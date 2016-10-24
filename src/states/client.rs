@@ -213,37 +213,28 @@ impl Client {
     fn dispatch_routing_message(&mut self,
                                 routing_msg: RoutingMessage)
                                 -> Result<Transition, RoutingError> {
-        let msg_content = routing_msg.content.clone();
-        let msg_src = routing_msg.src.clone();
-        let msg_dst = routing_msg.dst.clone();
-
-        match msg_content {
-            MessageContent::Ack(..) => (),
-            _ => {
-                trace!("{:?} Got routing message {:?} from {:?} to {:?}.",
+        match routing_msg.content {
+            MessageContent::Ack(ack, _) => Ok(self.handle_ack_response(ack)),
+            MessageContent::UserMessagePart { hash, part_count, part_index, payload, .. } => {
+                trace!("{:?} Got UserMessagePart {:x}, {}/{} from {:?} to {:?}.",
                        self,
-                       msg_content,
-                       msg_src,
-                       msg_dst)
-            }
-        }
-
-        match (msg_content, msg_src, msg_dst) {
-            // Ack
-            (MessageContent::Ack(ack, _), _, _) => Ok(self.handle_ack_response(ack)),
-            // UserMessagePart
-            (MessageContent::UserMessagePart { hash, part_count, part_index, payload, .. },
-             src,
-             dst) => {
+                       hash,
+                       part_count,
+                       part_index,
+                       routing_msg.src,
+                       routing_msg.dst);
                 if let Some(msg) = self.user_msg_cache.add(hash, part_count, part_index, payload) {
                     self.stats().count_user_message(&msg);
-                    self.send_event(msg.into_event(src, dst));
+                    self.send_event(msg.into_event(routing_msg.src, routing_msg.dst));
                 }
                 Ok(Transition::Stay)
             }
-            // other
-            _ => {
-                debug!("{:?} - Unhandled routing message: {:?}", self, routing_msg);
+            content => {
+                debug!("{:?} - Unhandled routing message: {:?} from {:?} to {:?}",
+                       self,
+                       content,
+                       routing_msg.src,
+                       routing_msg.dst);
                 Ok(Transition::Stay)
             }
         }
@@ -259,8 +250,8 @@ impl Client {
         self.stats.count_user_message(&user_msg);
         for part in try!(user_msg.to_parts(priority)) {
             try!(self.send_routing_message(RoutingMessage {
-                src: src.clone(),
-                dst: dst.clone(),
+                src: src,
+                dst: dst,
                 content: part,
             }));
         }

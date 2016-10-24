@@ -663,7 +663,7 @@ fn messages_accumulate_with_quorum() {
 
     let send = |node: &mut TestNode, dst: &Authority, message_id: MessageId| {
         assert!(node.inner
-            .send_get_success(src.clone(), dst.clone(), data.clone(), message_id)
+            .send_get_success(src, *dst, data.clone(), message_id)
             .is_ok());
     };
 
@@ -929,14 +929,16 @@ fn successful_get_request() {
 
     let mut request_received_count = 0;
 
-    // for node in nodes.iter().filter(|n| n.routing_table().is_close(data.name(), MIN_GROUP_SIZE)) {
+    // for node in nodes.iter().filter(|n| n.routing_table()
+    //                  .is_close(data.name(), MIN_GROUP_SIZE)) {
     //     loop {
     //         match node.event_rx.try_recv() {
-    //             Ok(Event::Request { request: Request::Get(ref request, id), ref src, ref dst }) => {
+    //             Ok(Event::Request { request: Request::Get(ref request, id), ref src, ref dst })
+    //                     => {
     //                 request_received_count += 1;
     //                 if data_request == *request && message_id == id {
     //                     if let Err(_) = node.inner
-    //                         .send_get_success(dst.clone(), src.clone(), data.clone(), id) {
+    //                         .send_get_success(dst, src, data.clone(), id) {
     //                         trace!("Failed to send GetSuccess response");
     //                     }
     //                     break;
@@ -996,7 +998,8 @@ fn failed_get_request() {
 
     let mut request_received_count = 0;
 
-    // for node in nodes.iter().filter(|n| n.routing_table().is_close(data.name(), MIN_GROUP_SIZE)) {
+    // for node in nodes.iter()
+    //                  .filter(|n| n.routing_table().is_close(data.name(), MIN_GROUP_SIZE)) {
     //     loop {
     //         match node.event_rx.try_recv() {
     //             Ok(Event::Request { request: Request::Get(ref data_id, ref id),
@@ -1005,7 +1008,7 @@ fn failed_get_request() {
     //                 request_received_count += 1;
     //                 if data_request == *data_id && message_id == *id {
     //                     if let Err(_) = node.inner
-    //                         .send_get_failure(dst.clone(), src.clone(), *data_id, vec![], *id) {
+    //                         .send_get_failure(dst, src, *data_id, vec![], *id) {
     //                         trace!("Failed to send GetFailure response.");
     //                     }
     //                     break;
@@ -1063,7 +1066,8 @@ fn disconnect_on_get_request() {
 
     let mut request_received_count = 0;
 
-    // for node in nodes.iter().filter(|n| n.routing_table().is_close(data.name(), MIN_GROUP_SIZE)) {
+    // for node in nodes.iter()
+    //                  .filter(|n| n.routing_table().is_close(data.name(), MIN_GROUP_SIZE)) {
     //     loop {
     //         match node.event_rx.try_recv() {
     //             Ok(Event::Request { request: Request::Get(ref request, ref id),
@@ -1072,7 +1076,7 @@ fn disconnect_on_get_request() {
     //                 request_received_count += 1;
     //                 if data_request == *request && message_id == *id {
     //                     if let Err(_) = node.inner
-    //                         .send_get_success(dst.clone(), src.clone(), data.clone(), *id) {
+    //                         .send_get_success(dst, src, data.clone(), *id) {
     //                         trace!("Failed to send GetSuccess response");
     //                     }
     //                     break;
@@ -1119,7 +1123,7 @@ fn request_during_churn_node_to_self() {
         let data_id = data.identifier();
         let message_id = MessageId::new();
 
-        unwrap!(nodes[index].inner.send_get_request(src.clone(), dst.clone(), data_id, message_id));
+        unwrap!(nodes[index].inner.send_get_request(src, dst, data_id, message_id));
 
         poll_and_resend(&mut nodes, &mut []);
         assert!(did_receive_get_request(&nodes[index], src, dst, data_id, message_id));
@@ -1146,10 +1150,7 @@ fn request_during_churn_node_to_node() {
         let data_id = data.identifier();
         let message_id = MessageId::new();
 
-        unwrap!(nodes[index0].inner.send_get_request(src.clone(),
-                                                     dst.clone(),
-                                                     data_id,
-                                                     message_id));
+        unwrap!(nodes[index0].inner.send_get_request(src, dst, data_id, message_id));
 
         poll_and_resend(&mut nodes, &mut []);
         assert!(did_receive_get_request(&nodes[index1], src, dst, data_id, message_id));
@@ -1174,7 +1175,7 @@ fn request_during_churn_node_to_group() {
         let data_id = data.identifier();
         let message_id = MessageId::new();
 
-        unwrap!(nodes[index].inner.send_get_request(src.clone(), dst.clone(), data_id, message_id));
+        unwrap!(nodes[index].inner.send_get_request(src, dst, data_id, message_id));
 
         poll_and_resend(&mut nodes, &mut []);
 
@@ -1183,9 +1184,7 @@ fn request_during_churn_node_to_group() {
 
         let num_received = nodes.iter()
             .take(MIN_GROUP_SIZE)
-            .filter(|node| {
-                did_receive_get_request(node, src.clone(), dst.clone(), data_id, message_id)
-            })
+            .filter(|node| did_receive_get_request(node, src, dst, data_id, message_id))
             .count();
 
         assert!(num_received >= QUORUM_SIZE);
@@ -1210,7 +1209,7 @@ fn request_during_churn_group_to_self() {
         sort_nodes_by_distance_to(&mut nodes, &name);
 
         for node in &nodes[0..MIN_GROUP_SIZE] {
-            unwrap!(node.inner.send_get_request(src.clone(), dst.clone(), data_id, message_id));
+            unwrap!(node.inner.send_get_request(src, dst, data_id, message_id));
         }
 
         let _ = random_churn(&mut rng, &network, &mut nodes);
@@ -1219,9 +1218,7 @@ fn request_during_churn_group_to_self() {
 
         let num_received = nodes.iter()
             .take(MIN_GROUP_SIZE)
-            .filter(|node| {
-                did_receive_get_request(node, src.clone(), dst.clone(), data_id, message_id)
-            })
+            .filter(|node| did_receive_get_request(node, src, dst, data_id, message_id))
             .count();
 
         assert!(num_received >= QUORUM_SIZE);
@@ -1247,10 +1244,7 @@ fn request_during_churn_group_to_node() {
         let message_id = MessageId::new();
 
         for node in &nodes[0..MIN_GROUP_SIZE] {
-            unwrap!(node.inner.send_get_success(src.clone(),
-                                                dst.clone(),
-                                                data.clone(),
-                                                message_id));
+            unwrap!(node.inner.send_get_success(src, dst, data.clone(), message_id));
         }
 
         poll_and_resend(&mut nodes, &mut []);
@@ -1277,7 +1271,7 @@ fn request_during_churn_group_to_group() {
         let added_index = random_churn(&mut rng, &network, &mut nodes);
 
         for node in &nodes[0..MIN_GROUP_SIZE] {
-            unwrap!(node.inner.send_get_request(src.clone(), dst.clone(), data_id, message_id));
+            unwrap!(node.inner.send_get_request(src, dst, data_id, message_id));
         }
 
         poll_and_resend(&mut nodes, &mut []);
@@ -1286,9 +1280,7 @@ fn request_during_churn_group_to_group() {
 
         let num_received = nodes.iter()
             .take(MIN_GROUP_SIZE)
-            .filter(|node| {
-                did_receive_get_request(node, src.clone(), dst.clone(), data_id, message_id)
-            })
+            .filter(|node| did_receive_get_request(node, src, dst, data_id, message_id))
             .count();
 
         assert!(num_received >= QUORUM_SIZE);
@@ -1333,8 +1325,7 @@ fn response_caching() {
 
     // No node has the data cached yet, so this request should reach the nodes
     // in the NAE manager group of the data.
-    unwrap!(clients[0].inner
-                             .send_get_request(dst.clone(), data_id, message_id));
+    unwrap!(clients[0].inner.send_get_request(dst, data_id, message_id));
 
     poll_all(&mut nodes, &mut clients);
 
