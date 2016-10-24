@@ -314,6 +314,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         Iter { inner: self.groups.iter().flat_map(Iter::<T>::iterate) }
     }
 
+    pub fn prefixes(&self) -> HashSet<Prefix<T>> {
+        self.groups.keys().cloned().collect()
+    }
+
     // If our group is the closest one to `name`, returns all names in our group *including ours*,
     // otherwise returns `None`.
     pub fn close_names(&self, name: &T) -> Option<HashSet<T>> {
@@ -418,11 +422,13 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     //
     // If the group exists in the routing table, it is split, otherwise this function is a no-op.
     // If any of the groups don't satisfy the invariant any more (i.e. only differ in one bit from
-    // our own prefix), they are removed and those contacts are returned.
-    pub fn split(&mut self, prefix: Prefix<T>) -> Vec<T> {
+    // our own prefix), they are removed and those contacts are returned.  If the split is happening
+    // to our own group, our new prefix is returned in the optional field.
+    pub fn split(&mut self, prefix: Prefix<T>) -> (Vec<T>, Option<Prefix<T>>) {
         let mut result = vec![];
         if prefix == self.our_group_prefix {
-            return self.split_our_group();
+            result = self.split_our_group();
+            return (result, Some(self.our_group_prefix));
         }
 
         if let Some(to_split) = self.groups.remove(&prefix) {
@@ -443,7 +449,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                 result.extend(group1);
             }
         }
-        result
+        (result, None)
     }
 
     // Removes a contact from the routing table.
@@ -777,11 +783,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             let message = format!("Invariant not satisfied for RT: {:?}", self);
             panic!(message);
         }
-    }
-
-    #[cfg(test)]
-    pub fn prefixes(&self) -> HashSet<Prefix<T>> {
-        self.groups.keys().cloned().collect()
     }
 
     #[cfg(test)]
