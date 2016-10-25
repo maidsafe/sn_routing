@@ -896,8 +896,7 @@ impl Node {
                     if let Err(err) = self.send_routing_message(request_msg) {
                         debug!("{:?} Failed to send RoutingTable: {:?}.", self, err);
                     }
-                    let event = Event::NodeAdded(*public_id.name(),
-                                                 self.peer_mgr.routing_table().clone());
+                    let event = Event::NodeAdded(*public_id.name());
                     if let Err(err) = self.event_sender.send(event) {
                         error!("{:?} Error sending event to routing user - {:?}", self, err);
                     }
@@ -1724,7 +1723,7 @@ impl Node {
               details.name);
 
         if details.was_in_our_group {
-            let event = Event::NodeLost(details.name, self.peer_mgr.routing_table().clone());
+            let event = Event::NodeLost(details.name);
             if let Err(err) = self.event_sender.send(event) {
                 error!("{:?} Error sending event to routing user - {:?}", self, err);
             }
