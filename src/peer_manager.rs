@@ -317,8 +317,10 @@ impl PeerManager {
 
     /// Splits the indicated group and returns the `PeerId`s of any peers to which we should not
     /// remain connected.
-    pub fn split_group(&mut self, prefix: Prefix<XorName>) -> Vec<PeerId> {
-        let names_to_drop = self.routing_table.split(prefix);
+    pub fn split_group(&mut self,
+                       prefix: Prefix<XorName>)
+                       -> (Vec<PeerId>, Option<Prefix<XorName>>) {
+        let (names_to_drop, our_new_prefix) = self.routing_table.split(prefix);
         let mut ids_to_drop = vec![];
         for name in &names_to_drop {
             if let Some(peer) = self.peer_map.remove_by_name(name) {
@@ -328,7 +330,7 @@ impl PeerManager {
                 }
             }
         }
-        ids_to_drop
+        (ids_to_drop, our_new_prefix)
     }
 
     // Returns the `OwnMergeState` from `RoutingTable` which defines what further action needs to be

@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use maidsafe_utilities::serialisation::{deserialise, serialise};
+use maidsafe_utilities::serialisation::{deserialise, serialise, serialised_size};
 use rust_sodium::crypto::{box_, sealedbox};
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
 use rustc_serialize::{Decodable, Decoder};
@@ -27,7 +27,7 @@ use error::RoutingError;
 use append_types::{AppendWrapper, AppendedData, Filter};
 
 /// Maximum allowed size for a private appendable data to grow to
-pub const MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES: usize = 102400;
+pub const MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES: u64 = 102400;
 
 /// Maximum size of a serialised `PrivAppendedData` item, in bytes.
 pub const MAX_PRIV_APPENDED_DATA_BYTES: usize = 220;
@@ -314,13 +314,7 @@ impl PrivAppendableData {
 
     /// Return true if the size is valid
     pub fn validate_size(&self) -> bool {
-        match serialise(self) {
-            Ok(raw) => raw.len() <= MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES,
-            Err(e) => {
-                warn!("Failed to serialise PrivAppendableData: {:?}", e);
-                false
-            }
-        }
+        serialised_size(self) <= MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES
     }
 }
 

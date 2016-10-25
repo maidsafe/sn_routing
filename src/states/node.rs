@@ -455,17 +455,6 @@ impl Node {
                 }
                 Ok(())
             }
-            DirectMessage::RoutingTable(public_ids) => {
-                for public_id in &public_ids {
-                    if self.peer_mgr.routing_table().need_to_add(public_id.name()).is_ok() {
-                        let our_name = *self.name();
-                        let _ = self.send_connection_info(*public_id,
-                                                  Authority::ManagedNode(our_name),
-                                                  Authority::ManagedNode(*public_id.name()));
-                    }
-                }
-                Ok(())
-            }
             DirectMessage::TunnelRequest(dst_id) => self.handle_tunnel_request(peer_id, dst_id),
             DirectMessage::TunnelSuccess(dst_id) => self.handle_tunnel_success(peer_id, dst_id),
             DirectMessage::TunnelClosed(dst_id) => self.handle_tunnel_closed(peer_id, dst_id),
@@ -577,21 +566,12 @@ impl Node {
     fn dispatch_routing_message(&mut self,
                                 routing_msg: RoutingMessage)
                                 -> Result<(), RoutingError> {
-        let msg_content = routing_msg.content.clone();
-        let msg_src = routing_msg.src.clone();
-        let msg_dst = routing_msg.dst.clone();
-        match msg_content {
+        match routing_msg.content {
             MessageContent::Ack(..) => (),
-            _ => {
-                trace!("{:?} Got routing message {:?} from {:?} to {:?}.",
-                       self,
-                       msg_content,
-                       msg_src,
-                       msg_dst)
-            }
+            _ => trace!("{:?} Got routing message {:?}.", self, routing_msg),
         }
 
-        match (msg_content, msg_src, msg_dst) {
+        match (routing_msg.content, routing_msg.src, routing_msg.dst) {
             (MessageContent::GetNodeName { current_id, message_id },
              Authority::Client { client_key, proxy_node_name, peer_id },
              Authority::NaeManager(dst_name)) => {
@@ -640,12 +620,16 @@ impl Node {
                 self.handle_connection_info_from_node(encrypted_connection_info,
                                                       nonce_bytes,
                                                       src_name,
-                                                      routing_msg.dst.clone(),
+                                                      routing_msg.dst,
                                                       public_id)
             }
             (MessageContent::GetCloseGroupResponse { close_group_ids, .. },
              Authority::ManagedNode(_),
              dst) => self.handle_get_close_group_response(close_group_ids, dst),
+            (MessageContent::RoutingTable(public_ids), _, _) => {
+                self.handle_routing_table(public_ids)
+            }
+            (MessageContent::GroupSplit(prefix), _, _) => self.handle_group_split(prefix),
             (MessageContent::OwnGroupMerge { sender_prefix, merge_prefix, groups }, src, _) => {
                 self.handle_own_group_merge(src, sender_prefix, merge_prefix, groups)
             }
@@ -662,8 +646,12 @@ impl Node {
                 }
                 Ok(())
             }
-            _ => {
-                debug!("{:?} Unhandled routing message {:?}", self, routing_msg);
+            (content, src, dst) => {
+                debug!("{:?} Unhandled routing message {:?} from {:?} to {:?}",
+                       self,
+                       content,
+                       src,
+                       dst);
                 Err(RoutingError::BadAuthority)
             }
         }
@@ -706,9 +694,9 @@ impl Node {
 
                         let priority = response.priority();
                         let src = Authority::ManagedNode(*self.name());
-                        let dst = routing_msg.src.clone();
+                        let dst = routing_msg.src;
 
-                        self.send_ack_from(routing_msg, route, src.clone());
+                        self.send_ack_from(routing_msg, route, src);
 
                         try!(self.send_user_message(src,
                                                     dst,
@@ -876,17 +864,16 @@ impl Node {
                 }
 
                 if should_split {
-                    // None of the `peers_to_drop` will have been in our group, so no need to notify
-                    // Routing user about them.
                     let our_group_prefix = *self.peer_mgr.routing_table().our_group_prefix();
-                    let peers_to_drop = self.peer_mgr.split_group(our_group_prefix);
-                    let our_new_prefix = *self.peer_mgr.routing_table().our_group_prefix();
-                    if let Err(err) = self.event_sender.send(Event::GroupSplit(our_new_prefix)) {
-                        error!("{:?} Error sending event to routing user - {:?}", self, err);
-                    }
-
-                    for peer_id in peers_to_drop {
-                        self.disconnect_peer(&peer_id);
+                    for prefix in self.peer_mgr.routing_table().prefixes() {
+                        let request_msg = RoutingMessage {
+                            src: Authority::NaeManager(our_group_prefix.lower_bound()),
+                            dst: Authority::NaeManager(prefix.lower_bound()),
+                            content: MessageContent::GroupSplit(our_group_prefix),
+                        };
+                        if let Err(err) = self.send_routing_message(request_msg) {
+                            debug!("{:?} Failed to send GroupSplit: {:?}.", self, err);
+                        }
                     }
                 }
 
@@ -897,9 +884,21 @@ impl Node {
                     .cloned()
                     .collect();
                 if self.peer_mgr.routing_table().is_in_our_group(public_id.name()) {
-                    let message = DirectMessage::RoutingTable(self.peer_mgr
-                        .get_pub_ids(&all_rt_contacts));
-                    let _ = self.send_direct_message(&peer_id, message);
+                    let mut public_ids =
+                        self.peer_mgr.get_pub_ids(&all_rt_contacts).into_iter().collect_vec();
+                    public_ids.sort();
+                    let request_content = MessageContent::RoutingTable(public_ids);
+                    let request_msg = RoutingMessage {
+                        src: Authority::NaeManager(self.peer_mgr
+                            .routing_table()
+                            .our_group_prefix()
+                            .lower_bound()),
+                        dst: Authority::ManagedNode(*public_id.name()),
+                        content: request_content,
+                    };
+                    if let Err(err) = self.send_routing_message(request_msg) {
+                        debug!("{:?} Failed to send RoutingTable: {:?}.", self, err);
+                    }
                     let event = Event::NodeAdded(*public_id.name(),
                                                  self.peer_mgr.routing_table().clone());
                     if let Err(err) = self.event_sender.send(event) {
@@ -1183,9 +1182,8 @@ impl Node {
                    self,
                    close_node_id);
 
-            if let Err(error) = self.send_connection_info(close_node_id,
-                                      dst.clone(),
-                                      Authority::ManagedNode(*close_node_id.name())) {
+            let node_auth = Authority::ManagedNode(*close_node_id.name());
+            if let Err(error) = self.send_connection_info(close_node_id, dst, node_auth) {
                 debug!("{:?} - Failed to send connection info to {:?}: {:?}",
                        self,
                        close_node_id,
@@ -1286,8 +1284,36 @@ impl Node {
                        self,
                        close_node_id);
                 let ci_dst = Authority::ManagedNode(*close_node_id.name());
-                try!(self.send_connection_info(close_node_id, dst.clone(), ci_dst));
+                try!(self.send_connection_info(close_node_id, dst, ci_dst));
             }
+        }
+        Ok(())
+    }
+
+    fn handle_routing_table(&mut self, public_ids: Vec<PublicId>) -> Result<(), RoutingError> {
+        for public_id in &public_ids {
+            if self.peer_mgr.routing_table().need_to_add(public_id.name()).is_ok() {
+                let our_name = *self.name();
+                let _ = self.send_connection_info(*public_id,
+                                                  Authority::ManagedNode(our_name),
+                                                  Authority::ManagedNode(*public_id.name()));
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_group_split(&mut self, prefix: Prefix<XorName>) -> Result<(), RoutingError> {
+        // None of the `peers_to_drop` will have been in our group, so no need to notify Routing
+        // user about them.
+        let (peers_to_drop, our_new_prefix) = self.peer_mgr.split_group(prefix);
+        if let Some(new_prefix) = our_new_prefix {
+            if let Err(err) = self.event_sender.send(Event::GroupSplit(new_prefix)) {
+                error!("{:?} Error sending event to routing user - {:?}", self, err);
+            }
+        }
+
+        for peer_id in peers_to_drop {
+            self.disconnect_peer(&peer_id);
         }
         Ok(())
     }
@@ -1437,8 +1463,8 @@ impl Node {
 
         for part in try!(user_msg.to_parts(priority)) {
             try!(self.send_routing_message(RoutingMessage {
-                src: src.clone(),
-                dst: dst.clone(),
+                src: src,
+                dst: dst,
                 content: part,
             }));
         }
@@ -1739,12 +1765,15 @@ impl Node {
                             targets: Vec<Prefix<XorName>>,
                             merge_details: OwnMergeDetails<XorName>,
                             src: Authority) {
-        let groups = merge_details.groups
+        let mut groups = merge_details.groups
             .into_iter()
             .map(|(prefix, members)| {
-                (prefix, self.peer_mgr.get_pub_ids(&members).into_iter().collect())
+                let mut group = self.peer_mgr.get_pub_ids(&members).into_iter().collect_vec();
+                group.sort();
+                (prefix, group)
             })
-            .collect();
+            .collect_vec();
+        groups.sort();
         let request_content = MessageContent::OwnGroupMerge {
             sender_prefix: merge_details.sender_prefix,
             merge_prefix: merge_details.merge_prefix,
@@ -1752,7 +1781,7 @@ impl Node {
         };
         for target in &targets {
             let request_msg = RoutingMessage {
-                src: src.clone(),
+                src: src,
                 dst: Authority::NaeManager(target.lower_bound()),
                 content: request_content.clone(),
             };
@@ -1773,7 +1802,7 @@ impl Node {
                 group: group.clone(),
             };
             let request_msg = RoutingMessage {
-                src: src.clone(),
+                src: src,
                 dst: Authority::NaeManager(target.lower_bound()),
                 content: request_content,
             };
