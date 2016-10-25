@@ -809,7 +809,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                 group.len()
             };
             // Only enforce group size when there are actually enough nodes!
-            if has_enough_nodes && group.len() < self.min_group_size {
+            if has_enough_nodes && len < self.min_group_size {
                 warn!("Minimum group size not met for group {:?}: {:?}",
                       prefix,
                       self);

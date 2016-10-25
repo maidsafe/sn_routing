@@ -282,7 +282,7 @@ pub fn verify_network_invariant<'a, T, U>(nodes: U)
     where T: Binary + Clone + Copy + Debug + Default + Hash + Xorable + 'a,
           U: IntoIterator<Item = &'a RoutingTable<T>>
 {
-    let mut groups: HashMap<Prefix<T>, HashSet<T>> = HashMap::new();
+    let mut groups: HashMap<Prefix<T>, (T, HashSet<T>)> = HashMap::new();
     // first, collect all groups in the network
     for node in nodes {
         for prefix in node.groups.keys() {
@@ -290,11 +290,20 @@ pub fn verify_network_invariant<'a, T, U>(nodes: U)
             if *prefix == node.our_group_prefix {
                 group_content.insert(*node.our_name());
             }
-            if let Some(group) = groups.get_mut(prefix) {
-                assert_eq!(*group, group_content);
+            if let Some(&mut (ref mut src, ref mut group)) = groups.get_mut(prefix) {
+                assert!(*group == group_content,
+                        "Group with prefix {:?} doesn't agree between nodes {:?} and {:?}\n{:?}: \
+                         {:?}, {:?}: {:?}",
+                        prefix,
+                        node.our_name,
+                        src,
+                        node.our_name,
+                        group_content,
+                        src,
+                        group);
                 continue;
             }
-            let _ = groups.insert(*prefix, group_content);
+            let _ = groups.insert(*prefix, (node.our_name, group_content));
         }
         node.verify_invariant();
     }
@@ -317,11 +326,11 @@ fn verify_disjoint_prefixes<T>(prefixes: HashSet<Prefix<T>>)
     }
 }
 
-fn verify_groups_match_names<T>(groups: &HashMap<Prefix<T>, HashSet<T>>)
+fn verify_groups_match_names<T>(groups: &HashMap<Prefix<T>, (T, HashSet<T>)>)
     where T: Binary + Clone + Copy + Debug + Default + Hash + Xorable
 {
     for &prefix in groups.keys() {
-        for name in &groups[&prefix] {
+        for name in &groups[&prefix].1 {
             assert!(prefix.matches(name));
         }
     }
