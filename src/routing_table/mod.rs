@@ -590,7 +590,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                 // Safe to unwrap as we just chose `closest_group_prefix` from the list of groups
                 let closest_group = unwrap!(self.groups.get(closest_group_prefix));
                 if closest_group.contains(target_name) {
-                    return Ok([*target_name].iter().cloned().collect());
+                    return Ok(iter::once(*target_name).collect());
                 } else if *closest_group_prefix == self.our_group_prefix {
                     return Err(Error::NoSuchPeer);
                 }
@@ -600,8 +600,23 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         let mut names = closest_group.iter().collect_vec();
         names.sort_by(|&lhs, &rhs| target_name.cmp_distance(lhs, rhs));
         match names.get(route) {
-            Some(&name) => Ok([*name].iter().cloned().collect()),
-            None => Err(Error::CannotRoute),
+            Some(&name) => Ok(iter::once(*name).collect()),
+            None => {
+                // TODO: This is a workaround for the cases where we have not connected to all
+                //       needed contacts yet and may have empty or incomplete groups.
+                // Err(Error::CannotRoute),
+                let cmp = |name0: &T, name1: &T| target_name.cmp_distance(name0, name1);
+                match self.groups
+                    .iter()
+                    .map(|(prefix, group)| (prefix.lower_bound(), group))
+                    .sorted_by(|&(name0, _), &(name1, _)| cmp(&name0, &name1))
+                    .into_iter()
+                    .flat_map(|(_, peers)| peers.iter().cloned().sorted_by(&cmp).into_iter())
+                    .next() {
+                    Some(name) => Ok(iter::once(name).collect()),
+                    None => Err(Error::CannotRoute),
+                }
+            }
         }
     }
 
