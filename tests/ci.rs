@@ -58,8 +58,8 @@ use itertools::Itertools;
 use maidsafe_utilities::SeededRng;
 use maidsafe_utilities::thread::{self, Joiner};
 use rand::Rng;
-use routing::{Authority, Client, Data, Event, FullId, MIN_GROUP_SIZE, MessageId, Node, QUORUM_SIZE,
-              Request, Response, StructuredData, XorName, Xorable};
+use routing::{Authority, Client, Data, Event, FullId, MIN_GROUP_SIZE, MessageId, Node,
+              QUORUM_SIZE, Request, Response, StructuredData, XorName, Xorable};
 use rust_sodium::crypto;
 use std::iter;
 use std::collections::HashSet;
@@ -232,9 +232,7 @@ fn create_connected_nodes(count: usize,
     nodes
 }
 
-fn gen_structured_data<R: Rng>(full_id: &FullId,
-                               rng: &mut R)
-                               -> Data {
+fn gen_structured_data<R: Rng>(full_id: &FullId, rng: &mut R) -> Data {
     Data::Structured(StructuredData::new(10000,
                                          rng.gen(),
                                          0,
@@ -283,10 +281,7 @@ fn core() {
                         if let Request::Put(_, ref id) = request {
                             let node = &nodes[index].node;
 
-                            unwrap!(node.send_put_success(dst,
-                                                          src,
-                                                          data.identifier(),
-                                                          id.clone()));
+                            unwrap!(node.send_put_success(dst, src, data.identifier(), id.clone()));
                         }
                     }
 
@@ -403,8 +398,8 @@ fn core() {
         loop {
             if let Ok(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
                 match test_event {
-                    TestEvent(index, Event::NodeLost(lost_name, _)) if index < nodes.len() &&
-                                                                       lost_name == name => {
+                    TestEvent(index, Event::NodeLost(lost_name)) if index < nodes.len() &&
+                                                                    lost_name == name => {
                         churns[index] = true;
                         if churns.iter().all(|b| *b) {
                             break;

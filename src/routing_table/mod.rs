@@ -293,6 +293,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
     }
 
+    #[cfg(any(test, feature = "use-mock-crust"))]
     pub fn our_name(&self) -> &T {
         &self.our_name
     }
@@ -306,6 +307,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         self.groups.values().fold(0, |acc, group| acc + group.len())
     }
 
+    #[cfg(any(test, feature = "use-mock-crust"))]
     pub fn is_empty(&self) -> bool {
         self.groups.values().all(HashSet::is_empty)
     }
@@ -350,8 +352,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
     }
 
-    // Returns the list of contacts as a result of a merge to which we aren't currently connected,
-    // but should be.
+    /// Returns the list of contacts as a result of a merge to which we aren't currently connected,
+    /// but should be.
+    #[cfg(any(test, feature = "use-mock-crust"))]
     pub fn needed(&self) -> &Groups<T> {
         &self.needed
     }
