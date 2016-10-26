@@ -29,7 +29,7 @@ use node::Node;
 use peer_manager::{MIN_GROUP_SIZE, QUORUM_SIZE};
 use rand::{self, Rng, SeedableRng, XorShiftRng};
 use rand::distributions::{IndependentSample, Range};
-use routing_table::{RoutingTable, Xorable};
+use routing_table::{self, RoutingTable, Xorable};
 use std::cell::RefCell;
 use std::cmp;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -320,6 +320,7 @@ fn create_connected_nodes_with_cache(network: &Network,
         while let Ok(event) = node.event_rx.try_recv() {
             match event {
                 Event::NodeAdded(..) |
+                Event::GroupSplit(..) |
                 Event::Tick => (),
                 event => panic!("Got unexpected event: {:?}", event),
             }
@@ -396,31 +397,6 @@ fn random_churn<R: Rng>(rng: &mut R,
     }
 }
 
-// Get names of all nodes in the `bucket_index`-th bucket in the routing table.
-// fn actual_names_in_bucket(table: &RoutingTable<XorName>,
-//                           bucket_index: usize)
-//                           -> BTreeSet<XorName> {
-//     let our_name = table.our_name();
-//     let far_name = our_name.with_flipped_bit(bucket_index);
-
-//     table.closest_nodes_to(&far_name, MIN_GROUP_SIZE, false)
-//         .into_iter()
-//         .map(|info| *info.name())
-//         .filter(|name| our_name.bucket_index(name) == bucket_index)
-//         .collect()
-// }
-
-// Get names of all nodes that belong to the `bucket_index`-th bucket in the `target`s
-// routing table.
-// fn expected_names_in_bucket(routing_tables: &[RoutingTable<XorName>],
-//                             target: &XorName,
-//                             bucket_index: usize)
-//                             -> BTreeSet<XorName> {
-//     routing_tables.iter()
-//         .filter(|routing_table| target.bucket_index(routing_table.our_name()) == bucket_index)
-//         .map(|routing_table| *routing_table.our_name())
-//         .collect()
-// }
 
 /// Sorts the given nodes by their distance to `name`. Note that this will call the `name()`
 /// function on them which causes polling, so it calls `poll_all` to make sure that all other
@@ -431,37 +407,13 @@ fn sort_nodes_by_distance_to(nodes: &mut [TestNode], name: &XorName) {
 }
 
 /// Verify that the invariant is upheld for the node at `index`.
-fn verify_invariant_for_node(nodes: &[TestNode], index: usize) {
-    let routing_tables = nodes.iter().map(|node| node.routing_table()).collect_vec();
-    verify_invariant(&routing_tables, index);
+fn verify_invariant_for_node(node: &TestNode) {
+    node.routing_table().verify_invariant();
 }
 
-/// Verify that the invariant is upheld for the routing table at `index`.
-pub fn verify_invariant(_routing_tables: &[RoutingTable<XorName>], _index: usize) {
-    // let target = routing_tables[index].our_name();
-    // let mut count = routing_tables.len() - 1;
-    // let mut bucket_index = 0;
-
-    // while count > 0 {
-    //     let actual_bucket = actual_names_in_bucket(&routing_tables[index], bucket_index);
-    //     let expected_bucket = expected_names_in_bucket(routing_tables, target, bucket_index);
-    //     if actual_bucket.len() < MIN_GROUP_SIZE {
-    //         assert!(expected_bucket == actual_bucket,
-    //                 "Node: {:?}, expected: {:?}. found: {:?}",
-    //                 target,
-    //                 expected_bucket,
-    //                 actual_bucket);
-    //     }
-    //     count -= expected_bucket.len();
-    //     bucket_index += 1;
-    // }
-}
-
-/// Verify that the invariant is upheld for all nodes.
 fn verify_invariant_for_all_nodes(nodes: &[TestNode]) {
-    for node_index in 0..nodes.len() {
-        verify_invariant_for_node(nodes, node_index);
-    }
+    let routing_tables = nodes.iter().map(TestNode::routing_table).collect_vec();
+    routing_table::verify_network_invariant(routing_tables.iter());
 }
 
 // Generate a vector of random bytes of the given length.
@@ -575,25 +527,21 @@ fn disconnect_on_rebootstrap() {
 }
 
 #[test]
-#[ignore]
 fn less_than_group_size_nodes() {
     test_nodes(3)
 }
 
 #[test]
-#[ignore]
 fn group_size_nodes() {
     test_nodes(MIN_GROUP_SIZE);
 }
 
 #[test]
-#[ignore]
 fn more_than_group_size_nodes() {
     test_nodes(MIN_GROUP_SIZE * 2);
 }
 
 #[test]
-#[ignore]
 fn failing_connections_group_of_three() {
     let network = Network::new(None);
 
@@ -615,7 +563,6 @@ fn failing_connections_group_of_three() {
 }
 
 #[test]
-#[ignore]
 fn failing_connections_ring() {
     let network = Network::new(None);
     let len = MIN_GROUP_SIZE * 2;
@@ -631,7 +578,6 @@ fn failing_connections_ring() {
 }
 
 #[test]
-#[ignore]
 fn failing_connections_unidirectional() {
     let network = Network::new(None);
     network.block_connection(Endpoint(1), Endpoint(2));
@@ -643,7 +589,6 @@ fn failing_connections_unidirectional() {
 }
 
 #[test]
-#[ignore]
 fn client_connects_to_nodes() {
     let network = Network::new(None);
     let mut nodes = create_connected_nodes(&network, MIN_GROUP_SIZE + 1);
@@ -651,7 +596,6 @@ fn client_connects_to_nodes() {
 }
 
 #[test]
-#[ignore]
 fn messages_accumulate_with_quorum() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
@@ -714,7 +658,7 @@ fn messages_accumulate_with_quorum() {
     }
     send(&mut nodes[QUORUM_SIZE - 1], &dst_grp, message_id);
     let _ = poll_all(&mut nodes, &mut []);
-    for node in &mut nodes[..MIN_GROUP_SIZE] {
+    for node in &mut nodes {
         expect_next_event!(node, Event::Response { response: Response::GetSuccess(..), .. });
     }
     send(&mut nodes[QUORUM_SIZE], &dst_grp, message_id);
@@ -736,7 +680,7 @@ fn messages_accumulate_with_quorum() {
     }
     send(&mut nodes[0], &dst_grp, message_id);
     let _ = poll_all(&mut nodes, &mut []);
-    for node in &mut nodes[..MIN_GROUP_SIZE] {
+    for node in &mut nodes {
         expect_next_event!(node, Event::Response { response: Response::GetSuccess(..), .. });
     }
     send(&mut nodes[QUORUM_SIZE + 1], &dst_grp, message_id);
@@ -747,7 +691,6 @@ fn messages_accumulate_with_quorum() {
 }
 
 #[test]
-#[ignore]
 fn node_drops() {
     let network = Network::new(None);
     let mut nodes = create_connected_nodes(&network, MIN_GROUP_SIZE + 2);
@@ -777,7 +720,6 @@ fn churn() {
 }
 
 #[test]
-#[ignore]
 fn node_joins_in_front() {
     let network = Network::new(None);
     let mut nodes = create_connected_nodes(&network, 2 * MIN_GROUP_SIZE);
@@ -790,7 +732,6 @@ fn node_joins_in_front() {
 }
 
 #[test]
-#[ignore]
 fn multiple_joining_nodes() {
     let network_size = 2 * MIN_GROUP_SIZE;
     let network = Network::new(None);
@@ -811,7 +752,6 @@ fn multiple_joining_nodes() {
 }
 
 #[test]
-#[ignore]
 #[cfg_attr(feature = "clippy", allow(needless_range_loop))]
 fn node_restart() {
     let network = Network::new(None);
@@ -839,7 +779,6 @@ fn node_restart() {
 }
 
 #[test]
-#[ignore]
 fn check_close_groups_for_group_size_nodes() {
     let nodes = create_connected_nodes(&Network::new(None), MIN_GROUP_SIZE);
     let close_groups_complete = nodes.iter()
@@ -848,7 +787,6 @@ fn check_close_groups_for_group_size_nodes() {
 }
 
 #[test]
-#[ignore]
 fn whitelist() {
     let network = Network::new(None);
     let mut nodes = create_connected_nodes(&network, MIN_GROUP_SIZE);

@@ -199,7 +199,7 @@ impl<N> Destination<N> {
 
 // Used when removal of a contact triggers the need to merge two or more groups.  Sent between all
 // members of all merging groups, but not peers outwith the new group.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct OwnMergeDetails<T: Binary + Clone + Copy + Default + Hash + Xorable> {
     pub sender_prefix: Prefix<T>,
     pub merge_prefix: Prefix<T>,
@@ -209,7 +209,7 @@ pub struct OwnMergeDetails<T: Binary + Clone + Copy + Default + Hash + Xorable> 
 
 
 // Used once merging our own group has completed to send to peers outwith the new group
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct OtherMergeDetails<T: Binary + Clone + Copy + Default + Hash + Xorable> {
     pub prefix: Prefix<T>,
     pub group: HashSet<T>,
@@ -502,6 +502,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     // The actual merge of the group is only done once all expected merging groups have provided
     // details.  See the docs for `OwnMergeState` for full details of the return value.
     pub fn merge_own_group(&mut self, merge_details: OwnMergeDetails<T>) -> OwnMergeState<T> {
+        if self.groups.contains_key(&merge_details.merge_prefix) {
+            warn!("{:?}: Attempt to call merge_own_group() for an already merged prefix {:?}",
+                  self.our_name,
+                  merge_details.merge_prefix);
+        }
         for (prefix, contacts) in &merge_details.groups {
             // Cache the prefix if it's a merging group, flagging the sender's prefix `true`.
             if merge_details.merge_prefix.is_compatible(prefix) {
@@ -560,7 +565,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     //     - returns `Err(Error::CannotRoute)`
     //
     // * If the destination is an individual node:
-    //     - if our name *is* the destination, returns `Err(Error::OwnName)`; otherwise
+    //     - if our name *is* the destination, returns an empty set; otherwise
     //     - if the destination name is an entry in the routing table, returns it; otherwise
     //     - if our group is the closest on the network (i.e. our group's prefix is a prefix of the
     //       destination), this returns `Err(Error::NoSuchPeer)`; otherwise
@@ -579,7 +584,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             }
             Destination::Node(ref target_name) => {
                 if *target_name == self.our_name {
-                    return Err(Error::OwnName);
+                    return Ok(HashSet::new());
                 }
                 let closest_group_prefix = self.closest_group_prefix(target_name);
                 // Safe to unwrap as we just chose `closest_group_prefix` from the list of groups
@@ -666,6 +671,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                     Some((*prefix, names.clone()))
                 }
             }));
+        let _ = unwrap!(merge_details.groups.get_mut(&self.our_group_prefix)).insert(self.our_name);
         OwnMergeState::Initialised {
             targets: self.prefixes_within_merge(&merge_details.merge_prefix),
             merge_details: merge_details,
@@ -673,6 +679,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     }
 
     fn finish_merging_own_group(&mut self, merge_details: OwnMergeDetails<T>) -> OwnMergeState<T> {
+        self.merging.clear();
         self.merge(&merge_details.merge_prefix);
         let targets = self.groups
             .keys()
@@ -800,8 +807,13 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
         let has_enough_nodes = self.len() >= self.min_group_size;
         for (prefix, group) in &self.groups {
+            let len = if *prefix == self.our_group_prefix {
+                group.len() + 1
+            } else {
+                group.len()
+            };
             // Only enforce group size when there are actually enough nodes!
-            if has_enough_nodes && group.len() < self.min_group_size {
+            if has_enough_nodes && len < self.min_group_size {
                 warn!("Minimum group size not met for group {:?}: {:?}",
                       prefix,
                       self);
