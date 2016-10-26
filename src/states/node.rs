@@ -1741,7 +1741,7 @@ impl Node {
                details {
             let our_new_prefix = merge_details.merge_prefix;
             let src_name = our_new_prefix.lower_bound();
-            self.send_own_group_merge(targets, merge_details, Authority::NodeManager(src_name));
+            self.send_own_group_merge(targets, merge_details, Authority::NaeManager(src_name));
             // TODO - the event should maybe only fire once all new connections have been made?
             if let Err(err) = self.event_sender.send(Event::GroupMerge(our_new_prefix)) {
                 error!("{:?} Error sending event to routing user - {:?}", self, err);

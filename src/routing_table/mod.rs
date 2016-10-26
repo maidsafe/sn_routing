@@ -591,9 +591,12 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                 let closest_group = unwrap!(self.groups.get(closest_group_prefix));
                 if closest_group.contains(target_name) {
                     return Ok(iter::once(*target_name).collect());
-                } else if *closest_group_prefix == self.our_group_prefix {
-                    return Err(Error::NoSuchPeer);
                 }
+                // TODO: This is temporarily disabled for the cases where we have not connected to
+                //       all needed contacts yet and may have empty or incomplete groups.
+                // } else if *closest_group_prefix == self.our_group_prefix {
+                //     return Err(Error::NoSuchPeer);
+                // }
                 (closest_group, target_name)
             }
         };
