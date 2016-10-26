@@ -413,7 +413,7 @@ fn verify_invariant_for_node(node: &TestNode) {
 }
 
 fn verify_invariant_for_all_nodes(nodes: &[TestNode]) {
-    let routing_tables: Vec<RoutingTable<_>> = nodes.iter().map(|x| x.routing_table()).collect();
+    let routing_tables: Vec<RoutingTable<_>> = nodes.iter().map(TestNode::routing_table).collect();
     verify_network_invariant(routing_tables.iter());
 }
 

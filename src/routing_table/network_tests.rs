@@ -103,7 +103,7 @@ impl Network {
     }
 
     // TODO: remove this when https://github.com/Manishearth/rust-clippy/issues/1279 is resolved
-    #[allow(for_kv_map)]
+    #[cfg_attr(feature="clippy", allow(for_kv_map))]
     /// Drops a node and, if necessary, merges groups to restore the group requirement.
     fn drop_node(&mut self) {
         let keys = self.keys();
@@ -132,7 +132,7 @@ impl Network {
 
         let mut iteration = 1;
         while !merge_own_info.is_empty() {
-            println!("+++ Merge own info: iteration #{}", iteration);
+            trace!("+++ Merge own info: iteration #{}", iteration);
             iteration += 1;
             let mut merge_other_info: HashMap<Prefix<u64>, OtherMergeInfo> = HashMap::new();
             // handle broadcast of merge_own_group
@@ -158,9 +158,9 @@ impl Network {
                             for needed_contact in needed.iter().flat_map(Iter::iterate) {
                                 let _ = target_node.add(*needed_contact);
                             }
-                            println!("Finished merging own group for {:?}:\n{:?}",
-                                     target_node.our_name().debug_binary(),
-                                     target_node);
+                            trace!("Finished merging own group for {:?}:\n{:?}",
+                                   target_node.our_name().debug_binary(),
+                                   target_node);
                         }
                     }
                 }
