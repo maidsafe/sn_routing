@@ -504,7 +504,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     pub fn merge_own_group(&mut self, merge_details: OwnMergeDetails<T>) -> OwnMergeState<T> {
         if self.groups.contains_key(&merge_details.merge_prefix) {
             warn!("{:?}: Attempt to call merge_own_group() for an already merged prefix {:?}",
-                  self.our_name.debug_binary(),
+                  self.our_name,
                   merge_details.merge_prefix);
         }
         for (prefix, contacts) in &merge_details.groups {

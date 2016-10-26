@@ -14,7 +14,6 @@
 //
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
-#![cfg(test)]
 
 use authority::Authority;
 use cache::{Cache, NullCache};
@@ -30,7 +29,7 @@ use node::Node;
 use peer_manager::{MIN_GROUP_SIZE, QUORUM_SIZE};
 use rand::{self, Rng, SeedableRng, XorShiftRng};
 use rand::distributions::{IndependentSample, Range};
-use routing_table::{RoutingTable, Xorable, verify_network_invariant};
+use routing_table::{self, RoutingTable, Xorable};
 use std::cell::RefCell;
 use std::cmp;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -413,8 +412,8 @@ fn verify_invariant_for_node(node: &TestNode) {
 }
 
 fn verify_invariant_for_all_nodes(nodes: &[TestNode]) {
-    let routing_tables: Vec<RoutingTable<_>> = nodes.iter().map(TestNode::routing_table).collect();
-    verify_network_invariant(routing_tables.iter());
+    let routing_tables = nodes.iter().map(TestNode::routing_table).collect_vec();
+    routing_table::verify_network_invariant(routing_tables.iter());
 }
 
 // Generate a vector of random bytes of the given length.

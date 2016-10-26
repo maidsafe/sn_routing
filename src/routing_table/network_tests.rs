@@ -130,10 +130,7 @@ impl Network {
             }
         }
 
-        let mut iteration = 1;
         while !merge_own_info.is_empty() {
-            trace!("+++ Merge own info: iteration #{}", iteration);
-            iteration += 1;
             let mut merge_other_info: HashMap<Prefix<u64>, OtherMergeInfo> = HashMap::new();
             // handle broadcast of merge_own_group
             let own_info = merge_own_info;
@@ -158,9 +155,6 @@ impl Network {
                             for needed_contact in needed.iter().flat_map(Iter::iterate) {
                                 let _ = target_node.add(*needed_contact);
                             }
-                            trace!("Finished merging own group for {:?}:\n{:?}",
-                                   target_node.our_name().debug_binary(),
-                                   target_node);
                         }
                     }
                 }
