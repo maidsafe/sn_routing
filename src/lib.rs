@@ -172,8 +172,7 @@ mod types;
 mod utils;
 mod xor_name;
 
-#[cfg(test)]
-#[cfg(feature = "use-mock-crust")]
+#[cfg(all(test, feature = "use-mock-crust"))]
 #[allow(unused)]
 mod core_tests;
 

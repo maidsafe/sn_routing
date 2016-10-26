@@ -200,6 +200,7 @@ fn recv_with_timeout<T>(rx: &Receiver<T>, timeout: Duration) -> Option<T> {
         }
 
         if Instant::now() - start > timeout {
+            warn!("Timed out.");
             return None;
         }
     }
