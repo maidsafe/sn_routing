@@ -160,21 +160,19 @@ impl<T: Clone + Copy + Default + Binary + Xorable> PartialEq<Prefix<T>> for Pref
 
 impl<T: Clone + Copy + Default + Binary + Xorable> PartialOrd<Prefix<T>> for Prefix<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        if self == other {
-            Some(Ordering::Equal)
-        } else if self.is_compatible(other) {
-            Some(self.bit_count().cmp(&other.bit_count()))
-        } else {
-            Some(self.name.cmp(&other.name))
-        }
+        Some(self.cmp(other))
     }
 }
 
 impl<T: Clone + Copy + Default + Binary + Xorable> Ord for Prefix<T> {
     fn cmp(&self, other: &Self) -> Ordering {
-        // safe - all paths in partial_cmp return Some()
-        // Option::expect used to satisfy Clippy
-        self.partial_cmp(other).expect("Prefix::partial_cmp returned None")
+        if self == other {
+            Ordering::Equal
+        } else if self.is_compatible(other) {
+            self.bit_count().cmp(&other.bit_count())
+        } else {
+            self.name.cmp(&other.name)
+        }
     }
 }
 
