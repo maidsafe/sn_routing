@@ -188,7 +188,7 @@ impl Client {
 
         let routing_msg = signed_msg.routing_message();
 
-        if !self.is_recipient(&routing_msg.dst) {
+        if !self.in_authority(&routing_msg.dst) {
             return Ok(Transition::Stay);
         }
 
@@ -258,8 +258,8 @@ impl Client {
         Ok(())
     }
 
-    fn is_recipient(&self, dst: &Authority) -> bool {
-        if let Authority::Client { ref client_key, .. } = *dst {
+    fn in_authority(&self, auth: &Authority) -> bool {
+        if let Authority::Client { ref client_key, .. } = *auth {
             client_key == self.full_id.public_id().signing_public_key()
         } else {
             false
@@ -347,7 +347,7 @@ impl Bootstrapped for Client {
         self.stats.count_route(route);
 
         if let Authority::Client { .. } = routing_msg.dst {
-            if self.is_recipient(&routing_msg.dst) {
+            if self.in_authority(&routing_msg.dst) {
                 return Ok(()); // Message is for us.
             }
         }

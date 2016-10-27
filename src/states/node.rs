@@ -508,7 +508,7 @@ impl Node {
         // FIXME: This is currently only in place so acks can get delivered if the
         // original ack was lost in transit
         if (self.msg_accumulator.contains(routing_msg) || !routing_msg.src.is_group()) &&
-           self.is_recipient(&routing_msg.dst) {
+           self.in_authority(&routing_msg.dst) {
             self.send_ack(routing_msg, route);
         }
 
@@ -521,7 +521,7 @@ impl Node {
             return Err(RoutingError::FilterCheckFailed);
         }
 
-        if self.is_recipient(&routing_msg.dst) {
+        if self.in_authority(&routing_msg.dst) {
             // TODO: If group, verify the sender's membership.
             if let Authority::Client { ref client_key, .. } = signed_msg.routing_message().src {
                 if client_key != signed_msg.public_id().signing_public_key() {
@@ -536,7 +536,7 @@ impl Node {
             debug!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);
         }
 
-        if count == 1 && self.is_recipient(&routing_msg.dst) {
+        if count == 1 && self.in_authority(&routing_msg.dst) {
             self.handle_routing_message(routing_msg, signed_msg.public_id())
         } else {
             Ok(())
@@ -1485,7 +1485,7 @@ impl Node {
             if self.name() == routing_msg.dst.name() {
                 // This is a message for a client we are the proxy of. Relay it.
                 return self.relay_to_client(signed_msg.clone(), peer_id);
-            } else if self.is_recipient(&routing_msg.dst) {
+            } else if self.in_authority(&routing_msg.dst) {
                 return Ok(()); // Message is for us as a client.
             }
         }
@@ -1579,12 +1579,12 @@ impl Node {
                            &self.full_id)
     }
 
-    /// Returns whether we are the recipient of a message for the given authority.
-    fn is_recipient(&self, dst: &Authority) -> bool {
-        if let Authority::Client { ref client_key, .. } = *dst {
+    /// Returns whether we are a part of the given authority.
+    fn in_authority(&self, auth: &Authority) -> bool {
+        if let Authority::Client { ref client_key, .. } = *auth {
             client_key == self.full_id.public_id().signing_public_key()
         } else {
-            self.is_proper() && self.peer_mgr.routing_table().is_recipient(&dst.to_destination())
+            self.is_proper() && self.peer_mgr.routing_table().is_recipient(&auth.to_destination())
         }
     }
 
@@ -1949,13 +1949,19 @@ impl Bootstrapped for Node {
                                       routing_msg: RoutingMessage,
                                       route: u8)
                                       -> Result<(), RoutingError> {
+        if !self.in_authority(&routing_msg.src) {
+            trace!("{:?} Not part of the source authority. Not sending message {:?}.",
+                   self,
+                   routing_msg);
+            return Ok(());
+        }
         let signed_msg = try!(SignedMessage::new(routing_msg, &self.full_id));
         let hop = *self.name();
         try!(self.send_signed_message(&signed_msg, route, &hop, &[hop]));
 
         // If we need to handle this message, handle it.
         let sent_msg = try!(self.message_to_send(&signed_msg, route, &hop));
-        if self.is_recipient(&sent_msg.routing_message().dst) &&
+        if self.in_authority(&sent_msg.routing_message().dst) &&
            self.signed_msg_filter.filter_incoming(&sent_msg) == 1 {
             self.handle_routing_message(sent_msg.routing_message(), sent_msg.public_id())
         } else {
