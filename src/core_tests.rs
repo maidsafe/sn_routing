@@ -306,6 +306,7 @@ fn create_connected_nodes_with_cache(network: &Network,
             .cache(use_cache)
             .create());
         let _ = poll_all(&mut nodes, &mut []);
+        verify_invariant_for_all_nodes(&nodes);
     }
 
     let n = cmp::min(nodes.len(), MIN_GROUP_SIZE) - 1;
@@ -708,6 +709,7 @@ fn churn() {
     let mut nodes = create_connected_nodes(&network, 20);
 
     for i in 0..100 {
+        trace!("Iteration {}", i);
         let _ = random_churn(&mut rng, &network, &mut nodes);
         poll_and_resend(&mut nodes, &mut []);
 

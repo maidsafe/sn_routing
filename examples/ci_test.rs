@@ -77,7 +77,6 @@ const DEFAULT_REQUESTS: usize = 30;
 const DEFAULT_NODE_COUNT: usize = 10;
 /// The number of churn-get cycles.
 const DEFAULT_BATCHES: usize = 1;
-const GROUP_SIZE: usize = MIN_GROUP_SIZE;
 
 struct NodeProcess(Child, usize);
 
@@ -178,7 +177,7 @@ fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
     io::stdout().flush().expect("Could not flush stdout");
 
     let kill_node = match nodes.len() {
-        size if size == GROUP_SIZE => false,
+        size if size == MIN_GROUP_SIZE => false,
         size if size == network_size => true,
         _ => random(),
     };
@@ -322,9 +321,9 @@ fn main() {
         unwrap!(maidsafe_utilities::log::init(false));
         let node_count = match args.arg_nodes {
             Some(number) => {
-                if number <= GROUP_SIZE {
-                    panic!("The number of nodes should be > Group-Size. {{Group-Size = #{}}}",
-                           GROUP_SIZE);
+                if number <= MIN_GROUP_SIZE {
+                    panic!("The number of nodes should be > {} (MIN_GROUP_SIZE).",
+                           MIN_GROUP_SIZE);
                 }
 
                 number
