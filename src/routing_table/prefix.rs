@@ -24,7 +24,7 @@ use super::xorable::Xorable;
 
 /// A group prefix, i.e. a sequence of bits specifying the part of the network's name space
 /// consisting of all names that start with this sequence.
-#[derive(Clone, Copy, Default, Eq, Ord)]
+#[derive(Clone, Copy, Default, Eq)]
 pub struct Prefix<T: Clone + Copy + Default + Binary + Xorable> {
     bit_count: usize,
     name: T,
@@ -160,12 +160,18 @@ impl<T: Clone + Copy + Default + Binary + Xorable> PartialEq<Prefix<T>> for Pref
 
 impl<T: Clone + Copy + Default + Binary + Xorable> PartialOrd<Prefix<T>> for Prefix<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<T: Clone + Copy + Default + Binary + Xorable> Ord for Prefix<T> {
+    fn cmp(&self, other: &Self) -> Ordering {
         if self == other {
-            Some(Ordering::Equal)
+            Ordering::Equal
         } else if self.is_compatible(other) {
-            None
+            self.bit_count().cmp(&other.bit_count())
         } else {
-            Some(self.name.cmp(&other.name))
+            self.name.cmp(&other.name)
         }
     }
 }

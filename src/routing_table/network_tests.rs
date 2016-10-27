@@ -140,13 +140,15 @@ impl Network {
                 for target in targets {
                     let target_node = unwrap!(self.nodes.get_mut(&target));
                     match target_node.merge_own_group(merge_own_details.clone()) {
-                        OwnMergeState::Initialised { targets, merge_details } => {
+                        OwnMergeState::Initialised { mut targets, merge_details } => {
+                            targets.sort();
                             Network::store_merge_info(&mut merge_own_info,
                                                       *target_node.our_group_prefix(),
                                                       (targets, merge_details));
                         }
                         OwnMergeState::Ongoing => (),
-                        OwnMergeState::Completed { targets, merge_details } => {
+                        OwnMergeState::Completed { mut targets, merge_details } => {
+                            targets.sort();
                             Network::store_merge_info(&mut merge_other_info,
                                                       *target_node.our_group_prefix(),
                                                       (targets, merge_details));
@@ -339,7 +341,6 @@ fn groups_have_identical_routing_tables() {
     verify_invariant(&network);
 }
 
-#[ignore]
 #[test]
 fn merging_groups() {
     let mut network = Network::new(None);
