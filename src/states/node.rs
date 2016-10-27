@@ -882,6 +882,7 @@ impl Node {
                     .iter()
                     .filter(|name| *name != public_id.name())
                     .cloned()
+                    .chain(iter::once(*self.name()))
                     .collect();
                 if self.peer_mgr.routing_table().is_in_our_group(public_id.name()) {
                     let mut public_ids =
@@ -1171,6 +1172,10 @@ impl Node {
                                      relocated_id: PublicId,
                                      close_group_ids: Vec<PublicId>,
                                      dst: Authority) {
+        if !self.peer_mgr.routing_table().is_empty() {
+            warn!("{:?} Received duplicate GetNodeName response.", self);
+            return;
+        }
         self.get_node_name_timer_token = None;
 
         self.full_id.public_id_mut().set_name(*relocated_id.name());
