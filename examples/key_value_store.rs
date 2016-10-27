@@ -59,9 +59,8 @@ mod utils;
 
 
 use docopt::Docopt;
-
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-use maidsafe_utilities::thread;
+use maidsafe_utilities::thread::{self, Joiner};
 use routing::{Data, DataIdentifier, StructuredData, XorName};
 use rust_sodium::crypto;
 use std::io;
@@ -77,30 +76,21 @@ Usage:
   key_value_store
   key_value_store --node
   key_value_store --first
-  \
-                              key_value_store --help
+  key_value_store --help
 
 Options:
-  -n, --node   Run as a \
-                              non-interactive routing node in the network.
+  -n, --node   Run as a non-interactive routing node in the network.
   -f, --first  Start a new network as the first node.
-  -h, --help   Display \
-                              this help message.
+  -h, --help   Display this help message.
 
-  Running without the --node option will start \
-                              an interactive node.
-  Such a node can be used to send requests \
-                              such as 'put' and 'get' to the network.
+  Running without the --node option will start an interactive node.
+  Such a node can be used to send requests such as 'put' and 'get' to the network.
 
-  A passive node is one \
-                              that simply reacts on received requests. Such nodes are
-  the \
-                              workers; they route messages and store and provide data.
+  A passive node is one that simply reacts on received requests. Such nodes are
+  the workers; they route messages and store and provide data.
 
-  The \
-                              crust configuration file can be used to provide information on what
-  \
-                              network discovery patterns to use, or which seed nodes to use.
+  The crust configuration file can be used to provide information on what
+  network discovery patterns to use, or which seed nodes to use.
 ";
 
 #[derive(RustcDecodable, Debug)]
@@ -117,48 +107,54 @@ enum UserCommand {
     Put(String, String),
 }
 
-fn parse_user_command(cmd: String) -> Option<UserCommand> {
-    let cmds = cmd.trim_right_matches(|c| c == '\r' || c == '\n')
-        .split(' ')
-        .collect::<Vec<_>>();
+fn read_user_commands(command_sender: Sender<UserCommand>) {
+    loop {
+        let mut command = String::new();
+        let stdin = io::stdin();
 
-    if cmds.is_empty() {
-        return None;
-    } else if cmds.len() == 1 && cmds[0] == "exit" {
-        return Some(UserCommand::Exit);
-    } else if cmds.len() == 2 && cmds[0] == "get" {
-        return Some(UserCommand::Get(cmds[1].to_owned()));
-    } else if cmds.len() == 3 && cmds[0] == "put" {
-        return Some(UserCommand::Put(cmds[1].to_owned(), cmds[2].to_owned()));
+        print!("Enter command (exit | put <key> <value> | get <key>)\n> ");
+        let _ = io::stdout().flush();
+        let _ = stdin.read_line(&mut command);
+
+        let parts = command.trim_right_matches(|c| c == '\r' || c == '\n')
+            .split(' ')
+            .collect::<Vec<_>>();
+
+        if parts.len() == 1 && parts[0] == "exit" {
+            let _ = command_sender.send(UserCommand::Exit);
+            return;
+        } else if parts.len() == 2 && parts[0] == "get" {
+            let _ = command_sender.send(UserCommand::Get(parts[1].to_string()));
+        } else if parts.len() == 3 && parts[0] == "put" {
+            let _ =
+                command_sender.send(UserCommand::Put(parts[1].to_string(), parts[2].to_string()));
+        } else {
+            println!("Unrecognised command");
+        }
     }
-
-    None
 }
 
 struct KeyValueStore {
     example_client: ExampleClient,
     command_receiver: Receiver<UserCommand>,
     exit: bool,
+    _joiner: Joiner,
 }
 
 impl KeyValueStore {
     fn new() -> KeyValueStore {
         let example_client = ExampleClient::new();
         let (command_sender, command_receiver) = mpsc::channel::<UserCommand>();
-        let _ = thread::named("Command reader", move || {
-            KeyValueStore::read_user_commands(command_sender);
-        });
-
         KeyValueStore {
             example_client: example_client,
             command_receiver: command_receiver,
             exit: false,
+            _joiner: thread::named("Command reader", move || read_user_commands(command_sender)),
         }
     }
 
     fn run(&mut self) {
-        // Need to do poll as Select is not yet stable in the current
-        // rust implementation.
+        // Need to do poll as Select is not yet stable in the current rust implementation.
         loop {
             while let Ok(command) = self.command_receiver.try_recv() {
                 self.handle_user_command(command);
@@ -170,27 +166,6 @@ impl KeyValueStore {
 
             let interval = std::time::Duration::from_millis(10);
             std::thread::sleep(interval);
-        }
-    }
-
-    fn read_user_commands(command_sender: Sender<UserCommand>) {
-        loop {
-            let mut command = String::new();
-            let stdin = io::stdin();
-
-            print!("Enter command (exit | put <key> <value> | get <key>)\n> ");
-            let _ = io::stdout().flush();
-            let _ = stdin.read_line(&mut command);
-
-            if let Some(cmd) = parse_user_command(command) {
-                let _ = command_sender.send(cmd.clone());
-                if cmd == UserCommand::Exit {
-                    break;
-                }
-            } else {
-                println!("Unrecognised command");
-                continue;
-            }
         }
     }
 

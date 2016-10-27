@@ -55,22 +55,18 @@ extern crate unwrap;
 
 mod utils;
 
-
 use docopt::Docopt;
-
 use maidsafe_utilities::SeededRng;
 use maidsafe_utilities::thread::Joiner;
 use maidsafe_utilities::thread::named as thread_named;
-
 use rand::{Rng, ThreadRng, random, thread_rng};
 use rand::distributions::{IndependentSample, Range};
-use routing::{Data, StructuredData};
+use routing::{Data, MIN_GROUP_SIZE, StructuredData};
 use std::{env, io, thread};
 use std::io::Write;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
-
 use term::color;
 use utils::{ExampleClient, ExampleNode};
 
@@ -78,10 +74,10 @@ const CHURN_MIN_WAIT_SEC: u64 = 20;
 const CHURN_MAX_WAIT_SEC: u64 = 30;
 const CHURN_TIME_SEC: u64 = 20;
 const DEFAULT_REQUESTS: usize = 30;
-const DEFAULT_NODE_COUNT: usize = 20;
+const DEFAULT_NODE_COUNT: usize = 10;
 /// The number of churn-get cycles.
 const DEFAULT_BATCHES: usize = 1;
-const GROUP_SIZE: usize = 8;
+const GROUP_SIZE: usize = MIN_GROUP_SIZE;
 
 struct NodeProcess(Child, usize);
 
@@ -224,6 +220,7 @@ fn print_color(text: &str, color: color::Color) {
 }
 
 fn store_and_verify(requests: usize, batches: usize) {
+    let mut test_success = true;
     println!("--------- Starting Client -----------");
     let mut example_client = ExampleClient::new();
 
@@ -245,10 +242,12 @@ fn store_and_verify(requests: usize, batches: usize) {
                 assert_eq!(got_data, data);
                 print_color("OK\n", color::GREEN);
             } else {
+                test_success = false;
                 print_color("FAIL\n", color::RED);
                 break;
             };
         } else {
+            test_success = false;
             print_color("FAIL\n", color::RED);
             break;
         }
@@ -268,11 +267,14 @@ fn store_and_verify(requests: usize, batches: usize) {
                 assert_eq!(data, stored_data[i]);
                 print_color("OK\n", color::GREEN);
             } else {
+                test_success = false;
                 print_color("FAIL\n", color::RED);
                 break;
             };
         }
     }
+
+    assert!(test_success, "Failed to store and verify data.");
 }
 
 // ==========================   Program Options   =================================
@@ -317,6 +319,7 @@ fn main() {
     let first = args.flag_first.unwrap_or(false);
 
     if run_network_test {
+        unwrap!(maidsafe_utilities::log::init(false));
         let node_count = match args.arg_nodes {
             Some(number) => {
                 if number <= GROUP_SIZE {
