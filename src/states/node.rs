@@ -1740,7 +1740,8 @@ impl Node {
         if let RemovalDetails { targets_and_merge_details: Some((targets, merge_details)), .. } =
                details {
             let our_new_prefix = merge_details.merge_prefix;
-            self.send_own_group_merge(targets, merge_details, Authority::NodeManager(details.name));
+            let src_name = our_new_prefix.lower_bound();
+            self.send_own_group_merge(targets, merge_details, Authority::NaeManager(src_name));
             // TODO - the event should maybe only fire once all new connections have been made?
             if let Err(err) = self.event_sender.send(Event::GroupMerge(our_new_prefix)) {
                 error!("{:?} Error sending event to routing user - {:?}", self, err);
