@@ -307,7 +307,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         self.groups.values().fold(0, |acc, group| acc + group.len())
     }
 
-    #[cfg(any(test, feature = "use-mock-crust"))]
     pub fn is_empty(&self) -> bool {
         self.groups.values().all(HashSet::is_empty)
     }
