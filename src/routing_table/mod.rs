@@ -253,6 +253,8 @@ pub enum OwnMergeState<T: Binary + Clone + Copy + Default + Hash + Xorable> {
         targets: Vec<Prefix<T>>,
         merge_details: OtherMergeDetails<T>,
     },
+    // The merge has already completed, implying that no further action by the caller is required.
+    AlreadyMerged,
 }
 
 
@@ -549,6 +551,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             warn!("{:?}: Attempt to call merge_own_group() for an already merged prefix {:?}",
                   self.our_name,
                   merge_details.merge_prefix);
+            return OwnMergeState::AlreadyMerged;
         }
         for (prefix, contacts) in &merge_details.groups {
             // Cache the prefix if it's a merging group, flagging the sender's prefix `true`.

@@ -627,8 +627,8 @@ impl Node {
              Authority::ManagedNode(_),
              dst) => self.handle_get_close_group_response(close_group_ids, dst),
             (MessageContent::GroupSplit(prefix), _, _) => self.handle_group_split(prefix),
-            (MessageContent::OwnGroupMerge { sender_prefix, merge_prefix, groups }, src, _) => {
-                self.handle_own_group_merge(src, sender_prefix, merge_prefix, groups)
+            (MessageContent::OwnGroupMerge { sender_prefix, merge_prefix, groups }, _, _) => {
+                self.handle_own_group_merge(sender_prefix, merge_prefix, groups)
             }
             (MessageContent::OtherGroupMerge { prefix, group }, _, _) => {
                 self.handle_other_group_merge(prefix, group)
@@ -1281,18 +1281,20 @@ impl Node {
     }
 
     fn handle_own_group_merge(&mut self,
-                              src: Authority,
                               sender_prefix: Prefix<XorName>,
                               merge_prefix: Prefix<XorName>,
                               groups: Vec<(Prefix<XorName>, Vec<PublicId>)>)
                               -> Result<(), RoutingError> {
         let (merge_state, needed_peers) = self.peer_mgr
             .merge_own_group(sender_prefix, merge_prefix, groups);
+        let src =
+            Authority::NaeManager(self.peer_mgr.routing_table().our_group_prefix().lower_bound());
         match merge_state {
             OwnMergeState::Initialised { targets, merge_details } => {
                 self.send_own_group_merge(targets, merge_details, src)
             }
-            OwnMergeState::Ongoing => (),
+            OwnMergeState::Ongoing |
+            OwnMergeState::AlreadyMerged => (),
             OwnMergeState::Completed { targets, merge_details } => {
                 self.send_other_group_merge(targets, merge_details, src)
             }
@@ -1703,7 +1705,7 @@ impl Node {
         if let RemovalDetails { targets_and_merge_details: Some((targets, merge_details)), .. } =
                details {
             let our_new_prefix = merge_details.merge_prefix;
-            let src_name = our_new_prefix.lower_bound();
+            let src_name = self.peer_mgr.routing_table().our_group_prefix().lower_bound();
             self.send_own_group_merge(targets, merge_details, Authority::NaeManager(src_name));
             // TODO - the event should maybe only fire once all new connections have been made?
             if let Err(err) = self.event_sender.send(Event::GroupMerge(our_new_prefix)) {

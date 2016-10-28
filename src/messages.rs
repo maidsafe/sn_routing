@@ -347,7 +347,8 @@ pub enum MessageContent {
     GetNodeNameResponse {
         /// Supplied `PublicId`, but with the new name
         relocated_id: PublicId,
-        /// The routing table structure of our group, including the `PublicId`s of our contacts.
+        /// The routing table shared by the nodes in our group, including the `PublicId`s of our
+        /// contacts.
         groups: Vec<(Prefix<XorName>, Vec<PublicId>)>,
         /// The message's unique identifier.
         message_id: MessageId,

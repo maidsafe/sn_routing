@@ -150,7 +150,8 @@ impl Network {
                                                       *target_node.our_group_prefix(),
                                                       (targets, merge_details));
                         }
-                        OwnMergeState::Ongoing => (),
+                        OwnMergeState::Ongoing |
+                        OwnMergeState::AlreadyMerged => (),
                         OwnMergeState::Completed { mut targets, merge_details } => {
                             targets.sort();
                             Network::store_merge_info(&mut merge_other_info,
@@ -321,8 +322,7 @@ fn verify_disjoint_prefixes<T>(prefixes: HashSet<Prefix<T>>)
     where T: Binary + Clone + Copy + Debug + Default + Hash + Xorable
 {
     for prefix in &prefixes {
-        assert!(!prefixes.iter()
-            .any(|x| *x != *prefix && (x.is_compatible(prefix) || prefix.is_compatible(x))));
+        assert!(!prefixes.iter().any(|x| *x != *prefix && x.is_compatible(prefix)));
     }
 }
 
