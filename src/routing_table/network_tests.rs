@@ -62,7 +62,11 @@ impl Network {
         let mut new_table = {
             let close_node = self.close_node(name);
             let close_peer = &self.nodes[&close_node];
-            unwrap!(RoutingTable::new_with_prefixes(name, MIN_GROUP_SIZE, close_peer.prefixes()))
+            unwrap!(RoutingTable::new_with_groups(name,
+                                                  MIN_GROUP_SIZE,
+                                                  close_peer.prefixes()
+                                                      .into_iter()
+                                                      .map(|prefix| (prefix, None))))
         };
 
         let mut split_prefixes = BTreeSet::new();
