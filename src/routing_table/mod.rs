@@ -403,27 +403,27 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     // This will generally be all the groups in our routing table.  However, if the addition of the
     // new node will cause our group to split, only the groups which will remain neighbours after
     // the split are returned.  Returns `Err(Error::PeerNameUnsuitable)` if `name` is not within our
-    // group.
-    // TODO - should we check `name` isn't already in RT?
+    // group, or `Err(Error::AlreadyExists)` if `name` is already in our table.
     pub fn expect_add_to_our_group(&self, name: &T) -> Result<Groups<T>, Error> {
         if !self.our_group_prefix.matches(name) {
             return Err(Error::PeerNameUnsuitable);
         }
         let mut groups = self.groups.clone();
         let mut our_group = unwrap!(groups.remove(&self.our_group_prefix));
+        if !our_group.insert(*name) {
+            return Err(Error::AlreadyExists);
+        }
         if self.should_split_our_group(&our_group) {
             let our_prefix_after_split = Prefix::new(self.our_group_prefix.bit_count() + 1,
                                                      self.our_name);
-            let groups_to_remove = groups.keys()
-                .filter(|&&x| {
-                    x != our_prefix_after_split && !x.is_neighbour(&our_prefix_after_split)
-                })
-                .cloned()
-                .collect_vec();
-            for prefix in groups_to_remove {
-                let _ = groups.remove(&prefix);
-            }
+            groups.iter_mut().foreach(|(prefix, mut members)| {
+                if *prefix != our_prefix_after_split &&
+                   !prefix.is_neighbour(&our_prefix_after_split) {
+                    members.clear()
+                }
+            });
         }
+        let _ = our_group.remove(name);
         let _ = our_group.insert(self.our_name);
         let _ = groups.insert(self.our_group_prefix, our_group);
         Ok(groups)
@@ -904,10 +904,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     #[cfg(test)]
     pub fn verify_invariant(&self) {
-        if let Err(_) = self.check_invariant() {
-            let message = format!("Invariant not satisfied for RT: {:?}", self);
-            panic!(message);
-        }
+        unwrap!(self.check_invariant(),
+                "Invariant not satisfied for RT: {:?}",
+                self);
     }
 
     #[cfg(test)]

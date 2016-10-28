@@ -286,11 +286,12 @@ impl PeerManager {
                 (*prefix, members.into_iter().map(|pub_id| *pub_id.name()).collect_vec())
             })
             .collect_vec();
-        // Nothing can be done to recover from an error here - use unwrap.
+        // TODO - nothing can be done to recover from an error here - use `unwrap!` for now, but
+        // consider refactoring to return an error which can be used to transition the state
+        // machine to `Terminate`.
         let new_rt = unwrap!(RoutingTable::new_with_groups(*our_public_id.name(),
                                                            MIN_GROUP_SIZE,
                                                            groups_as_names));
-        // RoutingTable::new_with_groups(*our_public_id.name(), MIN_GROUP_SIZE, groups);
         let old_rt = mem::replace(&mut self.routing_table, new_rt);
         for name in old_rt.iter() {
             let _ = self.peer_map.remove_by_name(name);
