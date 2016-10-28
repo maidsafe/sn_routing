@@ -582,10 +582,10 @@ impl Node {
                                                   peer_id,
                                                   message_id)
             }
-            (MessageContent::GetNodeNameResponse { relocated_id, close_group_ids, .. },
+            (MessageContent::GetNodeNameResponse { relocated_id, groups, .. },
              Authority::NodeManager(_),
              dst) => {
-                self.handle_get_node_name_response(relocated_id, close_group_ids, dst);
+                self.handle_get_node_name_response(relocated_id, groups, dst);
                 Ok(())
             }
             (MessageContent::ExpectCloseNode { expect_id, client_auth, message_id },
@@ -626,9 +626,6 @@ impl Node {
             (MessageContent::GetCloseGroupResponse { close_group_ids, .. },
              Authority::ManagedNode(_),
              dst) => self.handle_get_close_group_response(close_group_ids, dst),
-            (MessageContent::RoutingTable(public_ids), _, _) => {
-                self.handle_routing_table(public_ids)
-            }
             (MessageContent::GroupSplit(prefix), _, _) => self.handle_group_split(prefix),
             (MessageContent::OwnGroupMerge { sender_prefix, merge_prefix, groups }, src, _) => {
                 self.handle_own_group_merge(src, sender_prefix, merge_prefix, groups)
@@ -877,29 +874,7 @@ impl Node {
                     }
                 }
 
-                let all_rt_contacts = self.peer_mgr
-                    .routing_table()
-                    .iter()
-                    .filter(|name| *name != public_id.name())
-                    .cloned()
-                    .chain(iter::once(*self.name()))
-                    .collect();
                 if self.peer_mgr.routing_table().is_in_our_group(public_id.name()) {
-                    let mut public_ids =
-                        self.peer_mgr.get_pub_ids(&all_rt_contacts).into_iter().collect_vec();
-                    public_ids.sort();
-                    let request_content = MessageContent::RoutingTable(public_ids);
-                    let request_msg = RoutingMessage {
-                        src: Authority::NaeManager(self.peer_mgr
-                            .routing_table()
-                            .our_group_prefix()
-                            .lower_bound()),
-                        dst: Authority::ManagedNode(*public_id.name()),
-                        content: request_content,
-                    };
-                    if let Err(err) = self.send_routing_message(request_msg) {
-                        debug!("{:?} Failed to send RoutingTable: {:?}.", self, err);
-                    }
                     let event = Event::NodeAdded(*public_id.name());
                     if let Err(err) = self.event_sender.send(event) {
                         error!("{:?} Error sending event to routing user - {:?}", self, err);
@@ -1170,7 +1145,7 @@ impl Node {
 
     fn handle_get_node_name_response(&mut self,
                                      relocated_id: PublicId,
-                                     close_group_ids: Vec<PublicId>,
+                                     groups: Vec<(Prefix<XorName>, Vec<PublicId>)>,
                                      dst: Authority) {
         if !self.peer_mgr.routing_table().is_empty() {
             warn!("{:?} Received duplicate GetNodeName response.", self);
@@ -1179,18 +1154,18 @@ impl Node {
         self.get_node_name_timer_token = None;
 
         self.full_id.public_id_mut().set_name(*relocated_id.name());
-        self.peer_mgr.reset_routing_table(*self.full_id.public_id());
+        self.peer_mgr.reset_routing_table(*self.full_id.public_id(), &groups);
 
-        for close_node_id in close_group_ids {
+        for pub_id in groups.into_iter().flat_map(|(_, group)| group.into_iter()) {
             debug!("{:?} Sending connection info to {:?} on GetNodeName response.",
                    self,
-                   close_node_id);
+                   pub_id);
 
-            let node_auth = Authority::ManagedNode(*close_node_id.name());
-            if let Err(error) = self.send_connection_info(close_node_id, dst, node_auth) {
+            let node_auth = Authority::ManagedNode(*pub_id.name());
+            if let Err(error) = self.send_connection_info(pub_id, dst, node_auth) {
                 debug!("{:?} - Failed to send connection info to {:?}: {:?}",
                        self,
-                       close_node_id,
+                       pub_id,
                        error);
             }
         }
@@ -1214,19 +1189,14 @@ impl Node {
             self.sent_network_name_to = None;
         }
 
-        let mut public_ids = match self.peer_mgr
-            .routing_table()
-            .close_names(expect_id.name()) {
-            Some(close_group) => self.peer_mgr.get_pub_ids(&close_group).into_iter().collect_vec(),
-            None => return Err(RoutingError::InvalidDestination),
-        };
-        public_ids.sort();
-
+        // TODO - do we need to reply if `expect_id` triggers a failure here?
+        let groups = try!(self.peer_mgr
+            .expect_add_to_our_group(expect_id.name(), self.full_id.public_id()));
         self.sent_network_name_to = Some((*expect_id.name(), now));
         // From Y -> A (via B)
         let response_content = MessageContent::GetNodeNameResponse {
             relocated_id: expect_id,
-            close_group_ids: public_ids,
+            groups: groups,
             message_id: message_id,
         };
 
@@ -1289,18 +1259,6 @@ impl Node {
                        close_node_id);
                 let ci_dst = Authority::ManagedNode(*close_node_id.name());
                 try!(self.send_connection_info(close_node_id, dst, ci_dst));
-            }
-        }
-        Ok(())
-    }
-
-    fn handle_routing_table(&mut self, public_ids: Vec<PublicId>) -> Result<(), RoutingError> {
-        for public_id in &public_ids {
-            if self.peer_mgr.routing_table().need_to_add(public_id.name()).is_ok() {
-                let our_name = *self.name();
-                let _ = self.send_connection_info(*public_id,
-                                                  Authority::ManagedNode(our_name),
-                                                  Authority::ManagedNode(*public_id.name()));
             }
         }
         Ok(())

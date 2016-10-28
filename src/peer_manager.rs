@@ -41,6 +41,8 @@ const CONNECTION_TIMEOUT_SECS: u64 = 90;
 /// Time (in seconds) the node waits for a `NodeIdentify` message.
 const NODE_IDENTIFY_TIMEOUT_SECS: u64 = 60;
 
+type Group = (Prefix<XorName>, Vec<PublicId>);
+
 #[derive(Debug)]
 /// Errors that occur in peer status management.
 pub enum Error {
@@ -277,9 +279,18 @@ impl PeerManager {
     }
 
     /// Clears the routing table and resets this node's public ID.
-    pub fn reset_routing_table(&mut self, our_public_id: PublicId) {
+    pub fn reset_routing_table(&mut self, our_public_id: PublicId, groups: &[Group]) {
         self.our_public_id = our_public_id;
-        let new_rt = RoutingTable::new(*our_public_id.name(), MIN_GROUP_SIZE);
+        let groups_as_names = groups.into_iter()
+            .map(|&(ref prefix, ref members)| {
+                (*prefix, members.into_iter().map(|pub_id| *pub_id.name()).collect_vec())
+            })
+            .collect_vec();
+        // Nothing can be done to recover from an error here - use unwrap.
+        let new_rt = unwrap!(RoutingTable::new_with_groups(*our_public_id.name(),
+                                                           MIN_GROUP_SIZE,
+                                                           groups_as_names));
+        // RoutingTable::new_with_groups(*our_public_id.name(), MIN_GROUP_SIZE, groups);
         let old_rt = mem::replace(&mut self.routing_table, new_rt);
         for name in old_rt.iter() {
             let _ = self.peer_map.remove_by_name(name);
@@ -291,6 +302,29 @@ impl PeerManager {
     /// Returns the routing table.
     pub fn routing_table(&self) -> &RoutingTable<XorName> {
         &self.routing_table
+    }
+
+    /// Wraps the routing table function of the same name and maps `XorName`s to `PublicId`s.
+    pub fn expect_add_to_our_group(&self,
+                                   expected_name: &XorName,
+                                   our_public_id: &PublicId)
+                                   -> Result<Vec<Group>, RoutingTableError> {
+        let groups = try!(self.routing_table.expect_add_to_our_group(expected_name));
+        let mut result = vec![];
+        for (prefix, names) in groups {
+            let mut public_ids = vec![];
+            for name in names {
+                if name == *our_public_id.name() {
+                    public_ids.push(*our_public_id);
+                } else if let Some(peer) = self.peer_map.get_by_name(&name) {
+                    public_ids.push(*peer.pub_id())
+                }
+            }
+            public_ids.sort();
+            result.push((prefix, public_ids));
+        }
+        result.sort();
+        Ok(result)
     }
 
     /// Tries to add the given peer to the routing table, and returns the result, if successful.
@@ -339,7 +373,7 @@ impl PeerManager {
     pub fn merge_own_group(&mut self,
                            sender_prefix: Prefix<XorName>,
                            merge_prefix: Prefix<XorName>,
-                           groups: Vec<(Prefix<XorName>, Vec<PublicId>)>)
+                           groups: Vec<Group>)
                            -> (OwnMergeState<XorName>, Vec<PublicId>) {
         let mut needed = vec![];
         for pub_id in groups.iter()

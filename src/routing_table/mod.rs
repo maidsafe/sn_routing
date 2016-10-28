@@ -293,9 +293,37 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
     }
 
-    #[cfg(any(test, feature = "use-mock-crust"))]
-    pub fn our_name(&self) -> &T {
-        &self.our_name
+    pub fn new_with_groups<U, V>(our_name: T,
+                                 min_group_size: usize,
+                                 new_groups: U)
+                                 -> Result<Self, Error>
+        where U: IntoIterator<Item = (Prefix<T>, V)>,
+              V: IntoIterator<Item = T>
+    {
+        let mut needed = HashMap::new();
+        let mut our_group_prefix = Prefix::new(0, our_name);
+        let groups = new_groups.into_iter()
+            .map(|(prefix, members)| {
+                if prefix.matches(&our_name) {
+                    our_group_prefix = prefix;
+                }
+                let group: HashSet<T> = members.into_iter().collect();
+                if !group.is_empty() {
+                    let _ = needed.insert(prefix, group);
+                }
+                (prefix, HashSet::new())
+            })
+            .collect();
+        let result = RoutingTable {
+            our_name: our_name,
+            min_group_size: min_group_size,
+            our_group_prefix: our_group_prefix,
+            groups: groups,
+            needed: needed,
+            merging: HashMap::new(),
+        };
+        try!(result.check_invariant());
+        Ok(result)
     }
 
     pub fn our_group_prefix(&self) -> &Prefix<T> {
@@ -351,13 +379,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
     }
 
-    /// Returns the list of contacts as a result of a merge to which we aren't currently connected,
-    /// but should be.
-    #[cfg(any(test, feature = "use-mock-crust"))]
-    pub fn needed(&self) -> &Groups<T> {
-        &self.needed
-    }
-
     // Returns `Ok(())` if the given contact should be added to the routing table.
     //
     // Returns `Err` if `name` already exists in the routing table, or it doesn't fall within any
@@ -375,6 +396,37 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         } else {
             Err(Error::PeerNameUnsuitable)
         }
+    }
+
+    // Returns the collection of groups to which a peer joining our group should connect.
+    //
+    // This will generally be all the groups in our routing table.  However, if the addition of the
+    // new node will cause our group to split, only the groups which will remain neighbours after
+    // the split are returned.  Returns `Err(Error::PeerNameUnsuitable)` if `name` is not within our
+    // group.
+    // TODO - should we check `name` isn't already in RT?
+    pub fn expect_add_to_our_group(&self, name: &T) -> Result<Groups<T>, Error> {
+        if !self.our_group_prefix.matches(name) {
+            return Err(Error::PeerNameUnsuitable);
+        }
+        let mut groups = self.groups.clone();
+        let mut our_group = unwrap!(groups.remove(&self.our_group_prefix));
+        if self.should_split_our_group(&our_group) {
+            let our_prefix_after_split = Prefix::new(self.our_group_prefix.bit_count() + 1,
+                                                     self.our_name);
+            let groups_to_remove = groups.keys()
+                .filter(|&&x| {
+                    x != our_prefix_after_split && !x.is_neighbour(&our_prefix_after_split)
+                })
+                .cloned()
+                .collect_vec();
+            for prefix in groups_to_remove {
+                let _ = groups.remove(&prefix);
+            }
+        }
+        let _ = our_group.insert(self.our_name);
+        let _ = groups.insert(self.our_group_prefix, our_group);
+        Ok(groups)
     }
 
     // Adds a contact to the routing table.
@@ -409,15 +461,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
 
         let our_group = unwrap!(self.groups.get(&self.our_group_prefix));
-        // Count the number of names which will end up in our group if it is split (this
-        // implies common prefix is 1 longer than existing prefix).
-        let new_group_size = our_group.iter()
-            .filter(|name| self.our_name.common_prefix(name) > self.our_group_prefix.bit_count())
-            .count();
-        // If either of the two new groups will not contain enough entries, return `None` (add 1
-        // when considering our own group to also count ourself as a member of this group).
-        let min_size = self.min_split_size();
-        Ok(our_group.len() - new_group_size >= min_size && new_group_size + 1 >= min_size)
+        Ok(self.should_split_our_group(our_group))
     }
 
     // Splits a group.
@@ -647,6 +691,18 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
     }
 
+    fn should_split_our_group(&self, our_group: &HashSet<T>) -> bool {
+        // Count the number of names which will end up in our group if it is split (this
+        // implies common prefix is 1 longer than existing prefix).
+        let new_group_size = our_group.iter()
+            .filter(|name| self.our_name.common_prefix(name) > self.our_group_prefix.bit_count())
+            .count();
+        // If either of the two new groups will not contain enough entries, return `false` (add 1
+        // when considering our own group to also count ourself as a member of this group).
+        let min_size = self.min_split_size();
+        our_group.len() - new_group_size >= min_size && new_group_size + 1 >= min_size
+    }
+
     fn split_our_group(&mut self) -> Vec<T> {
         let our_group = unwrap!(self.groups.remove(&self.our_group_prefix));
         let prefix0 = self.our_group_prefix.pushed(false);
@@ -779,40 +835,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             .collect()
     }
 
-    #[cfg(test)]
-    pub fn new_with_prefixes<U: IntoIterator<Item = Prefix<T>>>(our_name: T,
-                                                                min_group_size: usize,
-                                                                prefixes: U)
-                                                                -> Result<Self, Error> {
-        let mut groups = HashMap::new();
-        let mut our_group_prefix = Prefix::new(0, our_name);
-        for prefix in prefixes {
-            if prefix.matches(&our_name) && prefix.bit_count() > our_group_prefix.bit_count() {
-                our_group_prefix = prefix;
-            }
-            let _ = groups.insert(prefix, HashSet::new());
-        }
-        let result = RoutingTable {
-            our_name: our_name,
-            min_group_size: min_group_size,
-            our_group_prefix: our_group_prefix,
-            groups: groups,
-            needed: HashMap::new(),
-            merging: HashMap::new(),
-        };
-        try!(result.check_invariant());
-        Ok(result)
-    }
-
-    #[cfg(test)]
-    pub fn verify_invariant(&self) {
-        if let Err(_) = self.check_invariant() {
-            let message = format!("Invariant not satisfied for RT: {:?}", self);
-            panic!(message);
-        }
-    }
-
-    #[cfg(test)]
     fn check_invariant(&self) -> Result<(), Error> {
         if !self.our_group_prefix.matches(&self.our_name) {
             warn!("Our prefix does not match our name: {:?}", self);
@@ -824,10 +846,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
         let has_enough_nodes = self.len() >= self.min_group_size;
         for (prefix, group) in &self.groups {
-            let len = if *prefix == self.our_group_prefix {
-                group.len() + 1
-            } else {
-                group.len()
+            let mut len = group.len() + self.needed.get(prefix).map(HashSet::len).unwrap_or(0);
+            if *prefix == self.our_group_prefix {
+                len += 1;
             };
             // Only enforce group size when there are actually enough nodes!
             if has_enough_nodes && len < self.min_group_size {
@@ -867,6 +888,26 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
         // TODO: any other invariants to check? What about `self.needed`?
         Ok(())
+    }
+
+    #[cfg(any(test, feature = "use-mock-crust"))]
+    pub fn our_name(&self) -> &T {
+        &self.our_name
+    }
+
+    /// Returns the list of contacts as a result of a merge to which we aren't currently connected,
+    /// but should be.
+    #[cfg(any(test, feature = "use-mock-crust"))]
+    pub fn needed(&self) -> &Groups<T> {
+        &self.needed
+    }
+
+    #[cfg(test)]
+    pub fn verify_invariant(&self) {
+        if let Err(_) = self.check_invariant() {
+            let message = format!("Invariant not satisfied for RT: {:?}", self);
+            panic!(message);
+        }
     }
 
     #[cfg(test)]

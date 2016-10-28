@@ -347,8 +347,8 @@ pub enum MessageContent {
     GetNodeNameResponse {
         /// Supplied `PublicId`, but with the new name
         relocated_id: PublicId,
-        /// Our close group `PublicId`s.
-        close_group_ids: Vec<PublicId>,
+        /// The routing table structure of our group, including the `PublicId`s of our contacts.
+        groups: Vec<(Prefix<XorName>, Vec<PublicId>)>,
         /// The message's unique identifier.
         message_id: MessageId,
     },
@@ -361,8 +361,6 @@ pub enum MessageContent {
         /// The message ID.
         message_id: MessageId,
     },
-    /// Sent to a joining node to allow it to establish connections to the included contacts.
-    RoutingTable(Vec<PublicId>),
     /// Sent to all connected peers when our own group splits
     GroupSplit(Prefix<XorName>),
     /// Sent amongst members of a newly-merged group to allow synchronisation of their routing
@@ -485,12 +483,12 @@ impl Debug for MessageContent {
             MessageContent::GetCloseGroup(id) => write!(formatter, "GetCloseGroup({:?})", id),
             MessageContent::ConnectionInfo { .. } => write!(formatter, "ConnectionInfo {{ .. }}"),
             MessageContent::GetNodeNameResponse { ref relocated_id,
-                                                  ref close_group_ids,
+                                                  ref groups,
                                                   ref message_id } => {
                 write!(formatter,
                        "GetNodeNameResponse {{ {:?}, {:?}, {:?} }}",
-                       close_group_ids,
                        relocated_id,
+                       groups,
                        message_id)
             }
             MessageContent::GetCloseGroupResponse { ref close_group_ids, message_id } => {
@@ -498,9 +496,6 @@ impl Debug for MessageContent {
                        "GetCloseGroupResponse {{ {:?}, {:?} }}",
                        close_group_ids,
                        message_id)
-            }
-            MessageContent::RoutingTable(ref public_ids) => {
-                write!(formatter, "RoutingTable({:?})", public_ids)
             }
             MessageContent::GroupSplit(ref prefix) => write!(formatter, "GroupSplit({:?})", prefix),
             MessageContent::OwnGroupMerge { ref sender_prefix, ref merge_prefix, ref groups } => {

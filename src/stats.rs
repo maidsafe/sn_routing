@@ -63,7 +63,6 @@ pub struct Stats {
     msg_get_account_info_success: usize,
     msg_get_account_info_failure: usize,
     msg_get_close_group_rsp: usize,
-    msg_routing_table: usize,
     msg_group_split: usize,
     msg_own_group_merge: usize,
     msg_other_group_merge: usize,
@@ -135,7 +134,6 @@ impl Stats {
             MessageContent::GetCloseGroup(..) => self.msg_get_close_group += 1,
             MessageContent::ConnectionInfo { .. } => self.msg_connection_info += 1,
             MessageContent::GetCloseGroupResponse { .. } => self.msg_get_close_group_rsp += 1,
-            MessageContent::RoutingTable(..) => self.msg_routing_table += 1,
             MessageContent::GroupSplit(..) => self.msg_group_split += 1,
             MessageContent::OwnGroupMerge { .. } => self.msg_own_group_merge += 1,
             MessageContent::OtherGroupMerge { .. } => self.msg_other_group_merge += 1,
@@ -176,14 +174,13 @@ impl Stats {
                   self.msg_direct_node_identify,
                   self.msg_direct_new_node);
             info!("Stats - Hops (Request/Response) - GetNodeName: {}/{}, ExpectCloseNode: {}, \
-                   GetCloseGroup: {}/{}, RoutingTable: {}, GroupSplit: {}, OwnGroupMerge: {}, \
-                   OtherGroupMerge: {}, ConnectionInfo: {}, Ack: {}, GroupMessageHash: {}",
+                   GetCloseGroup: {}/{}, GroupSplit: {}, OwnGroupMerge: {}, OtherGroupMerge: {}, \
+                   ConnectionInfo: {}, Ack: {}, GroupMessageHash: {}",
                   self.msg_get_node_name,
                   self.msg_get_node_name_rsp,
                   self.msg_expect_close_node,
                   self.msg_get_close_group,
                   self.msg_get_close_group_rsp,
-                  self.msg_routing_table,
                   self.msg_group_split,
                   self.msg_own_group_merge,
                   self.msg_other_group_merge,
