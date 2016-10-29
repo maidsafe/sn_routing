@@ -862,9 +862,16 @@ impl Node {
 
                 if should_split {
                     let our_group_prefix = *self.peer_mgr.routing_table().our_group_prefix();
-                    for prefix in self.peer_mgr.routing_table().prefixes() {
+                    // TODO: Find a better way to handle the split only _after_ having sent the
+                    // messages. For now, send to own prefix last.
+                    for prefix in self.peer_mgr
+                        .routing_table()
+                        .prefixes()
+                        .into_iter()
+                        .filter(|prefix| *prefix != our_group_prefix)
+                        .chain(iter::once(our_group_prefix)) {
                         let request_msg = RoutingMessage {
-                            src: Authority::NaeManager(our_group_prefix.lower_bound()),
+                            src: Authority::NaeManager(*public_id.name()),
                             dst: Authority::NaeManager(prefix.lower_bound()),
                             content: MessageContent::GroupSplit(our_group_prefix),
                         };
