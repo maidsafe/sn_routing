@@ -293,8 +293,8 @@ pub fn verify_network_invariant<'a, T, U>(nodes: U)
             }
             if let Some(&mut (ref mut src, ref mut group)) = groups.get_mut(prefix) {
                 assert!(*group == group_content,
-                        "Group with prefix {:?} doesn't agree between nodes {:?} and {:?}\n{:?}: \
-                         {:?}, {:?}: {:?}",
+                        "Group with prefix {:?} doesn't agree between nodes {:?} and {:?}\n\
+                        {:?}: {:?}, {:?}: {:?}",
                         prefix,
                         node.our_name,
                         src,
