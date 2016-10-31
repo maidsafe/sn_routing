@@ -31,9 +31,19 @@ use std::time::{Duration, Instant};
 use xor_name::XorName;
 
 /// The minimum group size for the routing table.
+#[cfg(not(feature="use-mock-crust"))]
 pub const MIN_GROUP_SIZE: usize = 8;
+/// The minimum group size for the routing table (reduced for mock crust)
+#[cfg(feature="use-mock-crust")]
+pub const MIN_GROUP_SIZE: usize = 5;
+
 /// The quorum for group consensus.
+#[cfg(not(feature="use-mock-crust"))]
 pub const QUORUM_SIZE: usize = 5;
+/// The quorum for group consensus (reduced for mock crust).
+#[cfg(feature="use-mock-crust")]
+pub const QUORUM_SIZE: usize = 3;
+
 /// Time (in seconds) after which a joining node will get dropped from the map of joining nodes.
 const JOINING_NODE_TIMEOUT_SECS: u64 = 300;
 /// Time (in seconds) after which the connection to a peer is considered failed.
