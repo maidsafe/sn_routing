@@ -42,6 +42,7 @@ use signed_message_filter::SignedMessageFilter;
 use state_machine::Transition;
 use stats::Stats;
 use std::{cmp, fmt, iter};
+use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};
 use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
@@ -67,6 +68,8 @@ pub struct Node {
     full_id: FullId,
     get_node_name_timer_token: Option<u64>,
     is_first_node: bool,
+    /// The queue of routing messages we need to handle.
+    msg_queue: VecDeque<RoutingMessage>,
     msg_accumulator: MessageAccumulator,
     peer_mgr: PeerManager,
     response_cache: Box<Cache>,
@@ -149,6 +152,7 @@ impl Node {
             full_id: full_id,
             get_node_name_timer_token: None,
             is_first_node: first_node,
+            msg_queue: VecDeque::new(),
             msg_accumulator: MessageAccumulator::new(),
             peer_mgr: PeerManager::new(public_id),
             response_cache: cache,
@@ -239,6 +243,7 @@ impl Node {
             }
         }
 
+        self.handle_routing_messages();
         self.update_stats();
         Transition::Stay
     }
@@ -285,8 +290,19 @@ impl Node {
             }
         }
 
+        self.handle_routing_messages();
         self.update_stats();
         Transition::Stay
+    }
+
+    fn handle_routing_messages(&mut self) {
+        while let Some(routing_msg) = self.msg_queue.pop_front() {
+            if self.in_authority(&routing_msg.dst) {
+                if let Err(err) = self.dispatch_routing_message(routing_msg) {
+                    warn!("{:?} Routing message dispatch failed: {:?}", self, err);
+                }
+            }
+        }
     }
 
     fn handle_listener_started(&mut self, port: u16) -> Transition {
@@ -537,16 +553,16 @@ impl Node {
         }
 
         if count == 1 && self.in_authority(&routing_msg.dst) {
-            self.handle_routing_message(routing_msg, signed_msg.public_id())
+            self.accumulate_routing_message(routing_msg, signed_msg.public_id())
         } else {
             Ok(())
         }
     }
 
-    fn handle_routing_message(&mut self,
-                              routing_msg: &RoutingMessage,
-                              public_id: &PublicId)
-                              -> Result<(), RoutingError> {
+    fn accumulate_routing_message(&mut self,
+                                  routing_msg: &RoutingMessage,
+                                  public_id: &PublicId)
+                                  -> Result<(), RoutingError> {
         if self.is_proper() {
             let dynamic_quorum_size = self.dynamic_quorum_size();
             self.msg_accumulator.set_quorum_size(dynamic_quorum_size);
@@ -557,10 +573,9 @@ impl Node {
                 self.send_ack(&msg, 0);
             }
 
-            self.dispatch_routing_message(msg)
-        } else {
-            Ok(())
+            self.msg_queue.push_back(msg);
         }
+        Ok(())
     }
 
     fn dispatch_routing_message(&mut self,
@@ -862,14 +877,7 @@ impl Node {
 
                 if should_split {
                     let our_group_prefix = *self.peer_mgr.routing_table().our_group_prefix();
-                    // TODO: Find a better way to handle the split only _after_ having sent the
-                    // messages. For now, send to own prefix last.
-                    for prefix in self.peer_mgr
-                        .routing_table()
-                        .prefixes()
-                        .into_iter()
-                        .filter(|prefix| *prefix != our_group_prefix)
-                        .chain(iter::once(our_group_prefix)) {
+                    for prefix in self.peer_mgr.routing_table().prefixes() {
                         let request_msg = RoutingMessage {
                             src: Authority::NaeManager(*public_id.name()),
                             dst: Authority::NaeManager(prefix.lower_bound()),
@@ -1935,7 +1943,7 @@ impl Bootstrapped for Node {
         let sent_msg = try!(self.message_to_send(&signed_msg, route, &hop));
         if self.in_authority(&sent_msg.routing_message().dst) &&
            self.signed_msg_filter.filter_incoming(&sent_msg) == 1 {
-            self.handle_routing_message(sent_msg.routing_message(), sent_msg.public_id())
+            self.accumulate_routing_message(sent_msg.routing_message(), sent_msg.public_id())
         } else {
             Ok(())
         }
