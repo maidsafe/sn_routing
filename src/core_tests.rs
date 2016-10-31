@@ -29,7 +29,7 @@ use node::Node;
 use peer_manager::{MIN_GROUP_SIZE, QUORUM_SIZE};
 use rand::{self, Rng, SeedableRng, XorShiftRng};
 use rand::distributions::{IndependentSample, Range};
-use routing_table::{self, RoutingTable, Xorable};
+use routing_table::{self, Destination, RoutingTable, Xorable};
 use std::cell::RefCell;
 use std::cmp;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -811,7 +811,6 @@ fn whitelist() {
 }
 
 #[test]
-#[ignore]
 fn successful_put_request() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
@@ -829,27 +828,26 @@ fn successful_put_request() {
     let _ = poll_all(&mut nodes, &mut clients);
 
     let mut request_received_count = 0;
-    // for node in nodes.iter()
-    //     .filter(|n| n.routing_table().is_close(&clients[0].name(), MIN_GROUP_SIZE)) {
-    //     loop {
-    //         match node.event_rx.try_recv() {
-    //             Ok(Event::Request { request: Request::Put(ref immutable, ref id), .. }) => {
-    //                 request_received_count += 1;
-    //                 if data == *immutable && message_id == *id {
-    //                     break;
-    //                 }
-    //             }
-    //             Ok(_) => (),
-    //             _ => panic!("Event::Request not received"),
-    //         }
-    //     }
-    // }
+    let client_dst = Destination::Group(clients[0].name());
+    for node in nodes.iter().filter(|n| n.routing_table().is_recipient(&client_dst)) {
+        loop {
+            match node.event_rx.try_recv() {
+                Ok(Event::Request { request: Request::Put(ref immutable, ref id), .. }) => {
+                    request_received_count += 1;
+                    if data == *immutable && message_id == *id {
+                        break;
+                    }
+                }
+                Ok(_) => (),
+                _ => panic!("Event::Request not received"),
+            }
+        }
+    }
 
     assert!(request_received_count >= QUORUM_SIZE);
 }
 
 #[test]
-#[ignore]
 fn successful_get_request() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
@@ -869,26 +867,25 @@ fn successful_get_request() {
 
     let mut request_received_count = 0;
 
-    // for node in nodes.iter().filter(|n| n.routing_table()
-    //                  .is_close(data.name(), MIN_GROUP_SIZE)) {
-    //     loop {
-    //         match node.event_rx.try_recv() {
-    //             Ok(Event::Request { request: Request::Get(ref request, id), ref src, ref dst })
-    //                     => {
-    //                 request_received_count += 1;
-    //                 if data_request == *request && message_id == id {
-    //                     if let Err(_) = node.inner
-    //                         .send_get_success(dst, src, data.clone(), id) {
-    //                         trace!("Failed to send GetSuccess response");
-    //                     }
-    //                     break;
-    //                 }
-    //             }
-    //             Ok(_) => (),
-    //             _ => panic!("Event::Request not received"),
-    //         }
-    //     }
-    // }
+    let data_dst = Destination::Group(*data.name());
+    for node in nodes.iter().filter(|n| n.routing_table().is_recipient(&data_dst)) {
+        loop {
+            match node.event_rx.try_recv() {
+                Ok(Event::Request { request: Request::Get(ref request, id), src, dst }) => {
+                    request_received_count += 1;
+                    if data_request == *request && message_id == id {
+                        if let Err(_) = node.inner
+                            .send_get_success(dst, src, data.clone(), id) {
+                            trace!("Failed to send GetSuccess response");
+                        }
+                        break;
+                    }
+                }
+                Ok(_) => (),
+                _ => panic!("Event::Request not received"),
+            }
+        }
+    }
 
     assert!(request_received_count >= QUORUM_SIZE);
 
@@ -918,7 +915,6 @@ fn successful_get_request() {
 }
 
 #[test]
-#[ignore]
 fn failed_get_request() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
@@ -938,27 +934,25 @@ fn failed_get_request() {
 
     let mut request_received_count = 0;
 
-    // for node in nodes.iter()
-    //                  .filter(|n| n.routing_table().is_close(data.name(), MIN_GROUP_SIZE)) {
-    //     loop {
-    //         match node.event_rx.try_recv() {
-    //             Ok(Event::Request { request: Request::Get(ref data_id, ref id),
-    //                                 ref src,
-    //                                 ref dst }) => {
-    //                 request_received_count += 1;
-    //                 if data_request == *data_id && message_id == *id {
-    //                     if let Err(_) = node.inner
-    //                         .send_get_failure(dst, src, *data_id, vec![], *id) {
-    //                         trace!("Failed to send GetFailure response.");
-    //                     }
-    //                     break;
-    //                 }
-    //             }
-    //             Ok(_) => (),
-    //             _ => panic!("Event::Request not received"),
-    //         }
-    //     }
-    // }
+    let data_dst = Destination::Group(*data.name());
+    for node in nodes.iter().filter(|n| n.routing_table().is_recipient(&data_dst)) {
+        loop {
+            match node.event_rx.try_recv() {
+                Ok(Event::Request { request: Request::Get(ref data_id, ref id), src, dst }) => {
+                    request_received_count += 1;
+                    if data_request == *data_id && message_id == *id {
+                        if let Err(_) = node.inner
+                            .send_get_failure(dst, src, *data_id, vec![], *id) {
+                            trace!("Failed to send GetFailure response.");
+                        }
+                        break;
+                    }
+                }
+                Ok(_) => (),
+                _ => panic!("Event::Request not received"),
+            }
+        }
+    }
 
     assert!(request_received_count >= QUORUM_SIZE);
 
@@ -985,7 +979,6 @@ fn failed_get_request() {
 }
 
 #[test]
-#[ignore]
 fn disconnect_on_get_request() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
@@ -1006,27 +999,25 @@ fn disconnect_on_get_request() {
 
     let mut request_received_count = 0;
 
-    // for node in nodes.iter()
-    //                  .filter(|n| n.routing_table().is_close(data.name(), MIN_GROUP_SIZE)) {
-    //     loop {
-    //         match node.event_rx.try_recv() {
-    //             Ok(Event::Request { request: Request::Get(ref request, ref id),
-    //                                 ref src,
-    //                                 ref dst }) => {
-    //                 request_received_count += 1;
-    //                 if data_request == *request && message_id == *id {
-    //                     if let Err(_) = node.inner
-    //                         .send_get_success(dst, src, data.clone(), *id) {
-    //                         trace!("Failed to send GetSuccess response");
-    //                     }
-    //                     break;
-    //                 }
-    //             }
-    //             Ok(_) => (),
-    //             _ => panic!("Event::Request not received"),
-    //         }
-    //     }
-    // }
+    let data_dst = Destination::Group(*data.name());
+    for node in nodes.iter().filter(|n| n.routing_table().is_recipient(&data_dst)) {
+        loop {
+            match node.event_rx.try_recv() {
+                Ok(Event::Request { request: Request::Get(ref request, ref id), src, dst }) => {
+                    request_received_count += 1;
+                    if data_request == *request && message_id == *id {
+                        if let Err(_) = node.inner
+                            .send_get_success(dst, src, data.clone(), *id) {
+                            trace!("Failed to send GetSuccess response");
+                        }
+                        break;
+                    }
+                }
+                Ok(_) => (),
+                _ => panic!("Event::Request not received"),
+            }
+        }
+    }
 
     assert!(request_received_count >= QUORUM_SIZE);
 
