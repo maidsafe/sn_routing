@@ -599,7 +599,10 @@ fn client_connects_to_nodes() {
 fn messages_accumulate_with_quorum() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes(&network, 15);
+    // Note: this was hard-coded to 15 when group-size was 8.
+    // I assume it was meant to be size*2 - 1.
+    let num_nodes = MIN_GROUP_SIZE * 2 - 1;
+    let mut nodes = create_connected_nodes(&network, num_nodes);
 
     let data = gen_immutable_data(&mut rng, 8);
     let src = Authority::NaeManager(*data.name()); // The data's NaeManager.
