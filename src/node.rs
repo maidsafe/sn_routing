@@ -417,14 +417,6 @@ impl Node {
         self.receive_action_result(&result_rx)
     }
 
-    /// Returns the name of this node.
-    pub fn quorum_size(&self) -> Result<usize, InterfaceError> {
-        let (result_tx, result_rx) = channel();
-        try!(self.action_sender.send(Action::QuorumSize { result_tx: result_tx }));
-
-        self.receive_action_result(&result_rx)
-    }
-
     fn send_action(&self,
                    src: Authority,
                    dst: Authority,

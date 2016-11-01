@@ -42,9 +42,8 @@ use xor_name::XorName;
 /// it moves to the `Bootstrapping` state.
 ///
 /// A now sends a `ClientIdentify` message to B, containing A's signed public ID. B verifies the
-/// signature and responds with a `BootstrapIdentify`, containing B's public ID and the current
-/// quorum size. Once it receives that, A goes into the `Client` state and uses B as its proxy to
-/// the network.
+/// signature and responds with a `BootstrapIdentify`, containing B's public ID. Once it receives
+/// that, A goes into the `Client` state and uses B as its proxy to the network.
 ///
 /// A can now exchange messages with any `Authority`. This completes the bootstrap process for
 /// clients.
@@ -112,17 +111,12 @@ impl State {
         }
     }
 
-    fn into_bootstrapped(self,
-                         proxy_peer_id: PeerId,
-                         proxy_public_id: PublicId,
-                         quorum_size: usize)
-                         -> Self {
+    fn into_bootstrapped(self, proxy_peer_id: PeerId, proxy_public_id: PublicId) -> Self {
         match self {
             State::Bootstrapping(state) => {
                 if state.client_restriction() {
-                    State::Client(state.into_client(proxy_peer_id, proxy_public_id, quorum_size))
-                } else if let Some(state) =
-                              state.into_node(proxy_peer_id, proxy_public_id, quorum_size) {
+                    State::Client(state.into_client(proxy_peer_id, proxy_public_id))
+                } else if let Some(state) = state.into_node(proxy_peer_id, proxy_public_id) {
                     State::Node(state)
                 } else {
                     State::Terminated
@@ -177,7 +171,6 @@ pub enum Transition {
     IntoBootstrapped {
         proxy_peer_id: PeerId,
         proxy_public_id: PublicId,
-        quorum_size: usize,
     },
     // Terminate
     Terminate,
@@ -245,21 +238,18 @@ impl StateMachine {
 
         match transition {
             Transition::Stay => (),
-            Transition::IntoBootstrapped { proxy_peer_id, proxy_public_id, quorum_size } => {
-                self.transition_to_bootstrapped(proxy_peer_id, proxy_public_id, quorum_size)
+            Transition::IntoBootstrapped { proxy_peer_id, proxy_public_id } => {
+                self.transition_to_bootstrapped(proxy_peer_id, proxy_public_id)
             }
             Transition::Terminate => self.terminate(),
         }
     }
 
-    fn transition_to_bootstrapped(&mut self,
-                                  proxy_peer_id: PeerId,
-                                  proxy_public_id: PublicId,
-                                  quorum_size: usize) {
+    fn transition_to_bootstrapped(&mut self, proxy_peer_id: PeerId, proxy_public_id: PublicId) {
         // Temporarily switch to `Terminated` to allow moving out of the current
         // state without moving `self`.
         let prev_state = mem::replace(&mut self.state, State::Terminated);
-        self.state = prev_state.into_bootstrapped(proxy_peer_id, proxy_public_id, quorum_size);
+        self.state = prev_state.into_bootstrapped(proxy_peer_id, proxy_public_id);
     }
 
     fn terminate(&mut self) {
