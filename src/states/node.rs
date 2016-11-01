@@ -27,11 +27,10 @@ use event::Event;
 use id::{FullId, PublicId};
 use itertools::Itertools;
 use maidsafe_utilities::serialisation;
-use message_accumulator::MessageAccumulator;
 use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, Message, MessageContent,
                RoutingMessage, SignedMessage, UserMessage, UserMessageCache};
 use peer_manager::{ConnectionInfoPreparedResult, ConnectionInfoReceivedResult, MIN_GROUP_SIZE,
-                   PeerManager, PeerState, QUORUM_SIZE};
+                   PeerManager, PeerState};
 use routing_table::{OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix, RemovalDetails};
 use routing_table::Error as RoutingTableError;
 #[cfg(feature = "use-mock-crust")]
@@ -41,7 +40,7 @@ use rust_sodium::crypto::hash::sha256;
 use signed_message_filter::SignedMessageFilter;
 use state_machine::Transition;
 use stats::Stats;
-use std::{cmp, fmt, iter};
+use std::{fmt, iter};
 use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};
 use std::sync::mpsc::Sender;
@@ -70,7 +69,6 @@ pub struct Node {
     is_first_node: bool,
     /// The queue of routing messages we need to handle.
     msg_queue: VecDeque<RoutingMessage>,
-    msg_accumulator: MessageAccumulator,
     peer_mgr: PeerManager,
     response_cache: Box<Cache>,
     /// The last joining node we have sent a `GetNodeName` response to, and when.
@@ -109,7 +107,6 @@ impl Node {
                               full_id: FullId,
                               proxy_peer_id: PeerId,
                               proxy_public_id: PublicId,
-                              quorum_size: usize,
                               stats: Stats,
                               timer: Timer)
                               -> Option<Self> {
@@ -122,7 +119,6 @@ impl Node {
                                  timer);
 
         if let Some(ref mut node) = node {
-            node.msg_accumulator.set_quorum_size(quorum_size);
             let _ = node.peer_mgr.set_proxy(proxy_peer_id, proxy_public_id);
         }
 
@@ -153,7 +149,6 @@ impl Node {
             get_node_name_timer_token: None,
             is_first_node: first_node,
             msg_queue: VecDeque::new(),
-            msg_accumulator: MessageAccumulator::new(),
             peer_mgr: PeerManager::new(public_id),
             response_cache: cache,
             signed_msg_filter: SignedMessageFilter::new(),
@@ -229,9 +224,6 @@ impl Node {
             }
             Action::Name { result_tx } => {
                 let _ = result_tx.send(*self.name());
-            }
-            Action::QuorumSize { result_tx } => {
-                let _ = result_tx.send(self.dynamic_quorum_size());
             }
             Action::Timeout(token) => {
                 if !self.handle_timeout(token) {
@@ -521,10 +513,7 @@ impl Node {
         try!(signed_msg.check_integrity());
         let routing_msg = signed_msg.routing_message();
 
-        // FIXME: This is currently only in place so acks can get delivered if the
-        // original ack was lost in transit
-        if (self.msg_accumulator.contains(routing_msg) || !routing_msg.src.is_group()) &&
-           self.in_authority(&routing_msg.dst) {
+        if self.in_authority(&routing_msg.dst) {
             self.send_ack(routing_msg, route);
         }
 
@@ -553,27 +542,7 @@ impl Node {
         }
 
         if count == 1 && self.in_authority(&routing_msg.dst) {
-            self.accumulate_routing_message(routing_msg, signed_msg.public_id())
-        } else {
-            Ok(())
-        }
-    }
-
-    fn accumulate_routing_message(&mut self,
-                                  routing_msg: &RoutingMessage,
-                                  public_id: &PublicId)
-                                  -> Result<(), RoutingError> {
-        if self.is_proper() {
-            let dynamic_quorum_size = self.dynamic_quorum_size();
-            self.msg_accumulator.set_quorum_size(dynamic_quorum_size);
-        }
-
-        if let Some(msg) = try!(self.accumulate(routing_msg, public_id)) {
-            if msg.src.is_group() {
-                self.send_ack(&msg, 0);
-            }
-
-            self.msg_queue.push_back(msg);
+            self.msg_queue.push_back(routing_msg.clone());
         }
         Ok(())
     }
@@ -731,17 +700,6 @@ impl Node {
         Ok(false)
     }
 
-    fn dynamic_quorum_size(&self) -> usize {
-        // Routing table entries plus this node itself.
-        let network_size = self.peer_mgr.routing_table().len() + 1;
-        if network_size >= MIN_GROUP_SIZE {
-            QUORUM_SIZE
-        } else {
-            cmp::max(network_size * QUORUM_SIZE / MIN_GROUP_SIZE,
-                     network_size / 2 + 1)
-        }
-    }
-
     fn start_listening(&mut self) -> bool {
         if let Err(error) = self.crust_service.start_listening_tcp() {
             error!("{:?} Failed to start listening: {:?}", self, error);
@@ -787,10 +745,8 @@ impl Node {
     }
 
     fn send_bootstrap_identify(&mut self, peer_id: PeerId) -> Result<(), RoutingError> {
-        let direct_message = DirectMessage::BootstrapIdentify {
-            public_id: *self.full_id.public_id(),
-            current_quorum_size: self.dynamic_quorum_size(),
-        };
+        let direct_message =
+            DirectMessage::BootstrapIdentify { public_id: *self.full_id.public_id() };
         self.send_direct_message(&peer_id, direct_message)
     }
 
@@ -1476,15 +1432,20 @@ impl Node {
             return Ok(());
         }
 
-        let send_msg = try!(self.message_to_send(signed_msg, route, hop));
-        let raw_bytes = try!(self.to_hop_bytes(send_msg.clone(), route, new_sent_to.clone()));
+        let src = &routing_msg.src;
+        if signed_msg.public_id() == self.full_id.public_id() && hop == self.name() &&
+           src.is_group() &&
+           !self.peer_mgr.routing_table().should_route_full_message(src.name(), route as usize) {
+            return Ok(()); // Not our turn to send the group message. TODO: Send hash.
+        }
 
+        let raw_bytes = try!(self.to_hop_bytes(signed_msg.clone(), route, new_sent_to.clone()));
         for target_peer_id in target_peer_ids {
             let (peer_id, bytes) = if self.crust_service.is_connected(&target_peer_id) {
                 (target_peer_id, raw_bytes.clone())
             } else if let Some(&tunnel_id) = self.tunnels
                 .tunnel_for(&target_peer_id) {
-                let bytes = try!(self.to_tunnel_hop_bytes(send_msg.clone(),
+                let bytes = try!(self.to_tunnel_hop_bytes(signed_msg.clone(),
                                                           route,
                                                           new_sent_to.clone(),
                                                           target_peer_id));
@@ -1532,31 +1493,6 @@ impl Node {
                    signed_msg);
             Err(RoutingError::ClientConnectionNotFound)
         }
-    }
-
-    /// Returns hash of the `SignedMessage` if its not our turn to send the full message.
-    fn message_to_send(&self,
-                       signed_msg: &SignedMessage,
-                       route: u8,
-                       hop: &XorName)
-                       -> Result<SignedMessage, RoutingError> {
-        // When sending group messages, only one of us needs to send the whole message and everyone
-        // else can send only a hash. If it's not our turn, replace `signed_msg` with the hash.
-        // TODO: This applies only to messages where we are the original sender. The sending and
-        // relaying code should be better separated.
-        let src = &signed_msg.routing_message().src;
-        if signed_msg.public_id() != self.full_id.public_id() || hop != self.name() ||
-           !src.is_group() {
-            return Ok(signed_msg.clone());
-        }
-
-        // TODO: Better distribute the work among the group.
-        if self.peer_mgr.routing_table().should_route_full_message(src.name(), route as usize) {
-            return Ok(signed_msg.clone());
-        }
-
-        SignedMessage::new(try!(signed_msg.routing_message().to_grp_msg_hash()),
-                           &self.full_id)
     }
 
     /// Returns whether we are a part of the given authority.
@@ -1902,7 +1838,6 @@ impl Node {
 
     pub fn clear_state(&mut self) {
         self.ack_mgr.clear();
-        self.msg_accumulator.clear();
         self.peer_mgr.remove_connecting_peers();
         self.signed_msg_filter.clear();
         self.sent_network_name_to = None;
@@ -1910,13 +1845,6 @@ impl Node {
 }
 
 impl Bootstrapped for Node {
-    fn accumulate(&mut self,
-                  routing_msg: &RoutingMessage,
-                  public_id: &PublicId)
-                  -> Result<Option<RoutingMessage>, RoutingError> {
-        self.msg_accumulator.add(routing_msg, public_id)
-    }
-
     fn ack_mgr(&self) -> &AckManager {
         &self.ack_mgr
     }
@@ -1939,14 +1867,12 @@ impl Bootstrapped for Node {
         let hop = *self.name();
         try!(self.send_signed_message(&signed_msg, route, &hop, &[hop]));
 
-        // If we need to handle this message, handle it.
-        let sent_msg = try!(self.message_to_send(&signed_msg, route, &hop));
-        if self.in_authority(&sent_msg.routing_message().dst) &&
-           self.signed_msg_filter.filter_incoming(&sent_msg) == 1 {
-            self.accumulate_routing_message(sent_msg.routing_message(), sent_msg.public_id())
-        } else {
-            Ok(())
+        // If we need to handle this message, put it in the queue.
+        if self.in_authority(&signed_msg.routing_message().dst) &&
+           self.signed_msg_filter.filter_incoming(&signed_msg) == 1 {
+            self.msg_queue.push_back(signed_msg.into_routing_message());
         }
+        Ok(())
     }
 
     fn signed_msg_filter(&mut self) -> &mut SignedMessageFilter {

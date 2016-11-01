@@ -100,8 +100,6 @@ pub enum DirectMessage {
     BootstrapIdentify {
         /// The bootstrap node's keys and name.
         public_id: ::id::PublicId,
-        /// The dynamically calculated quorum size the client's accumulator should use.
-        current_quorum_size: usize,
     },
     /// Sent to the client to indicate that this node is not available as a bootstrap node.
     BootstrapDeny,
@@ -240,6 +238,11 @@ impl SignedMessage {
         } else {
             Err(RoutingError::FailedSignature)
         }
+    }
+
+    /// Returns the routing message without cloning it.
+    pub fn into_routing_message(self) -> RoutingMessage {
+        self.content
     }
 
     /// The routing message that was signed.
@@ -416,11 +419,8 @@ impl MessageContent {
 impl Debug for DirectMessage {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            DirectMessage::BootstrapIdentify { ref public_id, ref current_quorum_size } => {
-                write!(formatter,
-                       "BootstrapIdentify {{ {:?}, {:?} }}",
-                       public_id,
-                       current_quorum_size)
+            DirectMessage::BootstrapIdentify { ref public_id } => {
+                write!(formatter, "BootstrapIdentify {{ {:?} }}", public_id)
             }
             DirectMessage::BootstrapDeny => write!(formatter, "BootstrapDeny"),
             DirectMessage::ClientIdentify { client_restriction: true, .. } => {

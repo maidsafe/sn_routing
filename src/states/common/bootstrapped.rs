@@ -19,7 +19,6 @@ use ack_manager::{ACK_TIMEOUT_SECS, Ack, AckManager, UnacknowledgedMessage};
 use authority::Authority;
 use crust::PeerId;
 use error::RoutingError;
-use id::PublicId;
 use maidsafe_utilities::serialisation;
 use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage};
 use peer_manager::MIN_GROUP_SIZE;
@@ -32,11 +31,6 @@ use xor_name::XorName;
 // Common functionality for states that are bootstrapped (have established a crust
 // connection to at least one peer).
 pub trait Bootstrapped: Base {
-    fn accumulate(&mut self,
-                  routing_msg: &RoutingMessage,
-                  public_id: &PublicId)
-                  -> Result<Option<RoutingMessage>, RoutingError>;
-
     fn ack_mgr(&self) -> &AckManager;
     fn ack_mgr_mut(&mut self) -> &mut AckManager;
 
