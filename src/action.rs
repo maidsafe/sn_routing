@@ -49,7 +49,6 @@ pub enum Action {
         result_tx: Sender<Option<HashSet<XorName>>>,
     },
     Name { result_tx: Sender<XorName> },
-    QuorumSize { result_tx: Sender<usize> },
     Timeout(u64),
     Terminate,
 }
@@ -70,7 +69,6 @@ impl Debug for Action {
             }
             Action::CloseGroup { .. } => write!(formatter, "Action::CloseGroup"),
             Action::Name { .. } => write!(formatter, "Action::Name"),
-            Action::QuorumSize { .. } => write!(formatter, "Action::QuorumSize"),
             Action::Timeout(token) => write!(formatter, "Action::Timeout({})", token),
             Action::Terminate => write!(formatter, "Action::Terminate"),
         }

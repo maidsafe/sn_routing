@@ -99,9 +99,6 @@ impl Bootstrapping {
             Action::CloseGroup { result_tx, .. } => {
                 let _ = result_tx.send(None);
             }
-            Action::QuorumSize { result_tx } => {
-                let _ = result_tx.send(0);
-            }
         }
 
         Transition::Stay
@@ -129,33 +126,23 @@ impl Bootstrapping {
         }
     }
 
-    pub fn into_client(self,
-                       proxy_peer_id: PeerId,
-                       proxy_public_id: PublicId,
-                       quorum_size: usize)
-                       -> Client {
+    pub fn into_client(self, proxy_peer_id: PeerId, proxy_public_id: PublicId) -> Client {
         Client::from_bootstrapping(self.crust_service,
                                    self.event_sender,
                                    self.full_id,
                                    proxy_peer_id,
                                    proxy_public_id,
-                                   quorum_size,
                                    self.stats,
                                    self.timer)
     }
 
-    pub fn into_node(self,
-                     proxy_peer_id: PeerId,
-                     proxy_public_id: PublicId,
-                     quorum_size: usize)
-                     -> Option<Node> {
+    pub fn into_node(self, proxy_peer_id: PeerId, proxy_public_id: PublicId) -> Option<Node> {
         Node::from_bootstrapping(self.cache,
                                  self.crust_service,
                                  self.event_sender,
                                  self.full_id,
                                  proxy_peer_id,
                                  proxy_public_id,
-                                 quorum_size,
                                  self.stats,
                                  self.timer)
     }
@@ -222,8 +209,8 @@ impl Bootstrapping {
                              peer_id: PeerId)
                              -> Transition {
         match direct_message {
-            DirectMessage::BootstrapIdentify { public_id, current_quorum_size } => {
-                self.handle_bootstrap_identify(public_id, peer_id, current_quorum_size)
+            DirectMessage::BootstrapIdentify { public_id } => {
+                self.handle_bootstrap_identify(public_id, peer_id)
             }
             DirectMessage::BootstrapDeny => self.handle_bootstrap_deny(),
             _ => {
@@ -235,11 +222,7 @@ impl Bootstrapping {
         }
     }
 
-    fn handle_bootstrap_identify(&mut self,
-                                 public_id: PublicId,
-                                 peer_id: PeerId,
-                                 current_quorum_size: usize)
-                                 -> Transition {
+    fn handle_bootstrap_identify(&mut self, public_id: PublicId, peer_id: PeerId) -> Transition {
         if *public_id.name() == XorName(sha256::hash(&public_id.signing_public_key().0).0) {
             warn!("{:?} Incoming Connection not validated as a proper node - dropping",
                   self);
@@ -250,7 +233,6 @@ impl Bootstrapping {
         Transition::IntoBootstrapped {
             proxy_peer_id: peer_id,
             proxy_public_id: public_id,
-            quorum_size: current_quorum_size,
         }
     }
 

@@ -24,7 +24,6 @@ use error::{InterfaceError, RoutingError};
 use event::Event;
 use id::{FullId, PublicId};
 use maidsafe_utilities::serialisation;
-use message_accumulator::MessageAccumulator;
 use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage, UserMessage,
                UserMessageCache};
 use peer_manager::MIN_GROUP_SIZE;
@@ -42,7 +41,6 @@ pub struct Client {
     crust_service: Service,
     event_sender: Sender<Event>,
     full_id: FullId,
-    msg_accumulator: MessageAccumulator,
     proxy_peer_id: PeerId,
     proxy_public_id: PublicId,
     signed_msg_filter: SignedMessageFilter,
@@ -58,19 +56,14 @@ impl Client {
                               full_id: FullId,
                               proxy_peer_id: PeerId,
                               proxy_public_id: PublicId,
-                              quorum_size: usize,
                               stats: Stats,
                               timer: Timer)
                               -> Self {
-        let mut msg_accumulator = MessageAccumulator::new();
-        msg_accumulator.set_quorum_size(quorum_size);
-
         let client = Client {
             ack_mgr: AckManager::new(),
             crust_service: crust_service,
             event_sender: event_sender,
             full_id: full_id,
-            msg_accumulator: msg_accumulator,
             proxy_peer_id: proxy_peer_id,
             proxy_public_id: proxy_public_id,
             signed_msg_filter: SignedMessageFilter::new(),
@@ -82,9 +75,7 @@ impl Client {
 
         client.send_event(Event::Connected);
 
-        debug!("{:?} - State changed to client, quorum size: {}.",
-               client,
-               quorum_size);
+        debug!("{:?} - State changed to client.", client);
 
         client
     }
@@ -114,9 +105,6 @@ impl Client {
             }
             Action::Name { result_tx } => {
                 let _ = result_tx.send(*self.name());
-            }
-            Action::QuorumSize { result_tx } => {
-                let _ = result_tx.send(self.msg_accumulator.quorum_size());
             }
             Action::Timeout(token) => self.handle_timeout(token),
             Action::Terminate => {
@@ -192,22 +180,14 @@ impl Client {
             return Ok(Transition::Stay);
         }
 
-        self.handle_routing_message(routing_msg, signed_msg.public_id())
+        self.handle_routing_message(routing_msg)
     }
 
     fn handle_routing_message(&mut self,
-                              routing_msg: &RoutingMessage,
-                              public_id: &PublicId)
+                              routing_msg: &RoutingMessage)
                               -> Result<Transition, RoutingError> {
-        if let Some(msg) = try!(self.accumulate(routing_msg, public_id)) {
-            if msg.src.is_group() {
-                self.send_ack(&msg, 0);
-            }
-
-            self.dispatch_routing_message(msg)
-        } else {
-            Ok(Transition::Stay)
-        }
+        self.send_ack(routing_msg, 0);
+        self.dispatch_routing_message(routing_msg.clone())
     }
 
     fn dispatch_routing_message(&mut self,
@@ -306,13 +286,6 @@ impl Base for Client {
 }
 
 impl Bootstrapped for Client {
-    fn accumulate(&mut self,
-                  routing_msg: &RoutingMessage,
-                  public_id: &PublicId)
-                  -> Result<Option<RoutingMessage>, RoutingError> {
-        self.msg_accumulator.add(routing_msg, public_id)
-    }
-
     fn ack_mgr(&self) -> &AckManager {
         &self.ack_mgr
     }

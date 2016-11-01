@@ -133,7 +133,6 @@ extern crate maidsafe_utilities;
 extern crate quick_error;
 #[macro_use]
 extern crate unwrap;
-extern crate accumulator;
 #[cfg(not(feature = "use-mock-crust"))]
 extern crate crust;
 extern crate itertools;
@@ -152,7 +151,6 @@ mod error;
 mod event;
 mod id;
 mod immutable_data;
-mod message_accumulator;
 mod message_filter;
 mod messages;
 mod node;
@@ -202,7 +200,7 @@ pub use messages::{Request, Response};
 #[cfg(feature = "use-mock-crust")]
 pub use mock_crust::crust;
 pub use node::{Node, NodeBuilder};
-pub use peer_manager::{MIN_GROUP_SIZE, QUORUM_SIZE};
+pub use peer_manager::MIN_GROUP_SIZE;
 pub use routing_table::{Prefix, Xorable};
 pub use append_types::{AppendWrapper, AppendedData, Filter};
 pub use pub_appendable_data::{MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES, PubAppendableData};

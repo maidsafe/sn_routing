@@ -32,8 +32,6 @@ use xor_name::XorName;
 
 /// The minimum group size for the routing table.
 pub const MIN_GROUP_SIZE: usize = 8;
-/// The quorum for group consensus.
-pub const QUORUM_SIZE: usize = 5;
 /// Time (in seconds) after which a joining node will get dropped from the map of joining nodes.
 const JOINING_NODE_TIMEOUT_SECS: u64 = 300;
 /// Time (in seconds) after which the connection to a peer is considered failed.
