@@ -559,7 +559,7 @@ fn less_than_group_size_nodes() {
 }
 
 #[test]
-fn group_size_nodes() {
+fn equal_group_size_nodes() {
     test_nodes(MIN_GROUP_SIZE);
 }
 

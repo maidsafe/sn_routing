@@ -26,6 +26,7 @@ use error::{InterfaceError, RoutingError};
 use event::Event;
 use id::{FullId, PublicId};
 use itertools::Itertools;
+use log::LogLevel;
 use maidsafe_utilities::serialisation;
 use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, Message, MessageContent,
                RoutingMessage, SignedMessage, UserMessage, UserMessageCache};
@@ -194,15 +195,17 @@ impl Node {
         if self.stats.cur_routing_table_size != self.peer_mgr.routing_table().len() {
             self.stats.cur_routing_table_size = self.peer_mgr.routing_table().len();
 
-            let status_str = format!("{:?} {:?} - Routing Table size: {:3}",
-                                     self,
-                                     self.crust_service.id(),
-                                     self.stats.cur_routing_table_size);
-            info!(" -{}- ",
-                  iter::repeat('-').take(status_str.len()).collect::<String>());
-            info!("| {} |", status_str); // Temporarily error for ci_test.
-            info!(" -{}- ",
-                  iter::repeat('-').take(status_str.len()).collect::<String>());
+            const TABLE_LVL: LogLevel = LogLevel::Info;
+            if log_enabled!(TABLE_LVL) {
+                let status_str = format!("{:?} {:?} - Routing Table size: {:3}",
+                                         self,
+                                         self.crust_service.id(),
+                                         self.stats.cur_routing_table_size);
+                let sep_str = iter::repeat('-').take(status_str.len()).collect::<String>();
+                log!(TABLE_LVL, " -{}- ", sep_str);
+                log!(TABLE_LVL, "| {} |", status_str);
+                log!(TABLE_LVL, " -{}- ", sep_str);
+            }
         }
     }
 
@@ -705,7 +708,6 @@ impl Node {
             error!("{:?} Failed to start listening: {:?}", self, error);
             false
         } else {
-            info!("{:?} Attempting to start listener.", self);
             true
         }
     }

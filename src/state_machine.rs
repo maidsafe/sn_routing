@@ -25,6 +25,7 @@ use routing_table::RoutingTable;
 use states::{Bootstrapping, Client, Node};
 use std::mem;
 use std::sync::mpsc::{self, Receiver};
+use std::fmt::{self, Debug, Formatter};
 use timer::Timer;
 use types::RoutingActionSender;
 #[cfg(feature = "use-mock-crust")]
@@ -123,6 +124,17 @@ impl State {
                 }
             }
             _ => unreachable!(),
+        }
+    }
+}
+
+impl Debug for State {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        match *self {
+            State::Bootstrapping(ref inner) => write!(formatter, "State::{:?}", inner),
+            State::Client(ref inner) => write!(formatter, "State::{:?}", inner),
+            State::Node(ref inner) => write!(formatter, "State::{:?}", inner),
+            State::Terminated => write!(formatter, "State::Terminated"),
         }
     }
 }
@@ -239,21 +251,23 @@ impl StateMachine {
         match transition {
             Transition::Stay => (),
             Transition::IntoBootstrapped { proxy_peer_id, proxy_public_id } => {
-                self.transition_to_bootstrapped(proxy_peer_id, proxy_public_id)
+                // Temporarily switch to `Terminated` to allow moving out of the current
+                // state without moving `self`.
+                let prev_state = mem::replace(&mut self.state, State::Terminated);
+                self.state = prev_state.into_bootstrapped(proxy_peer_id, proxy_public_id);
             }
             Transition::Terminate => self.terminate(),
         }
     }
 
-    fn transition_to_bootstrapped(&mut self, proxy_peer_id: PeerId, proxy_public_id: PublicId) {
-        // Temporarily switch to `Terminated` to allow moving out of the current
-        // state without moving `self`.
-        let prev_state = mem::replace(&mut self.state, State::Terminated);
-        self.state = prev_state.into_bootstrapped(proxy_peer_id, proxy_public_id);
-    }
-
     fn terminate(&mut self) {
         self.is_running = false;
+    }
+}
+
+impl Debug for StateMachine {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        self.state.fmt(formatter)
     }
 }
 
