@@ -41,7 +41,7 @@ pub struct AckManager {
     received: MessageFilter<Ack>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, RustcDecodable, RustcEncodable)]
 pub struct Ack(u64);
 
 impl AckManager {
@@ -56,9 +56,8 @@ impl AckManager {
 
     // Handle received ack.
     pub fn receive(&mut self, ack: Ack) {
-        if self.pending.remove(&ack).is_none() {
-            let _ = self.received.insert(&ack);
-        }
+        let _ = self.pending.remove(&ack);
+        let _ = self.received.insert(&ack);
     }
 
     pub fn did_receive(&mut self, ack: Ack) -> bool {
@@ -118,7 +117,13 @@ impl Ack {
 }
 
 impl fmt::Display for Ack {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:x}", self.0)
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "{:016x}", self.0)
+    }
+}
+
+impl fmt::Debug for Ack {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "Ack({:016x})", self.0)
     }
 }
