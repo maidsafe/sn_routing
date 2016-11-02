@@ -164,6 +164,7 @@ impl State {
     }
 }
 
+/// Enum returned from many message handlers
 pub enum Transition {
     // Stay in the current state.
     Stay,
