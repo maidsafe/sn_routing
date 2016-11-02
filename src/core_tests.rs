@@ -330,6 +330,33 @@ fn create_connected_nodes_with_cache(network: &Network,
     nodes
 }
 
+fn create_connected_nodes_with_cache_till_split(network: &Network) -> Vec<TestNode> {
+    let use_cache = true;
+    let mut nodes = create_connected_nodes_with_cache(network, MIN_GROUP_SIZE * 2, use_cache);
+    let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
+
+    'outer: loop {
+        let len = nodes.len();
+        nodes.push(TestNode::builder(network)
+            .config(config.clone())
+            .endpoint(Endpoint(len))
+            .cache(use_cache)
+            .create());
+        let _ = poll_all(&mut nodes, &mut []);
+        while let Ok(event) = nodes[len].event_rx.try_recv() {
+            match event {
+                Event::NodeAdded(..) |
+                Event::Connected |
+                Event::Tick => (),
+                Event::GroupSplit(..) => break 'outer,
+                event => panic!("Got unexpected event: {:?}", event),
+            }
+        }
+    }
+
+    nodes
+}
+
 fn create_connected_clients(network: &Network,
                             nodes: &mut [TestNode],
                             size: usize)
@@ -1240,19 +1267,18 @@ fn gen_immutable_data_not_close_to_first_node<T: Rng>(rng: &mut T, nodes: &mut [
         let data = gen_immutable_data(rng, 8);
         sort_nodes_by_distance_to(nodes, data.name());
 
-        if nodes.iter().take(MIN_GROUP_SIZE).all(|node| node.name() != first_name) {
+        if nodes.iter().take(nodes.len() / 2).all(|node| node.name() != first_name) {
             return data;
         }
     }
 }
 
 #[test]
-#[ignore]
 fn response_caching() {
     let network = Network::new(None);
 
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes_with_cache(&network, MIN_GROUP_SIZE * 2, true);
+    let mut nodes = create_connected_nodes_with_cache_till_split(&network);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
 
     let proxy_node_name = nodes[0].name();
