@@ -64,6 +64,7 @@ use rand::distributions::{IndependentSample, Range};
 use routing::{Data, MIN_GROUP_SIZE, StructuredData};
 use std::{env, io, thread};
 use std::io::Write;
+use std::panic;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
@@ -120,13 +121,13 @@ fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
             Ok(node)
         })
         .collect::<io::Result<Vec<NodeProcess>>>());
-    thread::sleep(Duration::from_secs(5));
+    thread::sleep(Duration::from_secs(10));
     Ok(nodes)
 }
 
 fn simulate_churn(mut nodes: Vec<NodeProcess>,
                   network_size: usize,
-                  stop_flg: Arc<(Mutex<bool>, Condvar)>)
+                  stop_flag: Arc<(Mutex<bool>, Condvar)>)
                   -> Joiner {
     thread_named("ChurnSimulationThread", move || {
         let mut rng = thread_rng();
@@ -136,14 +137,14 @@ fn simulate_churn(mut nodes: Vec<NodeProcess>,
 
         loop {
             {
-                let &(ref lock, ref cvar) = &*stop_flg;
+                let &(ref lock, ref condvar) = &*stop_flag;
 
                 let mut stop_condition = unwrap!(lock.lock());
                 let mut wait_timed_out = false;
                 let wait_for = wait_range.ind_sample(&mut rng);
 
                 while !*stop_condition && !wait_timed_out {
-                    let wake_up_result = unwrap!(cvar.wait_timeout(stop_condition,
+                    let wake_up_result = unwrap!(condvar.wait_timeout(stop_condition,
                                                          Duration::from_secs(wait_for)));
                     stop_condition = wake_up_result.0;
                     wait_timed_out = wake_up_result.1.timed_out();
@@ -190,7 +191,7 @@ fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
         io::stdout().flush().expect("Could not flush stdout");
     } else {
         *node_count += 1;
-        log_path.set_file_name(&format!("Node_{:02}.log", node_count));
+        log_path.set_file_name(&format!("Node{:02}.log", node_count));
         let arg = format!("--output={}", log_path.display());
 
         nodes.push(NodeProcess(try!(Command::new(current_exe_path.clone())
@@ -328,17 +329,20 @@ fn main() {
 
         let nodes = unwrap!(start_nodes(node_count));
 
-        let stop_flg = Arc::new((Mutex::new(false), Condvar::new()));
-        let _raii_joiner = simulate_churn(nodes, node_count, stop_flg.clone());
+        let stop_flag = Arc::new((Mutex::new(false), Condvar::new()));
+        let _raii_joiner = simulate_churn(nodes, node_count, stop_flag.clone());
 
-        store_and_verify(requests, batches);
+        let test_result = panic::catch_unwind(|| {
+            store_and_verify(requests, batches);
+        });
 
         // Graceful exit
         {
-            let &(ref lock, ref cvar) = &*stop_flg;
+            let &(ref lock, ref condvar) = &*stop_flag;
             *unwrap!(lock.lock()) = true;
-            cvar.notify_one();
+            condvar.notify_one();
         }
+        assert!(test_result.is_ok());
     } else {
         if let Some(log_file) = args.flag_output {
             unwrap!(maidsafe_utilities::log::init_to_file(false, log_file, true));

@@ -72,11 +72,7 @@ pub trait Bootstrapped: Base {
         };
 
         if let Some(ejected) = self.ack_mgr_mut().add_to_pending(ack, unacked_msg) {
-            // FIXME: This currently occurs for Connect request and
-            // GetNodeName response. Connect requests arent filtered which
-            // should get resolved with peer_mgr completion.
-            // GetNodeName response resends from a node needs to get looked into.
-            trace!("{:?} - Ejected pending ack: {:?} - {:?}",
+            debug!("{:?} - Ejected pending ack: {:?} - {:?}",
                    self,
                    ack,
                    ejected);

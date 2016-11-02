@@ -1426,6 +1426,17 @@ impl Node {
             }
         }
 
+        let acting_as_proxy = if let Authority::Client { ref proxy_node_name, .. } =
+                                     routing_msg.src {
+            proxy_node_name == self.name()
+        } else {
+            false
+        };
+        if !acting_as_proxy && hop != self.name() &&
+           self.peer_mgr.routing_table().is_in_our_group(hop) {
+            return Ok(());  // Avoid swarming back out to our own group.
+        }
+
         let (new_sent_to, target_peer_ids) = try!(self.get_targets(routing_msg, route, sent_to));
 
         if !self.add_to_pending_acks(signed_msg, route) {
@@ -1870,6 +1881,7 @@ impl Bootstrapped for Node {
         // If we need to handle this message, put it in the queue.
         if self.in_authority(&signed_msg.routing_message().dst) &&
            self.signed_msg_filter.filter_incoming(&signed_msg) == 1 {
+            self.send_ack(signed_msg.routing_message(), route);
             self.msg_queue.push_back(signed_msg.into_routing_message());
         }
         Ok(())
