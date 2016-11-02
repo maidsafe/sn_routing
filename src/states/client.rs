@@ -36,6 +36,9 @@ use std::time::Duration;
 use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 use timer::Timer;
 
+/// A node connecting a user to the network, as opposed to a routing / data storage node.
+/// 
+/// Each client has a _proxy_: a node through which all requests are routed.
 pub struct Client {
     ack_mgr: AckManager,
     crust_service: Service,
@@ -238,6 +241,7 @@ impl Client {
         Ok(())
     }
 
+    /// Does the given authority represent us?
     fn in_authority(&self, auth: &Authority) -> bool {
         if let Authority::Client { ref client_key, .. } = *auth {
             client_key == self.full_id.public_id().signing_public_key()
