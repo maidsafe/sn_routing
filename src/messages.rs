@@ -154,7 +154,7 @@ pub struct HopMessage {
     route: u8,
     /// Every node this has already been sent to.
     sent_to: Vec<XorName>,
-    /// Signature to be validated against `name`'s public key.
+    /// Signature to be validated against the neighbouring sender's public key.
     signature: sign::Signature,
 }
 
@@ -970,20 +970,14 @@ mod tests {
         let hop_message_result =
             HopMessage::new(signed_message.clone(), 0, vec![], &secret_signing_key);
 
-        assert!(hop_message_result.is_ok());
-
         let hop_message = unwrap!(hop_message_result);
 
         assert_eq!(signed_message, *hop_message.content());
 
-        let verify_result = hop_message.verify(&public_signing_key);
-
-        assert!(verify_result.is_ok());
+        assert!(hop_message.verify(&public_signing_key).is_ok());
 
         let (public_signing_key, _) = sign::gen_keypair();
-        let verify_result = hop_message.verify(&public_signing_key);
-
-        assert!(verify_result.is_err());
+        assert!(hop_message.verify(&public_signing_key).is_err());
     }
 
     #[test]
