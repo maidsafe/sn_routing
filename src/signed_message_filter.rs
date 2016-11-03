@@ -20,7 +20,7 @@ use lru_time_cache::LruCache;
 use maidsafe_utilities;
 
 use message_filter::MessageFilter;
-use messages::SignedMessage;
+use messages::{RoutingMessage, SignedMessage};
 use std::time::Duration;
 
 const INCOMING_EXPIRY_DURATION_SECS: u64 = 60 * 20;
@@ -28,7 +28,7 @@ const OUTGOING_EXPIRY_DURATION_SECS: u64 = 60 * 10;
 
 // Structure to filter (throttle) incoming and outgoing signed messages.
 pub struct SignedMessageFilter {
-    incoming: MessageFilter<SignedMessage>,
+    incoming: MessageFilter<(RoutingMessage, u8)>,
     outgoing: LruCache<(u64, PeerId, u8), ()>,
 }
 
@@ -45,8 +45,9 @@ impl SignedMessageFilter {
 
     // Filter incoming signed message. Return the number of times this specific
     // message has been seen, including this time.
-    pub fn filter_incoming(&mut self, msg: &SignedMessage) -> usize {
-        self.incoming.insert(msg)
+    // TODO - refactor to avoid cloning `msg` as `MessageFilter` only holds the hash of the tuple.
+    pub fn filter_incoming(&mut self, msg: &RoutingMessage, route: u8) -> usize {
+        self.incoming.insert(&(msg.clone(), route))
     }
 
     // Filter outgoing signed message. Return whether this specific message has

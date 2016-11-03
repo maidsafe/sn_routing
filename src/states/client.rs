@@ -37,7 +37,7 @@ use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 use timer::Timer;
 
 /// A node connecting a user to the network, as opposed to a routing / data storage node.
-/// 
+///
 /// Each client has a _proxy_: a node through which all requests are routed.
 pub struct Client {
     ack_mgr: AckManager,
@@ -172,24 +172,21 @@ impl Client {
         let signed_msg = hop_msg.content();
         try!(signed_msg.check_integrity());
 
-        // Prevents someone sending messages repeatedly to us
-        if self.signed_msg_filter.filter_incoming(signed_msg) > MIN_GROUP_SIZE {
+        let routing_msg = signed_msg.routing_message();
+        let in_authority = self.in_authority(&routing_msg.dst);
+        if in_authority {
+            self.send_ack(routing_msg, 0);
+        }
+
+        // Prevents us repeatedly handling identical messages sent by a malicious peer.
+        if self.signed_msg_filter.filter_incoming(routing_msg, hop_msg.route()) != 1 {
             return Err(RoutingError::FilterCheckFailed);
         }
 
-        let routing_msg = signed_msg.routing_message();
-
-        if !self.in_authority(&routing_msg.dst) {
+        if !in_authority {
             return Ok(Transition::Stay);
         }
 
-        self.handle_routing_message(routing_msg)
-    }
-
-    fn handle_routing_message(&mut self,
-                              routing_msg: &RoutingMessage)
-                              -> Result<Transition, RoutingError> {
-        self.send_ack(routing_msg, 0);
         self.dispatch_routing_message(routing_msg.clone())
     }
 

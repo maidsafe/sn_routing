@@ -15,9 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#[cfg(test)]
-extern crate rand;
-
 // TODO - Once we're at Stable v1.13.0, avoid disabling the lint check and replace `SipHasher` with
 // `std::collections::hash_map::DefaultHasher`.
 #[cfg_attr(feature="clippy", allow(useless_attribute))]
