@@ -64,6 +64,7 @@ use rand::distributions::{IndependentSample, Range};
 use routing::{Data, MIN_GROUP_SIZE, StructuredData};
 use std::{env, io, thread};
 use std::io::Write;
+use std::panic;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
@@ -74,7 +75,7 @@ const CHURN_MIN_WAIT_SEC: u64 = 20;
 const CHURN_MAX_WAIT_SEC: u64 = 30;
 const CHURN_TIME_SEC: u64 = 20;
 const DEFAULT_REQUESTS: usize = 30;
-const DEFAULT_NODE_COUNT: usize = 10;
+const DEFAULT_NODE_COUNT: usize = 20;
 /// The number of churn-get cycles.
 const DEFAULT_BATCHES: usize = 1;
 
@@ -101,7 +102,7 @@ fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
 
     let nodes = try!((0..count)
         .map(|i| {
-            log_path.set_file_name(&format!("Node_{:02}.log", i + 1));
+            log_path.set_file_name(&format!("Node{:02}.log", i));
             let mut args = vec![format!("--output={}", log_path.display())];
             if i == 0 {
                 args.push("-d".to_owned());
@@ -113,23 +114,20 @@ fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
                                        .stdout(Stdio::piped())
                                        .stderr(Stdio::inherit())
                                        .spawn()),
-                                   i + 1);
+                                   i);
 
-            println!("Started Node #{} with Process ID {}", i + 1, node.0.id());
-            if i == 0 {
-                thread::sleep(Duration::from_secs(5));
-            }
-            thread::sleep(Duration::from_secs(5));
+            println!("Started Node #{} with Process ID {}", i, node.0.id());
+            thread::sleep(Duration::from_secs(2));
             Ok(node)
         })
         .collect::<io::Result<Vec<NodeProcess>>>());
-
+    thread::sleep(Duration::from_secs(10));
     Ok(nodes)
 }
 
 fn simulate_churn(mut nodes: Vec<NodeProcess>,
                   network_size: usize,
-                  stop_flg: Arc<(Mutex<bool>, Condvar)>)
+                  stop_flag: Arc<(Mutex<bool>, Condvar)>)
                   -> Joiner {
     thread_named("ChurnSimulationThread", move || {
         let mut rng = thread_rng();
@@ -139,14 +137,14 @@ fn simulate_churn(mut nodes: Vec<NodeProcess>,
 
         loop {
             {
-                let &(ref lock, ref cvar) = &*stop_flg;
+                let &(ref lock, ref condvar) = &*stop_flag;
 
                 let mut stop_condition = unwrap!(lock.lock());
                 let mut wait_timed_out = false;
                 let wait_for = wait_range.ind_sample(&mut rng);
 
                 while !*stop_condition && !wait_timed_out {
-                    let wake_up_result = unwrap!(cvar.wait_timeout(stop_condition,
+                    let wake_up_result = unwrap!(condvar.wait_timeout(stop_condition,
                                                          Duration::from_secs(wait_for)));
                     stop_condition = wake_up_result.0;
                     wait_timed_out = wake_up_result.1.timed_out();
@@ -193,7 +191,7 @@ fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
         io::stdout().flush().expect("Could not flush stdout");
     } else {
         *node_count += 1;
-        log_path.set_file_name(&format!("Node_{:02}.log", node_count));
+        log_path.set_file_name(&format!("Node{:02}.log", node_count));
         let arg = format!("--output={}", log_path.display());
 
         nodes.push(NodeProcess(try!(Command::new(current_exe_path.clone())
@@ -230,7 +228,7 @@ fn store_and_verify(requests: usize, batches: usize) {
         let raw_data = rng.gen_iter().take(10).collect();
         let sd = StructuredData::new(10000, rng.gen(), 0, raw_data, vec![], vec![], None);
         let data = Data::Structured(unwrap!(sd));
-        print!("Putting Data: count #{} - Data {:?} - ", i + 1, data.name());
+        print!("Putting Data: count #{} - Data {:?} - ", i, data.name());
         io::stdout().flush().expect("Could not flush stdout");
         if example_client.put(data.clone()).is_ok() {
             print_color("OK", color::GREEN);
@@ -256,11 +254,9 @@ fn store_and_verify(requests: usize, batches: usize) {
         println!("--------- Churning {} seconds -----------", CHURN_TIME_SEC);
         thread::sleep(Duration::from_secs(CHURN_TIME_SEC));
 
-        println!("--------- Getting Data - batch {} of {} -----------",
-                 batch + 1,
-                 batches);
+        println!("--------- Getting Data - batch {} -----------", batch);
         for (i, data_item) in stored_data.iter().enumerate().take(requests) {
-            print!("Get attempt #{} - Data {:?} - ", i + 1, data_item.name());
+            print!("Get attempt #{} - {} - ", i, data_item.name());
             io::stdout().flush().expect("Could not flush stdout");
             if let Some(data) = example_client.get(data_item.identifier()) {
                 assert_eq!(data, stored_data[i]);
@@ -333,17 +329,20 @@ fn main() {
 
         let nodes = unwrap!(start_nodes(node_count));
 
-        let stop_flg = Arc::new((Mutex::new(false), Condvar::new()));
-        let _raii_joiner = simulate_churn(nodes, node_count, stop_flg.clone());
+        let stop_flag = Arc::new((Mutex::new(false), Condvar::new()));
+        let _raii_joiner = simulate_churn(nodes, node_count, stop_flag.clone());
 
-        store_and_verify(requests, batches);
+        let test_result = panic::catch_unwind(|| {
+            store_and_verify(requests, batches);
+        });
 
         // Graceful exit
         {
-            let &(ref lock, ref cvar) = &*stop_flg;
+            let &(ref lock, ref condvar) = &*stop_flag;
             *unwrap!(lock.lock()) = true;
-            cvar.notify_one();
+            condvar.notify_one();
         }
+        assert!(test_result.is_ok());
     } else {
         if let Some(log_file) = args.flag_output {
             unwrap!(maidsafe_utilities::log::init_to_file(false, log_file, true));
