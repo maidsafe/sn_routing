@@ -118,6 +118,17 @@ impl Network {
             .push_back(packet);
     }
 
+    // Drop any pending messages on a specific route (does not automatically
+    // drop packets going the other way).
+    fn drop_pending(&self, sender: Endpoint, receiver: Endpoint) {
+        if let Some(deque) = self.0
+            .borrow_mut()
+            .queue
+            .get_mut(&(sender, receiver)) {
+            deque.clear();
+        }
+    }
+
     fn pop_packet(&self) -> Option<(Endpoint, Endpoint, Packet)> {
         let mut network_impl = self.0.borrow_mut();
         let keys: Vec<_> = network_impl.queue.keys().cloned().collect();
@@ -443,6 +454,14 @@ impl ServiceImpl {
 
     pub fn disconnect(&mut self, peer_id: &PeerId) -> bool {
         if let Some(endpoint) = self.remove_connection_by_peer_id(peer_id) {
+            // We immediately drop all messages going in both directions. This is
+            // possibly not realistic since in the real CRust some of these might
+            // have already been sent and still be received by the far end, but
+            // this is a worst case for routing to deal with.
+            self.network.drop_pending(self.endpoint, endpoint);
+            self.network.drop_pending(endpoint, self.endpoint);
+
+            // Now send a new message to tell the other end to disconnect.
             self.send_packet(endpoint, Packet::Disconnect);
             true
         } else {
