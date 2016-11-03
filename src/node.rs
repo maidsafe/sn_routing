@@ -223,7 +223,7 @@ impl Node {
                             id: MessageId)
                             -> Result<(), InterfaceError> {
         let user_msg = UserMessage::Response(Response::GetSuccess(data, id));
-        let priority = if let Authority::Client { .. } = dst {
+        let priority = if dst.is_client() {
             CLIENT_GET_PRIORITY
         } else {
             RELOCATE_PRIORITY
@@ -244,7 +244,7 @@ impl Node {
             data_id: data_id,
             external_error_indicator: external_error_indicator,
         });
-        let priority = if let Authority::Client { .. } = dst {
+        let priority = if dst.is_client() {
             CLIENT_GET_PRIORITY
         } else {
             RELOCATE_PRIORITY

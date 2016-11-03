@@ -48,10 +48,6 @@ pub trait Bootstrapped: Base {
             return true;
         }
 
-        if *signed_msg.public_id() != *self.full_id().public_id() {
-            return true;
-        }
-
         let ack = match Ack::compute(signed_msg.routing_message()) {
             Ok(ack) => ack,
             Err(error) => {
