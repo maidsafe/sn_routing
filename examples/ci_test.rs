@@ -117,7 +117,7 @@ fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
                                    i);
 
             println!("Started Node #{} with Process ID {}", i, node.0.id());
-            thread::sleep(Duration::from_secs(2));
+            thread::sleep(Duration::from_secs(5));
             Ok(node)
         })
         .collect::<io::Result<Vec<NodeProcess>>>());
