@@ -26,6 +26,7 @@ use error::{InterfaceError, RoutingError};
 use event::Event;
 use id::{FullId, PublicId};
 use itertools::Itertools;
+use log::LogLevel;
 use maidsafe_utilities::serialisation;
 use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, Message, MessageContent,
                RoutingMessage, SignedMessage, UserMessage, UserMessageCache};
@@ -194,15 +195,17 @@ impl Node {
         if self.stats.cur_routing_table_size != self.peer_mgr.routing_table().len() {
             self.stats.cur_routing_table_size = self.peer_mgr.routing_table().len();
 
-            let status_str = format!("{:?} {:?} - Routing Table size: {:3}",
-                                     self,
-                                     self.crust_service.id(),
-                                     self.stats.cur_routing_table_size);
-            info!(" -{}- ",
-                  iter::repeat('-').take(status_str.len()).collect::<String>());
-            info!("| {} |", status_str); // Temporarily error for ci_test.
-            info!(" -{}- ",
-                  iter::repeat('-').take(status_str.len()).collect::<String>());
+            const TABLE_LVL: LogLevel = LogLevel::Info;
+            if log_enabled!(TABLE_LVL) {
+                let status_str = format!("{:?} {:?} - Routing Table size: {:3}",
+                                         self,
+                                         self.crust_service.id(),
+                                         self.stats.cur_routing_table_size);
+                let sep_str = iter::repeat('-').take(status_str.len()).collect::<String>();
+                log!(TABLE_LVL, " -{}- ", sep_str);
+                log!(TABLE_LVL, "| {} |", status_str);
+                log!(TABLE_LVL, " -{}- ", sep_str);
+            }
         }
     }
 
@@ -705,7 +708,6 @@ impl Node {
             error!("{:?} Failed to start listening: {:?}", self, error);
             false
         } else {
-            info!("{:?} Attempting to start listener.", self);
             true
         }
     }
@@ -1426,6 +1428,17 @@ impl Node {
             }
         }
 
+        let acting_as_proxy = if let Authority::Client { ref proxy_node_name, .. } =
+                                     routing_msg.src {
+            proxy_node_name == self.name()
+        } else {
+            false
+        };
+        if !acting_as_proxy && hop != self.name() &&
+           self.peer_mgr.routing_table().is_in_our_group(hop) {
+            return Ok(());  // Avoid swarming back out to our own group.
+        }
+
         let (new_sent_to, target_peer_ids) = try!(self.get_targets(routing_msg, route, sent_to));
 
         if !self.add_to_pending_acks(signed_msg, route) {
@@ -1870,6 +1883,7 @@ impl Bootstrapped for Node {
         // If we need to handle this message, put it in the queue.
         if self.in_authority(&signed_msg.routing_message().dst) &&
            self.signed_msg_filter.filter_incoming(&signed_msg) == 1 {
+            self.send_ack(signed_msg.routing_message(), route);
             self.msg_queue.push_back(signed_msg.into_routing_message());
         }
         Ok(())

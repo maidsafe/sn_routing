@@ -36,6 +36,8 @@ use states;
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::sync::mpsc::{Receiver, Sender, channel};
+#[cfg(feature = "use-mock-crust")]
+use std::fmt::{self, Debug, Formatter};
 use types::{MessageId, RoutingActionSender};
 use xor_name::XorName;
 
@@ -479,6 +481,13 @@ impl Node {
     fn receive_action_result<T>(&self, rx: &Receiver<T>) -> Result<T, InterfaceError> {
         while self.poll() {}
         Ok(try!(rx.recv()))
+    }
+}
+
+#[cfg(feature = "use-mock-crust")]
+impl Debug for Node {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        self.machine.borrow().fmt(formatter)
     }
 }
 
