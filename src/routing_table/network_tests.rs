@@ -309,31 +309,37 @@ pub fn verify_network_invariant<'a, T, U>(nodes: U)
         node.verify_invariant();
     }
     // check that prefixes are disjoint
-    verify_disjoint_prefixes(groups.keys().into_iter().cloned().collect());
+    for prefix1 in groups.keys() {
+        for prefix2 in groups.keys() {
+            if prefix1 == prefix2 {
+                continue;
+            }
+            if prefix1.is_compatible(prefix2) {
+                panic!("Group prefixes should be disjoint, but these are not:\n\
+                    Group {:?}: {:?}\n\
+                    Group {:?}: {:?}",
+                       prefix1,
+                       groups[prefix1].1,
+                       prefix2,
+                       groups[prefix2].1);
+            }
+        }
+    }
 
     // check that each group contains names agreeing with its prefix
-    verify_groups_match_names(&groups);
+    for (prefix, data) in &groups {
+        for name in &data.1 {
+            if !prefix.matches(name) {
+                panic!("Group members should match the prefix, but {:?} \
+                    does not match {:?}",
+                       name,
+                       prefix);
+            }
+        }
+    }
 
     // check that groups cover the whole namespace
     assert!(Prefix::<T>::new(0, Default::default()).is_covered_by(groups.keys()));
-}
-
-fn verify_disjoint_prefixes<T>(prefixes: HashSet<Prefix<T>>)
-    where T: Binary + Clone + Copy + Debug + Default + Hash + Xorable
-{
-    for prefix in &prefixes {
-        assert!(!prefixes.iter().any(|x| *x != *prefix && x.is_compatible(prefix)));
-    }
-}
-
-fn verify_groups_match_names<T>(groups: &HashMap<Prefix<T>, (T, HashSet<T>)>)
-    where T: Binary + Clone + Copy + Debug + Default + Hash + Xorable
-{
-    for &prefix in groups.keys() {
-        for name in &groups[&prefix].1 {
-            assert!(prefix.matches(name));
-        }
-    }
 }
 
 #[test]
