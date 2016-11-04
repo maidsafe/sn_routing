@@ -1054,7 +1054,6 @@ mod tests {
 
         let unknown_distant_name = unwrap!(unknown_distant_name);
         // These numbers depend on distribution of names
-        println!("{:?}", table);
         let num_known_nodes = 104;
         let num_groups = 8;
         let len_our_group = 13;

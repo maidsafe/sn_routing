@@ -1095,8 +1095,7 @@ impl Node {
             Some(close_group) => close_group.into_iter().collect(),
             None => return Err(RoutingError::InvalidDestination),
         };
-        let relocated_name = try!(utils::calculate_relocated_name(close_group,
-                                                                  &their_public_id.name()));
+        let relocated_name = utils::calculate_relocated_name(close_group, their_public_id.name());
         their_public_id.set_name(relocated_name);
 
         // From X -> Y; Send to close group of the relocated name
