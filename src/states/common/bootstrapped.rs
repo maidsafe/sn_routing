@@ -22,7 +22,7 @@ use error::RoutingError;
 use maidsafe_utilities::serialisation;
 use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage};
 use peer_manager::MIN_GROUP_SIZE;
-use signed_message_filter::SignedMessageFilter;
+use routing_message_filter::RoutingMessageFilter;
 use std::time::Duration;
 use super::Base;
 use timer::Timer;
@@ -39,7 +39,7 @@ pub trait Bootstrapped: Base {
                                       route: u8)
                                       -> Result<(), RoutingError>;
 
-    fn signed_msg_filter(&mut self) -> &mut SignedMessageFilter;
+    fn routing_msg_filter(&mut self) -> &mut RoutingMessageFilter;
     fn timer(&mut self) -> &mut Timer;
 
     fn add_to_pending_acks(&mut self, signed_msg: &SignedMessage, route: u8) -> bool {
@@ -83,16 +83,16 @@ pub trait Bootstrapped: Base {
 
     /// Adds the outgoing signed message to the statistics and returns `true`
     /// if it should be blocked due to deduplication.
-    fn filter_outgoing_signed_msg(&mut self,
-                                  msg: &SignedMessage,
-                                  peer_id: &PeerId,
-                                  route: u8)
-                                  -> bool {
-        if self.signed_msg_filter().filter_outgoing(msg, peer_id, route) {
+    fn filter_outgoing_routing_msg(&mut self,
+                                   msg: &RoutingMessage,
+                                   peer_id: &PeerId,
+                                   route: u8)
+                                   -> bool {
+        if self.routing_msg_filter().filter_outgoing(msg, peer_id, route) {
             return true;
         }
 
-        self.stats().count_routing_message(msg.routing_message());
+        self.stats().count_routing_message(msg);
         false
     }
 

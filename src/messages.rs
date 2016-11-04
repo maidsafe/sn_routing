@@ -516,12 +516,18 @@ impl Debug for MessageContent {
                        utils::format_binary_array(&hash.0),
                        priority)
             }
-            MessageContent::UserMessagePart { hash, part_count, part_index, priority, .. } => {
+            MessageContent::UserMessagePart { hash,
+                                              part_count,
+                                              part_index,
+                                              priority,
+                                              cacheable,
+                                              .. } => {
                 write!(formatter,
-                       "UserMessagePart {{ {}/{}, priority: {}  {:x}}}",
+                       "UserMessagePart {{ {}/{}, priority: {}, cacheable: {}, {:x} }}",
                        part_index + 1,
                        part_count,
                        priority,
+                       cacheable,
                        hash)
             }
         }

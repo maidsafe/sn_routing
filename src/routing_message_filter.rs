@@ -20,38 +20,39 @@ use lru_time_cache::LruCache;
 use maidsafe_utilities;
 
 use message_filter::MessageFilter;
-use messages::SignedMessage;
+use messages::RoutingMessage;
 use std::time::Duration;
 
 const INCOMING_EXPIRY_DURATION_SECS: u64 = 60 * 20;
 const OUTGOING_EXPIRY_DURATION_SECS: u64 = 60 * 10;
 
-// Structure to filter (throttle) incoming and outgoing signed messages.
-pub struct SignedMessageFilter {
-    incoming: MessageFilter<SignedMessage>,
+// Structure to filter (throttle) incoming and outgoing `RoutingMessages`.
+pub struct RoutingMessageFilter {
+    incoming: MessageFilter<(RoutingMessage, u8)>,
     outgoing: LruCache<(u64, PeerId, u8), ()>,
 }
 
-impl SignedMessageFilter {
+impl RoutingMessageFilter {
     pub fn new() -> Self {
         let incoming_duration = Duration::from_secs(INCOMING_EXPIRY_DURATION_SECS);
         let outgoing_duration = Duration::from_secs(OUTGOING_EXPIRY_DURATION_SECS);
 
-        SignedMessageFilter {
+        RoutingMessageFilter {
             incoming: MessageFilter::with_expiry_duration(incoming_duration),
             outgoing: LruCache::with_expiry_duration(outgoing_duration),
         }
     }
 
-    // Filter incoming signed message. Return the number of times this specific
-    // message has been seen, including this time.
-    pub fn filter_incoming(&mut self, msg: &SignedMessage) -> usize {
-        self.incoming.insert(msg)
+    // Filter incoming `RoutingMessage`. Return the number of times this specific message has been
+    // seen, including this time.
+    // TODO - refactor to avoid cloning `msg` as `MessageFilter` only holds the hash of the tuple.
+    pub fn filter_incoming(&mut self, msg: &RoutingMessage, route: u8) -> usize {
+        self.incoming.insert(&(msg.clone(), route))
     }
 
-    // Filter outgoing signed message. Return whether this specific message has
-    // been seen recently (and thus should not be sent, due to deduplication).
-    pub fn filter_outgoing(&mut self, msg: &SignedMessage, peer_id: &PeerId, route: u8) -> bool {
+    // Filter outgoing `RoutingMessage`. Return whether this specific message has been seen recently
+    // (and thus should not be sent, due to deduplication).
+    pub fn filter_outgoing(&mut self, msg: &RoutingMessage, peer_id: &PeerId, route: u8) -> bool {
         let hash = maidsafe_utilities::big_endian_sip_hash(msg);
         self.outgoing.insert((hash, *peer_id, route), ()).is_some()
     }

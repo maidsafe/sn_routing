@@ -27,7 +27,7 @@ use maidsafe_utilities::serialisation;
 use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage, UserMessage,
                UserMessageCache};
 use peer_manager::MIN_GROUP_SIZE;
-use signed_message_filter::SignedMessageFilter;
+use routing_message_filter::RoutingMessageFilter;
 use state_machine::Transition;
 use stats::Stats;
 use std::fmt::{self, Debug, Formatter};
@@ -37,7 +37,7 @@ use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 use timer::Timer;
 
 /// A node connecting a user to the network, as opposed to a routing / data storage node.
-/// 
+///
 /// Each client has a _proxy_: a node through which all requests are routed.
 pub struct Client {
     ack_mgr: AckManager,
@@ -46,7 +46,7 @@ pub struct Client {
     full_id: FullId,
     proxy_peer_id: PeerId,
     proxy_public_id: PublicId,
-    signed_msg_filter: SignedMessageFilter,
+    routing_msg_filter: RoutingMessageFilter,
     stats: Stats,
     timer: Timer,
     user_msg_cache: UserMessageCache,
@@ -69,7 +69,7 @@ impl Client {
             full_id: full_id,
             proxy_peer_id: proxy_peer_id,
             proxy_public_id: proxy_public_id,
-            signed_msg_filter: SignedMessageFilter::new(),
+            routing_msg_filter: RoutingMessageFilter::new(),
             stats: stats,
             timer: timer,
             user_msg_cache: UserMessageCache::with_expiry_duration(
@@ -172,24 +172,21 @@ impl Client {
         let signed_msg = hop_msg.content();
         try!(signed_msg.check_integrity());
 
-        // Prevents someone sending messages repeatedly to us
-        if self.signed_msg_filter.filter_incoming(signed_msg) > MIN_GROUP_SIZE {
+        let routing_msg = signed_msg.routing_message();
+        let in_authority = self.in_authority(&routing_msg.dst);
+        if in_authority {
+            self.send_ack(routing_msg, 0);
+        }
+
+        // Prevents us repeatedly handling identical messages sent by a malicious peer.
+        if self.routing_msg_filter.filter_incoming(routing_msg, hop_msg.route()) != 1 {
             return Err(RoutingError::FilterCheckFailed);
         }
 
-        let routing_msg = signed_msg.routing_message();
-
-        if !self.in_authority(&routing_msg.dst) {
+        if !in_authority {
             return Ok(Transition::Stay);
         }
 
-        self.handle_routing_message(routing_msg)
-    }
-
-    fn handle_routing_message(&mut self,
-                              routing_msg: &RoutingMessage)
-                              -> Result<Transition, RoutingError> {
-        self.send_ack(routing_msg, 0);
         self.dispatch_routing_message(routing_msg.clone())
     }
 
@@ -351,7 +348,7 @@ impl Bootstrapped for Client {
             return Ok(());
         }
 
-        if !self.filter_outgoing_signed_msg(&signed_msg, &proxy_peer_id, route) {
+        if !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_peer_id, route) {
             let bytes = try!(self.to_hop_bytes(signed_msg.clone(), route, Vec::new()));
 
             if let Err(error) = self.send_or_drop(&proxy_peer_id, bytes, signed_msg.priority()) {
@@ -365,8 +362,8 @@ impl Bootstrapped for Client {
         Ok(())
     }
 
-    fn signed_msg_filter(&mut self) -> &mut SignedMessageFilter {
-        &mut self.signed_msg_filter
+    fn routing_msg_filter(&mut self) -> &mut RoutingMessageFilter {
+        &mut self.routing_msg_filter
     }
 
     fn timer(&mut self) -> &mut Timer {
