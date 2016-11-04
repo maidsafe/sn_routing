@@ -842,7 +842,9 @@ impl Node {
                             dst: Authority::NaeManager(prefix.lower_bound()),
                             content: MessageContent::GroupSplit(our_group_prefix),
                         };
-                        if let Err(err) = self.send_routing_message(request_msg) {
+                        // We send on route 1 by default to avoid trying to send via the newly joined
+                        // node
+                        if let Err(err) = self.send_routing_message_via_route(request_msg, 1) {
                             debug!("{:?} Failed to send GroupSplit: {:?}.", self, err);
                         }
                     }
