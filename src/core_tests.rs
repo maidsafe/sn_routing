@@ -905,9 +905,9 @@ fn successful_get_request() {
                 Ok(Event::Request { request: Request::Get(ref request, id), src, dst }) => {
                     request_received_count += 1;
                     if data_request == *request && message_id == id {
-                        if let Err(_) = node.inner
+                        if let Err(err) = node.inner
                             .send_get_success(dst, src, data.clone(), id) {
-                            trace!("Failed to send GetSuccess response");
+                            trace!("Failed to send GetSuccess response: {:?}", err);
                         }
                         break;
                     }
@@ -974,9 +974,9 @@ fn failed_get_request() {
                 Ok(Event::Request { request: Request::Get(ref data_id, ref id), src, dst }) => {
                     request_received_count += 1;
                     if data_request == *data_id && message_id == *id {
-                        if let Err(_) = node.inner
+                        if let Err(err) = node.inner
                             .send_get_failure(dst, src, *data_id, vec![], *id) {
-                            trace!("Failed to send GetFailure response.");
+                            trace!("Failed to send GetFailure response: {:?}", err);
                         }
                         break;
                     }
@@ -1041,9 +1041,9 @@ fn disconnect_on_get_request() {
                 Ok(Event::Request { request: Request::Get(ref request, ref id), src, dst }) => {
                     request_received_count += 1;
                     if data_request == *request && message_id == *id {
-                        if let Err(_) = node.inner
+                        if let Err(err) = node.inner
                             .send_get_success(dst, src, data.clone(), *id) {
-                            trace!("Failed to send GetSuccess response");
+                            trace!("Failed to send GetSuccess response: {:?}", err);
                         }
                         break;
                     }
