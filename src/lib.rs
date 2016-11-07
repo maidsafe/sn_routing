@@ -150,20 +150,15 @@ mod data;
 mod error;
 mod event;
 mod id;
-mod immutable_data;
 mod message_filter;
 mod messages;
 mod node;
-mod append_types;
-mod priv_appendable_data;
-mod pub_appendable_data;
 mod peer_manager;
 mod routing_message_filter;
 mod routing_table;
 mod state_machine;
 mod states;
 mod stats;
-mod structured_data;
 mod timer;
 mod tunnels;
 mod types;
@@ -191,21 +186,19 @@ pub const TYPE_TAG_DNS_PACKET: u64 = 5;
 pub use authority::Authority;
 pub use cache::Cache;
 pub use client::Client;
-pub use data::{Data, DataIdentifier, NO_OWNER_PUB_KEY};
+pub use data::{AppendWrapper, AppendedData, Data, DataIdentifier, Filter, ImmutableData,
+               MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES,
+               MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES, MAX_STRUCTURED_DATA_SIZE_IN_BYTES,
+               NO_OWNER_PUB_KEY, PrivAppendableData, PrivAppendedData, PubAppendableData,
+               StructuredData};
 pub use error::{InterfaceError, RoutingError};
 pub use event::Event;
 pub use id::{FullId, PublicId};
-pub use immutable_data::{ImmutableData, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES};
 pub use messages::{Request, Response};
 #[cfg(feature = "use-mock-crust")]
 pub use mock_crust::crust;
 pub use node::{Node, NodeBuilder};
 pub use peer_manager::MIN_GROUP_SIZE;
 pub use routing_table::{Prefix, Xorable};
-pub use append_types::{AppendWrapper, AppendedData, Filter};
-pub use pub_appendable_data::{MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES, PubAppendableData};
-pub use priv_appendable_data::{MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES, PrivAppendableData,
-                               PrivAppendedData};
-pub use structured_data::{MAX_STRUCTURED_DATA_SIZE_IN_BYTES, StructuredData};
 pub use types::MessageId;
 pub use xor_name::{XOR_NAME_BITS, XOR_NAME_LEN, XorName, XorNameFromHexError};

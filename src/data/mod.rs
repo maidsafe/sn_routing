@@ -15,13 +15,22 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-pub use immutable_data::ImmutableData;
-pub use priv_appendable_data::PrivAppendableData;
-pub use pub_appendable_data::PubAppendableData;
-use std::fmt::{self, Debug, Formatter};
-pub use structured_data::StructuredData;
-use xor_name::XorName;
+mod append_types;
+mod immutable_data;
+mod priv_appendable_data;
+mod pub_appendable_data;
+mod structured_data;
+
+pub use self::append_types::{AppendWrapper, AppendedData, Filter};
+pub use self::immutable_data::{ImmutableData, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES};
+pub use self::pub_appendable_data::{MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES, PubAppendableData};
+pub use self::priv_appendable_data::{MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES, PrivAppendableData,
+                                     PrivAppendedData};
+pub use self::structured_data::{MAX_STRUCTURED_DATA_SIZE_IN_BYTES, StructuredData};
+
 use rust_sodium::crypto::sign;
+use std::fmt::{self, Debug, Formatter};
+use xor_name::XorName;
 
 /// A signing key with no matching private key. Passing ownership to it will make a chunk
 /// effectively immutable.
