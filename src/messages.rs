@@ -17,10 +17,9 @@
 
 use ack_manager::Ack;
 use authority::Authority;
-use append_types::AppendWrapper;
 #[cfg(not(feature = "use-mock-crust"))]
 use crust::PeerId;
-use data::{Data, DataIdentifier};
+use data::{AppendWrapper, Data, DataIdentifier};
 use error::RoutingError;
 use event::Event;
 use id::{FullId, PublicId};
@@ -885,9 +884,8 @@ mod tests {
     extern crate rand;
 
     use authority::Authority;
-    use data::Data;
+    use data::{Data, ImmutableData};
     use id::FullId;
-    use immutable_data::ImmutableData;
     use maidsafe_utilities;
     use maidsafe_utilities::serialisation::serialise;
     use rust_sodium::crypto::sign;
