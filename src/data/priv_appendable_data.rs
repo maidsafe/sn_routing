@@ -22,9 +22,8 @@ use rustc_serialize::{Decodable, Decoder};
 use std::collections::BTreeSet;
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
-use data::{DataIdentifier, NO_OWNER_PUB_KEY, verify_detached};
+use super::{AppendWrapper, AppendedData, DataIdentifier, Filter, NO_OWNER_PUB_KEY, verify_detached};
 use error::RoutingError;
-use append_types::{AppendWrapper, AppendedData, Filter};
 
 /// Maximum allowed size for a private appendable data to grow to
 pub const MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES: u64 = 102400;
@@ -361,11 +360,10 @@ mod test {
     use super::*;
 
     use std::collections::BTreeSet;
-    use data::DataIdentifier;
     use maidsafe_utilities::serialisation::serialise;
     use rust_sodium::crypto::{box_, sign};
-    use append_types::{AppendWrapper, AppendedData, Filter};
     use xor_name::XorName;
+    use data::{AppendWrapper, AppendedData, DataIdentifier, Filter};
 
     #[test]
     fn serialised_priv_appended_data_size() {

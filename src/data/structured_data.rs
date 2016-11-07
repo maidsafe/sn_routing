@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use data::{DataIdentifier, NO_OWNER_PUB_KEY, verify_detached};
+use super::{DataIdentifier, NO_OWNER_PUB_KEY, verify_detached};
 use error::RoutingError;
 use maidsafe_utilities::serialisation::{serialise, serialised_size};
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
