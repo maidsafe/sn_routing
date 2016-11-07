@@ -8,7 +8,7 @@ Routing - a specialised storage DHT
 |:---:|:--------:|:---------:|:-----:|:------:|:----:|
 |[![](http://meritbadge.herokuapp.com/routing)](https://crates.io/crates/routing)|[![Build Status](https://travis-ci.org/maidsafe/routing.svg?branch=master)](https://travis-ci.org/maidsafe/routing)|[![Build Status](http://ci.maidsafe.net:8080/buildStatus/icon?job=routing_arm_status_badge)](http://ci.maidsafe.net:8080/job/routing_arm_status_badge/)|[![Build status](https://ci.appveyor.com/api/projects/status/2w1joqd2h64o4xrh/branch/master?svg=true)](https://ci.appveyor.com/project/MaidSafe-QA/routing/branch/master)|[![Coverage Status](https://coveralls.io/repos/maidsafe/routing/badge.svg)](https://coveralls.io/r/maidsafe/routing)|[![Stories in Ready](https://badge.waffle.io/maidsafe/routing.png?label=ready&title=Ready)](https://waffle.io/maidsafe/routing)|
 
-| [API Documentation - master branch](http://docs.maidsafe.net/routing/master) | [MaidSafe website](http://maidsafe.net) | [SAFE Network Forum](https://forum.safenetwork.io) |
+| [API Docs - master branch](http://docs.maidsafe.net/routing/master) | [MaidSafe website](https://maidsafe.net) | [SAFE Dev Forum](https://forum.safedev.org) | [SAFE Network Forum](https://safenetforum.org) |
 |:------:|:-------:|:-------:|:-------:|
 
 ## Overview
