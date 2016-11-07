@@ -16,11 +16,10 @@
 // relating to use of the SAFE Network Software.
 
 use action::Action;
-use append_types::AppendWrapper;
 use authority::Authority;
 use cache::NullCache;
 use core::{Core, Role};
-use data::{Data, DataIdentifier};
+use data::{AppendWrapper, Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use event::Event;
 use id::FullId;

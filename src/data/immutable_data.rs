@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use data::DataIdentifier;
+use super::DataIdentifier;
 use maidsafe_utilities::serialisation::serialised_size;
 use rust_sodium::crypto::hash::sha256;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};

@@ -149,16 +149,11 @@ mod data;
 mod error;
 mod event;
 mod id;
-mod immutable_data;
 mod message_filter;
 mod messages;
 mod node;
 mod peer_manager;
-mod append_types;
-mod priv_appendable_data;
-mod pub_appendable_data;
 mod stats;
-mod structured_data;
 mod timer;
 mod tunnels;
 mod types;
@@ -192,17 +187,15 @@ pub use authority::Authority;
 pub use cache::Cache;
 pub use client::Client;
 pub use core::{GROUP_SIZE, QUORUM_SIZE};
-pub use data::{Data, DataIdentifier, NO_OWNER_PUB_KEY};
+pub use data::{AppendWrapper, AppendedData, Data, DataIdentifier, Filter, ImmutableData,
+               MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES,
+               MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES, MAX_STRUCTURED_DATA_SIZE_IN_BYTES,
+               NO_OWNER_PUB_KEY, PrivAppendableData, PrivAppendedData, PubAppendableData,
+               StructuredData};
 pub use error::{InterfaceError, RoutingError};
 pub use event::Event;
 pub use id::{FullId, PublicId};
-pub use immutable_data::{ImmutableData, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES};
 pub use messages::{Request, Response};
 pub use node::{Node, NodeBuilder};
-pub use append_types::{AppendWrapper, AppendedData, Filter};
-pub use pub_appendable_data::{MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES, PubAppendableData};
-pub use priv_appendable_data::{MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES, PrivAppendableData,
-                               PrivAppendedData};
-pub use structured_data::{MAX_STRUCTURED_DATA_SIZE_IN_BYTES, StructuredData};
 pub use types::MessageId;
 pub use xor_name::{XOR_NAME_BITS, XOR_NAME_LEN, XorName, XorNameFromHexError};

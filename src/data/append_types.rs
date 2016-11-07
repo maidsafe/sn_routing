@@ -19,9 +19,8 @@ use maidsafe_utilities::serialisation::serialise;
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
 use std::collections::BTreeSet;
 use xor_name::XorName;
-use data::{DataIdentifier, verify_detached};
+use super::{DataIdentifier, PrivAppendedData, verify_detached};
 use error::RoutingError;
-use priv_appendable_data::PrivAppendedData;
 
 /// The type of access filter for appendable data.
 #[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable)]
@@ -197,10 +196,9 @@ impl AppendWrapper {
 mod test {
     extern crate rand;
     use super::*;
+    use data::{DataIdentifier, PrivAppendedData};
 
-    use data::DataIdentifier;
     use rust_sodium::crypto::{box_, sign};
-    use priv_appendable_data::PrivAppendedData;
 
     #[test]
     fn pub_signatures() {
