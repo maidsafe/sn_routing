@@ -73,13 +73,13 @@ impl Service {
     /// Start service discovery (beacon).
     /// Note: beacon is not yet implemented in mock.
     pub fn start_service_discovery(&mut self) {
-        trace!("[MOCK] start_service_discovery not implemented in mock");
+        trace!(target: "crust", "[MOCK] start_service_discovery not implemented in mock");
     }
 
     /// Enable listening and responding to peers searching for us. This will allow others finding us
     /// by interrogating the network.
     pub fn set_service_discovery_listen(&self, _listen: bool) {
-        trace!("[MOCK] set_service_discovery_listen not implemented in mock");
+        trace!(target: "crust", "[MOCK] set_service_discovery_listen not implemented in mock");
     }
 
     /// Check if we have peers on LAN
