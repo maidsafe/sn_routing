@@ -619,7 +619,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     //     - returns `Err(Error::CannotRoute)`
     pub fn targets(&self,
                    dst: &Destination<T>,
-                   exclude: Option<T>,
+                   exclude: T,
                    route: usize)
                    -> Result<HashSet<T>, Error> {
         let (closest_group, target_name) = match *dst {
@@ -649,11 +649,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                 (closest_group, target_name)
             }
         };
-        let mut names = if let Some(name) = exclude {
-            closest_group.iter().filter(|&x| *x != name).collect_vec()
-        } else {
-            closest_group.iter().collect_vec()
-        };
+        let mut names = closest_group.iter().filter(|&x| *x != exclude).collect_vec();
         names.sort_by(|&lhs, &rhs| target_name.cmp_distance(lhs, rhs));
         match names.get(route) {
             Some(&name) => Ok(iter::once(*name).collect()),

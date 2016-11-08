@@ -1442,13 +1442,8 @@ impl Node {
             return Ok(());  // Avoid swarming back out to our own group.
         }
 
-        let exclude = if routing_msg.dst.is_group() {
-            None
-        } else {
-            Some(*hop)
-        };
         let (new_sent_to, target_peer_ids) =
-            try!(self.get_targets(routing_msg, route, sent_to, exclude));
+            try!(self.get_targets(routing_msg, route, sent_to, *hop));
 
         if !self.add_to_pending_acks(signed_msg, route) {
             return Ok(());
@@ -1531,7 +1526,7 @@ impl Node {
                    routing_msg: &RoutingMessage,
                    route: u8,
                    sent_to: &[XorName],
-                   exclude: Option<XorName>)
+                   exclude: XorName)
                    -> Result<(Vec<XorName>, Vec<PeerId>), RoutingError> {
         let force_via_proxy = match (&routing_msg.src, &routing_msg.content) {
             (&Authority::Client { .. }, &MessageContent::ConnectionInfo { public_id, .. }) => {
