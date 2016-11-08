@@ -64,6 +64,9 @@ impl PubAppendableData {
                filter: Filter,
                signing_key: Option<&SecretKey>)
                -> Result<PubAppendableData, RoutingError> {
+        if current_owner_keys.len() > 1 || previous_owner_keys.len() > 1 {
+            return Err(RoutingError::InvalidOwners);
+        }
 
         let mut pub_appendable_data = PubAppendableData {
             name: name,
@@ -152,7 +155,8 @@ impl PubAppendableData {
     pub fn validate_self_against_successor(&self,
                                            other: &PubAppendableData)
                                            -> Result<(), RoutingError> {
-        if other.current_owner_keys.len() > 1 &&
+        if other.current_owner_keys.len() > 1 ||
+           other.previous_owner_keys.len() > 1 ||
            other.current_owner_keys.contains(&NO_OWNER_PUB_KEY) {
             return Err(RoutingError::InvalidOwners);
         }
@@ -402,6 +406,8 @@ mod test {
         }
     }
 
+    // TODO: this test is disabled as the feature of multi-sig is disabled
+    #[ignore]
     #[test]
     fn three_owners() {
         let keys1 = sign::gen_keypair();
@@ -432,6 +438,8 @@ mod test {
         }
     }
 
+    // TODO: this test is disabled as the feature of multi-sig is disabled
+    #[ignore]
     #[test]
     fn four_owners() {
         let keys1 = sign::gen_keypair();
@@ -463,6 +471,8 @@ mod test {
         }
     }
 
+    // TODO: this test is disabled as the feature of multi-sig is disabled
+    #[ignore]
     #[test]
     fn transfer_owners() {
         let keys1 = sign::gen_keypair();
@@ -523,6 +533,8 @@ mod test {
         }
     }
 
+    // TODO: this test is disabled as the feature of multi-sig is disabled
+    #[ignore]
     #[test]
     fn transfer_owner_attack() {
         let keys1 = sign::gen_keypair();
@@ -567,6 +579,8 @@ mod test {
         assert!(new_pub_appendable_data.verify_previous_owner_signatures(&attacker_keys).is_err());
     }
 
+    // TODO: this test is disabled as the feature of multi-sig is disabled
+    #[ignore]
     #[test]
     fn update_with_wrong_info() {
         let keys1 = sign::gen_keypair();
