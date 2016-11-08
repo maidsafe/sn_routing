@@ -20,6 +20,24 @@ allows the creation of a DHT based PKI and this in turn allows a decentralised n
 
 This is a very under researched area. For a general introduction to some of the ideas behind the design related to XOR Space, watching [The SAFE Network from First Principles series](https://www.youtube.com/watch?v=Lr9FJRDcNzk&list=PLiYqQVdgdw_sSDkdIZzDRQR9xZlsukIxD) is recommended. The slides for XOR Distance Metric and Basic Routing lecture are also [available here](http://ericklavoie.com/talks/safenetwork/1-xor-routing.pdf). The last video from the series on how the same ideas were applied to decentralised BitTorrent trackers is available [here](https://www.youtube.com/watch?v=YFV908uoLPY). A proper formalisation of the Routing algorithm is in progress.
 
+## Logging
+
+Messages are logged via the standard `log` crate, and where enabled, printed
+via `env_logger`. By default this prints messages of level "warn" and higher
+("error"), but not lower levels ("info", "debug", "trace"). The level can be set
+explicitly (any of the above or "off"), e.g.:
+
+    export RUST_LOG=routing=info
+
+Optionally, the following sub-targets can be controlled independently:
+
+*   stats — messages about connections and routing table size
+
+Example:
+
+    export RUST_LOG=routing=info,stats=off
+
+
 ## License
 
 Licensed under either of
