@@ -171,14 +171,14 @@ impl HopMessage {
     pub fn new(content: SignedMessage,
                route: u8,
                sent_to: Vec<XorName>,
-               sign_key: &sign::SecretKey)
+               signing_key: &sign::SecretKey)
                -> Result<HopMessage, RoutingError> {
         let bytes_to_sign = try!(serialise(&content));
         Ok(HopMessage {
             content: content,
             route: route,
             sent_to: sent_to,
-            signature: sign::sign_detached(&bytes_to_sign, sign_key),
+            signature: sign::sign_detached(&bytes_to_sign, signing_key),
         })
     }
 
@@ -251,13 +251,12 @@ impl SignedMessage {
         }
         Ok(())
     }
-
     /// Returns whether the message is signed by the given public ID.
     pub fn signed_by(&self, pub_id: &PublicId) -> bool {
         self.signatures.contains_key(pub_id)
     }
 
-    /// Appends the group list to the message.
+    /// Appends the group list to the message, and removes all invalid signatures.
     pub fn add_group_list(&mut self, group_list: GroupList) {
         if self.content.src.is_client() {
             return; // Clients are validated based on their names.
@@ -281,18 +280,15 @@ impl SignedMessage {
 
     /// Adds the given signature, if it is valid and new.
     pub fn add_signature(&mut self, pub_id: PublicId, sig: sign::Signature) {
-        if let Some(grp_list) = self.grp_lists.first() {
-            if !grp_list.pub_ids.contains(&pub_id) {
-                return; // Only add signatures that are validated by the first group list.
-            }
+        if self.content.src.is_group() {
+            let _ = self.signatures.insert(pub_id, sig);
         }
-        let _ = self.signatures.insert(pub_id, sig);
     }
 
     /// Adds all signatures from the given message.
     pub fn add_signatures(&mut self, msg: SignedMessage) {
-        for (pub_id, sig) in msg.signatures {
-            self.add_signature(pub_id, sig);
+        if self.content.src.is_group() {
+            self.signatures.extend(msg.signatures);
         }
     }
 
@@ -315,7 +311,7 @@ impl SignedMessage {
     pub fn is_fully_signed(&self) -> bool {
         if self.content.src.is_client() {
             return self.signatures.len() == 1;
-        }
+            }
         self.grp_lists.first().map_or(false, |grp_list| {
             if self.content.src.is_group() {
                 QUORUM * grp_list.pub_ids.len() < 100 * self.signatures.len()
@@ -353,10 +349,12 @@ impl RoutingMessage {
     }
 
     /// Returns a `DirectMessage::MessageSignature` for this message.
-    pub fn to_signature(&self, sign_key: &sign::SecretKey) -> Result<DirectMessage, RoutingError> {
+    pub fn to_signature(&self,
+                        signing_key: &sign::SecretKey)
+                        -> Result<DirectMessage, RoutingError> {
         let serialised_msg = try!(serialise(self));
         let hash = sha256::hash(&serialised_msg);
-        let sig = sign::sign_detached(&serialised_msg, sign_key);
+        let sig = sign::sign_detached(&serialised_msg, signing_key);
         Ok(DirectMessage::MessageSignature(hash, sig))
     }
 }

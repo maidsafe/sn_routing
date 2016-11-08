@@ -25,7 +25,8 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::time::Instant;
 
-/// Time (in seconds) after which a joining node will get dropped from the map of joining nodes.
+/// Time (in seconds) within which a message and a quorum of signatures need to arrive to
+/// accumulate.
 const ACCUMULATION_TIMEOUT_SECS: u64 = 30;
 
 #[derive(Default)]

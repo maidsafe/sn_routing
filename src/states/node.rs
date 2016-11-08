@@ -1470,7 +1470,7 @@ impl Node {
 
         let src = &routing_msg.src;
         let send_sig =
-            sent_by_us && hop == self.name() && src.is_group() &&
+            sent_by_us && src.is_group() &&
             !self.peer_mgr.routing_table().should_route_full_message(src.name(), route as usize);
         let raw_bytes = if send_sig {
             // Not our turn to send the full group message. Only send a hash.
