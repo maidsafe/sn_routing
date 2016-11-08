@@ -168,7 +168,7 @@ mod tests {
 
         // Check verify function with a valid and invalid key
         assert!(message.verify(&public_key));
-        if public_key.0[0] == 255 {
+        if public_key.0[0] != 255 {
             public_key.0[0] += 1;
         } else {
             public_key.0[0] = 0;
