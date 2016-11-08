@@ -1462,7 +1462,8 @@ impl Node {
             return Ok(());  // Avoid swarming back out to our own group.
         }
 
-        let (new_sent_to, target_peer_ids) = try!(self.get_targets(routing_msg, route, sent_to));
+        let (new_sent_to, target_peer_ids) =
+            try!(self.get_targets(routing_msg, route, sent_to, *hop));
 
         if sent_by_us && !self.add_to_pending_acks(signed_msg, route) {
             return Ok(());
@@ -1559,7 +1560,8 @@ impl Node {
     fn get_targets(&self,
                    routing_msg: &RoutingMessage,
                    route: u8,
-                   sent_to: &[XorName])
+                   sent_to: &[XorName],
+                   exclude: XorName)
                    -> Result<(Vec<XorName>, Vec<PeerId>), RoutingError> {
         let force_via_proxy = match routing_msg.content {
             MessageContent::ConnectionInfo { ref public_id, .. } => {
@@ -1571,7 +1573,7 @@ impl Node {
         if self.is_proper() && !force_via_proxy {
             let targets = try!(self.peer_mgr
                 .routing_table()
-                .targets(&routing_msg.dst.to_destination(), route as usize));
+                .targets(&routing_msg.dst.to_destination(), exclude, route as usize));
             let new_sent_to = sent_to.iter()
                 .chain(targets.iter())
                 .cloned()
