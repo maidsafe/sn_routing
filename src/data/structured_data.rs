@@ -50,6 +50,9 @@ impl StructuredData {
                previous_owner_keys: Vec<PublicKey>,
                signing_key: Option<&SecretKey>)
                -> Result<StructuredData, RoutingError> {
+        if current_owner_keys.len() > 1 || previous_owner_keys.len() > 1 {
+            return Err(RoutingError::InvalidOwners);
+        }
 
         let mut structured_data = StructuredData {
             type_tag: type_tag,
@@ -126,10 +129,12 @@ impl StructuredData {
     pub fn validate_self_against_successor(&self,
                                            other: &StructuredData)
                                            -> Result<(), RoutingError> {
-        if other.current_owner_keys.len() > 1 &&
+        if other.current_owner_keys.len() > 1 ||
+           other.previous_owner_keys.len() > 1 ||
            other.current_owner_keys.contains(&NO_OWNER_PUB_KEY) {
             return Err(RoutingError::InvalidOwners);
         }
+
         let owner_keys_to_match = if other.previous_owner_keys.is_empty() {
             &other.current_owner_keys
         } else {
@@ -381,6 +386,8 @@ mod tests {
         }
     }
 
+    // TODO: this test is disabled as the feature of multi-sig is disabled
+    #[ignore]
     #[test]
     fn three_owners() {
         let keys1 = sign::gen_keypair();
@@ -411,6 +418,8 @@ mod tests {
         }
     }
 
+    // TODO: this test is disabled as the feature of multi-sig is disabled
+    #[ignore]
     #[test]
     fn four_owners() {
         let keys1 = sign::gen_keypair();
@@ -442,6 +451,8 @@ mod tests {
         }
     }
 
+    // TODO: this test is disabled as the feature of multi-sig is disabled
+    #[ignore]
     #[test]
     fn transfer_owners() {
         let keys1 = sign::gen_keypair();
