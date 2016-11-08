@@ -209,7 +209,7 @@ impl Network {
         while let Some(node) = received.pop() {
             handled.insert(node); // `node` is now handling the message and relaying it.
             if Destination::Node(node) != dst {
-                for target in unwrap!(self.nodes[&node].targets(&dst, route)) {
+                for target in unwrap!(self.nodes[&node].targets(&dst, Some(src), route)) {
                     if !handled.contains(&target) && !received.contains(&target) {
                         received.push(target);
                     }

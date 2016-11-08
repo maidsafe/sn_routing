@@ -618,7 +618,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     //     - if the closest group has more than `route` members, returns the `route`-th member of
     //       this group; otherwise
     //     - returns `Err(Error::CannotRoute)`
-    pub fn targets(&self, dst: &Destination<T>, route: usize) -> Result<HashSet<T>, Error> {
+    pub fn targets(&self,
+                   dst: &Destination<T>,
+                   exclude: Option<T>,
+                   route: usize)
+                   -> Result<HashSet<T>, Error> {
         let (closest_group, target_name) = match *dst {
             Destination::Group(ref target_name) => {
                 let closest_group_prefix = self.closest_group_prefix(target_name);
@@ -646,7 +650,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                 (closest_group, target_name)
             }
         };
-        let mut names = closest_group.iter().collect_vec();
+        let mut names = if let Some(name) = exclude {
+            closest_group.iter().filter(|&x| *x != name).collect_vec()
+        } else {
+            closest_group.iter().collect_vec()
+        };
         names.sort_by(|&lhs, &rhs| target_name.cmp_distance(lhs, rhs));
         match names.get(route) {
             Some(&name) => Ok(iter::once(*name).collect()),
