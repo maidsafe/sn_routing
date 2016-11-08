@@ -32,6 +32,7 @@ explicitly (any of the above or "off"), e.g.:
 Optionally, the following sub-targets can be controlled independently:
 
 *   stats — messages about connections and routing table size
+*   crust — messages from the mock Crust layer (not real Crust)
 
 Example:
 
