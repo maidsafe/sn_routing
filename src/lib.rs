@@ -156,6 +156,7 @@ mod node;
 mod peer_manager;
 mod routing_message_filter;
 mod routing_table;
+mod signature_accumulator;
 mod state_machine;
 mod states;
 mod stats;
