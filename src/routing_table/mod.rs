@@ -416,8 +416,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             return Err(Error::AlreadyExists);
         }
         if self.should_split_our_group(&our_group) {
-            let our_prefix_after_split = Prefix::new(self.our_group_prefix.bit_count() + 1,
-                                                     self.our_name);
+            let our_prefix_after_split = Prefix::new(self.our_group_prefix.bit_count() + 1, *name);
             groups.iter_mut().foreach(|(prefix, mut members)| {
                 if *prefix != our_prefix_after_split &&
                    !prefix.is_neighbour(&our_prefix_after_split) {
