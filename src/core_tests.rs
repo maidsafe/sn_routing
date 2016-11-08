@@ -29,7 +29,7 @@ use node::Node;
 use peer_manager::MIN_GROUP_SIZE;
 use rand::{self, Rng, SeedableRng, XorShiftRng};
 use rand::distributions::{IndependentSample, Range};
-use routing_table::{self, Destination, RoutingTable, Xorable};
+use routing_table::{self, Destination, Prefix, RoutingTable, Xorable};
 use std::cell::RefCell;
 use std::cmp;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -357,6 +357,7 @@ fn create_connected_nodes_with_cache_till_split(network: &Network) -> Vec<TestNo
     nodes
 }
 
+// Create `size` clients, all of whom are connected to `nodes[0]`.
 fn create_connected_clients(network: &Network,
                             nodes: &mut [TestNode],
                             size: usize)
@@ -1260,23 +1261,23 @@ fn request_during_churn_group_to_group() {
 }
 
 // Generate random immutable data, but make sure the first node in the given
-// node slice (the proxy node) is not the closest to the data. Also sorts
-// the nodes by distance to the data.
-fn gen_immutable_data_not_close_to_first_node<T: Rng>(rng: &mut T, nodes: &mut [TestNode]) -> Data {
+// node slice (the proxy node) is not in the data's group.
+fn gen_immutable_data_not_in_first_node_group<T: Rng>(rng: &mut T, nodes: &[TestNode]) -> Data {
     let first_name = nodes[0].name();
+    // We want to make sure the data is inserted into a different group. Since the
+    // root prefix uses 0 bits, we will have at least one group starting bit 0 and at
+    // least one starting bit 1. If this differs, the groups are guaranteed different.
+    let prefix = Prefix::new(1, first_name);
 
     loop {
         let data = gen_immutable_data(rng, 8);
-        sort_nodes_by_distance_to(nodes, data.name());
-
-        if nodes.iter().take(nodes.len() / 2).all(|node| node.name() != first_name) {
+        if !prefix.matches(data.name()) {
             return data;
         }
     }
 }
 
 #[test]
-#[ignore]
 fn response_caching() {
     let network = Network::new(None);
 
@@ -1290,7 +1291,7 @@ fn response_caching() {
     // because in that case the full response (as opposed to just a hash of it)
     // would originate from the proxy node and would never be relayed by it, thus
     // it would never be stored in the cache.
-    let data = gen_immutable_data_not_close_to_first_node(&mut rng, &mut nodes);
+    let data = gen_immutable_data_not_in_first_node_group(&mut rng, &nodes);
     let data_id = data.identifier();
     let message_id = MessageId::new();
     let dst = Authority::NaeManager(*data.name());
@@ -1301,7 +1302,7 @@ fn response_caching() {
 
     poll_all(&mut nodes, &mut clients);
 
-    for node in nodes.iter().take(MIN_GROUP_SIZE) {
+    for node in &nodes {
         loop {
             match node.event_rx.try_recv() {
                 Ok(Event::Request { request: Request::Get(req_data_id, req_message_id),
