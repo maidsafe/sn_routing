@@ -187,8 +187,8 @@ pub use authority::Authority;
 pub use cache::Cache;
 pub use client::Client;
 pub use data::{AppendWrapper, AppendedData, Data, DataIdentifier, Filter, ImmutableData,
-               MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES,
-               MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES, MAX_STRUCTURED_DATA_SIZE_IN_BYTES,
+               MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES,
+               MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES, MAX_STRUCTURED_DATA_SIZE_IN_BYTES,
                NO_OWNER_PUB_KEY, PrivAppendableData, PrivAppendedData, PubAppendableData,
                StructuredData};
 pub use error::{InterfaceError, RoutingError};

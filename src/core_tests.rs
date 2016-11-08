@@ -641,8 +641,9 @@ fn client_connects_to_nodes() {
 //
 //     let dst = Authority::ManagedNode(nodes[0].name()); // The closest node.
 //
-//     // Send a message from the group `src` to the node `dst`. Only the `QUORUM_SIZE`-th sender
-//     // should cause accumulation and a `Response` event. The event should only occur once.
+//     // Send a message from the group `src` to the node `dst`.
+//     // Only the `QUORUM_SIZE`-th sender should cause accumulation and a
+//     // `Response` event. The event should only occur once.
 //     let message_id = MessageId::new();
 //     for node in nodes.iter_mut().take(QUORUM_SIZE - 1) {
 //         send(node, &dst, message_id);
@@ -674,8 +675,9 @@ fn client_connects_to_nodes() {
 //
 //     let dst_grp = Authority::NaeManager(*src.name()); // The whole group.
 //
-//     // Send a message from the group `src` to the group `dst_grp`. Only the `QUORUM_SIZE`-th sender
-//     // should cause accumulation and a `Response` event. The event should only occur once.
+//     // Send a message from the group `src` to the group `dst_grp`.
+//     // Only the `QUORUM_SIZE`-th sender should cause accumulation and a
+//     // `Response` event. The event should only occur once.
 //     let message_id = MessageId::new();
 //     for node in nodes.iter_mut().take(QUORUM_SIZE - 1) {
 //         send(node, &dst_grp, message_id);
