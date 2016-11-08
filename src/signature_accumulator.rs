@@ -106,9 +106,13 @@ impl SignatureAccumulator {
     }
 
     fn remove_if_complete(&mut self, hash: &sha256::Digest) -> Option<(SignedMessage, u8)> {
-        match self.msgs.get(hash) {
+        match self.msgs.get_mut(hash) {
             None => return None,
-            Some(&(ref msg, _, _)) => {
+            Some(&mut (ref mut msg, _, _)) => {
+                if !msg.is_fully_signed() {
+                    return None;
+                }
+                msg.remove_invalid_signatures();
                 if !msg.is_fully_signed() {
                     return None;
                 }

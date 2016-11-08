@@ -193,14 +193,6 @@ impl HopMessage {
             Err(RoutingError::FailedSignature)
         }
     }
-
-    /// Returns the `SignedMessage` and the `name` of the previous routing node.
-    ///
-    /// Does not validate the message! [#verify] must be called to ensure that the sender is valid
-    /// and signed the message.
-    pub fn content(&self) -> &SignedMessage {
-        &self.content
-    }
 }
 
 /// A list of a group's public IDs, together with a list of signatures of a neighbouring group.
@@ -277,14 +269,14 @@ impl SignedMessage {
         self.grp_lists.push(group_list);
     }
 
-    /// Adds the given signature, if it is valid and new.
+    /// Adds the given signature if it is new, without validating it.
     pub fn add_signature(&mut self, pub_id: PublicId, sig: sign::Signature) {
         if self.content.src.is_group() {
             let _ = self.signatures.insert(pub_id, sig);
         }
     }
 
-    /// Adds all signatures from the given message.
+    /// Adds all signatures from the given message, without validating them.
     pub fn add_signatures(&mut self, msg: SignedMessage) {
         if self.content.src.is_group() {
             self.signatures.extend(msg.signatures);
@@ -306,18 +298,45 @@ impl SignedMessage {
         self.content.priority()
     }
 
-    /// Returns whether there are enough valid signatures from the sender.
+    /// Returns whether there are enough signatures from the sender. NOTE: to ensure only validated
+    /// signatures are counted, first call `remove_invalid_signatures()`.
     pub fn is_fully_signed(&self) -> bool {
         if self.content.src.is_client() {
             return self.signatures.len() == 1;
-            }
+        }
         self.grp_lists.first().map_or(false, |grp_list| {
             if self.content.src.is_group() {
                 QUORUM * grp_list.pub_ids.len() < 100 * self.signatures.len()
             } else {
-                !self.signatures.is_empty()
+                self.signatures.len() == 1
             }
         })
+    }
+
+    /// Removes all signatures which fail validation.
+    pub fn remove_invalid_signatures(&mut self) {
+        let signed_bytes = match serialise(&self.content) {
+            Ok(serialised) => serialised,
+            Err(error) => {
+                info!("Failed to remove invalid signatures from {:?}: {:?}",
+                      self,
+                      error);
+                return;
+            }
+        };
+        let invalid_signatures = self.signatures
+            .iter()
+            .filter_map(|(pub_id, sig)| {
+                if sign::verify_detached(sig, &signed_bytes, pub_id.signing_public_key()) {
+                    None
+                } else {
+                    Some(*pub_id)
+                }
+            })
+            .collect_vec();
+        for invalid_signature in &invalid_signatures {
+            let _ = self.signatures.remove(invalid_signature);
+        }
     }
 }
 
@@ -1007,6 +1026,20 @@ mod tests {
             msg => panic!("Unexpected message: {:?}", msg),
         }
         assert!(signed_msg.is_fully_signed());
+
+        assert_eq!(signed_msg.signatures.len(), 2);
+        signed_msg.remove_invalid_signatures();
+        assert_eq!(signed_msg.signatures.len(), 2);
+
+        // Add a bad signature mapping and check that it gets removed properly
+        let bad_id = *FullId::new().public_id();
+        let bad_sig = sign::Signature([0; sign::SIGNATUREBYTES]);
+        signed_msg.add_signature(bad_id, bad_sig);
+        assert!(signed_msg.signatures.contains_key(&bad_id));
+        let len_before = signed_msg.signatures.len();
+        signed_msg.remove_invalid_signatures();
+        assert_eq!(signed_msg.signatures.len(), len_before - 1);
+        assert!(!signed_msg.signatures.contains_key(&bad_id));
     }
 
     #[test]
@@ -1029,7 +1062,7 @@ mod tests {
 
         let hop_message = unwrap!(hop_message_result);
 
-        assert_eq!(signed_message, *hop_message.content());
+        assert_eq!(signed_message, hop_message.content);
 
         assert!(hop_message.verify(&public_signing_key).is_ok());
 

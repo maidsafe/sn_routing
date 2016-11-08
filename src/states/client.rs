@@ -169,7 +169,7 @@ impl Client {
             return Err(RoutingError::UnknownConnection(peer_id));
         }
 
-        let signed_msg = hop_msg.content();
+        let signed_msg = hop_msg.content;
         try!(signed_msg.check_integrity());
 
         let routing_msg = signed_msg.routing_message();

@@ -419,7 +419,7 @@ impl Node {
                    self.tunnels.tunnel_for(&src) == Some(&peer_id) {
                     self.handle_hop_message(content, src)
                 } else if self.tunnels.has_clients(src, dst) {
-                    self.send_or_drop(&dst, bytes, content.content().priority())
+                    self.send_or_drop(&dst, bytes, content.content.priority())
                 } else {
                     Err(RoutingError::InvalidDestination)
                 }
@@ -514,7 +514,7 @@ impl Node {
 
             match *peer.state() {
                 PeerState::Client => {
-                    try!(self.check_valid_client_message(hop_msg.content().routing_message()));
+                    try!(self.check_valid_client_message(hop_msg.content.routing_message()));
                     *self.name()
                 }
                 PeerState::JoiningNode => *self.name(),
