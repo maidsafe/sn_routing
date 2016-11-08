@@ -29,7 +29,7 @@ use node::Node;
 use peer_manager::MIN_GROUP_SIZE;
 use rand::{self, Rng, SeedableRng, XorShiftRng};
 use rand::distributions::{IndependentSample, Range};
-use routing_table::{self, Destination, RoutingTable, Xorable};
+use routing_table::{self, Destination, Prefix, RoutingTable, Xorable};
 use std::cell::RefCell;
 use std::cmp;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -38,6 +38,9 @@ use std::sync::mpsc;
 use std::thread;
 use types::MessageId;
 use xor_name::XorName;
+use maidsafe_utilities;
+// Add the following line to tests to enable logging:
+// maidsafe_utilities::log::init(false);
 
 // Poll one event per node. Otherwise, all events in a single node are polled before moving on.
 const BALANCED_POLLING: bool = true;
@@ -169,12 +172,39 @@ impl TestNode {
         unwrap!(self.inner.name())
     }
 
+    // For routing nodes, this returns the group prefix. For clients, this
+    // returns None.
+    fn group_prefix(&self) -> Prefix<XorName> {
+        *self.inner.routing_table().our_group_prefix()
+    }
+
     fn close_group(&self) -> HashSet<XorName> {
         unwrap!(self.inner.close_group(self.name())).unwrap_or_else(HashSet::new)
     }
 
     fn routing_table(&self) -> RoutingTable<XorName> {
         self.inner.routing_table()
+    }
+}
+
+// Prints all nodes in a table, organised by group.
+// Does not check the routing tables (use verify_invariant_for_all_nodes() for that).
+fn log_nodes(nodes: &[TestNode], clients: &[TestClient]) {
+    let mut groups = HashMap::<Prefix<XorName>, HashSet<XorName>>::new();
+    for node in nodes {
+        groups.entry(node.group_prefix())
+            .or_insert_with(HashSet::new)
+            .insert(node.name());
+    }
+    for (prefix, names) in groups {
+        trace!("Group {:?}:", prefix);
+        for name in names {
+            trace!("Node\t{:?}", name);
+        }
+    }
+    trace!("Clients:");
+    for client in clients {
+        trace!("\t{:?}", client.name());
     }
 }
 
@@ -357,6 +387,7 @@ fn create_connected_nodes_with_cache_till_split(network: &Network) -> Vec<TestNo
     nodes
 }
 
+// Create `size` clients, all of whom are connected to `nodes[0]`.
 fn create_connected_clients(network: &Network,
                             nodes: &mut [TestNode],
                             size: usize)
@@ -641,8 +672,9 @@ fn client_connects_to_nodes() {
 //
 //     let dst = Authority::ManagedNode(nodes[0].name()); // The closest node.
 //
-//     // Send a message from the group `src` to the node `dst`. Only the `QUORUM_SIZE`-th sender
-//     // should cause accumulation and a `Response` event. The event should only occur once.
+//     // Send a message from the group `src` to the node `dst`.
+//     // Only the `QUORUM_SIZE`-th sender should cause accumulation and a
+//     // `Response` event. The event should only occur once.
 //     let message_id = MessageId::new();
 //     for node in nodes.iter_mut().take(QUORUM_SIZE - 1) {
 //         send(node, &dst, message_id);
@@ -674,8 +706,9 @@ fn client_connects_to_nodes() {
 //
 //     let dst_grp = Authority::NaeManager(*src.name()); // The whole group.
 //
-//     // Send a message from the group `src` to the group `dst_grp`. Only the `QUORUM_SIZE`-th sender
-//     // should cause accumulation and a `Response` event. The event should only occur once.
+//     // Send a message from the group `src` to the group `dst_grp`.
+//     // Only the `QUORUM_SIZE`-th sender should cause accumulation and a
+//     // `Response` event. The event should only occur once.
 //     let message_id = MessageId::new();
 //     for node in nodes.iter_mut().take(QUORUM_SIZE - 1) {
 //         send(node, &dst_grp, message_id);
@@ -1258,29 +1291,30 @@ fn request_during_churn_group_to_group() {
 }
 
 // Generate random immutable data, but make sure the first node in the given
-// node slice (the proxy node) is not the closest to the data. Also sorts
-// the nodes by distance to the data.
-fn gen_immutable_data_not_close_to_first_node<T: Rng>(rng: &mut T, nodes: &mut [TestNode]) -> Data {
+// node slice (the proxy node) is not in the data's group.
+fn gen_immutable_data_not_in_first_node_group<T: Rng>(rng: &mut T, nodes: &[TestNode]) -> Data {
     let first_name = nodes[0].name();
+    // We want to make sure the data is inserted into a different group. Since the
+    // root prefix uses 0 bits, we will have at least one group starting bit 0 and at
+    // least one starting bit 1. If this differs, the groups are guaranteed different.
+    let prefix = Prefix::new(1, first_name);
 
     loop {
         let data = gen_immutable_data(rng, 8);
-        sort_nodes_by_distance_to(nodes, data.name());
-
-        if nodes.iter().take(nodes.len() / 2).all(|node| node.name() != first_name) {
+        if !prefix.matches(data.name()) {
             return data;
         }
     }
 }
 
 #[test]
-#[ignore]
 fn response_caching() {
     let network = Network::new(None);
 
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_with_cache_till_split(&network);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
+    log_nodes(&nodes, &clients);
 
     let proxy_node_name = nodes[0].name();
 
@@ -1288,7 +1322,7 @@ fn response_caching() {
     // because in that case the full response (as opposed to just a hash of it)
     // would originate from the proxy node and would never be relayed by it, thus
     // it would never be stored in the cache.
-    let data = gen_immutable_data_not_close_to_first_node(&mut rng, &mut nodes);
+    let data = gen_immutable_data_not_in_first_node_group(&mut rng, &nodes);
     let data_id = data.identifier();
     let message_id = MessageId::new();
     let dst = Authority::NaeManager(*data.name());
@@ -1299,7 +1333,7 @@ fn response_caching() {
 
     poll_all(&mut nodes, &mut clients);
 
-    for node in nodes.iter().take(MIN_GROUP_SIZE) {
+    for node in &nodes {
         loop {
             match node.event_rx.try_recv() {
                 Ok(Event::Request { request: Request::Get(req_data_id, req_message_id),
