@@ -1873,12 +1873,20 @@ impl Bootstrapped for Node {
                                       routing_msg: RoutingMessage,
                                       route: u8)
                                       -> Result<(), RoutingError> {
-        if !self.in_authority(&routing_msg.src) {
-            trace!("{:?} Not part of the source authority. Not sending message {:?}.",
-                   self,
-                   routing_msg);
-            return Ok(());
-        }
+        // Note: we used to prevent ourselves from sending a message we're not
+        // in the source authority of. If we send a message and then a group
+        // split happens, this avoids resending the message several times in
+        // the half of the group that isn't the source after the split anymore,
+        // because that half won't receive the ack.
+        // However, if the message actually doesn't reach the destination and
+        // there is no ack, it leads to only half of the source authority
+        // retrying, which won't be enough to accumulate.
+        // if !self.in_authority(&routing_msg.src) {
+        //     trace!("{:?} Not part of the source authority. Not sending message {:?}.",
+        //            self,
+        //            routing_msg);
+        //     return Ok(());
+        // }
         let signed_msg = try!(SignedMessage::new(routing_msg, &self.full_id));
         let hop = *self.name();
         try!(self.send_signed_message(&signed_msg, route, &hop, &[hop]));
