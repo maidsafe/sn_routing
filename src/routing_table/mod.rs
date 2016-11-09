@@ -120,7 +120,7 @@ pub use self::error::Error;
 pub use self::prefix::Prefix;
 pub use self::xorable::Xorable;
 use std::{iter, mem};
-use std::collections::{HashMap, HashSet, hash_map, hash_set};
+use std::collections::{BTreeSet, HashMap, HashSet, hash_map, hash_set};
 use std::fmt::{Binary, Debug, Formatter};
 use std::fmt::Result as FmtResult;
 use std::hash::Hash;
@@ -227,7 +227,7 @@ pub struct RemovalDetails<T: Binary + Clone + Copy + Default + Hash + Xorable> {
     // If, after removal, our group needs to merge, this is set to `Some`. It contains the
     // appropriate targets (all members of the merging groups) and the merge details they each need
     // to receive (the new prefix and all groups in the table).
-    pub targets_and_merge_details: Option<(Vec<Prefix<T>>, OwnMergeDetails<T>)>,
+    pub targets_and_merge_details: Option<(BTreeSet<Prefix<T>>, OwnMergeDetails<T>)>,
 }
 
 
@@ -238,7 +238,7 @@ pub enum OwnMergeState<T: Binary + Clone + Copy + Default + Hash + Xorable> {
     // returned, containing the appropriate targets (all the merging groups' `Prefix`es) and the
     // merge details they each need to receive (the new prefix and all groups in the table).
     Initialised {
-        targets: Vec<Prefix<T>>,
+        targets: BTreeSet<Prefix<T>>,
         merge_details: OwnMergeDetails<T>,
     },
     // If an ongoing merge is happening, and this call to `merge_own_group()` doesn't complete the
@@ -250,7 +250,7 @@ pub enum OwnMergeState<T: Binary + Clone + Copy + Default + Hash + Xorable> {
     // containing the appropriate targets (the `Prefix`es of all groups outwith the merging ones)
     // and the merge details they each need to receive (the new prefix and merged group).
     Completed {
-        targets: Vec<Prefix<T>>,
+        targets: BTreeSet<Prefix<T>>,
         merge_details: OtherMergeDetails<T>,
     },
     // The merge has already completed, implying that no further action by the caller is required.
@@ -833,7 +833,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     // Returns prefixes of all groups we're connected to (i.e. non-empty groups from `self.groups`)
     // which are merging into a new group defined by `merge_prefix`.
-    fn prefixes_within_merge(&self, merge_prefix: &Prefix<T>) -> Vec<Prefix<T>> {
+    fn prefixes_within_merge(&self, merge_prefix: &Prefix<T>) -> BTreeSet<Prefix<T>> {
         self.groups
             .iter()
             .filter(|&(prefix, names)| merge_prefix.is_compatible(prefix) && !names.is_empty())
