@@ -540,7 +540,6 @@ impl Node {
         content.add_group_list(GroupList { pub_ids: hop_pub_ids });
         match self.sig_accumulator.add_message(content, route) {
             Some((signed_msg, route)) => {
-                println!("ACCUMULATED {:?}", signed_msg);
                 self.handle_signed_message(signed_msg, route, hop_name, sent_to)
             }
             None => Ok(()), // Has not accumulated yet.

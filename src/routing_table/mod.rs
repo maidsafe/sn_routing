@@ -124,6 +124,7 @@ use std::collections::{BTreeSet, HashMap, HashSet, hash_map, hash_set};
 use std::fmt::{Binary, Debug, Formatter};
 use std::fmt::Result as FmtResult;
 use std::hash::Hash;
+use std::thread;
 
 #[cfg(test)]
 pub use self::network_tests::verify_network_invariant;
@@ -925,8 +926,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Binary for RoutingTable<T> {
     fn fmt(&self, formatter: &mut Formatter) -> FmtResult {
         try!(writeln!(formatter,
-                      "RoutingTable {{\n\tour_name: {},\n\tmin_group_size: \
+                      "RoutingTable {{\n\tour_name: {:?} ({}),\n\tmin_group_size: \
                        {},\n\tour_group_prefix: {:?},",
+                      self.our_name,
                       self.our_name.debug_binary(),
                       self.min_group_size,
                       self.our_group_prefix));
@@ -943,7 +945,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Binary for Rou
                 } else {
                     ","
                 };
-                try!(writeln!(formatter, "\t\t{}{}", name.debug_binary(), comma));
+                try!(writeln!(formatter,
+                              "\t\t{:?} ({}){}",
+                              name,
+                              name.debug_binary(),
+                              comma));
             }
             let comma = if group_index == groups.len() - 1 {
                 ""
@@ -961,6 +967,16 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Debug for Rout
         Binary::fmt(self, formatter)
     }
 }
+
+impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Drop for RoutingTable<T> {
+    fn drop(&mut self) {
+        if thread::panicking() {
+            trace!("{:?}", self);
+        }
+    }
+}
+
+
 
 #[cfg(test)]
 mod tests {

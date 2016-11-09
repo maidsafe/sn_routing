@@ -952,13 +952,12 @@ impl UserMessageCache {
 
 #[cfg(test)]
 mod tests {
-    extern crate rand;
-
     use authority::Authority;
     use data::{Data, ImmutableData};
     use id::FullId;
     use maidsafe_utilities;
     use maidsafe_utilities::serialisation::serialise;
+    use rand;
     use rust_sodium::crypto::sign;
     use rust_sodium::crypto::hash::sha256;
     use std::iter;
@@ -976,8 +975,6 @@ mod tests {
         };
         let full_id = FullId::new();
         let signed_message_result = SignedMessage::new(routing_message.clone(), &full_id);
-
-        assert!(signed_message_result.is_ok());
 
         let mut signed_message = unwrap!(signed_message_result);
 
