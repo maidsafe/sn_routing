@@ -416,8 +416,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             return Err(Error::AlreadyExists);
         }
         if self.should_split_our_group(&our_group) {
-            let our_prefix_after_split = Prefix::new(self.our_group_prefix.bit_count() + 1,
-                                                     self.our_name);
+            let our_prefix_after_split = Prefix::new(self.our_group_prefix.bit_count() + 1, *name);
             groups.iter_mut().foreach(|(prefix, mut members)| {
                 if *prefix != our_prefix_after_split &&
                    !prefix.is_neighbour(&our_prefix_after_split) {
@@ -618,7 +617,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     //     - if the closest group has more than `route` members, returns the `route`-th member of
     //       this group; otherwise
     //     - returns `Err(Error::CannotRoute)`
-    pub fn targets(&self, dst: &Destination<T>, route: usize) -> Result<HashSet<T>, Error> {
+    pub fn targets(&self,
+                   dst: &Destination<T>,
+                   exclude: T,
+                   route: usize)
+                   -> Result<HashSet<T>, Error> {
         let (closest_group, target_name) = match *dst {
             Destination::Group(ref target_name) => {
                 let closest_group_prefix = self.closest_group_prefix(target_name);
@@ -646,7 +649,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                 (closest_group, target_name)
             }
         };
-        let mut names = closest_group.iter().collect_vec();
+        let mut names = closest_group.iter().filter(|&x| *x != exclude).collect_vec();
         names.sort_by(|&lhs, &rhs| target_name.cmp_distance(lhs, rhs));
         match names.get(route) {
             Some(&name) => Ok(iter::once(*name).collect()),
