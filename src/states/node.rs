@@ -69,7 +69,8 @@ pub struct Node {
     full_id: FullId,
     get_node_name_timer_token: Option<u64>,
     is_first_node: bool,
-    /// The queue of routing messages we need to handle.
+    /// The queue of routing messages addressed to us. These do not themselves need
+    /// forwarding, although they may wrap a message which needs forwarding.
     msg_queue: VecDeque<RoutingMessage>,
     peer_mgr: PeerManager,
     response_cache: Box<Cache>,
@@ -1145,6 +1146,8 @@ impl Node {
         self.send_routing_message(request_msg)
     }
 
+    // Context: we're a new node joining a group. This message should have been
+    // sent by each node in the target group with the new node name and routing table.
     fn handle_get_node_name_response(&mut self,
                                      relocated_id: PublicId,
                                      groups: Vec<(Prefix<XorName>, Vec<PublicId>)>,
@@ -1174,12 +1177,15 @@ impl Node {
     }
 
     // Received by Y; From X -> Y
+    // Context: we're part of the `NaeManager` for the new name of a node
+    // (i.e. a node is joining our group). Send the node our routing table.
     fn handle_expect_close_node_request(&mut self,
                                         expect_id: PublicId,
                                         client_auth: Authority,
                                         message_id: MessageId)
                                         -> Result<(), RoutingError> {
         if expect_id == *self.full_id.public_id() {
+            // If we're the joining node: stop
             return Ok(());
         }
 
@@ -1187,8 +1193,10 @@ impl Node {
         if let Some((_, timestamp)) = self.sent_network_name_to {
             if (now - timestamp).as_secs() <= SENT_NETWORK_NAME_TIMEOUT_SECS {
                 return Ok(()); // Not sending node name, as we are already waiting for a node.
+            } else {
+                // Timeout: forget last node we were waiting for
+                self.sent_network_name_to = None;
             }
-            self.sent_network_name_to = None;
         }
 
         // TODO - do we need to reply if `expect_id` triggers a failure here?

@@ -159,7 +159,8 @@ impl Stats {
         self.msg_total_bytes += len as u64;
     }
 
-    /// Increment the total message count, and if divisible by 100, log a message with the counts.
+    /// Increments the total message count, and if the count is divisible by
+    /// `MSG_LOG_COUNT` logs a message with the counts.
     fn increment_msg_total(&mut self) {
         self.msg_total += 1;
         if self.msg_total % MSG_LOG_COUNT == 0 {

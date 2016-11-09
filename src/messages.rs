@@ -382,6 +382,52 @@ impl RoutingMessage {
 }
 
 /// The routing message types
+///
+/// # The bootstrap process
+///
+///
+/// ## Bootstrapping a client
+///
+/// A newly created `Core`, A, starts in `Disconnected` state and tries to establish a connection to
+/// any node B of the network via Crust. When successful, i. e. when receiving an `OnConnect` event,
+/// it moves to the `Bootstrapping` state.
+///
+/// A now sends a `ClientIdentify` message to B, containing A's signed public ID. B verifies the
+/// signature and responds with a `BootstrapIdentify`, containing B's public ID. Once it receives
+/// that, A goes into the `Client` state and uses B as its proxy to the network.
+///
+/// A can now exchange messages with any `Authority`. This completes the bootstrap process for
+/// clients.
+///
+///
+/// ## Becoming a node
+///
+/// If A wants to become a full routing node (`client_restriction == false`), it needs to relocate,
+/// i. e. change its name to a value chosen by the network, and then add its peers to its routing
+/// table and get added to their routing tables.
+///
+///
+/// ### Getting a new network name from the `NaeManager`
+///
+/// Once in `Client` state, A sends a `GetNodeName` request to the `NaeManager` group authority X
+/// of A's current name. X computes a new name and sends it in an `ExpectCloseNode` request to  the
+/// `NaeManager` Y of A's new name. Each member of Y caches A's public ID, and Y sends a
+/// `GetNodeName` response back to A, which includes the public IDs of the members of Y.
+///
+///
+/// ### Connecting to the close group
+///
+/// To the `ManagedNode` for each public ID it receives from members of Y, A sends its
+/// `ConnectionInfo`. It also caches the ID.
+///
+/// For each `ConnectionInfo` that a node Z receives from A, it decides whether it wants A in its
+/// routing table. If yes, and if A's ID is in its ID cache, Z sends its own `ConnectionInfo` back
+/// to A and also attempts to connect to A via Crust. A does the same, once it receives the
+/// `ConnectionInfo`.
+///
+/// Once the connection between A and Z is established and a Crust `OnConnect` event is raised,
+/// they exchange `NodeIdentify` messages and add each other to their routing tables. When A
+/// receives its first `NodeIdentify`, it finally moves to the `Node` state.
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
 pub enum MessageContent {
     // ---------- Internal ------------
@@ -395,7 +441,7 @@ pub enum MessageContent {
         /// The message's unique identifier.
         message_id: MessageId,
     },
-    /// Notify a joining node's `NodeManager` so that it expects a `GetCloseGroup` request from it.
+    /// Notify a joining node's `NaeManager` so that it expects a `GetCloseGroup` request from it.
     ExpectCloseNode {
         /// The joining node's `PublicId` (public keys and name)
         expect_id: PublicId,

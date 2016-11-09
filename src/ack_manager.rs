@@ -41,10 +41,12 @@ pub struct AckManager {
     received: MessageFilter<Ack>,
 }
 
+/// An identifier for a waiting-to-be-acknowledged message (a hash of the message).
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, RustcDecodable, RustcEncodable)]
 pub struct Ack(u64);
 
 impl AckManager {
+    /// Creates a new manager, with empty lists.
     pub fn new() -> Self {
         let expiry_duration = Duration::from_secs(EXPIRY_DURATION_SECS);
 
@@ -54,16 +56,20 @@ impl AckManager {
         }
     }
 
-    // Handle received ack.
+    // Handles a received ack (removes the corresponding message from the list of
+    // pending ones, and remembers that we have received this ack).
     pub fn receive(&mut self, ack: Ack) {
         let _ = self.pending.remove(&ack);
         let _ = self.received.insert(&ack);
     }
 
+    /// Did we receive this ack?
     pub fn did_receive(&mut self, ack: Ack) -> bool {
         self.received.contains(&ack)
     }
 
+    /// Adds a pending message; if another with the same `Ack` identifier exists,
+    /// this is removed and returned.
     pub fn add_to_pending(&mut self,
                           ack: Ack,
                           unacked_msg: UnacknowledgedMessage)
@@ -93,10 +99,12 @@ impl AckManager {
 
 #[cfg(feature = "use-mock-crust")]
 impl AckManager {
+    /// Are we waiting for any acks?
     pub fn has_pending(&self) -> bool {
         !self.pending.is_empty()
     }
 
+    /// Collects all time-out tokens.
     pub fn timer_tokens(&self) -> Vec<u64> {
         self.pending
             .iter()
