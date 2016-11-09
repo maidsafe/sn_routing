@@ -1,4 +1,4 @@
-# Routing.
+# Routing
 
 **Maintainer:** Andreas Fackler (andreas.fackler@maidsafe.net)
 
