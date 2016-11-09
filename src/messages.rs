@@ -247,7 +247,8 @@ impl SignedMessage {
         self.signatures.contains_key(pub_id)
     }
 
-    /// Appends the group list to the message, and removes all invalid signatures.
+    /// Appends the group list to the message. If this is the first group list, it also removes all
+    /// signatures which don't correspond to an entry in `group_list`.
     pub fn add_group_list(&mut self, group_list: GroupList) {
         if self.content.src.is_client() {
             return; // Clients are validated based on their names.
@@ -256,22 +257,25 @@ impl SignedMessage {
         // need to know their proxy's group to verify messages, and joining nodes will have to
         // store their new group lists from the beginning.
         if self.grp_lists.is_empty() && !group_list.pub_ids.is_empty() {
-            // Drop signatures not validated by the first group list.
-            let invalid_ids = self.signatures
+            // Drop signatures not associated with any members of the first group list.
+            let irrelevant_ids = self.signatures
                 .keys()
                 .filter(|pub_id| !group_list.pub_ids.contains(pub_id))
                 .cloned()
                 .collect_vec();
-            for invalid_id in invalid_ids {
-                let _ = self.signatures.remove(&invalid_id);
+            for irrelevant_id in irrelevant_ids {
+                let _ = self.signatures.remove(&irrelevant_id);
             }
         }
         self.grp_lists.push(group_list);
     }
 
-    /// Adds the given signature if it is new, without validating it.
+    /// Adds the given signature if it is new, without validating it. If the collection of group
+    /// lists isn't empty, the signature is only added if `pub_id` is a member of the first group
+    /// list.
     pub fn add_signature(&mut self, pub_id: PublicId, sig: sign::Signature) {
-        if self.content.src.is_group() {
+        if self.content.src.is_group() &&
+           self.grp_lists.first().map_or(true, |grp_list| grp_list.pub_ids.contains(&pub_id)) {
             let _ = self.signatures.insert(pub_id, sig);
         }
     }
@@ -530,9 +534,10 @@ impl Debug for HopMessage {
 impl Debug for SignedMessage {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter,
-               "SignedMessage {{ content: {:?}, {} signatures }}",
+               "SignedMessage {{ content: {:?}, grp_lists sizes: {:?}, signatures: {:?} }}",
                self.content,
-               self.signatures.len())
+               self.grp_lists.iter().map(|grp_list| grp_list.pub_ids.len()).collect_vec(),
+               self.signatures.keys().collect_vec())
     }
 }
 
@@ -1000,6 +1005,8 @@ mod tests {
     fn msg_signatures() {
         let full_id_0 = FullId::new();
         let full_id_1 = FullId::new();
+        let full_id_2 = FullId::new();
+        let irrelevant_full_id = FullId::new();
         let data_bytes: Vec<u8> = (0..10).map(|i| i as u8).collect();
         let data = Data::Immutable(ImmutableData::new(data_bytes));
         let user_msg = UserMessage::Request(Request::Put(data, MessageId::new()));
@@ -1012,11 +1019,31 @@ mod tests {
             dst: Authority::ClientManager(name),
             content: part,
         };
+
+        // Add a signature which will not correspond to an ID in the first group list.
         let mut signed_msg = unwrap!(SignedMessage::new(routing_message, &full_id_0));
+        assert_eq!(signed_msg.signatures.len(), 1);
+        let irrelevant_sig = match unwrap!(signed_msg.routing_message()
+            .to_signature(irrelevant_full_id.signing_private_key())) {
+            DirectMessage::MessageSignature(_, sig) => {
+                signed_msg.add_signature(*irrelevant_full_id.public_id(), sig);
+                sig
+            }
+            msg => panic!("Unexpected message: {:?}", msg),
+        };
+        assert_eq!(signed_msg.signatures.len(), 2);
+
+        // Check the irrelevant signature gets removed by `add_group_list()`.
         signed_msg.add_group_list(GroupList {
-            pub_ids: vec![*full_id_0.public_id(), *full_id_1.public_id()].into_iter().collect(),
+            pub_ids: vec![*full_id_0.public_id(), *full_id_1.public_id(), *full_id_2.public_id()]
+                .into_iter()
+                .collect(),
         });
+        assert_eq!(signed_msg.signatures.len(), 1);
+        assert!(!signed_msg.signatures.contains_key(irrelevant_full_id.public_id()));
         assert!(!signed_msg.is_fully_signed());
+
+        // Add a valid signature for ID 1 and an invalid one for ID 2
         match unwrap!(signed_msg.routing_message().to_signature(full_id_1.signing_private_key())) {
             DirectMessage::MessageSignature(hash, sig) => {
                 let serialised_msg = unwrap!(serialise(signed_msg.routing_message()));
@@ -1025,21 +1052,20 @@ mod tests {
             }
             msg => panic!("Unexpected message: {:?}", msg),
         }
+        let bad_sig = sign::Signature([0; sign::SIGNATUREBYTES]);
+        signed_msg.add_signature(*full_id_2.public_id(), bad_sig);
+        assert_eq!(signed_msg.signatures.len(), 3);
         assert!(signed_msg.is_fully_signed());
 
-        assert_eq!(signed_msg.signatures.len(), 2);
+        // Check the bad signature gets removed properly.
         signed_msg.remove_invalid_signatures();
         assert_eq!(signed_msg.signatures.len(), 2);
+        assert!(!signed_msg.signatures.contains_key(full_id_2.public_id()));
 
-        // Add a bad signature mapping and check that it gets removed properly
-        let bad_id = *FullId::new().public_id();
-        let bad_sig = sign::Signature([0; sign::SIGNATUREBYTES]);
-        signed_msg.add_signature(bad_id, bad_sig);
-        assert!(signed_msg.signatures.contains_key(&bad_id));
-        let len_before = signed_msg.signatures.len();
-        signed_msg.remove_invalid_signatures();
-        assert_eq!(signed_msg.signatures.len(), len_before - 1);
-        assert!(!signed_msg.signatures.contains_key(&bad_id));
+        // Check an irrelevant signature can't be added.
+        signed_msg.add_signature(*irrelevant_full_id.public_id(), irrelevant_sig);
+        assert_eq!(signed_msg.signatures.len(), 2);
+        assert!(!signed_msg.signatures.contains_key(irrelevant_full_id.public_id()));
     }
 
     #[test]

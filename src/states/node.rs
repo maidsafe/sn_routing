@@ -526,13 +526,21 @@ impl Node {
 
         let HopMessage { mut content, route, sent_to, .. } = hop_msg;
         let hop_pub_ids = if let Some(group) = self.peer_mgr.routing_table().get_group(&hop_name) {
-            self.peer_mgr.get_pub_ids(group).into_iter().collect()
+            self.peer_mgr.get_pub_ids(group).into_iter().collect::<BTreeSet<_>>()
         } else {
             return Err(RoutingError::UnknownConnection(peer_id));
         };
+        // TODO - If the hop group is our own group, we should add our own ID in some cases here.
+        //        However, we can't always do this (e.g. the first node of a new network won't
+        //        handle any of the second node's requests since adding its own ID will stop it
+        //        from ever accumulating).
+        // if self.peer_mgr.routing_table().our_group_prefix().matches(&hop_name) {
+        //     let _ = hop_pub_ids.insert(*self.full_id.public_id());
+        // }
         content.add_group_list(GroupList { pub_ids: hop_pub_ids });
         match self.sig_accumulator.add_message(content, route) {
             Some((signed_msg, route)) => {
+                println!("ACCUMULATED {:?}", signed_msg);
                 self.handle_signed_message(signed_msg, route, hop_name, sent_to)
             }
             None => Ok(()), // Has not accumulated yet.
@@ -1474,7 +1482,7 @@ impl Node {
             sent_by_us && src.is_group() &&
             !self.peer_mgr.routing_table().should_route_full_message(src.name(), route as usize);
         let raw_bytes = if send_sig {
-            // Not our turn to send the full group message. Only send a hash.
+            // Not our turn to send the full `RoutingMessage`. Only send a signature.
             let sign_key = self.full_id().signing_private_key();
             let direct_msg = try!(signed_msg.routing_message().to_signature(sign_key));
             try!(serialisation::serialise(&Message::Direct(direct_msg)))
@@ -1487,7 +1495,7 @@ impl Node {
             } else if let Some(&tunnel_id) = self.tunnels
                 .tunnel_for(&target_peer_id) {
                 let bytes = if send_sig {
-                    // Not our turn to send the full group message. Only send a hash.
+                    // Not our turn to send the full `RoutingMessage`. Only send a signature.
                     let sign_key = self.full_id().signing_private_key();
                     let message = Message::TunnelDirect {
                         content: try!(signed_msg.routing_message().to_signature(sign_key)),

@@ -51,7 +51,10 @@ macro_rules! expect_next_event {
             match $node.event_rx.try_recv() {
                 Ok($pattern) => break,
                 Ok(Event::Tick) => (),
-                other => panic!("Expected Ok({}), got {:?}", stringify!($pattern), other),
+                other => panic!("Expected Ok({}) at {}, got {:?}",
+                    stringify!($pattern),
+                    unwrap!($node.inner.name()),
+                    other),
             }
         }
     }
@@ -69,7 +72,10 @@ macro_rules! expect_any_event {
             match $node.event_rx.try_recv() {
                 Ok($pattern) if $guard => break,
                 Ok(_) => (),
-                other => panic!("Expected Ok({}), got {:?}", stringify!($pattern), other),
+                other => panic!("Expected Ok({}) at {}, got {:?}",
+                    stringify!($pattern),
+                    unwrap!($node.inner.name()),
+                    other),
             }
         }
     }
@@ -81,7 +87,9 @@ macro_rules! expect_no_event {
         match $node.event_rx.try_recv() {
             Ok(Event::Tick) => (),
             Err(mpsc::TryRecvError::Empty) => (),
-            other => panic!("Expected no event, got {:?}", other),
+            other => panic!("Expected no event at {}, got {:?}",
+                unwrap!($node.inner.name()),
+                other),
         }
     }
 }
@@ -1338,7 +1346,7 @@ fn response_caching() {
 
     let message_id = MessageId::new();
 
-    // The proxy node should have cached the data, so this reqeust should only
+    // The proxy node should have cached the data, so this request should only
     // hit the proxy node and not be relayed to the other nodes.
     unwrap!(clients[0].inner.send_get_request(dst, data_id, message_id));
 
