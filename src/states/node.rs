@@ -43,7 +43,7 @@ use signature_accumulator::SignatureAccumulator;
 use state_machine::Transition;
 use stats::Stats;
 use std::{fmt, iter};
-use std::collections::VecDeque;
+use std::collections::{BTreeSet, VecDeque};
 use std::fmt::{Debug, Formatter};
 use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
@@ -180,7 +180,7 @@ impl Node {
             if self.stats.cur_client_num > old_client_num {
                 self.stats.cumulative_client_num += self.stats.cur_client_num - old_client_num;
             }
-            info!("{:?} - Connected clients: {}, cumulative: {}",
+            info!(target: "stats", "{:?} - Connected clients: {}, cumulative: {}",
                   self,
                   self.stats.cur_client_num,
                   self.stats.cumulative_client_num);
@@ -189,7 +189,7 @@ impl Node {
            self.stats.tunnel_client_pairs != self.tunnels.client_count() {
             self.stats.tunnel_connections = self.tunnels.tunnel_count();
             self.stats.tunnel_client_pairs = self.tunnels.client_count();
-            info!("{:?} - Indirect connections: {}, tunneling for: {}",
+            info!(target: "stats", "{:?} - Indirect connections: {}, tunneling for: {}",
                   self,
                   self.stats.tunnel_connections,
                   self.stats.tunnel_client_pairs);
@@ -205,9 +205,9 @@ impl Node {
                                          self.crust_service.id(),
                                          self.stats.cur_routing_table_size);
                 let sep_str = iter::repeat('-').take(status_str.len()).collect::<String>();
-                log!(TABLE_LVL, " -{}- ", sep_str);
-                log!(TABLE_LVL, "| {} |", status_str);
-                log!(TABLE_LVL, " -{}- ", sep_str);
+                log!(target: "stats", TABLE_LVL, " -{}- ", sep_str);
+                log!(target: "stats", TABLE_LVL, "| {} |", status_str);
+                log!(target: "stats", TABLE_LVL, " -{}- ", sep_str);
             }
         }
     }
@@ -1731,7 +1731,7 @@ impl Node {
     }
 
     fn send_own_group_merge(&mut self,
-                            targets: Vec<Prefix<XorName>>,
+                            targets: BTreeSet<Prefix<XorName>>,
                             merge_details: OwnMergeDetails<XorName>,
                             src: Authority) {
         let mut groups = merge_details.groups
@@ -1761,7 +1761,7 @@ impl Node {
     }
 
     fn send_other_group_merge(&mut self,
-                              targets: Vec<Prefix<XorName>>,
+                              targets: BTreeSet<Prefix<XorName>>,
                               merge_details: OtherMergeDetails<XorName>,
                               src: Authority) {
         let group = self.peer_mgr.get_pub_ids(&merge_details.group).into_iter().collect_vec();
