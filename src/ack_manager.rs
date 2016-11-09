@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use error::RoutingError;
-use maidsafe_utilities;
+use maidsafe_utilities::{self, serialisation};
 use message_filter::MessageFilter;
 use messages::RoutingMessage;
 use std::collections::HashMap;
@@ -111,7 +111,7 @@ impl AckManager {
 
 impl Ack {
     pub fn compute(routing_msg: &RoutingMessage) -> Result<Ack, RoutingError> {
-        let hash_msg = try!(routing_msg.to_grp_msg_hash());
+        let hash_msg = try!(serialisation::serialise(routing_msg));
         Ok(Ack(maidsafe_utilities::big_endian_sip_hash(&hash_msg)))
     }
 }

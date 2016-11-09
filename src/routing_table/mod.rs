@@ -697,6 +697,14 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
     }
 
+    /// Returns the group matching the given `name`, if present.
+    pub fn get_group(&self, name: &T) -> Option<&HashSet<T>> {
+        if let Some(prefix) = self.find_group_prefix(name) {
+            return self.groups.get(&prefix);
+        }
+        None
+    }
+
     fn should_split_our_group(&self, our_group: &HashSet<T>) -> bool {
         // Count the number of names which will end up in our group if it is split (this
         // implies common prefix is 1 longer than existing prefix).
@@ -797,13 +805,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         if merging_our_group {
             self.our_group_prefix = *new_prefix;
         }
-    }
-
-    fn get_group(&self, name: &T) -> Option<&HashSet<T>> {
-        if let Some(prefix) = self.find_group_prefix(name) {
-            return self.groups.get(&prefix);
-        }
-        None
     }
 
     fn get_mut_group(&mut self, name: &T) -> Option<&mut HashSet<T>> {
@@ -1057,7 +1058,6 @@ mod tests {
 
         let unknown_distant_name = unwrap!(unknown_distant_name);
         // These numbers depend on distribution of names
-        println!("{:?}", table);
         let num_known_nodes = 104;
         let num_groups = 8;
         let len_our_group = 13;

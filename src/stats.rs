@@ -38,6 +38,7 @@ pub struct Stats {
 
     msg_direct_node_identify: usize,
     msg_direct_new_node: usize,
+    msg_direct_sig: usize,
 
     msg_get: usize,
     msg_put: usize,
@@ -68,7 +69,6 @@ pub struct Stats {
     msg_other_group_merge: usize,
     msg_get_node_name_rsp: usize,
     msg_ack: usize,
-    msg_hash: usize,
 
     msg_other: usize,
 
@@ -139,7 +139,6 @@ impl Stats {
             MessageContent::OtherGroupMerge { .. } => self.msg_other_group_merge += 1,
             MessageContent::GetNodeNameResponse { .. } => self.msg_get_node_name_rsp += 1,
             MessageContent::Ack(..) => self.msg_ack += 1,
-            MessageContent::GroupMessageHash(..) => self.msg_hash += 1,
             MessageContent::UserMessagePart { .. } => return, // Counted as request/response.
         }
         self.increment_msg_total();
@@ -150,6 +149,7 @@ impl Stats {
         match *msg {
             DirectMessage::NodeIdentify { .. } => self.msg_direct_node_identify += 1,
             DirectMessage::NewNode(_) => self.msg_direct_new_node += 1,
+            DirectMessage::MessageSignature(..) => self.msg_direct_sig += 1,
             _ => self.msg_other += 1,
         }
         self.increment_msg_total();
@@ -170,12 +170,13 @@ impl Stats {
                   self.msg_other,
                   self.routes,
                   self.unacked_msgs);
-            info!("Stats - Direct - NodeIdentify: {}, NewNode: {}",
+            info!("Stats - Direct - NodeIdentify: {}, NewNode: {}, MessageSignature: {}",
                   self.msg_direct_node_identify,
-                  self.msg_direct_new_node);
+                  self.msg_direct_new_node,
+                  self.msg_direct_sig);
             info!("Stats - Hops (Request/Response) - GetNodeName: {}/{}, ExpectCloseNode: {}, \
                    GetCloseGroup: {}/{}, GroupSplit: {}, OwnGroupMerge: {}, OtherGroupMerge: {}, \
-                   ConnectionInfo: {}, Ack: {}, GroupMessageHash: {}",
+                   ConnectionInfo: {}, Ack: {}",
                   self.msg_get_node_name,
                   self.msg_get_node_name_rsp,
                   self.msg_expect_close_node,
@@ -185,8 +186,7 @@ impl Stats {
                   self.msg_own_group_merge,
                   self.msg_other_group_merge,
                   self.msg_connection_info,
-                  self.msg_ack,
-                  self.msg_hash);
+                  self.msg_ack);
             info!("Stats - User (Request/Success/Failure) - Get: {}/{}/{}, Put: {}/{}/{}, \
                    Post: {}/{}/{}, Delete: {}/{}/{}, Append: {}/{}/{}, GetAccountInfo: {}/{}/{}, \
                    Refresh: {}",
