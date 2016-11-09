@@ -42,7 +42,7 @@ use routing_message_filter::RoutingMessageFilter;
 use state_machine::Transition;
 use stats::Stats;
 use std::{fmt, iter};
-use std::collections::VecDeque;
+use std::collections::{BTreeSet, VecDeque};
 use std::fmt::{Debug, Formatter};
 use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
@@ -1694,7 +1694,7 @@ impl Node {
     }
 
     fn send_own_group_merge(&mut self,
-                            targets: Vec<Prefix<XorName>>,
+                            targets: BTreeSet<Prefix<XorName>>,
                             merge_details: OwnMergeDetails<XorName>,
                             src: Authority) {
         let mut groups = merge_details.groups
@@ -1724,7 +1724,7 @@ impl Node {
     }
 
     fn send_other_group_merge(&mut self,
-                              targets: Vec<Prefix<XorName>>,
+                              targets: BTreeSet<Prefix<XorName>>,
                               merge_details: OtherMergeDetails<XorName>,
                               src: Authority) {
         let group = self.peer_mgr.get_pub_ids(&merge_details.group).into_iter().collect_vec();

@@ -30,8 +30,8 @@ use routing_table::xorable::Xorable;
 
 const MIN_GROUP_SIZE: usize = 8;
 
-type OwnMergeInfo = (Vec<Prefix<u64>>, OwnMergeDetails<u64>);
-type OtherMergeInfo = (Vec<Prefix<u64>>, OtherMergeDetails<u64>);
+type OwnMergeInfo = (BTreeSet<Prefix<u64>>, OwnMergeDetails<u64>);
+type OtherMergeInfo = (BTreeSet<Prefix<u64>>, OtherMergeDetails<u64>);
 
 /// A simulated network, consisting of a set of "nodes" (routing tables) and a random number
 /// generator.
@@ -144,16 +144,14 @@ impl Network {
                 for target in targets {
                     let target_node = unwrap!(self.nodes.get_mut(&target));
                     match target_node.merge_own_group(merge_own_details.clone()) {
-                        OwnMergeState::Initialised { mut targets, merge_details } => {
-                            targets.sort();
+                        OwnMergeState::Initialised { targets, merge_details } => {
                             Network::store_merge_info(&mut merge_own_info,
                                                       *target_node.our_group_prefix(),
                                                       (targets, merge_details));
                         }
                         OwnMergeState::Ongoing |
                         OwnMergeState::AlreadyMerged => (),
-                        OwnMergeState::Completed { mut targets, merge_details } => {
-                            targets.sort();
+                        OwnMergeState::Completed { targets, merge_details } => {
                             Network::store_merge_info(&mut merge_other_info,
                                                       *target_node.our_group_prefix(),
                                                       (targets, merge_details));
@@ -182,7 +180,7 @@ impl Network {
         }
     }
 
-    fn nodes_covered_by_prefixes(&self, prefixes: &[Prefix<u64>]) -> Vec<u64> {
+    fn nodes_covered_by_prefixes(&self, prefixes: &BTreeSet<Prefix<u64>>) -> Vec<u64> {
         self.nodes
             .keys()
             .filter(|&name| prefixes.iter().any(|prefix| prefix.matches(name)))
