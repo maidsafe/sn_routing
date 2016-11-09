@@ -17,12 +17,14 @@
 
 mod append_types;
 mod immutable_data;
+mod map_data;
 mod priv_appendable_data;
 mod pub_appendable_data;
 mod structured_data;
 
 pub use self::append_types::{AppendWrapper, AppendedData, Filter};
 pub use self::immutable_data::{ImmutableData, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES};
+pub use self::map_data::MapData;
 pub use self::pub_appendable_data::{MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES, PubAppendableData};
 pub use self::priv_appendable_data::{MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES, PrivAppendableData,
                                      PrivAppendedData};
@@ -53,6 +55,8 @@ pub enum Data {
     PubAppendable(PubAppendableData),
     /// `PrivAppendableData` data type.
     PrivAppendable(PrivAppendableData),
+    /// `MapData` data type.
+    Map(MapData),
 }
 
 impl Data {
@@ -63,6 +67,7 @@ impl Data {
             Data::Immutable(ref data) => data.name(),
             Data::PubAppendable(ref data) => data.name(),
             Data::PrivAppendable(ref data) => data.name(),
+            Data::Map(ref data) => data.name(),
         }
     }
 
@@ -73,6 +78,7 @@ impl Data {
             Data::Immutable(ref data) => data.identifier(),
             Data::PubAppendable(ref data) => data.identifier(),
             Data::PrivAppendable(ref data) => data.identifier(),
+            Data::Map(ref data) => data.identifier(),
         }
     }
 
@@ -83,6 +89,7 @@ impl Data {
             Data::PrivAppendable(ref data) => data.validate_size(),
             Data::PubAppendable(ref data) => data.validate_size(),
             Data::Structured(ref data) => data.validate_size(),
+            Data::Map(ref data) => data.validate_size(),
         }
     }
 }
@@ -98,6 +105,8 @@ pub enum DataIdentifier {
     PubAppendable(XorName),
     /// Request for private appendable data.
     PrivAppendable(XorName),
+    /// Request for map data.
+    Map(XorName),
 }
 
 impl Debug for Data {
@@ -107,6 +116,7 @@ impl Debug for Data {
             Data::Immutable(ref data) => data.fmt(formatter),
             Data::PubAppendable(ref data) => data.fmt(formatter),
             Data::PrivAppendable(ref data) => data.fmt(formatter),
+            Data::Map(ref data) => data.fmt(formatter),
         }
     }
 }
@@ -118,7 +128,8 @@ impl DataIdentifier {
             DataIdentifier::Structured(ref name, _) |
             DataIdentifier::Immutable(ref name) |
             DataIdentifier::PubAppendable(ref name) |
-            DataIdentifier::PrivAppendable(ref name) => name,
+            DataIdentifier::PrivAppendable(ref name) |
+            DataIdentifier::Map(ref name) => name
         }
     }
 }
