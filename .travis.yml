@@ -23,7 +23,8 @@ cache:
   directories:
     - $HOME/elfutils
 script:
-  - curl -sSL https://github.com/maidsafe/QA/raw/master/Bash%20Scripts/Travis/build_and_run_tests.sh | bash
+  - curl -sSLO https://github.com/maidsafe/QA/raw/master/Bash%20Scripts/Travis/build_and_run_tests.sh
+  - travis_wait 40 . build_and_run_tests.sh
   - cd $TRAVIS_BUILD_DIR && cargo build --release --example key_value_store
   - cd $TRAVIS_BUILD_DIR && cargo build --release --example ci_test
   # - cd $TRAVIS_BUILD_DIR && cargo run --release --example ci_test > output.log
