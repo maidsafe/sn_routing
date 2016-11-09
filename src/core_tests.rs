@@ -332,7 +332,9 @@ fn create_connected_nodes_with_cache(network: &Network,
             }
         }
 
-        assert!(node_added_count >= n, "Got only {} NodeAdded events.");
+        assert!(node_added_count >= n,
+                "Got only {} NodeAdded events.",
+                node_added_count);
     }
 
     nodes

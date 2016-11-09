@@ -63,12 +63,10 @@ impl Authority {
 
     /// Returns true if a client, false if a node or group.
     pub fn is_client(&self) -> bool {
-        match *self {
-            Authority::ClientManager(_) |
-            Authority::NaeManager(_) |
-            Authority::NodeManager(_) |
-            Authority::ManagedNode(_) => false,
-            Authority::Client { .. } => true,
+        if let Authority::Client { .. } = *self {
+            true
+        } else {
+            false
         }
     }
 
