@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use super::{DataIdentifier, NO_OWNER_PUB_KEY, verify_detached};
+use super::{DataIdentifier, NO_OWNER_PUB_KEY, verify_signatures};
 use error::RoutingError;
 use maidsafe_utilities::serialisation::{serialise, serialised_size};
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
@@ -125,26 +125,7 @@ impl StructuredData {
             return Err(RoutingError::UnknownMessageType);
         }
         let data = try!(other.data_to_sign());
-        self.verify_signatures(&data, &other.signatures)
-    }
-
-    /// Confirms *unique and valid* signatures are more than 50% of total owners.
-    fn verify_signatures(&self,
-                         data: &[u8],
-                         signatures: &BTreeMap<PublicKey, Signature>)
-                         -> Result<(), RoutingError> {
-        // Refuse when not enough signatures found
-        if signatures.len() < (self.owners.len() + 1) / 2 {
-            return Err(RoutingError::NotEnoughSignatures);
-        }
-
-        let check_signature =
-            |pub_key, sig| self.owners.contains(&pub_key) && verify_detached(&sig, data, &pub_key);
-        // Refuse if there is any invalid signature
-        if !signatures.iter().all(|(pub_key, sig)| check_signature(*pub_key, *sig)) {
-            return Err(RoutingError::FailedSignature);
-        }
-        Ok(())
+        verify_signatures(&self.owners, &data, &other.signatures)
     }
 
     fn data_to_sign(&self) -> Result<Vec<u8>, RoutingError> {
