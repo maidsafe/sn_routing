@@ -313,18 +313,18 @@ fn create_connected_nodes_with_cache(network: &Network,
     for node in &nodes {
         expect_next_event!(node, Event::Connected);
 
-        for _ in 0..n {
-            expect_next_event!(node, Event::NodeAdded(..))
-        }
+        let mut node_added_count = 0;
 
         while let Ok(event) = node.event_rx.try_recv() {
             match event {
-                Event::NodeAdded(..) |
+                Event::NodeAdded(..) => node_added_count += 1,
                 Event::GroupSplit(..) |
                 Event::Tick => (),
                 event => panic!("Got unexpected event: {:?}", event),
             }
         }
+
+        assert!(node_added_count >= n, "Got only {} NodeAdded events.");
     }
 
     nodes
@@ -566,7 +566,7 @@ fn equal_group_size_nodes() {
 
 #[test]
 fn more_than_group_size_nodes() {
-    test_nodes(MIN_GROUP_SIZE * 2);
+    test_nodes(MIN_GROUP_SIZE * 6);
 }
 
 #[test]
