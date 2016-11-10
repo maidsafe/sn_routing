@@ -17,10 +17,11 @@
 
 use maidsafe_utilities::serialisation::{serialise, serialised_size};
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
-use super::{AppendWrapper, AppendedData, DataIdentifier, Filter, NO_OWNER_PUB_KEY, verify_detached};
+use super::{AppendWrapper, AppendedData, DataIdentifier, Filter, NO_OWNER_PUB_KEY,
+            verify_signatures};
 use error::RoutingError;
 
 /// Maximum allowed size for a public appendable data to grow to
@@ -39,16 +40,14 @@ pub struct PubAppendableData {
     pub name: XorName,
     /// The version, i.e. the number of times this has been updated by a `Post` request.
     pub version: u64,
-    /// The keys of the current owners that have the right to modify this data.
-    pub current_owner_keys: Vec<PublicKey>,
-    /// The keys of the owners of the chunk's previous version.
-    pub previous_owner_keys: Vec<PublicKey>,
     /// The filter defining who is allowed to append items.
     pub filter: Filter,
     /// A collection of previously deleted data items.
     pub deleted_data: BTreeSet<AppendedData>,
-    /// The signatures of the above fields by the previous owners, confirming the last update.
-    pub previous_owner_signatures: Vec<Signature>,
+    /// The pub_keys of the current owners of the chunk's.
+    pub owners: BTreeSet<PublicKey>,
+    /// The pub_keys and signatures of the owners of the chunk's current version.
+    pub signatures: BTreeMap<PublicKey, Signature>,
     /// The collection of appended data items. These are not signed by the owners, as they change
     /// even between `Post`s.
     pub data: BTreeSet<AppendedData>,
@@ -58,31 +57,23 @@ impl PubAppendableData {
     /// Creates a new `PubAppendableData` signed with `signing_key`.
     pub fn new(name: XorName,
                version: u64,
-               current_owner_keys: Vec<PublicKey>,
-               previous_owner_keys: Vec<PublicKey>,
+               owners: BTreeSet<PublicKey>,
                deleted_data: BTreeSet<AppendedData>,
-               filter: Filter,
-               signing_key: Option<&SecretKey>)
+               filter: Filter)
                -> Result<PubAppendableData, RoutingError> {
-        if current_owner_keys.len() > 1 || previous_owner_keys.len() > 1 {
+        if owners.len() > 1 {
             return Err(RoutingError::InvalidOwners);
         }
 
-        let mut pub_appendable_data = PubAppendableData {
+        Ok(PubAppendableData {
             name: name,
             version: version,
-            current_owner_keys: current_owner_keys,
-            previous_owner_keys: previous_owner_keys,
             filter: filter,
             deleted_data: deleted_data,
-            previous_owner_signatures: vec![],
+            owners: owners,
+            signatures: BTreeMap::new(),
             data: BTreeSet::new(),
-        };
-
-        if let Some(key) = signing_key {
-            let _ = try!(pub_appendable_data.add_signature(key));
-        }
-        Ok(pub_appendable_data)
+        })
     }
 
     /// Updates this data item with the given updated version if the update is valid, otherwise
@@ -99,11 +90,10 @@ impl PubAppendableData {
 
         self.name = other.name;
         self.version = other.version;
-        self.previous_owner_keys = other.previous_owner_keys;
-        self.current_owner_keys = other.current_owner_keys;
         self.filter = other.filter;
         self.deleted_data = other.deleted_data;
-        self.previous_owner_signatures = other.previous_owner_signatures;
+        self.owners = other.owners;
+        self.signatures = other.signatures;
         self.data.extend(other.data);
         for ad in &self.deleted_data {
             let _ = self.data.remove(ad);
@@ -155,56 +145,17 @@ impl PubAppendableData {
     pub fn validate_self_against_successor(&self,
                                            other: &PubAppendableData)
                                            -> Result<(), RoutingError> {
-        if other.current_owner_keys.len() > 1 ||
-           other.previous_owner_keys.len() > 1 ||
-           other.current_owner_keys.contains(&NO_OWNER_PUB_KEY) {
+        if other.owners.len() > 1 ||
+           other.signatures.len() > 1 ||
+           self.owners.contains(&NO_OWNER_PUB_KEY) {
             return Err(RoutingError::InvalidOwners);
         }
-        let owner_keys_to_match = if other.previous_owner_keys.is_empty() {
-            &other.current_owner_keys
-        } else {
-            &other.previous_owner_keys
-        };
 
-        if other.name != self.name || other.version != self.version + 1 ||
-           *owner_keys_to_match != self.current_owner_keys {
+        if other.name != self.name || other.version != self.version + 1 {
             return Err(RoutingError::UnknownMessageType);
         }
-        other.verify_previous_owner_signatures(owner_keys_to_match)
-    }
-
-    /// Confirms *unique and valid* owner_signatures are more than 50% of total owners.
-    fn verify_previous_owner_signatures(&self,
-                                        owner_keys: &[PublicKey])
-                                        -> Result<(), RoutingError> {
-        // Refuse any duplicate previous_owner_signatures (people can have many owner keys)
-        // Any duplicates invalidates this type.
-        for (i, sig) in self.previous_owner_signatures.iter().enumerate() {
-            for sig_check in &self.previous_owner_signatures[..i] {
-                if sig == sig_check {
-                    return Err(RoutingError::DuplicateSignatures);
-                }
-            }
-        }
-
-        // Refuse when not enough previous_owner_signatures found
-        if self.previous_owner_signatures.len() < (owner_keys.len() + 1) / 2 {
-            return Err(RoutingError::NotEnoughSignatures);
-        }
-
-        let data = try!(self.data_to_sign());
-        // Count valid previous_owner_signatures and refuse if quantity is not enough
-
-        let check_all_keys =
-            |&sig| owner_keys.iter().any(|pub_key| verify_detached(&sig, &data, pub_key));
-
-        if self.previous_owner_signatures
-            .iter()
-            .filter(|&sig| check_all_keys(sig))
-            .count() < (owner_keys.len() / 2 + owner_keys.len() % 2) {
-            return Err(RoutingError::NotEnoughSignatures);
-        }
-        Ok(())
+        let data = try!(other.data_to_sign());
+        verify_signatures(&self.owners, &data, &other.signatures)
     }
 
     fn data_to_sign(&self) -> Result<Vec<u8>, RoutingError> {
@@ -212,8 +163,7 @@ impl PubAppendableData {
         // handling is OK
         let sd = SerialisablePubAppendableData {
             name: self.name,
-            previous_owner_keys: &self.previous_owner_keys,
-            current_owner_keys: &self.current_owner_keys,
+            owners: &self.owners,
             version: self.version.to_string().as_bytes().to_vec(),
             filter: &self.filter,
             deleted_data: &self.deleted_data,
@@ -222,34 +172,27 @@ impl PubAppendableData {
         serialise(&sd).map_err(From::from)
     }
 
-    /// Adds a signature with the given `secret_key` to the `previous_owner_signatures` and returns
-    /// the number of signatures that are still required. If more than 50% of the previous owners
+    /// Adds a signature with the given `keys.1` to the `signatures` and returns
+    /// the number of signatures that are still required. If more than 50% of the owners
     /// have signed, 0 is returned and validation is complete.
-    pub fn add_signature(&mut self, secret_key: &SecretKey) -> Result<usize, RoutingError> {
+    pub fn add_signature(&mut self, keys: (&PublicKey, &SecretKey)) -> Result<usize, RoutingError> {
+        if !self.signatures.is_empty() {
+            return Err(RoutingError::InvalidOwners);
+        }
         let data = try!(self.data_to_sign());
-        let sig = sign::sign_detached(&data, secret_key);
-        self.previous_owner_signatures.push(sig);
-        let owner_keys = if self.previous_owner_keys.is_empty() {
-            &self.current_owner_keys
-        } else {
-            &self.previous_owner_keys
-        };
-        Ok(((owner_keys.len() / 2) + 1).saturating_sub(self.previous_owner_signatures.len()))
+        let sig = sign::sign_detached(&data, keys.1);
+        let _ = self.signatures.insert(*keys.0, sig);
+        Ok(((self.owners.len() / 2) + 1).saturating_sub(self.signatures.len()))
     }
 
     /// Overwrite any existing signatures with the new signatures provided.
-    pub fn replace_signatures(&mut self, new_signatures: Vec<Signature>) {
-        self.previous_owner_signatures = new_signatures;
+    pub fn replace_signatures(&mut self, new_signatures: BTreeMap<PublicKey, Signature>) {
+        self.signatures = new_signatures;
     }
 
     /// Get the data
     pub fn get_data(&self) -> &BTreeSet<AppendedData> {
         &self.data
-    }
-
-    /// Get the previous owner keys
-    pub fn get_previous_owner_keys(&self) -> &Vec<PublicKey> {
-        &self.previous_owner_keys
     }
 
     /// Get the version
@@ -258,13 +201,13 @@ impl PubAppendableData {
     }
 
     /// Get the current owner keys
-    pub fn get_owner_keys(&self) -> &Vec<PublicKey> {
-        &self.current_owner_keys
+    pub fn get_owners(&self) -> &BTreeSet<PublicKey> {
+        &self.owners
     }
 
     /// Get previous owner signatures
-    pub fn get_previous_owner_signatures(&self) -> &Vec<Signature> {
-        &self.previous_owner_signatures
+    pub fn get_signatures(&self) -> &BTreeMap<PublicKey, Signature> {
+        &self.signatures
     }
 
     /// Return true if the size is valid
@@ -275,17 +218,17 @@ impl PubAppendableData {
 
 impl Debug for PubAppendableData {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        let previous_owner_keys: Vec<String> = self.previous_owner_keys
+        let previous_owner_keys: Vec<String> = self.signatures
+            .iter()
+            .map(|(pub_key, _)| ::utils::format_binary_array(&pub_key.0))
+            .collect();
+        let current_owner_keys: Vec<String> = self.owners
             .iter()
             .map(|pub_key| ::utils::format_binary_array(&pub_key.0))
             .collect();
-        let current_owner_keys: Vec<String> = self.current_owner_keys
+        let previous_owner_signatures: Vec<String> = self.signatures
             .iter()
-            .map(|pub_key| ::utils::format_binary_array(&pub_key.0))
-            .collect();
-        let previous_owner_signatures: Vec<String> = self.previous_owner_signatures
-            .iter()
-            .map(|signature| ::utils::format_binary_array(&signature.0[..]))
+            .map(|(_, sig)| ::utils::format_binary_array(&sig.0[..]))
             .collect();
         write!(formatter,
                "PubAppendableData {{ name: {}, previous_owner_keys: {:?}, \
@@ -302,8 +245,7 @@ impl Debug for PubAppendableData {
 #[derive(RustcEncodable)]
 struct SerialisablePubAppendableData<'a> {
     name: XorName,
-    previous_owner_keys: &'a [PublicKey],
-    current_owner_keys: &'a [PublicKey],
+    owners: &'a BTreeSet<PublicKey>,
     version: Vec<u8>,
     filter: &'a Filter,
     deleted_data: &'a BTreeSet<AppendedData>,
