@@ -381,6 +381,25 @@ impl RoutingMessage {
     }
 }
 
+/// `MessageContent::ConnectionInfo` details, as a stand-alone type.
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
+pub struct ConnectionInfo {
+    /// Encrypted Crust connection info.
+    pub encrypted_connection_info: Vec<u8>,
+    /// Nonce used to provide a salt in the encrypted message.
+    pub nonce_bytes: [u8; box_::NONCEBYTES],
+    // TODO: The receiver should have that in the node_id_cache.
+    /// The sender's public ID.
+    pub public_id: PublicId,
+}
+
+impl ConnectionInfo {
+    /// Create a `MessageContent` out of this info
+    pub fn into_msg(self) -> MessageContent {
+        MessageContent::ConnectionInfo(self)
+    }
+}
+
 /// The routing message types
 ///
 /// # The bootstrap process
@@ -456,15 +475,7 @@ pub enum MessageContent {
     /// `NodeManager`'s members.
     GetCloseGroup(MessageId),
     /// Send our connection_info encrypted to a node we wish to connect to and have the keys for.
-    ConnectionInfo {
-        /// Encrypted Crust connection info.
-        encrypted_connection_info: Vec<u8>,
-        /// Nonce used to provide a salt in the encrypted message.
-        nonce_bytes: [u8; box_::NONCEBYTES],
-        // TODO: The receiver should have that in the node_id_cache.
-        /// The sender's public ID.
-        public_id: PublicId,
-    },
+    ConnectionInfo(ConnectionInfo),
     /// Reply with the new `PublicId` for the joining node.
     ///
     /// Sent from the `NodeManager` to the `Client`.
@@ -604,7 +615,7 @@ impl Debug for MessageContent {
                        message_id)
             }
             MessageContent::GetCloseGroup(id) => write!(formatter, "GetCloseGroup({:?})", id),
-            MessageContent::ConnectionInfo { .. } => write!(formatter, "ConnectionInfo {{ .. }}"),
+            MessageContent::ConnectionInfo(_) => write!(formatter, "ConnectionInfo {{ .. }}"),
             MessageContent::GetNodeNameResponse { ref relocated_id,
                                                   ref groups,
                                                   ref message_id } => {

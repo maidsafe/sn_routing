@@ -132,7 +132,7 @@ impl Stats {
             MessageContent::GetNodeName { .. } => self.msg_get_node_name += 1,
             MessageContent::ExpectCloseNode { .. } => self.msg_expect_close_node += 1,
             MessageContent::GetCloseGroup(..) => self.msg_get_close_group += 1,
-            MessageContent::ConnectionInfo { .. } => self.msg_connection_info += 1,
+            MessageContent::ConnectionInfo(_) => self.msg_connection_info += 1,
             MessageContent::GetCloseGroupResponse { .. } => self.msg_get_close_group_rsp += 1,
             MessageContent::GroupSplit(..) => self.msg_group_split += 1,
             MessageContent::OwnGroupMerge { .. } => self.msg_own_group_merge += 1,
