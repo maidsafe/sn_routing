@@ -461,7 +461,7 @@ fn gen_bytes<R: Rng>(rng: &mut R, size: usize) -> Vec<u8> {
 
 // Generate random immutable data with the given payload length.
 fn gen_immutable_data<R: Rng>(rng: &mut R, size: usize) -> Data {
-    Data::Immutable(ImmutableData::new(gen_bytes(rng, 1024)))
+    Data::Immutable(ImmutableData::new(gen_bytes(rng, size)))
 }
 
 // Check that the given node received a Get request with the given details.
