@@ -18,6 +18,8 @@
 /// Mock crust main module. This module provides mock version of all public
 /// types and methods of crust.
 pub mod crust;
+/// Helper functions/structs for integration tests
+pub mod utils;
 mod support;
 
 #[cfg(test)]
