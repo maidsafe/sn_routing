@@ -18,6 +18,7 @@
 use routing_table::Xorable;
 use rust_sodium::crypto::hash::sha256;
 use std::fmt::Write;
+use std::iter;
 use xor_name::XorName;
 
 /// Format a vector of bytes as a hexadecimal number, ellipsising all but the first and last three.
@@ -44,33 +45,27 @@ pub fn format_binary_array<V: AsRef<[u8]>>(input: V) -> String {
 
 /// Compute the relocated name of a client with the given original name.
 ///
-/// This is used by each member of the client's `ClientManager` group to choose a new name for the
-/// client. On the one hand, sufficiently many of them need to agree on the new name to reach quorum
-/// size, on the other hand, the client shall not be able to predict it so that it cannot choose
-/// who will be its new `NodeManager` after relocation.
+/// This is used by each member of a joining node's group to choose a new name for the node. On the
+/// one hand, sufficiently many of them need to agree on the new name to reach quorum size, on the
+/// other hand, the joining node shall not be able to predict it so that it cannot choose where to
+/// be relocated to.
 ///
 /// To meet these requirements, the relocated name is computed from the two closest nodes and the
-/// client's original name: It is the SHA512 hash of:
+/// joining node's original name: It is the SHA256 hash of:
 ///
 /// [`original_name`, 1st closest node id, 2nd closest node id]
 ///
 /// In case of only one close node provided (in initial network setup scenario):
 ///
 /// [`original_name`, 1st closest node id]
-pub fn calculate_relocated_name(mut close_nodes: Vec<XorName>,
-                                original_name: &XorName)
-                                -> Result<XorName, ::error::RoutingError> {
+pub fn calculate_relocated_name(mut close_nodes: Vec<XorName>, original_name: &XorName) -> XorName {
     close_nodes.sort_by(|a, b| original_name.cmp_distance(a, b));
-    close_nodes.truncate(2);
-    close_nodes.insert(0, *original_name);
-
-    let mut combined: Vec<u8> = Vec::new();
-    for node_id in close_nodes {
-        for i in &node_id.0 {
-            combined.push(*i);
-        }
-    }
-    Ok(XorName(sha256::hash(&combined).0))
+    let combined: Vec<u8> = iter::once(original_name)
+        .chain(close_nodes.iter().take(2))
+        .flat_map(|close_node| close_node.0.into_iter())
+        .cloned()
+        .collect();
+    XorName(sha256::hash(&combined).0)
 }
 
 #[cfg(test)]
@@ -83,18 +78,14 @@ mod tests {
     use xor_name::XorName;
 
     #[test]
-    #[ignore]
     fn calculate_relocated_name() {
         let original_name: XorName = rand::random();
-
-        // empty close nodes
-        assert!(super::calculate_relocated_name(Vec::new(), &original_name).is_err());
 
         // one entry
         let mut close_nodes_one_entry: Vec<XorName> = Vec::new();
         close_nodes_one_entry.push(rand::random());
         let actual_relocated_name_one_entry =
-            unwrap!(super::calculate_relocated_name(close_nodes_one_entry.clone(), &original_name));
+            super::calculate_relocated_name(close_nodes_one_entry.clone(), &original_name);
         assert!(original_name != actual_relocated_name_one_entry);
 
         let mut combined_one_node_vec: Vec<XorName> = Vec::new();
@@ -118,8 +109,8 @@ mod tests {
         for _ in 0..MIN_GROUP_SIZE {
             close_nodes.push(rand::random());
         }
-        let actual_relocated_name = unwrap!(super::calculate_relocated_name(close_nodes.clone(),
-                                                                            &original_name));
+        let actual_relocated_name = super::calculate_relocated_name(close_nodes.clone(),
+                                                                    &original_name);
         assert!(original_name != actual_relocated_name);
         close_nodes.sort_by(|a, b| original_name.cmp_distance(a, b));
         let first_closest = close_nodes[0];

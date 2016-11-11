@@ -23,6 +23,7 @@ use data::{AppendWrapper, Data, DataIdentifier};
 use error::RoutingError;
 use event::Event;
 use id::{FullId, PublicId};
+use itertools::Itertools;
 use lru_time_cache::LruCache;
 use maidsafe_utilities;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
@@ -31,12 +32,16 @@ use mock_crust::crust::PeerId;
 use routing_table::Prefix;
 use rust_sodium::crypto::{box_, sign};
 use rust_sodium::crypto::hash::sha256;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
+use std::iter;
 use std::time::Duration;
 use types::MessageId;
 use utils;
 use xor_name::XorName;
+
+/// The quorum, as a percentage of the group size.
+const QUORUM: usize = 60;
 
 /// The maximal length of a user message part, in bytes.
 const MAX_PART_LEN: usize = 20 * 1024;
@@ -95,6 +100,9 @@ impl Message {
 /// Allows routing to directly send specific messages between nodes.
 #[derive(RustcEncodable, RustcDecodable)]
 pub enum DirectMessage {
+    /// Sent from members of a group message's source authority to the first hop. The message will
+    /// only be relayed once enough signatures have been accumulated.
+    MessageSignature(sha256::Digest, sign::Signature),
     /// Sent from the bootstrap node to a client in response to `ClientIdentify`.
     BootstrapIdentify {
         /// The bootstrap node's keys and name.
@@ -147,12 +155,12 @@ impl DirectMessage {
 #[derive(RustcEncodable, RustcDecodable)]
 pub struct HopMessage {
     /// Wrapped signed message.
-    content: SignedMessage,
+    pub content: SignedMessage,
     /// Route number; corresponds to the index of the peer in the group of target peers being
     /// considered for the next hop.
-    route: u8,
+    pub route: u8,
     /// Every node this has already been sent to.
-    sent_to: Vec<XorName>,
+    pub sent_to: Vec<XorName>,
     /// Signature to be validated against the neighbouring sender's public key.
     signature: sign::Signature,
 }
@@ -162,14 +170,14 @@ impl HopMessage {
     pub fn new(content: SignedMessage,
                route: u8,
                sent_to: Vec<XorName>,
-               sign_key: &sign::SecretKey)
+               signing_key: &sign::SecretKey)
                -> Result<HopMessage, RoutingError> {
         let bytes_to_sign = try!(serialise(&content));
         Ok(HopMessage {
             content: content,
             route: route,
             sent_to: sent_to,
-            signature: sign::sign_detached(&bytes_to_sign, sign_key),
+            signature: sign::sign_detached(&bytes_to_sign, signing_key),
         })
     }
 
@@ -185,22 +193,13 @@ impl HopMessage {
             Err(RoutingError::FailedSignature)
         }
     }
+}
 
-    /// Returns the `SignedMessage` and the `name` of the previous routing node.
-    ///
-    /// Does not validate the message! [#verify] must be called to ensure that the sender is valid
-    /// and signed the message.
-    pub fn content(&self) -> &SignedMessage {
-        &self.content
-    }
-
-    pub fn route(&self) -> u8 {
-        self.route
-    }
-
-    pub fn sent_to(&self) -> &Vec<XorName> {
-        &self.sent_to
-    }
+/// A list of a group's public IDs, together with a list of signatures of a neighbouring group.
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
+pub struct GroupList {
+    // TODO(MAID-1677): pub signatures: BTreeSet<(PublicId, sign::Signature)>,
+    pub pub_ids: BTreeSet<PublicId>,
 }
 
 /// Wrapper around a routing message, signed by the originator of the message.
@@ -208,34 +207,83 @@ impl HopMessage {
 pub struct SignedMessage {
     /// A request or response type message.
     content: RoutingMessage,
-    /// Claimed public ID of a node or client.
-    ///
-    /// For clients this is easily verifiable since their name is computed from the ID. For nodes it
-    /// needs to be confirmed by their `NodeManager`.
-    public_id: PublicId,
-    signature: sign::Signature,
+    /// The lists of the groups involved in routing this message, in chronological order.
+    grp_lists: Vec<GroupList>,
+    /// The IDs and signatures of the source authority's members.
+    signatures: BTreeMap<PublicId, sign::Signature>,
 }
 
 impl SignedMessage {
     /// Creates a `SignedMessage` with the given `content` and signed by the given `full_id`.
     pub fn new(content: RoutingMessage, full_id: &FullId) -> Result<SignedMessage, RoutingError> {
-        let bytes_to_sign = try!(serialise(&(&content, full_id.public_id())));
+        let sig = sign::sign_detached(&try!(serialise(&content)), full_id.signing_private_key());
         Ok(SignedMessage {
             content: content,
-            public_id: *full_id.public_id(),
-            signature: sign::sign_detached(&bytes_to_sign, full_id.signing_private_key()),
+            grp_lists: Vec::new(),
+            signatures: iter::once((*full_id.public_id(), sig)).collect(),
         })
     }
 
-    /// Confirms the signature against the claimed public ID.
+    /// Confirms the signatures.
     pub fn check_integrity(&self) -> Result<(), RoutingError> {
-        let signed_bytes = try!(serialise(&(&self.content, &self.public_id)));
-        if sign::verify_detached(&self.signature,
-                                 &signed_bytes,
-                                 self.public_id().signing_public_key()) {
-            Ok(())
-        } else {
-            Err(RoutingError::FailedSignature)
+        let signed_bytes = try!(serialise(&self.content));
+        for (pub_id, sig) in &self.signatures {
+            if !sign::verify_detached(sig, &signed_bytes, pub_id.signing_public_key()) {
+                return Err(RoutingError::FailedSignature);
+            }
+        }
+        if let Authority::Client { ref client_key, .. } = self.content.src {
+            if let Some(pub_id) = self.signatures.keys().next() {
+                if self.signatures.len() == 1 && pub_id.signing_public_key() == client_key {
+                    return Ok(());
+                }
+            }
+            return Err(RoutingError::FailedSignature);
+        }
+        Ok(())
+    }
+    /// Returns whether the message is signed by the given public ID.
+    pub fn signed_by(&self, pub_id: &PublicId) -> bool {
+        self.signatures.contains_key(pub_id)
+    }
+
+    /// Appends the group list to the message. If this is the first group list, it also removes all
+    /// signatures which don't correspond to an entry in `group_list`.
+    pub fn add_group_list(&mut self, group_list: GroupList) {
+        if self.content.src.is_client() {
+            return; // Clients are validated based on their names.
+        }
+        // TODO: We currently just add empty group lists in clients and joining nodes. Clients will
+        // need to know their proxy's group to verify messages, and joining nodes will have to
+        // store their new group lists from the beginning.
+        if self.grp_lists.is_empty() && !group_list.pub_ids.is_empty() {
+            // Drop signatures not associated with any members of the first group list.
+            let irrelevant_ids = self.signatures
+                .keys()
+                .filter(|pub_id| !group_list.pub_ids.contains(pub_id))
+                .cloned()
+                .collect_vec();
+            for irrelevant_id in irrelevant_ids {
+                let _ = self.signatures.remove(&irrelevant_id);
+            }
+        }
+        self.grp_lists.push(group_list);
+    }
+
+    /// Adds the given signature if it is new, without validating it. If the collection of group
+    /// lists isn't empty, the signature is only added if `pub_id` is a member of the first group
+    /// list.
+    pub fn add_signature(&mut self, pub_id: PublicId, sig: sign::Signature) {
+        if self.content.src.is_group() &&
+           self.grp_lists.first().map_or(true, |grp_list| grp_list.pub_ids.contains(&pub_id)) {
+            let _ = self.signatures.insert(pub_id, sig);
+        }
+    }
+
+    /// Adds all signatures from the given message, without validating them.
+    pub fn add_signatures(&mut self, msg: SignedMessage) {
+        if self.content.src.is_group() {
+            self.signatures.extend(msg.signatures);
         }
     }
 
@@ -249,14 +297,50 @@ impl SignedMessage {
         &self.content
     }
 
-    /// The `PublicId` associated with the signed message
-    pub fn public_id(&self) -> &PublicId {
-        &self.public_id
-    }
-
     /// The priority Crust should send this message with.
     pub fn priority(&self) -> u8 {
         self.content.priority()
+    }
+
+    /// Returns whether there are enough signatures from the sender. NOTE: to ensure only validated
+    /// signatures are counted, first call `remove_invalid_signatures()`.
+    pub fn is_fully_signed(&self) -> bool {
+        if self.content.src.is_client() {
+            return self.signatures.len() == 1;
+        }
+        self.grp_lists.first().map_or(false, |grp_list| {
+            if self.content.src.is_group() {
+                QUORUM * grp_list.pub_ids.len() < 100 * self.signatures.len()
+            } else {
+                self.signatures.len() == 1
+            }
+        })
+    }
+
+    /// Removes all signatures which fail validation.
+    pub fn remove_invalid_signatures(&mut self) {
+        let signed_bytes = match serialise(&self.content) {
+            Ok(serialised) => serialised,
+            Err(error) => {
+                info!("Failed to remove invalid signatures from {:?}: {:?}",
+                      self,
+                      error);
+                return;
+            }
+        };
+        let invalid_signatures = self.signatures
+            .iter()
+            .filter_map(|(pub_id, sig)| {
+                if sign::verify_detached(sig, &signed_bytes, pub_id.signing_public_key()) {
+                    None
+                } else {
+                    Some(*pub_id)
+                }
+            })
+            .collect_vec();
+        for invalid_signature in &invalid_signatures {
+            let _ = self.signatures.remove(invalid_signature);
+        }
     }
 }
 
@@ -286,22 +370,14 @@ impl RoutingMessage {
         self.content.priority()
     }
 
-    /// Replaces this message's contents with its hash.
-    pub fn to_grp_msg_hash(&self) -> Result<RoutingMessage, RoutingError> {
-        let content = match self.content {
-            MessageContent::GetNodeNameResponse { .. } |
-            MessageContent::GetCloseGroupResponse { .. } |
-            MessageContent::UserMessagePart { .. } => {
-                let serialised_msg = try!(serialise(self));
-                MessageContent::GroupMessageHash(sha256::hash(&serialised_msg), self.priority())
-            }
-            _ => self.content.clone(),
-        };
-        Ok(RoutingMessage {
-            src: self.src,
-            dst: self.dst,
-            content: content,
-        })
+    /// Returns a `DirectMessage::MessageSignature` for this message.
+    pub fn to_signature(&self,
+                        signing_key: &sign::SecretKey)
+                        -> Result<DirectMessage, RoutingError> {
+        let serialised_msg = try!(serialise(self));
+        let hash = sha256::hash(&serialised_msg);
+        let sig = sign::sign_detached(&serialised_msg, signing_key);
+        Ok(DirectMessage::MessageSignature(hash, sig))
     }
 }
 
@@ -382,10 +458,6 @@ pub enum MessageContent {
     /// Acknowledge receipt of any message except an `Ack`. It contains the hash of the
     /// received message and the priority.
     Ack(Ack, u8),
-    /// The hash of a `RoutingMessage`. This is sent by the source group authority members as a
-    /// confirmation, so that only one of them needs to send the full message. The second field is
-    /// the message priority.
-    GroupMessageHash(sha256::Digest, u8),
     /// Part of a user-facing message
     UserMessagePart {
         /// The hash of this user message.
@@ -408,7 +480,6 @@ impl MessageContent {
     pub fn priority(&self) -> u8 {
         match *self {
             MessageContent::Ack(_, priority) |
-            MessageContent::GroupMessageHash(_, priority) |
             MessageContent::UserMessagePart { priority, .. } => priority,
             _ => 0,
         }
@@ -418,6 +489,11 @@ impl MessageContent {
 impl Debug for DirectMessage {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
+            DirectMessage::MessageSignature(ref digest, _) => {
+                write!(formatter,
+                       "MessageSignature ({}, ..)",
+                       utils::format_binary_array(&digest.0))
+            }
             DirectMessage::BootstrapIdentify { ref public_id } => {
                 write!(formatter, "BootstrapIdentify {{ {:?} }}", public_id)
             }
@@ -458,9 +534,10 @@ impl Debug for HopMessage {
 impl Debug for SignedMessage {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter,
-               "SignedMessage {{ content: {:?}, public_id: {:?}, signature: .. }}",
+               "SignedMessage {{ content: {:?}, grp_lists sizes: {:?}, signatures: {:?} }}",
                self.content,
-               self.public_id)
+               self.grp_lists.iter().map(|grp_list| grp_list.pub_ids.len()).collect_vec(),
+               self.signatures.keys().collect_vec())
     }
 }
 
@@ -509,12 +586,6 @@ impl Debug for MessageContent {
                 write!(formatter, "OtherGroupMerge {{ {:?}, {:?} }}", prefix, group)
             }
             MessageContent::Ack(ack, priority) => write!(formatter, "Ack({}, {})", ack, priority),
-            MessageContent::GroupMessageHash(ref hash, priority) => {
-                write!(formatter,
-                       "GroupMessageHash({}, {})",
-                       utils::format_binary_array(&hash.0),
-                       priority)
-            }
             MessageContent::UserMessagePart { hash,
                                               part_count,
                                               part_index,
@@ -881,14 +952,15 @@ impl UserMessageCache {
 
 #[cfg(test)]
 mod tests {
-    extern crate rand;
-
     use authority::Authority;
     use data::{Data, ImmutableData};
     use id::FullId;
     use maidsafe_utilities;
     use maidsafe_utilities::serialisation::serialise;
+    use rand;
     use rust_sodium::crypto::sign;
+    use rust_sodium::crypto::hash::sha256;
+    use std::iter;
     use super::*;
     use types::MessageId;
     use xor_name::XorName;
@@ -904,12 +976,12 @@ mod tests {
         let full_id = FullId::new();
         let signed_message_result = SignedMessage::new(routing_message.clone(), &full_id);
 
-        assert!(signed_message_result.is_ok());
-
         let mut signed_message = unwrap!(signed_message_result);
 
         assert_eq!(routing_message, *signed_message.routing_message());
-        assert_eq!(full_id.public_id(), signed_message.public_id());
+        assert_eq!(1, signed_message.signatures.len());
+        assert_eq!(Some(full_id.public_id()),
+                   signed_message.signatures.keys().next());
 
         let check_integrity_result = signed_message.check_integrity();
 
@@ -919,7 +991,7 @@ mod tests {
         let bytes_to_sign = unwrap!(serialise(&(&routing_message, full_id.public_id())));
         let signature = sign::sign_detached(&bytes_to_sign, full_id.signing_private_key());
 
-        signed_message.signature = signature;
+        signed_message.signatures = iter::once((*full_id.public_id(), signature)).collect();
 
         let check_integrity_result = signed_message.check_integrity();
 
@@ -927,7 +999,11 @@ mod tests {
     }
 
     #[test]
-    fn grp_msg_hash() {
+    fn msg_signatures() {
+        let full_id_0 = FullId::new();
+        let full_id_1 = FullId::new();
+        let full_id_2 = FullId::new();
+        let irrelevant_full_id = FullId::new();
         let data_bytes: Vec<u8> = (0..10).map(|i| i as u8).collect();
         let data = Data::Immutable(ImmutableData::new(data_bytes));
         let user_msg = UserMessage::Request(Request::Put(data, MessageId::new()));
@@ -940,20 +1016,54 @@ mod tests {
             dst: Authority::ClientManager(name),
             content: part,
         };
-        let hash_msg = unwrap!(routing_message.to_grp_msg_hash());
-        match hash_msg.content {
-            MessageContent::GroupMessageHash(..) => (),
-            _ => panic!("Wrong content for hashed message: {:?}", hash_msg),
-        }
-        assert_eq!(hash_msg, unwrap!(hash_msg.to_grp_msg_hash()));
 
-        let non_hash_routing_msg = RoutingMessage {
-            src: Authority::ClientManager(name),
-            dst: Authority::ClientManager(name),
-            content: MessageContent::GetCloseGroup(MessageId::zero()),
+        let mut signed_msg = unwrap!(SignedMessage::new(routing_message, &full_id_0));
+        assert_eq!(signed_msg.signatures.len(), 1);
+
+        // Add a signature which will not correspond to an ID in the first group list.
+        let irrelevant_sig = match unwrap!(signed_msg.routing_message()
+            .to_signature(irrelevant_full_id.signing_private_key())) {
+            DirectMessage::MessageSignature(_, sig) => {
+                signed_msg.add_signature(*irrelevant_full_id.public_id(), sig);
+                sig
+            }
+            msg => panic!("Unexpected message: {:?}", msg),
         };
-        assert_eq!(non_hash_routing_msg,
-                   unwrap!(non_hash_routing_msg.to_grp_msg_hash()));
+        assert_eq!(signed_msg.signatures.len(), 2);
+
+        // Check the irrelevant signature gets removed by `add_group_list()`.
+        signed_msg.add_group_list(GroupList {
+            pub_ids: vec![*full_id_0.public_id(), *full_id_1.public_id(), *full_id_2.public_id()]
+                .into_iter()
+                .collect(),
+        });
+        assert_eq!(signed_msg.signatures.len(), 1);
+        assert!(!signed_msg.signatures.contains_key(irrelevant_full_id.public_id()));
+        assert!(!signed_msg.is_fully_signed());
+
+        // Add a valid signature for ID 1 and an invalid one for ID 2
+        match unwrap!(signed_msg.routing_message().to_signature(full_id_1.signing_private_key())) {
+            DirectMessage::MessageSignature(hash, sig) => {
+                let serialised_msg = unwrap!(serialise(signed_msg.routing_message()));
+                assert_eq!(hash, sha256::hash(&serialised_msg));
+                signed_msg.add_signature(*full_id_1.public_id(), sig);
+            }
+            msg => panic!("Unexpected message: {:?}", msg),
+        }
+        let bad_sig = sign::Signature([0; sign::SIGNATUREBYTES]);
+        signed_msg.add_signature(*full_id_2.public_id(), bad_sig);
+        assert_eq!(signed_msg.signatures.len(), 3);
+        assert!(signed_msg.is_fully_signed());
+
+        // Check the bad signature gets removed properly.
+        signed_msg.remove_invalid_signatures();
+        assert_eq!(signed_msg.signatures.len(), 2);
+        assert!(!signed_msg.signatures.contains_key(full_id_2.public_id()));
+
+        // Check an irrelevant signature can't be added.
+        signed_msg.add_signature(*irrelevant_full_id.public_id(), irrelevant_sig);
+        assert_eq!(signed_msg.signatures.len(), 2);
+        assert!(!signed_msg.signatures.contains_key(irrelevant_full_id.public_id()));
     }
 
     #[test]
@@ -976,7 +1086,7 @@ mod tests {
 
         let hop_message = unwrap!(hop_message_result);
 
-        assert_eq!(signed_message, *hop_message.content());
+        assert_eq!(signed_message, hop_message.content);
 
         assert!(hop_message.verify(&public_signing_key).is_ok());
 

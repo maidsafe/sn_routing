@@ -51,7 +51,10 @@ macro_rules! expect_next_event {
             match $node.event_rx.try_recv() {
                 Ok($pattern) => break,
                 Ok(Event::Tick) => (),
-                other => panic!("Expected Ok({}), got {:?}", stringify!($pattern), other),
+                other => panic!("Expected Ok({}) at {}, got {:?}",
+                    stringify!($pattern),
+                    unwrap!($node.inner.name()),
+                    other),
             }
         }
     }
@@ -69,7 +72,10 @@ macro_rules! expect_any_event {
             match $node.event_rx.try_recv() {
                 Ok($pattern) if $guard => break,
                 Ok(_) => (),
-                other => panic!("Expected Ok({}), got {:?}", stringify!($pattern), other),
+                other => panic!("Expected Ok({}) at {}, got {:?}",
+                    stringify!($pattern),
+                    unwrap!($node.inner.name()),
+                    other),
             }
         }
     }
@@ -81,7 +87,9 @@ macro_rules! expect_no_event {
         match $node.event_rx.try_recv() {
             Ok(Event::Tick) => (),
             Err(mpsc::TryRecvError::Empty) => (),
-            other => panic!("Expected no event, got {:?}", other),
+            other => panic!("Expected no event at {}, got {:?}",
+                unwrap!($node.inner.name()),
+                other),
         }
     }
 }
@@ -324,7 +332,9 @@ fn create_connected_nodes_with_cache(network: &Network,
             }
         }
 
-        assert!(node_added_count >= n, "Got only {} NodeAdded events.");
+        assert!(node_added_count >= n,
+                "Got only {} NodeAdded events.",
+                node_added_count);
     }
 
     nodes
@@ -565,6 +575,7 @@ fn equal_group_size_nodes() {
 }
 
 #[test]
+#[ignore]
 fn more_than_group_size_nodes() {
     test_nodes(MIN_GROUP_SIZE * 6);
 }
@@ -908,9 +919,9 @@ fn successful_get_request() {
                 Ok(Event::Request { request: Request::Get(ref request, id), src, dst }) => {
                     request_received_count += 1;
                     if data_request == *request && message_id == id {
-                        if let Err(_) = node.inner
+                        if let Err(err) = node.inner
                             .send_get_success(dst, src, data.clone(), id) {
-                            trace!("Failed to send GetSuccess response");
+                            trace!("Failed to send GetSuccess response: {:?}", err);
                         }
                         break;
                     }
@@ -977,9 +988,9 @@ fn failed_get_request() {
                 Ok(Event::Request { request: Request::Get(ref data_id, ref id), src, dst }) => {
                     request_received_count += 1;
                     if data_request == *data_id && message_id == *id {
-                        if let Err(_) = node.inner
+                        if let Err(err) = node.inner
                             .send_get_failure(dst, src, *data_id, vec![], *id) {
-                            trace!("Failed to send GetFailure response.");
+                            trace!("Failed to send GetFailure response: {:?}", err);
                         }
                         break;
                     }
@@ -1044,9 +1055,9 @@ fn disconnect_on_get_request() {
                 Ok(Event::Request { request: Request::Get(ref request, ref id), src, dst }) => {
                     request_received_count += 1;
                     if data_request == *request && message_id == *id {
-                        if let Err(_) = node.inner
+                        if let Err(err) = node.inner
                             .send_get_success(dst, src, data.clone(), *id) {
-                            trace!("Failed to send GetSuccess response");
+                            trace!("Failed to send GetSuccess response: {:?}", err);
                         }
                         break;
                     }
@@ -1338,7 +1349,7 @@ fn response_caching() {
 
     let message_id = MessageId::new();
 
-    // The proxy node should have cached the data, so this reqeust should only
+    // The proxy node should have cached the data, so this request should only
     // hit the proxy node and not be relayed to the other nodes.
     unwrap!(clients[0].inner.send_get_request(dst, data_id, message_id));
 

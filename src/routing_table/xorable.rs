@@ -77,7 +77,7 @@ macro_rules! impl_xorable_for_array {
                                (self[byte_index] ^ other[byte_index]).leading_zeros() as usize;
                     }
                 }
-                $l * mem::size_of::<$t>()
+                $l * mem::size_of::<$t>() * 8
             }
 
             fn cmp_distance(&self, lhs: &[$t; $l], rhs: &[$t; $l]) -> Ordering {
@@ -252,12 +252,15 @@ mod tests {
         assert_eq!(3, 10u8.common_prefix(&16u8));
         assert_eq!(0, 0u16.common_prefix(&(1 << 15)));
         assert_eq!(11, 10u16.common_prefix(&16u16));
+        assert_eq!(64, 100u64.common_prefix(&100));
     }
 
     #[test]
     fn common_prefix_array() {
         assert_eq!(0, [0, 0, 0, 0].common_prefix(&[128u8, 0, 0, 0]));
         assert_eq!(11, [0, 10u8, 0, 0].common_prefix(&[0, 16u8, 0, 0]));
+        assert_eq!(31, [1u8, 2, 3, 4].common_prefix(&[1, 2, 3, 5]));
+        assert_eq!(32, [1u8, 2, 3, 4].common_prefix(&[1, 2, 3, 4]));
     }
 
     #[test]

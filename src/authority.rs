@@ -61,6 +61,15 @@ impl Authority {
         }
     }
 
+    /// Returns true if a client, false if a node or group.
+    pub fn is_client(&self) -> bool {
+        if let Authority::Client { .. } = *self {
+            true
+        } else {
+            false
+        }
+    }
+
     /// Returns the name of authority.
     pub fn name(&self) -> &XorName {
         match *self {

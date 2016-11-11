@@ -169,7 +169,7 @@ impl Client {
             return Err(RoutingError::UnknownConnection(peer_id));
         }
 
-        let signed_msg = hop_msg.content();
+        let signed_msg = hop_msg.content;
         try!(signed_msg.check_integrity());
 
         let routing_msg = signed_msg.routing_message();
@@ -179,7 +179,7 @@ impl Client {
         }
 
         // Prevents us repeatedly handling identical messages sent by a malicious peer.
-        if self.routing_msg_filter.filter_incoming(routing_msg, hop_msg.route()) != 1 {
+        if self.routing_msg_filter.filter_incoming(routing_msg, hop_msg.route) != 1 {
             return Err(RoutingError::FilterCheckFailed);
         }
 
@@ -320,10 +320,8 @@ impl Bootstrapped for Client {
                                       -> Result<(), RoutingError> {
         self.stats.count_route(route);
 
-        if let Authority::Client { .. } = routing_msg.dst {
-            if self.in_authority(&routing_msg.dst) {
-                return Ok(()); // Message is for us.
-            }
+        if routing_msg.dst.is_client() && self.in_authority(&routing_msg.dst) {
+            return Ok(()); // Message is for us.
         }
 
         // Get PeerId of the proxy node
