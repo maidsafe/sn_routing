@@ -67,6 +67,7 @@ use rand::{Rng, ThreadRng, random, thread_rng};
 use rand::distributions::{IndependentSample, Range};
 use routing::{Data, GROUP_SIZE, StructuredData};
 use std::{env, io, thread};
+use std::collections::BTreeSet;
 use std::io::Write;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Condvar, Mutex};
@@ -232,7 +233,7 @@ fn store_and_verify(requests: usize, batches: usize) {
     let mut rng = SeededRng::new();
     for i in 0..requests {
         let raw_data = rng.gen_iter().take(10).collect();
-        let sd = StructuredData::new(10000, rng.gen(), 0, raw_data, vec![], vec![], None);
+        let sd = StructuredData::new(10000, rng.gen(), 0, raw_data, BTreeSet::new());
         let data = Data::Structured(unwrap!(sd));
         print!("Putting Data: count #{} - Data {:?} - ", i + 1, data.name());
         io::stdout().flush().expect("Could not flush stdout");

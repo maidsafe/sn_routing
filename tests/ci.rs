@@ -62,7 +62,7 @@ use routing::{Authority, Client, Data, Event, FullId, GROUP_SIZE, MessageId, Nod
 use rust_sodium::crypto;
 use rust_sodium::crypto::hash::sha256;
 use std::iter;
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 #[cfg(target_os = "macos")]
 use std::io;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -236,7 +236,7 @@ fn gen_structured_data() -> Data {
     let name = XorName(sha256::hash(key.as_bytes()).0);
     let data = unwrap!(serialisation::serialise(&(key, value)));
 
-    Data::Structured(unwrap!(StructuredData::new(TYPE_TAG, name, 0, data, vec![], vec![], None)))
+    Data::Structured(unwrap!(StructuredData::new(TYPE_TAG, name, 0, data, BTreeSet::new())))
 }
 
 fn closest_nodes(node_names: &[XorName], target: &XorName) -> Vec<XorName> {
