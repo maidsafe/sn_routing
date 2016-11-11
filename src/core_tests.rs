@@ -27,15 +27,12 @@ use mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
 use mock_crust::crust::PeerId;
 use node::Node;
 use peer_manager::MIN_GROUP_SIZE;
-use rand::{self, Rng, SeedableRng, XorShiftRng};
-use rand::distributions::{IndependentSample, Range};
+use rand::Rng;
 use routing_table::{self, Destination, Prefix, RoutingTable, Xorable};
 use std::cell::RefCell;
 use std::cmp;
-use std::collections::{BTreeSet, HashMap, HashSet};
-use std::ops;
+use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;
-use std::thread;
 use types::MessageId;
 use xor_name::XorName;
 
@@ -442,11 +439,6 @@ fn random_churn<R: Rng>(rng: &mut R,
 fn sort_nodes_by_distance_to(nodes: &mut [TestNode], name: &XorName) {
     let _ = poll_all(nodes, &mut []); // Poll
     nodes.sort_by(|node0, node1| name.cmp_distance(&node0.name(), &node1.name()));
-}
-
-/// Verify that the invariant is upheld for the node at `index`.
-fn verify_invariant_for_node(node: &TestNode) {
-    node.routing_table().verify_invariant();
 }
 
 fn verify_invariant_for_all_nodes(nodes: &[TestNode]) {
@@ -1215,12 +1207,12 @@ fn request_during_churn_group_to_node() {
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, 2 * MIN_GROUP_SIZE);
 
-    for i in 0..REQUEST_DURING_CHURN_ITERATIONS {
+    for _ in 0..REQUEST_DURING_CHURN_ITERATIONS {
         let data = gen_immutable_data(&mut rng, 8);
         let src = Authority::NaeManager(*data.name());
         sort_nodes_by_distance_to(&mut nodes, src.name());
 
-        let mut added_index = random_churn(&mut rng, &network, &mut nodes);
+        let added_index = random_churn(&mut rng, &network, &mut nodes);
 
         let index = gen_range_except(&mut rng, 0, nodes.len(), added_index);
         let dst = Authority::ManagedNode(nodes[index].name());
@@ -1251,7 +1243,7 @@ fn request_during_churn_group_to_group() {
         let data_id = data.identifier();
         let message_id = MessageId::new();
         sort_nodes_by_distance_to(&mut nodes, &name0);
-        let added_index = random_churn(&mut rng, &network, &mut nodes);
+        let _added_index = random_churn(&mut rng, &network, &mut nodes);
 
         for node in &nodes[0..MIN_GROUP_SIZE] {
             unwrap!(node.inner.send_get_request(src, dst, data_id, message_id));

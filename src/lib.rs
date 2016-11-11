@@ -167,7 +167,6 @@ mod utils;
 mod xor_name;
 
 #[cfg(all(test, feature = "use-mock-crust"))]
-#[allow(unused)]
 mod core_tests;
 
 /// Mock crust
