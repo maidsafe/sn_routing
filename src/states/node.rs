@@ -1551,8 +1551,8 @@ impl Node {
                    sent_to: &[XorName],
                    exclude: XorName)
                    -> Result<(Vec<XorName>, Vec<PeerId>), RoutingError> {
-        let force_via_proxy = match &routing_msg.content {
-            &MessageContent::ConnectionInfo(ConnectionInfo { public_id, .. }) => {
+        let force_via_proxy = match routing_msg.content {
+            MessageContent::ConnectionInfo(ConnectionInfo { public_id, .. }) => {
                 routing_msg.src.is_client() && public_id == *self.full_id.public_id()
             }
             _ => false,

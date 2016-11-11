@@ -15,19 +15,15 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-// TODO - Once we're at Stable v1.13.0, avoid disabling the lint check and replace `SipHasher` with
-// `std::collections::hash_map::DefaultHasher`.
-#[cfg_attr(feature="clippy", allow(useless_attribute))]
-#[allow(deprecated)]
-use std::hash::{Hash, Hasher, SipHasher};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::time::{Duration, SystemTime};
 
-#[allow(deprecated)]
 fn hash<T: Hash>(t: &T) -> u64 {
-    let mut s = SipHasher::new();
-    t.hash(&mut s);
-    s.finish()
+    let mut hasher = DefaultHasher::new();
+    t.hash(&mut hasher);
+    hasher.finish()
 }
 
 /// A time based message filter that takes any generic type as a key and will drop keys after a
