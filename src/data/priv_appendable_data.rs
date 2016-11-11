@@ -22,8 +22,7 @@ use rustc_serialize::{Decodable, Decoder};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
-use super::{AppendWrapper, AppendedData, DataIdentifier, Filter, NO_OWNER_PUB_KEY,
-            verify_signatures};
+use super::{AppendWrapper, AppendedData, DataIdentifier, Filter, NO_OWNER_PUB_KEY};
 use error::RoutingError;
 
 /// Maximum allowed size for a private appendable data to grow to
@@ -165,7 +164,7 @@ impl PrivAppendableData {
             return Err(RoutingError::UnknownMessageType);
         }
         let data = try!(other.data_to_sign());
-        verify_signatures(&self.owners, &data, &other.signatures)
+        super::verify_signatures(&self.owners, &data, &other.signatures)
     }
 
     /// Inserts the given data item, or returns `false` if it cannot be added because it has
@@ -220,13 +219,13 @@ impl PrivAppendableData {
     /// Adds a signature with the given `keys.1` to the `signatures` and returns
     /// the number of signatures that are still required. If more than 50% of the owners
     /// have signed, 0 is returned and validation is complete.
-    pub fn add_signature(&mut self, keys: (&PublicKey, &SecretKey)) -> Result<usize, RoutingError> {
+    pub fn add_signature(&mut self, keys: &(PublicKey, SecretKey)) -> Result<usize, RoutingError> {
         if !self.signatures.is_empty() {
             return Err(RoutingError::InvalidOwners);
         }
         let data = try!(self.data_to_sign());
-        let sig = sign::sign_detached(&data, keys.1);
-        let _ = self.signatures.insert(*keys.0, sig);
+        let sig = sign::sign_detached(&data, &keys.1);
+        let _ = self.signatures.insert(keys.0, sig);
         Ok(((self.owners.len() / 2) + 1).saturating_sub(self.signatures.len()))
     }
 
@@ -263,26 +262,12 @@ impl PrivAppendableData {
 
 impl Debug for PrivAppendableData {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        let previous_owner_keys: Vec<String> = self.signatures
-            .iter()
-            .map(|(pub_key, _)| ::utils::format_binary_array(&pub_key.0))
-            .collect();
-        let current_owner_keys: Vec<String> = self.owners
-            .iter()
-            .map(|pub_key| ::utils::format_binary_array(&pub_key.0))
-            .collect();
-        let previous_owner_signatures: Vec<String> = self.signatures
-            .iter()
-            .map(|(_, sig)| ::utils::format_binary_array(&sig.0[..]))
-            .collect();
         write!(formatter,
-               "PrivAppendableData {{ name: {}, previous_owner_keys: {:?}, \
-                version: {}, current_owner_keys: {:?}, previous_owner_signatures: {:?} }}",
+               "PrivAppendableData {{ name: {}, version: {}, owners: {:?}, signatures: {:?} }}",
                self.name(),
-               previous_owner_keys,
                self.version,
-               current_owner_keys,
-               previous_owner_signatures)
+               self.owners,
+               self.signatures)
         // TODO(afck): Print `data` and `deleted_data`.
     }
 }
@@ -306,7 +291,7 @@ mod test {
     use maidsafe_utilities::serialisation::serialise;
     use rust_sodium::crypto::{box_, sign};
     use xor_name::XorName;
-    use data::{AppendWrapper, AppendedData, DataIdentifier, Filter};
+    use data::{self, AppendWrapper, AppendedData, DataIdentifier, Filter};
 
     #[test]
     fn serialised_priv_appended_data_size() {
@@ -323,296 +308,74 @@ mod test {
     fn single_owner() {
         let keys = sign::gen_keypair();
         let encrypt_keys = box_::gen_keypair();
-        let owner_keys = vec![keys.0];
+        let mut owner_keys = BTreeSet::new();
+        owner_keys.insert(keys.0);
 
         match PrivAppendableData::new(rand::random(),
                                       0,
                                       owner_keys.clone(),
-                                      vec![],
                                       BTreeSet::new(),
                                       Filter::white_list(None),
-                                      encrypt_keys.0,
-                                      Some(&keys.1)) {
-            Ok(priv_appendable_data) => {
-                assert_eq!(priv_appendable_data.verify_previous_owner_signatures(&owner_keys).ok(),
-                           Some(()))
+                                      encrypt_keys.0) {
+            Ok(mut priv_appendable_data) => {
+                let data = match priv_appendable_data.data_to_sign() {
+                    Ok(data) => data,
+                    Err(error) => panic!("Error: {:?}", error),
+                };
+                assert!(data::verify_signatures(&owner_keys,
+                                                &data,
+                                                priv_appendable_data.get_signatures()).is_err());
+                assert_eq!(priv_appendable_data.add_signature(&keys).unwrap(), 0);
+                assert!(data::verify_signatures(&owner_keys,
+                                                &data,
+                                                priv_appendable_data.get_signatures()).is_ok());
             }
             Err(error) => panic!("Error: {:?}", error),
         }
     }
 
     #[test]
-    #[should_panic(expected = "assertion failed")]
-    fn single_owner_unsigned() {
-        let keys = sign::gen_keypair();
-        let owner_keys = vec![keys.0];
-        let encrypt_keys = box_::gen_keypair();
-
-        match PrivAppendableData::new(rand::random(),
-                                      0,
-                                      vec![],
-                                      owner_keys.clone(),
-                                      BTreeSet::new(),
-                                      Filter::white_list(None),
-                                      encrypt_keys.0,
-                                      None) {
-            Ok(priv_appendable_data) => {
-                assert_eq!(priv_appendable_data.verify_previous_owner_signatures(&owner_keys).ok(),
-                           Some(()))
-            }
-            Err(error) => panic!("Error: {:?}", error),
-        }
-    }
-
-    #[test]
-    #[should_panic(expected = "assertion failed")]
-    fn single_owner_other_signing_key() {
-        let keys = sign::gen_keypair();
-        let owner_keys = vec![keys.0];
-        let other_keys = sign::gen_keypair();
-        let encrypt_keys = box_::gen_keypair();
-
-        match PrivAppendableData::new(rand::random(),
-                                      0,
-                                      owner_keys.clone(),
-                                      vec![],
-                                      BTreeSet::new(),
-                                      Filter::white_list(None),
-                                      encrypt_keys.0,
-                                      Some(&other_keys.1)) {
-            Ok(priv_appendable_data) => {
-                assert_eq!(priv_appendable_data.verify_previous_owner_signatures(&owner_keys).ok(),
-                           Some(()))
-            }
-            Err(error) => panic!("Error: {:?}", error),
-        }
-    }
-
-    #[test]
-    #[should_panic(expected = "assertion failed")]
     fn single_owner_other_signature() {
         let keys = sign::gen_keypair();
-        let owner_keys = vec![keys.0];
         let other_keys = sign::gen_keypair();
         let encrypt_keys = box_::gen_keypair();
-
-        match PrivAppendableData::new(rand::random(),
-                                      0,
-                                      vec![],
-                                      owner_keys.clone(),
-                                      BTreeSet::new(),
-                                      Filter::white_list(None),
-                                      encrypt_keys.0,
-                                      None) {
-            Ok(mut priv_appendable_data) => {
-                assert_eq!(priv_appendable_data.add_signature(&other_keys.1).ok(),
-                           Some(0));
-                assert_eq!(priv_appendable_data.verify_previous_owner_signatures(&owner_keys).ok(),
-                           Some(()))
-            }
-            Err(error) => panic!("Error: {:?}", error),
-        }
-    }
-
-    // TODO: this test is disabled as the feature of multi-sig is disabled
-    #[ignore]
-    #[test]
-    fn three_owners() {
-        let keys1 = sign::gen_keypair();
-        let keys2 = sign::gen_keypair();
-        let keys3 = sign::gen_keypair();
-        let encrypt_keys = box_::gen_keypair();
-
-        let owner_keys = vec![keys1.0, keys2.0, keys3.0];
+        let mut owner_keys = BTreeSet::new();
+        owner_keys.insert(keys.0);
 
         match PrivAppendableData::new(rand::random(),
                                       0,
                                       owner_keys.clone(),
-                                      vec![],
                                       BTreeSet::new(),
                                       Filter::white_list(None),
-                                      encrypt_keys.0,
-                                      None) {
+                                      encrypt_keys.0) {
             Ok(mut priv_appendable_data) => {
-                // After one signature, one more is required to reach majority.
-                assert_eq!(unwrap!(priv_appendable_data.add_signature(&keys1.1)), 1);
-                assert!(priv_appendable_data.verify_previous_owner_signatures(&owner_keys)
-                    .is_err());
-                // Two out of three is enough.
-                assert_eq!(unwrap!(priv_appendable_data.add_signature(&keys2.1)), 0);
-                assert!(priv_appendable_data.verify_previous_owner_signatures(&owner_keys).is_ok());
-                // Three out of three is also fine.
-                assert_eq!(unwrap!(priv_appendable_data.add_signature(&keys3.1)), 0);
-                assert!(priv_appendable_data.verify_previous_owner_signatures(&owner_keys).is_ok());
+                assert_eq!(priv_appendable_data.add_signature(&other_keys).unwrap(), 0);
+                let data = match priv_appendable_data.data_to_sign() {
+                    Ok(data) => data,
+                    Err(error) => panic!("Error: {:?}", error),
+                };
+                assert!(data::verify_signatures(&owner_keys,
+                                                &data,
+                                                priv_appendable_data.get_signatures()).is_err());
             }
             Err(error) => panic!("Error: {:?}", error),
         }
-    }
-
-    // TODO: this test is disabled as the feature of multi-sig is disabled
-    #[ignore]
-    #[test]
-    fn four_owners() {
-        let keys1 = sign::gen_keypair();
-        let keys2 = sign::gen_keypair();
-        let keys3 = sign::gen_keypair();
-        let keys4 = sign::gen_keypair();
-        let encrypt_keys = box_::gen_keypair();
-
-        let owner_keys = vec![keys1.0, keys2.0, keys3.0, keys4.0];
-
-        match PrivAppendableData::new(rand::random(),
-                                      0,
-                                      owner_keys.clone(),
-                                      vec![],
-                                      BTreeSet::new(),
-                                      Filter::white_list(None),
-                                      encrypt_keys.0,
-                                      Some(&keys1.1)) {
-            Ok(mut priv_appendable_data) => {
-                // Two signatures are not enough because they don't have a strict majority.
-                assert_eq!(unwrap!(priv_appendable_data.add_signature(&keys2.1)), 1);
-                assert!(priv_appendable_data.verify_previous_owner_signatures(&owner_keys).is_ok());
-                // Three out of four is enough.
-                assert_eq!(unwrap!(priv_appendable_data.add_signature(&keys3.1)), 0);
-                assert!(priv_appendable_data.verify_previous_owner_signatures(&owner_keys).is_ok());
-                // Four out of four is also fine.
-                assert_eq!(unwrap!(priv_appendable_data.add_signature(&keys4.1)), 0);
-                assert!(priv_appendable_data.verify_previous_owner_signatures(&owner_keys).is_ok());
-            }
-            Err(error) => panic!("Error: {:?}", error),
-        }
-    }
-
-    // TODO: this test is disabled as the feature of multi-sig is disabled
-    #[ignore]
-    #[test]
-    fn transfer_owner_attack() {
-        let keys1 = sign::gen_keypair();
-        let keys2 = sign::gen_keypair();
-        let keys3 = sign::gen_keypair();
-        let encrypt_keys = box_::gen_keypair();
-        let new_owner = sign::gen_keypair();
-        let attacker = sign::gen_keypair();
-
-        let name: XorName = rand::random();
-        let owner_keys = vec![keys1.0, keys2.0, keys3.0];
-        let attacker_keys = vec![keys1.0, keys2.0, keys3.0, attacker.0];
-
-        let mut orig_priv_appendable_data = unwrap!(PrivAppendableData::new(name,
-                                      0,
-                                      owner_keys.clone(),
-                                      vec![],
-                                      BTreeSet::new(),
-                                      Filter::white_list(None),
-                                      encrypt_keys.0,
-                                      Some(&keys1.1)));
-        assert_eq!(orig_priv_appendable_data.add_signature(&keys2.1).ok(),
-                   Some(0));
-
-        let mut new_priv_appendable_data = unwrap!(PrivAppendableData::new(name,
-                                              1,
-                                              vec![new_owner.0],
-                                              owner_keys.clone(),
-                                              BTreeSet::new(),
-                                              Filter::white_list(None),
-                                              encrypt_keys.0,
-                                              Some(&keys1.1)));
-        assert_eq!(new_priv_appendable_data.add_signature(&attacker.1).ok(),
-                   Some(0));
-        assert!(new_priv_appendable_data.verify_previous_owner_signatures(&owner_keys).is_err());
-        assert!(new_priv_appendable_data.verify_previous_owner_signatures(&attacker_keys).is_ok());
-        // Shall throw error of NotEnoughSignatures
-        assert!(orig_priv_appendable_data.update_with_other(new_priv_appendable_data.clone())
-            .is_err());
-
-        assert_eq!(new_priv_appendable_data.add_signature(&attacker.1).ok(),
-                   Some(0));
-        // Shall throw error of DuplicateSignatures
-        assert!(new_priv_appendable_data.verify_previous_owner_signatures(&attacker_keys).is_err());
-    }
-
-    // TODO: this test is disabled as the feature of multi-sig is disabled
-    #[ignore]
-    #[test]
-    fn update_with_wrong_info() {
-        let keys1 = sign::gen_keypair();
-        let keys2 = sign::gen_keypair();
-        let keys3 = sign::gen_keypair();
-        let encrypt_keys = box_::gen_keypair();
-        let new_owner = sign::gen_keypair();
-
-        let name: XorName = rand::random();
-        let owner_keys = vec![keys1.0, keys2.0, keys3.0];
-
-        let mut orig_priv_appendable_data = unwrap!(PrivAppendableData::new(name,
-                                      0,
-                                      owner_keys.clone(),
-                                      vec![],
-                                      BTreeSet::new(),
-                                      Filter::white_list(None),
-                                      encrypt_keys.0,
-                                      Some(&keys1.1)));
-        assert_eq!(orig_priv_appendable_data.add_signature(&keys2.1).ok(),
-                   Some(0));
-
-        // Update with wrong version
-        let mut wrong_version = unwrap!(PrivAppendableData::new(name,
-                                                                2,
-                                                                vec![new_owner.0],
-                                                                owner_keys.clone(),
-                                                                BTreeSet::new(),
-                                                                Filter::white_list(None),
-                                                                encrypt_keys.0,
-                                                                Some(&keys1.1)));
-        assert_eq!(wrong_version.add_signature(&keys2.1).ok(), Some(0));
-        // Shall throw error of UnknownMessageType
-        assert!(orig_priv_appendable_data.update_with_other(wrong_version).is_err());
-
-        // Update with owner_keys in different order
-        let mut wrong_order = unwrap!(PrivAppendableData::new(name,
-                                                              1,
-                                                              vec![new_owner.0],
-                                                              vec![keys3.0, keys2.0, keys1.0],
-                                                              BTreeSet::new(),
-                                                              Filter::white_list(None),
-                                                              encrypt_keys.0,
-                                                              Some(&keys1.1)));
-        assert_eq!(wrong_order.add_signature(&keys2.1).ok(), Some(0));
-        // Shall throw error of UnknownMessageType
-        assert!(orig_priv_appendable_data.update_with_other(wrong_order).is_err());
-
-        // Update with wrong identifier
-        let mut wrong_name = unwrap!(PrivAppendableData::new(rand::random(),
-                                                             1,
-                                                             vec![new_owner.0],
-                                                             owner_keys,
-                                                             BTreeSet::new(),
-                                                             Filter::white_list(None),
-                                                             encrypt_keys.0,
-                                                             Some(&keys1.1)));
-        assert_eq!(wrong_name.add_signature(&keys2.1).ok(), Some(0));
-        // Shall throw error of UnknownMessageType
-        assert!(orig_priv_appendable_data.update_with_other(wrong_name).is_err());
     }
 
     #[test]
     fn appending_with_white_list() {
         let keys = sign::gen_keypair();
         let encrypt_keys = box_::gen_keypair();
-        let owner_keys = vec![keys.0];
 
         let white_key = sign::gen_keypair();
         let black_key = sign::gen_keypair();
 
         let mut priv_appendable_data = unwrap!(PrivAppendableData::new(rand::random(),
                                             0,
-                                            owner_keys.clone(),
-                                            vec![],
+                                            BTreeSet::new(),
                                             BTreeSet::new(),
                                             Filter::white_list(vec![white_key.0]),
-                                            encrypt_keys.0,
-                                            Some(&keys.1)));
+                                            encrypt_keys.0));
 
         let pointer = DataIdentifier::Structured(rand::random(), 10000);
         let appended_data = unwrap!(AppendedData::new(pointer, keys.0, &keys.1));
@@ -626,19 +389,16 @@ mod test {
     fn appending_with_black_list() {
         let keys = sign::gen_keypair();
         let encrypt_keys = box_::gen_keypair();
-        let owner_keys = vec![keys.0];
 
         let white_key = sign::gen_keypair();
         let black_key = sign::gen_keypair();
 
         let mut priv_appendable_data = unwrap!(PrivAppendableData::new(rand::random(),
                                             0,
-                                            owner_keys.clone(),
-                                            vec![],
+                                            BTreeSet::new(),
                                             BTreeSet::new(),
                                             Filter::black_list(vec![black_key.0]),
-                                            encrypt_keys.0,
-                                            Some(&keys.1)));
+                                            encrypt_keys.0));
 
         let pointer = DataIdentifier::Structured(rand::random(), 10000);
         let appended_data = unwrap!(AppendedData::new(pointer, keys.0, &keys.1));
@@ -656,12 +416,10 @@ mod test {
 
         let mut priv_appendable_data = unwrap!(PrivAppendableData::new(name,
                                                                        0,
-                                                                       vec![keys.0],
-                                                                       vec![],
+                                                                       BTreeSet::new(),
                                                                        BTreeSet::new(),
                                                                        Filter::black_list(None),
-                                                                       encrypt_keys.0,
-                                                                       Some(&keys.1)));
+                                                                       encrypt_keys.0));
 
         let pointer = DataIdentifier::Structured(rand::random(), 10000);
         let appended_data = unwrap!(AppendedData::new(pointer, keys.0, &keys.1));
@@ -678,5 +436,41 @@ mod test {
         let append_wrapper =
             unwrap!(AppendWrapper::new_priv(name, priv_appended_data, (&keys.0, &keys.1), 1));
         assert!(!priv_appendable_data.apply_wrapper(append_wrapper));
+    }
+
+    #[test]
+    fn transfer_ownership() {
+        let keys = sign::gen_keypair();
+        let other_keys = sign::gen_keypair();
+        let mut owner = BTreeSet::new();
+        owner.insert(keys.0);
+        let mut new_owner = BTreeSet::new();
+        new_owner.insert(other_keys.0);
+        let name: XorName = rand::random();
+        let encrypt_keys = box_::gen_keypair();
+
+        let mut ad = unwrap!(PrivAppendableData::new(name,
+                                                     0,
+                                                     owner,
+                                                     BTreeSet::new(),
+                                                     Filter::black_list(None),
+                                                     encrypt_keys.0));
+        let mut ad_new = unwrap!(PrivAppendableData::new(name,
+                                                         1,
+                                                         new_owner.clone(),
+                                                         BTreeSet::new(),
+                                                         Filter::black_list(None),
+                                                         encrypt_keys.0));
+        assert_eq!(ad_new.add_signature(&keys).unwrap(), 0);
+        assert!(ad.update_with_other(ad_new).is_ok());
+
+        let mut ad_fail = unwrap!(PrivAppendableData::new(name,
+                                                          2,
+                                                          new_owner.clone(),
+                                                          BTreeSet::new(),
+                                                          Filter::black_list(None),
+                                                          encrypt_keys.0));
+        assert_eq!(ad_fail.add_signature(&keys).unwrap(), 0);
+        assert!(ad.update_with_other(ad_fail).is_err());
     }
 }

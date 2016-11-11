@@ -20,8 +20,7 @@ use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
-use super::{AppendWrapper, AppendedData, DataIdentifier, Filter, NO_OWNER_PUB_KEY,
-            verify_signatures};
+use super::{AppendWrapper, AppendedData, DataIdentifier, Filter, NO_OWNER_PUB_KEY};
 use error::RoutingError;
 
 /// Maximum allowed size for a public appendable data to grow to
@@ -155,7 +154,7 @@ impl PubAppendableData {
             return Err(RoutingError::UnknownMessageType);
         }
         let data = try!(other.data_to_sign());
-        verify_signatures(&self.owners, &data, &other.signatures)
+        super::verify_signatures(&self.owners, &data, &other.signatures)
     }
 
     fn data_to_sign(&self) -> Result<Vec<u8>, RoutingError> {
@@ -175,13 +174,13 @@ impl PubAppendableData {
     /// Adds a signature with the given `keys.1` to the `signatures` and returns
     /// the number of signatures that are still required. If more than 50% of the owners
     /// have signed, 0 is returned and validation is complete.
-    pub fn add_signature(&mut self, keys: (&PublicKey, &SecretKey)) -> Result<usize, RoutingError> {
+    pub fn add_signature(&mut self, keys: &(PublicKey, SecretKey)) -> Result<usize, RoutingError> {
         if !self.signatures.is_empty() {
             return Err(RoutingError::InvalidOwners);
         }
         let data = try!(self.data_to_sign());
-        let sig = sign::sign_detached(&data, keys.1);
-        let _ = self.signatures.insert(*keys.0, sig);
+        let sig = sign::sign_detached(&data, &keys.1);
+        let _ = self.signatures.insert(keys.0, sig);
         Ok(((self.owners.len() / 2) + 1).saturating_sub(self.signatures.len()))
     }
 
@@ -218,26 +217,12 @@ impl PubAppendableData {
 
 impl Debug for PubAppendableData {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        let previous_owner_keys: Vec<String> = self.signatures
-            .iter()
-            .map(|(pub_key, _)| ::utils::format_binary_array(&pub_key.0))
-            .collect();
-        let current_owner_keys: Vec<String> = self.owners
-            .iter()
-            .map(|pub_key| ::utils::format_binary_array(&pub_key.0))
-            .collect();
-        let previous_owner_signatures: Vec<String> = self.signatures
-            .iter()
-            .map(|(_, sig)| ::utils::format_binary_array(&sig.0[..]))
-            .collect();
         write!(formatter,
-               "PubAppendableData {{ name: {}, previous_owner_keys: {:?}, \
-                version: {}, current_owner_keys: {:?}, previous_owner_signatures: {:?} }}",
+               "PubAppendableData {{ name: {}, version: {}, owners: {:?}, signatures: {:?} }}",
                self.name(),
-               previous_owner_keys,
                self.version,
-               current_owner_keys,
-               previous_owner_signatures)
+               self.owners,
+               self.signatures)
         // TODO(afck): Print `data` and `deleted_data`.
     }
 }
@@ -258,343 +243,73 @@ mod test {
 
     use rust_sodium::crypto::sign;
     use xor_name::XorName;
-    use data::{AppendWrapper, AppendedData, DataIdentifier, Filter};
+    use data::{self, AppendWrapper, AppendedData, DataIdentifier, Filter};
     use std::collections::BTreeSet;
 
     #[test]
     fn single_owner() {
         let keys = sign::gen_keypair();
-        let owner_keys = vec![keys.0];
+        let mut owner_keys = BTreeSet::new();
+        owner_keys.insert(keys.0);
 
         match PubAppendableData::new(rand::random(),
                                      0,
                                      owner_keys.clone(),
-                                     vec![],
                                      BTreeSet::new(),
-                                     Filter::white_list(None),
-                                     Some(&keys.1)) {
-            Ok(pub_appendable_data) => {
-                assert_eq!(pub_appendable_data.verify_previous_owner_signatures(&owner_keys).ok(),
-                           Some(()))
+                                     Filter::white_list(None)) {
+            Ok(mut pub_appendable_data) => {
+                let data = match pub_appendable_data.data_to_sign() {
+                    Ok(data) => data,
+                    Err(error) => panic!("Error: {:?}", error),
+                };
+                assert!(data::verify_signatures(&owner_keys,
+                                                &data,
+                                                pub_appendable_data.get_signatures()).is_err());
+                assert_eq!(pub_appendable_data.add_signature(&keys).unwrap(), 0);
+                assert!(data::verify_signatures(&owner_keys,
+                                                &data,
+                                                pub_appendable_data.get_signatures()).is_ok());
             }
             Err(error) => panic!("Error: {:?}", error),
         }
     }
 
     #[test]
-    #[should_panic(expected = "assertion failed")]
-    fn single_owner_unsigned() {
-        let keys = sign::gen_keypair();
-        let owner_keys = vec![keys.0];
-
-        match PubAppendableData::new(rand::random(),
-                                     0,
-                                     vec![],
-                                     owner_keys.clone(),
-                                     BTreeSet::new(),
-                                     Filter::white_list(None),
-                                     None) {
-            Ok(pub_appendable_data) => {
-                assert_eq!(pub_appendable_data.verify_previous_owner_signatures(&owner_keys).ok(),
-                           Some(()))
-            }
-            Err(error) => panic!("Error: {:?}", error),
-        }
-    }
-
-    #[test]
-    #[should_panic(expected = "assertion failed")]
-    fn single_owner_other_signing_key() {
-        let keys = sign::gen_keypair();
-        let owner_keys = vec![keys.0];
-        let other_keys = sign::gen_keypair();
-
-        match PubAppendableData::new(rand::random(),
-                                     0,
-                                     owner_keys.clone(),
-                                     vec![],
-                                     BTreeSet::new(),
-                                     Filter::white_list(None),
-                                     Some(&other_keys.1)) {
-            Ok(pub_appendable_data) => {
-                assert_eq!(pub_appendable_data.verify_previous_owner_signatures(&owner_keys).ok(),
-                           Some(()))
-            }
-            Err(error) => panic!("Error: {:?}", error),
-        }
-    }
-
-    #[test]
-    #[should_panic(expected = "assertion failed")]
     fn single_owner_other_signature() {
         let keys = sign::gen_keypair();
-        let owner_keys = vec![keys.0];
         let other_keys = sign::gen_keypair();
-
-        match PubAppendableData::new(rand::random(),
-                                     0,
-                                     vec![],
-                                     owner_keys.clone(),
-                                     BTreeSet::new(),
-                                     Filter::white_list(None),
-                                     None) {
-            Ok(mut pub_appendable_data) => {
-                assert_eq!(pub_appendable_data.add_signature(&other_keys.1).ok(),
-                           Some(0));
-                assert_eq!(pub_appendable_data.verify_previous_owner_signatures(&owner_keys).ok(),
-                           Some(()))
-            }
-            Err(error) => panic!("Error: {:?}", error),
-        }
-    }
-
-    // TODO: this test is disabled as the feature of multi-sig is disabled
-    #[ignore]
-    #[test]
-    fn three_owners() {
-        let keys1 = sign::gen_keypair();
-        let keys2 = sign::gen_keypair();
-        let keys3 = sign::gen_keypair();
-
-        let owner_keys = vec![keys1.0, keys2.0, keys3.0];
+        let mut owner_keys = BTreeSet::new();
+        owner_keys.insert(keys.0);
 
         match PubAppendableData::new(rand::random(),
                                      0,
                                      owner_keys.clone(),
-                                     vec![],
                                      BTreeSet::new(),
-                                     Filter::white_list(None),
-                                     None) {
+                                     Filter::white_list(None)) {
             Ok(mut pub_appendable_data) => {
-                // After one signature, one more is required to reach majority.
-                assert_eq!(unwrap!(pub_appendable_data.add_signature(&keys1.1)), 1);
-                assert!(pub_appendable_data.verify_previous_owner_signatures(&owner_keys).is_err());
-                // Two out of three is enough.
-                assert_eq!(unwrap!(pub_appendable_data.add_signature(&keys2.1)), 0);
-                assert!(pub_appendable_data.verify_previous_owner_signatures(&owner_keys).is_ok());
-                // Three out of three is also fine.
-                assert_eq!(unwrap!(pub_appendable_data.add_signature(&keys3.1)), 0);
-                assert!(pub_appendable_data.verify_previous_owner_signatures(&owner_keys).is_ok());
-            }
-            Err(error) => panic!("Error: {:?}", error),
-        }
-    }
-
-    // TODO: this test is disabled as the feature of multi-sig is disabled
-    #[ignore]
-    #[test]
-    fn four_owners() {
-        let keys1 = sign::gen_keypair();
-        let keys2 = sign::gen_keypair();
-        let keys3 = sign::gen_keypair();
-        let keys4 = sign::gen_keypair();
-
-        let owner_keys = vec![keys1.0, keys2.0, keys3.0, keys4.0];
-
-        match PubAppendableData::new(rand::random(),
-                                     0,
-                                     owner_keys.clone(),
-                                     vec![],
-                                     BTreeSet::new(),
-                                     Filter::white_list(None),
-                                     Some(&keys1.1)) {
-            Ok(mut pub_appendable_data) => {
-                // Two signatures are not enough because they don't have a strict majority.
-                assert_eq!(unwrap!(pub_appendable_data.add_signature(&keys2.1)), 1);
-                assert!(pub_appendable_data.verify_previous_owner_signatures(&owner_keys).is_ok());
-                // Three out of four is enough.
-                assert_eq!(unwrap!(pub_appendable_data.add_signature(&keys3.1)), 0);
-                assert!(pub_appendable_data.verify_previous_owner_signatures(&owner_keys).is_ok());
-                // Four out of four is also fine.
-                assert_eq!(unwrap!(pub_appendable_data.add_signature(&keys4.1)), 0);
-                assert!(pub_appendable_data.verify_previous_owner_signatures(&owner_keys).is_ok());
-            }
-            Err(error) => panic!("Error: {:?}", error),
-        }
-    }
-
-    // TODO: this test is disabled as the feature of multi-sig is disabled
-    #[ignore]
-    #[test]
-    fn transfer_owners() {
-        let keys1 = sign::gen_keypair();
-        let keys2 = sign::gen_keypair();
-        let keys3 = sign::gen_keypair();
-        let new_owner = sign::gen_keypair();
-
-        let identifier: XorName = rand::random();
-
-        // Owned by keys1 keys2 and keys3
-        match PubAppendableData::new(identifier,
-                                     0,
-                                     vec![keys1.0, keys2.0, keys3.0],
-                                     vec![],
-                                     BTreeSet::new(),
-                                     Filter::white_list(None),
-                                     Some(&keys1.1)) {
-            Ok(mut orig_pub_appendable_data) => {
-                assert_eq!(orig_pub_appendable_data.add_signature(&keys2.1).ok(),
-                           Some(0));
-                // Transfer ownership and update to new owner
-                match PubAppendableData::new(identifier,
-                                             1,
-                                             vec![new_owner.0],
-                                             vec![keys1.0, keys2.0, keys3.0],
-                                             BTreeSet::new(),
-                                             Filter::white_list(None),
-                                             Some(&keys1.1)) {
-                    Ok(mut new_pub_appendable_data) => {
-                        assert_eq!(new_pub_appendable_data.add_signature(&keys2.1).ok(),
-                                   Some(0));
-                        match orig_pub_appendable_data.update_with_other(new_pub_appendable_data) {
-                            Ok(()) => (),
-                            Err(e) => panic!("Error {:?}", e),
-                        }
-                        // transfer ownership back to keys1 only
-                        match PubAppendableData::new(identifier,
-                                                     2,
-                                                     vec![keys1.0],
-                                                     vec![new_owner.0],
-                                                     BTreeSet::new(),
-                                                     Filter::white_list(None),
-                                                     Some(&new_owner.1)) {
-                            Ok(another_new_pub_appendable_data) => {
-                                match orig_pub_appendable_data.update_with_other(
-                                        another_new_pub_appendable_data) {
-                                    Ok(()) => (),
-                                    Err(e) => panic!("Error {:?}", e),
-                                }
-                            }
-                            Err(error) => panic!("Error: {:?}", error),
-                        }
-                    }
+                assert_eq!(pub_appendable_data.add_signature(&other_keys).unwrap(), 0);
+                let data = match pub_appendable_data.data_to_sign() {
+                    Ok(data) => data,
                     Err(error) => panic!("Error: {:?}", error),
-                }
+                };
+                assert!(data::verify_signatures(&owner_keys,
+                                                &data,
+                                                pub_appendable_data.get_signatures()).is_err());
             }
             Err(error) => panic!("Error: {:?}", error),
         }
-    }
-
-    // TODO: this test is disabled as the feature of multi-sig is disabled
-    #[ignore]
-    #[test]
-    fn transfer_owner_attack() {
-        let keys1 = sign::gen_keypair();
-        let keys2 = sign::gen_keypair();
-        let keys3 = sign::gen_keypair();
-        let new_owner = sign::gen_keypair();
-        let attacker = sign::gen_keypair();
-
-        let name: XorName = rand::random();
-        let owner_keys = vec![keys1.0, keys2.0, keys3.0];
-        let attacker_keys = vec![keys1.0, keys2.0, keys3.0, attacker.0];
-
-        let mut orig_pub_appendable_data = unwrap!(PubAppendableData::new(name,
-                                                                         0,
-                                                                         owner_keys.clone(),
-                                                                         vec![],
-                                                                         BTreeSet::new(),
-                                                                         Filter::white_list(None),
-                                                                         Some(&keys1.1)));
-        assert_eq!(orig_pub_appendable_data.add_signature(&keys2.1).ok(),
-                   Some(0));
-
-        let mut new_pub_appendable_data = unwrap!(PubAppendableData::new(name,
-                                                                         1,
-                                                                         vec![new_owner.0],
-                                                                         owner_keys.clone(),
-                                                                         BTreeSet::new(),
-                                                                         Filter::white_list(None),
-                                                                         Some(&keys1.1)));
-        assert_eq!(new_pub_appendable_data.add_signature(&attacker.1).ok(),
-                   Some(0));
-
-        assert!(new_pub_appendable_data.verify_previous_owner_signatures(&owner_keys).is_err());
-        assert!(new_pub_appendable_data.verify_previous_owner_signatures(&attacker_keys).is_ok());
-        // Shall throw error of NotEnoughSignatures
-        assert!(orig_pub_appendable_data.update_with_other(new_pub_appendable_data.clone())
-            .is_err());
-
-        assert_eq!(new_pub_appendable_data.add_signature(&attacker.1).ok(),
-                   Some(0));
-        // Shall throw error of DuplicateSignatures
-        assert!(new_pub_appendable_data.verify_previous_owner_signatures(&attacker_keys).is_err());
-    }
-
-    // TODO: this test is disabled as the feature of multi-sig is disabled
-    #[ignore]
-    #[test]
-    fn update_with_wrong_info() {
-        let keys1 = sign::gen_keypair();
-        let keys2 = sign::gen_keypair();
-        let keys3 = sign::gen_keypair();
-        let new_owner = sign::gen_keypair();
-
-        let name: XorName = rand::random();
-        let owner_keys = vec![keys1.0, keys2.0, keys3.0];
-
-        let mut orig_pub_appendable_data = unwrap!(PubAppendableData::new(name,
-                                                                         0,
-                                                                         owner_keys.clone(),
-                                                                         vec![],
-                                                                         BTreeSet::new(),
-                                                                         Filter::white_list(None),
-                                                                         Some(&keys1.1)));
-        assert_eq!(orig_pub_appendable_data.add_signature(&keys2.1).ok(),
-                   Some(0));
-
-        // Update with wrong version
-        let mut wrong_version = unwrap!(PubAppendableData::new(name,
-                                                               2,
-                                                               vec![new_owner.0],
-                                                               owner_keys.clone(),
-                                                               BTreeSet::new(),
-                                                               Filter::white_list(None),
-                                                               Some(&keys1.1)));
-        assert_eq!(wrong_version.add_signature(&keys2.1).ok(), Some(0));
-        // Shall throw error of UnknownMessageType
-        assert!(orig_pub_appendable_data.update_with_other(wrong_version).is_err());
-
-        // Update with owner_keys in different order
-        let mut wrong_order = unwrap!(PubAppendableData::new(name,
-                                                             1,
-                                                             vec![new_owner.0],
-                                                             vec![keys3.0, keys2.0, keys1.0],
-                                                             BTreeSet::new(),
-                                                             Filter::white_list(None),
-                                                             Some(&keys1.1)));
-        assert_eq!(wrong_order.add_signature(&keys2.1).ok(), Some(0));
-        // Shall throw error of UnknownMessageType
-        assert!(orig_pub_appendable_data.update_with_other(wrong_order).is_err());
-
-        // Update with wrong name
-        let mut wrong_name = unwrap!(PubAppendableData::new(rand::random(),
-                                                            1,
-                                                            vec![new_owner.0],
-                                                            owner_keys.clone(),
-                                                            BTreeSet::new(),
-                                                            Filter::white_list(None),
-                                                            Some(&keys1.1)));
-        assert_eq!(wrong_name.add_signature(&keys2.1).ok(), Some(0));
-        // Shall throw error of UnknownMessageType
-        assert!(orig_pub_appendable_data.update_with_other(wrong_name).is_err());
     }
 
     #[test]
     fn appending_with_white_list() {
-        let keys = sign::gen_keypair();
-        let owner_keys = vec![keys.0];
-
         let black_key = sign::gen_keypair();
         let white_key = sign::gen_keypair();
 
         let mut pub_appendable_data = unwrap!(PubAppendableData::new(rand::random(),
-                                           0,
-                                           owner_keys.clone(),
-                                           vec![],
-                                           BTreeSet::new(),
-                                           Filter::white_list(vec![white_key.0]),
-                                           Some(&keys.1)));
+                                              0,
+                                              BTreeSet::new(),
+                                              BTreeSet::new(),
+                                              Filter::white_list(vec![white_key.0]),));
 
         let pointer = DataIdentifier::Structured(rand::random(), 10000);
         let black_appended_data = unwrap!(AppendedData::new(pointer, black_key.0, &black_key.1));
@@ -606,19 +321,14 @@ mod test {
 
     #[test]
     fn appending_with_black_list() {
-        let keys = sign::gen_keypair();
-        let owner_keys = vec![keys.0];
-
         let black_key = sign::gen_keypair();
         let white_key = sign::gen_keypair();
 
         let mut pub_appendable_data = unwrap!(PubAppendableData::new(rand::random(),
-                                           0,
-                                           owner_keys.clone(),
-                                           vec![],
-                                           BTreeSet::new(),
-                                           Filter::black_list(vec![black_key.0]),
-                                           Some(&keys.1)));
+                                              0,
+                                              BTreeSet::new(),
+                                              BTreeSet::new(),
+                                              Filter::black_list(vec![black_key.0])));
 
         let pointer = DataIdentifier::Structured(rand::random(), 10000);
         let black_appended_data = unwrap!(AppendedData::new(pointer, black_key.0, &black_key.1));
@@ -635,11 +345,9 @@ mod test {
 
         let mut pub_appendable_data = unwrap!(PubAppendableData::new(name,
                                                                      0,
-                                                                     vec![keys.0],
-                                                                     vec![],
                                                                      BTreeSet::new(),
-                                                                     Filter::black_list(None),
-                                                                     Some(&keys.1)));
+                                                                     BTreeSet::new(),
+                                                                     Filter::black_list(None)));
         let pointer = DataIdentifier::Structured(rand::random(), 10000);
         let appended_data = unwrap!(AppendedData::new(pointer, keys.0, &keys.1));
 
@@ -650,5 +358,37 @@ mod test {
         // apply wrapper with incorrect version
         let append_wrapper = AppendWrapper::new_pub(name, appended_data, 1);
         assert!(!pub_appendable_data.apply_wrapper(append_wrapper));
+    }
+
+    #[test]
+    fn transfer_ownership() {
+        let keys = sign::gen_keypair();
+        let other_keys = sign::gen_keypair();
+        let mut owner = BTreeSet::new();
+        owner.insert(keys.0);
+        let mut new_owner = BTreeSet::new();
+        new_owner.insert(other_keys.0);
+        let name: XorName = rand::random();
+
+        let mut ad = unwrap!(PubAppendableData::new(name,
+                                                    0,
+                                                    owner,
+                                                    BTreeSet::new(),
+                                                    Filter::black_list(None)));
+        let mut ad_new = unwrap!(PubAppendableData::new(name,
+                                                        1,
+                                                        new_owner.clone(),
+                                                        BTreeSet::new(),
+                                                        Filter::black_list(None)));
+        assert_eq!(ad_new.add_signature(&keys).unwrap(), 0);
+        assert!(ad.update_with_other(ad_new).is_ok());
+
+        let mut ad_fail = unwrap!(PubAppendableData::new(name,
+                                                         2,
+                                                         new_owner.clone(),
+                                                         BTreeSet::new(),
+                                                         Filter::black_list(None)));
+        assert_eq!(ad_fail.add_signature(&keys).unwrap(), 0);
+        assert!(ad.update_with_other(ad_fail).is_err());
     }
 }

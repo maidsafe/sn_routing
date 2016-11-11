@@ -62,7 +62,7 @@ use routing::{Authority, Client, Data, Event, FullId, MIN_GROUP_SIZE, MessageId,
               Response, StructuredData, XorName, Xorable};
 use rust_sodium::crypto;
 use std::iter;
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 #[cfg(target_os = "macos")]
 use std::io;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -233,14 +233,17 @@ fn create_connected_nodes(count: usize,
 }
 
 fn gen_structured_data<R: Rng>(full_id: &FullId, rng: &mut R) -> Data {
-    Data::Structured(StructuredData::new(10000,
-                                         rng.gen(),
-                                         0,
-                                         rng.gen_iter().take(10).collect(),
-                                         vec![full_id.public_id().signing_public_key().clone()],
-                                         vec![],
-                                         Some(full_id.signing_private_key()))
-        .expect("Cannot create structured data for test"))
+    let owner_pubkey = *full_id.public_id().signing_public_key();
+    let mut owner = BTreeSet::new();
+    owner.insert(owner_pubkey);
+    let mut sd = StructuredData::new(10000,
+                                     rng.gen(),
+                                     0,
+                                     rng.gen_iter().take(10).collect(),
+                                     owner)
+        .expect("Cannot create structured data for test");
+    let _ = sd.add_signature(&(owner_pubkey, full_id.signing_private_key().clone()));
+    Data::Structured(sd)
 }
 
 fn closest_nodes(node_names: &[XorName], target: &XorName) -> Vec<XorName> {
