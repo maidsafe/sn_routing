@@ -29,7 +29,8 @@ use xor_name::XorName;
 pub enum Authority {
     /// Manager of a Client.  XorName is the hash of the Client's `client_key`.
     ClientManager(XorName),
-    /// Manager of a network-addressable element.  XorName is the name of the element in question.
+    /// Manager of a network-addressable element, i.e. the group matching this name.
+    /// `XorName` is the name of the element in question.
     NaeManager(XorName),
     /// Manager of a ManagedNode.  XorName is that of the ManagedNode.
     NodeManager(XorName),

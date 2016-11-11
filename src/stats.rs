@@ -132,7 +132,7 @@ impl Stats {
             MessageContent::GetNodeName { .. } => self.msg_get_node_name += 1,
             MessageContent::ExpectCloseNode { .. } => self.msg_expect_close_node += 1,
             MessageContent::GetCloseGroup(..) => self.msg_get_close_group += 1,
-            MessageContent::ConnectionInfo { .. } => self.msg_connection_info += 1,
+            MessageContent::ConnectionInfo(_) => self.msg_connection_info += 1,
             MessageContent::GetCloseGroupResponse { .. } => self.msg_get_close_group_rsp += 1,
             MessageContent::GroupSplit(..) => self.msg_group_split += 1,
             MessageContent::OwnGroupMerge { .. } => self.msg_own_group_merge += 1,
@@ -159,7 +159,8 @@ impl Stats {
         self.msg_total_bytes += len as u64;
     }
 
-    /// Increment the total message count, and if divisible by 100, log a message with the counts.
+    /// Increments the total message count, and if the count is divisible by
+    /// `MSG_LOG_COUNT` logs a message with the counts.
     fn increment_msg_total(&mut self) {
         self.msg_total += 1;
         if self.msg_total % MSG_LOG_COUNT == 0 {

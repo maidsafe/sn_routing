@@ -314,11 +314,13 @@ pub fn verify_network_invariant<'a, T, U>(nodes: U)
             }
             if prefix1.is_compatible(prefix2) {
                 panic!("Group prefixes should be disjoint, but these are not:\n\
-                    Group {:?}: {:?}\n\
-                    Group {:?}: {:?}",
+                    Group {:?}, according to node {:?}: {:?}\n\
+                    Group {:?}, according to node {:?}: {:?}",
                        prefix1,
+                       groups[prefix1].0,
                        groups[prefix1].1,
                        prefix2,
+                       groups[prefix2].0,
                        groups[prefix2].1);
             }
         }

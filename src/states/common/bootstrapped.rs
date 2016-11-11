@@ -42,6 +42,11 @@ pub trait Bootstrapped: Base {
     fn routing_msg_filter(&mut self) -> &mut RoutingMessageFilter;
     fn timer(&mut self) -> &mut Timer;
 
+    /// Examines a message, and possibly adds a pending ack. Returns true unless
+    /// this is a message we already received an ack for.
+    ///
+    /// This short-circuits when the message is an ack or is not from us; in
+    /// these cases no ack is expected and the function returns true.
     fn add_to_pending_acks(&mut self, signed_msg: &SignedMessage, route: u8) -> bool {
         // If this is not an ack and we're the source, expect to receive an ack for this.
         if let MessageContent::Ack(..) = signed_msg.routing_message().content {
