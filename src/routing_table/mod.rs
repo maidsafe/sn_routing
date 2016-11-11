@@ -164,17 +164,17 @@ impl<'a, T: 'a + Binary + Clone + Copy + Default + Hash + Xorable> Iterator for 
 
 
 
-// A message destination.
+/// A message destination.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Destination<N> {
-    // The group closest to the given name.
+    /// The group closest to the given name.
     Group(N),
-    // The individual node at the given name.
+    /// The individual node at the given name.
     Node(N),
 }
 
 impl<N> Destination<N> {
-    // Returns the name of the destination, i.e. the node or group name.
+    /// Returns the name of the destination, i.e. the node or group name.
     pub fn name(&self) -> &N {
         match *self {
             Destination::Group(ref name) |
@@ -182,7 +182,7 @@ impl<N> Destination<N> {
         }
     }
 
-    // Returns `true` if the destination is a group, and `false` if it is an individual node.
+    /// Returns `true` if the destination is a group, and `false` if it is an individual node.
     pub fn is_group(&self) -> bool {
         match *self {
             Destination::Group(_) => true,
@@ -190,7 +190,7 @@ impl<N> Destination<N> {
         }
     }
 
-    // Returns `true` if the destination is an individual node, and `false` if it is a group.
+    /// Returns `true` if the destination is an individual node, and `false` if it is a group.
     pub fn is_node(&self) -> bool {
         !self.is_group()
     }
@@ -260,12 +260,13 @@ pub enum OwnMergeState<T: Binary + Clone + Copy + Default + Hash + Xorable> {
 
 
 
-// A routing table to manage contacts for a node.
-//
-// It maintains a list of `T`s representing connected peer nodes, and provides algorithms for
-// routing messages.
-//
-// See the [crate documentation](index.html) for details.
+/// A routing table to manage contacts for a node.
+///
+/// It maintains a list of groups (identified by a `Prefix<T>`), each with a
+/// list node identifiers of type `T` (e.g. `XorName`) representing connected
+/// peer nodes, and provides algorithms for routing messages.
+///
+/// See the [crate documentation](index.html) for details.
 #[derive(Clone, Eq, PartialEq)]
 pub struct RoutingTable<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> {
     our_name: T,
@@ -281,7 +282,7 @@ pub struct RoutingTable<T: Binary + Clone + Copy + Debug + Default + Hash + Xora
 }
 
 impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T> {
-    /// Create a new RoutingTable.
+    /// Creates a new `RoutingTable`.
     pub fn new(our_name: T, min_group_size: usize) -> Self {
         let mut groups = HashMap::new();
         let our_group_prefix = Prefix::new(0, our_name);
@@ -296,6 +297,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
     }
 
+    /// Creates a new `RoutingTable`, using an existing collection of groups.
     pub fn new_with_groups<U, V>(our_name: T,
                                  min_group_size: usize,
                                  new_groups: U)
@@ -329,29 +331,33 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         Ok(result)
     }
 
+    /// Returns the `Prefix` of our group
     pub fn our_group_prefix(&self) -> &Prefix<T> {
         &self.our_group_prefix
     }
 
-    // Total number of entries in the routing table.
+    /// Returns the total number of entries in the routing table.
     pub fn len(&self) -> usize {
         self.groups.values().fold(0, |acc, group| acc + group.len())
     }
 
+    /// Is the table empty? (Returns `true` if no nodes are known; empty groups are ignored.)
     pub fn is_empty(&self) -> bool {
         self.groups.values().all(HashSet::is_empty)
     }
 
+    /// Iterates over all nodes known by the routing table.
     pub fn iter(&self) -> Iter<T> {
         Iter { inner: self.groups.iter().flat_map(Iter::<T>::iterate) }
     }
 
+    /// Collects prefixes of all groups known by the routing table into a `HashSet`.
     pub fn prefixes(&self) -> HashSet<Prefix<T>> {
         self.groups.keys().cloned().collect()
     }
 
-    // If our group is the closest one to `name`, returns all names in our group *including ours*,
-    // otherwise returns `None`.
+    /// If our group is the closest one to `name`, returns all names in our group *including ours*,
+    /// otherwise returns `None`.
     pub fn close_names(&self, name: &T) -> Option<HashSet<T>> {
         if self.our_group_prefix.matches(name) {
             let mut our_group = unwrap!(self.groups.get(&self.our_group_prefix)).clone();
@@ -362,8 +368,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
     }
 
-    // If our group is the closest one to `name`, returns all names in our group *excluding ours*,
-    // otherwise returns `None`.
+    /// If our group is the closest one to `name`, returns all names in our group *excluding ours*,
+    /// otherwise returns `None`.
     pub fn other_close_names(&self, name: &T) -> Option<HashSet<T>> {
         if self.our_group_prefix.matches(name) {
             Some(unwrap!(self.groups.get(&self.our_group_prefix)).clone())
@@ -382,10 +388,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
     }
 
-    // Returns `Ok(())` if the given contact should be added to the routing table.
-    //
-    // Returns `Err` if `name` already exists in the routing table, or it doesn't fall within any
-    // of our groups, or it's our own name.  Otherwise it returns `true`.
+    /// Returns `Ok(())` if the given contact should be added to the routing table.
+    ///
+    /// Returns `Err` if `name` already exists in the routing table, or it doesn't fall within any
+    /// of our groups, or it's our own name.  Otherwise it returns `true`.
     pub fn need_to_add(&self, name: &T) -> Result<(), Error> {
         if *name == self.our_name {
             return Err(Error::OwnNameDisallowed);
@@ -401,12 +407,12 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
     }
 
-    // Returns the collection of groups to which a peer joining our group should connect.
-    //
-    // This will generally be all the groups in our routing table.  However, if the addition of the
-    // new node will cause our group to split, only the groups which will remain neighbours after
-    // the split are returned.  Returns `Err(Error::PeerNameUnsuitable)` if `name` is not within our
-    // group, or `Err(Error::AlreadyExists)` if `name` is already in our table.
+    /// Returns the collection of groups to which a peer joining our group should connect.
+    ///
+    /// This will generally be all the groups in our routing table.  However, if the addition of the
+    /// new node will cause our group to split, only the groups which will remain neighbours after
+    /// the split are returned.  Returns `Err(Error::PeerNameUnsuitable)` if `name` is not within our
+    /// group, or `Err(Error::AlreadyExists)` if `name` is already in our table.
     pub fn expect_add_to_our_group(&self, name: &T) -> Result<Groups<T>, Error> {
         if !self.our_group_prefix.matches(name) {
             return Err(Error::PeerNameUnsuitable);
@@ -431,12 +437,12 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         Ok(groups)
     }
 
-    // Adds a contact to the routing table.
-    //
-    // Returns `Err` if `name` already existed in the routing table, or it doesn't fall within any
-    // of our groups, or it's our own name.  Otherwise it returns `Ok(true)` if the addition
-    // succeeded and should cause our group to split or `Ok(false)` if the addition succeeded and
-    // shouldn't cause a split.
+    /// Adds a contact to the routing table.
+    ///
+    /// Returns `Err` if `name` already existed in the routing table, or it doesn't fall within any
+    /// of our groups, or it's our own name.  Otherwise it returns `Ok(true)` if the addition
+    /// succeeded and should cause our group to split or `Ok(false)` if the addition succeeded and
+    /// shouldn't cause a split.
     pub fn add(&mut self, name: T) -> Result<bool, Error> {
         if name == self.our_name {
             return Err(Error::OwnNameDisallowed);
@@ -466,12 +472,12 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         Ok(self.should_split_our_group(our_group))
     }
 
-    // Splits a group.
-    //
-    // If the group exists in the routing table, it is split, otherwise this function is a no-op.
-    // If any of the groups don't satisfy the invariant any more (i.e. only differ in one bit from
-    // our own prefix), they are removed and those contacts are returned.  If the split is happening
-    // to our own group, our new prefix is returned in the optional field.
+    /// Splits a group.
+    ///
+    /// If the group exists in the routing table, it is split, otherwise this function is a no-op.
+    /// If any of the groups don't satisfy the invariant any more (i.e. only differ in one bit from
+    /// our own prefix), they are removed and those contacts are returned.  If the split is happening
+    /// to our own group, our new prefix is returned in the optional field.
     pub fn split(&mut self, prefix: Prefix<T>) -> (Vec<T>, Option<Prefix<T>>) {
         let mut result = vec![];
         if prefix == self.our_group_prefix {
@@ -500,11 +506,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         (result, None)
     }
 
-    // Removes a contact from the routing table.
-    //
-    // If no entry with that name is found, `Err(Error::NoSuchPeer)` is returned.  Otherwise, the
-    // entry is removed from the routing table and `RemovalDetails` is returned.  See that struct's
-    // docs for further info.
+    /// Removes a contact from the routing table.
+    ///
+    /// If no entry with that name is found, `Err(Error::NoSuchPeer)` is returned.  Otherwise, the
+    /// entry is removed from the routing table and `RemovalDetails` is returned.  See that struct's
+    /// docs for further info.
     pub fn remove(&mut self, name: &T) -> Result<RemovalDetails<T>, Error> {
         let mut should_merge = false;
         let mut removal_details = RemovalDetails {
@@ -541,11 +547,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         Ok(removal_details)
     }
 
-    // When a merge of our own group is triggered (either from our own group or a neighbouring one)
-    // this function handles the incoming merge details from the peers within the merging groups.
-    //
-    // The actual merge of the group is only done once all expected merging groups have provided
-    // details.  See the docs for `OwnMergeState` for full details of the return value.
+    /// When a merge of our own group is triggered (either from our own group or a neighbouring one)
+    /// this function handles the incoming merge details from the peers within the merging groups.
+    ///
+    /// The actual merge of the group is only done once all expected merging groups have provided
+    /// details.  See the docs for `OwnMergeState` for full details of the return value.
     pub fn merge_own_group(&mut self, merge_details: OwnMergeDetails<T>) -> OwnMergeState<T> {
         if self.groups.contains_key(&merge_details.merge_prefix) {
             warn!("{:?}: Attempt to call merge_own_group() for an already merged prefix {:?}",
@@ -583,12 +589,12 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
     }
 
-    // Merges all existing compatible groups into the new one defined by `merge_details.prefix`.
-    // Our own group is not included in the merge.
-    //
-    // The appropriate targets (all contacts from `merge_details.groups` which are not currently
-    // held in the routing table) are returned so the caller can establish connections to these
-    // peers and subsequently add them.
+    /// Merges all existing compatible groups into the new one defined by `merge_details.prefix`.
+    /// Our own group is not included in the merge.
+    ///
+    /// The appropriate targets (all contacts from `merge_details.groups` which are not currently
+    /// held in the routing table) are returned so the caller can establish connections to these
+    /// peers and subsequently add them.
     pub fn merge_other_group(&mut self, merge_details: OtherMergeDetails<T>) -> HashSet<T> {
         self.merge(&merge_details.prefix);
 
@@ -599,25 +605,25 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             .collect()
     }
 
-    // Returns a collection of nodes to which a message with the given `Destination` should be sent
-    // onwards.  In all non-error cases below, the returned collection will have the members of
-    // `exclude` removed, possibly resulting in an empty set being returned.
-    //
-    // * If the destination is a group:
-    //     - if our group is the closest on the network (i.e. our group's prefix is a prefix of the
-    //       destination), returns all other members of our group; otherwise
-    //     - if the closest group has more than `route` members, returns the `route`-th member of
-    //       this group; otherwise
-    //     - returns `Err(Error::CannotRoute)`
-    //
-    // * If the destination is an individual node:
-    //     - if our name *is* the destination, returns an empty set; otherwise
-    //     - if the destination name is an entry in the routing table, returns it; otherwise
-    //     - if our group is the closest on the network (i.e. our group's prefix is a prefix of the
-    //       destination), this returns `Err(Error::NoSuchPeer)`; otherwise
-    //     - if the closest group has more than `route` members, returns the `route`-th member of
-    //       this group; otherwise
-    //     - returns `Err(Error::CannotRoute)`
+    /// Returns a collection of nodes to which a message with the given `Destination` should be sent
+    /// onwards.  In all non-error cases below, the returned collection will have the members of
+    /// `exclude` removed, possibly resulting in an empty set being returned.
+    ///
+    /// * If the destination is a group:
+    ///     - if our group is the closest on the network (i.e. our group's prefix is a prefix of the
+    ///       destination), returns all other members of our group; otherwise
+    ///     - if the closest group has more than `route` members, returns the `route`-th member of
+    ///       this group; otherwise
+    ///     - returns `Err(Error::CannotRoute)`
+    ///
+    /// * If the destination is an individual node:
+    ///     - if our name *is* the destination, returns an empty set; otherwise
+    ///     - if the destination name is an entry in the routing table, returns it; otherwise
+    ///     - if our group is the closest on the network (i.e. our group's prefix is a prefix of the
+    ///       destination), this returns `Err(Error::NoSuchPeer)`; otherwise
+    ///     - if the closest group has more than `route` members, returns the `route`-th member of
+    ///       this group; otherwise
+    ///     - returns `Err(Error::CannotRoute)`
     pub fn targets(&self,
                    dst: &Destination<T>,
                    exclude: T,
@@ -673,10 +679,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
     }
 
-    // Returns whether a `Destination` represents this node.
-    //
-    // Returns `true` if `dst` is a single node with name equal to `our_name`, or if `dst` is a
-    // group and the closest group is our group.
+    /// Returns whether a `Destination` represents this node.
+    ///
+    /// Returns `true` if `dst` is a single node with name equal to `our_name`, or if `dst` is a
+    /// group and the closest group is our group.
     pub fn is_recipient(&self, dst: &Destination<T>) -> bool {
         match *dst {
             Destination::Node(ref target_name) => *target_name == self.our_name,
@@ -684,10 +690,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
     }
 
-    // Returns true if our name is the `route`-th closest to `src_name` in our group.
-    //
-    // Used when sending a message from a group to decide which one of the group should send the
-    // full message (the remainder sending just a hash of the message).
+    /// Returns true if our name is the `route`-th closest to `src_name` in our group.
+    ///
+    /// Used when sending a message from a group to decide which one of the group should send the
+    /// full message (the remainder sending just a hash of the message).
     pub fn should_route_full_message(&self, src_name: &T, route: usize) -> bool {
         let mut our_group = unwrap!(self.groups.get(&self.our_group_prefix)).iter().collect_vec();
         our_group.push(&self.our_name);
@@ -898,6 +904,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         Ok(())
     }
 
+    /// Returns our name
     #[cfg(any(test, feature = "use-mock-crust"))]
     pub fn our_name(&self) -> &T {
         &self.our_name
@@ -910,6 +917,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         &self.needed
     }
 
+    /// Runs the built-in invariant checker
     #[cfg(test)]
     pub fn verify_invariant(&self) {
         unwrap!(self.check_invariant(),
