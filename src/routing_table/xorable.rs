@@ -16,13 +16,14 @@
 // relating to use of the SAFE Network Software.
 
 use std::cmp::Ordering;
+use std::marker::Sized;
 use std::mem;
 
 /// A sequence of bits, as a point in XOR space.
 ///
 /// These are considered points in a space with the XOR metric, and need to implement the
 /// functionality required by `RoutingTable` to use them as node names.
-pub trait Xorable: Ord {
+pub trait Xorable: Ord + Sized {
     /// Returns the length of the common prefix with the `other` name; e. g.
     /// the when `other = 11110000` and `self = 11111111` this is 4.
     fn common_prefix(&self, other: &Self) -> usize;
@@ -57,6 +58,11 @@ pub trait Xorable: Ord {
     /// Returns a copy of self with first `n` bits preserved, and remaining bits
     /// set to 0 (val == false) or 1 (val == true).
     fn set_remaining(self, n: usize, val: bool) -> Self;
+
+    /// Returns the number of bits in `Self`.
+    fn bit_len() -> usize {
+        mem::size_of::<Self>() * 8
+    }
 }
 
 /// Converts a string into debug format of `????????...????????` when the string is longer than 20.
@@ -105,7 +111,7 @@ macro_rules! impl_xorable_for_array {
 
             fn with_flipped_bit(mut self, i: usize) -> Self {
                 let bits = mem::size_of::<$t>() * 8;
-                if i >= bits * self.len() {
+                if i >= Self::bit_len() {
                     return self;
                 }
                 self[i / bits] ^= 1 << (bits - 1 - i % bits);
@@ -114,7 +120,7 @@ macro_rules! impl_xorable_for_array {
 
             fn with_bit(mut self, i: usize, bit: bool) -> Self {
                 let bits = mem::size_of::<$t>() * 8;
-                if i >= bits * self.len() {
+                if i >= Self::bit_len() {
                     return self;
                 }
                 let pow_i = 1 << (bits - 1 - i % bits); // 1 on bit i % bits.
@@ -127,8 +133,8 @@ macro_rules! impl_xorable_for_array {
             }
 
             fn binary(&self) -> String {
-                let bits = mem::size_of::<$t>() * 8 * $l;
-                let mut s = String::with_capacity(bits);
+                let bit_len = Self::bit_len();
+                let mut s = String::with_capacity(bit_len);
                 for value in self.iter() {
                     s.push_str(&value.binary());
                 }
@@ -217,7 +223,7 @@ macro_rules! impl_xorable {
             }
 
             fn set_remaining(self, n: usize, val: bool) -> Self {
-                let bits = mem::size_of::<$t>() * 8;
+                let bits = mem::size_of::<Self>() * 8;
                 if n >= bits {
                     self
                 } else {
@@ -336,5 +342,23 @@ mod tests {
         assert_eq!([13u8, 112, 9, 1].set_remaining(10, false), [13u8, 64, 0, 0]);
         assert_eq!([13u8, 112, 9, 1].set_remaining(10, true),
                    [13u8, 127, 255, 255]);
+    }
+
+    #[test]
+    fn bit_len() {
+        type Array32 = [u8; 32];
+        type Array16 = [u8; 16];
+        type Array8 = [u8; 8];
+        type Array4 = [u8; 4];
+
+        assert_eq!(u64::bit_len(), 64);
+        assert_eq!(u32::bit_len(), 32);
+        assert_eq!(u16::bit_len(), 16);
+        assert_eq!(u8::bit_len(), 8);
+
+        assert_eq!(Array32::bit_len(), 256);
+        assert_eq!(Array16::bit_len(), 128);
+        assert_eq!(Array8::bit_len(), 64);
+        assert_eq!(Array4::bit_len(), 32);
     }
 }
