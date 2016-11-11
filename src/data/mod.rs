@@ -149,22 +149,18 @@ mod tests {
     extern crate rand;
 
     use rust_sodium::crypto::hash::sha256;
-    use rust_sodium::crypto::sign;
     use super::*;
+    use std::collections::BTreeSet;
     use xor_name::XorName;
 
     #[test]
     fn data_name() {
         // name() resolves correctly for StructuredData
-        let keys = sign::gen_keypair();
-        let owner_keys = vec![keys.0];
         match StructuredData::new(0,
                                   rand::random(),
                                   0,
                                   vec![],
-                                  owner_keys.clone(),
-                                  vec![],
-                                  Some(&keys.1)) {
+                                  BTreeSet::new()) {
             Ok(structured_data) => {
                 assert_eq!(structured_data.clone().name(),
                            Data::Structured(structured_data.clone()).name());

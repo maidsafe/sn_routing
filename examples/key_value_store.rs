@@ -65,8 +65,8 @@ use maidsafe_utilities::serialisation::{deserialise, serialise};
 use maidsafe_utilities::thread;
 use routing::{Data, DataIdentifier, StructuredData, XorName};
 use rust_sodium::crypto;
-use std::io;
-use std::io::Write;
+use std::collections::BTreeSet;
+use std::io::{self, Write};
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
 use utils::{ExampleClient, ExampleNode};
@@ -236,7 +236,7 @@ impl KeyValueStore {
     pub fn put(&self, put_where: String, put_what: String) {
         let name = KeyValueStore::calculate_key_name(&put_where);
         let data = unwrap!(serialise(&(put_where, put_what)));
-        let sd = unwrap!(StructuredData::new(TYPE_TAG, name, 0, data, vec![], vec![], None));
+        let sd = unwrap!(StructuredData::new(TYPE_TAG, name, 0, data, BTreeSet::new()));
         if self.example_client.put(Data::Structured(sd)).is_err() {
             error!("Failed to put data.");
         }

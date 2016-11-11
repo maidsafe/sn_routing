@@ -15,12 +15,13 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use super::{DataIdentifier, NO_OWNER_PUB_KEY, verify_signatures};
+use super::{DataIdentifier, NO_OWNER_PUB_KEY};
 use error::RoutingError;
 use maidsafe_utilities::serialisation::{serialise, serialised_size};
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
+use utils;
 use xor_name::XorName;
 
 /// Maximum allowed size for a Structured Data to grow to
@@ -125,7 +126,7 @@ impl StructuredData {
             return Err(RoutingError::UnknownMessageType);
         }
         let data = try!(other.data_to_sign());
-        verify_signatures(&self.owners, &data, &other.signatures)
+        super::verify_signatures(&self.owners, &data, &other.signatures)
     }
 
     fn data_to_sign(&self) -> Result<Vec<u8>, RoutingError> {
@@ -145,13 +146,13 @@ impl StructuredData {
     /// Adds a signature with the given `keys.1` to the `signatures` and returns
     /// the number of signatures that are still required. If more than 50% of the owners
     /// have signed, 0 is returned and validation is complete.
-    pub fn add_signature(&mut self, keys: (&PublicKey, &SecretKey)) -> Result<usize, RoutingError> {
+    pub fn add_signature(&mut self, keys: &(PublicKey, SecretKey)) -> Result<usize, RoutingError> {
         if !self.signatures.is_empty() {
             return Err(RoutingError::InvalidOwners);
         }
         let data = try!(self.data_to_sign());
-        let sig = sign::sign_detached(&data, keys.1);
-        let _ = self.signatures.insert(*keys.0, sig);
+        let sig = sign::sign_detached(&data, &keys.1);
+        let _ = self.signatures.insert(keys.0, sig);
         Ok(((self.owners.len() / 2) + 1).saturating_sub(self.signatures.len()))
     }
 
@@ -193,28 +194,15 @@ impl StructuredData {
 
 impl Debug for StructuredData {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        let previous_owner_keys: Vec<String> = self.signatures
-            .iter()
-            .map(|(pub_key, _)| ::utils::format_binary_array(&pub_key.0))
-            .collect();
-        let current_owner_keys: Vec<String> = self.owners
-            .iter()
-            .map(|pub_key| ::utils::format_binary_array(&pub_key.0))
-            .collect();
-        let previous_owner_signatures: Vec<String> = self.signatures
-            .iter()
-            .map(|(_, sig)| ::utils::format_binary_array(&sig.0[..]))
-            .collect();
         write!(formatter,
-               "StructuredData {{ type_tag: {}, name: {}, data: {}, previous_owner_keys: {:?}, \
-                version: {}, current_owner_keys: {:?}, previous_owner_signatures: {:?} }}",
+               "StructuredData {{ type_tag: {}, name: {}, version: {}, data: {}, \
+                owners: {:?}, signatures: {:?} }}",
                self.type_tag,
                self.name(),
-               ::utils::format_binary_array(&self.data[..]),
-               previous_owner_keys,
                self.version,
-               current_owner_keys,
-               previous_owner_signatures)
+               utils::format_binary_array(&self.data[..]),
+               self.owners,
+               self.signatures)
     }
 }
 
@@ -232,217 +220,74 @@ mod tests {
     extern crate rand;
 
     use super::*;
+    use data;
     use rust_sodium::crypto::sign;
+    use std::collections::BTreeSet;
     use xor_name::XorName;
 
     #[test]
     fn single_owner() {
         let keys = sign::gen_keypair();
-        let owner_keys = vec![keys.0];
+        let mut owner_keys = BTreeSet::new();
+        owner_keys.insert(keys.0);
 
-        match StructuredData::new(0,
-                                  rand::random(),
-                                  0,
-                                  vec![],
-                                  owner_keys.clone(),
-                                  vec![],
-                                  Some(&keys.1)) {
-            Ok(structured_data) => {
-                assert_eq!(structured_data.verify_previous_owner_signatures(&owner_keys).ok(),
-                           Some(()))
+        match StructuredData::new(0, rand::random(), 0, vec![], owner_keys.clone()) {
+            Ok(mut structured_data) => {
+                let data = match structured_data.data_to_sign() {
+                    Ok(data) => data,
+                    Err(error) => panic!("Error: {:?}", error),
+                };
+                assert!(data::verify_signatures(&owner_keys,
+                                                &data,
+                                                structured_data.get_signatures()).is_err());
+                assert_eq!(structured_data.add_signature(&keys).unwrap(), 0);
+                assert!(data::verify_signatures(&owner_keys,
+                                                &data,
+                                                structured_data.get_signatures()).is_ok());
             }
             Err(error) => panic!("Error: {:?}", error),
         }
     }
 
     #[test]
-    #[should_panic(expected = "assertion failed")]
-    fn single_owner_unsigned() {
-        let keys = sign::gen_keypair();
-        let owner_keys = vec![keys.0];
-
-        match StructuredData::new(0,
-                                  rand::random(),
-                                  0,
-                                  vec![],
-                                  owner_keys.clone(),
-                                  vec![],
-                                  None) {
-            Ok(structured_data) => {
-                assert_eq!(structured_data.verify_previous_owner_signatures(&owner_keys).ok(),
-                           Some(()))
-            }
-            Err(error) => panic!("Error: {:?}", error),
-        }
-    }
-
-    #[test]
-    #[should_panic(expected = "assertion failed")]
-    fn single_owner_other_signing_key() {
-        let keys = sign::gen_keypair();
-        let owner_keys = vec![keys.0];
-        let other_keys = sign::gen_keypair();
-
-        match StructuredData::new(0,
-                                  rand::random(),
-                                  0,
-                                  vec![],
-                                  owner_keys.clone(),
-                                  vec![],
-                                  Some(&other_keys.1)) {
-            Ok(structured_data) => {
-                assert_eq!(structured_data.verify_previous_owner_signatures(&owner_keys).ok(),
-                           Some(()))
-            }
-            Err(error) => panic!("Error: {:?}", error),
-        }
-    }
-
-    #[test]
-    #[should_panic(expected = "assertion failed")]
     fn single_owner_other_signature() {
         let keys = sign::gen_keypair();
-        let owner_keys = vec![keys.0];
         let other_keys = sign::gen_keypair();
+        let mut owner_keys = BTreeSet::new();
+        owner_keys.insert(keys.0);
 
-        match StructuredData::new(0,
-                                  rand::random(),
-                                  0,
-                                  vec![],
-                                  owner_keys.clone(),
-                                  vec![],
-                                  None) {
+        match StructuredData::new(0, rand::random(), 0, vec![], owner_keys.clone()) {
             Ok(mut structured_data) => {
-                assert_eq!(structured_data.add_signature(&other_keys.1).ok(), Some(0));
-                assert_eq!(structured_data.verify_previous_owner_signatures(&owner_keys).ok(),
-                           Some(()))
-            }
-            Err(error) => panic!("Error: {:?}", error),
-        }
-    }
-
-    // TODO: this test is disabled as the feature of multi-sig is disabled
-    #[ignore]
-    #[test]
-    fn three_owners() {
-        let keys1 = sign::gen_keypair();
-        let keys2 = sign::gen_keypair();
-        let keys3 = sign::gen_keypair();
-
-        let owner_keys = vec![keys1.0, keys2.0, keys3.0];
-
-        match StructuredData::new(0,
-                                  rand::random(),
-                                  0,
-                                  vec![],
-                                  owner_keys.clone(),
-                                  vec![],
-                                  None) {
-            Ok(mut structured_data) => {
-                // After one signature, one more is required to reach majority.
-                assert_eq!(unwrap!(structured_data.add_signature(&keys1.1)), 1);
-                assert!(structured_data.verify_previous_owner_signatures(&owner_keys).is_err());
-                // Two out of three is enough.
-                assert_eq!(unwrap!(structured_data.add_signature(&keys2.1)), 0);
-                assert!(structured_data.verify_previous_owner_signatures(&owner_keys).is_ok());
-                // Three out of three is also fine.
-                assert_eq!(unwrap!(structured_data.add_signature(&keys3.1)), 0);
-                assert!(structured_data.verify_previous_owner_signatures(&owner_keys).is_ok());
-            }
-            Err(error) => panic!("Error: {:?}", error),
-        }
-    }
-
-    // TODO: this test is disabled as the feature of multi-sig is disabled
-    #[ignore]
-    #[test]
-    fn four_owners() {
-        let keys1 = sign::gen_keypair();
-        let keys2 = sign::gen_keypair();
-        let keys3 = sign::gen_keypair();
-        let keys4 = sign::gen_keypair();
-
-        let owner_keys = vec![keys1.0, keys2.0, keys3.0, keys4.0];
-
-        match StructuredData::new(0,
-                                  rand::random(),
-                                  0,
-                                  vec![],
-                                  owner_keys.clone(),
-                                  vec![],
-                                  Some(&keys1.1)) {
-            Ok(mut structured_data) => {
-                // Two signatures are not enough because they don't have a strict majority.
-                assert_eq!(unwrap!(structured_data.add_signature(&keys2.1)), 1);
-                assert!(structured_data.verify_previous_owner_signatures(&owner_keys).is_ok());
-                // Three out of four is enough.
-                assert_eq!(unwrap!(structured_data.add_signature(&keys3.1)), 0);
-                assert!(structured_data.verify_previous_owner_signatures(&owner_keys).is_ok());
-                // Four out of four is also fine.
-                assert_eq!(unwrap!(structured_data.add_signature(&keys4.1)), 0);
-                assert!(structured_data.verify_previous_owner_signatures(&owner_keys).is_ok());
-            }
-            Err(error) => panic!("Error: {:?}", error),
-        }
-    }
-
-    // TODO: this test is disabled as the feature of multi-sig is disabled
-    #[ignore]
-    #[test]
-    fn transfer_owners() {
-        let keys1 = sign::gen_keypair();
-        let keys2 = sign::gen_keypair();
-        let keys3 = sign::gen_keypair();
-        let new_owner = sign::gen_keypair();
-
-        let identifier: XorName = rand::random();
-
-        // Owned by keys1 keys2 and keys3
-        match StructuredData::new(0,
-                                  identifier,
-                                  0,
-                                  vec![],
-                                  vec![keys1.0, keys2.0, keys3.0],
-                                  vec![],
-                                  Some(&keys1.1)) {
-            Ok(mut orig_structured_data) => {
-                assert_eq!(orig_structured_data.add_signature(&keys2.1).ok(), Some(0));
-                // Transfer ownership and update to new owner
-                match StructuredData::new(0,
-                                          identifier,
-                                          1,
-                                          vec![],
-                                          vec![new_owner.0],
-                                          vec![keys1.0, keys2.0, keys3.0],
-                                          Some(&keys1.1)) {
-                    Ok(mut new_structured_data) => {
-                        assert_eq!(new_structured_data.add_signature(&keys2.1).ok(), Some(0));
-                        match orig_structured_data.replace_with_other(new_structured_data) {
-                            Ok(()) => (),
-                            Err(e) => panic!("Error {:?}", e),
-                        }
-                        // transfer ownership back to keys1 only
-                        match StructuredData::new(0,
-                                                  identifier,
-                                                  2,
-                                                  vec![],
-                                                  vec![keys1.0],
-                                                  vec![new_owner.0],
-                                                  Some(&new_owner.1)) {
-                            Ok(another_new_structured_data) => {
-                                match orig_structured_data.replace_with_other(
-                                        another_new_structured_data) {
-                                    Ok(()) => (),
-                                    Err(e) => panic!("Error {:?}", e),
-                                }
-                            }
-                            Err(error) => panic!("Error: {:?}", error),
-                        }
-                    }
+                assert_eq!(structured_data.add_signature(&other_keys).unwrap(), 0);
+                let data = match structured_data.data_to_sign() {
+                    Ok(data) => data,
                     Err(error) => panic!("Error: {:?}", error),
-                }
+                };
+                assert!(data::verify_signatures(&owner_keys,
+                                                &data,
+                                                structured_data.get_signatures()).is_err());
             }
             Err(error) => panic!("Error: {:?}", error),
         }
+    }
+
+    #[test]
+    fn transfer_ownership() {
+        let keys = sign::gen_keypair();
+        let other_keys = sign::gen_keypair();
+        let mut owner = BTreeSet::new();
+        owner.insert(keys.0);
+        let mut new_owner = BTreeSet::new();
+        new_owner.insert(other_keys.0);
+        let name: XorName = rand::random();
+
+        let mut sd = unwrap!(StructuredData::new(0, name, 0, vec![], owner));
+        let mut sd_new = unwrap!(StructuredData::new(0, name, 1, vec![], new_owner.clone()));
+        assert_eq!(sd_new.add_signature(&keys).unwrap(), 0);
+        assert!(sd.replace_with_other(sd_new).is_ok());
+
+        let mut sd_fail = unwrap!(StructuredData::new(0, name, 2, vec![], new_owner));
+        assert_eq!(sd_fail.add_signature(&keys).unwrap(), 0);
+        assert!(sd.replace_with_other(sd_fail).is_err());
     }
 }
