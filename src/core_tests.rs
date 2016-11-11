@@ -575,6 +575,7 @@ fn equal_group_size_nodes() {
 }
 
 #[test]
+#[ignore]
 fn more_than_group_size_nodes() {
     test_nodes(MIN_GROUP_SIZE * 6);
 }

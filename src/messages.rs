@@ -40,7 +40,7 @@ use types::MessageId;
 use utils;
 use xor_name::XorName;
 
-/// The quroum, as a percentage of the group size.
+/// The quorum, as a percentage of the group size.
 const QUORUM: usize = 60;
 
 /// The maximal length of a user message part, in bytes.
@@ -1017,9 +1017,10 @@ mod tests {
             content: part,
         };
 
-        // Add a signature which will not correspond to an ID in the first group list.
         let mut signed_msg = unwrap!(SignedMessage::new(routing_message, &full_id_0));
         assert_eq!(signed_msg.signatures.len(), 1);
+
+        // Add a signature which will not correspond to an ID in the first group list.
         let irrelevant_sig = match unwrap!(signed_msg.routing_message()
             .to_signature(irrelevant_full_id.signing_private_key())) {
             DirectMessage::MessageSignature(_, sig) => {

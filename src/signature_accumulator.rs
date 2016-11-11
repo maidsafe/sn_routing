@@ -265,8 +265,8 @@ mod tests {
                 .zip(env.other_ids.iter())
                 .foreach(|(signature_msg, full_id)| {
                     let result = match *signature_msg {
-                        DirectMessage::MessageSignature(ref hash, ref sig) => {
-                            sig_accumulator.add_signature(*hash, *sig, *full_id.public_id())
+                        DirectMessage::MessageSignature(hash, sig) => {
+                            sig_accumulator.add_signature(hash, sig, *full_id.public_id())
                         }
                         ref unexpected_msg => panic!("Unexpected message: {:?}", unexpected_msg),
                     };
