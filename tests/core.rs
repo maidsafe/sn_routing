@@ -15,26 +15,32 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use authority::Authority;
-use cache::{Cache, NullCache};
-use client::Client;
-use data::{Data, DataIdentifier, ImmutableData};
-use event::Event;
-use id::FullId;
+extern crate itertools;
+#[macro_use]
+extern crate log;
+extern crate rand;
+extern crate routing;
+#[macro_use]
+extern crate unwrap;
+
 use itertools::Itertools;
-use messages::{Request, Response};
-use mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
-use mock_crust::crust::PeerId;
-use node::Node;
-use peer_manager::MIN_GROUP_SIZE;
 use rand::Rng;
-use routing_table::{self, Destination, Prefix, RoutingTable, Xorable};
+use routing::{Authority, Cache, NullCache, Client};
+use routing::{Data, DataIdentifier, ImmutableData};
+use routing::{Event, FullId};
+use routing::{Request, Response};
+use routing::mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
+use routing::mock_crust::crust::PeerId;
+use routing::Node;
+use routing::MIN_GROUP_SIZE;
+use routing::{Prefix, Xorable};
+use routing::{Destination, RoutingTable, verify_network_invariant};
+use routing::MessageId;
+use routing::XorName;
 use std::cell::RefCell;
 use std::cmp;
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;
-use types::MessageId;
-use xor_name::XorName;
 
 // Poll one event per node. Otherwise, all events in a single node are polled before moving on.
 const BALANCED_POLLING: bool = true;
@@ -443,7 +449,7 @@ fn sort_nodes_by_distance_to(nodes: &mut [TestNode], name: &XorName) {
 
 fn verify_invariant_for_all_nodes(nodes: &[TestNode]) {
     let routing_tables = nodes.iter().map(TestNode::routing_table).collect_vec();
-    routing_table::verify_network_invariant(routing_tables.iter());
+    verify_network_invariant(routing_tables.iter());
 }
 
 // Generate a vector of random bytes of the given length.

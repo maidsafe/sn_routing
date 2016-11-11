@@ -166,9 +166,6 @@ mod types;
 mod utils;
 mod xor_name;
 
-#[cfg(all(test, feature = "use-mock-crust"))]
-mod core_tests;
-
 /// Mock crust
 #[cfg(feature = "use-mock-crust")]
 pub mod mock_crust;
@@ -184,7 +181,7 @@ pub const TYPE_TAG_SESSION_PACKET: u64 = 0;
 pub const TYPE_TAG_DNS_PACKET: u64 = 5;
 
 pub use authority::Authority;
-pub use cache::Cache;
+pub use cache::{Cache, NullCache};
 pub use client::Client;
 pub use data::{AppendWrapper, AppendedData, Data, DataIdentifier, Filter, ImmutableData,
                MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES,
@@ -200,5 +197,7 @@ pub use mock_crust::crust;
 pub use node::{Node, NodeBuilder};
 pub use peer_manager::MIN_GROUP_SIZE;
 pub use routing_table::{Prefix, Xorable};
+#[cfg(any(test, feature = "use-mock-crust"))]
+pub use routing_table::{Destination, RoutingTable, verify_network_invariant};
 pub use types::MessageId;
 pub use xor_name::{XOR_NAME_BITS, XOR_NAME_LEN, XorName, XorNameFromHexError};

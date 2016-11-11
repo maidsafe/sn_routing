@@ -126,7 +126,7 @@ use std::fmt::Result as FmtResult;
 use std::hash::Hash;
 use std::thread;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "use-mock-crust"))]
 pub use self::network_tests::verify_network_invariant;
 
 pub type Groups<T> = HashMap<Prefix<T>, HashSet<T>>;
@@ -849,6 +849,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             .collect()
     }
 
+    #[cfg(any(test, feature = "use-mock-crust"))]
     fn check_invariant(&self) -> Result<(), Error> {
         if !self.our_group_prefix.matches(&self.our_name) {
             warn!("Our prefix does not match our name: {:?}", self);
@@ -918,7 +919,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     }
 
     /// Runs the built-in invariant checker
-    #[cfg(test)]
+    #[cfg(any(test, feature = "use-mock-crust"))]
     pub fn verify_invariant(&self) {
         unwrap!(self.check_invariant(),
                 "Invariant not satisfied for RT: {:?}",
