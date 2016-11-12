@@ -409,7 +409,7 @@ impl Node {
                 } else if self.tunnels.has_clients(src, dst) {
                     self.send_or_drop(&dst, bytes, content.priority())
                 } else if self.tunnels.accept_clients(src, dst) {
-                    try!(self.send_direct_message(&dst, DirectMessage::TunnelSuccess(src)));
+                    self.send_direct_message(&dst, DirectMessage::TunnelSuccess(src))?;
                     self.send_or_drop(&dst, bytes, content.priority())
                 } else {
                     Err(RoutingError::InvalidDestination)
@@ -462,17 +462,6 @@ impl Node {
                 }
                 Ok(())
             }
-            DirectMessage::NewNode(public_id) => {
-                trace!("{:?} Received NewNode({:?}).", self, public_id);
-                if self.peer_mgr.routing_table().need_to_add(public_id.name()).is_ok() {
-                    let our_name = *self.name();
-                    return self.send_connection_info(public_id,
-                                              Authority::ManagedNode(our_name),
-                                              Authority::ManagedNode(*public_id.name()))
-                        .map(|_| ());
-                }
-                Ok(())
-            }
             DirectMessage::TunnelRequest(dst_id) => self.handle_tunnel_request(peer_id, dst_id),
             DirectMessage::TunnelSuccess(dst_id) => self.handle_tunnel_success(peer_id, dst_id),
             DirectMessage::TunnelClosed(dst_id) => self.handle_tunnel_closed(peer_id, dst_id),
@@ -496,7 +485,7 @@ impl Node {
             if let Some((signed_msg, route)) = self.sig_accumulator
                 .add_signature(digest, sig, pub_id) {
                 let hop = *pub_id.name();
-                return self.handle_signed_message(signed_msg, route, hop, Vec::new());
+                return self.handle_signed_message(signed_msg, route, hop);
             }
         } else {
             warn!("{:?} Received message signature from unknown peer {:?}",
@@ -511,11 +500,11 @@ impl Node {
                           peer_id: PeerId)
                           -> Result<(), RoutingError> {
         let hop_name = if let Some(peer) = self.peer_mgr.get_connected_peer(&peer_id) {
-            try!(hop_msg.verify(peer.pub_id().signing_public_key()));
+            hop_msg.verify(peer.pub_id().signing_public_key())?;
 
             match *peer.state() {
                 PeerState::Client => {
-                    try!(self.check_valid_client_message(hop_msg.content.routing_message()));
+                    self.check_valid_client_message(hop_msg.content.routing_message())?;
                     *self.name()
                 }
                 PeerState::JoiningNode => *self.name(),
@@ -525,7 +514,7 @@ impl Node {
             return Err(RoutingError::UnknownConnection(peer_id));
         };
 
-        let HopMessage { mut content, route, sent_to, .. } = hop_msg;
+        let HopMessage { mut content, route, .. } = hop_msg;
         let hop_pub_ids = if let Some(group) = self.peer_mgr.routing_table().get_group(&hop_name) {
             self.peer_mgr.get_pub_ids(group).into_iter().collect::<BTreeSet<_>>()
         } else {
@@ -540,21 +529,17 @@ impl Node {
         // }
         content.add_group_list(GroupList { pub_ids: hop_pub_ids });
         match self.sig_accumulator.add_message(content, route) {
-            Some((signed_msg, route)) => {
-                self.handle_signed_message(signed_msg, route, hop_name, sent_to)
-            }
+            Some((signed_msg, route)) => self.handle_signed_message(signed_msg, route, hop_name),
             None => Ok(()), // Has not accumulated yet.
         }
     }
 
-    // TODO - Remove all uses of `sent_to` throughout Routing codebase.
     fn handle_signed_message(&mut self,
                              signed_msg: SignedMessage,
                              route: u8,
-                             hop_name: XorName,
-                             sent_to: Vec<XorName>)
+                             hop_name: XorName)
                              -> Result<(), RoutingError> {
-        try!(signed_msg.check_integrity());
+        signed_msg.check_integrity()?;
 
         if self.in_authority(&signed_msg.routing_message().dst) {
             self.send_ack(signed_msg.routing_message(), route);
@@ -565,11 +550,11 @@ impl Node {
         }
 
         let in_authority = self.in_authority(&signed_msg.routing_message().dst);
-        if !in_authority && try!(self.respond_from_cache(signed_msg.routing_message(), route)) {
+        if !in_authority && self.respond_from_cache(signed_msg.routing_message(), route)? {
             return Ok(());
         }
 
-        if let Err(error) = self.send_signed_message(&signed_msg, route, &hop_name, &sent_to) {
+        if let Err(error) = self.send_signed_message(&signed_msg, route, &hop_name) {
             debug!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);
         }
 
@@ -963,7 +948,7 @@ impl Node {
                                           src: Authority,
                                           dst: Authority)
                                           -> Result<(), RoutingError> {
-        try!(self.peer_mgr.allow_connect(conn_info.public_id.name()));
+        self.peer_mgr.allow_connect(conn_info.public_id.name())?;
         self.connect(conn_info, dst, src)
     }
 
@@ -972,7 +957,7 @@ impl Node {
                                         src_name: XorName,
                                         dst: Authority)
                                         -> Result<(), RoutingError> {
-        try!(self.peer_mgr.allow_connect(&src_name));
+        self.peer_mgr.allow_connect(&src_name)?;
         self.connect(conn_info, dst, Authority::ManagedNode(src_name))
     }
 
@@ -1175,8 +1160,8 @@ impl Node {
         }
 
         // TODO - do we need to reply if `expect_id` triggers a failure here?
-        let groups = try!(self.peer_mgr
-            .expect_add_to_our_group(expect_id.name(), self.full_id.public_id()));
+        let groups = self.peer_mgr
+            .expect_add_to_our_group(expect_id.name(), self.full_id.public_id())?;
         self.sent_network_name_to = Some((*expect_id.name(), now));
         // From Y -> A (via B)
         let response_content = MessageContent::GetNodeNameResponse {
@@ -1243,7 +1228,7 @@ impl Node {
                        self,
                        close_node_id);
                 let ci_dst = Authority::ManagedNode(*close_node_id.name());
-                try!(self.send_connection_info(close_node_id, dst, ci_dst));
+                self.send_connection_info(close_node_id, dst, ci_dst)?;
             }
         }
         Ok(())
@@ -1365,7 +1350,7 @@ impl Node {
         let serialised_connection_info =
             try!(decipher_result.map_err(|()| RoutingError::AsymmetricDecryptionFailure));
         let their_connection_info: PubConnectionInfo =
-            try!(serialisation::deserialise(&serialised_connection_info));
+            serialisation::deserialise(&serialised_connection_info)?;
         let peer_id = their_connection_info.id();
         match self.peer_mgr
             .connection_info_received(src, dst, conn_info.public_id, their_connection_info) {
@@ -1382,7 +1367,7 @@ impl Node {
             Ok(ConnectionInfoReceivedResult::IsProxy) |
             Ok(ConnectionInfoReceivedResult::IsClient) |
             Ok(ConnectionInfoReceivedResult::IsJoiningNode) => {
-                try!(self.send_node_identify(peer_id));
+                self.send_node_identify(peer_id)?;
                 self.handle_node_identify(conn_info.public_id, peer_id);
             }
             Ok(ConnectionInfoReceivedResult::Waiting) |
@@ -1408,12 +1393,12 @@ impl Node {
                          -> Result<(), RoutingError> {
         self.stats.count_user_message(&user_msg);
 
-        for part in try!(user_msg.to_parts(priority)) {
-            try!(self.send_routing_message(RoutingMessage {
-                src: src,
-                dst: dst,
-                content: part,
-            }));
+        for part in user_msg.to_parts(priority)? {
+            self.send_routing_message(RoutingMessage {
+                    src: src,
+                    dst: dst,
+                    content: part,
+                })?;
         }
         Ok(())
     }
@@ -1421,8 +1406,7 @@ impl Node {
     fn send_signed_message(&mut self,
                            signed_msg: &SignedMessage,
                            route: u8,
-                           hop: &XorName,
-                           sent_to: &[XorName])
+                           hop: &XorName)
                            -> Result<(), RoutingError> {
         let sent_by_us = hop == self.name() && signed_msg.signed_by(self.full_id().public_id());
         if sent_by_us {
@@ -1450,8 +1434,7 @@ impl Node {
             return Ok(());  // Avoid swarming back out to our own group.
         }
 
-        let (new_sent_to, target_peer_ids) =
-            try!(self.get_targets(routing_msg, route, sent_to, *hop));
+        let target_peer_ids = self.get_targets(routing_msg, route, *hop)?;
 
         if sent_by_us && !self.add_to_pending_acks(signed_msg, route) {
             return Ok(());
@@ -1464,10 +1447,10 @@ impl Node {
         let raw_bytes = if send_sig {
             // Not our turn to send the full `RoutingMessage`. Only send a signature.
             let sign_key = self.full_id().signing_private_key();
-            let direct_msg = try!(signed_msg.routing_message().to_signature(sign_key));
-            try!(serialisation::serialise(&Message::Direct(direct_msg)))
+            let direct_msg = signed_msg.routing_message().to_signature(sign_key)?;
+            serialisation::serialise(&Message::Direct(direct_msg))?
         } else {
-            try!(self.to_hop_bytes(signed_msg.clone(), route, new_sent_to.clone()))
+            self.to_hop_bytes(signed_msg.clone(), route)?
         };
         for target_peer_id in target_peer_ids {
             let (peer_id, bytes) = if self.crust_service.is_connected(&target_peer_id) {
@@ -1478,16 +1461,13 @@ impl Node {
                     // Not our turn to send the full `RoutingMessage`. Only send a signature.
                     let sign_key = self.full_id().signing_private_key();
                     let message = Message::TunnelDirect {
-                        content: try!(signed_msg.routing_message().to_signature(sign_key)),
+                        content: signed_msg.routing_message().to_signature(sign_key)?,
                         src: self.crust_service.id(),
                         dst: target_peer_id,
                     };
-                    try!(serialisation::serialise(&message))
+                    serialisation::serialise(&message)?
                 } else {
-                    try!(self.to_tunnel_hop_bytes(signed_msg.clone(),
-                                                  route,
-                                                  new_sent_to.clone(),
-                                                  target_peer_id))
+                    self.to_tunnel_hop_bytes(signed_msg.clone(), route, target_peer_id)?
                 };
                 (tunnel_id, bytes)
             } else {
@@ -1519,10 +1499,9 @@ impl Node {
             if self.filter_outgoing_routing_msg(signed_msg.routing_message(), peer_id, 0) {
                 return Ok(());
             }
-            let hop_msg =
-                try!(HopMessage::new(signed_msg, 0, vec![], self.full_id.signing_private_key()));
+            let hop_msg = HopMessage::new(signed_msg, 0, self.full_id.signing_private_key())?;
             let message = Message::Hop(hop_msg);
-            let raw_bytes = try!(serialisation::serialise(&message));
+            let raw_bytes = serialisation::serialise(&message)?;
             self.send_or_drop(peer_id, raw_bytes, priority)
         } else {
             // Acknowledge the message so that the sender doesn't retry.
@@ -1544,34 +1523,29 @@ impl Node {
         }
     }
 
-    /// Returns a `sent_to` entry for the next hop message, and a list of target peer IDs.
+    /// Returns a list of target peer IDs.
     fn get_targets(&self,
                    routing_msg: &RoutingMessage,
                    route: u8,
-                   sent_to: &[XorName],
                    exclude: XorName)
-                   -> Result<(Vec<XorName>, Vec<PeerId>), RoutingError> {
-        let force_via_proxy = match &routing_msg.content {
-            &MessageContent::ConnectionInfo(ConnectionInfo { public_id, .. }) => {
+                   -> Result<Vec<PeerId>, RoutingError> {
+        let force_via_proxy = match routing_msg.content {
+            MessageContent::ConnectionInfo(ConnectionInfo { public_id, .. }) => {
                 routing_msg.src.is_client() && public_id == *self.full_id.public_id()
             }
             _ => false,
         };
 
         if self.is_proper() && !force_via_proxy {
-            let targets = try!(self.peer_mgr
+            let targets = self.peer_mgr
                 .routing_table()
-                .targets(&routing_msg.dst.to_destination(), exclude, route as usize));
-            let new_sent_to = sent_to.iter()
-                .chain(targets.iter())
-                .cloned()
-                .collect_vec();
-            Ok((new_sent_to, self.peer_mgr.get_peer_ids(&targets)))
+                .targets(&routing_msg.dst.to_destination(), exclude, route as usize)?;
+            Ok(self.peer_mgr.get_peer_ids(&targets))
         } else if let Authority::Client { ref proxy_node_name, .. } = routing_msg.src {
             // We don't have any contacts in our routing table yet. Keep using
             // the proxy connection until we do.
             if let Some(&peer_id) = self.peer_mgr.get_proxy_peer_id(proxy_node_name) {
-                Ok((vec![], vec![peer_id]))
+                Ok(vec![peer_id])
             } else {
                 error!("{:?} - Unable to find connection to proxy node in proxy map",
                        self);
@@ -1587,24 +1561,22 @@ impl Node {
     fn to_tunnel_hop_bytes(&self,
                            signed_msg: SignedMessage,
                            route: u8,
-                           sent_to: Vec<XorName>,
                            dst: PeerId)
                            -> Result<Vec<u8>, RoutingError> {
-        let hop_msg = try!(HopMessage::new(signed_msg.clone(),
-                                           route,
-                                           sent_to,
-                                           self.full_id.signing_private_key()));
+        let hop_msg = HopMessage::new(signed_msg.clone(),
+                                      route,
+                                      self.full_id.signing_private_key())?;
         let message = Message::TunnelHop {
             content: hop_msg,
             src: self.crust_service.id(),
             dst: dst,
         };
 
-        Ok(try!(serialisation::serialise(&message)))
+        Ok(serialisation::serialise(&message)?)
     }
 
     fn send_node_identify(&mut self, peer_id: PeerId) -> Result<(), RoutingError> {
-        let serialised_public_id = try!(serialisation::serialise(self.full_id().public_id()));
+        let serialised_public_id = serialisation::serialise(self.full_id().public_id())?;
         let signature = sign::sign_detached(&serialised_public_id,
                                             self.full_id().signing_private_key());
         let direct_message = DirectMessage::NodeIdentify {
@@ -1623,12 +1595,12 @@ impl Node {
         let their_name = *their_public_id.name();
         if let Some(peer_id) = self.peer_mgr
             .get_proxy_or_client_or_joining_node_peer_id(&their_public_id) {
-            try!(self.send_node_identify(peer_id));
+            self.send_node_identify(peer_id)?;
             self.handle_node_identify(their_public_id, peer_id);
             return Ok(());
         }
 
-        try!(self.peer_mgr.allow_connect(&their_name));
+        self.peer_mgr.allow_connect(&their_name)?;
         if let Some(token) = self.peer_mgr.get_connection_token(src, dst, their_public_id) {
             self.crust_service.prepare_connection_info(token);
         } else {
@@ -1912,9 +1884,9 @@ impl Bootstrapped for Node {
         //            routing_msg);
         //     return Ok(());
         // }
-        let signed_msg = try!(SignedMessage::new(routing_msg, &self.full_id));
+        let signed_msg = SignedMessage::new(routing_msg, &self.full_id)?;
         let hop = *self.name();
-        try!(self.send_signed_message(&signed_msg, route, &hop, &[hop]));
+        self.send_signed_message(&signed_msg, route, &hop)?;
 
         // If we need to handle this message, put it in the queue.
         if self.in_authority(&signed_msg.routing_message().dst) &&
@@ -1944,7 +1916,7 @@ impl Debug for Node {
 fn verify_signed_public_id(serialised_public_id: &[u8],
                            signature: &sign::Signature)
                            -> Result<PublicId, RoutingError> {
-    let public_id: PublicId = try!(serialisation::deserialise(serialised_public_id));
+    let public_id: PublicId = serialisation::deserialise(serialised_public_id)?;
     let public_key = public_id.signing_public_key();
     if sign::verify_detached(signature, serialised_public_id, public_key) {
         Ok(public_id)

@@ -325,7 +325,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             needed: needed,
             merging: HashMap::new(),
         };
-        try!(result.check_invariant());
+        result.check_invariant()?;
         Ok(result)
     }
 
@@ -925,38 +925,38 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
 impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Binary for RoutingTable<T> {
     fn fmt(&self, formatter: &mut Formatter) -> FmtResult {
-        try!(writeln!(formatter,
-                      "RoutingTable {{\n\tour_name: {:?} ({}),\n\tmin_group_size: \
-                       {},\n\tour_group_prefix: {:?},",
-                      self.our_name,
-                      self.our_name.debug_binary(),
-                      self.min_group_size,
-                      self.our_group_prefix));
+        writeln!(formatter,
+                 "RoutingTable {{\n\tour_name: {:?} ({}),\n\tmin_group_size: \
+                  {},\n\tour_group_prefix: {:?},",
+                 self.our_name,
+                 self.our_name.debug_binary(),
+                 self.min_group_size,
+                 self.our_group_prefix)?;
         let mut groups = self.groups.iter().collect_vec();
         groups.sort_by(|&(lhs_prefix, _), &(rhs_prefix, _)| {
             lhs_prefix.max_identical_index(&self.our_name)
                 .cmp(&rhs_prefix.max_identical_index(&self.our_name))
         });
         for (group_index, &(prefix, group)) in groups.iter().enumerate() {
-            try!(write!(formatter, "\tgroup {} with {:?}: {{\n", group_index, prefix));
+            write!(formatter, "\tgroup {} with {:?}: {{\n", group_index, prefix)?;
             for (name_index, name) in group.iter().enumerate() {
                 let comma = if name_index == group.len() - 1 {
                     ""
                 } else {
                     ","
                 };
-                try!(writeln!(formatter,
-                              "\t\t{:?} ({}){}",
-                              name,
-                              name.debug_binary(),
-                              comma));
+                writeln!(formatter,
+                         "\t\t{:?} ({}){}",
+                         name,
+                         name.debug_binary(),
+                         comma)?;
             }
             let comma = if group_index == groups.len() - 1 {
                 ""
             } else {
                 ","
             };
-            try!(writeln!(formatter, "\t}}{}", comma));
+            writeln!(formatter, "\t}}{}", comma)?;
         }
         write!(formatter, "}}")
     }

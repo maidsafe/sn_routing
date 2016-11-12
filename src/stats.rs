@@ -37,7 +37,6 @@ pub struct Stats {
     unacked_msgs: usize,
 
     msg_direct_node_identify: usize,
-    msg_direct_new_node: usize,
     msg_direct_sig: usize,
 
     msg_get: usize,
@@ -148,7 +147,6 @@ impl Stats {
     pub fn count_direct_message(&mut self, msg: &DirectMessage) {
         match *msg {
             DirectMessage::NodeIdentify { .. } => self.msg_direct_node_identify += 1,
-            DirectMessage::NewNode(_) => self.msg_direct_new_node += 1,
             DirectMessage::MessageSignature(..) => self.msg_direct_sig += 1,
             _ => self.msg_other += 1,
         }
@@ -171,9 +169,8 @@ impl Stats {
                   self.msg_other,
                   self.routes,
                   self.unacked_msgs);
-            info!("Stats - Direct - NodeIdentify: {}, NewNode: {}, MessageSignature: {}",
+            info!("Stats - Direct - NodeIdentify: {}, MessageSignature: {}",
                   self.msg_direct_node_identify,
-                  self.msg_direct_new_node,
                   self.msg_direct_sig);
             info!("Stats - Hops (Request/Response) - GetNodeName: {}/{}, ExpectCloseNode: {}, \
                    GetCloseGroup: {}/{}, GroupSplit: {}, OwnGroupMerge: {}, OtherGroupMerge: {}, \

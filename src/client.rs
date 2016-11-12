@@ -159,7 +159,7 @@ impl Client {
     /// Returns the name of this node.
     pub fn name(&self) -> Result<XorName, InterfaceError> {
         let (result_tx, result_rx) = channel();
-        try!(self.action_sender.send(Action::Name { result_tx: result_tx }));
+        self.action_sender.send(Action::Name { result_tx: result_tx })?;
 
         self.receive_action_result(&result_rx)
     }
@@ -176,13 +176,13 @@ impl Client {
             result_tx: self.interface_result_tx.clone(),
         };
 
-        try!(self.action_sender.send(action));
-        try!(self.receive_action_result(&self.interface_result_rx))
+        self.action_sender.send(action)?;
+        self.receive_action_result(&self.interface_result_rx)?
     }
 
     #[cfg(not(feature = "use-mock-crust"))]
     fn receive_action_result<T>(&self, rx: &Receiver<T>) -> Result<T, InterfaceError> {
-        Ok(try!(rx.recv()))
+        Ok(rx.recv()?)
     }
 }
 
@@ -219,7 +219,7 @@ impl Client {
 
     fn receive_action_result<T>(&self, rx: &Receiver<T>) -> Result<T, InterfaceError> {
         while self.poll() {}
-        Ok(try!(rx.recv()))
+        Ok(rx.recv()?)
     }
 }
 

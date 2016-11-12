@@ -15,7 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use rustc_serialize::{Decodable, Decoder, DecoderHelpers, Encodable, Encoder, EncoderHelpers};
 use std::cmp::{self, Ordering};
 use std::fmt::{Binary, Debug, Formatter};
 use std::fmt::Result as FmtResult;
@@ -24,26 +23,29 @@ use super::xorable::Xorable;
 
 /// A group prefix, i.e. a sequence of bits specifying the part of the network's name space
 /// consisting of all names that start with this sequence.
-#[derive(Clone, Copy, Default, Eq)]
+#[derive(Clone, Copy, Default, Eq, RustcDecodable, RustcEncodable)]
 pub struct Prefix<T: Clone + Copy + Default + Binary + Xorable> {
-    bit_count: usize,
+    bit_count: u16,
     name: T,
 }
 
 impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
-    /// Creates a new `Prefix` with the first `bit_count` bits of `name`.
-    /// Insignificant bits are all set to 0.
+    /// Creates a new `Prefix` with the first `bit_count` bits of `name`. Insignificant bits are all
+    /// set to 0. If `bit_count` exceeds the size of `T` in bits, then it is reduced to this lower
+    /// value.
     pub fn new(bit_count: usize, name: T) -> Prefix<T> {
         Prefix {
-            bit_count: bit_count,
+            bit_count: cmp::min(bit_count, T::bit_len()) as u16,
             name: name.set_remaining(bit_count, false),
         }
     }
 
-    /// Returns `self` with an appended bit: `0` if `bit` is `false`, and `1` if `bit` is `true`.
+    /// Returns `self` with an appended bit: `0` if `bit` is `false`, and `1` if `bit` is `true`. If
+    /// `self.bit_count` is already at the maximum for this type, then an unmodified copy of `self`
+    /// is returned.
     pub fn pushed(mut self, bit: bool) -> Prefix<T> {
-        self.name = self.name.with_bit(self.bit_count, bit);
-        self.bit_count += 1;
+        self.name = self.name.with_bit(self.bit_count(), bit);
+        self.bit_count = cmp::min(self.bit_count + 1, T::bit_len() as u16);
         self
     }
 
@@ -53,36 +55,36 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
         if self.bit_count > 0 {
             self.bit_count -= 1;
             // unused bits should be zero:
-            self.name = self.name.with_bit(self.bit_count, false);
+            self.name = self.name.with_bit(self.bit_count(), false);
         }
         self
     }
 
     /// Returns the number of bits in the prefix.
     pub fn bit_count(&self) -> usize {
-        self.bit_count
+        self.bit_count as usize
     }
 
     /// Returns `true` if `self` is a prefix of `other` or vice versa.
     pub fn is_compatible(&self, other: &Prefix<T>) -> bool {
         let i = self.name.common_prefix(&other.name);
-        i >= self.bit_count || i >= other.bit_count
+        i >= self.bit_count() || i >= other.bit_count()
     }
 
     /// Returns `true` if the `other` prefix differs in exactly one bit from this one.
     pub fn is_neighbour(&self, other: &Prefix<T>) -> bool {
         let i = self.name.common_prefix(&other.name);
-        if i >= self.bit_count || i >= other.bit_count {
+        if i >= self.bit_count() || i >= other.bit_count() {
             false
         } else {
             let j = self.name.with_flipped_bit(i).common_prefix(&other.name);
-            j >= self.bit_count || j >= other.bit_count
+            j >= self.bit_count() || j >= other.bit_count()
         }
     }
 
     /// Returns the number of common leading bits with the input name, capped with prefix length.
     pub fn common_prefix(&self, name: &T) -> usize {
-        cmp::min(self.bit_count, self.name.common_prefix(name))
+        cmp::min(self.bit_count(), self.name.common_prefix(name))
     }
 
     /// Returns the number of common leading bits with the input name.
@@ -92,7 +94,7 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
 
     /// Returns `true` if this is a prefix of the given `name`.
     pub fn matches(&self, name: &T) -> bool {
-        self.name.common_prefix(name) >= self.bit_count
+        self.name.common_prefix(name) >= self.bit_count()
     }
 
     /// Compares the distance of `self` and `other` to `target`. Returns `Less` if `self` is closer,
@@ -111,12 +113,12 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
 
     /// Returns the smallest name matching the prefix
     pub fn lower_bound(&self) -> T {
-        self.name.set_remaining(self.bit_count, false)
+        self.name.set_remaining(self.bit_count(), false)
     }
 
     /// Returns the largest name matching the prefix
     pub fn upper_bound(&self) -> T {
-        self.name.set_remaining(self.bit_count, true)
+        self.name.set_remaining(self.bit_count(), true)
     }
 
     /// Returns whether the namespace defined by `self` is covered by prefixes in the `prefixes`
@@ -147,7 +149,7 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
         if i >= self.bit_count() {
             *self
         } else {
-            Prefix::new(self.bit_count, self.name.with_flipped_bit(i))
+            Prefix::new(self.bit_count(), self.name.with_flipped_bit(i))
         }
     }
 }
@@ -178,7 +180,7 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Ord for Prefix<T> {
 
 impl<T: Clone + Copy + Default + Binary + Xorable> Hash for Prefix<T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        for i in 0..self.bit_count {
+        for i in 0..self.bit_count() {
             self.name.bit(i).hash(state);
         }
     }
@@ -187,7 +189,7 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Hash for Prefix<T> {
 impl<T: Clone + Copy + Default + Binary + Xorable> Binary for Prefix<T> {
     fn fmt(&self, formatter: &mut Formatter) -> FmtResult {
         let mut binary = self.name.binary();
-        binary.truncate(self.bit_count);
+        binary.truncate(self.bit_count());
         write!(formatter, "Prefix({})", binary)
     }
 }
@@ -195,30 +197,6 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Binary for Prefix<T> {
 impl<T: Clone + Copy + Default + Binary + Xorable> Debug for Prefix<T> {
     fn fmt(&self, formatter: &mut Formatter) -> FmtResult {
         Binary::fmt(self, formatter)
-    }
-}
-
-impl<T: Clone + Copy + Default + Binary + Xorable> Encodable for Prefix<T> {
-    fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), E::Error> {
-        let bit_vec = (0..self.bit_count).map(|i| self.name.bit(i)).collect::<Vec<_>>();
-        encoder.emit_from_vec(&bit_vec, |encoder, element| encoder.emit_bool(*element))
-    }
-}
-
-impl<T: Clone + Copy + Default + Binary + Xorable> Decodable for Prefix<T> {
-    fn decode<D: Decoder>(decoder: &mut D) -> Result<Prefix<T>, D::Error> {
-        // TODO - This is a rough and ready implementation to be replaced by Andreas' upcoming one.
-        // This implementation will cause the `split()` function to be incorrect as that depends on
-        // `self.name` being the name of the holder.  I don't know what idiot thought `split()` was
-        // a good idea!
-        let bit_vec = try!(decoder.read_to_vec(|decoder| decoder.read_bool()));
-        let mut name = T::default();
-        for (index, element) in bit_vec.iter().enumerate() {
-            if name.bit(index) != *element {
-                name = name.with_flipped_bit(index);
-            }
-        }
-        Ok(Prefix::new(bit_vec.len(), name))
     }
 }
 
@@ -255,5 +233,9 @@ mod tests {
 
         assert_eq!(str_to_prefix(b"0101").lower_bound(), 0b01010000);
         assert_eq!(str_to_prefix(b"0101").upper_bound(), 0b01011111);
+
+        // Check we handle passing an excessive `bit_count` to `new()`.
+        assert_eq!(Prefix::<u64>::new(64, 0).bit_count(), 64);
+        assert_eq!(Prefix::<u64>::new(65, 0).bit_count(), 64);
     }
 }

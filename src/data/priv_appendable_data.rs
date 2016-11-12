@@ -40,7 +40,7 @@ impl PrivAppendedData {
     pub fn new(appended_data: &AppendedData,
                encrypt_pub_key: &box_::PublicKey)
                -> Result<PrivAppendedData, RoutingError> {
-        let encoded_appended_data = try!(serialise(&appended_data));
+        let encoded_appended_data = serialise(&appended_data)?;
         let encrypted_appended_data = sealedbox::seal(&encoded_appended_data, encrypt_pub_key);
         Ok(PrivAppendedData(encrypted_appended_data))
     }
@@ -52,13 +52,13 @@ impl PrivAppendedData {
                 -> Result<AppendedData, RoutingError> {
         let decipher_result = try!(sealedbox::open(&self.0, pub_key, secret_key)
             .map_err(|()| RoutingError::AsymmetricDecryptionFailure));
-        Ok(try!(deserialise(&decipher_result)))
+        Ok(deserialise(&decipher_result)?)
     }
 }
 
 impl Decodable for PrivAppendedData {
     fn decode<D: Decoder>(d: &mut D) -> Result<Self, D::Error> {
-        let data: Vec<u8> = try!(Decodable::decode(d));
+        let data: Vec<u8> = Decodable::decode(d)?;
         if data.len() > MAX_PRIV_APPENDED_DATA_BYTES {
             return Err(d.error("wrong private appended data size"));
         }
@@ -124,7 +124,7 @@ impl PrivAppendableData {
         };
 
         if let Some(key) = signing_key {
-            let _ = try!(priv_appendable_data.add_signature(key));
+            let _ = priv_appendable_data.add_signature(key)?;
         }
         Ok(priv_appendable_data)
     }
@@ -139,7 +139,7 @@ impl PrivAppendableData {
     /// The `data` will contain the union of the data items, _excluding_ the `deleted_data` as
     /// given in the update.
     pub fn update_with_other(&mut self, other: PrivAppendableData) -> Result<(), RoutingError> {
-        try!(self.validate_self_against_successor(&other));
+        self.validate_self_against_successor(&other)?;
 
         self.name = other.name;
         self.version = other.version;
@@ -166,8 +166,7 @@ impl PrivAppendableData {
     pub fn validate_self_against_successor(&self,
                                            other: &PrivAppendableData)
                                            -> Result<(), RoutingError> {
-        if other.current_owner_keys.len() > 1 ||
-           other.previous_owner_keys.len() > 1 ||
+        if other.current_owner_keys.len() > 1 || other.previous_owner_keys.len() > 1 ||
            other.current_owner_keys.contains(&NO_OWNER_PUB_KEY) {
             return Err(RoutingError::InvalidOwners);
         }
@@ -239,7 +238,7 @@ impl PrivAppendableData {
             return Err(RoutingError::NotEnoughSignatures);
         }
 
-        let data = try!(self.data_to_sign());
+        let data = self.data_to_sign()?;
         // Count valid previous_owner_signatures and refuse if quantity is not enough
 
         let check_all_keys =
@@ -274,7 +273,7 @@ impl PrivAppendableData {
     /// the number of signatures that are still required. If more than 50% of the previous owners
     /// have signed, 0 is returned and validation is complete.
     pub fn add_signature(&mut self, secret_key: &SecretKey) -> Result<usize, RoutingError> {
-        let data = try!(self.data_to_sign());
+        let data = self.data_to_sign()?;
         let sig = sign::sign_detached(&data, secret_key);
         self.previous_owner_signatures.push(sig);
         let owner_keys = if self.previous_owner_keys.is_empty() {

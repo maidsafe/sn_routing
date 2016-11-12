@@ -65,7 +65,7 @@ impl StructuredData {
         };
 
         if let Some(key) = signing_key {
-            let _ = try!(structured_data.add_signature(key));
+            let _ = structured_data.add_signature(key)?;
         }
         Ok(structured_data)
     }
@@ -77,7 +77,7 @@ impl StructuredData {
     /// To transfer ownership, the current owner signs over the data; the previous owners field
     /// must have the previous owners of `version - 1` as the current owners of that last version.
     pub fn replace_with_other(&mut self, other: StructuredData) -> Result<(), RoutingError> {
-        try!(self.validate_self_against_successor(&other));
+        self.validate_self_against_successor(&other)?;
 
         self.type_tag = other.type_tag;
         self.name = other.name;
@@ -104,7 +104,7 @@ impl StructuredData {
     pub fn delete_if_valid_successor(&mut self,
                                      other: &StructuredData)
                                      -> Result<(), RoutingError> {
-        try!(self.validate_self_against_successor(other));
+        self.validate_self_against_successor(other)?;
         self.data.clear();
         self.previous_owner_keys.clear();
         self.version += 1;
@@ -129,8 +129,7 @@ impl StructuredData {
     pub fn validate_self_against_successor(&self,
                                            other: &StructuredData)
                                            -> Result<(), RoutingError> {
-        if other.current_owner_keys.len() > 1 ||
-           other.previous_owner_keys.len() > 1 ||
+        if other.current_owner_keys.len() > 1 || other.previous_owner_keys.len() > 1 ||
            other.current_owner_keys.contains(&NO_OWNER_PUB_KEY) {
             return Err(RoutingError::InvalidOwners);
         }
@@ -169,7 +168,7 @@ impl StructuredData {
             return Err(RoutingError::NotEnoughSignatures);
         }
 
-        let data = try!(self.data_to_sign());
+        let data = self.data_to_sign()?;
         // Count valid previous_owner_signatures and refuse if quantity is not enough
 
         let check_all_keys =
@@ -203,7 +202,7 @@ impl StructuredData {
     /// the number of signatures that are still required. If more than 50% of the previous owners
     /// have signed, 0 is returned and validation is complete.
     pub fn add_signature(&mut self, secret_key: &SecretKey) -> Result<usize, RoutingError> {
-        let data = try!(self.data_to_sign());
+        let data = self.data_to_sign()?;
         let sig = sign::sign_detached(&data, secret_key);
         self.previous_owner_signatures.push(sig);
         let owner_keys = if self.previous_owner_keys.is_empty() {
