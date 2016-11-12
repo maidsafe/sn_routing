@@ -347,7 +347,7 @@ impl Bootstrapped for Client {
         }
 
         if !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_peer_id, route) {
-            let bytes = try!(self.to_hop_bytes(signed_msg.clone(), route, Vec::new()));
+            let bytes = try!(self.to_hop_bytes(signed_msg.clone(), route));
 
             if let Err(error) = self.send_or_drop(&proxy_peer_id, bytes, signed_msg.priority()) {
                 info!("{:?} - Error sending message to {:?}: {:?}.",

@@ -26,7 +26,6 @@ use routing_message_filter::RoutingMessageFilter;
 use std::time::Duration;
 use super::Base;
 use timer::Timer;
-use xor_name::XorName;
 
 // Common functionality for states that are bootstrapped (have established a crust
 // connection to at least one peer).
@@ -143,15 +142,9 @@ pub trait Bootstrapped: Base {
     }
 
     // Serialise HopMessage containing the given signed message.
-    fn to_hop_bytes(&self,
-                    signed_msg: SignedMessage,
-                    route: u8,
-                    sent_to: Vec<XorName>)
-                    -> Result<Vec<u8>, RoutingError> {
-        let hop_msg = try!(HopMessage::new(signed_msg,
-                                           route,
-                                           sent_to,
-                                           self.full_id().signing_private_key()));
+    fn to_hop_bytes(&self, signed_msg: SignedMessage, route: u8) -> Result<Vec<u8>, RoutingError> {
+        let hop_msg =
+            try!(HopMessage::new(signed_msg, route, self.full_id().signing_private_key()));
         let message = Message::Hop(hop_msg);
         Ok(try!(serialisation::serialise(&message)))
     }

@@ -155,8 +155,7 @@ impl PubAppendableData {
     pub fn validate_self_against_successor(&self,
                                            other: &PubAppendableData)
                                            -> Result<(), RoutingError> {
-        if other.current_owner_keys.len() > 1 ||
-           other.previous_owner_keys.len() > 1 ||
+        if other.current_owner_keys.len() > 1 || other.previous_owner_keys.len() > 1 ||
            other.current_owner_keys.contains(&NO_OWNER_PUB_KEY) {
             return Err(RoutingError::InvalidOwners);
         }
