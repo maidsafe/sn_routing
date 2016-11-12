@@ -80,7 +80,7 @@ impl PubAppendableData {
         };
 
         if let Some(key) = signing_key {
-            let _ = try!(pub_appendable_data.add_signature(key));
+            let _ = pub_appendable_data.add_signature(key)?;
         }
         Ok(pub_appendable_data)
     }
@@ -95,7 +95,7 @@ impl PubAppendableData {
     /// The `data` will contain the union of the data items, _excluding_ the `deleted_data` as
     /// given in the update.
     pub fn update_with_other(&mut self, other: PubAppendableData) -> Result<(), RoutingError> {
-        try!(self.validate_self_against_successor(&other));
+        self.validate_self_against_successor(&other)?;
 
         self.name = other.name;
         self.version = other.version;
@@ -191,7 +191,7 @@ impl PubAppendableData {
             return Err(RoutingError::NotEnoughSignatures);
         }
 
-        let data = try!(self.data_to_sign());
+        let data = self.data_to_sign()?;
         // Count valid previous_owner_signatures and refuse if quantity is not enough
 
         let check_all_keys =
@@ -225,7 +225,7 @@ impl PubAppendableData {
     /// the number of signatures that are still required. If more than 50% of the previous owners
     /// have signed, 0 is returned and validation is complete.
     pub fn add_signature(&mut self, secret_key: &SecretKey) -> Result<usize, RoutingError> {
-        let data = try!(self.data_to_sign());
+        let data = self.data_to_sign()?;
         let sig = sign::sign_detached(&data, secret_key);
         self.previous_owner_signatures.push(sig);
         let owner_keys = if self.previous_owner_keys.is_empty() {

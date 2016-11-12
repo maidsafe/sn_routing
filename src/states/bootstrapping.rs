@@ -250,7 +250,7 @@ impl Bootstrapping {
         let token = self.timer.schedule(Duration::from_secs(BOOTSTRAP_TIMEOUT_SECS));
         self.bootstrap_connection = Some((peer_id, token));
 
-        let serialised_public_id = try!(serialisation::serialise(self.full_id.public_id()));
+        let serialised_public_id = serialisation::serialise(self.full_id.public_id())?;
         let signature = sign::sign_detached(&serialised_public_id,
                                             self.full_id.signing_private_key());
 

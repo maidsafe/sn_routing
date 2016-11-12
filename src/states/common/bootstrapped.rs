@@ -143,9 +143,8 @@ pub trait Bootstrapped: Base {
 
     // Serialise HopMessage containing the given signed message.
     fn to_hop_bytes(&self, signed_msg: SignedMessage, route: u8) -> Result<Vec<u8>, RoutingError> {
-        let hop_msg =
-            try!(HopMessage::new(signed_msg, route, self.full_id().signing_private_key()));
+        let hop_msg = HopMessage::new(signed_msg, route, self.full_id().signing_private_key())?;
         let message = Message::Hop(hop_msg);
-        Ok(try!(serialisation::serialise(&message)))
+        Ok(serialisation::serialise(&message)?)
     }
 }

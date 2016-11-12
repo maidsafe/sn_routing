@@ -308,7 +308,7 @@ impl PeerManager {
                                    expected_name: &XorName,
                                    our_public_id: &PublicId)
                                    -> Result<Vec<Group>, RoutingTableError> {
-        let groups = try!(self.routing_table.expect_add_to_our_group(expected_name));
+        let groups = self.routing_table.expect_add_to_our_group(expected_name)?;
         let mut result = vec![];
         for (prefix, names) in groups {
             let mut public_ids = vec![];
@@ -332,7 +332,7 @@ impl PeerManager {
                                 peer_id: PeerId)
                                 -> Result<bool, RoutingTableError> {
         let _ = self.unknown_peers.remove(&peer_id);
-        let should_split = try!(self.routing_table.add(*pub_id.name()));
+        let should_split = self.routing_table.add(*pub_id.name())?;
         let tunnel = match self.peer_map.remove(&peer_id).map(|peer| peer.state) {
             Some(PeerState::SearchingForTunnel) |
             Some(PeerState::AwaitingNodeIdentify(true)) => true,
@@ -699,7 +699,7 @@ impl PeerManager {
                                     token: u32,
                                     our_info: PrivConnectionInfo)
                                     -> Result<ConnectionInfoPreparedResult, Error> {
-        let pub_id = try!(self.connection_token_map.remove(&token).ok_or(Error::PeerNotFound));
+        let pub_id = self.connection_token_map.remove(&token).ok_or(Error::PeerNotFound)?;
         let (src, dst, opt_their_info) = match self.peer_map.remove_by_name(pub_id.name()) {
             Some(Peer { state: PeerState::ConnectionInfoPreparing(src, dst, info), .. }) => {
                 (src, dst, info)

@@ -166,7 +166,7 @@ impl HopMessage {
                route: u8,
                signing_key: &sign::SecretKey)
                -> Result<HopMessage, RoutingError> {
-        let bytes_to_sign = try!(serialise(&content));
+        let bytes_to_sign = serialise(&content)?;
         Ok(HopMessage {
             content: content,
             route: route,
@@ -179,7 +179,7 @@ impl HopMessage {
     /// This does not imply that the message came from a known node. That requires a check against
     /// the routing table to identify the name associated with the `verification_key`.
     pub fn verify(&self, verification_key: &sign::PublicKey) -> Result<(), RoutingError> {
-        let signed_bytes = try!(serialise(&self.content));
+        let signed_bytes = serialise(&self.content)?;
         if sign::verify_detached(&self.signature, &signed_bytes, verification_key) {
             Ok(())
         } else {
@@ -209,7 +209,7 @@ pub struct SignedMessage {
 impl SignedMessage {
     /// Creates a `SignedMessage` with the given `content` and signed by the given `full_id`.
     pub fn new(content: RoutingMessage, full_id: &FullId) -> Result<SignedMessage, RoutingError> {
-        let sig = sign::sign_detached(&try!(serialise(&content)), full_id.signing_private_key());
+        let sig = sign::sign_detached(&serialise(&content)?, full_id.signing_private_key());
         Ok(SignedMessage {
             content: content,
             grp_lists: Vec::new(),
@@ -219,7 +219,7 @@ impl SignedMessage {
 
     /// Confirms the signatures.
     pub fn check_integrity(&self) -> Result<(), RoutingError> {
-        let signed_bytes = try!(serialise(&self.content));
+        let signed_bytes = serialise(&self.content)?;
         for (pub_id, sig) in &self.signatures {
             if !sign::verify_detached(sig, &signed_bytes, pub_id.signing_public_key()) {
                 return Err(RoutingError::FailedSignature);
@@ -354,7 +354,7 @@ impl RoutingMessage {
         Ok(RoutingMessage {
             src: src,
             dst: msg.src,
-            content: MessageContent::Ack(try!(Ack::compute(msg)), msg.priority()),
+            content: MessageContent::Ack(Ack::compute(msg)?, msg.priority()),
         })
     }
 
@@ -367,7 +367,7 @@ impl RoutingMessage {
     pub fn to_signature(&self,
                         signing_key: &sign::SecretKey)
                         -> Result<DirectMessage, RoutingError> {
-        let serialised_msg = try!(serialise(self));
+        let serialised_msg = serialise(self)?;
         let hash = sha256::hash(&serialised_msg);
         let sig = sign::sign_detached(&serialised_msg, signing_key);
         Ok(DirectMessage::MessageSignature(hash, sig))
@@ -668,7 +668,7 @@ impl UserMessage {
     pub fn to_parts(&self, priority: u8) -> Result<Vec<MessageContent>, RoutingError> {
         // TODO: This internally serialises the message - remove that duplicated work!
         let hash = maidsafe_utilities::big_endian_sip_hash(self);
-        let payload = try!(serialise(self));
+        let payload = serialise(self)?;
         let len = payload.len();
         let part_count = (len + MAX_PART_LEN - 1) / MAX_PART_LEN;
 
@@ -695,7 +695,7 @@ impl UserMessage {
         for part in parts {
             payload.extend_from_slice(part);
         }
-        let user_msg = try!(deserialise(&payload[..]));
+        let user_msg = deserialise(&payload[..])?;
         if hash != maidsafe_utilities::big_endian_sip_hash(&user_msg) {
             Err(RoutingError::HashMismatch)
         } else {

@@ -164,13 +164,13 @@ impl Client {
                           -> Result<Transition, RoutingError> {
 
         if self.proxy_peer_id == peer_id {
-            try!(hop_msg.verify(self.proxy_public_id.signing_public_key()));
+            hop_msg.verify(self.proxy_public_id.signing_public_key())?;
         } else {
             return Err(RoutingError::UnknownConnection(peer_id));
         }
 
         let signed_msg = hop_msg.content;
-        try!(signed_msg.check_integrity());
+        signed_msg.check_integrity()?;
 
         let routing_msg = signed_msg.routing_message();
         let in_authority = self.in_authority(&routing_msg.dst);
@@ -228,12 +228,12 @@ impl Client {
                          priority: u8)
                          -> Result<(), RoutingError> {
         self.stats.count_user_message(&user_msg);
-        for part in try!(user_msg.to_parts(priority)) {
-            try!(self.send_routing_message(RoutingMessage {
-                src: src,
-                dst: dst,
-                content: part,
-            }));
+        for part in user_msg.to_parts(priority)? {
+            self.send_routing_message(RoutingMessage {
+                    src: src,
+                    dst: dst,
+                    content: part,
+                })?;
         }
         Ok(())
     }
@@ -340,14 +340,14 @@ impl Bootstrapped for Client {
             return Err(RoutingError::InvalidSource);
         };
 
-        let signed_msg = try!(SignedMessage::new(routing_msg, &self.full_id()));
+        let signed_msg = SignedMessage::new(routing_msg, self.full_id())?;
 
         if !self.add_to_pending_acks(&signed_msg, route) {
             return Ok(());
         }
 
         if !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_peer_id, route) {
-            let bytes = try!(self.to_hop_bytes(signed_msg.clone(), route));
+            let bytes = self.to_hop_bytes(signed_msg.clone(), route)?;
 
             if let Err(error) = self.send_or_drop(&proxy_peer_id, bytes, signed_msg.priority()) {
                 info!("{:?} - Error sending message to {:?}: {:?}.",
