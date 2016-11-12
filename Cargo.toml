@@ -11,7 +11,7 @@ repository = "https://github.com/maidsafe/routing"
 version = "0.25.1"
 
 [dependencies]
-clippy = {version = "~0.0.97", optional = true}
+clippy = {version = "~0.0.98", optional = true}
 crust = "~0.19.0"
 itertools = "~0.5.5"
 log = "~0.3.6"
@@ -19,7 +19,7 @@ lru_time_cache = "~0.5.0"
 maidsafe_utilities = "~0.10.0"
 quick-error = "~1.1.0"
 rand = "~0.3.14"
-rustc-serialize = "~0.3.19"
+rustc-serialize = "~0.3.21"
 rust_sodium = "~0.1.2"
 term = "~0.4.4"
 unwrap = "~1.1.0"
@@ -29,7 +29,7 @@ docopt = "~0.6.86"
 libc = "~0.2.17"
 
 [build-dependencies]
-hyper = {version = "~0.9.10", optional = true}
+hyper = {version = "~0.9.12", optional = true}
 
 [features]
 generate-diagrams = ["hyper"]
