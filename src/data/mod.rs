@@ -49,8 +49,7 @@ pub fn verify_signatures(owners: &BTreeSet<PublicKey>,
     }
 
     // Refuse if there is any invalid signature
-    if !signatures
-        .iter()
+    if !signatures.iter()
         .all(|(pub_key, sig)| owners.contains(pub_key) && verify_detached(sig, data, pub_key)) {
         return Err(RoutingError::FailedSignature);
     }
@@ -156,11 +155,7 @@ mod tests {
     #[test]
     fn data_name() {
         // name() resolves correctly for StructuredData
-        match StructuredData::new(0,
-                                  rand::random(),
-                                  0,
-                                  vec![],
-                                  BTreeSet::new()) {
+        match StructuredData::new(0, rand::random(), 0, vec![], BTreeSet::new()) {
             Ok(structured_data) => {
                 assert_eq!(structured_data.clone().name(),
                            Data::Structured(structured_data.clone()).name());

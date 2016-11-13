@@ -60,7 +60,7 @@ impl AppendedData {
                pub_key: PublicKey,
                secret_key: &SecretKey)
                -> Result<AppendedData, RoutingError> {
-        let data_to_sign = try!(serialise(&(&pointer, &pub_key)));
+        let data_to_sign = serialise(&(&pointer, &pub_key))?;
         let signature = sign::sign_detached(&data_to_sign, secret_key);
         Ok(AppendedData {
             pointer: pointer,
@@ -122,7 +122,7 @@ impl AppendWrapper {
                     sign_pair: (&PublicKey, &SecretKey),
                     version: u64)
                     -> Result<AppendWrapper, RoutingError> {
-        let data_to_sign = try!(serialise(&(&append_to, &data, &sign_pair.0, &version)));
+        let data_to_sign = serialise(&(&append_to, &data, &sign_pair.0, &version))?;
         let signature = sign::sign_detached(&data_to_sign, sign_pair.1);
         Ok(AppendWrapper::Priv {
             append_to: append_to,

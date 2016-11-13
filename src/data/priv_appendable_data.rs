@@ -40,7 +40,7 @@ impl PrivAppendedData {
     pub fn new(appended_data: &AppendedData,
                encrypt_pub_key: &box_::PublicKey)
                -> Result<PrivAppendedData, RoutingError> {
-        let encoded_appended_data = try!(serialise(&appended_data));
+        let encoded_appended_data = serialise(&appended_data)?;
         let encrypted_appended_data = sealedbox::seal(&encoded_appended_data, encrypt_pub_key);
         Ok(PrivAppendedData(encrypted_appended_data))
     }
@@ -52,13 +52,13 @@ impl PrivAppendedData {
                 -> Result<AppendedData, RoutingError> {
         let decipher_result = try!(sealedbox::open(&self.0, pub_key, secret_key)
             .map_err(|()| RoutingError::AsymmetricDecryptionFailure));
-        Ok(try!(deserialise(&decipher_result)))
+        Ok(deserialise(&decipher_result)?)
     }
 }
 
 impl Decodable for PrivAppendedData {
     fn decode<D: Decoder>(d: &mut D) -> Result<Self, D::Error> {
-        let data: Vec<u8> = try!(Decodable::decode(d));
+        let data: Vec<u8> = Decodable::decode(d)?;
         if data.len() > MAX_PRIV_APPENDED_DATA_BYTES {
             return Err(d.error("wrong private appended data size"));
         }
@@ -129,7 +129,7 @@ impl PrivAppendableData {
     /// The `data` will contain the union of the data items, _excluding_ the `deleted_data` as
     /// given in the update.
     pub fn update_with_other(&mut self, other: PrivAppendableData) -> Result<(), RoutingError> {
-        try!(self.validate_self_against_successor(&other));
+        self.validate_self_against_successor(&other)?;
 
         self.name = other.name;
         self.version = other.version;
@@ -154,8 +154,7 @@ impl PrivAppendableData {
     pub fn validate_self_against_successor(&self,
                                            other: &PrivAppendableData)
                                            -> Result<(), RoutingError> {
-        if other.owners.len() > 1 ||
-           other.signatures.len() > 1 ||
+        if other.owners.len() > 1 || other.signatures.len() > 1 ||
            self.owners.contains(&NO_OWNER_PUB_KEY) {
             return Err(RoutingError::InvalidOwners);
         }
@@ -163,7 +162,7 @@ impl PrivAppendableData {
         if other.name != self.name || other.version != self.version + 1 {
             return Err(RoutingError::UnknownMessageType);
         }
-        let data = try!(other.data_to_sign());
+        let data = other.data_to_sign()?;
         super::verify_signatures(&self.owners, &data, &other.signatures)
     }
 
@@ -223,7 +222,7 @@ impl PrivAppendableData {
         if !self.signatures.is_empty() {
             return Err(RoutingError::InvalidOwners);
         }
-        let data = try!(self.data_to_sign());
+        let data = self.data_to_sign()?;
         let sig = sign::sign_detached(&data, &keys.1);
         let _ = self.signatures.insert(keys.0, sig);
         Ok(((self.owners.len() / 2) + 1).saturating_sub(self.signatures.len()))
@@ -324,11 +323,13 @@ mod test {
                 };
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
-                                                priv_appendable_data.get_signatures()).is_err());
+                                                priv_appendable_data.get_signatures())
+                    .is_err());
                 assert_eq!(priv_appendable_data.add_signature(&keys).unwrap(), 0);
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
-                                                priv_appendable_data.get_signatures()).is_ok());
+                                                priv_appendable_data.get_signatures())
+                    .is_ok());
             }
             Err(error) => panic!("Error: {:?}", error),
         }
@@ -356,7 +357,8 @@ mod test {
                 };
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
-                                                priv_appendable_data.get_signatures()).is_err());
+                                                priv_appendable_data.get_signatures())
+                    .is_err());
             }
             Err(error) => panic!("Error: {:?}", error),
         }

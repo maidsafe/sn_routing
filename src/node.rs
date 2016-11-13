@@ -406,10 +406,11 @@ impl Node {
     /// Returns the names of the nodes in the routing table which are closest to the given one.
     pub fn close_group(&self, name: XorName) -> Result<Option<Vec<XorName>>, InterfaceError> {
         let (result_tx, result_rx) = channel();
-        try!(self.action_sender.send(Action::CloseGroup {
-            name: name,
-            result_tx: result_tx,
-        }));
+        self.action_sender
+            .send(Action::CloseGroup {
+                name: name,
+                result_tx: result_tx,
+            })?;
 
         self.receive_action_result(&result_rx)
     }
@@ -417,7 +418,7 @@ impl Node {
     /// Returns the name of this node.
     pub fn name(&self) -> Result<XorName, InterfaceError> {
         let (result_tx, result_rx) = channel();
-        try!(self.action_sender.send(Action::Name { result_tx: result_tx }));
+        self.action_sender.send(Action::Name { result_tx: result_tx })?;
 
         self.receive_action_result(&result_rx)
     }
@@ -425,7 +426,7 @@ impl Node {
     /// Returns the name of this node.
     pub fn quorum_size(&self) -> Result<usize, InterfaceError> {
         let (result_tx, result_rx) = channel();
-        try!(self.action_sender.send(Action::QuorumSize { result_tx: result_tx }));
+        self.action_sender.send(Action::QuorumSize { result_tx: result_tx })?;
 
         self.receive_action_result(&result_rx)
     }
@@ -436,26 +437,27 @@ impl Node {
                    user_msg: UserMessage,
                    priority: u8)
                    -> Result<(), InterfaceError> {
-        try!(self.action_sender.send(Action::NodeSendMessage {
-            src: src,
-            dst: dst,
-            content: user_msg,
-            priority: priority,
-            result_tx: self.interface_result_tx.clone(),
-        }));
+        self.action_sender
+            .send(Action::NodeSendMessage {
+                src: src,
+                dst: dst,
+                content: user_msg,
+                priority: priority,
+                result_tx: self.interface_result_tx.clone(),
+            })?;
 
-        try!(self.receive_action_result(&self.interface_result_rx))
+        self.receive_action_result(&self.interface_result_rx)?
     }
 
     #[cfg(not(feature = "use-mock-crust"))]
     fn receive_action_result<T>(&self, rx: &Receiver<T>) -> Result<T, InterfaceError> {
-        Ok(try!(rx.recv()))
+        Ok(rx.recv()?)
     }
 
     #[cfg(feature = "use-mock-crust")]
     fn receive_action_result<T>(&self, rx: &Receiver<T>) -> Result<T, InterfaceError> {
         while self.poll() {}
-        Ok(try!(rx.recv()))
+        Ok(rx.recv()?)
     }
 }
 

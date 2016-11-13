@@ -85,7 +85,7 @@ impl PubAppendableData {
     /// The `data` will contain the union of the data items, _excluding_ the `deleted_data` as
     /// given in the update.
     pub fn update_with_other(&mut self, other: PubAppendableData) -> Result<(), RoutingError> {
-        try!(self.validate_self_against_successor(&other));
+        self.validate_self_against_successor(&other)?;
 
         self.name = other.name;
         self.version = other.version;
@@ -144,8 +144,7 @@ impl PubAppendableData {
     pub fn validate_self_against_successor(&self,
                                            other: &PubAppendableData)
                                            -> Result<(), RoutingError> {
-        if other.owners.len() > 1 ||
-           other.signatures.len() > 1 ||
+        if other.owners.len() > 1 || other.signatures.len() > 1 ||
            self.owners.contains(&NO_OWNER_PUB_KEY) {
             return Err(RoutingError::InvalidOwners);
         }
@@ -153,7 +152,7 @@ impl PubAppendableData {
         if other.name != self.name || other.version != self.version + 1 {
             return Err(RoutingError::UnknownMessageType);
         }
-        let data = try!(other.data_to_sign());
+        let data = other.data_to_sign()?;
         super::verify_signatures(&self.owners, &data, &other.signatures)
     }
 
@@ -178,7 +177,7 @@ impl PubAppendableData {
         if !self.signatures.is_empty() {
             return Err(RoutingError::InvalidOwners);
         }
-        let data = try!(self.data_to_sign());
+        let data = self.data_to_sign()?;
         let sig = sign::sign_detached(&data, &keys.1);
         let _ = self.signatures.insert(keys.0, sig);
         Ok(((self.owners.len() / 2) + 1).saturating_sub(self.signatures.len()))
@@ -264,11 +263,13 @@ mod test {
                 };
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
-                                                pub_appendable_data.get_signatures()).is_err());
+                                                pub_appendable_data.get_signatures())
+                    .is_err());
                 assert_eq!(pub_appendable_data.add_signature(&keys).unwrap(), 0);
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
-                                                pub_appendable_data.get_signatures()).is_ok());
+                                                pub_appendable_data.get_signatures())
+                    .is_ok());
             }
             Err(error) => panic!("Error: {:?}", error),
         }
@@ -294,7 +295,8 @@ mod test {
                 };
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
-                                                pub_appendable_data.get_signatures()).is_err());
+                                                pub_appendable_data.get_signatures())
+                    .is_err());
             }
             Err(error) => panic!("Error: {:?}", error),
         }

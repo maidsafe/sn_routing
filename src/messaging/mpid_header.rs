@@ -74,7 +74,7 @@ impl MpidHeader {
         };
         rand::thread_rng().fill_bytes(&mut detail.guid);
 
-        let encoded = try!(serialise(&detail));
+        let encoded = serialise(&detail)?;
         Ok(MpidHeader {
             detail: detail,
             signature: sign::sign_detached(&encoded, secret_key),
@@ -104,7 +104,7 @@ impl MpidHeader {
     /// The name of the header.  This is a relatively expensive getter - the name is the SHA512 hash
     /// of the serialised header, so its use should be minimised.
     pub fn name(&self) -> Result<XorName, Error> {
-        let encoded = try!(serialise(self));
+        let encoded = serialise(self)?;
         Ok(XorName(sha256::hash(&encoded[..]).0))
     }
 

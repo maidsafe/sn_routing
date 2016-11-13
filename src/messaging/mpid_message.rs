@@ -66,14 +66,14 @@ impl MpidMessage {
             return Err(Error::BodyTooLarge);
         }
 
-        let header = try!(MpidHeader::new(sender, metadata, secret_key));
+        let header = MpidHeader::new(sender, metadata, secret_key)?;
 
         let detail = Detail {
             recipient: recipient,
             body: body,
         };
 
-        let recipient_and_body = try!(serialise(&detail));
+        let recipient_and_body = serialise(&detail)?;
         Ok(MpidMessage {
             header: header,
             detail: detail,
