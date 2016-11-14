@@ -247,6 +247,7 @@ impl TestClient {
 
 // —————  TestCache  —————
 
+#[derive(Default)]
 pub struct TestCache(RefCell<HashMap<DataIdentifier, Data>>);
 
 impl TestCache {

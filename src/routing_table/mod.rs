@@ -411,8 +411,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     ///
     /// This will generally be all the groups in our routing table.  However, if the addition of the
     /// new node will cause our group to split, only the groups which will remain neighbours after
-    /// the split are returned.  Returns `Err(Error::PeerNameUnsuitable)` if `name` is not within our
-    /// group, or `Err(Error::AlreadyExists)` if `name` is already in our table.
+    /// the split are returned.  Returns `Err(Error::PeerNameUnsuitable)` if `name` is not within
+    /// our group, or `Err(Error::AlreadyExists)` if `name` is already in our table.
     pub fn expect_add_to_our_group(&self, name: &T) -> Result<Groups<T>, Error> {
         if !self.our_group_prefix.matches(name) {
             return Err(Error::PeerNameUnsuitable);
@@ -476,8 +476,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     ///
     /// If the group exists in the routing table, it is split, otherwise this function is a no-op.
     /// If any of the groups don't satisfy the invariant any more (i.e. only differ in one bit from
-    /// our own prefix), they are removed and those contacts are returned.  If the split is happening
-    /// to our own group, our new prefix is returned in the optional field.
+    /// our own prefix), they are removed and those contacts are returned.  If the split is
+    /// happening to our own group, our new prefix is returned in the optional field.
     pub fn split(&mut self, prefix: Prefix<T>) -> (Vec<T>, Option<Prefix<T>>) {
         let mut result = vec![];
         if prefix == self.our_group_prefix {
