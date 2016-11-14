@@ -849,7 +849,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             .collect()
     }
 
-    #[cfg(any(test, feature = "use-mock-crust"))]
     fn check_invariant(&self) -> Result<(), Error> {
         if !self.our_group_prefix.matches(&self.our_name) {
             warn!("Our prefix does not match our name: {:?}", self);

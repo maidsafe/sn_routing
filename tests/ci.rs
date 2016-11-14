@@ -51,7 +51,7 @@ extern crate rust_sodium;
 #[macro_use]
 extern crate unwrap;
 
-mod utils;
+mod common;
 
 
 use itertools::Itertools;
@@ -67,7 +67,7 @@ use std::collections::{BTreeSet, HashSet};
 use std::io;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
-use utils::recv_with_timeout;
+use common::recv_with_timeout;
 
 #[derive(Debug)]
 struct TestEvent(usize, Event);
