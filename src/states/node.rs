@@ -1537,9 +1537,18 @@ impl Node {
         };
 
         if self.is_proper() && !force_via_proxy {
-            let targets = self.peer_mgr
-                .routing_table()
-                .targets(&routing_msg.dst.to_destination(), exclude, route as usize)?;
+            let targets = if routing_msg.src.is_group() && self.in_authority(&routing_msg.src) {
+                // we are in the sending group - send to the route-th node in our group for
+                // accumulation
+                let our_group = unwrap!(self.peer_mgr.routing_table().close_names(self.name()));
+                self.peer_mgr
+                    .routing_table()
+                    .get_routeth_node(&our_group, *routing_msg.dst.name(), None, route as usize)?
+            } else {
+                self.peer_mgr
+                    .routing_table()
+                    .targets(&routing_msg.dst.to_destination(), exclude, route as usize)?
+            };
             Ok(self.peer_mgr.get_peer_ids(&targets))
         } else if let Authority::Client { ref proxy_node_name, .. } = routing_msg.src {
             // We don't have any contacts in our routing table yet. Keep using
