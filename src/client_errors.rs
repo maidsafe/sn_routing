@@ -146,7 +146,7 @@ mod tests {
     #[test]
     fn conversion_from_str_literal() {
         fn mutate() -> Result<(), MutationError> {
-            try!(Err("Mutation"))
+            Err("Mutation")?
         }
 
         let err_get = GetError::from("Get");

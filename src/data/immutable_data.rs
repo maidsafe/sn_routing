@@ -77,7 +77,7 @@ impl Encodable for ImmutableData {
 
 impl Decodable for ImmutableData {
     fn decode<D: Decoder>(decoder: &mut D) -> Result<ImmutableData, D::Error> {
-        let value: Vec<u8> = try!(Decodable::decode(decoder));
+        let value: Vec<u8> = Decodable::decode(decoder)?;
         Ok(ImmutableData {
             name: XorName(sha256::hash(&value).0),
             value: value,

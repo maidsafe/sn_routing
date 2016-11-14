@@ -47,7 +47,7 @@ impl StructuredData {
                name: XorName,
                version: u64,
                data: Vec<u8>,
-               owners: BTreeSet<PublicKey>,)
+               owners: BTreeSet<PublicKey>)
                -> Result<StructuredData, RoutingError> {
         if owners.len() > 1 {
             return Err(RoutingError::InvalidOwners);
@@ -68,7 +68,7 @@ impl StructuredData {
     ///
     /// To transfer ownership, the current owner signs over the data and increase `version` by one.
     pub fn replace_with_other(&mut self, other: StructuredData) -> Result<(), RoutingError> {
-        try!(self.validate_self_against_successor(&other));
+        self.validate_self_against_successor(&other)?;
 
         self.type_tag = other.type_tag;
         self.name = other.name;
@@ -94,7 +94,7 @@ impl StructuredData {
     pub fn delete_if_valid_successor(&mut self,
                                      other: &StructuredData)
                                      -> Result<(), RoutingError> {
-        try!(self.validate_self_against_successor(other));
+        self.validate_self_against_successor(other)?;
         self.data.clear();
         self.version += 1;
         self.owners.clear();
@@ -114,8 +114,7 @@ impl StructuredData {
     pub fn validate_self_against_successor(&self,
                                            other: &StructuredData)
                                            -> Result<(), RoutingError> {
-        if other.owners.len() > 1 ||
-           other.signatures.len() > 1 ||
+        if other.owners.len() > 1 || other.signatures.len() > 1 ||
            self.owners.contains(&NO_OWNER_PUB_KEY) {
             return Err(RoutingError::InvalidOwners);
         }
@@ -125,7 +124,7 @@ impl StructuredData {
            other.version != self.version + 1 {
             return Err(RoutingError::UnknownMessageType);
         }
-        let data = try!(other.data_to_sign());
+        let data = other.data_to_sign()?;
         super::verify_signatures(&self.owners, &data, &other.signatures)
     }
 
@@ -150,7 +149,7 @@ impl StructuredData {
         if !self.signatures.is_empty() {
             return Err(RoutingError::InvalidOwners);
         }
-        let data = try!(self.data_to_sign());
+        let data = self.data_to_sign()?;
         let sig = sign::sign_detached(&data, &keys.1);
         let _ = self.signatures.insert(keys.0, sig);
         Ok(((self.owners.len() / 2) + 1).saturating_sub(self.signatures.len()))
@@ -239,11 +238,13 @@ mod tests {
                 };
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
-                                                structured_data.get_signatures()).is_err());
+                                                structured_data.get_signatures())
+                    .is_err());
                 assert_eq!(structured_data.add_signature(&keys).unwrap(), 0);
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
-                                                structured_data.get_signatures()).is_ok());
+                                                structured_data.get_signatures())
+                    .is_ok());
             }
             Err(error) => panic!("Error: {:?}", error),
         }
@@ -265,7 +266,8 @@ mod tests {
                 };
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
-                                                structured_data.get_signatures()).is_err());
+                                                structured_data.get_signatures())
+                    .is_err());
             }
             Err(error) => panic!("Error: {:?}", error),
         }

@@ -750,7 +750,7 @@ impl Core {
                 } else if self.tunnels.has_clients(src, dst) {
                     self.send_or_drop(&dst, bytes, content.priority())
                 } else if self.tunnels.accept_clients(src, dst) {
-                    try!(self.send_direct_message(&dst, DirectMessage::TunnelSuccess(src)));
+                    self.send_direct_message(&dst, DirectMessage::TunnelSuccess(src))?;
                     self.send_or_drop(&dst, bytes, content.priority())
                 } else {
                     Err(RoutingError::InvalidDestination)
@@ -777,17 +777,17 @@ impl Core {
         let hop_name;
         if self.state == State::Node {
             if let Some(info) = self.routing_table.iter().find(|node| node.peer_id == peer_id) {
-                try!(hop_msg.verify(info.public_id.signing_public_key()));
+                hop_msg.verify(info.public_id.signing_public_key())?;
                 // try!(self.check_direction(hop_msg));
                 hop_name = *info.name();
             } else if let Some(client_info) = self.peer_mgr.get_client(&peer_id) {
-                try!(hop_msg.verify(&client_info.public_key));
+                hop_msg.verify(&client_info.public_key)?;
                 if client_info.client_restriction {
-                    try!(self.check_valid_client_message(hop_msg.content().routing_message()));
+                    self.check_valid_client_message(hop_msg.content().routing_message())?;
                 }
                 hop_name = *self.name();
             } else if let Some(pub_id) = self.peer_mgr.get_proxy_public_id(&peer_id) {
-                try!(hop_msg.verify(pub_id.signing_public_key()));
+                hop_msg.verify(pub_id.signing_public_key())?;
                 hop_name = *pub_id.name();
             } else {
                 // TODO: Drop peer?
@@ -799,7 +799,7 @@ impl Core {
             }
         } else if self.state == State::Client {
             if let Some(pub_id) = self.peer_mgr.get_proxy_public_id(&peer_id) {
-                try!(hop_msg.verify(pub_id.signing_public_key()));
+                hop_msg.verify(pub_id.signing_public_key())?;
                 hop_name = *pub_id.name();
             } else {
                 return Err(RoutingError::UnknownConnection(peer_id));
@@ -836,7 +836,7 @@ impl Core {
                              hop_name: &XorName,
                              sent_to: &[XorName])
                              -> Result<(), RoutingError> {
-        try!(signed_msg.check_integrity());
+        signed_msg.check_integrity()?;
         let routing_msg = signed_msg.routing_message();
 
         // FIXME: This is currently only in place so acks can get delivered if the
@@ -861,7 +861,7 @@ impl Core {
                         return Err(RoutingError::FailedSignature);
                     };
                 }
-            } else if try!(self.respond_from_cache(&routing_msg, route)) {
+            } else if self.respond_from_cache(&routing_msg, route)? {
                 return Ok(());
             }
 
@@ -937,7 +937,7 @@ impl Core {
             }
             if let Some(group_msg) = self.accumulate(routing_msg, &public_id) {
                 let _ = self.grp_msg_filter.insert(&group_msg);
-                let _ = self.grp_msg_filter.insert(&try!(routing_msg.to_grp_msg_hash()));
+                let _ = self.grp_msg_filter.insert(&routing_msg.to_grp_msg_hash()?);
                 self.send_ack(&group_msg, 0);
                 self.dispatch_routing_message(&group_msg)
             } else {
@@ -1138,7 +1138,7 @@ impl Core {
         let token = self.timer.schedule(Duration::from_secs(BOOTSTRAP_TIMEOUT_SECS));
         self.state = State::Bootstrapping(peer_id, token);
 
-        let serialised_public_id = try!(serialisation::serialise(self.full_id.public_id()));
+        let serialised_public_id = serialisation::serialise(self.full_id.public_id())?;
         let signature = sign::sign_detached(&serialised_public_id,
                                             self.full_id.signing_private_key());
 
@@ -1151,7 +1151,7 @@ impl Core {
     }
 
     fn node_identify(&mut self, peer_id: PeerId) -> Result<(), RoutingError> {
-        let serialised_public_id = try!(serialisation::serialise(self.full_id.public_id()));
+        let serialised_public_id = serialisation::serialise(self.full_id.public_id())?;
         let signature = sign::sign_detached(&serialised_public_id,
                                             self.full_id.signing_private_key());
         let direct_message = DirectMessage::NodeIdentify {
@@ -1223,7 +1223,7 @@ impl Core {
     fn verify_signed_public_id(serialised_public_id: &[u8],
                                signature: &sign::Signature)
                                -> Result<PublicId, RoutingError> {
-        let public_id: PublicId = try!(serialisation::deserialise(serialised_public_id));
+        let public_id: PublicId = serialisation::deserialise(serialised_public_id)?;
         let public_key = public_id.signing_public_key();
         if sign::verify_detached(signature, serialised_public_id, public_key) {
             Ok(public_id)
@@ -1625,7 +1625,7 @@ impl Core {
         };
 
         let request_msg = RoutingMessage {
-            src: try!(self.get_client_authority()),
+            src: self.get_client_authority()?,
             dst: Authority::NaeManager(*self.name()),
             content: request_content,
         };
@@ -1657,8 +1657,7 @@ impl Core {
             Some(close_group) => close_group.iter().map(NodeInfo::name).cloned().collect(),
             None => return Err(RoutingError::InvalidDestination),
         };
-        let relocated_name = try!(utils::calculate_relocated_name(close_group,
-                                                                  &their_public_id.name()));
+        let relocated_name = utils::calculate_relocated_name(close_group, &their_public_id.name())?;
         their_public_id.set_name(relocated_name);
 
         // From X -> Y; Send to close group of the relocated name
@@ -1743,9 +1742,9 @@ impl Core {
             debug!("{:?} Sending connection info to {:?} on GetNodeName response.",
                    self,
                    close_node_id);
-            try!(self.send_connection_info(close_node_id,
-                                           dst,
-                                           Authority::ManagedNode(*close_node_id.name())));
+            self.send_connection_info(close_node_id,
+                                      dst,
+                                      Authority::ManagedNode(*close_node_id.name()))?;
         }
         Ok(())
     }
@@ -1795,7 +1794,7 @@ impl Core {
                        self,
                        close_node_id);
                 let ci_dst = Authority::ManagedNode(*close_node_id.name());
-                try!(self.send_connection_info(close_node_id, dst, ci_dst));
+                self.send_connection_info(close_node_id, dst, ci_dst)?;
             }
         }
         Ok(())
@@ -1816,7 +1815,7 @@ impl Core {
                                           dst_name: XorName,
                                           their_public_id: PublicId)
                                           -> Result<(), RoutingError> {
-        try!(self.check_address_for_routing_table(their_public_id.name()));
+        self.check_address_for_routing_table(their_public_id.name())?;
         self.connect(encrypted_connection_info,
                      nonce_bytes,
                      their_public_id,
@@ -1831,7 +1830,7 @@ impl Core {
                                         dst: Authority,
                                         their_public_id: PublicId)
                                         -> Result<(), RoutingError> {
-        try!(self.check_address_for_routing_table(&src_name));
+        self.check_address_for_routing_table(&src_name)?;
         self.connect(encrypted_connection_info,
                      nonce_bytes,
                      their_public_id,
@@ -1847,7 +1846,7 @@ impl Core {
                             dst: Authority)
                             -> Result<(), RoutingError> {
         if let Some(peer_id) = self.peer_mgr.get_proxy_or_client_peer_id(&their_public_id) {
-            try!(self.node_identify(peer_id));
+            self.node_identify(peer_id)?;
             self.handle_node_identify(their_public_id, peer_id);
         } else if !self.routing_table.contains(their_public_id.name()) &&
                   self.routing_table.allow_connection(their_public_id.name()) {
@@ -1970,7 +1969,7 @@ impl Core {
         let serialised_connection_info =
             try!(decipher_result.map_err(|()| RoutingError::AsymmetricDecryptionFailure));
         let their_connection_info: PubConnectionInfo =
-            try!(serialisation::deserialise(&serialised_connection_info));
+            serialisation::deserialise(&serialised_connection_info)?;
 
         if let Some(our_connection_info) = self.peer_mgr
             .our_connection_info_map
@@ -2012,12 +2011,12 @@ impl Core {
             UserMessage::Request(ref request) => self.stats.count_request(request),
             UserMessage::Response(ref response) => self.stats.count_response(response),
         }
-        for part in try!(user_msg.to_parts(priority)) {
-            try!(self.send_message(RoutingMessage {
-                src: src,
-                dst: dst,
-                content: part,
-            }));
+        for part in user_msg.to_parts(priority)? {
+            self.send_message(RoutingMessage {
+                    src: src,
+                    dst: dst,
+                    content: part,
+                })?;
         }
         Ok(())
     }
@@ -2030,10 +2029,10 @@ impl Core {
                               routing_msg: RoutingMessage,
                               route: u8)
                               -> Result<(), RoutingError> {
-        let signed_msg = try!(SignedMessage::new(routing_msg, &self.full_id));
+        let signed_msg = SignedMessage::new(routing_msg, &self.full_id)?;
         let hop = *self.name();
-        try!(self.send(&signed_msg, route, &hop, &[hop]));
-        let sent_msg = try!(self.message_to_send(&signed_msg, route, &hop));
+        self.send(&signed_msg, route, &hop, &[hop])?;
+        let sent_msg = self.message_to_send(&signed_msg, route, &hop)?;
         // If we need to handle this message, handle it.
         if self.is_recipient(&sent_msg.routing_message().dst) &&
            self.signed_message_filter.insert(&sent_msg) == 1 {
@@ -2053,9 +2052,9 @@ impl Core {
                 return Ok(());
             }
             let hop_msg =
-                try!(HopMessage::new(signed_msg, 0, vec![], self.full_id.signing_private_key()));
+                HopMessage::new(signed_msg, 0, vec![], self.full_id.signing_private_key())?;
             let message = Message::Hop(hop_msg);
-            let raw_bytes = try!(serialisation::serialise(&message));
+            let raw_bytes = serialisation::serialise(&message)?;
             self.send_or_drop(peer_id, raw_bytes, priority)
         } else {
             // Acknowledge the message so that the sender doesn't retry.
@@ -2073,12 +2072,12 @@ impl Core {
                     route: u8,
                     sent_to: Vec<XorName>)
                     -> Result<Vec<u8>, RoutingError> {
-        let hop_msg = try!(HopMessage::new(signed_msg,
-                                           route,
-                                           sent_to,
-                                           self.full_id.signing_private_key()));
+        let hop_msg = HopMessage::new(signed_msg,
+                                      route,
+                                      sent_to,
+                                      self.full_id.signing_private_key())?;
         let message = Message::Hop(hop_msg);
-        Ok(try!(serialisation::serialise(&message)))
+        Ok(serialisation::serialise(&message)?)
     }
 
     fn to_tunnel_hop_bytes(&self,
@@ -2088,16 +2087,16 @@ impl Core {
                            src: PeerId,
                            dst: PeerId)
                            -> Result<Vec<u8>, RoutingError> {
-        let hop_msg = try!(HopMessage::new(signed_msg.clone(),
-                                           route,
-                                           sent_to,
-                                           self.full_id.signing_private_key()));
+        let hop_msg = HopMessage::new(signed_msg.clone(),
+                                      route,
+                                      sent_to,
+                                      self.full_id.signing_private_key())?;
         let message = Message::TunnelHop {
             content: hop_msg,
             src: src,
             dst: dst,
         };
-        Ok(try!(serialisation::serialise(&message)))
+        Ok(serialisation::serialise(&message)?)
     }
 
     fn send(&mut self,
@@ -2120,25 +2119,24 @@ impl Core {
             }
         }
 
-        let (new_sent_to, target_peer_ids) =
-            try!(self.get_targets(routing_msg, route, hop, sent_to));
+        let (new_sent_to, target_peer_ids) = self.get_targets(routing_msg, route, hop, sent_to)?;
 
         if !self.add_to_pending_acks(signed_msg, route) {
             return Ok(());
         }
 
-        let send_msg = try!(self.message_to_send(signed_msg, route, hop));
-        let raw_bytes = try!(self.to_hop_bytes(send_msg.clone(), route, new_sent_to.clone()));
+        let send_msg = self.message_to_send(signed_msg, route, hop)?;
+        let raw_bytes = self.to_hop_bytes(send_msg.clone(), route, new_sent_to.clone())?;
         for target_peer_id in target_peer_ids {
             let (peer_id, bytes) = if self.crust_service.is_connected(&target_peer_id) {
                 (target_peer_id, raw_bytes.clone())
             } else if let Some(&tunnel_id) = self.tunnels
                 .tunnel_for(&target_peer_id) {
-                let bytes = try!(self.to_tunnel_hop_bytes(send_msg.clone(),
-                                                          route,
-                                                          new_sent_to.clone(),
-                                                          self.crust_service.id(),
-                                                          target_peer_id));
+                let bytes = self.to_tunnel_hop_bytes(send_msg.clone(),
+                                         route,
+                                         new_sent_to.clone(),
+                                         self.crust_service.id(),
+                                         target_peer_id)?;
                 (tunnel_id, bytes)
             } else {
                 trace!("{:?} Not connected or tunneling to {:?}. Dropping peer.",
@@ -2181,7 +2179,7 @@ impl Core {
             return Ok(signed_msg.clone());
         }
 
-        SignedMessage::new(try!(signed_msg.routing_message().to_grp_msg_hash()),
+        SignedMessage::new(signed_msg.routing_message().to_grp_msg_hash()?,
                            &self.full_id)
     }
 

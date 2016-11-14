@@ -105,8 +105,7 @@ fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
     let current_exe_path = unwrap!(env::current_exe());
     let mut log_path = current_exe_path.clone();
 
-    let nodes = try!((0..count)
-        .map(|i| {
+    let nodes = (0..count).map(|i| {
             log_path.set_file_name(&format!("Node_{:02}.log", i + 1));
             let mut args = vec![format!("--output={}", log_path.display())];
             if i == 0 {
@@ -114,11 +113,10 @@ fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
                 args.push("-f".to_owned());
             }
 
-            let node = NodeProcess(try!(Command::new(current_exe_path.clone())
-                                       .args(&args)
+            let node = NodeProcess(Command::new(current_exe_path.clone()).args(&args)
                                        .stdout(Stdio::piped())
                                        .stderr(Stdio::inherit())
-                                       .spawn()),
+                                       .spawn()?,
                                    i + 1);
 
             println!("Started Node #{} with Process ID {}", i + 1, node.0.id());
@@ -128,7 +126,7 @@ fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
             thread::sleep(Duration::from_secs(5));
             Ok(node)
         })
-        .collect::<io::Result<Vec<NodeProcess>>>());
+        .collect::<io::Result<Vec<NodeProcess>>>()?;
 
     Ok(nodes)
 }
@@ -202,11 +200,10 @@ fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
         log_path.set_file_name(&format!("Node_{:02}.log", node_count));
         let arg = format!("--output={}", log_path.display());
 
-        nodes.push(NodeProcess(try!(Command::new(current_exe_path.clone())
-                                   .arg(arg)
+        nodes.push(NodeProcess(Command::new(current_exe_path.clone()).arg(arg)
                                    .stdout(Stdio::null())
                                    .stderr(Stdio::null())
-                                   .spawn()),
+                                   .spawn()?,
                                *node_count));
         println!("Started Node #{} with Process ID #{}",
                  node_count,

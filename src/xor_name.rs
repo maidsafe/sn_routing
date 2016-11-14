@@ -213,7 +213,7 @@ impl Encodable for XorName {
     fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), E::Error> {
         encoder.emit_seq(XOR_NAME_LEN, |encoder| {
             for (i, e) in self[..].iter().enumerate() {
-                try!(encoder.emit_seq_elt(i, |encoder| e.encode(encoder)))
+                encoder.emit_seq_elt(i, |encoder| e.encode(encoder))?
             }
             Ok(())
         })
@@ -232,7 +232,7 @@ impl Decodable for XorName {
             {
                 let XorName(ref mut arr) = res;
                 for (i, val) in arr.iter_mut().enumerate() {
-                    *val = try!(decoder.read_seq_elt(i, |decoder| Decodable::decode(decoder)));
+                    *val = decoder.read_seq_elt(i, |decoder| Decodable::decode(decoder))?;
                 }
             }
             Ok(res)
