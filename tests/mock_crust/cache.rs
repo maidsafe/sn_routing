@@ -15,59 +15,13 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-extern crate itertools;
-#[macro_use]
-extern crate log;
-extern crate rand;
-extern crate routing;
-#[macro_use]
-extern crate unwrap;
-
 use rand::Rng;
-use routing::Authority;
-use routing::Data;
-use routing::Event;
-use routing::{Request, Response};
+use routing::{Authority, Data, Event, MIN_GROUP_SIZE, MessageId, Prefix, Request, Response};
 use routing::mock_crust::Network;
-use routing::MIN_GROUP_SIZE;
-use routing::Prefix;
-use routing::MessageId;
-use routing::mock_crust::utils::*;
+use super::{TestNode, create_connected_clients, create_connected_nodes_with_cache_till_split,
+            gen_immutable_data, poll_all};
 use std::sync::mpsc;
 
-/// Expects that any event raised by the node matches the given pattern
-/// (with optional pattern guard). Ignores events that do not match the pattern.
-/// Panics if the event channel is exhausted before matching event is found.
-macro_rules! expect_any_event {
-    ($node:expr, $pattern:pat) => {
-        expect_any_event!($node, $pattern if true => ())
-    };
-    ($node:expr, $pattern:pat if $guard:expr) => {
-        loop {
-            match $node.event_rx.try_recv() {
-                Ok($pattern) if $guard => break,
-                Ok(_) => (),
-                other => panic!("Expected Ok({}) at {}, got {:?}",
-                    stringify!($pattern),
-                    unwrap!($node.inner.name()),
-                    other),
-            }
-        }
-    }
-}
-
-/// Expects that the node raised no event, panics otherwise (ignores ticks).
-macro_rules! expect_no_event {
-    ($node:expr) => {
-        match $node.event_rx.try_recv() {
-            Ok(Event::Tick) => (),
-            Err(mpsc::TryRecvError::Empty) => (),
-            other => panic!("Expected no event at {}, got {:?}",
-                unwrap!($node.inner.name()),
-                other),
-        }
-    }
-}
 // Generate random immutable data, but make sure the first node in the given
 // node slice (the proxy node) is not in the data's group.
 fn gen_immutable_data_not_in_first_node_group<T: Rng>(rng: &mut T, nodes: &[TestNode]) -> Data {

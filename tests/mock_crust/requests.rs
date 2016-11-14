@@ -15,41 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-extern crate itertools;
-#[macro_use]
-extern crate log;
-extern crate rand;
-extern crate routing;
-#[macro_use]
-extern crate unwrap;
-
-use routing::Authority;
-use routing::{Data, DataIdentifier, ImmutableData};
-use routing::Event;
-use routing::{Request, Response};
+use routing::{Authority, Data, DataIdentifier, Destination, Event, ImmutableData, MIN_GROUP_SIZE,
+              MessageId, Request, Response};
 use routing::mock_crust::Network;
-use routing::MIN_GROUP_SIZE;
-use routing::Destination;
-use routing::MessageId;
-use routing::mock_crust::utils::*;
-
-/// Expect that the next event raised by the node matches the given pattern.
-/// Panics if no event, or an event that does not match the pattern is raised.
-/// (ignores ticks).
-macro_rules! expect_next_event {
-    ($node:expr, $pattern:pat) => {
-        loop {
-            match $node.event_rx.try_recv() {
-                Ok($pattern) => break,
-                Ok(Event::Tick) => (),
-                other => panic!("Expected Ok({}) at {}, got {:?}",
-                    stringify!($pattern),
-                    unwrap!($node.inner.name()),
-                    other),
-            }
-        }
-    }
-}
+use super::{create_connected_clients, create_connected_nodes, gen_bytes, gen_immutable_data,
+            poll_all};
 
 #[test]
 fn successful_put_request() {

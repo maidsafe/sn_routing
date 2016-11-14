@@ -15,23 +15,12 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-extern crate itertools;
-#[macro_use]
-extern crate log;
-extern crate rand;
-extern crate routing;
-#[macro_use]
-extern crate unwrap;
-
 use rand::Rng;
-use routing::Authority;
-use routing::{Data, DataIdentifier};
-use routing::{Event};
-use routing::{Request, Response};
-use routing::mock_crust::{ Config, Network};
-use routing::MIN_GROUP_SIZE;
-use routing::MessageId;
-use routing::mock_crust::utils::*;
+use routing::{Authority, Data, DataIdentifier, Event, MIN_GROUP_SIZE, MessageId, Request, Response};
+use routing::mock_crust::{Config, Network};
+use super::{TestClient, TestNode, create_connected_nodes, gen_immutable_data, gen_range_except,
+            gen_two_range_except, poll_all, sort_nodes_by_distance_to,
+            verify_invariant_for_all_nodes};
 
 // Randomly add or remove some nodes, causing churn.
 // If a new node was added, returns the index of this node. Otherwise

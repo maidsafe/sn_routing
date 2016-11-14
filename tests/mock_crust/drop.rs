@@ -15,37 +15,10 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-extern crate itertools;
-#[macro_use]
-extern crate log;
-extern crate rand;
-extern crate routing;
-#[macro_use]
-extern crate unwrap;
-
 use rand::Rng;
-use routing::Event;
+use routing::{Event, MIN_GROUP_SIZE};
 use routing::mock_crust::{Config, Endpoint, Network};
-use routing::MIN_GROUP_SIZE;
-use routing::mock_crust::utils::*;
-
-/// Expect that the next event raised by the node matches the given pattern.
-/// Panics if no event, or an event that does not match the pattern is raised.
-/// (ignores ticks).
-macro_rules! expect_next_event {
-    ($node:expr, $pattern:pat) => {
-        loop {
-            match $node.event_rx.try_recv() {
-                Ok($pattern) => break,
-                Ok(Event::Tick) => (),
-                other => panic!("Expected Ok({}) at {}, got {:?}",
-                    stringify!($pattern),
-                    unwrap!($node.inner.name()),
-                    other),
-            }
-        }
-    }
-}
+use super::{TestNode, create_connected_nodes, poll_all, verify_invariant_for_all_nodes};
 
 // Drop node at index and verify its close group receives NodeLost.
 fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {

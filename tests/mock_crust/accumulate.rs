@@ -15,14 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-extern crate itertools;
-#[macro_use]
-extern crate log;
-extern crate rand;
-extern crate routing;
-#[macro_use]
-extern crate unwrap;
-
 // use itertools::Itertools;
 // use rand::Rng;
 // use routing::{Authority, Cache, NullCache, Client};
@@ -37,42 +29,11 @@ extern crate unwrap;
 // use routing::{Destination, RoutingTable, verify_network_invariant};
 // use routing::MessageId;
 // use routing::XorName;
-// use routing::mock_crust::utils::*;
+// use super::{/*TODO*/};
 // use std::cell::RefCell;
 // use std::cmp;
 // use std::collections::{HashMap, HashSet};
 // use std::sync::mpsc;
-// 
-// /// Expect that the next event raised by the node matches the given pattern.
-// /// Panics if no event, or an event that does not match the pattern is raised.
-// /// (ignores ticks).
-// macro_rules! expect_next_event {
-//     ($node:expr, $pattern:pat) => {
-//         loop {
-//             match $node.event_rx.try_recv() {
-//                 Ok($pattern) => break,
-//                 Ok(Event::Tick) => (),
-//                 other => panic!("Expected Ok({}) at {}, got {:?}",
-//                     stringify!($pattern),
-//                     unwrap!($node.inner.name()),
-//                     other),
-//             }
-//         }
-//     }
-// }
-// 
-// /// Expects that the node raised no event, panics otherwise (ignores ticks).
-// macro_rules! expect_no_event {
-//     ($node:expr) => {
-//         match $node.event_rx.try_recv() {
-//             Ok(Event::Tick) => (),
-//             Err(mpsc::TryRecvError::Empty) => (),
-//             other => panic!("Expected no event at {}, got {:?}",
-//                 unwrap!($node.inner.name()),
-//                 other),
-//         }
-//     }
-// }
 
 // #[test]
 // #[ignore]

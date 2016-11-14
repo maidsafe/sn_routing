@@ -1,4 +1,4 @@
-// Copyright 2016 maidsafe.net limited.
+// Copyright 2016 MaidSafe.net limited.
 //
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
@@ -15,24 +15,16 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-//! Utilities for integration tests.
-//!
-//! If cargo supported sub-libs or some kind of code-sharing between integration tests, we could
-//! move this out of the core routing library.
-//!
-//! Much of this code has no doc since it is written specifically for tests (this could be fixed).
-#![allow(missing_docs)]
-
-use ::{Cache, Client, NullCache};
-use ::{Data, DataIdentifier, ImmutableData};
-use ::{Event, FullId};
-use ::{Request, Response};
-use ::mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
-use ::Node;
-use ::MIN_GROUP_SIZE;
-use ::Xorable;
-use ::{RoutingTable, verify_network_invariant};
-use ::XorName;
+use routing::{Cache, Client, NullCache};
+use routing::{Data, DataIdentifier, ImmutableData};
+use routing::{Event, FullId};
+use routing::{Request, Response};
+use routing::mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
+use routing::Node;
+use routing::MIN_GROUP_SIZE;
+use routing::Xorable;
+use routing::{RoutingTable, verify_network_invariant};
+use routing::XorName;
 use itertools::Itertools;
 use rand::Rng;
 use std::cell::RefCell;
@@ -40,26 +32,11 @@ use std::cmp;
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;
 
+// Various utilities. Since this is all internal stuff we're a bit lax about the doc.
+#[allow(missing_docs)]
+
 // Poll one event per node. Otherwise, all events in a single node are polled before moving on.
 const BALANCED_POLLING: bool = true;
-
-/// Expect that the next event raised by the node matches the given pattern.
-/// Panics if no event, or an event that does not match the pattern is raised.
-/// (ignores ticks).
-macro_rules! expect_next_event {
-    ($node:expr, $pattern:pat) => {
-        loop {
-            match $node.event_rx.try_recv() {
-                Ok($pattern) => break,
-                Ok(Event::Tick) => (),
-                other => panic!("Expected Ok({}) at {}, got {:?}",
-                    stringify!($pattern),
-                    unwrap!($node.inner.name()),
-                    other),
-            }
-        }
-    }
-}
 
 
 // —————  Random number generation  —————
