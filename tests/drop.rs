@@ -1,4 +1,4 @@
-// copyright 2016 maidsafe.net limited.
+// Copyright 2016 maidsafe.net limited.
 //
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which

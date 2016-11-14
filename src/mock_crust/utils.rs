@@ -1,4 +1,4 @@
-// copyright 2016 maidsafe.net limited.
+// Copyright 2016 maidsafe.net limited.
 //
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
@@ -20,7 +20,7 @@
 //! If cargo supported sub-libs or some kind of code-sharing between integration tests, we could
 //! move this out of the core routing library.
 //!
-//! Much of this code has no doc. Live with it.
+//! Much of this code has no doc since it is written specifically for tests (this could be fixed).
 #![allow(missing_docs)]
 
 use ::{Cache, Client, NullCache};
