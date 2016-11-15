@@ -15,27 +15,15 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use itertools::Itertools;
-use rand::Rng;
-use routing::{Authority, Cache, Client, NullCache};
-use routing::{Data, DataIdentifier, ImmutableData};
-use routing::{Event, FullId};
-use routing::{Request, Response};
+use routing::Authority;
+use routing::Event;
+use routing::Response;
 use routing::QUORUM;
-use routing::mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
-use routing::mock_crust::crust::PeerId;
-use routing::Node;
-use routing::MIN_GROUP_SIZE;
-use routing::{Prefix, Xorable};
-use routing::{Destination, RoutingTable, verify_network_invariant};
+use routing::mock_crust::Network;
 use routing::MessageId;
-use routing::XorName;
-use std::cell::RefCell;
-use std::cmp;
-use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;
 use super::{TestNode, create_connected_nodes, gen_immutable_data, poll_all,
-            sort_nodes_by_distance_to, verify_invariant_for_all_nodes};
+            sort_nodes_by_distance_to};
 
 #[test]
 #[ignore]
