@@ -51,8 +51,6 @@ extern crate rust_sodium;
 #[macro_use]
 extern crate unwrap;
 
-mod utils;
-
 
 use itertools::Itertools;
 use maidsafe_utilities::SeededRng;
@@ -65,9 +63,38 @@ use std::iter;
 use std::collections::{BTreeSet, HashSet};
 #[cfg(target_os = "macos")]
 use std::io;
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::time::Duration;
-use utils::recv_with_timeout;
+
+
+#[derive(Debug)]
+enum RecvWithTimeoutError {
+    Disconnected,
+    Timeout,
+}
+
+/// Blocks until something is received on the `Receiver`, or timeout, whichever happens sooner.
+fn recv_with_timeout<T>(receiver: &Receiver<T>,
+                            timeout: Duration)
+                            -> Result<T, RecvWithTimeoutError> {
+    let interval = Duration::from_millis(100);
+    let mut elapsed = Duration::from_millis(0);
+
+    loop {
+        match receiver.try_recv() {
+            Ok(value) => return Ok(value),
+            Err(TryRecvError::Disconnected) => return Err(RecvWithTimeoutError::Disconnected),
+            Err(TryRecvError::Empty) => {
+                std::thread::sleep(interval);
+                elapsed += interval;
+
+                if elapsed > timeout {
+                    return Err(RecvWithTimeoutError::Timeout);
+                }
+            }
+        }
+    }
+}
 
 #[derive(Debug)]
 struct TestEvent(usize, Event);

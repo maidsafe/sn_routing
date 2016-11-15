@@ -15,8 +15,12 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#![cfg(test)]
+// This is used two ways: inline tests, and integration tests (with use-mock-crust).
+// There's no point configuring each item which is only used in one of these.
+#![cfg(any(test, feature = "use-mock-crust"))]
+#![allow(unused, missing_docs)]
 
+use ::MIN_GROUP_SIZE;
 use maidsafe_utilities::SeededRng;
 use rand::Rng;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -27,8 +31,6 @@ use super::{Destination, Error, RoutingTable};
 use super::prefix::Prefix;
 use routing_table::{Iter, OtherMergeDetails, OwnMergeDetails, OwnMergeState};
 use routing_table::xorable::Xorable;
-
-const MIN_GROUP_SIZE: usize = 8;
 
 type OwnMergeInfo = (BTreeSet<Prefix<u64>>, OwnMergeDetails<u64>);
 type OtherMergeInfo = (BTreeSet<Prefix<u64>>, OtherMergeDetails<u64>);

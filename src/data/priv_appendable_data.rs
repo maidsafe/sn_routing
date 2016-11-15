@@ -50,8 +50,8 @@ impl PrivAppendedData {
                 pub_key: &box_::PublicKey,
                 secret_key: &box_::SecretKey)
                 -> Result<AppendedData, RoutingError> {
-        let decipher_result = try!(sealedbox::open(&self.0, pub_key, secret_key)
-            .map_err(|()| RoutingError::AsymmetricDecryptionFailure));
+        let decipher_result = sealedbox::open(&self.0, pub_key, secret_key)
+            .map_err(|()| RoutingError::AsymmetricDecryptionFailure)?;
         Ok(deserialise(&decipher_result)?)
     }
 }
