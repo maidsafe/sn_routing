@@ -26,7 +26,6 @@ use super::{TestNode, create_connected_nodes, gen_immutable_data, poll_all,
             sort_nodes_by_distance_to};
 
 #[test]
-#[ignore]
 fn messages_accumulate_with_quorum() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
@@ -43,7 +42,7 @@ fn messages_accumulate_with_quorum() {
     };
 
     let dst = Authority::ManagedNode(nodes[0].name()); // The closest node.
-    let quorum = (15 * QUORUM + 99) / 100;  // +99 makes sure that the result is rounded up
+    let quorum = 15 * QUORUM / 100 + 1;
 
     // Send a message from the group `src` to the node `dst`.
     // Only the `quorum`-th sender should cause accumulation and a
@@ -61,65 +60,65 @@ fn messages_accumulate_with_quorum() {
     let _ = poll_all(&mut nodes, &mut []);
     expect_no_event!(nodes[0]);
 
-    //     // If there are `quorum` senders but they all only sent hashes, nothing can accumulate.
-    //     // Only after `nodes[0]`, which is closest to `src.name()`, has sent the full message, it
-    //     // accumulates.
-    //     let message_id = MessageId::new();
-    //     for node in nodes.iter_mut().skip(1).take(quorum) {
-    //         send(node, &dst, message_id);
-    //     }
-    //     let _ = poll_all(&mut nodes, &mut []);
-    //     expect_no_event!(nodes[0]);
-    //     send(&mut nodes[0], &dst, message_id);
-    //     let _ = poll_all(&mut nodes, &mut []);
-    //     expect_next_event!(nodes[0], Event::Response { response: Response::GetSuccess(..), .. });
-    //     send(&mut nodes[quorum + 1], &dst, message_id);
-    //     let _ = poll_all(&mut nodes, &mut []);
-    //     expect_no_event!(nodes[0]);
-    //
-    //     let dst_grp = Authority::NaeManager(*src.name()); // The whole group.
-    //
-    //     // Send a message from the group `src` to the group `dst_grp`.
-    //     // Only the `quorum`-th sender should cause accumulation and a
-    //     // `Response` event. The event should only occur once.
-    //     let message_id = MessageId::new();
-    //     for node in nodes.iter_mut().take(quorum - 1) {
-    //         send(node, &dst_grp, message_id);
-    //     }
-    //     let _ = poll_all(&mut nodes, &mut []);
-    //     for node in &mut nodes {
-    //         expect_no_event!(node);
-    //     }
-    //     send(&mut nodes[quorum - 1], &dst_grp, message_id);
-    //     let _ = poll_all(&mut nodes, &mut []);
-    //     for node in &mut nodes {
-    //         expect_next_event!(node, Event::Response { response: Response::GetSuccess(..), .. });
-    //     }
-    //     send(&mut nodes[quorum], &dst_grp, message_id);
-    //     let _ = poll_all(&mut nodes, &mut []);
-    //     for node in &mut nodes {
-    //         expect_no_event!(node);
-    //     }
-    //
-    //     // If there are `quorum` senders but they all only sent hashes, nothing can accumulate.
-    //     // Only after `nodes[0]`, which is closest to `src.name()`, has sent the full message, it
-    //     // accumulates.
-    //     let message_id = MessageId::new();
-    //     for node in nodes.iter_mut().skip(1).take(quorum) {
-    //         send(node, &dst_grp, message_id);
-    //     }
-    //     let _ = poll_all(&mut nodes, &mut []);
-    //     for node in &mut nodes {
-    //         expect_no_event!(node);
-    //     }
-    //     send(&mut nodes[0], &dst_grp, message_id);
-    //     let _ = poll_all(&mut nodes, &mut []);
-    //     for node in &mut nodes {
-    //         expect_next_event!(node, Event::Response { response: Response::GetSuccess(..), .. });
-    //     }
-    //     send(&mut nodes[quorum + 1], &dst_grp, message_id);
-    //     let _ = poll_all(&mut nodes, &mut []);
-    //     for node in &mut nodes {
-    //         expect_no_event!(node);
-    //     }
+    // If there are `quorum` senders but they all only sent hashes, nothing can accumulate.
+    // Only after `nodes[0]`, which is closest to `src.name()`, has sent the full message, it
+    // accumulates.
+    let message_id = MessageId::new();
+    for node in nodes.iter_mut().skip(1).take(quorum) {
+        send(node, &dst, message_id);
+    }
+    let _ = poll_all(&mut nodes, &mut []);
+    expect_no_event!(nodes[0]);
+    send(&mut nodes[0], &dst, message_id);
+    let _ = poll_all(&mut nodes, &mut []);
+    expect_next_event!(nodes[0], Event::Response { response: Response::GetSuccess(..), .. });
+    send(&mut nodes[quorum + 1], &dst, message_id);
+    let _ = poll_all(&mut nodes, &mut []);
+    expect_no_event!(nodes[0]);
+
+    let dst_grp = Authority::NaeManager(*src.name()); // The whole group.
+
+    // Send a message from the group `src` to the group `dst_grp`.
+    // Only the `quorum`-th sender should cause accumulation and a
+    // `Response` event. The event should only occur once.
+    let message_id = MessageId::new();
+    for node in nodes.iter_mut().take(quorum - 1) {
+        send(node, &dst_grp, message_id);
+    }
+    let _ = poll_all(&mut nodes, &mut []);
+    for node in &mut nodes {
+        expect_no_event!(node);
+    }
+    send(&mut nodes[quorum - 1], &dst_grp, message_id);
+    let _ = poll_all(&mut nodes, &mut []);
+    for node in &mut nodes {
+        expect_next_event!(node, Event::Response { response: Response::GetSuccess(..), .. });
+    }
+    send(&mut nodes[quorum], &dst_grp, message_id);
+    let _ = poll_all(&mut nodes, &mut []);
+    for node in &mut nodes {
+        expect_no_event!(node);
+    }
+
+    // If there are `quorum` senders but they all only sent hashes, nothing can accumulate.
+    // Only after `nodes[0]`, which is closest to `src.name()`, has sent the full message, it
+    // accumulates.
+    let message_id = MessageId::new();
+    for node in nodes.iter_mut().skip(1).take(quorum) {
+        send(node, &dst_grp, message_id);
+    }
+    let _ = poll_all(&mut nodes, &mut []);
+    for node in &mut nodes {
+        expect_no_event!(node);
+    }
+    send(&mut nodes[0], &dst_grp, message_id);
+    let _ = poll_all(&mut nodes, &mut []);
+    for node in &mut nodes {
+        expect_next_event!(node, Event::Response { response: Response::GetSuccess(..), .. });
+    }
+    send(&mut nodes[quorum + 1], &dst_grp, message_id);
+    let _ = poll_all(&mut nodes, &mut []);
+    for node in &mut nodes {
+        expect_no_event!(node);
+    }
 }
