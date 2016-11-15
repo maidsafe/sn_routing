@@ -1348,7 +1348,7 @@ impl Node {
                                          self.full_id.encrypting_private_key());
 
         let serialised_connection_info =
-            try!(decipher_result.map_err(|()| RoutingError::AsymmetricDecryptionFailure));
+            decipher_result.map_err(|()| RoutingError::AsymmetricDecryptionFailure)?;
         let their_connection_info: PubConnectionInfo =
             serialisation::deserialise(&serialised_connection_info)?;
         let peer_id = their_connection_info.id();
