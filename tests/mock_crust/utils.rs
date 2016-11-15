@@ -15,16 +15,10 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use routing::{Cache, Client, NullCache};
-use routing::{Data, DataIdentifier, ImmutableData};
-use routing::{Event, FullId};
-use routing::{Request, Response};
+use routing::{Cache, Client, NullCache, Data, DataIdentifier, ImmutableData, Event, FullId,
+              Request, Response, Node, MIN_GROUP_SIZE, Xorable, RoutingTable,
+              verify_network_invariant, XorName};
 use routing::mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
-use routing::Node;
-use routing::MIN_GROUP_SIZE;
-use routing::Xorable;
-use routing::{RoutingTable, verify_network_invariant};
-use routing::XorName;
 use itertools::Itertools;
 use rand::Rng;
 use std::cell::RefCell;
