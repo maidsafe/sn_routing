@@ -611,7 +611,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                             target: T,
                             exclude: Option<T>,
                             route: usize)
-                            -> Result<HashSet<T>, Error> {
+                            -> Result<T, Error> {
         let mut names = if let Some(exclude) = exclude {
             group.iter().filter(|&x| *x != exclude).collect_vec()
         } else {
@@ -619,7 +619,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         };
         names.sort_by(|&lhs, &rhs| target.cmp_distance(lhs, rhs));
         match names.get(route) {
-            Some(&name) => Ok(iter::once(*name).collect()),
+            Some(&name) => Ok(*name),
             None => {
                 // TODO: This is a workaround for the cases where we have not connected to all
                 //       needed contacts yet and may have empty or incomplete groups.
@@ -632,7 +632,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                     .into_iter()
                     .flat_map(|(_, peers)| peers.iter().cloned().sorted_by(&cmp).into_iter())
                     .next() {
-                    Some(name) => Ok(iter::once(name).collect()),
+                    Some(name) => Ok(name),
                     None => Err(Error::CannotRoute),
                 }
             }
@@ -690,7 +690,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                 (closest_group, target_name)
             }
         };
-        self.get_routeth_node(closest_group, *target_name, Some(exclude), route)
+        Ok(iter::once(self.get_routeth_node(closest_group, *target_name, Some(exclude), route)?)
+            .collect())
     }
 
     /// Returns whether a `Destination` represents this node.

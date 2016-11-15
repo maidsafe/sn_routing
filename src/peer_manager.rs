@@ -637,10 +637,15 @@ impl PeerManager {
         })
     }
 
+    /// Return the PeerId of the node with a given name
+    pub fn get_peer_id(&self, name: &XorName) -> Option<&PeerId> {
+        self.peer_map.get_by_name(name).and_then(Peer::peer_id)
+    }
+
     /// Return the PeerIds of nodes bearing the names.
     pub fn get_peer_ids(&self, names: &HashSet<XorName>) -> Vec<PeerId> {
         names.iter()
-            .filter_map(|name| self.peer_map.get_by_name(name).and_then(Peer::peer_id))
+            .filter_map(|name| self.get_peer_id(name))
             .cloned()
             .collect()
     }
