@@ -297,8 +297,8 @@ impl Node {
     fn handle_routing_messages(&mut self) {
         while let Some(routing_msg) = self.msg_queue.pop_front() {
             if self.in_authority(&routing_msg.dst) {
-                if let Err(err) = self.dispatch_routing_message(routing_msg) {
-                    warn!("{:?} Routing message dispatch failed: {:?}", self, err);
+                if let Err(err) = self.dispatch_routing_message(routing_msg.clone()) {
+                    warn!("{:?} Routing message dispatch for {:?} failed: {:?}", self, routing_msg, err);
                 }
             }
         }
@@ -552,7 +552,9 @@ impl Node {
             // if the last hop is us and the destination is a group - we need to forward it to the
             // rest of the group
             let our_name = *self.name();
-            if hop_name == our_name && signed_msg.routing_message().dst.is_group() {
+            let from_our_group = self.routing_table().our_group_prefix().matches(&hop_name);
+            if (!from_our_group || hop_name == our_name) &&
+               signed_msg.routing_message().dst.is_group() {
                 self.send_signed_message(&signed_msg, route, &our_name)?;
             }
             // if addressed to us, then we just queue it and return
@@ -1957,6 +1959,10 @@ impl Bootstrapped for Node {
         let mut signed_msg = SignedMessage::new(routing_msg, &self.full_id)?;
         if is_group {
             signed_msg.add_group_list(GroupList { pub_ids: self.hop_pub_ids(self.name())? });
+        } else {
+            signed_msg.add_group_list(GroupList {
+                pub_ids: iter::once(*self.full_id().public_id()).collect(),
+            });
         }
 
         if send_sig {
