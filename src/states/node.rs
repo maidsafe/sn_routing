@@ -552,7 +552,8 @@ impl Node {
             // if the last hop is us and the destination is a group - we need to forward it to the
             // rest of the group
             let our_name = *self.name();
-            let from_our_group = self.routing_table().our_group_prefix().matches(&hop_name);
+            let from_our_group =
+                self.peer_mgr.routing_table().our_group_prefix().matches(&hop_name);
             if (!from_our_group || hop_name == our_name) &&
                signed_msg.routing_message().dst.is_group() {
                 self.send_signed_message(&signed_msg, route, &our_name)?;
