@@ -20,6 +20,7 @@ mod immutable_data;
 mod priv_appendable_data;
 mod pub_appendable_data;
 mod structured_data;
+mod mutable_data;
 
 pub use self::append_types::{AppendWrapper, AppendedData, Filter};
 pub use self::immutable_data::{ImmutableData, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES};
@@ -27,6 +28,7 @@ pub use self::pub_appendable_data::{MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES, PubAp
 pub use self::priv_appendable_data::{MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES, PrivAppendableData,
                                      PrivAppendedData};
 pub use self::structured_data::{MAX_STRUCTURED_DATA_SIZE_IN_BYTES, StructuredData};
+pub use self::mutable_data::MutableData;
 
 use error::RoutingError;
 use rust_sodium::crypto::sign::{self, PublicKey, Signature};
@@ -73,6 +75,8 @@ pub enum Data {
     PubAppendable(PubAppendableData),
     /// `PrivAppendableData` data type.
     PrivAppendable(PrivAppendableData),
+    /// `MutableData` data type.
+    Mutable(MutableData),
 }
 
 impl Data {
@@ -83,6 +87,7 @@ impl Data {
             Data::Immutable(ref data) => data.name(),
             Data::PubAppendable(ref data) => data.name(),
             Data::PrivAppendable(ref data) => data.name(),
+            Data::Mutable(ref data) => data.name(),
         }
     }
 
@@ -93,6 +98,7 @@ impl Data {
             Data::Immutable(ref data) => data.identifier(),
             Data::PubAppendable(ref data) => data.identifier(),
             Data::PrivAppendable(ref data) => data.identifier(),
+            Data::Mutable(ref data) => data.identifier(),
         }
     }
 
@@ -103,6 +109,7 @@ impl Data {
             Data::PrivAppendable(ref data) => data.validate_size(),
             Data::PubAppendable(ref data) => data.validate_size(),
             Data::Structured(ref data) => data.validate_size(),
+            Data::Mutable(ref data) => data.validate_size(),
         }
     }
 }
@@ -114,6 +121,8 @@ pub enum DataIdentifier {
     Structured(XorName, u64),
     /// Data request, (Identifier), for `ImmutableData`.
     Immutable(XorName),
+    /// Request for mutable data.
+    Mutable(XorName),
     /// Request for public appendable data.
     PubAppendable(XorName),
     /// Request for private appendable data.
@@ -127,6 +136,7 @@ impl Debug for Data {
             Data::Immutable(ref data) => data.fmt(formatter),
             Data::PubAppendable(ref data) => data.fmt(formatter),
             Data::PrivAppendable(ref data) => data.fmt(formatter),
+            Data::Mutable(ref data) => data.fmt(formatter),
         }
     }
 }
@@ -138,7 +148,8 @@ impl DataIdentifier {
             DataIdentifier::Structured(ref name, _) |
             DataIdentifier::Immutable(ref name) |
             DataIdentifier::PubAppendable(ref name) |
-            DataIdentifier::PrivAppendable(ref name) => name,
+            DataIdentifier::PrivAppendable(ref name) |
+            DataIdentifier::Mutable(ref name) => name,
         }
     }
 }
