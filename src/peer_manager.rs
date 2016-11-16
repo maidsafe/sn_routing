@@ -606,10 +606,18 @@ impl PeerManager {
     }
 
     /// Marks the given peer as "connected via tunnel and waiting for `NodeIdentify`".
-    pub fn tunnelling_to(&mut self, peer_id: &PeerId) {
+    pub fn tunnelling_to(&mut self, peer_id: &PeerId) -> bool {
+        match self.get_state(peer_id) {
+            Some(&PeerState::AwaitingNodeIdentify(false)) |
+            Some(&PeerState::Routing(_)) => {
+                return false;
+            }
+            _ => (),
+        }
         if !self.set_state(peer_id, PeerState::AwaitingNodeIdentify(true)) {
             let _ = self.unknown_peers.insert(*peer_id, Instant::now());
         }
+        true
     }
 
     /// Returns the public ID of the given peer, if it is in `CrustConnecting` state.

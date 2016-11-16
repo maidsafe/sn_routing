@@ -412,6 +412,7 @@ impl Node {
                     self.send_direct_message(&dst, DirectMessage::TunnelSuccess(src))?;
                     self.send_or_drop(&dst, bytes, content.priority())
                 } else {
+                    debug!("{:?} Invalid TunnelDirect message received via {:?}: {:?} -> {:?} {:?}", self, peer_id, src, dst, content);
                     Err(RoutingError::InvalidDestination)
                 }
             }
@@ -422,6 +423,7 @@ impl Node {
                 } else if self.tunnels.has_clients(src, dst) {
                     self.send_or_drop(&dst, bytes, content.content.priority())
                 } else {
+                    debug!("{:?} Invalid TunnelHop message received via {:?}: {:?} -> {:?} {:?}", self, peer_id, src, dst, content);
                     Err(RoutingError::InvalidDestination)
                 }
             }
@@ -997,7 +999,10 @@ impl Node {
                              peer_id: PeerId,
                              dst_id: PeerId)
                              -> Result<(), RoutingError> {
-        self.peer_mgr.tunnelling_to(&dst_id);
+        if !self.peer_mgr.tunnelling_to(&dst_id) {
+            debug!("{:?} Received TunnelSuccess for a peer we are already connected to: {:?}", self, dst_id);
+            return Ok(());
+        }
         if self.tunnels.add(dst_id, peer_id) {
             debug!("{:?} Adding {:?} as a tunnel node for {:?}.",
                    self,
