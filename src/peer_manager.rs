@@ -606,6 +606,7 @@ impl PeerManager {
     }
 
     /// Marks the given peer as "connected via tunnel and waiting for `NodeIdentify`".
+    /// Returns `false` if a tunnel is not needed.
     pub fn tunnelling_to(&mut self, peer_id: &PeerId) -> bool {
         match self.get_state(peer_id) {
             Some(&PeerState::AwaitingNodeIdentify(false)) |

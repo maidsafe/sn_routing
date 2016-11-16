@@ -1001,6 +1001,8 @@ impl Node {
                              -> Result<(), RoutingError> {
         if !self.peer_mgr.tunnelling_to(&dst_id) {
             debug!("{:?} Received TunnelSuccess for a peer we are already connected to: {:?}", self, dst_id);
+            let message = DirectMessage::TunnelDisconnect(dst_id);
+            self.send_direct_message(&peer_id, message)?;
             return Ok(());
         }
         if self.tunnels.add(dst_id, peer_id) {
