@@ -297,8 +297,8 @@ impl Node {
     fn handle_routing_messages(&mut self) {
         while let Some(routing_msg) = self.msg_queue.pop_front() {
             if self.in_authority(&routing_msg.dst) {
-                if let Err(err) = self.dispatch_routing_message(routing_msg.clone()) {
-                    warn!("{:?} Routing message dispatch for {:?} failed: {:?}", self, routing_msg, err);
+                if let Err(err) = self.dispatch_routing_message(routing_msg) {
+                    warn!("{:?} Routing message dispatch failed: {:?}", self, err);
                 }
             }
         }
@@ -527,7 +527,6 @@ impl Node {
         };
 
         let HopMessage { content, route, .. } = hop_msg;
-        // }
         self.handle_signed_message(content, route, hop_name)
     }
 

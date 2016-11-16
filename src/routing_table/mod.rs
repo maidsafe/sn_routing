@@ -617,26 +617,17 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         } else {
             group.iter().collect_vec()
         };
-        names.sort_by(|&lhs, &rhs| target.cmp_distance(lhs, rhs));
-        match names.get(route) {
-            Some(&name) => Ok(*name),
-            None => {
-                // TODO: This is a workaround for the cases where we have not connected to all
-                //       needed contacts yet and may have empty or incomplete groups.
-                // Err(Error::CannotRoute),
-                let cmp = |name0: &T, name1: &T| target.cmp_distance(name0, name1);
-                match self.groups
-                    .iter()
-                    .map(|(prefix, group)| (prefix.lower_bound(), group))
-                    .sorted_by(|&(name0, _), &(name1, _)| cmp(&name0, &name1))
-                    .into_iter()
-                    .flat_map(|(_, peers)| peers.iter().cloned().sorted_by(&cmp).into_iter())
-                    .next() {
-                    Some(name) => Ok(name),
-                    None => Err(Error::CannotRoute),
-                }
-            }
+
+        if names.is_empty() {
+            return Err(Error::CannotRoute);
         }
+
+        names.sort_by(|&lhs, &rhs| target.cmp_distance(lhs, rhs));
+
+        // We wrap around if we don't have enough names -
+        // this should be a rare case only happening when a merge
+        // is ongoing, since we only try `MIN_GROUP_SIZE` routes
+        Ok(**unwrap!(names.get(route % names.len())))    // % names.len() makes it safe
     }
 
     /// Returns a collection of nodes to which a message with the given `Destination` should be sent
