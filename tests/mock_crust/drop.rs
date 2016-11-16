@@ -92,7 +92,7 @@ fn node_restart() {
     // Restart the nodes that requested it
     for index in 1..nodes.len() {
         nodes[index] = TestNode::builder(&network).config(config.clone()).create();
-        poll_all(&mut nodes[..(index + 1)], &mut []);
+        poll_all(&mut nodes, &mut []);
     }
 
     verify_invariant_for_all_nodes(&nodes);

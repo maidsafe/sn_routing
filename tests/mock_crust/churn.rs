@@ -129,7 +129,6 @@ fn churn() {
 const REQUEST_DURING_CHURN_ITERATIONS: usize = 10;
 
 #[test]
-#[ignore]
 fn request_during_churn_node_to_self() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
@@ -155,7 +154,6 @@ fn request_during_churn_node_to_self() {
 }
 
 #[test]
-#[ignore]
 fn request_during_churn_node_to_node() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
@@ -182,7 +180,6 @@ fn request_during_churn_node_to_node() {
 }
 
 #[test]
-#[ignore]
 fn request_during_churn_node_to_group() {
     let network = Network::new(None);
     let mut rng = network.new_rng();

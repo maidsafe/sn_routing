@@ -64,7 +64,7 @@ fn equal_group_size_nodes() {
 
 #[test]
 fn more_than_group_size_nodes() {
-    test_nodes(MIN_GROUP_SIZE * 2);
+    test_nodes(MIN_GROUP_SIZE * 6);
 }
 
 #[test]
@@ -113,7 +113,6 @@ fn node_joins_in_front() {
 }
 
 #[test]
-#[ignore]
 fn multiple_joining_nodes() {
     let network_size = 2 * MIN_GROUP_SIZE;
     let network = Network::new(None);

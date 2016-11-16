@@ -606,10 +606,19 @@ impl PeerManager {
     }
 
     /// Marks the given peer as "connected via tunnel and waiting for `NodeIdentify`".
-    pub fn tunnelling_to(&mut self, peer_id: &PeerId) {
+    /// Returns `false` if a tunnel is not needed.
+    pub fn tunnelling_to(&mut self, peer_id: &PeerId) -> bool {
+        match self.get_state(peer_id) {
+            Some(&PeerState::AwaitingNodeIdentify(false)) |
+            Some(&PeerState::Routing(_)) => {
+                return false;
+            }
+            _ => (),
+        }
         if !self.set_state(peer_id, PeerState::AwaitingNodeIdentify(true)) {
             let _ = self.unknown_peers.insert(*peer_id, Instant::now());
         }
+        true
     }
 
     /// Returns the public ID of the given peer, if it is in `CrustConnecting` state.
@@ -637,10 +646,15 @@ impl PeerManager {
         })
     }
 
+    /// Return the PeerId of the node with a given name
+    pub fn get_peer_id(&self, name: &XorName) -> Option<&PeerId> {
+        self.peer_map.get_by_name(name).and_then(Peer::peer_id)
+    }
+
     /// Return the PeerIds of nodes bearing the names.
     pub fn get_peer_ids(&self, names: &HashSet<XorName>) -> Vec<PeerId> {
         names.iter()
-            .filter_map(|name| self.peer_map.get_by_name(name).and_then(Peer::peer_id))
+            .filter_map(|name| self.get_peer_id(name))
             .cloned()
             .collect()
     }

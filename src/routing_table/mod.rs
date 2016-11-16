@@ -605,6 +605,31 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             .collect()
     }
 
+    /// Returns the `route`-th node in the given group, sorted by distance to `target`
+    pub fn get_routeth_node(&self,
+                            group: &HashSet<T>,
+                            target: T,
+                            exclude: Option<T>,
+                            route: usize)
+                            -> Result<T, Error> {
+        let mut names = if let Some(exclude) = exclude {
+            group.iter().filter(|&x| *x != exclude).collect_vec()
+        } else {
+            group.iter().collect_vec()
+        };
+
+        if names.is_empty() {
+            return Err(Error::CannotRoute);
+        }
+
+        names.sort_by(|&lhs, &rhs| target.cmp_distance(lhs, rhs));
+
+        // We wrap around if we don't have enough names -
+        // this should be a rare case only happening when a merge
+        // is ongoing, since we only try `MIN_GROUP_SIZE` routes
+        Ok(**unwrap!(names.get(route % names.len())))    // % names.len() makes it safe
+    }
+
     /// Returns a collection of nodes to which a message with the given `Destination` should be sent
     /// onwards.  In all non-error cases below, the returned collection will have the members of
     /// `exclude` removed, possibly resulting in an empty set being returned.
@@ -656,27 +681,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                 (closest_group, target_name)
             }
         };
-        let mut names = closest_group.iter().filter(|&x| *x != exclude).collect_vec();
-        names.sort_by(|&lhs, &rhs| target_name.cmp_distance(lhs, rhs));
-        match names.get(route) {
-            Some(&name) => Ok(iter::once(*name).collect()),
-            None => {
-                // TODO: This is a workaround for the cases where we have not connected to all
-                //       needed contacts yet and may have empty or incomplete groups.
-                // Err(Error::CannotRoute),
-                let cmp = |name0: &T, name1: &T| target_name.cmp_distance(name0, name1);
-                match self.groups
-                    .iter()
-                    .map(|(prefix, group)| (prefix.lower_bound(), group))
-                    .sorted_by(|&(name0, _), &(name1, _)| cmp(&name0, &name1))
-                    .into_iter()
-                    .flat_map(|(_, peers)| peers.iter().cloned().sorted_by(&cmp).into_iter())
-                    .next() {
-                    Some(name) => Ok(iter::once(name).collect()),
-                    None => Err(Error::CannotRoute),
-                }
-            }
-        }
+        Ok(iter::once(self.get_routeth_node(closest_group, *target_name, Some(exclude), route)?)
+            .collect())
     }
 
     /// Returns whether a `Destination` represents this node.

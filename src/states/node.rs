@@ -412,6 +412,7 @@ impl Node {
                     self.send_direct_message(&dst, DirectMessage::TunnelSuccess(src))?;
                     self.send_or_drop(&dst, bytes, content.priority())
                 } else {
+                    debug!("{:?} Invalid TunnelDirect message received via {:?}: {:?} -> {:?} {:?}", self, peer_id, src, dst, content);
                     Err(RoutingError::InvalidDestination)
                 }
             }
@@ -422,6 +423,7 @@ impl Node {
                 } else if self.tunnels.has_clients(src, dst) {
                     self.send_or_drop(&dst, bytes, content.content.priority())
                 } else {
+                    debug!("{:?} Invalid TunnelHop message received via {:?}: {:?} -> {:?} {:?}", self, peer_id, src, dst, content);
                     Err(RoutingError::InvalidDestination)
                 }
             }
@@ -484,7 +486,7 @@ impl Node {
         if let Some(&pub_id) = self.peer_mgr.get_routing_peer(&peer_id) {
             if let Some((signed_msg, route)) = self.sig_accumulator
                 .add_signature(digest, sig, pub_id) {
-                let hop = *pub_id.name();
+                let hop = *self.name(); // we accumulated the message, so now we act as the last hop
                 return self.handle_signed_message(signed_msg, route, hop);
             }
         } else {
@@ -493,6 +495,18 @@ impl Node {
                   peer_id);
         }
         Ok(())
+    }
+
+    fn hop_pub_ids(&self, hop_name: &XorName) -> Result<BTreeSet<PublicId>, RoutingError> {
+        if let Some(group) = self.peer_mgr.routing_table().get_group(hop_name) {
+            let mut group = group.clone();
+            if self.peer_mgr.routing_table().our_group_prefix().matches(hop_name) {
+                let _ = group.insert(*self.name());
+            }
+            Ok(self.peer_mgr.get_pub_ids(&group).into_iter().collect::<BTreeSet<_>>())
+        } else {
+            Err(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer))
+        }
     }
 
     fn handle_hop_message(&mut self,
@@ -514,24 +528,8 @@ impl Node {
             return Err(RoutingError::UnknownConnection(peer_id));
         };
 
-        let HopMessage { mut content, route, .. } = hop_msg;
-        let hop_pub_ids = if let Some(group) = self.peer_mgr.routing_table().get_group(&hop_name) {
-            self.peer_mgr.get_pub_ids(group).into_iter().collect::<BTreeSet<_>>()
-        } else {
-            return Err(RoutingError::UnknownConnection(peer_id));
-        };
-        // TODO - If the hop group is our own group, we should add our own ID in some cases here.
-        //        However, we can't always do this (e.g. the first node of a new network won't
-        //        handle any of the second node's requests since adding its own ID will stop it
-        //        from ever accumulating).
-        // if self.peer_mgr.routing_table().our_group_prefix().matches(&hop_name) {
-        //     let _ = hop_pub_ids.insert(*self.full_id.public_id());
-        // }
-        content.add_group_list(GroupList { pub_ids: hop_pub_ids });
-        match self.sig_accumulator.add_message(content, route) {
-            Some((signed_msg, route)) => self.handle_signed_message(signed_msg, route, hop_name),
-            None => Ok(()), // Has not accumulated yet.
-        }
+        let HopMessage { content, route, .. } = hop_msg;
+        self.handle_signed_message(content, route, hop_name)
     }
 
     fn handle_signed_message(&mut self,
@@ -541,7 +539,9 @@ impl Node {
                              -> Result<(), RoutingError> {
         signed_msg.check_integrity()?;
 
-        if self.in_authority(&signed_msg.routing_message().dst) {
+        let in_authority = self.in_authority(&signed_msg.routing_message().dst);
+
+        if in_authority {
             self.send_ack(signed_msg.routing_message(), route);
         }
 
@@ -549,8 +549,22 @@ impl Node {
             return Err(RoutingError::FilterCheckFailed);
         }
 
-        let in_authority = self.in_authority(&signed_msg.routing_message().dst);
-        if !in_authority && self.respond_from_cache(signed_msg.routing_message(), route)? {
+        if in_authority {
+            // if the last hop is us and the destination is a group - we need to forward it to the
+            // rest of the group
+            let our_name = *self.name();
+            let from_our_group =
+                self.peer_mgr.routing_table().our_group_prefix().matches(&hop_name);
+            if (!from_our_group || hop_name == our_name) &&
+               signed_msg.routing_message().dst.is_group() {
+                self.send_signed_message(&signed_msg, route, &our_name)?;
+            }
+            // if addressed to us, then we just queue it and return
+            self.msg_queue.push_back(signed_msg.into_routing_message());
+            return Ok(());
+        }
+
+        if self.respond_from_cache(signed_msg.routing_message(), route)? {
             return Ok(());
         }
 
@@ -558,9 +572,6 @@ impl Node {
             debug!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);
         }
 
-        if in_authority {
-            self.msg_queue.push_back(signed_msg.into_routing_message());
-        }
         Ok(())
     }
 
@@ -988,7 +999,12 @@ impl Node {
                              peer_id: PeerId,
                              dst_id: PeerId)
                              -> Result<(), RoutingError> {
-        self.peer_mgr.tunnelling_to(&dst_id);
+        if !self.peer_mgr.tunnelling_to(&dst_id) {
+            debug!("{:?} Received TunnelSuccess for a peer we are already connected to: {:?}", self, dst_id);
+            let message = DirectMessage::TunnelDisconnect(dst_id);
+            self.send_direct_message(&peer_id, message)?;
+            return Ok(());
+        }
         if self.tunnels.add(dst_id, peer_id) {
             debug!("{:?} Adding {:?} as a tunnel node for {:?}.",
                    self,
@@ -1403,6 +1419,31 @@ impl Node {
         Ok(())
     }
 
+    fn accumulate_message(&mut self,
+                          signed_msg: SignedMessage,
+                          route: u8)
+                          -> Result<(), RoutingError> {
+        let our_name = *self.name();
+        if let Some((msg, route)) = self.sig_accumulator.add_message(signed_msg, route) {
+            if self.in_authority(&msg.routing_message().dst) {
+                self.handle_signed_message(msg, route, our_name)?;
+            } else {
+                self.send_signed_message(&msg, route, &our_name)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn send_signature(&mut self, signed_msg: SignedMessage, route: u8) -> Result<(), RoutingError> {
+        let direct_msg = {
+            let sign_key = self.full_id().signing_private_key();
+            signed_msg.routing_message().to_signature(sign_key)?
+        };
+        let target = self.get_signature_target(signed_msg.routing_message().src.name(), route)?;
+        self.send_direct_msg_to_peer(direct_msg, target, signed_msg.priority())?;
+        Ok(())
+    }
+
     fn send_signed_message(&mut self,
                            signed_msg: &SignedMessage,
                            route: u8,
@@ -1412,6 +1453,7 @@ impl Node {
         if sent_by_us {
             self.stats.count_route(route);
         }
+
         let routing_msg = signed_msg.routing_message();
 
         if let Authority::Client { ref peer_id, .. } = routing_msg.dst {
@@ -1434,56 +1476,75 @@ impl Node {
             return Ok(());  // Avoid swarming back out to our own group.
         }
 
-        let target_peer_ids = self.get_targets(routing_msg, route, *hop)?;
-
         if sent_by_us && !self.add_to_pending_acks(signed_msg, route) {
             return Ok(());
         }
 
-        let src = &routing_msg.src;
-        let send_sig =
-            sent_by_us && src.is_group() &&
-            !self.peer_mgr.routing_table().should_route_full_message(src.name(), route as usize);
-        let raw_bytes = if send_sig {
-            // Not our turn to send the full `RoutingMessage`. Only send a signature.
-            let sign_key = self.full_id().signing_private_key();
-            let direct_msg = signed_msg.routing_message().to_signature(sign_key)?;
-            serialisation::serialise(&Message::Direct(direct_msg))?
-        } else {
-            self.to_hop_bytes(signed_msg.clone(), route)?
-        };
+        let target_peer_ids = self.get_targets(routing_msg, route, *hop)?;
+
         for target_peer_id in target_peer_ids {
-            let (peer_id, bytes) = if self.crust_service.is_connected(&target_peer_id) {
-                (target_peer_id, raw_bytes.clone())
-            } else if let Some(&tunnel_id) = self.tunnels
-                .tunnel_for(&target_peer_id) {
-                let bytes = if send_sig {
-                    // Not our turn to send the full `RoutingMessage`. Only send a signature.
-                    let sign_key = self.full_id().signing_private_key();
-                    let message = Message::TunnelDirect {
-                        content: signed_msg.routing_message().to_signature(sign_key)?,
-                        src: self.crust_service.id(),
-                        dst: target_peer_id,
-                    };
-                    serialisation::serialise(&message)?
-                } else {
-                    self.to_tunnel_hop_bytes(signed_msg.clone(), route, target_peer_id)?
-                };
-                (tunnel_id, bytes)
-            } else {
-                trace!("{:?} Not connected or tunneling to {:?}. Dropping peer.",
-                       self,
-                       target_peer_id);
-                self.disconnect_peer(&target_peer_id);
-                continue;
+            self.send_signed_msg_to_peer(signed_msg, target_peer_id, route)?;
+        }
+        Ok(())
+    }
+
+    fn send_direct_msg_to_peer(&mut self,
+                               msg: DirectMessage,
+                               target: PeerId,
+                               priority: u8)
+                               -> Result<(), RoutingError> {
+        let (peer_id, bytes) = if self.crust_service.is_connected(&target) {
+            (target, serialisation::serialise(&Message::Direct(msg))?)
+        } else if let Some(&tunnel_id) = self.tunnels
+            .tunnel_for(&target) {
+            let message = Message::TunnelDirect {
+                content: msg,
+                src: self.crust_service.id(),
+                dst: target,
             };
-            if !self.filter_outgoing_routing_msg(routing_msg, &target_peer_id, route) {
-                if let Err(err) = self.send_or_drop(&peer_id, bytes, signed_msg.priority()) {
-                    info!("{:?} Error sending message to {:?}: {:?}.",
-                          self,
-                          target_peer_id,
-                          err);
-                }
+            (tunnel_id, serialisation::serialise(&message)?)
+        } else {
+            trace!("{:?} Not connected or tunneling to {:?}. Dropping peer.",
+                   self,
+                   target);
+            self.disconnect_peer(&target);
+            return Ok(());
+        };
+        // TODO: Refactor so that filtering is possible here as well
+        // if !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &target, route) {
+        if let Err(err) = self.send_or_drop(&peer_id, bytes, priority) {
+            info!("{:?} Error sending message to {:?}: {:?}.",
+                      self,
+                      target,
+                      err);
+        }
+        // }
+        Ok(())
+    }
+
+    fn send_signed_msg_to_peer(&mut self,
+                               signed_msg: &SignedMessage,
+                               target: PeerId,
+                               route: u8)
+                               -> Result<(), RoutingError> {
+        let (peer_id, bytes) = if self.crust_service.is_connected(&target) {
+            (target, self.to_hop_bytes(signed_msg.clone(), route)?)
+        } else if let Some(&tunnel_id) = self.tunnels
+            .tunnel_for(&target) {
+            (tunnel_id, self.to_tunnel_hop_bytes(signed_msg.clone(), route, target)?)
+        } else {
+            trace!("{:?} Not connected or tunneling to {:?}. Dropping peer.",
+                   self,
+                   target);
+            self.disconnect_peer(&target);
+            return Ok(());
+        };
+        if !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &target, route) {
+            if let Err(err) = self.send_or_drop(&peer_id, bytes, signed_msg.priority()) {
+                info!("{:?} Error sending message to {:?}: {:?}.",
+                      self,
+                      target,
+                      err);
             }
         }
         Ok(())
@@ -1520,6 +1581,18 @@ impl Node {
             client_key == self.full_id.public_id().signing_public_key()
         } else {
             self.is_proper() && self.peer_mgr.routing_table().is_recipient(&auth.to_destination())
+        }
+    }
+
+    fn get_signature_target(&self, target: &XorName, route: u8) -> Result<PeerId, RoutingError> {
+        let our_group = unwrap!(self.peer_mgr.routing_table().close_names(self.name()));
+        let name = self.peer_mgr
+            .routing_table()
+            .get_routeth_node(&our_group, *target, None, route as usize)?;
+        if let Some(peer_id) = self.peer_mgr.get_peer_id(&name) {
+            Ok(*peer_id)
+        } else {
+            Err(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer))
         }
     }
 
@@ -1884,16 +1957,27 @@ impl Bootstrapped for Node {
         //            routing_msg);
         //     return Ok(());
         // }
-        let signed_msg = SignedMessage::new(routing_msg, &self.full_id)?;
-        let hop = *self.name();
-        self.send_signed_message(&signed_msg, route, &hop)?;
-
-        // If we need to handle this message, put it in the queue.
-        if self.in_authority(&signed_msg.routing_message().dst) &&
-           self.routing_msg_filter.filter_incoming(signed_msg.routing_message(), route) == 1 {
-            self.send_ack(signed_msg.routing_message(), route);
-            self.msg_queue.push_back(signed_msg.into_routing_message());
+        let send_sig = {
+            let src = &routing_msg.src;
+            src.is_group() &&
+            !self.peer_mgr.routing_table().should_route_full_message(src.name(), route as usize)
+        };
+        let is_group = routing_msg.src.is_group();
+        let mut signed_msg = SignedMessage::new(routing_msg, &self.full_id)?;
+        if is_group {
+            signed_msg.add_group_list(GroupList { pub_ids: self.hop_pub_ids(self.name())? });
+        } else {
+            signed_msg.add_group_list(GroupList {
+                pub_ids: iter::once(*self.full_id().public_id()).collect(),
+            });
         }
+
+        if send_sig {
+            self.send_signature(signed_msg, route)?;
+        } else {
+            self.accumulate_message(signed_msg, route)?;
+        }
+
         Ok(())
     }
 

@@ -180,6 +180,9 @@ pub const TYPE_TAG_SESSION_PACKET: u64 = 0;
 /// Structured Data Tag for DNS Packet Type
 pub const TYPE_TAG_DNS_PACKET: u64 = 5;
 
+/// The quorum, as a percentage of the group size.
+pub const QUORUM: usize = 60;
+
 pub use authority::Authority;
 pub use cache::{Cache, NullCache};
 pub use client::Client;

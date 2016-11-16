@@ -36,12 +36,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
 use std::iter;
 use std::time::Duration;
+use super::QUORUM;
 use types::MessageId;
 use utils;
 use xor_name::XorName;
-
-/// The quorum, as a percentage of the group size.
-const QUORUM: usize = 60;
 
 /// The maximal length of a user message part, in bytes.
 const MAX_PART_LEN: usize = 20 * 1024;
