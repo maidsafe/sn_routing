@@ -6,7 +6,7 @@ environment:
     - RUST_VERSION: stable
 branches:
   only:
-    - master
+    - mutable-data
 clone_depth: 50
 
 install:

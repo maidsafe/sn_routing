@@ -5,8 +5,7 @@ env:
     - RUST_BACKTRACE=1
 branches:
   only:
-    - master
-    - stable
+    - mutable-data
 os:
   - linux
   - osx
