@@ -109,6 +109,14 @@ pub enum RoutingError {
     CannotTunnelThroughTunnel,
     /// Decoded a user message with an unexpected hash.
     HashMismatch,
+    /// Tried to replace an already existing entry
+    EntryAlreadyExist,
+    /// Tried to remove a non-existing entry
+    EntryNotFound,
+    /// Exceeded size limits
+    ExceededLimits,
+    /// Access is denied for a given requester
+    AccessDenied,
 }
 
 impl From<RoutingTableError> for RoutingError {
