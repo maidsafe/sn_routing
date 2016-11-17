@@ -329,7 +329,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_md_permissions() {
+    fn mutable_data_permissions() {
         let (owner, _) = sign::gen_keypair();
         let (pk1, _) = sign::gen_keypair();
         let (pk2, _) = sign::gen_keypair();
@@ -376,7 +376,7 @@ mod tests {
     }
 
     #[test]
-    fn test_permissions() {
+    fn permissions() {
         let mut anyone = PermissionSet::new();
         let _ = anyone.allow(Action::Insert).deny(Action::Delete);
         assert!(anyone.is_allowed(Action::Insert).unwrap());
@@ -399,7 +399,7 @@ mod tests {
     }
 
     #[test]
-    fn test_max_entries_limit() {
+    fn max_entries_limit() {
         let val = Value {
             content: "123".as_bytes().to_owned(),
             entry_version: 0,
@@ -425,6 +425,10 @@ mod tests {
 
         let mut md = unwrap!(MutableData::new(rand::random(), 0, BTreeMap::new(), data, owners));
 
+        assert_eq!(md.keys().len(), 100);
+        assert_eq!(md.values().len(), 100);
+        assert_eq!(md.entries().len(), 100);
+
         // Try to get over the limit
         assert!(md.ins_entry(vec![101u8], val.clone(), owner).is_ok());
         assert!(md.ins_entry(vec![102u8], val.clone(), owner).is_err());
@@ -434,7 +438,7 @@ mod tests {
     }
 
     #[test]
-    fn test_size_limit() {
+    fn size_limit() {
         let big_val = Value {
             content: iter::repeat(0)
                 .take((MAX_MUTABLE_DATA_SIZE_IN_BYTES - 1024) as usize)
@@ -488,5 +492,62 @@ mod tests {
         // Transfer ownership from an owner
         assert!(md.change_owner(pk1, owner).is_ok());
         assert!(md.change_owner(owner, owner).is_err());
+    }
+
+    #[test]
+    fn changing_permissions() {
+        let (owner, _) = sign::gen_keypair();
+        let (pk1, _) = sign::gen_keypair();
+
+        let mut owners = BTreeSet::new();
+        owners.insert(owner);
+
+        let mut md =
+            unwrap!(MutableData::new(rand::random(), 0, BTreeMap::new(), BTreeMap::new(), owners));
+
+        // Trying to do inserts without having a permission must fail
+        assert!(md.ins_entry(vec![0],
+                       Value {
+                           content: vec![1],
+                           entry_version: 0,
+                       },
+                       pk1)
+            .is_err());
+
+        // Now allow inserts for pk1
+        let mut ps1 = PermissionSet::new();
+        let _ = ps1.allow(Action::Insert).allow(Action::ManagePermission);
+        assert!(md.set_user_permissions(User::Key(pk1), ps1, owner).is_ok());
+
+        assert!(md.ins_entry(vec![0],
+                       Value {
+                           content: vec![1],
+                           entry_version: 0,
+                       },
+                       pk1)
+            .is_ok());
+
+        // pk1 now can change permissions
+        let mut ps2 = PermissionSet::new();
+        let _ = ps2.allow(Action::Insert).deny(Action::ManagePermission);
+        assert!(md.set_user_permissions(User::Key(pk1), ps2, pk1).is_ok());
+
+        // Revoke permissions for pk1
+        assert!(md.del_user_permissions(&User::Key(pk1), pk1).is_err());
+        assert!(md.del_user_permissions(&User::Key(pk1), owner).is_ok());
+        assert!(md.ins_entry(vec![1],
+                       Value {
+                           content: vec![2],
+                           entry_version: 0,
+                       },
+                       pk1)
+            .is_err());
+
+        // Revoking permissions for a non-existing user should return an error
+        assert!(md.del_user_permissions(&User::Key(pk1), owner).is_err());
+
+        // Get must always be allowed
+        assert!(md.get(&vec![0]).is_some());
+        assert!(md.get(&vec![1]).is_none());
     }
 }
