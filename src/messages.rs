@@ -489,7 +489,10 @@ pub enum MessageContent {
         message_id: MessageId,
     },
     /// Sent to all connected peers when our own group splits
-    GroupSplit(Prefix<XorName>),
+    GroupSplit {
+        prefix: Prefix<XorName>,
+        joining_node: XorName,
+    },
     /// Sent amongst members of a newly-merged group to allow synchronisation of their routing
     /// tables before notifying other connected peers of the merge.
     OwnGroupMerge {
@@ -621,7 +624,12 @@ impl Debug for MessageContent {
                        close_group_ids,
                        message_id)
             }
-            MessageContent::GroupSplit(ref prefix) => write!(formatter, "GroupSplit({:?})", prefix),
+            MessageContent::GroupSplit { ref prefix, ref joining_node } => {
+                write!(formatter,
+                       "GroupSplit {{ {:?}, joining_node: {:?} }}",
+                       prefix,
+                       joining_node)
+            }
             MessageContent::OwnGroupMerge { ref sender_prefix, ref merge_prefix, ref groups } => {
                 write!(formatter,
                        "OwnGroupMerge {{ {:?}, {:?}, {:?} }}",

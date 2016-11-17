@@ -133,7 +133,7 @@ impl Stats {
             MessageContent::GetCloseGroup(..) => self.msg_get_close_group += 1,
             MessageContent::ConnectionInfo(_) => self.msg_connection_info += 1,
             MessageContent::GetCloseGroupResponse { .. } => self.msg_get_close_group_rsp += 1,
-            MessageContent::GroupSplit(..) => self.msg_group_split += 1,
+            MessageContent::GroupSplit { .. } => self.msg_group_split += 1,
             MessageContent::OwnGroupMerge { .. } => self.msg_own_group_merge += 1,
             MessageContent::OtherGroupMerge { .. } => self.msg_other_group_merge += 1,
             MessageContent::GetNodeNameResponse { .. } => self.msg_get_node_name_rsp += 1,

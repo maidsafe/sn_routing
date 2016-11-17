@@ -634,7 +634,9 @@ impl Node {
             (MessageContent::GetCloseGroupResponse { close_group_ids, .. },
              Authority::ManagedNode(_),
              dst) => self.handle_get_close_group_response(close_group_ids, dst),
-            (MessageContent::GroupSplit(prefix), _, _) => self.handle_group_split(prefix),
+            (MessageContent::GroupSplit { prefix, joining_node }, _, _) => {
+                self.handle_group_split(prefix, joining_node)
+            }
             (MessageContent::OwnGroupMerge { sender_prefix, merge_prefix, groups }, _, _) => {
                 self.handle_own_group_merge(sender_prefix, merge_prefix, groups)
             }
@@ -856,18 +858,7 @@ impl Node {
 
                 if should_split {
                     let our_group_prefix = *self.peer_mgr.routing_table().our_group_prefix();
-                    for prefix in self.peer_mgr.routing_table().prefixes() {
-                        let request_msg = RoutingMessage {
-                            src: Authority::NaeManager(*public_id.name()),
-                            // this way of calculating the destination avoids using the joining
-                            // node as the route
-                            dst: Authority::NaeManager(prefix.substituted_in(!*public_id.name())),
-                            content: MessageContent::GroupSplit(our_group_prefix),
-                        };
-                        if let Err(err) = self.send_routing_message(request_msg) {
-                            debug!("{:?} Failed to send GroupSplit: {:?}.", self, err);
-                        }
-                    }
+                    self.send_group_split(our_group_prefix, *public_id.name());
                 }
 
                 if self.peer_mgr.routing_table().is_in_our_group(public_id.name()) {
@@ -1262,7 +1253,17 @@ impl Node {
         Ok(())
     }
 
-    fn handle_group_split(&mut self, prefix: Prefix<XorName>) -> Result<(), RoutingError> {
+    fn handle_group_split(&mut self,
+                          prefix: Prefix<XorName>,
+                          joining_node: XorName)
+                          -> Result<(), RoutingError> {
+        // Send GroupSplit notifications if we don't know of the new node yet
+        if !self.peer_mgr
+            .routing_table()
+            .get_group(&joining_node)
+            .map_or(false, |group| group.iter().any(|&x| x == joining_node)) {
+            self.send_group_split(prefix, joining_node);
+        }
         // None of the `peers_to_drop` will have been in our group, so no need to notify Routing
         // user about them.
         let (peers_to_drop, our_new_prefix) = self.peer_mgr.split_group(prefix);
@@ -1781,6 +1782,24 @@ impl Node {
         }
 
         true
+    }
+
+    fn send_group_split(&mut self, our_prefix: Prefix<XorName>, joining_node: XorName) {
+        for prefix in self.peer_mgr.routing_table().prefixes() {
+            let request_msg = RoutingMessage {
+                src: Authority::NaeManager(joining_node),
+                // this way of calculating the destination avoids using the joining
+                // node as the route
+                dst: Authority::NaeManager(prefix.substituted_in(!joining_node)),
+                content: MessageContent::GroupSplit {
+                    prefix: our_prefix,
+                    joining_node: joining_node,
+                },
+            };
+            if let Err(err) = self.send_routing_message(request_msg) {
+                debug!("{:?} Failed to send GroupSplit: {:?}.", self, err);
+            }
+        }
     }
 
     fn send_own_group_merge(&mut self,
