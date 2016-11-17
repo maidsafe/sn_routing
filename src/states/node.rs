@@ -859,7 +859,7 @@ impl Node {
                     for prefix in self.peer_mgr.routing_table().prefixes() {
                         let request_msg = RoutingMessage {
                             src: Authority::NaeManager(*public_id.name()),
-                            dst: Authority::NaeManager(prefix.lower_bound()),
+                            dst: Authority::NaeManager(prefix.substituted_in(!*public_id.name())),
                             content: MessageContent::GroupSplit(our_group_prefix),
                         };
                         if let Err(err) = self.send_routing_message(request_msg) {

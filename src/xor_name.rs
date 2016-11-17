@@ -199,6 +199,16 @@ impl ops::Index<ops::RangeFull> for XorName {
     }
 }
 
+impl ops::Not for XorName {
+    type Output = XorName;
+    fn not(mut self) -> XorName {
+        for byte in &mut self.0 {
+            *byte = !*byte;
+        }
+        self
+    }
+}
+
 impl Encodable for XorName {
     fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), E::Error> {
         encoder.emit_seq(XOR_NAME_LEN, |encoder| {
