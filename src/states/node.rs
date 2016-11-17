@@ -1461,7 +1461,7 @@ impl Node {
             let sign_key = self.full_id().signing_private_key();
             signed_msg.routing_message().to_signature(sign_key)?
         };
-        let target = self.get_signature_target(signed_msg.routing_message().src.name(), route)?;
+        let target = self.get_signature_target(signed_msg.routing_message().dst.name(), route)?;
         self.send_direct_msg_to_peer(direct_msg, target, signed_msg.priority())?;
         Ok(())
     }
@@ -1975,11 +1975,10 @@ impl Bootstrapped for Node {
         //            routing_msg);
         //     return Ok(());
         // }
-        let send_sig = {
-            let src = &routing_msg.src;
-            src.is_group() &&
-            !self.peer_mgr.routing_table().should_route_full_message(src.name(), route as usize)
-        };
+        let send_sig = routing_msg.src.is_group() &&
+                       !self.peer_mgr
+            .routing_table()
+            .should_route_full_message(routing_msg.dst.name(), route as usize);
         let is_group = routing_msg.src.is_group();
         let mut signed_msg = SignedMessage::new(routing_msg, &self.full_id)?;
         if is_group {

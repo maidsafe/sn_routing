@@ -700,10 +700,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     ///
     /// Used when sending a message from a group to decide which one of the group should send the
     /// full message (the remainder sending just a hash of the message).
-    pub fn should_route_full_message(&self, src_name: &T, route: usize) -> bool {
+    pub fn should_route_full_message(&self, dst_name: &T, route: usize) -> bool {
         let mut our_group = unwrap!(self.groups.get(&self.our_group_prefix)).iter().collect_vec();
         our_group.push(&self.our_name);
-        our_group.sort_by(|&lhs, &rhs| src_name.cmp_distance(lhs, rhs));
+        our_group.sort_by(|&lhs, &rhs| dst_name.cmp_distance(lhs, rhs));
         match our_group.get(route) {
             Some(&name) => *name == self.our_name,
             None => false,
