@@ -859,6 +859,8 @@ impl Node {
                     for prefix in self.peer_mgr.routing_table().prefixes() {
                         let request_msg = RoutingMessage {
                             src: Authority::NaeManager(*public_id.name()),
+                            // this way of calculating the destination avoids using the joining
+                            // node as the route
                             dst: Authority::NaeManager(prefix.substituted_in(!*public_id.name())),
                             content: MessageContent::GroupSplit(our_group_prefix),
                         };
