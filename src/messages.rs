@@ -301,7 +301,7 @@ impl SignedMessage {
         }
         self.grp_lists.first().map_or(false, |grp_list| {
             if self.content.src.is_group() {
-                QUORUM * grp_list.pub_ids.len() < 100 * self.signatures.len()
+                QUORUM * grp_list.pub_ids.len() <= 100 * self.signatures.len()
             } else {
                 self.signatures.len() == 1
             }
