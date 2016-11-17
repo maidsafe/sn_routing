@@ -388,23 +388,23 @@ mod tests {
     fn permissions() {
         let mut anyone = PermissionSet::new();
         let _ = anyone.allow(Action::Insert).deny(Action::Delete);
-        assert!(anyone.is_allowed(Action::Insert).unwrap());
+        assert!(unwrap!(anyone.is_allowed(Action::Insert)));
         assert!(anyone.is_allowed(Action::Update).is_none());
-        assert!(!anyone.is_allowed(Action::Delete).unwrap());
+        assert!(!unwrap!(anyone.is_allowed(Action::Delete)));
         assert!(anyone.is_allowed(Action::ManagePermission).is_none());
 
         let mut user1 = anyone;
         let _ = user1.clear(Action::Delete).deny(Action::ManagePermission);
-        assert!(user1.is_allowed(Action::Insert).unwrap());
+        assert!(unwrap!(user1.is_allowed(Action::Insert)));
         assert!(user1.is_allowed(Action::Update).is_none());
         assert!(user1.is_allowed(Action::Delete).is_none());
-        assert!(!user1.is_allowed(Action::ManagePermission).unwrap());
+        assert!(!unwrap!(user1.is_allowed(Action::ManagePermission)));
 
         let _ = user1.allow(Action::Update);
-        assert!(user1.is_allowed(Action::Insert).unwrap());
-        assert!(user1.is_allowed(Action::Update).unwrap());
+        assert!(unwrap!(user1.is_allowed(Action::Insert)));
+        assert!(unwrap!(user1.is_allowed(Action::Update)));
         assert!(user1.is_allowed(Action::Delete).is_none());
-        assert!(!user1.is_allowed(Action::ManagePermission).unwrap());
+        assert!(!unwrap!(user1.is_allowed(Action::ManagePermission)));
     }
 
     #[test]
