@@ -113,8 +113,10 @@ pub enum RoutingError {
     EntryAlreadyExist,
     /// Tried to remove a non-existing entry
     EntryNotFound,
-    /// Exceeded size limits
-    ExceededLimits,
+    /// Exceeded a limit on a number of entries
+    TooManyEntries,
+    /// Exceeded serialised size limit
+    ExceededSizeLimit,
     /// Access is denied for a given requester
     AccessDenied,
 }

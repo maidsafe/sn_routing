@@ -110,7 +110,7 @@ impl MutableData {
             return Err(RoutingError::InvalidOwners);
         }
         if data.len() >= (MAX_MUTABLE_DATA_ENTRIES + 1) as usize {
-            return Err(RoutingError::ExceededLimits);
+            return Err(RoutingError::TooManyEntries);
         }
 
         let md = MutableData {
@@ -123,7 +123,7 @@ impl MutableData {
         };
 
         if serialised_size(&md) > MAX_MUTABLE_DATA_SIZE_IN_BYTES {
-            return Err(RoutingError::ExceededLimits);
+            return Err(RoutingError::ExceededSizeLimit);
         }
 
         Ok(md)
@@ -182,12 +182,12 @@ impl MutableData {
             return Err(RoutingError::EntryAlreadyExist);
         }
         if self.data.len() > MAX_MUTABLE_DATA_ENTRIES as usize {
-            return Err(RoutingError::ExceededLimits);
+            return Err(RoutingError::TooManyEntries);
         }
         let _ = self.data.insert(key.clone(), value);
         if !self.validate_mut_size() {
             let _ = self.data.remove(&key);
-            return Err(RoutingError::ExceededLimits);
+            return Err(RoutingError::ExceededSizeLimit);
         }
         Ok(())
     }
@@ -208,7 +208,7 @@ impl MutableData {
         if !self.validate_mut_size() {
             // unwrap! would always succeed as we check that the key exists
             let _ = self.data.insert(key, unwrap!(prev));
-            return Err(RoutingError::ExceededLimits);
+            return Err(RoutingError::ExceededSizeLimit);
         }
         Ok(())
     }
@@ -241,7 +241,7 @@ impl MutableData {
                 None => self.permissions.remove(&user),
                 Some(perms) => self.permissions.insert(user, perms),
             };
-            return Err(RoutingError::ExceededLimits);
+            return Err(RoutingError::ExceededSizeLimit);
         }
         Ok(())
     }
@@ -326,7 +326,14 @@ mod tests {
     use rust_sodium::crypto::sign;
     use std::collections::{BTreeMap, BTreeSet};
     use std::iter;
+    use error::RoutingError;
     use super::*;
+
+    macro_rules! assert_err {
+        ($left: expr, $err: path) => {{
+            assert!(if let Err($err) = $left { true } else { false });
+        }}
+    }
 
     #[test]
     fn mutable_data_permissions() {
@@ -362,14 +369,16 @@ mod tests {
 
         // Check insert permissions
         assert!(md.ins_entry(k1.clone(), v1.clone(), pk1).is_ok());
-        assert!(md.ins_entry(k2.clone(), v2.clone(), pk2).is_err());
+        assert_err!(md.ins_entry(k2.clone(), v2.clone(), pk2),
+                    RoutingError::AccessDenied);
 
         // Check update permissions
-        assert!(md.update_entry(k1.clone(), v2.clone(), pk1).is_err());
+        assert_err!(md.update_entry(k1.clone(), v2.clone(), pk1),
+                    RoutingError::AccessDenied);
         assert!(md.update_entry(k1.clone(), v2.clone(), pk2).is_ok());
 
         // Check delete permissions (which should be implicitly forbidden)
-        assert!(md.del_entry(&k1, pk1).is_err());
+        assert_err!(md.del_entry(&k1, pk1), RoutingError::AccessDenied);
 
         // Actions requested by owner should always be allowed
         assert!(md.del_entry(&k1, owner).is_ok());
@@ -410,8 +419,8 @@ mod tests {
         for i in 0..105 {
             let _ = data.insert(vec![i], val.clone());
         }
-        assert!(MutableData::new(rand::random(), 0, BTreeMap::new(), data, BTreeSet::new())
-            .is_err());
+        assert_err!(MutableData::new(rand::random(), 0, BTreeMap::new(), data, BTreeSet::new()),
+                    RoutingError::TooManyEntries);
 
         let mut data = BTreeMap::new();
         for i in 0..100 {
@@ -431,7 +440,8 @@ mod tests {
 
         // Try to get over the limit
         assert!(md.ins_entry(vec![101u8], val.clone(), owner).is_ok());
-        assert!(md.ins_entry(vec![102u8], val.clone(), owner).is_err());
+        assert_err!(md.ins_entry(vec![102u8], val.clone(), owner),
+                    RoutingError::TooManyEntries);
 
         assert!(md.del_entry(&vec![101u8], owner).is_ok());
         assert!(md.ins_entry(vec![102u8], val.clone(), owner).is_ok());
@@ -456,8 +466,8 @@ mod tests {
         let _ = data.insert(vec![0], big_val.clone());
         let _ = data.insert(vec![1], small_val.clone());
 
-        assert!(MutableData::new(rand::random(), 0, BTreeMap::new(), data, BTreeSet::new())
-            .is_err());
+        assert_err!(MutableData::new(rand::random(), 0, BTreeMap::new(), data, BTreeSet::new()),
+                    RoutingError::ExceededSizeLimit);
 
         let mut data = BTreeMap::new();
         let _ = data.insert(vec![0], big_val.clone());
@@ -470,7 +480,8 @@ mod tests {
 
         // Try to get over the mutation limit of 2 MiB
         assert!(md.ins_entry(vec![1], big_val.clone(), owner).is_ok());
-        assert!(md.ins_entry(vec![2], small_val.clone(), owner).is_err());
+        assert_err!(md.ins_entry(vec![2], small_val.clone(), owner),
+                    RoutingError::ExceededSizeLimit);
         assert!(md.del_entry(&vec![0], owner).is_ok());
         assert!(md.ins_entry(vec![0], small_val, owner).is_ok());
     }
@@ -487,11 +498,11 @@ mod tests {
             unwrap!(MutableData::new(rand::random(), 0, BTreeMap::new(), BTreeMap::new(), owners));
 
         // Try to do ownership transfer from a non-owner requester
-        assert!(md.change_owner(pk1, pk1).is_err());
+        assert_err!(md.change_owner(pk1, pk1), RoutingError::AccessDenied);
 
         // Transfer ownership from an owner
         assert!(md.change_owner(pk1, owner).is_ok());
-        assert!(md.change_owner(owner, owner).is_err());
+        assert_err!(md.change_owner(owner, owner), RoutingError::AccessDenied);
     }
 
     #[test]
@@ -506,13 +517,13 @@ mod tests {
             unwrap!(MutableData::new(rand::random(), 0, BTreeMap::new(), BTreeMap::new(), owners));
 
         // Trying to do inserts without having a permission must fail
-        assert!(md.ins_entry(vec![0],
-                       Value {
-                           content: vec![1],
-                           entry_version: 0,
-                       },
-                       pk1)
-            .is_err());
+        assert_err!(md.ins_entry(vec![0],
+                                 Value {
+                                     content: vec![1],
+                                     entry_version: 0,
+                                 },
+                                 pk1),
+                    RoutingError::AccessDenied);
 
         // Now allow inserts for pk1
         let mut ps1 = PermissionSet::new();
@@ -533,18 +544,22 @@ mod tests {
         assert!(md.set_user_permissions(User::Key(pk1), ps2, pk1).is_ok());
 
         // Revoke permissions for pk1
-        assert!(md.del_user_permissions(&User::Key(pk1), pk1).is_err());
+        assert_err!(md.del_user_permissions(&User::Key(pk1), pk1),
+                    RoutingError::AccessDenied);
+
         assert!(md.del_user_permissions(&User::Key(pk1), owner).is_ok());
-        assert!(md.ins_entry(vec![1],
-                       Value {
-                           content: vec![2],
-                           entry_version: 0,
-                       },
-                       pk1)
-            .is_err());
+
+        assert_err!(md.ins_entry(vec![1],
+                                 Value {
+                                     content: vec![2],
+                                     entry_version: 0,
+                                 },
+                                 pk1),
+                    RoutingError::AccessDenied);
 
         // Revoking permissions for a non-existing user should return an error
-        assert!(md.del_user_permissions(&User::Key(pk1), owner).is_err());
+        assert_err!(md.del_user_permissions(&User::Key(pk1), owner),
+                    RoutingError::EntryNotFound);
 
         // Get must always be allowed
         assert!(md.get(&vec![0]).is_some());
