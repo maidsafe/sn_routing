@@ -18,8 +18,8 @@
 use rand::Rng;
 use routing::{Authority, Data, DataIdentifier, Event, MIN_GROUP_SIZE, MessageId, Request, Response};
 use routing::mock_crust::{Config, Network};
-use super::{TestClient, TestNode, create_connected_nodes, gen_immutable_data, gen_range_except,
-            gen_two_range_except, poll_all, sort_nodes_by_distance_to,
+use super::{TestNode, create_connected_nodes, gen_immutable_data, gen_range_except,
+            gen_two_range_except, poll_and_resend, sort_nodes_by_distance_to,
             verify_invariant_for_all_nodes};
 
 // Randomly add or remove some nodes, causing churn.
@@ -86,21 +86,6 @@ fn did_receive_get_success(node: &TestNode,
                                  ref dst }) if expected(src, dst, data, message_id) => return true,
             Ok(_) => (),
             Err(_) => return false,
-        }
-    }
-}
-
-fn poll_and_resend(nodes: &mut [TestNode], clients: &mut [TestClient]) {
-    loop {
-        let mut state_changed = poll_all(nodes, clients);
-        for node in nodes.iter_mut() {
-            state_changed = state_changed || node.inner.resend_unacknowledged();
-        }
-        for client in clients.iter_mut() {
-            state_changed = state_changed || client.inner.resend_unacknowledged();
-        }
-        if !state_changed {
-            return;
         }
     }
 }

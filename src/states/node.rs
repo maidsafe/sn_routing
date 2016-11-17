@@ -412,7 +412,12 @@ impl Node {
                     self.send_direct_message(&dst, DirectMessage::TunnelSuccess(src))?;
                     self.send_or_drop(&dst, bytes, content.priority())
                 } else {
-                    debug!("{:?} Invalid TunnelDirect message received via {:?}: {:?} -> {:?} {:?}", self, peer_id, src, dst, content);
+                    debug!("{:?} Invalid TunnelDirect message received via {:?}: {:?} -> {:?} {:?}",
+                           self,
+                           peer_id,
+                           src,
+                           dst,
+                           content);
                     Err(RoutingError::InvalidDestination)
                 }
             }
@@ -423,7 +428,12 @@ impl Node {
                 } else if self.tunnels.has_clients(src, dst) {
                     self.send_or_drop(&dst, bytes, content.content.priority())
                 } else {
-                    debug!("{:?} Invalid TunnelHop message received via {:?}: {:?} -> {:?} {:?}", self, peer_id, src, dst, content);
+                    debug!("{:?} Invalid TunnelHop message received via {:?}: {:?} -> {:?} {:?}",
+                           self,
+                           peer_id,
+                           src,
+                           dst,
+                           content);
                     Err(RoutingError::InvalidDestination)
                 }
             }
@@ -852,9 +862,7 @@ impl Node {
                             dst: Authority::NaeManager(prefix.lower_bound()),
                             content: MessageContent::GroupSplit(our_group_prefix),
                         };
-                        // We send on route 1 by default to avoid trying to
-                        // send via the newly joined node
-                        if let Err(err) = self.send_routing_message_via_route(request_msg, 1) {
+                        if let Err(err) = self.send_routing_message(request_msg) {
                             debug!("{:?} Failed to send GroupSplit: {:?}.", self, err);
                         }
                     }
@@ -1000,7 +1008,9 @@ impl Node {
                              dst_id: PeerId)
                              -> Result<(), RoutingError> {
         if !self.peer_mgr.tunnelling_to(&dst_id) {
-            debug!("{:?} Received TunnelSuccess for a peer we are already connected to: {:?}", self, dst_id);
+            debug!("{:?} Received TunnelSuccess for a peer we are already connected to: {:?}",
+                   self,
+                   dst_id);
             let message = DirectMessage::TunnelDisconnect(dst_id);
             self.send_direct_message(&peer_id, message)?;
             return Ok(());
@@ -1423,6 +1433,12 @@ impl Node {
                           signed_msg: SignedMessage,
                           route: u8)
                           -> Result<(), RoutingError> {
+        if !self.add_to_pending_acks(&signed_msg, route) {
+            debug!("{:?} already received an ack for {:?} - so not resending it.",
+                   self,
+                   signed_msg);
+            return Ok(());
+        }
         let our_name = *self.name();
         if let Some((msg, route)) = self.sig_accumulator.add_message(signed_msg, route) {
             if self.in_authority(&msg.routing_message().dst) {
@@ -1435,6 +1451,12 @@ impl Node {
     }
 
     fn send_signature(&mut self, signed_msg: SignedMessage, route: u8) -> Result<(), RoutingError> {
+        if !self.add_to_pending_acks(&signed_msg, route) {
+            debug!("{:?} already received an ack for {:?} - so not resending it.",
+                   self,
+                   signed_msg);
+            return Ok(());
+        }
         let direct_msg = {
             let sign_key = self.full_id().signing_private_key();
             signed_msg.routing_message().to_signature(sign_key)?
