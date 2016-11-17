@@ -237,10 +237,9 @@ struct SerialisablePubAppendableData<'a> {
 
 #[cfg(test)]
 mod test {
-    extern crate rand;
-    use super::*;
-
+    use rand;
     use rust_sodium::crypto::sign;
+    use super::*;
     use xor_name::XorName;
     use data::{self, AppendWrapper, AppendedData, DataIdentifier, Filter};
     use std::collections::BTreeSet;

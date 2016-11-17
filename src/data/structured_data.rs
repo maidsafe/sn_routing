@@ -216,10 +216,9 @@ struct SerialisableStructuredData<'a> {
 
 #[cfg(test)]
 mod tests {
-    extern crate rand;
-
     use super::*;
     use data;
+    use rand;
     use rust_sodium::crypto::sign;
     use std::collections::BTreeSet;
     use xor_name::XorName;

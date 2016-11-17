@@ -156,8 +156,7 @@ impl DataIdentifier {
 
 #[cfg(test)]
 mod tests {
-    extern crate rand;
-
+    use rand;
     use rust_sodium::crypto::hash::sha256;
     use super::*;
     use std::collections::BTreeSet;

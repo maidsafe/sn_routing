@@ -283,11 +283,11 @@ struct SerialisablePrivAppendableData<'a> {
 
 #[cfg(test)]
 mod test {
-    extern crate rand;
     use super::*;
 
     use std::collections::BTreeSet;
     use maidsafe_utilities::serialisation::serialise;
+    use rand;
     use rust_sodium::crypto::{box_, sign};
     use xor_name::XorName;
     use data::{self, AppendWrapper, AppendedData, DataIdentifier, Filter};
