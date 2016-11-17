@@ -194,7 +194,7 @@ impl AppendWrapper {
 
 #[cfg(test)]
 mod test {
-    extern crate rand;
+    use rand;
     use super::*;
     use data::{DataIdentifier, PrivAppendedData};
 

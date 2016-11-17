@@ -321,8 +321,7 @@ impl Debug for MutableData {
 
 #[cfg(test)]
 mod tests {
-    extern crate rand;
-
+    use rand;
     use rust_sodium::crypto::sign;
     use std::collections::{BTreeMap, BTreeSet};
     use std::iter;

@@ -93,8 +93,6 @@ impl Debug for ImmutableData {
 
 #[cfg(test)]
 mod tests {
-    extern crate rand;
-
     use rustc_serialize::hex::ToHex;
     use super::*;
 
