@@ -331,7 +331,8 @@ mod tests {
 
     macro_rules! assert_err {
         ($left: expr, $err: path) => {{
-            assert!(if let Err($err) = $left { true } else { false });
+            let result = $left; // required to prevent multiple repeating expansions
+            assert!(if let Err($err) = result { true } else { false }, "Expected Err({:?}), found {:?}", $err, result);
         }}
     }
 
