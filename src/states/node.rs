@@ -1498,10 +1498,6 @@ impl Node {
             return Ok(());  // Avoid swarming back out to our own group.
         }
 
-        if sent_by_us && !self.add_to_pending_acks(signed_msg, route) {
-            return Ok(());
-        }
-
         let target_peer_ids = self.get_targets(routing_msg, route, *hop)?;
 
         for target_peer_id in target_peer_ids {
