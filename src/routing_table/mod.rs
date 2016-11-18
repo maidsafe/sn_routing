@@ -346,6 +346,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         self.groups.values().all(HashSet::is_empty)
     }
 
+    /// Returns whether the table contains the given `name`
+    pub fn has(&self, name: T) -> bool {
+        self.get_group(&name).map_or(false, |group| group.iter().any(|&x| x == name))
+    }
+
     /// Iterates over all nodes known by the routing table.
     pub fn iter(&self) -> Iter<T> {
         Iter { inner: self.groups.iter().flat_map(Iter::<T>::iterate) }

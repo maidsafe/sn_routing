@@ -204,3 +204,15 @@ pub use routing_table::{Prefix, Xorable};
 pub use routing_table::{Destination, RoutingTable, verify_network_invariant};
 pub use types::MessageId;
 pub use xor_name::{XOR_NAME_BITS, XOR_NAME_LEN, XorName, XorNameFromHexError};
+
+#[cfg(test)]
+mod tests {
+    use super::QUORUM;
+
+    #[test]
+    #[cfg_attr(feature="clippy", allow(eq_op))]
+    fn quorum_percentage() {
+        assert!(QUORUM <= 100 && QUORUM > 50,
+                "Quorum percentage isn't between 51 and 100");
+    }
+}

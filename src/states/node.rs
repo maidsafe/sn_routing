@@ -634,8 +634,8 @@ impl Node {
             (MessageContent::GetCloseGroupResponse { close_group_ids, .. },
              Authority::ManagedNode(_),
              dst) => self.handle_get_close_group_response(close_group_ids, dst),
-            (MessageContent::GroupSplit { prefix, joining_node }, _, _) => {
-                self.handle_group_split(prefix, joining_node)
+            (MessageContent::GroupSplit(prefix), src, _) => {
+                self.handle_group_split(prefix, *src.name())
             }
             (MessageContent::OwnGroupMerge { sender_prefix, merge_prefix, groups }, _, _) => {
                 self.handle_own_group_merge(sender_prefix, merge_prefix, groups)
@@ -1261,8 +1261,7 @@ impl Node {
         if prefix == *self.peer_mgr.routing_table().our_group_prefix() &&
            !self.peer_mgr
             .routing_table()
-            .get_group(&joining_node)
-            .map_or(false, |group| group.iter().any(|&x| x == joining_node)) {
+            .has(joining_node) {
             self.send_group_split(prefix, joining_node);
         }
         // None of the `peers_to_drop` will have been in our group, so no need to notify Routing
@@ -1792,10 +1791,7 @@ impl Node {
                 // this way of calculating the destination avoids using the joining
                 // node as the route
                 dst: Authority::NaeManager(prefix.substituted_in(!joining_node)),
-                content: MessageContent::GroupSplit {
-                    prefix: our_prefix,
-                    joining_node: joining_node,
-                },
+                content: MessageContent::GroupSplit(our_prefix),
             };
             if let Err(err) = self.send_routing_message(request_msg) {
                 debug!("{:?} Failed to send GroupSplit: {:?}.", self, err);
