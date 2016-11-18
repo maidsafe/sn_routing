@@ -152,6 +152,7 @@ mod event;
 mod id;
 mod message_filter;
 mod messages;
+mod messages_new;
 mod node;
 mod peer_manager;
 mod routing_message_filter;
@@ -192,6 +193,8 @@ pub use error::{InterfaceError, RoutingError};
 pub use event::Event;
 pub use id::{FullId, PublicId};
 pub use messages::{Request, Response};
+pub use messages_new::Request as Request2;
+pub use messages_new::Response as Response2;
 #[cfg(feature = "use-mock-crust")]
 pub use mock_crust::crust;
 pub use node::{Node, NodeBuilder};
