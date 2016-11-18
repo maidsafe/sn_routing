@@ -119,6 +119,8 @@ pub enum RoutingError {
     ExceededSizeLimit,
     /// Access is denied for a given requester
     AccessDenied,
+    /// Version check has failed
+    InvalidSuccessor,
 }
 
 impl From<RoutingTableError> for RoutingError {
