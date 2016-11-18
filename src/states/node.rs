@@ -1258,7 +1258,8 @@ impl Node {
                           joining_node: XorName)
                           -> Result<(), RoutingError> {
         // Send GroupSplit notifications if we don't know of the new node yet
-        if !self.peer_mgr
+        if prefix == *self.peer_mgr.routing_table().our_group_prefix() &&
+           !self.peer_mgr
             .routing_table()
             .get_group(&joining_node)
             .map_or(false, |group| group.iter().any(|&x| x == joining_node)) {
