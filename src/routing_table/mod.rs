@@ -422,18 +422,26 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         if !our_group.insert(*name) {
             return Err(Error::AlreadyExists);
         }
-        if self.should_split_our_group(&our_group) {
+        let (our_prefix, mut our_group) = if self.should_split_our_group(&our_group) {
+            let _ = our_group.insert(self.our_name);
             let our_prefix_after_split = Prefix::new(self.our_group_prefix.bit_count() + 1, *name);
-            groups.iter_mut().foreach(|(prefix, mut members)| {
-                if *prefix != our_prefix_after_split &&
-                   !prefix.is_neighbour(&our_prefix_after_split) {
-                    members.clear()
-                }
-            });
-        }
+            groups = groups.into_iter()
+                .filter(|&(prefix, _)| {
+                    prefix == our_prefix_after_split || prefix.is_neighbour(&our_prefix_after_split)
+                })
+                .collect();
+            let (our_group, new_group) = our_group.into_iter()
+                .partition(|x| our_prefix_after_split.matches(x));
+            let _ = groups.insert(self.our_group_prefix
+                                      .pushed(!name.bit(self.our_group_prefix.bit_count())),
+                                  new_group);
+            (our_prefix_after_split, our_group)
+        } else {
+            let _ = our_group.insert(self.our_name);
+            (self.our_group_prefix, our_group)
+        };
         let _ = our_group.remove(name);
-        let _ = our_group.insert(self.our_name);
-        let _ = groups.insert(self.our_group_prefix, our_group);
+        let _ = groups.insert(our_prefix, our_group);
         Ok(groups)
     }
 
