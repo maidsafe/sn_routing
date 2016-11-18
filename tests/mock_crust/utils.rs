@@ -310,7 +310,7 @@ pub fn create_connected_nodes_with_cache(network: &Network,
             .endpoint(Endpoint(i))
             .cache(use_cache)
             .create());
-        let _ = poll_all(&mut nodes, &mut []);
+        poll_and_resend(&mut nodes, &mut []);
         verify_invariant_for_all_nodes(&nodes);
     }
 
