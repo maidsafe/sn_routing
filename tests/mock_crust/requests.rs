@@ -196,7 +196,6 @@ fn failed_get_request() {
 }
 
 #[test]
-#[ignore]
 fn disconnect_on_get_request() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
