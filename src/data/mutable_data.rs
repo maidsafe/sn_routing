@@ -72,30 +72,60 @@ pub enum Action {
 }
 
 #[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
-pub struct PermissionSet(BTreeMap<Action, bool>);
+pub struct PermissionSet {
+    insert: Option<bool>,
+    update: Option<bool>,
+    delete: Option<bool>,
+    manage_permissions: Option<bool>,
+}
 
 impl PermissionSet {
     pub fn new() -> PermissionSet {
-        PermissionSet(BTreeMap::new())
+        PermissionSet {
+            insert: None,
+            update: None,
+            delete: None,
+            manage_permissions: None,
+        }
     }
 
     pub fn allow(&mut self, action: Action) -> &mut PermissionSet {
-        let _ = self.0.insert(action, true);
+        match action {
+            Action::Insert => self.insert = Some(true),
+            Action::Update => self.update = Some(true),
+            Action::Delete => self.delete = Some(true),
+            Action::ManagePermission => self.manage_permissions = Some(true),
+        }
         self
     }
 
     pub fn deny(&mut self, action: Action) -> &mut PermissionSet {
-        let _ = self.0.insert(action, false);
+        match action {
+            Action::Insert => self.insert = Some(false),
+            Action::Update => self.update = Some(false),
+            Action::Delete => self.delete = Some(false),
+            Action::ManagePermission => self.manage_permissions = Some(false),
+        }
         self
     }
 
     pub fn clear(&mut self, action: Action) -> &mut PermissionSet {
-        let _ = self.0.remove(&action);
+        match action {
+            Action::Insert => self.insert = None,
+            Action::Update => self.update = None,
+            Action::Delete => self.delete = None,
+            Action::ManagePermission => self.manage_permissions = None,
+        }
         self
     }
 
     pub fn is_allowed(&self, action: Action) -> Option<bool> {
-        self.0.get(&action).cloned()
+        match action {
+            Action::Insert => self.insert,
+            Action::Update => self.update,
+            Action::Delete => self.delete,
+            Action::ManagePermission => self.manage_permissions,
+        }
     }
 }
 
@@ -180,21 +210,6 @@ impl MutableData {
         &self.data
     }
 
-    fn rollback(&mut self,
-                inserted: BTreeSet<Vec<u8>>,
-                updated: BTreeMap<Vec<u8>, Value>,
-                deleted: BTreeMap<Vec<u8>, Value>) {
-        for (key, val) in deleted {
-            let _ = self.data.insert(key, val);
-        }
-        for (key, val) in updated {
-            let _ = self.data.insert(key, val);
-        }
-        for key in inserted {
-            let _ = self.data.remove(&key);
-        }
-    }
-
     /// Mutates entries (key + value pairs) in bulk
     pub fn mutate_entries(&mut self,
                           actions: BTreeMap<Vec<u8>, EntryAction>,
@@ -218,90 +233,99 @@ impl MutableData {
                 (insert, update, delete)
             });
 
-        if (insert.len() > 0 && !self.is_action_allowed(requester, Action::Insert)) ||
-           (update.len() > 0 && !self.is_action_allowed(requester, Action::Update)) ||
-           (delete.len() > 0 && !self.is_action_allowed(requester, Action::Delete)) {
+        if (!insert.is_empty() && !self.is_action_allowed(requester, Action::Insert)) ||
+           (!update.is_empty() && !self.is_action_allowed(requester, Action::Update)) ||
+           (!delete.is_empty() && !self.is_action_allowed(requester, Action::Delete)) {
             return Err(RoutingError::AccessDenied);
         }
-        if (insert.len() > 0 || update.len() > 0) &&
+        if (!insert.is_empty() || !update.is_empty()) &&
            self.data.len() > MAX_MUTABLE_DATA_ENTRIES as usize {
             return Err(RoutingError::TooManyEntries);
         }
-
-        let mut inserted: BTreeSet<Vec<u8>> = BTreeSet::new();
-        let mut updated: BTreeMap<Vec<u8>, Value> = BTreeMap::new();
-        let mut deleted: BTreeMap<Vec<u8>, Value> = BTreeMap::new();
+        if (!insert.is_empty() || !update.is_empty()) && !self.validate_size() {
+            return Err(RoutingError::ExceededSizeLimit);
+        }
 
         for (key, val) in insert {
             if self.data.contains_key(&key) {
-                self.rollback(inserted, updated, deleted);
                 return Err(RoutingError::EntryAlreadyExist);
             }
             let _ = self.data.insert(key.clone(), val);
-            inserted.insert(key);
         }
 
         for (key, val) in update {
             if !self.data.contains_key(&key) {
-                self.rollback(inserted, updated, deleted);
                 return Err(RoutingError::EntryNotFound);
             }
             let version_valid = if let Entry::Occupied(mut oe) = self.data.entry(key.clone()) {
                 if val.entry_version != oe.get().entry_version + 1 {
                     false
                 } else {
-                    let prev = oe.insert(val);
-                    let _ = updated.insert(key, prev);
+                    let _prev = oe.insert(val);
                     true
                 }
             } else {
                 false
             };
             if !version_valid {
-                self.rollback(inserted, updated, deleted);
                 return Err(RoutingError::InvalidSuccessor);
             }
         }
 
         for (key, version) in delete {
             if !self.data.contains_key(&key) {
-                self.rollback(inserted, updated, deleted);
                 return Err(RoutingError::EntryNotFound);
             }
-            let version_valid = if let Entry::Occupied(oe) = self.data.entry(key.clone()) {
-                // let prev = oe.insert(Value { content: vec![], entry_version: version });
+            let version_valid = if let Entry::Occupied(mut oe) = self.data.entry(key.clone()) {
                 if version != oe.get().entry_version + 1 {
                     false
                 } else {
-                    let (key, prev) = oe.remove_entry();
-                    let _ = deleted.insert(key, prev);
+                    /// TODO(nbaksalyar): find a way to decrease a number of entries after deletion.
+                    /// In the current implementation if a number of entries exceeds the limit
+                    /// there's no way for an owner to delete unneeded entries.
+                    let _prev = oe.insert(Value {
+                        content: vec![],
+                        entry_version: version,
+                    });
                     true
                 }
             } else {
                 false
             };
             if !version_valid {
-                self.rollback(inserted, updated, deleted);
                 return Err(RoutingError::InvalidSuccessor);
             }
         }
 
         if !self.validate_mut_size() {
-            self.rollback(inserted, updated, deleted);
             return Err(RoutingError::ExceededSizeLimit);
         }
 
         Ok(())
     }
 
+    /// Gets a complete list of permissions
+    pub fn permissions(&self) -> &BTreeMap<User, PermissionSet> {
+        &self.permissions
+    }
+
+    /// Gets a list of permissions for the provided user.
+    pub fn user_permissions(&mut self, user: &User) -> Option<&PermissionSet> {
+        self.permissions.get(user)
+    }
+
     /// Insert or update permissions for the provided user.
     pub fn set_user_permissions(&mut self,
                                 user: User,
                                 permissions: PermissionSet,
+                                version: u64,
                                 requester: PublicKey)
                                 -> Result<(), RoutingError> {
         if !self.is_action_allowed(requester, Action::ManagePermission) {
             return Err(RoutingError::AccessDenied);
+        }
+        if version != self.version + 1 {
+            return Err(RoutingError::InvalidSuccessor);
         }
         let prev = self.permissions.insert(user.clone(), permissions);
         if !self.validate_mut_size() {
@@ -318,10 +342,14 @@ impl MutableData {
     /// Delete permissions for the provided user.
     pub fn del_user_permissions(&mut self,
                                 user: &User,
+                                version: u64,
                                 requester: PublicKey)
                                 -> Result<(), RoutingError> {
         if !self.is_action_allowed(requester, Action::ManagePermission) {
             return Err(RoutingError::AccessDenied);
+        }
+        if version != self.version + 1 {
+            return Err(RoutingError::InvalidSuccessor);
         }
         if !self.permissions.contains_key(user) {
             return Err(RoutingError::EntryNotFound);
@@ -333,10 +361,14 @@ impl MutableData {
     /// Change owner of the mutable data.
     pub fn change_owner(&mut self,
                         new_owner: PublicKey,
+                        version: u64,
                         requester: PublicKey)
                         -> Result<(), RoutingError> {
         if !self.owners.contains(&requester) {
             return Err(RoutingError::AccessDenied);
+        }
+        if version != self.version + 1 {
+            return Err(RoutingError::InvalidSuccessor);
         }
         self.owners.clear();
         self.owners.insert(new_owner);
@@ -451,7 +483,6 @@ mod tests {
                     RoutingError::AccessDenied);
 
         assert!(md.get(&k1).is_some());
-        assert!(md.get(&k2).is_none()); // check that rollback is working
 
         // Check update permissions
         let _ = v1.insert(k1.clone(),
@@ -461,8 +492,6 @@ mod tests {
                           }));
         assert_err!(md.mutate_entries(v1.clone(), pk1),
                     RoutingError::AccessDenied);
-        // check that rollback is working
-        assert_eq!(md.get(&k1).unwrap().content, "abc".as_bytes());
 
         assert!(md.mutate_entries(v1.clone(), pk2).is_ok());
 
@@ -475,7 +504,7 @@ mod tests {
 
         // Actions requested by owner should always be allowed
         assert!(md.mutate_entries(del, owner).is_ok());
-        assert!(md.get(&k1).is_none());
+        assert_eq!(md.get(&k1).unwrap().content, Vec::<u8>::new());
     }
 
     #[test]
@@ -545,8 +574,6 @@ mod tests {
         let mut del = BTreeMap::new();
         let _ = del.insert(vec![101u8], EntryAction::Del(1));
         assert!(md.mutate_entries(del, owner).is_ok());
-
-        assert!(md.mutate_entries(v2, owner).is_ok());
     }
 
     #[test]
@@ -609,11 +636,11 @@ mod tests {
             unwrap!(MutableData::new(rand::random(), 0, BTreeMap::new(), BTreeMap::new(), owners));
 
         // Try to do ownership transfer from a non-owner requester
-        assert_err!(md.change_owner(pk1, pk1), RoutingError::AccessDenied);
+        assert_err!(md.change_owner(pk1, 1, pk1), RoutingError::AccessDenied);
 
         // Transfer ownership from an owner
-        assert!(md.change_owner(pk1, owner).is_ok());
-        assert_err!(md.change_owner(owner, owner), RoutingError::AccessDenied);
+        assert!(md.change_owner(pk1, 1, owner).is_ok());
+        assert_err!(md.change_owner(owner, 1, owner), RoutingError::AccessDenied);
     }
 
     #[test]
@@ -693,20 +720,22 @@ mod tests {
         // Now allow inserts for pk1
         let mut ps1 = PermissionSet::new();
         let _ = ps1.allow(Action::Insert).allow(Action::ManagePermission);
-        assert!(md.set_user_permissions(User::Key(pk1), ps1, owner).is_ok());
+        assert!(md.set_user_permissions(User::Key(pk1), ps1, 1, owner).is_ok());
 
         assert!(md.mutate_entries(v1, pk1).is_ok());
 
         // pk1 now can change permissions
         let mut ps2 = PermissionSet::new();
         let _ = ps2.allow(Action::Insert).deny(Action::ManagePermission);
-        assert!(md.set_user_permissions(User::Key(pk1), ps2, pk1).is_ok());
+        assert_err!(md.set_user_permissions(User::Key(pk1), ps2.clone(), 2, pk1),
+                    RoutingError::InvalidSuccessor);
+        assert!(md.set_user_permissions(User::Key(pk1), ps2, 1, pk1).is_ok());
 
         // Revoke permissions for pk1
-        assert_err!(md.del_user_permissions(&User::Key(pk1), pk1),
+        assert_err!(md.del_user_permissions(&User::Key(pk1), 1, pk1),
                     RoutingError::AccessDenied);
 
-        assert!(md.del_user_permissions(&User::Key(pk1), owner).is_ok());
+        assert!(md.del_user_permissions(&User::Key(pk1), 1, owner).is_ok());
 
         let mut v2 = BTreeMap::new();
         let _ = v2.insert(vec![1],
@@ -717,7 +746,7 @@ mod tests {
         assert_err!(md.mutate_entries(v2, pk1), RoutingError::AccessDenied);
 
         // Revoking permissions for a non-existing user should return an error
-        assert_err!(md.del_user_permissions(&User::Key(pk1), owner),
+        assert_err!(md.del_user_permissions(&User::Key(pk1), 1, owner),
                     RoutingError::EntryNotFound);
 
         // Get must always be allowed
