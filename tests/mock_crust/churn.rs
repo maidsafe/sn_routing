@@ -21,7 +21,8 @@ use routing::{Authority, Data, DataIdentifier, Event, MIN_GROUP_SIZE, MessageId,
               Response};
 use routing::mock_crust::{Config, Network};
 use super::{TestNode, create_connected_nodes, gen_immutable_data, gen_range_except,
-            gen_two_range_except, poll_and_resend, verify_invariant_for_all_nodes};
+            gen_two_range_except, poll_and_resend, sort_nodes_by_distance_to,
+            verify_invariant_for_all_nodes};
 
 // Randomly add or remove some nodes, causing churn.
 // If a new node was added, returns the index of this node. Otherwise
@@ -265,30 +266,38 @@ fn request_during_churn_group_to_self() {
 }
 
 #[test]
-#[ignore]
 fn request_during_churn_group_to_node() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, 2 * MIN_GROUP_SIZE);
 
     for _ in 0..REQUEST_DURING_CHURN_ITERATIONS {
-        let added_index = random_churn(&mut rng, &network, &mut nodes);
-        let index = gen_range_except(&mut rng, 0, nodes.len(), added_index);
-
+        let message_id = MessageId::new();
         let data = gen_immutable_data(&mut rng, 8);
         let src = Authority::NaeManager(*data.name());
+
+        sort_nodes_by_distance_to(&mut nodes, src.name());
+
+        let group_len = nodes.iter()
+            .filter(|n| n.routing_table().is_recipient(&src.to_destination()))
+            .count();
+
+        let index = rng.gen_range(0, group_len);
         let dst = Authority::ManagedNode(nodes[index].name());
-        let message_id = MessageId::new();
+        for node in &nodes[0..group_len] {
+            unwrap!(node.inner.send_get_success(src, dst, data.clone(), message_id));
+        }
 
-        let _ = quorum_calculate(&nodes, (src, dst, data.identifier(), message_id), src, true, false);
-
+        let proxy = rng.gen_range(0, nodes.len());
+        let config = Config::with_contacts(&[nodes[proxy].handle.endpoint()]);
+        nodes.push(TestNode::builder(&network).config(config).create());
         poll_and_resend(&mut nodes, &mut []);
+
         assert!(did_receive_get_success(&nodes[index], src, dst, data, message_id));
     }
 }
 
 #[test]
-#[ignore]
 fn request_during_churn_group_to_group() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
@@ -303,11 +312,10 @@ fn request_during_churn_group_to_group() {
         let data_id = data.identifier();
         let message_id = MessageId::new();
 
-        let _added_index = random_churn(&mut rng, &network, &mut nodes);
-
         let (quorum_before, _) =
             quorum_calculate(&nodes, (src, dst, data_id, message_id), src, true, false);
 
+        let _added_index = random_churn(&mut rng, &network, &mut nodes);
         poll_and_resend(&mut nodes, &mut []);
 
         let (quorum_after, num_received) =
