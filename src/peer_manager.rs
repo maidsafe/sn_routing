@@ -25,7 +25,7 @@ use routing_table::{OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix, R
 use routing_table::Error as RoutingTableError;
 use rust_sodium::crypto::sign;
 use std::{error, fmt, mem};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::collections::hash_map::Values;
 use std::time::{Duration, Instant};
 use xor_name::XorName;
@@ -401,7 +401,7 @@ impl PeerManager {
 
     pub fn merge_other_group(&mut self,
                              prefix: Prefix<XorName>,
-                             group: Vec<PublicId>)
+                             group: BTreeSet<PublicId>)
                              -> HashSet<PublicId> {
         self.remove_expired();
 

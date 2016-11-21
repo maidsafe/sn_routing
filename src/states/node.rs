@@ -1318,7 +1318,7 @@ impl Node {
 
     fn handle_other_group_merge(&mut self,
                                 prefix: Prefix<XorName>,
-                                group: Vec<PublicId>)
+                                group: BTreeSet<PublicId>)
                                 -> Result<(), RoutingError> {
         let needed_peers = self.peer_mgr.merge_other_group(prefix, group);
         let own_name = *self.name();
@@ -1833,7 +1833,8 @@ impl Node {
                               targets: BTreeSet<Prefix<XorName>>,
                               merge_details: OtherMergeDetails<XorName>,
                               src: Authority) {
-        let group = self.peer_mgr.get_pub_ids(&merge_details.group).into_iter().collect_vec();
+        let group: BTreeSet<PublicId> =
+            self.peer_mgr.get_pub_ids(&merge_details.group).into_iter().collect();
         for target in &targets {
             let request_content = MessageContent::OtherGroupMerge {
                 prefix: merge_details.prefix,
