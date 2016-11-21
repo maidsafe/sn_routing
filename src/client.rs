@@ -18,13 +18,12 @@
 use action::Action;
 use authority::Authority;
 use cache::NullCache;
-use data::{AppendWrapper, Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use event::Event;
 use id::FullId;
 #[cfg(not(feature = "use-mock-crust"))]
 use maidsafe_utilities::thread::{self, Joiner};
-use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, Request};
+use messages::Request;
 #[cfg(not(feature = "use-mock-crust"))]
 use rust_sodium;
 use state_machine::{State, StateMachine};
@@ -32,7 +31,6 @@ use states;
 #[cfg(feature = "use-mock-crust")]
 use std::cell::RefCell;
 use std::sync::mpsc::{Receiver, Sender, channel};
-use types::MessageId;
 use types::RoutingActionSender;
 use xor_name::XorName;
 
@@ -43,6 +41,7 @@ type RoutingResult = Result<(), RoutingError>;
 ///
 /// A client is connected to the network via one or more nodes. Messages are never routed via a
 /// client, and a client cannot be part of a group authority.
+#[allow(unused)] // <-- TODO: remove this
 pub struct Client {
     interface_result_tx: Sender<Result<(), InterfaceError>>,
     interface_result_rx: Receiver<Result<(), InterfaceError>>,
@@ -100,6 +99,7 @@ impl Client {
         })
     }
 
+    /*
     /// Send a Get message with a `DataIdentifier` to an `Authority`, signed with given keys.
     pub fn send_get_request(&self,
                             dst: Authority,
@@ -155,6 +155,7 @@ impl Client {
                          dst,
                          CLIENT_GET_PRIORITY)
     }
+    */
 
     /// Returns the name of this node.
     pub fn name(&self) -> Result<XorName, InterfaceError> {
@@ -164,6 +165,7 @@ impl Client {
         self.receive_action_result(&result_rx)
     }
 
+    #[allow(unused)] // <-- TODO: remove this
     fn send_action(&self,
                    content: Request,
                    dst: Authority,

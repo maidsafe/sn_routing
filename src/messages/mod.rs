@@ -1,4 +1,4 @@
-// Copyright 2015 MaidSafe.net limited.
+// Copyright 2016 MaidSafe.net limited.
 //
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
@@ -15,11 +15,16 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+mod request;
+mod response;
+
+pub use self::request::Request;
+pub use self::response::Response;
+
 use ack_manager::Ack;
 use authority::Authority;
 #[cfg(not(feature = "use-mock-crust"))]
 use crust::PeerId;
-use data::{AppendWrapper, Data, DataIdentifier};
 use error::RoutingError;
 use event::Event;
 use id::{FullId, PublicId};
@@ -53,6 +58,7 @@ pub const RELOCATE_PRIORITY: u8 = 1;
 pub const DEFAULT_PRIORITY: u8 = 2;
 /// `Get` requests from clients have the lowest priority: If bandwidth is insufficient, the network
 /// needs to prioritise maintaining its structure, data and consensus.
+#[allow(unused)] // <-- TODO: remove this
 pub const CLIENT_GET_PRIORITY: u8 = 3;
 
 /// Wrapper of all messages.
@@ -728,241 +734,6 @@ impl UserMessage {
         match *self {
             UserMessage::Request(ref request) => request.is_cacheable(),
             UserMessage::Response(ref response) => response.is_cacheable(),
-        }
-    }
-}
-
-/// Request message types
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
-pub enum Request {
-    /// Message from upper layers sending network state on any network churn event.
-    Refresh(Vec<u8>, MessageId),
-    /// Ask for data from network, passed from API with data name as parameter
-    Get(DataIdentifier, MessageId),
-    /// Put data to network. Provide actual data as parameter
-    Put(Data, MessageId),
-    /// Post data to network. Provide actual data as parameter
-    Post(Data, MessageId),
-    /// Delete data from network. Provide actual data as parameter
-    Delete(Data, MessageId),
-    /// Append an item to an appendable data chunk.
-    Append(AppendWrapper, MessageId),
-    /// Get account information for Client with given ID
-    GetAccountInfo(MessageId),
-}
-
-/// Response message types
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
-pub enum Response {
-    /// Reply with the requested data (may not be ignored)
-    ///
-    /// Sent from a `ManagedNode` to an `NaeManager`, and from there to a `Client`, although this
-    /// may be shortcut if the data is in a node's cache.
-    GetSuccess(Data, MessageId),
-    /// Success token for Put (may be ignored)
-    PutSuccess(DataIdentifier, MessageId),
-    /// Success token for Post (may be ignored)
-    PostSuccess(DataIdentifier, MessageId),
-    /// Success token for delete (may be ignored)
-    DeleteSuccess(DataIdentifier, MessageId),
-    /// Success token for append (may be ignored)
-    AppendSuccess(DataIdentifier, MessageId),
-    /// Response containing account information for requested Client account
-    GetAccountInfoSuccess {
-        /// Unique message identifier
-        id: MessageId,
-        /// Amount of data stored on the network by this Client
-        data_stored: u64,
-        /// Amount of network space available to this Client
-        space_available: u64,
-    },
-    /// Error for `Get`, includes signed request to prevent injection attacks
-    GetFailure {
-        /// Unique message identifier
-        id: MessageId,
-        /// ID of the affected data chunk
-        data_id: DataIdentifier,
-        /// Error type sent back, may be injected from upper layers
-        external_error_indicator: Vec<u8>,
-    },
-    /// Error for Put, includes signed request to prevent injection attacks
-    PutFailure {
-        /// Unique message identifier
-        id: MessageId,
-        /// ID of the affected data chunk
-        data_id: DataIdentifier,
-        /// Error type sent back, may be injected from upper layers
-        external_error_indicator: Vec<u8>,
-    },
-    /// Error for Post, includes signed request to prevent injection attacks
-    PostFailure {
-        /// Unique message identifier
-        id: MessageId,
-        /// ID of the affected data chunk
-        data_id: DataIdentifier,
-        /// Error type sent back, may be injected from upper layers
-        external_error_indicator: Vec<u8>,
-    },
-    /// Error for delete, includes signed request to prevent injection attacks
-    DeleteFailure {
-        /// Unique message identifier
-        id: MessageId,
-        /// ID of the affected data chunk
-        data_id: DataIdentifier,
-        /// Error type sent back, may be injected from upper layers
-        external_error_indicator: Vec<u8>,
-    },
-    /// Error for append, includes signed request to prevent injection attacks
-    AppendFailure {
-        /// Unique message identifier
-        id: MessageId,
-        /// ID of the affected data chunk
-        data_id: DataIdentifier,
-        /// Error type sent back, may be injected from upper layers
-        external_error_indicator: Vec<u8>,
-    },
-    /// Error for `GetAccountInfo`
-    GetAccountInfoFailure {
-        /// Unique message identifier
-        id: MessageId,
-        /// Error type sent back, may be injected from upper layers
-        external_error_indicator: Vec<u8>,
-    },
-}
-
-impl Request {
-    /// The priority Crust should send this message with.
-    pub fn priority(&self) -> u8 {
-        match *self {
-            Request::Refresh(..) => 2,
-            Request::Get(..) |
-            Request::GetAccountInfo(..) => 3,
-            Request::Append(..) => 4,
-            Request::Put(ref data, _) |
-            Request::Post(ref data, _) |
-            Request::Delete(ref data, _) => {
-                match *data {
-                    Data::Structured(..) => 4,
-                    _ => 5,
-                }
-            }
-        }
-    }
-
-    /// Is the response corresponding to this request cacheable?
-    pub fn is_cacheable(&self) -> bool {
-        if let Request::Get(DataIdentifier::Immutable(..), _) = *self {
-            true
-        } else {
-            false
-        }
-    }
-}
-
-impl Response {
-    /// The priority Crust should send this message with.
-    pub fn priority(&self) -> u8 {
-        match *self {
-            Response::GetSuccess(ref data, _) => {
-                match *data {
-                    Data::Structured(..) => 4,
-                    _ => 5,
-                }
-            }
-            Response::PutSuccess(..) |
-            Response::PostSuccess(..) |
-            Response::DeleteSuccess(..) |
-            Response::AppendSuccess(..) |
-            Response::GetAccountInfoSuccess { .. } |
-            Response::GetFailure { .. } |
-            Response::PutFailure { .. } |
-            Response::PostFailure { .. } |
-            Response::DeleteFailure { .. } |
-            Response::AppendFailure { .. } |
-            Response::GetAccountInfoFailure { .. } => 3,
-        }
-    }
-
-    /// Is this response cacheable?
-    pub fn is_cacheable(&self) -> bool {
-        if let Response::GetSuccess(Data::Immutable(..), _) = *self {
-            true
-        } else {
-            false
-        }
-    }
-}
-
-impl Debug for Request {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        match *self {
-            Request::Refresh(ref data, ref message_id) => {
-                write!(formatter,
-                       "Refresh({}, {:?})",
-                       utils::format_binary_array(data),
-                       message_id)
-            }
-            Request::Get(ref data_request, ref message_id) => {
-                write!(formatter, "Get({:?}, {:?})", data_request, message_id)
-            }
-            Request::Put(ref data, ref message_id) => {
-                write!(formatter, "Put({:?}, {:?})", data, message_id)
-            }
-            Request::Post(ref data, ref message_id) => {
-                write!(formatter, "Post({:?}, {:?})", data, message_id)
-            }
-            Request::Delete(ref data, ref message_id) => {
-                write!(formatter, "Delete({:?}, {:?})", data, message_id)
-            }
-            Request::Append(ref wrapper, ref message_id) => {
-                write!(formatter, "Append({:?}, {:?})", wrapper, message_id)
-            }
-            Request::GetAccountInfo(ref message_id) => {
-                write!(formatter, "GetAccountInfo({:?})", message_id)
-            }
-        }
-    }
-}
-
-impl Debug for Response {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        match *self {
-            Response::GetSuccess(ref data, ref message_id) => {
-                write!(formatter, "GetSuccess({:?}, {:?})", data, message_id)
-            }
-            Response::PutSuccess(ref name, ref message_id) => {
-                write!(formatter, "PutSuccess({:?}, {:?})", name, message_id)
-            }
-            Response::PostSuccess(ref name, ref message_id) => {
-                write!(formatter, "PostSuccess({:?}, {:?})", name, message_id)
-            }
-            Response::DeleteSuccess(ref name, ref message_id) => {
-                write!(formatter, "DeleteSuccess({:?}, {:?})", name, message_id)
-            }
-            Response::AppendSuccess(ref name, ref message_id) => {
-                write!(formatter, "AppendSuccess({:?}, {:?})", name, message_id)
-            }
-            Response::GetAccountInfoSuccess { ref id, .. } => {
-                write!(formatter, "GetAccountInfoSuccess {{ {:?}, .. }}", id)
-            }
-            Response::GetFailure { ref id, ref data_id, .. } => {
-                write!(formatter, "GetFailure {{ {:?}, {:?}, .. }}", id, data_id)
-            }
-            Response::PutFailure { ref id, ref data_id, .. } => {
-                write!(formatter, "PutFailure {{ {:?}, {:?}, .. }}", id, data_id)
-            }
-            Response::PostFailure { ref id, ref data_id, .. } => {
-                write!(formatter, "PostFailure {{ {:?}, {:?}, .. }}", id, data_id)
-            }
-            Response::DeleteFailure { ref id, ref data_id, .. } => {
-                write!(formatter, "DeleteFailure {{ {:?}, {:?}, .. }}", id, data_id)
-            }
-            Response::AppendFailure { ref id, ref data_id, .. } => {
-                write!(formatter, "AppendFailure {{ {:?}, {:?}, .. }}", id, data_id)
-            }
-            Response::GetAccountInfoFailure { ref id, .. } => {
-                write!(formatter, "GetAccountInfoFailure {{ {:?}, .. }}", id)
-            }
         }
     }
 }

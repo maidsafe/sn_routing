@@ -139,7 +139,7 @@ impl PermissionSet {
 }
 
 /// Action performed on a single entry: insert, update or delete.
-#[derive(Hash, Eq, PartialEq, Clone, PartialOrd, Ord)]
+#[derive(Hash, Eq, PartialEq, Clone, PartialOrd, Ord, RustcDecodable, RustcEncodable)]
 pub enum EntryAction {
     /// Inserts a new entry
     Ins(Value),
