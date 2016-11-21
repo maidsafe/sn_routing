@@ -18,51 +18,9 @@
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 
-/// Errors in Get (non-mutating) operations involving Core and Vaults
+/// Errors in operations involving Core and Vaults
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, RustcEncodable, RustcDecodable)]
-pub enum GetError {
-    /// SAFE Account does not exist for client
-    NoSuchAccount,
-    /// Requested data not found
-    NoSuchData,
-    /// Network error occurring at Vault level which has no bearing on clients, e.g. serialisation
-    /// failure or database failure
-    NetworkOther(String),
-}
-
-impl<T: Into<String>> From<T> for GetError {
-    fn from(err: T) -> Self {
-        GetError::NetworkOther(err.into())
-    }
-}
-
-impl Display for GetError {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        match *self {
-            GetError::NoSuchAccount => write!(formatter, "Account does not exist for client"),
-            GetError::NoSuchData => write!(formatter, "Requested data not found"),
-            GetError::NetworkOther(ref error) => {
-                write!(formatter, "Error on Vault network: {}", error)
-            }
-        }
-    }
-}
-
-impl Error for GetError {
-    fn description(&self) -> &str {
-        match *self {
-            GetError::NoSuchAccount => "No such account",
-            GetError::NoSuchData => "No such data",
-            GetError::NetworkOther(ref error) => error,
-        }
-    }
-}
-
-
-
-/// Errors in Put/Post/Delete (mutating) operations involving Core and Vaults
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, RustcEncodable, RustcDecodable)]
-pub enum MutationError {
+pub enum ClientError {
     /// SAFE Account does not exist for client
     NoSuchAccount,
     /// Attempt to take an account network name that already exists
@@ -73,13 +31,13 @@ pub enum MutationError {
     DataExists,
     /// Attempt to create/post a data exceeds size limit
     DataTooLarge,
-    /// Insufficient balance for performing a given mutating operation
-    LowBalance,
     /// Invalid successor for performing a given mutating operation, e.g. signature mismatch or
     /// invalid data versioning
     InvalidSuccessor,
     /// Invalid Operation such as a POST on ImmutableData
     InvalidOperation,
+    /// Insufficient balance for performing a given mutating operation
+    LowBalance,
     /// The loss of sacrificial copies indicates the network as a whole is no longer having
     /// enough space to accept further put request so have to wait for more nodes to join
     NetworkFull,
@@ -88,53 +46,51 @@ pub enum MutationError {
     NetworkOther(String),
 }
 
-impl<T: Into<String>> From<T> for MutationError {
+impl<T: Into<String>> From<T> for ClientError {
     fn from(err: T) -> Self {
-        MutationError::NetworkOther(err.into())
+        ClientError::NetworkOther(err.into())
     }
 }
 
-impl Display for MutationError {
+impl Display for ClientError {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            MutationError::NoSuchAccount => write!(formatter, "Account does not exist for client"),
-            MutationError::AccountExists => write!(formatter, "Account already exists for client"),
-            MutationError::NoSuchData => write!(formatter, "Requested data not found"),
-            MutationError::DataExists => write!(formatter, "Data given already exists"),
-            MutationError::DataTooLarge => write!(formatter, "Data given is too large"),
-            MutationError::LowBalance => {
+            ClientError::NoSuchAccount => write!(formatter, "Account does not exist for client"),
+            ClientError::AccountExists => write!(formatter, "Account already exists for client"),
+            ClientError::NoSuchData => write!(formatter, "Requested data not found"),
+            ClientError::DataExists => write!(formatter, "Data given already exists"),
+            ClientError::DataTooLarge => write!(formatter, "Data given is too large"),
+            ClientError::LowBalance => {
                 write!(formatter, "Insufficient account balance for this operation")
             }
-            MutationError::InvalidSuccessor => {
+            ClientError::InvalidSuccessor => {
                 write!(formatter,
                        "Data given is not a valid successor of stored data")
             }
-            MutationError::InvalidOperation => {
+            ClientError::InvalidOperation => {
                 write!(formatter, "Requested operation is not allowed")
             }
-            MutationError::NetworkFull => {
-                write!(formatter, "Network cannot store any further data")
-            }
-            MutationError::NetworkOther(ref error) => {
+            ClientError::NetworkFull => write!(formatter, "Network cannot store any further data"),
+            ClientError::NetworkOther(ref error) => {
                 write!(formatter, "Error on Vault network: {}", error)
             }
         }
     }
 }
 
-impl Error for MutationError {
+impl Error for ClientError {
     fn description(&self) -> &str {
         match *self {
-            MutationError::NoSuchAccount => "No such account",
-            MutationError::AccountExists => "Account exists",
-            MutationError::NoSuchData => "No such data",
-            MutationError::DataExists => "Data exists",
-            MutationError::DataTooLarge => "Data is too large",
-            MutationError::LowBalance => "Low account balance",
-            MutationError::InvalidSuccessor => "Invalid data successor",
-            MutationError::InvalidOperation => "Invalid operation",
-            MutationError::NetworkFull => "Network full",
-            MutationError::NetworkOther(ref error) => error,
+            ClientError::NoSuchAccount => "No such account",
+            ClientError::AccountExists => "Account exists",
+            ClientError::NoSuchData => "No such data",
+            ClientError::DataExists => "Data exists",
+            ClientError::DataTooLarge => "Data is too large",
+            ClientError::LowBalance => "Low account balance",
+            ClientError::InvalidSuccessor => "Invalid data successor",
+            ClientError::InvalidOperation => "Invalid operation",
+            ClientError::NetworkFull => "Network full",
+            ClientError::NetworkOther(ref error) => error,
         }
     }
 }

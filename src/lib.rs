@@ -145,6 +145,7 @@ mod ack_manager;
 mod action;
 mod authority;
 mod client;
+mod client_error;
 mod cache;
 mod data;
 mod error;
@@ -172,9 +173,6 @@ pub mod mock_crust;
 
 /// Messaging infrastructure
 pub mod messaging;
-/// Error communication between vaults and core
-pub mod client_errors;
-
 /// Structured Data Tag for Session Packet Type
 pub const TYPE_TAG_SESSION_PACKET: u64 = 0;
 /// Structured Data Tag for DNS Packet Type
@@ -183,6 +181,7 @@ pub const TYPE_TAG_DNS_PACKET: u64 = 5;
 pub use authority::Authority;
 pub use cache::{Cache, NullCache};
 pub use client::Client;
+pub use client_error::ClientError;
 pub use data::{AppendWrapper, AppendedData, Data, DataIdentifier, EntryAction, Filter,
                ImmutableData, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_MUTABLE_DATA_ENTRIES,
                MAX_MUTABLE_DATA_SIZE_IN_BYTES, MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES,

@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use client_error::ClientError;
 use data::{ImmutableData, PermissionSet, User, Value};
 use rust_sodium::crypto::sign;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
@@ -28,7 +29,7 @@ pub enum Response {
     /// Returns an error occurred during account information retrieval.
     GetAccountInfoFailure {
         /// Description of an occurred error
-        reason: Vec<u8>,
+        reason: ClientError,
         /// Unique message identifier
         msg_id: MsgId,
     },
@@ -47,14 +48,14 @@ pub enum Response {
     /// Returns a success or failure status of putting ImmutableData to the network.
     PutIData {
         /// Result of putting ImmutableData to the network.
-        res: Result<(), Vec<u8>>,
+        res: Result<(), ClientError>,
         /// Unique message identifier
         msg_id: MsgId,
     },
     /// Returns a result of fetching ImmutableData from the network.
     GetIData {
         /// Result of fetching ImmutableData from the network.
-        res: Result<ImmutableData, Vec<u8>>,
+        res: Result<ImmutableData, ClientError>,
         /// Unique message identifier
         msg_id: MsgId,
     },
@@ -64,7 +65,7 @@ pub enum Response {
     /// Returns a success or failure status of putting MutableData to the network.
     PutMData {
         /// Result of putting MutableData to the network.
-        res: Result<(), Vec<u8>>,
+        res: Result<(), ClientError>,
         /// Unique message identifier
         msg_id: MsgId,
     },
@@ -72,7 +73,7 @@ pub enum Response {
     /// Returns a current version of MutableData stored in the network.
     GetMDataVersion {
         /// Result of getting a version of MutableData
-        res: Result<u64, Vec<u8>>,
+        res: Result<u64, ClientError>,
         /// Unique message identifier
         msg_id: MsgId,
     },
@@ -81,35 +82,35 @@ pub enum Response {
     /// Returns a complete list of entries in MutableData or an error in case of failure.
     ListMDataEntries {
         /// Result of getting a list of entries in MutableData
-        res: Result<BTreeMap<Vec<u8>, Value>, Vec<u8>>,
+        res: Result<BTreeMap<Vec<u8>, Value>, ClientError>,
         /// Unique message identifier
         msg_id: MsgId,
     },
     /// Returns a list of keys in MutableData or an error in case of failure.
     ListMDataKeys {
         /// Result of getting a list of keys in MutableData
-        res: Result<BTreeSet<Vec<u8>>, Vec<u8>>,
+        res: Result<BTreeSet<Vec<u8>>, ClientError>,
         /// Unique message identifier
         msg_id: MsgId,
     },
     /// Returns a list of values in MutableData or an error in case of failure.
     ListMDataValues {
         /// Result of getting a list of values in MutableData
-        res: Result<Vec<Value>, Vec<u8>>,
+        res: Result<Vec<Value>, ClientError>,
         /// Unique message identifier
         msg_id: MsgId,
     },
     /// Returns a single entry from MutableData or an error in case of failure.
     GetMDataValue {
         /// Result of getting a value from MutableData
-        res: Result<Value, Vec<u8>>,
+        res: Result<Value, ClientError>,
         /// Unique message identifier
         msg_id: MsgId,
     },
     /// Returns a success or failure status of mutating MutableData in the network.
     MutateMDataEntries {
         /// Result of mutating an entry in MutableData
-        res: Result<(), Vec<u8>>,
+        res: Result<(), ClientError>,
         /// Unique message identifier
         msg_id: MsgId,
     },
@@ -119,7 +120,7 @@ pub enum Response {
     /// or an error in case of failure.
     ListMDataPermissions {
         /// Result of getting a list of permissions in MutableData
-        res: Result<BTreeMap<User, PermissionSet>, Vec<u8>>,
+        res: Result<BTreeMap<User, PermissionSet>, ClientError>,
         /// Unique message identifier
         msg_id: MsgId,
     },
@@ -127,7 +128,7 @@ pub enum Response {
     /// error in case of failure.
     ListMDataUserPermissions {
         /// Result of getting a list of user permissions in MutableData
-        res: Result<PermissionSet, Vec<u8>>,
+        res: Result<PermissionSet, ClientError>,
         /// Unique message identifier
         msg_id: MsgId,
     },
@@ -135,7 +136,7 @@ pub enum Response {
     /// User in MutableData.
     SetMDataUserPermissions {
         /// Result of setting a list of user permissions in MutableData
-        res: Result<(), Vec<u8>>,
+        res: Result<(), ClientError>,
         /// Unique message identifier
         msg_id: MsgId,
     },
@@ -143,7 +144,7 @@ pub enum Response {
     /// User in MutableData.
     DelMDataUserPermissions {
         /// Result of deleting a list of user permissions in MutableData
-        res: Result<(), Vec<u8>>,
+        res: Result<(), ClientError>,
         /// Unique message identifier
         msg_id: MsgId,
     },
@@ -152,7 +153,7 @@ pub enum Response {
     /// Returns a success or failure status of chaning an owner of MutableData.
     ChangeMDataOwner {
         /// Result of chaning an owner of MutableData
-        res: Result<(), Vec<u8>>,
+        res: Result<(), ClientError>,
         /// Unique message identifier
         msg_id: MsgId,
     },
@@ -162,21 +163,21 @@ pub enum Response {
     /// Returns a list of authorised keys from MaidManager.
     ListAuthKeysAndVersion {
         /// Result of getting a list of authorised keys
-        res: Result<BTreeSet<sign::PublicKey>, Vec<u8>>,
+        res: Result<BTreeSet<sign::PublicKey>, ClientError>,
         /// Unique message identifier
         msg_id: MsgId,
     },
     /// Returns a success or failure status of inserting an authorised key into MaidManager.
     InsAuthKey {
         /// Result of inserting an authorised key
-        res: Result<(), Vec<u8>>,
+        res: Result<(), ClientError>,
         /// Unique message identifier
         msg_id: MsgId,
     },
     /// Returns a success or failure status of deleting an authorised key from MaidManager.
     DelAuthKey {
         /// Result of deleting an authorised key
-        res: Result<(), Vec<u8>>,
+        res: Result<(), ClientError>,
         /// Unique message identifier
         msg_id: MsgId,
     },
