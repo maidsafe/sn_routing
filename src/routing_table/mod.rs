@@ -346,6 +346,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         self.groups.values().all(HashSet::is_empty)
     }
 
+    /// Returns whether the table contains the given `name`
+    pub fn has(&self, name: T) -> bool {
+        self.get_group(&name).map_or(false, |group| group.iter().any(|&x| x == name))
+    }
+
     /// Iterates over all nodes known by the routing table.
     pub fn iter(&self) -> Iter<T> {
         Iter { inner: self.groups.iter().flat_map(Iter::<T>::iterate) }
@@ -422,18 +427,26 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         if !our_group.insert(*name) {
             return Err(Error::AlreadyExists);
         }
-        if self.should_split_our_group(&our_group) {
+        let (our_prefix, mut our_group) = if self.should_split_our_group(&our_group) {
+            let _ = our_group.insert(self.our_name);
             let our_prefix_after_split = Prefix::new(self.our_group_prefix.bit_count() + 1, *name);
-            groups.iter_mut().foreach(|(prefix, mut members)| {
-                if *prefix != our_prefix_after_split &&
-                   !prefix.is_neighbour(&our_prefix_after_split) {
-                    members.clear()
-                }
-            });
-        }
+            groups = groups.into_iter()
+                .filter(|&(prefix, _)| {
+                    prefix == our_prefix_after_split || prefix.is_neighbour(&our_prefix_after_split)
+                })
+                .collect();
+            let (our_group, new_group) = our_group.into_iter()
+                .partition(|x| our_prefix_after_split.matches(x));
+            let _ = groups.insert(self.our_group_prefix
+                                      .pushed(!name.bit(self.our_group_prefix.bit_count())),
+                                  new_group);
+            (our_prefix_after_split, our_group)
+        } else {
+            let _ = our_group.insert(self.our_name);
+            (self.our_group_prefix, our_group)
+        };
         let _ = our_group.remove(name);
-        let _ = our_group.insert(self.our_name);
-        let _ = groups.insert(self.our_group_prefix, our_group);
+        let _ = groups.insert(our_prefix, our_group);
         Ok(groups)
     }
 
@@ -700,10 +713,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     ///
     /// Used when sending a message from a group to decide which one of the group should send the
     /// full message (the remainder sending just a hash of the message).
-    pub fn should_route_full_message(&self, src_name: &T, route: usize) -> bool {
+    pub fn should_route_full_message(&self, dst_name: &T, route: usize) -> bool {
         let mut our_group = unwrap!(self.groups.get(&self.our_group_prefix)).iter().collect_vec();
         our_group.push(&self.our_name);
-        our_group.sort_by(|&lhs, &rhs| src_name.cmp_distance(lhs, rhs));
+        our_group.sort_by(|&lhs, &rhs| dst_name.cmp_distance(lhs, rhs));
         match our_group.get(route) {
             Some(&name) => *name == self.our_name,
             None => false,

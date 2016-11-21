@@ -268,6 +268,21 @@ pub fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
     }
 }
 
+pub fn poll_and_resend(nodes: &mut [TestNode], clients: &mut [TestClient]) {
+    loop {
+        let mut state_changed = poll_all(nodes, clients);
+        for node in nodes.iter_mut() {
+            state_changed = state_changed || node.inner.resend_unacknowledged();
+        }
+        for client in clients.iter_mut() {
+            state_changed = state_changed || client.inner.resend_unacknowledged();
+        }
+        if !state_changed {
+            return;
+        }
+    }
+}
+
 pub fn create_connected_nodes(network: &Network, size: usize) -> Vec<TestNode> {
     create_connected_nodes_with_cache(network, size, false)
 }
@@ -295,7 +310,7 @@ pub fn create_connected_nodes_with_cache(network: &Network,
             .endpoint(Endpoint(i))
             .cache(use_cache)
             .create());
-        let _ = poll_all(&mut nodes, &mut []);
+        poll_and_resend(&mut nodes, &mut []);
         verify_invariant_for_all_nodes(&nodes);
     }
 
@@ -335,7 +350,7 @@ pub fn create_connected_nodes_with_cache_till_split(network: &Network) -> Vec<Te
             .endpoint(Endpoint(len))
             .cache(use_cache)
             .create());
-        let _ = poll_all(&mut nodes, &mut []);
+        poll_and_resend(&mut nodes, &mut []);
         while let Ok(event) = nodes[len].event_rx.try_recv() {
             match event {
                 Event::NodeAdded(..) |

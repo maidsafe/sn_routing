@@ -38,7 +38,8 @@ fn messages_accumulate_with_quorum() {
     };
 
     let dst = Authority::ManagedNode(nodes[0].name()); // The closest node.
-    let quorum = 15 * QUORUM / 100 + 1;
+    // The smallest number such that `quorum * 100 >= len * QUORUM`:
+    let quorum = (nodes.len() * QUORUM - 1) / 100 + 1;
 
     // Send a message from the group `src` to the node `dst`.
     // Only the `quorum`-th sender should cause accumulation and a

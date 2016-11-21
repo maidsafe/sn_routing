@@ -18,8 +18,8 @@
 use rand::Rng;
 use routing::{Authority, Data, DataIdentifier, Event, MIN_GROUP_SIZE, MessageId, Request, Response};
 use routing::mock_crust::{Config, Network};
-use super::{TestClient, TestNode, create_connected_nodes, gen_immutable_data, gen_range_except,
-            gen_two_range_except, poll_all, sort_nodes_by_distance_to,
+use super::{TestNode, create_connected_nodes, gen_immutable_data, gen_range_except,
+            gen_two_range_except, poll_and_resend, sort_nodes_by_distance_to,
             verify_invariant_for_all_nodes};
 
 // Randomly add or remove some nodes, causing churn.
@@ -90,21 +90,6 @@ fn did_receive_get_success(node: &TestNode,
     }
 }
 
-fn poll_and_resend(nodes: &mut [TestNode], clients: &mut [TestClient]) {
-    loop {
-        let mut state_changed = poll_all(nodes, clients);
-        for node in nodes.iter_mut() {
-            state_changed = state_changed || node.inner.resend_unacknowledged();
-        }
-        for client in clients.iter_mut() {
-            state_changed = state_changed || client.inner.resend_unacknowledged();
-        }
-        if !state_changed {
-            return;
-        }
-    }
-}
-
 #[test]
 #[ignore]
 fn churn() {
@@ -129,6 +114,7 @@ fn churn() {
 const REQUEST_DURING_CHURN_ITERATIONS: usize = 10;
 
 #[test]
+#[ignore]
 fn request_during_churn_node_to_self() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
@@ -154,6 +140,7 @@ fn request_during_churn_node_to_self() {
 }
 
 #[test]
+#[ignore]
 fn request_during_churn_node_to_node() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
@@ -180,6 +167,7 @@ fn request_during_churn_node_to_node() {
 }
 
 #[test]
+#[ignore]
 fn request_during_churn_node_to_group() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
