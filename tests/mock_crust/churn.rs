@@ -91,7 +91,6 @@ fn did_receive_get_success(node: &TestNode,
 }
 
 #[test]
-#[ignore]
 fn churn() {
     let network = Network::new(None);
 

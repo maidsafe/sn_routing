@@ -737,7 +737,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         where I: IntoIterator,
               I::Item: Borrow<T>
     {
-        // Count the number of names which will end up in our group if it is split.
+        // Count the number of names which will end up in each new group if our group is split.
         let mut new_group_size_0 = 0;
         let mut new_group_size_1 = 0;
         for name in our_group {
@@ -747,8 +747,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                 new_group_size_1 += 1;
             }
         }
-        // If either of the two new groups will not contain enough entries, return `false` (add 1
-        // when considering our own group to also count ourself as a member of this group).
+        // If either of the two new groups will not contain enough entries, return `false`.
         let min_size = self.min_split_size();
         new_group_size_0 >= min_size && new_group_size_1 >= min_size
     }
