@@ -57,9 +57,12 @@ pub struct Value {
     entry_version: u64,
 }
 
+/// Subject of permissions
 #[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable)]
 pub enum User {
+    /// Permissions apply to anyone.
     Anyone,
+    /// Permissions apply to a single public key.
     Key(PublicKey),
 }
 
@@ -71,6 +74,7 @@ pub enum Action {
     ManagePermission,
 }
 
+/// Set of user permissions.
 #[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
 pub struct PermissionSet {
     insert: Option<bool>,
@@ -80,6 +84,7 @@ pub struct PermissionSet {
 }
 
 impl PermissionSet {
+    /// Construct new permission set.
     pub fn new() -> PermissionSet {
         PermissionSet {
             insert: None,
@@ -89,6 +94,7 @@ impl PermissionSet {
         }
     }
 
+    /// Allow the given action.
     pub fn allow(&mut self, action: Action) -> &mut PermissionSet {
         match action {
             Action::Insert => self.insert = Some(true),
@@ -99,6 +105,7 @@ impl PermissionSet {
         self
     }
 
+    /// Deny the given action.
     pub fn deny(&mut self, action: Action) -> &mut PermissionSet {
         match action {
             Action::Insert => self.insert = Some(false),
@@ -109,6 +116,7 @@ impl PermissionSet {
         self
     }
 
+    /// Clear the permission for the given action.
     pub fn clear(&mut self, action: Action) -> &mut PermissionSet {
         match action {
             Action::Insert => self.insert = None,
@@ -119,6 +127,7 @@ impl PermissionSet {
         self
     }
 
+    /// Is the given action allowed according to this permission set?
     pub fn is_allowed(&self, action: Action) -> Option<bool> {
         match action {
             Action::Insert => self.insert,
@@ -129,6 +138,7 @@ impl PermissionSet {
     }
 }
 
+/// Action performed on a single entry: insert, update or delete.
 #[derive(Hash, Eq, PartialEq, Clone, PartialOrd, Ord)]
 pub enum EntryAction {
     /// Inserts a new entry

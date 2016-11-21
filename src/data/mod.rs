@@ -28,7 +28,9 @@ pub use self::pub_appendable_data::{MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES, PubAp
 pub use self::priv_appendable_data::{MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES, PrivAppendableData,
                                      PrivAppendedData};
 pub use self::structured_data::{MAX_STRUCTURED_DATA_SIZE_IN_BYTES, StructuredData};
-pub use self::mutable_data::{EntryAction, MutableData, PermissionSet, User, Value};
+pub use self::mutable_data::{EntryAction, MAX_MUTABLE_DATA_ENTRIES,
+                             MAX_MUTABLE_DATA_SIZE_IN_BYTES, MutableData, PermissionSet, User,
+                             Value};
 
 use error::RoutingError;
 use rust_sodium::crypto::sign::{self, PublicKey, Signature};

@@ -184,11 +184,12 @@ pub const TYPE_TAG_DNS_PACKET: u64 = 5;
 pub use authority::Authority;
 pub use cache::{Cache, NullCache};
 pub use client::Client;
-pub use data::{AppendWrapper, AppendedData, Data, DataIdentifier, Filter, ImmutableData,
-               MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES,
+pub use data::{AppendWrapper, AppendedData, Data, DataIdentifier, EntryAction, Filter,
+               ImmutableData, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_MUTABLE_DATA_ENTRIES,
+               MAX_MUTABLE_DATA_SIZE_IN_BYTES, MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES,
                MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES, MAX_STRUCTURED_DATA_SIZE_IN_BYTES,
-               NO_OWNER_PUB_KEY, PrivAppendableData, PrivAppendedData, PubAppendableData,
-               StructuredData};
+               MutableData, NO_OWNER_PUB_KEY, PermissionSet, PrivAppendableData, PrivAppendedData,
+               PubAppendableData, StructuredData, User};
 pub use error::{InterfaceError, RoutingError};
 pub use event::Event;
 pub use id::{FullId, PublicId};

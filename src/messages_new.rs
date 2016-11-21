@@ -35,14 +35,14 @@ pub enum Request {
         /// ImmutableData to be stored
         data: ImmutableData,
         /// Unique message identifier
-        msg_id: MsgId
+        msg_id: MsgId,
     },
     /// Fetches ImmutableData from the network by the given name.
     GetIData {
         /// Network identifier of ImmutableData
         name: XorName,
         /// Unique message identifier
-        msg_id: MsgId
+        msg_id: MsgId,
     },
 
     // --- MutableData ---
@@ -220,7 +220,7 @@ pub enum Response {
         /// Description of an occurred error
         reason: Vec<u8>,
         /// Unique message identifier
-        msg_id: MsgId
+        msg_id: MsgId,
     },
     /// Returns an account information.
     GetAccountInfoSuccess {
@@ -305,28 +305,32 @@ pub enum Response {
     },
 
     // Permission Actions
-    /// Returns a complete list of MutableData permissions stored on the network or an error in case of failure.
+    /// Returns a complete list of MutableData permissions stored on the network
+    /// or an error in case of failure.
     ListMDataPermissions {
         /// Result of getting a list of permissions in MutableData
         res: Result<BTreeMap<User, PermissionSet>, Vec<u8>>,
         /// Unique message identifier
         msg_id: MsgId,
     },
-    /// Returns a list of permissions for a particular User in MutableData or an error in case of failure.
+    /// Returns a list of permissions for a particular User in MutableData or an
+    /// error in case of failure.
     ListMDataUserPermissions {
         /// Result of getting a list of user permissions in MutableData
         res: Result<PermissionSet, Vec<u8>>,
         /// Unique message identifier
         msg_id: MsgId,
     },
-    /// Returns a success or failure status of setting permissions for a particular User in MutableData.
+    /// Returns a success or failure status of setting permissions for a particular
+    /// User in MutableData.
     SetMDataUserPermissions {
         /// Result of setting a list of user permissions in MutableData
         res: Result<(), Vec<u8>>,
         /// Unique message identifier
         msg_id: MsgId,
     },
-    /// Returns a success or failure status of deleting permissions for a particular User in MutableData.
+    /// Returns a success or failure status of deleting permissions for a particular
+    /// User in MutableData.
     DelMDataUserPermissions {
         /// Result of deleting a list of user permissions in MutableData
         res: Result<(), Vec<u8>>,
