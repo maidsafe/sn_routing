@@ -501,7 +501,7 @@ pub enum MessageContent {
     /// the merge.
     OtherGroupMerge {
         prefix: Prefix<XorName>,
-        group: Vec<PublicId>,
+        group: BTreeSet<PublicId>,
     },
     /// Acknowledge receipt of any message except an `Ack`. It contains the hash of the
     /// received message and the priority.
