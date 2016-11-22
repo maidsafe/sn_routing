@@ -523,7 +523,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             if !self.our_group.remove(name) {
                 return Err(Error::NoSuchPeer);
             }
-            should_merge = self.our_group.len() == self.min_group_size - 1 &&
+            should_merge = self.our_group.len() < self.min_group_size &&
                            self.our_group_prefix.bit_count() != 0 &&
                            self.merging.is_empty();
         } else if let Some(prefix) = self.find_group_prefix(name) {
