@@ -21,8 +21,7 @@ use routing::{Authority, Data, DataIdentifier, Event, MIN_GROUP_SIZE, MessageId,
               Response};
 use routing::mock_crust::{Config, Network};
 use super::{TestNode, create_connected_nodes, gen_immutable_data, gen_range_except,
-            gen_two_range_except, poll_and_resend, sort_nodes_by_distance_to,
-            verify_invariant_for_all_nodes};
+            poll_and_resend, sort_nodes_by_distance_to, verify_invariant_for_all_nodes};
 
 // Randomly add or remove some nodes, causing churn.
 // If a new node was added, returns the index of this node. Otherwise
@@ -182,7 +181,8 @@ fn request_during_churn_node_to_node() {
     for _ in 0..REQUEST_DURING_CHURN_ITERATIONS {
         let added_index = random_churn(&mut rng, &network, &mut nodes);
 
-        let (index0, index1) = gen_two_range_except(&mut rng, 0, nodes.len(), added_index);
+        let index0 = gen_range_except(&mut rng, 0, nodes.len(), added_index);
+        let index1 = gen_range_except(&mut rng, 0, nodes.len(), added_index);
         let name0 = nodes[index0].name();
         let name1 = nodes[index1].name();
 

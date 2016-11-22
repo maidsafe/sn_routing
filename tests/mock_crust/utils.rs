@@ -53,23 +53,6 @@ pub fn gen_range_except<T: Rng>(rng: &mut T,
     }
 }
 
-/// Generate two distinct random values in the range, excluding the `exclude` value.
-pub fn gen_two_range_except<T: Rng>(rng: &mut T,
-                                    low: usize,
-                                    high: usize,
-                                    exclude: Option<usize>)
-                                    -> (usize, usize) {
-    let r0 = gen_range_except(rng, low, high, exclude);
-
-    loop {
-        let r1 = gen_range_except(rng, low, high, exclude);
-
-        if r0 != r1 {
-            return (r0, r1);
-        }
-    }
-}
-
 
 // —————  TestNode and builder  —————
 
