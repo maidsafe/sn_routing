@@ -57,7 +57,6 @@ extern crate lru_time_cache;
 
 mod utils;
 
-
 use docopt::Docopt;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use maidsafe_utilities::thread::{self, Joiner};

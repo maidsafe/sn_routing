@@ -15,12 +15,12 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use itertools::Itertools;
+use rand::Rng;
 use routing::{Cache, Client, Data, DataIdentifier, Event, FullId, ImmutableData, MIN_GROUP_SIZE,
               Node, NullCache, Request, Response, RoutingTable, XorName, Xorable,
               verify_network_invariant};
 use routing::mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
-use itertools::Itertools;
-use rand::Rng;
 use std::cell::RefCell;
 use std::cmp;
 use std::collections::{HashMap, HashSet};

@@ -18,9 +18,9 @@
 use rand::Rng;
 use routing::{Authority, Data, Event, MIN_GROUP_SIZE, MessageId, Prefix, Request, Response};
 use routing::mock_crust::Network;
+use std::sync::mpsc;
 use super::{TestNode, create_connected_clients, create_connected_nodes_with_cache_till_split,
             gen_immutable_data, poll_all};
-use std::sync::mpsc;
 
 // Generate random immutable data, but make sure the first node in the given
 // node slice (the proxy node) is not in the data's group.

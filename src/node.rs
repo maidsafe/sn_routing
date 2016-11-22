@@ -35,9 +35,9 @@ use states;
 #[cfg(feature = "use-mock-crust")]
 use std::cell::RefCell;
 use std::collections::HashSet;
-use std::sync::mpsc::{Receiver, Sender, channel};
 #[cfg(feature = "use-mock-crust")]
 use std::fmt::{self, Debug, Formatter};
+use std::sync::mpsc::{Receiver, Sender, channel};
 use types::{MessageId, RoutingActionSender};
 use xor_name::XorName;
 

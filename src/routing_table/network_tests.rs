@@ -23,14 +23,14 @@
 use ::MIN_GROUP_SIZE;
 use maidsafe_utilities::SeededRng;
 use rand::Rng;
-use std::collections::{BTreeSet, HashMap, HashSet};
-use std::iter::IntoIterator;
-use std::fmt::{Binary, Debug};
-use std::hash::Hash;
-use super::{Destination, Error, RoutingTable};
-use super::prefix::Prefix;
 use routing_table::{Iter, OtherMergeDetails, OwnMergeDetails, OwnMergeState};
 use routing_table::xorable::Xorable;
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::fmt::{Binary, Debug};
+use std::hash::Hash;
+use std::iter::IntoIterator;
+use super::{Destination, Error, RoutingTable};
+use super::prefix::Prefix;
 
 type OwnMergeInfo = (BTreeSet<Prefix<u64>>, OwnMergeDetails<u64>);
 type OtherMergeInfo = (BTreeSet<Prefix<u64>>, OtherMergeDetails<u64>);
