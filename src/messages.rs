@@ -1005,8 +1005,8 @@ mod tests {
     use maidsafe_utilities;
     use maidsafe_utilities::serialisation::serialise;
     use rand;
-    use rust_sodium::crypto::sign;
     use rust_sodium::crypto::hash::sha256;
+    use rust_sodium::crypto::sign;
     use std::iter;
     use super::*;
     use types::MessageId;

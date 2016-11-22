@@ -15,12 +15,12 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use super::{DataIdentifier, NO_OWNER_PUB_KEY};
 use error::RoutingError;
 use maidsafe_utilities::serialisation::{serialise, serialised_size};
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
+use super::{DataIdentifier, NO_OWNER_PUB_KEY};
 use utils;
 use xor_name::XorName;
 
@@ -216,12 +216,11 @@ struct SerialisableStructuredData<'a> {
 
 #[cfg(test)]
 mod tests {
-    extern crate rand;
-
-    use super::*;
     use data;
+    use rand;
     use rust_sodium::crypto::sign;
     use std::collections::BTreeSet;
+    use super::*;
     use xor_name::XorName;
 
     #[test]

@@ -23,9 +23,9 @@ use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 #[cfg(feature = "use-mock-crust")]
 use routing_table::RoutingTable;
 use states::{Bootstrapping, Client, Node};
+use std::fmt::{self, Debug, Formatter};
 use std::mem;
 use std::sync::mpsc::{self, Receiver};
-use std::fmt::{self, Debug, Formatter};
 use timer::Timer;
 use types::RoutingActionSender;
 #[cfg(feature = "use-mock-crust")]
