@@ -92,38 +92,40 @@ fn did_receive_get_success(node: &TestNode,
     }
 }
 
-fn quorum_calculate(nodes: &[TestNode],
-                    request_info: (Authority, Authority, DataIdentifier, MessageId),
-                    target: Authority,
-                    send_get: bool,
-                    check_received: bool)
-                    -> (usize, usize) {
-    let group = nodes.iter()
-        .filter(|n| n.routing_table().is_recipient(&target.to_destination()))
-        .collect_vec();
-    let quorum = (group.len() * QUORUM - 1) / 100 + 1;
+fn target_group(nodes: &[TestNode], target: Authority) -> Vec<&TestNode> {
+    nodes.iter()
+         .filter(|n| n.routing_table().is_recipient(&target.to_destination()))
+         .collect_vec()
+}
 
-    if send_get {
-        for node in &group {
-            let _ = node.inner.send_get_request(request_info.0,
-                                                request_info.1,
-                                                request_info.2,
-                                                request_info.3);
-        }
+
+fn send_requests(group: Vec<&TestNode>,
+                 src: Authority,
+                 dst: Authority,
+                 data_id: DataIdentifier,
+                 message_id: MessageId) {
+    for node in &group {
+        let _ = node.inner.send_get_request(src, dst, data_id, message_id);
     }
+}
 
-    let num_received = if check_received { 
-        group.iter()
-             .filter(|node| did_receive_get_request(node,
-                                                    request_info.0,
-                                                    request_info.1,
-                                                    request_info.2,
-                                                    request_info.3))
-             .count()
-    } else {
-        0
-    };
-    (quorum, num_received)
+fn count_received(group: Vec<&TestNode>,
+                  src: Authority,
+                  dst: Authority,
+                  data_id: DataIdentifier,
+                  message_id: MessageId)
+                  -> usize {
+    group.iter()
+         .filter(|node| did_receive_get_request(node,
+                                                src,
+                                                dst,
+                                                data_id,
+                                                message_id))
+         .count()
+}
+
+fn quorum(group_len: usize) -> usize {
+    (group_len * QUORUM - 1) / 100 + 1
 }
 
 #[test]
@@ -201,7 +203,6 @@ fn request_during_churn_node_to_node() {
 }
 
 #[test]
-#[ignore]
 fn request_during_churn_node_to_group() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
@@ -218,17 +219,26 @@ fn request_during_churn_node_to_group() {
         let data_id = data.identifier();
         let message_id = MessageId::new();
 
+        let except_index = added_index.unwrap_or(nodes.len());
+        let quorum_before = quorum(nodes.iter()
+            .enumerate()
+            .filter(|&(i, n)|
+                i != except_index && n.routing_table().is_recipient(&dst.to_destination()))
+            .count());
+
         unwrap!(nodes[index].inner.send_get_request(src, dst, data_id, message_id));
 
         poll_and_resend(&mut nodes, &mut []);
 
-        let (quorum, num_received) =
-            quorum_calculate(&nodes, (src, dst, data_id, message_id), dst, false, true);
+        let receiving_group = target_group(&nodes, dst);
+        let quorum_after = quorum(receiving_group.len());
+        let num_received = count_received(receiving_group, src, dst, data_id, message_id);
 
-        assert!(num_received >= quorum,
-                "Received: {}, quorum: {}",
+        assert!(num_received >= quorum_before || num_received >= quorum_after,
+                "Received: {}, quorum_before: {}, quorum_after: {}",
                 num_received,
-                quorum);
+                quorum_before,
+                quorum_after);
     }
 }
 
@@ -247,15 +257,15 @@ fn request_during_churn_group_to_self() {
         let data_id = data.identifier();
         let message_id = MessageId::new();
 
-        let (quorum_before, _) =
-            quorum_calculate(&nodes, (src, dst, data_id, message_id), src, true, false);
+        send_requests(target_group(&nodes, src), src, dst, data_id, message_id);
+        let quorum_before = quorum(target_group(&nodes, dst).len());
 
         let _ = random_churn(&mut rng, &network, &mut nodes);
-
         poll_and_resend(&mut nodes, &mut []);
 
-        let (quorum_after, num_received) =
-            quorum_calculate(&nodes, (src, dst, data_id, message_id), dst, false, true);
+        let receiving_group = target_group(&nodes, dst);
+        let quorum_after = quorum(receiving_group.len());
+        let num_received = count_received(receiving_group, src, dst, data_id, message_id);
 
         assert!(num_received >= quorum_before || num_received >= quorum_after,
                 "Received: {}, quorum_before: {}, quorum_after: {}",
@@ -266,20 +276,26 @@ fn request_during_churn_group_to_self() {
 }
 
 #[test]
+#[ignore]
 fn request_during_churn_group_to_node() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, 2 * MIN_GROUP_SIZE);
 
     for _ in 0..REQUEST_DURING_CHURN_ITERATIONS {
+        let added_index = random_churn(&mut rng, &network, &mut nodes);
+
         let message_id = MessageId::new();
         let data = gen_immutable_data(&mut rng, 8);
         let src = Authority::NaeManager(*data.name());
 
         sort_nodes_by_distance_to(&mut nodes, src.name());
 
+        let except_index = added_index.unwrap_or(nodes.len());
         let group_len = nodes.iter()
-            .filter(|n| n.routing_table().is_recipient(&src.to_destination()))
+            .enumerate()
+            .filter(|&(i, n)|
+                i != except_index && n.routing_table().is_recipient(&src.to_destination()))
             .count();
 
         let index = rng.gen_range(0, group_len);
@@ -288,9 +304,6 @@ fn request_during_churn_group_to_node() {
             unwrap!(node.inner.send_get_success(src, dst, data.clone(), message_id));
         }
 
-        let proxy = rng.gen_range(0, nodes.len());
-        let config = Config::with_contacts(&[nodes[proxy].handle.endpoint()]);
-        nodes.push(TestNode::builder(&network).config(config).create());
         poll_and_resend(&mut nodes, &mut []);
 
         assert!(did_receive_get_success(&nodes[index], src, dst, data, message_id));
@@ -298,6 +311,7 @@ fn request_during_churn_group_to_node() {
 }
 
 #[test]
+#[ignore]
 fn request_during_churn_group_to_group() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
@@ -312,14 +326,15 @@ fn request_during_churn_group_to_group() {
         let data_id = data.identifier();
         let message_id = MessageId::new();
 
-        let (quorum_before, _) =
-            quorum_calculate(&nodes, (src, dst, data_id, message_id), src, true, false);
+        send_requests(target_group(&nodes, src), src, dst, data_id, message_id);
+        let quorum_before = quorum(target_group(&nodes, dst).len());
 
-        let _added_index = random_churn(&mut rng, &network, &mut nodes);
+        let _ = random_churn(&mut rng, &network, &mut nodes);
         poll_and_resend(&mut nodes, &mut []);
 
-        let (quorum_after, num_received) =
-            quorum_calculate(&nodes, (src, dst, data_id, message_id), dst, false, true);
+        let receiving_group = target_group(&nodes, dst);
+        let quorum_after = quorum(receiving_group.len());
+        let num_received = count_received(receiving_group, src, dst, data_id, message_id);
 
         assert!(num_received >= quorum_before || num_received >= quorum_after,
                 "Received: {}, quorum_before: {}, quorum_after: {}",
