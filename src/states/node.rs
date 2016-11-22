@@ -32,13 +32,13 @@ use messages::{ConnectionInfo, DEFAULT_PRIORITY, DirectMessage, GroupList, HopMe
                MessageContent, RoutingMessage, SignedMessage, UserMessage, UserMessageCache};
 use peer_manager::{ConnectionInfoPreparedResult, ConnectionInfoReceivedResult, MIN_GROUP_SIZE,
                    PeerManager, PeerState};
+use routing_message_filter::RoutingMessageFilter;
 use routing_table::{OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix, RemovalDetails};
 use routing_table::Error as RoutingTableError;
 #[cfg(feature = "use-mock-crust")]
 use routing_table::RoutingTable;
 use rust_sodium::crypto::{box_, sign};
 use rust_sodium::crypto::hash::sha256;
-use routing_message_filter::RoutingMessageFilter;
 use signature_accumulator::SignatureAccumulator;
 use state_machine::Transition;
 use stats::Stats;
@@ -413,7 +413,7 @@ impl Node {
                     self.send_or_drop(&dst, bytes, content.priority())
                 } else {
                     debug!("{:?} Invalid TunnelDirect message received via {:?}: {:?} -> {:?} {:?}",
-                           self,
+                                               self,
                            peer_id,
                            src,
                            dst,
@@ -494,8 +494,9 @@ impl Node {
                                 peer_id: PeerId)
                                 -> Result<(), RoutingError> {
         if let Some(&pub_id) = self.peer_mgr.get_routing_peer(&peer_id) {
-            if let Some((signed_msg, route)) = self.sig_accumulator
-                .add_signature(digest, sig, pub_id) {
+            if let Some((signed_msg, route)) =
+                self.sig_accumulator
+                    .add_signature(digest, sig, pub_id) {
                 let hop = *self.name(); // we accumulated the message, so now we act as the last hop
                 return self.handle_signed_message(signed_msg, route, hop);
             }
@@ -634,7 +635,9 @@ impl Node {
             (MessageContent::GetCloseGroupResponse { close_group_ids, .. },
              Authority::ManagedNode(_),
              dst) => self.handle_get_close_group_response(close_group_ids, dst),
-            (MessageContent::GroupSplit(prefix), _, _) => self.handle_group_split(prefix),
+            (MessageContent::GroupSplit(prefix), src, _) => {
+                self.handle_group_split(prefix, *src.name())
+            }
             (MessageContent::OwnGroupMerge { sender_prefix, merge_prefix, groups }, _, _) => {
                 self.handle_own_group_merge(sender_prefix, merge_prefix, groups)
             }
@@ -856,16 +859,7 @@ impl Node {
 
                 if should_split {
                     let our_group_prefix = *self.peer_mgr.routing_table().our_group_prefix();
-                    for prefix in self.peer_mgr.routing_table().prefixes() {
-                        let request_msg = RoutingMessage {
-                            src: Authority::NaeManager(*public_id.name()),
-                            dst: Authority::NaeManager(prefix.lower_bound()),
-                            content: MessageContent::GroupSplit(our_group_prefix),
-                        };
-                        if let Err(err) = self.send_routing_message(request_msg) {
-                            debug!("{:?} Failed to send GroupSplit: {:?}.", self, err);
-                        }
-                    }
+                    self.send_group_split(our_group_prefix, *public_id.name());
                 }
 
                 if self.peer_mgr.routing_table().is_in_our_group(public_id.name()) {
@@ -1260,7 +1254,17 @@ impl Node {
         Ok(())
     }
 
-    fn handle_group_split(&mut self, prefix: Prefix<XorName>) -> Result<(), RoutingError> {
+    fn handle_group_split(&mut self,
+                          prefix: Prefix<XorName>,
+                          joining_node: XorName)
+                          -> Result<(), RoutingError> {
+        // Send GroupSplit notifications if we don't know of the new node yet
+        if prefix == *self.peer_mgr.routing_table().our_group_prefix() &&
+           !self.peer_mgr
+            .routing_table()
+            .has(joining_node) {
+            self.send_group_split(prefix, joining_node);
+        }
         // None of the `peers_to_drop` will have been in our group, so no need to notify Routing
         // user about them.
         let (peers_to_drop, our_new_prefix) = self.peer_mgr.split_group(prefix);
@@ -1315,7 +1319,7 @@ impl Node {
 
     fn handle_other_group_merge(&mut self,
                                 prefix: Prefix<XorName>,
-                                group: Vec<PublicId>)
+                                group: BTreeSet<PublicId>)
                                 -> Result<(), RoutingError> {
         let needed_peers = self.peer_mgr.merge_other_group(prefix, group);
         let own_name = *self.name();
@@ -1461,7 +1465,7 @@ impl Node {
             let sign_key = self.full_id().signing_private_key();
             signed_msg.routing_message().to_signature(sign_key)?
         };
-        let target = self.get_signature_target(signed_msg.routing_message().src.name(), route)?;
+        let target = self.get_signature_target(signed_msg.routing_message().dst.name(), route)?;
         self.send_direct_msg_to_peer(direct_msg, target, signed_msg.priority())?;
         Ok(())
     }
@@ -1488,7 +1492,7 @@ impl Node {
         }
 
         let acting_as_proxy = if let Authority::Client { ref proxy_node_name, .. } =
-                                     routing_msg.src {
+            routing_msg.src {
             proxy_node_name == self.name()
         } else {
             false
@@ -1496,10 +1500,6 @@ impl Node {
         if !acting_as_proxy && hop != self.name() &&
            self.peer_mgr.routing_table().is_in_our_group(hop) {
             return Ok(());  // Avoid swarming back out to our own group.
-        }
-
-        if sent_by_us && !self.add_to_pending_acks(signed_msg, route) {
-            return Ok(());
         }
 
         let target_peer_ids = self.get_targets(routing_msg, route, *hop)?;
@@ -1762,7 +1762,7 @@ impl Node {
         }
 
         if let RemovalDetails { targets_and_merge_details: Some((targets, merge_details)), .. } =
-               details {
+            details {
             let our_new_prefix = merge_details.merge_prefix;
             let src_name = self.peer_mgr.routing_table().our_group_prefix().lower_bound();
             self.send_own_group_merge(targets, merge_details, Authority::NaeManager(src_name));
@@ -1783,6 +1783,21 @@ impl Node {
         }
 
         true
+    }
+
+    fn send_group_split(&mut self, our_prefix: Prefix<XorName>, joining_node: XorName) {
+        for prefix in self.peer_mgr.routing_table().prefixes() {
+            let request_msg = RoutingMessage {
+                src: Authority::NaeManager(joining_node),
+                // this way of calculating the destination avoids using the joining
+                // node as the route
+                dst: Authority::NaeManager(prefix.substituted_in(!joining_node)),
+                content: MessageContent::GroupSplit(our_prefix),
+            };
+            if let Err(err) = self.send_routing_message(request_msg) {
+                debug!("{:?} Failed to send GroupSplit: {:?}.", self, err);
+            }
+        }
     }
 
     fn send_own_group_merge(&mut self,
@@ -1819,7 +1834,8 @@ impl Node {
                               targets: BTreeSet<Prefix<XorName>>,
                               merge_details: OtherMergeDetails<XorName>,
                               src: Authority) {
-        let group = self.peer_mgr.get_pub_ids(&merge_details.group).into_iter().collect_vec();
+        let group: BTreeSet<PublicId> =
+            self.peer_mgr.get_pub_ids(&merge_details.group).into_iter().collect();
         for target in &targets {
             let request_content = MessageContent::OtherGroupMerge {
                 prefix: merge_details.prefix,
@@ -1979,11 +1995,10 @@ impl Bootstrapped for Node {
         //            routing_msg);
         //     return Ok(());
         // }
-        let send_sig = {
-            let src = &routing_msg.src;
-            src.is_group() &&
-            !self.peer_mgr.routing_table().should_route_full_message(src.name(), route as usize)
-        };
+        let send_sig = routing_msg.src.is_group() &&
+                       !self.peer_mgr
+            .routing_table()
+            .should_route_full_message(routing_msg.dst.name(), route as usize);
         let is_group = routing_msg.src.is_group();
         let mut signed_msg = SignedMessage::new(routing_msg, &self.full_id)?;
         if is_group {

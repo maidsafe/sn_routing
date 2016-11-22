@@ -23,7 +23,6 @@ use std::cmp;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::rc::{Rc, Weak};
-
 use super::crust::{ConnectionInfoResult, CrustEventSender, Event, PeerId, PrivConnectionInfo,
                    PubConnectionInfo};
 
@@ -118,7 +117,7 @@ impl Network {
             .push_back(packet);
     }
 
-    // Drop any pending messages on a specific route (does not automatically
+    // Drops any pending messages on a specific route (does not automatically
     // drop packets going the other way).
     fn drop_pending(&self, sender: Endpoint, receiver: Endpoint) {
         if let Some(deque) = self.0
@@ -127,6 +126,11 @@ impl Network {
             .get_mut(&(sender, receiver)) {
             deque.clear();
         }
+    }
+
+    // Drops all pending messages across the entire network.
+    fn drop_all_pending(&self) {
+        self.0.borrow_mut().queue.clear();
     }
 
     fn pop_packet(&self) -> Option<(Endpoint, Endpoint, Packet)> {
@@ -470,6 +474,7 @@ impl ServiceImpl {
     }
 
     pub fn disconnect_all(&mut self) {
+        self.network.drop_all_pending();
         let endpoints = self.connections
             .drain(..)
             .map(|(_, ep)| ep)

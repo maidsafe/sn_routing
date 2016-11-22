@@ -15,15 +15,15 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use error::RoutingError;
 use maidsafe_utilities::serialisation::{deserialise, serialise, serialised_size};
 use rust_sodium::crypto::{box_, sealedbox};
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
 use rustc_serialize::{Decodable, Decoder};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
-use xor_name::XorName;
 use super::{AppendWrapper, AppendedData, DataIdentifier, Filter, NO_OWNER_PUB_KEY};
-use error::RoutingError;
+use xor_name::XorName;
 
 /// Maximum allowed size for a private appendable data to grow to
 pub const MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES: u64 = 102400;
@@ -282,15 +282,14 @@ struct SerialisablePrivAppendableData<'a> {
 }
 
 #[cfg(test)]
-mod test {
-    extern crate rand;
-    use super::*;
-
-    use std::collections::BTreeSet;
-    use maidsafe_utilities::serialisation::serialise;
-    use rust_sodium::crypto::{box_, sign};
-    use xor_name::XorName;
+mod tests {
     use data::{self, AppendWrapper, AppendedData, DataIdentifier, Filter};
+    use maidsafe_utilities::serialisation::serialise;
+    use rand;
+    use rust_sodium::crypto::{box_, sign};
+    use std::collections::BTreeSet;
+    use super::*;
+    use xor_name::XorName;
 
     #[test]
     fn serialised_priv_appended_data_size() {

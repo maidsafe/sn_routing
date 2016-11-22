@@ -301,7 +301,7 @@ impl SignedMessage {
         }
         self.grp_lists.first().map_or(false, |grp_list| {
             if self.content.src.is_group() {
-                QUORUM * grp_list.pub_ids.len() < 100 * self.signatures.len()
+                QUORUM * grp_list.pub_ids.len() <= 100 * self.signatures.len()
             } else {
                 self.signatures.len() == 1
             }
@@ -501,7 +501,7 @@ pub enum MessageContent {
     /// the merge.
     OtherGroupMerge {
         prefix: Prefix<XorName>,
-        group: Vec<PublicId>,
+        group: BTreeSet<PublicId>,
     },
     /// Acknowledge receipt of any message except an `Ack`. It contains the hash of the
     /// received message and the priority.
@@ -1005,8 +1005,8 @@ mod tests {
     use maidsafe_utilities;
     use maidsafe_utilities::serialisation::serialise;
     use rand;
-    use rust_sodium::crypto::sign;
     use rust_sodium::crypto::hash::sha256;
+    use rust_sodium::crypto::sign;
     use std::iter;
     use super::*;
     use types::MessageId;

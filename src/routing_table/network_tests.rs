@@ -23,14 +23,14 @@
 use ::MIN_GROUP_SIZE;
 use maidsafe_utilities::SeededRng;
 use rand::Rng;
-use std::collections::{BTreeSet, HashMap, HashSet};
-use std::iter::IntoIterator;
-use std::fmt::{Binary, Debug};
-use std::hash::Hash;
-use super::{Destination, Error, RoutingTable};
-use super::prefix::Prefix;
 use routing_table::{Iter, OtherMergeDetails, OwnMergeDetails, OwnMergeState};
 use routing_table::xorable::Xorable;
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::fmt::{Binary, Debug};
+use std::hash::Hash;
+use std::iter::IntoIterator;
+use super::{Destination, Error, RoutingTable};
+use super::prefix::Prefix;
 
 type OwnMergeInfo = (BTreeSet<Prefix<u64>>, OwnMergeDetails<u64>);
 type OtherMergeInfo = (BTreeSet<Prefix<u64>>, OtherMergeDetails<u64>);
@@ -159,7 +159,7 @@ impl Network {
                                                       (targets, merge_details));
                             // add needed contacts
                             let needed = target_node.needed().clone();
-                            for needed_contact in needed.iter().flat_map(Iter::iterate) {
+                            for needed_contact in needed.values().flat_map(HashSet::iter) {
                                 let _ = target_node.add(*needed_contact);
                             }
                         }
@@ -286,12 +286,16 @@ pub fn verify_network_invariant<'a, T, U>(nodes: U)
     let mut groups: HashMap<Prefix<T>, (T, HashSet<T>)> = HashMap::new();
     // first, collect all groups in the network
     for node in nodes {
-        for prefix in node.groups.keys() {
-            let mut group_content = node.groups[prefix].clone();
-            if *prefix == node.our_group_prefix {
+        node.verify_invariant();
+        for prefix in node.prefixes() {
+            let group_content = if prefix == node.our_group_prefix {
+                let mut group_content = node.our_group.clone();
                 group_content.insert(*node.our_name());
-            }
-            if let Some(&mut (ref mut src, ref mut group)) = groups.get_mut(prefix) {
+                group_content
+            } else {
+                node.groups[&prefix].clone()
+            };
+            if let Some(&mut (ref mut src, ref mut group)) = groups.get_mut(&prefix) {
                 assert!(*group == group_content,
                         "Group with prefix {:?} doesn't agree between nodes {:?} and {:?}\n\
                         {:?}: {:?}, {:?}: {:?}",
@@ -304,9 +308,8 @@ pub fn verify_network_invariant<'a, T, U>(nodes: U)
                         group);
                 continue;
             }
-            let _ = groups.insert(*prefix, (node.our_name, group_content));
+            let _ = groups.insert(prefix, (node.our_name, group_content));
         }
-        node.verify_invariant();
     }
     // check that prefixes are disjoint
     for prefix1 in groups.keys() {
@@ -341,7 +344,7 @@ pub fn verify_network_invariant<'a, T, U>(nodes: U)
     }
 
     // check that groups cover the whole namespace
-    assert!(Prefix::<T>::new(0, Default::default()).is_covered_by(groups.keys()));
+    assert!(Prefix::default().is_covered_by(groups.keys()));
 }
 
 #[test]
@@ -349,8 +352,8 @@ fn groups_have_identical_routing_tables() {
     let mut network = Network::new(None);
     for _ in 0..100 {
         network.add_node();
+        verify_invariant(&network);
     }
-    verify_invariant(&network);
 }
 
 #[test]
@@ -362,7 +365,7 @@ fn merging_groups() {
     }
     assert!(network.nodes
         .iter()
-        .all(|(_, table)| if table.num_of_groups() < 3 {
+        .all(|(_, table)| if table.num_of_groups() < 2 {
             trace!("{:?}", table);
             false
         } else {
@@ -374,7 +377,7 @@ fn merging_groups() {
     }
     assert!(network.nodes
         .iter()
-        .all(|(_, table)| if table.num_of_groups() > 1 {
+        .all(|(_, table)| if table.num_of_groups() > 0 {
             trace!("{:?}", table);
             false
         } else {

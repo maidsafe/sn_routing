@@ -133,8 +133,7 @@ impl TimestampedMessage {
 
 #[cfg(test)]
 mod tests {
-    use rand;
-    use rand::Rng;
+    use rand::{self, Rng};
     use std::thread;
     use std::time::Duration;
     use super::*;

@@ -25,7 +25,7 @@ use routing_table::{OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix, R
 use routing_table::Error as RoutingTableError;
 use rust_sodium::crypto::sign;
 use std::{error, fmt, mem};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::collections::hash_map::Values;
 use std::time::{Duration, Instant};
 use xor_name::XorName;
@@ -374,15 +374,16 @@ impl PeerManager {
                            merge_prefix: Prefix<XorName>,
                            groups: Vec<Group>)
                            -> (OwnMergeState<XorName>, Vec<PublicId>) {
-        let mut needed = vec![];
-        for pub_id in groups.iter()
-            .filter(|&&(prefix, _)| merge_prefix.is_compatible(&prefix))
-            .flat_map(|&(_, ref pub_ids)| pub_ids.iter()) {
-            if self.peer_map.get_by_name(pub_id.name()).is_none() {
-                needed.push(*pub_id);
-            }
-        }
         self.remove_expired();
+        let needed = groups.iter()
+            .filter(|&&(prefix, _)| merge_prefix.is_compatible(&prefix))
+            .flat_map(|&(_, ref pub_ids)| pub_ids)
+            .filter(|pub_id| {
+                pub_id.name() != self.routing_table.our_name() &&
+                self.peer_map.get_by_name(pub_id.name()).is_none()
+            })
+            .cloned()
+            .collect();
 
         let groups_as_names = groups.into_iter()
             .map(|(prefix, members)| {
@@ -400,7 +401,7 @@ impl PeerManager {
 
     pub fn merge_other_group(&mut self,
                              prefix: Prefix<XorName>,
-                             group: Vec<PublicId>)
+                             group: BTreeSet<PublicId>)
                              -> HashSet<PublicId> {
         self.remove_expired();
 

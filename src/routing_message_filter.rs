@@ -18,7 +18,6 @@
 use crust::PeerId;
 use lru_time_cache::LruCache;
 use maidsafe_utilities;
-
 use message_filter::MessageFilter;
 use messages::RoutingMessage;
 use std::time::Duration;

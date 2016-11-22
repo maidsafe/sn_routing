@@ -15,12 +15,12 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use itertools::Itertools;
+use rand::Rng;
 use routing::{Cache, Client, Data, DataIdentifier, Event, FullId, ImmutableData, MIN_GROUP_SIZE,
               Node, NullCache, Request, Response, RoutingTable, XorName, Xorable,
               verify_network_invariant};
 use routing::mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
-use itertools::Itertools;
-use rand::Rng;
 use std::cell::RefCell;
 use std::cmp;
 use std::collections::{HashMap, HashSet};
@@ -310,7 +310,7 @@ pub fn create_connected_nodes_with_cache(network: &Network,
             .endpoint(Endpoint(i))
             .cache(use_cache)
             .create());
-        let _ = poll_all(&mut nodes, &mut []);
+        poll_and_resend(&mut nodes, &mut []);
         verify_invariant_for_all_nodes(&nodes);
     }
 
@@ -351,13 +351,15 @@ pub fn create_connected_nodes_with_cache_till_split(network: &Network) -> Vec<Te
             .cache(use_cache)
             .create());
         poll_and_resend(&mut nodes, &mut []);
-        while let Ok(event) = nodes[len].event_rx.try_recv() {
-            match event {
-                Event::NodeAdded(..) |
-                Event::Connected |
-                Event::Tick => (),
-                Event::GroupSplit(..) => break 'outer,
-                event => panic!("Got unexpected event: {:?}", event),
+        for node in &nodes {
+            while let Ok(event) = node.event_rx.try_recv() {
+                match event {
+                    Event::NodeAdded(..) |
+                    Event::Connected |
+                    Event::Tick => (),
+                    Event::GroupSplit(..) => break 'outer,
+                    event => panic!("Got unexpected event: {:?}", event),
+                }
             }
         }
     }

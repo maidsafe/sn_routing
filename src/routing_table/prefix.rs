@@ -152,6 +152,15 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
             Prefix::new(self.bit_count(), self.name.with_flipped_bit(i))
         }
     }
+
+    /// Returns the given `name` with first bits replaced by `self`
+    pub fn substituted_in(&self, mut name: T) -> T {
+        // TODO: is there a more efficient way of doing that?
+        for i in 0..self.bit_count() {
+            name = name.with_bit(i, self.name.bit(i));
+        }
+        name
+    }
 }
 
 impl<T: Clone + Copy + Default + Binary + Xorable> PartialEq<Prefix<T>> for Prefix<T> {

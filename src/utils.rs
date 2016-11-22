@@ -70,9 +70,8 @@ pub fn calculate_relocated_name(mut close_nodes: Vec<XorName>, original_name: &X
 
 #[cfg(test)]
 mod tests {
-    extern crate rand;
-
     use peer_manager::MIN_GROUP_SIZE;
+    use rand;
     use routing_table::Xorable;
     use rust_sodium::crypto::hash::sha256;
     use xor_name::XorName;
