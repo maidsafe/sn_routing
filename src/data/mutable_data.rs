@@ -24,10 +24,10 @@ use std::fmt::{self, Debug, Formatter};
 use super::DataIdentifier;
 use xor_name::XorName;
 
-/// Maximum allowed size for MutableData (1 MiB)
+/// Maximum allowed size for `MutableData` (1 MiB)
 pub const MAX_MUTABLE_DATA_SIZE_IN_BYTES: u64 = 1024 * 1024;
 
-/// Maximum allowed entries in MutableData
+/// Maximum allowed entries in `MutableData`
 pub const MAX_MUTABLE_DATA_ENTRIES: u64 = 100;
 
 /// Mutable data.
@@ -50,7 +50,7 @@ pub struct MutableData {
     owners: BTreeSet<PublicKey>,
 }
 
-/// A value in MutableData
+/// A value in `MutableData`
 #[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable)]
 pub struct Value {
     content: Vec<u8>,
@@ -138,6 +138,12 @@ impl PermissionSet {
     }
 }
 
+impl Default for PermissionSet {
+    fn default() -> Self {
+        PermissionSet::new()
+    }
+}
+
 /// Action performed on a single entry: insert, update or delete.
 #[derive(Hash, Eq, PartialEq, Clone, PartialOrd, Ord, RustcDecodable, RustcEncodable)]
 pub enum EntryAction {
@@ -201,7 +207,7 @@ impl MutableData {
     }
 
     /// Returns a value by the given key
-    pub fn get(&self, key: &Vec<u8>) -> Option<&Value> {
+    pub fn get(&self, key: &[u8]) -> Option<&Value> {
         self.data.get(key)
     }
 
@@ -466,20 +472,20 @@ mod tests {
         let _ = ps2.deny(Action::Update).allow(Action::Insert);
         let _ = perms.insert(User::Key(pk1), ps2);
 
-        let k1 = "123".as_bytes().to_owned();
-        let k2 = "234".as_bytes().to_owned();
+        let k1 = b"123".to_vec();
+        let k2 = b"234".to_vec();
 
         let mut v1 = BTreeMap::new();
         let _ = v1.insert(k1.clone(),
                           EntryAction::Ins(Value {
-                              content: "abc".as_bytes().to_owned(),
+                              content: b"abc".to_vec(),
                               entry_version: 0,
                           }));
 
         let mut v2 = BTreeMap::new();
         let _ = v2.insert(k2.clone(),
                           EntryAction::Ins(Value {
-                              content: "def".as_bytes().to_owned(),
+                              content: b"def".to_vec(),
                               entry_version: 0,
                           }));
 
@@ -497,7 +503,7 @@ mod tests {
         // Check update permissions
         let _ = v1.insert(k1.clone(),
                           EntryAction::Update(Value {
-                              content: "def".as_bytes().to_owned(),
+                              content: b"def".to_vec(),
                               entry_version: 1,
                           }));
         assert_err!(md.mutate_entries(v1.clone(), pk1),
@@ -543,7 +549,7 @@ mod tests {
     #[test]
     fn max_entries_limit() {
         let val = Value {
-            content: "123".as_bytes().to_owned(),
+            content: b"123".to_vec(),
             entry_version: 0,
         };
 
@@ -760,7 +766,7 @@ mod tests {
                     ClientError::NoSuchEntry);
 
         // Get must always be allowed
-        assert!(md.get(&vec![0]).is_some());
-        assert!(md.get(&vec![1]).is_none());
+        assert!(md.get(&[0]).is_some());
+        assert!(md.get(&[1]).is_none());
     }
 }
