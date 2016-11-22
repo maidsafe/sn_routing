@@ -82,7 +82,7 @@ pub enum Action {
 }
 
 /// Set of user permissions.
-#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable, Default)]
 pub struct PermissionSet {
     insert: Option<bool>,
     update: Option<bool>,
@@ -333,7 +333,7 @@ impl MutableData {
     }
 
     /// Gets a list of permissions for the provided user.
-    pub fn user_permissions(&mut self, user: &User) -> Option<&PermissionSet> {
+    pub fn user_permissions(&self, user: &User) -> Option<&PermissionSet> {
         self.permissions.get(user)
     }
 
