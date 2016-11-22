@@ -109,16 +109,6 @@ pub enum RoutingError {
     CannotTunnelThroughTunnel,
     /// Decoded a user message with an unexpected hash.
     HashMismatch,
-    /// Tried to replace an already existing entry
-    EntryAlreadyExist,
-    /// Tried to remove a non-existing entry
-    EntryNotFound,
-    /// Exceeded a limit on a number of entries
-    TooManyEntries,
-    /// Exceeded serialised size limit
-    ExceededSizeLimit,
-    /// Access is denied for a given requester
-    AccessDenied,
     /// Version check has failed
     InvalidSuccessor,
 }

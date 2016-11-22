@@ -773,7 +773,7 @@ impl UserMessageCache {
 #[cfg(test)]
 mod tests {
     use authority::Authority;
-    use data::{Data, ImmutableData};
+    use data::ImmutableData;
     use id::FullId;
     use maidsafe_utilities;
     use maidsafe_utilities::serialisation::serialise;
@@ -825,8 +825,11 @@ mod tests {
         let full_id_2 = FullId::new();
         let irrelevant_full_id = FullId::new();
         let data_bytes: Vec<u8> = (0..10).map(|i| i as u8).collect();
-        let data = Data::Immutable(ImmutableData::new(data_bytes));
-        let user_msg = UserMessage::Request(Request::Put(data, MessageId::new()));
+        let data = ImmutableData::new(data_bytes);
+        let user_msg = UserMessage::Request(Request::PutIData {
+            data: data,
+            msg_id: MessageId::new(),
+        });
         let parts = unwrap!(user_msg.to_parts(1));
         assert_eq!(1, parts.len());
         let part = parts[0].clone();
@@ -916,8 +919,11 @@ mod tests {
     #[test]
     fn user_message_parts() {
         let data_bytes: Vec<u8> = (0..(super::MAX_PART_LEN * 2)).map(|i| i as u8).collect();
-        let data = Data::Immutable(ImmutableData::new(data_bytes));
-        let user_msg = UserMessage::Request(Request::Put(data, MessageId::new()));
+        let data = ImmutableData::new(data_bytes);
+        let user_msg = UserMessage::Request(Request::PutIData {
+            data: data,
+            msg_id: MessageId::new(),
+        });
         let msg_hash = maidsafe_utilities::big_endian_sip_hash(&user_msg);
         let parts = unwrap!(user_msg.to_parts(42));
         assert_eq!(parts.len(), 3);

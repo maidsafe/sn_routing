@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use error::RoutingError;
+use client_error::ClientError;
 use maidsafe_utilities::serialisation::serialised_size;
 use rust_sodium::crypto::sign::PublicKey;
 use std::collections::BTreeSet;
@@ -156,12 +156,12 @@ impl MutableData {
                permissions: BTreeMap<User, PermissionSet>,
                data: BTreeMap<Vec<u8>, Value>,
                owners: BTreeSet<PublicKey>)
-               -> Result<MutableData, RoutingError> {
+               -> Result<MutableData, ClientError> {
         if owners.len() > 1 {
-            return Err(RoutingError::InvalidOwners);
+            return Err(ClientError::InvalidOwners);
         }
         if data.len() >= (MAX_MUTABLE_DATA_ENTRIES + 1) as usize {
-            return Err(RoutingError::TooManyEntries);
+            return Err(ClientError::TooManyEntries);
         }
 
         let md = MutableData {
@@ -174,7 +174,7 @@ impl MutableData {
         };
 
         if serialised_size(&md) > MAX_MUTABLE_DATA_SIZE_IN_BYTES {
-            return Err(RoutingError::ExceededSizeLimit);
+            return Err(ClientError::DataTooLarge);
         }
 
         Ok(md)
@@ -224,7 +224,7 @@ impl MutableData {
     pub fn mutate_entries(&mut self,
                           actions: BTreeMap<Vec<u8>, EntryAction>,
                           requester: PublicKey)
-                          -> Result<(), RoutingError> {
+                          -> Result<(), ClientError> {
         // Deconstruct actions into inserts, updates, and deletes
         let (insert, update, delete) = actions.into_iter()
             .fold((BTreeMap::new(), BTreeMap::new(), BTreeMap::new()),
@@ -246,26 +246,26 @@ impl MutableData {
         if (!insert.is_empty() && !self.is_action_allowed(requester, Action::Insert)) ||
            (!update.is_empty() && !self.is_action_allowed(requester, Action::Update)) ||
            (!delete.is_empty() && !self.is_action_allowed(requester, Action::Delete)) {
-            return Err(RoutingError::AccessDenied);
+            return Err(ClientError::AccessDenied);
         }
         if (!insert.is_empty() || !update.is_empty()) &&
            self.data.len() > MAX_MUTABLE_DATA_ENTRIES as usize {
-            return Err(RoutingError::TooManyEntries);
+            return Err(ClientError::TooManyEntries);
         }
         if (!insert.is_empty() || !update.is_empty()) && !self.validate_size() {
-            return Err(RoutingError::ExceededSizeLimit);
+            return Err(ClientError::DataTooLarge);
         }
 
         for (key, val) in insert {
             if self.data.contains_key(&key) {
-                return Err(RoutingError::EntryAlreadyExist);
+                return Err(ClientError::EntryExists);
             }
             let _ = self.data.insert(key.clone(), val);
         }
 
         for (key, val) in update {
             if !self.data.contains_key(&key) {
-                return Err(RoutingError::EntryNotFound);
+                return Err(ClientError::NoSuchEntry);
             }
             let version_valid = if let Entry::Occupied(mut oe) = self.data.entry(key.clone()) {
                 if val.entry_version != oe.get().entry_version + 1 {
@@ -278,13 +278,13 @@ impl MutableData {
                 false
             };
             if !version_valid {
-                return Err(RoutingError::InvalidSuccessor);
+                return Err(ClientError::InvalidSuccessor);
             }
         }
 
         for (key, version) in delete {
             if !self.data.contains_key(&key) {
-                return Err(RoutingError::EntryNotFound);
+                return Err(ClientError::NoSuchEntry);
             }
             let version_valid = if let Entry::Occupied(mut oe) = self.data.entry(key.clone()) {
                 if version != oe.get().entry_version + 1 {
@@ -303,12 +303,12 @@ impl MutableData {
                 false
             };
             if !version_valid {
-                return Err(RoutingError::InvalidSuccessor);
+                return Err(ClientError::InvalidSuccessor);
             }
         }
 
         if !self.validate_mut_size() {
-            return Err(RoutingError::ExceededSizeLimit);
+            return Err(ClientError::DataTooLarge);
         }
 
         Ok(())
@@ -330,12 +330,12 @@ impl MutableData {
                                 permissions: PermissionSet,
                                 version: u64,
                                 requester: PublicKey)
-                                -> Result<(), RoutingError> {
+                                -> Result<(), ClientError> {
         if !self.is_action_allowed(requester, Action::ManagePermission) {
-            return Err(RoutingError::AccessDenied);
+            return Err(ClientError::AccessDenied);
         }
         if version != self.version + 1 {
-            return Err(RoutingError::InvalidSuccessor);
+            return Err(ClientError::InvalidSuccessor);
         }
         let prev = self.permissions.insert(user.clone(), permissions);
         if !self.validate_mut_size() {
@@ -344,7 +344,7 @@ impl MutableData {
                 None => self.permissions.remove(&user),
                 Some(perms) => self.permissions.insert(user, perms),
             };
-            return Err(RoutingError::ExceededSizeLimit);
+            return Err(ClientError::DataTooLarge);
         }
         Ok(())
     }
@@ -354,15 +354,15 @@ impl MutableData {
                                 user: &User,
                                 version: u64,
                                 requester: PublicKey)
-                                -> Result<(), RoutingError> {
+                                -> Result<(), ClientError> {
         if !self.is_action_allowed(requester, Action::ManagePermission) {
-            return Err(RoutingError::AccessDenied);
+            return Err(ClientError::AccessDenied);
         }
         if version != self.version + 1 {
-            return Err(RoutingError::InvalidSuccessor);
+            return Err(ClientError::InvalidSuccessor);
         }
         if !self.permissions.contains_key(user) {
-            return Err(RoutingError::EntryNotFound);
+            return Err(ClientError::NoSuchEntry);
         }
         let _ = self.permissions.remove(user);
         Ok(())
@@ -373,12 +373,12 @@ impl MutableData {
                         new_owner: PublicKey,
                         version: u64,
                         requester: PublicKey)
-                        -> Result<(), RoutingError> {
+                        -> Result<(), ClientError> {
         if !self.owners.contains(&requester) {
-            return Err(RoutingError::AccessDenied);
+            return Err(ClientError::AccessDenied);
         }
         if version != self.version + 1 {
-            return Err(RoutingError::InvalidSuccessor);
+            return Err(ClientError::InvalidSuccessor);
         }
         self.owners.clear();
         self.owners.insert(new_owner);
@@ -432,11 +432,11 @@ impl Debug for MutableData {
 
 #[cfg(test)]
 mod tests {
+    use client_error::ClientError;
     use rand;
     use rust_sodium::crypto::sign;
     use std::collections::{BTreeMap, BTreeSet};
     use std::iter;
-    use error::RoutingError;
     use super::*;
 
     macro_rules! assert_err {
@@ -490,7 +490,7 @@ mod tests {
         // Check insert permissions
         assert!(md.mutate_entries(v1.clone(), pk1).is_ok());
         assert_err!(md.mutate_entries(v2.clone(), pk2),
-                    RoutingError::AccessDenied);
+                    ClientError::AccessDenied);
 
         assert!(md.get(&k1).is_some());
 
@@ -501,7 +501,7 @@ mod tests {
                               entry_version: 1,
                           }));
         assert_err!(md.mutate_entries(v1.clone(), pk1),
-                    RoutingError::AccessDenied);
+                    ClientError::AccessDenied);
 
         assert!(md.mutate_entries(v1.clone(), pk2).is_ok());
 
@@ -509,7 +509,7 @@ mod tests {
         let mut del = BTreeMap::new();
         let _ = del.insert(k1.clone(), EntryAction::Del(2));
         assert_err!(md.mutate_entries(del.clone(), pk1),
-                    RoutingError::AccessDenied);
+                    ClientError::AccessDenied);
         assert!(md.get(&k1).is_some());
 
         // Actions requested by owner should always be allowed
@@ -553,7 +553,7 @@ mod tests {
             let _ = data.insert(vec![i], val.clone());
         }
         assert_err!(MutableData::new(rand::random(), 0, BTreeMap::new(), data, BTreeSet::new()),
-                    RoutingError::TooManyEntries);
+                    ClientError::TooManyEntries);
 
         let mut data = BTreeMap::new();
         for i in 0..100 {
@@ -579,7 +579,7 @@ mod tests {
         let mut v2 = BTreeMap::new();
         let _ = v2.insert(vec![102u8], EntryAction::Ins(val.clone()));
         assert_err!(md.mutate_entries(v2.clone(), owner),
-                    RoutingError::TooManyEntries);
+                    ClientError::TooManyEntries);
 
         let mut del = BTreeMap::new();
         let _ = del.insert(vec![101u8], EntryAction::Del(1));
@@ -606,7 +606,7 @@ mod tests {
         let _ = data.insert(vec![1], small_val.clone());
 
         assert_err!(MutableData::new(rand::random(), 0, BTreeMap::new(), data, BTreeSet::new()),
-                    RoutingError::ExceededSizeLimit);
+                    ClientError::DataTooLarge);
 
         let mut data = BTreeMap::new();
         let _ = data.insert(vec![0], big_val.clone());
@@ -625,7 +625,7 @@ mod tests {
         let mut v2 = BTreeMap::new();
         let _ = v2.insert(vec![2], EntryAction::Ins(small_val.clone()));
         assert_err!(md.mutate_entries(v2.clone(), owner),
-                    RoutingError::ExceededSizeLimit);
+                    ClientError::DataTooLarge);
 
         let mut del = BTreeMap::new();
         let _ = del.insert(vec![0], EntryAction::Del(1));
@@ -646,11 +646,11 @@ mod tests {
             unwrap!(MutableData::new(rand::random(), 0, BTreeMap::new(), BTreeMap::new(), owners));
 
         // Try to do ownership transfer from a non-owner requester
-        assert_err!(md.change_owner(pk1, 1, pk1), RoutingError::AccessDenied);
+        assert_err!(md.change_owner(pk1, 1, pk1), ClientError::AccessDenied);
 
         // Transfer ownership from an owner
         assert!(md.change_owner(pk1, 1, owner).is_ok());
-        assert_err!(md.change_owner(owner, 1, owner), RoutingError::AccessDenied);
+        assert_err!(md.change_owner(owner, 1, owner), ClientError::AccessDenied);
     }
 
     #[test]
@@ -678,7 +678,7 @@ mod tests {
                               entry_version: 0,
                           }));
         assert_err!(md.mutate_entries(v2.clone(), owner),
-                    RoutingError::InvalidSuccessor);
+                    ClientError::InvalidSuccessor);
 
         let _ = v2.insert(vec![1],
                           EntryAction::Update(Value {
@@ -686,7 +686,7 @@ mod tests {
                               entry_version: 2,
                           }));
         assert_err!(md.mutate_entries(v2.clone(), owner),
-                    RoutingError::InvalidSuccessor);
+                    ClientError::InvalidSuccessor);
 
         // Check update with a valid version
         let _ = v2.insert(vec![1],
@@ -700,7 +700,7 @@ mod tests {
         let mut del = BTreeMap::new();
         let _ = del.insert(vec![1], EntryAction::Del(1));
         assert_err!(md.mutate_entries(del.clone(), owner),
-                    RoutingError::InvalidSuccessor);
+                    ClientError::InvalidSuccessor);
 
         let _ = del.insert(vec![1], EntryAction::Del(2));
         assert!(md.mutate_entries(del, owner).is_ok());
@@ -725,7 +725,7 @@ mod tests {
                               entry_version: 0,
                           }));
         assert_err!(md.mutate_entries(v1.clone(), pk1),
-                    RoutingError::AccessDenied);
+                    ClientError::AccessDenied);
 
         // Now allow inserts for pk1
         let mut ps1 = PermissionSet::new();
@@ -738,12 +738,12 @@ mod tests {
         let mut ps2 = PermissionSet::new();
         let _ = ps2.allow(Action::Insert).deny(Action::ManagePermission);
         assert_err!(md.set_user_permissions(User::Key(pk1), ps2.clone(), 2, pk1),
-                    RoutingError::InvalidSuccessor);
+                    ClientError::InvalidSuccessor);
         assert!(md.set_user_permissions(User::Key(pk1), ps2, 1, pk1).is_ok());
 
         // Revoke permissions for pk1
         assert_err!(md.del_user_permissions(&User::Key(pk1), 1, pk1),
-                    RoutingError::AccessDenied);
+                    ClientError::AccessDenied);
 
         assert!(md.del_user_permissions(&User::Key(pk1), 1, owner).is_ok());
 
@@ -753,11 +753,11 @@ mod tests {
                               content: vec![1],
                               entry_version: 0,
                           }));
-        assert_err!(md.mutate_entries(v2, pk1), RoutingError::AccessDenied);
+        assert_err!(md.mutate_entries(v2, pk1), ClientError::AccessDenied);
 
         // Revoking permissions for a non-existing user should return an error
         assert_err!(md.del_user_permissions(&User::Key(pk1), 1, owner),
-                    RoutingError::EntryNotFound);
+                    ClientError::NoSuchEntry);
 
         // Get must always be allowed
         assert!(md.get(&vec![0]).is_some());
