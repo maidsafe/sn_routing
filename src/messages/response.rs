@@ -26,19 +26,10 @@ use types::MessageId as MsgId;
 /// Response message types
 #[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Response {
-    /// Returns an error occurred during account information retrieval.
-    GetAccountInfoFailure {
-        /// Description of an occurred error
-        reason: ClientError,
-        /// Unique message identifier
-        msg_id: MsgId,
-    },
-    /// Returns an account information.
-    GetAccountInfoSuccess {
-        /// Amount of data stored on the network by this Client
-        data_stored: u64,
-        /// Amount of network space available to this Client
-        space_available: u64,
+    /// Returns a success or failure status of account information retrieval.
+    GetAccountInfo {
+        /// Result of fetching account info from the network.
+        res: Result<AccountInfo, ClientError>,
         /// Unique message identifier
         msg_id: MsgId,
     },
@@ -278,4 +269,13 @@ impl Debug for Response {
 
         unimplemented!()
     }
+}
+
+/// Account information
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, RustcDecodable, RustcEncodable)]
+pub struct AccountInfo {
+    /// Number of data pieces stored by the account.
+    pub data_stored: u64,
+    /// Remaining storage space (in terms of data pieces) for the account.
+    pub space_available: u64,
 }

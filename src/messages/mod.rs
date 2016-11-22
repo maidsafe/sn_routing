@@ -19,7 +19,7 @@ mod request;
 mod response;
 
 pub use self::request::Request;
-pub use self::response::Response;
+pub use self::response::{AccountInfo, Response};
 
 use ack_manager::Ack;
 use authority::Authority;

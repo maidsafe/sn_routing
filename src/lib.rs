@@ -191,7 +191,7 @@ pub use data::{AppendWrapper, AppendedData, Data, DataIdentifier, EntryAction, F
 pub use error::{InterfaceError, RoutingError};
 pub use event::Event;
 pub use id::{FullId, PublicId};
-pub use messages::{Request, Response};
+pub use messages::{AccountInfo, Request, Response};
 #[cfg(feature = "use-mock-crust")]
 pub use mock_crust::crust;
 pub use node::{Node, NodeBuilder};
