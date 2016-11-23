@@ -53,8 +53,10 @@ pub struct MutableData {
 /// A value in `MutableData`
 #[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable)]
 pub struct Value {
-    content: Vec<u8>,
-    entry_version: u64,
+    /// Content of the entry.
+    pub content: Vec<u8>,
+    /// Version of the entry.
+    pub entry_version: u64,
 }
 
 /// Subject of permissions
