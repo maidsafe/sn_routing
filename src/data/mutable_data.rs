@@ -68,16 +68,21 @@ pub enum User {
     Key(PublicKey),
 }
 
+/// Action a permission applies to
 #[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Copy, Clone, RustcEncodable, RustcDecodable)]
 pub enum Action {
+    /// Permission to insert new entries.
     Insert,
+    /// Permission to update existing entries.
     Update,
+    /// Permission to delete existing entries.
     Delete,
+    /// Permission to modify permissions for other users.
     ManagePermission,
 }
 
 /// Set of user permissions.
-#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable, Default)]
 pub struct PermissionSet {
     insert: Option<bool>,
     update: Option<bool>,
@@ -137,12 +142,6 @@ impl PermissionSet {
             Action::Delete => self.delete,
             Action::ManagePermission => self.manage_permissions,
         }
-    }
-}
-
-impl Default for PermissionSet {
-    fn default() -> Self {
-        PermissionSet::new()
     }
 }
 
@@ -328,7 +327,7 @@ impl MutableData {
     }
 
     /// Gets a list of permissions for the provided user.
-    pub fn user_permissions(&mut self, user: &User) -> Option<&PermissionSet> {
+    pub fn user_permissions(&self, user: &User) -> Option<&PermissionSet> {
         self.permissions.get(user)
     }
 
@@ -354,6 +353,7 @@ impl MutableData {
             };
             return Err(ClientError::DataTooLarge);
         }
+        self.version = version;
         Ok(())
     }
 
@@ -373,6 +373,7 @@ impl MutableData {
             return Err(ClientError::NoSuchEntry);
         }
         let _ = self.permissions.remove(user);
+        self.version = version;
         Ok(())
     }
 
@@ -390,6 +391,7 @@ impl MutableData {
         }
         self.owners.clear();
         self.owners.insert(new_owner);
+        self.version = version;
         Ok(())
     }
 
@@ -745,15 +747,15 @@ mod tests {
         // pk1 now can change permissions
         let mut ps2 = PermissionSet::new();
         let _ = ps2.allow(Action::Insert).deny(Action::ManagePermission);
-        assert_err!(md.set_user_permissions(User::Key(pk1), ps2.clone(), 2, pk1),
+        assert_err!(md.set_user_permissions(User::Key(pk1), ps2.clone(), 1, pk1),
                     ClientError::InvalidSuccessor);
-        assert!(md.set_user_permissions(User::Key(pk1), ps2, 1, pk1).is_ok());
+        assert!(md.set_user_permissions(User::Key(pk1), ps2, 2, pk1).is_ok());
 
         // Revoke permissions for pk1
-        assert_err!(md.del_user_permissions(&User::Key(pk1), 1, pk1),
+        assert_err!(md.del_user_permissions(&User::Key(pk1), 3, pk1),
                     ClientError::AccessDenied);
 
-        assert!(md.del_user_permissions(&User::Key(pk1), 1, owner).is_ok());
+        assert!(md.del_user_permissions(&User::Key(pk1), 3, owner).is_ok());
 
         let mut v2 = BTreeMap::new();
         let _ = v2.insert(vec![1],
@@ -764,7 +766,7 @@ mod tests {
         assert_err!(md.mutate_entries(v2, pk1), ClientError::AccessDenied);
 
         // Revoking permissions for a non-existing user should return an error
-        assert_err!(md.del_user_permissions(&User::Key(pk1), 1, owner),
+        assert_err!(md.del_user_permissions(&User::Key(pk1), 4, owner),
                     ClientError::NoSuchEntry);
 
         // Get must always be allowed

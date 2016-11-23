@@ -18,6 +18,7 @@
 use action::Action;
 use authority::Authority;
 use cache::NullCache;
+use data::{EntryAction, ImmutableData, MutableData, PermissionSet, User, Value};
 use error::{InterfaceError, RoutingError};
 use event::Event;
 use id::FullId;
@@ -26,12 +27,14 @@ use maidsafe_utilities::thread::{self, Joiner};
 use messages::Request;
 #[cfg(not(feature = "use-mock-crust"))]
 use rust_sodium;
+use rust_sodium::crypto::sign;
 use state_machine::{State, StateMachine};
 use states;
 #[cfg(feature = "use-mock-crust")]
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::sync::mpsc::{Receiver, Sender, channel};
-use types::RoutingActionSender;
+use types::{MessageId, RoutingActionSender};
 use xor_name::XorName;
 
 type RoutingResult = Result<(), RoutingError>;
@@ -99,63 +102,213 @@ impl Client {
         })
     }
 
-    /*
-    /// Send a Get message with a `DataIdentifier` to an `Authority`, signed with given keys.
-    pub fn send_get_request(&self,
-                            dst: Authority,
-                            data_id: DataIdentifier,
-                            message_id: MessageId)
-                            -> Result<(), InterfaceError> {
-        self.send_action(Request::Get(data_id, message_id), dst, CLIENT_GET_PRIORITY)
+    /// Puts ImmutableData to the network
+    #[allow(unused)] // <-- TODO: remove this
+    pub fn put_idata(&mut self,
+                     dst: Authority,
+                     data: ImmutableData,
+                     msg_id: MessageId)
+                     -> Result<(), InterfaceError> {
+        unimplemented!();
     }
 
-    /// Add something to the network
-    pub fn send_put_request(&self,
-                            dst: Authority,
-                            data: Data,
-                            message_id: MessageId)
-                            -> Result<(), InterfaceError> {
-        self.send_action(Request::Put(data, message_id), dst, DEFAULT_PRIORITY)
+    /// Fetches ImmutableData from the network by the given name.
+    #[allow(unused)] // <-- TODO: remove this
+    pub fn get_idata(&mut self,
+                     dst: Authority,
+                     name: XorName,
+                     msg_id: MessageId)
+                     -> Result<(), InterfaceError> {
+        unimplemented!();
     }
 
-    /// Change something already on the network
-    pub fn send_post_request(&self,
+    /// Fetches a latest version number of the provided MutableData
+    #[allow(unused)] // <-- TODO: remove this
+    pub fn get_mdata_version(&self,
                              dst: Authority,
-                             data: Data,
-                             message_id: MessageId)
+                             name: XorName,
+                             tag: u64,
+                             msg_id: MessageId)
                              -> Result<(), InterfaceError> {
-        self.send_action(Request::Post(data, message_id), dst, DEFAULT_PRIORITY)
+        unimplemented!();
     }
 
-    /// Remove something from the network
-    pub fn send_delete_request(&self,
-                               dst: Authority,
-                               data: Data,
-                               message_id: MessageId)
-                               -> Result<(), InterfaceError> {
-        self.send_action(Request::Delete(data, message_id), dst, DEFAULT_PRIORITY)
+    /// Fetches a list of entries (keys + values) of the provided MutableData
+    #[allow(unused)] // <-- TODO: remove this
+    pub fn list_mdata_entries(&self,
+                              dst: Authority,
+                              name: XorName,
+                              tag: u64,
+                              msg_id: MessageId)
+                              -> Result<(), InterfaceError> {
+        unimplemented!();
     }
 
-    /// Append an item to appendable data.
-    pub fn send_append_request(&self,
-                               dst: Authority,
-                               wrapper: AppendWrapper,
-                               message_id: MessageId)
-                               -> Result<(), InterfaceError> {
-        self.send_action(Request::Append(wrapper, message_id), dst, DEFAULT_PRIORITY)
+    /// Fetches a list of keys of the provided MutableData
+    #[allow(unused)] // <-- TODO: remove this
+    pub fn list_mdata_keys(&self,
+                           dst: Authority,
+                           name: XorName,
+                           tag: u64,
+                           msg_id: MessageId)
+                           -> Result<(), InterfaceError> {
+        unimplemented!();
     }
 
-
-    /// Request account information for the Client calling this function
-    pub fn send_get_account_info_request(&self,
-                                         dst: Authority,
-                                         message_id: MessageId)
-                                         -> Result<(), InterfaceError> {
-        self.send_action(Request::GetAccountInfo(message_id),
-                         dst,
-                         CLIENT_GET_PRIORITY)
+    /// Fetches a list of values of the provided MutableData
+    #[allow(unused)] // <-- TODO: remove this
+    pub fn list_mdata_values(&self,
+                             dst: Authority,
+                             name: XorName,
+                             tag: u64,
+                             msg_id: MessageId)
+                             -> Result<(), InterfaceError> {
+        unimplemented!();
     }
-    */
+
+    /// Fetches a single value from the provided MutableData by the given key
+    #[allow(unused)] // <-- TODO: remove this
+    pub fn get_mdata_value(&self,
+                           dst: Authority,
+                           name: XorName,
+                           tag: u64,
+                           key: Vec<u8>,
+                           msg_id: MessageId)
+                           -> Result<(), InterfaceError> {
+        unimplemented!();
+    }
+
+    /// Creates a new `MutableData` in the network
+    #[allow(unused)] // <-- TODO: remove this
+    pub fn put_mdata(&self,
+                     dst: Authority,
+                     data: MutableData,
+                     msg_id: MessageId,
+                     requester: sign::PublicKey)
+                     -> Result<(), InterfaceError> {
+        unimplemented!();
+    }
+
+    /// Updates `MutableData` entries in bulk
+    #[allow(unused)] // <-- TODO: remove this
+    pub fn mutate_mdata_entries(&self,
+                                dst: Authority,
+                                name: XorName,
+                                tag: u64,
+                                actions: BTreeMap<Vec<u8>, EntryAction>,
+                                msg_id: MessageId,
+                                requester: sign::PublicKey)
+                                -> Result<(), InterfaceError> {
+        unimplemented!();
+    }
+
+    /// Updates a single entry in the provided MutableData by the given key
+    #[allow(unused)] // <-- TODO: remove this
+    pub fn update_mdata_value(&self,
+                              dst: Authority,
+                              name: XorName,
+                              tag: u64,
+                              key: Vec<u8>,
+                              value: Value,
+                              msg_id: MessageId,
+                              requester: sign::PublicKey)
+                              -> Result<(), InterfaceError> {
+        unimplemented!();
+    }
+
+    /// Inserts a new entry (key-value pair) to the provided MutableData
+    #[allow(unused)] // <-- TODO: remove this
+    pub fn insert_mdata_entry(&self,
+                              dst: Authority,
+                              name: XorName,
+                              tag: u64,
+                              key: Vec<u8>,
+                              value: Value,
+                              msg_id: MessageId,
+                              requester: sign::PublicKey)
+                              -> Result<(), InterfaceError> {
+        unimplemented!();
+    }
+
+    /// Deletes a single entry from the provided MutableData by the given key
+    #[allow(unused)] // <-- TODO: remove this
+    pub fn delete_mdata_entry(&self,
+                              dst: Authority,
+                              name: XorName,
+                              tag: u64,
+                              key: Vec<u8>,
+                              entry_version: u64,
+                              msg_id: MessageId,
+                              requester: sign::PublicKey)
+                              -> Result<(), InterfaceError> {
+        unimplemented!();
+    }
+
+    /// Lists all permissions for a given `MutableData`
+    #[allow(unused)] // <-- TODO: remove this
+    pub fn list_mdata_permissions(&self,
+                                  dst: Authority,
+                                  name: XorName,
+                                  tag: u64,
+                                  msg_id: MessageId)
+                                  -> Result<(), InterfaceError> {
+        unimplemented!();
+    }
+
+    /// Lists a permission set for a given user
+    #[allow(unused)] // <-- TODO: remove this
+    pub fn list_mdata_user_permissions(&self,
+                                       dst: Authority,
+                                       name: XorName,
+                                       tag: u64,
+                                       user: User,
+                                       msg_id: MessageId)
+                                       -> Result<(), InterfaceError> {
+        unimplemented!();
+    }
+
+    /// Updates or inserts a permission set for a given user
+    #[allow(unused)] // <-- TODO: remove this
+    pub fn set_mdata_user_permissions(&self,
+                                      dst: Authority,
+                                      name: XorName,
+                                      tag: u64,
+                                      user: User,
+                                      permissions: PermissionSet,
+                                      version: u64,
+                                      msg_id: MessageId,
+                                      requester: sign::PublicKey)
+                                      -> Result<(), InterfaceError> {
+        unimplemented!();
+    }
+
+    /// Deletes a permission set for a given user
+    #[allow(unused)] // <-- TODO: remove this
+    pub fn del_mdata_user_permissions(&self,
+                                      dst: Authority,
+                                      name: XorName,
+                                      tag: u64,
+                                      user: User,
+                                      version: u64,
+                                      msg_id: MessageId,
+                                      requester: sign::PublicKey)
+                                      -> Result<(), InterfaceError> {
+        unimplemented!();
+    }
+
+    /// Sends an ownership transfer request
+    #[allow(unused)] // <-- TODO: remove this
+    pub fn change_mdata_owner(&self,
+                              dst: Authority,
+                              name: XorName,
+                              tag: u64,
+                              new_owner: sign::PublicKey,
+                              version: u64,
+                              message_id: MessageId,
+                              requester: sign::PublicKey)
+                              -> Result<(), InterfaceError> {
+        unimplemented!();
+    }
 
     /// Returns the name of this node.
     pub fn name(&self) -> Result<XorName, InterfaceError> {

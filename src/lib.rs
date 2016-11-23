@@ -122,6 +122,7 @@
 #![cfg_attr(feature="clippy", deny(clippy, unicode_not_nfc, wrong_pub_self_convention,
                                    option_unwrap_used))]
 #![cfg_attr(feature="clippy", allow(use_debug))]
+#![cfg_attr(feature="clippy", allow(too_many_arguments))]
 
 #[macro_use]
 extern crate log;
@@ -182,7 +183,7 @@ pub use authority::Authority;
 pub use cache::{Cache, NullCache};
 pub use client::Client;
 pub use client_error::ClientError;
-pub use data::{AppendWrapper, AppendedData, Data, DataIdentifier, EntryAction, Filter,
+pub use data::{Action, AppendWrapper, AppendedData, Data, DataIdentifier, EntryAction, Filter,
                ImmutableData, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_MUTABLE_DATA_ENTRIES,
                MAX_MUTABLE_DATA_SIZE_IN_BYTES, MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES,
                MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES, MAX_STRUCTURED_DATA_SIZE_IN_BYTES,
