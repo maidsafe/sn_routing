@@ -705,18 +705,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
     }
 
-    /// Returns true if our name is the `route`-th closest to `src_name` in our group.
-    ///
-    /// Used when sending a message from a group to decide which one of the group should send the
-    /// full message (the remainder sending just a hash of the message).
-    pub fn should_route_full_message(&self, dst_name: &T, route: usize) -> bool {
-        let our_group = self.our_group
-            .iter()
-            .chain(iter::once(&self.our_name))
-            .sorted_by(|&lhs, &rhs| dst_name.cmp_distance(lhs, rhs));
-        *our_group[route % our_group.len()] == self.our_name
-    }
-
     /// Returns the group matching the given `name`, if present.
     pub fn get_group(&self, name: &T) -> Option<&HashSet<T>> {
         if self.our_group_prefix.matches(name) {

@@ -1995,19 +1995,17 @@ impl Bootstrapped for Node {
         //            routing_msg);
         //     return Ok(());
         // }
-        let send_sig = routing_msg.src.is_group() &&
-                       !self.peer_mgr
-            .routing_table()
-            .should_route_full_message(routing_msg.dst.name(), route as usize);
         let is_group = routing_msg.src.is_group();
-        let mut signed_msg = SignedMessage::new(routing_msg, &self.full_id)?;
-        if is_group {
-            signed_msg.add_group_list(GroupList { pub_ids: self.hop_pub_ids(self.name())? });
+        let group_list = if is_group {
+            GroupList { pub_ids: self.hop_pub_ids(self.name())? }
         } else {
-            signed_msg.add_group_list(GroupList {
-                pub_ids: iter::once(*self.full_id().public_id()).collect(),
-            });
-        }
+            GroupList { pub_ids: iter::once(*self.full_id().public_id()).collect() }
+        };
+        let send_sig = routing_msg.src.is_group() &&
+                       !group_list
+            .should_route_full_message(self.name(), routing_msg.dst.name(), route as usize);
+        let mut signed_msg = SignedMessage::new(routing_msg, &self.full_id)?;
+        signed_msg.add_group_list(group_list);
 
         if send_sig {
             self.send_signature(signed_msg, route)?;

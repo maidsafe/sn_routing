@@ -29,7 +29,7 @@ use maidsafe_utilities;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 #[cfg(feature = "use-mock-crust")]
 use mock_crust::crust::PeerId;
-use routing_table::Prefix;
+use routing_table::{Prefix, Xorable};
 use rust_sodium::crypto::{box_, sign};
 use rust_sodium::crypto::hash::sha256;
 use std::collections::{BTreeMap, BTreeSet};
@@ -191,6 +191,24 @@ impl HopMessage {
 pub struct GroupList {
     // TODO(MAID-1677): pub signatures: BTreeSet<(PublicId, sign::Signature)>,
     pub pub_ids: BTreeSet<PublicId>,
+}
+
+impl GroupList {
+    /// Returns true if our name is the `route`-th closest to `src_name` in our group.
+    ///
+    /// Used when sending a message from a group to decide which one of the group should send the
+    /// full message (the remainder sending just a hash of the message).
+    pub fn should_route_full_message(&self,
+                                     our_name: &XorName,
+                                     dst_name: &XorName,
+                                     route: usize)
+                                     -> bool {
+        let our_group = self.pub_ids
+            .iter()
+            .map(|id| id.name())
+            .sorted_by(|&lhs, &rhs| dst_name.cmp_distance(lhs, rhs));
+        *our_group[route % our_group.len()] == *our_name
+    }
 }
 
 /// Wrapper around a routing message, signed by the originator of the message.
