@@ -1465,7 +1465,7 @@ impl Node {
             let sign_key = self.full_id().signing_private_key();
             signed_msg.routing_message().to_signature(sign_key)?
         };
-        let target = self.get_signature_target(signed_msg.routing_message().dst.name(), route)?;
+        let target = self.get_signature_target(&signed_msg, route)?;
         self.send_direct_msg_to_peer(direct_msg, target, signed_msg.priority())?;
         Ok(())
     }
@@ -1606,12 +1606,13 @@ impl Node {
         }
     }
 
-    fn get_signature_target(&self, target: &XorName, route: u8) -> Result<PeerId, RoutingError> {
-        let our_group = unwrap!(self.peer_mgr.routing_table().close_names(self.name()));
-        let name = self.peer_mgr
-            .routing_table()
-            .get_routeth_node(&our_group, *target, None, route as usize)?;
-        if let Some(peer_id) = self.peer_mgr.get_peer_id(&name) {
+    fn get_signature_target(&self,
+                            signed_msg: &SignedMessage,
+                            route: u8)
+                            -> Result<PeerId, RoutingError> {
+        let group = unwrap!(signed_msg.sender_group_list());
+        let name = group.get_routeth_name(signed_msg.routing_message().dst.name(), route as usize);
+        if let Some(peer_id) = self.peer_mgr.get_peer_id(name) {
             Ok(*peer_id)
         } else {
             Err(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer))
@@ -1977,6 +1978,26 @@ impl Bootstrapped for Node {
         &mut self.ack_mgr
     }
 
+    fn send_routing_message_via_route_with_group_list(&mut self,
+                                                      routing_msg: RoutingMessage,
+                                                      route: u8,
+                                                      group_list: GroupList)
+                                                      -> Result<(), RoutingError> {
+        let send_sig = routing_msg.src.is_group() &&
+                       !group_list
+            .should_route_full_message(self.name(), routing_msg.dst.name(), route as usize);
+        let mut signed_msg = SignedMessage::new(routing_msg, &self.full_id)?;
+        signed_msg.add_group_list(group_list);
+
+        if send_sig {
+            self.send_signature(signed_msg, route)?;
+        } else {
+            self.accumulate_message(signed_msg, route)?;
+        }
+
+        Ok(())
+    }
+
     fn send_routing_message_via_route(&mut self,
                                       routing_msg: RoutingMessage,
                                       route: u8)
@@ -1995,27 +2016,13 @@ impl Bootstrapped for Node {
         //            routing_msg);
         //     return Ok(());
         // }
-        let send_sig = routing_msg.src.is_group() &&
-                       !self.peer_mgr
-            .routing_table()
-            .should_route_full_message(routing_msg.dst.name(), route as usize);
         let is_group = routing_msg.src.is_group();
-        let mut signed_msg = SignedMessage::new(routing_msg, &self.full_id)?;
-        if is_group {
-            signed_msg.add_group_list(GroupList { pub_ids: self.hop_pub_ids(self.name())? });
+        let group_list = if is_group {
+            GroupList { pub_ids: self.hop_pub_ids(self.name())? }
         } else {
-            signed_msg.add_group_list(GroupList {
-                pub_ids: iter::once(*self.full_id().public_id()).collect(),
-            });
-        }
-
-        if send_sig {
-            self.send_signature(signed_msg, route)?;
-        } else {
-            self.accumulate_message(signed_msg, route)?;
-        }
-
-        Ok(())
+            GroupList { pub_ids: iter::once(*self.full_id().public_id()).collect() }
+        };
+        self.send_routing_message_via_route_with_group_list(routing_msg, route, group_list)
     }
 
     fn routing_msg_filter(&mut self) -> &mut RoutingMessageFilter {

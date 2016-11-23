@@ -94,8 +94,8 @@ fn did_receive_get_success(node: &TestNode,
 
 fn target_group(nodes: &[TestNode], target: Authority) -> Vec<&TestNode> {
     nodes.iter()
-         .filter(|n| n.routing_table().is_recipient(&target.to_destination()))
-         .collect_vec()
+        .filter(|n| n.routing_table().is_recipient(&target.to_destination()))
+        .collect_vec()
 }
 
 
@@ -116,12 +116,8 @@ fn count_received(group: Vec<&TestNode>,
                   message_id: MessageId)
                   -> usize {
     group.iter()
-         .filter(|node| did_receive_get_request(node,
-                                                src,
-                                                dst,
-                                                data_id,
-                                                message_id))
-         .count()
+        .filter(|node| did_receive_get_request(node, src, dst, data_id, message_id))
+        .count()
 }
 
 fn quorum(group_len: usize) -> usize {
@@ -224,8 +220,9 @@ fn request_during_churn_node_to_group() {
         let except_index = added_index.unwrap_or(nodes.len());
         let quorum_before = quorum(nodes.iter()
             .enumerate()
-            .filter(|&(i, n)|
-                i != except_index && n.routing_table().is_recipient(&dst.to_destination()))
+            .filter(|&(i, n)| {
+                i != except_index && n.routing_table().is_recipient(&dst.to_destination())
+            })
             .count());
 
         unwrap!(nodes[index].inner.send_get_request(src, dst, data_id, message_id));
@@ -296,8 +293,9 @@ fn request_during_churn_group_to_node() {
         let except_index = added_index.unwrap_or(nodes.len());
         let group_len = nodes.iter()
             .enumerate()
-            .filter(|&(i, n)|
-                i != except_index && n.routing_table().is_recipient(&src.to_destination()))
+            .filter(|&(i, n)| {
+                i != except_index && n.routing_table().is_recipient(&src.to_destination())
+            })
             .count();
 
         let index = rng.gen_range(0, group_len);

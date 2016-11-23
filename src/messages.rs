@@ -29,7 +29,7 @@ use maidsafe_utilities;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 #[cfg(feature = "use-mock-crust")]
 use mock_crust::crust::PeerId;
-use routing_table::Prefix;
+use routing_table::{Prefix, RoutingTable};
 use rust_sodium::crypto::{box_, sign};
 use rust_sodium::crypto::hash::sha256;
 use std::collections::{BTreeMap, BTreeSet};
@@ -187,10 +187,29 @@ impl HopMessage {
 }
 
 /// A list of a group's public IDs, together with a list of signatures of a neighbouring group.
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable, Debug)]
 pub struct GroupList {
     // TODO(MAID-1677): pub signatures: BTreeSet<(PublicId, sign::Signature)>,
     pub pub_ids: BTreeSet<PublicId>,
+}
+
+impl GroupList {
+    /// Gets the `route`-th name in the group list.
+    pub fn get_routeth_name(&self, dst_name: &XorName, route: usize) -> &XorName {
+        RoutingTable::get_routeth_name(self.pub_ids.iter().map(|id| id.name()), dst_name, route)
+    }
+
+    /// Returns true if our name is the `route`-th closest to `src_name` in our group.
+    ///
+    /// Used when sending a message from a group to decide which one of the group should send the
+    /// full message (the remainder sending just a hash of the message).
+    pub fn should_route_full_message(&self,
+                                     our_name: &XorName,
+                                     dst_name: &XorName,
+                                     route: usize)
+                                     -> bool {
+        *self.get_routeth_name(dst_name, route) == *our_name
+    }
 }
 
 /// Wrapper around a routing message, signed by the originator of the message.
@@ -213,6 +232,15 @@ impl SignedMessage {
             grp_lists: Vec::new(),
             signatures: iter::once((*full_id.public_id(), sig)).collect(),
         })
+    }
+
+    /// Returns the group list of the sender authority
+    pub fn sender_group_list(&self) -> Option<GroupList> {
+        if self.grp_lists.is_empty() {
+            None
+        } else {
+            Some(self.grp_lists[0].clone())
+        }
     }
 
     /// Confirms the signatures.

@@ -617,6 +617,16 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             .collect()
     }
 
+    /// Gets the `route`-th name from a collection of names
+    pub fn get_routeth_name<'a, U: IntoIterator<Item = &'a T>>(names: U,
+                                                               dst_name: &T,
+                                                               route: usize)
+                                                               -> &'a T {
+        let sorted_names = names.into_iter()
+            .sorted_by(|&lhs, &rhs| dst_name.cmp_distance(lhs, rhs));
+        sorted_names[route % sorted_names.len()]
+    }
+
     /// Returns the `route`-th node in the given group, sorted by distance to `target`
     pub fn get_routeth_node(&self,
                             group: &HashSet<T>,
@@ -624,7 +634,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                             exclude: Option<T>,
                             route: usize)
                             -> Result<T, Error> {
-        let mut names = if let Some(exclude) = exclude {
+        let names = if let Some(exclude) = exclude {
             group.iter().filter(|&x| *x != exclude).collect_vec()
         } else {
             group.iter().collect_vec()
@@ -634,12 +644,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             return Err(Error::CannotRoute);
         }
 
-        names.sort_by(|&lhs, &rhs| target.cmp_distance(lhs, rhs));
-
-        // We wrap around if we don't have enough names -
-        // this should be a rare case only happening when a merge
-        // is ongoing, since we only try `MIN_GROUP_SIZE` routes
-        Ok(**unwrap!(names.get(route % names.len())))    // % names.len() makes it safe
+        Ok(*RoutingTable::get_routeth_name(names, &target, route))
     }
 
     /// Returns a collection of nodes to which a message with the given `Destination` should be sent
@@ -703,18 +708,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             Destination::Node(ref target_name) => *target_name == self.our_name,
             Destination::Group(ref target_name) => self.our_group_prefix.matches(target_name),
         }
-    }
-
-    /// Returns true if our name is the `route`-th closest to `src_name` in our group.
-    ///
-    /// Used when sending a message from a group to decide which one of the group should send the
-    /// full message (the remainder sending just a hash of the message).
-    pub fn should_route_full_message(&self, dst_name: &T, route: usize) -> bool {
-        let our_group = self.our_group
-            .iter()
-            .chain(iter::once(&self.our_name))
-            .sorted_by(|&lhs, &rhs| dst_name.cmp_distance(lhs, rhs));
-        *our_group[route % our_group.len()] == self.our_name
     }
 
     /// Returns the group matching the given `name`, if present.
