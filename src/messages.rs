@@ -29,7 +29,7 @@ use maidsafe_utilities;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 #[cfg(feature = "use-mock-crust")]
 use mock_crust::crust::PeerId;
-use routing_table::{Prefix, Xorable};
+use routing_table::{Prefix, RoutingTable};
 use rust_sodium::crypto::{box_, sign};
 use rust_sodium::crypto::hash::sha256;
 use std::collections::{BTreeMap, BTreeSet};
@@ -194,6 +194,11 @@ pub struct GroupList {
 }
 
 impl GroupList {
+    /// Gets the `route`-th name in the group list.
+    pub fn get_routeth_name(&self, dst_name: &XorName, route: usize) -> &XorName {
+        RoutingTable::get_routeth_name(self.pub_ids.iter().map(|id| id.name()), dst_name, route)
+    }
+
     /// Returns true if our name is the `route`-th closest to `src_name` in our group.
     ///
     /// Used when sending a message from a group to decide which one of the group should send the
@@ -203,11 +208,7 @@ impl GroupList {
                                      dst_name: &XorName,
                                      route: usize)
                                      -> bool {
-        let our_group = self.pub_ids
-            .iter()
-            .map(|id| id.name())
-            .sorted_by(|&lhs, &rhs| dst_name.cmp_distance(lhs, rhs));
-        *our_group[route % our_group.len()] == *our_name
+        *self.get_routeth_name(dst_name, route) == *our_name
     }
 }
 
