@@ -187,7 +187,7 @@ impl HopMessage {
 }
 
 /// A list of a group's public IDs, together with a list of signatures of a neighbouring group.
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable, Debug)]
 pub struct GroupList {
     // TODO(MAID-1677): pub signatures: BTreeSet<(PublicId, sign::Signature)>,
     pub pub_ids: BTreeSet<PublicId>,
@@ -231,6 +231,15 @@ impl SignedMessage {
             grp_lists: Vec::new(),
             signatures: iter::once((*full_id.public_id(), sig)).collect(),
         })
+    }
+
+    /// Returns the group list of the sender authority
+    pub fn sender_group_list(&self) -> Option<GroupList> {
+        if self.grp_lists.is_empty() {
+            None
+        } else {
+            Some(self.grp_lists[0].clone())
+        }
     }
 
     /// Confirms the signatures.

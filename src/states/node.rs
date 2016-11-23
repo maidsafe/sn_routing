@@ -1901,26 +1901,6 @@ impl Node {
             self.send_message(dst_id, Message::Direct(direct_message))
         }
     }
-
-    fn send_routing_message_via_route_with_group_list(&mut self,
-                                                      routing_msg: RoutingMessage,
-                                                      route: u8,
-                                                      group_list: GroupList)
-                                                      -> Result<(), RoutingError> {
-        let send_sig = routing_msg.src.is_group() &&
-                       !group_list
-            .should_route_full_message(self.name(), routing_msg.dst.name(), route as usize);
-        let mut signed_msg = SignedMessage::new(routing_msg, &self.full_id)?;
-        signed_msg.add_group_list(group_list);
-
-        if send_sig {
-            self.send_signature(signed_msg, route)?;
-        } else {
-            self.accumulate_message(signed_msg, route)?;
-        }
-
-        Ok(())
-    }
 }
 
 impl Base for Node {
@@ -1995,6 +1975,26 @@ impl Bootstrapped for Node {
 
     fn ack_mgr_mut(&mut self) -> &mut AckManager {
         &mut self.ack_mgr
+    }
+
+    fn send_routing_message_via_route_with_group_list(&mut self,
+                                                      routing_msg: RoutingMessage,
+                                                      route: u8,
+                                                      group_list: GroupList)
+                                                      -> Result<(), RoutingError> {
+        let send_sig = routing_msg.src.is_group() &&
+                       !group_list
+            .should_route_full_message(self.name(), routing_msg.dst.name(), route as usize);
+        let mut signed_msg = SignedMessage::new(routing_msg, &self.full_id)?;
+        signed_msg.add_group_list(group_list);
+
+        if send_sig {
+            self.send_signature(signed_msg, route)?;
+        } else {
+            self.accumulate_message(signed_msg, route)?;
+        }
+
+        Ok(())
     }
 
     fn send_routing_message_via_route(&mut self,
