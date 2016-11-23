@@ -145,12 +145,6 @@ impl PermissionSet {
     }
 }
 
-impl Default for PermissionSet {
-    fn default() -> Self {
-        PermissionSet::new()
-    }
-}
-
 /// Action performed on a single entry: insert, update or delete.
 #[derive(Hash, Eq, PartialEq, Clone, PartialOrd, Ord, RustcDecodable, RustcEncodable)]
 pub enum EntryAction {
@@ -359,6 +353,7 @@ impl MutableData {
             };
             return Err(ClientError::DataTooLarge);
         }
+        self.version = version;
         Ok(())
     }
 
@@ -378,6 +373,7 @@ impl MutableData {
             return Err(ClientError::NoSuchEntry);
         }
         let _ = self.permissions.remove(user);
+        self.version = version;
         Ok(())
     }
 
@@ -395,6 +391,7 @@ impl MutableData {
         }
         self.owners.clear();
         self.owners.insert(new_owner);
+        self.version = version;
         Ok(())
     }
 
@@ -750,15 +747,15 @@ mod tests {
         // pk1 now can change permissions
         let mut ps2 = PermissionSet::new();
         let _ = ps2.allow(Action::Insert).deny(Action::ManagePermission);
-        assert_err!(md.set_user_permissions(User::Key(pk1), ps2.clone(), 2, pk1),
+        assert_err!(md.set_user_permissions(User::Key(pk1), ps2.clone(), 1, pk1),
                     ClientError::InvalidSuccessor);
-        assert!(md.set_user_permissions(User::Key(pk1), ps2, 1, pk1).is_ok());
+        assert!(md.set_user_permissions(User::Key(pk1), ps2, 2, pk1).is_ok());
 
         // Revoke permissions for pk1
-        assert_err!(md.del_user_permissions(&User::Key(pk1), 1, pk1),
+        assert_err!(md.del_user_permissions(&User::Key(pk1), 3, pk1),
                     ClientError::AccessDenied);
 
-        assert!(md.del_user_permissions(&User::Key(pk1), 1, owner).is_ok());
+        assert!(md.del_user_permissions(&User::Key(pk1), 3, owner).is_ok());
 
         let mut v2 = BTreeMap::new();
         let _ = v2.insert(vec![1],
@@ -769,7 +766,7 @@ mod tests {
         assert_err!(md.mutate_entries(v2, pk1), ClientError::AccessDenied);
 
         // Revoking permissions for a non-existing user should return an error
-        assert_err!(md.del_user_permissions(&User::Key(pk1), 1, owner),
+        assert_err!(md.del_user_permissions(&User::Key(pk1), 4, owner),
                     ClientError::NoSuchEntry);
 
         // Get must always be allowed
