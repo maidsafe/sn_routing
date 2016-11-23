@@ -91,10 +91,9 @@ fn did_receive_get_success(node: &TestNode,
     }
 }
 
-fn target_group(nodes: &[TestNode], target: Authority) -> Vec<&TestNode> {
-    nodes.iter()
-        .filter(|n| n.routing_table().is_recipient(&target.to_destination()))
-        .collect_vec()
+fn target_group<'a>(nodes: &'a [TestNode], target: &Authority) -> Vec<&'a TestNode> {
+    let dst = target.to_destination();
+    nodes.iter().filter(|n| n.is_recipient(&dst)).collect_vec()
 }
 
 
@@ -147,12 +146,7 @@ fn churn() {
         let msg_id_01 = MessageId::new();
         let msg_id_0d = MessageId::new();
 
-        let quorum_before = quorum(nodes.iter()
-            .enumerate()
-            .filter(|&(i, n)| {
-                Some(i) != added_index && n.routing_table().is_recipient(&authd.to_destination())
-            })
-            .count());
+        let quorum_before = quorum(target_group(&nodes, &authd).len());
 
         unwrap!(nodes[index0].inner.send_get_request(auth0, auth0, data_id, msg_id_00));
         unwrap!(nodes[index0].inner.send_get_request(auth0, auth1, data_id, msg_id_01));
@@ -166,7 +160,7 @@ fn churn() {
         assert!(did_receive_get_request(&nodes[index1], auth0, auth1, data_id, msg_id_01));
 
         {
-            let receiving_group = target_group(&nodes, authd);
+            let receiving_group = target_group(&nodes, &authd);
             let quorum_after = quorum(receiving_group.len());
             let num_received = count_received(receiving_group, auth0, authd, data_id, msg_id_0d);
 
@@ -205,13 +199,13 @@ fn request_during_churn_group_to_self() {
         let data_id = data.identifier();
         let message_id = MessageId::new();
 
-        send_requests(target_group(&nodes, src), src, dst, data_id, message_id);
-        let quorum_before = quorum(target_group(&nodes, dst).len());
+        send_requests(target_group(&nodes, &src), src, dst, data_id, message_id);
+        let quorum_before = quorum(target_group(&nodes, &dst).len());
 
         let _ = random_churn(&mut rng, &network, &mut nodes);
         poll_and_resend(&mut nodes, &mut []);
 
-        let receiving_group = target_group(&nodes, dst);
+        let receiving_group = target_group(&nodes, &dst);
         let quorum_after = quorum(receiving_group.len());
         let num_received = count_received(receiving_group, src, dst, data_id, message_id);
 
@@ -231,7 +225,7 @@ fn request_during_churn_group_to_node() {
     let mut nodes = create_connected_nodes(&network, 2 * MIN_GROUP_SIZE);
 
     for _ in 0..REQUEST_DURING_CHURN_ITERATIONS {
-        let added_index = random_churn(&mut rng, &network, &mut nodes);
+        let _ = random_churn(&mut rng, &network, &mut nodes);
 
         let message_id = MessageId::new();
         let data = gen_immutable_data(&mut rng, 8);
@@ -239,13 +233,7 @@ fn request_during_churn_group_to_node() {
 
         sort_nodes_by_distance_to(&mut nodes, src.name());
 
-        let except_index = added_index.unwrap_or(nodes.len());
-        let group_len = nodes.iter()
-            .enumerate()
-            .filter(|&(i, n)| {
-                i != except_index && n.routing_table().is_recipient(&src.to_destination())
-            })
-            .count();
+        let group_len = target_group(&nodes, &src).len();
 
         let index = rng.gen_range(0, group_len);
         let dst = Authority::ManagedNode(nodes[index].name());
@@ -275,13 +263,13 @@ fn request_during_churn_group_to_group() {
         let data_id = data.identifier();
         let message_id = MessageId::new();
 
-        send_requests(target_group(&nodes, src), src, dst, data_id, message_id);
-        let quorum_before = quorum(target_group(&nodes, dst).len());
+        send_requests(target_group(&nodes, &src), src, dst, data_id, message_id);
+        let quorum_before = quorum(target_group(&nodes, &dst).len());
 
         let _ = random_churn(&mut rng, &network, &mut nodes);
         poll_and_resend(&mut nodes, &mut []);
 
-        let receiving_group = target_group(&nodes, dst);
+        let receiving_group = target_group(&nodes, &dst);
         let quorum_after = quorum(receiving_group.len());
         let num_received = count_received(receiving_group, src, dst, data_id, message_id);
 

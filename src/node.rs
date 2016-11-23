@@ -462,8 +462,8 @@ impl Node {
     }
 
     /// Routing table of this node.
-    pub fn routing_table(&self) -> RoutingTable<XorName> {
-        self.machine.borrow().current().routing_table().clone()
+    pub fn routing_table(&self) -> Option<RoutingTable<XorName>> {
+        self.machine.borrow().current().routing_table().cloned()
     }
 
     /// Resend all unacknowledged messages.
