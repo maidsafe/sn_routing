@@ -37,13 +37,13 @@
                                    option_unwrap_used))]
 #![cfg_attr(feature="clippy", allow(use_debug))]
 
-extern crate itertools;
-#[macro_use]
-extern crate log;
-extern crate rand;
-extern crate routing;
-#[macro_use]
-extern crate unwrap;
+// extern crate itertools;
+// #[macro_use]
+// extern crate log;
+// extern crate rand;
+// extern crate routing;
+// #[macro_use]
+// extern crate unwrap;
 
 // This module is a driver and defines macros. See `mock_crust` modules for
 // tests.
