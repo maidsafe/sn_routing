@@ -27,8 +27,8 @@ use routing::mock_crust::{Config, Endpoint, Network};
 use routing::mock_crust::crust::PeerId;
 pub use self::utils::{TestClient, TestNode, create_connected_clients, create_connected_nodes,
                       create_connected_nodes_with_cache_till_split, gen_bytes, gen_immutable_data,
-                      gen_range_except, gen_two_range_except, poll_all, poll_and_resend,
-                      sort_nodes_by_distance_to, verify_invariant_for_all_nodes};
+                      gen_range_except, poll_all, poll_and_resend, sort_nodes_by_distance_to,
+                      verify_invariant_for_all_nodes};
 
 // —————  Miscellaneous tests below  —————
 
@@ -125,7 +125,7 @@ fn multiple_joining_nodes() {
     nodes.push(TestNode::builder(&network).config(config.clone()).create());
 
     let _ = poll_all(&mut nodes, &mut []);
-    nodes.retain(|node| !node.routing_table().is_empty());
+    nodes.retain(|node| !unwrap!(node.routing_table()).is_empty());
     let _ = poll_all(&mut nodes, &mut []);
 
     verify_invariant_for_all_nodes(&nodes);

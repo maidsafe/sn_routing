@@ -21,8 +21,7 @@ use routing::{Authority, Data, DataIdentifier, Event, MIN_GROUP_SIZE, MessageId,
               Response};
 use routing::mock_crust::{Config, Network};
 use super::{TestNode, create_connected_nodes, gen_immutable_data, gen_range_except,
-            gen_two_range_except, poll_and_resend, sort_nodes_by_distance_to,
-            verify_invariant_for_all_nodes};
+            poll_and_resend, sort_nodes_by_distance_to, verify_invariant_for_all_nodes};
 
 // Randomly add or remove some nodes, causing churn.
 // If a new node was added, returns the index of this node. Otherwise
@@ -92,10 +91,9 @@ fn did_receive_get_success(node: &TestNode,
     }
 }
 
-fn target_group(nodes: &[TestNode], target: Authority) -> Vec<&TestNode> {
-    nodes.iter()
-        .filter(|n| n.routing_table().is_recipient(&target.to_destination()))
-        .collect_vec()
+fn target_group<'a>(nodes: &'a [TestNode], target: &Authority) -> Vec<&'a TestNode> {
+    let dst = target.to_destination();
+    nodes.iter().filter(|n| n.is_recipient(&dst)).collect_vec()
 }
 
 
@@ -124,6 +122,8 @@ fn quorum(group_len: usize) -> usize {
     (group_len * QUORUM - 1) / 100 + 1
 }
 
+const CHURN_ITERATIONS: usize = 100;
+
 #[test]
 fn churn() {
     let network = Network::new(None);
@@ -131,118 +131,60 @@ fn churn() {
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, 20);
 
-    for i in 0..100 {
+    for i in 0..CHURN_ITERATIONS {
         trace!("Iteration {}", i);
-        let _ = random_churn(&mut rng, &network, &mut nodes);
+        let added_index = random_churn(&mut rng, &network, &mut nodes);
+
+        // Create random data and pick random sending and receiving nodes.
+        let data_id = gen_immutable_data(&mut rng, 8).identifier();
+        let index0 = gen_range_except(&mut rng, 0, nodes.len(), added_index);
+        let index1 = gen_range_except(&mut rng, 0, nodes.len(), added_index);
+        let auth0 = Authority::ManagedNode(nodes[index0].name());
+        let auth1 = Authority::ManagedNode(nodes[index1].name());
+        let authd = Authority::NaeManager(*data_id.name());
+        let msg_id_00 = MessageId::new();
+        let msg_id_01 = MessageId::new();
+        let msg_id_0d = MessageId::new();
+
+        let quorum_before = quorum(target_group(&nodes, &authd).len());
+
+        unwrap!(nodes[index0].inner.send_get_request(auth0, auth0, data_id, msg_id_00));
+        unwrap!(nodes[index0].inner.send_get_request(auth0, auth1, data_id, msg_id_01));
+        unwrap!(nodes[index0].inner.send_get_request(auth0, authd, data_id, msg_id_0d));
+
         poll_and_resend(&mut nodes, &mut []);
 
-        for node in &mut nodes {
-            node.inner.clear_state();
+        // TODO: These empty the nodes' event queues. When we add groups as destinations to this
+        //       test, we'll need to accept the events in any order.
+        assert!(did_receive_get_request(&nodes[index0], auth0, auth0, data_id, msg_id_00));
+        assert!(did_receive_get_request(&nodes[index1], auth0, auth1, data_id, msg_id_01));
+
+        {
+            let receiving_group = target_group(&nodes, &authd);
+            let quorum_after = quorum(receiving_group.len());
+            let num_received = count_received(receiving_group, auth0, authd, data_id, msg_id_0d);
+
+            assert!(num_received >= quorum_before || num_received >= quorum_after,
+                    "Received: {}, quorum_before: {}, quorum_after: {}",
+                    num_received,
+                    quorum_before,
+                    quorum_after);
         }
 
         verify_invariant_for_all_nodes(&nodes);
+
+        // Every few iterations, clear the nodes' caches, simulating a longer time between events.
+        if rng.gen_weighted_bool(5) {
+            for node in &mut nodes {
+                node.inner.clear_state();
+            }
+        }
     }
 }
 
 const REQUEST_DURING_CHURN_ITERATIONS: usize = 10;
 
 #[test]
-#[ignore]
-fn request_during_churn_node_to_self() {
-    let network = Network::new(None);
-    let mut rng = network.new_rng();
-
-    let mut nodes = create_connected_nodes(&network, 2 * MIN_GROUP_SIZE);
-
-    for _ in 0..REQUEST_DURING_CHURN_ITERATIONS {
-        let added_index = random_churn(&mut rng, &network, &mut nodes);
-        let index = gen_range_except(&mut rng, 0, nodes.len(), added_index);
-        let name = nodes[index].name();
-
-        let src = Authority::ManagedNode(name);
-        let dst = Authority::ManagedNode(name);
-        let data = gen_immutable_data(&mut rng, 8);
-        let data_id = data.identifier();
-        let message_id = MessageId::new();
-
-        unwrap!(nodes[index].inner.send_get_request(src, dst, data_id, message_id));
-
-        poll_and_resend(&mut nodes, &mut []);
-        assert!(did_receive_get_request(&nodes[index], src, dst, data_id, message_id));
-    }
-}
-
-#[test]
-#[ignore]
-fn request_during_churn_node_to_node() {
-    let network = Network::new(None);
-    let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes(&network, 2 * MIN_GROUP_SIZE);
-
-    for _ in 0..REQUEST_DURING_CHURN_ITERATIONS {
-        let added_index = random_churn(&mut rng, &network, &mut nodes);
-
-        let (index0, index1) = gen_two_range_except(&mut rng, 0, nodes.len(), added_index);
-        let name0 = nodes[index0].name();
-        let name1 = nodes[index1].name();
-
-        let src = Authority::ManagedNode(name0);
-        let dst = Authority::ManagedNode(name1);
-        let data = gen_immutable_data(&mut rng, 8);
-        let data_id = data.identifier();
-        let message_id = MessageId::new();
-
-        unwrap!(nodes[index0].inner.send_get_request(src, dst, data_id, message_id));
-
-        poll_and_resend(&mut nodes, &mut []);
-        assert!(did_receive_get_request(&nodes[index1], src, dst, data_id, message_id));
-    }
-}
-
-#[test]
-#[ignore]
-fn request_during_churn_node_to_group() {
-    let network = Network::new(None);
-    let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes(&network, 2 * MIN_GROUP_SIZE);
-
-    for _ in 0..REQUEST_DURING_CHURN_ITERATIONS {
-        let added_index = random_churn(&mut rng, &network, &mut nodes);
-
-        let index = gen_range_except(&mut rng, 0, nodes.len(), added_index);
-
-        let data = gen_immutable_data(&mut rng, 8);
-        let src = Authority::ManagedNode(nodes[index].name());
-        let dst = Authority::NaeManager(*data.name());
-        let data_id = data.identifier();
-        let message_id = MessageId::new();
-
-        let except_index = added_index.unwrap_or(nodes.len());
-        let quorum_before = quorum(nodes.iter()
-            .enumerate()
-            .filter(|&(i, n)| {
-                i != except_index && n.routing_table().is_recipient(&dst.to_destination())
-            })
-            .count());
-
-        unwrap!(nodes[index].inner.send_get_request(src, dst, data_id, message_id));
-
-        poll_and_resend(&mut nodes, &mut []);
-
-        let receiving_group = target_group(&nodes, dst);
-        let quorum_after = quorum(receiving_group.len());
-        let num_received = count_received(receiving_group, src, dst, data_id, message_id);
-
-        assert!(num_received >= quorum_before || num_received >= quorum_after,
-                "Received: {}, quorum_before: {}, quorum_after: {}",
-                num_received,
-                quorum_before,
-                quorum_after);
-    }
-}
-
-#[test]
-#[ignore]
 fn request_during_churn_group_to_self() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
@@ -256,13 +198,13 @@ fn request_during_churn_group_to_self() {
         let data_id = data.identifier();
         let message_id = MessageId::new();
 
-        send_requests(target_group(&nodes, src), src, dst, data_id, message_id);
-        let quorum_before = quorum(target_group(&nodes, dst).len());
+        send_requests(target_group(&nodes, &src), src, dst, data_id, message_id);
+        let quorum_before = quorum(target_group(&nodes, &dst).len());
 
         let _ = random_churn(&mut rng, &network, &mut nodes);
         poll_and_resend(&mut nodes, &mut []);
 
-        let receiving_group = target_group(&nodes, dst);
+        let receiving_group = target_group(&nodes, &dst);
         let quorum_after = quorum(receiving_group.len());
         let num_received = count_received(receiving_group, src, dst, data_id, message_id);
 
@@ -275,14 +217,13 @@ fn request_during_churn_group_to_self() {
 }
 
 #[test]
-#[ignore]
 fn request_during_churn_group_to_node() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, 2 * MIN_GROUP_SIZE);
 
     for _ in 0..REQUEST_DURING_CHURN_ITERATIONS {
-        let added_index = random_churn(&mut rng, &network, &mut nodes);
+        let _ = random_churn(&mut rng, &network, &mut nodes);
 
         let message_id = MessageId::new();
         let data = gen_immutable_data(&mut rng, 8);
@@ -290,13 +231,7 @@ fn request_during_churn_group_to_node() {
 
         sort_nodes_by_distance_to(&mut nodes, src.name());
 
-        let except_index = added_index.unwrap_or(nodes.len());
-        let group_len = nodes.iter()
-            .enumerate()
-            .filter(|&(i, n)| {
-                i != except_index && n.routing_table().is_recipient(&src.to_destination())
-            })
-            .count();
+        let group_len = target_group(&nodes, &src).len();
 
         let index = rng.gen_range(0, group_len);
         let dst = Authority::ManagedNode(nodes[index].name());
@@ -311,7 +246,6 @@ fn request_during_churn_group_to_node() {
 }
 
 #[test]
-#[ignore]
 fn request_during_churn_group_to_group() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
@@ -326,13 +260,13 @@ fn request_during_churn_group_to_group() {
         let data_id = data.identifier();
         let message_id = MessageId::new();
 
-        send_requests(target_group(&nodes, src), src, dst, data_id, message_id);
-        let quorum_before = quorum(target_group(&nodes, dst).len());
+        send_requests(target_group(&nodes, &src), src, dst, data_id, message_id);
+        let quorum_before = quorum(target_group(&nodes, &dst).len());
 
         let _ = random_churn(&mut rng, &network, &mut nodes);
         poll_and_resend(&mut nodes, &mut []);
 
-        let receiving_group = target_group(&nodes, dst);
+        let receiving_group = target_group(&nodes, &dst);
         let quorum_after = quorum(receiving_group.len());
         let num_received = count_received(receiving_group, src, dst, data_id, message_id);
 

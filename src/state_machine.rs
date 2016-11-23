@@ -113,10 +113,10 @@ impl State {
         }
     }
 
-    pub fn routing_table(&self) -> &RoutingTable<XorName> {
+    pub fn routing_table(&self) -> Option<&RoutingTable<XorName>> {
         match *self {
-            State::Node(ref state) => state.routing_table(),
-            _ => unreachable!(),
+            State::Node(ref state) => Some(state.routing_table()),
+            _ => None,
         }
     }
 

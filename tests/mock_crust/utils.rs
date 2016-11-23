@@ -17,8 +17,8 @@
 
 use itertools::Itertools;
 use rand::Rng;
-use routing::{Cache, Client, Data, DataIdentifier, Event, FullId, ImmutableData, MIN_GROUP_SIZE,
-              Node, NullCache, Request, Response, RoutingTable, XorName, Xorable,
+use routing::{Cache, Client, Data, DataIdentifier, Destination, Event, FullId, ImmutableData,
+              MIN_GROUP_SIZE, Node, NullCache, Request, Response, RoutingTable, XorName, Xorable,
               verify_network_invariant};
 use routing::mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
 use std::cell::RefCell;
@@ -49,23 +49,6 @@ pub fn gen_range_except<T: Rng>(rng: &mut T,
                 r += 1
             }
             r
-        }
-    }
-}
-
-/// Generate two distinct random values in the range, excluding the `exclude` value.
-pub fn gen_two_range_except<T: Rng>(rng: &mut T,
-                                    low: usize,
-                                    high: usize,
-                                    exclude: Option<usize>)
-                                    -> (usize, usize) {
-    let r0 = gen_range_except(rng, low, high, exclude);
-
-    loop {
-        let r1 = gen_range_except(rng, low, high, exclude);
-
-        if r0 != r1 {
-            return (r0, r1);
         }
     }
 }
@@ -128,8 +111,12 @@ impl TestNode {
         unwrap!(self.inner.close_group(self.name())).unwrap_or_else(HashSet::new)
     }
 
-    pub fn routing_table(&self) -> RoutingTable<XorName> {
+    pub fn routing_table(&self) -> Option<RoutingTable<XorName>> {
         self.inner.routing_table()
+    }
+
+    pub fn is_recipient(&self, dst: &Destination<XorName>) -> bool {
+        self.inner.routing_table().map_or(false, |rt| rt.is_recipient(dst))
     }
 }
 
@@ -398,7 +385,7 @@ pub fn sort_nodes_by_distance_to(nodes: &mut [TestNode], name: &XorName) {
 }
 
 pub fn verify_invariant_for_all_nodes(nodes: &[TestNode]) {
-    let routing_tables = nodes.iter().map(TestNode::routing_table).collect_vec();
+    let routing_tables = nodes.iter().map(|n| unwrap!(n.routing_table())).collect_vec();
     verify_network_invariant(routing_tables.iter());
 }
 

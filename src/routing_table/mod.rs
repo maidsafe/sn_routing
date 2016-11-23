@@ -523,7 +523,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             if !self.our_group.remove(name) {
                 return Err(Error::NoSuchPeer);
             }
-            should_merge = self.our_group.len() == self.min_group_size - 1 &&
+            should_merge = self.our_group.len() + 1 < self.min_group_size &&
                            self.our_group_prefix.bit_count() != 0 &&
                            self.merging.is_empty();
         } else if let Some(prefix) = self.find_group_prefix(name) {
@@ -878,7 +878,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             return Err(Error::InvariantViolation);
         }
         let has_enough_nodes = self.len() >= self.min_group_size;
-        if has_enough_nodes && self.our_group.len() < self.min_group_size {
+        if has_enough_nodes && self.our_group.len() + 1 < self.min_group_size {
             warn!("Minimum group size not met for group {:?}: {:?}",
                   self.our_group_prefix,
                   self);
