@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use messages::{DirectMessage, MessageContent, Request, Response, RoutingMessage, UserMessage};
+use messages::{DirectMessage, MessageContent, RoutingMessage, UserMessage};
 use peer_manager::MIN_GROUP_SIZE;
 
 /// The number of messages after which the message statistics should be printed.
@@ -88,7 +88,9 @@ impl Stats {
     }
 
     /// Increments the counter for the given request.
-    pub fn count_user_message(&mut self, msg: &UserMessage) {
+    pub fn count_user_message(&mut self, _msg: &UserMessage) {
+        // TODO: port this to the new request/response variants
+        /*
         match *msg {
             UserMessage::Request(ref request) => {
                 match *request {
@@ -122,7 +124,18 @@ impl Stats {
                 }
             }
         }
+
         self.increment_msg_total();
+        */
+
+
+
+
+
+
+
+
+        unimplemented!()
     }
 
     /// Increments the counter for the given routing message type.

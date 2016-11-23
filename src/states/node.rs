@@ -482,8 +482,9 @@ impl Node {
                                 peer_id: PeerId)
                                 -> Result<(), RoutingError> {
         if let Some(&pub_id) = self.peer_mgr.get_routing_peer(&peer_id) {
-            if let Some((signed_msg, route)) = self.sig_accumulator
-                .add_signature(digest, sig, pub_id) {
+            if let Some((signed_msg, route)) =
+                self.sig_accumulator
+                    .add_signature(digest, sig, pub_id) {
                 let hop = *pub_id.name();
                 return self.handle_signed_message(signed_msg, route, hop);
             }
@@ -1424,7 +1425,7 @@ impl Node {
         }
 
         let acting_as_proxy = if let Authority::Client { ref proxy_node_name, .. } =
-                                     routing_msg.src {
+            routing_msg.src {
             proxy_node_name == self.name()
         } else {
             false
@@ -1667,7 +1668,7 @@ impl Node {
         }
 
         if let RemovalDetails { targets_and_merge_details: Some((targets, merge_details)), .. } =
-               details {
+            details {
             let our_new_prefix = merge_details.merge_prefix;
             let src_name = self.peer_mgr.routing_table().our_group_prefix().lower_bound();
             self.send_own_group_merge(targets, merge_details, Authority::NaeManager(src_name));

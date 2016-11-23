@@ -15,13 +15,15 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use data::{EntryAction, ImmutableData, MutableData, PermissionSet, User, Value};
+use data::{EntryAction, ImmutableData, MutableData, PermissionSet, User};
 use rust_sodium::crypto::sign;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::{self, Debug, Formatter};
 use types::MessageId as MsgId;
 use xor_name::XorName;
 
 /// Request message types
+#[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd, RustcDecodable, RustcEncodable)]
 pub enum Request {
     /// Represents a refresh message sent between vaults. Vec<u8> is the message content.
     Refresh(Vec<u8>, MsgId),
@@ -35,14 +37,14 @@ pub enum Request {
         /// ImmutableData to be stored
         data: ImmutableData,
         /// Unique message identifier
-        msg_id: MsgId
+        msg_id: MsgId,
     },
     /// Fetches ImmutableData from the network by the given name.
     GetIData {
         /// Network identifier of ImmutableData
         name: XorName,
         /// Unique message identifier
-        msg_id: MsgId
+        msg_id: MsgId,
     },
 
     // --- MutableData ---
@@ -213,157 +215,70 @@ pub enum Request {
     },
 }
 
-/// Response message types
-pub enum Response {
-    /// Returns an error occurred during account information retrieval.
-    GetAccountInfoFailure {
-        /// Description of an occurred error
-        reason: Vec<u8>,
-        /// Unique message identifier
-        msg_id: MsgId
-    },
-    /// Returns an account information.
-    GetAccountInfoSuccess {
-        /// Amount of data stored on the network by this Client
-        data_stored: u64,
-        /// Amount of network space available to this Client
-        space_available: u64,
-        /// Unique message identifier
-        msg_id: MsgId,
-    },
+impl Request {
+    /// The priority Crust should send this message with.
+    pub fn priority(&self) -> u8 {
+        /*
+        match *self {
+            Request::Refresh(..) => 2,
+            Request::Get(..) |
+            Request::GetAccountInfo(..) => 3,
+            Request::Append(..) => 4,
+            Request::Put(ref data, _) |
+            Request::Post(ref data, _) |
+            Request::Delete(ref data, _) => {
+                match *data {
+                    Data::Structured(..) => 4,
+                    _ => 5,
+                }
+            }
+        }
+        */
 
-    // --- ImmutableData ---
-    // ==========================
-    /// Returns a success or failure status of putting ImmutableData to the network.
-    PutIData {
-        /// Result of putting ImmutableData to the network.
-        res: Result<(), Vec<u8>>,
-        /// Unique message identifier
-        msg_id: MsgId,
-    },
-    /// Returns a result of fetching ImmutableData from the network.
-    GetIData {
-        /// Result of fetching ImmutableData from the network.
-        res: Result<ImmutableData, Vec<u8>>,
-        /// Unique message identifier
-        msg_id: MsgId,
-    },
+        unimplemented!()
+    }
 
-    // --- MutableData ---
-    // ==========================
-    /// Returns a success or failure status of putting MutableData to the network.
-    PutMData {
-        /// Result of putting MutableData to the network.
-        res: Result<(), Vec<u8>>,
-        /// Unique message identifier
-        msg_id: MsgId,
-    },
+    /// Is the response corresponding to this request cacheable?
+    pub fn is_cacheable(&self) -> bool {
+        if let Request::GetIData { .. } = *self {
+            true
+        } else {
+            false
+        }
+    }
+}
 
-    /// Returns a current version of MutableData stored in the network.
-    GetMDataVersion {
-        /// Result of getting a version of MutableData
-        res: Result<u64, Vec<u8>>,
-        /// Unique message identifier
-        msg_id: MsgId,
-    },
+impl Debug for Request {
+    fn fmt(&self, _formatter: &mut Formatter) -> fmt::Result {
+        /*
+        match *self {
+            Request::Refresh(ref data, ref message_id) => {
+                write!(formatter,
+                       "Refresh({}, {:?})",
+                       utils::format_binary_array(data),
+                       message_id)
+            }
+            Request::Get(ref data_request, ref message_id) => {
+                write!(formatter, "Get({:?}, {:?})", data_request, message_id)
+            }
+            Request::Put(ref data, ref message_id) => {
+                write!(formatter, "Put({:?}, {:?})", data, message_id)
+            }
+            Request::Post(ref data, ref message_id) => {
+                write!(formatter, "Post({:?}, {:?})", data, message_id)
+            }
+            Request::Delete(ref data, ref message_id) => {
+                write!(formatter, "Delete({:?}, {:?})", data, message_id)
+            }
+            Request::Append(ref wrapper, ref message_id) => {
+                write!(formatter, "Append({:?}, {:?})", wrapper, message_id)
+            }
+            Request::GetAccountInfo(ref message_id) => {
+                write!(formatter, "GetAccountInfo({:?})", message_id)
+            }
+        }
+        */
 
-    // Data Actions
-    /// Returns a complete list of entries in MutableData or an error in case of failure.
-    ListMDataEntries {
-        /// Result of getting a list of entries in MutableData
-        res: Result<BTreeMap<Vec<u8>, Value>, Vec<u8>>,
-        /// Unique message identifier
-        msg_id: MsgId,
-    },
-    /// Returns a list of keys in MutableData or an error in case of failure.
-    ListMDataKeys {
-        /// Result of getting a list of keys in MutableData
-        res: Result<BTreeSet<Vec<u8>>, Vec<u8>>,
-        /// Unique message identifier
-        msg_id: MsgId,
-    },
-    /// Returns a list of values in MutableData or an error in case of failure.
-    ListMDataValues {
-        /// Result of getting a list of values in MutableData
-        res: Result<Vec<Value>, Vec<u8>>,
-        /// Unique message identifier
-        msg_id: MsgId,
-    },
-    /// Returns a single entry from MutableData or an error in case of failure.
-    GetMDataValue {
-        /// Result of getting a value from MutableData
-        res: Result<Value, Vec<u8>>,
-        /// Unique message identifier
-        msg_id: MsgId,
-    },
-    /// Returns a success or failure status of mutating MutableData in the network.
-    MutateMDataEntries {
-        /// Result of mutating an entry in MutableData
-        res: Result<(), Vec<u8>>,
-        /// Unique message identifier
-        msg_id: MsgId,
-    },
-
-    // Permission Actions
-    /// Returns a complete list of MutableData permissions stored on the network or an error in case of failure.
-    ListMDataPermissions {
-        /// Result of getting a list of permissions in MutableData
-        res: Result<BTreeMap<User, PermissionSet>, Vec<u8>>,
-        /// Unique message identifier
-        msg_id: MsgId,
-    },
-    /// Returns a list of permissions for a particular User in MutableData or an error in case of failure.
-    ListMDataUserPermissions {
-        /// Result of getting a list of user permissions in MutableData
-        res: Result<PermissionSet, Vec<u8>>,
-        /// Unique message identifier
-        msg_id: MsgId,
-    },
-    /// Returns a success or failure status of setting permissions for a particular User in MutableData.
-    SetMDataUserPermissions {
-        /// Result of setting a list of user permissions in MutableData
-        res: Result<(), Vec<u8>>,
-        /// Unique message identifier
-        msg_id: MsgId,
-    },
-    /// Returns a success or failure status of deleting permissions for a particular User in MutableData.
-    DelMDataUserPermissions {
-        /// Result of deleting a list of user permissions in MutableData
-        res: Result<(), Vec<u8>>,
-        /// Unique message identifier
-        msg_id: MsgId,
-    },
-
-    // Ownership Actions
-    /// Returns a success or failure status of chaning an owner of MutableData.
-    ChangeMDataOwner {
-        /// Result of chaning an owner of MutableData
-        res: Result<(), Vec<u8>>,
-        /// Unique message identifier
-        msg_id: MsgId,
-    },
-
-    // --- Client (Owner) to MM ---
-    // ==========================
-    /// Returns a list of authorised keys from MaidManager.
-    ListAuthKeysAndVersion {
-        /// Result of getting a list of authorised keys
-        res: Result<BTreeSet<sign::PublicKey>, Vec<u8>>,
-        /// Unique message identifier
-        msg_id: MsgId,
-    },
-    /// Returns a success or failure status of inserting an authorised key into MaidManager.
-    InsAuthKey {
-        /// Result of inserting an authorised key
-        res: Result<(), Vec<u8>>,
-        /// Unique message identifier
-        msg_id: MsgId,
-    },
-    /// Returns a success or failure status of deleting an authorised key from MaidManager.
-    DelAuthKey {
-        /// Result of deleting an authorised key
-        res: Result<(), Vec<u8>>,
-        /// Unique message identifier
-        msg_id: MsgId,
-    },
+        unimplemented!()
+    }
 }

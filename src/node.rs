@@ -18,14 +18,12 @@
 use action::Action;
 use authority::Authority;
 use cache::{Cache, NullCache};
-use data::{Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use event::Event;
 use id::FullId;
 #[cfg(not(feature = "use-mock-crust"))]
 use maidsafe_utilities::thread;
-use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, RELOCATE_PRIORITY, Request, Response,
-               UserMessage};
+use messages::{RELOCATE_PRIORITY, Request, UserMessage};
 #[cfg(feature = "use-mock-crust")]
 use routing_table::RoutingTable;
 #[cfg(not(feature = "use-mock-crust"))]
@@ -171,6 +169,7 @@ impl Node {
         }
     }
 
+    /*
     /// Send a `Get` request to `dst` to retrieve data from the network.
     pub fn send_get_request(&self,
                             src: Authority,
@@ -389,6 +388,7 @@ impl Node {
         });
         self.send_action(src, dst, user_msg, CLIENT_GET_PRIORITY)
     }
+    */
 
     /// Send a `Refresh` request from `src` to `dst` to trigger churn.
     pub fn send_refresh_request(&self,

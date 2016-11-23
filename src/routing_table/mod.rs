@@ -456,10 +456,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             return Err(Error::PeerNameUnsuitable);
         }
 
-        if let Some(needed_prefix) = self.needed
-            .keys()
-            .find(|&prefix| prefix.matches(&name))
-            .cloned() {
+        if let Some(needed_prefix) =
+            self.needed
+                .keys()
+                .find(|&prefix| prefix.matches(&name))
+                .cloned() {
             // Safe to unwrap as we just found this key
             let mut needed_group = unwrap!(self.needed.remove(&needed_prefix));
             let _ = needed_group.remove(&name);
@@ -539,10 +540,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             removal_details.targets_and_merge_details =
                 Some((self.prefixes_within_merge(&merge_prefix),
                       OwnMergeDetails {
-                    sender_prefix: self.our_group_prefix,
-                    merge_prefix: merge_prefix,
-                    groups: groups,
-                }));
+                          sender_prefix: self.our_group_prefix,
+                          merge_prefix: merge_prefix,
+                          groups: groups,
+                      }));
         }
         Ok(removal_details)
     }
@@ -1054,8 +1055,8 @@ mod tests {
                         // one split possible; the arbitrariness is just which half we choose here).
                         (group.len(),
                          group.iter()
-                            .filter(|name| new_name.common_prefix(name) > group_prefix.bit_count())
-                            .count())
+                             .filter(|name| new_name.common_prefix(name) > group_prefix.bit_count())
+                             .count())
                     };
                     let min_size = table.min_split_size();
                     if new_group_size >= min_size && group_len - new_group_size >= min_size {

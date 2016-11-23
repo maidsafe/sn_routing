@@ -145,6 +145,7 @@ mod ack_manager;
 mod action;
 mod authority;
 mod client;
+mod client_error;
 mod cache;
 mod data;
 mod error;
@@ -152,7 +153,6 @@ mod event;
 mod id;
 mod message_filter;
 mod messages;
-mod messages_new;
 mod node;
 mod peer_manager;
 mod routing_message_filter;
@@ -173,9 +173,6 @@ pub mod mock_crust;
 
 /// Messaging infrastructure
 pub mod messaging;
-/// Error communication between vaults and core
-pub mod client_errors;
-
 /// Structured Data Tag for Session Packet Type
 pub const TYPE_TAG_SESSION_PACKET: u64 = 0;
 /// Structured Data Tag for DNS Packet Type
@@ -184,17 +181,17 @@ pub const TYPE_TAG_DNS_PACKET: u64 = 5;
 pub use authority::Authority;
 pub use cache::{Cache, NullCache};
 pub use client::Client;
-pub use data::{AppendWrapper, AppendedData, Data, DataIdentifier, Filter, ImmutableData,
-               MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES,
+pub use client_error::ClientError;
+pub use data::{AppendWrapper, AppendedData, Data, DataIdentifier, EntryAction, Filter,
+               ImmutableData, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_MUTABLE_DATA_ENTRIES,
+               MAX_MUTABLE_DATA_SIZE_IN_BYTES, MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES,
                MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES, MAX_STRUCTURED_DATA_SIZE_IN_BYTES,
-               NO_OWNER_PUB_KEY, PrivAppendableData, PrivAppendedData, PubAppendableData,
-               StructuredData};
+               MutableData, NO_OWNER_PUB_KEY, PermissionSet, PrivAppendableData, PrivAppendedData,
+               PubAppendableData, StructuredData, User, Value};
 pub use error::{InterfaceError, RoutingError};
 pub use event::Event;
 pub use id::{FullId, PublicId};
-pub use messages::{Request, Response};
-pub use messages_new::Request as Request2;
-pub use messages_new::Response as Response2;
+pub use messages::{AccountInfo, Request, Response};
 #[cfg(feature = "use-mock-crust")]
 pub use mock_crust::crust;
 pub use node::{Node, NodeBuilder};

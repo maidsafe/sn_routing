@@ -40,6 +40,10 @@
                                    option_unwrap_used))]
 #![cfg_attr(feature="clippy", allow(use_debug))]
 
+// TODO: uncomment and fix
+
+/*
+
 extern crate itertools;
 #[cfg(target_os = "macos")]
 extern crate libc;
@@ -562,3 +566,5 @@ fn main() {
     init();
     core();
 }
+
+*/

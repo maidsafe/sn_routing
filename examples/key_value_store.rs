@@ -42,6 +42,10 @@
 
 #![cfg(not(feature = "use-mock-crust"))]
 
+// TODO: uncomment and fix
+
+/*
+
 #[macro_use]
 extern crate log;
 #[macro_use]
@@ -243,3 +247,7 @@ fn main() {
         KeyValueStore::new().run();
     }
 }
+
+*/
+
+fn main() {}
