@@ -182,7 +182,7 @@ pub use authority::Authority;
 pub use cache::{Cache, NullCache};
 pub use client::Client;
 pub use client_error::ClientError;
-pub use data::{AppendWrapper, AppendedData, Data, DataIdentifier, EntryAction, Filter,
+pub use data::{Action, AppendWrapper, AppendedData, Data, DataIdentifier, EntryAction, Filter,
                ImmutableData, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_MUTABLE_DATA_ENTRIES,
                MAX_MUTABLE_DATA_SIZE_IN_BYTES, MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES,
                MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES, MAX_STRUCTURED_DATA_SIZE_IN_BYTES,

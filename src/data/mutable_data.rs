@@ -68,11 +68,16 @@ pub enum User {
     Key(PublicKey),
 }
 
+/// Action a permission applies to
 #[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Copy, Clone, RustcEncodable, RustcDecodable)]
 pub enum Action {
+    /// Permission to insert new entries.
     Insert,
+    /// Permission to update existing entries.
     Update,
+    /// Permission to delete existing entries.
     Delete,
+    /// Permission to modify permissions for other users.
     ManagePermission,
 }
 
