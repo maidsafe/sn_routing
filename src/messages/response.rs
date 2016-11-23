@@ -212,70 +212,463 @@ impl Response {
     }
 }
 
+fn decode_result<D: Decoder, T: Decodable>(s: &mut D) -> Result<Result<T, ClientError>, D::Error> {
+    Ok(match s.read_u8()? {
+        0 => Ok(T::decode(s)?),
+        1 => Err(ClientError::decode(s)?),
+        _ => return Err(s.error("unexpected Result binary format: must be 0 or 1")),
+    })
+}
+
+fn decode_response_variant<D: Decoder, T: Decodable>
+    (s: &mut D)
+     -> Result<(Result<T, ClientError>, MsgId), D::Error> {
+    let res = s.read_enum_struct_variant_field("res", 0, |s| decode_result(s))?;
+    let msg_id = s.read_enum_struct_variant_field("msg_id", 1, |s| MsgId::decode(s))?;
+    Ok((res, msg_id))
+}
+
 impl Decodable for Response {
-    fn decode<D: Decoder>(_d: &mut D) -> Result<Self, D::Error> {
-        unimplemented!()
+    fn decode<D: Decoder>(s: &mut D) -> Result<Self, D::Error> {
+        s.read_enum("Response", |s| {
+            s.read_enum_struct_variant(&["GetAccountInfo",
+                                         "PutIData",
+                                         "GetIData",
+                                         "PutMData",
+                                         "GetMDataVersion",
+                                         "ListMDataEntries",
+                                         "ListMDataKeys",
+                                         "ListMDataValues",
+                                         "GetMDataValue",
+                                         "MutateMDataEntries",
+                                         "ListMDataPermissions",
+                                         "ListMDataUserPermissions",
+                                         "SetMDataUserPermissions",
+                                         "DelMDataUserPermissions",
+                                         "ChangeMDataOwner",
+                                         "ListAuthKeysAndVersion",
+                                         "InsAuthKey",
+                                         "DelAuthKey"],
+                                       |s, num| {
+                match num {
+                    0 => {
+                        let (res, msg_id) = decode_response_variant(s)?;
+                        Ok(Response::GetAccountInfo {
+                            res: res,
+                            msg_id: msg_id,
+                        })
+                    }
+                    1 => {
+                        let (res, msg_id) = decode_response_variant(s)?;
+                        Ok(Response::PutIData {
+                            res: res,
+                            msg_id: msg_id,
+                        })
+                    }
+                    2 => {
+                        let (res, msg_id) = decode_response_variant(s)?;
+                        Ok(Response::GetIData {
+                            res: res,
+                            msg_id: msg_id,
+                        })
+                    }
+                    3 => {
+                        let (res, msg_id) = decode_response_variant(s)?;
+                        Ok(Response::PutMData {
+                            res: res,
+                            msg_id: msg_id,
+                        })
+                    }
+                    4 => {
+                        let (res, msg_id) = decode_response_variant(s)?;
+                        Ok(Response::GetMDataVersion {
+                            res: res,
+                            msg_id: msg_id,
+                        })
+                    }
+                    5 => {
+                        let (res, msg_id) = decode_response_variant(s)?;
+                        Ok(Response::ListMDataEntries {
+                            res: res,
+                            msg_id: msg_id,
+                        })
+                    }
+                    6 => {
+                        let (res, msg_id) = decode_response_variant(s)?;
+                        Ok(Response::ListMDataKeys {
+                            res: res,
+                            msg_id: msg_id,
+                        })
+                    }
+                    7 => {
+                        let (res, msg_id) = decode_response_variant(s)?;
+                        Ok(Response::ListMDataValues {
+                            res: res,
+                            msg_id: msg_id,
+                        })
+                    }
+                    8 => {
+                        let (res, msg_id) = decode_response_variant(s)?;
+                        Ok(Response::GetMDataValue {
+                            res: res,
+                            msg_id: msg_id,
+                        })
+                    }
+                    9 => {
+                        let (res, msg_id) = decode_response_variant(s)?;
+                        Ok(Response::MutateMDataEntries {
+                            res: res,
+                            msg_id: msg_id,
+                        })
+                    }
+                    10 => {
+                        let (res, msg_id) = decode_response_variant(s)?;
+                        Ok(Response::ListMDataPermissions {
+                            res: res,
+                            msg_id: msg_id,
+                        })
+                    }
+                    11 => {
+                        let (res, msg_id) = decode_response_variant(s)?;
+                        Ok(Response::ListMDataUserPermissions {
+                            res: res,
+                            msg_id: msg_id,
+                        })
+                    }
+                    12 => {
+                        let (res, msg_id) = decode_response_variant(s)?;
+                        Ok(Response::SetMDataUserPermissions {
+                            res: res,
+                            msg_id: msg_id,
+                        })
+                    }
+                    13 => {
+                        let (res, msg_id) = decode_response_variant(s)?;
+                        Ok(Response::DelMDataUserPermissions {
+                            res: res,
+                            msg_id: msg_id,
+                        })
+                    }
+                    14 => {
+                        let (res, msg_id) = decode_response_variant(s)?;
+                        Ok(Response::ChangeMDataOwner {
+                            res: res,
+                            msg_id: msg_id,
+                        })
+                    }
+                    15 => {
+                        let (res, msg_id) = decode_response_variant(s)?;
+                        Ok(Response::ListAuthKeysAndVersion {
+                            res: res,
+                            msg_id: msg_id,
+                        })
+                    }
+                    16 => {
+                        let (res, msg_id) = decode_response_variant(s)?;
+                        Ok(Response::InsAuthKey {
+                            res: res,
+                            msg_id: msg_id,
+                        })
+                    }
+                    17 => {
+                        let (res, msg_id) = decode_response_variant(s)?;
+                        Ok(Response::DelAuthKey {
+                            res: res,
+                            msg_id: msg_id,
+                        })
+                    }
+                    _ => Err(s.error("Unknown Response type")),
+                }
+            })
+        })
     }
 }
 
+fn encode_result<E: Encoder, T: Encodable>(encoder: &mut E,
+                                           res: &Result<T, ClientError>)
+                                           -> Result<(), E::Error> {
+    match *res {
+        Ok(ref val) => {
+            encoder.emit_u8(0)?;
+            val.encode(encoder)?;
+        }
+        Err(ref err) => {
+            encoder.emit_u8(1)?;
+            err.encode(encoder)?;
+        }
+    }
+    Ok(())
+}
+
+fn encode_response_variant<S: Encoder, T: Encodable>(s: &mut S,
+                                                     v_name: &str,
+                                                     v_id: usize,
+                                                     res: &Result<T, ClientError>,
+                                                     msg_id: &MsgId)
+                                                     -> Result<(), S::Error> {
+    s.emit_enum_variant(v_name, v_id, 2, |s| {
+        s.emit_enum_struct_variant_field("res", 0, |s| encode_result(s, res))?;
+        s.emit_enum_struct_variant_field("msg_id", 1, |s| msg_id.encode(s))?;
+        Ok(())
+    })
+}
+
 impl Encodable for Response {
-    fn encode<E: Encoder>(&self, _e: &mut E) -> Result<(), E::Error> {
-        unimplemented!()
+    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+        s.emit_enum("Response", |s| {
+            match *self {
+                Response::GetAccountInfo { ref res, ref msg_id } => {
+                    encode_response_variant(s, "GetAccountInfo", 0, res, msg_id)
+                }
+                Response::PutIData { ref res, ref msg_id } => {
+                    encode_response_variant(s, "PutIData", 1, res, msg_id)
+                }
+                Response::GetIData { ref res, ref msg_id } => {
+                    encode_response_variant(s, "GetIData", 2, res, msg_id)
+                }
+                Response::PutMData { ref res, ref msg_id } => {
+                    encode_response_variant(s, "PutMData", 3, res, msg_id)
+                }
+                Response::GetMDataVersion { ref res, ref msg_id } => {
+                    encode_response_variant(s, "GetMDataVersion", 4, res, msg_id)
+                }
+                Response::ListMDataEntries { ref res, ref msg_id } => {
+                    encode_response_variant(s, "ListMDataEntries", 5, res, msg_id)
+                }
+                Response::ListMDataKeys { ref res, ref msg_id } => {
+                    encode_response_variant(s, "ListMDataKeys", 6, res, msg_id)
+                }
+                Response::ListMDataValues { ref res, ref msg_id } => {
+                    encode_response_variant(s, "ListMDataValues", 7, res, msg_id)
+                }
+                Response::GetMDataValue { ref res, ref msg_id } => {
+                    encode_response_variant(s, "GetMDataValue", 8, res, msg_id)
+                }
+                Response::MutateMDataEntries { ref res, ref msg_id } => {
+                    encode_response_variant(s, "MutateMDataEntries", 9, res, msg_id)
+                }
+                Response::ListMDataPermissions { ref res, ref msg_id } => {
+                    encode_response_variant(s, "ListMDataPermissions", 10, res, msg_id)
+                }
+                Response::ListMDataUserPermissions { ref res, ref msg_id } => {
+                    encode_response_variant(s, "ListMDataUserPermissions", 11, res, msg_id)
+                }
+                Response::SetMDataUserPermissions { ref res, ref msg_id } => {
+                    encode_response_variant(s, "SetMDataUserPermissions", 12, res, msg_id)
+                }
+                Response::DelMDataUserPermissions { ref res, ref msg_id } => {
+                    encode_response_variant(s, "DelMDataUserPermissions", 13, res, msg_id)
+                }
+                Response::ChangeMDataOwner { ref res, ref msg_id } => {
+                    encode_response_variant(s, "ChangeMDataOwner", 14, res, msg_id)
+                }
+                Response::ListAuthKeysAndVersion { ref res, ref msg_id } => {
+                    encode_response_variant(s, "ListAuthKeysAndVersion", 15, res, msg_id)
+                }
+                Response::InsAuthKey { ref res, ref msg_id } => {
+                    encode_response_variant(s, "InsAuthKey", 16, res, msg_id)
+                }
+                Response::DelAuthKey { ref res, ref msg_id } => {
+                    encode_response_variant(s, "DelAuthKey", 17, res, msg_id)
+                }
+            }
+        })
     }
 }
 
 impl Debug for Response {
-    fn fmt(&self, _formatter: &mut Formatter) -> fmt::Result {
-        /*
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            Response::GetSuccess(ref data, ref message_id) => {
-                write!(formatter, "GetSuccess({:?}, {:?})", data, message_id)
+            Response::GetAccountInfo { ref res, ref msg_id } => {
+                write!(formatter,
+                       "GetAccountInfo {{ res: {:?}, msg_id: {:?} }}",
+                       res,
+                       msg_id)
             }
-            Response::PutSuccess(ref name, ref message_id) => {
-                write!(formatter, "PutSuccess({:?}, {:?})", name, message_id)
+            Response::PutIData { ref res, ref msg_id } => {
+                write!(formatter,
+                       "PutIData {{ res: {:?}, msg_id: {:?} }}",
+                       res,
+                       msg_id)
             }
-            Response::PostSuccess(ref name, ref message_id) => {
-                write!(formatter, "PostSuccess({:?}, {:?})", name, message_id)
+            Response::GetIData { ref res, ref msg_id } => {
+                write!(formatter,
+                       "GetIData {{ res: {:?}, msg_id: {:?} }}",
+                       res,
+                       msg_id)
             }
-            Response::DeleteSuccess(ref name, ref message_id) => {
-                write!(formatter, "DeleteSuccess({:?}, {:?})", name, message_id)
+            Response::PutMData { ref res, ref msg_id } => {
+                write!(formatter,
+                       "PutMData {{ res: {:?}, msg_id: {:?} }}",
+                       res,
+                       msg_id)
             }
-            Response::AppendSuccess(ref name, ref message_id) => {
-                write!(formatter, "AppendSuccess({:?}, {:?})", name, message_id)
+            Response::GetMDataVersion { ref res, ref msg_id } => {
+                write!(formatter,
+                       "GetMDataVersion {{ res: {:?}, msg_id: {:?} }}",
+                       res,
+                       msg_id)
             }
-            Response::GetAccountInfoSuccess { ref id, .. } => {
-                write!(formatter, "GetAccountInfoSuccess {{ {:?}, .. }}", id)
+            Response::ListMDataEntries { ref res, ref msg_id } => {
+                write!(formatter,
+                       "ListMDataEntries {{ res: {:?}, msg_id: {:?} }}",
+                       res,
+                       msg_id)
             }
-            Response::GetFailure { ref id, ref data_id, .. } => {
-                write!(formatter, "GetFailure {{ {:?}, {:?}, .. }}", id, data_id)
+            Response::ListMDataKeys { ref res, ref msg_id } => {
+                write!(formatter,
+                       "ListMDataKeys {{ res: {:?}, msg_id: {:?} }}",
+                       res,
+                       msg_id)
             }
-            Response::PutFailure { ref id, ref data_id, .. } => {
-                write!(formatter, "PutFailure {{ {:?}, {:?}, .. }}", id, data_id)
+            Response::ListMDataValues { ref res, ref msg_id } => {
+                write!(formatter,
+                       "ListMDataValues {{ res: {:?}, msg_id: {:?} }}",
+                       res,
+                       msg_id)
             }
-            Response::PostFailure { ref id, ref data_id, .. } => {
-                write!(formatter, "PostFailure {{ {:?}, {:?}, .. }}", id, data_id)
+            Response::GetMDataValue { ref res, ref msg_id } => {
+                write!(formatter,
+                       "GetMDataValue {{ res: {:?}, msg_id: {:?} }}",
+                       res,
+                       msg_id)
             }
-            Response::DeleteFailure { ref id, ref data_id, .. } => {
-                write!(formatter, "DeleteFailure {{ {:?}, {:?}, .. }}", id, data_id)
+            Response::MutateMDataEntries { ref res, ref msg_id } => {
+                write!(formatter,
+                       "MutateMDataEntries {{ res: {:?}, msg_id: {:?} }}",
+                       res,
+                       msg_id)
             }
-            Response::AppendFailure { ref id, ref data_id, .. } => {
-                write!(formatter, "AppendFailure {{ {:?}, {:?}, .. }}", id, data_id)
+            Response::ListMDataPermissions { ref res, ref msg_id } => {
+                write!(formatter,
+                       "ListMDataPermissions {{ res: {:?}, msg_id: {:?} }}",
+                       res,
+                       msg_id)
             }
-            Response::GetAccountInfoFailure { ref id, .. } => {
-                write!(formatter, "GetAccountInfoFailure {{ {:?}, .. }}", id)
+            Response::ListMDataUserPermissions { ref res, ref msg_id } => {
+                write!(formatter,
+                       "ListMDataUserPermissions {{ res: {:?}, msg_id: {:?} }}",
+                       res,
+                       msg_id)
+            }
+            Response::SetMDataUserPermissions { ref res, ref msg_id } => {
+                write!(formatter,
+                       "SetMDataUserPermissions {{ res: {:?}, msg_id: {:?} }}",
+                       res,
+                       msg_id)
+            }
+            Response::DelMDataUserPermissions { ref res, ref msg_id } => {
+                write!(formatter,
+                       "DelMDataUserPermissions {{ res: {:?}, msg_id: {:?} }}",
+                       res,
+                       msg_id)
+            }
+            Response::ChangeMDataOwner { ref res, ref msg_id } => {
+                write!(formatter,
+                       "ChangeMDataOwner {{ res: {:?}, msg_id: {:?} }}",
+                       res,
+                       msg_id)
+            }
+            Response::ListAuthKeysAndVersion { ref res, ref msg_id } => {
+                write!(formatter,
+                       "ListAuthKeysAndVersion {{ res: {:?}, msg_id: {:?} }}",
+                       res,
+                       msg_id)
+            }
+            Response::InsAuthKey { ref res, ref msg_id } => {
+                write!(formatter,
+                       "InsAuthKey {{ res: {:?}, msg_id: {:?} }}",
+                       res,
+                       msg_id)
+            }
+            Response::DelAuthKey { ref res, ref msg_id } => {
+                write!(formatter,
+                       "DelAuthKey {{ res: {:?}, msg_id: {:?} }}",
+                       res,
+                       msg_id)
             }
         }
-        */
-
-        unimplemented!()
     }
 }
 
 /// Account information
-#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, RustcDecodable, RustcEncodable, Debug)]
 pub struct AccountInfo {
     /// Number of data pieces stored by the account.
     pub data_stored: u64,
     /// Remaining storage space (in terms of data pieces) for the account.
     pub space_available: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use client_error::ClientError;
+    use maidsafe_utilities::serialisation::{deserialise, serialise};
+    use super::*;
+    use types::MessageId;
+
+    #[test]
+    fn serialise_response_err() {
+        let msg_id = MessageId::new();
+        let serialised = unwrap!(serialise(&Response::GetAccountInfo {
+            res: Err(ClientError::NoSuchData),
+            msg_id: msg_id,
+        }));
+
+        let deserialised = unwrap!(deserialise::<Response>(&serialised));
+
+        if let Response::GetAccountInfo { res, msg_id: got_msg_id } = deserialised {
+            assert!(if let Err(ClientError::NoSuchData) = res {
+                        true
+                    } else {
+                        false
+                    },
+                    "Expected Err(ClientError::NoSuchData), got {:?}",
+                    res);
+            assert_eq!(got_msg_id, msg_id);
+        } else {
+            panic!("Expected Response::GetAccountInfo, got {:?}", deserialised);
+        }
+    }
+
+    #[test]
+    fn serialise_response_ok() {
+        let msg_id = MessageId::new();
+        let serialised = unwrap!(serialise(&Response::GetAccountInfo {
+            res: Ok(AccountInfo {
+                data_stored: 64,
+                space_available: 128,
+            }),
+            msg_id: msg_id,
+        }));
+
+        let deserialised = unwrap!(deserialise::<Response>(&serialised));
+
+        if let Response::GetAccountInfo { res, msg_id: got_msg_id } = deserialised {
+            let res = unwrap!(res);
+            assert_eq!(res.data_stored, 64);
+            assert_eq!(res.space_available, 128);
+            assert_eq!(got_msg_id, msg_id);
+        } else {
+            panic!("Expected Response::GetAccountInfo, got {:?}", deserialised);
+        }
+    }
+
+    #[test]
+    fn serialise_response_ok2() {
+        let msg_id = MessageId::new();
+        let serialised = unwrap!(serialise(&Response::ChangeMDataOwner {
+            res: Ok(()),
+            msg_id: msg_id,
+        }));
+
+        let deserialised = unwrap!(deserialise::<Response>(&serialised));
+        if let Response::ChangeMDataOwner { res, msg_id: got_msg_id } = deserialised {
+            assert!(res.is_ok());
+            assert_eq!(got_msg_id, msg_id);
+        } else {
+            panic!("Expected Response::ChangeMDataOwner, got {:?}",
+                   deserialised);
+        }
+    }
 }

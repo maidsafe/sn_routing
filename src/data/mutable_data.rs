@@ -51,7 +51,7 @@ pub struct MutableData {
 }
 
 /// A value in `MutableData`
-#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable)]
+#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable, Debug)]
 pub struct Value {
     /// Content of the entry.
     pub content: Vec<u8>,
@@ -60,7 +60,7 @@ pub struct Value {
 }
 
 /// Subject of permissions
-#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable)]
+#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable, Debug)]
 pub enum User {
     /// Permissions apply to anyone.
     Anyone,
@@ -82,7 +82,7 @@ pub enum Action {
 }
 
 /// Set of user permissions.
-#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable, Default)]
+#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable, Default, Debug)]
 pub struct PermissionSet {
     insert: Option<bool>,
     update: Option<bool>,
