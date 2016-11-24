@@ -43,7 +43,7 @@ use signature_accumulator::SignatureAccumulator;
 use state_machine::Transition;
 use stats::Stats;
 use std::{fmt, iter};
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeSet, HashSet, VecDeque};
 use std::fmt::{Debug, Formatter};
 use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
@@ -498,7 +498,7 @@ impl Node {
                 self.sig_accumulator
                     .add_signature(digest, sig, pub_id) {
                 let hop = *self.name(); // we accumulated the message, so now we act as the last hop
-                return self.handle_signed_message(signed_msg, route, hop);
+                return self.handle_signed_message(signed_msg, route, hop, &[]);
             }
         } else {
             warn!("{:?} Received message signature from unknown peer {:?}",
@@ -539,14 +539,15 @@ impl Node {
             return Err(RoutingError::UnknownConnection(peer_id));
         };
 
-        let HopMessage { content, route, .. } = hop_msg;
-        self.handle_signed_message(content, route, hop_name)
+        let HopMessage { content, route, sent_to, .. } = hop_msg;
+        self.handle_signed_message(content, route, hop_name, &sent_to)
     }
 
     fn handle_signed_message(&mut self,
                              signed_msg: SignedMessage,
                              route: u8,
-                             hop_name: XorName)
+                             hop_name: XorName,
+                             sent_to: &[XorName])
                              -> Result<(), RoutingError> {
         signed_msg.check_integrity()?;
 
@@ -568,7 +569,7 @@ impl Node {
                 self.peer_mgr.routing_table().our_group_prefix().matches(&hop_name);
             if (!from_our_group || hop_name == our_name) &&
                signed_msg.routing_message().dst.is_group() {
-                self.send_signed_message(&signed_msg, route, &our_name)?;
+                self.send_signed_message(&signed_msg, route, &our_name, sent_to)?;
             }
             // if addressed to us, then we just queue it and return
             self.msg_queue.push_back(signed_msg.into_routing_message());
@@ -579,7 +580,7 @@ impl Node {
             return Ok(());
         }
 
-        if let Err(error) = self.send_signed_message(&signed_msg, route, &hop_name) {
+        if let Err(error) = self.send_signed_message(&signed_msg, route, &hop_name, sent_to) {
             debug!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);
         }
 
@@ -1446,9 +1447,9 @@ impl Node {
         let our_name = *self.name();
         if let Some((msg, route)) = self.sig_accumulator.add_message(signed_msg, route) {
             if self.in_authority(&msg.routing_message().dst) {
-                self.handle_signed_message(msg, route, our_name)?;
+                self.handle_signed_message(msg, route, our_name, &[])?;
             } else {
-                self.send_signed_message(&msg, route, &our_name)?;
+                self.send_signed_message(&msg, route, &our_name, &[])?;
             }
         }
         Ok(())
@@ -1473,7 +1474,8 @@ impl Node {
     fn send_signed_message(&mut self,
                            signed_msg: &SignedMessage,
                            route: u8,
-                           hop: &XorName)
+                           hop: &XorName,
+                           sent_to: &[XorName])
                            -> Result<(), RoutingError> {
         let sent_by_us = hop == self.name() && signed_msg.signed_by(self.full_id().public_id());
         if sent_by_us {
@@ -1502,10 +1504,10 @@ impl Node {
             return Ok(());  // Avoid swarming back out to our own group.
         }
 
-        let target_peer_ids = self.get_targets(routing_msg, route, *hop)?;
+        let (new_sent_to, target_peer_ids) = self.get_targets(routing_msg, route, hop, sent_to)?;
 
         for target_peer_id in target_peer_ids {
-            self.send_signed_msg_to_peer(signed_msg, target_peer_id, route)?;
+            self.send_signed_msg_to_peer(signed_msg, target_peer_id, route, new_sent_to.clone())?;
         }
         Ok(())
     }
@@ -1547,13 +1549,14 @@ impl Node {
     fn send_signed_msg_to_peer(&mut self,
                                signed_msg: &SignedMessage,
                                target: PeerId,
-                               route: u8)
+                               route: u8,
+                               sent_to: Vec<XorName>)
                                -> Result<(), RoutingError> {
         let (peer_id, bytes) = if self.crust_service.is_connected(&target) {
-            (target, self.to_hop_bytes(signed_msg.clone(), route)?)
+            (target, self.to_hop_bytes(signed_msg.clone(), route, sent_to)?)
         } else if let Some(&tunnel_id) = self.tunnels
             .tunnel_for(&target) {
-            (tunnel_id, self.to_tunnel_hop_bytes(signed_msg.clone(), route, target)?)
+            (tunnel_id, self.to_tunnel_hop_bytes(signed_msg.clone(), route, sent_to, target)?)
         } else {
             trace!("{:?} Not connected or tunneling to {:?}. Dropping peer.",
                    self,
@@ -1582,7 +1585,8 @@ impl Node {
             if self.filter_outgoing_routing_msg(signed_msg.routing_message(), peer_id, 0) {
                 return Ok(());
             }
-            let hop_msg = HopMessage::new(signed_msg, 0, self.full_id.signing_private_key())?;
+            let hop_msg =
+                HopMessage::new(signed_msg, 0, vec![], self.full_id.signing_private_key())?;
             let message = Message::Hop(hop_msg);
             let raw_bytes = serialisation::serialise(&message)?;
             self.send_or_drop(peer_id, raw_bytes, priority)
@@ -1623,8 +1627,9 @@ impl Node {
     fn get_targets(&self,
                    routing_msg: &RoutingMessage,
                    route: u8,
-                   exclude: XorName)
-                   -> Result<Vec<PeerId>, RoutingError> {
+                   hop: &XorName,
+                   sent_to: &[XorName])
+                   -> Result<(Vec<XorName>, Vec<PeerId>), RoutingError> {
         let force_via_proxy = match routing_msg.content {
             MessageContent::ConnectionInfo(ConnectionInfo { public_id, .. }) => {
                 routing_msg.src.is_client() && public_id == *self.full_id.public_id()
@@ -1633,15 +1638,29 @@ impl Node {
         };
 
         if self.is_proper() && !force_via_proxy {
-            let targets = self.peer_mgr
+            let targets: HashSet<_> = self.peer_mgr
                 .routing_table()
-                .targets(&routing_msg.dst.to_destination(), exclude, route as usize)?;
-            Ok(self.peer_mgr.get_peer_ids(&targets))
+                .targets(&routing_msg.dst.to_destination(), *hop, route as usize)?
+                .into_iter()
+                .filter(|target| !sent_to.contains(target))
+                .collect();
+            let new_sent_to =
+                if self.peer_mgr.routing_table()
+                                .our_group_prefix()
+                                .matches(routing_msg.dst.name()) {
+                    sent_to.iter()
+                        .chain(targets.iter())
+                        .cloned()
+                        .collect_vec()
+            } else {
+              vec![]
+            };
+            Ok((new_sent_to, self.peer_mgr.get_peer_ids(&targets)))
         } else if let Authority::Client { ref proxy_node_name, .. } = routing_msg.src {
             // We don't have any contacts in our routing table yet. Keep using
             // the proxy connection until we do.
             if let Some(&peer_id) = self.peer_mgr.get_proxy_peer_id(proxy_node_name) {
-                Ok(vec![peer_id])
+                Ok((vec![], vec![peer_id]))
             } else {
                 error!("{:?} - Unable to find connection to proxy node in proxy map",
                        self);
@@ -1657,10 +1676,12 @@ impl Node {
     fn to_tunnel_hop_bytes(&self,
                            signed_msg: SignedMessage,
                            route: u8,
+                           sent_to: Vec<XorName>,
                            dst: PeerId)
                            -> Result<Vec<u8>, RoutingError> {
         let hop_msg = HopMessage::new(signed_msg.clone(),
                                       route,
+                                      sent_to,
                                       self.full_id.signing_private_key())?;
         let message = Message::TunnelHop {
             content: hop_msg,

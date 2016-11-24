@@ -154,6 +154,8 @@ pub struct HopMessage {
     /// Route number; corresponds to the index of the peer in the group of target peers being
     /// considered for the next hop.
     pub route: u8,
+    /// Every node this has already been sent to.
+    pub sent_to: Vec<XorName>,
     /// Signature to be validated against the neighbouring sender's public key.
     signature: sign::Signature,
 }
@@ -162,12 +164,14 @@ impl HopMessage {
     /// Wrap `content` for transmission to the next hop and sign it.
     pub fn new(content: SignedMessage,
                route: u8,
+               sent_to: Vec<XorName>,
                signing_key: &sign::SecretKey)
                -> Result<HopMessage, RoutingError> {
         let bytes_to_sign = serialise(&content)?;
         Ok(HopMessage {
             content: content,
             route: route,
+            sent_to: sent_to,
             signature: sign::sign_detached(&bytes_to_sign, signing_key),
         })
     }
@@ -600,7 +604,7 @@ impl Debug for DirectMessage {
 impl Debug for HopMessage {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter,
-               "HopMessage {{ content: {:?}, route: {}, signature: .. }}",
+               "HopMessage {{ content: {:?}, route: {}, sent_to: .., signature: .. }}",
                self.content,
                self.route)
     }
@@ -1156,7 +1160,8 @@ mod tests {
 
         let signed_message = unwrap!(signed_message_result);
         let (public_signing_key, secret_signing_key) = sign::gen_keypair();
-        let hop_message_result = HopMessage::new(signed_message.clone(), 0, &secret_signing_key);
+        let hop_message_result =
+            HopMessage::new(signed_message.clone(), 0, vec![], &secret_signing_key);
 
         let hop_message = unwrap!(hop_message_result);
 
