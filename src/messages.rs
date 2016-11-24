@@ -1041,6 +1041,7 @@ mod tests {
     use rust_sodium::crypto::sign;
     use std::iter;
     use super::*;
+    use super::MAX_PART_LEN;
     use types::MessageId;
     use xor_name::XorName;
 
@@ -1175,7 +1176,7 @@ mod tests {
 
     #[test]
     fn user_message_parts() {
-        let data_bytes: Vec<u8> = (0..(super::MAX_PART_LEN * 2)).map(|i| i as u8).collect();
+        let data_bytes: Vec<u8> = (0..(MAX_PART_LEN * 2)).map(|i| i as u8).collect();
         let data = Data::Immutable(ImmutableData::new(data_bytes));
         let user_msg = UserMessage::Request(Request::Put(data, MessageId::new()));
         let msg_hash = maidsafe_utilities::big_endian_sip_hash(&user_msg);
