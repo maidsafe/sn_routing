@@ -1644,16 +1644,16 @@ impl Node {
                 .into_iter()
                 .filter(|target| !sent_to.contains(target))
                 .collect();
-            let new_sent_to =
-                if self.peer_mgr.routing_table()
-                                .our_group_prefix()
-                                .matches(routing_msg.dst.name()) {
-                    sent_to.iter()
-                        .chain(targets.iter())
-                        .cloned()
-                        .collect_vec()
+            let new_sent_to = if self.peer_mgr
+                .routing_table()
+                .our_group_prefix()
+                .matches(routing_msg.dst.name()) {
+                sent_to.iter()
+                    .chain(targets.iter())
+                    .cloned()
+                    .collect_vec()
             } else {
-              vec![]
+                vec![]
             };
             Ok((new_sent_to, self.peer_mgr.get_peer_ids(&targets)))
         } else if let Authority::Client { ref proxy_node_name, .. } = routing_msg.src {
