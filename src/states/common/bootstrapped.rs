@@ -20,7 +20,7 @@ use authority::Authority;
 use crust::PeerId;
 use error::RoutingError;
 use maidsafe_utilities::serialisation;
-use messages::{GroupList, HopMessage, Message, MessageContent, RoutingMessage, SignedMessage};
+use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage};
 use peer_manager::MIN_GROUP_SIZE;
 use routing_message_filter::RoutingMessageFilter;
 use std::time::Duration;
@@ -33,12 +33,6 @@ use xor_name::XorName;
 pub trait Bootstrapped: Base {
     fn ack_mgr(&self) -> &AckManager;
     fn ack_mgr_mut(&mut self) -> &mut AckManager;
-
-    fn send_routing_message_via_route_with_group_list(&mut self,
-                                                      routing_msg: RoutingMessage,
-                                                      route: u8,
-                                                      group_list: GroupList)
-                                                      -> Result<(), RoutingError>;
 
     fn send_routing_message_via_route(&mut self,
                                       routing_msg: RoutingMessage,
@@ -74,7 +68,6 @@ pub trait Bootstrapped: Base {
         let token = self.timer().schedule(Duration::from_secs(ACK_TIMEOUT_SECS));
         let unacked_msg = UnacknowledgedMessage {
             routing_msg: signed_msg.routing_message().clone(),
-            group_list: signed_msg.sender_group_list(),
             route: route,
             timer_token: token,
         };
@@ -116,17 +109,9 @@ pub trait Bootstrapped: Base {
                        self,
                        unacked_msg);
                 self.stats().count_unacked();
-            } else {
-                let result = if let Some(group_list) = unacked_msg.group_list {
-                    self.send_routing_message_via_route_with_group_list(unacked_msg.routing_msg,
-                                                                        unacked_msg.route,
-                                                                        group_list)
-                } else {
-                    self.send_routing_message_via_route(unacked_msg.routing_msg, unacked_msg.route)
-                };
-                if let Err(error) = result {
-                    debug!("{:?} Failed to send message: {:?}", self, error);
-                }
+            } else if let Err(error) = self.send_routing_message_via_route(unacked_msg.routing_msg,
+                                                unacked_msg.route) {
+                debug!("{:?} Failed to send message: {:?}", self, error);
             }
         }
     }

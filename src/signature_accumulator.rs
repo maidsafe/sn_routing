@@ -148,8 +148,7 @@ mod tests {
             let routing_msg = RoutingMessage {
                 src: Authority::ClientManager(rand::random()),
                 dst: Authority::ClientManager(rand::random()),
-                content: MessageContent::GroupSplit(Prefix::new(rand::random::<u8>() as usize,
-                                                                rand::random())),
+                content: MessageContent::GroupSplit(Prefix::new(0, rand::random()), rand::random()),
             };
             let signed_msg = unwrap!(SignedMessage::new(routing_msg, msg_sender_id));
             let signature_msgs = other_ids.map(|id| {

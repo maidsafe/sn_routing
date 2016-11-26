@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use routing::{Authority, Event, MessageId, QUORUM, Response};
+use routing::{Authority, Event, MIN_GROUP_SIZE, MessageId, QUORUM, Response};
 use routing::mock_crust::Network;
 use std::sync::mpsc;
 use super::{TestNode, create_connected_nodes, gen_immutable_data, poll_all,
@@ -39,7 +39,7 @@ fn messages_accumulate_with_quorum() {
 
     let dst = Authority::ManagedNode(nodes[0].name()); // The closest node.
     // The smallest number such that `quorum * 100 >= len * QUORUM`:
-    let quorum = (nodes.len() * QUORUM - 1) / 100 + 1;
+    let quorum = (MIN_GROUP_SIZE * QUORUM - 1) / 100 + 1;
 
     // Send a message from the group `src` to the node `dst`.
     // Only the `quorum`-th sender should cause accumulation and a

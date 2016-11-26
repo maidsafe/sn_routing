@@ -147,11 +147,11 @@ fn whitelist() {
     for node in &mut nodes {
         node.handle.0.borrow_mut().whitelist_peer(PeerId(MIN_GROUP_SIZE));
     }
-    // The next node has peer ID `GROUP_SIZE`: It should be able to join.
+    // The next node has peer ID `MIN_GROUP_SIZE`: It should be able to join.
     nodes.push(TestNode::builder(&network).config(config.clone()).create());
     let _ = poll_all(&mut nodes, &mut []);
     verify_invariant_for_all_nodes(&nodes);
-    // The next node has peer ID `GROUP_SIZE + 1`: It is not whitelisted.
+    // The next node has peer ID `MIN_GROUP_SIZE + 1`: It is not whitelisted.
     nodes.push(TestNode::builder(&network).config(config.clone()).create());
     let _ = poll_all(&mut nodes, &mut []);
     assert!(!unwrap!(nodes.pop()).inner.is_node());

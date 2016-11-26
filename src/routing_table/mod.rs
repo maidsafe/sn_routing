@@ -334,6 +334,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         &self.our_group_prefix
     }
 
+    /// Returns our own group, excluding our own name.
+    pub fn our_group(&self) -> &HashSet<T> {
+        &self.our_group
+    }
+
     /// Returns the total number of entries in the routing table.
     pub fn len(&self) -> usize {
         self.groups.values().fold(0, |acc, group| acc + group.len()) + self.our_group.len()

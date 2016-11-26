@@ -29,14 +29,14 @@ use maidsafe_utilities;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 #[cfg(feature = "use-mock-crust")]
 use mock_crust::crust::PeerId;
-use routing_table::{Prefix, RoutingTable};
+use routing_table::{Prefix, Xorable};
 use rust_sodium::crypto::{box_, sign};
 use rust_sodium::crypto::hash::sha256;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::{self, Debug, Formatter};
 use std::iter;
 use std::time::Duration;
-use super::QUORUM;
+use super::{MIN_GROUP_SIZE, QUORUM};
 use types::MessageId;
 use utils;
 use xor_name::XorName;
@@ -197,25 +197,6 @@ pub struct GroupList {
     pub pub_ids: BTreeSet<PublicId>,
 }
 
-impl GroupList {
-    /// Gets the `route`-th name in the group list.
-    pub fn get_routeth_name(&self, dst_name: &XorName, route: usize) -> &XorName {
-        RoutingTable::get_routeth_name(self.pub_ids.iter().map(|id| id.name()), dst_name, route)
-    }
-
-    /// Returns true if our name is the `route`-th closest to `src_name` in our group.
-    ///
-    /// Used when sending a message from a group to decide which one of the group should send the
-    /// full message (the remainder sending just a hash of the message).
-    pub fn should_route_full_message(&self,
-                                     our_name: &XorName,
-                                     dst_name: &XorName,
-                                     route: usize)
-                                     -> bool {
-        *self.get_routeth_name(dst_name, route) == *our_name
-    }
-}
-
 /// Wrapper around a routing message, signed by the originator of the message.
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
 pub struct SignedMessage {
@@ -236,15 +217,6 @@ impl SignedMessage {
             grp_lists: Vec::new(),
             signatures: iter::once((*full_id.public_id(), sig)).collect(),
         })
-    }
-
-    /// Returns the group list of the sender authority
-    pub fn sender_group_list(&self) -> Option<GroupList> {
-        if self.grp_lists.is_empty() {
-            None
-        } else {
-            Some(self.grp_lists[0].clone())
-        }
     }
 
     /// Confirms the signatures.
@@ -333,7 +305,18 @@ impl SignedMessage {
         }
         self.grp_lists.first().map_or(false, |grp_list| {
             if self.content.src.is_group() {
-                QUORUM * grp_list.pub_ids.len() <= 100 * self.signatures.len()
+                let valid_names: HashSet<_> = grp_list.pub_ids
+                    .iter()
+                    .map(PublicId::name)
+                    .sorted_by(|lhs, rhs| self.content.src.name().cmp_distance(lhs, rhs))
+                    .into_iter()
+                    .take(MIN_GROUP_SIZE)
+                    .collect();
+                let valid_sigs = self.signatures
+                    .keys()
+                    .filter(|pub_id| valid_names.contains(pub_id.name()))
+                    .count();
+                QUORUM * valid_names.len() <= 100 * valid_sigs
             } else {
                 self.signatures.len() == 1
             }
@@ -521,7 +504,7 @@ pub enum MessageContent {
         message_id: MessageId,
     },
     /// Sent to all connected peers when our own group splits
-    GroupSplit(Prefix<XorName>),
+    GroupSplit(Prefix<XorName>, XorName),
     /// Sent amongst members of a newly-merged group to allow synchronisation of their routing
     /// tables before notifying other connected peers of the merge.
     OwnGroupMerge {
@@ -653,7 +636,9 @@ impl Debug for MessageContent {
                        close_group_ids,
                        message_id)
             }
-            MessageContent::GroupSplit(ref prefix) => write!(formatter, "GroupSplit({:?})", prefix),
+            MessageContent::GroupSplit(ref prefix, ref joining_node) => {
+                write!(formatter, "GroupSplit({:?}, {:?})", prefix, joining_node)
+            }
             MessageContent::OwnGroupMerge { ref sender_prefix, ref merge_prefix, ref groups } => {
                 write!(formatter,
                        "OwnGroupMerge {{ {:?}, {:?}, {:?} }}",

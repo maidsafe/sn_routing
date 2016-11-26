@@ -18,7 +18,7 @@
 use error::RoutingError;
 use maidsafe_utilities::{self, serialisation};
 use message_filter::MessageFilter;
-use messages::{GroupList, RoutingMessage};
+use messages::RoutingMessage;
 use std::collections::HashMap;
 use std::fmt;
 use std::time::Duration;
@@ -32,7 +32,6 @@ const EXPIRY_DURATION_SECS: u64 = 4 * 60;
 #[derive(Clone, Debug)]
 pub struct UnacknowledgedMessage {
     pub routing_msg: RoutingMessage,
-    pub group_list: Option<GroupList>,
     pub route: u8,
     pub timer_token: u64,
 }
