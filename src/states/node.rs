@@ -852,24 +852,26 @@ impl Node {
                        peer_id,
                        error);
                 self.disconnect_peer(&peer_id);
+                return;
             }
-            Ok(should_split) => {
-                info!("{:?} Added {:?} to routing table.", self, public_id.name());
-                if self.peer_mgr.routing_table().len() == 1 {
-                    self.send_event(Event::Connected);
-                }
+            Ok(true) => {
+                let our_group_prefix = *self.peer_mgr.routing_table().our_group_prefix();
+                self.send_group_split(our_group_prefix, *public_id.name());
+            }
+            Ok(false) => {
+                self.merge_if_necessary();
+            }
+        }
 
-                if should_split {
-                    let our_group_prefix = *self.peer_mgr.routing_table().our_group_prefix();
-                    self.send_group_split(our_group_prefix, *public_id.name());
-                }
+        info!("{:?} Added {:?} to routing table.", self, public_id.name());
+        if self.peer_mgr.routing_table().len() == 1 {
+            self.send_event(Event::Connected);
+        }
 
-                if self.peer_mgr.routing_table().is_in_our_group(public_id.name()) {
-                    let event = Event::NodeAdded(*public_id.name());
-                    if let Err(err) = self.event_sender.send(event) {
-                        error!("{:?} Error sending event to routing user - {:?}", self, err);
-                    }
-                }
+        if self.peer_mgr.routing_table().is_in_our_group(public_id.name()) {
+            let event = Event::NodeAdded(*public_id.name());
+            if let Err(err) = self.event_sender.send(event) {
+                error!("{:?} Error sending event to routing user - {:?}", self, err);
             }
         }
 
@@ -1277,6 +1279,8 @@ impl Node {
         for peer_id in peers_to_drop {
             self.disconnect_peer(&peer_id);
         }
+
+        self.merge_if_necessary();
         Ok(())
     }
 
@@ -1290,12 +1294,17 @@ impl Node {
         let src =
             Authority::NaeManager(self.peer_mgr.routing_table().our_group_prefix().lower_bound());
         match merge_state {
-            OwnMergeState::Initialised { targets, merge_details } => {
-                self.send_own_group_merge(targets, merge_details, src)
+            OwnMergeState::Initialised { merge_details } => {
+                self.send_own_group_merge(merge_details, src)
             }
             OwnMergeState::Ongoing |
             OwnMergeState::AlreadyMerged => (),
             OwnMergeState::Completed { targets, merge_details } => {
+                // TODO - the event should maybe only fire once all new connections have been made?
+                if let Err(err) = self.event_sender.send(Event::GroupMerge(merge_details.prefix)) {
+                    error!("{:?} Error sending event to routing user - {:?}", self, err);
+                }
+                self.merge_if_necessary();
                 self.send_other_group_merge(targets, merge_details, src)
             }
         }
@@ -1334,6 +1343,7 @@ impl Node {
                 debug!("{:?} - Failed to send connection info: {:?}", self, error);
             }
         }
+        self.merge_if_necessary();
         Ok(())
     }
 
@@ -1766,16 +1776,7 @@ impl Node {
             }
         }
 
-        if let RemovalDetails { targets_and_merge_details: Some((targets, merge_details)), .. } =
-            details {
-            let our_new_prefix = merge_details.merge_prefix;
-            let src_name = self.peer_mgr.routing_table().our_group_prefix().lower_bound();
-            self.send_own_group_merge(targets, merge_details, Authority::NaeManager(src_name));
-            // TODO - the event should maybe only fire once all new connections have been made?
-            if let Err(err) = self.event_sender.send(Event::GroupMerge(our_new_prefix)) {
-                error!("{:?} Error sending event to routing user - {:?}", self, err);
-            }
-        }
+        self.merge_if_necessary();
 
         if self.peer_mgr.routing_table().len() < MIN_GROUP_SIZE - 1 {
             debug!("{:?} Lost connection, less than {} remaining.",
@@ -1798,34 +1799,35 @@ impl Node {
                 dst: Authority::NaeManager(prefix.substituted_in(joining_node)),
                 content: MessageContent::GroupSplit(our_prefix, joining_node),
             };
-            if let Err(err) = self.send_routing_message_via_route(request_msg, 1) {
+            if let Err(err) = self.send_routing_message(request_msg) {
                 debug!("{:?} Failed to send GroupSplit: {:?}.", self, err);
             }
         }
     }
 
-    fn send_own_group_merge(&mut self,
-                            targets: BTreeSet<Prefix<XorName>>,
-                            merge_details: OwnMergeDetails<XorName>,
-                            src: Authority) {
-        let mut groups = merge_details.groups
+    fn merge_if_necessary(&mut self) {
+        if let Some(merge_details) = self.peer_mgr.routing_table().should_merge() {
+            let src_name = self.peer_mgr.routing_table().our_group_prefix().lower_bound();
+            self.send_own_group_merge(merge_details, Authority::NaeManager(src_name));
+        }
+    }
+
+    fn send_own_group_merge(&mut self, merge_details: OwnMergeDetails<XorName>, src: Authority) {
+        let groups = merge_details.groups
             .into_iter()
             .map(|(prefix, members)| {
-                let mut group = self.peer_mgr.get_pub_ids(&members).into_iter().collect_vec();
-                group.sort();
-                (prefix, group)
+                (prefix, self.peer_mgr.get_pub_ids(&members).into_iter().sorted())
             })
-            .collect_vec();
-        groups.sort();
+            .sorted();
         let request_content = MessageContent::OwnGroupMerge {
             sender_prefix: merge_details.sender_prefix,
             merge_prefix: merge_details.merge_prefix,
             groups: groups,
         };
-        for target in &targets {
+        for &bit in &[false, true] {
             let request_msg = RoutingMessage {
                 src: src,
-                dst: Authority::NaeManager(target.lower_bound()),
+                dst: Authority::NaeManager(merge_details.merge_prefix.pushed(bit).lower_bound()),
                 content: request_content.clone(),
             };
             if let Err(err) = self.send_routing_message(request_msg) {
