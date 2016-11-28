@@ -221,10 +221,6 @@ pub struct RemovalDetails<T: Binary + Clone + Copy + Default + Hash + Xorable> {
     pub name: T,
     // True if the removed peer was in our group.
     pub was_in_our_group: bool,
-    // If, after removal, our group needs to merge, this is set to `Some`. It contains the
-    // appropriate targets (all members of the merging groups) and the merge details they each need
-    // to receive (the new prefix and all groups in the table).
-    pub targets_and_merge_details: Option<(BTreeSet<Prefix<T>>, OwnMergeDetails<T>)>,
 }
 
 
@@ -232,12 +228,9 @@ pub struct RemovalDetails<T: Binary + Clone + Copy + Default + Hash + Xorable> {
 // Details returned by `RoutingTable::merge_own_group()`.
 pub enum OwnMergeState<T: Binary + Clone + Copy + Default + Hash + Xorable> {
     // If no ongoing merge is happening when `merge_own_group()` is called, `Initialised` is
-    // returned, containing the appropriate targets (all the merging groups' `Prefix`es) and the
-    // merge details they each need to receive (the new prefix and all groups in the table).
-    Initialised {
-        targets: BTreeSet<Prefix<T>>,
-        merge_details: OwnMergeDetails<T>,
-    },
+    // returned, containing the merge details they each need to receive (the new prefix and all
+    // groups in the table).
+    Initialised { merge_details: OwnMergeDetails<T> },
     // If an ongoing merge is happening, and this call to `merge_own_group()` doesn't complete the
     // merge (i.e. at least one of the merging groups hasn't yet sent us its merge details), then
     // `Ongoing` is returned, implying that no further action by the caller is required.
@@ -332,6 +325,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// Returns the `Prefix` of our group
     pub fn our_group_prefix(&self) -> &Prefix<T> {
         &self.our_group_prefix
+    }
+
+    /// Returns our own group, excluding our own name.
+    pub fn our_group(&self) -> &HashSet<T> {
+        &self.our_group
     }
 
     /// Returns the total number of entries in the routing table.
@@ -513,19 +511,14 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// entry is removed from the routing table and `RemovalDetails` is returned.  See that struct's
     /// docs for further info.
     pub fn remove(&mut self, name: &T) -> Result<RemovalDetails<T>, Error> {
-        let mut should_merge = false;
-        let mut removal_details = RemovalDetails {
+        let removal_details = RemovalDetails {
             name: *name,
             was_in_our_group: self.our_group_prefix.matches(name),
-            targets_and_merge_details: None,
         };
         if removal_details.was_in_our_group {
             if !self.our_group.remove(name) {
                 return Err(Error::NoSuchPeer);
             }
-            should_merge = self.our_group.len() + 1 < self.min_group_size &&
-                           self.our_group_prefix.bit_count() != 0 &&
-                           self.merging.is_empty();
         } else if let Some(prefix) = self.find_group_prefix(name) {
             if let Some(group) = self.groups.get_mut(&prefix) {
                 if !group.remove(name) {
@@ -535,21 +528,41 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         } else {
             return Err(Error::NoSuchPeer);
         }
-        if should_merge {
-            let merge_prefix = self.our_group_prefix.popped();
-            let mut groups = self.groups.clone();
-            let mut our_group = self.our_group.clone();
-            let _ = our_group.insert(self.our_name);
-            let _ = groups.insert(self.our_group_prefix, our_group);
-            removal_details.targets_and_merge_details =
-                Some((self.prefixes_within_merge(&merge_prefix),
-                      OwnMergeDetails {
-                          sender_prefix: self.our_group_prefix,
-                          merge_prefix: merge_prefix,
-                          groups: groups,
-                      }));
-        }
         Ok(removal_details)
+    }
+
+    /// If our group is required to merge, returns the details to initiate merging.
+    ///
+    /// Merging is required if any group has dropped below the minimum size and can only restore it
+    /// by ultimately merging with us.
+    ///
+    /// However, merging happens in simple steps, each of which involves only two groups. If. e.g.
+    /// group `1` drops below the minimum size, and the other groups are `01`, `001` and `000`,
+    /// then this will return `true` only in the latter two. Once they are merged and have
+    /// established all their new connections, it will return `true` in `01` and `00`. Only after
+    /// that, the group `0` will merge with group `1`.
+    pub fn should_merge(&self) -> Option<OwnMergeDetails<T>> {
+        let bit_count = self.our_group_prefix.bit_count();
+        let needs_to_merge_with_us = |(prefix, group): (&Prefix<T>, &HashSet<T>)| {
+            !prefix.popped().is_compatible(&self.our_group_prefix) ||
+            group.len() >= self.min_group_size
+        };
+        if bit_count == 0 || !self.needed.is_empty() || !self.merging.is_empty() ||
+           !self.groups.contains_key(&self.our_group_prefix.with_flipped_bit(bit_count - 1)) ||
+           (self.our_group.len() + 1 >= self.min_group_size &&
+            self.groups.iter().all(needs_to_merge_with_us)) {
+            return None;
+        }
+        let merge_prefix = self.our_group_prefix.popped();
+        let mut groups = self.groups.clone();
+        let mut our_group = self.our_group.clone();
+        let _ = our_group.insert(self.our_name);
+        let _ = groups.insert(self.our_group_prefix, our_group);
+        Some(OwnMergeDetails {
+            sender_prefix: self.our_group_prefix,
+            merge_prefix: merge_prefix,
+            groups: groups,
+        })
     }
 
     /// When a merge of our own group is triggered (either from our own group or a neighbouring one)
@@ -781,10 +794,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         let mut our_group = self.our_group.clone();
         our_group.insert(self.our_name);
         let _ = merge_details.groups.insert(self.our_group_prefix, our_group);
-        OwnMergeState::Initialised {
-            targets: self.prefixes_within_merge(&merge_details.merge_prefix),
-            merge_details: merge_details,
-        }
+        OwnMergeState::Initialised { merge_details: merge_details }
     }
 
     fn finish_merging_own_group(&mut self, merge_details: OwnMergeDetails<T>) -> OwnMergeState<T> {
@@ -855,17 +865,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     fn min_split_size(&self) -> usize {
         self.min_group_size + SPLIT_BUFFER
-    }
-
-    // Returns prefixes of all groups we're connected to (i.e. non-empty groups from `self.groups`,
-    // and our own) which are merging into a new group defined by `merge_prefix`.
-    fn prefixes_within_merge(&self, merge_prefix: &Prefix<T>) -> BTreeSet<Prefix<T>> {
-        self.groups
-            .iter()
-            .chain(iter::once((&self.our_group_prefix, &self.our_group)))
-            .filter(|&(prefix, names)| merge_prefix.is_compatible(prefix) && !names.is_empty())
-            .map(|(prefix, _)| *prefix)
-            .collect()
     }
 
     fn check_invariant(&self) -> Result<(), Error> {

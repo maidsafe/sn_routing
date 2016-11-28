@@ -24,8 +24,8 @@ use error::{InterfaceError, RoutingError};
 use event::Event;
 use id::{FullId, PublicId};
 use maidsafe_utilities::serialisation;
-use messages::{GroupList, HopMessage, Message, MessageContent, RoutingMessage, SignedMessage,
-               UserMessage, UserMessageCache};
+use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage, UserMessage,
+               UserMessageCache};
 use peer_manager::MIN_GROUP_SIZE;
 use routing_message_filter::RoutingMessageFilter;
 use state_machine::Transition;
@@ -312,15 +312,6 @@ impl Bootstrapped for Client {
                 debug!("{:?} Failed to send message: {:?}", self, error);
             }
         }
-    }
-
-    fn send_routing_message_via_route_with_group_list(&mut self,
-                                                      routing_msg: RoutingMessage,
-                                                      route: u8,
-                                                      _group_list: GroupList)
-                                                      -> Result<(), RoutingError> {
-        // clients have no group lists
-        self.send_routing_message_via_route(routing_msg, route)
     }
 
     fn send_routing_message_via_route(&mut self,
