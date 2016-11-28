@@ -318,6 +318,34 @@ impl Client {
         unimplemented!();
     }
 
+    /// Fetches a list of authorised keys and version in MaidManager
+    pub fn list_auth_keys(&self,
+                          _dst: Authority,
+                          _message_id: MessageId)
+                          -> Result<(), InterfaceError> {
+        unimplemented!();
+    }
+
+    /// Adds a new authorised key to MaidManager
+    pub fn ins_auth_key(&self,
+                        _dst: Authority,
+                        _key: sign::PublicKey,
+                        _version: u64,
+                        _message_id: MessageId)
+                        -> Result<(), InterfaceError> {
+        unimplemented!();
+    }
+
+    /// Removes an authorised key from MaidManager
+    pub fn del_auth_key(&self,
+                        _dst: Authority,
+                        _key: sign::PublicKey,
+                        _version: u64,
+                        _message_id: MessageId)
+                        -> Result<(), InterfaceError> {
+        unimplemented!();
+    }
+
     /// Returns the name of this node.
     pub fn name(&self) -> Result<XorName, InterfaceError> {
         let (result_tx, result_rx) = channel();
