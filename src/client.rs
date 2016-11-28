@@ -102,6 +102,14 @@ impl Client {
         })
     }
 
+    /// Gets MAID account information.
+    pub fn get_account_info(&mut self,
+                            _dst: Authority,
+                            _msg_id: MessageId)
+                            -> Result<(), InterfaceError> {
+        unimplemented!()
+    }
+
     /// Puts ImmutableData to the network
     #[allow(unused)] // <-- TODO: remove this
     pub fn put_idata(&mut self,
