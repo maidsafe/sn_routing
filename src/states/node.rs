@@ -1486,17 +1486,6 @@ impl Node {
             }
         }
 
-        let acting_as_proxy = if let Authority::Client { ref proxy_node_name, .. } =
-            routing_msg.src {
-            proxy_node_name == self.name()
-        } else {
-            false
-        };
-        if !acting_as_proxy && hop != self.name() &&
-           self.peer_mgr.routing_table().is_in_our_group(hop) {
-            return Ok(());  // Avoid swarming back out to our own group.
-        }
-
         let (new_sent_to, target_peer_ids) = self.get_targets(routing_msg, route, hop, sent_to)?;
 
         for target_peer_id in target_peer_ids {
@@ -1649,6 +1638,7 @@ impl Node {
                 .matches(routing_msg.dst.name()) {
                 sent_to.iter()
                     .chain(targets.iter())
+                    .chain(iter::once(self.name()))
                     .cloned()
                     .collect_vec()
             } else {
