@@ -1279,6 +1279,9 @@ impl Node {
         for peer_id in peers_to_drop {
             self.disconnect_peer(&peer_id);
         }
+        trace!("{:?} Split completed. Prefixes: {:?}",
+               self,
+               self.peer_mgr.routing_table().prefixes());
 
         self.merge_if_necessary();
         Ok(())
@@ -1304,6 +1307,9 @@ impl Node {
                 if let Err(err) = self.event_sender.send(Event::GroupMerge(merge_details.prefix)) {
                     error!("{:?} Error sending event to routing user - {:?}", self, err);
                 }
+                trace!("{:?} Merge completed. Prefixes: {:?}",
+                       self,
+                       self.peer_mgr.routing_table().prefixes());
                 self.merge_if_necessary();
                 self.send_other_group_merge(targets, merge_details, src)
             }
