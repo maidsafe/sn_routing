@@ -1264,7 +1264,7 @@ impl Node {
                           -> Result<(), RoutingError> {
         // Send GroupSplit notifications if we don't know of the new node yet
         if prefix == *self.peer_mgr.routing_table().our_group_prefix() &&
-           !self.peer_mgr.routing_table().has(joining_node) {
+           !self.peer_mgr.routing_table().has(&joining_node) {
             self.send_group_split(prefix, joining_node);
         }
         // None of the `peers_to_drop` will have been in our group, so no need to notify Routing
