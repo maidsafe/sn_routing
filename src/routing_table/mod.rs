@@ -343,8 +343,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     }
 
     /// Returns whether the table contains the given `name`
-    pub fn has(&self, name: T) -> bool {
-        self.get_group(&name).map_or(false, |group| group.contains(&name))
+    pub fn has(&self, name: &T) -> bool {
+        self.get_group(name).map_or(false, |group| group.contains(name))
     }
 
     /// Iterates over all nodes known by the routing table.
@@ -354,7 +354,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     }
 
     /// Collects prefixes of all groups known by the routing table into a `HashSet`.
-    pub fn prefixes(&self) -> HashSet<Prefix<T>> {
+    pub fn prefixes(&self) -> BTreeSet<Prefix<T>> {
         self.groups.keys().cloned().chain(iter::once(self.our_group_prefix)).collect()
     }
 

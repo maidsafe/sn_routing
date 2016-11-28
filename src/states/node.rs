@@ -182,7 +182,7 @@ impl Node {
             if self.stats.cur_client_num > old_client_num {
                 self.stats.cumulative_client_num += self.stats.cur_client_num - old_client_num;
             }
-            info!(target: "stats", "{:?} - Connected clients: {}, cumulative: {}",
+            info!(target: "routing_stats", "{:?} - Connected clients: {}, cumulative: {}",
                   self,
                   self.stats.cur_client_num,
                   self.stats.cumulative_client_num);
@@ -191,7 +191,7 @@ impl Node {
            self.stats.tunnel_client_pairs != self.tunnels.client_count() {
             self.stats.tunnel_connections = self.tunnels.tunnel_count();
             self.stats.tunnel_client_pairs = self.tunnels.client_count();
-            info!(target: "stats", "{:?} - Indirect connections: {}, tunneling for: {}",
+            info!(target: "routing_stats", "{:?} - Indirect connections: {}, tunneling for: {}",
                   self,
                   self.stats.tunnel_connections,
                   self.stats.tunnel_client_pairs);
@@ -207,9 +207,9 @@ impl Node {
                                          self.crust_service.id(),
                                          self.stats.cur_routing_table_size);
                 let sep_str = iter::repeat('-').take(status_str.len()).collect::<String>();
-                log!(target: "stats", TABLE_LVL, " -{}- ", sep_str);
-                log!(target: "stats", TABLE_LVL, "| {} |", status_str);
-                log!(target: "stats", TABLE_LVL, " -{}- ", sep_str);
+                log!(target: "routing_stats", TABLE_LVL, " -{}- ", sep_str);
+                log!(target: "routing_stats", TABLE_LVL, "| {} |", status_str);
+                log!(target: "routing_stats", TABLE_LVL, " -{}- ", sep_str);
             }
         }
     }
@@ -1264,7 +1264,7 @@ impl Node {
                           -> Result<(), RoutingError> {
         // Send GroupSplit notifications if we don't know of the new node yet
         if prefix == *self.peer_mgr.routing_table().our_group_prefix() &&
-           !self.peer_mgr.routing_table().has(joining_node) {
+           !self.peer_mgr.routing_table().has(&joining_node) {
             self.send_group_split(prefix, joining_node);
         }
         // None of the `peers_to_drop` will have been in our group, so no need to notify Routing
@@ -1279,6 +1279,9 @@ impl Node {
         for peer_id in peers_to_drop {
             self.disconnect_peer(&peer_id);
         }
+        trace!("{:?} Split completed. Prefixes: {:?}",
+               self,
+               self.peer_mgr.routing_table().prefixes());
 
         self.merge_if_necessary();
         Ok(())
@@ -1304,6 +1307,9 @@ impl Node {
                 if let Err(err) = self.event_sender.send(Event::GroupMerge(merge_details.prefix)) {
                     error!("{:?} Error sending event to routing user - {:?}", self, err);
                 }
+                trace!("{:?} Merge completed. Prefixes: {:?}",
+                       self,
+                       self.peer_mgr.routing_table().prefixes());
                 self.merge_if_necessary();
                 self.send_other_group_merge(targets, merge_details, src)
             }
@@ -1480,17 +1486,6 @@ impl Node {
             }
         }
 
-        let acting_as_proxy = if let Authority::Client { ref proxy_node_name, .. } =
-            routing_msg.src {
-            proxy_node_name == self.name()
-        } else {
-            false
-        };
-        if !acting_as_proxy && hop != self.name() &&
-           self.peer_mgr.routing_table().is_in_our_group(hop) {
-            return Ok(());  // Avoid swarming back out to our own group.
-        }
-
         let (new_sent_to, target_peer_ids) = self.get_targets(routing_msg, route, hop, sent_to)?;
 
         for target_peer_id in target_peer_ids {
@@ -1643,6 +1638,7 @@ impl Node {
                 .matches(routing_msg.dst.name()) {
                 sent_to.iter()
                     .chain(targets.iter())
+                    .chain(iter::once(self.name()))
                     .cloned()
                     .collect_vec()
             } else {
