@@ -182,7 +182,7 @@ impl Node {
             if self.stats.cur_client_num > old_client_num {
                 self.stats.cumulative_client_num += self.stats.cur_client_num - old_client_num;
             }
-            info!(target: "stats", "{:?} - Connected clients: {}, cumulative: {}",
+            info!(target: "routing_stats", "{:?} - Connected clients: {}, cumulative: {}",
                   self,
                   self.stats.cur_client_num,
                   self.stats.cumulative_client_num);
@@ -191,7 +191,7 @@ impl Node {
            self.stats.tunnel_client_pairs != self.tunnels.client_count() {
             self.stats.tunnel_connections = self.tunnels.tunnel_count();
             self.stats.tunnel_client_pairs = self.tunnels.client_count();
-            info!(target: "stats", "{:?} - Indirect connections: {}, tunneling for: {}",
+            info!(target: "routing_stats", "{:?} - Indirect connections: {}, tunneling for: {}",
                   self,
                   self.stats.tunnel_connections,
                   self.stats.tunnel_client_pairs);
@@ -207,9 +207,9 @@ impl Node {
                                          self.crust_service.id(),
                                          self.stats.cur_routing_table_size);
                 let sep_str = iter::repeat('-').take(status_str.len()).collect::<String>();
-                log!(target: "stats", TABLE_LVL, " -{}- ", sep_str);
-                log!(target: "stats", TABLE_LVL, "| {} |", status_str);
-                log!(target: "stats", TABLE_LVL, " -{}- ", sep_str);
+                log!(target: "routing_stats", TABLE_LVL, " -{}- ", sep_str);
+                log!(target: "routing_stats", TABLE_LVL, "| {} |", status_str);
+                log!(target: "routing_stats", TABLE_LVL, " -{}- ", sep_str);
             }
         }
     }
