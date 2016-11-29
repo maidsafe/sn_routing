@@ -543,14 +543,14 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// that, the group `0` will merge with group `1`.
     pub fn should_merge(&self) -> Option<OwnMergeDetails<T>> {
         let bit_count = self.our_group_prefix.bit_count();
-        let needs_to_merge_with_us = |(prefix, group): (&Prefix<T>, &HashSet<T>)| {
+        let doesnt_need_to_merge_with_us = |(prefix, group): (&Prefix<T>, &HashSet<T>)| {
             !prefix.popped().is_compatible(&self.our_group_prefix) ||
             group.len() >= self.min_group_size
         };
         if bit_count == 0 || !self.needed.is_empty() || !self.merging.is_empty() ||
            !self.groups.contains_key(&self.our_group_prefix.with_flipped_bit(bit_count - 1)) ||
            (self.our_group.len() + 1 >= self.min_group_size &&
-            self.groups.iter().all(needs_to_merge_with_us)) {
+            self.groups.iter().all(doesnt_need_to_merge_with_us)) {
             return None;
         }
         let merge_prefix = self.our_group_prefix.popped();
