@@ -78,6 +78,7 @@ pub struct Node {
     sent_network_name_to: Option<(XorName, Instant)>,
     routing_msg_filter: RoutingMessageFilter,
     sig_accumulator: SignatureAccumulator,
+    group_list_sigs: HashMap<Prefix<XorName>, BTreeMap<PublicId, sign::Signature>>,
     stats: Stats,
     tick_timer_token: u64,
     timer: Timer,
@@ -165,6 +166,7 @@ impl Node {
             response_cache: cache,
             routing_msg_filter: RoutingMessageFilter::new(),
             sig_accumulator: Default::default(),
+            group_list_sigs: Default::default(),
             sent_network_name_to: None,
             stats: stats,
             tick_timer_token: tick_timer_token,
@@ -460,6 +462,7 @@ impl Node {
         use messages::DirectMessage::*;
         match direct_message {
             MessageSignature(digest, sig) => self.handle_message_signature(digest, sig, peer_id),
+            GroupListSignature(prefix, sig) => self.handle_group_list_signature(peer_id, prefix, sig),
             ClientIdentify { ref serialised_public_id, ref signature, client_restriction } => {
                 if let Ok(public_id) = verify_signed_public_id(serialised_public_id, signature) {
                     self.handle_client_identify(public_id, peer_id, client_restriction)
@@ -514,6 +517,30 @@ impl Node {
                   peer_id);
         }
         Ok(())
+    }
+
+    fn handle_group_list_signature(&mut self,
+                                   peer_id: PeerId,
+                                   prefix: Prefix<XorName>,
+                                   sig: sign::Signature)
+                                   -> Result<(), RoutingError> {
+        let src_pub_id =
+            self.peer_mgr.get_routing_peer(&peer_id).ok_or(RoutingError::InvalidSource)?;
+        let group: BTreeSet<XorName> = self.peer_mgr
+            .routing_table()
+            .get_group(&prefix.lower_bound())
+            .ok_or(RoutingError::InvalidSource)?
+            .iter()
+            .cloned()
+            .collect();
+        let serialised = serialisation::serialise(&group)?;
+        if sign::verify_detached(&sig, &serialised, src_pub_id.signing_public_key()) {
+            let group_entry = self.group_list_sigs.entry(prefix).or_insert_with(BTreeMap::new);
+            let _ = group_entry.insert(*src_pub_id, sig);
+            Ok(())
+        } else {
+            Err(RoutingError::FailedSignature)
+        }
     }
 
     fn hop_pub_ids(&self, hop_name: &XorName) -> Result<BTreeSet<PublicId>, RoutingError> {
