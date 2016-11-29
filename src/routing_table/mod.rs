@@ -580,15 +580,30 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             return OwnMergeState::AlreadyMerged;
         }
         for (prefix, contacts) in &merge_details.groups {
-            // Cache the prefix if it's a merging group, flagging the sender's prefix `true`.
+            let compatible_with_ours = self.our_group_prefix.is_compatible(prefix);
+            // If it's a merging group...
             if merge_details.merge_prefix.is_compatible(prefix) {
-                let prefix_entry = self.merging.entry(*prefix).or_insert(false);
+                // This may be a group which has been merged from multiple groups currently still
+                // in our RT, so fix up our RT first.
+                if !self.groups.contains_key(prefix) && !compatible_with_ours {
+                    self.merge(prefix);
+                }
+                // Cache the prefix, flagging the sender's prefix `true`.  If the prefix is
+                // compatible with ours, just add our own prefix, as we could have been merging at
+                // the same time as the sender, in which case it could have out-of-date info about
+                // our own groups.
+                let prefix_to_enter = if compatible_with_ours {
+                    self.our_group_prefix
+                } else {
+                    *prefix
+                };
+                let prefix_entry = self.merging.entry(prefix_to_enter).or_insert(false);
                 if merge_details.sender_prefix == *prefix {
                     *prefix_entry = true;
                 }
             }
             // Add an empty group in the table and cache the corresponding contacts.
-            let group = if *prefix == self.our_group_prefix {
+            let group = if compatible_with_ours {
                 &self.our_group
             } else {
                 self.groups.entry(*prefix).or_insert_with(HashSet::new)
@@ -621,6 +636,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// held in the routing table) are returned so the caller can establish connections to these
     /// peers and subsequently add them.
     pub fn merge_other_group(&mut self, merge_details: OtherMergeDetails<T>) -> HashSet<T> {
+        if self.our_group_prefix.is_compatible(&merge_details.prefix) {
+            // We've already handled this particular merge via `merge_own_group()`.
+            return HashSet::new();
+        }
+
         self.merge(&merge_details.prefix);
 
         // Establish list of provided contacts which are currently missing from our table.
@@ -991,6 +1011,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Binary for Rou
             };
             writeln!(formatter, "\t}}{}", comma)?;
         }
+        writeln!(formatter, "\tneeded: {:?}", self.needed)?;
+        writeln!(formatter, "\tmerging: {:?}", self.merging)?;
         write!(formatter, "}}")
     }
 }
