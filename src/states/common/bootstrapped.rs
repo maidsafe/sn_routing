@@ -109,8 +109,8 @@ pub trait Bootstrapped: Base {
                        self,
                        unacked_msg);
                 self.stats().count_unacked();
-            } else if let Err(error) = self.send_routing_message_via_route(unacked_msg.routing_msg,
-                                                unacked_msg.route) {
+            } else if let Err(error) =
+                self.send_routing_message_via_route(unacked_msg.routing_msg, unacked_msg.route) {
                 debug!("{:?} Failed to send message: {:?}", self, error);
             }
         }
