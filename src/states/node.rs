@@ -519,6 +519,31 @@ impl Node {
         Ok(())
     }
 
+    fn get_group(&self, prefix: &Prefix<XorName>) -> Result<BTreeSet<XorName>, RoutingError> {
+        let group = self.peer_mgr
+            .routing_table()
+            .get_group(&prefix.lower_bound())
+            .ok_or(RoutingError::InvalidSource)?
+            .iter()
+            .cloned()
+            .collect();
+        Ok(group)
+    }
+
+    fn send_group_list_signature(&mut self, prefix: Prefix<XorName>) -> Result<(), RoutingError> {
+        let group = self.get_group(&prefix)?;
+        let serialised = serialisation::serialise(&group)?;
+        let sig = sign::sign_detached(&serialised, self.full_id.signing_private_key());
+
+        let peers = self.peer_mgr.get_peer_ids(self.peer_mgr.routing_table().our_group());
+        for peer_id in peers {
+            let msg = DirectMessage::GroupListSignature(prefix, sig);
+            self.send_direct_message(&peer_id, msg)?;
+        }
+
+        Ok(())
+    }
+
     fn handle_group_list_signature(&mut self,
                                    peer_id: PeerId,
                                    prefix: Prefix<XorName>,
@@ -526,13 +551,7 @@ impl Node {
                                    -> Result<(), RoutingError> {
         let src_pub_id =
             self.peer_mgr.get_routing_peer(&peer_id).ok_or(RoutingError::InvalidSource)?;
-        let group: BTreeSet<XorName> = self.peer_mgr
-            .routing_table()
-            .get_group(&prefix.lower_bound())
-            .ok_or(RoutingError::InvalidSource)?
-            .iter()
-            .cloned()
-            .collect();
+        let group = self.get_group(&prefix)?;
         let serialised = serialisation::serialise(&group)?;
         if sign::verify_detached(&sig, &serialised, src_pub_id.signing_public_key()) {
             let group_entry = self.group_list_sigs.entry(prefix).or_insert_with(BTreeMap::new);
@@ -894,6 +913,12 @@ impl Node {
         }
 
         self.add_to_routing_table(public_id, peer_id);
+
+        if let Some(prefix) = self.peer_mgr.routing_table().find_group_prefix(public_id.name()) {
+            if *self.peer_mgr.routing_table().our_group_prefix() != prefix {
+                let _ = self.send_group_list_signature(prefix);
+            }
+        }
     }
 
     fn add_to_routing_table(&mut self, public_id: PublicId, peer_id: PeerId) {
@@ -1478,6 +1503,11 @@ impl Node {
                self.peer_mgr.routing_table().prefixes());
 
         self.merge_if_necessary();
+
+        if prefix != *self.peer_mgr.routing_table().our_group_prefix() {
+            self.send_group_list_signature(prefix)?;
+        }
+
         Ok(())
     }
 
@@ -1546,6 +1576,7 @@ impl Node {
                self,
                self.peer_mgr.routing_table().prefixes());
         self.merge_if_necessary();
+        self.send_group_list_signature(prefix)?;
         Ok(())
     }
 
@@ -1949,6 +1980,12 @@ impl Node {
         }
 
         self.merge_if_necessary();
+
+        if !details.was_in_our_group {
+            self.peer_mgr.routing_table().find_group_prefix(&details.name).map_or((), |prefix| {
+                let _ = self.send_group_list_signature(prefix);
+            });
+        }
 
         if self.peer_mgr.routing_table().len() < self.min_group_size() - 1 {
             debug!("{:?} Lost connection, less than {} remaining.",
