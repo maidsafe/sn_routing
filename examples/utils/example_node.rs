@@ -95,7 +95,8 @@ impl ExampleNode {
                     trace!("{} Received GroupMerge event {:?}",
                            self.get_debug_name(),
                            prefix);
-                    self.send_refresh(MessageId::from_lost_node(prefix.lower_bound()));
+                    let pfx = Prefix::new(prefix.bit_count() + 1, unwrap!(self.node.name()));
+                    self.send_refresh(MessageId::from_lost_node(pfx.lower_bound()));
                 }
                 event => {
                     trace!("{} Received {:?} event", self.get_debug_name(), event);
