@@ -325,10 +325,18 @@ pub fn create_connected_nodes_with_cache(network: &Network,
     nodes
 }
 
-pub fn create_connected_nodes_with_cache_till_split(network: &Network) -> Vec<TestNode> {
+// This creates new nodes (all with `use_cache` set to `true`) until the specified number of unique
+// split events have happened.  `split_count` should be at least 1.  Note that the final shape of
+// the network is still random, e.g. if `split_count` is 5, then the network could comprise groups
+// [0, 10, 110, 111] or [00, 01, 10, 11].
+pub fn create_connected_nodes_with_cache_until_split(network: &Network,
+                                                     split_count: usize)
+                                                     -> Vec<TestNode> {
+    assert!(split_count > 0);
     let use_cache = true;
     let mut nodes = create_connected_nodes_with_cache(network, MIN_GROUP_SIZE * 2, use_cache);
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
+    let mut split_events = HashSet::new();
 
     'outer: loop {
         let len = nodes.len();
@@ -344,11 +352,21 @@ pub fn create_connected_nodes_with_cache_till_split(network: &Network) -> Vec<Te
                     Event::NodeAdded(..) |
                     Event::Connected |
                     Event::Tick => (),
-                    Event::GroupSplit(..) => break 'outer,
+                    Event::GroupSplit(prefix) => {
+                        let _ = split_events.insert(prefix);
+                        if split_events.len() == split_count {
+                            break 'outer;
+                        }
+                    }
                     event => panic!("Got unexpected event: {:?}", event),
                 }
             }
         }
+    }
+
+    // Clear all event queues
+    for node in &nodes {
+        while node.event_rx.try_recv().is_ok() {}
     }
 
     nodes

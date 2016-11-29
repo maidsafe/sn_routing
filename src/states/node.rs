@@ -414,7 +414,7 @@ impl Node {
                     self.send_or_drop(&dst, bytes, content.priority())
                 } else {
                     debug!("{:?} Invalid TunnelDirect message received via {:?}: {:?} -> {:?} {:?}",
-                                               self,
+                           self,
                            peer_id,
                            src,
                            dst,

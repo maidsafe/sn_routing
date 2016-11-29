@@ -19,6 +19,7 @@ mod accumulate;
 mod cache;
 mod churn;
 mod drop;
+mod merge;
 mod requests;
 mod utils;
 
@@ -26,9 +27,9 @@ use routing::{Event, MIN_GROUP_SIZE};
 use routing::mock_crust::{Config, Endpoint, Network};
 use routing::mock_crust::crust::PeerId;
 pub use self::utils::{TestClient, TestNode, create_connected_clients, create_connected_nodes,
-                      create_connected_nodes_with_cache_till_split, gen_bytes, gen_immutable_data,
-                      gen_range_except, poll_all, poll_and_resend, sort_nodes_by_distance_to,
-                      verify_invariant_for_all_nodes};
+                      create_connected_nodes_with_cache_until_split, gen_bytes,
+                      gen_immutable_data, gen_range_except, poll_all, poll_and_resend,
+                      sort_nodes_by_distance_to, verify_invariant_for_all_nodes};
 
 // —————  Miscellaneous tests below  —————
 
