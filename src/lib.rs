@@ -203,8 +203,9 @@ pub use messages::{Request, Response};
 pub use mock_crust::crust;
 pub use node::{Node, NodeBuilder};
 #[cfg(any(test, feature = "use-mock-crust"))]
-pub use routing_table::{Destination, RoutingTable, verify_network_invariant};
-pub use routing_table::{Prefix, Xorable};
+pub use routing_table::{Destination, verify_network_invariant};
+pub use routing_table::Error as RoutingTableError;
+pub use routing_table::{RoutingTable, Prefix, Xorable};
 pub use types::MessageId;
 pub use xor_name::{XOR_NAME_BITS, XOR_NAME_LEN, XorName, XorNameFromHexError};
 

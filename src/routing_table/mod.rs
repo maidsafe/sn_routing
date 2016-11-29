@@ -959,7 +959,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     /// Returns the list of contacts as a result of a merge to which we aren't currently connected,
     /// but should be.
-    #[cfg(any(test, feature = "use-mock-crust"))]
     pub fn needed(&self) -> &Groups<T> {
         &self.needed
     }

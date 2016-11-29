@@ -875,7 +875,7 @@ impl Node {
         }
 
         if self.peer_mgr.routing_table().is_in_our_group(public_id.name()) {
-            let event = Event::NodeAdded(*public_id.name());
+            let event = Event::NodeAdded(*public_id.name(), self.peer_mgr.routing_table().clone());
             if let Err(err) = self.event_sender.send(event) {
                 error!("{:?} Error sending event to routing user - {:?}", self, err);
             }
@@ -1775,7 +1775,7 @@ impl Node {
               details.name);
 
         if details.was_in_our_group {
-            let event = Event::NodeLost(details.name);
+            let event = Event::NodeLost(details.name, self.peer_mgr.routing_table().clone());
             if let Err(err) = self.event_sender.send(event) {
                 error!("{:?} Error sending event to routing user - {:?}", self, err);
             }
