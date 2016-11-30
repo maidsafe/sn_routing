@@ -69,7 +69,7 @@ pub enum User {
 }
 
 /// Action a permission applies to
-#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Copy, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Debug, Hash, Eq, PartialEq, PartialOrd, Ord, Copy, Clone, RustcEncodable, RustcDecodable)]
 pub enum Action {
     /// Permission to insert new entries.
     Insert,
@@ -78,11 +78,12 @@ pub enum Action {
     /// Permission to delete existing entries.
     Delete,
     /// Permission to modify permissions for other users.
-    ManagePermission,
+    ManagePermissions,
 }
 
 /// Set of user permissions.
-#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable, Default, Debug)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord, RustcEncodable, RustcDecodable,
+         Default)]
 pub struct PermissionSet {
     insert: Option<bool>,
     update: Option<bool>,
@@ -107,7 +108,7 @@ impl PermissionSet {
             Action::Insert => self.insert = Some(true),
             Action::Update => self.update = Some(true),
             Action::Delete => self.delete = Some(true),
-            Action::ManagePermission => self.manage_permissions = Some(true),
+            Action::ManagePermissions => self.manage_permissions = Some(true),
         }
         self
     }
@@ -118,7 +119,7 @@ impl PermissionSet {
             Action::Insert => self.insert = Some(false),
             Action::Update => self.update = Some(false),
             Action::Delete => self.delete = Some(false),
-            Action::ManagePermission => self.manage_permissions = Some(false),
+            Action::ManagePermissions => self.manage_permissions = Some(false),
         }
         self
     }
@@ -129,7 +130,7 @@ impl PermissionSet {
             Action::Insert => self.insert = None,
             Action::Update => self.update = None,
             Action::Delete => self.delete = None,
-            Action::ManagePermission => self.manage_permissions = None,
+            Action::ManagePermissions => self.manage_permissions = None,
         }
         self
     }
@@ -140,13 +141,13 @@ impl PermissionSet {
             Action::Insert => self.insert,
             Action::Update => self.update,
             Action::Delete => self.delete,
-            Action::ManagePermission => self.manage_permissions,
+            Action::ManagePermissions => self.manage_permissions,
         }
     }
 }
 
 /// Action performed on a single entry: insert, update or delete.
-#[derive(Hash, Eq, PartialEq, Clone, PartialOrd, Ord, RustcDecodable, RustcEncodable)]
+#[derive(Hash, Debug, Eq, PartialEq, Clone, PartialOrd, Ord, RustcDecodable, RustcEncodable)]
 pub enum EntryAction {
     /// Inserts a new entry
     Ins(Value),
@@ -338,7 +339,7 @@ impl MutableData {
                                 version: u64,
                                 requester: PublicKey)
                                 -> Result<(), ClientError> {
-        if !self.is_action_allowed(requester, Action::ManagePermission) {
+        if !self.is_action_allowed(requester, Action::ManagePermissions) {
             return Err(ClientError::AccessDenied);
         }
         if version != self.version + 1 {
@@ -363,7 +364,7 @@ impl MutableData {
                                 version: u64,
                                 requester: PublicKey)
                                 -> Result<(), ClientError> {
-        if !self.is_action_allowed(requester, Action::ManagePermission) {
+        if !self.is_action_allowed(requester, Action::ManagePermissions) {
             return Err(ClientError::AccessDenied);
         }
         if version != self.version + 1 {
@@ -534,20 +535,20 @@ mod tests {
         assert!(unwrap!(anyone.is_allowed(Action::Insert)));
         assert!(anyone.is_allowed(Action::Update).is_none());
         assert!(!unwrap!(anyone.is_allowed(Action::Delete)));
-        assert!(anyone.is_allowed(Action::ManagePermission).is_none());
+        assert!(anyone.is_allowed(Action::ManagePermissions).is_none());
 
         let mut user1 = anyone;
-        let _ = user1.clear(Action::Delete).deny(Action::ManagePermission);
+        let _ = user1.clear(Action::Delete).deny(Action::ManagePermissions);
         assert!(unwrap!(user1.is_allowed(Action::Insert)));
         assert!(user1.is_allowed(Action::Update).is_none());
         assert!(user1.is_allowed(Action::Delete).is_none());
-        assert!(!unwrap!(user1.is_allowed(Action::ManagePermission)));
+        assert!(!unwrap!(user1.is_allowed(Action::ManagePermissions)));
 
         let _ = user1.allow(Action::Update);
         assert!(unwrap!(user1.is_allowed(Action::Insert)));
         assert!(unwrap!(user1.is_allowed(Action::Update)));
         assert!(user1.is_allowed(Action::Delete).is_none());
-        assert!(!unwrap!(user1.is_allowed(Action::ManagePermission)));
+        assert!(!unwrap!(user1.is_allowed(Action::ManagePermissions)));
     }
 
     #[test]
@@ -739,14 +740,14 @@ mod tests {
 
         // Now allow inserts for pk1
         let mut ps1 = PermissionSet::new();
-        let _ = ps1.allow(Action::Insert).allow(Action::ManagePermission);
+        let _ = ps1.allow(Action::Insert).allow(Action::ManagePermissions);
         assert!(md.set_user_permissions(User::Key(pk1), ps1, 1, owner).is_ok());
 
         assert!(md.mutate_entries(v1, pk1).is_ok());
 
         // pk1 now can change permissions
         let mut ps2 = PermissionSet::new();
-        let _ = ps2.allow(Action::Insert).deny(Action::ManagePermission);
+        let _ = ps2.allow(Action::Insert).deny(Action::ManagePermissions);
         assert_err!(md.set_user_permissions(User::Key(pk1), ps2.clone(), 1, pk1),
                     ClientError::InvalidSuccessor);
         assert!(md.set_user_permissions(User::Key(pk1), ps2, 2, pk1).is_ok());
