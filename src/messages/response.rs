@@ -594,10 +594,10 @@ impl Debug for Response {
 /// Account information
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, RustcDecodable, RustcEncodable, Debug)]
 pub struct AccountInfo {
-    /// Number of data pieces stored by the account.
-    pub data_stored: u64,
-    /// Remaining storage space (in terms of data pieces) for the account.
-    pub space_available: u64,
+    /// Number of mutate operations performed by the account.
+    pub mutations_done: u64,
+    /// Number of mutate operations remaining for the account.
+    pub mutations_available: u64,
 }
 
 #[cfg(test)]
@@ -636,8 +636,8 @@ mod tests {
         let msg_id = MessageId::new();
         let serialised = unwrap!(serialise(&Response::GetAccountInfo {
             res: Ok(AccountInfo {
-                data_stored: 64,
-                space_available: 128,
+                mutations_done: 64,
+                mutations_available: 128,
             }),
             msg_id: msg_id,
         }));
@@ -646,8 +646,8 @@ mod tests {
 
         if let Response::GetAccountInfo { res, msg_id: got_msg_id } = deserialised {
             let res = unwrap!(res);
-            assert_eq!(res.data_stored, 64);
-            assert_eq!(res.space_available, 128);
+            assert_eq!(res.mutations_done, 64);
+            assert_eq!(res.mutations_available, 128);
             assert_eq!(got_msg_id, msg_id);
         } else {
             panic!("Expected Response::GetAccountInfo, got {:?}", deserialised);
