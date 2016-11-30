@@ -39,6 +39,8 @@ pub enum ClientError {
     EntryExists,
     /// Exceeded a limit on a number of entries
     TooManyEntries,
+    /// User does not exist
+    NoSuchUser,
     /// The list of owner keys is invalid
     InvalidOwners,
     /// Invalid successor for performing a given mutating operation, e.g. signature mismatch or
@@ -63,34 +65,26 @@ impl<T: Into<String>> From<T> for ClientError {
 }
 
 impl Display for ClientError {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match *self {
-            ClientError::AccessDenied => write!(formatter, "Access denied"),
-            ClientError::NoSuchAccount => write!(formatter, "Account does not exist for client"),
-            ClientError::AccountExists => write!(formatter, "Account already exists for client"),
-            ClientError::NoSuchData => write!(formatter, "Requested data not found"),
-            ClientError::DataExists => write!(formatter, "Data given already exists"),
-            ClientError::DataTooLarge => write!(formatter, "Data given is too large"),
-            ClientError::NoSuchEntry => write!(formatter, "Requested entry not found"),
-            ClientError::EntryExists => write!(formatter, "Entry already exists"),
-            ClientError::TooManyEntries => {
-                write!(formatter, "Exceeded a limit on a number of entries")
-            }
-            ClientError::InvalidOwners => write!(formatter, "The list of owner keys is invalid"),
-            ClientError::InvalidOperation => {
-                write!(formatter, "Requested operation is not allowed")
-            }
+            ClientError::AccessDenied => write!(f, "Access denied"),
+            ClientError::NoSuchAccount => write!(f, "Account does not exist for client"),
+            ClientError::AccountExists => write!(f, "Account already exists for client"),
+            ClientError::NoSuchData => write!(f, "Requested data not found"),
+            ClientError::DataExists => write!(f, "Data given already exists"),
+            ClientError::DataTooLarge => write!(f, "Data given is too large"),
+            ClientError::NoSuchEntry => write!(f, "Requested entry not found"),
+            ClientError::EntryExists => write!(f, "Entry already exists"),
+            ClientError::TooManyEntries => write!(f, "Exceeded a limit on a number of entries"),
+            ClientError::NoSuchUser => write!(f, "User does not exists"),
+            ClientError::InvalidOwners => write!(f, "The list of owner keys is invalid"),
+            ClientError::InvalidOperation => write!(f, "Requested operation is not allowed"),
             ClientError::InvalidSuccessor => {
-                write!(formatter,
-                       "Data given is not a valid successor of stored data")
+                write!(f, "Data given is not a valid successor of stored data")
             }
-            ClientError::LowBalance => {
-                write!(formatter, "Insufficient account balance for this operation")
-            }
-            ClientError::NetworkFull => write!(formatter, "Network cannot store any further data"),
-            ClientError::NetworkOther(ref error) => {
-                write!(formatter, "Error on Vault network: {}", error)
-            }
+            ClientError::LowBalance => write!(f, "Insufficient account balance for this operation"),
+            ClientError::NetworkFull => write!(f, "Network cannot store any further data"),
+            ClientError::NetworkOther(ref error) => write!(f, "Error on Vault network: {}", error),
         }
     }
 }
@@ -107,6 +101,7 @@ impl Error for ClientError {
             ClientError::NoSuchEntry => "No such entry",
             ClientError::EntryExists => "Entry exists",
             ClientError::TooManyEntries => "Too many entries",
+            ClientError::NoSuchUser => "No such user",
             ClientError::InvalidOwners => "Invalid owners",
             ClientError::InvalidSuccessor => "Invalid data successor",
             ClientError::InvalidOperation => "Invalid operation",
