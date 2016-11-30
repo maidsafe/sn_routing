@@ -61,6 +61,37 @@ const GET_NODE_NAME_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) the new close group waits for a joining node it sent a network name to.
 const SENT_NETWORK_NAME_TIMEOUT_SECS: u64 = 30;
 
+#[derive(Clone, Default)]
+struct GroupListSigCache(HashMap<Prefix<XorName>, BTreeMap<PublicId, sign::Signature>>);
+
+impl ops::Deref for GroupListSigCache {
+    type Target = HashMap<Prefix<XorName>, BTreeMap<PublicId, sign::Signature>>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl ops::DerefMut for GroupListSigCache {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl GroupListSigCache {
+    /// Prunes all prefixes compatible with `prefix` from the cache - to be used with merges and
+    /// splits
+    pub fn prune_compatible(&mut self, prefix: Prefix<XorName>) {
+        let to_remove = self.0
+            .keys()
+            .filter(|&x| prefix.is_compatible(x) && prefix != *x)
+            .cloned()
+            .collect_vec();
+        for prefix in to_remove {
+            let _ = self.0.remove(&prefix);
+        }
+    }
+}
+
 pub struct Node {
     ack_mgr: AckManager,
     cacheable_user_msg_cache: UserMessageCache,
@@ -78,7 +109,7 @@ pub struct Node {
     sent_network_name_to: Option<(XorName, Instant)>,
     routing_msg_filter: RoutingMessageFilter,
     sig_accumulator: SignatureAccumulator,
-    group_list_sigs: HashMap<Prefix<XorName>, BTreeMap<PublicId, sign::Signature>>,
+    group_list_sigs: GroupListSigCache,
     stats: Stats,
     tick_timer_token: u64,
     timer: Timer,
@@ -531,6 +562,10 @@ impl Node {
     }
 
     fn send_group_list_signature(&mut self, prefix: Prefix<XorName>) -> Result<(), RoutingError> {
+        // don't send signatures for our own group
+        if prefix == *self.peer_mgr.routing_table().our_group_prefix() {
+            return Ok(());
+        }
         let group = self.get_group(&prefix)?;
         let serialised = serialisation::serialise(&group)?;
         let sig = sign::sign_detached(&serialised, self.full_id.signing_private_key());
@@ -915,9 +950,7 @@ impl Node {
         self.add_to_routing_table(public_id, peer_id);
 
         if let Some(prefix) = self.peer_mgr.routing_table().find_group_prefix(public_id.name()) {
-            if *self.peer_mgr.routing_table().our_group_prefix() != prefix {
-                let _ = self.send_group_list_signature(prefix);
-            }
+            let _ = self.send_group_list_signature(prefix);
         }
     }
 
@@ -1504,9 +1537,12 @@ impl Node {
 
         self.merge_if_necessary();
 
-        if prefix != *self.peer_mgr.routing_table().our_group_prefix() {
-            self.send_group_list_signature(prefix)?;
-        }
+        let prefix0 = prefix.pushed(false);
+        let prefix1 = prefix.pushed(true);
+        self.send_group_list_signature(prefix0)?;
+        self.send_group_list_signature(prefix1)?;
+        self.group_list_sigs.prune_compatible(prefix0);
+        self.group_list_sigs.prune_compatible(prefix1);
 
         Ok(())
     }
@@ -1576,6 +1612,7 @@ impl Node {
                self,
                self.peer_mgr.routing_table().prefixes());
         self.merge_if_necessary();
+        self.group_list_sigs.prune_compatible(prefix);
         self.send_group_list_signature(prefix)?;
         Ok(())
     }
@@ -1690,40 +1727,6 @@ impl Node {
         for target_peer_id in target_peer_ids {
             self.send_signed_msg_to_peer(signed_msg, target_peer_id, route, new_sent_to.clone())?;
         }
-        Ok(())
-    }
-
-    fn send_direct_msg_to_peer(&mut self,
-                               msg: DirectMessage,
-                               target: PeerId,
-                               priority: u8)
-                               -> Result<(), RoutingError> {
-        let (peer_id, bytes) = if self.crust_service.is_connected(&target) {
-            (target, serialisation::serialise(&Message::Direct(msg))?)
-        } else if let Some(&tunnel_id) = self.tunnels
-            .tunnel_for(&target) {
-            let message = Message::TunnelDirect {
-                content: msg,
-                src: self.crust_service.id(),
-                dst: target,
-            };
-            (tunnel_id, serialisation::serialise(&message)?)
-        } else {
-            trace!("{:?} Not connected or tunneling to {:?}. Dropping peer.",
-                   self,
-                   target);
-            self.disconnect_peer(&target);
-            return Ok(());
-        };
-        // TODO: Refactor so that filtering is possible here as well
-        // if !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &target, route) {
-        if let Err(err) = self.send_or_drop(&peer_id, bytes, priority) {
-            info!("{:?} Error sending message to {:?}: {:?}.",
-                      self,
-                      target,
-                      err);
-        }
-        // }
         Ok(())
     }
 
@@ -2249,7 +2252,7 @@ impl Bootstrapped for Node {
                            self,
                            signed_msg,
                            target_name);
-                    self.send_direct_msg_to_peer(direct_msg, peer_id, signed_msg.priority())
+                    self.send_direct_message(&peer_id, direct_msg)
                 } else {
                     Err(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer))
                 }
