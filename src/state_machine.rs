@@ -21,8 +21,10 @@ use crust::Event as CrustEvent;
 use id::PublicId;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 #[cfg(feature = "use-mock-crust")]
-use routing_table::RoutingTable;
+use routing_table::{Prefix, RoutingTable};
+use rust_sodium::crypto::sign;
 use states::{Bootstrapping, Client, Node};
+use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Formatter};
 use std::mem;
 use std::sync::mpsc::{self, Receiver};
@@ -126,6 +128,15 @@ impl State {
             State::Bootstrapping(_) |
             State::Client(_) |
             State::Terminated => (),
+        }
+    }
+
+    pub fn group_list_signatures(&self,
+                                 prefix: Prefix<XorName>)
+                                 -> Option<BTreeMap<PublicId, sign::Signature>> {
+        match *self {
+            State::Node(ref state) => Some(state.group_list_signatures(prefix)),
+            _ => None,
         }
     }
 

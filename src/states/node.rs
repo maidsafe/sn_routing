@@ -42,8 +42,8 @@ use rust_sodium::crypto::hash::sha256;
 use signature_accumulator::SignatureAccumulator;
 use state_machine::Transition;
 use stats::Stats;
-use std::{fmt, iter};
-use std::collections::{BTreeSet, HashSet, VecDeque};
+use std::{fmt, iter, ops};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::fmt::{Debug, Formatter};
 use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
@@ -62,7 +62,7 @@ const GET_NODE_NAME_TIMEOUT_SECS: u64 = 60;
 const SENT_NETWORK_NAME_TIMEOUT_SECS: u64 = 30;
 
 #[derive(Clone, Default)]
-struct GroupListSigCache(HashMap<Prefix<XorName>, BTreeMap<PublicId, sign::Signature>>);
+pub struct GroupListSigCache(HashMap<Prefix<XorName>, BTreeMap<PublicId, sign::Signature>>);
 
 impl ops::Deref for GroupListSigCache {
     type Target = HashMap<Prefix<XorName>, BTreeMap<PublicId, sign::Signature>>;
@@ -2190,6 +2190,31 @@ impl Node {
         self.routing_msg_filter.clear();
         self.sent_network_name_to = None;
         self.merge_if_necessary();
+    }
+
+    pub fn group_list_signatures(&self,
+                                 prefix: Prefix<XorName>)
+                                 -> BTreeMap<PublicId, sign::Signature> {
+        if let Some(signatures) = self.group_list_sigs.get(&prefix) {
+            let group = if let Ok(group) = self.get_group(&prefix) {
+                group
+            } else {
+                return Default::default();
+            };
+            let data = if let Ok(data) = serialisation::serialise(&group) {
+                data
+            } else {
+                return Default::default();
+            };
+            signatures.iter()
+                .filter(|&(pub_id, sig)| {
+                    sign::verify_detached(sig, &data, pub_id.signing_public_key())
+                })
+                .map(|(&pub_id, &sig)| (pub_id, sig))
+                .collect()
+        } else {
+            Default::default()
+        }
     }
 
     pub fn set_next_node_name(&mut self, relocation_name: Option<XorName>) {

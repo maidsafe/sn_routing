@@ -30,10 +30,15 @@ use routing_table::Authority;
 use routing_table::RoutingTable;
 #[cfg(not(feature = "use-mock-crust"))]
 use rust_sodium;
+#[cfg(feature = "use-mock-crust")]
+use rust_sodium::crypto::sign;
 use state_machine::{State, StateMachine};
 use states;
 #[cfg(feature = "use-mock-crust")]
 use std::cell::RefCell;
+#[cfg(feature = "use-mock-crust")]
+use std::collections::BTreeMap;
+use std::collections::HashSet;
 #[cfg(feature = "use-mock-crust")]
 use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -482,6 +487,13 @@ impl Node {
     /// Resend all unacknowledged messages.
     pub fn clear_state(&self) {
         self.machine.borrow_mut().current_mut().clear_state()
+    }
+
+    /// Return false if we don't have a quorum of signatures for neighbouring groups lists
+    pub fn group_list_signatures(&self,
+                                 prefix: Prefix<XorName>)
+                                 -> Option<BTreeMap<PublicId, sign::Signature>> {
+        self.machine.borrow().current().group_list_signatures(prefix)
     }
 
     /// Returns whether the current state is `Node`.
