@@ -151,6 +151,7 @@ mod cache;
 mod data;
 mod error;
 mod event;
+mod section_list_cache;
 mod id;
 mod message_filter;
 mod messages;

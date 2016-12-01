@@ -21,13 +21,15 @@ use data::{Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use event::Event;
 use id::FullId;
+#[cfg(feature = "use-mock-crust")]
+use id::PublicId;
 #[cfg(not(feature = "use-mock-crust"))]
 use maidsafe_utilities::thread;
 use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, RELOCATE_PRIORITY, Request, Response,
                UserMessage};
-use routing_table::Authority;
 #[cfg(feature = "use-mock-crust")]
-use routing_table::RoutingTable;
+use routing_table::{Prefix, RoutingTable};
+use routing_table::Authority;
 #[cfg(not(feature = "use-mock-crust"))]
 use rust_sodium;
 #[cfg(feature = "use-mock-crust")]
@@ -38,7 +40,6 @@ use states;
 use std::cell::RefCell;
 #[cfg(feature = "use-mock-crust")]
 use std::collections::BTreeMap;
-use std::collections::HashSet;
 #[cfg(feature = "use-mock-crust")]
 use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -489,7 +490,8 @@ impl Node {
         self.machine.borrow_mut().current_mut().clear_state()
     }
 
-    /// Return false if we don't have a quorum of signatures for neighbouring groups lists
+    /// Returns a quorum of signatures for the neighbouring section's list or `None` if we don't
+    /// have one
     pub fn group_list_signatures(&self,
                                  prefix: Prefix<XorName>)
                                  -> Option<BTreeMap<PublicId, sign::Signature>> {

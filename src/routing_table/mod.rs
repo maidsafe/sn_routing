@@ -837,7 +837,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     /// Returns the prefix of the group in which `name` belongs, or `None` if there is no such group
     /// in the routing table.
-    fn find_group_prefix(&self, name: &T) -> Option<Prefix<T>> {
+    pub fn find_group_prefix(&self, name: &T) -> Option<Prefix<T>> {
         if self.our_prefix.matches(name) {
             return Some(self.our_prefix);
         }

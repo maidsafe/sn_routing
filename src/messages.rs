@@ -102,7 +102,7 @@ pub enum DirectMessage {
     /// only be relayed once enough signatures have been accumulated.
     MessageSignature(sha256::Digest, sign::Signature),
     /// A signature for the current `BTreeSet` of group's node names
-    GroupListSignature(Prefix<XorName>, sign::Signature),
+    GroupListSignature(Prefix<XorName>, GroupList, sign::Signature),
     /// Sent from the bootstrap node to a client in response to `ClientIdentify`.
     BootstrapIdentify {
         /// The bootstrap node's keys and name.
@@ -557,7 +557,7 @@ impl Debug for DirectMessage {
                        "MessageSignature ({}, ..)",
                        utils::format_binary_array(&digest.0))
             }
-            DirectMessage::GroupListSignature(ref prefix, _) => {
+            DirectMessage::GroupListSignature(ref prefix, _, _) => {
                 write!(formatter, "GroupListSignature({:?}, ..)", prefix)
             }
             DirectMessage::BootstrapIdentify { ref public_id } => {

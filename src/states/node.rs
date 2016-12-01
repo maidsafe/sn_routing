@@ -39,11 +39,12 @@ use routing_table::Error as RoutingTableError;
 use routing_table::RoutingTable;
 use rust_sodium::crypto::{box_, sign};
 use rust_sodium::crypto::hash::sha256;
+use section_list_cache::SectionListCache;
 use signature_accumulator::SignatureAccumulator;
 use state_machine::Transition;
 use stats::Stats;
-use std::{fmt, iter, ops};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::{fmt, iter};
+use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 use std::fmt::{Debug, Formatter};
 use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
@@ -60,37 +61,6 @@ const TICK_TIMEOUT_SECS: u64 = 60;
 const GET_NODE_NAME_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) the new close group waits for a joining node it sent a network name to.
 const SENT_NETWORK_NAME_TIMEOUT_SECS: u64 = 30;
-
-#[derive(Clone, Default)]
-pub struct GroupListSigCache(HashMap<Prefix<XorName>, BTreeMap<PublicId, sign::Signature>>);
-
-impl ops::Deref for GroupListSigCache {
-    type Target = HashMap<Prefix<XorName>, BTreeMap<PublicId, sign::Signature>>;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl ops::DerefMut for GroupListSigCache {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-impl GroupListSigCache {
-    /// Prunes all prefixes compatible with `prefix` from the cache - to be used with merges and
-    /// splits
-    pub fn prune_compatible(&mut self, prefix: Prefix<XorName>) {
-        let to_remove = self.0
-            .keys()
-            .filter(|&x| prefix.is_compatible(x) && prefix != *x)
-            .cloned()
-            .collect_vec();
-        for prefix in to_remove {
-            let _ = self.0.remove(&prefix);
-        }
-    }
-}
 
 pub struct Node {
     ack_mgr: AckManager,
@@ -109,7 +79,7 @@ pub struct Node {
     sent_network_name_to: Option<(XorName, Instant)>,
     routing_msg_filter: RoutingMessageFilter,
     sig_accumulator: SignatureAccumulator,
-    group_list_sigs: GroupListSigCache,
+    section_list_sigs: SectionListCache,
     stats: Stats,
     tick_timer_token: u64,
     timer: Timer,
@@ -197,7 +167,7 @@ impl Node {
             response_cache: cache,
             routing_msg_filter: RoutingMessageFilter::new(),
             sig_accumulator: Default::default(),
-            group_list_sigs: Default::default(),
+            section_list_sigs: SectionListCache::new(),
             sent_network_name_to: None,
             stats: stats,
             tick_timer_token: tick_timer_token,
@@ -493,7 +463,9 @@ impl Node {
         use messages::DirectMessage::*;
         match direct_message {
             MessageSignature(digest, sig) => self.handle_message_signature(digest, sig, peer_id),
-            GroupListSignature(prefix, sig) => self.handle_group_list_signature(peer_id, prefix, sig),
+            GroupListSignature(prefix, group_list, sig) => {
+                self.handle_group_list_signature(peer_id, prefix, group_list, sig)
+            }
             ClientIdentify { ref serialised_public_id, ref signature, client_restriction } => {
                 if let Ok(public_id) = verify_signed_public_id(serialised_public_id, signature) {
                     self.handle_client_identify(public_id, peer_id, client_restriction)
@@ -561,18 +533,33 @@ impl Node {
         Ok(group)
     }
 
+    fn get_group_list(&self, prefix: &Prefix<XorName>) -> Result<GroupList, RoutingError> {
+        Ok(GroupList {
+            pub_ids: self.peer_mgr
+                .get_pub_ids(&self.get_group(prefix)?.into_iter().collect())
+                .into_iter()
+                .collect(),
+        })
+    }
+
     fn send_group_list_signature(&mut self, prefix: Prefix<XorName>) -> Result<(), RoutingError> {
         // don't send signatures for our own group
         if prefix == *self.peer_mgr.routing_table().our_group_prefix() {
             return Ok(());
         }
-        let group = self.get_group(&prefix)?;
+        let group = self.get_group_list(&prefix)?;
         let serialised = serialisation::serialise(&group)?;
         let sig = sign::sign_detached(&serialised, self.full_id.signing_private_key());
 
+        self.section_list_sigs.add_signature(prefix,
+                                             *self.full_id.public_id(),
+                                             group.clone(),
+                                             sig,
+                                             self.peer_mgr.routing_table().our_group().len() + 1);
+
         let peers = self.peer_mgr.get_peer_ids(self.peer_mgr.routing_table().our_group());
         for peer_id in peers {
-            let msg = DirectMessage::GroupListSignature(prefix, sig);
+            let msg = DirectMessage::GroupListSignature(prefix, group.clone(), sig);
             self.send_direct_message(&peer_id, msg)?;
         }
 
@@ -582,15 +569,19 @@ impl Node {
     fn handle_group_list_signature(&mut self,
                                    peer_id: PeerId,
                                    prefix: Prefix<XorName>,
+                                   group_list: GroupList,
                                    sig: sign::Signature)
                                    -> Result<(), RoutingError> {
         let src_pub_id =
             self.peer_mgr.get_routing_peer(&peer_id).ok_or(RoutingError::InvalidSource)?;
-        let group = self.get_group(&prefix)?;
-        let serialised = serialisation::serialise(&group)?;
+        let serialised = serialisation::serialise(&group_list)?;
         if sign::verify_detached(&sig, &serialised, src_pub_id.signing_public_key()) {
-            let group_entry = self.group_list_sigs.entry(prefix).or_insert_with(BTreeMap::new);
-            let _ = group_entry.insert(*src_pub_id, sig);
+            self.section_list_sigs
+                .add_signature(prefix,
+                               *src_pub_id,
+                               group_list,
+                               sig,
+                               self.peer_mgr.routing_table().our_group().len() + 1);
             Ok(())
         } else {
             Err(RoutingError::FailedSignature)
@@ -1541,8 +1532,6 @@ impl Node {
         let prefix1 = prefix.pushed(true);
         self.send_group_list_signature(prefix0)?;
         self.send_group_list_signature(prefix1)?;
-        self.group_list_sigs.prune_compatible(prefix0);
-        self.group_list_sigs.prune_compatible(prefix1);
 
         Ok(())
     }
@@ -1612,7 +1601,6 @@ impl Node {
                self,
                self.peer_mgr.routing_table().prefixes());
         self.merge_if_necessary();
-        self.group_list_sigs.prune_compatible(prefix);
         self.send_group_list_signature(prefix)?;
         Ok(())
     }
@@ -1938,7 +1926,7 @@ impl Node {
         };
 
         if let Ok(removal_details) = removal_result {
-            if !self.dropped_routing_node(removal_details) {
+            if !self.dropped_routing_node(peer.pub_id(), removal_details) {
                 return false;
             }
         }
@@ -1972,7 +1960,10 @@ impl Node {
 
     // Handle dropped routing peer with the given name and removal details. Returns true if we
     // should keep running, false if we should terminate.
-    fn dropped_routing_node(&mut self, details: RemovalDetails<XorName>) -> bool {
+    fn dropped_routing_node(&mut self,
+                            pub_id: &PublicId,
+                            details: RemovalDetails<XorName>)
+                            -> bool {
         info!("{:?} Dropped {:?} from the routing table.",
               self,
               details.name);
@@ -1988,6 +1979,9 @@ impl Node {
             self.peer_mgr.routing_table().find_group_prefix(&details.name).map_or((), |prefix| {
                 let _ = self.send_group_list_signature(prefix);
             });
+        } else {
+            self.section_list_sigs
+                .remove_signatures_by(*pub_id, self.peer_mgr.routing_table().our_group().len() + 1);
         }
 
         if self.peer_mgr.routing_table().len() < self.min_group_size() - 1 {
@@ -2195,13 +2189,9 @@ impl Node {
     pub fn group_list_signatures(&self,
                                  prefix: Prefix<XorName>)
                                  -> BTreeMap<PublicId, sign::Signature> {
-        if let Some(signatures) = self.group_list_sigs.get(&prefix) {
-            let group = if let Ok(group) = self.get_group(&prefix) {
-                group
-            } else {
-                return Default::default();
-            };
-            let data = if let Ok(data) = serialisation::serialise(&group) {
+        if let Some(&(ref group_list, ref signatures)) =
+            self.section_list_sigs.get_signatures(prefix) {
+            let data = if let Ok(data) = serialisation::serialise(group_list) {
                 data
             } else {
                 return Default::default();
