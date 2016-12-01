@@ -95,13 +95,14 @@ impl Drop for NodeProcess {
     }
 }
 
-fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
+fn start_nodes(count: usize) -> Vec<NodeProcess> {
     println!("--------- Starting {} nodes -----------", count);
 
     let current_exe_path = unwrap!(env::current_exe());
     let mut log_path = current_exe_path.clone();
 
-    let nodes = (0..count).map(|i| {
+    let nodes: Vec<_> = (0..count)
+        .map(|i| {
             log_path.set_file_name(&format!("Node{:02}.log", i));
             let mut args = vec![format!("--output={}", log_path.display())];
             if i == 0 {
@@ -109,19 +110,20 @@ fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
                 args.push("-f".to_owned());
             }
 
-            let node = NodeProcess(Command::new(current_exe_path.clone()).args(&args)
-                                       .stdout(Stdio::piped())
-                                       .stderr(Stdio::inherit())
-                                       .spawn()?,
-                                   i);
+            let cmd = Command::new(current_exe_path.clone())
+                .args(&args)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::inherit())
+                .spawn();
+            let node = NodeProcess(unwrap!(cmd), i);
 
             println!("Started Node #{} with Process ID {}", i, node.0.id());
             thread::sleep(Duration::from_secs(5));
-            Ok(node)
+            node
         })
-        .collect::<io::Result<Vec<NodeProcess>>>()?;
+        .collect();
     thread::sleep(Duration::from_secs(10));
-    Ok(nodes)
+    nodes
 }
 
 fn simulate_churn(mut nodes: Vec<NodeProcess>,
@@ -325,7 +327,7 @@ fn main() {
             None => DEFAULT_NODE_COUNT,
         };
 
-        let nodes = unwrap!(start_nodes(node_count));
+        let nodes = start_nodes(node_count);
 
         let stop_flag = Arc::new((Mutex::new(false), Condvar::new()));
         let _raii_joiner = simulate_churn(nodes, node_count, stop_flag.clone());
