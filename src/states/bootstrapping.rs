@@ -50,6 +50,7 @@ pub struct Bootstrapping {
     crust_service: Service,
     event_sender: Sender<Event>,
     full_id: FullId,
+    min_group_size: usize,
     stats: Stats,
     timer: Timer,
 }
@@ -60,6 +61,7 @@ impl Bootstrapping {
                mut crust_service: Service,
                event_sender: Sender<Event>,
                full_id: FullId,
+               min_group_size: usize,
                timer: Timer)
                -> Self {
         let _ = crust_service.start_bootstrap(HashSet::new());
@@ -72,7 +74,8 @@ impl Bootstrapping {
             crust_service: crust_service,
             event_sender: event_sender,
             full_id: full_id,
-            stats: Default::default(),
+            min_group_size: min_group_size,
+            stats: Stats::new(min_group_size),
             timer: timer,
         }
     }
@@ -130,6 +133,7 @@ impl Bootstrapping {
         Client::from_bootstrapping(self.crust_service,
                                    self.event_sender,
                                    self.full_id,
+                                   self.min_group_size,
                                    proxy_peer_id,
                                    proxy_public_id,
                                    self.stats,
@@ -141,6 +145,7 @@ impl Bootstrapping {
                                  self.crust_service,
                                  self.event_sender,
                                  self.full_id,
+                                 self.min_group_size,
                                  proxy_peer_id,
                                  proxy_public_id,
                                  self.stats,

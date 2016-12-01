@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use rand::Rng;
-use routing::{Event, MIN_GROUP_SIZE};
+use routing::Event;
 use routing::mock_crust::{Config, Endpoint, Network};
 use super::{TestNode, create_connected_nodes, poll_all, verify_invariant_for_all_nodes};
 
@@ -43,7 +43,8 @@ fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
 
 #[test]
 fn failing_connections_group_of_three() {
-    let network = Network::new(None);
+    let min_group_size = 8;
+    let network = Network::new(min_group_size, None);
 
     network.block_connection(Endpoint(1), Endpoint(2));
     network.block_connection(Endpoint(2), Endpoint(1));
@@ -64,8 +65,9 @@ fn failing_connections_group_of_three() {
 
 #[test]
 fn node_drops() {
-    let network = Network::new(None);
-    let mut nodes = create_connected_nodes(&network, MIN_GROUP_SIZE + 2);
+    let min_group_size = 8;
+    let network = Network::new(min_group_size, None);
+    let mut nodes = create_connected_nodes(&network, min_group_size + 2);
     drop_node(&mut nodes, 0);
 
     verify_invariant_for_all_nodes(&nodes);
@@ -74,9 +76,10 @@ fn node_drops() {
 #[test]
 #[cfg_attr(feature = "clippy", allow(needless_range_loop))]
 fn node_restart() {
-    let network = Network::new(None);
+    let min_group_size = 8;
+    let network = Network::new(min_group_size, None);
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes(&network, MIN_GROUP_SIZE);
+    let mut nodes = create_connected_nodes(&network, min_group_size);
 
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
 

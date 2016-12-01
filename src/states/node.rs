@@ -30,8 +30,8 @@ use log::LogLevel;
 use maidsafe_utilities::serialisation;
 use messages::{ConnectionInfo, DEFAULT_PRIORITY, DirectMessage, GroupList, HopMessage, Message,
                MessageContent, RoutingMessage, SignedMessage, UserMessage, UserMessageCache};
-use peer_manager::{ConnectionInfoPreparedResult, ConnectionInfoReceivedResult, MIN_GROUP_SIZE,
-                   PeerManager, PeerState};
+use peer_manager::{ConnectionInfoPreparedResult, ConnectionInfoReceivedResult, PeerManager,
+                   PeerState};
 use routing_message_filter::RoutingMessageFilter;
 use routing_table::{OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix, RemovalDetails,
                     Xorable};
@@ -91,6 +91,7 @@ impl Node {
                  crust_service: Service,
                  event_sender: Sender<Event>,
                  mut full_id: FullId,
+                 min_group_size: usize,
                  timer: Timer)
                  -> Option<Self> {
         let name = XorName(sha256::hash(&full_id.public_id().name().0).0);
@@ -101,7 +102,8 @@ impl Node {
                   event_sender,
                   true,
                   full_id,
-                  Default::default(),
+                  min_group_size,
+                  Stats::new(min_group_size),
                   timer)
     }
 
@@ -110,6 +112,7 @@ impl Node {
                               crust_service: Service,
                               event_sender: Sender<Event>,
                               full_id: FullId,
+                              min_group_size: usize,
                               proxy_peer_id: PeerId,
                               proxy_public_id: PublicId,
                               stats: Stats,
@@ -120,6 +123,7 @@ impl Node {
                                  event_sender,
                                  false,
                                  full_id,
+                                 min_group_size,
                                  stats,
                                  timer);
 
@@ -136,6 +140,7 @@ impl Node {
            event_sender: Sender<Event>,
            first_node: bool,
            full_id: FullId,
+           min_group_size: usize,
            stats: Stats,
            mut timer: Timer)
            -> Option<Self> {
@@ -154,7 +159,7 @@ impl Node {
             get_node_name_timer_token: None,
             is_first_node: first_node,
             msg_queue: VecDeque::new(),
-            peer_mgr: PeerManager::new(public_id),
+            peer_mgr: PeerManager::new(min_group_size, public_id),
             response_cache: cache,
             routing_msg_filter: RoutingMessageFilter::new(),
             sig_accumulator: Default::default(),
@@ -495,9 +500,10 @@ impl Node {
                                 peer_id: PeerId)
                                 -> Result<(), RoutingError> {
         if let Some(&pub_id) = self.peer_mgr.get_routing_peer(&peer_id) {
+            let min_group_size = self.min_group_size();
             if let Some((signed_msg, route)) =
                 self.sig_accumulator
-                    .add_signature(digest, sig, pub_id) {
+                    .add_signature(min_group_size, digest, sig, pub_id) {
                 let hop = *self.name(); // we accumulated the message, so now we act as the last hop
                 return self.handle_signed_message(signed_msg, route, hop, &[]);
             }
@@ -803,12 +809,12 @@ impl Node {
         }
 
         if (client_restriction || !self.is_first_node) &&
-           self.peer_mgr.routing_table().len() < MIN_GROUP_SIZE - 1 {
+           self.peer_mgr.routing_table().len() < self.min_group_size() - 1 {
             debug!("{:?} Client {:?} rejected: Routing table has {} entries. {} required.",
-                   self,
-                   public_id.name(),
-                   self.peer_mgr.routing_table().len(),
-                   MIN_GROUP_SIZE - 1);
+                    self,
+                    public_id.name(),
+                    self.peer_mgr.routing_table().len(),
+                    self.min_group_size() - 1);
             return self.send_direct_message(&peer_id, DirectMessage::BootstrapDeny);
         }
 
@@ -1454,7 +1460,9 @@ impl Node {
                           route: u8)
                           -> Result<(), RoutingError> {
         let our_name = *self.name();
-        if let Some((msg, route)) = self.sig_accumulator.add_message(signed_msg, route) {
+        let min_group_size = self.min_group_size();
+        if let Some((msg, route)) =
+            self.sig_accumulator.add_message(signed_msg, min_group_size, route) {
             if self.in_authority(&msg.routing_message().dst) {
                 self.handle_signed_message(msg, route, our_name, &[])?;
             } else {
@@ -1603,7 +1611,7 @@ impl Node {
             .iter()
             .chain(iter::once(self.name()))
             .sorted_by(|&lhs, &rhs| src.name().cmp_distance(lhs, rhs));
-        group.truncate(MIN_GROUP_SIZE);
+        group.truncate(self.min_group_size());
         if !group.contains(&self.name()) {
             None
         } else {
@@ -1747,7 +1755,7 @@ impl Node {
                        peer.name(),
                        peer_id);
 
-                if self.peer_mgr.routing_table().len() < MIN_GROUP_SIZE - 1 {
+                if self.peer_mgr.routing_table().len() < self.min_group_size() - 1 {
                     self.send_event(Event::Terminate);
                     return false;
                 }
@@ -1774,10 +1782,10 @@ impl Node {
 
         self.merge_if_necessary();
 
-        if self.peer_mgr.routing_table().len() < MIN_GROUP_SIZE - 1 {
+        if self.peer_mgr.routing_table().len() < self.min_group_size() - 1 {
             debug!("{:?} Lost connection, less than {} remaining.",
                    self,
-                   MIN_GROUP_SIZE - 1);
+                   self.min_group_size() - 1);
             if !self.is_first_node {
                 self.send_event(Event::RestartRequired);
                 return false;
@@ -1978,6 +1986,11 @@ impl Bootstrapped for Node {
     fn ack_mgr_mut(&mut self) -> &mut AckManager {
         &mut self.ack_mgr
     }
+
+    fn min_group_size(&self) -> usize {
+        self.peer_mgr.routing_table().min_group_size()
+    }
+
 
     fn send_routing_message_via_route(&mut self,
                                       routing_msg: RoutingMessage,

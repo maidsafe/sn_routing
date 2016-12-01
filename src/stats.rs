@@ -16,13 +16,12 @@
 // relating to use of the SAFE Network Software.
 
 use messages::{DirectMessage, MessageContent, Request, Response, RoutingMessage, UserMessage};
-use peer_manager::MIN_GROUP_SIZE;
+use std::iter;
 
 /// The number of messages after which the message statistics should be printed.
 const MSG_LOG_COUNT: usize = 1000;
 
 /// A collection of counters to gather Routing statistics.
-#[derive(Default)]
 pub struct Stats {
     // TODO: Make these private and move the logic here.
     pub cur_routing_table_size: usize,
@@ -32,7 +31,7 @@ pub struct Stats {
     pub tunnel_connections: usize,
 
     /// Messages sent by us on different routes.
-    routes: [usize; MIN_GROUP_SIZE],
+    routes: Vec<usize>,
     /// Messages we sent unsuccessfully: unacknowledged on all routes.
     unacked_msgs: usize,
 
@@ -76,6 +75,53 @@ pub struct Stats {
 }
 
 impl Stats {
+    // Create a new instance, with the given number of routes
+    pub fn new(num_routes: usize) -> Self {
+        Stats {
+            cur_routing_table_size: 0,
+            cur_client_num: 0,
+            cumulative_client_num: 0,
+            tunnel_client_pairs: 0,
+            tunnel_connections: 0,
+            routes: iter::repeat(0).take(num_routes).collect(),
+            unacked_msgs: 0,
+            msg_direct_node_identify: 0,
+            msg_direct_sig: 0,
+            msg_get: 0,
+            msg_put: 0,
+            msg_post: 0,
+            msg_delete: 0,
+            msg_append: 0,
+            msg_get_account_info: 0,
+            msg_get_close_group: 0,
+            msg_get_node_name: 0,
+            msg_expect_close_node: 0,
+            msg_refresh: 0,
+            msg_connection_info: 0,
+            msg_get_success: 0,
+            msg_get_failure: 0,
+            msg_put_success: 0,
+            msg_put_failure: 0,
+            msg_post_success: 0,
+            msg_post_failure: 0,
+            msg_delete_success: 0,
+            msg_delete_failure: 0,
+            msg_append_success: 0,
+            msg_append_failure: 0,
+            msg_get_account_info_success: 0,
+            msg_get_account_info_failure: 0,
+            msg_get_close_group_rsp: 0,
+            msg_group_split: 0,
+            msg_own_group_merge: 0,
+            msg_other_group_merge: 0,
+            msg_get_node_name_rsp: 0,
+            msg_ack: 0,
+            msg_other: 0,
+            msg_total: 0,
+            msg_total_bytes: 0,
+        }
+    }
+
     pub fn count_unacked(&mut self) {
         self.unacked_msgs += 1;
     }

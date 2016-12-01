@@ -342,6 +342,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         self.our_group.is_empty() && self.groups.values().all(HashSet::is_empty)
     }
 
+    /// Get the minimum group size
+    pub fn min_group_size(&self) -> usize {
+        self.min_group_size
+    }
+
     /// Returns whether the table contains the given `name`
     pub fn has(&self, name: &T) -> bool {
         self.get_group(name).map_or(false, |group| group.contains(name))

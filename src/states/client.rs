@@ -26,7 +26,6 @@ use id::{FullId, PublicId};
 use maidsafe_utilities::serialisation;
 use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage, UserMessage,
                UserMessageCache};
-use peer_manager::MIN_GROUP_SIZE;
 use routing_message_filter::RoutingMessageFilter;
 use state_machine::Transition;
 use stats::Stats;
@@ -44,6 +43,7 @@ pub struct Client {
     crust_service: Service,
     event_sender: Sender<Event>,
     full_id: FullId,
+    min_group_size: usize,
     proxy_peer_id: PeerId,
     proxy_public_id: PublicId,
     routing_msg_filter: RoutingMessageFilter,
@@ -57,6 +57,7 @@ impl Client {
     pub fn from_bootstrapping(crust_service: Service,
                               event_sender: Sender<Event>,
                               full_id: FullId,
+                              min_group_size: usize,
                               proxy_peer_id: PeerId,
                               proxy_public_id: PublicId,
                               stats: Stats,
@@ -67,6 +68,7 @@ impl Client {
             crust_service: crust_service,
             event_sender: event_sender,
             full_id: full_id,
+            min_group_size: min_group_size,
             proxy_peer_id: proxy_peer_id,
             proxy_public_id: proxy_public_id,
             routing_msg_filter: RoutingMessageFilter::new(),
@@ -295,6 +297,10 @@ impl Bootstrapped for Client {
         &mut self.ack_mgr
     }
 
+    fn min_group_size(&self) -> usize {
+        self.min_group_size
+    }
+
     fn resend_unacknowledged_timed_out_msgs(&mut self, token: u64) {
         if let Some((unacked_msg, ack)) = self.ack_mgr.find_timed_out(token) {
             trace!("{:?} - Timed out waiting for ack({}) {:?}",
@@ -302,7 +308,7 @@ impl Bootstrapped for Client {
                    ack,
                    unacked_msg);
 
-            if unacked_msg.route as usize == MIN_GROUP_SIZE {
+            if unacked_msg.route as usize == self.min_group_size {
                 debug!("{:?} - Message unable to be acknowledged - giving up. {:?}",
                        self,
                        unacked_msg);

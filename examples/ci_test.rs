@@ -61,7 +61,7 @@ use maidsafe_utilities::thread::Joiner;
 use maidsafe_utilities::thread::named as thread_named;
 use rand::{Rng, ThreadRng, random, thread_rng};
 use rand::distributions::{IndependentSample, Range};
-use routing::{Data, MIN_GROUP_SIZE, StructuredData};
+use routing::{Data, StructuredData};
 use std::{env, io, thread};
 use std::collections::BTreeSet;
 use std::io::Write;
@@ -167,7 +167,8 @@ fn simulate_churn(mut nodes: Vec<NodeProcess>,
     })
 }
 
-fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
+fn simulate_churn_impl(min_group_size: usize,
+                       nodes: &mut Vec<NodeProcess>,
                        rng: &mut ThreadRng,
                        network_size: usize,
                        node_count: &mut usize)
@@ -176,7 +177,7 @@ fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
     io::stdout().flush().expect("Could not flush stdout");
 
     let kill_node = match nodes.len() {
-        size if size == MIN_GROUP_SIZE => false,
+        size if size == min_group_size => false,
         size if size == network_size => true,
         _ => random(),
     };
@@ -303,6 +304,9 @@ struct Args {
 
 #[cfg_attr(feature="clippy", allow(mutex_atomic))] // AtomicBool cannot be used with Condvar.
 fn main() {
+    // TODO: make size a run-time argument?
+    let min_group_size = 8;
+
     let args: Args = Docopt::new(USAGE)
         .and_then(|docopt| docopt.decode())
         .unwrap_or_else(|error| error.exit());
@@ -317,9 +321,8 @@ fn main() {
         unwrap!(maidsafe_utilities::log::init(false));
         let node_count = match args.arg_nodes {
             Some(number) => {
-                if number <= MIN_GROUP_SIZE {
-                    panic!("The number of nodes should be > {} (MIN_GROUP_SIZE).",
-                           MIN_GROUP_SIZE);
+                if number <= min_group_size {
+                    panic!("The number of nodes should be > {}.", min_group_size);
                 }
 
                 number
