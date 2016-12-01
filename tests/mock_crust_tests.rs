@@ -40,6 +40,10 @@
 extern crate itertools;
 #[macro_use]
 extern crate log;
+#[cfg_attr(feature="clippy", allow(useless_attribute))]
+#[allow(unused_extern_crates)]
+#[macro_use]
+extern crate maidsafe_utilities;
 extern crate rand;
 extern crate routing;
 #[macro_use]
