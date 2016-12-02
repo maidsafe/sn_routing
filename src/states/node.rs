@@ -499,6 +499,7 @@ impl Node {
                 self.sig_accumulator
                     .add_signature(digest, sig, pub_id) {
                 let hop = *self.name(); // we accumulated the message, so now we act as the last hop
+                trace!("{:?} Message accumulated - handling: {:?}", self, signed_msg);
                 return self.handle_signed_message(signed_msg, route, hop, &[]);
             }
         } else {
@@ -558,7 +559,7 @@ impl Node {
             self.send_ack(signed_msg.routing_message(), route);
         }
 
-        if self.routing_msg_filter.filter_incoming(signed_msg.routing_message(), route) > 1 {
+        if self.routing_msg_filter.filter_incoming(signed_msg.routing_message()) > 1 {
             return Err(RoutingError::FilterCheckFailed);
         }
 
@@ -1455,6 +1456,7 @@ impl Node {
                           -> Result<(), RoutingError> {
         let our_name = *self.name();
         if let Some((msg, route)) = self.sig_accumulator.add_message(signed_msg, route) {
+            trace!("{:?} Message accumulated - sending: {:?}", self, msg);
             if self.in_authority(&msg.routing_message().dst) {
                 self.handle_signed_message(msg, route, our_name, &[])?;
             } else {
@@ -2007,6 +2009,7 @@ impl Bootstrapped for Node {
         match self.get_signature_target(&signed_msg.routing_message().src, route) {
             None => Ok(()),
             Some(target_name) if target_name == *self.name() => {
+                trace!("{:?} Starting message accumulation for {:?}", self, signed_msg);
                 self.accumulate_message(signed_msg, route)
             }
             Some(target_name) => {
@@ -2015,6 +2018,10 @@ impl Bootstrapped for Node {
                         let sign_key = self.full_id().signing_private_key();
                         signed_msg.routing_message().to_signature(sign_key)?
                     };
+                    trace!("{:?} Sending signature for {:?} to {:?}",
+                           self,
+                           signed_msg,
+                           target_name);
                     self.send_direct_msg_to_peer(direct_msg, peer_id, signed_msg.priority())
                 } else {
                     Err(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer))
