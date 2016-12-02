@@ -29,14 +29,14 @@ use maidsafe_utilities;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 #[cfg(feature = "use-mock-crust")]
 use mock_crust::crust::PeerId;
-use routing_table::Prefix;
+use routing_table::{Prefix, Xorable};
 use rust_sodium::crypto::{box_, sign};
 use rust_sodium::crypto::hash::sha256;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::{self, Debug, Formatter};
 use std::iter;
 use std::time::Duration;
-use super::QUORUM;
+use super::{MIN_GROUP_SIZE, QUORUM};
 use types::MessageId;
 use utils;
 use xor_name::XorName;
@@ -154,6 +154,8 @@ pub struct HopMessage {
     /// Route number; corresponds to the index of the peer in the group of target peers being
     /// considered for the next hop.
     pub route: u8,
+    /// Every node this has already been sent to.
+    pub sent_to: Vec<XorName>,
     /// Signature to be validated against the neighbouring sender's public key.
     signature: sign::Signature,
 }
@@ -162,12 +164,14 @@ impl HopMessage {
     /// Wrap `content` for transmission to the next hop and sign it.
     pub fn new(content: SignedMessage,
                route: u8,
+               sent_to: Vec<XorName>,
                signing_key: &sign::SecretKey)
                -> Result<HopMessage, RoutingError> {
         let bytes_to_sign = serialise(&content)?;
         Ok(HopMessage {
             content: content,
             route: route,
+            sent_to: sent_to,
             signature: sign::sign_detached(&bytes_to_sign, signing_key),
         })
     }
@@ -187,7 +191,7 @@ impl HopMessage {
 }
 
 /// A list of a group's public IDs, together with a list of signatures of a neighbouring group.
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable, Debug)]
 pub struct GroupList {
     // TODO(MAID-1677): pub signatures: BTreeSet<(PublicId, sign::Signature)>,
     pub pub_ids: BTreeSet<PublicId>,
@@ -301,7 +305,18 @@ impl SignedMessage {
         }
         self.grp_lists.first().map_or(false, |grp_list| {
             if self.content.src.is_group() {
-                QUORUM * grp_list.pub_ids.len() < 100 * self.signatures.len()
+                let valid_names: HashSet<_> = grp_list.pub_ids
+                    .iter()
+                    .map(PublicId::name)
+                    .sorted_by(|lhs, rhs| self.content.src.name().cmp_distance(lhs, rhs))
+                    .into_iter()
+                    .take(MIN_GROUP_SIZE)
+                    .collect();
+                let valid_sigs = self.signatures
+                    .keys()
+                    .filter(|pub_id| valid_names.contains(pub_id.name()))
+                    .count();
+                QUORUM * valid_names.len() <= 100 * valid_sigs
             } else {
                 self.signatures.len() == 1
             }
@@ -489,7 +504,7 @@ pub enum MessageContent {
         message_id: MessageId,
     },
     /// Sent to all connected peers when our own group splits
-    GroupSplit(Prefix<XorName>),
+    GroupSplit(Prefix<XorName>, XorName),
     /// Sent amongst members of a newly-merged group to allow synchronisation of their routing
     /// tables before notifying other connected peers of the merge.
     OwnGroupMerge {
@@ -501,7 +516,7 @@ pub enum MessageContent {
     /// the merge.
     OtherGroupMerge {
         prefix: Prefix<XorName>,
-        group: Vec<PublicId>,
+        group: BTreeSet<PublicId>,
     },
     /// Acknowledge receipt of any message except an `Ack`. It contains the hash of the
     /// received message and the priority.
@@ -572,7 +587,7 @@ impl Debug for DirectMessage {
 impl Debug for HopMessage {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter,
-               "HopMessage {{ content: {:?}, route: {}, signature: .. }}",
+               "HopMessage {{ content: {:?}, route: {}, sent_to: .., signature: .. }}",
                self.content,
                self.route)
     }
@@ -621,7 +636,9 @@ impl Debug for MessageContent {
                        close_group_ids,
                        message_id)
             }
-            MessageContent::GroupSplit(ref prefix) => write!(formatter, "GroupSplit({:?})", prefix),
+            MessageContent::GroupSplit(ref prefix, ref joining_node) => {
+                write!(formatter, "GroupSplit({:?}, {:?})", prefix, joining_node)
+            }
             MessageContent::OwnGroupMerge { ref sender_prefix, ref merge_prefix, ref groups } => {
                 write!(formatter,
                        "OwnGroupMerge {{ {:?}, {:?}, {:?} }}",
@@ -1005,10 +1022,11 @@ mod tests {
     use maidsafe_utilities;
     use maidsafe_utilities::serialisation::serialise;
     use rand;
-    use rust_sodium::crypto::sign;
     use rust_sodium::crypto::hash::sha256;
+    use rust_sodium::crypto::sign;
     use std::iter;
     use super::*;
+    use super::MAX_PART_LEN;
     use types::MessageId;
     use xor_name::XorName;
 
@@ -1128,7 +1146,8 @@ mod tests {
 
         let signed_message = unwrap!(signed_message_result);
         let (public_signing_key, secret_signing_key) = sign::gen_keypair();
-        let hop_message_result = HopMessage::new(signed_message.clone(), 0, &secret_signing_key);
+        let hop_message_result =
+            HopMessage::new(signed_message.clone(), 0, vec![], &secret_signing_key);
 
         let hop_message = unwrap!(hop_message_result);
 
@@ -1142,7 +1161,7 @@ mod tests {
 
     #[test]
     fn user_message_parts() {
-        let data_bytes: Vec<u8> = (0..(super::MAX_PART_LEN * 2)).map(|i| i as u8).collect();
+        let data_bytes: Vec<u8> = (0..(MAX_PART_LEN * 2)).map(|i| i as u8).collect();
         let data = Data::Immutable(ImmutableData::new(data_bytes));
         let user_msg = UserMessage::Request(Request::Put(data, MessageId::new()));
         let msg_hash = maidsafe_utilities::big_endian_sip_hash(&user_msg);

@@ -19,8 +19,8 @@ use id::PublicId;
 use itertools::Itertools;
 use maidsafe_utilities::serialisation;
 use messages::SignedMessage;
-use rust_sodium::crypto::sign;
 use rust_sodium::crypto::hash::sha256;
+use rust_sodium::crypto::sign;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::time::Instant;
@@ -148,8 +148,7 @@ mod tests {
             let routing_msg = RoutingMessage {
                 src: Authority::ClientManager(rand::random()),
                 dst: Authority::ClientManager(rand::random()),
-                content: MessageContent::GroupSplit(Prefix::new(rand::random::<u8>() as usize,
-                                                                rand::random())),
+                content: MessageContent::GroupSplit(Prefix::new(0, rand::random()), rand::random()),
             };
             let signed_msg = unwrap!(SignedMessage::new(routing_msg, msg_sender_id));
             let signature_msgs = other_ids.map(|id| {

@@ -19,7 +19,6 @@
 /// bytes).
 pub const MAX_HEADER_METADATA_SIZE: usize = 128;  // bytes
 
-
 use maidsafe_utilities::serialisation::serialise;
 use rand::{self, Rng};
 use rust_sodium::crypto::hash::sha256;

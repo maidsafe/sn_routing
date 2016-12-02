@@ -15,7 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-
 use maidsafe_utilities::serialisation::SerialisationError;
 use std::error::Error as StdError;
 use std::fmt::{self, Display, Formatter};

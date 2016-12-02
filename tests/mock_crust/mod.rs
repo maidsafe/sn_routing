@@ -19,17 +19,17 @@ mod accumulate;
 mod cache;
 mod churn;
 mod drop;
+mod merge;
 mod requests;
 mod utils;
-
-pub use self::utils::{TestClient, TestNode, create_connected_clients, create_connected_nodes,
-                      create_connected_nodes_with_cache_till_split, gen_bytes, gen_immutable_data,
-                      gen_range_except, gen_two_range_except, poll_all, sort_nodes_by_distance_to,
-                      verify_invariant_for_all_nodes};
 
 use routing::{Event, MIN_GROUP_SIZE};
 use routing::mock_crust::{Config, Endpoint, Network};
 use routing::mock_crust::crust::PeerId;
+pub use self::utils::{TestClient, TestNode, create_connected_clients, create_connected_nodes,
+                      create_connected_nodes_with_cache_until_split, gen_bytes,
+                      gen_immutable_data, gen_range_except, poll_all, poll_and_resend,
+                      sort_nodes_by_distance_to, verify_invariant_for_all_nodes};
 
 // —————  Miscellaneous tests below  —————
 
@@ -64,7 +64,7 @@ fn equal_group_size_nodes() {
 
 #[test]
 fn more_than_group_size_nodes() {
-    test_nodes(MIN_GROUP_SIZE * 2);
+    test_nodes(MIN_GROUP_SIZE * 6);
 }
 
 #[test]
@@ -126,7 +126,7 @@ fn multiple_joining_nodes() {
     nodes.push(TestNode::builder(&network).config(config.clone()).create());
 
     let _ = poll_all(&mut nodes, &mut []);
-    nodes.retain(|node| !node.routing_table().is_empty());
+    nodes.retain(|node| !unwrap!(node.routing_table()).is_empty());
     let _ = poll_all(&mut nodes, &mut []);
 
     verify_invariant_for_all_nodes(&nodes);
@@ -148,11 +148,11 @@ fn whitelist() {
     for node in &mut nodes {
         node.handle.0.borrow_mut().whitelist_peer(PeerId(MIN_GROUP_SIZE));
     }
-    // The next node has peer ID `GROUP_SIZE`: It should be able to join.
+    // The next node has peer ID `MIN_GROUP_SIZE`: It should be able to join.
     nodes.push(TestNode::builder(&network).config(config.clone()).create());
     let _ = poll_all(&mut nodes, &mut []);
     verify_invariant_for_all_nodes(&nodes);
-    // The next node has peer ID `GROUP_SIZE + 1`: It is not whitelisted.
+    // The next node has peer ID `MIN_GROUP_SIZE + 1`: It is not whitelisted.
     nodes.push(TestNode::builder(&network).config(config.clone()).create());
     let _ = poll_all(&mut nodes, &mut []);
     assert!(!unwrap!(nodes.pop()).inner.is_node());

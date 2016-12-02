@@ -308,7 +308,7 @@ impl Bootstrapped for Client {
                        unacked_msg);
                 self.stats.count_unacked();
             } else if let Err(error) =
-                   self.send_routing_message_via_route(unacked_msg.routing_msg, unacked_msg.route) {
+                self.send_routing_message_via_route(unacked_msg.routing_msg, unacked_msg.route) {
                 debug!("{:?} Failed to send message: {:?}", self, error);
             }
         }
@@ -326,7 +326,7 @@ impl Bootstrapped for Client {
 
         // Get PeerId of the proxy node
         let proxy_peer_id = if let Authority::Client { ref proxy_node_name, .. } =
-                                   routing_msg.src {
+            routing_msg.src {
             if *self.proxy_public_id.name() == *proxy_node_name {
                 self.proxy_peer_id
             } else {
@@ -347,7 +347,7 @@ impl Bootstrapped for Client {
         }
 
         if !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_peer_id, route) {
-            let bytes = self.to_hop_bytes(signed_msg.clone(), route)?;
+            let bytes = self.to_hop_bytes(signed_msg.clone(), route, vec![])?;
 
             if let Err(error) = self.send_or_drop(&proxy_peer_id, bytes, signed_msg.priority()) {
                 info!("{:?} - Error sending message to {:?}: {:?}.",

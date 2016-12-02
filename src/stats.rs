@@ -162,17 +162,20 @@ impl Stats {
     fn increment_msg_total(&mut self) {
         self.msg_total += 1;
         if self.msg_total % MSG_LOG_COUNT == 0 {
-            info!("Stats - Sent {} messages in total, comprising {} bytes, {} uncategorised, \
+            info!(target: "routing_stats",
+                  "Stats - Sent {} messages in total, comprising {} bytes, {} uncategorised, \
                   routes/failed: {:?}/{}",
                   self.msg_total,
                   self.msg_total_bytes,
                   self.msg_other,
                   self.routes,
                   self.unacked_msgs);
-            info!("Stats - Direct - NodeIdentify: {}, MessageSignature: {}",
+            info!(target: "routing_stats",
+                  "Stats - Direct - NodeIdentify: {}, MessageSignature: {}",
                   self.msg_direct_node_identify,
                   self.msg_direct_sig);
-            info!("Stats - Hops (Request/Response) - GetNodeName: {}/{}, ExpectCloseNode: {}, \
+            info!(target: "routing_stats",
+                  "Stats - Hops (Request/Response) - GetNodeName: {}/{}, ExpectCloseNode: {}, \
                    GetCloseGroup: {}/{}, GroupSplit: {}, OwnGroupMerge: {}, OtherGroupMerge: {}, \
                    ConnectionInfo: {}, Ack: {}",
                   self.msg_get_node_name,
@@ -185,7 +188,8 @@ impl Stats {
                   self.msg_other_group_merge,
                   self.msg_connection_info,
                   self.msg_ack);
-            info!("Stats - User (Request/Success/Failure) - Get: {}/{}/{}, Put: {}/{}/{}, \
+            info!(target: "routing_stats",
+                  "Stats - User (Request/Success/Failure) - Get: {}/{}/{}, Put: {}/{}/{}, \
                    Post: {}/{}/{}, Delete: {}/{}/{}, Append: {}/{}/{}, GetAccountInfo: {}/{}/{}, \
                    Refresh: {}",
                   self.msg_get,

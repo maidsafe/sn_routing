@@ -51,7 +51,6 @@ extern crate rust_sodium;
 #[macro_use]
 extern crate unwrap;
 
-
 use itertools::Itertools;
 use maidsafe_utilities::SeededRng;
 use maidsafe_utilities::thread::{self, Joiner};
@@ -59,13 +58,12 @@ use rand::Rng;
 use routing::{Authority, Client, Data, Event, FullId, MIN_GROUP_SIZE, MessageId, Node, Request,
               Response, StructuredData, XorName, Xorable};
 use rust_sodium::crypto;
-use std::iter;
 use std::collections::{BTreeSet, HashSet};
 #[cfg(target_os = "macos")]
 use std::io;
+use std::iter;
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::time::Duration;
-
 
 #[derive(Debug)]
 enum RecvWithTimeoutError {
@@ -75,8 +73,8 @@ enum RecvWithTimeoutError {
 
 /// Blocks until something is received on the `Receiver`, or timeout, whichever happens sooner.
 fn recv_with_timeout<T>(receiver: &Receiver<T>,
-                            timeout: Duration)
-                            -> Result<T, RecvWithTimeoutError> {
+                        timeout: Duration)
+                        -> Result<T, RecvWithTimeoutError> {
     let interval = Duration::from_millis(100);
     let mut elapsed = Duration::from_millis(0);
 
