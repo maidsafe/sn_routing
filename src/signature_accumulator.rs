@@ -39,6 +39,7 @@ impl SignatureAccumulator {
     /// Adds the given signature to the list of pending signatures or to the appropriate
     /// `SignedMessage`. Returns the message, if it has enough signatures now.
     pub fn add_signature(&mut self,
+                         min_group_size: usize,
                          hash: sha256::Digest,
                          sig: sign::Signature,
                          pub_id: PublicId)
@@ -51,16 +52,17 @@ impl SignatureAccumulator {
             sigs_vec.0.push((pub_id, sig));
             return None;
         }
-        self.remove_if_complete(&hash)
+        self.remove_if_complete(min_group_size, &hash)
     }
 
     /// Adds the given message to the list of pending messages. Returns it if it has enough
     /// signatures.
     pub fn add_message(&mut self,
                        mut msg: SignedMessage,
+                       min_group_size: usize,
                        route: u8)
                        -> Option<(SignedMessage, u8)> {
-        if msg.is_fully_signed() {
+        if msg.is_fully_signed(min_group_size) {
             return Some((msg, route));
         }
         self.remove_expired();
@@ -84,7 +86,7 @@ impl SignatureAccumulator {
                 let _ = entry.insert((msg, route, Instant::now()));
             }
         }
-        self.remove_if_complete(&hash)
+        self.remove_if_complete(min_group_size, &hash)
     }
 
     fn remove_expired(&mut self) {
@@ -106,15 +108,18 @@ impl SignatureAccumulator {
         }
     }
 
-    fn remove_if_complete(&mut self, hash: &sha256::Digest) -> Option<(SignedMessage, u8)> {
+    fn remove_if_complete(&mut self,
+                          min_group_size: usize,
+                          hash: &sha256::Digest)
+                          -> Option<(SignedMessage, u8)> {
         match self.msgs.get_mut(hash) {
             None => return None,
             Some(&mut (ref mut msg, _, _)) => {
-                if !msg.is_fully_signed() {
+                if !msg.is_fully_signed(min_group_size) {
                     return None;
                 }
                 msg.remove_invalid_signatures();
-                if !msg.is_fully_signed() {
+                if !msg.is_fully_signed(min_group_size) {
                     return None;
                 }
             }
@@ -193,6 +198,7 @@ mod tests {
 
     #[test]
     fn group_src_add_message_last() {
+        let min_group_size = 8;
         let mut sig_accumulator = SignatureAccumulator::default();
         let env = Env::new();
 
@@ -204,8 +210,12 @@ mod tests {
                 .foreach(|(signature_msg, full_id)| {
                     match *signature_msg {
                         DirectMessage::MessageSignature(ref hash, ref sig) => {
-                            assert!(sig_accumulator.add_signature(*hash, *sig, *full_id.public_id())
-                                .is_none());
+                            let result =
+                                sig_accumulator.add_signature(min_group_size,
+                                                              *hash,
+                                                              *sig,
+                                                              *full_id.public_id());
+                            assert!(result.is_none());
                         }
                         ref unexpected_msg => panic!("Unexpected message: {:?}", unexpected_msg),
                     }
@@ -228,13 +238,13 @@ mod tests {
             signed_msg.add_group_list(env.group_list.clone());
             let route = rand::random();
             let (returned_msg, returned_route) =
-                unwrap!(sig_accumulator.add_message(signed_msg.clone(), route));
+                unwrap!(sig_accumulator.add_message(signed_msg.clone(), min_group_size, route));
             assert_eq!(sig_accumulator.sigs.len(), expected_sigs_count);
             assert!(sig_accumulator.msgs.is_empty());
             assert_eq!(route, returned_route);
             assert_eq!(signed_msg.routing_message(), returned_msg.routing_message());
             unwrap!(returned_msg.check_integrity());
-            assert!(returned_msg.is_fully_signed());
+            assert!(returned_msg.is_fully_signed(min_group_size));
             env.group_list
                 .pub_ids
                 .iter()
@@ -244,6 +254,7 @@ mod tests {
 
     #[test]
     fn group_src_add_signature_last() {
+        let min_group_size = 8;
         let mut sig_accumulator = SignatureAccumulator::default();
         let env = Env::new();
 
@@ -251,7 +262,9 @@ mod tests {
         env.msgs_and_sigs.iter().enumerate().foreach(|(route, msg_and_sigs)| {
             let mut signed_msg = msg_and_sigs.signed_msg.clone();
             signed_msg.add_group_list(env.group_list.clone());
-            assert!(sig_accumulator.add_message(signed_msg.clone(), route as u8).is_none());
+            let result =
+                sig_accumulator.add_message(signed_msg.clone(), min_group_size, route as u8);
+            assert!(result.is_none());
         });
         let mut expected_msgs_count = env.msgs_and_sigs.len();
         assert_eq!(sig_accumulator.msgs.len(), expected_msgs_count);
@@ -265,7 +278,8 @@ mod tests {
                 .foreach(|(signature_msg, full_id)| {
                     let result = match *signature_msg {
                         DirectMessage::MessageSignature(hash, sig) => {
-                            sig_accumulator.add_signature(hash, sig, *full_id.public_id())
+                            sig_accumulator.add_signature(min_group_size, hash, sig,
+                                *full_id.public_id())
                         }
                         ref unexpected_msg => panic!("Unexpected message: {:?}", unexpected_msg),
                     };
@@ -277,7 +291,7 @@ mod tests {
                         assert_eq!(msg_and_sigs.signed_msg.routing_message(),
                                    returned_msg.routing_message());
                         unwrap!(returned_msg.check_integrity());
-                        assert!(returned_msg.is_fully_signed());
+                        assert!(returned_msg.is_fully_signed(min_group_size));
                     }
                 });
         });

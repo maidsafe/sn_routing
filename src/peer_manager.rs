@@ -30,8 +30,6 @@ use std::collections::hash_map::Values;
 use std::time::{Duration, Instant};
 use xor_name::XorName;
 
-/// The minimum group size for the routing table.
-pub const MIN_GROUP_SIZE: usize = 8;
 /// Time (in seconds) after which a joining node will get dropped from the map of joining nodes.
 const JOINING_NODE_TIMEOUT_SECS: u64 = 300;
 /// Time (in seconds) after which the connection to a peer is considered failed.
@@ -265,19 +263,20 @@ pub struct PeerManager {
 
 impl PeerManager {
     /// Returns a new peer manager with no entries.
-    pub fn new(our_public_id: PublicId) -> PeerManager {
+    pub fn new(min_group_size: usize, our_public_id: PublicId) -> PeerManager {
         PeerManager {
             connection_token_map: HashMap::new(),
             peer_map: PeerMap::new(),
             unknown_peers: HashMap::new(),
             proxy_peer_id: None,
-            routing_table: RoutingTable::<XorName>::new(*our_public_id.name(), MIN_GROUP_SIZE),
+            routing_table: RoutingTable::<XorName>::new(*our_public_id.name(), min_group_size),
             our_public_id: our_public_id,
         }
     }
 
     /// Clears the routing table and resets this node's public ID.
     pub fn reset_routing_table(&mut self, our_public_id: PublicId, groups: &[Group]) {
+        let min_group_size = self.routing_table.min_group_size();
         self.our_public_id = our_public_id;
         let groups_as_names = groups.into_iter()
             .map(|&(ref prefix, ref members)| {
@@ -288,7 +287,7 @@ impl PeerManager {
         // consider refactoring to return an error which can be used to transition the state
         // machine to `Terminate`.
         let new_rt = unwrap!(RoutingTable::new_with_groups(*our_public_id.name(),
-                                                           MIN_GROUP_SIZE,
+                                                           min_group_size,
                                                            groups_as_names));
         let old_rt = mem::replace(&mut self.routing_table, new_rt);
         for name in old_rt.iter() {
@@ -968,8 +967,9 @@ mod tests {
 
     #[test]
     pub fn connection_info_prepare_receive() {
+        let min_group_size = 8;
         let orig_pub_id = *FullId::new().public_id();
-        let mut peer_mgr = PeerManager::new(orig_pub_id);
+        let mut peer_mgr = PeerManager::new(min_group_size, orig_pub_id);
 
         let our_connection_info = PrivConnectionInfo(PeerId(0), Endpoint(0));
         let their_connection_info = PubConnectionInfo(PeerId(1), Endpoint(1));
@@ -1004,8 +1004,9 @@ mod tests {
 
     #[test]
     pub fn connection_info_receive_prepare() {
+        let min_group_size = 8;
         let orig_pub_id = *FullId::new().public_id();
-        let mut peer_mgr = PeerManager::new(orig_pub_id);
+        let mut peer_mgr = PeerManager::new(min_group_size, orig_pub_id);
         let our_connection_info = PrivConnectionInfo(PeerId(0), Endpoint(0));
         let their_connection_info = PubConnectionInfo(PeerId(1), Endpoint(1));
         // We received a connection info from the peer and get a token to prepare ours.

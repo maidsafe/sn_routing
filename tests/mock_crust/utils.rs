@@ -18,7 +18,7 @@
 use itertools::Itertools;
 use rand::Rng;
 use routing::{Cache, Client, Data, DataIdentifier, Destination, Event, FullId, ImmutableData,
-              MIN_GROUP_SIZE, Node, NullCache, Request, Response, RoutingTable, XorName, Xorable,
+              Node, NullCache, Request, Response, RoutingTable, XorName, Xorable,
               verify_network_invariant};
 use routing::mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
 use std::cell::RefCell;
@@ -82,7 +82,10 @@ impl TestNode {
         let (event_tx, event_rx) = mpsc::channel();
         let handle = network.new_service_handle(config, endpoint);
         let node = mock_crust::make_current(&handle, || {
-            unwrap!(Node::builder().cache(cache).first(first_node).create(event_tx))
+            unwrap!(Node::builder()
+                .cache(cache)
+                .first(first_node)
+                .create(event_tx, network.min_group_size()))
         });
 
         TestNode {
@@ -177,8 +180,9 @@ impl TestClient {
         let (event_tx, event_rx) = mpsc::channel();
         let full_id = FullId::new();
         let handle = network.new_service_handle(config, endpoint);
-        let client = mock_crust::make_current(&handle,
-                                              || unwrap!(Client::new(event_tx, Some(full_id))));
+        let client = mock_crust::make_current(&handle, || {
+            unwrap!(Client::new(event_tx, Some(full_id), network.min_group_size()))
+        });
 
         TestClient {
             handle: handle,
@@ -301,7 +305,7 @@ pub fn create_connected_nodes_with_cache(network: &Network,
         verify_invariant_for_all_nodes(&nodes);
     }
 
-    let n = cmp::min(nodes.len(), MIN_GROUP_SIZE) - 1;
+    let n = cmp::min(nodes.len(), network.min_group_size()) - 1;
 
     for node in &nodes {
         expect_next_event!(node, Event::Connected);
@@ -334,7 +338,8 @@ pub fn create_connected_nodes_with_cache_until_split(network: &Network,
                                                      -> Vec<TestNode> {
     assert!(split_count > 0);
     let use_cache = true;
-    let mut nodes = create_connected_nodes_with_cache(network, MIN_GROUP_SIZE * 2, use_cache);
+    let mut nodes =
+        create_connected_nodes_with_cache(network, network.min_group_size() * 2, use_cache);
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
     let mut split_events = HashSet::new();
 

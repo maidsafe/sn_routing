@@ -73,11 +73,14 @@ impl NodeBuilder {
     ///
     /// The initial `Node` object will have newly generated keys.
     #[cfg(not(feature = "use-mock-crust"))]
-    pub fn create(self, event_sender: Sender<Event>) -> Result<Node, RoutingError> {
+    pub fn create(self,
+                  event_sender: Sender<Event>,
+                  min_group_size: usize)
+                  -> Result<Node, RoutingError> {
         rust_sodium::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing without a restriction to become a full node
-        let (action_sender, mut machine) = self.make_state_machine(event_sender);
+        let (action_sender, mut machine) = self.make_state_machine(event_sender, min_group_size);
 
         let (tx, rx) = channel();
 
@@ -93,9 +96,12 @@ impl NodeBuilder {
 
     /// Creates a new `Node` for unit testing.
     #[cfg(feature = "use-mock-crust")]
-    pub fn create(self, event_sender: Sender<Event>) -> Result<Node, RoutingError> {
+    pub fn create(self,
+                  event_sender: Sender<Event>,
+                  min_group_size: usize)
+                  -> Result<Node, RoutingError> {
         // start the handler for routing without a restriction to become a full node
-        let (action_sender, machine) = self.make_state_machine(event_sender);
+        let (action_sender, machine) = self.make_state_machine(event_sender, min_group_size);
         let (tx, rx) = channel();
 
         Ok(Node {
@@ -107,7 +113,8 @@ impl NodeBuilder {
     }
 
     fn make_state_machine(self,
-                          event_sender: Sender<Event>)
+                          event_sender: Sender<Event>,
+                          min_group_size: usize)
                           -> (RoutingActionSender, StateMachine) {
         let full_id = FullId::new();
 
@@ -117,6 +124,7 @@ impl NodeBuilder {
                                                          crust_service,
                                                          event_sender,
                                                          full_id,
+                                                         min_group_size,
                                                          timer) {
                     State::Node(state)
                 } else {
@@ -135,6 +143,7 @@ impl NodeBuilder {
                                                                 crust_service,
                                                                 event_sender,
                                                                 full_id,
+                                                                min_group_size,
                                                                 timer))
             }
         })

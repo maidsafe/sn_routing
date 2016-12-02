@@ -67,11 +67,15 @@ impl Client {
     /// cryptographically secure and uses group consensus. The restriction for the client name
     /// exists to ensure that the client cannot choose its `ClientAuthority`.
     #[cfg(not(feature = "use-mock-crust"))]
-    pub fn new(event_sender: Sender<Event>, keys: Option<FullId>) -> Result<Client, RoutingError> {
+    pub fn new(event_sender: Sender<Event>,
+               keys: Option<FullId>,
+               min_group_size: usize)
+               -> Result<Client, RoutingError> {
         rust_sodium::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing with a restriction to become a full node
-        let (action_sender, mut machine) = Self::make_state_machine(event_sender, keys);
+        let (action_sender, mut machine) =
+            Self::make_state_machine(event_sender, keys, min_group_size);
         let (tx, rx) = channel();
 
         let raii_joiner = thread::named("Client thread", move || machine.run());
@@ -85,7 +89,8 @@ impl Client {
     }
 
     fn make_state_machine(event_sender: Sender<Event>,
-                          keys: Option<FullId>)
+                          keys: Option<FullId>,
+                          min_group_size: usize)
                           -> (RoutingActionSender, StateMachine) {
         let cache = Box::new(NullCache);
         let full_id = keys.unwrap_or_else(FullId::new);
@@ -96,6 +101,7 @@ impl Client {
                                                             crust_service,
                                                             event_sender,
                                                             full_id,
+                                                            min_group_size,
                                                             timer))
         })
     }
@@ -189,9 +195,12 @@ impl Client {
 #[cfg(feature = "use-mock-crust")]
 impl Client {
     /// Create a new `Client` for unit testing.
-    pub fn new(event_sender: Sender<Event>, keys: Option<FullId>) -> Result<Client, RoutingError> {
+    pub fn new(event_sender: Sender<Event>,
+               keys: Option<FullId>,
+               min_group_size: usize)
+               -> Result<Client, RoutingError> {
         // start the handler for routing with a restriction to become a full node
-        let (action_sender, machine) = Self::make_state_machine(event_sender, keys);
+        let (action_sender, machine) = Self::make_state_machine(event_sender, keys, min_group_size);
         let (tx, rx) = channel();
 
         Ok(Client {

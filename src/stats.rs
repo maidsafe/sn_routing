@@ -16,7 +16,6 @@
 // relating to use of the SAFE Network Software.
 
 use messages::{DirectMessage, MessageContent, Request, Response, RoutingMessage, UserMessage};
-use peer_manager::MIN_GROUP_SIZE;
 
 /// The number of messages after which the message statistics should be printed.
 const MSG_LOG_COUNT: usize = 1000;
@@ -32,7 +31,7 @@ pub struct Stats {
     pub tunnel_connections: usize,
 
     /// Messages sent by us on different routes.
-    routes: [usize; MIN_GROUP_SIZE],
+    routes: Vec<usize>,
     /// Messages we sent unsuccessfully: unacknowledged on all routes.
     unacked_msgs: usize,
 
@@ -76,15 +75,21 @@ pub struct Stats {
 }
 
 impl Stats {
+    // Create a new instance, with the given number of routes
+    pub fn new() -> Self {
+        Default::default()
+    }
+
     pub fn count_unacked(&mut self) {
         self.unacked_msgs += 1;
     }
 
     pub fn count_route(&mut self, route: u8) {
-        match self.routes.get_mut(route as usize) {
-            Some(count) => *count += 1,
-            None => error!("Unexpected route number {}", route),
+        let route = route as usize;
+        if route >= self.routes.len() {
+            self.routes.resize(route + 1, 0);
         }
+        self.routes[route] += 1;
     }
 
     /// Increments the counter for the given request.

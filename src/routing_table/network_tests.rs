@@ -20,7 +20,6 @@
 #![cfg(any(test, feature = "use-mock-crust"))]
 #![allow(unused, missing_docs)]
 
-use ::MIN_GROUP_SIZE;
 use maidsafe_utilities::SeededRng;
 use rand::Rng;
 use routing_table::{Iter, OtherMergeDetails, OwnMergeDetails, OwnMergeState};
@@ -39,17 +38,25 @@ type OtherMergeInfo = (BTreeSet<Prefix<u64>>, OtherMergeDetails<u64>);
 /// generator.
 #[derive(Default)]
 struct Network {
+    min_group_size: usize,
     rng: SeededRng,
     nodes: HashMap<u64, RoutingTable<u64>>,
 }
 
 impl Network {
-    /// Creates a new empty network with a seeded random number generator.
-    fn new(optional_seed: Option<[u32; 4]>) -> Network {
+    /// Creates a new empty network with specified minimum group size and a seeded random number
+    /// generator.
+    fn new(min_group_size: usize, optional_seed: Option<[u32; 4]>) -> Network {
         Network {
+            min_group_size: min_group_size,
             rng: optional_seed.map_or_else(SeededRng::new, SeededRng::from_seed),
             nodes: HashMap::new(),
         }
+    }
+
+    /// Get min_group_size
+    pub fn min_group_size(&self) -> usize {
+        self.min_group_size
     }
 
     /// Adds a new node to the network and makes it join its new group, splitting if necessary.
@@ -57,7 +64,8 @@ impl Network {
         let name = self.random_free_name(); // The new node's name.
         if self.nodes.is_empty() {
             // If this is the first node, just add it and return.
-            assert!(self.nodes.insert(name, RoutingTable::new(name, MIN_GROUP_SIZE)).is_none());
+            let result = self.nodes.insert(name, RoutingTable::new(name, self.min_group_size));
+            assert!(result.is_none());
             return;
         }
 
@@ -65,7 +73,7 @@ impl Network {
             let close_node = self.close_node(name);
             let close_peer = &self.nodes[&close_node];
             unwrap!(RoutingTable::new_with_groups(name,
-                                                  MIN_GROUP_SIZE,
+                                                  self.min_group_size,
                                                   close_peer.prefixes()
                                                       .into_iter()
                                                       .map(|prefix| (prefix, None))))
@@ -257,7 +265,7 @@ impl Network {
 
 #[test]
 fn node_to_node_message() {
-    let mut network = Network::new(None);
+    let mut network = Network::new(8, None);
     for _ in 0..100 {
         network.add_node();
     }
@@ -265,7 +273,7 @@ fn node_to_node_message() {
     for _ in 0..20 {
         let src = *unwrap!(network.rng.choose(&keys));
         let dst = *unwrap!(network.rng.choose(&keys));
-        for route in 0..MIN_GROUP_SIZE {
+        for route in 0..network.min_group_size {
             network.send_message(src, Destination::Node(dst), route);
         }
     }
@@ -273,7 +281,7 @@ fn node_to_node_message() {
 
 #[test]
 fn node_to_group_message() {
-    let mut network = Network::new(None);
+    let mut network = Network::new(8, None);
     for _ in 0..100 {
         network.add_node();
     }
@@ -281,7 +289,7 @@ fn node_to_group_message() {
     for _ in 0..20 {
         let src = *unwrap!(network.rng.choose(&keys));
         let dst = network.rng.gen();
-        for route in 0..MIN_GROUP_SIZE {
+        for route in 0..network.min_group_size {
             network.send_message(src, Destination::Group(dst), route);
         }
     }
@@ -361,7 +369,7 @@ pub fn verify_network_invariant<'a, T, U>(nodes: U)
 
 #[test]
 fn groups_have_identical_routing_tables() {
-    let mut network = Network::new(None);
+    let mut network = Network::new(8, None);
     for _ in 0..100 {
         network.add_node();
         verify_invariant(&network);
@@ -370,7 +378,7 @@ fn groups_have_identical_routing_tables() {
 
 #[test]
 fn merging_groups() {
-    let mut network = Network::new(None);
+    let mut network = Network::new(8, None);
     for _ in 0..100 {
         network.add_node();
         verify_invariant(&network);
