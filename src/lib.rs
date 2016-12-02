@@ -59,7 +59,7 @@
 //! use routing::{Client, Event, FullId};
 //!
 //! let min_group_size = 8;
-//! 
+//!
 //! let (sender, _receiver) = mpsc::channel::<Event>();
 //! let full_id = FullId::new(); // Generate new keys.
 //! let _ = Client::new(sender, Some(full_id.clone()), min_group_size).unwrap();

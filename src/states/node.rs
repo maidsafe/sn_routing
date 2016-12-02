@@ -103,7 +103,7 @@ impl Node {
                   true,
                   full_id,
                   min_group_size,
-                  Stats::new(min_group_size),
+                  Stats::new(),
                   timer)
     }
 
@@ -1462,7 +1462,8 @@ impl Node {
         let our_name = *self.name();
         let min_group_size = self.min_group_size();
         if let Some((msg, route)) =
-            self.sig_accumulator.add_message(signed_msg, min_group_size, route) {
+            self.sig_accumulator
+                .add_message(signed_msg, min_group_size, route) {
             if self.in_authority(&msg.routing_message().dst) {
                 self.handle_signed_message(msg, route, our_name, &[])?;
             } else {

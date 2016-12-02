@@ -75,7 +75,7 @@ impl Bootstrapping {
             event_sender: event_sender,
             full_id: full_id,
             min_group_size: min_group_size,
-            stats: Stats::new(min_group_size),
+            stats: Stats::new(),
             timer: timer,
         }
     }
