@@ -47,7 +47,7 @@ use std::{fmt, iter};
 use std::collections::{BTreeSet, HashSet, VecDeque};
 use std::fmt::{Debug, Formatter};
 use std::sync::mpsc::Sender;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 use timer::Timer;
 use tunnels::Tunnels;
@@ -59,8 +59,13 @@ use xor_name::XorName;
 const TICK_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) after which a `GetNodeName` request is resent.
 const GET_NODE_NAME_TIMEOUT_SECS: u64 = 60;
-/// Time (in seconds) the new close group waits for a joining node it sent a network name to.
-const SENT_NETWORK_NAME_TIMEOUT_SECS: u64 = 30;
+/// in bits
+const RESOURCE_PROOF_DIFFICULTY: u32 = 10;
+
+// in Bytes
+fn resource_proof_target_size(group_len: usize) -> u32 {
+    (40 / group_len as u32) * 100 * 1024 / 2
+}
 
 pub struct Node {
     ack_mgr: AckManager,
@@ -75,8 +80,6 @@ pub struct Node {
     msg_queue: VecDeque<RoutingMessage>,
     peer_mgr: PeerManager,
     response_cache: Box<Cache>,
-    /// The last joining node we have sent a `GetNodeName` response to, and when.
-    sent_network_name_to: Option<(XorName, Instant)>,
     routing_msg_filter: RoutingMessageFilter,
     sig_accumulator: SignatureAccumulator,
     stats: Stats,
@@ -158,7 +161,6 @@ impl Node {
             response_cache: cache,
             routing_msg_filter: RoutingMessageFilter::new(),
             sig_accumulator: Default::default(),
-            sent_network_name_to: None,
             stats: stats,
             tick_timer_token: tick_timer_token,
             timer: timer,
@@ -607,10 +609,10 @@ impl Node {
                                                   peer_id,
                                                   message_id)
             }
-            (MessageContent::GetNodeNameResponse { relocated_id, groups, .. },
+            (MessageContent::GetNodeNameResponse { relocated_id, group, .. },
              Authority::NodeManager(_),
              dst) => {
-                self.handle_get_node_name_response(relocated_id, groups, dst);
+                self.handle_get_node_name_response(relocated_id, group, dst);
                 Ok(())
             }
             (MessageContent::ExpectCloseNode { expect_id, client_auth, message_id },
@@ -633,6 +635,26 @@ impl Node {
              Authority::ManagedNode(src_name),
              dst @ Authority::ManagedNode(_)) => {
                 self.handle_connection_info_from_node(conn_info, src_name, dst)
+            }
+            (MessageContent::ResourceProof { seed, target_size, difficulty }, src, dst) => {
+                self.handle_resource_proof_request(dst, src, seed, target_size, difficulty)
+            }
+            (MessageContent::ResourceProofResponse { proof, leading_zero_bytes },
+             Authority::ManagedNode(src_name),
+             _) => {
+                self.handle_resource_proof_response(src_name, proof, leading_zero_bytes);
+                Ok(())
+            }
+            (MessageContent::CandidateApproval(validity),
+             Authority::NaeManager(_),
+             Authority::NaeManager(candidate_name)) => {
+                self.handle_node_approval_vote(candidate_name, validity)
+            }
+            (MessageContent::NodeApproval { groups },
+             Authority::NodeManager(_),
+             Authority::ManagedNode(_)) => {
+                self.handle_node_approval(groups);
+                Ok(())
             }
             (MessageContent::GetCloseGroupResponse { close_group_ids, .. },
              Authority::ManagedNode(_),
@@ -664,6 +686,101 @@ impl Node {
                        dst);
                 Err(RoutingError::BadAuthority)
             }
+        }
+    }
+
+    fn handle_node_approval_vote(&mut self,
+                                 candidate_name: XorName,
+                                 validity: bool)
+                                 -> Result<(), RoutingError> {
+        let result = self.peer_mgr.handle_node_approval_vote(candidate_name, validity);
+        if !validity {
+            let peer_id = if let Some(peer_id) = self.peer_mgr.get_peer_id(&candidate_name) {
+                *peer_id
+            } else {
+                return Ok(());
+            };
+            self.disconnect_peer(&peer_id);
+        }
+        if result && validity {
+            let groups = self.peer_mgr.get_groups(&candidate_name, self.full_id.public_id())?;
+            // From Y -> A
+            let response_content = MessageContent::NodeApproval { groups: groups };
+
+            debug!("{:?} sending NodeApproval to {:?}: {:?}.",
+                   self,
+                   candidate_name,
+                   response_content);
+
+            let response_msg = RoutingMessage {
+                src: Authority::NodeManager(candidate_name),
+                dst: Authority::ManagedNode(candidate_name),
+                content: response_content,
+            };
+
+            return self.send_routing_message(response_msg);
+        }
+        Ok(())
+    }
+
+    fn handle_node_approval(&mut self, groups: Vec<(Prefix<XorName>, Vec<PublicId>)>) {
+        self.peer_mgr.handle_node_approval();
+        for pub_id in groups.into_iter().flat_map(|(_, group)| group.into_iter()) {
+            debug!("{:?} Sending connection info to {:?} on NodeApproval.",
+                   self,
+                   pub_id);
+            let src = Authority::ManagedNode(*self.name());
+            let node_auth = Authority::ManagedNode(*pub_id.name());
+            if let Err(error) = self.send_connection_info(pub_id, src, node_auth) {
+                debug!("{:?} - Failed to send connection info to {:?}: {:?}",
+                       self,
+                       pub_id,
+                       error);
+            }
+        }
+    }
+
+    fn handle_resource_proof_request(&mut self,
+                                     src: Authority,
+                                     dst: Authority,
+                                     seed: Vec<u8>,
+                                     _target_size: u32,
+                                     _difficulty: u32)
+                                     -> Result<(), RoutingError> {
+        let response_content = MessageContent::ResourceProofResponse {
+            proof: seed,
+            leading_zero_bytes: 0,
+        };
+        let response_msg = RoutingMessage {
+            src: src,
+            dst: dst,
+            content: response_content,
+        };
+
+        info!("{:?} Sending ResourceProofResponse to {:?}. This can take a while.",
+              self,
+              dst);
+
+        self.send_routing_message(response_msg)
+    }
+
+    fn handle_resource_proof_response(&mut self,
+                                      name: XorName,
+                                      proof: Vec<u8>,
+                                      leading_zero_bytes: u32) {
+        if let Some(valid_candidate) =
+            self.peer_mgr
+                .verify_candidate(name, proof, leading_zero_bytes, RESOURCE_PROOF_DIFFICULTY) {
+            let response_content = MessageContent::CandidateApproval(valid_candidate);
+            let response_msg = RoutingMessage {
+                src: Authority::NaeManager(name),
+                dst: Authority::NaeManager(name),
+                content: response_content,
+            };
+            info!("{:?} Sending CandidateApproval {:?} to group.",
+                  self,
+                  valid_candidate);
+            let _ = self.send_routing_message(response_msg);
         }
     }
 
@@ -833,17 +950,48 @@ impl Node {
         debug!("{:?} Handling NodeIdentify from {:?}.",
                self,
                public_id.name());
-
-        if let Some((name, _)) = self.sent_network_name_to {
-            if name == *public_id.name() {
-                self.sent_network_name_to = None;
-            }
+        if self.peer_mgr.is_peer_candidate(&public_id, &peer_id) {
+            return;
         }
-
-        self.add_to_routing_table(public_id, peer_id);
+        if let Ok(Some((tunnel, seed))) = self.peer_mgr.is_node_candidate(&public_id, &peer_id) {
+            let (src, dst, content) = if tunnel {
+                /// if connection is in tunnel, vote NO directly, don't carry out profiling
+                /// limitation: joining node ONLY carries out QUORAM valid connection/evaluations
+                info!("{:?} Sending CandidateApproval false to group rejeting {:?}.",
+                      self,
+                      *public_id.name());
+                // From Y -> Y
+                (Authority::NaeManager(*public_id.name()),
+                 Authority::NaeManager(*public_id.name()),
+                 MessageContent::CandidateApproval(false))
+            } else {
+                // From Y -> A
+                let request = MessageContent::ResourceProof {
+                    seed: seed,
+                    target_size: resource_proof_target_size(self.peer_mgr
+                        .routing_table()
+                        .our_group()
+                        .len()),
+                    difficulty: RESOURCE_PROOF_DIFFICULTY,
+                };
+                let dst = Authority::ManagedNode(*public_id.name());
+                debug!("{:?} requesting resource_proof from node candidate {:?}: {:?}.",
+                       self,
+                       dst,
+                       request);
+                (Authority::ManagedNode(*self.name()), dst, request)
+            };
+            let _ = self.send_routing_message(RoutingMessage {
+                src: src,
+                dst: dst,
+                content: content,
+            });
+        } else {
+            self.add_to_routing_table(&public_id, &peer_id);
+        }
     }
 
-    fn add_to_routing_table(&mut self, public_id: PublicId, peer_id: PeerId) {
+    fn add_to_routing_table(&mut self, public_id: &PublicId, peer_id: &PeerId) {
         match self.peer_mgr.add_to_routing_table(public_id, peer_id) {
             Err(RoutingTableError::AlreadyExists) => return,  // already in RT
             Err(error) => {
@@ -851,7 +999,7 @@ impl Node {
                        self,
                        peer_id,
                        error);
-                self.disconnect_peer(&peer_id);
+                self.disconnect_peer(peer_id);
                 return;
             }
             Ok(true) => {
@@ -881,7 +1029,7 @@ impl Node {
                    peer_id,
                    dst_id);
             let tunnel_request = DirectMessage::TunnelRequest(dst_id);
-            let _ = self.send_direct_message(&peer_id, tunnel_request);
+            let _ = self.send_direct_message(peer_id, tunnel_request);
         }
     }
 
@@ -1134,7 +1282,7 @@ impl Node {
     // sent by each node in the target group with the new node name and routing table.
     fn handle_get_node_name_response(&mut self,
                                      relocated_id: PublicId,
-                                     groups: Vec<(Prefix<XorName>, Vec<PublicId>)>,
+                                     group: (Prefix<XorName>, Vec<PublicId>),
                                      dst: Authority) {
         if !self.peer_mgr.routing_table().is_empty() {
             warn!("{:?} Received duplicate GetNodeName response.", self);
@@ -1143,9 +1291,10 @@ impl Node {
         self.get_node_name_timer_token = None;
 
         self.full_id.public_id_mut().set_name(*relocated_id.name());
+        let groups = vec![group.clone()];
         self.peer_mgr.reset_routing_table(*self.full_id.public_id(), &groups);
 
-        for pub_id in groups.into_iter().flat_map(|(_, group)| group.into_iter()) {
+        for pub_id in group.1.into_iter() {
             debug!("{:?} Sending connection info to {:?} on GetNodeName response.",
                    self,
                    pub_id);
@@ -1157,6 +1306,7 @@ impl Node {
                        pub_id,
                        error);
             }
+            self.peer_mgr.add_as_peer_candidate(*pub_id.name());
         }
     }
 
@@ -1173,24 +1323,14 @@ impl Node {
             return Ok(());
         }
 
-        let now = Instant::now();
-        if let Some((_, timestamp)) = self.sent_network_name_to {
-            if (now - timestamp).as_secs() <= SENT_NETWORK_NAME_TIMEOUT_SECS {
-                return Ok(()); // Not sending node name, as we are already waiting for a node.
-            } else {
-                // Timeout: forget last node we were waiting for
-                self.sent_network_name_to = None;
-            }
-        }
-
         // TODO - do we need to reply if `expect_id` triggers a failure here?
-        let groups = self.peer_mgr
-            .expect_add_to_our_group(expect_id.name(), self.full_id.public_id())?;
-        self.sent_network_name_to = Some((*expect_id.name(), now));
+        let own_group = self.peer_mgr
+            .expect_join_our_group(expect_id.name(), self.full_id.public_id())?;
+
         // From Y -> A (via B)
         let response_content = MessageContent::GetNodeNameResponse {
             relocated_id: expect_id,
-            groups: groups,
+            group: own_group,
             message_id: message_id,
         };
 
@@ -1966,7 +2106,6 @@ impl Node {
         self.ack_mgr.clear();
         self.peer_mgr.remove_connecting_peers();
         self.routing_msg_filter.clear();
-        self.sent_network_name_to = None;
     }
 }
 

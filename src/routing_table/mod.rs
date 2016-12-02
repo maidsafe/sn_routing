@@ -404,13 +404,29 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
     }
 
+    /// Returns our group to which a peer joining should connect.
+    ///
+    /// Returns `Err(Error::PeerNameUnsuitable)` if `name` is not within our group, or
+    /// `Err(Error::AlreadyExists)` if `name` is already in our table.
+    pub fn expect_join_our_group(&self, name: &T) -> Result<(Prefix<T>, HashSet<T>), Error> {
+        if !self.our_group_prefix.matches(name) {
+            return Err(Error::PeerNameUnsuitable);
+        }
+        if self.our_group.contains(name) {
+            return Err(Error::AlreadyExists);
+        }
+        let mut our_group = self.our_group.clone();
+        our_group.insert(self.our_name);
+        Ok((self.our_group_prefix, our_group))
+    }
+
     /// Returns the collection of groups to which a peer joining our group should connect.
     ///
     /// This will generally be all the groups in our routing table.  However, if the addition of the
     /// new node will cause our group to split, only the groups which will remain neighbours after
     /// the split are returned.  Returns `Err(Error::PeerNameUnsuitable)` if `name` is not within
     /// our group, or `Err(Error::AlreadyExists)` if `name` is already in our table.
-    pub fn expect_add_to_our_group(&self, name: &T) -> Result<Groups<T>, Error> {
+    pub fn get_groups(&self, name: &T) -> Result<Groups<T>, Error> {
         if !self.our_group_prefix.matches(name) {
             return Err(Error::PeerNameUnsuitable);
         }

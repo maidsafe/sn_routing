@@ -490,7 +490,7 @@ pub enum MessageContent {
         relocated_id: PublicId,
         /// The routing table shared by the nodes in our group, including the `PublicId`s of our
         /// contacts.
-        groups: Vec<(Prefix<XorName>, Vec<PublicId>)>,
+        group: (Prefix<XorName>, Vec<PublicId>),
         /// The message's unique identifier.
         message_id: MessageId,
     },
@@ -535,6 +535,37 @@ pub enum MessageContent {
         cacheable: bool,
         /// The `part_index`-th part of the serialised user message.
         payload: Vec<u8>,
+    },
+    /// Request a proof to be provided by the joining node
+    ///
+    /// This is sent from Group Y to the joining node
+    ResourceProof {
+        /// seed of proof
+        seed: Vec<u8>,
+        /// size of the proof
+        target_size: u32,
+        /// leading zero bits of the hash of the proof
+        difficulty: u32,
+    },
+    /// Provide a proof to the network
+    ///
+    /// This is sent from the joining node to Group Y
+    ResourceProofResponse {
+        /// Proof to be presented
+        proof: Vec<u8>,
+        /// Claimed leading zero bytes to be added to proof's header so that the hash matches
+        /// the difficulty requirement
+        leading_zero_bytes: u32,
+    },
+    /// Send among Group Y to vote for Accept or Reject a joining node
+    CandidateApproval(bool),
+    /// Approves the joining node as a routing node.
+    ///
+    /// Sent from Group Y to the joining node.
+    NodeApproval {
+        /// The routing table shared by the nodes in our group, including the `PublicId`s of our
+        /// contacts.
+        groups: Vec<(Prefix<XorName>, Vec<PublicId>)>,
     },
 }
 
@@ -621,13 +652,11 @@ impl Debug for MessageContent {
             }
             MessageContent::GetCloseGroup(id) => write!(formatter, "GetCloseGroup({:?})", id),
             MessageContent::ConnectionInfo(_) => write!(formatter, "ConnectionInfo {{ .. }}"),
-            MessageContent::GetNodeNameResponse { ref relocated_id,
-                                                  ref groups,
-                                                  ref message_id } => {
+            MessageContent::GetNodeNameResponse { ref relocated_id, ref group, ref message_id } => {
                 write!(formatter,
                        "GetNodeNameResponse {{ {:?}, {:?}, {:?} }}",
                        relocated_id,
-                       groups,
+                       group,
                        message_id)
             }
             MessageContent::GetCloseGroupResponse { ref close_group_ids, message_id } => {
@@ -663,6 +692,25 @@ impl Debug for MessageContent {
                        priority,
                        cacheable,
                        hash)
+            }
+            MessageContent::ResourceProof { ref seed, ref target_size, ref difficulty } => {
+                write!(formatter,
+                       "ResourceProof {{ {:?}, {:?}, {:?} }}",
+                       seed,
+                       target_size,
+                       difficulty)
+            }
+            MessageContent::ResourceProofResponse { ref proof, ref leading_zero_bytes } => {
+                write!(formatter,
+                       "ResourceProofResponse {{ {:?}, {:?} }}",
+                       proof.len(),
+                       leading_zero_bytes)
+            }
+            MessageContent::CandidateApproval(approval) => {
+                write!(formatter, "CandidateApproval({})", approval)
+            }
+            MessageContent::NodeApproval { ref groups } => {
+                write!(formatter, "NodeApproval {{ {:?} }}", groups)
             }
         }
     }
