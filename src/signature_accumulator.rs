@@ -210,8 +210,12 @@ mod tests {
                 .foreach(|(signature_msg, full_id)| {
                     match *signature_msg {
                         DirectMessage::MessageSignature(ref hash, ref sig) => {
-                            assert!(sig_accumulator.add_signature(min_group_size, *hash, *sig, *full_id.public_id())
-                                .is_none());
+                            let result =
+                                sig_accumulator.add_signature(min_group_size,
+                                                              *hash,
+                                                              *sig,
+                                                              *full_id.public_id());
+                            assert!(result.is_none());
                         }
                         ref unexpected_msg => panic!("Unexpected message: {:?}", unexpected_msg),
                     }
@@ -258,7 +262,9 @@ mod tests {
         env.msgs_and_sigs.iter().enumerate().foreach(|(route, msg_and_sigs)| {
             let mut signed_msg = msg_and_sigs.signed_msg.clone();
             signed_msg.add_group_list(env.group_list.clone());
-            assert!(sig_accumulator.add_message(signed_msg.clone(), min_group_size, route as u8).is_none());
+            let result =
+                sig_accumulator.add_message(signed_msg.clone(), min_group_size, route as u8);
+            assert!(result.is_none());
         });
         let mut expected_msgs_count = env.msgs_and_sigs.len();
         assert_eq!(sig_accumulator.msgs.len(), expected_msgs_count);
@@ -272,7 +278,8 @@ mod tests {
                 .foreach(|(signature_msg, full_id)| {
                     let result = match *signature_msg {
                         DirectMessage::MessageSignature(hash, sig) => {
-                            sig_accumulator.add_signature(min_group_size, hash, sig, *full_id.public_id())
+                            sig_accumulator.add_signature(min_group_size, hash, sig,
+                                *full_id.public_id())
                         }
                         ref unexpected_msg => panic!("Unexpected message: {:?}", unexpected_msg),
                     };
