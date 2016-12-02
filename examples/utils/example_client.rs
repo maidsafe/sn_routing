@@ -25,6 +25,7 @@ use rust_sodium::crypto;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant};
+use super::MIN_GROUP_SIZE;
 
 const RESPONSE_TIMEOUT_SECS: u64 = 10;
 
@@ -54,7 +55,8 @@ impl ExampleClient {
         // Try to connect the client to the network. If it fails, it probably means
         // the network isn't fully formed yet, so we restart and try again.
         'outer: loop {
-            routing_client = unwrap!(Client::new(sender.clone(), Some(full_id.clone())));
+            routing_client =
+                unwrap!(Client::new(sender.clone(), Some(full_id.clone()), MIN_GROUP_SIZE));
 
             for event in receiver.iter() {
                 match event {

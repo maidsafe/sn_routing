@@ -70,7 +70,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 use term::color;
-use utils::{ExampleClient, ExampleNode};
+use utils::{ExampleClient, ExampleNode, MIN_GROUP_SIZE};
 
 const CHURN_MIN_WAIT_SEC: u64 = 20;
 const CHURN_MAX_WAIT_SEC: u64 = 30;
@@ -167,8 +167,7 @@ fn simulate_churn(mut nodes: Vec<NodeProcess>,
     })
 }
 
-fn simulate_churn_impl(min_group_size: usize,
-                       nodes: &mut Vec<NodeProcess>,
+fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
                        rng: &mut ThreadRng,
                        network_size: usize,
                        node_count: &mut usize)
@@ -177,7 +176,7 @@ fn simulate_churn_impl(min_group_size: usize,
     io::stdout().flush().expect("Could not flush stdout");
 
     let kill_node = match nodes.len() {
-        size if size == min_group_size => false,
+        size if size == MIN_GROUP_SIZE => false,
         size if size == network_size => true,
         _ => random(),
     };
@@ -304,9 +303,6 @@ struct Args {
 
 #[cfg_attr(feature="clippy", allow(mutex_atomic))] // AtomicBool cannot be used with Condvar.
 fn main() {
-    // TODO: make size a run-time argument?
-    let min_group_size = 8;
-
     let args: Args = Docopt::new(USAGE)
         .and_then(|docopt| docopt.decode())
         .unwrap_or_else(|error| error.exit());
@@ -321,8 +317,8 @@ fn main() {
         unwrap!(maidsafe_utilities::log::init(false));
         let node_count = match args.arg_nodes {
             Some(number) => {
-                if number <= min_group_size {
-                    panic!("The number of nodes should be > {}.", min_group_size);
+                if number <= MIN_GROUP_SIZE {
+                    panic!("The number of nodes should be > {}.", MIN_GROUP_SIZE);
                 }
 
                 number
