@@ -2029,6 +2029,10 @@ impl Bootstrapped for Node {
                         let sign_key = self.full_id().signing_private_key();
                         signed_msg.routing_message().to_signature(sign_key)?
                     };
+                    trace!("{:?} Sending signature for {:?} to {:?}",
+                           self,
+                           signed_msg,
+                           target_name);
                     self.send_direct_msg_to_peer(direct_msg, peer_id, signed_msg.priority())
                 } else {
                     Err(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer))
