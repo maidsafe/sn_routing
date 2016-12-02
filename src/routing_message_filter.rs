@@ -27,7 +27,7 @@ const OUTGOING_EXPIRY_DURATION_SECS: u64 = 60 * 10;
 
 // Structure to filter (throttle) incoming and outgoing `RoutingMessages`.
 pub struct RoutingMessageFilter {
-    incoming: MessageFilter<(RoutingMessage, u8)>,
+    incoming: MessageFilter<RoutingMessage>,
     outgoing: LruCache<(u64, PeerId, u8), ()>,
 }
 
@@ -45,8 +45,8 @@ impl RoutingMessageFilter {
     // Filter incoming `RoutingMessage`. Return the number of times this specific message has been
     // seen, including this time.
     // TODO - refactor to avoid cloning `msg` as `MessageFilter` only holds the hash of the tuple.
-    pub fn filter_incoming(&mut self, msg: &RoutingMessage, route: u8) -> usize {
-        self.incoming.insert(&(msg.clone(), route))
+    pub fn filter_incoming(&mut self, msg: &RoutingMessage) -> usize {
+        self.incoming.insert(msg)
     }
 
     // Filter outgoing `RoutingMessage`. Return whether this specific message has been seen recently
