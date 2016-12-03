@@ -1317,6 +1317,18 @@ impl Node {
                        self,
                        self.peer_mgr.routing_table().prefixes());
                 self.merge_if_necessary();
+                // TODO: Either `NodeLost` should also be fired on split events, or safe_vault
+                //       should handle `GroupMerge` events accordingly instead.
+                for node in unwrap!(self.peer_mgr.routing_table().other_close_names(self.name())) {
+                    if self.name().common_prefix(&node) >
+                       self.peer_mgr.routing_table().our_group_prefix().bit_count() {
+                        continue;
+                    }
+                    let event = Event::NodeAdded(node, self.peer_mgr.routing_table().clone());
+                    if let Err(err) = self.event_sender.send(event) {
+                        error!("{:?} Error sending event to routing user - {:?}", self, err);
+                    }
+                }
                 self.send_other_group_merge(targets, merge_details, src)
             }
         }
