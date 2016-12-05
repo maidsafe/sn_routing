@@ -871,7 +871,8 @@ impl Node {
             self.send_event(Event::Connected);
         }
 
-        if self.peer_mgr.routing_table().is_in_our_group(public_id.name()) {
+        if self.peer_mgr.routing_table().our_group_prefix().bit_count() <=
+           1 + self.name().common_prefix(public_id.name()) {
             let event = Event::NodeAdded(*public_id.name(), self.peer_mgr.routing_table().clone());
             if let Err(err) = self.event_sender.send(event) {
                 error!("{:?} Error sending event to routing user - {:?}", self, err);
@@ -1314,18 +1315,6 @@ impl Node {
                        self,
                        self.peer_mgr.routing_table().prefixes());
                 self.merge_if_necessary();
-                // TODO: Either `NodeLost` should also be fired on split events, or safe_vault
-                //       should handle `GroupMerge` events accordingly instead.
-                for node in unwrap!(self.peer_mgr.routing_table().other_close_names(self.name())) {
-                    if self.name().common_prefix(&node) >
-                       self.peer_mgr.routing_table().our_group_prefix().bit_count() {
-                        continue;
-                    }
-                    let event = Event::NodeAdded(node, self.peer_mgr.routing_table().clone());
-                    if let Err(err) = self.event_sender.send(event) {
-                        error!("{:?} Error sending event to routing user - {:?}", self, err);
-                    }
-                }
                 self.send_other_group_merge(targets, merge_details, src)
             }
         }
@@ -1783,7 +1772,8 @@ impl Node {
               self,
               details.name);
 
-        if details.was_in_our_group {
+        if self.peer_mgr.routing_table().our_group_prefix().bit_count() <=
+           1 + self.name().common_prefix(&details.name) {
             let event = Event::NodeLost(details.name, self.peer_mgr.routing_table().clone());
             if let Err(err) = self.event_sender.send(event) {
                 error!("{:?} Error sending event to routing user - {:?}", self, err);
