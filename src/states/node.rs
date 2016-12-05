@@ -554,6 +554,8 @@ impl Node {
         self.handle_signed_message(content, route, hop_name, &sent_to)
     }
 
+    // Acknowledge reception of the message and broadcast to our group if necessary
+    // The function is only called when we are in the destination authority
     fn ack_and_broadcast(&mut self,
                          signed_msg: &SignedMessage,
                          route: u8,

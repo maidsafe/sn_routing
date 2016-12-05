@@ -409,7 +409,8 @@ impl Node {
         self.send_action(src, dst, user_msg, RELOCATE_PRIORITY)
     }
 
-    /// Returns the names of the nodes in the routing table which are closest to the given one.
+    /// Returns the first `count` names of the nodes in the routing table which are closest
+    /// to the given one.
     pub fn close_group(&self,
                        name: XorName,
                        count: usize)

@@ -25,9 +25,13 @@ use std::time::Duration;
 const INCOMING_EXPIRY_DURATION_SECS: u64 = 60 * 20;
 const OUTGOING_EXPIRY_DURATION_SECS: u64 = 60 * 10;
 
+/// An enum representing a result of message filtering
 pub enum FilteringResult {
+    /// We don't have the message in the filter yet
     NewMessage,
+    /// We have the message in the filter, but it was sent on a different route
     KnownMessage,
+    /// We have already seen this message on this route
     KnownMessageAndRoute,
 }
 
@@ -59,8 +63,7 @@ impl RoutingMessageFilter {
         match (known_msg, known_msg_rt) {
             (false, false) => FilteringResult::NewMessage,
             (true, false) => FilteringResult::KnownMessage,
-            (true, true) => FilteringResult::KnownMessageAndRoute,
-            _ => unreachable!(),
+            (_, true) => FilteringResult::KnownMessageAndRoute,
         }
     }
 
