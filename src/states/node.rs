@@ -559,17 +559,8 @@ impl Node {
                              -> Result<(), RoutingError> {
         signed_msg.check_integrity()?;
 
-        let in_authority = self.in_authority(&signed_msg.routing_message().dst);
-
-        if in_authority {
+        if self.in_authority(&signed_msg.routing_message().dst) {
             self.send_ack(signed_msg.routing_message(), route);
-        }
-
-        if self.routing_msg_filter.filter_incoming(signed_msg.routing_message()) > 1 {
-            return Err(RoutingError::FilterCheckFailed);
-        }
-
-        if in_authority {
             // if the last hop is us and the destination is a group - we need to forward it to the
             // rest of the group
             let our_name = *self.name();
@@ -577,10 +568,15 @@ impl Node {
                 self.peer_mgr.routing_table().our_group_prefix().matches(&hop_name);
             if (!from_our_group || hop_name == our_name) &&
                signed_msg.routing_message().dst.is_group() {
-                self.send_signed_message(&signed_msg, route, &our_name, sent_to)?;
+                if let Err(error) =
+                    self.send_signed_message(&signed_msg, route, &hop_name, sent_to) {
+                    debug!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);
+                }
             }
             // if addressed to us, then we just queue it and return
-            self.msg_queue.push_back(signed_msg.into_routing_message());
+            if self.routing_msg_filter.filter_incoming(signed_msg.routing_message()) == 1 {
+                self.msg_queue.push_back(signed_msg.into_routing_message());
+            }
             return Ok(());
         }
 
