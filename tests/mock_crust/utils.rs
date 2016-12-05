@@ -315,6 +315,7 @@ pub fn create_connected_nodes_with_cache(network: &Network,
         while let Ok(event) = node.event_rx.try_recv() {
             match event {
                 Event::NodeAdded(..) => node_added_count += 1,
+                Event::NodeLost(..) |
                 Event::GroupSplit(..) |
                 Event::Tick => (),
                 event => panic!("Got unexpected event: {:?}", event),

@@ -906,12 +906,9 @@ impl Node {
             self.send_event(Event::Connected);
         }
 
-        if self.peer_mgr.routing_table().our_group_prefix().bit_count() <=
-           1 + self.name().common_prefix(public_id.name()) {
-            let event = Event::NodeAdded(*public_id.name(), self.peer_mgr.routing_table().clone());
-            if let Err(err) = self.event_sender.send(event) {
-                error!("{:?} Error sending event to routing user - {:?}", self, err);
-            }
+        let event = Event::NodeAdded(*public_id.name(), self.peer_mgr.routing_table().clone());
+        if let Err(err) = self.event_sender.send(event) {
+            error!("{:?} Error sending event to routing user - {:?}", self, err);
         }
 
         for dst_id in self.peer_mgr.peers_needing_tunnel() {
@@ -1807,12 +1804,9 @@ impl Node {
               self,
               details.name);
 
-        if self.peer_mgr.routing_table().our_group_prefix().bit_count() <=
-           1 + self.name().common_prefix(&details.name) {
-            let event = Event::NodeLost(details.name, self.peer_mgr.routing_table().clone());
-            if let Err(err) = self.event_sender.send(event) {
-                error!("{:?} Error sending event to routing user - {:?}", self, err);
-            }
+        let event = Event::NodeLost(details.name, self.peer_mgr.routing_table().clone());
+        if let Err(err) = self.event_sender.send(event) {
+            error!("{:?} Error sending event to routing user - {:?}", self, err);
         }
 
         self.merge_if_necessary();
