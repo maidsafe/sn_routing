@@ -33,7 +33,7 @@ fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
     for node in nodes.iter().filter(|n| close_names.contains(&n.name())) {
         loop {
             match node.event_rx.try_recv() {
-                Ok(Event::NodeLost(lost_name)) if lost_name == name => break,
+                Ok(Event::NodeLost(lost_name, _)) if lost_name == name => break,
                 Ok(_) => (),
                 _ => panic!("Event::NodeLost({:?}) not received", name),
             }

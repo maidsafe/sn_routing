@@ -181,7 +181,7 @@ impl Client {
         }
 
         // Prevents us repeatedly handling identical messages sent by a malicious peer.
-        if self.routing_msg_filter.filter_incoming(routing_msg, hop_msg.route) != 1 {
+        if self.routing_msg_filter.filter_incoming(routing_msg) != 1 {
             return Err(RoutingError::FilterCheckFailed);
         }
 

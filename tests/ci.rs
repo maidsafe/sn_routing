@@ -434,8 +434,8 @@ fn core() {
         loop {
             if let Ok(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
                 match test_event {
-                    TestEvent(index, Event::NodeLost(lost_name)) if index < nodes.len() &&
-                                                                    lost_name == name => {
+                    TestEvent(index, Event::NodeLost(lost_name, _)) if index < nodes.len() &&
+                                                                       lost_name == name => {
                         churns[index] = true;
                         if churns.iter().all(|b| *b) {
                             break;
