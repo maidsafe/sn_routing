@@ -45,7 +45,7 @@ fn response_caching() {
     let network = Network::new(min_group_size, None);
 
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes_with_cache_until_split(&network, 1);
+    let mut nodes = create_connected_nodes_with_cache_until_split(&network, vec![1, 1]);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
 
     let proxy_node_name = nodes[0].name();

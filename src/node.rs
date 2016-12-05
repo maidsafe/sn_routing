@@ -489,6 +489,17 @@ impl Node {
         }
     }
 
+    /// Sets a name to be used when the next node relocation request is received by this node.
+    pub fn set_next_node_name(&self, relocation_name: XorName) {
+        self.machine.borrow_mut().current_mut().set_next_node_name(Some(relocation_name))
+    }
+
+    /// Clears the name to be used when the next node relocation request is received by this node so
+    /// the normal process is followed to calculate the relocated name.
+    pub fn clear_next_node_name(&self) {
+        self.machine.borrow_mut().current_mut().set_next_node_name(None)
+    }
+
     fn receive_action_result<T>(&self, rx: &Receiver<T>) -> Result<T, InterfaceError> {
         while self.poll() {}
         Ok(rx.recv()?)

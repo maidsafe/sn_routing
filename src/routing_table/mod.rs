@@ -342,12 +342,18 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         self.our_group.is_empty() && self.groups.values().all(HashSet::is_empty)
     }
 
-    /// Get the minimum group size
+    /// Returns the minimum group size.
     pub fn min_group_size(&self) -> usize {
         self.min_group_size
     }
 
-    /// Returns whether the table contains the given `name`
+    /// Returns the number of nodes which need to exist in each subgroup of a given group to allow
+    /// it to be split.
+    pub fn min_split_size(&self) -> usize {
+        self.min_group_size + SPLIT_BUFFER
+    }
+
+    /// Returns whether the table contains the given `name`.
     pub fn has(&self, name: &T) -> bool {
         self.get_group(name).map_or(false, |group| group.contains(name))
     }
@@ -886,10 +892,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             }
         }
         result
-    }
-
-    fn min_split_size(&self) -> usize {
-        self.min_group_size + SPLIT_BUFFER
     }
 
     fn check_invariant(&self) -> Result<(), Error> {

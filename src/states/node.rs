@@ -84,6 +84,9 @@ pub struct Node {
     timer: Timer,
     tunnels: Tunnels,
     user_msg_cache: UserMessageCache,
+    // Value which can be set in mock-crust tests to be used as the calculated name for the next
+    // relocation request received by this node.
+    next_node_name: Option<XorName>,
 }
 
 impl Node {
@@ -169,6 +172,7 @@ impl Node {
             timer: timer,
             tunnels: Default::default(),
             user_msg_cache: UserMessageCache::with_expiry_duration(user_msg_cache_duration),
+            next_node_name: None,
         };
 
         if node.start_listening() {
@@ -1113,7 +1117,10 @@ impl Node {
             Some(close_group) => close_group.into_iter().collect(),
             None => return Err(RoutingError::InvalidDestination),
         };
-        let relocated_name = utils::calculate_relocated_name(close_group, their_public_id.name());
+        let relocated_name =
+            self.next_node_name.take().unwrap_or_else(|| {
+                utils::calculate_relocated_name(close_group, their_public_id.name())
+            });
         their_public_id.set_name(relocated_name);
 
         // From X -> Y; Send to close group of the relocated name
@@ -1976,6 +1983,10 @@ impl Node {
         self.peer_mgr.remove_connecting_peers();
         self.routing_msg_filter.clear();
         self.sent_network_name_to = None;
+    }
+
+    pub fn set_next_node_name(&mut self, relocation_name: Option<XorName>) {
+        self.next_node_name = relocation_name;
     }
 }
 
