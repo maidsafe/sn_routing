@@ -232,8 +232,11 @@ impl Node {
 
                 let _ = result_tx.send(result);
             }
-            Action::CloseGroup { name, result_tx } => {
-                let _ = result_tx.send(self.peer_mgr.routing_table().close_names(&name));
+            Action::CloseGroup { name, count, result_tx } => {
+                let _ = result_tx.send(self.peer_mgr
+                    .routing_table()
+                    .closest_names(&name, count)
+                    .map(|names| names.into_iter().cloned().collect_vec()));
             }
             Action::Name { result_tx } => {
                 let _ = result_tx.send(*self.name());
