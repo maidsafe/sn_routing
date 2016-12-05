@@ -592,7 +592,10 @@ impl Node {
 
         match self.routing_msg_filter.filter_incoming(signed_msg.routing_message(), route) {
             FilteringResult::KnownMessageAndRoute => {
-                warn!("{:?} Duplicate message received on route {}: {:?}", self, route, signed_msg.routing_message());
+                warn!("{:?} Duplicate message received on route {}: {:?}",
+                      self,
+                      route,
+                      signed_msg.routing_message());
             }
             FilteringResult::KnownMessage => {
                 if self.in_authority(&signed_msg.routing_message().dst) {
@@ -2058,7 +2061,10 @@ impl Bootstrapped for Node {
                         let sign_key = self.full_id().signing_private_key();
                         signed_msg.routing_message().to_signature(sign_key)?
                     };
-                    trace!("{:?} Sending signature for {:?} to {:?}", self, signed_msg, target_name);
+                    trace!("{:?} Sending signature for {:?} to {:?}",
+                           self,
+                           signed_msg,
+                           target_name);
                     self.send_direct_msg_to_peer(direct_msg, peer_id, signed_msg.priority())
                 } else {
                     Err(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer))
