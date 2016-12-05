@@ -26,7 +26,7 @@ use id::{FullId, PublicId};
 use maidsafe_utilities::serialisation;
 use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage, UserMessage,
                UserMessageCache};
-use routing_message_filter::RoutingMessageFilter;
+use routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use state_machine::Transition;
 use stats::Stats;
 use std::fmt::{self, Debug, Formatter};
@@ -181,8 +181,12 @@ impl Client {
         }
 
         // Prevents us repeatedly handling identical messages sent by a malicious peer.
-        if self.routing_msg_filter.filter_incoming(routing_msg) != 1 {
-            return Err(RoutingError::FilterCheckFailed);
+        match self.routing_msg_filter.filter_incoming(routing_msg, hop_msg.route) {
+            FilteringResult::KnownMessage |
+            FilteringResult::KnownMessageAndRoute => {
+                return Err(RoutingError::FilterCheckFailed);
+            }
+            FilteringResult::NewMessage => (),
         }
 
         if !in_authority {

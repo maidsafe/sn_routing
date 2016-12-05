@@ -32,7 +32,7 @@ use messages::{ConnectionInfo, DEFAULT_PRIORITY, DirectMessage, GroupList, HopMe
                MessageContent, RoutingMessage, SignedMessage, UserMessage, UserMessageCache};
 use peer_manager::{ConnectionInfoPreparedResult, ConnectionInfoReceivedResult, PeerManager,
                    PeerState};
-use routing_message_filter::RoutingMessageFilter;
+use routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use routing_table::{OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix, RemovalDetails,
                     Xorable};
 use routing_table::Error as RoutingTableError;
@@ -554,6 +554,34 @@ impl Node {
         self.handle_signed_message(content, route, hop_name, &sent_to)
     }
 
+    fn ack_and_broadcast(&mut self,
+                         signed_msg: &SignedMessage,
+                         route: u8,
+                         hop_name: XorName,
+                         sent_to: &[XorName]) {
+        self.send_ack(signed_msg.routing_message(), route);
+        // if the last hop is us and the destination is a group - we need to forward it to the
+        // rest of the group
+        let our_name = *self.name();
+        let from_our_group = self.peer_mgr.routing_table().our_group_prefix().matches(&hop_name);
+        if (!from_our_group || hop_name == our_name) &&
+           signed_msg.routing_message().dst.is_group() {
+            if let Err(error) = self.send_signed_message(signed_msg, route, &hop_name, sent_to) {
+                debug!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);
+            }
+        }
+    }
+
+    fn handle_signed_msg_to_us(&mut self,
+                               signed_msg: SignedMessage,
+                               route: u8,
+                               hop_name: XorName,
+                               sent_to: &[XorName]) {
+        self.ack_and_broadcast(&signed_msg, route, hop_name, sent_to);
+        // if addressed to us, then we just queue it and return
+        self.msg_queue.push_back(signed_msg.into_routing_message());
+    }
+
     fn handle_signed_message(&mut self,
                              signed_msg: SignedMessage,
                              route: u8,
@@ -562,33 +590,37 @@ impl Node {
                              -> Result<(), RoutingError> {
         signed_msg.check_integrity()?;
 
-        if self.in_authority(&signed_msg.routing_message().dst) {
-            self.send_ack(signed_msg.routing_message(), route);
-            // if the last hop is us and the destination is a group - we need to forward it to the
-            // rest of the group
-            let our_name = *self.name();
-            let from_our_group =
-                self.peer_mgr.routing_table().our_group_prefix().matches(&hop_name);
-            if (!from_our_group || hop_name == our_name) &&
-               signed_msg.routing_message().dst.is_group() {
+        match self.routing_msg_filter.filter_incoming(signed_msg.routing_message(), route) {
+            FilteringResult::KnownMessageAndRoute => {
+                warn!("{:?} Duplicate message received on route {}: {:?}", self, route, signed_msg.routing_message());
+            }
+            FilteringResult::KnownMessage => {
+                if self.in_authority(&signed_msg.routing_message().dst) {
+                    self.ack_and_broadcast(&signed_msg, route, hop_name, sent_to);
+                    return Ok(());
+                }
+
+                // known message, but new route - we still need to relay it in this case
                 if let Err(error) =
                     self.send_signed_message(&signed_msg, route, &hop_name, sent_to) {
                     debug!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);
                 }
             }
-            // if addressed to us, then we just queue it and return
-            if self.routing_msg_filter.filter_incoming(signed_msg.routing_message()) == 1 {
-                self.msg_queue.push_back(signed_msg.into_routing_message());
+            FilteringResult::NewMessage => {
+                if self.in_authority(&signed_msg.routing_message().dst) {
+                    self.handle_signed_msg_to_us(signed_msg, route, hop_name, sent_to);
+                    return Ok(());
+                }
+
+                if self.respond_from_cache(signed_msg.routing_message(), route)? {
+                    return Ok(());
+                }
+
+                if let Err(error) =
+                    self.send_signed_message(&signed_msg, route, &hop_name, sent_to) {
+                    debug!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);
+                }
             }
-            return Ok(());
-        }
-
-        if self.respond_from_cache(signed_msg.routing_message(), route)? {
-            return Ok(());
-        }
-
-        if let Err(error) = self.send_signed_message(&signed_msg, route, &hop_name, sent_to) {
-            debug!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);
         }
 
         Ok(())
