@@ -219,6 +219,14 @@ fn send_and_receive<R: Rng>(mut rng: &mut R,
     }
 }
 
+fn count_groups(nodes: &[TestNode]) -> usize {
+    let mut prefixes = HashSet::new();
+    for node in nodes {
+        prefixes.insert(*node.routing_table().our_group_prefix());
+    }
+    prefixes.len()
+}
+
 #[test]
 fn churn() {
     let min_group_size = 5;
@@ -230,27 +238,36 @@ fn churn() {
     // decrease back to min_group_size, then increase to again.
     let mut nodes = create_connected_nodes(&network, min_group_size);
 
+    info!("Churn [{} nodes, {} groups]: adding nodes",
+          nodes.len(),
+          count_groups(&nodes));
     loop {
         let added_index = add_random_node(&mut rng, &network, &mut nodes);
         send_and_receive(&mut rng, &mut nodes, min_group_size, Some(added_index));
-        let mut prefixes = HashSet::new();
-        for node in &nodes {
-            prefixes.insert(*node.routing_table().our_group_prefix());
-        }
-        if prefixes.len() > 5 {
+        if count_groups(&nodes) > 5 {
             break;
         }
     }
 
+    info!("Churn [{} nodes, {} groups]: dropping nodes",
+          nodes.len(),
+          count_groups(&nodes));
     while nodes.len() > min_group_size {
         drop_random_nodes(&mut rng, &mut nodes, min_group_size);
         send_and_receive(&mut rng, &mut nodes, min_group_size, None);
     }
 
+    info!("Churn [{} nodes, {} groups]: adding nodes",
+          nodes.len(),
+          count_groups(&nodes));
     while nodes.len() < 50 {
         let added_index = add_random_node(&mut rng, &network, &mut nodes);
         send_and_receive(&mut rng, &mut nodes, min_group_size, Some(added_index));
     }
+
+    info!("Churn [{} nodes, {} groups]: done",
+          nodes.len(),
+          count_groups(&nodes));
 }
 
 fn bootstrap_from(initial_nodes: usize, optional_seed: Option<[u32; 4]>) {
