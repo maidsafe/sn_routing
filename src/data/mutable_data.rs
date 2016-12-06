@@ -208,6 +208,11 @@ impl MutableData {
         self.version
     }
 
+    /// Returns the owner keys
+    pub fn owners(&self) -> &BTreeSet<PublicKey> {
+        &self.owners
+    }
+
     /// Returns a value by the given key
     pub fn get(&self, key: &[u8]) -> Option<&Value> {
         self.data.get(key)
