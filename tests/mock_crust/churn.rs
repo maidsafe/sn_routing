@@ -16,6 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use itertools::Itertools;
+use maidsafe_utilities::log;
 use rand::Rng;
 use routing::{Authority, DataIdentifier, Event, MessageId, QUORUM, Request, XorName};
 use routing::mock_crust::{Config, Endpoint, Network};
@@ -229,6 +230,7 @@ fn count_groups(nodes: &[TestNode]) -> usize {
 
 #[test]
 fn churn() {
+    unwrap!(log::init(false));
     let min_group_size = 5;
     let network = Network::new(min_group_size, None);
     let mut rng = network.new_rng();
