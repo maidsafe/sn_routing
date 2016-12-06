@@ -168,17 +168,22 @@ fn churn() {
         let auth_n1 = Authority::ManagedNode(nodes[index1].name());
         let auth_g0 = Authority::NaeManager(rng.gen());
         let auth_g1 = Authority::NaeManager(rng.gen());
+        let auth_c0 = Authority::ClientManager(rng.gen());
 
         let mut expected_gets = ExpectedGets::default();
 
-        // Test messages from a node to itself, another node and a group ...
+        // Test messages from a node to itself, another node, and another group ...
         expected_gets.send_and_expect(data_id, auth_n0, auth_n0, &nodes, min_group_size);
         expected_gets.send_and_expect(data_id, auth_n0, auth_n1, &nodes, min_group_size);
         expected_gets.send_and_expect(data_id, auth_n0, auth_g0, &nodes, min_group_size);
-        // ... and from a group to itself, another group and a node.
+        // ... from a group to itself, another group, a node, and a client authority ...
         expected_gets.send_and_expect(data_id, auth_g0, auth_g0, &nodes, min_group_size);
         expected_gets.send_and_expect(data_id, auth_g0, auth_g1, &nodes, min_group_size);
         expected_gets.send_and_expect(data_id, auth_g0, auth_n0, &nodes, min_group_size);
+        expected_gets.send_and_expect(data_id, auth_g0, auth_c0, &nodes, min_group_size);
+        // .. and from a client authority to a group
+        expected_gets.send_and_expect(data_id, auth_c0, auth_g0, &nodes, min_group_size);
+        // Note: client→client, node→client and client→node messages are not currently needed.
 
         poll_and_resend(&mut nodes, &mut []);
 
