@@ -322,19 +322,24 @@ impl PeerManager {
     pub fn expect_join_our_group(&mut self,
                                  expected_name: &XorName,
                                  our_public_id: &PublicId)
-                                 -> Result<(Prefix<XorName>, Vec<PublicId>), RoutingTableError> {
+                                 -> Result<(bool, (Prefix<XorName>, Vec<PublicId>)), RoutingTableError> {
         if let Some((name, now, _)) = self.node_candidate {
             if name == *expected_name ||
                now.elapsed() < Duration::from_secs(RESOURCE_PROOF_APPROVE_TIMEOUT_SECS) {
                 return Err(RoutingTableError::AlreadyExists);
             }
         }
-        self.node_candidate = None;
 
-        let mut rng = SeededRng::new();
-        let seed = rng.gen_iter().take(10).collect();
-        self.node_candidate = Some((*expected_name, Instant::now(), seed));
         let (prefix, names) = self.routing_table.expect_join_our_group(expected_name)?;
+
+        if names.len() > MIN_GROUP_SIZE {
+            self.node_candidate = None;
+            let mut rng = SeededRng::new();
+            let seed = rng.gen_iter().take(10).collect();
+            self.node_candidate = Some((*expected_name, Instant::now(), seed));
+        } else {
+            return Ok((false, (prefix, vec![])));
+        }
 
         let mut public_ids = vec![];
         for name in names {
@@ -345,7 +350,7 @@ impl PeerManager {
             }
         }
 
-        Ok((prefix, public_ids))
+        Ok((true, (prefix, public_ids)))
     }
 
     pub fn add_as_peer_candidate(&mut self, name: XorName) {

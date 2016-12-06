@@ -563,6 +563,8 @@ pub enum MessageContent {
     ///
     /// Sent from Group Y to the joining node.
     NodeApproval {
+        /// Supplied `PublicId`, but with the new name
+        relocated_id: PublicId,
         /// The routing table shared by the nodes in our group, including the `PublicId`s of our
         /// contacts.
         groups: Vec<(Prefix<XorName>, Vec<PublicId>)>,
@@ -709,8 +711,8 @@ impl Debug for MessageContent {
             MessageContent::CandidateApproval(approval) => {
                 write!(formatter, "CandidateApproval({})", approval)
             }
-            MessageContent::NodeApproval { ref groups } => {
-                write!(formatter, "NodeApproval {{ {:?} }}", groups)
+            MessageContent::NodeApproval { ref relocated_id, ref groups } => {
+                write!(formatter, "NodeApproval {{ {:?}, {:?} }}", relocated_id, groups)
             }
         }
     }

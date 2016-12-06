@@ -650,10 +650,16 @@ impl Node {
              Authority::NaeManager(candidate_name)) => {
                 self.handle_node_approval_vote(candidate_name, validity)
             }
-            (MessageContent::NodeApproval { groups },
+            (MessageContent::NodeApproval { groups, .. },
              Authority::NodeManager(_),
              Authority::ManagedNode(_)) => {
                 self.handle_node_approval(groups);
+                Ok(())
+            }
+            (MessageContent::NodeApproval { relocated_id, groups },
+             Authority::NodeManager(_),
+             dst @ Authority::Client { .. }) => {
+                self.handle_node_approval_no_resource_proof(relocated_id, groups, dst);
                 Ok(())
             }
             (MessageContent::GetCloseGroupResponse { close_group_ids, .. },
@@ -704,8 +710,9 @@ impl Node {
         }
         if result && validity {
             let groups = self.peer_mgr.get_groups(&candidate_name, self.full_id.public_id())?;
-            // From Y -> A
-            let response_content = MessageContent::NodeApproval { groups: groups };
+            let response_content =
+                MessageContent::NodeApproval { relocated_id: *self.full_id.public_id(),
+                                               groups: groups };
 
             debug!("{:?} sending NodeApproval to {:?}: {:?}.",
                    self,
@@ -1011,7 +1018,7 @@ impl Node {
             }
         }
 
-        info!("{:?} Added {:?} to routing table.", self, public_id.name());
+        debug!("{:?} Added {:?} to routing table.", self, public_id.name());
         if self.peer_mgr.routing_table().len() == 1 {
             self.send_event(Event::Connected);
         }
@@ -1280,6 +1287,36 @@ impl Node {
 
     // Context: we're a new node joining a group. This message should have been
     // sent by each node in the target group with the new node name and routing table.
+    fn handle_node_approval_no_resource_proof(&mut self,
+                                              relocated_id: PublicId,
+                                              groups: Vec<(Prefix<XorName>, Vec<PublicId>)>,
+                                              dst: Authority) {
+        if !self.peer_mgr.routing_table().is_empty() {
+            warn!("{:?} Received duplicate GetNodeName response.", self);
+            return;
+        }
+        self.get_node_name_timer_token = None;
+
+        self.full_id.public_id_mut().set_name(*relocated_id.name());
+        self.peer_mgr.reset_routing_table(*self.full_id.public_id(), &groups);
+
+        for pub_id in groups.into_iter().flat_map(|(_, group)| group.into_iter()) {
+            debug!("{:?} Sending connection info to {:?} on GetNodeName response.",
+                   self,
+                   pub_id);
+
+            let node_auth = Authority::ManagedNode(*pub_id.name());
+            if let Err(error) = self.send_connection_info(pub_id, dst, node_auth) {
+                debug!("{:?} - Failed to send connection info to {:?}: {:?}",
+                       self,
+                       pub_id,
+                       error);
+            }
+        }
+    }
+
+    // Context: we're a new node joining a group. This message should have been
+    // sent by each node in the target group with the new node name and group for resource proving.
     fn handle_get_node_name_response(&mut self,
                                      relocated_id: PublicId,
                                      group: (Prefix<XorName>, Vec<PublicId>),
@@ -1295,6 +1332,7 @@ impl Node {
         self.peer_mgr.reset_routing_table(*self.full_id.public_id(), &groups);
 
         for pub_id in group.1.into_iter() {
+            self.peer_mgr.add_as_peer_candidate(*pub_id.name());
             debug!("{:?} Sending connection info to {:?} on GetNodeName response.",
                    self,
                    pub_id);
@@ -1306,7 +1344,6 @@ impl Node {
                        pub_id,
                        error);
             }
-            self.peer_mgr.add_as_peer_candidate(*pub_id.name());
         }
     }
 
@@ -1324,21 +1361,35 @@ impl Node {
         }
 
         // TODO - do we need to reply if `expect_id` triggers a failure here?
-        let own_group = self.peer_mgr
+        let (resource_proving, own_group) = self.peer_mgr
             .expect_join_our_group(expect_id.name(), self.full_id.public_id())?;
 
-        // From Y -> A (via B)
-        let response_content = MessageContent::GetNodeNameResponse {
-            relocated_id: expect_id,
-            group: own_group,
-            message_id: message_id,
+        let response_content = if resource_proving {
+            // From Y -> A (via B)
+            let response_content = MessageContent::GetNodeNameResponse {
+                relocated_id: expect_id,
+                group: own_group,
+                message_id: message_id,
+            };
+
+            debug!("{:?} Responding to client {:?}: {:?}.",
+                   self,
+                   client_auth,
+                   response_content);
+            response_content
+        } else {
+            let groups = self.peer_mgr.get_groups(expect_id.name(), self.full_id.public_id())?;
+            // From Y -> A
+            let response_content =
+                MessageContent::NodeApproval { relocated_id: expect_id, groups: groups };
+
+            debug!("{:?} sending NodeApproval to {:?}: {:?}.",
+                   self,
+                   client_auth,
+                   response_content);
+
+            response_content
         };
-
-        debug!("{:?} Responding to client {:?}: {:?}.",
-               self,
-               client_auth,
-               response_content);
-
         let response_msg = RoutingMessage {
             src: Authority::NodeManager(*expect_id.name()),
             dst: client_auth,
