@@ -18,7 +18,7 @@
 use itertools::Itertools;
 use rand::Rng;
 use routing::{Authority, DataIdentifier, Event, MessageId, QUORUM, Request, XorName};
-use routing::mock_crust::{Config, Network};
+use routing::mock_crust::{Config, Endpoint, Network};
 use std::cmp::min;
 use std::collections::{HashMap, HashSet};
 use super::{TestNode, create_connected_nodes, gen_range_except, poll_and_resend,
@@ -251,4 +251,57 @@ fn churn() {
         let added_index = add_random_node(&mut rng, &network, &mut nodes);
         send_and_receive(&mut rng, &mut nodes, min_group_size, Some(added_index));
     }
+}
+
+fn bootstrap_from(initial_nodes: usize, optional_seed: Option<[u32; 4]>) {
+    assert!(initial_nodes > 0);
+    let min_group_size = 8;
+    let network = Network::new(min_group_size, optional_seed);
+    let mut rng = network.new_rng();
+
+    let mut nodes = if initial_nodes == 1 {
+        vec![TestNode::builder(&network).first().endpoint(Endpoint(0)).create()]
+    } else {
+        create_connected_nodes(&network, initial_nodes)
+    };
+
+    while nodes.len() < min_group_size {
+        let added_index = add_random_node(&mut rng, &network, &mut nodes);
+        send_and_receive(&mut rng, &mut nodes, min_group_size, Some(added_index));
+    }
+}
+
+#[test]
+fn bootstrap_1() {
+    bootstrap_from(1, None);
+}
+
+#[test]
+fn bootstrap_2() {
+    bootstrap_from(2, None);
+}
+
+#[test]
+fn bootstrap_3() {
+    bootstrap_from(3, None);
+}
+
+#[test]
+fn bootstrap_4() {
+    bootstrap_from(4, None);
+}
+
+#[test]
+fn bootstrap_5() {
+    bootstrap_from(5, None);
+}
+
+#[test]
+fn bootstrap_6() {
+    bootstrap_from(6, None);
+}
+
+#[test]
+fn bootstrap_7() {
+    bootstrap_from(7, None);
 }
