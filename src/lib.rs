@@ -144,6 +144,7 @@ extern crate lru_time_cache;
 extern crate rand;
 extern crate rust_sodium;
 extern crate rustc_serialize;
+extern crate tiny_keccak;
 
 mod ack_manager;
 mod action;
@@ -169,6 +170,7 @@ mod tunnels;
 mod types;
 mod utils;
 mod xor_name;
+mod sha3;
 
 /// Mock crust
 #[cfg(feature = "use-mock-crust")]

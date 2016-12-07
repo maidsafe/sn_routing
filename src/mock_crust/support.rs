@@ -67,10 +67,11 @@ impl Network {
         let endpoint = self.gen_endpoint(opt_endpoint);
 
         let handle = ServiceHandle::new(self.clone(), config, endpoint);
-        let _ = self.0
+        let _handle = self.0
             .borrow_mut()
             .services
-            .insert(endpoint, Rc::downgrade(&handle.0));
+            .insert(endpoint, Rc::downgrade(&handle.0))
+            .ok_or(debug!("Could not insert service handle "));
 
         handle
     }
@@ -153,7 +154,9 @@ impl Network {
             .and_then(|packets| packets.pop_front().map(|packet| (sender, receiver, packet)));
         if result.is_some() &&
            network_impl.queue.get(&(sender, receiver)).map_or(false, VecDeque::is_empty) {
-            let _ = network_impl.queue.remove(&(sender, receiver));
+            let _queue = network_impl.queue
+                .remove(&(sender, receiver))
+                .ok_or(debug!("Could not remove packet from queue."));
         }
         result
     }
@@ -278,7 +281,9 @@ impl ServiceImpl {
     }
 
     pub fn whitelist_peer(&mut self, peer_id: PeerId) {
-        let _ = self.whitelist.insert(peer_id);
+        if self.whitelist.insert(peer_id.clone()) {
+            debug!("Could not insert whitelist for peer : {:?}", peer_id);
+        }
     }
 
     pub fn is_peer_whitelisted(&self, peer_id: &PeerId) -> bool {

@@ -19,6 +19,7 @@ use error::RoutingError;
 use maidsafe_utilities::{self, serialisation};
 use message_filter::MessageFilter;
 use messages::RoutingMessage;
+use sha3;
 use std::collections::HashMap;
 use std::fmt;
 use std::time::Duration;
@@ -43,7 +44,10 @@ pub struct AckManager {
 
 /// An identifier for a waiting-to-be-acknowledged message (a hash of the message).
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, RustcDecodable, RustcEncodable)]
-pub struct Ack(u64);
+pub struct Ack {
+    id: u64,
+    m_hash: [u8; 32],
+}
 
 impl AckManager {
     /// Creates a new manager, with empty lists.
@@ -56,11 +60,15 @@ impl AckManager {
         }
     }
 
-    // Handles a received ack (removes the corresponding message from the list of
-    // pending ones, and remembers that we have received this ack).
+    /// Handles a received ack (removes the corresponding message from the list of
+    /// pending ones, and remembers that we have received this ack).
     pub fn receive(&mut self, ack: Ack) {
-        let _ = self.pending.remove(&ack);
-        let _ = self.received.insert(&ack);
+        let _ack = self.pending
+            .remove(&ack)
+            .ok_or(debug!("received and Ack we were not expecting : {}", ack));
+        // TODO - Should this insert an ack we were not expecting ??
+        let count = self.received.insert(&ack);
+        trace!("Received ack {} : {} times", ack, count);
     }
 
     /// Did we receive this ack?
@@ -121,18 +129,24 @@ impl AckManager {
 impl Ack {
     pub fn compute(routing_msg: &RoutingMessage) -> Result<Ack, RoutingError> {
         let hash_msg = serialisation::serialise(routing_msg)?;
-        Ok(Ack(maidsafe_utilities::big_endian_sip_hash(&hash_msg)))
+        Ok(Ack {
+            id: maidsafe_utilities::big_endian_sip_hash(&hash_msg),
+            m_hash: sha3::hash(&hash_msg),
+        })
     }
 }
 
 impl fmt::Display for Ack {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(formatter, "{:016x}", self.0)
+        write!(formatter, "id : {:016x}, hash : {:?}", self.id, self.m_hash)
     }
 }
 
 impl fmt::Debug for Ack {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(formatter, "Ack({:016x})", self.0)
+        write!(formatter,
+               "Ack( id: {:016x}, hash : {:?})",
+               self.id,
+               self.m_hash)
     }
 }

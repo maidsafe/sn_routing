@@ -95,7 +95,11 @@ impl PubAppendableData {
         self.signatures = other.signatures;
         self.data.extend(other.data);
         for ad in &self.deleted_data {
-            let _ = self.data.remove(ad);
+            let failed = self.data
+                .remove(&ad.clone());
+            if failed {
+                debug!("Failed to delete : {:?}", ad);
+            }
         }
         Ok(())
     }
@@ -109,8 +113,7 @@ impl PubAppendableData {
         } || self.deleted_data.contains(&appended_data) {
             return false;
         }
-        let _ = self.data.insert(appended_data);
-        true
+        self.data.insert(appended_data)
     }
 
     /// Inserts the given wrapper item, or returns `false` if cannot
@@ -179,8 +182,11 @@ impl PubAppendableData {
         }
         let data = self.data_to_sign()?;
         let sig = sign::sign_detached(&data, &keys.1);
-        let _ = self.signatures.insert(keys.0, sig);
-        Ok(((self.owners.len() / 2) + 1).saturating_sub(self.signatures.len()))
+
+        if self.signatures.insert(keys.0, sig).is_some() {
+            return Ok(((self.owners.len() / 2) + 1).saturating_sub(self.signatures.len()));
+        }
+        Err(RoutingError::FailedSignature)
     }
 
     /// Overwrite any existing signatures with the new signatures provided.
@@ -264,7 +270,7 @@ mod test {
                                                 &data,
                                                 pub_appendable_data.get_signatures())
                     .is_err());
-                assert_eq!(pub_appendable_data.add_signature(&keys).unwrap(), 0);
+                assert!(pub_appendable_data.add_signature(&keys).is_err());
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
                                                 pub_appendable_data.get_signatures())
@@ -287,7 +293,7 @@ mod test {
                                      BTreeSet::new(),
                                      Filter::white_list(None)) {
             Ok(mut pub_appendable_data) => {
-                assert_eq!(pub_appendable_data.add_signature(&other_keys).unwrap(), 0);
+                assert!(pub_appendable_data.add_signature(&other_keys).is_err());
                 let data = match pub_appendable_data.data_to_sign() {
                     Ok(data) => data,
                     Err(error) => panic!("Error: {:?}", error),
@@ -381,7 +387,7 @@ mod test {
                                                         new_owner.clone(),
                                                         BTreeSet::new(),
                                                         Filter::black_list(None)));
-        assert_eq!(ad_new.add_signature(&keys).unwrap(), 0);
+        assert!(ad_new.add_signature(&keys).is_err());
         assert!(ad.update_with_other(ad_new).is_ok());
 
         let mut ad_fail = unwrap!(PubAppendableData::new(name,
@@ -389,7 +395,7 @@ mod test {
                                                          new_owner.clone(),
                                                          BTreeSet::new(),
                                                          Filter::black_list(None)));
-        assert_eq!(ad_fail.add_signature(&keys).unwrap(), 0);
+        assert!(ad_fail.add_signature(&keys).is_err());
         assert!(ad.update_with_other(ad_fail).is_err());
     }
 }

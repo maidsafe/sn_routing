@@ -259,7 +259,10 @@ impl SignedMessage {
                 .cloned()
                 .collect_vec();
             for irrelevant_id in irrelevant_ids {
-                let _ = self.signatures.remove(&irrelevant_id);
+                let _removed_sig = self.signatures
+                    .remove(&irrelevant_id)
+                    .ok_or(debug!("Tried to remove a signature we did not have : {:?}",
+                                  irrelevant_id));
             }
         }
         self.grp_lists.push(group_list);
@@ -271,7 +274,7 @@ impl SignedMessage {
     pub fn add_signature(&mut self, pub_id: PublicId, sig: sign::Signature) {
         if self.content.src.is_group() &&
            self.grp_lists.first().map_or(true, |grp_list| grp_list.pub_ids.contains(&pub_id)) {
-            let _ = self.signatures.insert(pub_id, sig);
+            let _ignore_num = self.signatures.insert(pub_id, sig);
         }
     }
 
@@ -345,7 +348,10 @@ impl SignedMessage {
             })
             .collect_vec();
         for invalid_signature in &invalid_signatures {
-            let _ = self.signatures.remove(invalid_signature);
+            let _ignore_removed = self.signatures
+                .remove(invalid_signature)
+                .ok_or(debug!("Tried to remove an invalid signature we do not have : {:?}",
+                              invalid_signature));
         }
     }
 }
@@ -1002,7 +1008,10 @@ impl UserMessageCache {
                -> Option<UserMessage> {
         {
             let entry = self.0.entry((hash, part_count)).or_insert_with(BTreeMap::new);
-            let _ = entry.insert(part_index, payload);
+            let _count = entry.insert(part_index.clone(), payload.clone())
+                .ok_or(debug!("Could not insert part index : {:?} with payload {:?}",
+                              part_index,
+                              payload));
             if entry.len() != part_count as usize {
                 return None;
             }
