@@ -55,8 +55,8 @@ use itertools::Itertools;
 use maidsafe_utilities::SeededRng;
 use maidsafe_utilities::thread::{self, Joiner};
 use rand::Rng;
-use routing::{Authority, Client, Data, Event, FullId, MIN_GROUP_SIZE, MessageId, Node, Request,
-              Response, StructuredData, XorName, Xorable};
+use routing::{Authority, Client, Data, Event, FullId, MessageId, Node, Request, Response,
+              StructuredData, XorName, Xorable};
 use rust_sodium::crypto;
 use std::collections::{BTreeSet, HashSet};
 #[cfg(target_os = "macos")]
@@ -104,12 +104,12 @@ struct TestNode {
 
 impl TestNode {
     // If `index` is `0`, this will be treated as the first node of the network.
-    fn new(index: usize, main_sender: Sender<TestEvent>) -> Self {
+    fn new(index: usize, main_sender: Sender<TestEvent>, min_group_size: usize) -> Self {
         let thread_name = format!("TestNode {} event sender", index);
         let (sender, joiner) = spawn_select_thread(index, main_sender, thread_name);
 
         TestNode {
-            node: unwrap!(Node::builder().first(index == 0).create(sender)),
+            node: unwrap!(Node::builder().first(index == 0).create(sender, min_group_size)),
             _thread_joiner: joiner,
         }
     }
@@ -127,7 +127,7 @@ struct TestClient {
 }
 
 impl TestClient {
-    fn new(index: usize, main_sender: Sender<TestEvent>) -> Self {
+    fn new(index: usize, main_sender: Sender<TestEvent>, min_group_size: usize) -> Self {
         let thread_name = format!("TestClient {} event sender", index);
         let (sender, joiner) = spawn_select_thread(index, main_sender, thread_name);
 
@@ -138,7 +138,7 @@ impl TestClient {
         TestClient {
             index: index,
             full_id: full_id.clone(),
-            client: unwrap!(Client::new(sender, Some(full_id))),
+            client: unwrap!(Client::new(sender, Some(full_id), min_group_size)),
             _thread_joiner: joiner,
         }
     }
@@ -211,7 +211,8 @@ fn spawn_select_thread(index: usize,
 
 fn wait_for_nodes_to_connect(nodes: &[TestNode],
                              connection_counts: &mut [usize],
-                             event_receiver: &Receiver<TestEvent>) {
+                             event_receiver: &Receiver<TestEvent>,
+                             min_group_size: usize) {
     // Wait for each node to connect to all the other nodes by counting churns.
     loop {
         if let Ok(test_event) = recv_with_timeout(event_receiver, Duration::from_secs(30)) {
@@ -221,7 +222,7 @@ fn wait_for_nodes_to_connect(nodes: &[TestNode],
                 let k = nodes.len();
                 let all_events_received = (0..k)
                     .map(|i| connection_counts[i])
-                    .all(|n| n >= k - 1 || n >= MIN_GROUP_SIZE);
+                    .all(|n| n >= k - 1 || n >= min_group_size);
                 if all_events_received {
                     break;
                 }
@@ -234,13 +235,14 @@ fn wait_for_nodes_to_connect(nodes: &[TestNode],
 
 fn create_connected_nodes(count: usize,
                           event_sender: Sender<TestEvent>,
-                          event_receiver: &Receiver<TestEvent>)
+                          event_receiver: &Receiver<TestEvent>,
+                          min_group_size: usize)
                           -> Vec<TestNode> {
     let mut nodes = Vec::with_capacity(count);
     let mut connection_counts = iter::repeat(0).take(count).collect::<Vec<usize>>();
 
     // Bootstrap node
-    nodes.push(TestNode::new(0, event_sender.clone()));
+    nodes.push(TestNode::new(0, event_sender.clone(), min_group_size));
 
     // HACK: wait until the above node switches to accepting mode. Would be
     // nice to know exactly when it happens instead of having to thread::sleep...
@@ -250,10 +252,12 @@ fn create_connected_nodes(count: usize,
     // continuing.
     for _ in 1..count {
         let index = nodes.len();
-        nodes.push(TestNode::new(index, event_sender.clone()));
-        wait_for_nodes_to_connect(&nodes, &mut connection_counts, event_receiver);
+        nodes.push(TestNode::new(index, event_sender.clone(), min_group_size));
+        wait_for_nodes_to_connect(&nodes,
+                                  &mut connection_counts,
+                                  event_receiver,
+                                  min_group_size);
     }
-
     nodes
 }
 
@@ -271,11 +275,11 @@ fn gen_structured_data<R: Rng>(full_id: &FullId, rng: &mut R) -> Data {
     Data::Structured(sd)
 }
 
-fn closest_nodes(node_names: &[XorName], target: &XorName) -> Vec<XorName> {
+fn closest_nodes(node_names: &[XorName], target: &XorName, min_group_size: usize) -> Vec<XorName> {
     node_names.iter()
         .sorted_by(|a, b| target.cmp_distance(a, b))
         .into_iter()
-        .take(MIN_GROUP_SIZE)
+        .take(min_group_size)
         .cloned()
         .collect()
 }
@@ -283,14 +287,17 @@ fn closest_nodes(node_names: &[XorName], target: &XorName) -> Vec<XorName> {
 // TODO: Extract the individual tests into their own functions.
 #[cfg_attr(feature="clippy", allow(cyclomatic_complexity))]
 fn core() {
+    let min_group_size = 8;
     let (event_sender, event_receiver) = mpsc::channel();
-    let mut nodes =
-        create_connected_nodes(MIN_GROUP_SIZE + 1, event_sender.clone(), &event_receiver);
+    let mut nodes = create_connected_nodes(min_group_size + 1,
+                                           event_sender.clone(),
+                                           &event_receiver,
+                                           min_group_size);
     let mut rng = SeededRng::new();
 
     {
         // request and response
-        let client = TestClient::new(nodes.len(), event_sender.clone());
+        let client = TestClient::new(nodes.len(), event_sender.clone(), min_group_size);
         let data = gen_structured_data(client.full_id(), &mut rng);
         let message_id = MessageId::new();
 
@@ -332,9 +339,9 @@ fn core() {
     {
         // request to group authority
         let node_names = nodes.iter().map(|node| node.name()).collect_vec();
-        let client = TestClient::new(nodes.len(), event_sender.clone());
+        let client = TestClient::new(nodes.len(), event_sender.clone(), min_group_size);
         let data = gen_structured_data(client.full_id(), &mut rng);
-        let mut close_group = closest_nodes(&node_names, client.name());
+        let mut close_group = closest_nodes(&node_names, client.name(), min_group_size);
 
         loop {
             if let Ok(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
@@ -366,9 +373,9 @@ fn core() {
     {
         // response from group authority
         let node_names = nodes.iter().map(|node| node.name()).collect_vec();
-        let client = TestClient::new(nodes.len(), event_sender.clone());
+        let client = TestClient::new(nodes.len(), event_sender.clone(), min_group_size);
         let data = gen_structured_data(client.full_id(), &mut rng);
-        let mut close_group = closest_nodes(&node_names, client.name());
+        let mut close_group = closest_nodes(&node_names, client.name(), min_group_size);
 
         loop {
             if let Ok(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
@@ -426,8 +433,8 @@ fn core() {
         loop {
             if let Ok(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
                 match test_event {
-                    TestEvent(index, Event::NodeLost(lost_name)) if index < nodes.len() &&
-                                                                    lost_name == name => {
+                    TestEvent(index, Event::NodeLost(lost_name, _)) if index < nodes.len() &&
+                                                                       lost_name == name => {
                         churns[index] = true;
                         if churns.iter().all(|b| *b) {
                             break;
@@ -447,7 +454,7 @@ fn core() {
         let nodes_len = nodes.len();
         let mut churns = iter::repeat(false).take(nodes_len + 1).collect::<Vec<_>>();
         // a node joins...
-        nodes.push(TestNode::new(nodes_len, event_sender.clone()));
+        nodes.push(TestNode::new(nodes_len, event_sender.clone(), min_group_size));
 
         loop {
             if let Ok(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
@@ -469,7 +476,7 @@ fn core() {
 
     {
         // message from quorum - 1 group members
-        let client = TestClient::new(nodes.len(), event_sender.clone());
+        let client = TestClient::new(nodes.len(), event_sender.clone(), min_group_size);
         let data = gen_structured_data(client.full_id(), &mut rng);
 
         while let Ok(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(5)) {
@@ -493,7 +500,7 @@ fn core() {
                 }
                 TestEvent(index, Event::Request { request, src, dst }) => {
                     if let Request::Put(data, id) = request {
-                        if 2 * (index + 1) < MIN_GROUP_SIZE {
+                        if 2 * (index + 1) < min_group_size {
                             unwrap!(nodes[index]
                                 .node
                                 .send_put_failure(dst, src, data.identifier(), vec![], id));
@@ -512,7 +519,7 @@ fn core() {
 
     {
         // message from more than quorum group members
-        let client = TestClient::new(nodes.len(), event_sender.clone());
+        let client = TestClient::new(nodes.len(), event_sender.clone(), min_group_size);
         let data = gen_structured_data(client.full_id(), &mut rng);
         let mut sent_ids = HashSet::new();
         let mut received_ids = HashSet::new();

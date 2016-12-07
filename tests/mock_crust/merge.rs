@@ -25,7 +25,8 @@ use super::{create_connected_nodes_with_cache_until_split, poll_and_resend,
 fn merge_three_groups_into_one() {
     // Create a network comprising three groups, one with a prefix `bit_count` of 1 and two with
     // prefix `bit_count`s of 2.
-    let network = Network::new(None);
+    let min_group_size = 8;
+    let network = Network::new(min_group_size, None);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_with_cache_until_split(&network, 3);
     verify_invariant_for_all_nodes(&nodes);

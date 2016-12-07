@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use rand::Rng;
-use routing::{Authority, Data, Event, MIN_GROUP_SIZE, MessageId, Prefix, Request, Response};
+use routing::{Authority, Data, Event, MessageId, Prefix, Request, Response};
 use routing::mock_crust::Network;
 use std::sync::mpsc;
 use super::{TestNode, create_connected_clients, create_connected_nodes_with_cache_until_split,
@@ -41,7 +41,8 @@ fn gen_immutable_data_not_in_first_node_group<T: Rng>(rng: &mut T, nodes: &[Test
 
 #[test]
 fn response_caching() {
-    let network = Network::new(None);
+    let min_group_size = 8;
+    let network = Network::new(min_group_size, None);
 
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_with_cache_until_split(&network, 1);
@@ -126,7 +127,7 @@ fn response_caching() {
 
     // The request should not be relayed to any other node, so no node should
     // raise Event::Request.
-    for node in nodes.iter().take(MIN_GROUP_SIZE) {
+    for node in nodes.iter().take(min_group_size) {
         expect_no_event!(node);
     }
 }

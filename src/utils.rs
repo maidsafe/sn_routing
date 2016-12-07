@@ -70,7 +70,6 @@ pub fn calculate_relocated_name(mut close_nodes: Vec<XorName>, original_name: &X
 
 #[cfg(test)]
 mod tests {
-    use peer_manager::MIN_GROUP_SIZE;
     use rand;
     use routing_table::Xorable;
     use rust_sodium::crypto::hash::sha256;
@@ -78,6 +77,7 @@ mod tests {
 
     #[test]
     fn calculate_relocated_name() {
+        let min_group_size = 8;
         let original_name: XorName = rand::random();
 
         // one entry
@@ -103,9 +103,10 @@ mod tests {
         assert_eq!(actual_relocated_name_one_entry,
                    expected_relocated_name_one_node);
 
+        // TODO: we're not using fixed sizes any more: this code should possibly change!
         // populated closed nodes
         let mut close_nodes: Vec<XorName> = Vec::new();
-        for _ in 0..MIN_GROUP_SIZE {
+        for _ in 0..min_group_size {
             close_nodes.push(rand::random());
         }
         let actual_relocated_name = super::calculate_relocated_name(close_nodes.clone(),

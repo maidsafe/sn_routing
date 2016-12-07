@@ -32,6 +32,7 @@ pub struct Network(Rc<RefCell<NetworkImpl>>);
 
 pub struct NetworkImpl {
     services: HashMap<Endpoint, Weak<RefCell<ServiceImpl>>>,
+    min_group_size: usize,
     next_endpoint: usize,
     queue: HashMap<(Endpoint, Endpoint), VecDeque<Packet>>,
     blocked_connections: HashSet<(Endpoint, Endpoint)>,
@@ -40,7 +41,7 @@ pub struct NetworkImpl {
 
 impl Network {
     /// Create new mock Network.
-    pub fn new(optional_seed: Option<[u32; 4]>) -> Self {
+    pub fn new(min_group_size: usize, optional_seed: Option<[u32; 4]>) -> Self {
         let mut rng = if let Some(seed) = optional_seed {
             SeededRng::from_seed(seed)
         } else {
@@ -49,6 +50,7 @@ impl Network {
         unwrap!(rust_sodium::init_with_rng(&mut rng));
         Network(Rc::new(RefCell::new(NetworkImpl {
             services: HashMap::new(),
+            min_group_size: min_group_size,
             next_endpoint: 0,
             queue: HashMap::new(),
             blocked_connections: HashSet::new(),
@@ -65,12 +67,18 @@ impl Network {
         let endpoint = self.gen_endpoint(opt_endpoint);
 
         let handle = ServiceHandle::new(self.clone(), config, endpoint);
-        let _ = self.0
+        let _handle = self.0
             .borrow_mut()
             .services
-            .insert(endpoint, Rc::downgrade(&handle.0));
+            .insert(endpoint, Rc::downgrade(&handle.0))
+            .ok_or(debug!("Could not insert service handle "));
 
         handle
+    }
+
+    /// Get min_group_size
+    pub fn min_group_size(&self) -> usize {
+        self.0.borrow().min_group_size
     }
 
     /// Generate unique Endpoint
@@ -146,7 +154,9 @@ impl Network {
             .and_then(|packets| packets.pop_front().map(|packet| (sender, receiver, packet)));
         if result.is_some() &&
            network_impl.queue.get(&(sender, receiver)).map_or(false, VecDeque::is_empty) {
-            let _ = network_impl.queue.remove(&(sender, receiver));
+            let _queue = network_impl.queue
+                .remove(&(sender, receiver))
+                .ok_or(debug!("Could not remove packet from queue."));
         }
         result
     }
@@ -169,12 +179,6 @@ impl Network {
 
     fn find_service(&self, endpoint: Endpoint) -> Option<Rc<RefCell<ServiceImpl>>> {
         self.0.borrow().services.get(&endpoint).and_then(|s| s.upgrade())
-    }
-}
-
-impl Default for Network {
-    fn default() -> Network {
-        Network::new(None)
     }
 }
 
@@ -277,7 +281,9 @@ impl ServiceImpl {
     }
 
     pub fn whitelist_peer(&mut self, peer_id: PeerId) {
-        let _ = self.whitelist.insert(peer_id);
+        if !self.whitelist.insert(peer_id.clone()) {
+            debug!("Could not insert whitelist for peer : {:?}", peer_id);
+        }
     }
 
     pub fn is_peer_whitelisted(&self, peer_id: &PeerId) -> bool {

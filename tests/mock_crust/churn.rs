@@ -17,8 +17,7 @@
 
 use itertools::Itertools;
 use rand::Rng;
-use routing::{Authority, DataIdentifier, Destination, Event, MIN_GROUP_SIZE, MessageId, QUORUM,
-              Request, XorName};
+use routing::{Authority, DataIdentifier, Destination, Event, MessageId, QUORUM, Request, XorName};
 use routing::mock_crust::{Config, Network};
 use std::cmp;
 use std::collections::{HashMap, HashSet};
@@ -37,7 +36,7 @@ fn random_churn<R: Rng>(rng: &mut R,
                         -> Option<usize> {
     let len = nodes.len();
 
-    if len > MIN_GROUP_SIZE + 2 && rng.gen_weighted_bool(3) {
+    if len > network.min_group_size() + 2 && rng.gen_weighted_bool(3) {
         let _ = nodes.remove(rng.gen_range(0, len));
         let _ = nodes.remove(rng.gen_range(0, len - 1));
         let _ = nodes.remove(rng.gen_range(0, len - 2));
@@ -73,7 +72,8 @@ impl ExpectedGets {
                        data_id: DataIdentifier,
                        src: Authority,
                        dst: Authority,
-                       nodes: &[TestNode]) {
+                       nodes: &[TestNode],
+                       min_group_size: usize) {
         let src_dest = src.to_destination();
         let dst_dest = dst.to_destination();
         let msg_id = MessageId::new();
@@ -83,7 +83,7 @@ impl ExpectedGets {
             sent_count += 1;
         }
         match src_dest {
-            Destination::Group(_) => assert!(100 * sent_count >= QUORUM * MIN_GROUP_SIZE),
+            Destination::Group(_) => assert!(100 * sent_count >= QUORUM * min_group_size),
             Destination::Node(_) => assert_eq!(sent_count, 1),
         }
         if dst.is_group() && !self.groups.contains_key(&dst) {
@@ -151,7 +151,8 @@ const CHURN_ITERATIONS: usize = 100;
 
 #[test]
 fn churn() {
-    let network = Network::new(None);
+    let min_group_size = 8;
+    let network = Network::new(min_group_size, None);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, 20);
 
@@ -171,13 +172,13 @@ fn churn() {
         let mut expected_gets = ExpectedGets::default();
 
         // Test messages from a node to itself, another node and a group ...
-        expected_gets.send_and_expect(data_id, auth_n0, auth_n0, &nodes);
-        expected_gets.send_and_expect(data_id, auth_n0, auth_n1, &nodes);
-        expected_gets.send_and_expect(data_id, auth_n0, auth_g0, &nodes);
+        expected_gets.send_and_expect(data_id, auth_n0, auth_n0, &nodes, min_group_size);
+        expected_gets.send_and_expect(data_id, auth_n0, auth_n1, &nodes, min_group_size);
+        expected_gets.send_and_expect(data_id, auth_n0, auth_g0, &nodes, min_group_size);
         // ... and from a group to itself, another group and a node.
-        expected_gets.send_and_expect(data_id, auth_g0, auth_g0, &nodes);
-        expected_gets.send_and_expect(data_id, auth_g0, auth_g1, &nodes);
-        expected_gets.send_and_expect(data_id, auth_g0, auth_n0, &nodes);
+        expected_gets.send_and_expect(data_id, auth_g0, auth_g0, &nodes, min_group_size);
+        expected_gets.send_and_expect(data_id, auth_g0, auth_g1, &nodes, min_group_size);
+        expected_gets.send_and_expect(data_id, auth_g0, auth_n0, &nodes, min_group_size);
 
         poll_and_resend(&mut nodes, &mut []);
 

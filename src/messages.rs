@@ -36,7 +36,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::{self, Debug, Formatter};
 use std::iter;
 use std::time::Duration;
-use super::{MIN_GROUP_SIZE, QUORUM};
+use super::QUORUM;
 use types::MessageId;
 use utils;
 use xor_name::XorName;
@@ -259,7 +259,10 @@ impl SignedMessage {
                 .cloned()
                 .collect_vec();
             for irrelevant_id in irrelevant_ids {
-                let _ = self.signatures.remove(&irrelevant_id);
+                let _removed_sig = self.signatures
+                    .remove(&irrelevant_id)
+                    .ok_or(debug!("Tried to remove a signature we did not have : {:?}",
+                                  irrelevant_id));
             }
         }
         self.grp_lists.push(group_list);
@@ -271,7 +274,7 @@ impl SignedMessage {
     pub fn add_signature(&mut self, pub_id: PublicId, sig: sign::Signature) {
         if self.content.src.is_group() &&
            self.grp_lists.first().map_or(true, |grp_list| grp_list.pub_ids.contains(&pub_id)) {
-            let _ = self.signatures.insert(pub_id, sig);
+            let _ignore_num = self.signatures.insert(pub_id, sig);
         }
     }
 
@@ -299,7 +302,7 @@ impl SignedMessage {
 
     /// Returns whether there are enough signatures from the sender. NOTE: to ensure only validated
     /// signatures are counted, first call `remove_invalid_signatures()`.
-    pub fn is_fully_signed(&self) -> bool {
+    pub fn is_fully_signed(&self, min_group_size: usize) -> bool {
         if self.content.src.is_client() {
             return self.signatures.len() == 1;
         }
@@ -310,7 +313,7 @@ impl SignedMessage {
                     .map(PublicId::name)
                     .sorted_by(|lhs, rhs| self.content.src.name().cmp_distance(lhs, rhs))
                     .into_iter()
-                    .take(MIN_GROUP_SIZE)
+                    .take(min_group_size)
                     .collect();
                 let valid_sigs = self.signatures
                     .keys()
@@ -345,7 +348,10 @@ impl SignedMessage {
             })
             .collect_vec();
         for invalid_signature in &invalid_signatures {
-            let _ = self.signatures.remove(invalid_signature);
+            let _ignore_removed = self.signatures
+                .remove(invalid_signature)
+                .ok_or(debug!("Tried to remove an invalid signature we do not have : {:?}",
+                              invalid_signature));
         }
     }
 }
@@ -1002,7 +1008,10 @@ impl UserMessageCache {
                -> Option<UserMessage> {
         {
             let entry = self.0.entry((hash, part_count)).or_insert_with(BTreeMap::new);
-            let _ = entry.insert(part_index, payload);
+            let _count = entry.insert(part_index.clone(), payload.clone())
+                .ok_or(debug!("Could not insert part index : {:?} with payload {:?}",
+                              part_index,
+                              payload));
             if entry.len() != part_count as usize {
                 return None;
             }
@@ -1065,6 +1074,8 @@ mod tests {
 
     #[test]
     fn msg_signatures() {
+        let min_group_size = 8;
+
         let full_id_0 = FullId::new();
         let full_id_1 = FullId::new();
         let full_id_2 = FullId::new();
@@ -1104,7 +1115,7 @@ mod tests {
         });
         assert_eq!(signed_msg.signatures.len(), 1);
         assert!(!signed_msg.signatures.contains_key(irrelevant_full_id.public_id()));
-        assert!(!signed_msg.is_fully_signed());
+        assert!(!signed_msg.is_fully_signed(min_group_size));
 
         // Add a valid signature for ID 1 and an invalid one for ID 2
         match unwrap!(signed_msg.routing_message().to_signature(full_id_1.signing_private_key())) {
@@ -1118,7 +1129,7 @@ mod tests {
         let bad_sig = sign::Signature([0; sign::SIGNATUREBYTES]);
         signed_msg.add_signature(*full_id_2.public_id(), bad_sig);
         assert_eq!(signed_msg.signatures.len(), 3);
-        assert!(signed_msg.is_fully_signed());
+        assert!(signed_msg.is_fully_signed(min_group_size));
 
         // Check the bad signature gets removed properly.
         signed_msg.remove_invalid_signatures();

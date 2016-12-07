@@ -58,9 +58,11 @@
 //! use std::sync::mpsc;
 //! use routing::{Client, Event, FullId};
 //!
+//! let min_group_size = 8;
+//!
 //! let (sender, _receiver) = mpsc::channel::<Event>();
 //! let full_id = FullId::new(); // Generate new keys.
-//! let _ = Client::new(sender, Some(full_id.clone())).unwrap();
+//! let _ = Client::new(sender, Some(full_id.clone()), min_group_size).unwrap();
 //!
 //! let _ = full_id.public_id().name();
 //! ```
@@ -77,8 +79,10 @@
 //! use std::sync::mpsc;
 //! use routing::{Node, Event};
 //!
+//! let min_group_size = 8;
+//!
 //! let (sender, _receiver) = mpsc::channel::<Event>();
-//! let _ = Node::builder().create(sender).unwrap();
+//! let _ = Node::builder().create(sender, min_group_size).unwrap();
 //! ```
 //!
 //! Upon creation, the node will first connect to the network as a client. Once it has client
@@ -140,6 +144,7 @@ extern crate lru_time_cache;
 extern crate rand;
 extern crate rust_sodium;
 extern crate rustc_serialize;
+extern crate tiny_keccak;
 
 mod ack_manager;
 mod action;
@@ -165,6 +170,7 @@ mod tunnels;
 mod types;
 mod utils;
 mod xor_name;
+mod sha3;
 
 /// Mock crust
 #[cfg(feature = "use-mock-crust")]
@@ -198,10 +204,10 @@ pub use messages::{Request, Response};
 #[cfg(feature = "use-mock-crust")]
 pub use mock_crust::crust;
 pub use node::{Node, NodeBuilder};
-pub use peer_manager::MIN_GROUP_SIZE;
 #[cfg(any(test, feature = "use-mock-crust"))]
-pub use routing_table::{Destination, RoutingTable, verify_network_invariant};
-pub use routing_table::{Prefix, Xorable};
+pub use routing_table::{Destination, verify_network_invariant};
+pub use routing_table::{Prefix, RoutingTable, Xorable};
+pub use routing_table::Error as RoutingTableError;
 pub use types::MessageId;
 pub use xor_name::{XOR_NAME_BITS, XOR_NAME_LEN, XorName, XorNameFromHexError};
 

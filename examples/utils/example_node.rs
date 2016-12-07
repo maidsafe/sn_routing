@@ -22,6 +22,7 @@ use routing::{Authority, Data, DataIdentifier, Event, MessageId, Node, Prefix, R
 use std::collections::HashMap;
 use std::sync::mpsc;
 use std::time::Duration;
+use super::MIN_GROUP_SIZE;
 
 /// A simple example node implementation for a network based on the Routing library.
 pub struct ExampleNode {
@@ -42,7 +43,7 @@ impl ExampleNode {
     /// Creates a new node and attempts to establish a connection to the network.
     pub fn new(first: bool) -> ExampleNode {
         let (sender, receiver) = mpsc::channel::<Event>();
-        let node = unwrap!(Node::builder().first(first).create(sender.clone()));
+        let node = unwrap!(Node::builder().first(first).create(sender.clone(), MIN_GROUP_SIZE));
 
         ExampleNode {
             node: node,
@@ -60,13 +61,13 @@ impl ExampleNode {
             match event {
                 Event::Request { request, src, dst } => self.handle_request(request, src, dst),
                 Event::Response { response, src, dst } => self.handle_response(response, src, dst),
-                Event::NodeAdded(name) => {
+                Event::NodeAdded(name, _routing_table) => {
                     trace!("{} Received NodeAdded event {:?}",
                            self.get_debug_name(),
                            name);
                     self.handle_node_added(name);
                 }
-                Event::NodeLost(name) => {
+                Event::NodeLost(name, _routing_table) => {
                     trace!("{} Received NodeLost event {:?}",
                            self.get_debug_name(),
                            name);
@@ -83,7 +84,8 @@ impl ExampleNode {
                 }
                 Event::RestartRequired => {
                     info!("{} Received RestartRequired event", self.get_debug_name());
-                    self.node = unwrap!(Node::builder().create(self.sender.clone()));
+                    self.node = unwrap!(Node::builder()
+                        .create(self.sender.clone(), MIN_GROUP_SIZE));
                 }
                 Event::GroupSplit(prefix) => {
                     trace!("{} Received GroupSplit event {:?}",

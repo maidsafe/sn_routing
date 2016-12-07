@@ -20,5 +20,7 @@
 mod example_node;
 mod example_client;
 
+pub const MIN_GROUP_SIZE: usize = 8;
+
 pub use self::example_client::ExampleClient;
 pub use self::example_node::ExampleNode;
