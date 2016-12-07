@@ -111,7 +111,7 @@ impl TestNode {
     }
 
     pub fn close_group(&self) -> HashSet<XorName> {
-        unwrap!(self.inner.close_group(self.name())).unwrap_or_else(HashSet::new)
+        unwrap!(unwrap!(self.inner.routing_table()).close_names(&self.name()))
     }
 
     pub fn routing_table(&self) -> Option<RoutingTable<XorName>> {
@@ -315,6 +315,7 @@ pub fn create_connected_nodes_with_cache(network: &Network,
         while let Ok(event) = node.event_rx.try_recv() {
             match event {
                 Event::NodeAdded(..) => node_added_count += 1,
+                Event::NodeLost(..) |
                 Event::GroupSplit(..) |
                 Event::Tick => (),
                 event => panic!("Got unexpected event: {:?}", event),

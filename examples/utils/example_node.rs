@@ -61,13 +61,13 @@ impl ExampleNode {
             match event {
                 Event::Request { request, src, dst } => self.handle_request(request, src, dst),
                 Event::Response { response, src, dst } => self.handle_response(response, src, dst),
-                Event::NodeAdded(name) => {
+                Event::NodeAdded(name, _routing_table) => {
                     trace!("{} Received NodeAdded event {:?}",
                            self.get_debug_name(),
                            name);
                     self.handle_node_added(name);
                 }
-                Event::NodeLost(name) => {
+                Event::NodeLost(name, _routing_table) => {
                     trace!("{} Received NodeLost event {:?}",
                            self.get_debug_name(),
                            name);

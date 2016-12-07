@@ -32,7 +32,7 @@ use messages::{ConnectionInfo, DEFAULT_PRIORITY, DirectMessage, GroupList, HopMe
                MessageContent, RoutingMessage, SignedMessage, UserMessage, UserMessageCache};
 use peer_manager::{ConnectionInfoPreparedResult, ConnectionInfoReceivedResult, PeerManager,
                    PeerState};
-use routing_message_filter::RoutingMessageFilter;
+use routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use routing_table::{OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix, RemovalDetails,
                     Xorable};
 use routing_table::Error as RoutingTableError;
@@ -232,8 +232,11 @@ impl Node {
 
                 let _ = result_tx.send(result);
             }
-            Action::CloseGroup { name, result_tx } => {
-                let _ = result_tx.send(self.peer_mgr.routing_table().close_names(&name));
+            Action::CloseGroup { name, count, result_tx } => {
+                let _ = result_tx.send(self.peer_mgr
+                    .routing_table()
+                    .closest_names(&name, count)
+                    .map(|names| names.into_iter().cloned().collect_vec()));
             }
             Action::Name { result_tx } => {
                 let _ = result_tx.send(*self.name());
@@ -505,6 +508,7 @@ impl Node {
                 self.sig_accumulator
                     .add_signature(min_group_size, digest, sig, pub_id) {
                 let hop = *self.name(); // we accumulated the message, so now we act as the last hop
+                trace!("{:?} Message accumulated - handling: {:?}", self, signed_msg);
                 return self.handle_signed_message(signed_msg, route, hop, &[]);
             }
         } else {
@@ -550,6 +554,36 @@ impl Node {
         self.handle_signed_message(content, route, hop_name, &sent_to)
     }
 
+    // Acknowledge reception of the message and broadcast to our group if necessary
+    // The function is only called when we are in the destination authority
+    fn ack_and_broadcast(&mut self,
+                         signed_msg: &SignedMessage,
+                         route: u8,
+                         hop_name: XorName,
+                         sent_to: &[XorName]) {
+        self.send_ack(signed_msg.routing_message(), route);
+        // if the last hop is us and the destination is a group - we need to forward it to the
+        // rest of the group
+        let our_name = *self.name();
+        let from_our_group = self.peer_mgr.routing_table().our_group_prefix().matches(&hop_name);
+        if (!from_our_group || hop_name == our_name) &&
+           signed_msg.routing_message().dst.is_group() {
+            if let Err(error) = self.send_signed_message(signed_msg, route, &hop_name, sent_to) {
+                debug!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);
+            }
+        }
+    }
+
+    fn handle_signed_msg_to_us(&mut self,
+                               signed_msg: SignedMessage,
+                               route: u8,
+                               hop_name: XorName,
+                               sent_to: &[XorName]) {
+        self.ack_and_broadcast(&signed_msg, route, hop_name, sent_to);
+        // if addressed to us, then we just queue it and return
+        self.msg_queue.push_back(signed_msg.into_routing_message());
+    }
+
     fn handle_signed_message(&mut self,
                              signed_msg: SignedMessage,
                              route: u8,
@@ -558,37 +592,40 @@ impl Node {
                              -> Result<(), RoutingError> {
         signed_msg.check_integrity()?;
 
-        let in_authority = self.in_authority(&signed_msg.routing_message().dst);
-
-        if in_authority {
-            self.send_ack(signed_msg.routing_message(), route);
-        }
-
-        if self.routing_msg_filter.filter_incoming(signed_msg.routing_message(), route) > 1 {
-            return Err(RoutingError::FilterCheckFailed);
-        }
-
-        if in_authority {
-            // if the last hop is us and the destination is a group - we need to forward it to the
-            // rest of the group
-            let our_name = *self.name();
-            let from_our_group =
-                self.peer_mgr.routing_table().our_group_prefix().matches(&hop_name);
-            if (!from_our_group || hop_name == our_name) &&
-               signed_msg.routing_message().dst.is_group() {
-                self.send_signed_message(&signed_msg, route, &our_name, sent_to)?;
+        match self.routing_msg_filter.filter_incoming(signed_msg.routing_message(), route) {
+            FilteringResult::KnownMessageAndRoute => {
+                warn!("{:?} Duplicate message received on route {}: {:?}",
+                      self,
+                      route,
+                      signed_msg.routing_message());
             }
-            // if addressed to us, then we just queue it and return
-            self.msg_queue.push_back(signed_msg.into_routing_message());
-            return Ok(());
-        }
+            FilteringResult::KnownMessage => {
+                if self.in_authority(&signed_msg.routing_message().dst) {
+                    self.ack_and_broadcast(&signed_msg, route, hop_name, sent_to);
+                    return Ok(());
+                }
 
-        if self.respond_from_cache(signed_msg.routing_message(), route)? {
-            return Ok(());
-        }
+                // known message, but new route - we still need to relay it in this case
+                if let Err(error) =
+                    self.send_signed_message(&signed_msg, route, &hop_name, sent_to) {
+                    debug!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);
+                }
+            }
+            FilteringResult::NewMessage => {
+                if self.in_authority(&signed_msg.routing_message().dst) {
+                    self.handle_signed_msg_to_us(signed_msg, route, hop_name, sent_to);
+                    return Ok(());
+                }
 
-        if let Err(error) = self.send_signed_message(&signed_msg, route, &hop_name, sent_to) {
-            debug!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);
+                if self.respond_from_cache(signed_msg.routing_message(), route)? {
+                    return Ok(());
+                }
+
+                if let Err(error) =
+                    self.send_signed_message(&signed_msg, route, &hop_name, sent_to) {
+                    debug!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);
+                }
+            }
         }
 
         Ok(())
@@ -874,11 +911,9 @@ impl Node {
             self.send_event(Event::Connected);
         }
 
-        if self.peer_mgr.routing_table().is_in_our_group(public_id.name()) {
-            let event = Event::NodeAdded(*public_id.name());
-            if let Err(err) = self.event_sender.send(event) {
-                error!("{:?} Error sending event to routing user - {:?}", self, err);
-            }
+        let event = Event::NodeAdded(*public_id.name(), self.peer_mgr.routing_table().clone());
+        if let Err(err) = self.event_sender.send(event) {
+            error!("{:?} Error sending event to routing user - {:?}", self, err);
         }
 
         for dst_id in self.peer_mgr.peers_needing_tunnel() {
@@ -1462,8 +1497,8 @@ impl Node {
         let our_name = *self.name();
         let min_group_size = self.min_group_size();
         if let Some((msg, route)) =
-            self.sig_accumulator
-                .add_message(signed_msg, min_group_size, route) {
+            self.sig_accumulator.add_message(signed_msg, min_group_size, route) {
+            trace!("{:?} Message accumulated - sending: {:?}", self, msg);
             if self.in_authority(&msg.routing_message().dst) {
                 self.handle_signed_message(msg, route, our_name, &[])?;
             } else {
@@ -1774,11 +1809,9 @@ impl Node {
               self,
               details.name);
 
-        if details.was_in_our_group {
-            let event = Event::NodeLost(details.name);
-            if let Err(err) = self.event_sender.send(event) {
-                error!("{:?} Error sending event to routing user - {:?}", self, err);
-            }
+        let event = Event::NodeLost(details.name, self.peer_mgr.routing_table().clone());
+        if let Err(err) = self.event_sender.send(event) {
+            error!("{:?} Error sending event to routing user - {:?}", self, err);
         }
 
         self.merge_if_necessary();
@@ -2021,6 +2054,7 @@ impl Bootstrapped for Node {
         match self.get_signature_target(&signed_msg.routing_message().src, route) {
             None => Ok(()),
             Some(target_name) if target_name == *self.name() => {
+                trace!("{:?} Starting message accumulation for {:?}", self, signed_msg);
                 self.accumulate_message(signed_msg, route)
             }
             Some(target_name) => {
@@ -2029,6 +2063,10 @@ impl Bootstrapped for Node {
                         let sign_key = self.full_id().signing_private_key();
                         signed_msg.routing_message().to_signature(sign_key)?
                     };
+                    trace!("{:?} Sending signature for {:?} to {:?}",
+                           self,
+                           signed_msg,
+                           target_name);
                     self.send_direct_msg_to_peer(direct_msg, peer_id, signed_msg.priority())
                 } else {
                     Err(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer))

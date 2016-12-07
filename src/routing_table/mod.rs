@@ -385,6 +385,48 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
     }
 
+    /// Are we among the `count` closest nodes to `name`?
+    pub fn is_closest(&self, name: &T, count: usize) -> bool {
+        self.closest_names(name, count).is_some()
+    }
+
+    /// Returns the `count` closest entries to `name` in the routing table, including our own name,
+    /// sorted by ascending distance to `name`. If we are not close, returns `None`.
+    pub fn closest_names(&self, name: &T, count: usize) -> Option<Vec<&T>> {
+        let result = self.groups
+            .iter()
+            .chain(iter::once((&self.our_group_prefix, &self.our_group)))
+            .sorted_by(|&(pfx0, _), &(pfx1, _)| pfx0.cmp_distance(pfx1, name))
+            .into_iter()
+            .flat_map(|(pfx, group)| {
+                group.iter()
+                    .chain(if *pfx == self.our_group_prefix {
+                        Some(&self.our_name)
+                    } else {
+                        None
+                    })
+                    .sorted_by(|name0, name1| name.cmp_distance(name0, name1))
+                    .into_iter()
+            })
+            .take(count)
+            .collect_vec();
+        if result.contains(&&self.our_name) {
+            Some(result)
+        } else {
+            None
+        }
+    }
+
+    /// Returns the `count-1` closest entries to `name` in the routing table, excluding
+    /// our own name, sorted by ascending distance to `name` -  or `None`, if our name
+    /// isn't among `count` names closest to `name`.
+    pub fn other_closest_names(&self, name: &T, count: usize) -> Option<Vec<&T>> {
+        self.closest_names(name, count).map(|mut result| {
+            result.retain(|name| *name != &self.our_name);
+            result
+        })
+    }
+
     /// Returns true if `name` is in our group (including if it is our own name).
     pub fn is_in_our_group(&self, name: &T) -> bool {
         *name == self.our_name || self.our_group.contains(name)
@@ -959,7 +1001,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     /// Returns the list of contacts as a result of a merge to which we aren't currently connected,
     /// but should be.
-    #[cfg(any(test, feature = "use-mock-crust"))]
     pub fn needed(&self) -> &Groups<T> {
         &self.needed
     }
@@ -1190,5 +1231,44 @@ mod tests {
         assert_eq!(table.need_to_add(&unknown_neighbour), Ok(()));
         assert_eq!(table.need_to_add(&unknown_distant_name),
                    Err(Error::PeerNameUnsuitable));
+    }
+
+    #[test]
+    fn test_closest_names() {
+        let our_name = 0u16;
+        let mut table = RoutingTable::new(our_name, 8);
+        // initialize the table
+        unwrap!(table.add(0x8000));
+        unwrap!(table.add(0x4000));
+        unwrap!(table.add(0x2000));
+        unwrap!(table.add(0x1000));
+        unwrap!(table.add(0x0800));
+        unwrap!(table.add(0x0400));
+        unwrap!(table.add(0x0200));
+        unwrap!(table.add(0x0100));
+        unwrap!(table.add(0x0080));
+        unwrap!(table.add(0x0040));
+
+        let mut name = 0xFFFF;
+        assert!(table.closest_names(&name, 10).is_none());
+        assert!(table.other_closest_names(&name, 10).is_none());
+        assert!(table.closest_names(&name, 11).is_some());
+        let result = unwrap!(table.other_closest_names(&name, 11));
+        assert_eq!(result.len(), 10);
+
+        name = 0x01FF;
+        assert!(table.closest_names(&name, 3).is_none());
+        let result = unwrap!(table.closest_names(&name, 4));
+        assert_eq!(result.len(), 4);
+        assert_eq!(*result[0], 0x0100);
+        assert_eq!(*result[1], 0x0080);
+        assert_eq!(*result[2], 0x0040);
+        assert_eq!(*result[3], 0x0000);
+
+        let result = unwrap!(table.other_closest_names(&name, 4));
+        assert_eq!(result.len(), 3);
+        assert_eq!(*result[0], 0x0100);
+        assert_eq!(*result[1], 0x0080);
+        assert_eq!(*result[2], 0x0040);
     }
 }
