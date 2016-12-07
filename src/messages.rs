@@ -36,7 +36,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::{self, Debug, Formatter};
 use std::iter;
 use std::time::Duration;
-use super::{MIN_GROUP_SIZE, QUORUM};
+use super::QUORUM;
 use types::MessageId;
 use utils;
 use xor_name::XorName;
@@ -299,7 +299,7 @@ impl SignedMessage {
 
     /// Returns whether there are enough signatures from the sender. NOTE: to ensure only validated
     /// signatures are counted, first call `remove_invalid_signatures()`.
-    pub fn is_fully_signed(&self) -> bool {
+    pub fn is_fully_signed(&self, min_group_size: usize) -> bool {
         if self.content.src.is_client() {
             return self.signatures.len() == 1;
         }
@@ -310,7 +310,7 @@ impl SignedMessage {
                     .map(PublicId::name)
                     .sorted_by(|lhs, rhs| self.content.src.name().cmp_distance(lhs, rhs))
                     .into_iter()
-                    .take(MIN_GROUP_SIZE)
+                    .take(min_group_size)
                     .collect();
                 let valid_sigs = self.signatures
                     .keys()
@@ -1115,6 +1115,8 @@ mod tests {
 
     #[test]
     fn msg_signatures() {
+        let min_group_size = 8;
+
         let full_id_0 = FullId::new();
         let full_id_1 = FullId::new();
         let full_id_2 = FullId::new();
@@ -1154,7 +1156,7 @@ mod tests {
         });
         assert_eq!(signed_msg.signatures.len(), 1);
         assert!(!signed_msg.signatures.contains_key(irrelevant_full_id.public_id()));
-        assert!(!signed_msg.is_fully_signed());
+        assert!(!signed_msg.is_fully_signed(min_group_size));
 
         // Add a valid signature for ID 1 and an invalid one for ID 2
         match unwrap!(signed_msg.routing_message().to_signature(full_id_1.signing_private_key())) {
@@ -1168,7 +1170,7 @@ mod tests {
         let bad_sig = sign::Signature([0; sign::SIGNATUREBYTES]);
         signed_msg.add_signature(*full_id_2.public_id(), bad_sig);
         assert_eq!(signed_msg.signatures.len(), 3);
-        assert!(signed_msg.is_fully_signed());
+        assert!(signed_msg.is_fully_signed(min_group_size));
 
         // Check the bad signature gets removed properly.
         signed_msg.remove_invalid_signatures();

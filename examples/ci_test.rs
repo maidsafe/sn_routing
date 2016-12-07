@@ -61,7 +61,7 @@ use maidsafe_utilities::thread::Joiner;
 use maidsafe_utilities::thread::named as thread_named;
 use rand::{Rng, ThreadRng, random, thread_rng};
 use rand::distributions::{IndependentSample, Range};
-use routing::{Data, MIN_GROUP_SIZE, StructuredData};
+use routing::{Data, StructuredData};
 use std::{env, io, thread};
 use std::collections::BTreeSet;
 use std::io::Write;
@@ -70,7 +70,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 use term::color;
-use utils::{ExampleClient, ExampleNode};
+use utils::{ExampleClient, ExampleNode, MIN_GROUP_SIZE};
 
 const CHURN_MIN_WAIT_SEC: u64 = 20;
 const CHURN_MAX_WAIT_SEC: u64 = 30;
@@ -95,13 +95,14 @@ impl Drop for NodeProcess {
     }
 }
 
-fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
+fn start_nodes(count: usize) -> Vec<NodeProcess> {
     println!("--------- Starting {} nodes -----------", count);
 
     let current_exe_path = unwrap!(env::current_exe());
     let mut log_path = current_exe_path.clone();
 
-    let nodes = (0..count).map(|i| {
+    let nodes: Vec<_> = (0..count)
+        .map(|i| {
             log_path.set_file_name(&format!("Node{:02}.log", i));
             let mut args = vec![format!("--output={}", log_path.display())];
             if i == 0 {
@@ -109,19 +110,20 @@ fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
                 args.push("-f".to_owned());
             }
 
-            let node = NodeProcess(Command::new(current_exe_path.clone()).args(&args)
-                                       .stdout(Stdio::piped())
-                                       .stderr(Stdio::inherit())
-                                       .spawn()?,
-                                   i);
+            let cmd = Command::new(current_exe_path.clone())
+                .args(&args)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::inherit())
+                .spawn();
+            let node = NodeProcess(unwrap!(cmd), i);
 
             println!("Started Node #{} with Process ID {}", i, node.0.id());
             thread::sleep(Duration::from_secs(5));
-            Ok(node)
+            node
         })
-        .collect::<io::Result<Vec<NodeProcess>>>()?;
+        .collect();
     thread::sleep(Duration::from_secs(10));
-    Ok(nodes)
+    nodes
 }
 
 fn simulate_churn(mut nodes: Vec<NodeProcess>,
@@ -316,8 +318,7 @@ fn main() {
         let node_count = match args.arg_nodes {
             Some(number) => {
                 if number <= MIN_GROUP_SIZE {
-                    panic!("The number of nodes should be > {} (MIN_GROUP_SIZE).",
-                           MIN_GROUP_SIZE);
+                    panic!("The number of nodes should be > {}.", MIN_GROUP_SIZE);
                 }
 
                 number
@@ -325,7 +326,7 @@ fn main() {
             None => DEFAULT_NODE_COUNT,
         };
 
-        let nodes = unwrap!(start_nodes(node_count));
+        let nodes = start_nodes(node_count);
 
         let stop_flag = Arc::new((Mutex::new(false), Condvar::new()));
         let _raii_joiner = simulate_churn(nodes, node_count, stop_flag.clone());

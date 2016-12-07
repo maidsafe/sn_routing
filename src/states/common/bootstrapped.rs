@@ -21,7 +21,6 @@ use crust::PeerId;
 use error::RoutingError;
 use maidsafe_utilities::serialisation;
 use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage};
-use peer_manager::MIN_GROUP_SIZE;
 use routing_message_filter::RoutingMessageFilter;
 use std::time::Duration;
 use super::Base;
@@ -33,6 +32,7 @@ use xor_name::XorName;
 pub trait Bootstrapped: Base {
     fn ack_mgr(&self) -> &AckManager;
     fn ack_mgr_mut(&mut self) -> &mut AckManager;
+    fn min_group_size(&self) -> usize;
 
     fn send_routing_message_via_route(&mut self,
                                       routing_msg: RoutingMessage,
@@ -104,7 +104,7 @@ pub trait Bootstrapped: Base {
                    ack,
                    unacked_msg);
 
-            if unacked_msg.route as usize == MIN_GROUP_SIZE {
+            if unacked_msg.route as usize == self.min_group_size() {
                 debug!("{:?} - Message unable to be acknowledged - giving up. {:?}",
                        self,
                        unacked_msg);

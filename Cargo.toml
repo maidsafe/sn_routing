@@ -11,7 +11,9 @@ repository = "https://github.com/maidsafe/routing"
 version = "0.25.1"
 
 [dependencies]
-clippy = {version = "~0.0.100", optional = true}
+# Recommended nightly version (also see .travis.yml):
+# rustc 1.15.0-nightly (ba872f270 2016-11-17)
+clippy = {version = "=0.0.99", optional = true}
 crust = "~0.19.0"
 itertools = "~0.5.6"
 log = "~0.3.6"
