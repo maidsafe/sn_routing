@@ -138,15 +138,20 @@ impl Ack {
 
 impl fmt::Display for Ack {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(formatter, "id : {:016x}, hash : {:?}", self.id, self.m_hash)
+        write!(formatter,
+               "id : {:016x}, hash : {:02x}{:02x}..",
+               self.id,
+               self.m_hash[0],
+               self.m_hash[1])
     }
 }
 
 impl fmt::Debug for Ack {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         write!(formatter,
-               "Ack( id: {:016x}, hash : {:?})",
+               "Ack( id: {:016x}, hash : {:02X}{:02X}..)",
                self.id,
-               self.m_hash)
+               self.m_hash[0],
+               self.m_hash[1])
     }
 }
