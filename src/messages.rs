@@ -1008,10 +1008,12 @@ impl UserMessageCache {
                -> Option<UserMessage> {
         {
             let entry = self.0.entry((hash, part_count)).or_insert_with(BTreeMap::new);
-            let _count = entry.insert(part_index.clone(), payload.clone())
-                .ok_or(debug!("Could not insert part index : {:?} with payload {:?}",
-                              part_index,
-                              payload));
+            if entry.insert(part_index.clone(), payload.clone()).is_some() {
+                debug!("Duplicate message part : {:?} with payload {:?}",
+                       part_index,
+                       payload);
+            }
+
             if entry.len() != part_count as usize {
                 return None;
             }

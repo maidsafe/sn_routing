@@ -140,10 +140,8 @@ impl PrivAppendableData {
         self.owners = other.owners;
         self.data.extend(other.data);
         for ad in &self.deleted_data {
-            let removed = self.data
-                .remove(&ad.clone());
-            if !removed {
-                debug!("Could not remove deleted data : {:?}", ad);
+            if self.data.contains(ad) {
+                let _remove = self.data.remove(ad);
             }
         }
         Ok(())

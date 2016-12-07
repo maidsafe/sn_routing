@@ -95,10 +95,8 @@ impl PubAppendableData {
         self.signatures = other.signatures;
         self.data.extend(other.data);
         for ad in &self.deleted_data {
-            let failed = self.data
-                .remove(&ad.clone());
-            if failed {
-                debug!("Failed to delete : {:?}", ad);
+            if self.data.contains(ad) {
+                let _remove = self.data.remove(ad);
             }
         }
         Ok(())

@@ -67,11 +67,13 @@ impl Network {
         let endpoint = self.gen_endpoint(opt_endpoint);
 
         let handle = ServiceHandle::new(self.clone(), config, endpoint);
-        let _handle = self.0
+        if self.0
             .borrow_mut()
             .services
             .insert(endpoint, Rc::downgrade(&handle.0))
-            .ok_or(debug!("Could not insert service handle "));
+            .is_some() {
+            debug!("Tried to insert duplicate service handle ");
+        }
 
         handle
     }
@@ -282,7 +284,8 @@ impl ServiceImpl {
 
     pub fn whitelist_peer(&mut self, peer_id: PeerId) {
         if !self.whitelist.insert(peer_id.clone()) {
-            debug!("Could not insert whitelist for peer : {:?}", peer_id);
+            debug!("Duplicate insert attempt  whitelist for peer : {:?}",
+                   peer_id);
         }
     }
 
