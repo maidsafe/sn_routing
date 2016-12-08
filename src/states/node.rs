@@ -566,12 +566,8 @@ impl Node {
                          hop_name: XorName,
                          sent_to: &[XorName]) {
         self.send_ack(signed_msg.routing_message(), route);
-        // if the last hop is us and the destination is a group - we need to forward it to the
-        // rest of the group
-        let our_name = *self.name();
-        let from_our_group = self.peer_mgr.routing_table().our_group_prefix().matches(&hop_name);
-        if (!from_our_group || hop_name == our_name) &&
-           signed_msg.routing_message().dst.is_group() {
+        // If the destination is our group we need to forward it to the rest of the group
+        if signed_msg.routing_message().dst.is_group() {
             if let Err(error) = self.send_signed_message(signed_msg, route, &hop_name, sent_to) {
                 debug!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);
             }
@@ -903,7 +899,12 @@ impl Node {
             }
             Ok(true) => {
                 let our_group_prefix = *self.peer_mgr.routing_table().our_group_prefix();
-                self.send_group_split(our_group_prefix, *public_id.name());
+                // In the future we'll look to remove this restriction so we always call
+                // `send_group_split()` here and also check whether another round of splitting is
+                // required in `handle_group_split()` so splitting becomes recursive like merging.
+                if our_group_prefix.matches(public_id.name()) {
+                    self.send_group_split(our_group_prefix, *public_id.name());
+                }
             }
             Ok(false) => {
                 self.merge_if_necessary();

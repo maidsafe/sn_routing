@@ -490,32 +490,32 @@ mod tests {
 
     #[test]
     fn sanity_check_valid() {
-        sanity_check(&vec![1, 1]);
-        sanity_check(&vec![1, 2, 3, 4, 5, 6, 7, 8, 8]);
-        sanity_check(&vec![8; 256]);
+        sanity_check(&[1, 1]);
+        sanity_check(&[1, 2, 3, 4, 5, 6, 7, 8, 8]);
+        sanity_check(&[8; 256]);
     }
 
     #[test]
     #[should_panic(expected = "There should be at least two specified prefix lengths")]
     fn sanity_check_no_split() {
-        sanity_check(&vec![0]);
+        sanity_check(&[0]);
     }
 
     #[test]
     #[should_panic(expected = "would require overlapping groups")]
     fn sanity_check_overlapping_groups() {
-        sanity_check(&vec![1, 2, 2, 2]);
+        sanity_check(&[1, 2, 2, 2]);
     }
 
     #[test]
     #[should_panic(expected = "would not cover the entire address space")]
     fn sanity_check_missing_groups() {
-        sanity_check(&vec![1, 2]);
+        sanity_check(&[1, 2]);
     }
 
     #[test]
     #[should_panic(expected = "must each be no more than 8")]
     fn sanity_check_too_many_groups() {
-        sanity_check(&vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 9]);
+        sanity_check(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 9]);
     }
 }
