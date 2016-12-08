@@ -562,7 +562,8 @@ impl Node {
                          sent_to: &[XorName]) {
         self.send_ack(signed_msg.routing_message(), route);
         // If the destination is our group we need to forward it to the rest of the group
-        if signed_msg.routing_message().dst.is_group() {
+        if (signed_msg.routing_message().dst.is_group() ||
+            signed_msg.routing_message().dst.is_section()) {
             if let Err(error) = self.send_signed_message(signed_msg, route, &hop_name, sent_to) {
                 debug!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);
             }
@@ -630,7 +631,7 @@ impl Node {
                                 routing_msg: RoutingMessage)
                                 -> Result<(), RoutingError> {
         use messages::MessageContent::*;
-        use Authority::{Client, ManagedNode, NaeManager, NodeManager};
+        use Authority::{Client, ManagedNode, NaeManager, NodeManager, Section};
 
         match routing_msg.content {
             Ack(..) => (),
@@ -640,7 +641,7 @@ impl Node {
         match (routing_msg.content, routing_msg.src, routing_msg.dst) {
             (GetNodeName { current_id, message_id },
              Client { client_key, proxy_node_name, peer_id },
-             NaeManager(dst_name)) => {
+             Section(dst_name)) => {
                 self.handle_get_node_name_request(current_id,
                                                   client_key,
                                                   proxy_node_name,
@@ -648,13 +649,13 @@ impl Node {
                                                   peer_id,
                                                   message_id)
             }
-            (GetNodeNameResponse { relocated_id, groups, .. }, NodeManager(_), dst) => {
+            (GetNodeNameResponse { relocated_id, groups, .. }, Section(_), dst) => {
                 self.handle_get_node_name_response(relocated_id, groups, dst);
                 Ok(())
             }
             (ExpectCloseNode { expect_id, client_auth, message_id },
-             NaeManager(_),
-             NaeManager(_)) => {
+             Section(_),
+             Section(_)) => {
                 self.handle_expect_close_node_request(expect_id, client_auth, message_id)
             }
             (GetCloseGroup(message_id), src, NaeManager(dst_name)) => {
@@ -792,7 +793,7 @@ impl Node {
 
         let request_msg = RoutingMessage {
             src: src,
-            dst: Authority::NaeManager(*self.name()),
+            dst: Authority::Section(*self.name()),
             content: request_content,
         };
 
@@ -1159,8 +1160,8 @@ impl Node {
         };
 
         let request_msg = RoutingMessage {
-            src: Authority::NaeManager(dst_name),
-            dst: Authority::NaeManager(relocated_name),
+            src: Authority::Section(dst_name),
+            dst: Authority::Section(relocated_name),
             content: request_content,
         };
 
@@ -1240,7 +1241,7 @@ impl Node {
                response_content);
 
         let response_msg = RoutingMessage {
-            src: Authority::NodeManager(*expect_id.name()),
+            src: Authority::Section(*expect_id.name()),
             dst: client_auth,
             content: response_content,
         };
@@ -1336,7 +1337,7 @@ impl Node {
         let (merge_state, needed_peers) = self.peer_mgr
             .merge_own_group(sender_prefix, merge_prefix, groups);
         let src =
-            Authority::NaeManager(self.peer_mgr.routing_table().our_group_prefix().lower_bound());
+            Authority::Section(self.peer_mgr.routing_table().our_group_prefix().lower_bound());
         match merge_state {
             OwnMergeState::Initialised { merge_details } => {
                 self.send_own_group_merge(merge_details, src)
@@ -1632,7 +1633,7 @@ impl Node {
 
     /// Returns the peer that is responsible for collecting our signature for a group message.
     fn get_signature_target(&self, src: &Authority<XorName>, route: u8) -> Option<XorName> {
-        if !src.is_group() {
+        if !src.is_group() && !src.is_section() {
             return Some(*self.name());
         }
         let mut group = self.peer_mgr
@@ -1827,8 +1828,8 @@ impl Node {
         for prefix in self.peer_mgr.routing_table().prefixes() {
             let request_msg = RoutingMessage {
                 // this way of calculating the source avoids using the joining node as the route
-                src: Authority::NaeManager(our_prefix.substituted_in(!joining_node)),
-                dst: Authority::NaeManager(prefix.substituted_in(joining_node)),
+                src: Authority::Section(our_prefix.substituted_in(!joining_node)),
+                dst: Authority::Section(prefix.substituted_in(joining_node)),
                 content: MessageContent::GroupSplit(our_prefix, joining_node),
             };
             if let Err(err) = self.send_routing_message(request_msg) {
@@ -1840,7 +1841,7 @@ impl Node {
     fn merge_if_necessary(&mut self) {
         if let Some(merge_details) = self.peer_mgr.routing_table().should_merge() {
             let src_name = self.peer_mgr.routing_table().our_group_prefix().lower_bound();
-            self.send_own_group_merge(merge_details, Authority::NaeManager(src_name));
+            self.send_own_group_merge(merge_details, Authority::Section(src_name));
         }
     }
 
@@ -1861,7 +1862,7 @@ impl Node {
         for &bit in &[false, true] {
             let request_msg = RoutingMessage {
                 src: src,
-                dst: Authority::NaeManager(merge_details.merge_prefix.pushed(bit).lower_bound()),
+                dst: Authority::Section(merge_details.merge_prefix.pushed(bit).lower_bound()),
                 content: request_content.clone(),
             };
             if let Err(err) = self.send_routing_message(request_msg) {
@@ -1883,7 +1884,7 @@ impl Node {
             };
             let request_msg = RoutingMessage {
                 src: src,
-                dst: Authority::NaeManager(target.lower_bound()),
+                dst: Authority::Section(target.lower_bound()),
                 content: request_content,
             };
 
@@ -1953,7 +1954,11 @@ impl Base for Node {
     }
 
     fn in_authority(&self, auth: &Authority<XorName>) -> bool {
-        self.peer_mgr.routing_table().in_authority(auth)
+        if let Authority::Client { ref client_key, .. } = *auth {
+            client_key == self.full_id.public_id().signing_public_key()
+        } else {
+            self.is_proper() && self.peer_mgr.routing_table().in_authority(auth)
+        }
     }
 
     fn handle_lost_peer(&mut self, peer_id: PeerId) -> Transition {
@@ -2040,7 +2045,7 @@ impl Bootstrapped for Node {
                    routing_msg);
             return Ok(());
         }
-        let group_list = if routing_msg.src.is_group() {
+        let group_list = if routing_msg.src.is_group() || routing_msg.src.is_section() {
             GroupList { pub_ids: self.hop_pub_ids(self.name())? }
         } else {
             GroupList { pub_ids: iter::once(*self.full_id().public_id()).collect() }
