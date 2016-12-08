@@ -351,14 +351,14 @@ impl PeerManager {
     /// remain connected.
     pub fn split_group(&mut self,
                        prefix: Prefix<XorName>)
-                       -> (Vec<PeerId>, Option<Prefix<XorName>>) {
+                       -> (Vec<(XorName, PeerId)>, Option<Prefix<XorName>>) {
         let (names_to_drop, our_new_prefix) = self.routing_table.split(prefix);
         let mut ids_to_drop = vec![];
         for name in &names_to_drop {
             if let Some(peer) = self.peer_map.remove_by_name(name) {
                 self.cleanup_proxy_peer_id();
                 if let Some(peer_id) = peer.peer_id {
-                    ids_to_drop.push(peer_id);
+                    ids_to_drop.push((*name, peer_id));
                 }
             }
         }

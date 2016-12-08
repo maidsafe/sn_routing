@@ -1192,6 +1192,9 @@ impl Node {
 
         self.full_id.public_id_mut().set_name(*relocated_id.name());
         self.peer_mgr.reset_routing_table(*self.full_id.public_id(), &groups);
+        trace!("{:?} GetNodeName completed. Prefixes: {:?}",
+               self,
+               self.peer_mgr.routing_table().prefixes());
 
         for pub_id in groups.into_iter().flat_map(|(_, group)| group.into_iter()) {
             debug!("{:?} Sending connection info to {:?} on GetNodeName response.",
@@ -1324,8 +1327,9 @@ impl Node {
             }
         }
 
-        for peer_id in peers_to_drop {
+        for (name, peer_id) in peers_to_drop {
             self.disconnect_peer(&peer_id);
+            info!("{:?} Dropped {:?} from the routing table.", self, name);
         }
         trace!("{:?} Split completed. Prefixes: {:?}",
                self,
@@ -1397,6 +1401,9 @@ impl Node {
                 debug!("{:?} - Failed to send connection info: {:?}", self, error);
             }
         }
+        trace!("{:?} Other merge completed. Prefixes: {:?}",
+               self,
+               self.peer_mgr.routing_table().prefixes());
         self.merge_if_necessary();
         Ok(())
     }
