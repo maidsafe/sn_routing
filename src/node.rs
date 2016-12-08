@@ -34,7 +34,6 @@ use state_machine::{State, StateMachine};
 use states;
 #[cfg(feature = "use-mock-crust")]
 use std::cell::RefCell;
-use std::collections::HashSet;
 #[cfg(feature = "use-mock-crust")]
 use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -410,12 +409,17 @@ impl Node {
         self.send_action(src, dst, user_msg, RELOCATE_PRIORITY)
     }
 
-    /// Returns the names of the nodes in the routing table which are closest to the given one.
-    pub fn close_group(&self, name: XorName) -> Result<Option<HashSet<XorName>>, InterfaceError> {
+    /// Returns the first `count` names of the nodes in the routing table which are closest
+    /// to the given one.
+    pub fn close_group(&self,
+                       name: XorName,
+                       count: usize)
+                       -> Result<Option<Vec<XorName>>, InterfaceError> {
         let (result_tx, result_rx) = channel();
         self.action_sender
             .send(Action::CloseGroup {
                 name: name,
+                count: count,
                 result_tx: result_tx,
             })?;
 

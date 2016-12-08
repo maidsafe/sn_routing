@@ -17,7 +17,7 @@
 
 use authority::Authority;
 use messages::{Request, Response};
-use routing_table::Prefix;
+use routing_table::{Prefix, RoutingTable};
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
 
@@ -49,9 +49,9 @@ pub enum Event {
         dst: Authority,
     },
     /// A new node joined the network and may be a member of group authorities we also belong to.
-    NodeAdded(XorName),
+    NodeAdded(XorName, RoutingTable<XorName>),
     /// A node left the network and may have been a member of group authorities we also belong to.
-    NodeLost(XorName),
+    NodeLost(XorName, RoutingTable<XorName>),
     /// Our own group has been split, resulting in the included `Prefix` for our new group.
     GroupSplit(Prefix<XorName>),
     /// Our own group requires merged with others, resulting in the included `Prefix` for our new
@@ -85,12 +85,12 @@ impl Debug for Event {
                        src,
                        dst)
             }
-            Event::NodeAdded(ref node_name) => {
+            Event::NodeAdded(ref node_name, _) => {
                 write!(formatter,
                        "Event::NodeAdded({:?}, routing_table)",
                        node_name)
             }
-            Event::NodeLost(ref node_name) => {
+            Event::NodeLost(ref node_name, _) => {
                 write!(formatter, "Event::NodeLost({:?}, routing_table)", node_name)
             }
             Event::GroupSplit(ref prefix) => write!(formatter, "Event::GroupSplit({:?})", prefix),
