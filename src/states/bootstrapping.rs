@@ -24,6 +24,7 @@ use event::Event;
 use id::{FullId, PublicId};
 use maidsafe_utilities::serialisation;
 use messages::{DirectMessage, Message};
+use routing_table::Authority;
 use rust_sodium::crypto::hash::sha256;
 use rust_sodium::crypto::sign;
 use state_machine::Transition;
@@ -302,6 +303,10 @@ impl Base for Bootstrapping {
 
     fn stats(&mut self) -> &mut Stats {
         &mut self.stats
+    }
+
+    fn in_authority(&self, _: &Authority<XorName>) -> bool {
+        false
     }
 }
 

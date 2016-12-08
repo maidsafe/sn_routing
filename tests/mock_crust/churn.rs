@@ -17,7 +17,7 @@
 
 use itertools::Itertools;
 use rand::Rng;
-use routing::{Authority, DataIdentifier, Destination, Event, MessageId, QUORUM, Request, XorName};
+use routing::{Authority, DataIdentifier, Event, MessageId, QUORUM, Request, XorName};
 use routing::mock_crust::{Config, Network};
 use std::cmp;
 use std::collections::{HashMap, HashSet};
@@ -53,7 +53,7 @@ fn random_churn<R: Rng>(rng: &mut R,
 }
 
 /// The entries of a Get request: the data ID, message ID, source and destination authority.
-type GetKey = (DataIdentifier, MessageId, Authority, Authority);
+type GetKey = (DataIdentifier, MessageId, Authority<XorName>, Authority<XorName>);
 
 /// A set of expectations: Which nodes and groups are supposed to receive Get requests.
 #[derive(Default)]
@@ -61,7 +61,7 @@ struct ExpectedGets {
     /// The Get requests expected to be received.
     messages: HashSet<GetKey>,
     /// The group members of the receiving groups, at the time of sending.
-    groups: HashMap<Authority, HashSet<XorName>>,
+    groups: HashMap<Authority<XorName>, HashSet<XorName>>,
 }
 
 impl ExpectedGets {
@@ -70,24 +70,23 @@ impl ExpectedGets {
     /// if an individual sending node could not be found.
     fn send_and_expect(&mut self,
                        data_id: DataIdentifier,
-                       src: Authority,
-                       dst: Authority,
+                       src: Authority<XorName>,
+                       dst: Authority<XorName>,
                        nodes: &[TestNode],
                        min_group_size: usize) {
-        let src_dest = src.to_destination();
-        let dst_dest = dst.to_destination();
         let msg_id = MessageId::new();
         let mut sent_count = 0;
-        for node in nodes.iter().filter(|node| node.is_recipient(&src_dest)) {
+        for node in nodes.iter().filter(|node| node.is_recipient(&src)) {
             unwrap!(node.inner.send_get_request(src, dst, data_id, msg_id));
             sent_count += 1;
         }
-        match src_dest {
-            Destination::Group(_) => assert!(100 * sent_count >= QUORUM * min_group_size),
-            Destination::Node(_) => assert_eq!(sent_count, 1),
+        if src.is_group() {
+            assert!(100 * sent_count >= QUORUM * min_group_size);
+        } else {
+            assert_eq!(sent_count, 1);
         }
         if dst.is_group() && !self.groups.contains_key(&dst) {
-            let is_recipient = |n: &&TestNode| n.is_recipient(&dst_dest);
+            let is_recipient = |n: &&TestNode| n.is_recipient(&dst);
             let group = nodes.iter().filter(is_recipient).map(TestNode::name).collect();
             let _ = self.groups.insert(dst, group);
         }
@@ -102,8 +101,7 @@ impl ExpectedGets {
         let group_sizes: HashMap<_, _> = self.groups
             .iter_mut()
             .map(|(dst, group)| {
-                let dst_dest = dst.to_destination();
-                let is_recipient = |n: &&TestNode| n.is_recipient(&dst_dest);
+                let is_recipient = |n: &&TestNode| n.is_recipient(dst);
                 let new_group = nodes.iter().filter(is_recipient).map(TestNode::name).collect_vec();
                 let count = cmp::min(group.len(), new_group.len());
                 group.extend(new_group);

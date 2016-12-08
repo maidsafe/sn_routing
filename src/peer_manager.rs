@@ -15,13 +15,13 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use authority::Authority;
 use crust::{PeerId, PrivConnectionInfo, PubConnectionInfo};
 use id::PublicId;
 use itertools::Itertools;
 use rand;
 use routing_table::{OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix, RemovalDetails,
                     RoutingTable};
+use routing_table::Authority;
 use routing_table::Error as RoutingTableError;
 use rust_sodium::crypto::sign;
 use std::{error, fmt, mem};
@@ -71,7 +71,7 @@ impl error::Error for Error {
 pub enum PeerState {
     /// Waiting for Crust to prepare our `PrivConnectionInfo`. Contains source and destination for
     /// sending it to the peer, and their connection info, if we already received it.
-    ConnectionInfoPreparing(Authority, Authority, Option<PubConnectionInfo>),
+    ConnectionInfoPreparing(Authority<XorName>, Authority<XorName>, Option<PubConnectionInfo>),
     /// The prepared connection info that has been sent to the peer.
     ConnectionInfoReady(PrivConnectionInfo),
     /// We called `connect` and are waiting for a `NewPeer` event.
@@ -120,9 +120,9 @@ pub struct ConnectionInfoPreparedResult {
     /// The peer's public ID.
     pub pub_id: PublicId,
     /// The source authority for sending the connection info.
-    pub src: Authority,
+    pub src: Authority<XorName>,
     /// The destination authority for sending the connection info.
-    pub dst: Authority,
+    pub dst: Authority<XorName>,
     /// If the peer's connection info was already present, the peer has been moved to
     /// `CrustConnecting` status. Crust's `connect` method should be called with these infos now.
     pub infos: Option<(PrivConnectionInfo, PubConnectionInfo)>,
@@ -748,8 +748,8 @@ impl PeerManager {
     /// Inserts the given connection info in the map to wait for the preparation of our own info, or
     /// returns both if that's already present and sets the status to `CrustConnecting`.
     pub fn connection_info_received(&mut self,
-                                    src: Authority,
-                                    dst: Authority,
+                                    src: Authority<XorName>,
+                                    dst: Authority<XorName>,
                                     pub_id: PublicId,
                                     their_info: PubConnectionInfo)
                                     -> Result<ConnectionInfoReceivedResult, Error> {
@@ -804,8 +804,8 @@ impl PeerManager {
     /// Returns a new token for Crust's `prepare_connection_info` and puts the given peer into
     /// `ConnectionInfoPreparing` status.
     pub fn get_connection_token(&mut self,
-                                src: Authority,
-                                dst: Authority,
+                                src: Authority<XorName>,
+                                dst: Authority<XorName>,
                                 pub_id: PublicId)
                                 -> Option<u32> {
         match self.get_state_by_name(pub_id.name()) {
@@ -954,14 +954,14 @@ impl PeerManager {
 
 #[cfg(all(test, feature = "use-mock-crust"))]
 mod tests {
-    use authority::Authority;
     use id::FullId;
     use mock_crust::Endpoint;
     use mock_crust::crust::{PeerId, PrivConnectionInfo, PubConnectionInfo};
+    use routing_table::Authority;
     use super::*;
     use xor_name::{XOR_NAME_LEN, XorName};
 
-    fn node_auth(byte: u8) -> Authority {
+    fn node_auth(byte: u8) -> Authority<XorName> {
         Authority::ManagedNode(XorName([byte; XOR_NAME_LEN]))
     }
 

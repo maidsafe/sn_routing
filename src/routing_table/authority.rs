@@ -16,27 +16,28 @@
 // relating to use of the SAFE Network Software.
 
 use crust::PeerId;
-use routing_table::Destination;
 use rust_sodium::crypto::{hash, sign};
-use std::fmt::{self, Debug, Formatter};
-use xor_name::XorName;
+use std::fmt::{self, Debug, Display, Formatter};
+use super::Xorable;
 
 /// An entity that can act as a source or destination of a message.
 ///
 /// An `Authority` can be an individual `Client` or `ManagedNode`, or a group of nodes, like a
 /// `NodeManager`, `ClientManager` or `NaeManager`.
 #[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Hash)]
-pub enum Authority {
+pub enum Authority<N: Xorable> {
     /// Manager of a Client.  XorName is the hash of the Client's `client_key`.
-    ClientManager(XorName),
+    ClientManager(N),
     /// Manager of a network-addressable element, i.e. the group matching this name.
     /// `XorName` is the name of the element in question.
-    NaeManager(XorName),
+    NaeManager(N),
     /// Manager of a ManagedNode.  XorName is that of the ManagedNode.
-    NodeManager(XorName),
+    NodeManager(N),
+    /// A set of nodes with names sharing a common prefix.
+    Section(N),
     /// A non-client node (i.e. a vault) which is managed by NodeManagers.  XorName is provided
     /// by the network relocation process immediately after bootstrapping.
-    ManagedNode(XorName),
+    ManagedNode(N),
     /// A Client.
     Client {
         /// The client's public signing key.  The hash of this specifies the location of the Client
@@ -46,20 +47,26 @@ pub enum Authority {
         peer_id: PeerId,
         /// The name of the single ManagedNode which the Client connects to and proxies all messages
         /// through.
-        proxy_node_name: XorName,
+        proxy_node_name: N,
     },
 }
 
-impl Authority {
+impl<N: Xorable> Authority<N> {
     /// Returns true if group authority, otherwise false.
     pub fn is_group(&self) -> bool {
         match *self {
             Authority::ClientManager(_) |
             Authority::NaeManager(_) |
-            Authority::NodeManager(_) => true,
+            Authority::NodeManager(_) |
+            Authority::Section(_) => true,
             Authority::ManagedNode(_) |
             Authority::Client { .. } => false,
         }
+    }
+
+    /// Returns `true` if the destination is an individual node, and `false` if it is a group.
+    pub fn is_node(&self) -> bool {
+        !self.is_group()
     }
 
     /// Returns true if a client, false if a node or group.
@@ -72,27 +79,19 @@ impl Authority {
     }
 
     /// Returns the name of authority.
-    pub fn name(&self) -> &XorName {
+    pub fn name(&self) -> &N {
         match *self {
             Authority::ClientManager(ref name) |
             Authority::NaeManager(ref name) |
             Authority::NodeManager(ref name) |
+            Authority::Section(ref name) |
             Authority::ManagedNode(ref name) => name,
             Authority::Client { ref proxy_node_name, .. } => proxy_node_name,
         }
     }
-
-    /// Returns the `Destination` for the `RoutingTable`.
-    pub fn to_destination(&self) -> Destination<XorName> {
-        if self.is_group() {
-            Destination::Group(*self.name())
-        } else {
-            Destination::Node(*self.name())
-        }
-    }
 }
 
-impl Debug for Authority {
+impl<N: Xorable + Display> Debug for Authority<N> {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
             Authority::ClientManager(ref name) => {
@@ -100,11 +99,12 @@ impl Debug for Authority {
             }
             Authority::NaeManager(ref name) => write!(formatter, "NaeManager(name: {})", name),
             Authority::NodeManager(ref name) => write!(formatter, "NodeManager(name: {})", name),
+            Authority::Section(ref name) => write!(formatter, "Section(name: {})", name),
             Authority::ManagedNode(ref name) => write!(formatter, "ManagedNode(name: {})", name),
             Authority::Client { ref client_key, ref proxy_node_name, ref peer_id } => {
                 write!(formatter,
                        "Client {{ client_name: {}, proxy_node_name: {}, peer_id: {:?} }}",
-                       XorName(hash::sha256::hash(&client_key[..]).0),
+                       N::from_hash(hash::sha256::hash(&client_key[..]).0),
                        proxy_node_name,
                        peer_id)
             }

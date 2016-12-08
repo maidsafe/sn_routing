@@ -17,7 +17,6 @@
 
 use ack_manager::{Ack, AckManager};
 use action::Action;
-use authority::Authority;
 use cache::Cache;
 use crust::{ConnectionInfoResult, CrustError, PeerId, PrivConnectionInfo, PubConnectionInfo,
             Service};
@@ -35,6 +34,7 @@ use peer_manager::{ConnectionInfoPreparedResult, ConnectionInfoReceivedResult, P
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use routing_table::{OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix, RemovalDetails,
                     Xorable};
+use routing_table::Authority;
 use routing_table::Error as RoutingTableError;
 #[cfg(feature = "use-mock-crust")]
 use routing_table::RoutingTable;
@@ -996,8 +996,8 @@ impl Node {
     // TODO: check whether these two methods can be merged into one.
     fn handle_connection_info_from_client(&mut self,
                                           conn_info: ConnectionInfo,
-                                          src: Authority,
-                                          dst: Authority)
+                                          src: Authority<XorName>,
+                                          dst: Authority<XorName>)
                                           -> Result<(), RoutingError> {
         self.peer_mgr.allow_connect(conn_info.public_id.name())?;
         self.connect(conn_info, dst, src)
@@ -1006,7 +1006,7 @@ impl Node {
     fn handle_connection_info_from_node(&mut self,
                                         conn_info: ConnectionInfo,
                                         src_name: XorName,
-                                        dst: Authority)
+                                        dst: Authority<XorName>)
                                         -> Result<(), RoutingError> {
         self.peer_mgr.allow_connect(&src_name)?;
         self.connect(conn_info, dst, Authority::ManagedNode(src_name))
@@ -1172,7 +1172,7 @@ impl Node {
     fn handle_get_node_name_response(&mut self,
                                      relocated_id: PublicId,
                                      groups: Vec<(Prefix<XorName>, Vec<PublicId>)>,
-                                     dst: Authority) {
+                                     dst: Authority<XorName>) {
         if !self.peer_mgr.routing_table().is_empty() {
             warn!("{:?} Received duplicate GetNodeName response.", self);
             return;
@@ -1205,7 +1205,7 @@ impl Node {
     // (i.e. a node is joining our group). Send the node our routing table.
     fn handle_expect_close_node_request(&mut self,
                                         expect_id: PublicId,
-                                        client_auth: Authority,
+                                        client_auth: Authority<XorName>,
                                         message_id: MessageId)
                                         -> Result<(), RoutingError> {
         if expect_id == *self.full_id.public_id() {
@@ -1250,7 +1250,7 @@ impl Node {
 
     // Received by Y; From A -> Y, or from any node to one of its bucket addresses.
     fn handle_get_close_group_request(&mut self,
-                                      src: Authority,
+                                      src: Authority<XorName>,
                                       dst_name: XorName,
                                       message_id: MessageId)
                                       -> Result<(), RoutingError> {
@@ -1284,7 +1284,7 @@ impl Node {
 
     fn handle_get_close_group_response(&mut self,
                                        close_group_ids: Vec<PublicId>,
-                                       dst: Authority)
+                                       dst: Authority<XorName>)
                                        -> Result<(), RoutingError> {
         for close_node_id in close_group_ids {
             if self.peer_mgr.routing_table().need_to_add(close_node_id.name()).is_ok() {
@@ -1429,8 +1429,8 @@ impl Node {
 
     fn connect(&mut self,
                conn_info: ConnectionInfo,
-               src: Authority,
-               dst: Authority)
+               src: Authority<XorName>,
+               dst: Authority<XorName>)
                -> Result<(), RoutingError> {
         let decipher_result = box_::open(&conn_info.encrypted_connection_info,
                                          &box_::Nonce(conn_info.nonce_bytes),
@@ -1476,8 +1476,8 @@ impl Node {
 
     // ----- Send Functions -----------------------------------------------------------------------
     fn send_user_message(&mut self,
-                         src: Authority,
-                         dst: Authority,
+                         src: Authority<XorName>,
+                         dst: Authority<XorName>,
                          user_msg: UserMessage,
                          priority: u8)
                          -> Result<(), RoutingError> {
@@ -1630,17 +1630,8 @@ impl Node {
         }
     }
 
-    /// Returns whether we are a part of the given authority.
-    fn in_authority(&self, auth: &Authority) -> bool {
-        if let Authority::Client { ref client_key, .. } = *auth {
-            client_key == self.full_id.public_id().signing_public_key()
-        } else {
-            self.is_proper() && self.peer_mgr.routing_table().is_recipient(&auth.to_destination())
-        }
-    }
-
     /// Returns the peer that is responsible for collecting our signature for a group message.
-    fn get_signature_target(&self, src: &Authority, route: u8) -> Option<XorName> {
+    fn get_signature_target(&self, src: &Authority<XorName>, route: u8) -> Option<XorName> {
         if !src.is_group() {
             return Some(*self.name());
         }
@@ -1675,7 +1666,7 @@ impl Node {
         if self.is_proper() && !force_via_proxy {
             let targets: HashSet<_> = self.peer_mgr
                 .routing_table()
-                .targets(&routing_msg.dst.to_destination(), *hop, route as usize)?
+                .targets(&routing_msg.dst, *hop, route as usize)?
                 .into_iter()
                 .filter(|target| !sent_to.contains(target))
                 .collect();
@@ -1742,8 +1733,8 @@ impl Node {
 
     fn send_connection_info(&mut self,
                             their_public_id: PublicId,
-                            src: Authority,
-                            dst: Authority)
+                            src: Authority<XorName>,
+                            dst: Authority<XorName>)
                             -> Result<(), RoutingError> {
         let their_name = *their_public_id.name();
         if let Some(peer_id) = self.peer_mgr
@@ -1853,7 +1844,9 @@ impl Node {
         }
     }
 
-    fn send_own_group_merge(&mut self, merge_details: OwnMergeDetails<XorName>, src: Authority) {
+    fn send_own_group_merge(&mut self,
+                            merge_details: OwnMergeDetails<XorName>,
+                            src: Authority<XorName>) {
         let groups = merge_details.groups
             .into_iter()
             .map(|(prefix, members)| {
@@ -1880,7 +1873,7 @@ impl Node {
     fn send_other_group_merge(&mut self,
                               targets: BTreeSet<Prefix<XorName>>,
                               merge_details: OtherMergeDetails<XorName>,
-                              src: Authority) {
+                              src: Authority<XorName>) {
         let group: BTreeSet<PublicId> =
             self.peer_mgr.get_pub_ids(&merge_details.group).into_iter().collect();
         for target in &targets {
@@ -1957,6 +1950,10 @@ impl Base for Node {
 
     fn full_id(&self) -> &FullId {
         &self.full_id
+    }
+
+    fn in_authority(&self, auth: &Authority<XorName>) -> bool {
+        self.peer_mgr.routing_table().in_authority(auth)
     }
 
     fn handle_lost_peer(&mut self, peer_id: PeerId) -> Transition {
