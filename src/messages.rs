@@ -625,9 +625,7 @@ impl Debug for MessageContent {
                        message_id)
             }
             MessageContent::SectionUpdate { ref prefix, ref members } => {
-                write!(formatter,
-                       "SectionUpdate {{ {:?}, {:?} }}",
-                       prefix, members)
+                write!(formatter, "SectionUpdate {{ {:?}, {:?} }}", prefix, members)
             }
             MessageContent::GroupSplit(ref prefix, ref joining_node) => {
                 write!(formatter, "GroupSplit({:?}, {:?})", prefix, joining_node)

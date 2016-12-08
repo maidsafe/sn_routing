@@ -882,6 +882,7 @@ impl Node {
                 return;
             }
             Ok(true) => {
+                // i.e. the group should split
                 let our_group_prefix = *self.peer_mgr.routing_table().our_group_prefix();
                 // In the future we'll look to remove this restriction so we always call
                 // `send_group_split()` here and also check whether another round of splitting is
@@ -904,6 +905,12 @@ impl Node {
         if let Err(err) = self.event_sender.send(event) {
             error!("{:?} Error sending event to routing user - {:?}", self, err);
         }
+        
+        if self.peer_mgr.routing_table().is_in_our_group(public_id.name()) {
+            // TODO: we probably don't need to send this if we're splitting, but in that case
+            // we should send something else instead. This will do for now.
+            self.send_section_update();
+        }
 
         for dst_id in self.peer_mgr.peers_needing_tunnel() {
             trace!("{:?} Asking {:?} to serve as a tunnel for {:?}",
@@ -912,6 +919,38 @@ impl Node {
                    dst_id);
             let tunnel_request = DirectMessage::TunnelRequest(dst_id);
             let _ = self.send_direct_message(&peer_id, tunnel_request);
+        }
+    }
+
+    // Tell all neighbouring sections that our member list changed.
+    // Currently we only send this when nodes join and it's only used to add missing members.
+    fn send_section_update(&mut self) {
+        let names = self.peer_mgr.routing_table().our_names();
+        // TODO: why does the method return a HashSet? A Vec is fine for us
+        let members = self.peer_mgr.get_pub_ids(&names).iter().cloned().collect();
+
+        let content = MessageContent::SectionUpdate {
+            prefix: *self.peer_mgr.routing_table().our_group_prefix(),
+            members: members,
+        };
+
+        let neighbours = self.peer_mgr.routing_table().other_prefixes();
+        for neighbour_pfx in neighbours {
+            let request_msg = RoutingMessage {
+                src: Authority::NaeManager(self.peer_mgr
+                    .routing_table()
+                    .our_group_prefix()
+                    .lower_bound()),
+                dst: Authority::NaeManager(neighbour_pfx.lower_bound()),
+                content: content.clone(),
+            };
+
+            if let Err(err) = self.send_routing_message(request_msg) {
+                debug!("{:?} Failed to send section update to {:?}: {:?}",
+                    self,
+                    neighbour_pfx,
+                    err);
+            }
         }
     }
 

@@ -324,7 +324,9 @@ impl PeerManager {
         Ok(result)
     }
 
-    /// Tries to add the given peer to the routing table, and returns the result, if successful.
+    /// Tries to add the given peer to the routing table. If successful, this returns `Ok(true)` if
+    /// the addition should cause our group to split or `Ok(false)` if the addition shouldn't cause
+    /// a split.
     pub fn add_to_routing_table(&mut self,
                                 pub_id: PublicId,
                                 peer_id: PeerId)
