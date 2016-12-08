@@ -761,21 +761,27 @@ impl Node {
 
     fn handle_node_approval(&mut self, groups: Vec<(Prefix<XorName>, Vec<PublicId>)>) {
         let result = self.peer_mgr.handle_node_approval();
-        for peer_info in &result {
-            self.add_to_routing_table(&peer_info.0, &peer_info.1);
-        }
-        for pub_id in groups.into_iter().flat_map(|(_, group)| group.into_iter()) {
-            if !self.peer_mgr.routing_table().has(pub_id.name()) {
-                debug!("{:?} Sending connection info to {:?} on NodeApproval.",
-                       self,
-                       pub_id);
-                let src = Authority::ManagedNode(*self.name());
-                let node_auth = Authority::ManagedNode(*pub_id.name());
-                if let Err(error) = self.send_connection_info(pub_id, src, node_auth) {
-                    debug!("{:?} - Failed to send connection info to {:?}: {:?}",
-                           self,
-                           pub_id,
-                           error);
+        if result.len() > 0 {
+            self.peer_mgr.populate_routing_table(&groups);
+            for peer_info in &result {
+                self.add_to_routing_table(&peer_info.0, &peer_info.1);
+            }
+
+            for group in &groups {
+                for pub_id in &group.1 {
+                    if !self.peer_mgr.routing_table().has(pub_id.name()) {
+                        debug!("{:?} Sending connection info to {:?} on NodeApproval.",
+                               self,
+                               pub_id);
+                        let src = Authority::ManagedNode(*self.name());
+                        let node_auth = Authority::ManagedNode(*pub_id.name());
+                        if let Err(error) = self.send_connection_info(*pub_id, src, node_auth) {
+                            debug!("{:?} - Failed to send connection info to {:?}: {:?}",
+                                   self,
+                                   pub_id,
+                                   error);
+                        }
+                    }
                 }
             }
         }
@@ -1351,8 +1357,7 @@ impl Node {
         self.get_node_name_timer_token = None;
 
         self.full_id.public_id_mut().set_name(*relocated_id.name());
-        let groups = vec![group.clone()];
-        self.peer_mgr.reset_routing_table(*self.full_id.public_id(), &groups);
+        self.peer_mgr.restart_routing_table(*self.full_id.public_id());
 
         for pub_id in group.1.into_iter() {
             self.peer_mgr.add_as_peer_candidate(*pub_id.name());

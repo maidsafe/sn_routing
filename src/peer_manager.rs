@@ -312,6 +312,32 @@ impl PeerManager {
         self.cleanup_proxy_peer_id();
     }
 
+    /// Clears the routing table and resets this node's public ID.
+    pub fn restart_routing_table(&mut self, our_public_id: PublicId) {
+        let min_group_size = self.routing_table.min_group_size();
+        self.our_public_id = our_public_id;
+
+        let new_rt = RoutingTable::new(*our_public_id.name(), min_group_size);
+        self.routing_table = new_rt;
+    }
+
+    /// Populates the routing table.
+    pub fn populate_routing_table(&mut self, groups: &[Group]) {
+        let min_group_size = self.routing_table.min_group_size();
+        let groups_as_names = groups.into_iter()
+            .map(|&(ref prefix, ref members)| {
+                (*prefix, members.into_iter().map(|pub_id| *pub_id.name()).collect_vec())
+            })
+            .collect_vec();
+        // TODO - nothing can be done to recover from an error here - use `unwrap!` for now, but
+        // consider refactoring to return an error which can be used to transition the state
+        // machine to `Terminate`.
+        let new_rt = unwrap!(RoutingTable::new_with_groups(*self.our_public_id.name(),
+                                                           min_group_size,
+                                                           groups_as_names));
+        self.routing_table = new_rt;
+    }
+
     /// Returns the routing table.
     pub fn routing_table(&self) -> &RoutingTable<XorName> {
         &self.routing_table
