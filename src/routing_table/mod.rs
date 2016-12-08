@@ -363,10 +363,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         self.closest_names(name, count).is_some()
     }
 
-    /// Returns the `count` closest entries to `name` in the routing table, including our own name,
-    /// sorted by ascending distance to `name`. If we are not close, returns `None`.
-    pub fn closest_names(&self, name: &T, count: usize) -> Option<Vec<&T>> {
-        let result = self.groups
+    fn all_closest_names(&self, name: &T, count: usize) -> Vec<&T> {
+        self.groups
             .iter()
             .chain(iter::once((&self.our_group_prefix, &self.our_group)))
             .sorted_by(|&(pfx0, _), &(pfx1, _)| pfx0.cmp_distance(pfx1, name))
@@ -382,7 +380,13 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                     .into_iter()
             })
             .take(count)
-            .collect_vec();
+            .collect_vec()
+    }
+
+    /// Returns the `count` closest entries to `name` in the routing table, including our own name,
+    /// sorted by ascending distance to `name`. If we are not close, returns `None`.
+    pub fn closest_names(&self, name: &T, count: usize) -> Option<Vec<&T>> {
+        let result = self.all_closest_names(name, count);
         if result.contains(&&self.our_name) {
             Some(result)
         } else {
@@ -725,28 +729,35 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                    route: usize)
                    -> Result<HashSet<T>, Error> {
         let target_name = dst.name();
-        let (closest_group, target_name) = if dst.is_group() {
-            let (prefix, group) = self.closest_group(target_name);
+        let (closest_section, target_name) = if dst.is_section() || dst.is_group() {
+            let (prefix, section) = self.closest_section(target_name);
             if *prefix == self.our_group_prefix {
-                return Ok(group.clone());
+                if dst.is_section() {
+                    return Ok(section.clone());
+                } else {
+                    return Ok(self.all_closest_names(target_name, self.min_group_size)
+                        .into_iter()
+                        .cloned()
+                        .collect());
+                }
             }
-            (group, target_name)
+            (section, target_name)
         } else {
             if *target_name == self.our_name {
                 return Ok(HashSet::new());
             }
-            let (_, group) = self.closest_group(target_name);
+            let (_, group) = self.closest_section(target_name);
             if group.contains(target_name) {
                 return Ok(iter::once(*target_name).collect());
             }
             // TODO: This is temporarily disabled for the cases where we have not connected to
             //       all needed contacts yet and may have empty or incomplete groups.
-            // } else if *closest_group_prefix == self.our_group_prefix {
+            // } else if *closest_section_prefix == self.our_group_prefix {
             //     return Err(Error::NoSuchPeer);
             // }
             (group, target_name)
         };
-        Ok(iter::once(self.get_routeth_node(closest_group, *target_name, Some(exclude), route)?)
+        Ok(iter::once(self.get_routeth_node(closest_section, *target_name, Some(exclude), route)?)
             .collect())
     }
 
@@ -891,9 +902,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         self.groups.keys().find(|&prefix| prefix.matches(name)).cloned()
     }
 
-    // Returns the prefix of the group closest to `name`, regardless of whether `name` belongs in
-    // that group or not, and the group itself.
-    fn closest_group(&self, name: &T) -> (&Prefix<T>, &HashSet<T>) {
+    // Returns the prefix of the section closest to `name`, regardless of whether `name` belongs in
+    // that section or not, and the section itself.
+    fn closest_section(&self, name: &T) -> (&Prefix<T>, &HashSet<T>) {
         let mut result = (&self.our_group_prefix, &self.our_group);
         for entry in &self.groups {
             if result.0.cmp_distance(entry.0, name) == Ordering::Greater {

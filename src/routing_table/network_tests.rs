@@ -229,16 +229,17 @@ impl Network {
         received.push(src);
         while let Some(node) = received.pop() {
             handled.insert(node); // `node` is now handling the message and relaying it.
-            if dst.is_group() {
-                for target in unwrap!(self.nodes[dst.name()].targets(&dst, src, route)) {
-                    if !handled.contains(&target) && !received.contains(&target) {
-                        received.push(target);
-                    }
+            for target in unwrap!(self.nodes[&node].targets(&dst, src, route)) {
+                if !handled.contains(&target) && !received.contains(&target) {
+                    received.push(target);
                 }
             }
         }
         if dst.is_node() {
-            assert!(handled.contains(dst.name()));
+            assert!(handled.contains(dst.name()),
+                    "Message to {:?} only handled by {:?}",
+                    dst,
+                    handled);
         } else {
             let close_node = self.close_node(*dst.name());
             for node in unwrap!(self.nodes[&close_node].close_names(dst.name())) {

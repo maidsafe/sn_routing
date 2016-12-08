@@ -57,16 +57,35 @@ impl<N: Xorable> Authority<N> {
         match *self {
             Authority::ClientManager(_) |
             Authority::NaeManager(_) |
-            Authority::NodeManager(_) |
-            Authority::Section(_) => true,
+            Authority::NodeManager(_) => true,
+            Authority::Section(_) |
             Authority::ManagedNode(_) |
             Authority::Client { .. } => false,
         }
     }
 
-    /// Returns `true` if the destination is an individual node, and `false` if it is a group.
+    /// Returns true if section authority, otherwise false.
+    pub fn is_section(&self) -> bool {
+        match *self {
+            Authority::ClientManager(_) |
+            Authority::NaeManager(_) |
+            Authority::NodeManager(_) |
+            Authority::ManagedNode(_) |
+            Authority::Client { .. } => false,
+            Authority::Section(_) => true,
+        }
+    }
+
+    /// Returns `true` if the destination is an individual node, and `false` otherwise.
     pub fn is_node(&self) -> bool {
-        !self.is_group()
+        match *self {
+            Authority::ClientManager(_) |
+            Authority::NaeManager(_) |
+            Authority::Section(_) |
+            Authority::NodeManager(_) => false,
+            Authority::ManagedNode(_) |
+            Authority::Client { .. } => true,
+        }
     }
 
     /// Returns true if a client, false if a node or group.
