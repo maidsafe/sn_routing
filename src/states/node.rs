@@ -656,9 +656,6 @@ impl Node {
             (ExpectCloseNode { expect_id, client_auth, message_id }, Section(_), Section(_)) => {
                 self.handle_expect_close_node_request(expect_id, client_auth, message_id)
             }
-            (GetCloseGroup(message_id), src, NaeManager(dst_name)) => {
-                self.handle_get_close_group_request(src, dst_name, message_id)
-            }
             (ConnectionInfo(conn_info), src @ Client { .. }, dst @ ManagedNode(_)) => {
                 self.handle_connection_info_from_client(conn_info, src, dst)
             }
@@ -666,8 +663,8 @@ impl Node {
             (ConnectionInfo(conn_info), ManagedNode(src_name), dst @ ManagedNode(_)) => {
                 self.handle_connection_info_from_node(conn_info, src_name, dst)
             }
-            (GetCloseGroupResponse { close_group_ids, .. }, ManagedNode(_), dst) => {
-                self.handle_get_close_group_response(close_group_ids, dst)
+            (SectionUpdate { .. }, ManagedNode(_), dst) => {
+                self.handle_section_update(dst)
             }
             (GroupSplit(prefix, joining_node), _, _) => {
                 self.handle_group_split(prefix, joining_node)
@@ -1247,53 +1244,8 @@ impl Node {
         self.send_routing_message(response_msg)
     }
 
-    // Received by Y; From A -> Y, or from any node to one of its bucket addresses.
-    fn handle_get_close_group_request(&mut self,
-                                      src: Authority<XorName>,
-                                      dst_name: XorName,
-                                      message_id: MessageId)
-                                      -> Result<(), RoutingError> {
-        // If msg is from ourselves, ignore it.
-        if src.name() == self.name() {
-            return Ok(());
-        }
-
-        let public_ids = match self.peer_mgr.routing_table().close_names(&dst_name) {
-            Some(close_group) => self.peer_mgr.get_pub_ids(&close_group),
-            None => return Err(RoutingError::InvalidDestination),
-        };
-
-        trace!("{:?} Sending GetCloseGroup response with {:?} to {:?}.",
-               self,
-               public_ids.iter().map(PublicId::name).collect_vec(),
-               src);
-        let response_content = MessageContent::GetCloseGroupResponse {
-            close_group_ids: public_ids.into_iter().collect(),
-            message_id: message_id,
-        };
-
-        let response_msg = RoutingMessage {
-            src: Authority::ManagedNode(*self.name()),
-            dst: src,
-            content: response_content,
-        };
-
-        self.send_routing_message(response_msg)
-    }
-
-    fn handle_get_close_group_response(&mut self,
-                                       close_group_ids: Vec<PublicId>,
-                                       dst: Authority<XorName>)
-                                       -> Result<(), RoutingError> {
-        for close_node_id in close_group_ids {
-            if self.peer_mgr.routing_table().need_to_add(close_node_id.name()).is_ok() {
-                debug!("{:?} Sending connection info to {:?} on GetCloseGroup response.",
-                       self,
-                       close_node_id);
-                let ci_dst = Authority::ManagedNode(*close_node_id.name());
-                self.send_connection_info(close_node_id, dst, ci_dst)?;
-            }
-        }
+    fn handle_section_update(&mut self, _dst: Authority) -> Result<(), RoutingError> {
+        // TODO
         Ok(())
     }
 
