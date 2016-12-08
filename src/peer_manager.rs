@@ -301,6 +301,11 @@ impl PeerManager {
         &self.routing_table
     }
 
+    /// Marks a node as being needed
+    pub fn mark_needed(&mut self, name: &XorName) -> Result<(), RoutingTableError> {
+        self.routing_table.mark_needed(name)
+    }
+
     /// Wraps the routing table function of the same name and maps `XorName`s to `PublicId`s.
     pub fn expect_add_to_our_group(&self,
                                    expected_name: &XorName,

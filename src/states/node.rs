@@ -663,8 +663,8 @@ impl Node {
             (ConnectionInfo(conn_info), ManagedNode(src_name), dst @ ManagedNode(_)) => {
                 self.handle_connection_info_from_node(conn_info, src_name, dst)
             }
-            (SectionUpdate { .. }, ManagedNode(_), dst) => {
-                self.handle_section_update(dst)
+            (SectionUpdate { prefix, members }, NaeManager(_), NaeManager(_)) => {
+                self.handle_section_update(prefix, members)
             }
             (GroupSplit(prefix, joining_node), _, _) => {
                 self.handle_group_split(prefix, joining_node)
@@ -905,7 +905,7 @@ impl Node {
         if let Err(err) = self.event_sender.send(event) {
             error!("{:?} Error sending event to routing user - {:?}", self, err);
         }
-        
+
         if self.peer_mgr.routing_table().is_in_our_group(public_id.name()) {
             // TODO: we probably don't need to send this if we're splitting, but in that case
             // we should send something else instead. This will do for now.
@@ -1283,8 +1283,31 @@ impl Node {
         self.send_routing_message(response_msg)
     }
 
-    fn handle_section_update(&mut self, _dst: Authority) -> Result<(), RoutingError> {
-        // TODO
+    fn handle_section_update(&mut self,
+                             prefix: Prefix<XorName>,
+                             members: Vec<PublicId>)
+                             -> Result<(), RoutingError> {
+        // Filter list of members to just those we don't know about:
+        let members = if let Some(section) = self.peer_mgr.routing_table().section_ref(&prefix) {
+            let f = |id: &PublicId| !(section.is_member(id.name()) || section.is_needed(id.name()));
+            members.into_iter().filter(f).collect_vec()
+        } else {
+            warn!("{:?} Section update received from unknown neighbour {:?}", self, prefix);
+            return Ok(());
+        };
+
+        let own_name = *self.name();
+        for pub_id in members {
+            self.peer_mgr.mark_needed(pub_id.name())?;
+            if let Err(error) = self.send_connection_info(pub_id,
+                                                          Authority::ManagedNode(own_name),
+                                                          Authority::ManagedNode(*pub_id.name())) {
+                debug!("{:?} - Failed to send connection info to {:?}: {:?}",
+                    self,
+                    pub_id,
+                    error);
+            }
+        }
         Ok(())
     }
 
