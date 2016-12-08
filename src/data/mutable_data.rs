@@ -157,6 +157,51 @@ pub enum EntryAction {
     Del(u64),
 }
 
+/// Helper struct to build entry actions on `MutableData`
+#[derive(Debug, Clone)]
+pub struct EntryActions {
+    actions: BTreeMap<Vec<u8>, EntryAction>,
+}
+
+impl EntryActions {
+    /// Create a helper to simplify construction of `MutableData` actions
+    pub fn new() -> Self {
+        EntryActions { actions: BTreeMap::new() }
+    }
+
+    /// Insert a new key-value pair
+    pub fn ins(mut self, key: Vec<u8>, content: Vec<u8>, version: u64) -> Self {
+        let _ = self.actions.insert(key,
+                                    EntryAction::Ins(Value {
+                                        entry_version: version,
+                                        content: content,
+                                    }));
+        self
+    }
+
+    /// Update existing key-value pair
+    pub fn update(mut self, key: Vec<u8>, content: Vec<u8>, version: u64) -> Self {
+        let _ = self.actions.insert(key,
+                                    EntryAction::Update(Value {
+                                        entry_version: version,
+                                        content: content,
+                                    }));
+        self
+    }
+
+    /// Delete existing key
+    pub fn del(mut self, key: Vec<u8>, version: u64) -> Self {
+        let _ = self.actions.insert(key, EntryAction::Del(version));
+        self
+    }
+}
+
+impl Into<BTreeMap<Vec<u8>, EntryAction>> for EntryActions {
+    fn into(self) -> BTreeMap<Vec<u8>, EntryAction> {
+        self.actions
+    }
+}
+
 impl MutableData {
     /// Creates a new MutableData
     pub fn new(name: XorName,
@@ -485,51 +530,41 @@ mod tests {
         let k1 = b"123".to_vec();
         let k2 = b"234".to_vec();
 
-        let mut v1 = BTreeMap::new();
-        let _ = v1.insert(k1.clone(),
-                          EntryAction::Ins(Value {
-                              content: b"abc".to_vec(),
-                              entry_version: 0,
-                          }));
-
-        let mut v2 = BTreeMap::new();
-        let _ = v2.insert(k2.clone(),
-                          EntryAction::Ins(Value {
-                              content: b"def".to_vec(),
-                              entry_version: 0,
-                          }));
-
         let mut owners = BTreeSet::new();
         owners.insert(owner);
         let mut md = unwrap!(MutableData::new(rand::random(), 0, perms, BTreeMap::new(), owners));
 
         // Check insert permissions
-        assert!(md.mutate_entries(v1.clone(), pk1).is_ok());
-        assert_err!(md.mutate_entries(v2.clone(), pk2),
+        assert!(md.mutate_entries(EntryActions::new()
+                                .ins(k1.clone(), b"abc".to_vec(), 0)
+                                .into(),
+                            pk1)
+            .is_ok());
+
+        assert_err!(md.mutate_entries(EntryActions::new()
+                                          .ins(k2.clone(), b"def".to_vec(), 0)
+                                          .into(),
+                                      pk2),
                     ClientError::AccessDenied);
 
         assert!(md.get(&k1).is_some());
 
         // Check update permissions
-        let _ = v1.insert(k1.clone(),
-                          EntryAction::Update(Value {
-                              content: b"def".to_vec(),
-                              entry_version: 1,
-                          }));
-        assert_err!(md.mutate_entries(v1.clone(), pk1),
+        let upd = EntryActions::new().update(k1.clone(), b"def".to_vec(), 1);
+
+        assert_err!(md.mutate_entries(upd.clone().into(), pk1),
                     ClientError::AccessDenied);
 
-        assert!(md.mutate_entries(v1.clone(), pk2).is_ok());
+        assert!(md.mutate_entries(upd.into(), pk2).is_ok());
 
         // Check delete permissions (which should be implicitly forbidden)
-        let mut del = BTreeMap::new();
-        let _ = del.insert(k1.clone(), EntryAction::Del(2));
-        assert_err!(md.mutate_entries(del.clone(), pk1),
+        let del = EntryActions::new().del(k1.clone(), 2);
+        assert_err!(md.mutate_entries(del.clone().into(), pk1),
                     ClientError::AccessDenied);
         assert!(md.get(&k1).is_some());
 
         // Actions requested by owner should always be allowed
-        assert!(md.mutate_entries(del, owner).is_ok());
+        assert!(md.mutate_entries(del.into(), owner).is_ok());
         assert_eq!(md.get(&k1).unwrap().content, Vec::<u8>::new());
     }
 
