@@ -739,7 +739,8 @@ impl Node {
                                  validity: bool)
                                  -> Result<(), RoutingError> {
         let groups = self.peer_mgr.get_groups(&candidate_name, self.full_id.public_id())?;
-        let result = self.peer_mgr.handle_node_approval_vote(candidate_name, validity);
+        let (approval, peer_info) =
+            self.peer_mgr.handle_node_approval_vote(candidate_name, validity);
         let peer_id = if let Some(peer_id) = self.peer_mgr.get_peer_id(&candidate_name) {
             *peer_id
         } else {
@@ -748,7 +749,10 @@ impl Node {
         if !validity {
             self.disconnect_peer(&peer_id);
         }
-        if result && validity {
+        if approval && validity {
+            if let Some((pub_id, peer_id)) = peer_info {
+                self.add_to_routing_table(&pub_id, &peer_id);
+            }
             let direct_message = DirectMessage::NodeApproval { groups: groups };
             return self.send_direct_message(&peer_id, direct_message);
         }
@@ -757,8 +761,8 @@ impl Node {
 
     fn handle_node_approval(&mut self, groups: Vec<(Prefix<XorName>, Vec<PublicId>)>) {
         let result = self.peer_mgr.handle_node_approval();
-        for peer in &result {
-            self.add_to_routing_table(&peer.0, &peer.1);
+        for peer_info in &result {
+            self.add_to_routing_table(&peer_info.0, &peer_info.1);
         }
         for pub_id in groups.into_iter().flat_map(|(_, group)| group.into_iter()) {
             if !self.peer_mgr.routing_table().has(pub_id.name()) {

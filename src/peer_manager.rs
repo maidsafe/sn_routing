@@ -372,27 +372,32 @@ impl PeerManager {
         None
     }
 
-    pub fn handle_node_approval_vote(&mut self, candidate_name: XorName, validity: bool) -> bool {
+    pub fn handle_node_approval_vote(&mut self,
+                                     candidate_name: XorName,
+                                     validity: bool)
+                                     -> (bool, Option<(PublicId, PeerId)>) {
         if let Some((name, _, _)) = self.node_candidate {
             if name == candidate_name {
-                if validity {
+                let result = if validity {
                     let (pub_id, peer_id) = if let Some(peer) = self.peer_map
                         .get_by_name(&candidate_name) {
                         if let Some(peer_id) = peer.peer_id().clone() {
                             (*peer.pub_id(), *peer_id)
                         } else {
-                            return false;
+                            return (false, None);
                         }
                     } else {
-                        return false;
+                        return (false, None);
                     };
-                    let _ = self.add_to_routing_table(&pub_id, &peer_id);
-                }
+                    Some((pub_id, peer_id))
+                } else {
+                    None
+                };
                 self.node_candidate = None;
-                return true;
+                return (true, result);
             }
         }
-        false
+        (false, None)
     }
 
     pub fn handle_node_approval(&mut self) -> Vec<(PublicId, PeerId)> {
