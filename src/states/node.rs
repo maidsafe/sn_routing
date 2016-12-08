@@ -491,6 +491,17 @@ impl Node {
             DirectMessage::TunnelDisconnect(dst_id) => {
                 self.handle_tunnel_disconnect(peer_id, dst_id)
             }
+            DirectMessage::ResourceProof { seed, target_size, difficulty } => {
+                self.handle_resource_proof_request(peer_id, seed, target_size, difficulty)
+            }
+            DirectMessage::ResourceProofResponse { proof, leading_zero_bytes } => {
+                self.handle_resource_proof_response(peer_id, proof, leading_zero_bytes);
+                Ok(())
+            }
+            DirectMessage::NodeApproval { groups } => {
+                self.handle_node_approval(groups);
+                Ok(())
+            }
             msg @ DirectMessage::BootstrapIdentify { .. } |
             msg @ DirectMessage::BootstrapDeny => {
                 debug!("{:?} - Unhandled direct message: {:?}", self, msg);
@@ -679,25 +690,10 @@ impl Node {
              dst @ Authority::ManagedNode(_)) => {
                 self.handle_connection_info_from_node(conn_info, src_name, dst)
             }
-            (MessageContent::ResourceProof { seed, target_size, difficulty }, src, dst) => {
-                self.handle_resource_proof_request(dst, src, seed, target_size, difficulty)
-            }
-            (MessageContent::ResourceProofResponse { proof, leading_zero_bytes },
-             Authority::ManagedNode(src_name),
-             _) => {
-                self.handle_resource_proof_response(src_name, proof, leading_zero_bytes);
-                Ok(())
-            }
             (MessageContent::CandidateApproval(validity),
              Authority::NaeManager(_),
              Authority::NaeManager(candidate_name)) => {
                 self.handle_node_approval_vote(candidate_name, validity)
-            }
-            (MessageContent::NodeApproval { groups, .. },
-             Authority::NodeManager(_),
-             Authority::ManagedNode(_)) => {
-                self.handle_node_approval(groups);
-                Ok(())
             }
             (MessageContent::NodeApproval { relocated_id, groups },
              Authority::NodeManager(_),
@@ -742,82 +738,67 @@ impl Node {
                                  candidate_name: XorName,
                                  validity: bool)
                                  -> Result<(), RoutingError> {
+        let groups = self.peer_mgr.get_groups(&candidate_name, self.full_id.public_id())?;
         let result = self.peer_mgr.handle_node_approval_vote(candidate_name, validity);
+        let peer_id = if let Some(peer_id) = self.peer_mgr.get_peer_id(&candidate_name) {
+            *peer_id
+        } else {
+            return Ok(());
+        };
         if !validity {
-            let peer_id = if let Some(peer_id) = self.peer_mgr.get_peer_id(&candidate_name) {
-                *peer_id
-            } else {
-                return Ok(());
-            };
             self.disconnect_peer(&peer_id);
         }
         if result && validity {
-            let groups = self.peer_mgr.get_groups(&candidate_name, self.full_id.public_id())?;
-            let response_content =
-                MessageContent::NodeApproval { relocated_id: *self.full_id.public_id(),
-                                               groups: groups };
-
-            debug!("{:?} sending NodeApproval to {:?}: {:?}.",
-                   self,
-                   candidate_name,
-                   response_content);
-
-            let response_msg = RoutingMessage {
-                src: Authority::NodeManager(candidate_name),
-                dst: Authority::ManagedNode(candidate_name),
-                content: response_content,
-            };
-
-            return self.send_routing_message(response_msg);
+            let direct_message = DirectMessage::NodeApproval { groups: groups };
+            return self.send_direct_message(&peer_id, direct_message);
         }
         Ok(())
     }
 
     fn handle_node_approval(&mut self, groups: Vec<(Prefix<XorName>, Vec<PublicId>)>) {
-        self.peer_mgr.handle_node_approval();
+        let result = self.peer_mgr.handle_node_approval();
+        for peer in &result {
+            self.add_to_routing_table(&peer.0, &peer.1);
+        }
         for pub_id in groups.into_iter().flat_map(|(_, group)| group.into_iter()) {
-            debug!("{:?} Sending connection info to {:?} on NodeApproval.",
-                   self,
-                   pub_id);
-            let src = Authority::ManagedNode(*self.name());
-            let node_auth = Authority::ManagedNode(*pub_id.name());
-            if let Err(error) = self.send_connection_info(pub_id, src, node_auth) {
-                debug!("{:?} - Failed to send connection info to {:?}: {:?}",
+            if !self.peer_mgr.routing_table().has(pub_id.name()) {
+                debug!("{:?} Sending connection info to {:?} on NodeApproval.",
                        self,
-                       pub_id,
-                       error);
+                       pub_id);
+                let src = Authority::ManagedNode(*self.name());
+                let node_auth = Authority::ManagedNode(*pub_id.name());
+                if let Err(error) = self.send_connection_info(pub_id, src, node_auth) {
+                    debug!("{:?} - Failed to send connection info to {:?}: {:?}",
+                           self,
+                           pub_id,
+                           error);
+                }
             }
         }
     }
 
     fn handle_resource_proof_request(&mut self,
-                                     src: Authority,
-                                     dst: Authority,
+                                     peer_id: PeerId,
                                      seed: Vec<u8>,
                                      _target_size: u32,
                                      _difficulty: u32)
                                      -> Result<(), RoutingError> {
-        let response_content = MessageContent::ResourceProofResponse {
+        let direct_message = DirectMessage::ResourceProofResponse {
             proof: seed,
             leading_zero_bytes: 0,
         };
-        let response_msg = RoutingMessage {
-            src: src,
-            dst: dst,
-            content: response_content,
-        };
-
-        info!("{:?} Sending ResourceProofResponse to {:?}. This can take a while.",
-              self,
-              dst);
-
-        self.send_routing_message(response_msg)
+        self.send_direct_message(&peer_id, direct_message)
     }
 
     fn handle_resource_proof_response(&mut self,
-                                      name: XorName,
+                                      peer_id: PeerId,
                                       proof: Vec<u8>,
                                       leading_zero_bytes: u32) {
+        let name = if let Some(name) = self.peer_mgr.get_peer_name(&peer_id) {
+            *name
+        } else {
+            return;
+        };
         if let Some(valid_candidate) =
             self.peer_mgr
                 .verify_candidate(name, proof, leading_zero_bytes, RESOURCE_PROOF_DIFFICULTY) {
@@ -1004,19 +985,21 @@ impl Node {
             return;
         }
         if let Ok(Some((tunnel, seed))) = self.peer_mgr.is_node_candidate(&public_id, &peer_id) {
-            let (src, dst, content) = if tunnel {
+            if tunnel {
                 /// if connection is in tunnel, vote NO directly, don't carry out profiling
                 /// limitation: joining node ONLY carries out QUORAM valid connection/evaluations
                 info!("{:?} Sending CandidateApproval false to group rejeting {:?}.",
                       self,
                       *public_id.name());
                 // From Y -> Y
-                (Authority::NaeManager(*public_id.name()),
-                 Authority::NaeManager(*public_id.name()),
-                 MessageContent::CandidateApproval(false))
+                let _ = self.send_routing_message(RoutingMessage {
+                    src: Authority::NaeManager(*public_id.name()),
+                    dst: Authority::NaeManager(*public_id.name()),
+                    content: MessageContent::CandidateApproval(false),
+                });
             } else {
                 // From Y -> A
-                let request = MessageContent::ResourceProof {
+                let direct_message = DirectMessage::ResourceProof {
                     seed: seed,
                     target_size: resource_proof_target_size(self.peer_mgr
                         .routing_table()
@@ -1024,18 +1007,13 @@ impl Node {
                         .len()),
                     difficulty: RESOURCE_PROOF_DIFFICULTY,
                 };
-                let dst = Authority::ManagedNode(*public_id.name());
-                debug!("{:?} requesting resource_proof from node candidate {:?}: {:?}.",
+                let _ = self.send_direct_message(&peer_id, direct_message);
+
+                debug!("{:?} requesting resource_proof from node candidate {:?}.",
                        self,
-                       dst,
-                       request);
-                (Authority::ManagedNode(*self.name()), dst, request)
-            };
-            let _ = self.send_routing_message(RoutingMessage {
-                src: src,
-                dst: dst,
-                content: content,
-            });
+                       *public_id.name());
+
+            }
         } else {
             self.add_to_routing_table(&public_id, &peer_id);
         }

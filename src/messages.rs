@@ -133,6 +133,35 @@ pub enum DirectMessage {
     TunnelClosed(PeerId),
     /// Sent to a tunnel node to indicate the tunnel is not needed any more.
     TunnelDisconnect(PeerId),
+    /// Request a proof to be provided by the joining node
+    ///
+    /// This is sent from member of Group Y to the joining node
+    ResourceProof {
+        /// seed of proof
+        seed: Vec<u8>,
+        /// size of the proof
+        target_size: u32,
+        /// leading zero bits of the hash of the proof
+        difficulty: u32,
+    },
+    /// Provide a proof to the network
+    ///
+    /// This is sent from the joining node to member of Group Y
+    ResourceProofResponse {
+        /// Proof to be presented
+        proof: Vec<u8>,
+        /// Claimed leading zero bytes to be added to proof's header so that the hash matches
+        /// the difficulty requirement
+        leading_zero_bytes: u32,
+    },
+    /// Approves the joining node as a routing node.
+    ///
+    /// Sent from member of Group Y to the joining node.
+    NodeApproval {
+        /// The routing table shared by the nodes in our group, including the `PublicId`s of our
+        /// contacts.
+        groups: Vec<(Prefix<XorName>, Vec<PublicId>)>,
+    },
 }
 
 impl DirectMessage {
@@ -536,27 +565,6 @@ pub enum MessageContent {
         /// The `part_index`-th part of the serialised user message.
         payload: Vec<u8>,
     },
-    /// Request a proof to be provided by the joining node
-    ///
-    /// This is sent from Group Y to the joining node
-    ResourceProof {
-        /// seed of proof
-        seed: Vec<u8>,
-        /// size of the proof
-        target_size: u32,
-        /// leading zero bits of the hash of the proof
-        difficulty: u32,
-    },
-    /// Provide a proof to the network
-    ///
-    /// This is sent from the joining node to Group Y
-    ResourceProofResponse {
-        /// Proof to be presented
-        proof: Vec<u8>,
-        /// Claimed leading zero bytes to be added to proof's header so that the hash matches
-        /// the difficulty requirement
-        leading_zero_bytes: u32,
-    },
     /// Send among Group Y to vote for Accept or Reject a joining node
     CandidateApproval(bool),
     /// Approves the joining node as a routing node.
@@ -612,6 +620,22 @@ impl Debug for DirectMessage {
             }
             DirectMessage::TunnelDisconnect(peer_id) => {
                 write!(formatter, "TunnelDisconnect({:?})", peer_id)
+            }
+            DirectMessage::ResourceProof { ref seed, ref target_size, ref difficulty } => {
+                write!(formatter,
+                       "ResourceProof {{ {:?}, {:?}, {:?} }}",
+                       seed,
+                       target_size,
+                       difficulty)
+            }
+            DirectMessage::ResourceProofResponse { ref proof, ref leading_zero_bytes } => {
+                write!(formatter,
+                       "ResourceProofResponse {{ {:?}, {:?} }}",
+                       proof.len(),
+                       leading_zero_bytes)
+            }
+            DirectMessage::NodeApproval { ref groups } => {
+                write!(formatter, "NodeApproval {{ {:?} }}", groups)
             }
         }
     }
@@ -694,19 +718,6 @@ impl Debug for MessageContent {
                        priority,
                        cacheable,
                        hash)
-            }
-            MessageContent::ResourceProof { ref seed, ref target_size, ref difficulty } => {
-                write!(formatter,
-                       "ResourceProof {{ {:?}, {:?}, {:?} }}",
-                       seed,
-                       target_size,
-                       difficulty)
-            }
-            MessageContent::ResourceProofResponse { ref proof, ref leading_zero_bytes } => {
-                write!(formatter,
-                       "ResourceProofResponse {{ {:?}, {:?} }}",
-                       proof.len(),
-                       leading_zero_bytes)
             }
             MessageContent::CandidateApproval(approval) => {
                 write!(formatter, "CandidateApproval({})", approval)

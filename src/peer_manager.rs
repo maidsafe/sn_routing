@@ -331,7 +331,7 @@ impl PeerManager {
 
         let (prefix, names) = self.routing_table.expect_join_our_group(expected_name)?;
 
-        if names.len() > MIN_GROUP_SIZE {
+        if names.len() > 8 {
             self.node_candidate = None;
             let mut rng = SeededRng::new();
             let seed = rng.gen_iter().take(10).collect();
@@ -348,6 +348,7 @@ impl PeerManager {
                 public_ids.push(*peer.pub_id())
             }
         }
+        public_ids.sort();
 
         Ok((true, (prefix, public_ids)))
     }
@@ -394,20 +395,17 @@ impl PeerManager {
         false
     }
 
-    pub fn handle_node_approval(&mut self) {
+    pub fn handle_node_approval(&mut self) -> Vec<(PublicId, PeerId)> {
+        let mut result = vec![];
         for peer_name in &self.peer_candidates.clone() {
-            let (pub_id, peer_id) = if let Some(peer) = self.peer_map.get_by_name(peer_name) {
+            if let Some(peer) = self.peer_map.get_by_name(peer_name) {
                 if let Some(peer_id) = peer.peer_id().clone() {
-                    (*peer.pub_id(), *peer_id)
-                } else {
-                    continue;
+                    result.push((*peer.pub_id(), *peer_id));
                 }
-            } else {
-                continue;
-            };
-            let _ = self.add_to_routing_table(&pub_id, &peer_id);
+            }
         }
         self.peer_candidates.clear();
+        result
     }
 
     pub fn is_node_candidate(&mut self,
@@ -456,7 +454,10 @@ impl PeerManager {
                       name: &XorName,
                       our_public_id: &PublicId)
                       -> Result<Vec<Group>, RoutingTableError> {
-        let groups = self.routing_table.get_groups(name)?;
+        let groups = match self.routing_table.get_groups(name) {
+            Ok(groups) => groups,
+            Err(err) => return Err(err),
+        };
         let mut result = vec![];
         for (prefix, names) in groups {
             let mut public_ids = vec![];
@@ -782,6 +783,11 @@ impl PeerManager {
         })
     }
 
+    /// Returns the name of the given peer.
+    pub fn get_peer_name(&self, peer_id: &PeerId) -> Option<&XorName> {
+        self.peer_map.get(peer_id).map(Peer::name)
+    }
+
     /// Returns the peer with the given peer_id if it is already in one of the
     /// connected states.
     pub fn get_connected_peer(&self, peer_id: &PeerId) -> Option<&Peer> {
@@ -790,6 +796,7 @@ impl PeerManager {
                 PeerState::Client |
                 PeerState::JoiningNode |
                 PeerState::Proxy |
+                PeerState::Candidate(_) |
                 PeerState::Routing(_) => Some(peer),
                 _ => None,
             }
