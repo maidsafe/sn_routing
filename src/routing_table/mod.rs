@@ -331,18 +331,18 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         Iter { inner: self.groups.values().flat_map(iter).chain(&self.our_group) }
     }
 
-    /// Collects prefixes of all groups known by the routing table other than ours into a `HashSet`.
+    /// Collects prefixes of all groups known by the routing table other than ours into a
+    /// `BTreeSet`.
     pub fn other_prefixes(&self) -> BTreeSet<Prefix<T>> {
         self.groups.keys().cloned().collect()
     }
 
-    /// Collects prefixes of all groups known by the routing table into a `HashSet`.
+    /// Collects prefixes of all groups known by the routing table into a `BTreeSet`.
     pub fn prefixes(&self) -> BTreeSet<Prefix<T>> {
         self.groups.keys().cloned().chain(iter::once(self.our_group_prefix)).collect()
     }
 
     /// Returns all names in our section
-    // TODO: why construct a HashSet for the result?
     pub fn our_names(&self) -> HashSet<T> {
         let mut our_group = self.our_group.clone();
         let _ = our_group.insert(self.our_name);
@@ -351,8 +351,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     /// If our group is the closest one to `name`, returns all names in our group *including ours*,
     /// otherwise returns `None`.
-    // TODO(refactor): we should probably replace this with self.our_names() and something checking
-    // whether a name matches our prefix.
     pub fn close_names(&self, name: &T) -> Option<HashSet<T>> {
         if self.our_group_prefix.matches(name) {
             Some(self.our_names())

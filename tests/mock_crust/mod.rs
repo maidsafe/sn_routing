@@ -177,8 +177,6 @@ fn simultaneous_joining_nodes() {
     }
 
     let _ = poll_all(&mut nodes, &mut []);
-    nodes.retain(|node| !unwrap!(node.routing_table()).is_empty());
-    let _ = poll_all(&mut nodes, &mut []);
 
     verify_invariant_for_all_nodes(&nodes);
 }

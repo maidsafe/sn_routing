@@ -1007,13 +1007,12 @@ impl UserMessageCache {
 
 #[cfg(test)]
 mod tests {
-    use ack_manager::Ack;
     use data::{Data, ImmutableData};
     use id::FullId;
     use maidsafe_utilities;
     use maidsafe_utilities::serialisation::serialise;
     use rand;
-    use routing_table::Authority;
+    use routing_table::{Authority, Prefix};
     use rust_sodium::crypto::hash::sha256;
     use rust_sodium::crypto::sign;
     use std::iter;
@@ -1028,7 +1027,7 @@ mod tests {
         let routing_message = RoutingMessage {
             src: Authority::ClientManager(name),
             dst: Authority::ClientManager(name),
-            content: MessageContent::Ack(Ack::null(), 0),
+            content: MessageContent::GroupSplit(Prefix::new(0, name), name),
         };
         let full_id = FullId::new();
         let signed_message_result = SignedMessage::new(routing_message.clone(), &full_id);
@@ -1131,7 +1130,7 @@ mod tests {
         let routing_message = RoutingMessage {
             src: Authority::ClientManager(name),
             dst: Authority::ClientManager(name),
-            content: MessageContent::Ack(Ack::null(), 0),
+            content: MessageContent::GroupSplit(Prefix::new(0, name), name),
         };
         let full_id = FullId::new();
         let signed_message_result = SignedMessage::new(routing_message.clone(), &full_id);

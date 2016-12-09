@@ -119,11 +119,6 @@ impl AckManager {
 }
 
 impl Ack {
-    /// Create a null `Ack`. Probably won't equal anything other than another null `Ack`.
-    pub fn null() -> Ack {
-        Ack(0)
-    }
-
     /// Compute an `Ack` from a message.
     pub fn compute(routing_msg: &RoutingMessage) -> Result<Ack, RoutingError> {
         let hash_msg = serialisation::serialise(routing_msg)?;

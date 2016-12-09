@@ -927,9 +927,7 @@ impl Node {
     fn send_section_update(&mut self) {
         trace!("{:?} Sending section update", self);
         let names = self.peer_mgr.routing_table().our_names();
-        // TODO: why does the method return a HashSet? A Vec is fine for us
-        let mut members = self.peer_mgr.get_pub_ids(&names).iter().cloned().collect_vec();
-        members.sort();
+        let members = self.peer_mgr.get_pub_ids(&names).iter().cloned().sorted();
 
         let content = MessageContent::SectionUpdate {
             prefix: *self.peer_mgr.routing_table().our_group_prefix(),
