@@ -17,8 +17,8 @@
 
 use itertools::Itertools;
 use rand::Rng;
-use routing::{Cache, Client, Data, DataIdentifier, Destination, Event, FullId, ImmutableData,
-              Node, NullCache, Prefix, Request, Response, RoutingTable, XorName, Xorable,
+use routing::{Authority, Cache, Client, Data, DataIdentifier, Event, FullId, ImmutableData, Node,
+              NullCache, Prefix, Request, Response, RoutingTable, XorName, Xorable,
               verify_network_invariant};
 use routing::mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
 use std::cell::RefCell;
@@ -118,8 +118,8 @@ impl TestNode {
         self.inner.routing_table()
     }
 
-    pub fn is_recipient(&self, dst: &Destination<XorName>) -> bool {
-        self.inner.routing_table().map_or(false, |rt| rt.is_recipient(dst))
+    pub fn is_recipient(&self, dst: &Authority<XorName>) -> bool {
+        self.inner.routing_table().map_or(false, |rt| rt.in_authority(dst))
     }
 }
 

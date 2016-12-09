@@ -15,8 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use routing::{Authority, Data, DataIdentifier, Destination, Event, ImmutableData, MessageId,
-              Request, Response};
+use routing::{Authority, Data, DataIdentifier, Event, ImmutableData, MessageId, Request, Response};
 use routing::mock_crust::Network;
 use super::{create_connected_clients, create_connected_nodes, gen_bytes, gen_immutable_data,
             poll_all};
@@ -41,8 +40,7 @@ fn successful_put_request() {
     let _ = poll_all(&mut nodes, &mut clients);
 
     let mut request_received_count = 0;
-    let client_dst = Destination::Group(clients[0].name());
-    for node in nodes.iter().filter(|n| n.is_recipient(&client_dst)) {
+    for node in nodes.iter().filter(|n| n.is_recipient(&dst)) {
         loop {
             match node.event_rx.try_recv() {
                 Ok(Event::Request { request: Request::Put(ref immutable, ref id), .. }) => {
@@ -83,8 +81,7 @@ fn successful_get_request() {
 
     let mut request_received_count = 0;
 
-    let data_dst = Destination::Group(*data.name());
-    for node in nodes.iter().filter(|n| n.is_recipient(&data_dst)) {
+    for node in nodes.iter().filter(|n| n.is_recipient(&dst)) {
         loop {
             match node.event_rx.try_recv() {
                 Ok(Event::Request { request: Request::Get(ref request, id), src, dst }) => {
@@ -153,8 +150,7 @@ fn failed_get_request() {
 
     let mut request_received_count = 0;
 
-    let data_dst = Destination::Group(*data.name());
-    for node in nodes.iter().filter(|n| n.is_recipient(&data_dst)) {
+    for node in nodes.iter().filter(|n| n.is_recipient(&dst)) {
         loop {
             match node.event_rx.try_recv() {
                 Ok(Event::Request { request: Request::Get(ref data_id, ref id), src, dst }) => {
@@ -221,8 +217,7 @@ fn disconnect_on_get_request() {
 
     let mut request_received_count = 0;
 
-    let data_dst = Destination::Group(*data.name());
-    for node in nodes.iter().filter(|n| n.is_recipient(&data_dst)) {
+    for node in nodes.iter().filter(|n| n.is_recipient(&dst)) {
         loop {
             match node.event_rx.try_recv() {
                 Ok(Event::Request { request: Request::Get(ref request, ref id), src, dst }) => {

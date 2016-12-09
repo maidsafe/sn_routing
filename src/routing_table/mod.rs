@@ -110,12 +110,14 @@
 // is considered to be legitimate, if a majority of group members have sent a message with the same
 // content.
 
+mod authority;
 mod error;
 mod network_tests;
 mod prefix;
 mod xorable;
 
 use itertools::Itertools;
+pub use self::authority::Authority;
 pub use self::error::Error;
 #[cfg(any(test, feature = "use-mock-crust"))]
 pub use self::network_tests::verify_network_invariant;
@@ -157,41 +159,6 @@ impl<'a, T: 'a + Binary + Clone + Copy + Default + Hash + Xorable> Iterator for 
         self.inner.size_hint()
     }
 }
-
-
-
-/// A message destination.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum Destination<N> {
-    /// The group closest to the given name.
-    Group(N),
-    /// The individual node at the given name.
-    Node(N),
-}
-
-impl<N> Destination<N> {
-    /// Returns the name of the destination, i.e. the node or group name.
-    pub fn name(&self) -> &N {
-        match *self {
-            Destination::Group(ref name) |
-            Destination::Node(ref name) => name,
-        }
-    }
-
-    /// Returns `true` if the destination is a group, and `false` if it is an individual node.
-    pub fn is_group(&self) -> bool {
-        match *self {
-            Destination::Group(_) => true,
-            Destination::Node(_) => false,
-        }
-    }
-
-    /// Returns `true` if the destination is an individual node, and `false` if it is a group.
-    pub fn is_node(&self) -> bool {
-        !self.is_group()
-    }
-}
-
 
 
 // Used when removal of a contact triggers the need to merge two or more groups.  Sent between all
@@ -396,10 +363,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         self.closest_names(name, count).is_some()
     }
 
-    /// Returns the `count` closest entries to `name` in the routing table, including our own name,
-    /// sorted by ascending distance to `name`. If we are not close, returns `None`.
-    pub fn closest_names(&self, name: &T, count: usize) -> Option<Vec<&T>> {
-        let result = self.groups
+    fn closest_known_names(&self, name: &T, count: usize) -> Vec<&T> {
+        self.groups
             .iter()
             .chain(iter::once((&self.our_group_prefix, &self.our_group)))
             .sorted_by(|&(pfx0, _), &(pfx1, _)| pfx0.cmp_distance(pfx1, name))
@@ -415,7 +380,13 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                     .into_iter()
             })
             .take(count)
-            .collect_vec();
+            .collect_vec()
+    }
+
+    /// Returns the `count` closest entries to `name` in the routing table, including our own name,
+    /// sorted by ascending distance to `name`. If we are not close, returns `None`.
+    pub fn closest_names(&self, name: &T, count: usize) -> Option<Vec<&T>> {
+        let result = self.closest_known_names(name, count);
         if result.contains(&&self.our_name) {
             Some(result)
         } else {
@@ -733,7 +704,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         Ok(*RoutingTable::get_routeth_name(names, &target, route))
     }
 
-    /// Returns a collection of nodes to which a message with the given `Destination` should be sent
+    /// Returns a collection of nodes to which a message for the given `Authority` should be sent
     /// onwards.  In all non-error cases below, the returned collection will have the members of
     /// `exclude` removed, possibly resulting in an empty set being returned.
     ///
@@ -753,46 +724,53 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     ///       this group; otherwise
     ///     - returns `Err(Error::CannotRoute)`
     pub fn targets(&self,
-                   dst: &Destination<T>,
+                   dst: &Authority<T>,
                    exclude: T,
                    route: usize)
                    -> Result<HashSet<T>, Error> {
-        let (closest_group, target_name) = match *dst {
-            Destination::Group(ref target_name) => {
-                let (prefix, group) = self.closest_group(target_name);
-                if *prefix == self.our_group_prefix {
-                    return Ok(group.clone());
+        let target_name = dst.name();
+        let closest_section = if dst.is_section() || dst.is_group() {
+            let (prefix, section) = self.closest_section(target_name);
+            if *prefix == self.our_group_prefix {
+                if dst.is_section() {
+                    return Ok(section.clone());
+                } else {
+                    return Ok(self.closest_known_names(target_name, self.min_group_size)
+                        .into_iter()
+                        .cloned()
+                        .collect());
                 }
-                (group, target_name)
             }
-            Destination::Node(ref target_name) => {
-                if *target_name == self.our_name {
-                    return Ok(HashSet::new());
-                }
-                let (_, group) = self.closest_group(target_name);
-                if group.contains(target_name) {
-                    return Ok(iter::once(*target_name).collect());
-                }
-                // TODO: This is temporarily disabled for the cases where we have not connected to
-                //       all needed contacts yet and may have empty or incomplete groups.
-                // } else if *closest_group_prefix == self.our_group_prefix {
-                //     return Err(Error::NoSuchPeer);
-                // }
-                (group, target_name)
+            section
+        } else {
+            if *target_name == self.our_name {
+                return Ok(HashSet::new());
             }
+            let (_, section) = self.closest_section(target_name);
+            if section.contains(target_name) {
+                return Ok(iter::once(*target_name).collect());
+            }
+            // TODO: This is temporarily disabled for the cases where we have not connected to
+            //       all needed contacts yet and may have empty or incomplete groups.
+            // } else if *closest_section_prefix == self.our_group_prefix {
+            //     return Err(Error::NoSuchPeer);
+            // }
+            section
         };
-        Ok(iter::once(self.get_routeth_node(closest_group, *target_name, Some(exclude), route)?)
+        Ok(iter::once(self.get_routeth_node(closest_section, *target_name, Some(exclude), route)?)
             .collect())
     }
 
-    /// Returns whether a `Destination` represents this node.
-    ///
-    /// Returns `true` if `dst` is a single node with name equal to `our_name`, or if `dst` is a
-    /// group and the closest group is our group.
-    pub fn is_recipient(&self, dst: &Destination<T>) -> bool {
-        match *dst {
-            Destination::Node(ref target_name) => *target_name == self.our_name,
-            Destination::Group(ref target_name) => self.our_group_prefix.matches(target_name),
+    /// Returns whether we are a part of the given authority.
+    pub fn in_authority(&self, auth: &Authority<T>) -> bool {
+        match *auth {
+            // clients have no routing tables
+            Authority::Client { .. } => false,
+            Authority::ManagedNode(ref name) => self.our_name == *name,
+            Authority::ClientManager(ref name) |
+            Authority::NaeManager(ref name) |
+            Authority::NodeManager(ref name) => self.is_closest(name, self.min_group_size),
+            Authority::Section(ref name) => self.our_group_prefix.matches(name),
         }
     }
 
@@ -924,9 +902,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         self.groups.keys().find(|&prefix| prefix.matches(name)).cloned()
     }
 
-    // Returns the prefix of the group closest to `name`, regardless of whether `name` belongs in
-    // that group or not, and the group itself.
-    fn closest_group(&self, name: &T) -> (&Prefix<T>, &HashSet<T>) {
+    // Returns the prefix of the section closest to `name`, regardless of whether `name` belongs in
+    // that section or not, and the section itself.
+    fn closest_section(&self, name: &T) -> (&Prefix<T>, &HashSet<T>) {
         let mut result = (&self.our_group_prefix, &self.our_group);
         for entry in &self.groups {
             if result.0.cmp_distance(entry.0, name) == Ordering::Greater {

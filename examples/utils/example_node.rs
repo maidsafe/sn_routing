@@ -36,7 +36,7 @@ pub struct ExampleNode {
     db: HashMap<DataIdentifier, Data>,
     client_accounts: HashMap<XorName, u64>,
     /// A cache that contains the data necessary to respond with a `PutSuccess` to a `Client`.
-    put_request_cache: LruCache<MessageId, (Authority, Authority)>,
+    put_request_cache: LruCache<MessageId, (Authority<XorName>, Authority<XorName>)>,
 }
 
 impl ExampleNode {
@@ -107,7 +107,10 @@ impl ExampleNode {
         }
     }
 
-    fn handle_request(&mut self, request: Request, src: Authority, dst: Authority) {
+    fn handle_request(&mut self,
+                      request: Request,
+                      src: Authority<XorName>,
+                      dst: Authority<XorName>) {
         match request {
             Request::Get(data_id, id) => {
                 self.handle_get_request(data_id, id, src, dst);
@@ -137,7 +140,10 @@ impl ExampleNode {
         }
     }
 
-    fn handle_response(&mut self, response: Response, _src: Authority, dst: Authority) {
+    fn handle_response(&mut self,
+                       response: Response,
+                       _src: Authority<XorName>,
+                       dst: Authority<XorName>) {
         match (response, dst) {
             (Response::PutSuccess(data_id, id), Authority::ClientManager(_name)) => {
                 if let Some((src, dst)) = self.put_request_cache.remove(&id) {
@@ -151,8 +157,8 @@ impl ExampleNode {
     fn handle_get_request(&mut self,
                           data_id: DataIdentifier,
                           id: MessageId,
-                          src: Authority,
-                          dst: Authority) {
+                          src: Authority<XorName>,
+                          dst: Authority<XorName>) {
         match (src, dst) {
             (src @ Authority::Client { .. }, dst @ Authority::NaeManager(_)) => {
                 if let Some(data) = self.db.get(&data_id) {
@@ -170,7 +176,11 @@ impl ExampleNode {
         }
     }
 
-    fn handle_put_request(&mut self, data: Data, id: MessageId, src: Authority, dst: Authority) {
+    fn handle_put_request(&mut self,
+                          data: Data,
+                          id: MessageId,
+                          src: Authority<XorName>,
+                          dst: Authority<XorName>) {
         match dst {
             Authority::NaeManager(_) => {
                 trace!("{:?} Storing : key {:?}, value {:?}",
