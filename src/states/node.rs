@@ -631,7 +631,7 @@ impl Node {
                                 routing_msg: RoutingMessage)
                                 -> Result<(), RoutingError> {
         use messages::MessageContent::*;
-        use Authority::{Client, ManagedNode, NaeManager, Section};
+        use Authority::{Client, ManagedNode, Section};
 
         match routing_msg.content {
             Ack(..) => (),
@@ -663,7 +663,7 @@ impl Node {
             (ConnectionInfo(conn_info), ManagedNode(src_name), dst @ ManagedNode(_)) => {
                 self.handle_connection_info_from_node(conn_info, src_name, dst)
             }
-            (SectionUpdate { prefix, members }, NaeManager(_), NaeManager(_)) => {
+            (SectionUpdate { prefix, members }, Section(_), Section(_)) => {
                 self.handle_section_update(prefix, members)
             }
             (GroupSplit(prefix, joining_node), _, _) => {
@@ -939,11 +939,11 @@ impl Node {
         let neighbours = self.peer_mgr.routing_table().other_prefixes();
         for neighbour_pfx in neighbours {
             let request_msg = RoutingMessage {
-                src: Authority::NaeManager(self.peer_mgr
+                src: Authority::Section(self.peer_mgr
                     .routing_table()
                     .our_group_prefix()
                     .lower_bound()),
-                dst: Authority::NaeManager(neighbour_pfx.lower_bound()),
+                dst: Authority::Section(neighbour_pfx.lower_bound()),
                 content: content.clone(),
             };
 
