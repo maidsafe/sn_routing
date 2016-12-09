@@ -122,12 +122,16 @@ fn node_joins_in_front() {
 #[test]
 #[ignore]
 fn multiple_joining_nodes() {
+    // Create a network with two sections:
     let min_group_size = 8;
-    let network_size = 2 * min_group_size;
     let network = Network::new(min_group_size, None);
-    let mut nodes = create_connected_nodes(&network, network_size);
+    let mut nodes = create_connected_nodes_with_cache_until_split(&network, vec![1, 1], false);
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
 
+    // Add multiple nodes simultaneously:
+    // TODO: it would be good if we could force both nodes to be in the same section in one case,
+    // and each to be in a different section in another run (or afterwards). But I don't know how
+    // to force where nodes are added.
     nodes.insert(0,
                  TestNode::builder(&network).config(config.clone()).create());
     nodes.insert(0,

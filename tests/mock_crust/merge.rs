@@ -26,7 +26,7 @@ fn merge(prefix_lengths: Vec<usize>) {
     let min_group_size = 8;
     let network = Network::new(min_group_size, None);
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes_with_cache_until_split(&network, prefix_lengths);
+    let mut nodes = create_connected_nodes_with_cache_until_split(&network, prefix_lengths, false);
     verify_invariant_for_all_nodes(&nodes);
 
     // Drop nodes from a group with the shortest prefix until we get a merge event for the empty

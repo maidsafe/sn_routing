@@ -341,7 +341,8 @@ pub fn create_connected_nodes_with_cache(network: &Network,
 // The array is sanity checked (e.g. it would be an error to pass [1, 1, 1]), must comprise at
 // least two elements, and every element must be no more than `8`.
 pub fn create_connected_nodes_with_cache_until_split(network: &Network,
-                                                     mut prefix_lengths: Vec<usize>)
+                                                     mut prefix_lengths: Vec<usize>,
+                                                     use_cache: bool)
                                                      -> Vec<TestNode> {
     // Get sorted list of prefixes to suit requested lengths.
     sanity_check(&prefix_lengths);
@@ -351,7 +352,7 @@ pub fn create_connected_nodes_with_cache_until_split(network: &Network,
 
     // Start first node.
     let mut nodes =
-        vec![TestNode::builder(network).first().endpoint(Endpoint(0)).cache(true).create()];
+        vec![TestNode::builder(network).first().endpoint(Endpoint(0)).cache(use_cache).create()];
     nodes[0].poll();
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
 
@@ -366,7 +367,7 @@ pub fn create_connected_nodes_with_cache_until_split(network: &Network,
             nodes.push(TestNode::builder(network)
                 .config(config.clone())
                 .endpoint(endpoint)
-                .cache(true)
+                .cache(use_cache)
                 .create());
             poll_and_resend(&mut nodes, &mut []);
             expect_next_event!(nodes[nodes.len() - 1], Event::Connected);
