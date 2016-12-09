@@ -32,7 +32,7 @@ use routing_table::{Prefix, Xorable};
 use routing_table::Authority;
 use rust_sodium::crypto::{box_, sign};
 use rust_sodium::crypto::hash::sha256;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 use std::fmt::{self, Debug, Formatter};
 use std::iter;
 use std::time::Duration;
@@ -142,19 +142,19 @@ pub enum DirectMessage {
         /// seed of proof
         seed: Vec<u8>,
         /// size of the proof
-        target_size: u32,
+        target_size: usize,
         /// leading zero bits of the hash of the proof
-        difficulty: u32,
+        difficulty: u8,
     },
     /// Provide a proof to the network
     ///
     /// This is sent from the joining node to member of Group Y
     ResourceProofResponse {
         /// Proof to be presented
-        proof: Vec<u8>,
+        proof: VecDeque<u8>,
         /// Claimed leading zero bytes to be added to proof's header so that the hash matches
         /// the difficulty requirement
-        leading_zero_bytes: u32,
+        leading_zero_bytes: u64,
     },
 }
 

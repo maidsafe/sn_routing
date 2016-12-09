@@ -135,6 +135,7 @@ extern crate crust;
 extern crate itertools;
 extern crate lru_time_cache;
 extern crate rand;
+extern crate resource_proof;
 extern crate rust_sodium;
 extern crate rustc_serialize;
 extern crate tiny_keccak;

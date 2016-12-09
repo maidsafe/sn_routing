@@ -31,6 +31,7 @@ use maidsafe_utilities::serialisation;
 use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, Message, MessageContent,
                RoutingMessage, SectionList, SignedMessage, UserMessage, UserMessageCache};
 use peer_manager::{ConnectionInfoPreparedResult, PeerManager, PeerState};
+use resource_proof::ResourceProof as ResourceProofUtil;
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use routing_table::{OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix, RemovalDetails,
                     Xorable};
@@ -44,7 +45,7 @@ use section_list_cache::SectionListCache;
 use signature_accumulator::SignatureAccumulator;
 use state_machine::Transition;
 use stats::Stats;
-use std::{cmp, fmt, iter};
+use std::{fmt, iter};
 use std::collections::{BTreeSet, HashSet, VecDeque};
 #[cfg(feature = "use-mock-crust")]
 use std::collections::BTreeMap;
@@ -62,15 +63,7 @@ const TICK_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) after which a `GetNodeName` request is resent.
 const GET_NODE_NAME_TIMEOUT_SECS: u64 = 60;
 /// The number of required leading zero bits for the resource proof
-const RESOURCE_PROOF_DIFFICULTY: u32 = 10;
-
-// in Bytes
-fn resource_proof_target_size(min_size: usize, group_len: usize) -> u32 {
-    let evaluators = cmp::max(min_size, group_len);
-    // Default value: 2 MBytes sharing among the evaluators
-    // TODO: the algorithm need to be measured and refactored against the real network
-    2 * 1024 * 1024 / evaluators as u32
-}
+const RESOURCE_PROOF_DIFFICULTY: u8 = 4;
 
 pub struct Node {
     ack_mgr: AckManager,
@@ -927,23 +920,25 @@ impl Node {
     fn handle_resource_proof_request(&mut self,
                                      peer_id: PeerId,
                                      seed: Vec<u8>,
-                                     _target_size: u32,
-                                     _difficulty: u32)
+                                     target_size: usize,
+                                     difficulty: u8)
                                      -> Result<(), RoutingError> {
-        // TODO: use proper hashing utility to generate the proof
+        let rp_object = ResourceProofUtil::new(target_size, difficulty);
+        let mut proof = rp_object.create_proof_data(&seed);
         let direct_message = DirectMessage::ResourceProofResponse {
-            proof: seed,
-            leading_zero_bytes: 0,
+            proof: proof.clone(),
+            leading_zero_bytes: rp_object.create_proof(&mut proof),
         };
         self.send_direct_message(peer_id, direct_message)
     }
 
     fn handle_resource_proof_response(&mut self,
                                       peer_id: PeerId,
-                                      proof: Vec<u8>,
-                                      leading_zero_bytes: u32)
+                                      proof: VecDeque<u8>,
+                                      leading_zero_bytes: u64)
                                       -> Evented<Result<(), RoutingError>> {
         let mut result = Evented::empty();
+
         let name = if let Some(name) = self.peer_mgr.get_peer_name(&peer_id) {
             *name
         } else {
@@ -1138,7 +1133,7 @@ impl Node {
         let mut result = Evented::empty();
         debug!("{:?} Handling NodeIdentify from {:?}.", self, public_id.name());
         match self.peer_mgr.check_candidate(&public_id, &peer_id) {
-            Ok(Some((true, _))) => {
+            Ok(Some((true, _, _))) => {
                 /// if connection is in tunnel, vote NO directly, don't carry out profiling
                 /// limitation: joining node ONLY carries out QUORAM valid evaluations
                 info!("{:?} Sending CandidateApproval false to group rejecting {:?}.",
@@ -1151,14 +1146,10 @@ impl Node {
                     })
                     .extract(&mut result);
             }
-            Ok(Some((false, seed))) => {
+            Ok(Some((false, target_size, seed))) => {
                 let direct_message = DirectMessage::ResourceProof {
                     seed: seed,
-                    target_size: resource_proof_target_size(self.min_group_size(),
-                                                            self.peer_mgr
-                                                                .routing_table()
-                                                                .our_section()
-                                                                .len()),
+                    target_size: target_size,
                     difficulty: RESOURCE_PROOF_DIFFICULTY,
                 };
                 let _ = self.send_direct_message(peer_id, direct_message);

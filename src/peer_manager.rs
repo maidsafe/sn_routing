@@ -21,13 +21,14 @@ use id::PublicId;
 use itertools::Itertools;
 use maidsafe_utilities::SeededRng;
 use rand::{self, Rng};
+use resource_proof::ResourceProof;
 use routing_table::{Authority, OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix,
                     RemovalDetails, RoutingTable};
 use routing_table::Error as RoutingTableError;
 use rust_sodium::crypto::hash::sha256;
 use rust_sodium::crypto::sign;
-use std::{error, fmt, mem};
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::{cmp, error, fmt, mem};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::collections::hash_map::Values;
 use std::time::{Duration, Instant};
 use super::QUORUM;
@@ -48,6 +49,14 @@ const RESOURCE_PROOF_APPROVE_TIMEOUT_SECS: u64 = 60;
 const NODE_CONNECT_TIMEOUT_SECS: u64 = 60;
 
 type Group = (Prefix<XorName>, Vec<PublicId>);
+
+// in Bytes
+fn resource_proof_target_size(min_size: usize, section_size: usize) -> usize {
+    let evaluators = cmp::max(min_size, section_size);
+    // Default value: 2 MBytes sharing among the evaluators
+    // TODO: the algorithm need to be measured and refactored against the real network
+    2 * 1024 * 1024 / evaluators
+}
 
 #[derive(Debug)]
 /// Errors that occur in peer status management.
@@ -287,6 +296,7 @@ impl PeerMap {
 struct Candidate {
     name: XorName,
     insertion_time: Instant,
+    target_size: usize,
     seed: Vec<u8>,
     client_auth: Authority<XorName>,
     approved: bool,
@@ -384,6 +394,8 @@ impl PeerManager {
         self.candidate = Some(Candidate {
             name: *expected_name,
             insertion_time: Instant::now(),
+            target_size: resource_proof_target_size(self.routing_table.min_group_size(),
+                                                    self.routing_table.our_section().len()),
             seed: seed,
             client_auth: *client_auth,
             approved: false,
@@ -394,18 +406,19 @@ impl PeerManager {
 
     pub fn verify_candidate(&self,
                             node_name: XorName,
-                            proof: Vec<u8>,
-                            _leading_zero_bytes: u32,
-                            _difficulty: u32)
+                            proof: VecDeque<u8>,
+                            leading_zero_bytes: u64,
+                            difficulty: u8)
                             -> Option<bool> {
         self.candidate
             .as_ref()
             .map_or(None,
-                    |&Candidate { ref name, ref insertion_time, ref seed, .. }| {
+                    |&Candidate { ref name, ref insertion_time, ref target_size, ref seed, .. }| {
                 if *name == node_name &&
                    insertion_time.elapsed() <
                    Duration::from_secs(RESOURCE_PROOF_EVALUATE_TIMEOUT_SECS) {
-                    Some(*seed == proof)
+                    let rp_object = ResourceProof::new(*target_size, difficulty);
+                    return Some(rp_object.validate_all(&seed, &proof, leading_zero_bytes));
                 } else {
                     None
                 }
@@ -484,15 +497,15 @@ impl PeerManager {
     ///
     /// Returns:
     ///
-    /// * Ok(None)                   if the peer is not a node candidate for resource proof or has
-    /// *                            been approved
-    /// * Ok(Some(is_tunnel, seed))  if the peer is a node candidate
-    /// * Err(AlreadyExists)         If peer already a routing node
+    /// * Ok(None)                                  If the peer is not a node candidate for
+    /// *                                           resource proof or has been approved
+    /// * Ok(Some(is_tunnel, seed, target_size))    If the peer is a node candidate
+    /// * Err(AlreadyExists)                        If peer already a routing node
     pub fn check_candidate(&mut self,
                            pub_id: &PublicId,
                            peer_id: &PeerId)
-                           -> Result<Option<(bool, Vec<u8>)>, RoutingError> {
-        if let Some(Candidate { ref name, ref seed, .. }) = self.candidate {
+                           -> Result<Option<(bool, usize, Vec<u8>)>, RoutingError> {
+        if let Some(Candidate { ref name, ref target_size, ref seed, .. }) = self.candidate {
             if name == pub_id.name() && !seed.is_empty() {
                 let tunnel = match self.peer_map.get(peer_id).map(|peer| &peer.state) {
                     Some(&PeerState::SearchingForTunnel) |
@@ -504,7 +517,7 @@ impl PeerManager {
                 };
                 let state = PeerState::Candidate(tunnel);
                 let _ = self.peer_map.insert(Peer::new(*pub_id, Some(*peer_id), state));
-                return Ok(Some((tunnel, seed.clone())));
+                return Ok(Some((tunnel, *target_size, seed.clone())));
             }
         }
         Ok(None)
