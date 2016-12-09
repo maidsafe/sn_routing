@@ -74,7 +74,7 @@ fn messages_accumulate_with_quorum() {
     let _ = poll_all(&mut nodes, &mut []);
     expect_no_event!(nodes[0]);
 
-    let dst_grp = Authority::NaeManager(*src.name()); // The whole group.
+    let dst_grp = Authority::Section(*src.name()); // The whole group.
 
     // Send a message from the group `src` to the group `dst_grp`.
     // Only the `quorum`-th sender should cause accumulation and a
