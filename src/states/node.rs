@@ -925,9 +925,11 @@ impl Node {
     // Tell all neighbouring sections that our member list changed.
     // Currently we only send this when nodes join and it's only used to add missing members.
     fn send_section_update(&mut self) {
+        trace!("{:?} Sending section update", self);
         let names = self.peer_mgr.routing_table().our_names();
         // TODO: why does the method return a HashSet? A Vec is fine for us
-        let members = self.peer_mgr.get_pub_ids(&names).iter().cloned().collect();
+        let mut members = self.peer_mgr.get_pub_ids(&names).iter().cloned().collect_vec();
+        members.sort();
 
         let content = MessageContent::SectionUpdate {
             prefix: *self.peer_mgr.routing_table().our_group_prefix(),
@@ -1287,6 +1289,7 @@ impl Node {
                              prefix: Prefix<XorName>,
                              members: Vec<PublicId>)
                              -> Result<(), RoutingError> {
+        trace!("{:?} Got section update for {:?}", self, prefix);
         // Filter list of members to just those we don't know about:
         let members = if let Some(section) = self.peer_mgr.routing_table().section_ref(&prefix) {
             let f = |id: &PublicId| !(section.is_member(id.name()) || section.is_needed(id.name()));
