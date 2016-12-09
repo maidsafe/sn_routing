@@ -562,8 +562,8 @@ impl Node {
                          sent_to: &[XorName]) {
         self.send_ack(signed_msg.routing_message(), route);
         // If the destination is our group we need to forward it to the rest of the group
-        if (signed_msg.routing_message().dst.is_group() ||
-            signed_msg.routing_message().dst.is_section()) {
+        if signed_msg.routing_message().dst.is_group() ||
+           signed_msg.routing_message().dst.is_section() {
             if let Err(error) = self.send_signed_message(signed_msg, route, &hop_name, sent_to) {
                 debug!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);
             }
@@ -631,7 +631,7 @@ impl Node {
                                 routing_msg: RoutingMessage)
                                 -> Result<(), RoutingError> {
         use messages::MessageContent::*;
-        use Authority::{Client, ManagedNode, NaeManager, NodeManager, Section};
+        use Authority::{Client, ManagedNode, NaeManager, Section};
 
         match routing_msg.content {
             Ack(..) => (),
@@ -653,9 +653,7 @@ impl Node {
                 self.handle_get_node_name_response(relocated_id, groups, dst);
                 Ok(())
             }
-            (ExpectCloseNode { expect_id, client_auth, message_id },
-             Section(_),
-             Section(_)) => {
+            (ExpectCloseNode { expect_id, client_auth, message_id }, Section(_), Section(_)) => {
                 self.handle_expect_close_node_request(expect_id, client_auth, message_id)
             }
             (GetCloseGroup(message_id), src, NaeManager(dst_name)) => {

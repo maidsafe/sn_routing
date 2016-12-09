@@ -17,8 +17,8 @@
 
 use itertools::Itertools;
 use rand::Rng;
-use routing::{Authority, Cache, Client, Data, DataIdentifier, Destination, Event, FullId, ImmutableData,
-              Node, NullCache, Request, Response, RoutingTable, XorName, Xorable,
+use routing::{Authority, Cache, Client, Data, DataIdentifier, Event, FullId, ImmutableData, Node,
+              NullCache, Prefix, Request, Response, RoutingTable, XorName, Xorable,
               verify_network_invariant};
 use routing::mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
 use std::cell::RefCell;
