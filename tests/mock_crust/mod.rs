@@ -23,7 +23,7 @@ mod merge;
 mod requests;
 mod utils;
 
-use routing::Event;
+use routing::{Event, Prefix, XOR_NAME_LEN, XorName};
 use routing::mock_crust::{Config, Endpoint, Network};
 use routing::mock_crust::crust::PeerId;
 pub use self::utils::{TestClient, TestNode, create_connected_clients, create_connected_nodes,
@@ -125,18 +125,56 @@ fn multiple_joining_nodes() {
     // Create a network with two sections:
     let min_group_size = 8;
     let network = Network::new(min_group_size, None);
+    let mut nodes = create_connected_nodes(&network, min_group_size);
+    let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
+
+    // Try adding three nodes at once, to the same section. This makes sure one section can handle
+    // this (probably by rejecting some of the nodes).
+    nodes.push(TestNode::builder(&network).config(config.clone()).create());
+    nodes.push(TestNode::builder(&network).config(config.clone()).create());
+    nodes.push(TestNode::builder(&network).config(config.clone()).create());
+
+    let _ = poll_all(&mut nodes, &mut []);
+    nodes.retain(|node| !unwrap!(node.routing_table()).is_empty());
+    let _ = poll_all(&mut nodes, &mut []);
+
+    verify_invariant_for_all_nodes(&nodes);
+}
+
+#[test]
+fn simultaneous_joining_nodes() {
+    // Create a network with two sections:
+    let min_group_size = 8;
+    let network = Network::new(min_group_size, None);
     let mut nodes = create_connected_nodes_with_cache_until_split(&network, vec![1, 1], false);
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
 
-    // Add multiple nodes simultaneously:
-    // TODO: it would be good if we could force both nodes to be in the same section in one case,
-    // and each to be in a different section in another run (or afterwards). But I don't know how
-    // to force where nodes are added.
-    nodes.insert(0,
-                 TestNode::builder(&network).config(config.clone()).create());
-    nodes.insert(0,
-                 TestNode::builder(&network).config(config.clone()).create());
-    nodes.push(TestNode::builder(&network).config(config.clone()).create());
+    // Add two nodes simultaneously, to two different sections:
+    // We now have two sections, with prefixes 0 and 1. Make one joining node contact each section,
+    // and tell each section to allocate a name in its own section when `GetNodeName` is received.
+    // This is to test that the routing table gets updated correctly (previously one new node would
+    // miss the new node added to the neighbouring section).
+    let (name0, name1) = (XorName([0u8; XOR_NAME_LEN]), XorName([255u8; XOR_NAME_LEN]));
+    let prefix0 = Prefix::new(1, name0);
+
+    for node in &mut nodes {
+        if prefix0.matches(&node.name()) {
+            node.inner.set_next_node_name(name0);
+        } else {
+            node.inner.set_next_node_name(name1);
+        }
+    }
+
+    let node = TestNode::builder(&network).config(config.clone()).create();
+    let prefix = Prefix::new(1, node.name());
+    nodes.push(node);
+    loop {
+        let node = TestNode::builder(&network).config(config.clone()).create();
+        if !prefix.matches(&node.name()) {
+            nodes.push(node);
+            break;
+        }
+    }
 
     let _ = poll_all(&mut nodes, &mut []);
     nodes.retain(|node| !unwrap!(node.routing_table()).is_empty());
