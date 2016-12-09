@@ -132,11 +132,11 @@ impl SignatureAccumulator {
 
 #[cfg(test)]
 mod tests {
-    use authority::Authority;
     use id::FullId;
     use itertools::Itertools;
     use messages::{DirectMessage, GroupList, MessageContent, RoutingMessage, SignedMessage};
     use rand;
+    use routing_table::Authority;
     use routing_table::Prefix;
     use std::collections::BTreeSet;
     use super::*;

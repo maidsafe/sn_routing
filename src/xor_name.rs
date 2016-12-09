@@ -138,6 +138,10 @@ impl Xorable for XorName {
     fn set_remaining(self, n: usize, val: bool) -> Self {
         XorName(self.0.set_remaining(n, val))
     }
+
+    fn from_hash<T: AsRef<[u8]>>(hash: T) -> Self {
+        XorName(Xorable::from_hash(hash))
+    }
 }
 
 impl fmt::Debug for XorName {

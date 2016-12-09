@@ -16,7 +16,6 @@
 // relating to use of the SAFE Network Software.
 
 use ack_manager::Ack;
-use authority::Authority;
 #[cfg(not(feature = "use-mock-crust"))]
 use crust::PeerId;
 use data::{AppendWrapper, Data, DataIdentifier};
@@ -30,6 +29,7 @@ use maidsafe_utilities::serialisation::{deserialise, serialise};
 #[cfg(feature = "use-mock-crust")]
 use mock_crust::crust::PeerId;
 use routing_table::{Prefix, Xorable};
+use routing_table::Authority;
 use rust_sodium::crypto::{box_, sign};
 use rust_sodium::crypto::hash::sha256;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -383,16 +383,16 @@ impl SignedMessage {
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
 pub struct RoutingMessage {
     /// Source authority
-    pub src: Authority,
+    pub src: Authority<XorName>,
     /// Destination authority
-    pub dst: Authority,
+    pub dst: Authority<XorName>,
     /// The message content
     pub content: MessageContent,
 }
 
 impl RoutingMessage {
     /// Create ack for the given message
-    pub fn ack_from(msg: &RoutingMessage, src: Authority) -> Result<Self, RoutingError> {
+    pub fn ack_from(msg: &RoutingMessage, src: Authority<XorName>) -> Result<Self, RoutingError> {
         Ok(RoutingMessage {
             src: src,
             dst: msg.src,
@@ -500,7 +500,7 @@ pub enum MessageContent {
         /// The joining node's `PublicId` (public keys and name)
         expect_id: PublicId,
         /// The client's current authority.
-        client_auth: Authority,
+        client_auth: Authority<XorName>,
         /// The message's unique identifier.
         message_id: MessageId,
     },
@@ -784,7 +784,7 @@ impl UserMessage {
 
     /// Returns an event indicating that this message was received with the given source and
     /// destination authorities.
-    pub fn into_event(self, src: Authority, dst: Authority) -> Event {
+    pub fn into_event(self, src: Authority<XorName>, dst: Authority<XorName>) -> Event {
         match self {
             UserMessage::Request(request) => {
                 Event::Request {
@@ -1080,12 +1080,12 @@ impl UserMessageCache {
 
 #[cfg(test)]
 mod tests {
-    use authority::Authority;
     use data::{Data, ImmutableData};
     use id::FullId;
     use maidsafe_utilities;
     use maidsafe_utilities::serialisation::serialise;
     use rand;
+    use routing_table::Authority;
     use rust_sodium::crypto::hash::sha256;
     use rust_sodium::crypto::sign;
     use std::iter;

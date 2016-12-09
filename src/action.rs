@@ -15,9 +15,9 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use authority::Authority;
 use error::InterfaceError;
 use messages::{Request, UserMessage};
+use routing_table::Authority;
 use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::Sender;
 use xor_name::XorName;
@@ -31,15 +31,15 @@ use xor_name::XorName;
 #[derive(Clone)]
 pub enum Action {
     NodeSendMessage {
-        src: Authority,
-        dst: Authority,
+        src: Authority<XorName>,
+        dst: Authority<XorName>,
         content: UserMessage,
         priority: u8,
         result_tx: Sender<Result<(), InterfaceError>>,
     },
     ClientSendRequest {
         content: Request,
-        dst: Authority,
+        dst: Authority<XorName>,
         priority: u8,
         result_tx: Sender<Result<(), InterfaceError>>,
     },

@@ -120,6 +120,7 @@ fn node_joins_in_front() {
 }
 
 #[test]
+#[ignore]
 fn multiple_joining_nodes() {
     let min_group_size = 8;
     let network_size = 2 * min_group_size;

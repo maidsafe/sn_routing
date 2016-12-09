@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use routing::{Authority, Event, MessageId, QUORUM, Response};
+use routing::{Authority, Event, MessageId, QUORUM, Response, XorName};
 use routing::mock_crust::Network;
 use std::sync::mpsc;
 use super::{TestNode, create_connected_nodes, gen_immutable_data, poll_all,
@@ -32,7 +32,7 @@ fn messages_accumulate_with_quorum() {
     let src = Authority::NaeManager(*data.name()); // The data's NaeManager.
     sort_nodes_by_distance_to(&mut nodes, src.name());
 
-    let send = |node: &mut TestNode, dst: &Authority, message_id: MessageId| {
+    let send = |node: &mut TestNode, dst: &Authority<XorName>, message_id: MessageId| {
         assert!(node.inner
             .send_get_success(src, *dst, data.clone(), message_id)
             .is_ok());
@@ -74,7 +74,7 @@ fn messages_accumulate_with_quorum() {
     let _ = poll_all(&mut nodes, &mut []);
     expect_no_event!(nodes[0]);
 
-    let dst_grp = Authority::NaeManager(*src.name()); // The whole group.
+    let dst_grp = Authority::Section(*src.name()); // The whole group.
 
     // Send a message from the group `src` to the group `dst_grp`.
     // Only the `quorum`-th sender should cause accumulation and a

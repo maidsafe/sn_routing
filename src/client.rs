@@ -16,7 +16,6 @@
 // relating to use of the SAFE Network Software.
 
 use action::Action;
-use authority::Authority;
 use cache::NullCache;
 use data::{AppendWrapper, Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
@@ -25,6 +24,7 @@ use id::FullId;
 #[cfg(not(feature = "use-mock-crust"))]
 use maidsafe_utilities::thread::{self, Joiner};
 use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, Request};
+use routing_table::Authority;
 #[cfg(not(feature = "use-mock-crust"))]
 use rust_sodium;
 use state_machine::{State, StateMachine};
@@ -108,7 +108,7 @@ impl Client {
 
     /// Send a Get message with a `DataIdentifier` to an `Authority`, signed with given keys.
     pub fn send_get_request(&self,
-                            dst: Authority,
+                            dst: Authority<XorName>,
                             data_id: DataIdentifier,
                             message_id: MessageId)
                             -> Result<(), InterfaceError> {
@@ -117,7 +117,7 @@ impl Client {
 
     /// Add something to the network
     pub fn send_put_request(&self,
-                            dst: Authority,
+                            dst: Authority<XorName>,
                             data: Data,
                             message_id: MessageId)
                             -> Result<(), InterfaceError> {
@@ -126,7 +126,7 @@ impl Client {
 
     /// Change something already on the network
     pub fn send_post_request(&self,
-                             dst: Authority,
+                             dst: Authority<XorName>,
                              data: Data,
                              message_id: MessageId)
                              -> Result<(), InterfaceError> {
@@ -135,7 +135,7 @@ impl Client {
 
     /// Remove something from the network
     pub fn send_delete_request(&self,
-                               dst: Authority,
+                               dst: Authority<XorName>,
                                data: Data,
                                message_id: MessageId)
                                -> Result<(), InterfaceError> {
@@ -144,7 +144,7 @@ impl Client {
 
     /// Append an item to appendable data.
     pub fn send_append_request(&self,
-                               dst: Authority,
+                               dst: Authority<XorName>,
                                wrapper: AppendWrapper,
                                message_id: MessageId)
                                -> Result<(), InterfaceError> {
@@ -154,7 +154,7 @@ impl Client {
 
     /// Request account information for the Client calling this function
     pub fn send_get_account_info_request(&self,
-                                         dst: Authority,
+                                         dst: Authority<XorName>,
                                          message_id: MessageId)
                                          -> Result<(), InterfaceError> {
         self.send_action(Request::GetAccountInfo(message_id),
@@ -172,7 +172,7 @@ impl Client {
 
     fn send_action(&self,
                    content: Request,
-                   dst: Authority,
+                   dst: Authority<XorName>,
                    priority: u8)
                    -> Result<(), InterfaceError> {
         let action = Action::ClientSendRequest {

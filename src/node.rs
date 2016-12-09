@@ -16,7 +16,6 @@
 // relating to use of the SAFE Network Software.
 
 use action::Action;
-use authority::Authority;
 use cache::{Cache, NullCache};
 use data::{Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
@@ -26,6 +25,7 @@ use id::FullId;
 use maidsafe_utilities::thread;
 use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, RELOCATE_PRIORITY, Request, Response,
                UserMessage};
+use routing_table::Authority;
 #[cfg(feature = "use-mock-crust")]
 use routing_table::RoutingTable;
 #[cfg(not(feature = "use-mock-crust"))]
@@ -181,8 +181,8 @@ impl Node {
 
     /// Send a `Get` request to `dst` to retrieve data from the network.
     pub fn send_get_request(&self,
-                            src: Authority,
-                            dst: Authority,
+                            src: Authority<XorName>,
+                            dst: Authority<XorName>,
                             data_request: DataIdentifier,
                             id: MessageId)
                             -> Result<(), InterfaceError> {
@@ -192,8 +192,8 @@ impl Node {
 
     /// Send a `Put` request to `dst` to store data on the network.
     pub fn send_put_request(&self,
-                            src: Authority,
-                            dst: Authority,
+                            src: Authority<XorName>,
+                            dst: Authority<XorName>,
                             data: Data,
                             id: MessageId)
                             -> Result<(), InterfaceError> {
@@ -203,8 +203,8 @@ impl Node {
 
     /// Send a `Post` request to `dst` to modify data on the network.
     pub fn send_post_request(&self,
-                             src: Authority,
-                             dst: Authority,
+                             src: Authority<XorName>,
+                             dst: Authority<XorName>,
                              data: Data,
                              id: MessageId)
                              -> Result<(), InterfaceError> {
@@ -214,8 +214,8 @@ impl Node {
 
     /// Send a `Delete` request to `dst` to remove data from the network.
     pub fn send_delete_request(&self,
-                               src: Authority,
-                               dst: Authority,
+                               src: Authority<XorName>,
+                               dst: Authority<XorName>,
                                data: Data,
                                id: MessageId)
                                -> Result<(), InterfaceError> {
@@ -225,8 +225,8 @@ impl Node {
 
     /// Respond to a `Get` request indicating success and sending the requested data.
     pub fn send_get_success(&self,
-                            src: Authority,
-                            dst: Authority,
+                            src: Authority<XorName>,
+                            dst: Authority<XorName>,
                             data: Data,
                             id: MessageId)
                             -> Result<(), InterfaceError> {
@@ -241,8 +241,8 @@ impl Node {
 
     /// Respond to a `Get` request indicating failure.
     pub fn send_get_failure(&self,
-                            src: Authority,
-                            dst: Authority,
+                            src: Authority<XorName>,
+                            dst: Authority<XorName>,
                             data_id: DataIdentifier,
                             external_error_indicator: Vec<u8>,
                             id: MessageId)
@@ -262,8 +262,8 @@ impl Node {
 
     /// Respond to a `Put` request indicating success.
     pub fn send_put_success(&self,
-                            src: Authority,
-                            dst: Authority,
+                            src: Authority<XorName>,
+                            dst: Authority<XorName>,
                             name: DataIdentifier,
                             id: MessageId)
                             -> Result<(), InterfaceError> {
@@ -273,8 +273,8 @@ impl Node {
 
     /// Respond to a `Put` request indicating failure.
     pub fn send_put_failure(&self,
-                            src: Authority,
-                            dst: Authority,
+                            src: Authority<XorName>,
+                            dst: Authority<XorName>,
                             data_id: DataIdentifier,
                             external_error_indicator: Vec<u8>,
                             id: MessageId)
@@ -289,8 +289,8 @@ impl Node {
 
     /// Respond to a `Post` request indicating success.
     pub fn send_post_success(&self,
-                             src: Authority,
-                             dst: Authority,
+                             src: Authority<XorName>,
+                             dst: Authority<XorName>,
                              name: DataIdentifier,
                              id: MessageId)
                              -> Result<(), InterfaceError> {
@@ -300,8 +300,8 @@ impl Node {
 
     /// Respond to a `Post` request indicating failure.
     pub fn send_post_failure(&self,
-                             src: Authority,
-                             dst: Authority,
+                             src: Authority<XorName>,
+                             dst: Authority<XorName>,
                              data_id: DataIdentifier,
                              external_error_indicator: Vec<u8>,
                              id: MessageId)
@@ -316,8 +316,8 @@ impl Node {
 
     /// Respond to a `Delete` request indicating success.
     pub fn send_delete_success(&self,
-                               src: Authority,
-                               dst: Authority,
+                               src: Authority<XorName>,
+                               dst: Authority<XorName>,
                                name: DataIdentifier,
                                id: MessageId)
                                -> Result<(), InterfaceError> {
@@ -327,8 +327,8 @@ impl Node {
 
     /// Respond to a `Delete` request indicating failure.
     pub fn send_delete_failure(&self,
-                               src: Authority,
-                               dst: Authority,
+                               src: Authority<XorName>,
+                               dst: Authority<XorName>,
                                data_id: DataIdentifier,
                                external_error_indicator: Vec<u8>,
                                id: MessageId)
@@ -343,8 +343,8 @@ impl Node {
 
     /// Respond to an `Append` request indicating success.
     pub fn send_append_success(&self,
-                               src: Authority,
-                               dst: Authority,
+                               src: Authority<XorName>,
+                               dst: Authority<XorName>,
                                name: DataIdentifier,
                                id: MessageId)
                                -> Result<(), InterfaceError> {
@@ -354,8 +354,8 @@ impl Node {
 
     /// Respond to an `Append` request indicating failure.
     pub fn send_append_failure(&self,
-                               src: Authority,
-                               dst: Authority,
+                               src: Authority<XorName>,
+                               dst: Authority<XorName>,
                                data_id: DataIdentifier,
                                external_error_indicator: Vec<u8>,
                                id: MessageId)
@@ -370,8 +370,8 @@ impl Node {
 
     /// Respond to a `GetAccountInfo` request indicating success.
     pub fn send_get_account_info_success(&self,
-                                         src: Authority,
-                                         dst: Authority,
+                                         src: Authority<XorName>,
+                                         dst: Authority<XorName>,
                                          data_stored: u64,
                                          space_available: u64,
                                          id: MessageId)
@@ -386,8 +386,8 @@ impl Node {
 
     /// Respond to a `GetAccountInfo` request indicating failure.
     pub fn send_get_account_info_failure(&self,
-                                         src: Authority,
-                                         dst: Authority,
+                                         src: Authority<XorName>,
+                                         dst: Authority<XorName>,
                                          external_error_indicator: Vec<u8>,
                                          id: MessageId)
                                          -> Result<(), InterfaceError> {
@@ -400,8 +400,8 @@ impl Node {
 
     /// Send a `Refresh` request from `src` to `dst` to trigger churn.
     pub fn send_refresh_request(&self,
-                                src: Authority,
-                                dst: Authority,
+                                src: Authority<XorName>,
+                                dst: Authority<XorName>,
                                 content: Vec<u8>,
                                 id: MessageId)
                                 -> Result<(), InterfaceError> {
@@ -434,8 +434,8 @@ impl Node {
     }
 
     fn send_action(&self,
-                   src: Authority,
-                   dst: Authority,
+                   src: Authority<XorName>,
+                   dst: Authority<XorName>,
                    user_msg: UserMessage,
                    priority: u8)
                    -> Result<(), InterfaceError> {
