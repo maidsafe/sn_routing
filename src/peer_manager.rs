@@ -344,10 +344,11 @@ impl PeerManager {
     }
 
     /// Wraps the routing table function of the same name and maps `XorName`s to `PublicId`s.
-    pub fn expect_join_our_group(&mut self,
-                                 expected_name: &XorName,
-                                 our_public_id: &PublicId)
-                                 -> Result<(bool, (Prefix<XorName>, Vec<PublicId>)), RoutingTableError> {
+    pub fn expect_join_our_group
+        (&mut self,
+         expected_name: &XorName,
+         our_public_id: &PublicId)
+         -> Result<(bool, (Prefix<XorName>, Vec<PublicId>)), RoutingTableError> {
         if let Some((name, now, _)) = self.node_candidate {
             if name == *expected_name ||
                now.elapsed() < Duration::from_secs(RESOURCE_PROOF_APPROVE_TIMEOUT_SECS) {

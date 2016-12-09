@@ -739,8 +739,8 @@ impl Node {
                                  validity: bool)
                                  -> Result<(), RoutingError> {
         let groups = self.peer_mgr.get_groups(&candidate_name, self.full_id.public_id())?;
-        let (approval, peer_info) =
-            self.peer_mgr.handle_node_approval_vote(candidate_name, validity);
+        let (approval, peer_info) = self.peer_mgr
+            .handle_node_approval_vote(candidate_name, validity);
         let peer_id = if let Some(peer_id) = self.peer_mgr.get_peer_id(&candidate_name) {
             *peer_id
         } else {
@@ -1419,8 +1419,10 @@ impl Node {
         } else {
             let groups = self.peer_mgr.get_groups(expect_id.name(), self.full_id.public_id())?;
             // From Y -> A
-            let response_content =
-                MessageContent::NodeApproval { relocated_id: expect_id, groups: groups };
+            let response_content = MessageContent::NodeApproval {
+                relocated_id: expect_id,
+                groups: groups,
+            };
 
             debug!("{:?} sending NodeApproval to {:?}: {:?}.",
                    self,
