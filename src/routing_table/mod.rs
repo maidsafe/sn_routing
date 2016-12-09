@@ -945,7 +945,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     fn closest_group(&self, name: &T) -> (&Prefix<T>, &HashSet<T>) {
         let mut result = (&self.our_group_prefix, &self.our_group);
         for entry in &self.groups {
-            if entry.1.len() != 0 && result.0.cmp_distance(entry.0, name) == Ordering::Greater {
+            if !entry.1.is_empty() && result.0.cmp_distance(entry.0, name) == Ordering::Greater {
                 result = entry
             }
         }

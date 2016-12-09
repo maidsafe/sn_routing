@@ -723,7 +723,10 @@ impl Debug for MessageContent {
                 write!(formatter, "CandidateApproval({})", approval)
             }
             MessageContent::NodeApproval { ref relocated_id, ref groups } => {
-                write!(formatter, "NodeApproval {{ {:?}, {:?} }}", relocated_id, groups)
+                write!(formatter,
+                       "NodeApproval {{ {:?}, {:?} }}",
+                       relocated_id,
+                       groups)
             }
         }
     }
