@@ -19,9 +19,8 @@ use crust::{PeerId, PrivConnectionInfo, PubConnectionInfo};
 use id::PublicId;
 use itertools::Itertools;
 use rand;
-use routing_table::{OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix, RemovalDetails,
-                    RoutingTable};
-use routing_table::Authority;
+use routing_table::{Authority, OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix,
+                    RemovalDetails, RoutingTable};
 use routing_table::Error as RoutingTableError;
 use rust_sodium::crypto::sign;
 use std::{error, fmt, mem};

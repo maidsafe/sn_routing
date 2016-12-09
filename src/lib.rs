@@ -200,8 +200,7 @@ pub use messages::{Request, Response};
 #[cfg(feature = "use-mock-crust")]
 pub use mock_crust::crust;
 pub use node::{Node, NodeBuilder};
-pub use routing_table::{Prefix, RoutingTable, Xorable};
-pub use routing_table::Authority;
+pub use routing_table::{Authority, Prefix, RoutingTable, Xorable};
 pub use routing_table::Error as RoutingTableError;
 #[cfg(any(test, feature = "use-mock-crust"))]
 pub use routing_table::verify_network_invariant;

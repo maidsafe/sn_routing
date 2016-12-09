@@ -52,7 +52,7 @@ pub enum Authority<N: Xorable> {
 }
 
 impl<N: Xorable> Authority<N> {
-    /// Returns true if group authority, otherwise false.
+    /// Returns `true` if group authority, otherwise `false`.
     pub fn is_group(&self) -> bool {
         match *self {
             Authority::ClientManager(_) |
@@ -64,7 +64,7 @@ impl<N: Xorable> Authority<N> {
         }
     }
 
-    /// Returns true if section authority, otherwise false.
+    /// Returns `true` if section authority, otherwise `false`.
     pub fn is_section(&self) -> bool {
         match *self {
             Authority::ClientManager(_) |
@@ -88,7 +88,7 @@ impl<N: Xorable> Authority<N> {
         }
     }
 
-    /// Returns true if a client, false if a node or group.
+    /// Returns `true` if a client, `false` if a node or group.
     pub fn is_client(&self) -> bool {
         if let Authority::Client { .. } = *self {
             true

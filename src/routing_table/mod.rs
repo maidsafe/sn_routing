@@ -363,7 +363,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         self.closest_names(name, count).is_some()
     }
 
-    fn all_closest_names(&self, name: &T, count: usize) -> Vec<&T> {
+    fn closest_known_names(&self, name: &T, count: usize) -> Vec<&T> {
         self.groups
             .iter()
             .chain(iter::once((&self.our_group_prefix, &self.our_group)))
@@ -386,7 +386,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// Returns the `count` closest entries to `name` in the routing table, including our own name,
     /// sorted by ascending distance to `name`. If we are not close, returns `None`.
     pub fn closest_names(&self, name: &T, count: usize) -> Option<Vec<&T>> {
-        let result = self.all_closest_names(name, count);
+        let result = self.closest_known_names(name, count);
         if result.contains(&&self.our_name) {
             Some(result)
         } else {
@@ -729,25 +729,25 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                    route: usize)
                    -> Result<HashSet<T>, Error> {
         let target_name = dst.name();
-        let (closest_section, target_name) = if dst.is_section() || dst.is_group() {
+        let closest_section = if dst.is_section() || dst.is_group() {
             let (prefix, section) = self.closest_section(target_name);
             if *prefix == self.our_group_prefix {
                 if dst.is_section() {
                     return Ok(section.clone());
                 } else {
-                    return Ok(self.all_closest_names(target_name, self.min_group_size)
+                    return Ok(self.closest_known_names(target_name, self.min_group_size)
                         .into_iter()
                         .cloned()
                         .collect());
                 }
             }
-            (section, target_name)
+            section
         } else {
             if *target_name == self.our_name {
                 return Ok(HashSet::new());
             }
-            let (_, group) = self.closest_section(target_name);
-            if group.contains(target_name) {
+            let (_, section) = self.closest_section(target_name);
+            if section.contains(target_name) {
                 return Ok(iter::once(*target_name).collect());
             }
             // TODO: This is temporarily disabled for the cases where we have not connected to
@@ -755,7 +755,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             // } else if *closest_section_prefix == self.our_group_prefix {
             //     return Err(Error::NoSuchPeer);
             // }
-            (group, target_name)
+            section
         };
         Ok(iter::once(self.get_routeth_node(closest_section, *target_name, Some(exclude), route)?)
             .collect())
