@@ -18,12 +18,12 @@
 use itertools::Itertools;
 use rand::Rng;
 use routing::{Cache, Client, Data, DataIdentifier, Destination, Event, FullId, ImmutableData,
-              Node, NullCache, Request, Response, RoutingTable, XorName, Xorable,
+              Node, NullCache, Prefix, Request, Response, RoutingTable, XorName, Xorable,
               verify_network_invariant};
 use routing::mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
 use std::cell::RefCell;
 use std::cmp;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::mpsc;
 
 // Various utilities. Since this is all internal stuff we're a bit lax about the doc.
@@ -33,7 +33,7 @@ use std::sync::mpsc;
 const BALANCED_POLLING: bool = true;
 
 
-// —————  Random number generation  —————
+// -----  Random number generation  -----
 
 /// Generate a random value in the range, excluding the `exclude` value, if not `None`.
 pub fn gen_range_except<T: Rng>(rng: &mut T,
@@ -54,7 +54,7 @@ pub fn gen_range_except<T: Rng>(rng: &mut T,
 }
 
 
-// —————  TestNode and builder  —————
+// -----  TestNode and builder  -----
 
 pub struct TestNode {
     pub handle: ServiceHandle,
@@ -167,7 +167,7 @@ impl<'a> TestNodeBuilder<'a> {
 }
 
 
-// —————  TestClient  —————
+// -----  TestClient  -----
 
 pub struct TestClient {
     pub handle: ServiceHandle,
@@ -207,7 +207,7 @@ impl TestClient {
     }
 }
 
-// —————  TestCache  —————
+// -----  TestCache  -----
 
 #[derive(Default)]
 pub struct TestCache(RefCell<HashMap<DataIdentifier, Data>>);
@@ -238,7 +238,7 @@ impl Cache for TestCache {
 }
 
 
-// —————  poll_all, create_connected_...  —————
+// -----  poll_all, create_connected_...  -----
 
 /// Process all events. Returns whether there were any events.
 pub fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
@@ -330,51 +330,78 @@ pub fn create_connected_nodes_with_cache(network: &Network,
     nodes
 }
 
-// This creates new nodes (all with `use_cache` set to `true`) until the specified number of unique
-// split events have happened.  `split_count` should be at least 1.  Note that the final shape of
-// the network is still random, e.g. if `split_count` is 5, then the network could comprise groups
-// [0, 10, 110, 111] or [00, 01, 10, 11].
+// This creates new nodes (all with `use_cache` set to `true`) until the specified disjoint groups
+// have formed.
+//
+// `prefix_lengths` is an array representing the required `bit_count`s of the group prefixes.  For
+// example passing [1, 2, 3, 3] could yield a network comprising groups [0, 100, 101, 11], or
+// passing [2, 2, 3, 3, 3, 3] could yield [000, 001, 01, 100, 101, 11], while passing [1, 1] will
+// always yield groups [0, 1].
+//
+// The array is sanity checked (e.g. it would be an error to pass [1, 1, 1]), must comprise at
+// least two elements, and every element must be no more than `8`.
 pub fn create_connected_nodes_with_cache_until_split(network: &Network,
-                                                     split_count: usize)
+                                                     mut prefix_lengths: Vec<usize>)
                                                      -> Vec<TestNode> {
-    assert!(split_count > 0);
-    let use_cache = true;
-    let mut nodes =
-        create_connected_nodes_with_cache(network, network.min_group_size() * 2, use_cache);
-    let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
-    let mut split_events = HashSet::new();
+    // Get sorted list of prefixes to suit requested lengths.
+    sanity_check(&prefix_lengths);
+    prefix_lengths.sort();
+    let mut rng = network.new_rng();
+    let prefixes = prefixes(&prefix_lengths, &mut rng);
 
-    'outer: loop {
-        let len = nodes.len();
-        nodes.push(TestNode::builder(network)
-            .config(config.clone())
-            .endpoint(Endpoint(len))
-            .cache(use_cache)
-            .create());
-        poll_and_resend(&mut nodes, &mut []);
-        for node in &nodes {
-            while let Ok(event) = node.event_rx.try_recv() {
-                match event {
-                    Event::NodeAdded(..) |
-                    Event::Connected |
-                    Event::Tick => (),
-                    Event::GroupSplit(prefix) => {
-                        let _ = split_events.insert(prefix);
-                        if split_events.len() == split_count {
-                            break 'outer;
-                        }
-                    }
-                    event => panic!("Got unexpected event: {:?}", event),
-                }
+    // Start first node.
+    let mut nodes =
+        vec![TestNode::builder(network).first().endpoint(Endpoint(0)).cache(true).create()];
+    nodes[0].poll();
+    let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
+
+    // Start enough new nodes under each target prefix to trigger a split eventually.
+    let min_split_size = unwrap!(nodes[0].routing_table()).min_split_size();
+    for prefix in &prefixes {
+        for _ in 0..min_split_size {
+            let relocation_name = prefix.substituted_in(rng.gen());
+            nodes.iter().foreach(|node| node.inner.set_next_node_name(relocation_name));
+
+            let endpoint = Endpoint(nodes.len());
+            nodes.push(TestNode::builder(network)
+                .config(config.clone())
+                .endpoint(endpoint)
+                .cache(true)
+                .create());
+            poll_and_resend(&mut nodes, &mut []);
+            expect_next_event!(nodes[nodes.len() - 1], Event::Connected);
+            assert_eq!(relocation_name, nodes[nodes.len() - 1].name());
+            if nodes.len() == 2 {
+                expect_next_event!(nodes[0], Event::Connected);
             }
         }
     }
 
-    // Clear all event queues
+    // Gather all the actual prefixes and check they are as expected.
+    let mut actual_prefixes = BTreeSet::<Prefix<XorName>>::new();
     for node in &nodes {
-        while node.event_rx.try_recv().is_ok() {}
+        actual_prefixes.append(&mut unwrap!(node.inner.routing_table()).prefixes());
+    }
+    assert_eq!(prefixes.iter().cloned().collect::<BTreeSet<_>>(),
+               actual_prefixes);
+    assert_eq!(prefix_lengths,
+               prefixes.iter().map(|prefix| prefix.bit_count()).collect_vec());
+
+    // Clear all event queues and clear the `next_node_name` values.
+    for node in &nodes {
+        while let Ok(event) = node.event_rx.try_recv() {
+            match event {
+                Event::NodeAdded(..) |
+                Event::NodeLost(..) |
+                Event::Tick |
+                Event::GroupSplit(..) => (),
+                event => panic!("Got unexpected event: {:?}", event),
+            }
+        }
+        node.inner.clear_next_node_name();
     }
 
+    trace!("Created testnet comprising {:?}", prefixes);
     nodes
 }
 
@@ -398,7 +425,7 @@ pub fn create_connected_clients(network: &Network,
 }
 
 
-// —————  Small misc functions  —————
+// -----  Small misc functions  -----
 
 /// Sorts the given nodes by their distance to `name`. Note that this will call the `name()`
 /// function on them which causes polling, so it calls `poll_all` to make sure that all other
@@ -421,4 +448,74 @@ pub fn gen_bytes<R: Rng>(rng: &mut R, size: usize) -> Vec<u8> {
 // Generate random immutable data with the given payload length.
 pub fn gen_immutable_data<R: Rng>(rng: &mut R, size: usize) -> Data {
     Data::Immutable(ImmutableData::new(gen_bytes(rng, size)))
+}
+
+fn sanity_check(prefix_lengths: &[usize]) {
+    assert!(prefix_lengths.len() > 1,
+            "There should be at least two specified prefix lengths");
+    let sum = prefix_lengths.iter().fold(0, |accumulated, &bit_count| {
+        assert!(bit_count <= 8,
+                "The specified prefix lengths {:?} must each be no more than 8",
+                prefix_lengths);
+        accumulated + (1 << (8 - bit_count))
+    });
+    if sum < 256 {
+        panic!("The specified prefix lengths {:?} would not cover the entire address space",
+               prefix_lengths);
+    } else if sum > 256 {
+        panic!("The specified prefix lengths {:?} would require overlapping groups",
+               prefix_lengths);
+    }
+}
+
+fn prefixes<T: Rng>(prefix_lengths: &[usize], rng: &mut T) -> Vec<Prefix<XorName>> {
+    let _ = prefix_lengths.iter().fold(0, |previous, &current| {
+        assert!(previous <= current,
+                "Slice {:?} should be sorted.",
+                prefix_lengths);
+        current
+    });
+    let mut prefixes = vec![Prefix::new(prefix_lengths[0], rng.gen())];
+    while prefixes.len() < prefix_lengths.len() {
+        let new_prefix = Prefix::new(prefix_lengths[prefixes.len()], rng.gen());
+        if prefixes.iter().all(|prefix| !prefix.is_compatible(&new_prefix)) {
+            prefixes.push(new_prefix);
+        }
+    }
+    prefixes
+}
+
+mod tests {
+    use super::sanity_check;
+
+    #[test]
+    fn sanity_check_valid() {
+        sanity_check(&[1, 1]);
+        sanity_check(&[1, 2, 3, 4, 5, 6, 7, 8, 8]);
+        sanity_check(&[8; 256]);
+    }
+
+    #[test]
+    #[should_panic(expected = "There should be at least two specified prefix lengths")]
+    fn sanity_check_no_split() {
+        sanity_check(&[0]);
+    }
+
+    #[test]
+    #[should_panic(expected = "would require overlapping groups")]
+    fn sanity_check_overlapping_groups() {
+        sanity_check(&[1, 2, 2, 2]);
+    }
+
+    #[test]
+    #[should_panic(expected = "would not cover the entire address space")]
+    fn sanity_check_missing_groups() {
+        sanity_check(&[1, 2]);
+    }
+
+    #[test]
+    #[should_panic(expected = "must each be no more than 8")]
+    fn sanity_check_too_many_groups() {
+        sanity_check(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 9]);
+    }
 }
