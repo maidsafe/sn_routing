@@ -458,13 +458,10 @@ impl Node {
                              direct_message: DirectMessage,
                              peer_id: PeerId)
                              -> Result<(), RoutingError> {
+        use messages::DirectMessage::*;
         match direct_message {
-            DirectMessage::MessageSignature(digest, sig) => {
-                self.handle_message_signature(digest, sig, peer_id)
-            }
-            DirectMessage::ClientIdentify { ref serialised_public_id,
-                                            ref signature,
-                                            client_restriction } => {
+            MessageSignature(digest, sig) => self.handle_message_signature(digest, sig, peer_id),
+            ClientIdentify { ref serialised_public_id, ref signature, client_restriction } => {
                 if let Ok(public_id) = verify_signed_public_id(serialised_public_id, signature) {
                     self.handle_client_identify(public_id, peer_id, client_restriction)
                 } else {
@@ -476,7 +473,7 @@ impl Node {
                     Ok(())
                 }
             }
-            DirectMessage::NodeIdentify { ref serialised_public_id, ref signature } => {
+            NodeIdentify { ref serialised_public_id, ref signature } => {
                 if let Ok(public_id) = verify_signed_public_id(serialised_public_id, signature) {
                     self.handle_node_identify(public_id, peer_id);
                 } else {
@@ -487,14 +484,12 @@ impl Node {
                 }
                 Ok(())
             }
-            DirectMessage::TunnelRequest(dst_id) => self.handle_tunnel_request(peer_id, dst_id),
-            DirectMessage::TunnelSuccess(dst_id) => self.handle_tunnel_success(peer_id, dst_id),
-            DirectMessage::TunnelClosed(dst_id) => self.handle_tunnel_closed(peer_id, dst_id),
-            DirectMessage::TunnelDisconnect(dst_id) => {
-                self.handle_tunnel_disconnect(peer_id, dst_id)
-            }
-            msg @ DirectMessage::BootstrapIdentify { .. } |
-            msg @ DirectMessage::BootstrapDeny => {
+            TunnelRequest(dst_id) => self.handle_tunnel_request(peer_id, dst_id),
+            TunnelSuccess(dst_id) => self.handle_tunnel_success(peer_id, dst_id),
+            TunnelClosed(dst_id) => self.handle_tunnel_closed(peer_id, dst_id),
+            TunnelDisconnect(dst_id) => self.handle_tunnel_disconnect(peer_id, dst_id),
+            msg @ BootstrapIdentify { .. } |
+            msg @ BootstrapDeny => {
                 debug!("{:?} - Unhandled direct message: {:?}", self, msg);
                 Ok(())
             }
@@ -634,15 +629,18 @@ impl Node {
     fn dispatch_routing_message(&mut self,
                                 routing_msg: RoutingMessage)
                                 -> Result<(), RoutingError> {
+        use messages::MessageContent::*;
+        use Authority::{Client, ManagedNode, NaeManager, NodeManager};
+
         match routing_msg.content {
-            MessageContent::Ack(..) => (),
+            Ack(..) => (),
             _ => trace!("{:?} Got routing message {:?}.", self, routing_msg),
         }
 
         match (routing_msg.content, routing_msg.src, routing_msg.dst) {
-            (MessageContent::GetNodeName { current_id, message_id },
-             Authority::Client { client_key, proxy_node_name, peer_id },
-             Authority::NaeManager(dst_name)) => {
+            (GetNodeName { current_id, message_id },
+             Client { client_key, proxy_node_name, peer_id },
+             NaeManager(dst_name)) => {
                 self.handle_get_node_name_request(current_id,
                                                   client_key,
                                                   proxy_node_name,
@@ -650,49 +648,39 @@ impl Node {
                                                   peer_id,
                                                   message_id)
             }
-            (MessageContent::GetNodeNameResponse { relocated_id, groups, .. },
-             Authority::NodeManager(_),
-             dst) => {
+            (GetNodeNameResponse { relocated_id, groups, .. }, NodeManager(_), dst) => {
                 self.handle_get_node_name_response(relocated_id, groups, dst);
                 Ok(())
             }
-            (MessageContent::ExpectCloseNode { expect_id, client_auth, message_id },
-             Authority::NaeManager(_),
-             Authority::NaeManager(_)) => {
+            (ExpectCloseNode { expect_id, client_auth, message_id },
+             NaeManager(_),
+             NaeManager(_)) => {
                 self.handle_expect_close_node_request(expect_id, client_auth, message_id)
             }
-            (MessageContent::GetCloseGroup(message_id), src, Authority::NaeManager(dst_name)) => {
+            (GetCloseGroup(message_id), src, NaeManager(dst_name)) => {
                 self.handle_get_close_group_request(src, dst_name, message_id)
             }
-            (MessageContent::ConnectionInfo(conn_info),
-             src @ Authority::Client { .. },
-             dst @ Authority::ManagedNode(_)) => {
+            (ConnectionInfo(conn_info), src @ Client { .. }, dst @ ManagedNode(_)) => {
                 self.handle_connection_info_from_client(conn_info, src, dst)
             }
-            (MessageContent::ConnectionInfo(conn_info),
-             Authority::ManagedNode(src_name),
-             dst @ Authority::Client { .. }) |
-            (MessageContent::ConnectionInfo(conn_info),
-             Authority::ManagedNode(src_name),
-             dst @ Authority::ManagedNode(_)) => {
+            (ConnectionInfo(conn_info), ManagedNode(src_name), dst @ Client { .. }) |
+            (ConnectionInfo(conn_info), ManagedNode(src_name), dst @ ManagedNode(_)) => {
                 self.handle_connection_info_from_node(conn_info, src_name, dst)
             }
-            (MessageContent::GetCloseGroupResponse { close_group_ids, .. },
-             Authority::ManagedNode(_),
-             dst) => self.handle_get_close_group_response(close_group_ids, dst),
-            (MessageContent::GroupSplit(prefix, joining_node), _, _) => {
+            (GetCloseGroupResponse { close_group_ids, .. }, ManagedNode(_), dst) => {
+                self.handle_get_close_group_response(close_group_ids, dst)
+            }
+            (GroupSplit(prefix, joining_node), _, _) => {
                 self.handle_group_split(prefix, joining_node)
             }
-            (MessageContent::OwnGroupMerge { sender_prefix, merge_prefix, groups }, _, _) => {
+            (OwnGroupMerge { sender_prefix, merge_prefix, groups }, _, _) => {
                 self.handle_own_group_merge(sender_prefix, merge_prefix, groups)
             }
-            (MessageContent::OtherGroupMerge { prefix, group }, _, _) => {
+            (OtherGroupMerge { prefix, group }, _, _) => {
                 self.handle_other_group_merge(prefix, group)
             }
-            (MessageContent::Ack(ack, _), _, _) => self.handle_ack_response(ack),
-            (MessageContent::UserMessagePart { hash, part_count, part_index, payload, .. },
-             src,
-             dst) => {
+            (Ack(ack, _), _, _) => self.handle_ack_response(ack),
+            (UserMessagePart { hash, part_count, part_index, payload, .. }, src, dst) => {
                 if let Some(msg) = self.user_msg_cache.add(hash, part_count, part_index, payload) {
                     self.stats().count_user_message(&msg);
                     self.send_event(msg.into_event(src, dst));
