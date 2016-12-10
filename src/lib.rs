@@ -98,7 +98,6 @@
 //! # Sequence diagrams
 //!
 //! - [Bootstrapping](bootstrap.png)
-//! - [`GetCloseGroup`](get-close-group.png)
 //! - [Churn (`NewNode`)](new-node.png)
 //! - [Tunnel](tunnel.png)
 

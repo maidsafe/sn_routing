@@ -331,18 +331,29 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         Iter { inner: self.groups.values().flat_map(iter).chain(&self.our_group) }
     }
 
-    /// Collects prefixes of all groups known by the routing table into a `HashSet`.
+    /// Collects prefixes of all groups known by the routing table other than ours into a
+    /// `BTreeSet`.
+    pub fn other_prefixes(&self) -> BTreeSet<Prefix<T>> {
+        self.groups.keys().cloned().collect()
+    }
+
+    /// Collects prefixes of all groups known by the routing table into a `BTreeSet`.
     pub fn prefixes(&self) -> BTreeSet<Prefix<T>> {
         self.groups.keys().cloned().chain(iter::once(self.our_group_prefix)).collect()
+    }
+
+    /// Returns all names in our section
+    pub fn our_names(&self) -> HashSet<T> {
+        let mut our_group = self.our_group.clone();
+        let _ = our_group.insert(self.our_name);
+        our_group
     }
 
     /// If our group is the closest one to `name`, returns all names in our group *including ours*,
     /// otherwise returns `None`.
     pub fn close_names(&self, name: &T) -> Option<HashSet<T>> {
         if self.our_group_prefix.matches(name) {
-            let mut our_group = self.our_group.clone();
-            let _ = our_group.insert(self.our_name);
-            Some(our_group)
+            Some(self.our_names())
         } else {
             None
         }
@@ -404,6 +415,16 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         })
     }
 
+    /// Get a reference to the subset of the table concerning some section, if that section is
+    /// known. The returned object blocks access to the table and is not clonable.
+    pub fn section_ref(&self, prefix: &Prefix<T>) -> Option<RoutingSection<T>> {
+        if *prefix == self.our_group_prefix {
+            Some(RoutingSection::with(prefix, Some(&self.our_name), &self.our_group, &self.needed))
+        } else {
+            self.groups.get(prefix).map(|g| RoutingSection::with(prefix, None, g, &self.needed))
+        }
+    }
+
     /// Returns true if `name` is in our group (including if it is our own name).
     pub fn is_in_our_group(&self, name: &T) -> bool {
         *name == self.our_name || self.our_group.contains(name)
@@ -412,7 +433,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// Returns `Ok(())` if the given contact should be added to the routing table.
     ///
     /// Returns `Err` if `name` already exists in the routing table, or it doesn't fall within any
-    /// of our groups, or it's our own name.  Otherwise it returns `true`.
+    /// of our groups, or it's our own name.
     pub fn need_to_add(&self, name: &T) -> Result<(), Error> {
         if *name == self.our_name {
             return Err(Error::OwnNameDisallowed);
@@ -493,6 +514,16 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
 
         Ok(self.should_split_our_group(self.our_group.iter().chain(iter::once(&self.our_name))))
+    }
+
+    /// Marks a node as being needed
+    pub fn mark_needed(&mut self, name: &T) -> Result<(), Error> {
+        if let Some(prefix) = self.find_group_prefix(name) {
+            self.needed.entry(prefix).or_insert_with(HashSet::new).insert(*name);
+            Ok(())
+        } else {
+            Err(Error::PeerNameUnsuitable)
+        }
     }
 
     /// Splits a group.
@@ -1054,6 +1085,40 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Drop for Routi
         if thread::panicking() {
             trace!("{:?}", self);
         }
+    }
+}
+
+
+/// References some section within the routing table
+pub struct RoutingSection<'a, T: 'a + Binary + Clone + Copy + Debug + Default + Hash + Xorable> {
+    // in case the referred section is our own group, our name must be considered separately
+    our_name: Option<&'a T>,
+    section: &'a HashSet<T>,
+    needed: Option<&'a HashSet<T>>,
+}
+
+impl<'a, T: 'a + Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingSection<'a, T> {
+    /// Create an instance (only done by RoutingTable itself)
+    fn with(prefix: &Prefix<T>,
+            our_name: Option<&'a T>,
+            section: &'a HashSet<T>,
+            needed_all: &'a Groups<T>)
+            -> Self {
+        RoutingSection {
+            our_name: our_name,
+            section: section,
+            needed: needed_all.get(prefix),
+        }
+    }
+
+    /// Does the section have a member by this name?
+    pub fn is_member(&self, name: &T) -> bool {
+        self.our_name.map_or(false, |n| n == name) || self.section.contains(name)
+    }
+
+    /// Has the section already sent contact info to a node it should contain?
+    pub fn is_needed(&self, name: &T) -> bool {
+        self.needed.map_or(false, |n| n.contains(name))
     }
 }
 
