@@ -718,7 +718,7 @@ impl Node {
                                  candidate_name: XorName,
                                  validity: bool)
                                  -> Result<(), RoutingError> {
-        let groups = self.peer_mgr.get_groups(&candidate_name, self.full_id.public_id())?;
+        let groups = self.peer_mgr.get_sections_to_join(&candidate_name, self.full_id.public_id())?;
         let (approval, peer_info) = self.peer_mgr
             .handle_node_approval_vote(candidate_name, validity);
         let peer_id = if let Some(peer_id) = self.peer_mgr.get_peer_id(&candidate_name) {
@@ -740,7 +740,7 @@ impl Node {
     }
 
     fn handle_node_approval(&mut self, groups: Vec<(Prefix<XorName>, Vec<PublicId>)>) {
-        let result = self.peer_mgr.handle_node_approval();
+        let result = self.peer_mgr.peer_candidates();
         if result.len() > 0 {
             self.peer_mgr.populate_routing_table(&groups);
             for peer_info in &result {
@@ -978,7 +978,7 @@ impl Node {
             if tunnel {
                 /// if connection is in tunnel, vote NO directly, don't carry out profiling
                 /// limitation: joining node ONLY carries out QUORAM valid connection/evaluations
-                info!("{:?} Sending CandidateApproval false to group rejeting {:?}.",
+                info!("{:?} Sending CandidateApproval false to group rejetcing {:?}.",
                       self,
                       *public_id.name());
                 // From Y -> Y
@@ -1436,7 +1436,8 @@ impl Node {
                    response_content);
             response_content
         } else {
-            let groups = self.peer_mgr.get_groups(expect_id.name(), self.full_id.public_id())?;
+            let groups = self.peer_mgr.get_sections_to_join(expect_id.name(),
+                                                            self.full_id.public_id())?;
             // From Y -> A
             let response_content = MessageContent::NodeApproval {
                 relocated_id: expect_id,

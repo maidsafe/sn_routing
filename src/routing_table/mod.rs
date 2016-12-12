@@ -471,7 +471,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// new node will cause our group to split, only the groups which will remain neighbours after
     /// the split are returned.  Returns `Err(Error::PeerNameUnsuitable)` if `name` is not within
     /// our group, or `Err(Error::AlreadyExists)` if `name` is already in our table.
-    pub fn get_groups(&self, name: &T) -> Result<Groups<T>, Error> {
+    pub fn get_sections_to_join(&self, name: &T) -> Result<Groups<T>, Error> {
         if !self.our_group_prefix.matches(name) {
             return Err(Error::PeerNameUnsuitable);
         }

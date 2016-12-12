@@ -464,7 +464,7 @@ impl ConnectionInfo {
 /// ### Getting a new network name from the `NaeManager`
 ///
 /// Once in `Client` state, A sends a `GetNodeName` request to the `NaeManager` group authority X
-/// of A's current name. X computes a new name and sends it in an `ExpectCloseNode` request to  the
+/// of A's current name. X computes a new name and sends it in an `ExpectCloseNode` request to the
 /// `NaeManager` Y of A's new name. Each member of Y caches A's public ID, and Y sends a
 /// `GetNodeName` response back to A, which includes the public IDs of the members of Y.
 ///
@@ -480,8 +480,16 @@ impl ConnectionInfo {
 /// `ConnectionInfo`.
 ///
 /// Once the connection between A and Z is established and a Crust `OnConnect` event is raised,
-/// they exchange `NodeIdentify` messages and add each other to their routing tables. When A
-/// receives its first `NodeIdentify`, it finally moves to the `Node` state.
+/// they exchange `NodeIdentify` messages.
+///
+///
+/// ### Resource Proof Evaluation to approve
+/// Once Z received `NodeIdentify` from A, it sends a `ResourceProof` request to it. A needs to
+/// answer that request (resolving a hashing challenge) with `ResourceProofResponse`. Member of Y
+/// will sends out `CandidateApproval` to vote for the approval in group. Once approved, member of Y
+/// add A into its routing_table and send `NodeApproval` to A. On receiving first `NodeApproval`, A
+/// adds members of Y into its routing_table.
+/// 
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
 pub enum MessageContent {
     // ---------- Internal ------------
