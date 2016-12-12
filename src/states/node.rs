@@ -630,7 +630,7 @@ impl Node {
                                 routing_msg: RoutingMessage)
                                 -> Result<(), RoutingError> {
         use messages::MessageContent::*;
-        use Authority::{Client, ManagedNode, Section};
+        use Authority::{Client, ManagedNode, PrefixSection, Section};
 
         match routing_msg.content {
             Ack(..) => (),
@@ -662,7 +662,7 @@ impl Node {
             (ConnectionInfo(conn_info), ManagedNode(src_name), dst @ ManagedNode(_)) => {
                 self.handle_connection_info_from_node(conn_info, src_name, dst)
             }
-            (SectionUpdate { prefix, members }, Section(_), Section(_)) => {
+            (SectionUpdate { prefix, members }, Section(_), PrefixSection(_)) => {
                 self.handle_section_update(prefix, members)
             }
             (GroupSplit(prefix, joining_node), _, _) => {
@@ -940,7 +940,7 @@ impl Node {
                     .routing_table()
                     .our_group_prefix()
                     .lower_bound()),
-                dst: Authority::Section(neighbour_pfx.lower_bound()),
+                dst: Authority::PrefixSection(neighbour_pfx),
                 content: content.clone(),
             };
 
@@ -1840,7 +1840,7 @@ impl Node {
             let request_msg = RoutingMessage {
                 // this way of calculating the source avoids using the joining node as the route
                 src: Authority::Section(our_prefix.substituted_in(!joining_node)),
-                dst: Authority::Section(prefix.substituted_in(joining_node)),
+                dst: Authority::PrefixSection(prefix),
                 content: MessageContent::GroupSplit(our_prefix, joining_node),
             };
             if let Err(err) = self.send_routing_message(request_msg) {
@@ -1870,15 +1870,13 @@ impl Node {
             merge_prefix: merge_details.merge_prefix,
             groups: groups,
         };
-        for &bit in &[false, true] {
-            let request_msg = RoutingMessage {
-                src: src,
-                dst: Authority::Section(merge_details.merge_prefix.pushed(bit).lower_bound()),
-                content: request_content.clone(),
-            };
-            if let Err(err) = self.send_routing_message(request_msg) {
-                debug!("{:?} Failed to send OwnGroupMerge: {:?}.", self, err);
-            }
+        let request_msg = RoutingMessage {
+            src: src,
+            dst: Authority::PrefixSection(merge_details.merge_prefix),
+            content: request_content.clone(),
+        };
+        if let Err(err) = self.send_routing_message(request_msg) {
+            debug!("{:?} Failed to send OwnGroupMerge: {:?}.", self, err);
         }
     }
 
@@ -1895,7 +1893,7 @@ impl Node {
             };
             let request_msg = RoutingMessage {
                 src: src,
-                dst: Authority::Section(target.lower_bound()),
+                dst: Authority::PrefixSection(*target),
                 content: request_content,
             };
 
