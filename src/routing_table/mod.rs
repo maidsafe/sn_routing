@@ -759,37 +759,62 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                    exclude: T,
                    route: usize)
                    -> Result<HashSet<T>, Error> {
-        let target_name = dst.name();
-        let closest_section = if dst.is_multiple() {
-            let (prefix, section) = self.closest_section(&target_name);
-            if *prefix == self.our_group_prefix {
-                if true {
-                    // TODO
-                    return Ok(section.clone());
-                } else {
-                    return Ok(self.closest_known_names(&target_name, self.min_group_size)
+        let closest_section = match *dst {
+            Authority::ManagedNode(ref target_name) |
+            Authority::Client { proxy_node_name: ref target_name, .. } => {
+                if *target_name == self.our_name {
+                    return Ok(HashSet::new());
+                }
+                let (_, section) = self.closest_section(target_name);
+                if section.contains(target_name) {
+                    return Ok(iter::once(*target_name).collect());
+                }
+                // TODO: This is temporarily disabled for the cases where we have not connected to
+                //       all needed contacts yet and may have empty or incomplete groups.
+                // } else if *closest_section_prefix == self.our_group_prefix {
+                //     return Err(Error::NoSuchPeer);
+                // }
+                section
+            }
+            Authority::ClientManager(ref target_name) |
+            Authority::NaeManager(ref target_name) |
+            Authority::NodeManager(ref target_name) => {
+                let (prefix, section) = self.closest_section(target_name);
+                if *prefix == self.our_group_prefix {
+                    return Ok(self.closest_known_names(target_name, self.min_group_size)
                         .into_iter()
                         .cloned()
                         .collect());
                 }
+                section
             }
-            section
-        } else {
-            if target_name == self.our_name {
-                return Ok(HashSet::new());
+            Authority::Section(ref target_name) => {
+                let (prefix, section) = self.closest_section(target_name);
+                if *prefix == self.our_group_prefix {
+                    return Ok(section.clone());
+                }
+                section
             }
-            let (_, section) = self.closest_section(&target_name);
-            if section.contains(&target_name) {
-                return Ok(iter::once(target_name).collect());
+            Authority::PrefixSection(ref prefix) => {
+                if prefix.is_compatible(&self.our_group_prefix) {
+                    // only route the message when we have all the targets in our routing table -
+                    // this is to prevent spamming the network by sending messages with
+                    // intentionally short prefixes
+                    if prefix.is_covered_by(self.prefixes().iter()) {
+                        return Ok(self.iter()
+                            .filter(|name| prefix.matches(name))
+                            .cloned()
+                            .collect());
+                    } else {
+                        return Err(Error::CannotRoute);
+                    }
+                } else {
+                    let (_, section) = self.closest_section(&prefix.lower_bound());
+                    section
+                }
             }
-            // TODO: This is temporarily disabled for the cases where we have not connected to
-            //       all needed contacts yet and may have empty or incomplete groups.
-            // } else if *closest_section_prefix == self.our_group_prefix {
-            //     return Err(Error::NoSuchPeer);
-            // }
-            section
         };
-        Ok(iter::once(self.get_routeth_node(closest_section, target_name, Some(exclude), route)?)
+        Ok(iter::once(self.get_routeth_node(closest_section, dst.name(), Some(exclude), route)?)
             .collect())
     }
 
