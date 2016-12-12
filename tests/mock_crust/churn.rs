@@ -80,12 +80,12 @@ impl ExpectedGets {
             unwrap!(node.inner.send_get_request(src, dst, data_id, msg_id));
             sent_count += 1;
         }
-        if src.is_group() {
+        if src.is_multiple() {
             assert!(100 * sent_count >= QUORUM * min_group_size);
         } else {
             assert_eq!(sent_count, 1);
         }
-        if dst.is_group() && !self.groups.contains_key(&dst) {
+        if dst.is_multiple() && !self.groups.contains_key(&dst) {
             let is_recipient = |n: &&TestNode| n.is_recipient(&dst);
             let group = nodes.iter().filter(is_recipient).map(TestNode::name).collect();
             let _ = self.groups.insert(dst, group);
@@ -113,7 +113,7 @@ impl ExpectedGets {
             while let Ok(event) = node.event_rx.try_recv() {
                 if let Event::Request { request: Request::Get(data_id, msg_id), src, dst } = event {
                     let key = (data_id, msg_id, src, dst);
-                    if dst.is_group() {
+                    if dst.is_multiple() {
                         assert!(self.groups
                                     .get(&key.3)
                                     .map_or(false, |entry| entry.contains(&node.name())),
@@ -122,7 +122,7 @@ impl ExpectedGets {
                                 key);
                         *group_msgs_received.entry(key).or_insert(0usize) += 1;
                     } else {
-                        assert_eq!(node.name(), *dst.name());
+                        assert_eq!(node.name(), dst.name());
                         assert!(self.messages.remove(&key),
                                 "Unexpected request for node {:?}: {:?}",
                                 node.name(),
@@ -133,7 +133,7 @@ impl ExpectedGets {
         }
         for key in self.messages {
             // All received messages for single nodes were removed: if any are left, they failed.
-            assert!(key.3.is_group(), "Failed to receive request {:?}", key);
+            assert!(key.3.is_multiple(), "Failed to receive request {:?}", key);
             let group_size = group_sizes[&key.3];
             let count = group_msgs_received.remove(&key).unwrap_or(0);
             assert!(100 * count >= QUORUM * group_size,
