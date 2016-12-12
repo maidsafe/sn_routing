@@ -235,7 +235,7 @@ impl Network {
                 }
             }
         }
-        if dst.is_node() {
+        if dst.is_single() {
             assert!(handled.contains(&dst.name()),
                     "Message to {:?} only handled by {:?}",
                     dst,

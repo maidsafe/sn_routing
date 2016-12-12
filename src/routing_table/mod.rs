@@ -760,10 +760,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                    route: usize)
                    -> Result<HashSet<T>, Error> {
         let target_name = dst.name();
-        let closest_section = if dst.is_section() || dst.is_group() {
+        let closest_section = if dst.is_multiple() {
             let (prefix, section) = self.closest_section(&target_name);
             if *prefix == self.our_group_prefix {
-                if dst.is_section() {
+                if true {
+                    // TODO
                     return Ok(section.clone());
                 } else {
                     return Ok(self.closest_known_names(&target_name, self.min_group_size)

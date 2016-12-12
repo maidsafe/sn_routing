@@ -562,8 +562,7 @@ impl Node {
                          sent_to: &[XorName]) {
         self.send_ack(signed_msg.routing_message(), route);
         // If the destination is our group we need to forward it to the rest of the group
-        if signed_msg.routing_message().dst.is_group() ||
-           signed_msg.routing_message().dst.is_section() {
+        if signed_msg.routing_message().dst.is_multiple() {
             if let Err(error) = self.send_signed_message(signed_msg, route, &hop_name, sent_to) {
                 debug!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);
             }
@@ -1646,7 +1645,7 @@ impl Node {
 
     /// Returns the peer that is responsible for collecting our signature for a group message.
     fn get_signature_target(&self, src: &Authority<XorName>, route: u8) -> Option<XorName> {
-        if !src.is_group() && !src.is_section() {
+        if !src.is_multiple() {
             return Some(*self.name());
         }
         let mut group = self.peer_mgr
@@ -2058,7 +2057,7 @@ impl Bootstrapped for Node {
                    routing_msg);
             return Ok(());
         }
-        let group_list = if routing_msg.src.is_group() || routing_msg.src.is_section() {
+        let group_list = if routing_msg.src.is_multiple() {
             GroupList { pub_ids: self.hop_pub_ids(self.name())? }
         } else {
             GroupList { pub_ids: iter::once(*self.full_id().public_id()).collect() }

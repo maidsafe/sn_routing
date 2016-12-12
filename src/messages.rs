@@ -269,7 +269,7 @@ impl SignedMessage {
     /// lists isn't empty, the signature is only added if `pub_id` is a member of the first group
     /// list.
     pub fn add_signature(&mut self, pub_id: PublicId, sig: sign::Signature) {
-        if self.content.src.is_group() &&
+        if self.content.src.is_multiple() &&
            self.grp_lists.first().map_or(true, |grp_list| grp_list.pub_ids.contains(&pub_id)) {
             let _ = self.signatures.insert(pub_id, sig);
         }
@@ -277,7 +277,7 @@ impl SignedMessage {
 
     /// Adds all signatures from the given message, without validating them.
     pub fn add_signatures(&mut self, msg: SignedMessage) {
-        if self.content.src.is_group() {
+        if self.content.src.is_multiple() {
             self.signatures.extend(msg.signatures);
         }
     }
@@ -304,7 +304,7 @@ impl SignedMessage {
             return self.signatures.len() == 1;
         }
         self.grp_lists.first().map_or(false, |grp_list| {
-            if self.content.src.is_group() {
+            if self.content.src.is_multiple() {
                 let valid_names: HashSet<_> = grp_list.pub_ids
                     .iter()
                     .map(PublicId::name)

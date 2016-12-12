@@ -55,34 +55,21 @@ pub enum Authority<N: Xorable + Clone + Copy + Binary + Default> {
 }
 
 impl<N: Xorable + Clone + Copy + Binary + Default> Authority<N> {
-    /// Returns `true` if group authority, otherwise `false`.
-    pub fn is_group(&self) -> bool {
+    /// Returns `true` if the authority consists of multiple nodes, otherwise `false`.
+    pub fn is_multiple(&self) -> bool {
         match *self {
+            Authority::Section(_) |
+            Authority::PrefixSection(_) |
             Authority::ClientManager(_) |
             Authority::NaeManager(_) |
             Authority::NodeManager(_) => true,
-            Authority::Section(_) |
-            Authority::PrefixSection(_) |
             Authority::ManagedNode(_) |
             Authority::Client { .. } => false,
         }
     }
 
-    /// Returns `true` if section authority, otherwise `false`.
-    pub fn is_section(&self) -> bool {
-        match *self {
-            Authority::ClientManager(_) |
-            Authority::NaeManager(_) |
-            Authority::NodeManager(_) |
-            Authority::ManagedNode(_) |
-            Authority::Client { .. } => false,
-            Authority::PrefixSection(_) |
-            Authority::Section(_) => true,
-        }
-    }
-
-    /// Returns `true` if the destination is an individual node, and `false` otherwise.
-    pub fn is_node(&self) -> bool {
+    /// Returns `true` if the authority is a single node, and `false` otherwise.
+    pub fn is_single(&self) -> bool {
         match *self {
             Authority::ClientManager(_) |
             Authority::NaeManager(_) |
