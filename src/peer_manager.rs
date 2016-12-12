@@ -575,18 +575,15 @@ impl PeerManager {
                 PeerState::Client | PeerState::JoiningNode | PeerState::Proxy => peer.peer_id,
                 _ => None,
             }
-        } else {
-            // Joining node might have relocated by now
-            // but we might have it via its client name
-            if let Some(join_peer) = self.peer_map
-                .get_by_name(&XorName(sha256::hash(&pub_id.signing_public_key().0).0)) {
-                match join_peer.state {
-                    PeerState::JoiningNode => join_peer.peer_id,
-                    _ => None,
-                }
-            } else {
-                None
+        } else if let Some(join_peer) = self.peer_map
+            .get_by_name(&XorName(sha256::hash(&pub_id.signing_public_key().0).0)) {
+            // Joining node might have relocated by now but we might have it via its client name
+            match join_peer.state {
+                PeerState::JoiningNode => join_peer.peer_id,
+                _ => None,
             }
+        } else {
+            None
         }
     }
 
