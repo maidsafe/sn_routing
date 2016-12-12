@@ -1683,10 +1683,9 @@ impl Node {
                 .into_iter()
                 .filter(|target| !sent_to.contains(target))
                 .collect();
-            let new_sent_to = if self.peer_mgr
-                .routing_table()
-                .our_group_prefix()
-                .matches(&routing_msg.dst.name()) {
+            // TODO: shouldn't sent_to be a BTreeSet? This will potentially duplicate self.name()
+            // in sent_to.
+            let new_sent_to = if self.in_authority(&routing_msg.dst) {
                 sent_to.iter()
                     .chain(targets.iter())
                     .chain(iter::once(self.name()))
