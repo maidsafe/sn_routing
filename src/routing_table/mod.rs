@@ -761,12 +761,12 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                    -> Result<HashSet<T>, Error> {
         let target_name = dst.name();
         let closest_section = if dst.is_section() || dst.is_group() {
-            let (prefix, section) = self.closest_section(target_name);
+            let (prefix, section) = self.closest_section(&target_name);
             if *prefix == self.our_group_prefix {
                 if dst.is_section() {
                     return Ok(section.clone());
                 } else {
-                    return Ok(self.closest_known_names(target_name, self.min_group_size)
+                    return Ok(self.closest_known_names(&target_name, self.min_group_size)
                         .into_iter()
                         .cloned()
                         .collect());
@@ -774,12 +774,12 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             }
             section
         } else {
-            if *target_name == self.our_name {
+            if target_name == self.our_name {
                 return Ok(HashSet::new());
             }
-            let (_, section) = self.closest_section(target_name);
-            if section.contains(target_name) {
-                return Ok(iter::once(*target_name).collect());
+            let (_, section) = self.closest_section(&target_name);
+            if section.contains(&target_name) {
+                return Ok(iter::once(target_name).collect());
             }
             // TODO: This is temporarily disabled for the cases where we have not connected to
             //       all needed contacts yet and may have empty or incomplete groups.
@@ -788,7 +788,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             // }
             section
         };
-        Ok(iter::once(self.get_routeth_node(closest_section, *target_name, Some(exclude), route)?)
+        Ok(iter::once(self.get_routeth_node(closest_section, target_name, Some(exclude), route)?)
             .collect())
     }
 
@@ -802,6 +802,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             Authority::NaeManager(ref name) |
             Authority::NodeManager(ref name) => self.is_closest(name, self.min_group_size),
             Authority::Section(ref name) => self.our_group_prefix.matches(name),
+            Authority::PrefixSection(ref prefix) => prefix.matches(&self.our_name),
         }
     }
 

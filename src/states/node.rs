@@ -1539,7 +1539,7 @@ impl Node {
         let routing_msg = signed_msg.routing_message();
 
         if let Authority::Client { ref peer_id, .. } = routing_msg.dst {
-            if self.name() == routing_msg.dst.name() {
+            if *self.name() == routing_msg.dst.name() {
                 // This is a message for a client we are the proxy of. Relay it.
                 return self.relay_to_client(signed_msg.clone(), peer_id);
             } else if self.in_authority(&routing_msg.dst) {
@@ -1687,7 +1687,7 @@ impl Node {
             let new_sent_to = if self.peer_mgr
                 .routing_table()
                 .our_group_prefix()
-                .matches(routing_msg.dst.name()) {
+                .matches(&routing_msg.dst.name()) {
                 sent_to.iter()
                     .chain(targets.iter())
                     .chain(iter::once(self.name()))
