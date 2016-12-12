@@ -359,20 +359,23 @@ impl Node {
         }
 
         // Remove tunnel connection if we have one for this peer already
+        let mut connected = false;
         if let Some(tunnel_id) = self.tunnels.remove_tunnel_for(&peer_id) {
             debug!("{:?} Removing unwanted tunnel for {:?}", self, peer_id);
             let message = DirectMessage::TunnelDisconnect(peer_id);
             let _ = self.send_direct_message(&tunnel_id, message);
         } else if let Some(pub_id) = self.peer_mgr.get_routing_peer(&peer_id) {
-            warn!("{:?} Received ConnectSuccess from {:?}, but node {:?} is already in our \
-                   routing table.",
+            warn!("{:?} Received ConnectSuccess from {:?}, but node {:?} is already in routing \
+                   state in peer_map.",
                   self,
                   peer_id,
                   pub_id.name());
-            return;
+            connected = true;
         }
 
-        self.peer_mgr.connected_to(&peer_id);
+        if !connected {
+            self.peer_mgr.connected_to(&peer_id);
+        }
 
         debug!("{:?} Received ConnectSuccess from {:?}. Sending NodeIdentify.",
                self,
@@ -724,6 +727,8 @@ impl Node {
         let peer_id = if let Some(peer_id) = self.peer_mgr.get_peer_id(&candidate_name) {
             *peer_id
         } else {
+            // The joining node may receive the vote regarding it self once joined.
+            warn!("{:?} cannot get peer_id of candidate {:?}", self, candidate_name);
             return Ok(());
         };
         if !validity {
@@ -1727,7 +1732,17 @@ impl Node {
         let (new_sent_to, target_peer_ids) = self.get_targets(routing_msg, route, hop, sent_to)?;
 
         for target_peer_id in target_peer_ids {
-            self.send_signed_msg_to_peer(signed_msg, target_peer_id, route, new_sent_to.clone())?;
+            match self.send_signed_msg_to_peer(signed_msg,
+                                               target_peer_id,
+                                               route,
+                                               new_sent_to.clone()) {
+                Ok(_) => {}
+                Err(err) => {
+                    warn!("{:?} failed with {:?} in sending {:?} to peer {:?}",
+                          self, err, routing_msg, target_peer_id);
+                }
+            }
+
         }
         Ok(())
     }

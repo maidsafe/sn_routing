@@ -484,11 +484,12 @@ impl ConnectionInfo {
 ///
 ///
 /// ### Resource Proof Evaluation to approve
-/// Once Z received `NodeIdentify` from A, it sends a `ResourceProof` request to it. A needs to
-/// answer that request (resolving a hashing challenge) with `ResourceProofResponse`. Member of Y
-/// will sends out `CandidateApproval` to vote for the approval in group. Once approved, member of Y
-/// add A into its routing_table and send `NodeApproval` to A. On receiving first `NodeApproval`, A
-/// adds members of Y into its routing_table.
+/// When nodes Z of section Y receive `NodeIdentify` from A, they respond with a `ResourceProof`
+/// request. Node A needs to answer these requests (resolving a hashing challenge) with
+/// `ResourceProofResponse`. Members of Y will send out `CandidateApproval` messages to vote for the
+/// approval in their section. Once the vote succeeds, the members of Y add A to their routing table
+/// and send `NodeApproval` to A. When A receives the first NodeApproval message, it adds the
+/// members of Y to its routing table.
 /// 
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
 pub enum MessageContent {

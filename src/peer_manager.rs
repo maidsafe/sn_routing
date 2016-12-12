@@ -490,6 +490,10 @@ impl PeerManager {
         Ok(None)
     }
 
+    /// Update peer's state to `Candidate` if it is a peer candidate
+    ///
+    /// Returns: true       if the peer is a peer candidate
+    ///          false      if the peer is not a peer candidate
     pub fn is_peer_candidate(&mut self, pub_id: &PublicId, peer_id: &PeerId) -> bool {
         if !self.peer_candidates.contains(pub_id.name()) {
             return false;
