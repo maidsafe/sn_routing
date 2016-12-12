@@ -18,15 +18,14 @@
 use rand::Rng;
 use routing::Event;
 use routing::mock_crust::Network;
-use super::{create_connected_nodes_with_cache_until_split, poll_and_resend,
-            verify_invariant_for_all_nodes};
+use super::{create_connected_nodes_until_split, poll_and_resend, verify_invariant_for_all_nodes};
 
 // See docs for `create_connected_nodes_with_cache_until_split` for details on `prefix_lengths`.
 fn merge(prefix_lengths: Vec<usize>) {
     let min_group_size = 8;
     let network = Network::new(min_group_size, None);
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes_with_cache_until_split(&network, prefix_lengths, false);
+    let mut nodes = create_connected_nodes_until_split(&network, prefix_lengths, false);
     verify_invariant_for_all_nodes(&nodes);
 
     // Drop nodes from a group with the shortest prefix until we get a merge event for the empty
