@@ -84,11 +84,13 @@ fn merge_four_unbalanced_groups_into_one() {
 }
 
 #[test]
+#[ignore]
 fn merge_four_balanced_groups_into_one() {
     merge(vec![2, 2, 2, 2])
 }
 
 #[test]
+#[ignore]
 fn merge_five_groups_into_one() {
     merge(vec![1, 3, 3, 3, 3])
 }
