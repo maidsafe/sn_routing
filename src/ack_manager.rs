@@ -119,6 +119,7 @@ impl AckManager {
 }
 
 impl Ack {
+    /// Compute an `Ack` from a message.
     pub fn compute(routing_msg: &RoutingMessage) -> Result<Ack, RoutingError> {
         let hash_msg = serialisation::serialise(routing_msg)?;
         Ok(Ack(maidsafe_utilities::big_endian_sip_hash(&hash_msg)))

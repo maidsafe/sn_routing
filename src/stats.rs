@@ -47,7 +47,6 @@ pub struct Stats {
     msg_delete: usize,
     msg_append: usize,
     msg_get_account_info: usize,
-    msg_get_close_group: usize,
     msg_get_node_name: usize,
     msg_expect_close_node: usize,
     msg_refresh: usize,
@@ -64,7 +63,7 @@ pub struct Stats {
     msg_append_failure: usize,
     msg_get_account_info_success: usize,
     msg_get_account_info_failure: usize,
-    msg_get_close_group_rsp: usize,
+    msg_section_update: usize,
     msg_group_split: usize,
     msg_own_group_merge: usize,
     msg_other_group_merge: usize,
@@ -140,9 +139,8 @@ impl Stats {
         match msg.content {
             MessageContent::GetNodeName { .. } => self.msg_get_node_name += 1,
             MessageContent::ExpectCloseNode { .. } => self.msg_expect_close_node += 1,
-            MessageContent::GetCloseGroup(..) => self.msg_get_close_group += 1,
             MessageContent::ConnectionInfo(_) => self.msg_connection_info += 1,
-            MessageContent::GetCloseGroupResponse { .. } => self.msg_get_close_group_rsp += 1,
+            MessageContent::SectionUpdate { .. } => self.msg_section_update += 1,
             MessageContent::GroupSplit(..) => self.msg_group_split += 1,
             MessageContent::OwnGroupMerge { .. } => self.msg_own_group_merge += 1,
             MessageContent::OtherGroupMerge { .. } => self.msg_other_group_merge += 1,
@@ -195,13 +193,12 @@ impl Stats {
                   self.msg_direct_node_approval);
             info!(target: "routing_stats",
                   "Stats - Hops (Request/Response) - GetNodeName: {}/{}, ExpectCloseNode: {}, \
-                   GetCloseGroup: {}/{}, GroupSplit: {}, OwnGroupMerge: {}, OtherGroupMerge: {}, \
+                   SectionUpdate: {}, GroupSplit: {}, OwnGroupMerge: {}, OtherGroupMerge: {}, \
                    ConnectionInfo: {},  CandidateApproval: {}, NodeApproval: {}, Ack: {}",
                   self.msg_get_node_name,
                   self.msg_get_node_name_rsp,
                   self.msg_expect_close_node,
-                  self.msg_get_close_group,
-                  self.msg_get_close_group_rsp,
+                  self.msg_section_update,
                   self.msg_group_split,
                   self.msg_own_group_merge,
                   self.msg_other_group_merge,

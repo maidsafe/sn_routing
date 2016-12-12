@@ -495,7 +495,7 @@ pub enum MessageContent {
         /// The message's unique identifier.
         message_id: MessageId,
     },
-    /// Notify a joining node's `NaeManager` so that it expects a `GetCloseGroup` request from it.
+    /// Notify a joining node's `NaeManager` so that it sends a `GetNodeNameResponse`.
     ExpectCloseNode {
         /// The joining node's `PublicId` (public keys and name)
         expect_id: PublicId,
@@ -504,11 +504,6 @@ pub enum MessageContent {
         /// The message's unique identifier.
         message_id: MessageId,
     },
-    /// Request the `PublicId`s of the recipient's close group.
-    ///
-    /// This is sent from a joining node to its `NodeManager` to request the `PublicId`s of the
-    /// `NodeManager`'s members.
-    GetCloseGroup(MessageId),
     /// Send our connection_info encrypted to a node we wish to connect to and have the keys for.
     ConnectionInfo(ConnectionInfo),
     /// Reply with the new `PublicId` for the joining node.
@@ -523,14 +518,14 @@ pub enum MessageContent {
         /// The message's unique identifier.
         message_id: MessageId,
     },
-    /// Return the close `PublicId`s back to the requester.
-    ///
-    /// Sent from a `NodeManager` to a node or client.
-    GetCloseGroupResponse {
-        /// Our close group `PublicId`s.
-        close_group_ids: Vec<PublicId>,
-        /// The message ID.
-        message_id: MessageId,
+    /// Sent to notify neighbours and own members when our section's member list changed (for now,
+    /// only when new nodes join).
+    SectionUpdate {
+        /// Section prefix. Included because this message is sent to both the section's own members
+        /// and neighbouring sections.
+        prefix: Prefix<XorName>,
+        /// Members of the section
+        members: Vec<PublicId>,
     },
     /// Sent to all connected peers when our own group splits
     GroupSplit(Prefix<XorName>, XorName),
@@ -676,7 +671,6 @@ impl Debug for MessageContent {
                        client_auth,
                        message_id)
             }
-            MessageContent::GetCloseGroup(id) => write!(formatter, "GetCloseGroup({:?})", id),
             MessageContent::ConnectionInfo(_) => write!(formatter, "ConnectionInfo {{ .. }}"),
             MessageContent::GetNodeNameResponse { ref relocated_id, ref group, ref message_id } => {
                 write!(formatter,
@@ -685,11 +679,8 @@ impl Debug for MessageContent {
                        group,
                        message_id)
             }
-            MessageContent::GetCloseGroupResponse { ref close_group_ids, message_id } => {
-                write!(formatter,
-                       "GetCloseGroupResponse {{ {:?}, {:?} }}",
-                       close_group_ids,
-                       message_id)
+            MessageContent::SectionUpdate { ref prefix, ref members } => {
+                write!(formatter, "SectionUpdate {{ {:?}, {:?} }}", prefix, members)
             }
             MessageContent::GroupSplit(ref prefix, ref joining_node) => {
                 write!(formatter, "GroupSplit({:?}, {:?})", prefix, joining_node)
@@ -1085,7 +1076,7 @@ mod tests {
     use maidsafe_utilities;
     use maidsafe_utilities::serialisation::serialise;
     use rand;
-    use routing_table::Authority;
+    use routing_table::{Authority, Prefix};
     use rust_sodium::crypto::hash::sha256;
     use rust_sodium::crypto::sign;
     use std::iter;
@@ -1100,7 +1091,7 @@ mod tests {
         let routing_message = RoutingMessage {
             src: Authority::ClientManager(name),
             dst: Authority::ClientManager(name),
-            content: MessageContent::GetCloseGroup(MessageId::zero()),
+            content: MessageContent::GroupSplit(Prefix::new(0, name), name),
         };
         let full_id = FullId::new();
         let signed_message_result = SignedMessage::new(routing_message.clone(), &full_id);
@@ -1203,7 +1194,7 @@ mod tests {
         let routing_message = RoutingMessage {
             src: Authority::ClientManager(name),
             dst: Authority::ClientManager(name),
-            content: MessageContent::GetCloseGroup(MessageId::zero()),
+            content: MessageContent::GroupSplit(Prefix::new(0, name), name),
         };
         let full_id = FullId::new();
         let signed_message_result = SignedMessage::new(routing_message.clone(), &full_id);
