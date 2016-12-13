@@ -17,15 +17,15 @@
 
 use crust::PeerId;
 use rust_sodium::crypto::{hash, sign};
-use std::fmt::{self, Debug, Display, Formatter};
-use super::Xorable;
+use std::fmt::{self, Binary, Debug, Display, Formatter};
+use super::{Prefix, Xorable};
 
 /// An entity that can act as a source or destination of a message.
 ///
 /// An `Authority` can be an individual `Client` or `ManagedNode`, or a group of nodes, like a
 /// `NodeManager`, `ClientManager` or `NaeManager`.
 #[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Hash)]
-pub enum Authority<N: Xorable> {
+pub enum Authority<N: Xorable + Clone + Copy + Binary + Default> {
     /// Manager of a Client.  XorName is the hash of the Client's `client_key`.
     ClientManager(N),
     /// Manager of a network-addressable element, i.e. the group matching this name.
@@ -35,6 +35,9 @@ pub enum Authority<N: Xorable> {
     NodeManager(N),
     /// A set of nodes with names sharing a common prefix.
     Section(N),
+    /// A set of nodes with names sharing a common prefix - may span multiple `Section`s present in
+    /// the routing table or only a part of a `Section`
+    PrefixSection(Prefix<N>),
     /// A non-client node (i.e. a vault) which is managed by NodeManagers.  XorName is provided
     /// by the network relocation process immediately after bootstrapping.
     ManagedNode(N),
@@ -51,37 +54,27 @@ pub enum Authority<N: Xorable> {
     },
 }
 
-impl<N: Xorable> Authority<N> {
-    /// Returns `true` if group authority, otherwise `false`.
-    pub fn is_group(&self) -> bool {
+impl<N: Xorable + Clone + Copy + Binary + Default> Authority<N> {
+    /// Returns `true` if the authority consists of multiple nodes, otherwise `false`.
+    pub fn is_multiple(&self) -> bool {
         match *self {
+            Authority::Section(_) |
+            Authority::PrefixSection(_) |
             Authority::ClientManager(_) |
             Authority::NaeManager(_) |
             Authority::NodeManager(_) => true,
-            Authority::Section(_) |
             Authority::ManagedNode(_) |
             Authority::Client { .. } => false,
         }
     }
 
-    /// Returns `true` if section authority, otherwise `false`.
-    pub fn is_section(&self) -> bool {
-        match *self {
-            Authority::ClientManager(_) |
-            Authority::NaeManager(_) |
-            Authority::NodeManager(_) |
-            Authority::ManagedNode(_) |
-            Authority::Client { .. } => false,
-            Authority::Section(_) => true,
-        }
-    }
-
-    /// Returns `true` if the destination is an individual node, and `false` otherwise.
-    pub fn is_node(&self) -> bool {
+    /// Returns `true` if the authority is a single node, and `false` otherwise.
+    pub fn is_single(&self) -> bool {
         match *self {
             Authority::ClientManager(_) |
             Authority::NaeManager(_) |
             Authority::Section(_) |
+            Authority::PrefixSection(_) |
             Authority::NodeManager(_) => false,
             Authority::ManagedNode(_) |
             Authority::Client { .. } => true,
@@ -98,19 +91,20 @@ impl<N: Xorable> Authority<N> {
     }
 
     /// Returns the name of authority.
-    pub fn name(&self) -> &N {
+    pub fn name(&self) -> N {
         match *self {
             Authority::ClientManager(ref name) |
             Authority::NaeManager(ref name) |
             Authority::NodeManager(ref name) |
             Authority::Section(ref name) |
-            Authority::ManagedNode(ref name) => name,
-            Authority::Client { ref proxy_node_name, .. } => proxy_node_name,
+            Authority::ManagedNode(ref name) => *name,
+            Authority::PrefixSection(ref prefix) => prefix.lower_bound(),
+            Authority::Client { ref proxy_node_name, .. } => *proxy_node_name,
         }
     }
 }
 
-impl<N: Xorable + Display> Debug for Authority<N> {
+impl<N: Xorable + Clone + Copy + Binary + Default + Display> Debug for Authority<N> {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
             Authority::ClientManager(ref name) => {
@@ -119,6 +113,9 @@ impl<N: Xorable + Display> Debug for Authority<N> {
             Authority::NaeManager(ref name) => write!(formatter, "NaeManager(name: {})", name),
             Authority::NodeManager(ref name) => write!(formatter, "NodeManager(name: {})", name),
             Authority::Section(ref name) => write!(formatter, "Section(name: {})", name),
+            Authority::PrefixSection(ref prefix) => {
+                write!(formatter, "PrefixSection(prefix: {:?})", prefix)
+            }
             Authority::ManagedNode(ref name) => write!(formatter, "ManagedNode(name: {})", name),
             Authority::Client { ref client_key, ref proxy_node_name, ref peer_id } => {
                 write!(formatter,

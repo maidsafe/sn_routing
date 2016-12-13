@@ -22,6 +22,7 @@ use maidsafe_utilities::serialisation;
 use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage};
 use routing_message_filter::RoutingMessageFilter;
 use routing_table::Authority;
+use std::collections::BTreeSet;
 use std::time::Duration;
 use super::Base;
 use timer::Timer;
@@ -146,7 +147,7 @@ pub trait Bootstrapped: Base {
     fn to_hop_bytes(&self,
                     signed_msg: SignedMessage,
                     route: u8,
-                    sent_to: Vec<XorName>)
+                    sent_to: BTreeSet<XorName>)
                     -> Result<Vec<u8>, RoutingError> {
         let hop_msg = HopMessage::new(signed_msg,
                                       route,
