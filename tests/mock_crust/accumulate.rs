@@ -30,7 +30,7 @@ fn messages_accumulate_with_quorum() {
 
     let data = gen_immutable_data(&mut rng, 8);
     let src = Authority::NaeManager(*data.name()); // The data's NaeManager.
-    sort_nodes_by_distance_to(&mut nodes, src.name());
+    sort_nodes_by_distance_to(&mut nodes, &src.name());
 
     let send = |node: &mut TestNode, dst: &Authority<XorName>, message_id: MessageId| {
         assert!(node.inner
@@ -74,7 +74,7 @@ fn messages_accumulate_with_quorum() {
     let _ = poll_all(&mut nodes, &mut []);
     expect_no_event!(nodes[0]);
 
-    let dst_grp = Authority::Section(*src.name()); // The whole group.
+    let dst_grp = Authority::Section(src.name()); // The whole group.
 
     // Send a message from the group `src` to the group `dst_grp`.
     // Only the `quorum`-th sender should cause accumulation and a

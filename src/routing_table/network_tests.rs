@@ -168,7 +168,7 @@ impl Network {
                                                       (targets, merge_details));
                             // add needed contacts
                             let needed = target_node.needed().clone();
-                            for needed_contact in needed.values().flat_map(HashSet::iter) {
+                            for needed_contact in &needed {
                                 let _ = target_node.add(*needed_contact);
                             }
                             if let Some(info) = target_node.should_merge() {
@@ -235,14 +235,14 @@ impl Network {
                 }
             }
         }
-        if dst.is_node() {
-            assert!(handled.contains(dst.name()),
+        if dst.is_single() {
+            assert!(handled.contains(&dst.name()),
                     "Message to {:?} only handled by {:?}",
                     dst,
                     handled);
         } else {
-            let close_node = self.close_node(*dst.name());
-            for node in unwrap!(self.nodes[&close_node].close_names(dst.name())) {
+            let close_node = self.close_node(dst.name());
+            for node in unwrap!(self.nodes[&close_node].close_names(&dst.name())) {
                 assert!(handled.contains(&node));
             }
         }

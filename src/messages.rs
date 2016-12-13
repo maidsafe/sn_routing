@@ -184,7 +184,7 @@ pub struct HopMessage {
     /// considered for the next hop.
     pub route: u8,
     /// Every node this has already been sent to.
-    pub sent_to: Vec<XorName>,
+    pub sent_to: BTreeSet<XorName>,
     /// Signature to be validated against the neighbouring sender's public key.
     signature: sign::Signature,
 }
@@ -193,7 +193,7 @@ impl HopMessage {
     /// Wrap `content` for transmission to the next hop and sign it.
     pub fn new(content: SignedMessage,
                route: u8,
-               sent_to: Vec<XorName>,
+               sent_to: BTreeSet<XorName>,
                signing_key: &sign::SecretKey)
                -> Result<HopMessage, RoutingError> {
         let bytes_to_sign = serialise(&content)?;
@@ -298,7 +298,7 @@ impl SignedMessage {
     /// lists isn't empty, the signature is only added if `pub_id` is a member of the first group
     /// list.
     pub fn add_signature(&mut self, pub_id: PublicId, sig: sign::Signature) {
-        if self.content.src.is_group() &&
+        if self.content.src.is_multiple() &&
            self.grp_lists.first().map_or(true, |grp_list| grp_list.pub_ids.contains(&pub_id)) {
             let _ = self.signatures.insert(pub_id, sig);
         }
@@ -306,7 +306,7 @@ impl SignedMessage {
 
     /// Adds all signatures from the given message, without validating them.
     pub fn add_signatures(&mut self, msg: SignedMessage) {
-        if self.content.src.is_group() {
+        if self.content.src.is_multiple() {
             self.signatures.extend(msg.signatures);
         }
     }
@@ -333,7 +333,7 @@ impl SignedMessage {
             return self.signatures.len() == 1;
         }
         self.grp_lists.first().map_or(false, |grp_list| {
-            if self.content.src.is_group() {
+            if self.content.src.is_multiple() {
                 let valid_names: HashSet<_> = grp_list.pub_ids
                     .iter()
                     .map(PublicId::name)
@@ -490,7 +490,7 @@ impl ConnectionInfo {
 /// approval in their section. Once the vote succeeds, the members of Y add A to their routing table
 /// and send `NodeApproval` to A. When A receives the first NodeApproval message, it adds the
 /// members of Y to its routing table.
-/// 
+///
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
 pub enum MessageContent {
     // ---------- Internal ------------
@@ -1088,6 +1088,7 @@ mod tests {
     use routing_table::{Authority, Prefix};
     use rust_sodium::crypto::hash::sha256;
     use rust_sodium::crypto::sign;
+    use std::collections::BTreeSet;
     use std::iter;
     use super::*;
     use super::MAX_PART_LEN;
@@ -1212,8 +1213,10 @@ mod tests {
 
         let signed_message = unwrap!(signed_message_result);
         let (public_signing_key, secret_signing_key) = sign::gen_keypair();
-        let hop_message_result =
-            HopMessage::new(signed_message.clone(), 0, vec![], &secret_signing_key);
+        let hop_message_result = HopMessage::new(signed_message.clone(),
+                                                 0,
+                                                 BTreeSet::new(),
+                                                 &secret_signing_key);
 
         let hop_message = unwrap!(hop_message_result);
 
