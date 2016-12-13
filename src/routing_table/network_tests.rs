@@ -151,9 +151,9 @@ impl Network {
             let own_info = merge_own_info;
             merge_own_info = HashMap::new();
             for (_, merge_own_details) in own_info {
-                let targets = self.nodes_covered_by_prefixes(&[merge_own_details.merge_prefix]);
-                for target in targets {
-                    let target_node = unwrap!(self.nodes.get_mut(&target));
+                let nodes = self.nodes_covered_by_prefixes(&[merge_own_details.merge_prefix]);
+                for node in &nodes {
+                    let target_node = unwrap!(self.nodes.get_mut(&node));
                     match target_node.merge_own_group(merge_own_details.clone()) {
                         OwnMergeState::Initialised { merge_details } => {
                             Network::store_merge_info(&mut merge_own_info,
@@ -166,10 +166,11 @@ impl Network {
                             Network::store_merge_info(&mut merge_other_info,
                                                       *target_node.our_group_prefix(),
                                                       (targets, merge_details));
-                            // add needed contacts
-                            let needed = target_node.needed().clone();
-                            for needed_contact in &needed {
-                                let _ = target_node.add(*needed_contact);
+                            // Forcibly add new connections.
+                            for name in &nodes {
+                                // Try adding each node we should be connected to.
+                                // Ignore failures and ignore splits.
+                                let _ = target_node.add(*name);
                             }
                             if let Some(info) = target_node.should_merge() {
                                 Network::store_merge_info(&mut merge_own_info,
@@ -378,6 +379,7 @@ fn groups_have_identical_routing_tables() {
 }
 
 #[test]
+#[ignore]
 fn merging_groups() {
     let mut network = Network::new(8, None);
     for _ in 0..100 {

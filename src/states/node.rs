@@ -29,8 +29,7 @@ use log::LogLevel;
 use maidsafe_utilities::serialisation;
 use messages::{ConnectionInfo, DEFAULT_PRIORITY, DirectMessage, GroupList, HopMessage, Message,
                MessageContent, RoutingMessage, SignedMessage, UserMessage, UserMessageCache};
-use peer_manager::{ConnectionInfoPreparedResult, ConnectionInfoReceivedResult, PeerManager,
-                   PeerState};
+use peer_manager::{ConnectionInfoPreparedResult, PeerManager, PeerState};
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use routing_table::{OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix, RemovalDetails,
                     Xorable};
@@ -1275,16 +1274,19 @@ impl Node {
         trace!("{:?} Got section update for {:?}", self, prefix);
         // Filter list of members to just those we don't know about:
         let members = if let Some(section) = self.peer_mgr.routing_table().section_ref(&prefix) {
-            let f = |id: &PublicId| !(section.is_member(id.name()) || section.is_needed(id.name()));
+            let f = |id: &PublicId| !section.is_member(id.name());
             members.into_iter().filter(f).collect_vec()
         } else {
             warn!("{:?} Section update received from unknown neighbour {:?}", self, prefix);
             return Ok(());
         };
+        let members = members.into_iter()
+            .filter(|id: &PublicId| !self.peer_mgr.is_expected(id.name()))
+            .collect_vec();
 
         let own_name = *self.name();
         for pub_id in members {
-            self.peer_mgr.mark_needed(pub_id.name())?;
+            self.peer_mgr.expect_peer(&pub_id);
             if let Err(error) = self.send_connection_info(pub_id,
                                                           Authority::ManagedNode(own_name),
                                                           Authority::ManagedNode(*pub_id.name())) {
@@ -1334,11 +1336,9 @@ impl Node {
                               -> Result<(), RoutingError> {
         let (merge_state, needed_peers) = self.peer_mgr
             .merge_own_group(sender_prefix, merge_prefix, groups);
-        let src =
-            Authority::Section(self.peer_mgr.routing_table().our_group_prefix().lower_bound());
         match merge_state {
             OwnMergeState::Initialised { merge_details } => {
-                self.send_own_group_merge(merge_details, src)
+                self.send_own_group_merge(merge_details)
             }
             OwnMergeState::Ongoing |
             OwnMergeState::AlreadyMerged => (),
@@ -1351,6 +1351,10 @@ impl Node {
                        self,
                        self.peer_mgr.routing_table().prefixes());
                 self.merge_if_necessary();
+                let src = Authority::Section(self.peer_mgr
+                    .routing_table()
+                    .our_group_prefix()
+                    .lower_bound());
                 self.send_other_group_merge(targets, merge_details, src)
             }
         }
@@ -1441,26 +1445,27 @@ impl Node {
         let their_connection_info: PubConnectionInfo =
             serialisation::deserialise(&serialised_connection_info)?;
         let peer_id = their_connection_info.id();
+
+        use peer_manager::ConnectionInfoReceivedResult::*;
         match self.peer_mgr
             .connection_info_received(src, dst, conn_info.public_id, their_connection_info) {
-            Ok(ConnectionInfoReceivedResult::Ready(our_info, their_info)) => {
+            Ok(Ready(our_info, their_info)) => {
                 debug!("{:?} Received connection info. Trying to connect to {:?} ({:?}).",
                        self,
                        conn_info.public_id.name(),
                        peer_id);
                 let _ = self.crust_service.connect(our_info, their_info);
             }
-            Ok(ConnectionInfoReceivedResult::Prepare(token)) => {
+            Ok(Prepare(token)) => {
                 self.crust_service.prepare_connection_info(token);
             }
-            Ok(ConnectionInfoReceivedResult::IsProxy) |
-            Ok(ConnectionInfoReceivedResult::IsClient) |
-            Ok(ConnectionInfoReceivedResult::IsJoiningNode) => {
+            Ok(IsProxy) |
+            Ok(IsClient) |
+            Ok(IsJoiningNode) => {
                 self.send_node_identify(peer_id)?;
                 self.handle_node_identify(conn_info.public_id, peer_id);
             }
-            Ok(ConnectionInfoReceivedResult::Waiting) |
-            Ok(ConnectionInfoReceivedResult::IsConnected) => (),
+            Ok(Waiting) | Ok(IsConnected) => (),
             Err(error) => {
                 warn!("{:?} Failed to insert connection info from {:?} ({:?}): {:?}",
                       self,
@@ -1845,15 +1850,12 @@ impl Node {
     }
 
     fn merge_if_necessary(&mut self) {
-        if let Some(merge_details) = self.peer_mgr.routing_table().should_merge() {
-            let src_name = self.peer_mgr.routing_table().our_group_prefix().lower_bound();
-            self.send_own_group_merge(merge_details, Authority::Section(src_name));
+        if let Some(merge_details) = self.peer_mgr.should_merge() {
+            self.send_own_group_merge(merge_details);
         }
     }
 
-    fn send_own_group_merge(&mut self,
-                            merge_details: OwnMergeDetails<XorName>,
-                            src: Authority<XorName>) {
+    fn send_own_group_merge(&mut self, merge_details: OwnMergeDetails<XorName>) {
         let groups = merge_details.groups
             .into_iter()
             .map(|(prefix, members)| {
@@ -1865,8 +1867,9 @@ impl Node {
             merge_prefix: merge_details.merge_prefix,
             groups: groups,
         };
+        let src_name = self.peer_mgr.routing_table().our_group_prefix().lower_bound();
         let request_msg = RoutingMessage {
-            src: src,
+            src: Authority::Section(src_name),
             dst: Authority::PrefixSection(merge_details.merge_prefix),
             content: request_content.clone(),
         };
