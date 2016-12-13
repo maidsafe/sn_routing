@@ -713,14 +713,20 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                    exclude: T,
                    route: usize)
                    -> Result<HashSet<T>, Error> {
+        let candidates = |target_name| {
+            self.closest_known_names(target_name, self.min_group_size)
+                .into_iter()
+                .cloned()
+                .collect::<HashSet<_>>()
+        };
+
         let closest_section = match *dst {
             Authority::ManagedNode(ref target_name) |
             Authority::Client { proxy_node_name: ref target_name, .. } => {
                 if *target_name == self.our_name {
                     return Ok(HashSet::new());
                 }
-                let (_, section) = self.closest_section(target_name);
-                if section.contains(target_name) {
+                if self.has(target_name) {
                     return Ok(iter::once(*target_name).collect());
                 }
                 // TODO: This is temporarily disabled for the cases where we have not connected to
@@ -728,26 +734,22 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                 // } else if *closest_section_prefix == self.our_group_prefix {
                 //     return Err(Error::NoSuchPeer);
                 // }
-                section
+                candidates(target_name)
             }
             Authority::ClientManager(ref target_name) |
             Authority::NaeManager(ref target_name) |
             Authority::NodeManager(ref target_name) => {
-                let (prefix, section) = self.closest_section(target_name);
-                if *prefix == self.our_group_prefix {
-                    return Ok(self.closest_known_names(target_name, self.min_group_size)
-                        .into_iter()
-                        .cloned()
-                        .collect());
+                if let Some(group) = self.other_closest_names(target_name, self.min_group_size) {
+                    return Ok(group.into_iter().cloned().collect());
                 }
-                section
+                candidates(target_name)
             }
             Authority::Section(ref target_name) => {
                 let (prefix, section) = self.closest_section(target_name);
                 if *prefix == self.our_group_prefix {
                     return Ok(section.clone());
                 }
-                section
+                candidates(target_name)
             }
             Authority::PrefixSection(ref prefix) => {
                 if prefix.is_compatible(&self.our_group_prefix) {
@@ -763,12 +765,16 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                         return Err(Error::CannotRoute);
                     }
                 } else {
-                    let (_, section) = self.closest_section(&prefix.lower_bound());
-                    section
+                    // using `candidates(&prefix.lower_bound())` here
+                    // results in a weird lifetime error
+                    self.closest_known_names(&prefix.lower_bound(), self.min_group_size)
+                        .into_iter()
+                        .cloned()
+                        .collect()
                 }
             }
         };
-        Ok(iter::once(self.get_routeth_node(closest_section, dst.name(), Some(exclude), route)?)
+        Ok(iter::once(self.get_routeth_node(&closest_section, dst.name(), Some(exclude), route)?)
             .collect())
     }
 
