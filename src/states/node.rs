@@ -726,7 +726,8 @@ impl Node {
         let peer_id = if let Some(peer_id) = self.peer_mgr.get_peer_id(&candidate_name) {
             *peer_id
         } else {
-            // The joining node may receive the vote regarding it self once joined.
+            // Once the joining node joined, it may receive the vote regarding itself.
+            // Or a node may receive CandidateApproval before connection established.
             warn!("{:?} cannot get peer_id of candidate {:?}", self, candidate_name);
             return Ok(());
         };
@@ -1352,7 +1353,7 @@ impl Node {
                                               groups: Vec<(Prefix<XorName>, Vec<PublicId>)>,
                                               dst: Authority<XorName>) {
         if !self.peer_mgr.routing_table().is_empty() {
-            warn!("{:?} Received duplicate GetNodeName response.", self);
+            warn!("{:?} Received duplicate NodeApproval.", self);
             return;
         }
         self.get_node_name_timer_token = None;
@@ -1361,7 +1362,7 @@ impl Node {
         self.peer_mgr.reset_routing_table(*self.full_id.public_id(), &groups);
 
         for pub_id in groups.into_iter().flat_map(|(_, group)| group.into_iter()) {
-            debug!("{:?} Sending connection info to {:?} on GetNodeName response.",
+            debug!("{:?} Sending connection info to {:?} on NodeApproval.",
                    self,
                    pub_id);
 
