@@ -281,25 +281,21 @@ impl PeerManager {
     }
 
     /// Clears the routing table and resets this node's public ID.
-    // TODO: prevent connection to anyone we were waiting on a connection from? Perhaps by only
-    // adding connections if we were expecting them (entry in unknown_peers)?
     pub fn reset_routing_table(&mut self, our_public_id: PublicId, groups: &[Group]) {
-        // TODO: should unknown_peers and expected_peers be cleared?
+        self.unknown_peers.clear();
+        self.expected_peers.clear();
         let min_group_size = self.routing_table.min_group_size();
         self.our_public_id = our_public_id;
-        let groups_as_names = groups.into_iter()
-            .map(|&(ref prefix, ref members)| {
-                (*prefix, members.into_iter().map(|pub_id| *pub_id.name()).collect_vec())
-            })
-            .collect_vec();
-        self.expected_peers.extend(groups_as_names.iter()
-            .flat_map(|&(_, ref v)| v.iter().map(|name| (*name, Instant::now()))));
+        self.expected_peers.extend(groups.iter()
+            .flat_map(|&(_, ref members)| members)
+            .map(|id| (*id.name(), Instant::now())));
+        let prefixes = groups.iter().map(|&(ref prefix, _)| *prefix).collect_vec();
         // TODO - nothing can be done to recover from an error here - use `unwrap!` for now, but
         // consider refactoring to return an error which can be used to transition the state
         // machine to `Terminate`.
         let new_rt = unwrap!(RoutingTable::new_with_groups(*our_public_id.name(),
                                                            min_group_size,
-                                                           groups_as_names));
+                                                           prefixes));
         let old_rt = mem::replace(&mut self.routing_table, new_rt);
         for name in old_rt.iter() {
             let _ = self.peer_map.remove_by_name(name);
@@ -313,7 +309,8 @@ impl PeerManager {
         &self.routing_table
     }
 
-    /// Note that a new peer is expected
+    /// Notes that a new peer should be expected. This should only be called for peers not already
+    /// in our routing table.
     pub fn expect_peer(&mut self, id: &PublicId) {
         let _ = self.expected_peers.insert(*id.name(), Instant::now());
     }
@@ -372,8 +369,8 @@ impl PeerManager {
     pub fn split_group(&mut self,
                        prefix: Prefix<XorName>)
                        -> (Vec<(XorName, PeerId)>, Option<Prefix<XorName>>) {
-        // TODO: what about names in unknown_peers and expected_peers ?
         let (names_to_drop, our_new_prefix) = self.routing_table.split(prefix);
+
         let mut ids_to_drop = vec![];
         for name in &names_to_drop {
             if let Some(peer) = self.peer_map.remove_by_name(name) {
@@ -383,6 +380,13 @@ impl PeerManager {
                 }
             }
         }
+
+        let mut old_expected_peers = HashMap::new();
+        mem::swap(&mut self.expected_peers, &mut old_expected_peers);
+        self.expected_peers = old_expected_peers.into_iter()
+            .filter(|&(ref name, _)| self.routing_table.need_to_add(name) == Ok(()))
+            .collect();
+
         (ids_to_drop, our_new_prefix)
     }
 
@@ -423,10 +427,17 @@ impl PeerManager {
             merge_prefix: merge_prefix,
             groups: groups_as_names,
         };
-        self.expected_peers.extend(own_merge_details.groups
-            .iter()
-            .flat_map(|(_, group)| group.iter())
-            .map(|name| (*name, Instant::now())));
+        let mut expected_peers = HashMap::new();
+        mem::swap(&mut self.expected_peers, &mut expected_peers);
+        expected_peers.extend(own_merge_details.groups
+            .values()
+            .flat_map(|group| group.iter())
+            .filter_map(|name| if self.peer_map.get_by_name(name).is_none() {
+                Some((*name, Instant::now()))
+            } else {
+                None
+            }));
+        mem::swap(&mut self.expected_peers, &mut expected_peers);
         (self.routing_table.merge_own_group(own_merge_details), needed)
     }
 
@@ -717,7 +728,7 @@ impl PeerManager {
             .collect()
     }
 
-    /// Return the PublicIds of nodes given their names; the result is filtered to the names we
+    /// Returns the PublicIds of nodes given their names; the result is filtered to the names we
     /// know about (i.e. unknown names are ignored).
     pub fn get_pub_ids(&self, names: &HashSet<XorName>) -> HashSet<PublicId> {
         let mut result_map = names.iter()

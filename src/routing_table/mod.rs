@@ -252,16 +252,13 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     }
 
     /// Creates a new `RoutingTable`, using an existing collection of groups.
-    pub fn new_with_groups<U, V>(our_name: T,
-                                 min_group_size: usize,
-                                 new_groups: U)
-                                 -> Result<Self, Error>
-        where U: IntoIterator<Item = (Prefix<T>, V)>,
-              V: IntoIterator<Item = T>
-    {
+    pub fn new_with_groups(our_name: T,
+                           min_group_size: usize,
+                           prefixes: Vec<Prefix<T>>)
+                           -> Result<Self, Error> {
         let mut our_group_prefix = Default::default();
-        let groups = new_groups.into_iter()
-            .filter_map(|(prefix, _)| {
+        let groups = prefixes.into_iter()
+            .filter_map(|prefix| {
                 if prefix.matches(&our_name) {
                     our_group_prefix = prefix;
                     None
