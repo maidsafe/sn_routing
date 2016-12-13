@@ -27,9 +27,9 @@ use routing::{Event, Prefix, XOR_NAME_LEN, XorName};
 use routing::mock_crust::{Config, Endpoint, Network};
 use routing::mock_crust::crust::PeerId;
 pub use self::utils::{TestClient, TestNode, create_connected_clients, create_connected_nodes,
-                      create_connected_nodes_with_cache_until_split, gen_bytes,
-                      gen_immutable_data, gen_range_except, poll_all, poll_and_resend,
-                      sort_nodes_by_distance_to, verify_invariant_for_all_nodes};
+                      create_connected_nodes_until_split, gen_bytes, gen_immutable_data,
+                      gen_range_except, poll_all, poll_and_resend, sort_nodes_by_distance_to,
+                      verify_invariant_for_all_nodes};
 
 // -----  Miscellaneous tests below  -----
 
@@ -146,7 +146,7 @@ fn simultaneous_joining_nodes() {
     // Create a network with two sections:
     let min_group_size = 8;
     let network = Network::new(min_group_size, None);
-    let mut nodes = create_connected_nodes_with_cache_until_split(&network, vec![1, 1], false);
+    let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1], false);
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
 
     // Add two nodes simultaneously, to two different sections:

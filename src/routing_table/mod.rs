@@ -231,7 +231,7 @@ pub struct RoutingTable<T: Binary + Clone + Copy + Debug + Default + Hash + Xora
     our_group: HashSet<T>,
     groups: Groups<T>,
     // Peers discovered while merging our own group which should be added but aren't yet.
-    needed: Groups<T>,
+    needed: HashSet<T>,
     // While merging our own group, this is the set of merging prefixes with a flag for each
     // indicating whether we have "heard from" that group yet or not (i.e. if
     // `RoutingTable::merge_own_group()` has been called with that group as the sender).
@@ -247,7 +247,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             our_group: HashSet::new(),
             our_group_prefix: Default::default(),
             groups: HashMap::new(),
-            needed: HashMap::new(),
+            needed: HashSet::new(),
             merging: HashMap::new(),
         }
     }
@@ -260,14 +260,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         where U: IntoIterator<Item = (Prefix<T>, V)>,
               V: IntoIterator<Item = T>
     {
-        let mut needed = HashMap::new();
+        let mut needed = HashSet::new();
         let mut our_group_prefix = Default::default();
         let groups = new_groups.into_iter()
             .filter_map(|(prefix, members)| {
-                let group: HashSet<T> = members.into_iter().collect();
-                if !group.is_empty() {
-                    let _ = needed.insert(prefix, group);
-                }
+                needed.extend(members);
                 if prefix.matches(&our_name) {
                     our_group_prefix = prefix;
                     None
@@ -500,30 +497,14 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             return Err(Error::PeerNameUnsuitable);
         }
 
-        if let Some(needed_prefix) =
-            self.needed
-                .keys()
-                .find(|&prefix| prefix.matches(&name))
-                .cloned() {
-            // Safe to unwrap as we just found this key
-            let mut needed_group = unwrap!(self.needed.remove(&needed_prefix));
-            let _ = needed_group.remove(&name);
-            if !needed_group.is_empty() {
-                let _ = self.needed.insert(needed_prefix, needed_group);
-            }
-        }
-
+        let _ = self.needed.remove(&name);
         Ok(self.should_split_our_group(self.our_group.iter().chain(iter::once(&self.our_name))))
     }
 
     /// Marks a node as being needed
     pub fn mark_needed(&mut self, name: &T) -> Result<(), Error> {
-        if let Some(prefix) = self.find_group_prefix(name) {
-            self.needed.entry(prefix).or_insert_with(HashSet::new).insert(*name);
-            Ok(())
-        } else {
-            Err(Error::PeerNameUnsuitable)
-        }
+        let _ = self.needed.insert(*name);
+        Ok(())
     }
 
     /// Splits a group.
@@ -664,8 +645,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                 self.groups.entry(*prefix).or_insert_with(HashSet::new)
             };
             if group.is_empty() {
-                let needed_group = self.needed.entry(*prefix).or_insert_with(HashSet::new);
-                needed_group.extend(contacts);
+                self.needed.extend(contacts);
             }
         }
 
@@ -699,40 +679,14 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         self.merge(&merge_details.prefix);
 
         // Establish list of provided contacts which are currently missing from our table.
-        merge_details.group
+        let missing = merge_details.group
             .difference(unwrap!(self.groups.get(&merge_details.prefix)))
             .cloned()
-            .collect()
-    }
-
-    /// Gets the `route`-th name from a collection of names
-    pub fn get_routeth_name<'a, U: IntoIterator<Item = &'a T>>(names: U,
-                                                               dst_name: &T,
-                                                               route: usize)
-                                                               -> &'a T {
-        let sorted_names = names.into_iter()
-            .sorted_by(|&lhs, &rhs| dst_name.cmp_distance(lhs, rhs));
-        sorted_names[route % sorted_names.len()]
-    }
-
-    /// Returns the `route`-th node in the given group, sorted by distance to `target`
-    pub fn get_routeth_node(&self,
-                            group: &HashSet<T>,
-                            target: T,
-                            exclude: Option<T>,
-                            route: usize)
-                            -> Result<T, Error> {
-        let names = if let Some(exclude) = exclude {
-            group.iter().filter(|&x| *x != exclude).collect_vec()
-        } else {
-            group.iter().collect_vec()
-        };
-
-        if names.is_empty() {
-            return Err(Error::CannotRoute);
+            .collect::<HashSet<_>>();
+        if !missing.is_empty() {
+            self.needed.extend(missing.iter().cloned());
         }
-
-        Ok(*RoutingTable::get_routeth_name(names, &target, route))
+        missing
     }
 
     /// Returns a collection of nodes to which a message for the given `Authority` should be sent
@@ -852,6 +806,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         where I: IntoIterator,
               I::Item: Borrow<T>
     {
+        // If we're currently merging, we shouldn't split too.
+        if !self.needed.is_empty() || !self.merging.is_empty() || self.should_merge().is_some() {
+            return false;
+        }
+
         // Count the number of names which will end up in each new group if our group is split.
         let mut new_group_size_0 = 0;
         let mut new_group_size_1 = 0;
@@ -914,10 +873,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             prefix: merge_details.merge_prefix,
             group: self.our_group.clone(),
         };
-        other_details.group.extend(self.needed
-            .iter()
-            .filter(|&(prefix, _)| self.our_group_prefix.is_compatible(prefix))
-            .flat_map(|(_, names)| names.iter().cloned()));
         other_details.group.insert(self.our_name);
         OwnMergeState::Completed {
             targets: targets,
@@ -951,8 +906,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         None
     }
 
-    // Returns the prefix of the group in which `name` belongs, or `None` if there is no such group
-    // in the routing table.
+    /// Returns the prefix of the group in which `name` belongs, or `None` if there is no such group
+    /// in the routing table.
     fn find_group_prefix(&self, name: &T) -> Option<Prefix<T>> {
         if self.our_group_prefix.matches(name) {
             return Some(self.our_group_prefix);
@@ -960,16 +915,46 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         self.groups.keys().find(|&prefix| prefix.matches(name)).cloned()
     }
 
-    // Returns the prefix of the section closest to `name`, regardless of whether `name` belongs in
-    // that section or not, and the section itself.
+    /// Returns the prefix of the closest non-empty section to `name`, regardless of whether `name`
+    /// belongs in that section or not, and the section itself.
     fn closest_section(&self, name: &T) -> (&Prefix<T>, &HashSet<T>) {
         let mut result = (&self.our_group_prefix, &self.our_group);
-        for entry in &self.groups {
-            if result.0.cmp_distance(entry.0, name) == Ordering::Greater {
-                result = entry
+        for (prefix, group) in &self.groups {
+            if !group.is_empty() && result.0.cmp_distance(prefix, name) == Ordering::Greater {
+                result = (prefix, group)
             }
         }
         result
+    }
+
+    /// Gets the `route`-th name from a collection of names
+    fn get_routeth_name<'a, U: IntoIterator<Item = &'a T>>(names: U,
+                                                           dst_name: &T,
+                                                           route: usize)
+                                                           -> &'a T {
+        let sorted_names = names.into_iter()
+            .sorted_by(|&lhs, &rhs| dst_name.cmp_distance(lhs, rhs));
+        sorted_names[route % sorted_names.len()]
+    }
+
+    /// Returns the `route`-th node in the given group, sorted by distance to `target`
+    fn get_routeth_node(&self,
+                        group: &HashSet<T>,
+                        target: T,
+                        exclude: Option<T>,
+                        route: usize)
+                        -> Result<T, Error> {
+        let names = if let Some(exclude) = exclude {
+            group.iter().filter(|&x| *x != exclude).collect_vec()
+        } else {
+            group.iter().collect_vec()
+        };
+
+        if names.is_empty() {
+            return Err(Error::CannotRoute);
+        }
+
+        Ok(*RoutingTable::get_routeth_name(names, &target, route))
     }
 
     fn check_invariant(&self) -> Result<(), Error> {
@@ -998,7 +983,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             }
         }
         for (prefix, group) in &self.groups {
-            let len = group.len() + self.needed.get(prefix).map(HashSet::len).unwrap_or(0);
+            let len = group.len() + self.needed.len();
             if has_enough_nodes && len < self.min_group_size {
                 warn!("Minimum group size not met for group {:?}: {:?}",
                       prefix,
@@ -1039,7 +1024,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     /// Returns the list of contacts as a result of a merge to which we aren't currently connected,
     /// but should be.
-    pub fn needed(&self) -> &Groups<T> {
+    #[cfg(any(test, feature = "use-mock-crust"))]
+    pub fn needed(&self) -> &HashSet<T> {
         &self.needed
     }
 
@@ -1121,7 +1107,7 @@ pub struct RoutingSection<'a, T: 'a + Binary + Clone + Copy + Debug + Default + 
     // in case the referred section is our own group, our name must be considered separately
     our_name: Option<&'a T>,
     section: &'a HashSet<T>,
-    needed: Option<&'a HashSet<T>>,
+    needed: HashSet<&'a T>,
 }
 
 impl<'a, T: 'a + Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingSection<'a, T> {
@@ -1129,12 +1115,12 @@ impl<'a, T: 'a + Binary + Clone + Copy + Debug + Default + Hash + Xorable> Routi
     fn with(prefix: &Prefix<T>,
             our_name: Option<&'a T>,
             section: &'a HashSet<T>,
-            needed_all: &'a Groups<T>)
+            needed_all: &'a HashSet<T>)
             -> Self {
         RoutingSection {
             our_name: our_name,
             section: section,
-            needed: needed_all.get(prefix),
+            needed: needed_all.iter().filter(|name| prefix.matches(name)).collect(),
         }
     }
 
@@ -1145,7 +1131,7 @@ impl<'a, T: 'a + Binary + Clone + Copy + Debug + Default + Hash + Xorable> Routi
 
     /// Has the section already sent contact info to a node it should contain?
     pub fn is_needed(&self, name: &T) -> bool {
-        self.needed.map_or(false, |n| n.contains(name))
+        self.needed.contains(name)
     }
 }
 

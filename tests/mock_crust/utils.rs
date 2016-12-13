@@ -340,10 +340,10 @@ pub fn create_connected_nodes_with_cache(network: &Network,
 //
 // The array is sanity checked (e.g. it would be an error to pass [1, 1, 1]), must comprise at
 // least two elements, and every element must be no more than `8`.
-pub fn create_connected_nodes_with_cache_until_split(network: &Network,
-                                                     mut prefix_lengths: Vec<usize>,
-                                                     use_cache: bool)
-                                                     -> Vec<TestNode> {
+pub fn create_connected_nodes_until_split(network: &Network,
+                                          mut prefix_lengths: Vec<usize>,
+                                          use_cache: bool)
+                                          -> Vec<TestNode> {
     // Get sorted list of prefixes to suit requested lengths.
     sanity_check(&prefix_lengths);
     prefix_lengths.sort();
@@ -354,27 +354,46 @@ pub fn create_connected_nodes_with_cache_until_split(network: &Network,
     let mut nodes =
         vec![TestNode::builder(network).first().endpoint(Endpoint(0)).cache(use_cache).create()];
     nodes[0].poll();
-    let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
 
     // Start enough new nodes under each target prefix to trigger a split eventually.
     let min_split_size = unwrap!(nodes[0].routing_table()).min_split_size();
     for prefix in &prefixes {
         for _ in 0..min_split_size {
-            let relocation_name = prefix.substituted_in(rng.gen());
-            nodes.iter().foreach(|node| node.inner.set_next_node_name(relocation_name));
-
-            let endpoint = Endpoint(nodes.len());
-            nodes.push(TestNode::builder(network)
-                .config(config.clone())
-                .endpoint(endpoint)
-                .cache(use_cache)
-                .create());
-            poll_and_resend(&mut nodes, &mut []);
-            expect_next_event!(nodes[nodes.len() - 1], Event::Connected);
-            assert_eq!(relocation_name, nodes[nodes.len() - 1].name());
+            add_node_to_group(network, &mut nodes, prefix, &mut rng, use_cache);
             if nodes.len() == 2 {
                 expect_next_event!(nodes[0], Event::Connected);
             }
+        }
+    }
+
+    // If recursive splits are added to Routing (https://maidsafe.atlassian.net/browse/MAID-1861)
+    // this next step can be removed.
+    // Find and add nodes to sections which still need to split to trigger this.
+    loop {
+        let mut found_prefix = None;
+        for node in &nodes {
+            if let Some(prefix_to_split) =
+                unwrap!(node.inner.routing_table())
+                    .prefixes()
+                    .iter()
+                    .find(|&prefix| !prefixes.contains(prefix)) {
+                // Assert that this can be split down to a desired prefix.
+                let is_valid = |prefix: &Prefix<XorName>| {
+                    if prefix.is_compatible(prefix_to_split) {
+                        assert!(prefix.bit_count() > prefix_to_split.bit_count());
+                        return true;
+                    }
+                    false
+                };
+                assert!(prefixes.iter().any(is_valid));
+                found_prefix = Some(*prefix_to_split);
+                break;
+            }
+        }
+        if let Some(prefix_to_split) = found_prefix {
+            add_node_to_group(network, &mut nodes, &prefix_to_split, &mut rng, use_cache);
+        } else {
+            break;
         }
     }
 
@@ -484,6 +503,26 @@ fn prefixes<T: Rng>(prefix_lengths: &[usize], rng: &mut T) -> Vec<Prefix<XorName
         }
     }
     prefixes
+}
+
+fn add_node_to_group<T: Rng>(network: &Network,
+                             nodes: &mut Vec<TestNode>,
+                             prefix: &Prefix<XorName>,
+                             rng: &mut T,
+                             use_cache: bool) {
+    let relocation_name = prefix.substituted_in(rng.gen());
+    nodes.iter().foreach(|node| node.inner.set_next_node_name(relocation_name));
+
+    let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
+    let endpoint = Endpoint(nodes.len());
+    nodes.push(TestNode::builder(network)
+        .config(config.clone())
+        .endpoint(endpoint)
+        .cache(use_cache)
+        .create());
+    poll_and_resend(nodes, &mut []);
+    expect_next_event!(nodes[nodes.len() - 1], Event::Connected);
+    assert_eq!(relocation_name, nodes[nodes.len() - 1].name());
 }
 
 mod tests {

@@ -22,6 +22,7 @@ use rand;
 use routing_table::{Authority, OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix,
                     RemovalDetails, RoutingTable};
 use routing_table::Error as RoutingTableError;
+use rust_sodium::crypto::hash::sha256;
 use rust_sodium::crypto::sign;
 use std::{error, fmt, mem};
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -381,11 +382,10 @@ impl PeerManager {
                            -> (OwnMergeState<XorName>, Vec<PublicId>) {
         self.remove_expired();
         let needed = groups.iter()
-            .filter(|&&(prefix, _)| merge_prefix.is_compatible(&prefix))
             .flat_map(|&(_, ref pub_ids)| pub_ids)
             .filter(|pub_id| {
                 pub_id.name() != self.routing_table.our_name() &&
-                self.peer_map.get_by_name(pub_id.name()).is_none()
+                !self.routing_table.has(pub_id.name())
             })
             .cloned()
             .collect();
@@ -573,6 +573,13 @@ impl PeerManager {
         if let Some(peer) = self.peer_map.get_by_name(pub_id.name()) {
             match peer.state {
                 PeerState::Client | PeerState::JoiningNode | PeerState::Proxy => peer.peer_id,
+                _ => None,
+            }
+        } else if let Some(join_peer) = self.peer_map
+            .get_by_name(&XorName(sha256::hash(&pub_id.signing_public_key().0).0)) {
+            // Joining node might have relocated by now but we might have it via its client name
+            match join_peer.state {
+                PeerState::JoiningNode => join_peer.peer_id,
                 _ => None,
             }
         } else {

@@ -168,7 +168,7 @@ impl Network {
                                                       (targets, merge_details));
                             // add needed contacts
                             let needed = target_node.needed().clone();
-                            for needed_contact in needed.values().flat_map(HashSet::iter) {
+                            for needed_contact in &needed {
                                 let _ = target_node.add(*needed_contact);
                             }
                             if let Some(info) = target_node.should_merge() {

@@ -18,21 +18,22 @@
 use rand::Rng;
 use routing::Event;
 use routing::mock_crust::Network;
-use super::{create_connected_nodes_with_cache_until_split, poll_and_resend,
-            verify_invariant_for_all_nodes};
+use super::{create_connected_nodes_until_split, poll_and_resend, verify_invariant_for_all_nodes};
 
 // See docs for `create_connected_nodes_with_cache_until_split` for details on `prefix_lengths`.
 fn merge(prefix_lengths: Vec<usize>) {
     let min_group_size = 8;
     let network = Network::new(min_group_size, None);
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes_with_cache_until_split(&network, prefix_lengths, false);
+    let mut nodes = create_connected_nodes_until_split(&network, prefix_lengths, false);
     verify_invariant_for_all_nodes(&nodes);
 
     // Drop nodes from a group with the shortest prefix until we get a merge event for the empty
     // prefix.
     let mut min_prefix = *unwrap!(nodes[0].routing_table()).our_group_prefix();
+    let mut got_merge_event;
     loop {
+        got_merge_event = false;
         rng.shuffle(&mut nodes);
         let mut index = nodes.len();
         for (i, node) in nodes.iter().enumerate() {
@@ -46,6 +47,7 @@ fn merge(prefix_lengths: Vec<usize>) {
             }
         }
 
+        info!("Killing {:?}", nodes[index].name());
         let _ = nodes.remove(index);
         poll_and_resend(&mut nodes, &mut []);
         for node in &nodes {
@@ -55,6 +57,7 @@ fn merge(prefix_lengths: Vec<usize>) {
                     Event::NodeLost(..) |
                     Event::Tick => (),
                     Event::GroupMerge(prefix) => {
+                        got_merge_event = true;
                         if prefix.bit_count() == 0 {
                             return;
                         }
@@ -62,6 +65,9 @@ fn merge(prefix_lengths: Vec<usize>) {
                     event => panic!("{} got unexpected event: {:?}", node.name(), event),
                 }
             }
+        }
+        if got_merge_event {
+            info!("About to check invariant");
         }
         verify_invariant_for_all_nodes(&nodes);
     }
