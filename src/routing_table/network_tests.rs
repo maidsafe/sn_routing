@@ -143,6 +143,7 @@ impl Network {
             }
         }
 
+        let mut expected_peers = HashMap::new();
         while !merge_own_info.is_empty() {
             let mut merge_other_info: HashMap<Prefix<u64>, OtherMergeInfo> = HashMap::new();
             // handle broadcast of merge_own_group
@@ -151,6 +152,11 @@ impl Network {
             for (_, merge_own_details) in own_info {
                 let nodes = self.nodes_covered_by_prefixes(&[merge_own_details.merge_prefix]);
                 for node in &nodes {
+                    let node_expected = expected_peers.entry(*node)
+                        .or_insert_with(HashSet::new);
+                    for group in &merge_own_details.groups {
+                        node_expected.extend(group.1);
+                    }
                     let target_node = unwrap!(self.nodes.get_mut(&node));
                     match target_node.merge_own_group(merge_own_details.clone()) {
                         OwnMergeState::Initialised { merge_details } => {
@@ -165,15 +171,17 @@ impl Network {
                                                       *target_node.our_group_prefix(),
                                                       (targets, merge_details));
                             // Forcibly add new connections.
-                            for name in &nodes {
+                            for name in node_expected.iter() {
                                 // Try adding each node we should be connected to.
                                 // Ignore failures and ignore splits.
                                 let _ = target_node.add(*name);
                             }
-                            if let Some(info) = target_node.should_merge() {
-                                Network::store_merge_info(&mut merge_own_info,
-                                                          *target_node.our_group_prefix(),
-                                                          info);
+                            if node_expected.is_empty() {
+                                if let Some(info) = target_node.should_merge() {
+                                    Network::store_merge_info(&mut merge_own_info,
+                                                              *target_node.our_group_prefix(),
+                                                              info);
+                                }
                             }
                         }
                     }
@@ -377,7 +385,6 @@ fn groups_have_identical_routing_tables() {
 }
 
 #[test]
-#[ignore]
 fn merging_groups() {
     let mut network = Network::new(8, None);
     for _ in 0..100 {
