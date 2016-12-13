@@ -29,6 +29,7 @@ use routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use routing_table::Authority;
 use state_machine::Transition;
 use stats::Stats;
+use std::collections::BTreeSet;
 use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::Sender;
 use std::time::Duration;
@@ -358,7 +359,7 @@ impl Bootstrapped for Client {
         }
 
         if !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_peer_id, route) {
-            let bytes = self.to_hop_bytes(signed_msg.clone(), route, vec![])?;
+            let bytes = self.to_hop_bytes(signed_msg.clone(), route, BTreeSet::new())?;
 
             if let Err(error) = self.send_or_drop(&proxy_peer_id, bytes, signed_msg.priority()) {
                 info!("{:?} - Error sending message to {:?}: {:?}.",

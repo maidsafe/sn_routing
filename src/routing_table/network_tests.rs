@@ -235,14 +235,14 @@ impl Network {
                 }
             }
         }
-        if dst.is_node() {
-            assert!(handled.contains(dst.name()),
+        if dst.is_single() {
+            assert!(handled.contains(&dst.name()),
                     "Message to {:?} only handled by {:?}",
                     dst,
                     handled);
         } else {
-            let close_node = self.close_node(*dst.name());
-            for node in unwrap!(self.nodes[&close_node].close_names(dst.name())) {
+            let close_node = self.close_node(dst.name());
+            for node in unwrap!(self.nodes[&close_node].close_names(&dst.name())) {
                 assert!(handled.contains(&node));
             }
         }
