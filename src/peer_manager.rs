@@ -293,9 +293,8 @@ impl PeerManager {
         // TODO - nothing can be done to recover from an error here - use `unwrap!` for now, but
         // consider refactoring to return an error which can be used to transition the state
         // machine to `Terminate`.
-        let new_rt = unwrap!(RoutingTable::new_with_groups(*our_public_id.name(),
-                                                           min_group_size,
-                                                           prefixes));
+        let new_rt =
+            unwrap!(RoutingTable::new_with_groups(*our_public_id.name(), min_group_size, prefixes));
         let old_rt = mem::replace(&mut self.routing_table, new_rt);
         for name in old_rt.iter() {
             let _ = self.peer_map.remove_by_name(name);
@@ -348,7 +347,8 @@ impl PeerManager {
                                 -> Result<bool, RoutingTableError> {
         let _ = self.unknown_peers.remove(&peer_id);
         let _ = self.expected_peers.remove(pub_id.name());
-        let should_split = self.routing_table.add(*pub_id.name())?;
+        let should_split = self.routing_table.add(*pub_id.name())? &&
+                           self.expected_peers.is_empty();
         let tunnel = match self.peer_map.remove(&peer_id).map(|peer| peer.state) {
             Some(PeerState::SearchingForTunnel) |
             Some(PeerState::AwaitingNodeIdentify(true)) => true,
@@ -381,8 +381,7 @@ impl PeerManager {
             }
         }
 
-        let mut old_expected_peers = HashMap::new();
-        mem::swap(&mut self.expected_peers, &mut old_expected_peers);
+        let old_expected_peers = mem::replace(&mut self.expected_peers, HashMap::new());
         self.expected_peers = old_expected_peers.into_iter()
             .filter(|&(ref name, _)| self.routing_table.need_to_add(name) == Ok(()))
             .collect();
@@ -409,10 +408,7 @@ impl PeerManager {
         self.remove_expired();
         let needed = groups.iter()
             .flat_map(|&(_, ref pub_ids)| pub_ids)
-            .filter(|pub_id| {
-                pub_id.name() != self.routing_table.our_name() &&
-                !self.routing_table.has(pub_id.name())
-            })
+            .filter(|pub_id| !self.routing_table.has(pub_id.name()))
             .cloned()
             .collect();
 
@@ -427,17 +423,16 @@ impl PeerManager {
             merge_prefix: merge_prefix,
             groups: groups_as_names,
         };
-        let mut expected_peers = HashMap::new();
-        mem::swap(&mut self.expected_peers, &mut expected_peers);
+        let mut expected_peers = mem::replace(&mut self.expected_peers, HashMap::new());
         expected_peers.extend(own_merge_details.groups
             .values()
             .flat_map(|group| group.iter())
-            .filter_map(|name| if self.peer_map.get_by_name(name).is_none() {
-                Some((*name, Instant::now()))
-            } else {
+            .filter_map(|name| if self.routing_table.has(name) {
                 None
+            } else {
+                Some((*name, Instant::now()))
             }));
-        mem::swap(&mut self.expected_peers, &mut expected_peers);
+        self.expected_peers = expected_peers;
         (self.routing_table.merge_own_group(own_merge_details), needed)
     }
 
