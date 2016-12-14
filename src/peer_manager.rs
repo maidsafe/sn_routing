@@ -312,7 +312,8 @@ impl PeerManager {
                                    expected_name: &XorName,
                                    our_public_id: &PublicId)
                                    -> Result<Vec<Group>, RoutingTableError> {
-        let groups = self.routing_table.expect_add_to_our_group(expected_name)?;
+        self.routing_table.validate_joining_node(expected_name)?;
+        let groups = self.routing_table.groups();
         let mut result = vec![];
         for (prefix, names) in groups {
             let mut public_ids = vec![];
