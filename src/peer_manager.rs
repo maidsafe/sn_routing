@@ -170,15 +170,15 @@ impl Peer {
 
     fn is_expired(&self) -> bool {
         match self.state {
-            PeerState::ConnectionInfoPreparing(..) |
-            PeerState::ConnectionInfoReady(_) |
-            PeerState::CrustConnecting |
             PeerState::SearchingForTunnel => {
                 self.timestamp.elapsed() >= Duration::from_secs(CONNECTION_TIMEOUT_SECS)
             }
             PeerState::JoiningNode | PeerState::Proxy => {
                 self.timestamp.elapsed() >= Duration::from_secs(JOINING_NODE_TIMEOUT_SECS)
             }
+            PeerState::ConnectionInfoPreparing(..) |
+            PeerState::ConnectionInfoReady(_) |
+            PeerState::CrustConnecting |
             PeerState::Client |
             PeerState::Routing(_) |
             PeerState::AwaitingNodeIdentify(_) => false,
@@ -967,7 +967,6 @@ impl PeerManager {
 
     fn remove_expired(&mut self) {
         self.remove_expired_peers();
-        self.remove_expired_tokens();
         self.cleanup_proxy_peer_id();
     }
 
@@ -983,21 +982,6 @@ impl PeerManager {
         }
 
         self.cleanup_proxy_peer_id();
-    }
-
-    fn remove_expired_tokens(&mut self) {
-        let remove_tokens = self.connection_token_map
-            .iter()
-            .filter(|&(_, pub_id)| match self.get_state_by_name(pub_id.name()) {
-                Some(&PeerState::ConnectionInfoPreparing(..)) => false,
-                _ => true,
-            })
-            .map(|(token, _)| *token)
-            .collect_vec();
-
-        for token in remove_tokens {
-            let _ = self.connection_token_map.remove(&token);
-        }
     }
 
     fn cleanup_proxy_peer_id(&mut self) {
