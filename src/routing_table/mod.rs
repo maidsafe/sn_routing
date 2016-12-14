@@ -298,6 +298,15 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         &self.our_group
     }
 
+    /// Returns the whole routing table, including our group and our name
+    pub fn groups(&self) -> Groups<T> {
+        let mut groups = self.groups.clone();
+        let mut our_group = self.our_group.clone();
+        our_group.insert(self.our_name);
+        let _ = groups.insert(self.our_group_prefix, our_group);
+        groups
+    }
+
     /// Returns the total number of entries in the routing table.
     pub fn len(&self) -> usize {
         self.groups.values().fold(0, |acc, group| acc + group.len()) + self.our_group.len()
@@ -448,36 +457,15 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
     }
 
-    /// Returns the collection of groups to which a peer joining our group should connect.
-    ///
-    /// This will generally be all the groups in our routing table.  However, if the addition of the
-    /// new node will cause our group to split, only the groups which will remain neighbours after
-    /// the split are returned.  Returns `Err(Error::PeerNameUnsuitable)` if `name` is not within
-    /// our group, or `Err(Error::AlreadyExists)` if `name` is already in our table.
-    pub fn expect_add_to_our_group(&self, name: &T) -> Result<Groups<T>, Error> {
+    /// Validates a joining node's name.
+    pub fn validate_joining_node(&self, name: &T) -> Result<(), Error> {
         if !self.our_group_prefix.matches(name) {
             return Err(Error::PeerNameUnsuitable);
         }
         if self.our_group.contains(name) {
             return Err(Error::AlreadyExists);
         }
-        let mut our_group = self.our_group.clone();
-        our_group.insert(self.our_name);
-        let next_name_bit = name.bit(self.our_group_prefix.bit_count());
-        let mut groups = self.groups.clone();
-        if self.should_split_our_group(our_group.iter().chain(iter::once(name))) {
-            let name_prefix_after_split = self.our_group_prefix.pushed(next_name_bit);
-            groups = groups.into_iter()
-                .filter(|&(prefix, _)| prefix.is_neighbour(&name_prefix_after_split))
-                .collect();
-            let (name_group, other_group) = our_group.into_iter()
-                .partition(|x| name_prefix_after_split.matches(x));
-            let _ = groups.insert(self.our_group_prefix.pushed(!next_name_bit), other_group);
-            let _ = groups.insert(name_prefix_after_split, name_group);
-        } else {
-            let _ = groups.insert(self.our_group_prefix, our_group);
-        }
-        Ok(groups)
+        Ok(())
     }
 
     /// Adds a contact to the routing table.
