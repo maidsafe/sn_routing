@@ -17,7 +17,6 @@
 
 use ack_manager::{Ack, AckManager};
 use action::Action;
-use authority::Authority;
 use crust::{PeerId, Service};
 use crust::Event as CrustEvent;
 use error::{InterfaceError, RoutingError};
@@ -27,13 +26,16 @@ use maidsafe_utilities::serialisation;
 use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage, UserMessage,
                UserMessageCache};
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
+use routing_table::Authority;
 use state_machine::Transition;
 use stats::Stats;
+use std::collections::BTreeSet;
 use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::Sender;
 use std::time::Duration;
 use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 use timer::Timer;
+use xor_name::XorName;
 
 /// A node connecting a user to the network, as opposed to a routing / data storage node.
 ///
@@ -228,8 +230,8 @@ impl Client {
 
     /// Sends the given message, possibly splitting it up into smaller parts.
     fn send_user_message(&mut self,
-                         src: Authority,
-                         dst: Authority,
+                         src: Authority<XorName>,
+                         dst: Authority<XorName>,
                          user_msg: UserMessage,
                          priority: u8)
                          -> Result<(), RoutingError> {
@@ -243,15 +245,6 @@ impl Client {
         }
         Ok(())
     }
-
-    /// Does the given authority represent us?
-    fn in_authority(&self, auth: &Authority) -> bool {
-        if let Authority::Client { ref client_key, .. } = *auth {
-            client_key == self.full_id.public_id().signing_public_key()
-        } else {
-            false
-        }
-    }
 }
 
 impl Base for Client {
@@ -261,6 +254,15 @@ impl Base for Client {
 
     fn full_id(&self) -> &FullId {
         &self.full_id
+    }
+
+    /// Does the given authority represent us?
+    fn in_authority(&self, auth: &Authority<XorName>) -> bool {
+        if let Authority::Client { ref client_key, .. } = *auth {
+            client_key == self.full_id.public_id().signing_public_key()
+        } else {
+            false
+        }
     }
 
     fn handle_lost_peer(&mut self, peer_id: PeerId) -> Transition {
@@ -357,7 +359,7 @@ impl Bootstrapped for Client {
         }
 
         if !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_peer_id, route) {
-            let bytes = self.to_hop_bytes(signed_msg.clone(), route, vec![])?;
+            let bytes = self.to_hop_bytes(signed_msg.clone(), route, BTreeSet::new())?;
 
             if let Err(error) = self.send_or_drop(&proxy_peer_id, bytes, signed_msg.priority()) {
                 info!("{:?} - Error sending message to {:?}: {:?}.",

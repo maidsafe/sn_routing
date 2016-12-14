@@ -28,7 +28,8 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::{Binary, Debug};
 use std::hash::Hash;
 use std::iter::IntoIterator;
-use super::{Destination, Error, RoutingTable};
+use super::{Error, RoutingTable};
+use super::authority::Authority;
 use super::prefix::Prefix;
 
 type OwnMergeInfo = (BTreeSet<Prefix<u64>>, OwnMergeDetails<u64>);
@@ -167,7 +168,7 @@ impl Network {
                                                       (targets, merge_details));
                             // add needed contacts
                             let needed = target_node.needed().clone();
-                            for needed_contact in needed.values().flat_map(HashSet::iter) {
+                            for needed_contact in &needed {
                                 let _ = target_node.add(*needed_contact);
                             }
                             if let Some(info) = target_node.should_merge() {
@@ -222,27 +223,27 @@ impl Network {
 
     /// Verifies that a message sent from node `src` would arrive at destination `dst` via the
     /// given `route`.
-    fn send_message(&self, src: u64, dst: Destination<u64>, route: usize) {
+    fn send_message(&self, src: u64, dst: Authority<u64>, route: usize) {
         let mut received = Vec::new(); // These nodes have received but not handled the message.
         let mut handled = HashSet::new(); // These nodes have received and handled the message.
         received.push(src);
         while let Some(node) = received.pop() {
             handled.insert(node); // `node` is now handling the message and relaying it.
-            if Destination::Node(node) != dst {
-                for target in unwrap!(self.nodes[&node].targets(&dst, src, route)) {
-                    if !handled.contains(&target) && !received.contains(&target) {
-                        received.push(target);
-                    }
+            for target in unwrap!(self.nodes[&node].targets(&dst, src, route)) {
+                if !handled.contains(&target) && !received.contains(&target) {
+                    received.push(target);
                 }
             }
         }
-        match dst {
-            Destination::Node(node) => assert!(handled.contains(&node)),
-            Destination::Group(address) => {
-                let close_node = self.close_node(address);
-                for node in unwrap!(self.nodes[&close_node].close_names(&address)) {
-                    assert!(handled.contains(&node));
-                }
+        if dst.is_single() {
+            assert!(handled.contains(&dst.name()),
+                    "Message to {:?} only handled by {:?}",
+                    dst,
+                    handled);
+        } else {
+            let close_node = self.close_node(dst.name());
+            for node in unwrap!(self.nodes[&close_node].close_names(&dst.name())) {
+                assert!(handled.contains(&node));
             }
         }
     }
@@ -250,10 +251,10 @@ impl Network {
     /// Returns any node that's close to the given address. Panics if the network is empty or no
     /// node is found.
     fn close_node(&self, address: u64) -> u64 {
-        let target = Destination::Group(address);
+        let target = Authority::Section(address);
         unwrap!(self.nodes
             .iter()
-            .find(|&(_, table)| table.is_recipient(&target))
+            .find(|&(_, table)| table.in_authority(&target))
             .map(|(&peer, _)| peer))
     }
 
@@ -274,7 +275,7 @@ fn node_to_node_message() {
         let src = *unwrap!(network.rng.choose(&keys));
         let dst = *unwrap!(network.rng.choose(&keys));
         for route in 0..network.min_group_size {
-            network.send_message(src, Destination::Node(dst), route);
+            network.send_message(src, Authority::ManagedNode(dst), route);
         }
     }
 }
@@ -290,7 +291,7 @@ fn node_to_group_message() {
         let src = *unwrap!(network.rng.choose(&keys));
         let dst = network.rng.gen();
         for route in 0..network.min_group_size {
-            network.send_message(src, Destination::Group(dst), route);
+            network.send_message(src, Authority::Section(dst), route);
         }
     }
 }

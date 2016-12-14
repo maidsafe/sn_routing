@@ -15,9 +15,9 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use authority::Authority;
 use messages::{Request, Response};
 use routing_table::{Prefix, RoutingTable};
+use routing_table::Authority;
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
 
@@ -35,18 +35,18 @@ pub enum Event {
         /// The request message.
         request: Request,
         /// The source authority that sent the request.
-        src: Authority,
+        src: Authority<XorName>,
         /// The destination authority that receives the request.
-        dst: Authority,
+        dst: Authority<XorName>,
     },
     /// Received a response message.
     Response {
         /// The response message.
         response: Response,
         /// The source authority that sent the response.
-        src: Authority,
+        src: Authority<XorName>,
         /// The destination authority that receives the response.
-        dst: Authority,
+        dst: Authority<XorName>,
     },
     /// A new node joined the network and may be a member of group authorities we also belong to.
     NodeAdded(XorName, RoutingTable<XorName>),

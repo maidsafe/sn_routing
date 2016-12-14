@@ -16,12 +16,13 @@
 // relating to use of the SAFE Network Software.
 
 use ack_manager::{ACK_TIMEOUT_SECS, Ack, AckManager, UnacknowledgedMessage};
-use authority::Authority;
 use crust::PeerId;
 use error::RoutingError;
 use maidsafe_utilities::serialisation;
 use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage};
 use routing_message_filter::RoutingMessageFilter;
+use routing_table::Authority;
+use std::collections::BTreeSet;
 use std::time::Duration;
 use super::Base;
 use timer::Timer;
@@ -124,7 +125,7 @@ pub trait Bootstrapped: Base {
         self.send_ack_from(routing_msg, route, routing_msg.dst);
     }
 
-    fn send_ack_from(&mut self, routing_msg: &RoutingMessage, route: u8, src: Authority) {
+    fn send_ack_from(&mut self, routing_msg: &RoutingMessage, route: u8, src: Authority<XorName>) {
         if let MessageContent::Ack(..) = routing_msg.content {
             return;
         }
@@ -146,7 +147,7 @@ pub trait Bootstrapped: Base {
     fn to_hop_bytes(&self,
                     signed_msg: SignedMessage,
                     route: u8,
-                    sent_to: Vec<XorName>)
+                    sent_to: BTreeSet<XorName>)
                     -> Result<Vec<u8>, RoutingError> {
         let hop_msg = HopMessage::new(signed_msg,
                                       route,

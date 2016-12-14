@@ -19,7 +19,7 @@ use rand::Rng;
 use routing::{Authority, Data, Event, MessageId, Prefix, Request, Response};
 use routing::mock_crust::Network;
 use std::sync::mpsc;
-use super::{TestNode, create_connected_clients, create_connected_nodes_with_cache_until_split,
+use super::{TestNode, create_connected_clients, create_connected_nodes_until_split,
             gen_immutable_data, poll_all};
 
 // Generate random immutable data, but make sure the first node in the given
@@ -45,7 +45,7 @@ fn response_caching() {
     let network = Network::new(min_group_size, None);
 
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes_with_cache_until_split(&network, 1);
+    let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1], true);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
 
     let proxy_node_name = nodes[0].name();

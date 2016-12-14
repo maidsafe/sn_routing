@@ -128,6 +128,12 @@ impl State {
             State::Terminated => (),
         }
     }
+
+    pub fn set_next_node_name(&mut self, relocation_name: Option<XorName>) {
+        if let State::Node(ref mut state) = *self {
+            state.set_next_node_name(relocation_name);
+        }
+    }
 }
 
 /// Enum returned from many message handlers

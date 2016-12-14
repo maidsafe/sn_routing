@@ -15,14 +15,14 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use authority::Authority;
 use crust::{PeerId, PrivConnectionInfo, PubConnectionInfo};
 use id::PublicId;
 use itertools::Itertools;
 use rand;
-use routing_table::{OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix, RemovalDetails,
-                    RoutingTable};
+use routing_table::{Authority, OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix,
+                    RemovalDetails, RoutingTable};
 use routing_table::Error as RoutingTableError;
+use rust_sodium::crypto::hash::sha256;
 use rust_sodium::crypto::sign;
 use std::{error, fmt, mem};
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -71,7 +71,7 @@ impl error::Error for Error {
 pub enum PeerState {
     /// Waiting for Crust to prepare our `PrivConnectionInfo`. Contains source and destination for
     /// sending it to the peer, and their connection info, if we already received it.
-    ConnectionInfoPreparing(Authority, Authority, Option<PubConnectionInfo>),
+    ConnectionInfoPreparing(Authority<XorName>, Authority<XorName>, Option<PubConnectionInfo>),
     /// The prepared connection info that has been sent to the peer.
     ConnectionInfoReady(PrivConnectionInfo),
     /// We called `connect` and are waiting for a `NewPeer` event.
@@ -120,9 +120,9 @@ pub struct ConnectionInfoPreparedResult {
     /// The peer's public ID.
     pub pub_id: PublicId,
     /// The source authority for sending the connection info.
-    pub src: Authority,
+    pub src: Authority<XorName>,
     /// The destination authority for sending the connection info.
-    pub dst: Authority,
+    pub dst: Authority<XorName>,
     /// If the peer's connection info was already present, the peer has been moved to
     /// `CrustConnecting` status. Crust's `connect` method should be called with these infos now.
     pub infos: Option<(PrivConnectionInfo, PubConnectionInfo)>,
@@ -302,12 +302,18 @@ impl PeerManager {
         &self.routing_table
     }
 
+    /// Marks a node as being needed
+    pub fn mark_needed(&mut self, name: &XorName) -> Result<(), RoutingTableError> {
+        self.routing_table.mark_needed(name)
+    }
+
     /// Wraps the routing table function of the same name and maps `XorName`s to `PublicId`s.
     pub fn expect_add_to_our_group(&self,
                                    expected_name: &XorName,
                                    our_public_id: &PublicId)
                                    -> Result<Vec<Group>, RoutingTableError> {
-        let groups = self.routing_table.expect_add_to_our_group(expected_name)?;
+        self.routing_table.validate_joining_node(expected_name)?;
+        let groups = self.routing_table.groups();
         let mut result = vec![];
         for (prefix, names) in groups {
             let mut public_ids = vec![];
@@ -325,7 +331,9 @@ impl PeerManager {
         Ok(result)
     }
 
-    /// Tries to add the given peer to the routing table, and returns the result, if successful.
+    /// Tries to add the given peer to the routing table. If successful, this returns `Ok(true)` if
+    /// the addition should cause our group to split or `Ok(false)` if the addition shouldn't cause
+    /// a split.
     pub fn add_to_routing_table(&mut self,
                                 pub_id: PublicId,
                                 peer_id: PeerId)
@@ -351,14 +359,14 @@ impl PeerManager {
     /// remain connected.
     pub fn split_group(&mut self,
                        prefix: Prefix<XorName>)
-                       -> (Vec<PeerId>, Option<Prefix<XorName>>) {
+                       -> (Vec<(XorName, PeerId)>, Option<Prefix<XorName>>) {
         let (names_to_drop, our_new_prefix) = self.routing_table.split(prefix);
         let mut ids_to_drop = vec![];
         for name in &names_to_drop {
             if let Some(peer) = self.peer_map.remove_by_name(name) {
                 self.cleanup_proxy_peer_id();
                 if let Some(peer_id) = peer.peer_id {
-                    ids_to_drop.push(peer_id);
+                    ids_to_drop.push((*name, peer_id));
                 }
             }
         }
@@ -375,11 +383,10 @@ impl PeerManager {
                            -> (OwnMergeState<XorName>, Vec<PublicId>) {
         self.remove_expired();
         let needed = groups.iter()
-            .filter(|&&(prefix, _)| merge_prefix.is_compatible(&prefix))
             .flat_map(|&(_, ref pub_ids)| pub_ids)
             .filter(|pub_id| {
                 pub_id.name() != self.routing_table.our_name() &&
-                self.peer_map.get_by_name(pub_id.name()).is_none()
+                !self.routing_table.has(pub_id.name())
             })
             .cloned()
             .collect();
@@ -569,6 +576,13 @@ impl PeerManager {
                 PeerState::Client | PeerState::JoiningNode | PeerState::Proxy => peer.peer_id,
                 _ => None,
             }
+        } else if let Some(join_peer) = self.peer_map
+            .get_by_name(&XorName(sha256::hash(&pub_id.signing_public_key().0).0)) {
+            // Joining node might have relocated by now but we might have it via its client name
+            match join_peer.state {
+                PeerState::JoiningNode => join_peer.peer_id,
+                _ => None,
+            }
         } else {
             None
         }
@@ -748,8 +762,8 @@ impl PeerManager {
     /// Inserts the given connection info in the map to wait for the preparation of our own info, or
     /// returns both if that's already present and sets the status to `CrustConnecting`.
     pub fn connection_info_received(&mut self,
-                                    src: Authority,
-                                    dst: Authority,
+                                    src: Authority<XorName>,
+                                    dst: Authority<XorName>,
                                     pub_id: PublicId,
                                     their_info: PubConnectionInfo)
                                     -> Result<ConnectionInfoReceivedResult, Error> {
@@ -804,8 +818,8 @@ impl PeerManager {
     /// Returns a new token for Crust's `prepare_connection_info` and puts the given peer into
     /// `ConnectionInfoPreparing` status.
     pub fn get_connection_token(&mut self,
-                                src: Authority,
-                                dst: Authority,
+                                src: Authority<XorName>,
+                                dst: Authority<XorName>,
                                 pub_id: PublicId)
                                 -> Option<u32> {
         match self.get_state_by_name(pub_id.name()) {
@@ -954,14 +968,14 @@ impl PeerManager {
 
 #[cfg(all(test, feature = "use-mock-crust"))]
 mod tests {
-    use authority::Authority;
     use id::FullId;
     use mock_crust::Endpoint;
     use mock_crust::crust::{PeerId, PrivConnectionInfo, PubConnectionInfo};
+    use routing_table::Authority;
     use super::*;
     use xor_name::{XOR_NAME_LEN, XorName};
 
-    fn node_auth(byte: u8) -> Authority {
+    fn node_auth(byte: u8) -> Authority<XorName> {
         Authority::ManagedNode(XorName([byte; XOR_NAME_LEN]))
     }
 

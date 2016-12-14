@@ -16,7 +16,6 @@
 // relating to use of the SAFE Network Software.
 
 use ack_manager::Ack;
-use authority::Authority;
 #[cfg(not(feature = "use-mock-crust"))]
 use crust::PeerId;
 use data::{AppendWrapper, Data, DataIdentifier};
@@ -30,6 +29,7 @@ use maidsafe_utilities::serialisation::{deserialise, serialise};
 #[cfg(feature = "use-mock-crust")]
 use mock_crust::crust::PeerId;
 use routing_table::{Prefix, Xorable};
+use routing_table::Authority;
 use rust_sodium::crypto::{box_, sign};
 use rust_sodium::crypto::hash::sha256;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -155,7 +155,7 @@ pub struct HopMessage {
     /// considered for the next hop.
     pub route: u8,
     /// Every node this has already been sent to.
-    pub sent_to: Vec<XorName>,
+    pub sent_to: BTreeSet<XorName>,
     /// Signature to be validated against the neighbouring sender's public key.
     signature: sign::Signature,
 }
@@ -164,7 +164,7 @@ impl HopMessage {
     /// Wrap `content` for transmission to the next hop and sign it.
     pub fn new(content: SignedMessage,
                route: u8,
-               sent_to: Vec<XorName>,
+               sent_to: BTreeSet<XorName>,
                signing_key: &sign::SecretKey)
                -> Result<HopMessage, RoutingError> {
         let bytes_to_sign = serialise(&content)?;
@@ -272,7 +272,7 @@ impl SignedMessage {
     /// lists isn't empty, the signature is only added if `pub_id` is a member of the first group
     /// list.
     pub fn add_signature(&mut self, pub_id: PublicId, sig: sign::Signature) {
-        if self.content.src.is_group() &&
+        if self.content.src.is_multiple() &&
            self.grp_lists.first().map_or(true, |grp_list| grp_list.pub_ids.contains(&pub_id)) {
             let _ignore_num = self.signatures.insert(pub_id, sig);
         }
@@ -280,7 +280,7 @@ impl SignedMessage {
 
     /// Adds all signatures from the given message, without validating them.
     pub fn add_signatures(&mut self, msg: SignedMessage) {
-        if self.content.src.is_group() {
+        if self.content.src.is_multiple() {
             self.signatures.extend(msg.signatures);
         }
     }
@@ -307,7 +307,7 @@ impl SignedMessage {
             return self.signatures.len() == 1;
         }
         self.grp_lists.first().map_or(false, |grp_list| {
-            if self.content.src.is_group() {
+            if self.content.src.is_multiple() {
                 let valid_names: HashSet<_> = grp_list.pub_ids
                     .iter()
                     .map(PublicId::name)
@@ -360,16 +360,16 @@ impl SignedMessage {
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
 pub struct RoutingMessage {
     /// Source authority
-    pub src: Authority,
+    pub src: Authority<XorName>,
     /// Destination authority
-    pub dst: Authority,
+    pub dst: Authority<XorName>,
     /// The message content
     pub content: MessageContent,
 }
 
 impl RoutingMessage {
     /// Create ack for the given message
-    pub fn ack_from(msg: &RoutingMessage, src: Authority) -> Result<Self, RoutingError> {
+    pub fn ack_from(msg: &RoutingMessage, src: Authority<XorName>) -> Result<Self, RoutingError> {
         Ok(RoutingMessage {
             src: src,
             dst: msg.src,
@@ -472,20 +472,15 @@ pub enum MessageContent {
         /// The message's unique identifier.
         message_id: MessageId,
     },
-    /// Notify a joining node's `NaeManager` so that it expects a `GetCloseGroup` request from it.
+    /// Notify a joining node's `NaeManager` so that it sends a `GetNodeNameResponse`.
     ExpectCloseNode {
         /// The joining node's `PublicId` (public keys and name)
         expect_id: PublicId,
         /// The client's current authority.
-        client_auth: Authority,
+        client_auth: Authority<XorName>,
         /// The message's unique identifier.
         message_id: MessageId,
     },
-    /// Request the `PublicId`s of the recipient's close group.
-    ///
-    /// This is sent from a joining node to its `NodeManager` to request the `PublicId`s of the
-    /// `NodeManager`'s members.
-    GetCloseGroup(MessageId),
     /// Send our connection_info encrypted to a node we wish to connect to and have the keys for.
     ConnectionInfo(ConnectionInfo),
     /// Reply with the new `PublicId` for the joining node.
@@ -500,14 +495,14 @@ pub enum MessageContent {
         /// The message's unique identifier.
         message_id: MessageId,
     },
-    /// Return the close `PublicId`s back to the requester.
-    ///
-    /// Sent from a `NodeManager` to a node or client.
-    GetCloseGroupResponse {
-        /// Our close group `PublicId`s.
-        close_group_ids: Vec<PublicId>,
-        /// The message ID.
-        message_id: MessageId,
+    /// Sent to notify neighbours and own members when our section's member list changed (for now,
+    /// only when new nodes join).
+    SectionUpdate {
+        /// Section prefix. Included because this message is sent to both the section's own members
+        /// and neighbouring sections.
+        prefix: Prefix<XorName>,
+        /// Members of the section
+        members: Vec<PublicId>,
     },
     /// Sent to all connected peers when our own group splits
     GroupSplit(Prefix<XorName>, XorName),
@@ -625,7 +620,6 @@ impl Debug for MessageContent {
                        client_auth,
                        message_id)
             }
-            MessageContent::GetCloseGroup(id) => write!(formatter, "GetCloseGroup({:?})", id),
             MessageContent::ConnectionInfo(_) => write!(formatter, "ConnectionInfo {{ .. }}"),
             MessageContent::GetNodeNameResponse { ref relocated_id,
                                                   ref groups,
@@ -636,11 +630,8 @@ impl Debug for MessageContent {
                        groups,
                        message_id)
             }
-            MessageContent::GetCloseGroupResponse { ref close_group_ids, message_id } => {
-                write!(formatter,
-                       "GetCloseGroupResponse {{ {:?}, {:?} }}",
-                       close_group_ids,
-                       message_id)
+            MessageContent::SectionUpdate { ref prefix, ref members } => {
+                write!(formatter, "SectionUpdate {{ {:?}, {:?} }}", prefix, members)
             }
             MessageContent::GroupSplit(ref prefix, ref joining_node) => {
                 write!(formatter, "GroupSplit({:?}, {:?})", prefix, joining_node)
@@ -726,7 +717,7 @@ impl UserMessage {
 
     /// Returns an event indicating that this message was received with the given source and
     /// destination authorities.
-    pub fn into_event(self, src: Authority, dst: Authority) -> Event {
+    pub fn into_event(self, src: Authority<XorName>, dst: Authority<XorName>) -> Event {
         match self {
             UserMessage::Request(request) => {
                 Event::Request {
@@ -1027,14 +1018,15 @@ impl UserMessageCache {
 
 #[cfg(test)]
 mod tests {
-    use authority::Authority;
     use data::{Data, ImmutableData};
     use id::FullId;
     use maidsafe_utilities;
     use maidsafe_utilities::serialisation::serialise;
     use rand;
+    use routing_table::{Authority, Prefix};
     use rust_sodium::crypto::hash::sha256;
     use rust_sodium::crypto::sign;
+    use std::collections::BTreeSet;
     use std::iter;
     use super::*;
     use super::MAX_PART_LEN;
@@ -1047,7 +1039,7 @@ mod tests {
         let routing_message = RoutingMessage {
             src: Authority::ClientManager(name),
             dst: Authority::ClientManager(name),
-            content: MessageContent::GetCloseGroup(MessageId::zero()),
+            content: MessageContent::GroupSplit(Prefix::new(0, name), name),
         };
         let full_id = FullId::new();
         let signed_message_result = SignedMessage::new(routing_message.clone(), &full_id);
@@ -1150,7 +1142,7 @@ mod tests {
         let routing_message = RoutingMessage {
             src: Authority::ClientManager(name),
             dst: Authority::ClientManager(name),
-            content: MessageContent::GetCloseGroup(MessageId::zero()),
+            content: MessageContent::GroupSplit(Prefix::new(0, name), name),
         };
         let full_id = FullId::new();
         let signed_message_result = SignedMessage::new(routing_message.clone(), &full_id);
@@ -1159,8 +1151,10 @@ mod tests {
 
         let signed_message = unwrap!(signed_message_result);
         let (public_signing_key, secret_signing_key) = sign::gen_keypair();
-        let hop_message_result =
-            HopMessage::new(signed_message.clone(), 0, vec![], &secret_signing_key);
+        let hop_message_result = HopMessage::new(signed_message.clone(),
+                                                 0,
+                                                 BTreeSet::new(),
+                                                 &secret_signing_key);
 
         let hop_message = unwrap!(hop_message_result);
 

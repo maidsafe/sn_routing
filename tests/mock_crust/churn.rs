@@ -17,7 +17,7 @@
 
 use itertools::Itertools;
 use rand::Rng;
-use routing::{Authority, DataIdentifier, Destination, Event, MessageId, QUORUM, Request, XorName};
+use routing::{Authority, DataIdentifier, Event, MessageId, QUORUM, Request, XorName};
 use routing::mock_crust::{Config, Network};
 use std::cmp;
 use std::collections::{HashMap, HashSet};
@@ -53,7 +53,7 @@ fn random_churn<R: Rng>(rng: &mut R,
 }
 
 /// The entries of a Get request: the data ID, message ID, source and destination authority.
-type GetKey = (DataIdentifier, MessageId, Authority, Authority);
+type GetKey = (DataIdentifier, MessageId, Authority<XorName>, Authority<XorName>);
 
 /// A set of expectations: Which nodes and groups are supposed to receive Get requests.
 #[derive(Default)]
@@ -61,7 +61,7 @@ struct ExpectedGets {
     /// The Get requests expected to be received.
     messages: HashSet<GetKey>,
     /// The group members of the receiving groups, at the time of sending.
-    groups: HashMap<Authority, HashSet<XorName>>,
+    groups: HashMap<Authority<XorName>, HashSet<XorName>>,
 }
 
 impl ExpectedGets {
@@ -70,24 +70,23 @@ impl ExpectedGets {
     /// if an individual sending node could not be found.
     fn send_and_expect(&mut self,
                        data_id: DataIdentifier,
-                       src: Authority,
-                       dst: Authority,
+                       src: Authority<XorName>,
+                       dst: Authority<XorName>,
                        nodes: &[TestNode],
                        min_group_size: usize) {
-        let src_dest = src.to_destination();
-        let dst_dest = dst.to_destination();
         let msg_id = MessageId::new();
         let mut sent_count = 0;
-        for node in nodes.iter().filter(|node| node.is_recipient(&src_dest)) {
+        for node in nodes.iter().filter(|node| node.is_recipient(&src)) {
             unwrap!(node.inner.send_get_request(src, dst, data_id, msg_id));
             sent_count += 1;
         }
-        match src_dest {
-            Destination::Group(_) => assert!(100 * sent_count >= QUORUM * min_group_size),
-            Destination::Node(_) => assert_eq!(sent_count, 1),
+        if src.is_multiple() {
+            assert!(100 * sent_count >= QUORUM * min_group_size);
+        } else {
+            assert_eq!(sent_count, 1);
         }
-        if dst.is_group() && !self.groups.contains_key(&dst) {
-            let is_recipient = |n: &&TestNode| n.is_recipient(&dst_dest);
+        if dst.is_multiple() && !self.groups.contains_key(&dst) {
+            let is_recipient = |n: &&TestNode| n.is_recipient(&dst);
             let group = nodes.iter().filter(is_recipient).map(TestNode::name).collect();
             let _ = self.groups.insert(dst, group);
         }
@@ -102,8 +101,7 @@ impl ExpectedGets {
         let group_sizes: HashMap<_, _> = self.groups
             .iter_mut()
             .map(|(dst, group)| {
-                let dst_dest = dst.to_destination();
-                let is_recipient = |n: &&TestNode| n.is_recipient(&dst_dest);
+                let is_recipient = |n: &&TestNode| n.is_recipient(dst);
                 let new_group = nodes.iter().filter(is_recipient).map(TestNode::name).collect_vec();
                 let count = cmp::min(group.len(), new_group.len());
                 group.extend(new_group);
@@ -115,7 +113,7 @@ impl ExpectedGets {
             while let Ok(event) = node.event_rx.try_recv() {
                 if let Event::Request { request: Request::Get(data_id, msg_id), src, dst } = event {
                     let key = (data_id, msg_id, src, dst);
-                    if dst.is_group() {
+                    if dst.is_multiple() {
                         assert!(self.groups
                                     .get(&key.3)
                                     .map_or(false, |entry| entry.contains(&node.name())),
@@ -124,7 +122,7 @@ impl ExpectedGets {
                                 key);
                         *group_msgs_received.entry(key).or_insert(0usize) += 1;
                     } else {
-                        assert_eq!(node.name(), *dst.name());
+                        assert_eq!(node.name(), dst.name());
                         assert!(self.messages.remove(&key),
                                 "Unexpected request for node {:?}: {:?}",
                                 node.name(),
@@ -135,7 +133,7 @@ impl ExpectedGets {
         }
         for key in self.messages {
             // All received messages for single nodes were removed: if any are left, they failed.
-            assert!(key.3.is_group(), "Failed to receive request {:?}", key);
+            assert!(key.3.is_multiple(), "Failed to receive request {:?}", key);
             let group_size = group_sizes[&key.3];
             let count = group_msgs_received.remove(&key).unwrap_or(0);
             assert!(100 * count >= QUORUM * group_size,
@@ -168,17 +166,28 @@ fn churn() {
         let auth_n1 = Authority::ManagedNode(nodes[index1].name());
         let auth_g0 = Authority::NaeManager(rng.gen());
         let auth_g1 = Authority::NaeManager(rng.gen());
+        let section_name: XorName = rng.gen();
+        let auth_s0 = Authority::Section(section_name);
+        // this makes sure we have two different sections if there exists more than one
+        let auth_s1 = Authority::Section(!section_name);
 
         let mut expected_gets = ExpectedGets::default();
 
-        // Test messages from a node to itself, another node and a group ...
+        // Test messages from a node to itself, another node, a group and a section...
         expected_gets.send_and_expect(data_id, auth_n0, auth_n0, &nodes, min_group_size);
         expected_gets.send_and_expect(data_id, auth_n0, auth_n1, &nodes, min_group_size);
         expected_gets.send_and_expect(data_id, auth_n0, auth_g0, &nodes, min_group_size);
-        // ... and from a group to itself, another group and a node.
+        expected_gets.send_and_expect(data_id, auth_n0, auth_s0, &nodes, min_group_size);
+        // ... and from a group to itself, another group, a section and a node...
         expected_gets.send_and_expect(data_id, auth_g0, auth_g0, &nodes, min_group_size);
         expected_gets.send_and_expect(data_id, auth_g0, auth_g1, &nodes, min_group_size);
+        expected_gets.send_and_expect(data_id, auth_g0, auth_s0, &nodes, min_group_size);
         expected_gets.send_and_expect(data_id, auth_g0, auth_n0, &nodes, min_group_size);
+        // ... and from a section to itself, another section, a group and a node...
+        expected_gets.send_and_expect(data_id, auth_s0, auth_s0, &nodes, min_group_size);
+        expected_gets.send_and_expect(data_id, auth_s0, auth_s1, &nodes, min_group_size);
+        expected_gets.send_and_expect(data_id, auth_s0, auth_g0, &nodes, min_group_size);
+        expected_gets.send_and_expect(data_id, auth_s0, auth_n0, &nodes, min_group_size);
 
         poll_and_resend(&mut nodes, &mut []);
 

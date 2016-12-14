@@ -98,7 +98,6 @@
 //! # Sequence diagrams
 //!
 //! - [Bootstrapping](bootstrap.png)
-//! - [`GetCloseGroup`](get-close-group.png)
 //! - [Churn (`NewNode`)](new-node.png)
 //! - [Tunnel](tunnel.png)
 
@@ -148,7 +147,6 @@ extern crate tiny_keccak;
 
 mod ack_manager;
 mod action;
-mod authority;
 mod client;
 mod cache;
 mod data;
@@ -189,7 +187,6 @@ pub const TYPE_TAG_DNS_PACKET: u64 = 5;
 /// The quorum, as a percentage of the group size.
 pub const QUORUM: usize = 60;
 
-pub use authority::Authority;
 pub use cache::{Cache, NullCache};
 pub use client::Client;
 pub use data::{AppendWrapper, AppendedData, Data, DataIdentifier, Filter, ImmutableData,
@@ -204,10 +201,10 @@ pub use messages::{Request, Response};
 #[cfg(feature = "use-mock-crust")]
 pub use mock_crust::crust;
 pub use node::{Node, NodeBuilder};
-#[cfg(any(test, feature = "use-mock-crust"))]
-pub use routing_table::{Destination, verify_network_invariant};
-pub use routing_table::{Prefix, RoutingTable, Xorable};
+pub use routing_table::{Authority, Prefix, RoutingTable, Xorable};
 pub use routing_table::Error as RoutingTableError;
+#[cfg(any(test, feature = "use-mock-crust"))]
+pub use routing_table::verify_network_invariant;
 pub use types::MessageId;
 pub use xor_name::{XOR_NAME_BITS, XOR_NAME_LEN, XorName, XorNameFromHexError};
 

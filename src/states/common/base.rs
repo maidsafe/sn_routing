@@ -21,6 +21,7 @@ use event::Event;
 use id::FullId;
 use maidsafe_utilities::serialisation;
 use messages::Message;
+use routing_table::Authority;
 use state_machine::Transition;
 use stats::Stats;
 use std::fmt::Debug;
@@ -32,6 +33,7 @@ pub trait Base: Debug {
     fn full_id(&self) -> &FullId;
     fn stats(&mut self) -> &mut Stats;
     fn send_event(&self, event: Event);
+    fn in_authority(&self, auth: &Authority<XorName>) -> bool;
 
     fn handle_lost_peer(&mut self, _peer_id: PeerId) -> Transition {
         Transition::Stay
