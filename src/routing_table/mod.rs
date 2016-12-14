@@ -232,10 +232,10 @@ pub struct RoutingTable<T: Binary + Clone + Copy + Debug + Default + Hash + Xora
     groups: Groups<T>,
     // Peers discovered while merging our own group which should be added but aren't yet.
     needed: HashSet<T>,
-    // While merging our own group, this is the set of merging prefixes with a flag for each
-    // indicating whether we have "heard from" that group yet or not (i.e. if
-    // `RoutingTable::merge_own_group()` has been called with that group as the sender).
-    merging: HashMap<Prefix<T>, bool>,
+    // Whether we have sent our merge details to the other group.
+    we_want_to_merge: bool,
+    // Whether the other group has sent their merge details to us.
+    they_want_to_merge: bool,
 }
 
 impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T> {
@@ -248,7 +248,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             our_group_prefix: Default::default(),
             groups: HashMap::new(),
             needed: HashSet::new(),
-            merging: HashMap::new(),
+            we_want_to_merge: false,
+            they_want_to_merge: false,
         }
     }
 
@@ -280,7 +281,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             our_group_prefix: our_group_prefix,
             groups: groups,
             needed: needed,
-            merging: HashMap::new(),
+            we_want_to_merge: false,
+            they_want_to_merge: false,
         };
         result.check_invariant()?;
         Ok(result)
@@ -583,7 +585,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             !prefix.popped().is_compatible(&self.our_group_prefix) ||
             group.len() >= self.min_group_size
         };
-        if bit_count == 0 || !self.needed.is_empty() || !self.merging.is_empty() ||
+        if bit_count == 0 || !self.needed.is_empty() || self.we_want_to_merge ||
+           self.they_want_to_merge ||
            !self.groups.contains_key(&self.our_group_prefix.with_flipped_bit(bit_count - 1)) ||
            (self.our_group.len() + 1 >= self.min_group_size &&
             self.groups.iter().all(doesnt_need_to_merge_with_us)) {
@@ -609,7 +612,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     pub fn merge_own_group(&mut self, merge_details: OwnMergeDetails<T>) -> OwnMergeState<T> {
         // TODO: Return an error if they are not compatible instead?
         if !self.our_group_prefix.is_compatible(&merge_details.merge_prefix) ||
-           self.our_group_prefix.bit_count() <= merge_details.merge_prefix.bit_count() {
+           self.our_group_prefix.bit_count() != merge_details.merge_prefix.bit_count() + 1 {
             warn!("{:?}: Attempt to call merge_own_group() for an already merged prefix {:?}",
                   self.our_name,
                   merge_details.merge_prefix);
@@ -617,26 +620,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
         for (prefix, contacts) in &merge_details.groups {
             let compatible_with_ours = self.our_group_prefix.is_compatible(prefix);
-            // If it's a merging group...
-            if merge_details.merge_prefix.is_compatible(prefix) {
-                // This may be a group which has been merged from multiple groups currently still
-                // in our RT, so fix up our RT first.
-                if !self.groups.contains_key(prefix) && !compatible_with_ours {
-                    self.merge(prefix);
-                }
-                // Cache the prefix, flagging the sender's prefix `true`.  If the prefix is
-                // compatible with ours, just add our own prefix, as we could have been merging at
-                // the same time as the sender, in which case it could have out-of-date info about
-                // our own groups.
-                let prefix_to_enter = if compatible_with_ours {
-                    self.our_group_prefix
-                } else {
-                    *prefix
-                };
-                let prefix_entry = self.merging.entry(prefix_to_enter).or_insert(false);
-                if merge_details.sender_prefix == *prefix {
-                    *prefix_entry = true;
-                }
+            // This may be a group which has been merged from multiple groups currently still
+            // in our RT, so fix up our RT first.
+            if merge_details.merge_prefix.is_compatible(prefix) &&
+               !self.groups.contains_key(prefix) && !compatible_with_ours {
+                self.merge(prefix);
             }
             // Add an empty group in the table and cache the corresponding contacts.
             let group = if compatible_with_ours {
@@ -649,11 +637,15 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             }
         }
 
-        let called_count = self.merging.values().filter(|&&flag| flag).count();
-        if called_count == self.merging.len() {
+        if merge_details.sender_prefix == self.our_group_prefix {
+            self.we_want_to_merge = true;
+        } else {
+            self.they_want_to_merge = true;
+        }
+        if self.we_want_to_merge && self.they_want_to_merge {
             // We've heard from all merging groups - do the merge and return `Completed`.
             self.finish_merging_own_group(merge_details)
-        } else if merge_details.sender_prefix == self.our_group_prefix || called_count > 1 {
+        } else if self.we_want_to_merge {
             // We've either triggered the merge ourself via a `remove()` call or we've already been
             // notified of the merge by a peer group via this function, so we've already notified
             // the merging peers.
@@ -813,7 +805,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
               I::Item: Borrow<T>
     {
         // If we're currently merging, we shouldn't split too.
-        if !self.needed.is_empty() || !self.merging.is_empty() || self.should_merge().is_some() {
+        if !self.needed.is_empty() || self.we_want_to_merge || self.they_want_to_merge ||
+           self.should_merge().is_some() {
             return false;
         }
 
@@ -872,7 +865,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     }
 
     fn finish_merging_own_group(&mut self, merge_details: OwnMergeDetails<T>) -> OwnMergeState<T> {
-        self.merging.clear();
+        self.we_want_to_merge = false;
+        self.they_want_to_merge = false;
         self.merge(&merge_details.merge_prefix);
         let targets = self.groups.keys().cloned().collect();
         let mut other_details = OtherMergeDetails {
@@ -1088,7 +1082,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Binary for Rou
             writeln!(formatter, "\t}}{}", comma)?;
         }
         writeln!(formatter, "\tneeded: {:?}", self.needed)?;
-        writeln!(formatter, "\tmerging: {:?}", self.merging)?;
+        writeln!(formatter,
+                 "\tmerging: we {:?}, they {:?}",
+                 self.we_want_to_merge,
+                 self.they_want_to_merge)?;
         write!(formatter, "}}")
     }
 }
