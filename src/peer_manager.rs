@@ -932,16 +932,6 @@ impl PeerManager {
         self.peer_map.get_by_name(name).map(Peer::state)
     }
 
-    pub fn our_connection_info(&self, name: &XorName) -> Option<PubConnectionInfo> {
-        self.peer_map.get_by_name(name).and_then(|peer| {
-            if let PeerState::ConnectionInfoReady(ref our_priv_info) = peer.state {
-                Some(our_priv_info.to_pub_connection_info())
-            } else {
-                None
-            }
-        })
-    }
-
     fn get_state(&self, peer_id: &PeerId) -> Option<&PeerState> {
         self.peer_map.get(peer_id).map(Peer::state)
     }

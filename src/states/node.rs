@@ -962,9 +962,17 @@ impl Node {
                             their_pub_id: PublicId,
                             src: Authority<XorName>,
                             dst: Authority<XorName>,
-                            msg_id: Option<MessageId>)
-                            -> Result<(), RoutingError> {
-        let encoded_connection_info = serialisation::serialise(&our_pub_info)?;
+                            msg_id: Option<MessageId>) {
+        let encoded_connection_info = match serialisation::serialise(&our_pub_info) {
+            Ok(encoded_connection_info) => encoded_connection_info,
+            Err(err) => {
+                debug!("{:?} Failed to serialise connection info for {:?}: {:?}.",
+                   self,
+                   their_pub_id.name(),
+                   err);
+                return;
+            }
+        };
         let nonce = box_::gen_nonce();
         let encrypted_conn_info = box_::seal(&encoded_connection_info,
                                              &nonce,
@@ -998,7 +1006,6 @@ impl Node {
                    their_pub_id.name(),
                    err);
         }
-        Ok(())
     }
 
     fn handle_connection_info_prepared(&mut self,
@@ -1012,6 +1019,7 @@ impl Node {
             Ok(connection_info) => connection_info,
         };
 
+        let our_pub_info = our_connection_info.to_pub_connection_info();
         match self.peer_mgr.connection_info_prepared(result_token, our_connection_info) {
             Err(error) => {
                 // This usually means we have already connected.
@@ -1026,23 +1034,14 @@ impl Node {
                         debug!("{:?} Prepared connection info for {:?}.",
                                self,
                                pub_id.name());
-                        if let Some(our_info) = self.peer_mgr.our_connection_info(pub_id.name()) {
-                            let _ = self.send_connection_info(our_info, pub_id, src, dst, None);
-                        } else {
-                            error!("{:?} Logic error in PeerManager: we just added our connection \
-                                    info for {} so it should be retrievable.", self, pub_id.name());
-                        }
+                        self.send_connection_info(our_pub_info, pub_id, src, dst, None);
                     }
                     Some((our_info, their_info, msg_id)) => {
                         debug!("{:?} Trying to connect to {:?} as {:?}.",
                                self,
                                their_info.id(),
                                pub_id.name());
-                        let _ = self.send_connection_info(our_info.to_pub_connection_info(),
-                                                          pub_id,
-                                                          src,
-                                                          dst,
-                                                          Some(msg_id));
+                        self.send_connection_info(our_pub_info, pub_id, src, dst, Some(msg_id));
                         let _ = self.crust_service.connect(our_info, their_info);
                     }
                 }
@@ -1077,11 +1076,11 @@ impl Node {
                       self,
                       public_id.name(),
                       peer_id);
-                let _ = self.send_connection_info(our_info.to_pub_connection_info(),
-                                                  public_id,
-                                                  dst,
-                                                  src,
-                                                  Some(message_id));
+                self.send_connection_info(our_info.to_pub_connection_info(),
+                                          public_id,
+                                          dst,
+                                          src,
+                                          Some(message_id));
                 if let Err(error) = self.crust_service.connect(our_info, their_info) {
                     trace!("{:?} Unable to connect to {:?} - {:?}", self, src, error);
                 }
@@ -1132,7 +1131,10 @@ impl Node {
                        self,
                        public_id.name(),
                        peer_id);
-                let _ = self.crust_service.connect(our_info, their_info);
+                if let Err(error) = self.crust_service.connect(our_info, their_info) {
+                    debug!("{:?} Crust failed initiating a connection to  {:?} ({:?}): {:?}",
+                           self, public_id.name(), peer_id, error);
+                }
             }
             Ok(Prepare(_)) |
             Ok(IsProxy) |
@@ -1862,7 +1864,7 @@ impl Node {
         trace!("{:?} Resending connection info request to {:?}",
                    self,
                    their_name);
-        let _ = self.send_connection_info(our_pub_info, their_public_id, src, dst, None);
+        self.send_connection_info(our_pub_info, their_public_id, src, dst, None);
         Ok(())
     }
 
