@@ -347,8 +347,7 @@ impl PeerManager {
                                 -> Result<bool, RoutingTableError> {
         let _ = self.unknown_peers.remove(&peer_id);
         let _ = self.expected_peers.remove(pub_id.name());
-        let should_split = self.routing_table.add(*pub_id.name())? &&
-                           self.expected_peers.is_empty();
+        let should_split = self.routing_table.add(*pub_id.name())?;
         let tunnel = match self.peer_map.remove(&peer_id).map(|peer| peer.state) {
             Some(PeerState::SearchingForTunnel) |
             Some(PeerState::AwaitingNodeIdentify(true)) => true,
