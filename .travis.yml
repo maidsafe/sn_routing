@@ -13,10 +13,7 @@ os:
 language: rust
 rust:
   - stable
-  - nightly-2016-11-17
-matrix:
-  allow_failures:
-    - rust: nightly
+  - nightly
 sudo: false
 cache:
   cargo: true
