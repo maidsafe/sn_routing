@@ -47,7 +47,8 @@ pub struct Stats {
     msg_get_node_name: usize,
     msg_expect_close_node: usize,
     msg_refresh: usize,
-    msg_connection_info: usize,
+    msg_connection_info_req: usize,
+    msg_connection_info_rsp: usize,
     msg_get_success: usize,
     msg_get_failure: usize,
     msg_put_success: usize,
@@ -134,7 +135,8 @@ impl Stats {
         match msg.content {
             MessageContent::GetNodeName { .. } => self.msg_get_node_name += 1,
             MessageContent::ExpectCloseNode { .. } => self.msg_expect_close_node += 1,
-            MessageContent::ConnectionInfo(_) => self.msg_connection_info += 1,
+            MessageContent::ConnectionInfoRequest { .. } => self.msg_connection_info_req += 1,
+            MessageContent::ConnectionInfoResponse { .. } => self.msg_connection_info_rsp += 1,
             MessageContent::SectionUpdate { .. } => self.msg_section_update += 1,
             MessageContent::GroupSplit(..) => self.msg_group_split += 1,
             MessageContent::OwnGroupMerge { .. } => self.msg_own_group_merge += 1,
@@ -180,7 +182,7 @@ impl Stats {
             info!(target: "routing_stats",
                   "Stats - Hops (Request/Response) - GetNodeName: {}/{}, ExpectCloseNode: {}, \
                    SectionUpdate: {}, GroupSplit: {}, OwnGroupMerge: {}, OtherGroupMerge: {}, \
-                   ConnectionInfo: {}, Ack: {}",
+                   ConnectionInfo: {}/{}, Ack: {}",
                   self.msg_get_node_name,
                   self.msg_get_node_name_rsp,
                   self.msg_expect_close_node,
@@ -188,7 +190,8 @@ impl Stats {
                   self.msg_group_split,
                   self.msg_own_group_merge,
                   self.msg_other_group_merge,
-                  self.msg_connection_info,
+                  self.msg_connection_info_req,
+                  self.msg_connection_info_rsp,
                   self.msg_ack);
             info!(target: "routing_stats",
                   "Stats - User (Request/Success/Failure) - Get: {}/{}/{}, Put: {}/{}/{}, \
