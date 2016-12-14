@@ -978,6 +978,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                       self);
                 return Err(Error::InvariantViolation);
             }
+            if self.should_split_our_group(group) {
+                return Err(Error::InvariantViolation);
+            }
             for name in group {
                 if !prefix.matches(name) {
                     warn!("Name {} doesn't match group prefix {:?}: {:?}",
@@ -1174,7 +1177,6 @@ mod tests {
                     panic!("unexpected error: {}", e);
                 }
                 Ok(true) => {
-                    unwrap!(table.check_invariant());
                     let our_prefix = *table.our_group_prefix();
                     assert!(our_prefix.matches(&new_name));
                     let _ = table.split(our_prefix);
