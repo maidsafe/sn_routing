@@ -1013,6 +1013,8 @@ impl PeerManager {
         for name in remove_names {
             let _ = self.peer_map.remove_by_name(&name);
         }
+
+        self.expected_peers.clear();
     }
 }
 
