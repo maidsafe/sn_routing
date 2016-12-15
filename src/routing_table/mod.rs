@@ -272,7 +272,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             we_want_to_merge: false,
             they_want_to_merge: false,
         };
-        result.check_invariant(false)?;
+        result.check_invariant()?;
         Ok(result)
     }
 
@@ -889,7 +889,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         Ok(*RoutingTable::get_routeth_name(names, &target, route))
     }
 
-    fn check_invariant(&self, allow_small_sections: bool) -> Result<(), Error> {
+    fn check_invariant(&self) -> Result<(), Error> {
         if !self.our_group_prefix.matches(&self.our_name) {
             warn!("Our prefix does not match our name: {:?}", self);
             return Err(Error::InvariantViolation);
@@ -915,7 +915,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             }
         }
         for (prefix, group) in &self.groups {
-            if !allow_small_sections && has_enough_nodes && group.len() < self.min_group_size {
+            if has_enough_nodes && group.len() < self.min_group_size {
                 warn!("Minimum group size not met for group {:?}: {:?}",
                       prefix,
                       self);
@@ -955,7 +955,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// Runs the built-in invariant checker
     #[cfg(any(test, feature = "use-mock-crust"))]
     pub fn verify_invariant(&self) {
-        unwrap!(self.check_invariant(false),
+        unwrap!(self.check_invariant(),
                 "Invariant not satisfied for RT: {:?}",
                 self);
     }
@@ -1075,7 +1075,7 @@ mod tests {
         let mut rng: XorShiftRng = SeedableRng::from_seed([1315, 30, 61894, 315]);
         let our_name = rng.next_u32();
         let mut table = RoutingTable::new(our_name, 8);
-        unwrap!(table.check_invariant(false));
+        unwrap!(table.check_invariant());
         let mut unknown_distant_name = None;
 
         for _ in 0..1000 {
@@ -1083,12 +1083,12 @@ mod tests {
             // Try to add new_name. We double-check the output to test this too.
             match table.add(new_name) {
                 Err(Error::AlreadyExists) => {
-                    unwrap!(table.check_invariant(false));
+                    unwrap!(table.check_invariant());
                     assert!(table.iter().any(|u| *u == new_name));
                     // skip
                 }
                 Err(Error::PeerNameUnsuitable) => {
-                    unwrap!(table.check_invariant(false));
+                    unwrap!(table.check_invariant());
                     assert!(table.groups.keys().all(|p| !p.matches(&new_name)));
                     // We should get a few of these. Save one for tests, but otherwise ignore.
                     unknown_distant_name = Some(new_name);
@@ -1097,14 +1097,14 @@ mod tests {
                     panic!("unexpected error: {}", e);
                 }
                 Ok(true) => {
-                    unwrap!(table.check_invariant(false));
+                    unwrap!(table.check_invariant());
                     let our_prefix = *table.our_group_prefix();
                     assert!(our_prefix.matches(&new_name));
                     let _ = table.split(our_prefix);
-                    unwrap!(table.check_invariant(false));
+                    unwrap!(table.check_invariant());
                 }
                 Ok(false) => {
-                    unwrap!(table.check_invariant(false));
+                    unwrap!(table.check_invariant());
                     assert!(table.iter().any(|u| *u == new_name));
                     if table.is_in_our_group(&new_name) {
                         continue;   // add() already checked for necessary split
@@ -1125,7 +1125,7 @@ mod tests {
                     let min_size = table.min_split_size();
                     if new_group_size >= min_size && group_len - new_group_size >= min_size {
                         let _ = table.split(group_prefix);  // do the split
-                        unwrap!(table.check_invariant(false));
+                        unwrap!(table.check_invariant());
                     }
                 }
             }
