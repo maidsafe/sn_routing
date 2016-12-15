@@ -488,7 +488,7 @@ impl ConnectionInfo {
 /// request. Node A needs to answer these requests (resolving a hashing challenge) with
 /// `ResourceProofResponse`. Members of Y will send out `CandidateApproval` messages to vote for the
 /// approval in their section. Once the vote succeeds, the members of Y add A to their routing table
-/// and send `NodeApproval` to A. When A receives the first NodeApproval message, it adds the
+/// and send `NodeApproval` to A. When A receives the first `NodeApproval` message, it adds the
 /// members of Y to its routing table.
 ///
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]

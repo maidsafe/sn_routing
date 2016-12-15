@@ -731,7 +731,7 @@ impl Node {
 
     fn handle_node_approval(&mut self, groups: Vec<(Prefix<XorName>, Vec<PublicId>)>) {
         let result = self.peer_mgr.peer_candidates();
-        if result.len() > 0 {
+        if !result.is_empty() {
             self.peer_mgr.populate_routing_table(&groups);
             for peer_info in &result {
                 self.add_to_routing_table(&peer_info.0, &peer_info.1);
@@ -961,10 +961,10 @@ impl Node {
         debug!("{:?} Handling NodeIdentify from {:?}.",
                self,
                public_id.name());
-        if self.peer_mgr.is_peer_candidate(&public_id, &peer_id) {
+        if self.peer_mgr.check_peer_candidate(&public_id, &peer_id) {
             return;
         }
-        if let Ok(Some((tunnel, seed))) = self.peer_mgr.is_node_candidate(&public_id, &peer_id) {
+        if let Ok(Some((tunnel, seed))) = self.peer_mgr.check_node_candidate(&public_id, &peer_id) {
             if tunnel {
                 /// if connection is in tunnel, vote NO directly, don't carry out profiling
                 /// limitation: joining node ONLY carries out QUORAM valid connection/evaluations
@@ -1379,14 +1379,14 @@ impl Node {
                self,
                self.peer_mgr.routing_table().prefixes());
 
-        for pub_id in group.1.into_iter() {
+        for pub_id in &group.1 {
             self.peer_mgr.add_as_peer_candidate(*pub_id.name());
             debug!("{:?} Sending connection info to {:?} on GetNodeName response.",
                    self,
                    pub_id);
 
             let node_auth = Authority::ManagedNode(*pub_id.name());
-            if let Err(error) = self.send_connection_info(pub_id, dst, node_auth) {
+            if let Err(error) = self.send_connection_info(*pub_id, dst, node_auth) {
                 debug!("{:?} - Failed to send connection info to {:?}: {:?}",
                        self,
                        pub_id,

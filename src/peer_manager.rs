@@ -261,6 +261,9 @@ impl PeerMap {
     }
 }
 
+/// (whether requires resource proof, own group)
+type ExpectJoinResult = Result<(bool, (Prefix<XorName>, Vec<PublicId>)), RoutingTableError>;
+
 /// A container for information about other nodes in the network.
 ///
 /// This keeps track of which nodes we know of, which ones we have tried to connect to, which IDs
@@ -341,9 +344,7 @@ impl PeerManager {
     pub fn populate_routing_table(&mut self, groups: &[Group]) {
         let min_group_size = self.routing_table.min_group_size();
         let groups_prefixes = groups.into_iter()
-            .map(|&(ref prefix, _)| {
-                *prefix
-            })
+            .map(|&(ref prefix, _)| *prefix)
             .collect_vec();
         // TODO - nothing can be done to recover from an error here - use `unwrap!` for now, but
         // consider refactoring to return an error which can be used to transition the state
@@ -369,11 +370,10 @@ impl PeerManager {
     ///
     /// Returns: (true, our_group_list)     if needs to carry out resource proof evaluate
     ///          (false, empty_list)        if doesn't need to carry out resource proof evaluate
-    pub fn expect_join_our_group
-        (&mut self,
-         expected_name: &XorName,
-         our_public_id: &PublicId)
-         -> Result<(bool, (Prefix<XorName>, Vec<PublicId>)), RoutingTableError> {
+    pub fn expect_join_our_group(&mut self,
+                                 expected_name: &XorName,
+                                 our_public_id: &PublicId)
+                                 -> ExpectJoinResult {
         if let Some((name, now, _)) = self.node_candidate {
             if name == *expected_name ||
                now.elapsed() < Duration::from_secs(RESOURCE_PROOF_APPROVE_TIMEOUT_SECS) {
@@ -389,6 +389,7 @@ impl PeerManager {
             self.node_candidate = Some((*expected_name, Instant::now(), seed));
             self.approved_candidate = None;
         } else {
+            self.node_candidate = Some((*expected_name, Instant::now(), vec![]));
             return Ok((false, (prefix, vec![])));
         }
 
@@ -444,7 +445,7 @@ impl PeerManager {
                         if let PeerState::ConnectionInfoPreparing(..) = peer.state {
                             return (false, None);
                         }
-                        if let Some(peer_id) = peer.peer_id().clone() {
+                        if let Some(peer_id) = peer.peer_id() {
                             (*peer.pub_id(), *peer_id)
                         } else {
                             return (false, None);
@@ -467,7 +468,7 @@ impl PeerManager {
         let mut result = vec![];
         for peer_name in &self.peer_candidates.clone() {
             if let Some(peer) = self.peer_map.get_by_name(peer_name) {
-                if let Some(peer_id) = peer.peer_id().clone() {
+                if let Some(peer_id) = peer.peer_id() {
                     result.push((*peer.pub_id(), *peer_id));
                 }
             }
@@ -479,19 +480,20 @@ impl PeerManager {
     /// Update peer's state to `Candidate` if it is a node candidate
     ///
     /// Returns:
-    ///     Ok(None)                   if the peer is not a node candidate or has been approved
+    ///     Ok(None)                   if the peer is not a node candidate for resource proof or has
+    ///                                been approved
     ///     Ok(Some(is_tunnel, seed))  if the peer is a node candidate
     ///     Err(AlreadyExists)         If peer already a routing node
-    pub fn is_node_candidate(&mut self,
-                             pub_id: &PublicId,
-                             peer_id: &PeerId)
-                             -> Result<Option<(bool, Vec<u8>)>, RoutingTableError> {
+    pub fn check_node_candidate(&mut self,
+                                pub_id: &PublicId,
+                                peer_id: &PeerId)
+                                -> Result<Option<(bool, Vec<u8>)>, RoutingTableError> {
         if self.approved_candidate == Some(*pub_id.name()) {
             self.approved_candidate = None;
             return Ok(None);
         }
         if let Some((ref name, _, ref seed)) = self.node_candidate {
-            if name == pub_id.name() {
+            if name == pub_id.name() && !seed.is_empty() {
                 let tunnel = match self.peer_map.remove(peer_id).map(|peer| peer.state) {
                     Some(PeerState::SearchingForTunnel) |
                     Some(PeerState::AwaitingNodeIdentify(true)) => true,
@@ -514,7 +516,7 @@ impl PeerManager {
     ///
     /// Returns: true       if the peer is a peer candidate
     ///          false      if the peer is not a peer candidate
-    pub fn is_peer_candidate(&mut self, pub_id: &PublicId, peer_id: &PeerId) -> bool {
+    pub fn check_peer_candidate(&mut self, pub_id: &PublicId, peer_id: &PeerId) -> bool {
         if !self.peer_candidates.contains(pub_id.name()) {
             return false;
         }
@@ -563,8 +565,14 @@ impl PeerManager {
                                 pub_id: &PublicId,
                                 peer_id: &PeerId)
                                 -> Result<bool, RoutingTableError> {
-        let _ = self.unknown_peers.remove(&peer_id);
+        if let Some((name, _, _)) = self.node_candidate.clone() {
+            if *pub_id.name() == name {
+                self.node_candidate = None;
+            }
+        }
+        let _ = self.unknown_peers.remove(peer_id);
         let _ = self.expected_peers.remove(pub_id.name());
+
         let should_split = self.routing_table.add(*pub_id.name())?;
         let tunnel = match self.peer_map.remove(peer_id).map(|peer| peer.state) {
             Some(PeerState::SearchingForTunnel) |
@@ -1071,11 +1079,7 @@ impl PeerManager {
                 let _ = self.peer_map.insert(peer);
                 Ok(ConnectionInfoReceivedResult::IsProxy)
             }
-            Some(peer @ Peer { state: PeerState::Routing(_), .. }) => {
-                // TODO: We _should_ retry connecting if the peer is connected via tunnel.
-                let _ = self.peer_map.insert(peer);
-                Ok(ConnectionInfoReceivedResult::IsConnected)
-            }
+            Some(peer @ Peer { state: PeerState::Routing(_), .. }) |
             Some(peer @ Peer { state: PeerState::Candidate(_), .. }) => {
                 // TODO: We _should_ retry connecting if the peer is connected via tunnel.
                 let _ = self.peer_map.insert(peer);
