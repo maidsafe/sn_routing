@@ -114,8 +114,8 @@ impl TestNode {
         unwrap!(unwrap!(self.inner.routing_table()).close_names(&self.name()))
     }
 
-    pub fn routing_table(&self) -> Option<RoutingTable<XorName>> {
-        self.inner.routing_table()
+    pub fn routing_table(&self) -> RoutingTable<XorName> {
+        unwrap!(self.inner.routing_table())
     }
 
     pub fn is_recipient(&self, dst: &Authority<XorName>) -> bool {
@@ -356,7 +356,7 @@ pub fn create_connected_nodes_until_split(network: &Network,
     nodes[0].poll();
 
     // Start enough new nodes under each target prefix to trigger a split eventually.
-    let min_split_size = unwrap!(nodes[0].routing_table()).min_split_size();
+    let min_split_size = nodes[0].routing_table().min_split_size();
     for prefix in &prefixes {
         for _ in 0..min_split_size {
             add_node_to_group(network, &mut nodes, prefix, &mut rng, use_cache);
@@ -456,7 +456,7 @@ pub fn sort_nodes_by_distance_to(nodes: &mut [TestNode], name: &XorName) {
 }
 
 pub fn verify_invariant_for_all_nodes(nodes: &[TestNode]) {
-    let routing_tables = nodes.iter().map(|n| unwrap!(n.routing_table())).collect_vec();
+    let routing_tables = nodes.iter().map(|n| n.routing_table()).collect_vec();
     verify_network_invariant(routing_tables.iter());
 }
 
