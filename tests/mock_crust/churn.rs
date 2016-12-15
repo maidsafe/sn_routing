@@ -149,7 +149,7 @@ const CHURN_ITERATIONS: usize = 100;
 
 fn verify_group_list_signatures(nodes: &[TestNode]) {
     for node in nodes {
-        let rt = unwrap!(node.routing_table());
+        let rt = node.routing_table();
         let group_size = rt.our_group().len() + 1;
         for prefix in rt.prefixes() {
             if prefix != *rt.our_group_prefix() {
