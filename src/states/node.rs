@@ -520,8 +520,7 @@ impl Node {
         if let Some(&pub_id) = self.peer_mgr.get_routing_peer(&peer_id) {
             let min_group_size = self.min_group_size();
             if let Some((signed_msg, route)) =
-                self.sig_accumulator
-                    .add_signature(min_group_size, digest, sig, pub_id) {
+                self.sig_accumulator.add_signature(min_group_size, digest, sig, pub_id) {
                 let hop = *self.name(); // we accumulated the message, so now we act as the last hop
                 trace!("{:?} Message accumulated - handling: {:?}", self, signed_msg);
                 return self.handle_signed_message(signed_msg, route, hop, &BTreeSet::new());
@@ -585,16 +584,6 @@ impl Node {
         }
     }
 
-    fn handle_signed_msg_to_us(&mut self,
-                               signed_msg: SignedMessage,
-                               route: u8,
-                               hop_name: XorName,
-                               sent_to: &BTreeSet<XorName>) {
-        self.ack_and_broadcast(&signed_msg, route, hop_name, sent_to);
-        // if addressed to us, then we just queue it and return
-        self.msg_queue.push_back(signed_msg.into_routing_message());
-    }
-
     fn handle_signed_message(&mut self,
                              signed_msg: SignedMessage,
                              route: u8,
@@ -609,34 +598,31 @@ impl Node {
                       self,
                       route,
                       signed_msg.routing_message());
+                return Ok(());
             }
             FilteringResult::KnownMessage => {
                 if self.in_authority(&signed_msg.routing_message().dst) {
                     self.ack_and_broadcast(&signed_msg, route, hop_name, sent_to);
                     return Ok(());
                 }
-
                 // known message, but new route - we still need to relay it in this case
-                if let Err(error) =
-                    self.send_signed_message(&signed_msg, route, &hop_name, sent_to) {
-                    debug!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);
-                }
             }
             FilteringResult::NewMessage => {
                 if self.in_authority(&signed_msg.routing_message().dst) {
-                    self.handle_signed_msg_to_us(signed_msg, route, hop_name, sent_to);
+                    self.ack_and_broadcast(&signed_msg, route, hop_name, sent_to);
+                    // if addressed to us, then we just queue it and return
+                    self.msg_queue.push_back(signed_msg.into_routing_message());
                     return Ok(());
-                }
-
-                if self.respond_from_cache(signed_msg.routing_message(), route)? {
-                    return Ok(());
-                }
-
-                if let Err(error) =
-                    self.send_signed_message(&signed_msg, route, &hop_name, sent_to) {
-                    debug!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);
                 }
             }
+        }
+
+        if self.respond_from_cache(signed_msg.routing_message(), route)? {
+            return Ok(());
+        }
+
+        if let Err(error) = self.send_signed_message(&signed_msg, route, &hop_name, sent_to) {
+            debug!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);
         }
 
         Ok(())
@@ -1843,12 +1829,21 @@ impl Node {
         if !src.is_multiple() {
             return Some(*self.name());
         }
-        let mut group = self.peer_mgr
-            .routing_table()
-            .our_group()
-            .iter()
-            .chain(iter::once(self.name()))
-            .sorted_by(|&lhs, &rhs| src.name().cmp_distance(lhs, rhs));
+        let mut group = if let Authority::PrefixSection(ref pfx) = *src {
+            self.peer_mgr
+                .routing_table()
+                .iter()
+                .filter(|name| pfx.matches(name))
+                .chain(iter::once(self.name()))
+                .sorted_by(|&lhs, &rhs| src.name().cmp_distance(lhs, rhs))
+        } else {
+            self.peer_mgr
+                .routing_table()
+                .our_group()
+                .iter()
+                .chain(iter::once(self.name()))
+                .sorted_by(|&lhs, &rhs| src.name().cmp_distance(lhs, rhs))
+        };
         group.truncate(self.min_group_size());
         if !group.contains(&self.name()) {
             None
