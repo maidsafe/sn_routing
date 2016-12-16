@@ -906,9 +906,11 @@ impl Node {
     // Currently we only send this when nodes join and it's only used to add missing members.
     fn send_section_update(&mut self) {
         trace!("{:?} Sending section update", self);
-        // TODO: do we need to clone?
-        let names = self.peer_mgr.routing_table().our_section().clone();
-        let members = self.peer_mgr.get_pub_ids(&names).iter().cloned().sorted();
+        let members = self.peer_mgr
+            .get_pub_ids(self.peer_mgr.routing_table().our_section())
+            .iter()
+            .cloned()
+            .sorted();
 
         let content = MessageContent::SectionUpdate {
             prefix: *self.peer_mgr.routing_table().our_prefix(),
@@ -1270,13 +1272,14 @@ impl Node {
                              -> Result<(), RoutingError> {
         trace!("{:?} Got section update for {:?}", self, prefix);
         // Filter list of members to just those we don't know about:
-        let members = if let Some(section) = self.peer_mgr.routing_table().section_ref(&prefix) {
-            let f = |id: &PublicId| !section.is_member(id.name());
-            members.into_iter().filter(f).collect_vec()
-        } else {
-            warn!("{:?} Section update received from unknown neighbour {:?}", self, prefix);
-            return Ok(());
-        };
+        let members =
+            if let Some(section) = self.peer_mgr.routing_table().section_with_prefix(&prefix) {
+                let f = |id: &PublicId| !section.contains(id.name());
+                members.into_iter().filter(f).collect_vec()
+            } else {
+                warn!("{:?} Section update received from unknown neighbour {:?}", self, prefix);
+                return Ok(());
+            };
         let members = members.into_iter()
             .filter(|id: &PublicId| !self.peer_mgr.is_expected(id.name()))
             .collect_vec();

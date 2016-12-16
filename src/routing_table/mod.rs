@@ -309,6 +309,15 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         result
     }
 
+    /// Returns the section with the given prefix, if any (includes own name if is own section)
+    pub fn section_with_prefix(&self, prefix: &Prefix<T>) -> Option<&HashSet<T>> {
+        if *prefix == self.our_prefix {
+            Some(&self.our_section)
+        } else {
+            self.groups.get(prefix)
+        }
+    }
+
     /// Returns the total number of entries in the routing table, excluding our own name.
     // TODO: refactor to include our name?
     pub fn len(&self) -> usize {
@@ -422,16 +431,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         })
     }
 
-    /// Get a reference to the subset of the table concerning some section, if that section is
-    /// known. The returned object blocks access to the table and is not clonable.
-    pub fn section_ref(&self, prefix: &Prefix<T>) -> Option<RoutingSection<T>> {
-        if *prefix == self.our_prefix {
-            Some(RoutingSection::with(&self.our_section))
-        } else {
-            self.groups.get(prefix).map(|g| RoutingSection::with(g))
-        }
-    }
-
     /// Returns true if `name` is in our group (including if it is our own name).
     pub fn is_in_our_group(&self, name: &T) -> bool {
         self.our_section.contains(name)
@@ -486,8 +485,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             return Err(Error::PeerNameUnsuitable);
         }
 
-        // TODO: could return ref instead of iterator
-        Ok(self.should_split_our_group(self.our_section.iter()))
+        Ok(self.should_split_our_section())
     }
 
     /// Splits a group.
@@ -770,10 +768,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         &self.our_name
     }
 
-    fn should_split_our_group<I>(&self, our_section: I) -> bool
-        where I: IntoIterator,
-              I::Item: Borrow<T>
-    {
+    fn should_split_our_section(&self) -> bool {
         // If we're currently merging, we shouldn't split too.
         if self.we_want_to_merge || self.they_want_to_merge || self.should_merge().is_some() {
             return false;
@@ -782,7 +777,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         // Count the number of names which will end up in each new group if our group is split.
         let mut new_group_size_0 = 0;
         let mut new_group_size_1 = 0;
-        for name in our_section {
+        for name in &self.our_section {
             if self.our_name.common_prefix(name.borrow()) > self.our_prefix.bit_count() {
                 new_group_size_0 += 1;
             } else {
@@ -1044,26 +1039,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Drop for Routi
         }
     }
 }
-
-
-// TODO: I don't think there's any point in RoutingSection's existance any more.
-/// References some section within the routing table
-pub struct RoutingSection<'a, T: 'a + Binary + Clone + Copy + Debug + Default + Hash + Xorable> {
-    section: &'a HashSet<T>,
-}
-
-impl<'a, T: 'a + Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingSection<'a, T> {
-    /// Create an instance (only done by RoutingTable itself)
-    fn with(section: &'a HashSet<T>) -> Self {
-        RoutingSection { section: section }
-    }
-
-    /// Does the section have a member by this name?
-    pub fn is_member(&self, name: &T) -> bool {
-        self.section.contains(name)
-    }
-}
-
 
 
 #[cfg(test)]
