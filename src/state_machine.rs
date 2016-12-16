@@ -22,8 +22,10 @@ use id::PublicId;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 #[cfg(feature = "use-mock-crust")]
 use routing_table::{Prefix, RoutingTable};
+#[cfg(feature = "use-mock-crust")]
 use rust_sodium::crypto::sign;
 use states::{Bootstrapping, Client, Node};
+#[cfg(feature = "use-mock-crust")]
 use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Formatter};
 use std::mem;

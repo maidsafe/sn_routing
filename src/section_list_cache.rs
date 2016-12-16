@@ -151,6 +151,8 @@ impl SectionListCache {
     }
 
     /// Returns the currently signed group list for `prefix` along with a quorum of signatures.
+    // TODO: Remove this when the method is used in production
+    #[cfg(feature="use-mock-crust")]
     pub fn get_signatures(&self, prefix: Prefix<XorName>) -> Option<&(GroupList, Signatures)> {
         self.lists_cache.get(&prefix)
     }
