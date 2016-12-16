@@ -83,14 +83,14 @@ impl Network {
         for node in self.nodes.values_mut() {
             match node.add(name) {
                 Ok(true) => {
-                    split_prefixes.insert(*node.our_group_prefix());
+                    split_prefixes.insert(*node.our_prefix());
                 }
                 Ok(false) => {}
                 Err(e) => trace!("failed to add node with error {:?}", e),
             }
             match new_table.add(*node.our_name()) {
                 Ok(true) => {
-                    let prefix = *new_table.our_group_prefix();
+                    let prefix = *new_table.our_prefix();
                     let _ = new_table.split(prefix);
                 }
                 Ok(false) => {}
@@ -132,7 +132,7 @@ impl Network {
                 assert_eq!(removed_node_is_in_our_group,
                            removal_details.was_in_our_group);
                 if let Some(info) = node.should_merge() {
-                    Network::store_merge_info(&mut merge_own_info, *node.our_group_prefix(), info);
+                    Network::store_merge_info(&mut merge_own_info, *node.our_prefix(), info);
                 }
             } else {
                 match node.remove(&name) {
@@ -163,7 +163,7 @@ impl Network {
                         OwnMergeState::AlreadyMerged => (),
                         OwnMergeState::Completed { targets, merge_details } => {
                             Network::store_merge_info(&mut merge_other_info,
-                                                      *target_node.our_group_prefix(),
+                                                      *target_node.our_prefix(),
                                                       (targets, merge_details));
                             // Forcibly add new connections.
                             for name in node_expected.clone() {
@@ -177,7 +177,7 @@ impl Network {
                             if node_expected.is_empty() {
                                 if let Some(info) = target_node.should_merge() {
                                     Network::store_merge_info(&mut merge_own_info,
-                                                              *target_node.our_group_prefix(),
+                                                              *target_node.our_prefix(),
                                                               info);
                                 }
                             }
@@ -198,7 +198,7 @@ impl Network {
                     }
                     if let Some(info) = target_node.should_merge() {
                         Network::store_merge_info(&mut merge_own_info,
-                                                  *target_node.our_group_prefix(),
+                                                  *target_node.our_prefix(),
                                                   info);
                     }
                 }
@@ -314,10 +314,8 @@ pub fn verify_network_invariant<'a, T, U>(nodes: U)
     for node in nodes {
         node.verify_invariant();
         for prefix in node.prefixes() {
-            let group_content = if prefix == node.our_group_prefix {
-                let mut group_content = node.our_group.clone();
-                group_content.insert(*node.our_name());
-                group_content
+            let group_content = if prefix == node.our_prefix {
+                node.our_section.clone()
             } else {
                 node.groups[&prefix].clone()
             };
