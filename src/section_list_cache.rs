@@ -32,8 +32,6 @@ pub struct SectionListCache {
     signatures: PrefixMap<HashMap<GroupList, Signatures>>,
     // group lists signed by a given public id
     signed_by: HashMap<PublicId, PrefixMap<GroupList>>,
-    // most signed group lists for given prefixes
-    lists_for: PrefixMap<(GroupList, usize)>,
     // the latest group list for each prefix with a quorum of signatures
     lists_cache: PrefixMap<(GroupList, Signatures)>,
 }
@@ -43,7 +41,6 @@ impl SectionListCache {
         SectionListCache {
             signatures: Default::default(),
             signed_by: Default::default(),
-            lists_for: Default::default(),
             lists_cache: Default::default(),
         }
     }
@@ -80,7 +77,6 @@ impl SectionListCache {
     }
 
     fn update_lists_cache(&mut self, our_section_size: usize) {
-        let mut new_lists_for = HashMap::new();
         for (prefix, map) in &self.signatures {
             // find the entries with the most signatures
             let entries = map.iter()
@@ -88,15 +84,13 @@ impl SectionListCache {
                 .sorted_by(|lhs, rhs| rhs.1.cmp(&lhs.1));
             if let Some(&entry) = entries.first() {
                 // entry.0 = list, entry.1 = num of signatures
-                if 100 * entry.1 > QUORUM * our_section_size {
+                if 100 * entry.1 >= QUORUM * our_section_size {
                     // we have a list with a quorum of signatures
                     let signatures = unwrap!(map.get(entry.0));
                     let _ = self.lists_cache.insert(*prefix, (entry.0.clone(), signatures.clone()));
                 }
-                let _ = new_lists_for.insert(*prefix, (entry.0.clone(), entry.1));
             }
         }
-        self.lists_for = new_lists_for;
     }
 
     fn remove_signatures_for_prefix_by(&mut self, prefix: Prefix<XorName>, author: PublicId) {
@@ -111,7 +105,9 @@ impl SectionListCache {
             });
         for (prefix, list) in to_remove {
             // remove the signatures from self.signatures
-            let _ = self.signatures.get_mut(&prefix).map_or(None, |map| map.remove(&list));
+            let _ = self.signatures.get_mut(&prefix).map_or(None, |map| {
+                map.get_mut(&list).map_or(None, |sigmap| sigmap.remove(&author))
+            });
             // remove those entries from self.signed_by
             let _ = self.signed_by.get_mut(&author).map_or(None, |map| map.remove(&prefix));
         }
@@ -123,7 +119,9 @@ impl SectionListCache {
     pub fn remove_signatures_by(&mut self, author: PublicId, our_section_size: usize) {
         if let Some(lists) = self.signed_by.remove(&author) {
             for (prefix, list) in lists {
-                let _ = self.signatures.get_mut(&prefix).map_or(None, |map| map.remove(&list));
+                let _ = self.signatures.get_mut(&prefix).map_or(None, |map| {
+                    map.get_mut(&list).map_or(None, |sigmap| sigmap.remove(&author))
+                });
             }
             self.prune();
             self.update_lists_cache(our_section_size);
