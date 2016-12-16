@@ -1129,7 +1129,8 @@ mod tests {
         assert_eq!(our_name, table.our_name);
 
         // Get some names
-        let close_name: u32 = *unwrap!(table.our_section.iter().nth(4));
+        let close_name: u32 =
+            *unwrap!(table.our_section.iter().filter(|name| **name != our_name).nth(4));
         let mut known_neighbour: Option<u32> = None;
         for (prefix, group) in &table.groups {
             if *prefix == table.our_prefix {
