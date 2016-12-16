@@ -525,7 +525,7 @@ impl Node {
     fn get_group(&self, prefix: &Prefix<XorName>) -> Result<BTreeSet<XorName>, RoutingError> {
         let group = self.peer_mgr
             .routing_table()
-            .get_group(&prefix.lower_bound())
+            .get_section(&prefix.lower_bound())
             .ok_or(RoutingError::InvalidSource)?
             .iter()
             .cloned()
@@ -549,7 +549,7 @@ impl Node {
                                  dst: Option<XorName>)
                                  -> Result<(), RoutingError> {
         // don't send signatures for our own group
-        if prefix == *self.peer_mgr.routing_table().our_group_prefix() {
+        if prefix == *self.peer_mgr.routing_table().our_prefix() {
             return Ok(());
         }
         let group = self.get_group_list(&prefix)?;
@@ -560,27 +560,21 @@ impl Node {
                                              *self.full_id.public_id(),
                                              group.clone(),
                                              sig,
-                                             self.peer_mgr.routing_table().our_group().len() + 1);
+                                             self.peer_mgr.routing_table().our_section().len());
 
-        // nested scope because set_dst borrows peer_mgr immutably
-        let peers = {
-            // set_dst is defined to avoid cloning our_group in case we send to everyone (we need
-            // something to refer to in targets)
-            let set_dst = dst.and_then(|dst| {
-                let mut result = HashSet::new();
-                result.insert(dst);
-                Some(result)
-            });
-            // this defines whom we are sending signature to: our group if dst is None, or given
-            // name if it's Some
-            let targets = if let Some(ref set_dst) = set_dst {
-                set_dst
-            } else {
-                self.peer_mgr.routing_table().our_group()
-            };
-
-            self.peer_mgr.get_peer_ids(targets)
+        // this defines whom we are sending signature to: our group if dst is None, or given
+        // name if it's Some
+        let targets = if let Some(dst) = dst {
+            let mut result = HashSet::new();
+            result.insert(dst);
+            result
+        } else {
+            let mut section = self.peer_mgr.routing_table().our_section().clone();
+            section.remove(self.name());
+            section
         };
+
+        let peers = self.peer_mgr.get_peer_ids(&targets);
         for peer_id in peers {
             let msg = DirectMessage::GroupListSignature(prefix, group.clone(), sig);
             self.send_direct_message(&peer_id, msg)?;
@@ -604,7 +598,7 @@ impl Node {
                                *src_pub_id,
                                group_list,
                                sig,
-                               self.peer_mgr.routing_table().our_group().len() + 1);
+                               self.peer_mgr.routing_table().our_section().len());
             Ok(())
         } else {
             Err(RoutingError::FailedSignature)
@@ -965,7 +959,7 @@ impl Node {
 
         if let Some(prefix) = self.peer_mgr.routing_table().find_group_prefix(public_id.name()) {
             let _ = self.send_group_list_signature(prefix, None);
-            if prefix == *self.peer_mgr.routing_table().our_group_prefix() {
+            if prefix == *self.peer_mgr.routing_table().our_prefix() {
                 // if the node joined our group, send signatures for all neighbouring group lists
                 // to it
                 for pfx in self.peer_mgr.routing_table().other_prefixes() {
@@ -2011,7 +2005,7 @@ impl Node {
             });
         } else {
             self.section_list_sigs
-                .remove_signatures_by(*pub_id, self.peer_mgr.routing_table().our_group().len() + 1);
+                .remove_signatures_by(*pub_id, self.peer_mgr.routing_table().our_section().len());
         }
 
         if self.peer_mgr.routing_table().len() < self.min_group_size() - 1 {
