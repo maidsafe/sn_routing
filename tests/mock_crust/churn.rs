@@ -193,12 +193,5 @@ fn churn() {
 
         expected_gets.verify(&nodes);
         verify_invariant_for_all_nodes(&nodes);
-
-        // Every few iterations, clear the nodes' caches, simulating a longer time between events.
-        if rng.gen_weighted_bool(5) {
-            for node in &mut nodes {
-                node.inner.clear_state();
-            }
-        }
     }
 }

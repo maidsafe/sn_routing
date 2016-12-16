@@ -1337,9 +1337,6 @@ impl Node {
         let (merge_state, needed_peers) = self.peer_mgr
             .merge_own_group(sender_prefix, merge_prefix, groups);
         match merge_state {
-            OwnMergeState::Initialised { merge_details } => {
-                self.send_own_group_merge(merge_details)
-            }
             OwnMergeState::Ongoing |
             OwnMergeState::AlreadyMerged => (),
             OwnMergeState::Completed { targets, merge_details } => {
@@ -1421,6 +1418,7 @@ impl Node {
                 debug!("{:?} Disconnecting from timed out peer {:?}", self, peer_id);
                 let _ = self.crust_service.disconnect(peer_id);
             }
+            self.merge_if_necessary();
 
             return true;
         }
@@ -2021,6 +2019,7 @@ impl Node {
         self.peer_mgr.remove_connecting_peers();
         self.routing_msg_filter.clear();
         self.sent_network_name_to = None;
+        self.merge_if_necessary();
     }
 
     pub fn set_next_node_name(&mut self, relocation_name: Option<XorName>) {

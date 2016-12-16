@@ -222,11 +222,10 @@ impl PeerMap {
     }
 
     fn insert(&mut self, peer: Peer) -> Option<Peer> {
-        if let Some(peer_id) = peer.peer_id {
-            let _ = self.names.insert(peer_id, *peer.name());
-        }
-
-        self.peers.insert(*peer.name(), peer)
+        let old_peer = peer.peer_id
+            .and_then(|peer_id| self.names.insert(peer_id, *peer.name()))
+            .and_then(|old_name| self.peers.remove(&old_name));
+        self.peers.insert(*peer.name(), peer).or(old_peer)
     }
 
     fn remove(&mut self, peer_id: &PeerId) -> Option<Peer> {
@@ -1013,6 +1012,8 @@ impl PeerManager {
         for name in remove_names {
             let _ = self.peer_map.remove_by_name(&name);
         }
+
+        self.expected_peers.clear();
     }
 }
 

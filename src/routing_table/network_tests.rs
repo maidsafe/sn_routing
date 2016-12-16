@@ -159,11 +159,6 @@ impl Network {
                         node_expected.extend(group.1.iter().filter(|name| !target_node.has(name)));
                     }
                     match target_node.merge_own_group(merge_own_details.clone()) {
-                        OwnMergeState::Initialised { merge_details } => {
-                            Network::store_merge_info(&mut merge_own_info,
-                                                      *target_node.our_group_prefix(),
-                                                      merge_details);
-                        }
                         OwnMergeState::Ongoing |
                         OwnMergeState::AlreadyMerged => (),
                         OwnMergeState::Completed { targets, merge_details } => {

@@ -195,10 +195,6 @@ pub struct RemovalDetails<T: Binary + Clone + Copy + Default + Hash + Xorable> {
 
 // Details returned by `RoutingTable::merge_own_group()`.
 pub enum OwnMergeState<T: Binary + Clone + Copy + Default + Hash + Xorable> {
-    // If no ongoing merge is happening when `merge_own_group()` is called, `Initialised` is
-    // returned, containing the merge details they each need to receive (the new prefix and all
-    // groups in the table).
-    Initialised { merge_details: OwnMergeDetails<T> },
     // If an ongoing merge is happening, and this call to `merge_own_group()` doesn't complete the
     // merge (i.e. at least one of the merging groups hasn't yet sent us its merge details), then
     // `Ongoing` is returned, implying that no further action by the caller is required.
@@ -558,7 +554,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             !prefix.popped().is_compatible(&self.our_group_prefix) ||
             group.len() >= self.min_group_size
         };
-        if bit_count == 0 || self.we_want_to_merge || self.they_want_to_merge ||
+        if bit_count == 0 || self.we_want_to_merge ||
            !self.groups.contains_key(&self.our_group_prefix.with_flipped_bit(bit_count - 1)) ||
            (self.our_group.len() + 1 >= self.min_group_size &&
             self.groups.iter().all(doesnt_need_to_merge_with_us)) {
@@ -610,14 +606,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         if self.we_want_to_merge && self.they_want_to_merge {
             // We've heard from all merging groups - do the merge and return `Completed`.
             self.finish_merging_own_group(merge_details)
-        } else if self.we_want_to_merge {
-            // We've either triggered the merge ourself via a `remove()` call or we've already been
-            // notified of the merge by a peer group via this function, so we've already notified
-            // the merging peers.
-            OwnMergeState::Ongoing
         } else {
-            // This is the first we've heard of the merge - return `Initialised`.
-            self.initialise_merging_own_group(merge_details)
+            // We don't have the merge details from both sides yet.
+            OwnMergeState::Ongoing
         }
     }
 
@@ -804,24 +795,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             .filter_map(|prefix| self.groups.remove(&prefix))
             .flat_map(HashSet::into_iter)
             .collect()
-    }
-
-    fn initialise_merging_own_group(&self,
-                                    mut merge_details: OwnMergeDetails<T>)
-                                    -> OwnMergeState<T> {
-        merge_details.sender_prefix = self.our_group_prefix;
-        merge_details.groups
-            .extend(self.groups.iter().filter_map(|(prefix, names)| {
-                if names.is_empty() {
-                    None
-                } else {
-                    Some((*prefix, names.clone()))
-                }
-            }));
-        let mut our_group = self.our_group.clone();
-        our_group.insert(self.our_name);
-        let _ = merge_details.groups.insert(self.our_group_prefix, our_group);
-        OwnMergeState::Initialised { merge_details: merge_details }
     }
 
     fn finish_merging_own_group(&mut self, merge_details: OwnMergeDetails<T>) -> OwnMergeState<T> {
