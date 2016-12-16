@@ -124,7 +124,6 @@ pub use self::network_tests::verify_network_invariant;
 pub use self::prefix::Prefix;
 pub use self::xorable::Xorable;
 use std::{iter, mem};
-use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap, HashSet, hash_map, hash_set};
 use std::fmt::{Binary, Debug, Formatter};
@@ -401,10 +400,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             .chain(iter::once((&self.our_prefix, &self.our_section)))
             .sorted_by(|&(pfx0, _), &(pfx1, _)| pfx0.cmp_distance(pfx1, name))
             .into_iter()
-            .flat_map(|(_, section)| {
-                section.iter()
-                    .sorted_by(|name0, name1| name.cmp_distance(name0, name1))
-                    .into_iter()
+            .flat_map(|(_, group)| {
+                group.iter().sorted_by(|name0, name1| name.cmp_distance(name0, name1))
             })
             .take(count)
             .collect_vec()
@@ -485,7 +482,23 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             return Err(Error::PeerNameUnsuitable);
         }
 
-        Ok(self.should_split_our_section())
+        let split_size = self.min_split_size();
+        let close_to_merging_with_us = |(prefix, group): (&Prefix<T>, &HashSet<T>)| {
+            prefix.popped().is_compatible(&self.our_prefix) && group.len() < split_size
+        };
+        // If we're currently merging or are close to merging, we shouldn't split.
+        if self.we_want_to_merge || self.they_want_to_merge ||
+           self.groups.iter().any(close_to_merging_with_us) {
+            return Ok(false);
+        }
+
+        // Count the number of names which will end up in each new group if our group is split.
+        let new_size = self.our_section
+            .iter()
+            .filter(|name| self.our_name.common_prefix(name) > self.our_prefix.bit_count())
+            .count();
+        // If either of the two new sections will not contain enough entries, return `false`.
+        Ok(new_size >= split_size && self.our_section().len() >= split_size + new_size)
     }
 
     /// Splits a group.
@@ -669,11 +682,12 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                    exclude: T,
                    route: usize)
                    -> Result<HashSet<T>, Error> {
-        let candidates = |target_name| {
+        let candidates = |target_name: &T| {
             self.closest_known_names(target_name, self.min_group_size)
                 .into_iter()
+                .filter(|name| **name != self.our_name)
                 .cloned()
-                .collect::<HashSet<_>>()
+                .collect::<HashSet<T>>()
         };
 
         let closest_section = match *dst {
@@ -685,11 +699,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                 if self.has(target_name) {
                     return Ok(iter::once(*target_name).collect());
                 }
-                // TODO: This is temporarily disabled for the cases where we have not connected to
-                //       all needed contacts yet and may have empty or incomplete groups.
-                // } else if *closest_section_prefix == self.our_prefix {
-                //     return Err(Error::NoSuchPeer);
-                // }
                 candidates(target_name)
             }
             Authority::ClientManager(ref target_name) |
@@ -717,20 +726,14 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                     // intentionally short prefixes
                     if prefix.is_covered_by(self.prefixes().iter()) {
                         return Ok(self.iter()
-                            .filter(|name| prefix.matches(name))
+                            .filter(|name| prefix.matches(name) && **name != self.our_name)
                             .cloned()
                             .collect());
                     } else {
                         return Err(Error::CannotRoute);
                     }
-                } else {
-                    // using `candidates(&prefix.lower_bound())` here
-                    // results in a weird lifetime error
-                    self.closest_known_names(&prefix.lower_bound(), self.min_group_size)
-                        .into_iter()
-                        .cloned()
-                        .collect()
                 }
+                candidates(&prefix.lower_bound())
             }
         };
         Ok(iter::once(self.get_routeth_node(&closest_section, dst.name(), Some(exclude), route)?)
@@ -766,27 +769,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// Returns our name
     pub fn our_name(&self) -> &T {
         &self.our_name
-    }
-
-    fn should_split_our_section(&self) -> bool {
-        // If we're currently merging, we shouldn't split too.
-        if self.we_want_to_merge || self.they_want_to_merge || self.should_merge().is_some() {
-            return false;
-        }
-
-        // Count the number of names which will end up in each new group if our group is split.
-        let mut new_group_size_0 = 0;
-        let mut new_group_size_1 = 0;
-        for name in &self.our_section {
-            if self.our_name.common_prefix(name.borrow()) > self.our_prefix.bit_count() {
-                new_group_size_0 += 1;
-            } else {
-                new_group_size_1 += 1;
-            }
-        }
-        // If either of the two new groups will not contain enough entries, return `false`.
-        let min_group_size = self.min_split_size();
-        new_group_size_0 >= min_group_size && new_group_size_1 >= min_group_size
     }
 
     fn split_our_group(&mut self) -> Vec<T> {
