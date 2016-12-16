@@ -517,12 +517,8 @@ impl Node {
     }
 
     fn hop_pub_ids(&self, hop_name: &XorName) -> Result<BTreeSet<PublicId>, RoutingError> {
-        if let Some(group) = self.peer_mgr.routing_table().get_group(hop_name) {
-            let mut group = group.clone();
-            if self.peer_mgr.routing_table().our_group_prefix().matches(hop_name) {
-                let _ = group.insert(*self.name());
-            }
-            Ok(self.peer_mgr.get_pub_ids(&group).into_iter().collect::<BTreeSet<_>>())
+        if let Some(section) = self.peer_mgr.routing_table().get_section(hop_name) {
+            Ok(self.peer_mgr.get_pub_ids(section).into_iter().collect::<BTreeSet<_>>())
         } else {
             Err(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer))
         }
@@ -867,12 +863,12 @@ impl Node {
             }
             Ok(true) => {
                 // i.e. the group should split
-                let our_group_prefix = *self.peer_mgr.routing_table().our_group_prefix();
+                let our_prefix = *self.peer_mgr.routing_table().our_prefix();
                 // In the future we'll look to remove this restriction so we always call
                 // `send_group_split()` here and also check whether another round of splitting is
                 // required in `handle_group_split()` so splitting becomes recursive like merging.
-                if our_group_prefix.matches(public_id.name()) {
-                    self.send_group_split(our_group_prefix, *public_id.name());
+                if our_prefix.matches(public_id.name()) {
+                    self.send_group_split(our_prefix, *public_id.name());
                 }
             }
             Ok(false) => {
@@ -910,11 +906,14 @@ impl Node {
     // Currently we only send this when nodes join and it's only used to add missing members.
     fn send_section_update(&mut self) {
         trace!("{:?} Sending section update", self);
-        let names = self.peer_mgr.routing_table().our_names();
-        let members = self.peer_mgr.get_pub_ids(&names).iter().cloned().sorted();
+        let members = self.peer_mgr
+            .get_pub_ids(self.peer_mgr.routing_table().our_section())
+            .iter()
+            .cloned()
+            .sorted();
 
         let content = MessageContent::SectionUpdate {
-            prefix: *self.peer_mgr.routing_table().our_group_prefix(),
+            prefix: *self.peer_mgr.routing_table().our_prefix(),
             members: members,
         };
 
@@ -923,7 +922,7 @@ impl Node {
             let request_msg = RoutingMessage {
                 src: Authority::Section(self.peer_mgr
                     .routing_table()
-                    .our_group_prefix()
+                    .our_prefix()
                     .lower_bound()),
                 dst: Authority::PrefixSection(neighbour_pfx),
                 content: content.clone(),
@@ -1273,13 +1272,14 @@ impl Node {
                              -> Result<(), RoutingError> {
         trace!("{:?} Got section update for {:?}", self, prefix);
         // Filter list of members to just those we don't know about:
-        let members = if let Some(section) = self.peer_mgr.routing_table().section_ref(&prefix) {
-            let f = |id: &PublicId| !section.is_member(id.name());
-            members.into_iter().filter(f).collect_vec()
-        } else {
-            warn!("{:?} Section update received from unknown neighbour {:?}", self, prefix);
-            return Ok(());
-        };
+        let members =
+            if let Some(section) = self.peer_mgr.routing_table().section_with_prefix(&prefix) {
+                let f = |id: &PublicId| !section.contains(id.name());
+                members.into_iter().filter(f).collect_vec()
+            } else {
+                warn!("{:?} Section update received from unknown neighbour {:?}", self, prefix);
+                return Ok(());
+            };
         let members = members.into_iter()
             .filter(|id: &PublicId| !self.peer_mgr.is_expected(id.name()))
             .collect_vec();
@@ -1304,7 +1304,7 @@ impl Node {
                           joining_node: XorName)
                           -> Result<(), RoutingError> {
         // Send GroupSplit notifications if we don't know of the new node yet
-        if prefix == *self.peer_mgr.routing_table().our_group_prefix() &&
+        if prefix == *self.peer_mgr.routing_table().our_prefix() &&
            !self.peer_mgr.routing_table().has(&joining_node) {
             self.send_group_split(prefix, joining_node);
         }
@@ -1350,7 +1350,7 @@ impl Node {
                 self.merge_if_necessary();
                 let src = Authority::Section(self.peer_mgr
                     .routing_table()
-                    .our_group_prefix()
+                    .our_prefix()
                     .lower_bound());
                 self.send_other_group_merge(targets, merge_details, src)
             }
@@ -1649,9 +1649,8 @@ impl Node {
         } else {
             self.peer_mgr
                 .routing_table()
-                .our_group()
+                .our_section()
                 .iter()
-                .chain(iter::once(self.name()))
                 .sorted_by(|&lhs, &rhs| src.name().cmp_distance(lhs, rhs))
         };
         group.truncate(self.min_group_size());
@@ -1865,7 +1864,7 @@ impl Node {
             merge_prefix: merge_details.merge_prefix,
             groups: groups,
         };
-        let src_name = self.peer_mgr.routing_table().our_group_prefix().lower_bound();
+        let src_name = self.peer_mgr.routing_table().our_prefix().lower_bound();
         let request_msg = RoutingMessage {
             src: Authority::Section(src_name),
             dst: Authority::PrefixSection(merge_details.merge_prefix),
