@@ -315,9 +315,7 @@ pub fn verify_network_invariant<'a, T, U>(nodes: U)
         node.verify_invariant();
         for prefix in node.prefixes() {
             let group_content = if prefix == node.our_prefix {
-                let mut group_content = node.our_group.clone();
-                group_content.insert(*node.our_name());
-                group_content
+                node.our_section.clone()
             } else {
                 node.groups[&prefix].clone()
             };

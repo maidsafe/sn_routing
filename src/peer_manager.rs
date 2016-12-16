@@ -319,9 +319,9 @@ impl PeerManager {
                                    our_public_id: &PublicId)
                                    -> Result<Vec<Group>, RoutingTableError> {
         self.routing_table.validate_joining_node(expected_name)?;
-        let groups = self.routing_table.groups();
+        let sections = self.routing_table.all_sections();
         let mut result = vec![];
-        for (prefix, names) in groups {
+        for (prefix, names) in sections {
             let mut public_ids = vec![];
             for name in names {
                 if name == *our_public_id.name() {

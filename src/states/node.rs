@@ -517,12 +517,8 @@ impl Node {
     }
 
     fn hop_pub_ids(&self, hop_name: &XorName) -> Result<BTreeSet<PublicId>, RoutingError> {
-        if let Some(group) = self.peer_mgr.routing_table().get_group(hop_name) {
-            let mut group = group.clone();
-            if self.peer_mgr.routing_table().our_prefix().matches(hop_name) {
-                let _ = group.insert(*self.name());
-            }
-            Ok(self.peer_mgr.get_pub_ids(&group).into_iter().collect::<BTreeSet<_>>())
+        if let Some(section) = self.peer_mgr.routing_table().get_section(hop_name) {
+            Ok(self.peer_mgr.get_pub_ids(section).into_iter().collect::<BTreeSet<_>>())
         } else {
             Err(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer))
         }
@@ -910,7 +906,8 @@ impl Node {
     // Currently we only send this when nodes join and it's only used to add missing members.
     fn send_section_update(&mut self) {
         trace!("{:?} Sending section update", self);
-        let names = self.peer_mgr.routing_table().our_names();
+        // TODO: do we need to clone?
+        let names = self.peer_mgr.routing_table().our_section().clone();
         let members = self.peer_mgr.get_pub_ids(&names).iter().cloned().sorted();
 
         let content = MessageContent::SectionUpdate {
@@ -1649,9 +1646,8 @@ impl Node {
         } else {
             self.peer_mgr
                 .routing_table()
-                .our_group()
+                .our_section()
                 .iter()
-                .chain(iter::once(self.name()))
                 .sorted_by(|&lhs, &rhs| src.name().cmp_distance(lhs, rhs))
         };
         group.truncate(self.min_group_size());

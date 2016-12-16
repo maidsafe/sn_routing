@@ -146,13 +146,20 @@ const SPLIT_BUFFER: usize = 1;
 // Immutable iterator over the entries of a `RoutingTable`.
 pub struct Iter<'a, T: 'a + Binary + Clone + Copy + Default + Hash + Xorable> {
     inner: iter::Chain<OtherGroupsIter<'a, T>, hash_set::Iter<'a, T>>,
+    our_name: T,
 }
 
 impl<'a, T: 'a + Binary + Clone + Copy + Default + Hash + Xorable> Iterator for Iter<'a, T> {
     type Item = &'a T;
 
+    #[cfg_attr(feature="clippy", allow(while_let_on_iterator))]
     fn next(&mut self) -> Option<&'a T> {
-        self.inner.next()
+        while let Some(name) = self.inner.next() {
+            if *name != self.our_name {
+                return Some(name);
+            }
+        }
+        None
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -228,8 +235,8 @@ pub struct RoutingTable<T: Binary + Clone + Copy + Debug + Default + Hash + Xora
     our_name: T,
     // Prefix of our section
     our_prefix: Prefix<T>,
-    // Members of our section, excluding our own name (TODO: rename)
-    our_group: HashSet<T>,
+    // Members of our section, including our own name
+    our_section: HashSet<T>,
     // Other sections (excludes our own) (TODO: rename)
     groups: Groups<T>,
     // Whether we have sent our merge details to the other group.
@@ -241,10 +248,12 @@ pub struct RoutingTable<T: Binary + Clone + Copy + Debug + Default + Hash + Xora
 impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T> {
     /// Creates a new `RoutingTable`.
     pub fn new(our_name: T, min_section_size: usize) -> Self {
+        let mut our_section = HashSet::new();
+        our_section.insert(our_name);
         RoutingTable {
             our_name: our_name,
             min_group_size: min_section_size,
-            our_group: HashSet::new(),
+            our_section: our_section,
             our_prefix: Default::default(),
             groups: HashMap::new(),
             we_want_to_merge: false,
@@ -258,6 +267,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                            prefixes: Vec<Prefix<T>>)
                            -> Result<Self, Error> {
         let mut our_prefix = Default::default();
+        let mut our_section = HashSet::new();
+        our_section.insert(our_name);
         let groups = prefixes.into_iter()
             .filter_map(|prefix| {
                 if prefix.matches(&our_name) {
@@ -271,8 +282,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         let result = RoutingTable {
             our_name: our_name,
             min_group_size: min_section_size,
-            our_group: HashSet::new(),
             our_prefix: our_prefix,
+            our_section: our_section,
             groups: groups,
             we_want_to_merge: false,
             they_want_to_merge: false,
@@ -286,28 +297,28 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         &self.our_prefix
     }
 
-    /// Returns our own group, excluding our own name.
-    pub fn our_group(&self) -> &HashSet<T> {
-        &self.our_group
+    /// Returns our own group, including our own name.
+    pub fn our_section(&self) -> &HashSet<T> {
+        &self.our_section
     }
 
     /// Returns the whole routing table, including our group and our name
-    pub fn groups(&self) -> Groups<T> {
-        let mut groups = self.groups.clone();
-        let mut our_group = self.our_group.clone();
-        our_group.insert(self.our_name);
-        let _ = groups.insert(self.our_prefix, our_group);
-        groups
+    pub fn all_sections(&self) -> Groups<T> {
+        let mut result = self.groups.clone();
+        let _ = result.insert(self.our_prefix, self.our_section.clone());
+        result
     }
 
-    /// Returns the total number of entries in the routing table.
+    /// Returns the total number of entries in the routing table, excluding our own name.
+    // TODO: refactor to include our name?
     pub fn len(&self) -> usize {
-        self.groups.values().fold(0, |acc, group| acc + group.len()) + self.our_group.len()
+        self.groups.values().fold(0, |acc, group| acc + group.len()) + self.our_section.len() - 1
     }
 
-    /// Is the table empty? (Returns `true` if no nodes are known; empty groups are ignored.)
+    /// Is the table empty? (Returns `true` if no nodes besides our own are known;
+    /// empty groups are ignored.)
     pub fn is_empty(&self) -> bool {
-        self.our_group.is_empty() && self.groups.values().all(HashSet::is_empty)
+        self.our_section.len() == 1 && self.groups.values().all(HashSet::is_empty)
     }
 
     /// Returns the minimum section size.
@@ -323,13 +334,17 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     /// Returns whether the table contains the given `name`.
     pub fn has(&self, name: &T) -> bool {
-        self.our_name == *name || self.get_group(name).map_or(false, |group| group.contains(name))
+        self.get_section(name).map_or(false, |section| section.contains(name))
     }
 
     /// Iterates over all nodes known by the routing table, excluding our own name.
+    // TODO: do we need to exclude our name?
     pub fn iter(&self) -> Iter<T> {
         let iter: fn(_) -> _ = HashSet::iter;
-        Iter { inner: self.groups.values().flat_map(iter).chain(&self.our_group) }
+        Iter {
+            inner: self.groups.values().flat_map(iter).chain(self.our_section.iter()),
+            our_name: self.our_name,
+        }
     }
 
     /// Collects prefixes of all groups known by the routing table other than ours into a
@@ -343,18 +358,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         self.groups.keys().cloned().chain(iter::once(self.our_prefix)).collect()
     }
 
-    /// Returns all names in our section
-    pub fn our_names(&self) -> HashSet<T> {
-        let mut our_group = self.our_group.clone();
-        let _ = our_group.insert(self.our_name);
-        our_group
-    }
-
     /// If our group is the closest one to `name`, returns all names in our group *including ours*,
     /// otherwise returns `None`.
     pub fn close_names(&self, name: &T) -> Option<HashSet<T>> {
         if self.our_prefix.matches(name) {
-            Some(self.our_names())
+            Some(self.our_section().clone())
         } else {
             None
         }
@@ -364,7 +372,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// otherwise returns `None`.
     pub fn other_close_names(&self, name: &T) -> Option<HashSet<T>> {
         if self.our_prefix.matches(name) {
-            Some(self.our_group.clone())
+            let mut section = self.our_section.clone();
+            section.remove(&self.our_name);
+            Some(section)
         } else {
             None
         }
@@ -375,19 +385,15 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         self.closest_names(name, count).is_some()
     }
 
+    // Finds the `count` names closest to `name` in the whole routing table
     fn closest_known_names(&self, name: &T, count: usize) -> Vec<&T> {
         self.groups
             .iter()
-            .chain(iter::once((&self.our_prefix, &self.our_group)))
+            .chain(iter::once((&self.our_prefix, &self.our_section)))
             .sorted_by(|&(pfx0, _), &(pfx1, _)| pfx0.cmp_distance(pfx1, name))
             .into_iter()
-            .flat_map(|(pfx, group)| {
-                group.iter()
-                    .chain(if *pfx == self.our_prefix {
-                        Some(&self.our_name)
-                    } else {
-                        None
-                    })
+            .flat_map(|(_, section)| {
+                section.iter()
                     .sorted_by(|name0, name1| name.cmp_distance(name0, name1))
                     .into_iter()
             })
@@ -420,27 +426,27 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// known. The returned object blocks access to the table and is not clonable.
     pub fn section_ref(&self, prefix: &Prefix<T>) -> Option<RoutingSection<T>> {
         if *prefix == self.our_prefix {
-            Some(RoutingSection::with(Some(&self.our_name), &self.our_group))
+            Some(RoutingSection::with(&self.our_section))
         } else {
-            self.groups.get(prefix).map(|g| RoutingSection::with(None, g))
+            self.groups.get(prefix).map(|g| RoutingSection::with(g))
         }
     }
 
     /// Returns true if `name` is in our group (including if it is our own name).
     pub fn is_in_our_group(&self, name: &T) -> bool {
-        *name == self.our_name || self.our_group.contains(name)
+        self.our_section.contains(name)
     }
 
     /// Returns `Ok(())` if the given contact should be added to the routing table.
     ///
     /// Returns `Err` if `name` already exists in the routing table, or it doesn't fall within any
-    /// of our groups, or it's our own name.
+    /// of our sections, or it's our own name.
     pub fn need_to_add(&self, name: &T) -> Result<(), Error> {
         if *name == self.our_name {
             return Err(Error::OwnNameDisallowed);
         }
-        if let Some(group) = self.get_group(name) {
-            if group.contains(name) {
+        if let Some(section) = self.get_section(name) {
+            if section.contains(name) {
                 Err(Error::AlreadyExists)
             } else {
                 Ok(())
@@ -455,7 +461,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         if !self.our_prefix.matches(name) {
             return Err(Error::PeerNameUnsuitable);
         }
-        if self.our_group.contains(name) {
+        if self.our_section.contains(name) {
             return Err(Error::AlreadyExists);
         }
         Ok(())
@@ -472,15 +478,16 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             return Err(Error::OwnNameDisallowed);
         }
 
-        if let Some(group) = self.get_mut_group(&name) {
-            if !group.insert(name) {
+        if let Some(section) = self.get_section_mut(&name) {
+            if !section.insert(name) {
                 return Err(Error::AlreadyExists);
             }
         } else {
             return Err(Error::PeerNameUnsuitable);
         }
 
-        Ok(self.should_split_our_group(self.our_group.iter().chain(iter::once(&self.our_name))))
+        // TODO: could return ref instead of iterator
+        Ok(self.should_split_our_group(self.our_section.iter()))
     }
 
     /// Splits a group.
@@ -528,7 +535,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             was_in_our_group: self.our_prefix.matches(name),
         };
         if removal_details.was_in_our_group {
-            if !self.our_group.remove(name) {
+            if self.our_name == *name {
+                return Err(Error::OwnNameDisallowed);
+            }
+            if !self.our_section.remove(name) {
                 return Err(Error::NoSuchPeer);
             }
         } else if let Some(prefix) = self.find_group_prefix(name) {
@@ -560,13 +570,13 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         };
         if bit_count == 0 || self.we_want_to_merge ||
            !self.groups.contains_key(&self.our_prefix.with_flipped_bit(bit_count - 1)) ||
-           (self.our_group.len() + 1 >= self.min_group_size &&
+           (self.our_section.len() >= self.min_group_size &&
             self.groups.iter().all(doesnt_need_to_merge_with_us)) {
             return None;
         }
         let merge_prefix = self.our_prefix.popped();
         let mut groups = self.groups.clone();
-        let _ = groups.insert(self.our_prefix, self.our_names());
+        let _ = groups.insert(self.our_prefix, self.our_section().clone());
         Some(OwnMergeDetails {
             sender_prefix: self.our_prefix,
             merge_prefix: merge_prefix,
@@ -695,7 +705,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             Authority::Section(ref target_name) => {
                 let (prefix, section) = self.closest_section(target_name);
                 if *prefix == self.our_prefix {
-                    return Ok(section.clone());
+                    // Exclude our name since we don't need to send to ourself
+                    let mut section = section.clone();
+                    section.remove(&self.our_name);
+                    return Ok(section);
                 }
                 candidates(target_name)
             }
@@ -741,10 +754,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     }
 
     /// Returns the group matching the given `name`, if present.
-    /// Excludes our own name (in the case that our prefix matches name).
-    pub fn get_group(&self, name: &T) -> Option<&HashSet<T>> {
+    /// Includes our own name in the case that our prefix matches `name`.
+    pub fn get_section(&self, name: &T) -> Option<&HashSet<T>> {
         if self.our_prefix.matches(name) {
-            return Some(&self.our_group);
+            return Some(&self.our_section);
         }
         if let Some(prefix) = self.find_group_prefix(name) {
             return self.groups.get(&prefix);
@@ -757,7 +770,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         &self.our_name
     }
 
-    fn should_split_our_group<I>(&self, our_group: I) -> bool
+    fn should_split_our_group<I>(&self, our_section: I) -> bool
         where I: IntoIterator,
               I::Item: Borrow<T>
     {
@@ -769,7 +782,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         // Count the number of names which will end up in each new group if our group is split.
         let mut new_group_size_0 = 0;
         let mut new_group_size_1 = 0;
-        for name in our_group {
+        for name in our_section {
             if self.our_name.common_prefix(name.borrow()) > self.our_prefix.bit_count() {
                 new_group_size_0 += 1;
             } else {
@@ -785,10 +798,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         let next_bit = self.our_name.bit(self.our_prefix.bit_count());
         let other_prefix = self.our_prefix.pushed(!next_bit);
         self.our_prefix = self.our_prefix.pushed(next_bit);
-        let (our_new_group, other_group) = self.our_group
+        let (our_new_section, other_group) = self.our_section
             .iter()
             .partition::<HashSet<_>, _>(|name| self.our_prefix.matches(name));
-        self.our_group = our_new_group;
+        self.our_section = our_new_section;
         // Drop groups that ceased to be our neighbours.
         let groups_to_remove = self.groups
             .keys()
@@ -809,7 +822,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         let targets = self.groups.keys().cloned().collect();
         let other_details = OtherMergeDetails {
             prefix: merge_details.merge_prefix,
-            group: self.our_names(),
+            group: self.our_section().clone(),
         };
         OwnMergeState::Completed {
             targets: targets,
@@ -825,7 +838,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         // Merge selected groups and add the merged group back in.
         let merged_names = groups_to_merge.into_iter().flat_map(|(_, names)| names).collect();
         if self.our_prefix.is_compatible(new_prefix) {
-            self.our_group.extend(merged_names);
+            self.our_section.extend(merged_names);
             self.our_prefix = *new_prefix;
         } else {
             let _ = groups.insert(*new_prefix, merged_names);
@@ -833,11 +846,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         self.groups = groups;
     }
 
-    /// Get a mutable reference to whichever group matches the given name. If our own group, our
-    /// own name is omitted from the group.
-    fn get_mut_group(&mut self, name: &T) -> Option<&mut HashSet<T>> {
+    /// Get a mutable reference to whichever section matches the given name. If our own section,
+    /// our name is included.
+    fn get_section_mut(&mut self, name: &T) -> Option<&mut HashSet<T>> {
         if self.our_prefix.matches(name) {
-            return Some(&mut self.our_group);
+            return Some(&mut self.our_section);
         }
         if let Some(prefix) = self.find_group_prefix(name) {
             return self.groups.get_mut(&prefix);
@@ -857,7 +870,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// Returns the prefix of the closest non-empty section to `name`, regardless of whether `name`
     /// belongs in that section or not, and the section itself.
     fn closest_section(&self, name: &T) -> (&Prefix<T>, &HashSet<T>) {
-        let mut result = (&self.our_prefix, &self.our_group);
+        let mut result = (&self.our_prefix, &self.our_section);
         for (prefix, group) in &self.groups {
             if !group.is_empty() && result.0.cmp_distance(prefix, name) == Ordering::Greater {
                 result = (prefix, group)
@@ -906,13 +919,13 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             return Err(Error::InvariantViolation);
         }
         let has_enough_nodes = self.len() >= self.min_group_size;
-        if has_enough_nodes && self.our_group.len() + 1 < self.min_group_size {
+        if has_enough_nodes && self.our_section.len() < self.min_group_size {
             warn!("Minimum group size not met for group {:?}: {:?}",
                   self.our_prefix,
                   self);
             return Err(Error::InvariantViolation);
         }
-        for name in &self.our_group {
+        for name in &self.our_section {
             if !self.our_prefix.matches(name) {
                 warn!("Name {} doesn't match group prefix {:?}: {:?}",
                       name.debug_binary(),
@@ -983,7 +996,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Binary for Rou
         writeln!(formatter, "\tour_prefix: {:?}", self.our_prefix)?;
         let mut groups = self.groups
             .iter()
-            .chain(iter::once((&self.our_prefix, &self.our_group)))
+            .chain(iter::once((&self.our_prefix, &self.our_section)))
             .collect_vec();
         groups.sort_by(|&(lhs_prefix, _), &(rhs_prefix, _)| {
             lhs_prefix.cmp_distance(rhs_prefix, &self.our_name)
@@ -1033,25 +1046,21 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Drop for Routi
 }
 
 
+// TODO: I don't think there's any point in RoutingSection's existance any more.
 /// References some section within the routing table
 pub struct RoutingSection<'a, T: 'a + Binary + Clone + Copy + Debug + Default + Hash + Xorable> {
-    // in case the referred section is our own group, our name must be considered separately
-    our_name: Option<&'a T>,
     section: &'a HashSet<T>,
 }
 
 impl<'a, T: 'a + Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingSection<'a, T> {
     /// Create an instance (only done by RoutingTable itself)
-    fn with(our_name: Option<&'a T>, section: &'a HashSet<T>) -> Self {
-        RoutingSection {
-            our_name: our_name,
-            section: section,
-        }
+    fn with(section: &'a HashSet<T>) -> Self {
+        RoutingSection { section: section }
     }
 
     /// Does the section have a member by this name?
     pub fn is_member(&self, name: &T) -> bool {
-        self.our_name.map_or(false, |n| n == name) || self.section.contains(name)
+        self.section.contains(name)
     }
 }
 
@@ -1159,11 +1168,11 @@ mod tests {
         let len_our_group = 13;
         assert_eq!(table.len(), num_known_nodes);
         assert_eq!(table.groups.len(), num_groups - 1);
-        assert_eq!(table.our_group.len() + 1, len_our_group);
+        assert_eq!(table.our_section.len(), len_our_group);
         assert_eq!(our_name, table.our_name);
 
         // Get some names
-        let close_name: u32 = *unwrap!(table.our_group.iter().nth(4));
+        let close_name: u32 = *unwrap!(table.our_section.iter().nth(4));
         let mut known_neighbour: Option<u32> = None;
         for (prefix, group) in &table.groups {
             if *prefix == table.our_prefix {
