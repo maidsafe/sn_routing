@@ -460,25 +460,25 @@ pub enum MessageContent {
     /// have the keys.
     ConnectionInfoRequest {
         /// Encrypted Crust connection info.
-        encrypted_connection_info: Vec<u8>,
+        encrypted_conn_info: Vec<u8>,
         /// Nonce used to provide a salt in the encrypted message.
-        nonce_bytes: [u8; box_::NONCEBYTES],
+        nonce: [u8; box_::NONCEBYTES],
         /// The sender's public ID.
-        public_id: PublicId,
+        pub_id: PublicId,
         /// The message's unique identifier.
-        message_id: MessageId,
+        msg_id: MessageId,
     },
     /// Respond to a `ConnectionInfoRequest` with our Crust connection info encrypted to the
     /// requester.
     ConnectionInfoResponse {
         /// Encrypted Crust connection info.
-        encrypted_connection_info: Vec<u8>,
+        encrypted_conn_info: Vec<u8>,
         /// Nonce used to provide a salt in the encrypted message.
-        nonce_bytes: [u8; box_::NONCEBYTES],
+        nonce: [u8; box_::NONCEBYTES],
         /// The sender's public ID.
-        public_id: PublicId,
+        pub_id: PublicId,
         /// The message's unique identifier.
-        message_id: MessageId,
+        msg_id: MessageId,
     },
     /// Reply with the new `PublicId` for the joining node.
     ///
@@ -617,17 +617,17 @@ impl Debug for MessageContent {
                        client_auth,
                        message_id)
             }
-            MessageContent::ConnectionInfoRequest { ref public_id, ref message_id, .. } => {
+            MessageContent::ConnectionInfoRequest { ref pub_id, ref msg_id, .. } => {
                 write!(formatter,
                        "ConnectionInfoRequest {{ {:?}, {:?}, .. }}",
-                       public_id,
-                       message_id)
+                       pub_id,
+                       msg_id)
             }
-            MessageContent::ConnectionInfoResponse { ref public_id, ref message_id, .. } => {
+            MessageContent::ConnectionInfoResponse { ref pub_id, ref msg_id, .. } => {
                 write!(formatter,
                        "ConnectionInfoResponse {{ {:?}, {:?}, .. }}",
-                       public_id,
-                       message_id)
+                       pub_id,
+                       msg_id)
             }
             MessageContent::GetNodeNameResponse { ref relocated_id,
                                                   ref groups,
