@@ -492,10 +492,10 @@ impl Node {
 
     /// Returns a quorum of signatures for the neighbouring section's list or `None` if we don't
     /// have one
-    pub fn group_list_signatures(&self,
-                                 prefix: Prefix<XorName>)
-                                 -> Option<BTreeMap<PublicId, sign::Signature>> {
-        self.machine.borrow().current().group_list_signatures(prefix)
+    pub fn section_list_signatures(&self,
+                                   prefix: Prefix<XorName>)
+                                   -> Option<BTreeMap<PublicId, sign::Signature>> {
+        self.machine.borrow().current().section_list_signatures(prefix)
     }
 
     /// Returns whether the current state is `Node`.

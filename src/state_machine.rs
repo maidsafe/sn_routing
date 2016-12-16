@@ -131,11 +131,11 @@ impl State {
         }
     }
 
-    pub fn group_list_signatures(&self,
-                                 prefix: Prefix<XorName>)
-                                 -> Option<BTreeMap<PublicId, sign::Signature>> {
+    pub fn section_list_signatures(&self,
+                                   prefix: Prefix<XorName>)
+                                   -> Option<BTreeMap<PublicId, sign::Signature>> {
         match *self {
-            State::Node(ref state) => Some(state.group_list_signatures(prefix)),
+            State::Node(ref state) => Some(state.section_list_signatures(prefix)),
             _ => None,
         }
     }

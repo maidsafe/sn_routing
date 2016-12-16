@@ -463,8 +463,8 @@ impl Node {
         use messages::DirectMessage::*;
         match direct_message {
             MessageSignature(digest, sig) => self.handle_message_signature(digest, sig, peer_id),
-            GroupListSignature(prefix, group_list, sig) => {
-                self.handle_group_list_signature(peer_id, prefix, group_list, sig)
+            SectionListSignature(prefix, section_list, sig) => {
+                self.handle_section_list_signature(peer_id, prefix, section_list, sig)
             }
             ClientIdentify { ref serialised_public_id, ref signature, client_restriction } => {
                 if let Ok(public_id) = verify_signed_public_id(serialised_public_id, signature) {
@@ -522,21 +522,21 @@ impl Node {
         Ok(())
     }
 
-    fn get_group(&self, prefix: &Prefix<XorName>) -> Result<BTreeSet<XorName>, RoutingError> {
-        let group = self.peer_mgr
+    fn get_section(&self, prefix: &Prefix<XorName>) -> Result<BTreeSet<XorName>, RoutingError> {
+        let section = self.peer_mgr
             .routing_table()
             .get_section(&prefix.lower_bound())
             .ok_or(RoutingError::InvalidSource)?
             .iter()
             .cloned()
             .collect();
-        Ok(group)
+        Ok(section)
     }
 
-    fn get_group_list(&self, prefix: &Prefix<XorName>) -> Result<GroupList, RoutingError> {
+    fn get_section_list(&self, prefix: &Prefix<XorName>) -> Result<GroupList, RoutingError> {
         Ok(GroupList {
             pub_ids: self.peer_mgr
-                .get_pub_ids(&self.get_group(prefix)?.into_iter().collect())
+                .get_pub_ids(&self.get_section(prefix)?.into_iter().collect())
                 .into_iter()
                 .collect(),
         })
@@ -544,21 +544,21 @@ impl Node {
 
     /// Sends a signature for the list of members of a section with prefix `prefix` to our whole
     /// group if `dst` is `None`, or to the given node if it is `Some(name)`
-    fn send_group_list_signature(&mut self,
-                                 prefix: Prefix<XorName>,
-                                 dst: Option<XorName>)
-                                 -> Result<(), RoutingError> {
+    fn send_section_list_signature(&mut self,
+                                   prefix: Prefix<XorName>,
+                                   dst: Option<XorName>)
+                                   -> Result<(), RoutingError> {
         // don't send signatures for our own group
         if prefix == *self.peer_mgr.routing_table().our_prefix() {
             return Ok(());
         }
-        let group = self.get_group_list(&prefix)?;
-        let serialised = serialisation::serialise(&group)?;
+        let section = self.get_section_list(&prefix)?;
+        let serialised = serialisation::serialise(&section)?;
         let sig = sign::sign_detached(&serialised, self.full_id.signing_private_key());
 
         self.section_list_sigs.add_signature(prefix,
                                              *self.full_id.public_id(),
-                                             group.clone(),
+                                             section.clone(),
                                              sig,
                                              self.peer_mgr.routing_table().our_section().len());
 
@@ -576,27 +576,27 @@ impl Node {
 
         let peers = self.peer_mgr.get_peer_ids(&targets);
         for peer_id in peers {
-            let msg = DirectMessage::GroupListSignature(prefix, group.clone(), sig);
+            let msg = DirectMessage::SectionListSignature(prefix, section.clone(), sig);
             self.send_direct_message(&peer_id, msg)?;
         }
 
         Ok(())
     }
 
-    fn handle_group_list_signature(&mut self,
-                                   peer_id: PeerId,
-                                   prefix: Prefix<XorName>,
-                                   group_list: GroupList,
-                                   sig: sign::Signature)
-                                   -> Result<(), RoutingError> {
+    fn handle_section_list_signature(&mut self,
+                                     peer_id: PeerId,
+                                     prefix: Prefix<XorName>,
+                                     section_list: GroupList,
+                                     sig: sign::Signature)
+                                     -> Result<(), RoutingError> {
         let src_pub_id =
             self.peer_mgr.get_routing_peer(&peer_id).ok_or(RoutingError::InvalidSource)?;
-        let serialised = serialisation::serialise(&group_list)?;
+        let serialised = serialisation::serialise(&section_list)?;
         if sign::verify_detached(&sig, &serialised, src_pub_id.signing_public_key()) {
             self.section_list_sigs
                 .add_signature(prefix,
                                *src_pub_id,
-                               group_list,
+                               section_list,
                                sig,
                                self.peer_mgr.routing_table().our_section().len());
             Ok(())
@@ -958,12 +958,12 @@ impl Node {
         self.add_to_routing_table(public_id, peer_id);
 
         if let Some(prefix) = self.peer_mgr.routing_table().find_group_prefix(public_id.name()) {
-            let _ = self.send_group_list_signature(prefix, None);
+            let _ = self.send_section_list_signature(prefix, None);
             if prefix == *self.peer_mgr.routing_table().our_prefix() {
                 // if the node joined our group, send signatures for all neighbouring group lists
                 // to it
                 for pfx in self.peer_mgr.routing_table().other_prefixes() {
-                    let _ = self.send_group_list_signature(pfx, Some(*public_id.name()));
+                    let _ = self.send_section_list_signature(pfx, Some(*public_id.name()));
                 }
             }
         }
@@ -1554,8 +1554,8 @@ impl Node {
 
         let prefix0 = prefix.pushed(false);
         let prefix1 = prefix.pushed(true);
-        self.send_group_list_signature(prefix0, None)?;
-        self.send_group_list_signature(prefix1, None)?;
+        self.send_section_list_signature(prefix0, None)?;
+        self.send_section_list_signature(prefix1, None)?;
 
         Ok(())
     }
@@ -1625,7 +1625,7 @@ impl Node {
                self,
                self.peer_mgr.routing_table().prefixes());
         self.merge_if_necessary();
-        self.send_group_list_signature(prefix, None)?;
+        self.send_section_list_signature(prefix, None)?;
         Ok(())
     }
 
@@ -2001,7 +2001,7 @@ impl Node {
 
         if !details.was_in_our_group {
             self.peer_mgr.routing_table().find_group_prefix(&details.name).map_or((), |prefix| {
-                let _ = self.send_group_list_signature(prefix, None);
+                let _ = self.send_section_list_signature(prefix, None);
             });
         } else {
             self.section_list_sigs
@@ -2210,12 +2210,12 @@ impl Node {
         self.merge_if_necessary();
     }
 
-    pub fn group_list_signatures(&self,
-                                 prefix: Prefix<XorName>)
-                                 -> BTreeMap<PublicId, sign::Signature> {
-        if let Some(&(ref group_list, ref signatures)) =
+    pub fn section_list_signatures(&self,
+                                   prefix: Prefix<XorName>)
+                                   -> BTreeMap<PublicId, sign::Signature> {
+        if let Some(&(ref section_list, ref signatures)) =
             self.section_list_sigs.get_signatures(prefix) {
-            let data = if let Ok(data) = serialisation::serialise(group_list) {
+            let data = if let Ok(data) = serialisation::serialise(section_list) {
                 data
             } else {
                 return Default::default();
