@@ -259,7 +259,10 @@ pub fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
     }
 }
 
+/// Polls and processes all events, until there are no unacknowledged messages left and clearing
+/// the nodes' state triggers no new events anymore.
 pub fn poll_and_resend(nodes: &mut [TestNode], clients: &mut [TestClient]) {
+    let mut cleared_state = true;
     loop {
         let mut state_changed = poll_all(nodes, clients);
         for node in nodes.iter_mut() {
@@ -268,8 +271,15 @@ pub fn poll_and_resend(nodes: &mut [TestNode], clients: &mut [TestClient]) {
         for client in clients.iter_mut() {
             state_changed = state_changed || client.inner.resend_unacknowledged();
         }
-        if !state_changed {
+        if state_changed {
+            cleared_state = false;
+        } else if cleared_state {
             return;
+        } else {
+            for node in nodes.iter_mut() {
+                node.inner.clear_state();
+            }
+            cleared_state = true;
         }
     }
 }

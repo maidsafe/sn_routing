@@ -29,6 +29,7 @@ use std::{error, fmt, mem};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::collections::hash_map::Values;
 use std::time::{Duration, Instant};
+use types::MessageId;
 use xor_name::XorName;
 
 /// Time (in seconds) after which a joining node will get dropped from the map of joining nodes.
@@ -77,8 +78,11 @@ impl error::Error for Error {
 #[derive(Debug)]
 pub enum PeerState {
     /// Waiting for Crust to prepare our `PrivConnectionInfo`. Contains source and destination for
-    /// sending it to the peer, and their connection info, if we already received it.
-    ConnectionInfoPreparing(Authority<XorName>, Authority<XorName>, Option<PubConnectionInfo>),
+    /// sending it to the peer, and their connection info with the associated request's message ID,
+    /// if we already received it.
+    ConnectionInfoPreparing(Authority<XorName>,
+                            Authority<XorName>,
+                            Option<(PubConnectionInfo, MessageId)>),
     /// The prepared connection info that has been sent to the peer.
     ConnectionInfoReady(PrivConnectionInfo),
     /// We called `connect` and are waiting for a `NewPeer` event.
@@ -134,7 +138,7 @@ pub struct ConnectionInfoPreparedResult {
     pub dst: Authority<XorName>,
     /// If the peer's connection info was already present, the peer has been moved to
     /// `CrustConnecting` status. Crust's `connect` method should be called with these infos now.
-    pub infos: Option<(PrivConnectionInfo, PubConnectionInfo)>,
+    pub infos: Option<(PrivConnectionInfo, PubConnectionInfo, MessageId)>,
 }
 
 /// Represents peer we are connected or attempting connection to.
@@ -173,15 +177,15 @@ impl Peer {
 
     fn is_expired(&self) -> bool {
         match self.state {
-            PeerState::ConnectionInfoPreparing(..) |
-            PeerState::ConnectionInfoReady(_) |
-            PeerState::CrustConnecting |
             PeerState::SearchingForTunnel => {
                 self.timestamp.elapsed() >= Duration::from_secs(CONNECTION_TIMEOUT_SECS)
             }
             PeerState::JoiningNode | PeerState::Proxy => {
                 self.timestamp.elapsed() >= Duration::from_secs(JOINING_NODE_TIMEOUT_SECS)
             }
+            PeerState::ConnectionInfoPreparing(..) |
+            PeerState::ConnectionInfoReady(_) |
+            PeerState::CrustConnecting |
             PeerState::Client |
             PeerState::Routing(_) |
             PeerState::AwaitingNodeIdentify(_) => false,
@@ -233,11 +237,10 @@ impl PeerMap {
     }
 
     fn insert(&mut self, peer: Peer) -> Option<Peer> {
-        if let Some(peer_id) = peer.peer_id {
-            let _ = self.names.insert(peer_id, *peer.name());
-        }
-
-        self.peers.insert(*peer.name(), peer)
+        let old_peer = peer.peer_id
+            .and_then(|peer_id| self.names.insert(peer_id, *peer.name()))
+            .and_then(|old_name| self.peers.remove(&old_name));
+        self.peers.insert(*peer.name(), peer).or(old_peer)
     }
 
     fn remove(&mut self, peer_id: &PeerId) -> Option<Peer> {
@@ -536,13 +539,13 @@ impl PeerManager {
 
     /// Wraps the routing table function of the same name and maps `XorName`s to `PublicId`s.
     pub fn get_sections_to_join(&self,
-                                name: &XorName,
+                                expected_name: &XorName,
                                 our_public_id: &PublicId)
                                 -> Result<Vec<Group>, RoutingTableError> {
-        self.routing_table.validate_joining_node(name)?;
-        let groups = self.routing_table.groups();
+        self.routing_table.validate_joining_node(expected_name)?;
+        let sections = self.routing_table.all_sections();
         let mut result = vec![];
-        for (prefix, names) in groups {
+        for (prefix, names) in sections {
             let mut public_ids = vec![];
             for name in names {
                 if name == *our_public_id.name() {
@@ -1022,16 +1025,15 @@ impl PeerManager {
             None => return Err(Error::PeerNotFound),
         };
 
-
         Ok(ConnectionInfoPreparedResult {
             pub_id: pub_id,
             src: src,
             dst: dst,
             infos: match opt_their_info {
-                Some(their_info) => {
+                Some((their_info, msg_id)) => {
                     let state = PeerState::CrustConnecting;
                     self.insert_peer(pub_id, Some(their_info.id()), state);
-                    Some((our_info, their_info))
+                    Some((our_info, their_info, msg_id))
                 }
                 None => {
                     let state = PeerState::ConnectionInfoReady(our_info);
@@ -1048,7 +1050,8 @@ impl PeerManager {
                                     src: Authority<XorName>,
                                     dst: Authority<XorName>,
                                     pub_id: PublicId,
-                                    their_info: PubConnectionInfo)
+                                    their_info: PubConnectionInfo,
+                                    msg_id: MessageId)
                                     -> Result<ConnectionInfoReceivedResult, Error> {
         let peer_id = their_info.id();
 
@@ -1059,7 +1062,8 @@ impl PeerManager {
                 Ok(ConnectionInfoReceivedResult::Ready(our_info, their_info))
             }
             Some(Peer { state: PeerState::ConnectionInfoPreparing(src, dst, None), .. }) => {
-                let state = PeerState::ConnectionInfoPreparing(src, dst, Some(their_info));
+                let state =
+                    PeerState::ConnectionInfoPreparing(src, dst, Some((their_info, msg_id)));
                 self.insert_peer(pub_id, Some(peer_id), state);
                 Ok(ConnectionInfoReceivedResult::Waiting)
             }
@@ -1090,7 +1094,8 @@ impl PeerManager {
                 Err(Error::UnexpectedState)
             }
             None => {
-                let state = PeerState::ConnectionInfoPreparing(src, dst, Some(their_info));
+                let state =
+                    PeerState::ConnectionInfoPreparing(src, dst, Some((their_info, msg_id)));
                 self.insert_peer(pub_id, Some(peer_id), state);
                 let token = rand::random();
                 let _ = self.connection_token_map.insert(token, pub_id);
@@ -1158,12 +1163,12 @@ impl PeerManager {
         }
     }
 
-    fn get_state(&self, peer_id: &PeerId) -> Option<&PeerState> {
-        self.peer_map.get(peer_id).map(Peer::state)
-    }
-
     pub fn get_state_by_name(&self, name: &XorName) -> Option<&PeerState> {
         self.peer_map.get_by_name(name).map(Peer::state)
+    }
+
+    fn get_state(&self, peer_id: &PeerId) -> Option<&PeerState> {
+        self.peer_map.get(peer_id).map(Peer::state)
     }
 
     fn set_state(&mut self, peer_id: &PeerId, state: PeerState) -> bool {
@@ -1187,7 +1192,6 @@ impl PeerManager {
 
     fn remove_expired(&mut self) {
         self.remove_expired_peers();
-        self.remove_expired_tokens();
         self.cleanup_proxy_peer_id();
     }
 
@@ -1203,21 +1207,6 @@ impl PeerManager {
         }
 
         self.cleanup_proxy_peer_id();
-    }
-
-    fn remove_expired_tokens(&mut self) {
-        let remove_tokens = self.connection_token_map
-            .iter()
-            .filter(|&(_, pub_id)| match self.get_state_by_name(pub_id.name()) {
-                Some(&PeerState::ConnectionInfoPreparing(..)) => false,
-                _ => true,
-            })
-            .map(|(token, _)| *token)
-            .collect_vec();
-
-        for token in remove_tokens {
-            let _ = self.connection_token_map.remove(&token);
-        }
     }
 
     fn cleanup_proxy_peer_id(&mut self) {
@@ -1248,6 +1237,8 @@ impl PeerManager {
         for name in remove_names {
             let _ = self.peer_map.remove_by_name(&name);
         }
+
+        self.expected_peers.clear();
     }
 }
 
@@ -1258,6 +1249,7 @@ mod tests {
     use mock_crust::crust::{PeerId, PrivConnectionInfo, PubConnectionInfo};
     use routing_table::Authority;
     use super::*;
+    use types::MessageId;
     use xor_name::{XOR_NAME_LEN, XorName};
 
     fn node_auth(byte: u8) -> Authority<XorName> {
@@ -1287,7 +1279,8 @@ mod tests {
         match peer_mgr.connection_info_received(node_auth(0),
                                                 node_auth(1),
                                                 orig_pub_id,
-                                                their_connection_info.clone()) {
+                                                their_connection_info.clone(),
+                                                MessageId::new()) {
             Ok(ConnectionInfoReceivedResult::Ready(our_info, their_info)) => {
                 assert_eq!(our_connection_info, our_info);
                 assert_eq!(their_connection_info, their_info);
@@ -1308,11 +1301,13 @@ mod tests {
         let mut peer_mgr = PeerManager::new(min_group_size, orig_pub_id);
         let our_connection_info = PrivConnectionInfo(PeerId(0), Endpoint(0));
         let their_connection_info = PubConnectionInfo(PeerId(1), Endpoint(1));
+        let original_msg_id = MessageId::new();
         // We received a connection info from the peer and get a token to prepare ours.
         let token = match peer_mgr.connection_info_received(node_auth(0),
                                                             node_auth(1),
                                                             orig_pub_id,
-                                                            their_connection_info.clone()) {
+                                                            their_connection_info.clone(),
+                                                            original_msg_id) {
             Ok(ConnectionInfoReceivedResult::Prepare(token)) => token,
             result => panic!("Unexpected result: {:?}", result),
         };
@@ -1321,12 +1316,13 @@ mod tests {
             Ok(ConnectionInfoPreparedResult { pub_id,
                                               src,
                                               dst,
-                                              infos: Some((our_info, their_info)) }) => {
+                                              infos: Some((our_info, their_info, msg_id)) }) => {
                 assert_eq!(orig_pub_id, pub_id);
                 assert_eq!(node_auth(0), src);
                 assert_eq!(node_auth(1), dst);
                 assert_eq!(our_connection_info, our_info);
                 assert_eq!(their_connection_info, their_info);
+                assert_eq!(original_msg_id, msg_id);
             }
             result => panic!("Unexpected result: {:?}", result),
         }
