@@ -45,6 +45,48 @@ impl SectionListCache {
         }
     }
 
+    /// Removes all signatures authored by `author`
+    pub fn remove_signatures_by(&mut self, author: PublicId, our_section_size: usize) {
+        if let Some(lists) = self.signed_by.remove(&author) {
+            for (prefix, list) in lists {
+                let _ = self.signatures.get_mut(&prefix).map_or(None, |map| {
+                    map.get_mut(&list).map_or(None, |sigmap| sigmap.remove(&author))
+                });
+            }
+            self.prune();
+            self.update_lists_cache(our_section_size);
+        }
+    }
+
+    /// Adds a new signature for a group list
+    pub fn add_signature(&mut self,
+                         prefix: Prefix<XorName>,
+                         pub_id: PublicId,
+                         list: GroupList,
+                         sig: Signature,
+                         our_section_size: usize) {
+        // remove all conflicting signatures
+        self.remove_signatures_for_prefix_by(prefix, pub_id);
+        // remember that this public id signed this group list
+        let _ =
+            self.signed_by.entry(pub_id).or_insert_with(HashMap::new).insert(prefix, list.clone());
+        // remember that this group list has a new signature
+        let _ = self.signatures
+            .entry(prefix)
+            .or_insert_with(HashMap::new)
+            .entry(list)
+            .or_insert_with(HashMap::new)
+            .insert(pub_id, sig);
+        self.update_lists_cache(our_section_size);
+    }
+
+    /// Returns the currently signed group list for `prefix` along with a quorum of signatures.
+    // TODO: Remove this when the method is used in production
+    #[cfg(feature="use-mock-crust")]
+    pub fn get_signatures(&self, prefix: Prefix<XorName>) -> Option<&(GroupList, Signatures)> {
+        self.lists_cache.get(&prefix)
+    }
+
     fn prune(&mut self) {
         let mut to_remove = vec![];
         for (prefix, map) in &mut self.signatures {
@@ -113,47 +155,5 @@ impl SectionListCache {
         }
 
         self.prune();
-    }
-
-    /// Removes all signatures authored by `author`
-    pub fn remove_signatures_by(&mut self, author: PublicId, our_section_size: usize) {
-        if let Some(lists) = self.signed_by.remove(&author) {
-            for (prefix, list) in lists {
-                let _ = self.signatures.get_mut(&prefix).map_or(None, |map| {
-                    map.get_mut(&list).map_or(None, |sigmap| sigmap.remove(&author))
-                });
-            }
-            self.prune();
-            self.update_lists_cache(our_section_size);
-        }
-    }
-
-    /// Adds a new signature for a group list
-    pub fn add_signature(&mut self,
-                         prefix: Prefix<XorName>,
-                         pub_id: PublicId,
-                         list: GroupList,
-                         sig: Signature,
-                         our_section_size: usize) {
-        // remove all conflicting signatures
-        self.remove_signatures_for_prefix_by(prefix, pub_id);
-        // remember that this public id signed this group list
-        let _ =
-            self.signed_by.entry(pub_id).or_insert_with(HashMap::new).insert(prefix, list.clone());
-        // remember that this group list has a new signature
-        let _ = self.signatures
-            .entry(prefix)
-            .or_insert_with(HashMap::new)
-            .entry(list)
-            .or_insert_with(HashMap::new)
-            .insert(pub_id, sig);
-        self.update_lists_cache(our_section_size);
-    }
-
-    /// Returns the currently signed group list for `prefix` along with a quorum of signatures.
-    // TODO: Remove this when the method is used in production
-    #[cfg(feature="use-mock-crust")]
-    pub fn get_signatures(&self, prefix: Prefix<XorName>) -> Option<&(GroupList, Signatures)> {
-        self.lists_cache.get(&prefix)
     }
 }
