@@ -102,7 +102,7 @@ pub enum DirectMessage {
     /// only be relayed once enough signatures have been accumulated.
     MessageSignature(sha256::Digest, sign::Signature),
     /// A signature for the current `BTreeSet` of group's node names
-    SectionListSignature(Prefix<XorName>, GroupList, sign::Signature),
+    SectionListSignature(Prefix<XorName>, SectionList, sign::Signature),
     /// Sent from the bootstrap node to a client in response to `ClientIdentify`.
     BootstrapIdentify {
         /// The bootstrap node's keys and name.
@@ -194,7 +194,7 @@ impl HopMessage {
 
 /// A list of a group's public IDs, together with a list of signatures of a neighbouring group.
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable, Debug)]
-pub struct GroupList {
+pub struct SectionList {
     // TODO(MAID-1677): pub signatures: BTreeSet<(PublicId, sign::Signature)>,
     pub pub_ids: BTreeSet<PublicId>,
 }
@@ -204,19 +204,26 @@ pub struct GroupList {
 pub struct SignedMessage {
     /// A request or response type message.
     content: RoutingMessage,
-    /// The lists of the groups involved in routing this message, in chronological order.
-    grp_lists: Vec<GroupList>,
+    /// Nodes sending the message (those expected to sign it)
+    sending_nodes: BTreeSet<PublicId>,
+    /// The lists of the sections involved in routing this message, in chronological order.
+    // TODO: implement (JIRA 1677): sec_lists: Vec<SectionList>,
     /// The IDs and signatures of the source authority's members.
     signatures: BTreeMap<PublicId, sign::Signature>,
 }
 
 impl SignedMessage {
     /// Creates a `SignedMessage` with the given `content` and signed by the given `full_id`.
-    pub fn new(content: RoutingMessage, full_id: &FullId) -> Result<SignedMessage, RoutingError> {
+    ///
+    /// Requires the list `sending_nodes` of nodes who should sign this message.
+    pub fn new(content: RoutingMessage,
+               full_id: &FullId,
+               sending_nodes: BTreeSet<PublicId>)
+               -> Result<SignedMessage, RoutingError> {
         let sig = sign::sign_detached(&serialise(&content)?, full_id.signing_private_key());
         Ok(SignedMessage {
             content: content,
-            grp_lists: Vec::new(),
+            sending_nodes: sending_nodes,
             signatures: iter::once((*full_id.public_id(), sig)).collect(),
         })
     }
@@ -244,35 +251,11 @@ impl SignedMessage {
         self.signatures.contains_key(pub_id)
     }
 
-    /// Appends the group list to the message. If this is the first group list, it also removes all
-    /// signatures which don't correspond to an entry in `group_list`.
-    pub fn add_group_list(&mut self, group_list: GroupList) {
-        if self.content.src.is_client() {
-            return; // Clients are validated based on their names.
-        }
-        // TODO: We currently just add empty group lists in clients and joining nodes. Clients will
-        // need to know their proxy's group to verify messages, and joining nodes will have to
-        // store their new group lists from the beginning.
-        if self.grp_lists.is_empty() && !group_list.pub_ids.is_empty() {
-            // Drop signatures not associated with any members of the first group list.
-            let irrelevant_ids = self.signatures
-                .keys()
-                .filter(|pub_id| !group_list.pub_ids.contains(pub_id))
-                .cloned()
-                .collect_vec();
-            for irrelevant_id in irrelevant_ids {
-                let _ = self.signatures.remove(&irrelevant_id);
-            }
-        }
-        self.grp_lists.push(group_list);
-    }
-
     /// Adds the given signature if it is new, without validating it. If the collection of group
     /// lists isn't empty, the signature is only added if `pub_id` is a member of the first group
     /// list.
     pub fn add_signature(&mut self, pub_id: PublicId, sig: sign::Signature) {
-        if self.content.src.is_multiple() &&
-           self.grp_lists.first().map_or(true, |grp_list| grp_list.pub_ids.contains(&pub_id)) {
+        if self.content.src.is_multiple() && self.sending_nodes.contains(&pub_id) {
             let _ = self.signatures.insert(pub_id, sig);
         }
     }
@@ -299,41 +282,48 @@ impl SignedMessage {
         self.content.priority()
     }
 
-    /// Returns whether there are enough signatures from the sender. NOTE: to ensure only validated
-    /// signatures are counted, first call `remove_invalid_signatures()`.
-    pub fn is_fully_signed(&self, min_group_size: usize) -> bool {
-        if self.content.src.is_client() {
-            return self.signatures.len() == 1;
-        }
-        self.grp_lists.first().map_or(false, |grp_list| {
-            if self.content.src.is_multiple() {
-                let valid_names: HashSet<_> = grp_list.pub_ids
-                    .iter()
-                    .map(PublicId::name)
-                    .sorted_by(|lhs, rhs| self.content.src.name().cmp_distance(lhs, rhs))
-                    .into_iter()
-                    .take(min_group_size)
-                    .collect();
-                let valid_sigs = self.signatures
-                    .keys()
-                    .filter(|pub_id| valid_names.contains(pub_id.name()))
-                    .count();
-                QUORUM * valid_names.len() <= 100 * valid_sigs
-            } else {
-                self.signatures.len() == 1
-            }
-        })
-    }
+    /// Returns whether there are enough signatures from the sender.
+    pub fn check_fully_signed(&mut self, min_group_size: usize) -> bool {
+        fn has_enough_sigs(msg: &SignedMessage, min_group_size: usize) -> bool {
+            // TODO (1677): we should check each step.
 
-    /// Removes all signatures which fail validation.
-    pub fn remove_invalid_signatures(&mut self) {
+            use Authority::*;
+            match msg.content.src {
+                ClientManager(_) | NaeManager(_) | NodeManager(_) => {
+                    let valid_names: HashSet<_> = msg.sending_nodes
+                        .iter()
+                        .map(PublicId::name)
+                        .sorted_by(|lhs, rhs| msg.content.src.name().cmp_distance(lhs, rhs))
+                        .into_iter()
+                        .take(min_group_size)
+                        .collect();
+                    let valid_sigs = msg.signatures
+                        .keys()
+                        .filter(|pub_id| valid_names.contains(pub_id.name()))
+                        .count();
+                    QUORUM * valid_names.len() <= 100 * valid_sigs
+                }
+                Section(_) | PrefixSection(_) => {
+                    let num_sending = msg.sending_nodes.len();
+                    let valid_sigs = msg.signatures.len();
+                    QUORUM * num_sending <= 100 * valid_sigs
+                }
+                ManagedNode(_) | Client { .. } => msg.signatures.len() == 1,
+            }
+        }
+
+        if !has_enough_sigs(self, min_group_size) {
+            return false;
+        }
+        // Remove invalid signatures, then check again that we have enough:
+
         let signed_bytes = match serialise(&self.content) {
             Ok(serialised) => serialised,
             Err(error) => {
                 info!("Failed to remove invalid signatures from {:?}: {:?}",
                       self,
                       error);
-                return;
+                return false;
             }
         };
         let invalid_signatures = self.signatures
@@ -349,6 +339,8 @@ impl SignedMessage {
         for invalid_signature in &invalid_signatures {
             let _ = self.signatures.remove(invalid_signature);
         }
+
+        has_enough_sigs(self, min_group_size)
     }
 }
 
@@ -599,9 +591,9 @@ impl Debug for HopMessage {
 impl Debug for SignedMessage {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter,
-               "SignedMessage {{ content: {:?}, grp_lists sizes: {:?}, signatures: {:?} }}",
+               "SignedMessage {{ content: {:?}, sending nodes: {:?}, signatures: {:?} }}",
                self.content,
-               self.grp_lists.iter().map(|grp_list| grp_list.pub_ids.len()).collect_vec(),
+               self.sending_nodes,
                self.signatures.keys().collect_vec())
     }
 }
@@ -1050,7 +1042,8 @@ mod tests {
             content: MessageContent::GroupSplit(Prefix::new(0, name), name),
         };
         let full_id = FullId::new();
-        let signed_message_result = SignedMessage::new(routing_message.clone(), &full_id);
+        let senders = iter::empty().collect();
+        let signed_message_result = SignedMessage::new(routing_message.clone(), &full_id, senders);
 
         let mut signed_message = unwrap!(signed_message_result);
 
@@ -1095,10 +1088,15 @@ mod tests {
             content: part,
         };
 
-        let mut signed_msg = unwrap!(SignedMessage::new(routing_message, &full_id_0));
+        let sending_nodes =
+            vec![*full_id_0.public_id(), *full_id_1.public_id(), *full_id_2.public_id()]
+                .into_iter()
+                .collect();
+        let mut signed_msg =
+            unwrap!(SignedMessage::new(routing_message, &full_id_0, sending_nodes));
         assert_eq!(signed_msg.signatures.len(), 1);
 
-        // Add a signature which will not correspond to an ID in the first group list.
+        // Try to add a signature which will not correspond to an ID in the first group list.
         let irrelevant_sig = match unwrap!(signed_msg.routing_message()
             .to_signature(irrelevant_full_id.signing_private_key())) {
             DirectMessage::MessageSignature(_, sig) => {
@@ -1107,17 +1105,9 @@ mod tests {
             }
             msg => panic!("Unexpected message: {:?}", msg),
         };
-        assert_eq!(signed_msg.signatures.len(), 2);
-
-        // Check the irrelevant signature gets removed by `add_group_list()`.
-        signed_msg.add_group_list(GroupList {
-            pub_ids: vec![*full_id_0.public_id(), *full_id_1.public_id(), *full_id_2.public_id()]
-                .into_iter()
-                .collect(),
-        });
         assert_eq!(signed_msg.signatures.len(), 1);
         assert!(!signed_msg.signatures.contains_key(irrelevant_full_id.public_id()));
-        assert!(!signed_msg.is_fully_signed(min_group_size));
+        assert!(!signed_msg.check_fully_signed(min_group_size));
 
         // Add a valid signature for ID 1 and an invalid one for ID 2
         match unwrap!(signed_msg.routing_message().to_signature(full_id_1.signing_private_key())) {
@@ -1131,10 +1121,9 @@ mod tests {
         let bad_sig = sign::Signature([0; sign::SIGNATUREBYTES]);
         signed_msg.add_signature(*full_id_2.public_id(), bad_sig);
         assert_eq!(signed_msg.signatures.len(), 3);
-        assert!(signed_msg.is_fully_signed(min_group_size));
+        assert!(signed_msg.check_fully_signed(min_group_size));
 
-        // Check the bad signature gets removed properly.
-        signed_msg.remove_invalid_signatures();
+        // Check the bad signature got removed (by check_fully_signed) properly.
         assert_eq!(signed_msg.signatures.len(), 2);
         assert!(!signed_msg.signatures.contains_key(full_id_2.public_id()));
 
@@ -1153,11 +1142,10 @@ mod tests {
             content: MessageContent::GroupSplit(Prefix::new(0, name), name),
         };
         let full_id = FullId::new();
-        let signed_message_result = SignedMessage::new(routing_message.clone(), &full_id);
-
-        assert!(signed_message_result.is_ok());
-
+        let senders = iter::empty().collect();
+        let signed_message_result = SignedMessage::new(routing_message.clone(), &full_id, senders);
         let signed_message = unwrap!(signed_message_result);
+
         let (public_signing_key, secret_signing_key) = sign::gen_keypair();
         let hop_message_result = HopMessage::new(signed_message.clone(),
                                                  0,
