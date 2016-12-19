@@ -760,7 +760,8 @@ impl Node {
                                pub_id);
                         let src = Authority::ManagedNode(*self.name());
                         let node_auth = Authority::ManagedNode(*pub_id.name());
-                        if let Err(error) = self.send_connection_info_request(*pub_id, src, node_auth) {
+                        if let Err(error) =
+                            self.send_connection_info_request(*pub_id, src, node_auth) {
                             debug!("{:?} - Failed to send connection info to {:?}: {:?}",
                                    self,
                                    pub_id,
@@ -983,7 +984,7 @@ impl Node {
             if tunnel {
                 /// if connection is in tunnel, vote NO directly, don't carry out profiling
                 /// limitation: joining node ONLY carries out QUORAM valid connection/evaluations
-                info!("{:?} Sending CandidateApproval false to group rejetcing {:?}.",
+                info!("{:?} Sending CandidateApproval false to group rejecting {:?}.",
                       self,
                       *public_id.name());
                 // From Y -> Y
@@ -1520,8 +1521,8 @@ impl Node {
     }
 
     // Received by Y; From X -> Y
-    // Context: we're part of the `NaeManager` for the new name of a node
-    // (i.e. a node is joining our group). Send the node our routing table.
+    // Context: a node is joining our group. Sends the node our group if requiring resource prove,
+    // otherwise sends our routing_table.
     fn handle_expect_close_node_request(&mut self,
                                         expect_id: PublicId,
                                         client_auth: Authority<XorName>,
@@ -1533,10 +1534,10 @@ impl Node {
         }
 
         // TODO - do we need to reply if `expect_id` triggers a failure here?
-        let (resource_proving, own_group) = self.peer_mgr
+        let result = self.peer_mgr
             .expect_join_our_group(expect_id.name(), self.full_id.public_id())?;
 
-        let response_content = if resource_proving {
+        let response_content = if let Some(own_group) = result {
             // From Y -> A (via B)
             let response_content = MessageContent::GetNodeNameResponse {
                 relocated_id: expect_id,

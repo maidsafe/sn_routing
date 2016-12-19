@@ -524,8 +524,7 @@ pub enum MessageContent {
     GetNodeNameResponse {
         /// Supplied `PublicId`, but with the new name
         relocated_id: PublicId,
-        /// The routing table shared by the nodes in our group, including the `PublicId`s of our
-        /// contacts.
+        /// The relocated group that the joining node shall connect to
         group: (Prefix<XorName>, Vec<PublicId>),
         /// The message's unique identifier.
         message_id: MessageId,
@@ -695,9 +694,7 @@ impl Debug for MessageContent {
                        pub_id,
                        msg_id)
             }
-            MessageContent::GetNodeNameResponse { ref relocated_id,
-                                                  ref group,
-                                                  ref message_id } => {
+            MessageContent::GetNodeNameResponse { ref relocated_id, ref group, ref message_id } => {
                 write!(formatter,
                        "GetNodeNameResponse {{ {:?}, {:?}, {:?} }}",
                        relocated_id,
