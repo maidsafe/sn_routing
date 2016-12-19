@@ -27,6 +27,7 @@ use super::XorName;
 pub type Signatures = HashMap<PublicId, Signature>;
 pub type PrefixMap<T> = HashMap<Prefix<XorName>, T>;
 
+#[derive(Default)]
 pub struct SectionListCache {
     // all signatures for a group list for a given prefix
     signatures: PrefixMap<HashMap<GroupList, Signatures>>,
@@ -38,11 +39,7 @@ pub struct SectionListCache {
 
 impl SectionListCache {
     pub fn new() -> SectionListCache {
-        SectionListCache {
-            signatures: Default::default(),
-            signed_by: Default::default(),
-            lists_cache: Default::default(),
-        }
+        Default::default()
     }
 
     /// Removes all signatures authored by `author`
@@ -105,6 +102,9 @@ impl SectionListCache {
         // prune prefixes with no group lists
         for prefix in to_remove {
             let _ = self.signatures.remove(&prefix);
+            // if we lose a prefix from `signatures`, there is no point in holding it in
+            // `lists_cache`
+            let _ = self.lists_cache.remove(&prefix);
         }
 
         let to_remove = self.signed_by
@@ -124,12 +124,12 @@ impl SectionListCache {
             let entries = map.iter()
                 .map(|(list, sigs)| (list, sigs.len()))
                 .sorted_by(|lhs, rhs| rhs.1.cmp(&lhs.1));
-            if let Some(&entry) = entries.first() {
+            if let Some(&(list, sig_count)) = entries.first() {
                 // entry.0 = list, entry.1 = num of signatures
-                if 100 * entry.1 >= QUORUM * our_section_size {
+                if 100 * sig_count >= QUORUM * our_section_size {
                     // we have a list with a quorum of signatures
-                    let signatures = unwrap!(map.get(entry.0));
-                    let _ = self.lists_cache.insert(*prefix, (entry.0.clone(), signatures.clone()));
+                    let signatures = unwrap!(map.get(list));
+                    let _ = self.lists_cache.insert(*prefix, (list.clone(), signatures.clone()));
                 }
             }
         }
@@ -139,12 +139,11 @@ impl SectionListCache {
         // vector of tuples (prefix, group list) to be removed
         let to_remove = self.signed_by
             .get(&author)
-            .map_or(Default::default(), |map| {
-                map.iter()
-                    .filter(|&(p, _)| p.is_compatible(&prefix))
-                    .map(|(&prefix, list)| (prefix, list.clone()))
-                    .collect_vec()
-            });
+            .into_iter()
+            .flat_map(|map| map.iter())
+            .filter(|&(p, _)| p.is_compatible(&prefix))
+            .map(|(&prefix, list)| (prefix, list.clone()))
+            .collect_vec();
         for (prefix, list) in to_remove {
             // remove the signatures from self.signatures
             let _ = self.signatures.get_mut(&prefix).map_or(None, |map| {
@@ -155,5 +154,7 @@ impl SectionListCache {
         }
 
         self.prune();
+        // not updating the cache - removal of signatures shouldn't change it anyway, but even if
+        // it does, this function is only called from `add_signature` and we update the cache there
     }
 }

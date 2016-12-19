@@ -137,7 +137,7 @@ impl State {
                                    prefix: Prefix<XorName>)
                                    -> Option<BTreeMap<PublicId, sign::Signature>> {
         match *self {
-            State::Node(ref state) => Some(state.section_list_signatures(prefix)),
+            State::Node(ref state) => state.section_list_signatures(prefix).ok(),
             _ => None,
         }
     }

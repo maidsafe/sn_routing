@@ -524,7 +524,7 @@ impl Node {
         Ok(())
     }
 
-    fn get_section(&self, prefix: &Prefix<XorName>) -> Result<BTreeSet<XorName>, RoutingError> {
+    fn get_section(&self, prefix: &Prefix<XorName>) -> Result<HashSet<XorName>, RoutingError> {
         let section = self.peer_mgr
             .routing_table()
             .get_section(&prefix.lower_bound())
@@ -536,12 +536,7 @@ impl Node {
     }
 
     fn get_section_list(&self, prefix: &Prefix<XorName>) -> Result<GroupList, RoutingError> {
-        Ok(GroupList {
-            pub_ids: self.peer_mgr
-                .get_pub_ids(&self.get_section(prefix)?.into_iter().collect())
-                .into_iter()
-                .collect(),
-        })
+        Ok(GroupList { pub_ids: self.peer_mgr.get_pub_ids(&self.get_section(prefix)?) })
     }
 
     /// Sends a signature for the list of members of a section with prefix `prefix` to our whole
@@ -566,17 +561,19 @@ impl Node {
 
         // this defines whom we are sending signature to: our group if dst is None, or given
         // name if it's Some
-        let targets = if let Some(dst) = dst {
-            let mut result = HashSet::new();
-            result.insert(dst);
-            result
+        let peers = if let Some(dst) = dst {
+            self.peer_mgr.get_peer_id(&dst).into_iter().cloned().collect_vec()
         } else {
-            let mut section = self.peer_mgr.routing_table().our_section().clone();
-            section.remove(self.name());
-            section
+            self.peer_mgr
+                .routing_table()
+                .our_section()
+                .into_iter()
+                .filter(|&x| *x != *self.name())    // we don't want to send to ourselves
+                .filter_map(|x| self.peer_mgr.get_peer_id(x))   // map names to peer ids
+                .cloned()
+                .collect_vec()
         };
 
-        let peers = self.peer_mgr.get_peer_ids(&targets);
         for peer_id in peers {
             let msg = DirectMessage::SectionListSignature(prefix, section.clone(), sig);
             if let Err(e) = self.send_direct_message(&peer_id, msg) {
@@ -615,7 +612,7 @@ impl Node {
 
     fn hop_pub_ids(&self, hop_name: &XorName) -> Result<BTreeSet<PublicId>, RoutingError> {
         if let Some(section) = self.peer_mgr.routing_table().get_section(hop_name) {
-            Ok(self.peer_mgr.get_pub_ids(section).into_iter().collect::<BTreeSet<_>>())
+            Ok(self.peer_mgr.get_pub_ids(section))
         } else {
             Err(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer))
         }
@@ -2076,8 +2073,7 @@ impl Node {
                               targets: BTreeSet<Prefix<XorName>>,
                               merge_details: OtherMergeDetails<XorName>,
                               src: Authority<XorName>) {
-        let group: BTreeSet<PublicId> =
-            self.peer_mgr.get_pub_ids(&merge_details.group).into_iter().collect();
+        let group = self.peer_mgr.get_pub_ids(&merge_details.group);
         for target in &targets {
             let request_content = MessageContent::OtherGroupMerge {
                 prefix: merge_details.prefix,
@@ -2220,22 +2216,11 @@ impl Node {
 
     pub fn section_list_signatures(&self,
                                    prefix: Prefix<XorName>)
-                                   -> BTreeMap<PublicId, sign::Signature> {
-        if let Some(&(ref section_list, ref signatures)) =
-            self.section_list_sigs.get_signatures(prefix) {
-            let data = if let Ok(data) = serialisation::serialise(section_list) {
-                data
-            } else {
-                return Default::default();
-            };
-            signatures.iter()
-                .filter(|&(pub_id, sig)| {
-                    sign::verify_detached(sig, &data, pub_id.signing_public_key())
-                })
-                .map(|(&pub_id, &sig)| (pub_id, sig))
-                .collect()
+                                   -> Result<BTreeMap<PublicId, sign::Signature>, RoutingError> {
+        if let Some(&(_, ref signatures)) = self.section_list_sigs.get_signatures(prefix) {
+            Ok(signatures.iter().map(|(&pub_id, &sig)| (pub_id, sig)).collect())
         } else {
-            Default::default()
+            Err(RoutingError::NotEnoughSignatures)
         }
     }
 
