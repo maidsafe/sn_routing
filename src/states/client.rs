@@ -31,6 +31,7 @@ use state_machine::Transition;
 use stats::Stats;
 use std::collections::BTreeSet;
 use std::fmt::{self, Debug, Formatter};
+use std::iter;
 use std::sync::mpsc::Sender;
 use std::time::Duration;
 use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
@@ -337,22 +338,23 @@ impl Bootstrapped for Client {
         }
 
         // Get PeerId of the proxy node
-        let proxy_peer_id = if let Authority::Client { ref proxy_node_name, .. } =
-            routing_msg.src {
-            if *self.proxy_public_id.name() == *proxy_node_name {
-                self.proxy_peer_id
+        let (proxy_peer_id, sending_nodes) =
+            if let Authority::Client { ref proxy_node_name, .. } = routing_msg.src {
+                (if *self.proxy_public_id.name() == *proxy_node_name {
+                     self.proxy_peer_id
+                 } else {
+                     error!("{:?} - Unable to find connection to proxy node in proxy map",
+                            self);
+                     return Err(RoutingError::ProxyConnectionNotFound);
+                 },
+                 iter::once(*self.full_id().public_id()).collect())
             } else {
-                error!("{:?} - Unable to find connection to proxy node in proxy map",
+                error!("{:?} - Source should be client if our state is a Client",
                        self);
-                return Err(RoutingError::ProxyConnectionNotFound);
-            }
-        } else {
-            error!("{:?} - Source should be client if our state is a Client",
-                   self);
-            return Err(RoutingError::InvalidSource);
-        };
+                return Err(RoutingError::InvalidSource);
+            };
 
-        let signed_msg = SignedMessage::new(routing_msg, self.full_id())?;
+        let signed_msg = SignedMessage::new(routing_msg, self.full_id(), sending_nodes)?;
 
         if !self.add_to_pending_acks(&signed_msg, route) {
             return Ok(());

@@ -1142,6 +1142,7 @@ mod tests {
         let known_neighbour = unwrap!(known_neighbour);
         assert!(!table.our_prefix.matches(&known_neighbour));
 
+        // TODO: this can fail since `table.iter()` excludes own_name; maybe it shouldn't?
         assert!(table.iter().any(|u| *u == close_name));
         assert!(table.iter().any(|u| *u == known_neighbour));
         assert!(table.iter().all(|u| *u != unknown_neighbour));
