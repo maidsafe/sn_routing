@@ -537,7 +537,8 @@ impl Node {
     }
 
     fn get_section_list(&self, prefix: &Prefix<XorName>) -> Result<SectionList, RoutingError> {
-        Ok(SectionList { pub_ids: self.peer_mgr.get_pub_ids(&self.get_section(prefix)?) })
+        Ok(SectionList::new(*prefix,
+                            self.peer_mgr.get_pub_ids(&self.get_section(prefix)?)))
     }
 
     /// Sends a signature for the list of members of a section with prefix `prefix` to our whole
@@ -2242,32 +2243,31 @@ impl Bootstrapped for Node {
         }
         use routing_table::Authority::*;
         let sending_names = match routing_msg.src {
-            ClientManager(_) | NaeManager(_) | NodeManager(_) => {
-                self.peer_mgr
-                    .get_pub_ids(self.peer_mgr
-                        .routing_table()
-                        .get_section(self.name())
-                        .ok_or(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer))?)
+            ClientManager(_) | NaeManager(_) | NodeManager(_) | ManagedNode(_) => {
+                let section = self.peer_mgr
+                    .routing_table()
+                    .get_section(self.name())
+                    .ok_or(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer))?;
+                let pub_ids = self.peer_mgr.get_pub_ids(section);
+                vec![SectionList::new(*self.peer_mgr.routing_table().our_prefix(), pub_ids)]
             }
             Section(_) => {
-                self.peer_mgr
-                    .get_pub_ids(self.peer_mgr.routing_table().our_section())
+                vec![SectionList::new(*self.peer_mgr.routing_table().our_prefix(), self.peer_mgr
+                    .get_pub_ids(self.peer_mgr.routing_table().our_section()))]
             }
             PrefixSection(ref prefix) => {
-                // TODO: replace with something less ugly
-                self.peer_mgr.get_pub_ids(
-                &self.peer_mgr
+                self.peer_mgr
                     .routing_table()
                     .all_sections()
                     .into_iter()
-                    .flat_map(|(p, members)| if prefix.is_compatible(&p) {
-                        members.into_iter()
+                    .filter_map(|(p, members)| if prefix.is_compatible(&p) {
+                        Some(SectionList::new(p, self.peer_mgr.get_pub_ids(&members)))
                     } else {
-                        // we can't use iter::empty() because we need to match type of if branch
-                        HashSet::new().into_iter()
-                    }).collect())
+                        None
+                    })
+                    .collect()
             }
-            ManagedNode(_) | Client { .. } => iter::once(*self.full_id().public_id()).collect(),
+            Client { .. } => vec![],
         };
 
         let signed_msg = SignedMessage::new(routing_msg, &self.full_id, sending_names)?;

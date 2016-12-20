@@ -195,8 +195,24 @@ impl HopMessage {
 /// A list of a group's public IDs, together with a list of signatures of a neighbouring group.
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable, Debug)]
 pub struct SectionList {
+    prefix: Prefix<XorName>,
     // TODO(MAID-1677): pub signatures: BTreeSet<(PublicId, sign::Signature)>,
-    pub pub_ids: BTreeSet<PublicId>,
+    pub_ids: BTreeSet<PublicId>,
+}
+
+impl SectionList {
+    /// Create
+    pub fn new(prefix: Prefix<XorName>, pub_ids: BTreeSet<PublicId>) -> Self {
+        SectionList {
+            prefix: prefix,
+            pub_ids: pub_ids,
+        }
+    }
+
+    /// Create from any object convertable to an iterator
+    pub fn from<I: IntoIterator<Item = PublicId>>(prefix: Prefix<XorName>, pub_ids: I) -> Self {
+        Self::new(prefix, pub_ids.into_iter().collect())
+    }
 }
 
 /// Wrapper around a routing message, signed by the originator of the message.
@@ -205,7 +221,7 @@ pub struct SignedMessage {
     /// A request or response type message.
     content: RoutingMessage,
     /// Nodes sending the message (those expected to sign it)
-    sending_nodes: BTreeSet<PublicId>,
+    sending_nodes: Vec<SectionList>,
     /// The lists of the sections involved in routing this message, in chronological order.
     // TODO: implement (JIRA 1677): sec_lists: Vec<SectionList>,
     /// The IDs and signatures of the source authority's members.
@@ -218,8 +234,9 @@ impl SignedMessage {
     /// Requires the list `sending_nodes` of nodes who should sign this message.
     pub fn new(content: RoutingMessage,
                full_id: &FullId,
-               sending_nodes: BTreeSet<PublicId>)
+               mut sending_nodes: Vec<SectionList>)
                -> Result<SignedMessage, RoutingError> {
+        sending_nodes.sort_by_key(|list| list.prefix);
         let sig = sign::sign_detached(&serialise(&content)?, full_id.signing_private_key());
         Ok(SignedMessage {
             content: content,
@@ -255,7 +272,7 @@ impl SignedMessage {
     /// lists isn't empty, the signature is only added if `pub_id` is a member of the first group
     /// list.
     pub fn add_signature(&mut self, pub_id: PublicId, sig: sign::Signature) {
-        if self.content.src.is_multiple() && self.sending_nodes.contains(&pub_id) {
+        if self.content.src.is_multiple() && self.is_sender(&pub_id) {
             let _ = self.signatures.insert(pub_id, sig);
         }
     }
@@ -292,7 +309,7 @@ impl SignedMessage {
                 ClientManager(_) | NaeManager(_) | NodeManager(_) => {
                     let valid_names: HashSet<_> = msg.sending_nodes
                         .iter()
-                        .map(PublicId::name)
+                        .flat_map(|list| list.pub_ids.iter().map(PublicId::name))
                         .sorted_by(|lhs, rhs| msg.content.src.name().cmp_distance(lhs, rhs))
                         .into_iter()
                         .take(min_group_size)
@@ -336,9 +353,13 @@ impl SignedMessage {
             .iter()
             .filter_map(|(pub_id, sig)| {
                 // Remove if not in sending nodes or signature is invalid:
-                let c = self.sending_nodes.contains(pub_id) &&
-                        sign::verify_detached(sig, &signed_bytes, pub_id.signing_public_key());
-                if c { None } else { Some(*pub_id) }
+                let is_valid = if let Authority::Client { client_key, .. } = self.content.src {
+                    sign::verify_detached(sig, &signed_bytes, &client_key)
+                } else {
+                    self.is_sender(pub_id) &&
+                    sign::verify_detached(sig, &signed_bytes, pub_id.signing_public_key())
+                };
+                if is_valid { None } else { Some(*pub_id) }
             })
             .collect_vec();
         for invalid_signature in &invalid_signatures {
@@ -346,6 +367,10 @@ impl SignedMessage {
         }
 
         has_enough_sigs(self, min_group_size)
+    }
+
+    fn is_sender(&self, pub_id: &PublicId) -> bool {
+        self.sending_nodes.iter().any(|list| list.pub_ids.contains(pub_id))
     }
 }
 
@@ -1077,6 +1102,7 @@ mod tests {
         let min_group_size = 8;
 
         let full_id_0 = FullId::new();
+        let prefix = Prefix::new(0, *full_id_0.public_id().name());
         let full_id_1 = FullId::new();
         let full_id_2 = FullId::new();
         let irrelevant_full_id = FullId::new();
@@ -1093,10 +1119,10 @@ mod tests {
             content: part,
         };
 
-        let sending_nodes =
-            vec![*full_id_0.public_id(), *full_id_1.public_id(), *full_id_2.public_id()]
-                .into_iter()
-                .collect();
+        let sending_nodes = vec![SectionList::from(prefix,
+                                                   vec![*full_id_0.public_id(),
+                                                        *full_id_1.public_id(),
+                                                        *full_id_2.public_id()])];
         let mut signed_msg =
             unwrap!(SignedMessage::new(routing_message, &full_id_0, sending_nodes));
         assert_eq!(signed_msg.signatures.len(), 1);

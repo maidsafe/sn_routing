@@ -31,7 +31,6 @@ use state_machine::Transition;
 use stats::Stats;
 use std::collections::BTreeSet;
 use std::fmt::{self, Debug, Formatter};
-use std::iter;
 use std::sync::mpsc::Sender;
 use std::time::Duration;
 use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
@@ -345,7 +344,7 @@ impl Bootstrapped for Client {
                            self);
                     return Err(RoutingError::ProxyConnectionNotFound);
                 }
-                (self.proxy_peer_id, iter::once(*self.full_id().public_id()).collect())
+                (self.proxy_peer_id, vec![])
             }
             _ => {
                 error!("{:?} - Source should be client if our state is a Client",
