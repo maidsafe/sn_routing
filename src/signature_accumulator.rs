@@ -191,6 +191,7 @@ mod tests {
                 msgs_and_sigs: msgs_and_sigs,
             }
         }
+
         fn num_nodes(&self) -> usize {
             self.senders.len()
         }
