@@ -939,7 +939,7 @@ impl PeerManager {
 
     /// Returns the PublicIds of nodes given their names; the result is filtered to the names we
     /// know about (i.e. unknown names are ignored).
-    pub fn get_pub_ids(&self, names: &HashSet<XorName>) -> HashSet<PublicId> {
+    pub fn get_pub_ids(&self, names: &HashSet<XorName>) -> BTreeSet<PublicId> {
         let mut result_map = names.iter()
             .filter_map(|name| {
                 if let Some(peer) = self.peer_map.get_by_name(name) {

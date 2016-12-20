@@ -851,7 +851,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     /// Returns the prefix of the group in which `name` belongs, or `None` if there is no such group
     /// in the routing table.
-    fn find_group_prefix(&self, name: &T) -> Option<Prefix<T>> {
+    pub fn find_group_prefix(&self, name: &T) -> Option<Prefix<T>> {
         if self.our_prefix.matches(name) {
             return Some(self.our_prefix);
         }
@@ -1143,7 +1143,8 @@ mod tests {
         assert_eq!(our_name, table.our_name);
 
         // Get some names
-        let close_name: u32 = *unwrap!(table.our_section.iter().nth(4));
+        let close_name: u32 =
+            *unwrap!(table.our_section.iter().filter(|name| **name != our_name).nth(4));
         let mut known_neighbour: Option<u32> = None;
         for (prefix, group) in &table.groups {
             if *prefix == table.our_prefix {

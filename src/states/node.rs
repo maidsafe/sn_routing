@@ -39,11 +39,14 @@ use routing_table::Error as RoutingTableError;
 use routing_table::RoutingTable;
 use rust_sodium::crypto::{box_, sign};
 use rust_sodium::crypto::hash::sha256;
+use section_list_cache::SectionListCache;
 use signature_accumulator::SignatureAccumulator;
 use state_machine::Transition;
 use stats::Stats;
 use std::{cmp, fmt, iter};
 use std::collections::{BTreeSet, HashSet, VecDeque};
+#[cfg(feature = "use-mock-crust")]
+use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
 use std::sync::mpsc::Sender;
 use std::time::Duration;
@@ -82,6 +85,7 @@ pub struct Node {
     response_cache: Box<Cache>,
     routing_msg_filter: RoutingMessageFilter,
     sig_accumulator: SignatureAccumulator,
+    section_list_sigs: SectionListCache,
     stats: Stats,
     tick_timer_token: u64,
     timer: Timer,
@@ -169,6 +173,7 @@ impl Node {
             response_cache: cache,
             routing_msg_filter: RoutingMessageFilter::new(),
             sig_accumulator: Default::default(),
+            section_list_sigs: SectionListCache::new(),
             stats: stats,
             tick_timer_token: tick_timer_token,
             timer: timer,
@@ -466,6 +471,9 @@ impl Node {
         use messages::DirectMessage::*;
         match direct_message {
             MessageSignature(digest, sig) => self.handle_message_signature(digest, sig, peer_id),
+            SectionListSignature(prefix, section_list, sig) => {
+                self.handle_section_list_signature(peer_id, prefix, section_list, sig)
+            }
             ClientIdentify { ref serialised_public_id, ref signature, client_restriction } => {
                 if let Ok(public_id) = verify_signed_public_id(serialised_public_id, signature) {
                     self.handle_client_identify(public_id, peer_id, client_restriction)
@@ -533,9 +541,95 @@ impl Node {
         Ok(())
     }
 
+    fn get_section(&self, prefix: &Prefix<XorName>) -> Result<HashSet<XorName>, RoutingError> {
+        let section = self.peer_mgr
+            .routing_table()
+            .get_section(&prefix.lower_bound())
+            .ok_or(RoutingError::InvalidSource)?
+            .iter()
+            .cloned()
+            .collect();
+        Ok(section)
+    }
+
+    fn get_section_list(&self, prefix: &Prefix<XorName>) -> Result<GroupList, RoutingError> {
+        Ok(GroupList { pub_ids: self.peer_mgr.get_pub_ids(&self.get_section(prefix)?) })
+    }
+
+    /// Sends a signature for the list of members of a section with prefix `prefix` to our whole
+    /// group if `dst` is `None`, or to the given node if it is `Some(name)`
+    fn send_section_list_signature(&mut self,
+                                   prefix: Prefix<XorName>,
+                                   dst: Option<XorName>)
+                                   -> Result<(), RoutingError> {
+        // don't send signatures for our own group
+        if prefix == *self.peer_mgr.routing_table().our_prefix() {
+            return Ok(());
+        }
+        let section = self.get_section_list(&prefix)?;
+        let serialised = serialisation::serialise(&section)?;
+        let sig = sign::sign_detached(&serialised, self.full_id.signing_private_key());
+
+        self.section_list_sigs.add_signature(prefix,
+                                             *self.full_id.public_id(),
+                                             section.clone(),
+                                             sig,
+                                             self.peer_mgr.routing_table().our_section().len());
+
+        // this defines whom we are sending signature to: our group if dst is None, or given
+        // name if it's Some
+        let peers = if let Some(dst) = dst {
+            self.peer_mgr.get_peer_id(&dst).into_iter().cloned().collect_vec()
+        } else {
+            self.peer_mgr
+                .routing_table()
+                .our_section()
+                .into_iter()
+                .filter(|&x| *x != *self.name())    // we don't want to send to ourselves
+                .filter_map(|x| self.peer_mgr.get_peer_id(x))   // map names to peer ids
+                .cloned()
+                .collect_vec()
+        };
+
+        for peer_id in peers {
+            let msg = DirectMessage::SectionListSignature(prefix, section.clone(), sig);
+            if let Err(e) = self.send_direct_message(&peer_id, msg) {
+                error!("{:?} Error sending section list signature for {:?} to {:?}: {:?}",
+                       self,
+                       prefix,
+                       peer_id,
+                       e);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn handle_section_list_signature(&mut self,
+                                     peer_id: PeerId,
+                                     prefix: Prefix<XorName>,
+                                     section_list: GroupList,
+                                     sig: sign::Signature)
+                                     -> Result<(), RoutingError> {
+        let src_pub_id =
+            self.peer_mgr.get_routing_peer(&peer_id).ok_or(RoutingError::InvalidSource)?;
+        let serialised = serialisation::serialise(&section_list)?;
+        if sign::verify_detached(&sig, &serialised, src_pub_id.signing_public_key()) {
+            self.section_list_sigs
+                .add_signature(prefix,
+                               *src_pub_id,
+                               section_list,
+                               sig,
+                               self.peer_mgr.routing_table().our_section().len());
+            Ok(())
+        } else {
+            Err(RoutingError::FailedSignature)
+        }
+    }
+
     fn hop_pub_ids(&self, hop_name: &XorName) -> Result<BTreeSet<PublicId>, RoutingError> {
         if let Some(section) = self.peer_mgr.routing_table().get_section(hop_name) {
-            Ok(self.peer_mgr.get_pub_ids(section).into_iter().collect::<BTreeSet<_>>())
+            Ok(self.peer_mgr.get_pub_ids(section))
         } else {
             Err(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer))
         }
@@ -1059,6 +1153,17 @@ impl Node {
                    dst_id);
             let tunnel_request = DirectMessage::TunnelRequest(dst_id);
             let _ = self.send_direct_message(peer_id, tunnel_request);
+        }
+
+        if let Some(prefix) = self.peer_mgr.routing_table().find_group_prefix(public_id.name()) {
+            let _ = self.send_section_list_signature(prefix, None);
+            if prefix == *self.peer_mgr.routing_table().our_prefix() {
+                // if the node joined our group, send signatures for all neighbouring group lists
+                // to it
+                for pfx in self.peer_mgr.routing_table().other_prefixes() {
+                    let _ = self.send_section_list_signature(pfx, Some(*public_id.name()));
+                }
+            }
         }
     }
 
@@ -1607,6 +1712,12 @@ impl Node {
                self.peer_mgr.routing_table().prefixes());
 
         self.merge_if_necessary();
+
+        let prefix0 = prefix.pushed(false);
+        let prefix1 = prefix.pushed(true);
+        self.send_section_list_signature(prefix0, None)?;
+        self.send_section_list_signature(prefix1, None)?;
+
         Ok(())
     }
 
@@ -1675,6 +1786,7 @@ impl Node {
                self,
                self.peer_mgr.routing_table().prefixes());
         self.merge_if_necessary();
+        self.send_section_list_signature(prefix, None)?;
         Ok(())
     }
 
@@ -1798,40 +1910,6 @@ impl Node {
             }
 
         }
-        Ok(())
-    }
-
-    fn send_direct_msg_to_peer(&mut self,
-                               msg: DirectMessage,
-                               target: PeerId,
-                               priority: u8)
-                               -> Result<(), RoutingError> {
-        let (peer_id, bytes) = if self.crust_service.is_connected(&target) {
-            (target, serialisation::serialise(&Message::Direct(msg))?)
-        } else if let Some(&tunnel_id) = self.tunnels
-            .tunnel_for(&target) {
-            let message = Message::TunnelDirect {
-                content: msg,
-                src: self.crust_service.id(),
-                dst: target,
-            };
-            (tunnel_id, serialisation::serialise(&message)?)
-        } else {
-            trace!("{:?} Not connected or tunneling to {:?}. Dropping peer.",
-                   self,
-                   target);
-            self.disconnect_peer(&target);
-            return Ok(());
-        };
-        // TODO: Refactor so that filtering is possible here as well
-        // if !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &target, route) {
-        if let Err(err) = self.send_or_drop(&peer_id, bytes, priority) {
-            info!("{:?} Error sending message to {:?}: {:?}.",
-                      self,
-                      target,
-                      err);
-        }
-        // }
         Ok(())
     }
 
@@ -2043,7 +2121,7 @@ impl Node {
         };
 
         if let Ok(removal_details) = removal_result {
-            if !self.dropped_routing_node(removal_details) {
+            if !self.dropped_routing_node(peer.pub_id(), removal_details) {
                 return false;
             }
         }
@@ -2077,7 +2155,10 @@ impl Node {
 
     // Handle dropped routing peer with the given name and removal details. Returns true if we
     // should keep running, false if we should terminate.
-    fn dropped_routing_node(&mut self, details: RemovalDetails<XorName>) -> bool {
+    fn dropped_routing_node(&mut self,
+                            pub_id: &PublicId,
+                            details: RemovalDetails<XorName>)
+                            -> bool {
         info!("{:?} Dropped {:?} from the routing table.",
               self,
               details.name);
@@ -2088,6 +2169,15 @@ impl Node {
         }
 
         self.merge_if_necessary();
+
+        if !details.was_in_our_group {
+            self.peer_mgr.routing_table().find_group_prefix(&details.name).map_or((), |prefix| {
+                let _ = self.send_section_list_signature(prefix, None);
+            });
+        } else {
+            self.section_list_sigs
+                .remove_signatures_by(*pub_id, self.peer_mgr.routing_table().our_section().len());
+        }
 
         if self.peer_mgr.routing_table().len() < self.min_group_size() - 1 {
             debug!("{:?} Lost connection, less than {} remaining.",
@@ -2149,8 +2239,7 @@ impl Node {
                               targets: BTreeSet<Prefix<XorName>>,
                               merge_details: OtherMergeDetails<XorName>,
                               src: Authority<XorName>) {
-        let group: BTreeSet<PublicId> =
-            self.peer_mgr.get_pub_ids(&merge_details.group).into_iter().collect();
+        let group = self.peer_mgr.get_pub_ids(&merge_details.group);
         for target in &targets {
             let request_content = MessageContent::OtherGroupMerge {
                 prefix: merge_details.prefix,
@@ -2290,6 +2379,16 @@ impl Node {
         self.merge_if_necessary();
     }
 
+    pub fn section_list_signatures(&self,
+                                   prefix: Prefix<XorName>)
+                                   -> Result<BTreeMap<PublicId, sign::Signature>, RoutingError> {
+        if let Some(&(_, ref signatures)) = self.section_list_sigs.get_signatures(prefix) {
+            Ok(signatures.iter().map(|(&pub_id, &sig)| (pub_id, sig)).collect())
+        } else {
+            Err(RoutingError::NotEnoughSignatures)
+        }
+    }
+
     pub fn set_next_node_name(&mut self, relocation_name: Option<XorName>) {
         self.next_node_name = relocation_name;
     }
@@ -2350,7 +2449,7 @@ impl Bootstrapped for Node {
                            self,
                            signed_msg,
                            target_name);
-                    self.send_direct_msg_to_peer(direct_msg, peer_id, signed_msg.priority())
+                    self.send_direct_message(&peer_id, direct_msg)
                 } else {
                     Err(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer))
                 }

@@ -21,19 +21,25 @@ use data::{Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use event::Event;
 use id::FullId;
+#[cfg(feature = "use-mock-crust")]
+use id::PublicId;
 #[cfg(not(feature = "use-mock-crust"))]
 use maidsafe_utilities::thread;
 use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, RELOCATE_PRIORITY, Request, Response,
                UserMessage};
-use routing_table::Authority;
 #[cfg(feature = "use-mock-crust")]
-use routing_table::RoutingTable;
+use routing_table::{Prefix, RoutingTable};
+use routing_table::Authority;
 #[cfg(not(feature = "use-mock-crust"))]
 use rust_sodium;
+#[cfg(feature = "use-mock-crust")]
+use rust_sodium::crypto::sign;
 use state_machine::{State, StateMachine};
 use states;
 #[cfg(feature = "use-mock-crust")]
 use std::cell::RefCell;
+#[cfg(feature = "use-mock-crust")]
+use std::collections::BTreeMap;
 #[cfg(feature = "use-mock-crust")]
 use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -482,6 +488,14 @@ impl Node {
     /// Resend all unacknowledged messages.
     pub fn clear_state(&self) {
         self.machine.borrow_mut().current_mut().clear_state()
+    }
+
+    /// Returns a quorum of signatures for the neighbouring section's list or `None` if we don't
+    /// have one
+    pub fn section_list_signatures(&self,
+                                   prefix: Prefix<XorName>)
+                                   -> Option<BTreeMap<PublicId, sign::Signature>> {
+        self.machine.borrow().current().section_list_signatures(prefix)
     }
 
     /// Returns whether the current state is `Node`.
