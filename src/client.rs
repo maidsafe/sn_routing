@@ -319,10 +319,10 @@ impl Client {
     }
 
     /// Fetches a list of authorised keys and version in MaidManager
-    pub fn list_auth_keys(&self,
-                          _dst: Authority,
-                          _message_id: MessageId)
-                          -> Result<(), InterfaceError> {
+    pub fn list_auth_keys_and_version(&self,
+                                      _dst: Authority,
+                                      _message_id: MessageId)
+                                      -> Result<(), InterfaceError> {
         unimplemented!();
     }
 
