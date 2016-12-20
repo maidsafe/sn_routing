@@ -265,8 +265,6 @@ impl PeerMap {
     }
 }
 
-type ExpectJoinResult = Result<Option<(Prefix<XorName>, Vec<PublicId>)>, RoutingError>;
-
 /// A container for information about other nodes in the network.
 ///
 /// This keeps track of which nodes we know of, which ones we have tried to connect to, which IDs
@@ -286,8 +284,6 @@ pub struct PeerManager {
     node_candidate: Option<(XorName, Instant, Vec<u8>)>,
     /// Candidate has been approved
     approved_candidate: Option<XorName>,
-    /// A joining node's cache for the group it first joining to
-    peer_candidates: Vec<XorName>,
 }
 
 impl PeerManager {
@@ -303,7 +299,6 @@ impl PeerManager {
             our_public_id: our_public_id,
             node_candidate: None,
             approved_candidate: None,
-            peer_candidates: vec![],
         }
     }
 
@@ -368,13 +363,12 @@ impl PeerManager {
     /// Wraps the routing table function of the same name and maps `XorName`s to `PublicId`s.
     ///
     /// Returns:
-    /// Err()                   If already handing a joining request
-    /// Ok(None)                if doesn't need to carry out resource proof evaluate
-    /// Ok(Some(our_group))     if needs to carry out resource proof evaluate
+    /// Err()             If already handing a joining request
+    /// Ok(our_group)     if needs to carry out resource proof evaluate
     pub fn expect_join_our_group(&mut self,
                                  expected_name: &XorName,
                                  our_public_id: &PublicId)
-                                 -> ExpectJoinResult {
+                                 -> Result<(Prefix<XorName>, Vec<PublicId>), RoutingError> {
         if let Some((name, insertion_time, _)) = self.node_candidate {
             if name == *expected_name ||
                insertion_time.elapsed() < Duration::from_secs(RESOURCE_PROOF_APPROVE_TIMEOUT_SECS) {
@@ -383,17 +377,6 @@ impl PeerManager {
         }
 
         let (prefix, names) = self.routing_table.expect_join_our_group(expected_name)?;
-
-        if names.len() > self.routing_table.min_group_size() {
-            let mut rng = SeededRng::new();
-            let seed = rng.gen_iter().take(10).collect();
-            self.node_candidate = Some((*expected_name, Instant::now(), seed));
-            self.approved_candidate = None;
-        } else {
-            self.node_candidate = Some((*expected_name, Instant::now(), vec![]));
-            return Ok(None);
-        }
-
         let mut public_ids = vec![];
         for name in names {
             if name == *our_public_id.name() {
@@ -404,11 +387,12 @@ impl PeerManager {
         }
         public_ids.sort();
 
-        Ok(Some((prefix, public_ids)))
-    }
+        let mut rng = SeededRng::new();
+        let seed = rng.gen_iter().take(10).collect();
+        self.node_candidate = Some((*expected_name, Instant::now(), seed));
+        self.approved_candidate = None;
 
-    pub fn add_as_peer_candidate(&mut self, name: XorName) {
-        self.peer_candidates.push(name)
+        Ok((prefix, public_ids))
     }
 
     pub fn verify_candidate(&mut self,
@@ -431,66 +415,55 @@ impl PeerManager {
     /// Handles node_approval vote. `validity` indicates whether rejected or approved
     ///
     /// Returns:
-    /// (true, Some(peer_info)) if approved peer is a node candidate
-    /// (true, None)            if rejected peer is a node candidate
-    /// (false, None)           if peer is not a node candidate, or cannot find peer_info,
-    ///                         or not connected yet
+    /// Ok(peer_info)   peer_info for the node candidate
+    /// Err()           peer is not the node candidate or missing peer_info
     pub fn handle_node_approval_vote(&mut self,
                                      candidate_name: XorName,
                                      validity: bool)
-                                     -> (bool, Option<(PublicId, PeerId)>) {
+                                     -> Result<(PublicId, PeerId), RoutingError> {
         if let Some((name, _, _)) = self.node_candidate {
             if name == candidate_name {
                 self.node_candidate = None;
-                let result = if validity {
+                if validity {
                     self.approved_candidate = Some(candidate_name);
-                    let (pub_id, peer_id) = if let Some(peer) = self.peer_map
-                        .get_by_name(&candidate_name) {
-                        if let PeerState::ConnectionInfoPreparing(..) = peer.state {
-                            trace!("{:?} received NodeApproval for {:?} but not connected yet",
-                                   self.routing_table.our_name(),
-                                   candidate_name);
-                            return (false, None);
-                        }
-                        if let Some(peer_id) = peer.peer_id() {
-                            (*peer.pub_id(), *peer_id)
-                        } else {
-                            trace!("{:?} doesn't have peer_id for {:?}",
-                                   self.routing_table.our_name(),
-                                   candidate_name);
-                            return (false, None);
-                        }
-                    } else {
-                        trace!("{:?} doesn't have peer state for {:?}",
+                }
+                if let Some(peer) = self.peer_map.get_by_name(&candidate_name) {
+                    if let PeerState::ConnectionInfoPreparing(..) = peer.state {
+                        trace!("{:?} received NodeApproval for {:?} but not connected yet",
                                self.routing_table.our_name(),
                                candidate_name);
-                        return (false, None);
-                    };
-                    Some((pub_id, peer_id))
-                } else {
-                    None
-                };
-                return (true, result);
-            }
-        }
-        error!("{:?} received NodeApproal for {:?}, but doesn't record it as node_candidate",
-               self.routing_table.our_name(),
-               candidate_name);
-        (false, None)
-    }
-
-    /// Returns peer_candidates and empty it
-    pub fn peer_candidates(&mut self) -> Vec<(PublicId, PeerId)> {
-        let mut result = vec![];
-        for peer_name in &self.peer_candidates.clone() {
-            if let Some(peer) = self.peer_map.get_by_name(peer_name) {
-                if let Some(peer_id) = peer.peer_id() {
-                    result.push((*peer.pub_id(), *peer_id));
+                    } else if let Some(peer_id) = peer.peer_id() {
+                        return Ok((*peer.pub_id(), *peer_id));
+                    } else {
+                        trace!("{:?} doesn't have peer_id for {:?}",
+                               self.routing_table.our_name(),
+                               candidate_name);
+                    }
                 }
             }
         }
-        self.peer_candidates.clear();
-        result
+        trace!("{:?} received NodeApproal for {:?}, but doesn't record it as node_candidate \
+                or having its peer info",
+               self.routing_table.our_name(),
+               candidate_name);
+        // TODO: more specific return error
+        Err(RoutingError::InvalidStateForOperation)
+    }
+
+    /// Returns peers in `Candidate` state
+    pub fn peer_candidates(&mut self) -> Vec<(PublicId, PeerId)> {
+        self.peer_map
+            .peers()
+            .filter(|peer| match peer.state {
+                PeerState::Candidate(_) => true,
+                _ => false,
+            })
+            .filter_map(|peer| if let Some(peer_id) = peer.peer_id {
+                Some((*peer.pub_id(), peer_id))
+            } else {
+                None
+            })
+            .collect_vec()
     }
 
     /// Update peer's state to `Candidate` if it is a node candidate
@@ -528,14 +501,8 @@ impl PeerManager {
         Ok(None)
     }
 
-    /// Update peer's state to `Candidate` if it is a peer candidate
-    ///
-    /// Returns: true       if the peer is a peer candidate
-    ///          false      if the peer is not a peer candidate
-    pub fn check_peer_candidate(&mut self, pub_id: &PublicId, peer_id: &PeerId) -> bool {
-        if !self.peer_candidates.contains(pub_id.name()) {
-            return false;
-        }
+    /// Update peer's state to `Candidate`
+    pub fn add_as_peer_candidate(&mut self, pub_id: &PublicId, peer_id: &PeerId) {
         let tunnel = match self.peer_map.remove(peer_id).map(|peer| peer.state) {
             Some(PeerState::SearchingForTunnel) |
             Some(PeerState::AwaitingNodeIdentify(true)) => true,
@@ -547,7 +514,6 @@ impl PeerManager {
         };
         let state = PeerState::Candidate(tunnel);
         let _ = self.peer_map.insert(Peer::new(*pub_id, Some(*peer_id), state));
-        true
     }
 
     /// Wraps the routing table function of the same name and maps `XorName`s to `PublicId`s.

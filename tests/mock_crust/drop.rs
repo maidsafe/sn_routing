@@ -46,20 +46,20 @@ fn failing_connections_group_of_three() {
     let min_group_size = 8;
     let network = Network::new(min_group_size, None);
 
-    network.block_connection(Endpoint(1), Endpoint(2));
-    network.block_connection(Endpoint(2), Endpoint(1));
+    network.block_connection(Endpoint(1), Endpoint(6));
+    network.block_connection(Endpoint(6), Endpoint(1));
 
-    network.block_connection(Endpoint(1), Endpoint(3));
-    network.block_connection(Endpoint(3), Endpoint(1));
+    network.block_connection(Endpoint(1), Endpoint(7));
+    network.block_connection(Endpoint(7), Endpoint(1));
 
-    network.block_connection(Endpoint(2), Endpoint(3));
-    network.block_connection(Endpoint(3), Endpoint(2));
+    network.block_connection(Endpoint(6), Endpoint(7));
+    network.block_connection(Endpoint(7), Endpoint(6));
 
-    let mut nodes = create_connected_nodes(&network, 5);
+    let mut nodes = create_connected_nodes(&network, min_group_size);
     verify_invariant_for_all_nodes(&nodes);
-    drop_node(&mut nodes, 0); // Drop the tunnel node. Node 4 should replace it.
+    drop_node(&mut nodes, 0); // Drop the tunnel node. Node 1 should replace it.
     verify_invariant_for_all_nodes(&nodes);
-    drop_node(&mut nodes, 1); // Drop a tunnel client. The others should be notified.
+    drop_node(&mut nodes, 5); // Drop a tunnel client. The others should be notified.
     verify_invariant_for_all_nodes(&nodes);
 }
 

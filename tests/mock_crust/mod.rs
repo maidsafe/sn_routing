@@ -90,11 +90,11 @@ fn failing_connections_ring() {
 fn failing_connections_unidirectional() {
     let min_group_size = 8;
     let network = Network::new(min_group_size, None);
-    network.block_connection(Endpoint(1), Endpoint(2));
-    network.block_connection(Endpoint(1), Endpoint(3));
-    network.block_connection(Endpoint(2), Endpoint(3));
+    network.block_connection(Endpoint(1), Endpoint(6));
+    network.block_connection(Endpoint(1), Endpoint(7));
+    network.block_connection(Endpoint(6), Endpoint(7));
 
-    let nodes = create_connected_nodes(&network, 4);
+    let nodes = create_connected_nodes(&network, min_group_size);
     verify_invariant_for_all_nodes(&nodes);
 }
 
