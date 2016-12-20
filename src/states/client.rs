@@ -174,7 +174,7 @@ impl Client {
         }
 
         let signed_msg = hop_msg.content;
-        signed_msg.check_integrity()?;
+        signed_msg.check_integrity(self.min_group_size())?;
 
         let routing_msg = signed_msg.routing_message();
         let in_authority = self.in_authority(&routing_msg.dst);

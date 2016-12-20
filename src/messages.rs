@@ -246,19 +246,11 @@ impl SignedMessage {
     }
 
     /// Confirms the signatures.
-    pub fn check_integrity(&self) -> Result<(), RoutingError> {
+    // TODO (1677): verify the sending SectionLists via each hop's signed lists
+    pub fn check_integrity(&self, min_group_size: usize) -> Result<(), RoutingError> {
         let signed_bytes = serialise(&self.content)?;
-        for (pub_id, sig) in &self.signatures {
-            if !sign::verify_detached(sig, &signed_bytes, pub_id.signing_public_key()) {
-                return Err(RoutingError::FailedSignature);
-            }
-        }
-        if let Authority::Client { ref client_key, .. } = self.content.src {
-            if let Some(pub_id) = self.signatures.keys().next() {
-                if self.signatures.len() == 1 && pub_id.signing_public_key() == client_key {
-                    return Ok(());
-                }
-            }
+        if !self.find_invalid_sigs(signed_bytes).is_empty() ||
+           !self.has_enough_sigs(min_group_size) {
             return Err(RoutingError::FailedSignature);
         }
         Ok(())
@@ -301,37 +293,10 @@ impl SignedMessage {
 
     /// Returns whether there are enough signatures from the sender.
     pub fn check_fully_signed(&mut self, min_group_size: usize) -> bool {
-        fn has_enough_sigs(msg: &SignedMessage, min_group_size: usize) -> bool {
-            // TODO (1677): we should check each step.
-
-            use Authority::*;
-            match msg.content.src {
-                ClientManager(_) | NaeManager(_) | NodeManager(_) => {
-                    let valid_names: HashSet<_> = msg.sending_nodes
-                        .iter()
-                        .flat_map(|list| list.pub_ids.iter().map(PublicId::name))
-                        .sorted_by(|lhs, rhs| msg.content.src.name().cmp_distance(lhs, rhs))
-                        .into_iter()
-                        .take(min_group_size)
-                        .collect();
-                    let valid_sigs = msg.signatures
-                        .keys()
-                        .filter(|pub_id| valid_names.contains(pub_id.name()))
-                        .count();
-                    QUORUM * valid_names.len() <= 100 * valid_sigs
-                }
-                Section(_) | PrefixSection(_) => {
-                    let num_sending = msg.sending_nodes.len();
-                    let valid_sigs = msg.signatures.len();
-                    QUORUM * num_sending <= 100 * valid_sigs
-                }
-                ManagedNode(_) | Client { .. } => msg.signatures.len() == 1,
-            }
-        }
-
-        if !has_enough_sigs(self, min_group_size) {
+        if !self.has_enough_sigs(min_group_size) {
             return false;
         }
+
         // Remove invalid signatures, then check again that we have enough.
         // We also check (again) that all messages are from valid senders, because the message
         // may have been sent from another node, and we cannot trust that that node correctly
@@ -349,28 +314,64 @@ impl SignedMessage {
                 return false;
             }
         };
-        let invalid_signatures = self.signatures
+        for invalid_signature in &self.find_invalid_sigs(signed_bytes) {
+            let _ = self.signatures.remove(invalid_signature);
+        }
+
+        self.has_enough_sigs(min_group_size)
+    }
+
+    // Returns true iff `pub_id` is in self.section_lists
+    fn is_sender(&self, pub_id: &PublicId) -> bool {
+        self.sending_nodes.iter().any(|list| list.pub_ids.contains(pub_id))
+    }
+
+    // Returns a list of all invalid signatures (not from an expected key or not cryptographically
+    // valid).
+    fn find_invalid_sigs(&self, signed_bytes: Vec<u8>) -> Vec<PublicId> {
+        self.signatures
             .iter()
             .filter_map(|(pub_id, sig)| {
                 // Remove if not in sending nodes or signature is invalid:
-                let is_valid = if let Authority::Client { client_key, .. } = self.content.src {
-                    sign::verify_detached(sig, &signed_bytes, &client_key)
+                let is_valid = if let Authority::Client { ref client_key, .. } = self.content.src {
+                    client_key == pub_id.signing_public_key() &&
+                    sign::verify_detached(sig, &signed_bytes, client_key)
                 } else {
                     self.is_sender(pub_id) &&
                     sign::verify_detached(sig, &signed_bytes, pub_id.signing_public_key())
                 };
                 if is_valid { None } else { Some(*pub_id) }
             })
-            .collect_vec();
-        for invalid_signature in &invalid_signatures {
-            let _ = self.signatures.remove(invalid_signature);
-        }
-
-        has_enough_sigs(self, min_group_size)
+            .collect()
     }
 
-    fn is_sender(&self, pub_id: &PublicId) -> bool {
-        self.sending_nodes.iter().any(|list| list.pub_ids.contains(pub_id))
+    // Returns true iff there are enough signatures (note that this method does not verify the
+    // signatures, it only counts them).
+    fn has_enough_sigs(&self, min_group_size: usize) -> bool {
+        use Authority::*;
+        match self.content.src {
+            ClientManager(_) | NaeManager(_) | NodeManager(_) => {
+                let valid_names: HashSet<_> = self.sending_nodes
+                    .iter()
+                    .flat_map(|list| list.pub_ids.iter().map(PublicId::name))
+                    .sorted_by(|lhs, rhs| self.content.src.name().cmp_distance(lhs, rhs))
+                    .into_iter()
+                    .take(min_group_size)
+                    .collect();
+                let valid_sigs = self.signatures
+                    .keys()
+                    .filter(|pub_id| valid_names.contains(pub_id.name()))
+                    .count();
+                QUORUM * valid_names.len() <= 100 * valid_sigs
+            }
+            Section(_) | PrefixSection(_) => {
+                // TODO: for prefix sections, check _each_ section has enough sigs
+                let num_sending = self.sending_nodes.len();
+                let valid_sigs = self.signatures.len();
+                QUORUM * num_sending <= 100 * valid_sigs
+            }
+            ManagedNode(_) | Client { .. } => self.signatures.len() == 1,
+        }
     }
 }
 
@@ -1082,7 +1083,7 @@ mod tests {
         assert_eq!(Some(full_id.public_id()),
                    signed_message.signatures.keys().next());
 
-        let check_integrity_result = signed_message.check_integrity();
+        let check_integrity_result = signed_message.check_integrity(1000);
 
         assert!(check_integrity_result.is_ok());
 
@@ -1092,7 +1093,7 @@ mod tests {
 
         signed_message.signatures = iter::once((*full_id.public_id(), signature)).collect();
 
-        let check_integrity_result = signed_message.check_integrity();
+        let check_integrity_result = signed_message.check_integrity(1000);
 
         assert!(check_integrity_result.is_err());
     }

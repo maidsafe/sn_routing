@@ -657,7 +657,7 @@ impl Node {
                              hop_name: XorName,
                              sent_to: &BTreeSet<XorName>)
                              -> Result<(), RoutingError> {
-        signed_msg.check_integrity()?;
+        signed_msg.check_integrity(self.min_group_size())?;
 
         match self.routing_msg_filter.filter_incoming(signed_msg.routing_message(), route) {
             FilteringResult::KnownMessageAndRoute => {
