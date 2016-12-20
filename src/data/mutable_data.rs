@@ -103,7 +103,7 @@ impl PermissionSet {
     }
 
     /// Allow the given action.
-    pub fn allow(&mut self, action: Action) -> &mut PermissionSet {
+    pub fn allow(mut self, action: Action) -> Self {
         match action {
             Action::Insert => self.insert = Some(true),
             Action::Update => self.update = Some(true),
@@ -114,7 +114,7 @@ impl PermissionSet {
     }
 
     /// Deny the given action.
-    pub fn deny(&mut self, action: Action) -> &mut PermissionSet {
+    pub fn deny(mut self, action: Action) -> Self {
         match action {
             Action::Insert => self.insert = Some(false),
             Action::Update => self.update = Some(false),
@@ -125,7 +125,7 @@ impl PermissionSet {
     }
 
     /// Clear the permission for the given action.
-    pub fn clear(&mut self, action: Action) -> &mut PermissionSet {
+    pub fn clear(mut self, action: Action) -> Self {
         match action {
             Action::Insert => self.insert = None,
             Action::Update => self.update = None,
@@ -378,8 +378,8 @@ impl MutableData {
     }
 
     /// Gets a list of permissions for the provided user.
-    pub fn user_permissions(&self, user: &User) -> Option<&PermissionSet> {
-        self.permissions.get(user)
+    pub fn user_permissions(&self, user: &User) -> Result<&PermissionSet, ClientError> {
+        self.permissions.get(user).ok_or(ClientError::NoSuchKey)
     }
 
     /// Insert or update permissions for the provided user.
@@ -421,7 +421,7 @@ impl MutableData {
             return Err(ClientError::InvalidSuccessor);
         }
         if !self.permissions.contains_key(user) {
-            return Err(ClientError::NoSuchEntry);
+            return Err(ClientError::NoSuchKey);
         }
         let _ = self.permissions.remove(user);
         self.version = version;
@@ -519,12 +519,10 @@ mod tests {
 
         let mut perms = BTreeMap::new();
 
-        let mut ps1 = PermissionSet::new();
-        let _ = ps1.allow(Action::Update);
+        let ps1 = PermissionSet::new().allow(Action::Update);
         let _ = perms.insert(User::Anyone, ps1);
 
-        let mut ps2 = PermissionSet::new();
-        let _ = ps2.deny(Action::Update).allow(Action::Insert);
+        let ps2 = PermissionSet::new().deny(Action::Update).allow(Action::Insert);
         let _ = perms.insert(User::Key(pk1), ps2);
 
         let k1 = b"123".to_vec();
@@ -570,25 +568,23 @@ mod tests {
 
     #[test]
     fn permissions() {
-        let mut anyone = PermissionSet::new();
-        let _ = anyone.allow(Action::Insert).deny(Action::Delete);
+        let anyone = PermissionSet::new().allow(Action::Insert).deny(Action::Delete);
         assert!(unwrap!(anyone.is_allowed(Action::Insert)));
         assert!(anyone.is_allowed(Action::Update).is_none());
         assert!(!unwrap!(anyone.is_allowed(Action::Delete)));
         assert!(anyone.is_allowed(Action::ManagePermissions).is_none());
 
-        let mut user1 = anyone;
-        let _ = user1.clear(Action::Delete).deny(Action::ManagePermissions);
+        let user1 = anyone.clear(Action::Delete).deny(Action::ManagePermissions);
         assert!(unwrap!(user1.is_allowed(Action::Insert)));
         assert!(user1.is_allowed(Action::Update).is_none());
         assert!(user1.is_allowed(Action::Delete).is_none());
         assert!(!unwrap!(user1.is_allowed(Action::ManagePermissions)));
 
-        let _ = user1.allow(Action::Update);
-        assert!(unwrap!(user1.is_allowed(Action::Insert)));
-        assert!(unwrap!(user1.is_allowed(Action::Update)));
-        assert!(user1.is_allowed(Action::Delete).is_none());
-        assert!(!unwrap!(user1.is_allowed(Action::ManagePermissions)));
+        let user2 = user1.allow(Action::Update);
+        assert!(unwrap!(user2.is_allowed(Action::Insert)));
+        assert!(unwrap!(user2.is_allowed(Action::Update)));
+        assert!(user2.is_allowed(Action::Delete).is_none());
+        assert!(!unwrap!(user2.is_allowed(Action::ManagePermissions)));
     }
 
     #[test]
@@ -779,15 +775,13 @@ mod tests {
                     ClientError::AccessDenied);
 
         // Now allow inserts for pk1
-        let mut ps1 = PermissionSet::new();
-        let _ = ps1.allow(Action::Insert).allow(Action::ManagePermissions);
+        let ps1 = PermissionSet::new().allow(Action::Insert).allow(Action::ManagePermissions);
         assert!(md.set_user_permissions(User::Key(pk1), ps1, 1, owner).is_ok());
 
         assert!(md.mutate_entries(v1, pk1).is_ok());
 
         // pk1 now can change permissions
-        let mut ps2 = PermissionSet::new();
-        let _ = ps2.allow(Action::Insert).deny(Action::ManagePermissions);
+        let ps2 = PermissionSet::new().allow(Action::Insert).deny(Action::ManagePermissions);
         assert_err!(md.set_user_permissions(User::Key(pk1), ps2.clone(), 1, pk1),
                     ClientError::InvalidSuccessor);
         assert!(md.set_user_permissions(User::Key(pk1), ps2, 2, pk1).is_ok());
@@ -808,7 +802,7 @@ mod tests {
 
         // Revoking permissions for a non-existing user should return an error
         assert_err!(md.del_user_permissions(&User::Key(pk1), 4, owner),
-                    ClientError::NoSuchEntry);
+                    ClientError::NoSuchKey);
 
         // Get must always be allowed
         assert!(md.get(&[0]).is_some());
