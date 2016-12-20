@@ -315,7 +315,13 @@ impl SignedMessage {
         if !has_enough_sigs(self, min_group_size) {
             return false;
         }
-        // Remove invalid signatures, then check again that we have enough:
+        // Remove invalid signatures, then check again that we have enough.
+        // We also check (again) that all messages are from valid senders, because the message
+        // may have been sent from another node, and we cannot trust that that node correctly
+        // controlled which signatures were added.
+        // TODO (1677): we also need to check that the sending_nodes list corresponds to the
+        // section(s) at some point in recent history; i.e. that it was valid; but we shouldn't
+        // force it to match our own because our routing table may have changed since.
 
         let signed_bytes = match serialise(&self.content) {
             Ok(serialised) => serialised,
@@ -329,11 +335,10 @@ impl SignedMessage {
         let invalid_signatures = self.signatures
             .iter()
             .filter_map(|(pub_id, sig)| {
-                if sign::verify_detached(sig, &signed_bytes, pub_id.signing_public_key()) {
-                    None
-                } else {
-                    Some(*pub_id)
-                }
+                // Remove if not in sending nodes or signature is invalid:
+                let c = self.sending_nodes.contains(pub_id) &&
+                        sign::verify_detached(sig, &signed_bytes, pub_id.signing_public_key());
+                if c { None } else { Some(*pub_id) }
             })
             .collect_vec();
         for invalid_signature in &invalid_signatures {
@@ -1096,7 +1101,7 @@ mod tests {
             unwrap!(SignedMessage::new(routing_message, &full_id_0, sending_nodes));
         assert_eq!(signed_msg.signatures.len(), 1);
 
-        // Try to add a signature which will not correspond to an ID in the first group list.
+        // Try to add a signature which will not correspond to an ID from the sending nodes.
         let irrelevant_sig = match unwrap!(signed_msg.routing_message()
             .to_signature(irrelevant_full_id.signing_private_key())) {
             DirectMessage::MessageSignature(_, sig) => {

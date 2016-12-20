@@ -338,21 +338,21 @@ impl Bootstrapped for Client {
         }
 
         // Get PeerId of the proxy node
-        let (proxy_peer_id, sending_nodes) =
-            if let Authority::Client { ref proxy_node_name, .. } = routing_msg.src {
-                (if *self.proxy_public_id.name() == *proxy_node_name {
-                     self.proxy_peer_id
-                 } else {
-                     error!("{:?} - Unable to find connection to proxy node in proxy map",
-                            self);
-                     return Err(RoutingError::ProxyConnectionNotFound);
-                 },
-                 iter::once(*self.full_id().public_id()).collect())
-            } else {
+        let (proxy_peer_id, sending_nodes) = match routing_msg.src {
+            Authority::Client { ref proxy_node_name, .. } => {
+                if *self.proxy_public_id.name() != *proxy_node_name {
+                    error!("{:?} - Unable to find connection to proxy node in proxy map",
+                           self);
+                    return Err(RoutingError::ProxyConnectionNotFound);
+                }
+                (self.proxy_peer_id, iter::once(*self.full_id().public_id()).collect())
+            }
+            _ => {
                 error!("{:?} - Source should be client if our state is a Client",
                        self);
                 return Err(RoutingError::InvalidSource);
-            };
+            }
+        };
 
         let signed_msg = SignedMessage::new(routing_msg, self.full_id(), sending_nodes)?;
 
