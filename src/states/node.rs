@@ -1041,11 +1041,9 @@ impl Node {
                                              self.peer_mgr.routing_table().clone());
         result.add_event(node_added_ev);
 
-        if self.peer_mgr.routing_table().is_in_our_group(public_id.name()) {
-            // TODO: we probably don't need to send this if we're splitting, but in that case
-            // we should send something else instead. This will do for now.
-            self.send_section_update().extract(&mut result);
-        }
+        // TODO: we probably don't need to send this if we're splitting, but in that case
+        // we should send something else instead. This will do for now.
+        self.send_section_update().extract(&mut result);
 
         for dst_id in self.peer_mgr.peers_needing_tunnel() {
             trace!("{:?} Asking {:?} to serve as a tunnel for {:?}",
@@ -1561,6 +1559,18 @@ impl Node {
                              -> Evented<Result<(), RoutingError>> {
         let mut result = Evented::empty();
         trace!("{:?} Got section update for {:?}", self, prefix);
+        // Perform splits that we missed, according to the section update.
+        // TODO: This is a temporary fix and it shouldn't be necessary anymore once the new message
+        //       flow for joining nodes is in place and we send the routing table to the new node
+        //       at the point where it gets added to the group.
+        let pfx_name = prefix.lower_bound();
+        while let Some(rt_pfx) = self.peer_mgr.routing_table().find_group_prefix(&pfx_name) {
+            if rt_pfx.bit_count() >= prefix.bit_count() {
+                break;
+            }
+            trace!("{:?} Splitting {:?} on section update.", self, rt_pfx);
+            let _ = self.handle_group_split(rt_pfx, rt_pfx.lower_bound());
+        }
         // Filter list of members to just those we don't know about:
         let members =
             if let Some(section) = self.peer_mgr.routing_table().section_with_prefix(&prefix) {
