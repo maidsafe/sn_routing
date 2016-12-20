@@ -249,9 +249,11 @@ impl SignedMessage {
     // TODO (1677): verify the sending SectionLists via each hop's signed lists
     pub fn check_integrity(&self, min_group_size: usize) -> Result<(), RoutingError> {
         let signed_bytes = serialise(&self.content)?;
-        if !self.find_invalid_sigs(signed_bytes).is_empty() ||
-           !self.has_enough_sigs(min_group_size) {
+        if !self.find_invalid_sigs(signed_bytes).is_empty() {
             return Err(RoutingError::FailedSignature);
+        }
+        if !self.has_enough_sigs(min_group_size) {
+            return Err(RoutingError::NotEnoughSignatures);
         }
         Ok(())
     }
@@ -329,7 +331,7 @@ impl SignedMessage {
     // Returns a list of all invalid signatures (not from an expected key or not cryptographically
     // valid).
     fn find_invalid_sigs(&self, signed_bytes: Vec<u8>) -> Vec<PublicId> {
-        self.signatures
+        let invalid = self.signatures
             .iter()
             .filter_map(|(pub_id, sig)| {
                 // Remove if not in sending nodes or signature is invalid:
@@ -342,11 +344,15 @@ impl SignedMessage {
                 };
                 if is_valid { None } else { Some(*pub_id) }
             })
-            .collect()
+            .collect_vec();
+        if !invalid.is_empty() {
+            debug!("{:?}: invalid signatures: {:?}", self, invalid);
+        }
+        invalid
     }
 
     // Returns true iff there are enough signatures (note that this method does not verify the
-    // signatures, it only counts them).
+    // signatures, it only counts them; it also does not verify `self.src_sections`).
     fn has_enough_sigs(&self, min_group_size: usize) -> bool {
         use Authority::*;
         match self.content.src {
@@ -363,6 +369,10 @@ impl SignedMessage {
                     .keys()
                     .filter(|pub_id| valid_names.contains(pub_id.name()))
                     .count();
+                // TODO: we should consider replacing valid_names.len() with
+                // cmp::min(routing_table.len(), min_group_size)
+                // (or just min_group_size, but in that case we will not be able to handle user
+                // messages during boot-up).
                 QUORUM * valid_names.len() <= 100 * valid_sigs
             }
             Section(_) => {
@@ -1061,10 +1071,15 @@ impl UserMessageCache {
 
 #[cfg(test)]
 mod tests {
+
+    #[cfg(not(feature = "use-mock-crust"))]
+    use crust::PeerId;
     use data::{Data, ImmutableData};
     use id::FullId;
     use maidsafe_utilities;
     use maidsafe_utilities::serialisation::serialise;
+    #[cfg(feature = "use-mock-crust")]
+    use mock_crust::crust::PeerId;
     use rand;
     use routing_table::{Authority, Prefix};
     use rust_sodium::crypto::hash::sha256;
@@ -1076,15 +1091,29 @@ mod tests {
     use types::MessageId;
     use xor_name::XorName;
 
+    #[cfg(not(feature = "use-mock-crust"))]
+    fn make_peer_id() -> PeerId {
+        PeerId(*FullId::new().public_id().encrypting_public_key())
+    }
+    #[cfg(feature = "use-mock-crust")]
+    fn make_peer_id() -> PeerId {
+        PeerId(0)
+    }
+
     #[test]
     fn signed_message_check_integrity() {
+        let min_group_size = 1000;
         let name: XorName = rand::random();
+        let full_id = FullId::new();
         let routing_message = RoutingMessage {
-            src: Authority::ClientManager(name),
+            src: Authority::Client {
+                client_key: *full_id.public_id().signing_public_key(),
+                peer_id: make_peer_id(),
+                proxy_node_name: name,
+            },
             dst: Authority::ClientManager(name),
             content: MessageContent::GroupSplit(Prefix::new(0, name), name),
         };
-        let full_id = FullId::new();
         let senders = iter::empty().collect();
         let signed_message_result = SignedMessage::new(routing_message.clone(), &full_id, senders);
 
@@ -1095,9 +1124,7 @@ mod tests {
         assert_eq!(Some(full_id.public_id()),
                    signed_message.signatures.keys().next());
 
-        let check_integrity_result = signed_message.check_integrity(1000);
-
-        assert!(check_integrity_result.is_ok());
+        unwrap!(signed_message.check_integrity(min_group_size));
 
         let full_id = FullId::new();
         let bytes_to_sign = unwrap!(serialise(&(&routing_message, full_id.public_id())));
@@ -1105,9 +1132,10 @@ mod tests {
 
         signed_message.signatures = iter::once((*full_id.public_id(), signature)).collect();
 
-        let check_integrity_result = signed_message.check_integrity(1000);
-
-        assert!(check_integrity_result.is_err());
+        // Invalid because it's not signed by the sender:
+        assert!(signed_message.check_integrity(min_group_size).is_err());
+        // However, the signature itself should be valid:
+        assert!(signed_message.has_enough_sigs(min_group_size));
     }
 
     #[test]

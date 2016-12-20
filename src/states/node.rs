@@ -2280,9 +2280,8 @@ impl Bootstrapped for Node {
 
         match self.get_signature_target(&signed_msg.routing_message().src, route) {
             None => Ok(()),
-            Some(target_name) if target_name == *self.name() => {
+            Some(our_name) if our_name == *self.name() => {
                 trace!("{:?} Starting message accumulation for {:?}", self, signed_msg);
-                let our_name = *self.name();
                 let min_group_size = self.min_group_size();
                 if let Some((msg, route)) =
                     self.sig_accumulator
