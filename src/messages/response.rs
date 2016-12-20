@@ -151,10 +151,10 @@ pub enum Response {
 
     // --- Client (Owner) to MM ---
     // ==========================
-    /// Returns a list of authorised keys from MaidManager.
+    /// Returns a list of authorised keys from MaidManager and the account version.
     ListAuthKeysAndVersion {
-        /// Result of getting a list of authorised keys
-        res: Result<BTreeSet<sign::PublicKey>, ClientError>,
+        /// Result of getting a list of authorised keys and version
+        res: Result<(BTreeSet<sign::PublicKey>, u64), ClientError>,
         /// Unique message identifier
         msg_id: MsgId,
     },
