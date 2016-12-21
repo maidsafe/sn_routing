@@ -156,14 +156,6 @@ pub enum DirectMessage {
         /// the difficulty requirement
         leading_zero_bytes: u32,
     },
-    /// Approves the joining node as a routing node.
-    ///
-    /// Sent from member of Group Y to the joining node.
-    NodeApproval {
-        /// The routing table shared by the nodes in our group, including the `PublicId`s of our
-        /// contacts.
-        groups: Vec<(Prefix<XorName>, Vec<PublicId>)>,
-    },
 }
 
 impl DirectMessage {
@@ -470,9 +462,10 @@ impl RoutingMessage {
 /// When nodes Z of section Y receive `NodeIdentify` from A, they respond with a `ResourceProof`
 /// request. Node A needs to answer these requests (resolving a hashing challenge) with
 /// `ResourceProofResponse`. Members of Y will send out `CandidateApproval` messages to vote for the
-/// approval in their section. Once the vote succeeds, the members of Y add A to their routing table
-/// and send `NodeApproval` to A. When A receives the first `NodeApproval` message, it adds the
-/// members of Y to its routing table.
+/// approval in their section. Once the vote succeeds, the members of Y send `NodeApproval` to A.
+/// When A receives the `NodeApproval` message, it adds the members of Y to its routing table and
+/// replies `ApprovalConfirmation` to section Y. Members of Y add A to their routing table once
+/// receive `ApprovalConfirmation`.
 ///
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
 pub enum MessageContent {
@@ -527,7 +520,7 @@ pub enum MessageContent {
         /// Supplied `PublicId`, but with the new name
         relocated_id: PublicId,
         /// The relocated group that the joining node shall connect to
-        group: (Prefix<XorName>, Vec<PublicId>),
+        group: Vec<PublicId>,
         /// The message's unique identifier.
         message_id: MessageId,
     },
@@ -579,12 +572,14 @@ pub enum MessageContent {
     ///
     /// Sent from Group Y to the joining node.
     NodeApproval {
-        /// Supplied `PublicId`, but with the new name
-        relocated_id: PublicId,
         /// The routing table shared by the nodes in our group, including the `PublicId`s of our
         /// contacts.
         groups: Vec<(Prefix<XorName>, Vec<PublicId>)>,
     },
+    /// Confirms the joining node has received `NodeApproval`.
+    ///
+    /// Sent from the joining node to Group Y.
+    ApprovalConfirmation,
 }
 
 impl MessageContent {
@@ -634,19 +629,16 @@ impl Debug for DirectMessage {
             }
             DirectMessage::ResourceProof { ref seed, ref target_size, ref difficulty } => {
                 write!(formatter,
-                       "ResourceProof {{ {:?}, {:?}, {:?} }}",
+                       "ResourceProof {{ seed: {:?}, target_size: {:?}, difficulty: {:?} }}",
                        seed,
                        target_size,
                        difficulty)
             }
             DirectMessage::ResourceProofResponse { ref proof, ref leading_zero_bytes } => {
                 write!(formatter,
-                       "ResourceProofResponse {{ {:?}, {:?} }}",
+                       "ResourceProofResponse {{ proof_len: {:?}, leading_zero_bytes: {:?} }}",
                        proof.len(),
                        leading_zero_bytes)
-            }
-            DirectMessage::NodeApproval { ref groups } => {
-                write!(formatter, "NodeApproval {{ {:?} }}", groups)
             }
         }
     }
@@ -740,12 +732,10 @@ impl Debug for MessageContent {
             MessageContent::CandidateApproval(approval) => {
                 write!(formatter, "CandidateApproval({})", approval)
             }
-            MessageContent::NodeApproval { ref relocated_id, ref groups } => {
-                write!(formatter,
-                       "NodeApproval {{ {:?}, {:?} }}",
-                       relocated_id,
-                       groups)
+            MessageContent::NodeApproval { ref groups } => {
+                write!(formatter, "NodeApproval {{ {:?} }}", groups)
             }
+            MessageContent::ApprovalConfirmation => write!(formatter, "ApprovalConfirmation"),
         }
     }
 }

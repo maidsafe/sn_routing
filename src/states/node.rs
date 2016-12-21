@@ -508,10 +508,6 @@ impl Node {
                 self.handle_resource_proof_response(peer_id, proof, leading_zero_bytes);
                 Ok(())
             }
-            NodeApproval { groups } => {
-                self.handle_node_approval(groups);
-                Ok(())
-            }
             msg @ BootstrapIdentify { .. } |
             msg @ BootstrapDeny => {
                 debug!("{:?} - Unhandled direct message: {:?}", self, msg);
@@ -776,9 +772,12 @@ impl Node {
             (CandidateApproval(validity), Section(_), Section(candidate_name)) => {
                 self.handle_node_approval_vote(candidate_name, validity)
             }
-            (NodeApproval { relocated_id, groups }, Section(_), dst @ Client { .. }) => {
-                self.handle_node_approval_no_resource_proof(relocated_id, groups, dst);
+            (NodeApproval { groups }, Section(_), Client { .. }) => {
+                self.handle_node_approval(groups);
                 Ok(())
+            }
+            (ApprovalConfirmation, ManagedNode(_), Section(name)) => {
+                self.handle_approval_confirmation(name)
             }
             (SectionUpdate { prefix, members }, Section(_), PrefixSection(_)) => {
                 self.handle_section_update(prefix, members)
@@ -817,43 +816,63 @@ impl Node {
                                  -> Result<(), RoutingError> {
         // Once the joining node joined, it may receive the vote regarding itself.
         // Or a node may receive CandidateApproval before connection established.
-        let (pub_id, peer_id) = self.peer_mgr.handle_node_approval_vote(candidate_name, validity)?;
+        let (client_auth, peer_id) = self.peer_mgr
+            .handle_node_approval_vote(candidate_name, validity)?;
 
         if validity {
-            let groups = self.peer_mgr
-                .get_sections_to_join(&candidate_name, self.full_id.public_id())?;
-            self.add_to_routing_table(&pub_id, &peer_id);
-            let direct_message = DirectMessage::NodeApproval { groups: groups };
-            return self.send_direct_message(&peer_id, direct_message);
+            let groups = self.peer_mgr.get_sections(self.full_id.public_id());
+            info!("{:?} Sending NodeApproval to {:?}.", self, candidate_name);
+            let _ = self.send_routing_message(RoutingMessage {
+                src: Authority::Section(candidate_name),
+                dst: client_auth,
+                content: MessageContent::NodeApproval { groups: groups },
+            });
         } else {
             self.disconnect_peer(&peer_id);
         }
         Ok(())
     }
 
-    fn handle_node_approval(&mut self, groups: Vec<(Prefix<XorName>, Vec<PublicId>)>) {
-        let result = self.peer_mgr.peer_candidates();
-        if !result.is_empty() {
-            self.peer_mgr.populate_routing_table(&groups);
-            for peer_info in &result {
-                self.add_to_routing_table(&peer_info.0, &peer_info.1);
-            }
+    fn handle_approval_confirmation(&mut self,
+                                    candidate_name: XorName)
+                                    -> Result<(), RoutingError> {
+        let (pub_id, peer_id) = self.peer_mgr.handle_approval_confirmation(candidate_name)?;
+        self.add_to_routing_table(&pub_id, &peer_id);
+        Ok(())
+    }
 
-            for group in &groups {
-                for pub_id in &group.1 {
-                    if !self.peer_mgr.routing_table().has(pub_id.name()) {
-                        debug!("{:?} Sending connection info to {:?} on NodeApproval.",
+    fn handle_node_approval(&mut self, groups: Vec<(Prefix<XorName>, Vec<PublicId>)>) {
+        if !self.peer_mgr.routing_table().is_empty() {
+            warn!("{:?} Received duplicate NodeApproval.", self);
+            return;
+        }
+
+        let result = self.peer_mgr.peer_candidates();
+        self.peer_mgr.populate_routing_table(&groups);
+        for peer_info in &result {
+            self.add_to_routing_table(&peer_info.0, &peer_info.1);
+        }
+
+        let name = *self.name();
+        let _ = self.send_routing_message(RoutingMessage {
+            src: Authority::ManagedNode(name),
+            dst: Authority::Section(name),
+            content: MessageContent::ApprovalConfirmation,
+        });
+
+        for group in &groups {
+            for pub_id in &group.1 {
+                if !self.peer_mgr.routing_table().has(pub_id.name()) {
+                    debug!("{:?} Sending connection info to {:?} on NodeApproval.",
+                           self,
+                           pub_id);
+                    let src = Authority::ManagedNode(*self.name());
+                    let node_auth = Authority::ManagedNode(*pub_id.name());
+                    if let Err(error) = self.send_connection_info_request(*pub_id, src, node_auth) {
+                        debug!("{:?} - Failed to send connection info to {:?}: {:?}",
                                self,
-                               pub_id);
-                        let src = Authority::ManagedNode(*self.name());
-                        let node_auth = Authority::ManagedNode(*pub_id.name());
-                        if let Err(error) =
-                            self.send_connection_info_request(*pub_id, src, node_auth) {
-                            debug!("{:?} - Failed to send connection info to {:?}: {:?}",
-                                   self,
-                                   pub_id,
-                                   error);
-                        }
+                               pub_id,
+                               error);
                     }
                 }
             }
@@ -1067,40 +1086,45 @@ impl Node {
             self.peer_mgr.add_as_peer_candidate(&public_id, &peer_id);
             return;
         }
-        if let Ok(Some((tunnel, seed))) = self.peer_mgr.check_node_candidate(&public_id, &peer_id) {
-            if tunnel {
-                /// if connection is in tunnel, vote NO directly, don't carry out profiling
-                /// limitation: joining node ONLY carries out QUORAM valid connection/evaluations
-                info!("{:?} Sending CandidateApproval false to group rejecting {:?}.",
-                      self,
-                      public_id.name());
-                // From Y -> Y
-                let _ = self.send_routing_message(RoutingMessage {
-                    src: Authority::Section(*public_id.name()),
-                    dst: Authority::Section(*public_id.name()),
-                    content: MessageContent::CandidateApproval(false),
-                });
-            } else {
-                // From Y -> A
-                let direct_message = DirectMessage::ResourceProof {
-                    seed: seed,
-                    target_size: resource_proof_target_size(self.min_group_size(),
-                                                            self.peer_mgr
-                                                                .routing_table()
-                                                                .our_section()
-                                                                .len()),
-                    difficulty: RESOURCE_PROOF_DIFFICULTY,
-                };
-                let _ = self.send_direct_message(&peer_id, direct_message);
+        match self.peer_mgr.check_candidate(&public_id, &peer_id) {
+            Ok(Some((tunnel, seed))) => {
+                if tunnel {
+                    /// if connection is in tunnel, vote NO directly, don't carry out profiling
+                    /// limitation: joining node ONLY carries out QUORAM valid evaluations
+                    info!("{:?} Sending CandidateApproval false to group rejecting {:?}.",
+                          self,
+                          public_id.name());
+                    // From Y -> Y
+                    let _ = self.send_routing_message(RoutingMessage {
+                        src: Authority::Section(*public_id.name()),
+                        dst: Authority::Section(*public_id.name()),
+                        content: MessageContent::CandidateApproval(false),
+                    });
+                } else {
+                    // From Y -> A
+                    let direct_message = DirectMessage::ResourceProof {
+                        seed: seed,
+                        target_size: resource_proof_target_size(self.min_group_size(),
+                                                                self.peer_mgr
+                                                                    .routing_table()
+                                                                    .our_section()
+                                                                    .len()),
+                        difficulty: RESOURCE_PROOF_DIFFICULTY,
+                    };
+                    let _ = self.send_direct_message(&peer_id, direct_message);
 
-                debug!("{:?} requesting resource_proof from node candidate {:?}.",
-                       self,
-                       public_id.name());
-
+                    debug!("{:?} requesting resource_proof from node candidate {:?}.",
+                           self,
+                           public_id.name());
+                }
             }
-        } else {
-            debug!("{:?} adding {:?} into routing table.", self, public_id.name());
-            self.add_to_routing_table(&public_id, &peer_id);
+            Ok(None) => {
+                debug!("{:?} adding {:?} into routing table.", self, public_id.name());
+                self.add_to_routing_table(&public_id, &peer_id);
+            }
+            Err(err) => {
+                debug!("{:?} has un-expected connection {:?}/{:?}.", self, public_id.name(), err);
+            }
         }
     }
 
@@ -1557,40 +1581,10 @@ impl Node {
     }
 
     // Context: we're a new node joining a group. This message should have been
-    // sent by each node in the target group with the new node name and routing table.
-    fn handle_node_approval_no_resource_proof(&mut self,
-                                              relocated_id: PublicId,
-                                              groups: Vec<(Prefix<XorName>, Vec<PublicId>)>,
-                                              dst: Authority<XorName>) {
-        if !self.peer_mgr.routing_table().is_empty() {
-            warn!("{:?} Received duplicate NodeApproval.", self);
-            return;
-        }
-        self.get_node_name_timer_token = None;
-
-        self.full_id.public_id_mut().set_name(*relocated_id.name());
-        self.peer_mgr.reset_routing_table(*self.full_id.public_id(), &groups);
-
-        for pub_id in groups.into_iter().flat_map(|(_, group)| group.into_iter()) {
-            debug!("{:?} Sending connection info to {:?} on NodeApproval.",
-                   self,
-                   pub_id);
-
-            let node_auth = Authority::ManagedNode(*pub_id.name());
-            if let Err(error) = self.send_connection_info_request(pub_id, dst, node_auth) {
-                debug!("{:?} - Failed to send connection info to {:?}: {:?}",
-                       self,
-                       pub_id,
-                       error);
-            }
-        }
-    }
-
-    // Context: we're a new node joining a group. This message should have been
     // sent by each node in the target group with the new node name and group for resource proving.
     fn handle_get_node_name_response(&mut self,
                                      relocated_id: PublicId,
-                                     group: (Prefix<XorName>, Vec<PublicId>),
+                                     group: Vec<PublicId>,
                                      dst: Authority<XorName>) {
         if !self.peer_mgr.routing_table().is_empty() {
             warn!("{:?} Received duplicate GetNodeName response.", self);
@@ -1599,12 +1593,12 @@ impl Node {
         self.get_node_name_timer_token = None;
 
         self.full_id.public_id_mut().set_name(*relocated_id.name());
-        self.peer_mgr.restart_routing_table(*self.full_id.public_id());
+        self.peer_mgr.reset_routing_table(*self.full_id.public_id());
         trace!("{:?} GetNodeName completed. Prefixes: {:?}",
                self,
                self.peer_mgr.routing_table().prefixes());
 
-        for pub_id in &group.1 {
+        for pub_id in &group {
             debug!("{:?} Sending connection info to {:?} on GetNodeName response.",
                    self,
                    pub_id);
@@ -1633,7 +1627,7 @@ impl Node {
 
         // TODO - do we need to reply if `expect_id` triggers a failure here?
         let own_group = self.peer_mgr
-            .expect_join_our_group(expect_id.name(), self.full_id.public_id())?;
+            .expect_join_our_group(expect_id.name(), &client_auth, self.full_id.public_id())?;
         let response_content = MessageContent::GetNodeNameResponse {
             relocated_id: expect_id,
             group: own_group,

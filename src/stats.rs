@@ -39,7 +39,6 @@ pub struct Stats {
     msg_direct_sig: usize,
     msg_direct_resource_proof: usize,
     msg_direct_resource_proof_rsp: usize,
-    msg_direct_node_approval: usize,
 
     msg_get: usize,
     msg_put: usize,
@@ -71,6 +70,7 @@ pub struct Stats {
     msg_get_node_name_rsp: usize,
     msg_candidate_approval: usize,
     msg_node_approval: usize,
+    msg_approval_confirmation: usize,
     msg_ack: usize,
 
     msg_other: usize,
@@ -150,6 +150,7 @@ impl Stats {
             MessageContent::Ack(..) => self.msg_ack += 1,
             MessageContent::CandidateApproval(_) => self.msg_candidate_approval += 1,
             MessageContent::NodeApproval { .. } => self.msg_node_approval += 1,
+            MessageContent::ApprovalConfirmation { .. } => self.msg_approval_confirmation += 1,
             MessageContent::UserMessagePart { .. } => return, // Counted as request/response.
         }
         self.increment_msg_total();
@@ -162,7 +163,6 @@ impl Stats {
             DirectMessage::MessageSignature(..) => self.msg_direct_sig += 1,
             DirectMessage::ResourceProof { .. } => self.msg_direct_resource_proof += 1,
             DirectMessage::ResourceProofResponse { .. } => self.msg_direct_resource_proof_rsp += 1,
-            DirectMessage::NodeApproval { .. } => self.msg_direct_node_approval += 1,
             _ => self.msg_other += 1,
         }
         self.increment_msg_total();
@@ -186,17 +186,16 @@ impl Stats {
                   self.routes,
                   self.unacked_msgs);
             info!(target: "routing_stats",
-                  "Stats - Direct - NodeIdentify: {}, MessageSignature: {}, ResourceProof: {}/{} \
-                   NodeApproval: {}",
+                  "Stats - Direct - NodeIdentify: {}, MessageSignature: {}, ResourceProof: {}/{}",
                   self.msg_direct_node_identify,
                   self.msg_direct_sig,
                   self.msg_direct_resource_proof,
-                  self.msg_direct_resource_proof_rsp,
-                  self.msg_direct_node_approval);
+                  self.msg_direct_resource_proof_rsp);
             info!(target: "routing_stats",
                   "Stats - Hops (Request/Response) - GetNodeName: {}/{}, ExpectCloseNode: {}, \
                    SectionUpdate: {}, GroupSplit: {}, OwnGroupMerge: {}, OtherGroupMerge: {}, \
-                   ConnectionInfo: {}/{}, CandidateApproval: {}, NodeApproval: {}, Ack: {}",
+                   ConnectionInfo: {}/{}, CandidateApproval: {}, NodeApproval: {}, \
+                   ApprovalConfirmation: {}, Ack: {}",
                   self.msg_get_node_name,
                   self.msg_get_node_name_rsp,
                   self.msg_expect_close_node,
@@ -208,6 +207,7 @@ impl Stats {
                   self.msg_connection_info_rsp,
                   self.msg_candidate_approval,
                   self.msg_node_approval,
+                  self.msg_approval_confirmation,
                   self.msg_ack);
             info!(target: "routing_stats",
                   "Stats - User (Request/Success/Failure) - Get: {}/{}/{}, Put: {}/{}/{}, \
