@@ -48,6 +48,3 @@ bench = false
 name = "ci_test"
 test = false
 
-[features]
-generate-diagrams = ["hyper"]
-use-mock-crust = []
