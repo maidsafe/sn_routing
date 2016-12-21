@@ -60,7 +60,7 @@
 //!
 //! let (sender, _receiver) = mpsc::channel::<Event>();
 //! let full_id = FullId::new(); // Generate new keys.
-//! let _ = Client::new(sender, Some(full_id.clone())).unwrap();
+//! let _ = Client::new(sender, Some(full_id.clone()), None).unwrap();
 //!
 //! let _ = full_id.public_id().name();
 //! ```
@@ -167,6 +167,9 @@ mod tunnels;
 mod types;
 mod utils;
 mod xor_name;
+
+/// Reexports `crust::Config`
+pub type BootstrapConfig = crust::Config;
 
 /// Mock crust
 #[cfg(feature = "use-mock-crust")]

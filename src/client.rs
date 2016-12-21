@@ -15,9 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use BootstrapConfig;
 use action::Action;
 use authority::Authority;
 use cache::NullCache;
+use crust::Config;
 use data::{EntryAction, ImmutableData, MutableData, PermissionSet, User, Value};
 use error::{InterfaceError, RoutingError};
 use event::Event;
@@ -69,11 +71,14 @@ impl Client {
     /// cryptographically secure and uses group consensus. The restriction for the client name
     /// exists to ensure that the client cannot choose its `ClientAuthority`.
     #[cfg(not(feature = "use-mock-crust"))]
-    pub fn new(event_sender: Sender<Event>, keys: Option<FullId>) -> Result<Client, RoutingError> {
+    pub fn new(event_sender: Sender<Event>,
+               keys: Option<FullId>,
+               config: Option<Config>)
+               -> Result<Client, RoutingError> {
         rust_sodium::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing with a restriction to become a full node
-        let (action_sender, mut machine) = Self::make_state_machine(event_sender, keys);
+        let (action_sender, mut machine) = Self::make_state_machine(event_sender, keys, config);
         let (tx, rx) = channel();
 
         let raii_joiner = thread::named("Client thread", move || machine.run());
@@ -87,7 +92,8 @@ impl Client {
     }
 
     fn make_state_machine(event_sender: Sender<Event>,
-                          keys: Option<FullId>)
+                          keys: Option<FullId>,
+                          config: Option<Config>)
                           -> (RoutingActionSender, StateMachine) {
         let cache = Box::new(NullCache);
         let full_id = keys.unwrap_or_else(FullId::new);
@@ -99,7 +105,8 @@ impl Client {
                                                             event_sender,
                                                             full_id,
                                                             timer))
-        })
+        },
+                          config)
     }
 
     /// Gets MAID account information.
@@ -354,6 +361,22 @@ impl Client {
         self.receive_action_result(&result_rx)
     }
 
+    /// Returns the `crust::Config` associated with the `crust::Service` (if any).
+    #[cfg(feature = "use-mock-crust")]
+    pub fn bootstrap_config(&self) -> BootstrapConfig {
+        self.machine.borrow().bootstrap_config().unwrap_or_else(BootstrapConfig::default)
+    }
+
+    /// Returns the `crust::Config` associated with the `crust::Service` (if any).
+    #[cfg(not(feature = "use-mock-crust"))]
+    pub fn bootstrap_config(&self) -> BootstrapConfig {
+        let (tx, rx) = channel();
+        if self.action_sender.send(Action::Config { result_tx: tx }).is_err() {
+            return BootstrapConfig::default();
+        }
+        rx.recv().unwrap_or_else(|_| BootstrapConfig::default())
+    }
+
     #[allow(unused)] // <-- TODO: remove this
     fn send_action(&self,
                    content: Request,
@@ -380,9 +403,12 @@ impl Client {
 #[cfg(feature = "use-mock-crust")]
 impl Client {
     /// Create a new `Client` for unit testing.
-    pub fn new(event_sender: Sender<Event>, keys: Option<FullId>) -> Result<Client, RoutingError> {
+    pub fn new(event_sender: Sender<Event>,
+               keys: Option<FullId>,
+               config: Option<Config>)
+               -> Result<Client, RoutingError> {
         // start the handler for routing with a restriction to become a full node
-        let (action_sender, machine) = Self::make_state_machine(event_sender, keys);
+        let (action_sender, machine) = Self::make_state_machine(event_sender, keys, config);
         let (tx, rx) = channel();
 
         Ok(Client {

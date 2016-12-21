@@ -144,7 +144,7 @@ impl TestClient {
         TestClient {
             index: index,
             full_id: full_id.clone(),
-            client: unwrap!(Client::new(sender, Some(full_id))),
+            client: unwrap!(Client::new(sender, Some(full_id)), None),
             _thread_joiner: joiner,
         }
     }

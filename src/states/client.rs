@@ -19,6 +19,8 @@ use ack_manager::{Ack, AckManager};
 use action::Action;
 use authority::Authority;
 use crust::{PeerId, Service};
+#[cfg(feature = "use-mock-crust")]
+use crust::Config;
 use crust::Event as CrustEvent;
 use error::{InterfaceError, RoutingError};
 use event::Event;
@@ -109,6 +111,9 @@ impl Client {
             Action::Name { result_tx } => {
                 let _ = result_tx.send(*self.name());
             }
+            Action::Config { result_tx } => {
+                let _ = result_tx.send(self.crust_service.config());
+            }
             Action::Timeout(token) => self.handle_timeout(token),
             Action::Terminate => {
                 return Transition::Terminate;
@@ -127,6 +132,11 @@ impl Client {
                 Transition::Stay
             }
         }
+    }
+
+    #[cfg(feature = "use-mock-crust")]
+    pub fn config(&self) -> Config {
+        self.crust_service.config()
     }
 
     fn handle_ack_response(&mut self, ack: Ack) -> Transition {

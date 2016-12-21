@@ -18,6 +18,8 @@
 use action::Action;
 use cache::Cache;
 use crust::{PeerId, Service};
+#[cfg(feature = "use-mock-crust")]
+use crust::Config;
 use crust::Event as CrustEvent;
 use error::RoutingError;
 use event::Event;
@@ -89,6 +91,9 @@ impl Bootstrapping {
             Action::Name { result_tx } => {
                 let _ = result_tx.send(*self.name());
             }
+            Action::Config { result_tx } => {
+                let _ = result_tx.send(self.crust_service.config());
+            }
             Action::Timeout(token) => self.handle_timeout(token),
             Action::Terminate => {
                 return Transition::Terminate;
@@ -149,6 +154,11 @@ impl Bootstrapping {
 
     pub fn client_restriction(&self) -> bool {
         self.client_restriction
+    }
+
+    #[cfg(feature = "use-mock-crust")]
+    pub fn config(&self) -> Config {
+        self.crust_service.config()
     }
 
     fn handle_timeout(&mut self, token: u64) {

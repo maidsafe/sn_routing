@@ -135,7 +135,8 @@ impl NodeBuilder {
                                                                 full_id,
                                                                 timer))
             }
-        })
+        },
+                          None)
     }
 }
 
