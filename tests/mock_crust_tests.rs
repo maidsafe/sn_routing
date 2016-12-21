@@ -104,4 +104,92 @@ macro_rules! expect_no_event {
     }
 }
 
+/// Checks that an expression is true.
+/// Copied from libcore/macros.rs, with minor changes
+macro_rules! check {
+    ($cond:expr) => (
+        if !$cond {
+            let msg = String::from(concat!("check failed: ", stringify!($cond)));
+            return Err(CheckError::CheckFailure(file!(), line!(), column!(), msg));
+        }
+    );
+    ($cond:expr, $($arg:tt)+) => (
+        if !$cond {
+            let msg = format!($($arg)+);
+            return Err(CheckError::CheckFailure(file!(), line!(), column!(), msg));
+        }
+    );
+}
+
+/// Checks that two expressions are equal.
+/// Copied from libcore/macros.rs, with minor changes
+macro_rules! check_eq {
+    ($left:expr , $right:expr) => ({
+        match (&$left, &$right) {
+            (left_val, right_val) => {
+                if !(*left_val == *right_val) {
+                    let msg = format!("check failed: `(left == right)` \
+                           (left: `{:?}`, right: `{:?}`)", left_val, right_val);
+                    return Err(CheckError::CheckFailure(file!(), line!(), column!(), msg));
+                }
+            }
+        }
+    });
+    ($left:expr , $right:expr, $($arg:tt)*) => ({
+        match (&($left), &($right)) {
+            (left_val, right_val) => {
+                if !(*left_val == *right_val) {
+                    let msg = format!("check failed: `(left == right)` \
+                           (left: `{:?}`, right: `{:?}`): {}", left_val, right_val,
+                           format_args!($($arg)*));
+                    return Err(CheckError::CheckFailure(file!(), line!(), column!(), msg));
+                }
+            }
+        }
+    });
+}
+
 mod mock_crust;
+
+use routing::{InterfaceError, RoutingError};
+
+
+// -----  Error types  -----
+
+/// Generic error type for `check` macros and wrapped errors.
+///
+/// TODO: it may be useful to include file/line numbers for wrapped errors. This would require
+/// using a custom macro in place of the std `try!` / `?`. (Can we simply redefine `try!`?)
+enum CheckError {
+    CheckFailure(&'static str, u32, u32, String),
+    Interface(InterfaceError),
+    Routing(RoutingError),
+}
+
+impl CheckError {
+    /// Print details
+    fn println(&self) {
+        use CheckError::*;
+        match *self {
+            CheckFailure(file, line, col, ref msg) => {
+                println!("{}:{}:{}: {}", file, line, col, msg)
+            }
+            Interface(ref e) => println!("{:?}", e),
+            Routing(ref e) => println!("{:?}", e),
+        };
+    }
+}
+
+impl From<InterfaceError> for CheckError {
+    fn from(error: InterfaceError) -> CheckError {
+        CheckError::Interface(error)
+    }
+}
+
+impl From<RoutingError> for CheckError {
+    fn from(error: RoutingError) -> CheckError {
+        CheckError::Routing(error)
+    }
+}
+
+type CheckResult<T> = Result<T, CheckError>;

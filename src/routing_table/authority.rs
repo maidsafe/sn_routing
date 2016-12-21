@@ -22,8 +22,12 @@ use super::{Prefix, Xorable};
 
 /// An entity that can act as a source or destination of a message.
 ///
-/// An `Authority` can be an individual `Client` or `ManagedNode`, or a group of nodes, like a
-/// `NodeManager`, `ClientManager` or `NaeManager`.
+/// `Client` and `ManagedNode` are single-node authorities (i.e. no verification of messages from
+/// additional sources needed); other authorities require agreement by a quorum of some set.
+/// `NodeManager`, `ClientManager` and `NaeManager` use _group_ verification of messages: they
+/// require quorum agreement from the `min_group_size` nodes closest to the source, while `Section`
+/// and `PrefixSection` use _section_ verification: the set from which a quorum is required is all
+/// members of the section (`Section`) or of all sections matching the prefix (`PrefixSection`).
 #[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Hash)]
 pub enum Authority<N: Xorable + Clone + Copy + Binary + Default> {
     /// Manager of a Client.  XorName is the hash of the Client's `client_key`.
