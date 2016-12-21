@@ -35,7 +35,7 @@
 #![cfg_attr(feature="clippy", plugin(clippy))]
 #![cfg_attr(feature="clippy", deny(clippy, unicode_not_nfc, wrong_pub_self_convention,
                                    option_unwrap_used))]
-#![cfg_attr(feature="clippy", allow(use_debug, useless_format))]
+#![cfg_attr(feature="clippy", allow(use_debug))]
 
 extern crate itertools;
 #[macro_use]
@@ -109,7 +109,7 @@ macro_rules! expect_no_event {
 macro_rules! check {
     ($cond:expr) => (
         if !$cond {
-            let msg = format!(concat!("check failed: ", stringify!($cond)));
+            let msg = String::from(concat!("check failed: ", stringify!($cond)));
             return Err(CheckError::CheckFailure(file!(), line!(), column!(), msg));
         }
     );
