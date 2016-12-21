@@ -595,7 +595,7 @@ impl Node {
         for peer_id in peers {
             let msg = DirectMessage::SectionListSignature(prefix, section.clone(), sig);
             if let Err(e) = self.send_direct_message(&peer_id, msg) {
-                warn!("{:?} Error sending section list signature for {:?} to {:?}: {:?}",
+                warn!("{:?} Failed to send sending section list signature for {:?} to {:?}: {:?}",
                        self,
                        prefix,
                        peer_id,
@@ -684,7 +684,7 @@ impl Node {
 
         match self.routing_msg_filter.filter_incoming(signed_msg.routing_message(), route) {
             FilteringResult::KnownMessageAndRoute => {
-                warn!("{:?} Duplicate message received on route {}: {:?}",
+                debug!("{:?} Duplicate message received on route {}: {:?}",
                       self,
                       route,
                       signed_msg.routing_message());
