@@ -88,8 +88,10 @@ impl Stats {
     }
 
     /// Increments the counter for the given request.
+    #[cfg_attr(rustfmt, rustfmt_skip)]
     pub fn count_user_message(&mut self, _msg: &UserMessage) {
-        // TODO: port this to the new request/response variants
+        // TODO: port this to the new request/response variants. Also remove
+        // the rustfmt_skip attribute afterwards.
         /*
         match *msg {
             UserMessage::Request(ref request) => {
@@ -127,14 +129,6 @@ impl Stats {
 
         self.increment_msg_total();
         */
-
-
-
-
-
-
-
-
 
         unimplemented!()
     }

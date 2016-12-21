@@ -117,6 +117,9 @@ mod xorable;
 
 use itertools::Itertools;
 pub use self::error::Error;
+
+#[cfg(any(test, feature = "use-mock-crust"))]
+pub use self::network_tests::verify_network_invariant;
 pub use self::prefix::Prefix;
 pub use self::xorable::Xorable;
 use std::{iter, mem};
@@ -125,9 +128,6 @@ use std::fmt::{Binary, Debug, Formatter};
 use std::fmt::Result as FmtResult;
 use std::hash::Hash;
 use std::thread;
-
-#[cfg(any(test, feature = "use-mock-crust"))]
-pub use self::network_tests::verify_network_invariant;
 
 pub type Groups<T> = HashMap<Prefix<T>, HashSet<T>>;
 

@@ -15,12 +15,12 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use error::RoutingError;
 use maidsafe_utilities::serialisation::serialise;
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
 use std::collections::BTreeSet;
-use xor_name::XorName;
 use super::{DataIdentifier, PrivAppendedData, verify_detached};
-use error::RoutingError;
+use xor_name::XorName;
 
 /// The type of access filter for appendable data.
 #[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable)]
@@ -194,11 +194,11 @@ impl AppendWrapper {
 
 #[cfg(test)]
 mod test {
-    use rand;
-    use super::*;
     use data::{DataIdentifier, PrivAppendedData};
+    use rand;
 
     use rust_sodium::crypto::{box_, sign};
+    use super::*;
 
     #[test]
     fn pub_signatures() {
