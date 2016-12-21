@@ -262,9 +262,7 @@ impl SignedMessage {
                 .collect_vec();
             for irrelevant_id in irrelevant_ids {
                 let _removed_sig = self.signatures
-                    .remove(&irrelevant_id)
-                    .ok_or(debug!("Tried to remove a signature we did not have : {:?}",
-                                  irrelevant_id));
+                    .remove(&irrelevant_id);
             }
         }
         self.grp_lists.push(group_list);
@@ -351,9 +349,7 @@ impl SignedMessage {
             .collect_vec();
         for invalid_signature in &invalid_signatures {
             let _ignore_removed = self.signatures
-                .remove(invalid_signature)
-                .ok_or(debug!("Tried to remove an invalid signature we do not have : {:?}",
-                              invalid_signature));
+                .remove(invalid_signature);
         }
     }
 }

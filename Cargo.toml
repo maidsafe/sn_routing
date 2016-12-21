@@ -1,6 +1,5 @@
 [package]
 authors = ["MaidSafe Developers <dev@maidsafe.net>"]
-build = "build.rs"
 description = "A secured storage DHT"
 documentation = "http://docs.maidsafe.net/routing/latest"
 homepage = "http://maidsafe.net"
@@ -48,3 +47,5 @@ bench = false
 name = "ci_test"
 test = false
 
+[features]
+use-mock-crust = []

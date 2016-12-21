@@ -181,7 +181,7 @@ impl PubAppendableData {
         let data = self.data_to_sign()?;
         let sig = sign::sign_detached(&data, &keys.1);
 
-        if self.signatures.insert(keys.0, sig).is_some() {
+        if self.signatures.insert(keys.0, sig).is_none() {
             return Ok(((self.owners.len() / 2) + 1).saturating_sub(self.signatures.len()));
         }
         Err(RoutingError::FailedSignature)
@@ -268,7 +268,7 @@ mod test {
                                                 &data,
                                                 pub_appendable_data.get_signatures())
                     .is_err());
-                assert!(pub_appendable_data.add_signature(&keys).is_err());
+                assert!(pub_appendable_data.add_signature(&keys).is_ok());
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
                                                 pub_appendable_data.get_signatures())
@@ -291,7 +291,7 @@ mod test {
                                      BTreeSet::new(),
                                      Filter::white_list(None)) {
             Ok(mut pub_appendable_data) => {
-                assert!(pub_appendable_data.add_signature(&other_keys).is_err());
+                assert!(pub_appendable_data.add_signature(&other_keys).is_ok());
                 let data = match pub_appendable_data.data_to_sign() {
                     Ok(data) => data,
                     Err(error) => panic!("Error: {:?}", error),
@@ -385,7 +385,7 @@ mod test {
                                                         new_owner.clone(),
                                                         BTreeSet::new(),
                                                         Filter::black_list(None)));
-        assert!(ad_new.add_signature(&keys).is_err());
+        assert!(ad_new.add_signature(&keys).is_ok());
         assert!(ad.update_with_other(ad_new).is_ok());
 
         let mut ad_fail = unwrap!(PubAppendableData::new(name,
@@ -393,7 +393,7 @@ mod test {
                                                          new_owner.clone(),
                                                          BTreeSet::new(),
                                                          Filter::black_list(None)));
-        assert!(ad_fail.add_signature(&keys).is_err());
+        assert!(ad_fail.add_signature(&keys).is_ok());
         assert!(ad.update_with_other(ad_fail).is_err());
     }
 }

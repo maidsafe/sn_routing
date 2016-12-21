@@ -328,7 +328,7 @@ mod tests {
                                                 &data,
                                                 priv_appendable_data.get_signatures())
                     .is_err());
-                assert!(priv_appendable_data.add_signature(&keys).is_err());
+                assert!(priv_appendable_data.add_signature(&keys).is_ok());
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
                                                 priv_appendable_data.get_signatures())
@@ -353,7 +353,7 @@ mod tests {
                                       Filter::white_list(None),
                                       encrypt_keys.0) {
             Ok(mut priv_appendable_data) => {
-                assert!(priv_appendable_data.add_signature(&other_keys).is_err());
+                assert!(priv_appendable_data.add_signature(&other_keys).is_ok());
                 let data = match priv_appendable_data.data_to_sign() {
                     Ok(data) => data,
                     Err(error) => panic!("Error: {:?}", error),
@@ -466,7 +466,7 @@ mod tests {
                                                          BTreeSet::new(),
                                                          Filter::black_list(None),
                                                          encrypt_keys.0));
-        assert!(ad_new.add_signature(&keys).is_err());
+        assert!(ad_new.add_signature(&keys).is_ok());
         assert!(ad.update_with_other(ad_new).is_ok());
 
         let mut ad_fail = unwrap!(PrivAppendableData::new(name,
@@ -475,7 +475,7 @@ mod tests {
                                                           BTreeSet::new(),
                                                           Filter::black_list(None),
                                                           encrypt_keys.0));
-        assert!(ad_fail.add_signature(&keys).is_err());
+        assert!(ad_fail.add_signature(&keys).is_ok());
         assert!(ad.update_with_other(ad_fail).is_err());
     }
 }

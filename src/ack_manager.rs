@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use error::RoutingError;
-use maidsafe_utilities::{self, serialisation};
+use maidsafe_utilities::serialisation;
 use message_filter::MessageFilter;
 use messages::RoutingMessage;
 use sha3;
@@ -45,7 +45,6 @@ pub struct AckManager {
 /// An identifier for a waiting-to-be-acknowledged message (a hash of the message).
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, RustcDecodable, RustcEncodable)]
 pub struct Ack {
-    id: u64,
     m_hash: [u8; 32],
 }
 
@@ -130,18 +129,14 @@ impl Ack {
     /// Compute an `Ack` from a message.
     pub fn compute(routing_msg: &RoutingMessage) -> Result<Ack, RoutingError> {
         let hash_msg = serialisation::serialise(routing_msg)?;
-        Ok(Ack {
-            id: maidsafe_utilities::big_endian_sip_hash(&hash_msg),
-            m_hash: sha3::hash(&hash_msg),
-        })
+        Ok(Ack { m_hash: sha3::hash(&hash_msg) })
     }
 }
 
 impl fmt::Display for Ack {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         write!(formatter,
-               "id : {:016x}, hash : {:02x}{:02x}..",
-               self.id,
+               "hash : {:02x}{:02x}..",
                self.m_hash[0],
                self.m_hash[1])
     }
@@ -150,8 +145,7 @@ impl fmt::Display for Ack {
 impl fmt::Debug for Ack {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         write!(formatter,
-               "Ack( id: {:016x}, hash : {:02X}{:02X}..)",
-               self.id,
+               "Ack(hash : {:02X}{:02X}..)",
                self.m_hash[0],
                self.m_hash[1])
     }

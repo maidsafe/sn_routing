@@ -284,7 +284,7 @@ impl ServiceImpl {
 
     pub fn whitelist_peer(&mut self, peer_id: PeerId) {
         if !self.whitelist.insert(peer_id.clone()) {
-            debug!("Duplicate insert attempt  whitelist for peer : {:?}",
+            debug!("Duplicate insert attempt whitelist for peer : {:?}",
                    peer_id);
         }
     }
