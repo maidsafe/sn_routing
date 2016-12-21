@@ -662,7 +662,7 @@ impl Node {
         for peer_id in peers {
             let msg = DirectMessage::SectionListSignature(section.clone(), sig);
             if let Err(e) = self.send_direct_message(peer_id, msg) {
-                warn!("{:?} Error sending section list signature for {:?} to {:?}: {:?}",
+                warn!("{:?} Failed to send sending section list signature for {:?} to {:?}: {:?}",
                       self,
                       prefix,
                       peer_id,
