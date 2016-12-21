@@ -28,6 +28,7 @@ use std::{error, fmt, mem};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::collections::hash_map::Values;
 use std::time::{Duration, Instant};
+use super::QUORUM;
 use types::MessageId;
 use xor_name::XorName;
 
@@ -391,9 +392,32 @@ impl PeerManager {
         (ids_to_drop, our_new_prefix)
     }
 
+    /// Checks whether we have a quorum of nodes in each section
+    fn is_merging_possible(&self) -> bool {
+        let prefixes = self.expected_peers
+            .keys()
+            .map(|x| self.routing_table.find_group_prefix(x))
+            .collect::<HashSet<_>>();
+        if prefixes.contains(&None) {
+            // we expect contacts that don't belong in any of the sections in our RT - so we have
+            // no contacts from their section
+            return false;
+        }
+        // `unwrap` is safe here - we just verified that there is no `None` in the set
+        for prefix in prefixes.into_iter().map(Option::unwrap) {
+            let missing_contacts = self.expected_peers.keys().filter(|x| prefix.matches(x)).count();
+            let present_contacts =
+                self.routing_table.section_with_prefix(&prefix).map_or(0, |section| section.len());
+            if QUORUM * (missing_contacts + present_contacts) > 100 * present_contacts {
+                return false;
+            }
+        }
+        true
+    }
+
     /// Wraps `RoutingTable::should_merge` with an extra check.
     pub fn should_merge(&self) -> Option<OwnMergeDetails<XorName>> {
-        if !self.expected_peers.is_empty() {
+        if !self.is_merging_possible() {
             return None;
         }
         self.routing_table.should_merge()
