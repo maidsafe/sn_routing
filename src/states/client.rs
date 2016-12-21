@@ -174,7 +174,7 @@ impl Client {
         }
 
         let signed_msg = hop_msg.content;
-        signed_msg.check_integrity()?;
+        signed_msg.check_integrity(self.min_group_size())?;
 
         let routing_msg = signed_msg.routing_message();
         let in_authority = self.in_authority(&routing_msg.dst);
@@ -337,22 +337,23 @@ impl Bootstrapped for Client {
         }
 
         // Get PeerId of the proxy node
-        let proxy_peer_id = if let Authority::Client { ref proxy_node_name, .. } =
-            routing_msg.src {
-            if *self.proxy_public_id.name() == *proxy_node_name {
-                self.proxy_peer_id
-            } else {
-                error!("{:?} - Unable to find connection to proxy node in proxy map",
-                       self);
-                return Err(RoutingError::ProxyConnectionNotFound);
+        let (proxy_peer_id, sending_nodes) = match routing_msg.src {
+            Authority::Client { ref proxy_node_name, .. } => {
+                if *self.proxy_public_id.name() != *proxy_node_name {
+                    error!("{:?} - Unable to find connection to proxy node in proxy map",
+                           self);
+                    return Err(RoutingError::ProxyConnectionNotFound);
+                }
+                (self.proxy_peer_id, vec![])
             }
-        } else {
-            error!("{:?} - Source should be client if our state is a Client",
-                   self);
-            return Err(RoutingError::InvalidSource);
+            _ => {
+                error!("{:?} - Source should be client if our state is a Client",
+                       self);
+                return Err(RoutingError::InvalidSource);
+            }
         };
 
-        let signed_msg = SignedMessage::new(routing_msg, self.full_id())?;
+        let signed_msg = SignedMessage::new(routing_msg, self.full_id(), sending_nodes)?;
 
         if !self.add_to_pending_acks(&signed_msg, route) {
             return Ok(());

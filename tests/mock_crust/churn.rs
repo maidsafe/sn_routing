@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use ::{CheckError, CheckResult};
 use itertools::Itertools;
 use rand::Rng;
 use routing::{Authority, DataIdentifier, Event, MessageId, QUORUM, Request, XorName};
@@ -73,17 +74,18 @@ impl ExpectedGets {
                        src: Authority<XorName>,
                        dst: Authority<XorName>,
                        nodes: &[TestNode],
-                       min_group_size: usize) {
+                       min_group_size: usize)
+                       -> CheckResult<()> {
         let msg_id = MessageId::new();
         let mut sent_count = 0;
         for node in nodes.iter().filter(|node| node.is_recipient(&src)) {
-            unwrap!(node.inner.send_get_request(src, dst, data_id, msg_id));
+            node.inner.send_get_request(src, dst, data_id, msg_id)?;
             sent_count += 1;
         }
         if src.is_multiple() {
-            assert!(100 * sent_count >= QUORUM * min_group_size);
+            check!(100 * sent_count >= QUORUM * min_group_size);
         } else {
-            assert_eq!(sent_count, 1);
+            check_eq!(sent_count, 1);
         }
         if dst.is_multiple() && !self.groups.contains_key(&dst) {
             let is_recipient = |n: &&TestNode| n.is_recipient(&dst);
@@ -91,10 +93,11 @@ impl ExpectedGets {
             let _ = self.groups.insert(dst, group);
         }
         self.messages.insert((data_id, msg_id, src, dst));
+        Ok(())
     }
 
     /// Verifies that all sent messages have been received by the appropriate nodes.
-    fn verify(mut self, nodes: &[TestNode]) {
+    fn verify(mut self, nodes: &[TestNode]) -> CheckResult<()> {
         // The minimum of the group lengths when sending and now. If a churn event happened, both
         // cases are valid: that the message was received before or after that. The number of
         // recipients thus only needs to reach a quorum for the smaller of the group sizes.
@@ -114,69 +117,69 @@ impl ExpectedGets {
                 if let Event::Request { request: Request::Get(data_id, msg_id), src, dst } = event {
                     let key = (data_id, msg_id, src, dst);
                     if dst.is_multiple() {
-                        assert!(self.groups
-                                    .get(&key.3)
-                                    .map_or(false, |entry| entry.contains(&node.name())),
-                                "Unexpected request for node {:?}: {:?}",
-                                node.name(),
-                                key);
+                        check!(self.groups
+                                   .get(&key.3)
+                                   .map_or(false, |entry| entry.contains(&node.name())),
+                               "Unexpected request for node {:?}: {:?}",
+                               node.name(),
+                               key);
                         *group_msgs_received.entry(key).or_insert(0usize) += 1;
                     } else {
-                        assert_eq!(node.name(), dst.name());
-                        assert!(self.messages.remove(&key),
-                                "Unexpected request for node {:?}: {:?}",
-                                node.name(),
-                                key);
+                        check_eq!(node.name(), dst.name());
+                        check!(self.messages.remove(&key),
+                               "Unexpected request for node {:?}: {:?}",
+                               node.name(),
+                               key);
                     }
                 }
             }
         }
         for key in self.messages {
             // All received messages for single nodes were removed: if any are left, they failed.
-            assert!(key.3.is_multiple(), "Failed to receive request {:?}", key);
+            check!(key.3.is_multiple(), "Failed to receive request {:?}", key);
             let group_size = group_sizes[&key.3];
             let count = group_msgs_received.remove(&key).unwrap_or(0);
-            assert!(100 * count >= QUORUM * group_size,
-                    "Only received {} out of {} messages {:?}.",
-                    count,
-                    group_size,
-                    key);
+            check!(100 * count >= QUORUM * group_size,
+                   "Only received {} out of {} messages {:?}.",
+                   count,
+                   group_size,
+                   key);
         }
+        Ok(())
     }
 }
 
 const CHURN_ITERATIONS: usize = 100;
 
-fn verify_section_list_signatures(nodes: &[TestNode]) {
+fn verify_section_list_signatures(nodes: &[TestNode]) -> CheckResult<()> {
     for node in nodes {
         let rt = node.routing_table();
         let section_size = rt.our_section().len();
         for prefix in rt.prefixes() {
             if prefix != *rt.our_prefix() {
                 let sigs = unwrap!(node.inner.section_list_signatures(prefix));
-                assert!(sigs.len() * 100 > section_size * QUORUM,
-                        "{:?} Not enough signatures for prefix {:?} - {}/{}\n\tSignatures from: \
-                         {:?}",
-                        node.name(),
-                        prefix,
-                        sigs.len(),
-                        section_size,
-                        sigs.keys().collect_vec());
+                check!(sigs.len() * 100 > section_size * QUORUM,
+                       "{:?} Not enough signatures for prefix {:?} - {}/{}\n\tSignatures from: \
+                        {:?}",
+                       node.name(),
+                       prefix,
+                       sigs.len(),
+                       section_size,
+                       sigs.keys().collect_vec());
             }
         }
     }
+    Ok(())
 }
 
-#[test]
-fn churn() {
-    let min_group_size = 8;
-    let network = Network::new(min_group_size, None);
+fn do_churn(min_group_size: usize,
+            network: &Network,
+            nodes: &mut Vec<TestNode>)
+            -> CheckResult<()> {
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes(&network, 20);
-
     for i in 0..CHURN_ITERATIONS {
         trace!("Iteration {}", i);
-        let added_index = random_churn(&mut rng, &network, &mut nodes);
+        let added_index = random_churn(&mut rng, network, nodes);
 
         // Create random data ID and pick random sending and receiving nodes.
         let data_id = DataIdentifier::Immutable(rng.gen());
@@ -194,25 +197,44 @@ fn churn() {
         let mut expected_gets = ExpectedGets::default();
 
         // Test messages from a node to itself, another node, a group and a section...
-        expected_gets.send_and_expect(data_id, auth_n0, auth_n0, &nodes, min_group_size);
-        expected_gets.send_and_expect(data_id, auth_n0, auth_n1, &nodes, min_group_size);
-        expected_gets.send_and_expect(data_id, auth_n0, auth_g0, &nodes, min_group_size);
-        expected_gets.send_and_expect(data_id, auth_n0, auth_s0, &nodes, min_group_size);
+        expected_gets.send_and_expect(data_id, auth_n0, auth_n0, nodes, min_group_size)?;
+        expected_gets.send_and_expect(data_id, auth_n0, auth_n1, nodes, min_group_size)?;
+        expected_gets.send_and_expect(data_id, auth_n0, auth_g0, nodes, min_group_size)?;
+        expected_gets.send_and_expect(data_id, auth_n0, auth_s0, nodes, min_group_size)?;
         // ... and from a group to itself, another group, a section and a node...
-        expected_gets.send_and_expect(data_id, auth_g0, auth_g0, &nodes, min_group_size);
-        expected_gets.send_and_expect(data_id, auth_g0, auth_g1, &nodes, min_group_size);
-        expected_gets.send_and_expect(data_id, auth_g0, auth_s0, &nodes, min_group_size);
-        expected_gets.send_and_expect(data_id, auth_g0, auth_n0, &nodes, min_group_size);
+        expected_gets.send_and_expect(data_id, auth_g0, auth_g0, nodes, min_group_size)?;
+        expected_gets.send_and_expect(data_id, auth_g0, auth_g1, nodes, min_group_size)?;
+        expected_gets.send_and_expect(data_id, auth_g0, auth_s0, nodes, min_group_size)?;
+        expected_gets.send_and_expect(data_id, auth_g0, auth_n0, nodes, min_group_size)?;
         // ... and from a section to itself, another section, a group and a node...
-        expected_gets.send_and_expect(data_id, auth_s0, auth_s0, &nodes, min_group_size);
-        expected_gets.send_and_expect(data_id, auth_s0, auth_s1, &nodes, min_group_size);
-        expected_gets.send_and_expect(data_id, auth_s0, auth_g0, &nodes, min_group_size);
-        expected_gets.send_and_expect(data_id, auth_s0, auth_n0, &nodes, min_group_size);
+        expected_gets.send_and_expect(data_id, auth_s0, auth_s0, nodes, min_group_size)?;
+        expected_gets.send_and_expect(data_id, auth_s0, auth_s1, nodes, min_group_size)?;
+        expected_gets.send_and_expect(data_id, auth_s0, auth_g0, nodes, min_group_size)?;
+        expected_gets.send_and_expect(data_id, auth_s0, auth_n0, nodes, min_group_size)?;
 
-        poll_and_resend(&mut nodes, &mut []);
+        poll_and_resend(nodes, &mut []);
 
-        expected_gets.verify(&nodes);
-        verify_invariant_for_all_nodes(&nodes);
-        verify_section_list_signatures(&nodes);
+        expected_gets.verify(nodes)?;
+        verify_invariant_for_all_nodes(nodes);
+        verify_section_list_signatures(nodes)?;
+    }
+    Ok(())
+}
+
+#[test]
+fn churn() {
+    let min_group_size = 8;
+    let network = Network::new(min_group_size, None);
+    let mut nodes = create_connected_nodes(&network, 20);
+
+    // This could be in-lined when Rust gets try..fail error-handling blocks
+    if let Err(e) = do_churn(min_group_size, &network, &mut nodes) {
+        e.println();
+        println!("---------- Routing tables at time of error ----------");
+        println!("");
+        for node in nodes {
+            println!("----- Node {:?} -----", node.name());
+            println!("{:?}", node.routing_table());
+        }
     }
 }
