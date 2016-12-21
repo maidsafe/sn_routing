@@ -1161,9 +1161,9 @@ mod tests {
         };
 
         let src_sections = vec![SectionList::from(prefix,
-                                                   vec![*full_id_0.public_id(),
-                                                        *full_id_1.public_id(),
-                                                        *full_id_2.public_id()])];
+                                                  vec![*full_id_0.public_id(),
+                                                       *full_id_1.public_id(),
+                                                       *full_id_2.public_id()])];
         let mut signed_msg = unwrap!(SignedMessage::new(routing_message, &full_id_0, src_sections));
         assert_eq!(signed_msg.signatures.len(), 1);
 
