@@ -30,14 +30,14 @@ fn merge(prefix_lengths: Vec<usize>) {
 
     // Drop nodes from a group with the shortest prefix until we get a merge event for the empty
     // prefix.
-    let mut min_prefix = *unwrap!(nodes[0].routing_table()).our_group_prefix();
+    let mut min_prefix = *nodes[0].routing_table().our_prefix();
     let mut got_merge_event;
     loop {
         got_merge_event = false;
         rng.shuffle(&mut nodes);
         let mut index = nodes.len();
         for (i, node) in nodes.iter().enumerate() {
-            let this_prefix = *unwrap!(node.routing_table()).our_group_prefix();
+            let this_prefix = *node.routing_table().our_prefix();
             if this_prefix.bit_count() < min_prefix.bit_count() {
                 min_prefix = this_prefix;
                 index = i;
@@ -84,13 +84,11 @@ fn merge_four_unbalanced_groups_into_one() {
 }
 
 #[test]
-#[ignore]
 fn merge_four_balanced_groups_into_one() {
     merge(vec![2, 2, 2, 2])
 }
 
 #[test]
-#[ignore]
 fn merge_five_groups_into_one() {
     merge(vec![1, 3, 3, 3, 3])
 }

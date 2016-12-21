@@ -147,6 +147,26 @@ impl ExpectedGets {
 
 const CHURN_ITERATIONS: usize = 100;
 
+fn verify_section_list_signatures(nodes: &[TestNode]) {
+    for node in nodes {
+        let rt = node.routing_table();
+        let section_size = rt.our_section().len();
+        for prefix in rt.prefixes() {
+            if prefix != *rt.our_prefix() {
+                let sigs = unwrap!(node.inner.section_list_signatures(prefix));
+                assert!(sigs.len() * 100 > section_size * QUORUM,
+                        "{:?} Not enough signatures for prefix {:?} - {}/{}\n\tSignatures from: \
+                         {:?}",
+                        node.name(),
+                        prefix,
+                        sigs.len(),
+                        section_size,
+                        sigs.keys().collect_vec());
+            }
+        }
+    }
+}
+
 #[test]
 fn churn() {
     let min_group_size = 8;
@@ -193,12 +213,6 @@ fn churn() {
 
         expected_gets.verify(&nodes);
         verify_invariant_for_all_nodes(&nodes);
-
-        // Every few iterations, clear the nodes' caches, simulating a longer time between events.
-        if rng.gen_weighted_bool(5) {
-            for node in &mut nodes {
-                node.inner.clear_state();
-            }
-        }
+        verify_section_list_signatures(&nodes);
     }
 }
