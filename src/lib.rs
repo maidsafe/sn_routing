@@ -130,6 +130,8 @@
 extern crate log;
 #[macro_use]
 extern crate maidsafe_utilities;
+#[cfg_attr(feature="clippy", allow(useless_attribute))]
+#[allow(unused_extern_crates)]
 #[macro_use]
 extern crate quick_error;
 #[macro_use]
