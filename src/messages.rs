@@ -106,7 +106,7 @@ pub enum DirectMessage {
     /// Sent from the bootstrap node to a client in response to `ClientIdentify`.
     BootstrapIdentify {
         /// The bootstrap node's keys and name.
-        public_id: ::id::PublicId,
+        public_id: PublicId,
     },
     /// Sent to the client to indicate that this node is not available as a bootstrap node.
     BootstrapDeny,

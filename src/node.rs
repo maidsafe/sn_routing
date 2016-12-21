@@ -166,7 +166,7 @@ impl NodeBuilder {
 pub struct Node {
     interface_result_tx: Sender<Result<(), InterfaceError>>,
     interface_result_rx: Receiver<Result<(), InterfaceError>>,
-    action_sender: ::types::RoutingActionSender,
+    action_sender: RoutingActionSender,
 
     #[cfg(feature = "use-mock-crust")]
     machine: RefCell<StateMachine>,
