@@ -158,7 +158,7 @@ pub enum EntryAction {
 }
 
 /// Helper struct to build entry actions on `MutableData`
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct EntryActions {
     actions: BTreeMap<Vec<u8>, EntryAction>,
 }
@@ -166,7 +166,7 @@ pub struct EntryActions {
 impl EntryActions {
     /// Create a helper to simplify construction of `MutableData` actions
     pub fn new() -> Self {
-        EntryActions { actions: BTreeMap::new() }
+        Default::default()
     }
 
     /// Insert a new key-value pair

@@ -18,8 +18,6 @@
 mod request;
 mod response;
 
-pub use self::request::Request;
-pub use self::response::{AccountInfo, Response};
 
 use ack_manager::Ack;
 use authority::Authority;
@@ -37,6 +35,8 @@ use mock_crust::crust::PeerId;
 use routing_table::Prefix;
 use rust_sodium::crypto::{box_, sign};
 use rust_sodium::crypto::hash::sha256;
+pub use self::request::Request;
+pub use self::response::{AccountInfo, Response};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
 use std::iter;
@@ -778,8 +778,8 @@ mod tests {
     use maidsafe_utilities;
     use maidsafe_utilities::serialisation::serialise;
     use rand;
-    use rust_sodium::crypto::sign;
     use rust_sodium::crypto::hash::sha256;
+    use rust_sodium::crypto::sign;
     use std::iter;
     use super::*;
     use types::MessageId;
