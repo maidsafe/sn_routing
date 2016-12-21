@@ -226,7 +226,7 @@ impl PrivAppendableData {
         }
         let data = self.data_to_sign()?;
         let sig = sign::sign_detached(&data, &keys.1);
-        if self.signatures.insert(keys.0, sig).is_some() {
+        if self.signatures.insert(keys.0, sig).is_none() {
             return Ok(((self.owners.len() / 2) + 1).saturating_sub(self.signatures.len()));
         }
         Err(RoutingError::FailedSignature)
