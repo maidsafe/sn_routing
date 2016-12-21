@@ -401,10 +401,17 @@ impl PeerManager {
         if prefixes.contains(&None) {
             // we expect contacts that don't belong in any of the sections in our RT - so we have
             // no contacts from their section
+            warn!("Node({:?}) Expecting peers that don't have a corresponding section in the RT: \
+                   {:?}",
+                  self.routing_table.our_name(),
+                  self.expected_peers
+                      .keys()
+                      .filter(|&x| self.routing_table.find_group_prefix(x).is_none())
+                      .collect_vec());
             return false;
         }
-        // `unwrap` is safe here - we just verified that there is no `None` in the set
-        for prefix in prefixes.into_iter().map(Option::unwrap) {
+        // we use `flat_map` to unwrap `Option`s
+        for prefix in prefixes.into_iter().flat_map(|x| x) {
             let missing_contacts = self.expected_peers.keys().filter(|x| prefix.matches(x)).count();
             let present_contacts =
                 self.routing_table.section_with_prefix(&prefix).map_or(0, |section| section.len());
