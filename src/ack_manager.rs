@@ -64,7 +64,7 @@ impl AckManager {
     pub fn receive(&mut self, ack: Ack) {
         let _ack = self.pending
             .remove(&ack)
-            .ok_or(debug!("received and Ack we were not expecting : {}", ack));
+            .ok_or_else(|| debug!("received an Ack we were not expecting : {}", ack));
         // TODO - Should this insert an ack we were not expecting ??
         let count = self.received.insert(&ack);
         trace!("Received ack {} : {} times", ack, count);
