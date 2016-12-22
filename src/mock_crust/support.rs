@@ -21,6 +21,7 @@ use rust_sodium;
 use std::cell::RefCell;
 use std::cmp;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::hash_map::Entry;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::rc::{Rc, Weak};
 use super::crust::{ConnectionInfoResult, CrustEventSender, Event, PeerId, PrivConnectionInfo,
@@ -154,11 +155,12 @@ impl Network {
         let result = network_impl.queue
             .get_mut(&(sender, receiver))
             .and_then(|packets| packets.pop_front().map(|packet| (sender, receiver, packet)));
-        if result.is_some() &&
-           network_impl.queue.get(&(sender, receiver)).map_or(false, VecDeque::is_empty) {
-            let _queue = network_impl.queue
-                .remove(&(sender, receiver))
-                .ok_or(debug!("Could not remove packet from queue."));
+        if result.is_some() {
+            if let Entry::Occupied(entry) = network_impl.queue.entry((sender, receiver)) {
+                if entry.get().is_empty() {
+                    let (_key, _value) = entry.remove_entry();
+                }
+            }
         }
         result
     }

@@ -579,7 +579,7 @@ impl Node {
         for peer_id in peers {
             let msg = DirectMessage::SectionListSignature(prefix, section.clone(), sig);
             if let Err(e) = self.send_direct_message(&peer_id, msg) {
-                error!("{:?} Error sending section list signature for {:?} to {:?}: {:?}",
+                warn!("{:?} Error sending section list signature for {:?} to {:?}: {:?}",
                        self,
                        prefix,
                        peer_id,
@@ -1578,6 +1578,16 @@ impl Node {
                        self,
                        self.peer_mgr.routing_table().prefixes());
                 self.merge_if_necessary();
+                // after the merge, half of our section won't have our signatures for the
+                // neighbouring sections - send them
+                for prefix in self.peer_mgr.routing_table().other_prefixes() {
+                    if let Err(e) = self.send_section_list_signature(prefix, None) {
+                        warn!("{:?} Error sending section list signature for prefix {:?}: {:?}",
+                              self,
+                              prefix,
+                              e);
+                    }
+                }
                 let src = Authority::Section(self.peer_mgr
                     .routing_table()
                     .our_prefix()
