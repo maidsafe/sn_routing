@@ -21,9 +21,10 @@ use routing::{Authority, Cache, Client, Data, DataIdentifier, Event, FullId, Imm
               NullCache, Prefix, Request, Response, RoutingTable, XorName, Xorable,
               verify_network_invariant};
 use routing::mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
+use std::{cmp, thread};
 use std::cell::RefCell;
-use std::cmp;
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::ops::{Deref, DerefMut};
 use std::sync::mpsc;
 
 // Various utilities. Since this is all internal stuff we're a bit lax about the doc.
@@ -50,6 +51,38 @@ pub fn gen_range_except<T: Rng>(rng: &mut T,
             }
             r
         }
+    }
+}
+
+
+/// Wraps a `Vec<TestNode>`s and prints the nodes' routing tables when dropped in a panicking
+/// thread.
+pub struct Nodes(pub Vec<TestNode>);
+
+impl Drop for Nodes {
+    fn drop(&mut self) {
+        if thread::panicking() {
+            error!("---------- Routing tables at time of error ----------");
+            error!("");
+            for node in &self.0 {
+                error!("----- Node {:?} -----", node.name());
+                error!("{:?}", node.routing_table());
+            }
+        }
+    }
+}
+
+impl Deref for Nodes {
+    type Target = Vec<TestNode>;
+
+    fn deref(&self) -> &Vec<TestNode> {
+        &self.0
+    }
+}
+
+impl DerefMut for Nodes {
+    fn deref_mut(&mut self) -> &mut Vec<TestNode> {
+        &mut self.0
     }
 }
 
@@ -284,14 +317,11 @@ pub fn poll_and_resend(nodes: &mut [TestNode], clients: &mut [TestClient]) {
     }
 }
 
-pub fn create_connected_nodes(network: &Network, size: usize) -> Vec<TestNode> {
+pub fn create_connected_nodes(network: &Network, size: usize) -> Nodes {
     create_connected_nodes_with_cache(network, size, false)
 }
 
-pub fn create_connected_nodes_with_cache(network: &Network,
-                                         size: usize,
-                                         use_cache: bool)
-                                         -> Vec<TestNode> {
+pub fn create_connected_nodes_with_cache(network: &Network, size: usize, use_cache: bool) -> Nodes {
     let mut nodes = Vec::new();
 
     // Create the seed node.
@@ -337,7 +367,7 @@ pub fn create_connected_nodes_with_cache(network: &Network,
                 node_added_count);
     }
 
-    nodes
+    Nodes(nodes)
 }
 
 // This creates new nodes (all with `use_cache` set to `true`) until the specified disjoint groups
@@ -353,7 +383,7 @@ pub fn create_connected_nodes_with_cache(network: &Network,
 pub fn create_connected_nodes_until_split(network: &Network,
                                           mut prefix_lengths: Vec<usize>,
                                           use_cache: bool)
-                                          -> Vec<TestNode> {
+                                          -> Nodes {
     // Get sorted list of prefixes to suit requested lengths.
     sanity_check(&prefix_lengths);
     prefix_lengths.sort();
@@ -432,7 +462,7 @@ pub fn create_connected_nodes_until_split(network: &Network,
     }
 
     trace!("Created testnet comprising {:?}", prefixes);
-    nodes
+    Nodes(nodes)
 }
 
 // Create `size` clients, all of whom are connected to `nodes[0]`.
