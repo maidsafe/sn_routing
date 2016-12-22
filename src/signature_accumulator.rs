@@ -247,7 +247,7 @@ mod tests {
             assert!(sig_accumulator.msgs.is_empty());
             assert_eq!(route, returned_route);
             assert_eq!(signed_msg.routing_message(), returned_msg.routing_message());
-            unwrap!(returned_msg.check_integrity(1000));
+            unwrap!(returned_msg.check_integrity(1000, None));
             assert!(returned_msg.check_fully_signed(env.num_nodes()));
             env.senders
                 .iter()
@@ -290,7 +290,7 @@ mod tests {
                         assert_eq!(route as u8, returned_route);
                         assert_eq!(msg_and_sigs.signed_msg.routing_message(),
                                    returned_msg.routing_message());
-                        unwrap!(returned_msg.check_integrity(1000));
+                        unwrap!(returned_msg.check_integrity(1000, None));
                         assert!(returned_msg.check_fully_signed(env.num_nodes()));
                     }
                 });
