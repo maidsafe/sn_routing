@@ -15,7 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use ::{CheckError, CheckResult};
 use itertools::Itertools;
 use rand::Rng;
 use routing::{Authority, DataIdentifier, Event, MessageId, QUORUM, Request, XorName};
@@ -24,6 +23,7 @@ use std::cmp;
 use std::collections::{HashMap, HashSet};
 use super::{TestNode, create_connected_nodes, gen_range_except, poll_and_resend,
             verify_invariant_for_all_nodes};
+use super::utils::{self, CheckError, CheckResult};
 
 // Randomly add or remove some nodes, causing churn.
 // If a new node was added, returns the index of this node. Otherwise
@@ -226,15 +226,5 @@ fn churn() {
     let min_group_size = 8;
     let network = Network::new(min_group_size, None);
     let mut nodes = create_connected_nodes(&network, 20);
-
-    // This could be in-lined when Rust gets try..fail error-handling blocks
-    if let Err(e) = do_churn(min_group_size, &network, &mut nodes) {
-        e.println();
-        println!("---------- Routing tables at time of error ----------");
-        println!("");
-        for node in nodes {
-            println!("----- Node {:?} -----", node.name());
-            println!("{:?}", node.routing_table());
-        }
-    }
+    utils::verify_or_print(do_churn(min_group_size, &network, &mut nodes), &nodes);
 }

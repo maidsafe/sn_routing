@@ -17,13 +17,14 @@
 
 use itertools::Itertools;
 use rand::Rng;
-use routing::{Authority, Cache, Client, Data, DataIdentifier, Event, FullId, ImmutableData, Node,
-              NullCache, Prefix, Request, Response, RoutingTable, XorName, Xorable,
-              verify_network_invariant};
+use routing::{Authority, Cache, Client, Data, DataIdentifier, Event, FullId, ImmutableData,
+              InterfaceError, Node, NullCache, Prefix, Request, Response, RoutingError,
+              RoutingTable, XorName, Xorable, verify_network_invariant};
 use routing::mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
 use std::cell::RefCell;
 use std::cmp;
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc;
 
 // Various utilities. Since this is all internal stuff we're a bit lax about the doc.
@@ -567,5 +568,56 @@ mod tests {
     #[should_panic(expected = "must each be no more than 8")]
     fn sanity_check_too_many_groups() {
         sanity_check(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 9]);
+    }
+}
+
+// -----  Error types  -----
+
+/// Generic error type for `check` macros and wrapped errors.
+///
+/// TODO: it may be useful to include file/line numbers for wrapped errors. This would require
+/// using a custom macro in place of the std `try!` / `?`. (Can we simply redefine `try!`?)
+pub enum CheckError {
+    CheckFailure(&'static str, u32, u32, String),
+    Interface(InterfaceError),
+    Routing(RoutingError),
+}
+
+impl From<InterfaceError> for CheckError {
+    fn from(error: InterfaceError) -> CheckError {
+        CheckError::Interface(error)
+    }
+}
+
+impl From<RoutingError> for CheckError {
+    fn from(error: RoutingError) -> CheckError {
+        CheckError::Routing(error)
+    }
+}
+
+impl Debug for CheckError {
+    fn fmt(&self, fmt: &mut Formatter) -> fmt::Result {
+        use self::CheckError::*;
+        match *self {
+            CheckFailure(file, line, col, ref msg) => {
+                write!(fmt, "{}:{}:{}: {}", file, line, col, msg)
+            }
+            Interface(ref e) => write!(fmt, "{:?}", e),
+            Routing(ref e) => write!(fmt, "{:?}", e),
+        }
+    }
+}
+
+pub type CheckResult<T> = Result<T, CheckError>;
+
+pub fn verify_or_print<T>(result: Result<T, CheckError>, nodes: &[TestNode]) {
+    if let Err(e) = result {
+        error!("---------- Routing tables at time of error ----------");
+        error!("");
+        for node in nodes {
+            error!("----- Node {:?} -----", node.name());
+            error!("{:?}", node.routing_table());
+        }
+        panic!("Check failed: {:?}", e);
     }
 }
