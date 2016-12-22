@@ -74,7 +74,7 @@ fn node_drops() {
 }
 
 #[test]
-#[cfg_attr(feature = "clippy", allow(needless_range_loop))]
+#[cfg_attr(feature = "cargo-clippy", allow(needless_range_loop))]
 fn node_restart() {
     let min_group_size = 8;
     let network = Network::new(min_group_size, None);

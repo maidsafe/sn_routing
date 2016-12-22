@@ -29,10 +29,6 @@ term = "~0.4.4"
 tiny-keccak = "~1.1.1"
 unwrap = "~1.1.0"
 
-[dependencies.clippy]
-optional = true
-version = "=0.0.99"
-
 [dev-dependencies]
 docopt = "~0.6.86"
 libc = "~0.2.17"

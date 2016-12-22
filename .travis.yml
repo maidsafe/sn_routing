@@ -19,6 +19,8 @@ cache:
   cargo: true
 before_script:
   - (which cargo-install-update && cargo install-update cargo-update) || cargo install cargo-update
+  - (which clippy && cargo install-update clippy) || cargo install rustfmt
+  - (which cargo-clippy && cargo install-update cargo-clippy) || cargo install rustfmt
   - (which rustfmt && cargo install-update rustfmt) || cargo install rustfmt
   - (which cargo-prune && cargo install-update cargo-prune) || cargo install cargo-prune
 script:
@@ -33,6 +35,11 @@ script:
         cargo test  --verbose --features use-mock-crust
       );
     fi
-  - curl -sSL https://github.com/maidsafe/QA/raw/master/bash_scripts/travis/run_clippy.sh | bash
+  - if [ "${TRAVIS_RUST_VERSION}" = nightly ]; then
+      (
+        set -x;
+        cargo +nightly clippy
+      );
+    fi
 before_cache:
   - cargo prune

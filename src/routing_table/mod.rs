@@ -151,7 +151,7 @@ pub struct Iter<'a, T: 'a + Binary + Clone + Copy + Default + Hash + Xorable> {
 impl<'a, T: 'a + Binary + Clone + Copy + Default + Hash + Xorable> Iterator for Iter<'a, T> {
     type Item = &'a T;
 
-    #[cfg_attr(feature="clippy", allow(while_let_on_iterator))]
+    #[cfg_attr(feature="cargo-clippy", allow(while_let_on_iterator))]
     fn next(&mut self) -> Option<&'a T> {
         while let Some(name) = self.inner.next() {
             if *name != self.our_name {
