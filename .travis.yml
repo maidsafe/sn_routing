@@ -19,8 +19,8 @@ cache:
   cargo: true
 before_script:
   - (which cargo-install-update && cargo install-update cargo-update) || cargo install cargo-update
+  - (which cargo-clippy && cargo install-update cargo-clippy) || cargo install cargo-clippy
   - (which clippy && cargo install-update clippy) || cargo +nightly install clippy
-  - (which cargo-clippy && cargo install-update cargo-clippy) || cargo +nightly install cargo-clippy
   - (which rustfmt && cargo install-update rustfmt) || cargo install rustfmt
   - (which cargo-prune && cargo install-update cargo-prune) || cargo install cargo-prune
 script:
