@@ -22,7 +22,9 @@ before_script:
   - (which rustfmt && cargo install-update rustfmt) || cargo install rustfmt
   - (which cargo-prune && cargo install-update cargo-prune) || cargo install cargo-prune
   - if [ "${TRAVIS_RUST_VERSION}" = nightly ]; then
+    (
       (which clippy && cargo install-update clippy) || cargo install clippy
+    );
     fi
 script:
   - if [ "${TRAVIS_RUST_VERSION}" = stable ]; then
