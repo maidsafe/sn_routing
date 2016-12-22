@@ -119,6 +119,9 @@ pub enum RoutingError {
     FailedResourceProofValidation,
     /// Candidate is connected via a tunnel
     CandidateIsTunnelling,
+    /// Could not find a signed section list for some prefix in our cache. This might just be
+    /// because we didn't get enough signatures from neighbouring nodes yet.
+    NoSectionSigInCache,
 }
 
 impl From<RoutingTableError> for RoutingError {

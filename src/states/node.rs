@@ -735,7 +735,7 @@ impl Node {
     // Verify the message, then, if it is for us, handle the enclosed routing message; if not,
     // forward it.
     fn handle_signed_message(&mut self,
-                             signed_msg: SignedMessage,
+                             mut signed_msg: SignedMessage,
                              route: u8,
                              hop_name: XorName,
                              sent_to: &BTreeSet<XorName>)
@@ -771,6 +771,9 @@ impl Node {
             return Ok(());
         }
 
+        signed_msg.add_relaying_section(self.section_list_sigs
+            .get_signed_list(self.our_prefix())
+            .ok_or(RoutingError::NoSectionSigInCache)?);
         if let Err(error) = self.send_signed_message(&signed_msg, route, &hop_name, sent_to) {
             debug!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);
         }
@@ -2715,7 +2718,7 @@ impl Node {
         if details.was_in_our_section {
             self.reset_rt_timer();
             self.section_list_sigs
-                .remove_signatures_by(*pub_id, self.peer_mgr.routing_table().our_section().len());
+                .remove_signatures_by(pub_id, self.peer_mgr.routing_table().our_section().len());
         }
 
         if self.peer_mgr.routing_table().is_empty() {
@@ -2950,13 +2953,12 @@ impl Node {
     }
 
     pub fn section_list_signatures(&self,
-                                   prefix: Prefix<XorName>)
+                                   prefix: &Prefix<XorName>)
                                    -> Result<BTreeMap<PublicId, sign::Signature>, RoutingError> {
-        if let Some(&(_, ref signatures)) = self.section_list_sigs.get_signatures(prefix) {
-            Ok(signatures.iter().map(|(&pub_id, &sig)| (pub_id, sig)).collect())
-        } else {
-            Err(RoutingError::NotEnoughSignatures)
-        }
+        self.section_list_sigs
+            .get_signed_list(prefix)
+            .map(|ssl| ssl.signatures)
+            .ok_or(RoutingError::NotEnoughSignatures)
     }
 
     pub fn set_next_node_name(&mut self, relocation_name: Option<XorName>) {
@@ -2998,38 +3000,33 @@ impl Bootstrapped for Node {
             return Ok(());
         }
         use routing_table::Authority::*;
-        let sending_names = match routing_msg.src {
-            ClientManager(_) | NaeManager(_) | NodeManager(_) | ManagedNode(_) => {
-                let section = self.peer_mgr
-                    .routing_table()
-                    .get_section(self.name())
-                    .ok_or(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer))?;
-                let pub_ids = self.peer_mgr.get_pub_ids(section);
-                vec![SectionList::new(*self.our_prefix(), pub_ids)]
-            }
-            Section(_) => {
-                vec![SectionList::new(*self.our_prefix(),
-                                      self.peer_mgr
-                                          .get_pub_ids(self.peer_mgr
-                                              .routing_table()
-                                              .our_section()))]
+        let sending_sections = match routing_msg.src {
+            ClientManager(_) | NaeManager(_) | NodeManager(_) | ManagedNode(_) | Section(_) => {
+                vec![self.section_list_sigs
+                         .get_signed_list(self.our_prefix())
+                         .ok_or(RoutingError::NoSectionSigInCache)?]
             }
             PrefixSection(ref prefix) => {
-                self.peer_mgr
+                let prefixes = self.peer_mgr
                     .routing_table()
-                    .all_sections()
+                    .prefixes()
                     .into_iter()
-                    .filter_map(|(p, members)| if prefix.is_compatible(&p) {
-                        Some(SectionList::new(p, self.peer_mgr.get_pub_ids(&members)))
-                    } else {
-                        None
-                    })
-                    .collect()
+                    .filter(|p| prefix.is_compatible(p))
+                    .collect_vec();
+                let mut v = Vec::with_capacity(prefixes.len());
+                for p in prefixes {
+                    // `?` operator cannot be moved inside a `map` function, so we cannot use
+                    // an iterator chain here:
+                    v.push(self.section_list_sigs
+                        .get_signed_list(&p)
+                        .ok_or(RoutingError::NoSectionSigInCache)?);
+                }
+                v
             }
             Client { .. } => vec![],
         };
 
-        let signed_msg = SignedMessage::new(routing_msg, &self.full_id, sending_names)?;
+        let signed_msg = SignedMessage::new(routing_msg, &self.full_id, sending_sections)?;
 
         match self.get_signature_target(&signed_msg.routing_message().src, route) {
             None => Ok(()),
