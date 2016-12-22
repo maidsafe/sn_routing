@@ -104,7 +104,7 @@
 #![doc(html_logo_url =
            "https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png",
        html_favicon_url = "http://maidsafe.net/img/favicon.ico",
-       html_root_url = "http://maidsafe.github.io/routing")]
+       html_root_url = "https://docs.rs/routing")]
 
 // For explanation of lint checks, run `rustc -W help` or see
 // https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
@@ -143,6 +143,7 @@ extern crate lru_time_cache;
 extern crate rand;
 extern crate rust_sodium;
 extern crate rustc_serialize;
+extern crate tiny_keccak;
 
 mod ack_manager;
 mod action;
@@ -168,6 +169,7 @@ mod tunnels;
 mod types;
 mod utils;
 mod xor_name;
+mod sha3;
 
 /// Mock crust
 #[cfg(feature = "use-mock-crust")]

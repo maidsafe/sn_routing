@@ -258,7 +258,6 @@ fn create_connected_nodes(count: usize,
                                   event_receiver,
                                   min_group_size);
     }
-
     nodes
 }
 

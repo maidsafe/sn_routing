@@ -27,8 +27,8 @@ use id::{FullId, PublicId};
 use itertools::Itertools;
 use log::LogLevel;
 use maidsafe_utilities::serialisation;
-use messages::{DEFAULT_PRIORITY, DirectMessage, GroupList, HopMessage, Message, MessageContent,
-               RoutingMessage, SignedMessage, UserMessage, UserMessageCache};
+use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, Message, MessageContent,
+               RoutingMessage, SectionList, SignedMessage, UserMessage, UserMessageCache};
 use peer_manager::{ConnectionInfoPreparedResult, PeerManager, PeerState};
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use routing_table::{OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix, RemovalDetails,
@@ -524,7 +524,8 @@ impl Node {
         if let Some(&pub_id) = self.peer_mgr.get_routing_peer(&peer_id) {
             let min_group_size = self.min_group_size();
             if let Some((signed_msg, route)) =
-                self.sig_accumulator.add_signature(min_group_size, digest, sig, pub_id) {
+                self.sig_accumulator
+                    .add_signature(min_group_size, digest, sig, pub_id) {
                 let hop = *self.name(); // we accumulated the message, so now we act as the last hop
                 trace!("{:?} Message accumulated - handling: {:?}", self, signed_msg);
                 return self.handle_signed_message(signed_msg, route, hop, &BTreeSet::new());
@@ -548,8 +549,9 @@ impl Node {
         Ok(section)
     }
 
-    fn get_section_list(&self, prefix: &Prefix<XorName>) -> Result<GroupList, RoutingError> {
-        Ok(GroupList { pub_ids: self.peer_mgr.get_pub_ids(&self.get_section(prefix)?) })
+    fn get_section_list(&self, prefix: &Prefix<XorName>) -> Result<SectionList, RoutingError> {
+        Ok(SectionList::new(*prefix,
+                            self.peer_mgr.get_pub_ids(&self.get_section(prefix)?)))
     }
 
     /// Sends a signature for the list of members of a section with prefix `prefix` to our whole
@@ -604,7 +606,7 @@ impl Node {
     fn handle_section_list_signature(&mut self,
                                      peer_id: PeerId,
                                      prefix: Prefix<XorName>,
-                                     section_list: GroupList,
+                                     section_list: SectionList,
                                      sig: sign::Signature)
                                      -> Result<(), RoutingError> {
         let src_pub_id =
@@ -620,14 +622,6 @@ impl Node {
             Ok(())
         } else {
             Err(RoutingError::FailedSignature)
-        }
-    }
-
-    fn hop_pub_ids(&self, hop_name: &XorName) -> Result<BTreeSet<PublicId>, RoutingError> {
-        if let Some(section) = self.peer_mgr.routing_table().get_section(hop_name) {
-            Ok(self.peer_mgr.get_pub_ids(section))
-        } else {
-            Err(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer))
         }
     }
 
@@ -676,7 +670,7 @@ impl Node {
                              hop_name: XorName,
                              sent_to: &BTreeSet<XorName>)
                              -> Result<(), RoutingError> {
-        signed_msg.check_integrity()?;
+        signed_msg.check_integrity(self.min_group_size())?;
 
         match self.routing_msg_filter.filter_incoming(signed_msg.routing_message(), route) {
             FilteringResult::KnownMessageAndRoute => {
@@ -1849,24 +1843,6 @@ impl Node {
         Ok(())
     }
 
-    fn accumulate_message(&mut self,
-                          signed_msg: SignedMessage,
-                          route: u8)
-                          -> Result<(), RoutingError> {
-        let our_name = *self.name();
-        let min_group_size = self.min_group_size();
-        if let Some((msg, route)) =
-            self.sig_accumulator.add_message(signed_msg, min_group_size, route) {
-            trace!("{:?} Message accumulated - sending: {:?}", self, msg);
-            if self.in_authority(&msg.routing_message().dst) {
-                self.handle_signed_message(msg, route, our_name, &BTreeSet::new())?;
-            } else {
-                self.send_signed_message(&msg, route, &our_name, &BTreeSet::new())?;
-            }
-        }
-        Ok(())
-    }
-
     fn send_signed_message(&mut self,
                            signed_msg: &SignedMessage,
                            route: u8,
@@ -1964,30 +1940,42 @@ impl Node {
         }
     }
 
-    /// Returns the peer that is responsible for collecting our signature for a group message.
+    /// Returns the peer that is responsible for collecting signatures to verify a message; this
+    /// may be us or another node. If our signature is not required, this returns `None`.
     fn get_signature_target(&self, src: &Authority<XorName>, route: u8) -> Option<XorName> {
-        if !src.is_multiple() {
-            return Some(*self.name());
-        }
-        let mut group = if let Authority::PrefixSection(ref pfx) = *src {
-            self.peer_mgr
-                .routing_table()
-                .iter()
-                .filter(|name| pfx.matches(name))
-                .chain(iter::once(self.name()))
-                .sorted_by(|&lhs, &rhs| src.name().cmp_distance(lhs, rhs))
-        } else {
-            self.peer_mgr
-                .routing_table()
-                .our_section()
-                .iter()
-                .sorted_by(|&lhs, &rhs| src.name().cmp_distance(lhs, rhs))
+        use Authority::*;
+        let list: Vec<&XorName> = match *src {
+            ClientManager(_) | NaeManager(_) | NodeManager(_) => {
+                let mut v = self.peer_mgr
+                    .routing_table()
+                    .our_section()
+                    .iter()
+                    .sorted_by(|&lhs, &rhs| src.name().cmp_distance(lhs, rhs));
+                v.truncate(self.min_group_size());
+                v
+            }
+            Section(_) => {
+                self.peer_mgr
+                    .routing_table()
+                    .our_section()
+                    .iter()
+                    .sorted_by(|&lhs, &rhs| src.name().cmp_distance(lhs, rhs))
+            }
+            PrefixSection(ref pfx) => {
+                self.peer_mgr
+                    .routing_table()
+                    .iter()
+                    .filter(|name| pfx.matches(name))
+                    .chain(iter::once(self.name()))
+                    .sorted_by(|&lhs, &rhs| src.name().cmp_distance(lhs, rhs))
+            }
+            ManagedNode(_) | Client { .. } => return Some(*self.name()),
         };
-        group.truncate(self.min_group_size());
-        if !group.contains(&self.name()) {
+
+        if !list.contains(&self.name()) {
             None
         } else {
-            Some(*group[route as usize % group.len()])
+            Some(*list[route as usize % list.len()])
         }
     }
 
@@ -2412,14 +2400,36 @@ impl Bootstrapped for Node {
                    routing_msg);
             return Ok(());
         }
-        let group_list = if routing_msg.src.is_multiple() {
-            GroupList { pub_ids: self.hop_pub_ids(self.name())? }
-        } else {
-            GroupList { pub_ids: iter::once(*self.full_id().public_id()).collect() }
+        use routing_table::Authority::*;
+        let sending_names = match routing_msg.src {
+            ClientManager(_) | NaeManager(_) | NodeManager(_) | ManagedNode(_) => {
+                let section = self.peer_mgr
+                    .routing_table()
+                    .get_section(self.name())
+                    .ok_or(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer))?;
+                let pub_ids = self.peer_mgr.get_pub_ids(section);
+                vec![SectionList::new(*self.peer_mgr.routing_table().our_prefix(), pub_ids)]
+            }
+            Section(_) => {
+                vec![SectionList::new(*self.peer_mgr.routing_table().our_prefix(), self.peer_mgr
+                    .get_pub_ids(self.peer_mgr.routing_table().our_section()))]
+            }
+            PrefixSection(ref prefix) => {
+                self.peer_mgr
+                    .routing_table()
+                    .all_sections()
+                    .into_iter()
+                    .filter_map(|(p, members)| if prefix.is_compatible(&p) {
+                        Some(SectionList::new(p, self.peer_mgr.get_pub_ids(&members)))
+                    } else {
+                        None
+                    })
+                    .collect()
+            }
+            Client { .. } => vec![],
         };
 
-        let mut signed_msg = SignedMessage::new(routing_msg, &self.full_id)?;
-        signed_msg.add_group_list(group_list);
+        let signed_msg = SignedMessage::new(routing_msg, &self.full_id, sending_names)?;
         if !self.add_to_pending_acks(&signed_msg, route) {
             debug!("{:?} already received an ack for {:?} - so not resending it.",
                    self,
@@ -2429,16 +2439,25 @@ impl Bootstrapped for Node {
 
         match self.get_signature_target(&signed_msg.routing_message().src, route) {
             None => Ok(()),
-            Some(target_name) if target_name == *self.name() => {
+            Some(our_name) if our_name == *self.name() => {
                 trace!("{:?} Starting message accumulation for {:?}", self, signed_msg);
-                self.accumulate_message(signed_msg, route)
+                let min_group_size = self.min_group_size();
+                if let Some((msg, route)) =
+                    self.sig_accumulator
+                        .add_message(signed_msg, min_group_size, route) {
+                    trace!("{:?} Message accumulated - sending: {:?}", self, msg);
+                    if self.in_authority(&msg.routing_message().dst) {
+                        self.handle_signed_message(msg, route, our_name, &BTreeSet::new())?;
+                    } else {
+                        self.send_signed_message(&msg, route, &our_name, &BTreeSet::new())?;
+                    }
+                }
+                Ok(())
             }
             Some(target_name) => {
                 if let Some(&peer_id) = self.peer_mgr.get_peer_id(&target_name) {
-                    let direct_msg = {
-                        let sign_key = self.full_id().signing_private_key();
-                        signed_msg.routing_message().to_signature(sign_key)?
-                    };
+                    let direct_msg = signed_msg.routing_message()
+                        .to_signature(self.full_id().signing_private_key())?;
                     trace!("{:?} Sending signature for {:?} to {:?}",
                            self,
                            signed_msg,

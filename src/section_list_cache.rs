@@ -17,7 +17,7 @@
 
 use id::PublicId;
 use itertools::Itertools;
-use messages::GroupList;
+use messages::SectionList;
 use routing_table::Prefix;
 use rust_sodium::crypto::sign::Signature;
 use std::collections::HashMap;
@@ -30,11 +30,11 @@ pub type PrefixMap<T> = HashMap<Prefix<XorName>, T>;
 #[derive(Default)]
 pub struct SectionListCache {
     // all signatures for a group list for a given prefix
-    signatures: PrefixMap<HashMap<GroupList, Signatures>>,
+    signatures: PrefixMap<HashMap<SectionList, Signatures>>,
     // group lists signed by a given public id
-    signed_by: HashMap<PublicId, PrefixMap<GroupList>>,
+    signed_by: HashMap<PublicId, PrefixMap<SectionList>>,
     // the latest group list for each prefix with a quorum of signatures
-    lists_cache: PrefixMap<(GroupList, Signatures)>,
+    lists_cache: PrefixMap<(SectionList, Signatures)>,
 }
 
 impl SectionListCache {
@@ -59,7 +59,7 @@ impl SectionListCache {
     pub fn add_signature(&mut self,
                          prefix: Prefix<XorName>,
                          pub_id: PublicId,
-                         list: GroupList,
+                         list: SectionList,
                          sig: Signature,
                          our_section_size: usize) {
         // remove all conflicting signatures
@@ -80,7 +80,7 @@ impl SectionListCache {
     /// Returns the currently signed group list for `prefix` along with a quorum of signatures.
     // TODO: Remove this when the method is used in production
     #[cfg(feature="use-mock-crust")]
-    pub fn get_signatures(&self, prefix: Prefix<XorName>) -> Option<&(GroupList, Signatures)> {
+    pub fn get_signatures(&self, prefix: Prefix<XorName>) -> Option<&(SectionList, Signatures)> {
         self.lists_cache.get(&prefix)
     }
 

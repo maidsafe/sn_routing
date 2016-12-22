@@ -1143,6 +1143,7 @@ mod tests {
         assert_eq!(our_name, table.our_name);
 
         // Get some names
+        // TODO: the filter step here may not be needed if the definition of `iter()` is changed
         let close_name: u32 =
             *unwrap!(table.our_section.iter().filter(|name| **name != our_name).nth(4));
         let mut known_neighbour: Option<u32> = None;

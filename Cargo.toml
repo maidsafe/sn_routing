@@ -1,8 +1,7 @@
 [package]
 authors = ["MaidSafe Developers <dev@maidsafe.net>"]
-build = "build.rs"
 description = "A secured storage DHT"
-documentation = "http://docs.maidsafe.net/routing/latest"
+documentation = "https://docs.rs/routing/"
 homepage = "http://maidsafe.net"
 license = "GPL-3.0"
 name = "routing"
@@ -10,10 +9,13 @@ readme = "README.md"
 repository = "https://github.com/maidsafe/routing"
 version = "0.25.1"
 
+[build-dependencies]
+
+[build-dependencies.hyper]
+optional = true
+version = "~0.9.12"
+
 [dependencies]
-# Recommended nightly version (also see .travis.yml):
-# rustc 1.15.0-nightly (ba872f270 2016-11-17)
-clippy = {version = "=0.0.99", optional = true}
 crust = "~0.19.0"
 itertools = "~0.5.6"
 log = "~0.3.6"
@@ -21,21 +23,19 @@ lru_time_cache = "~0.5.0"
 maidsafe_utilities = "~0.10.0"
 quick-error = "~1.1.0"
 rand = "~0.3.14"
-rustc-serialize = "~0.3.21"
 rust_sodium = "~0.1.2"
+rustc-serialize = "~0.3.21"
 term = "~0.4.4"
+tiny-keccak = "~1.1.1"
 unwrap = "~1.1.0"
+
+[dependencies.clippy]
+optional = true
+version = "=0.0.99"
 
 [dev-dependencies]
 docopt = "~0.6.86"
 libc = "~0.2.17"
-
-[build-dependencies]
-hyper = {version = "~0.9.12", optional = true}
-
-[features]
-generate-diagrams = ["hyper"]
-use-mock-crust = []
 
 [[example]]
 bench = false
@@ -46,3 +46,6 @@ test = false
 bench = false
 name = "ci_test"
 test = false
+
+[features]
+use-mock-crust = []

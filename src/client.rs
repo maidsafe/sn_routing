@@ -36,8 +36,6 @@ use types::MessageId;
 use types::RoutingActionSender;
 use xor_name::XorName;
 
-type RoutingResult = Result<(), RoutingError>;
-
 /// Interface for sending and receiving messages to and from a network of nodes in the role of a
 /// client.
 ///
