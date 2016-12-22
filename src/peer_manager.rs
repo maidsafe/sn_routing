@@ -271,7 +271,14 @@ impl PeerMap {
     }
 }
 
-type Candidate = Option<(XorName, Instant, Vec<u8>, Authority<XorName>, bool)>;
+/// Holds the information of the joining node.
+struct Candidate {
+    name: XorName,
+    insertion_time: Instant,
+    seed: Vec<u8>,
+    client_auth: Authority<XorName>,
+    approved: bool,
+}
 
 /// A container for information about other nodes in the network.
 ///
@@ -288,8 +295,7 @@ pub struct PeerManager {
     routing_table: RoutingTable<XorName>,
     our_public_id: PublicId,
     /// A joining node wants to join our group
-    /// (name, time_inserted, seed_for_resource_proof, client_auth, approved)
-    candidate: Candidate,
+    candidate: Option<Candidate>,
 }
 
 impl PeerManager {
@@ -352,7 +358,7 @@ impl PeerManager {
                                  client_auth: &Authority<XorName>,
                                  our_public_id: &PublicId)
                                  -> Result<Vec<PublicId>, RoutingError> {
-        if let Some((name, insertion_time, _, _, _)) = self.candidate {
+        if let Some(Candidate { name, insertion_time, .. }) = self.candidate {
             if name == *expected_name ||
                insertion_time.elapsed() < Duration::from_secs(RESOURCE_PROOF_APPROVE_TIMEOUT_SECS) {
                 return Err(RoutingError::AlreadyHandlingJoinRequest);
@@ -372,7 +378,13 @@ impl PeerManager {
 
         let mut rng = SeededRng::new();
         let seed = rng.gen_iter().take(10).collect();
-        self.candidate = Some((*expected_name, Instant::now(), seed, *client_auth, false));
+        self.candidate = Some(Candidate {
+            name: *expected_name,
+            insertion_time: Instant::now(),
+            seed: seed,
+            client_auth: *client_auth,
+            approved: false,
+        });
 
         Ok(public_ids)
     }
@@ -385,7 +397,8 @@ impl PeerManager {
                             -> Option<bool> {
         self.candidate
             .as_ref()
-            .map_or(None, |&(ref name, ref insertion_time, ref seed, _, _)| {
+            .map_or(None,
+                    |&Candidate { ref name, ref insertion_time, ref seed, .. }| {
                 if *name == node_name &&
                    insertion_time.elapsed() <
                    Duration::from_secs(RESOURCE_PROOF_EVALUATE_TIMEOUT_SECS) {
@@ -405,7 +418,8 @@ impl PeerManager {
                                      candidate_name: XorName,
                                      validity: bool)
                                      -> Result<(Authority<XorName>, PeerId), RoutingError> {
-        if let Some((ref name, _, _, ref client_auth, ref mut approved)) = self.candidate {
+        if let Some(Candidate { ref name, ref client_auth, ref mut approved, .. }) =
+            self.candidate {
             if *name == candidate_name {
                 *approved = validity;
                 if let Some(peer) = self.peer_map.get_by_name(&candidate_name) {
@@ -439,7 +453,7 @@ impl PeerManager {
     pub fn handle_approval_confirmation(&mut self,
                                         candidate_name: XorName)
                                         -> Result<(PublicId, PeerId), RoutingError> {
-        if let Some((name, _, _, _, approved)) = self.candidate {
+        if let Some(Candidate { name, approved, .. }) = self.candidate {
             if name == candidate_name && approved {
                 self.candidate = None;
                 if let Some(peer) = self.peer_map.get_by_name(&candidate_name) {
@@ -492,7 +506,7 @@ impl PeerManager {
                            pub_id: &PublicId,
                            peer_id: &PeerId)
                            -> Result<Option<(bool, Vec<u8>)>, RoutingError> {
-        if let Some((ref name, _, ref seed, _, _)) = self.candidate {
+        if let Some(Candidate { ref name, ref seed, .. }) = self.candidate {
             if name == pub_id.name() && !seed.is_empty() {
                 let tunnel = match self.peer_map.remove(peer_id).map(|peer| peer.state) {
                     Some(PeerState::SearchingForTunnel) |
