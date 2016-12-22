@@ -21,7 +21,7 @@ use routing::{Authority, DataIdentifier, Event, MessageId, QUORUM, Request, XorN
 use routing::mock_crust::{Config, Network};
 use std::cmp;
 use std::collections::{HashMap, HashSet};
-use super::{TestNode, create_connected_nodes, gen_range_except, poll_and_resend,
+use super::{Nodes, TestNode, create_connected_nodes, gen_range_except, poll_and_resend,
             verify_invariant_for_all_nodes};
 
 // Randomly add or remove some nodes, causing churn.
@@ -172,7 +172,7 @@ fn churn() {
     let min_group_size = 8;
     let network = Network::new(min_group_size, None);
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes(&network, 20);
+    let mut nodes = Nodes(create_connected_nodes(&network, 20));
 
     for i in 0..CHURN_ITERATIONS {
         trace!("Iteration {}", i);

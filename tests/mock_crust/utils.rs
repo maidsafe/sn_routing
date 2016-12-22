@@ -21,9 +21,10 @@ use routing::{Authority, Cache, Client, Data, DataIdentifier, Event, FullId, Imm
               NullCache, Prefix, Request, Response, RoutingTable, XorName, Xorable,
               verify_network_invariant};
 use routing::mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
+use std::{cmp, thread};
 use std::cell::RefCell;
-use std::cmp;
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::ops::{Deref, DerefMut};
 use std::sync::mpsc;
 
 // Various utilities. Since this is all internal stuff we're a bit lax about the doc.
@@ -50,6 +51,38 @@ pub fn gen_range_except<T: Rng>(rng: &mut T,
             }
             r
         }
+    }
+}
+
+
+/// Wraps a `Vec<TestNode>`s and prints the nodes' routing tables when dropped in a panicking
+/// thread.
+pub struct Nodes(pub Vec<TestNode>);
+
+impl Drop for Nodes {
+    fn drop(&mut self) {
+        if thread::panicking() {
+            error!("---------- Routing tables at time of error ----------");
+            error!("");
+            for node in &self.0 {
+                error!("----- Node {:?} -----", node.name());
+                error!("{:?}", node.routing_table());
+            }
+        }
+    }
+}
+
+impl Deref for Nodes {
+    type Target = Vec<TestNode>;
+
+    fn deref(&self) -> &Vec<TestNode> {
+        &self.0
+    }
+}
+
+impl DerefMut for Nodes {
+    fn deref_mut(&mut self) -> &mut Vec<TestNode> {
+        &mut self.0
     }
 }
 
