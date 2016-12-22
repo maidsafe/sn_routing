@@ -65,7 +65,7 @@ fn response_caching() {
 
     poll_all(&mut nodes, &mut clients);
 
-    for node in &nodes {
+    for node in &*nodes {
         loop {
             match node.event_rx.try_recv() {
                 Ok(Event::Request { request: Request::Get(req_data_id, req_message_id),

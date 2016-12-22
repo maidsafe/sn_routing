@@ -84,17 +84,17 @@ fn messages_accumulate_with_quorum() {
         send(node, &dst_grp, message_id);
     }
     let _ = poll_all(&mut nodes, &mut []);
-    for node in &mut nodes {
+    for node in &mut *nodes {
         expect_no_event!(node);
     }
     send(&mut nodes[quorum - 1], &dst_grp, message_id);
     let _ = poll_all(&mut nodes, &mut []);
-    for node in &mut nodes {
+    for node in &mut *nodes {
         expect_next_event!(node, Event::Response { response: Response::GetSuccess(..), .. });
     }
     send(&mut nodes[quorum], &dst_grp, message_id);
     let _ = poll_all(&mut nodes, &mut []);
-    for node in &mut nodes {
+    for node in &mut *nodes {
         expect_no_event!(node);
     }
 
@@ -106,17 +106,17 @@ fn messages_accumulate_with_quorum() {
         send(node, &dst_grp, message_id);
     }
     let _ = poll_all(&mut nodes, &mut []);
-    for node in &mut nodes {
+    for node in &mut *nodes {
         expect_no_event!(node);
     }
     send(&mut nodes[0], &dst_grp, message_id);
     let _ = poll_all(&mut nodes, &mut []);
-    for node in &mut nodes {
+    for node in &mut *nodes {
         expect_next_event!(node, Event::Response { response: Response::GetSuccess(..), .. });
     }
     send(&mut nodes[quorum + 1], &dst_grp, message_id);
     let _ = poll_all(&mut nodes, &mut []);
-    for node in &mut nodes {
+    for node in &mut *nodes {
         expect_no_event!(node);
     }
 }
