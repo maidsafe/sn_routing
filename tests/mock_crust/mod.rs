@@ -31,7 +31,6 @@ pub use self::utils::{TestClient, TestNode, create_connected_clients, create_con
                       gen_range_except, poll_all, poll_and_resend, sort_nodes_by_distance_to,
                       verify_invariant_for_all_nodes};
 
-
 // -----  Miscellaneous tests below  -----
 
 fn test_nodes(percentage_size: usize) {
