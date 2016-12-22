@@ -659,7 +659,7 @@ impl Node {
     // Verify the message, then, if it is for us, handle the enclosed routing message; if not,
     // forward it.
     fn handle_signed_message(&mut self,
-                             signed_msg: SignedMessage,
+                             mut signed_msg: SignedMessage,
                              route: u8,
                              hop_name: XorName,
                              sent_to: &BTreeSet<XorName>)
@@ -703,6 +703,9 @@ impl Node {
             return result.map(Ok);
         }
 
+        signed_msg.add_relaying_section(try_ev!(self.section_list_sigs
+            .get_signed_list(self.our_prefix())
+            .ok_or(RoutingTableError::NoSecSigInCache), result));
         if let Err(error) = self.send_signed_message(&signed_msg, route, &hop_name, sent_to)
             .extract(&mut result) {
             debug!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);
@@ -979,7 +982,7 @@ impl Node {
 
         if let Some(prefix) = self.peer_mgr.routing_table().find_group_prefix(public_id.name()) {
             self.send_section_list_signature(prefix, None);
-            if prefix == *self.peer_mgr.routing_table().our_prefix() {
+            if prefix == *self.our_prefix() {
                 // if the node joined our section, send signatures for all section lists
                 // to it
                 for pfx in self.peer_mgr.routing_table().prefixes() {
@@ -1004,7 +1007,7 @@ impl Node {
             }
             Ok(true) => {
                 // i.e. the group should split
-                let our_prefix = *self.peer_mgr.routing_table().our_prefix();
+                let our_prefix = *self.our_prefix();
                 // In the future we'll look to remove this restriction so we always call
                 // `send_group_split()` here and also check whether another round of splitting is
                 // required in `handle_group_split()` so splitting becomes recursive like merging.
@@ -1054,7 +1057,7 @@ impl Node {
             .sorted();
 
         let content = MessageContent::SectionUpdate {
-            prefix: *self.peer_mgr.routing_table().our_prefix(),
+            prefix: *self.our_prefix(),
             members: members,
         };
 
@@ -1589,8 +1592,7 @@ impl Node {
                           -> Evented<Result<(), RoutingError>> {
         let mut events = Evented::empty();
         // Send GroupSplit notifications if we don't know of the new node yet
-        if prefix == *self.peer_mgr.routing_table().our_prefix() &&
-           !self.peer_mgr.routing_table().has(&joining_node) {
+        if prefix == *self.our_prefix() && !self.peer_mgr.routing_table().has(&joining_node) {
             self.send_group_split(prefix, joining_node).extract(&mut events);
         }
         // None of the `peers_to_drop` will have been in our group, so no need to notify Routing
@@ -2093,7 +2095,7 @@ impl Node {
         });
         if details.was_in_our_group {
             self.section_list_sigs
-                .remove_signatures_by(*pub_id, self.peer_mgr.routing_table().our_section().len());
+                .remove_signatures_by(pub_id, self.peer_mgr.routing_table().our_section().len());
         }
 
         if self.peer_mgr.routing_table().len() < self.min_group_size() - 1 {
@@ -2149,7 +2151,7 @@ impl Node {
             merge_prefix: merge_details.merge_prefix,
             groups: groups,
         };
-        let src_name = self.peer_mgr.routing_table().our_prefix().lower_bound();
+        let src_name = self.our_prefix().lower_bound();
         let request_msg = RoutingMessage {
             src: Authority::Section(src_name),
             dst: Authority::PrefixSection(merge_details.merge_prefix),
@@ -2235,6 +2237,11 @@ impl Node {
             self.send_message(dst_id, Message::Direct(direct_message))
         }
     }
+
+    /// Shortcut to get our prefix
+    fn our_prefix(&self) -> &Prefix<XorName> {
+        self.peer_mgr.routing_table().our_prefix()
+    }
 }
 
 impl Base for Node {
@@ -2319,10 +2326,10 @@ impl Node {
     }
 
     pub fn section_list_signatures(&self,
-                                   prefix: Prefix<XorName>)
+                                   prefix: &Prefix<XorName>)
                                    -> Result<BTreeMap<PublicId, sign::Signature>, RoutingError> {
-        if let Some(&(_, ref signatures)) = self.section_list_sigs.get_signatures(prefix) {
-            Ok(signatures.iter().map(|(&pub_id, &sig)| (pub_id, sig)).collect())
+        if let Some(ssl) = self.section_list_sigs.get_signed_list(prefix) {
+            Ok(ssl.signatures.iter().map(|(&pub_id, &sig)| (pub_id, sig)).collect())
         } else {
             Err(RoutingError::NotEnoughSignatures)
         }
@@ -2362,38 +2369,34 @@ impl Bootstrapped for Node {
             return result.with_value(Ok(()));
         }
         use routing_table::Authority::*;
-        let sending_names = match routing_msg.src {
-            ClientManager(_) | NaeManager(_) | NodeManager(_) | ManagedNode(_) => {
-                let section = try_ev!(self.peer_mgr
-                    .routing_table()
-                    .get_section(self.name())
-                    .ok_or(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer)),
-                    result
-                );
-                let pub_ids = self.peer_mgr.get_pub_ids(section);
-                vec![SectionList::new(*self.peer_mgr.routing_table().our_prefix(), pub_ids)]
-            }
-            Section(_) => {
-                vec![SectionList::new(*self.peer_mgr.routing_table().our_prefix(), self.peer_mgr
-                    .get_pub_ids(self.peer_mgr.routing_table().our_section()))]
+        let sending_sections = match routing_msg.src {
+            ClientManager(_) | NaeManager(_) | NodeManager(_) | ManagedNode(_) | Section(_) => {
+                vec![try_ev!(
+                    self.section_list_sigs
+                        .get_signed_list(self.our_prefix())
+                        .ok_or(RoutingTableError::NoSecSigInCache), result)
+                ]
             }
             PrefixSection(ref prefix) => {
-                self.peer_mgr
+                let prefixes = self.peer_mgr
                     .routing_table()
-                    .all_sections()
+                    .prefixes()
                     .into_iter()
-                    .filter_map(|(p, members)| if prefix.is_compatible(&p) {
-                        Some(SectionList::new(p, self.peer_mgr.get_pub_ids(&members)))
-                    } else {
-                        None
-                    })
-                    .collect()
+                    .filter(|p| prefix.is_compatible(p))
+                    .collect_vec();
+                let mut v = Vec::with_capacity(prefixes.len());
+                for prefix in prefixes {
+                    v.push(try_ev!(self.section_list_sigs
+                        .get_signed_list(&prefix)
+                        .ok_or(RoutingTableError::NoSecSigInCache), result));
+                }
+                v
             }
             Client { .. } => vec![],
         };
 
         let signed_msg = try_ev!(
-            SignedMessage::new(routing_msg, &self.full_id, sending_names),
+            SignedMessage::new(routing_msg, &self.full_id, sending_sections),
             result
         );
         if !self.add_to_pending_acks(&signed_msg, route) {
