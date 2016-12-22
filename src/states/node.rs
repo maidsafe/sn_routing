@@ -658,6 +658,9 @@ impl Node {
 
     // Verify the message, then, if it is for us, handle the enclosed routing message; if not,
     // forward it.
+    //
+    // If we are the originator or accumulator of the message, then `hop_name` is our name;
+    // otherwise, it is the name of the node which forwarded us the message.
     fn handle_signed_message(&mut self,
                              mut signed_msg: SignedMessage,
                              route: u8,
@@ -665,7 +668,15 @@ impl Node {
                              sent_to: &BTreeSet<XorName>)
                              -> Evented<Result<(), RoutingError>> {
         let mut result = Evented::empty();
-        try_ev!(signed_msg.check_integrity(self.min_group_size()), result);
+        let hop_prefix = try_ev!(self.peer_mgr
+            .routing_table()
+            .find_group_prefix(&hop_name)
+            .ok_or(RoutingTableError::NoSuchPeer), result);
+        let section_list = try_ev!(self.section_list_sigs
+            .get_signed_list(&hop_prefix)
+            .ok_or(RoutingTableError::NoSecSigInCache), result);
+        try_ev!(signed_msg.check_integrity(self.min_group_size(), Some(&section_list.list)),
+            result);
 
         match self.routing_msg_filter.filter_incoming(signed_msg.routing_message(), route) {
             FilteringResult::KnownMessageAndRoute => {
@@ -703,9 +714,7 @@ impl Node {
             return result.map(Ok);
         }
 
-        signed_msg.add_relaying_section(try_ev!(self.section_list_sigs
-            .get_signed_list(self.our_prefix())
-            .ok_or(RoutingTableError::NoSecSigInCache), result));
+        signed_msg.add_relaying_section(section_list);
         if let Err(error) = self.send_signed_message(&signed_msg, route, &hop_name, sent_to)
             .extract(&mut result) {
             debug!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);

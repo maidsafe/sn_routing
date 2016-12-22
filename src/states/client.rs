@@ -174,7 +174,9 @@ impl Client {
         }
 
         let signed_msg = hop_msg.content;
-        try_ev!(signed_msg.check_integrity(self.min_group_size()), result);
+        // TODO: verify with proxy's section list
+        try_ev!(signed_msg.check_integrity(self.min_group_size(), None),
+                result);
 
         let routing_msg = signed_msg.routing_message();
         let in_authority = self.in_authority(&routing_msg.dst);
