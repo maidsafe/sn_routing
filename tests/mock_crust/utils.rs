@@ -317,14 +317,11 @@ pub fn poll_and_resend(nodes: &mut [TestNode], clients: &mut [TestClient]) {
     }
 }
 
-pub fn create_connected_nodes(network: &Network, size: usize) -> Vec<TestNode> {
+pub fn create_connected_nodes(network: &Network, size: usize) -> Nodes {
     create_connected_nodes_with_cache(network, size, false)
 }
 
-pub fn create_connected_nodes_with_cache(network: &Network,
-                                         size: usize,
-                                         use_cache: bool)
-                                         -> Vec<TestNode> {
+pub fn create_connected_nodes_with_cache(network: &Network, size: usize, use_cache: bool) -> Nodes {
     let mut nodes = Vec::new();
 
     // Create the seed node.
@@ -370,7 +367,7 @@ pub fn create_connected_nodes_with_cache(network: &Network,
                 node_added_count);
     }
 
-    nodes
+    Nodes(nodes)
 }
 
 // This creates new nodes (all with `use_cache` set to `true`) until the specified disjoint groups
@@ -386,7 +383,7 @@ pub fn create_connected_nodes_with_cache(network: &Network,
 pub fn create_connected_nodes_until_split(network: &Network,
                                           mut prefix_lengths: Vec<usize>,
                                           use_cache: bool)
-                                          -> Vec<TestNode> {
+                                          -> Nodes {
     // Get sorted list of prefixes to suit requested lengths.
     sanity_check(&prefix_lengths);
     prefix_lengths.sort();
@@ -465,7 +462,7 @@ pub fn create_connected_nodes_until_split(network: &Network,
     }
 
     trace!("Created testnet comprising {:?}", prefixes);
-    nodes
+    Nodes(nodes)
 }
 
 // Create `size` clients, all of whom are connected to `nodes[0]`.

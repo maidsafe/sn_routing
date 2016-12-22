@@ -156,7 +156,7 @@ fn simultaneous_joining_nodes() {
     let (name0, name1) = (XorName([0u8; XOR_NAME_LEN]), XorName([255u8; XOR_NAME_LEN]));
     let prefix0 = Prefix::new(1, name0);
 
-    for node in &mut nodes {
+    for node in &mut *nodes {
         if prefix0.matches(&node.name()) {
             node.inner.set_next_node_name(name0);
         } else {
@@ -195,7 +195,7 @@ fn whitelist() {
     let network = Network::new(min_group_size, None);
     let mut nodes = create_connected_nodes(&network, min_group_size);
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
-    for node in &mut nodes {
+    for node in &mut *nodes {
         node.handle.0.borrow_mut().whitelist_peer(PeerId(min_group_size));
     }
     // The next node has peer ID `min_group_size`: It should be able to join.
