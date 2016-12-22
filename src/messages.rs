@@ -236,8 +236,17 @@ impl HopMessage {
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable, Debug)]
 pub struct SectionList {
     pub prefix: Prefix<XorName>,
-    // TODO(MAID-1677): pub signatures: BTreeSet<(PublicId, sign::Signature)>,
     pub_ids: BTreeSet<PublicId>,
+}
+
+/// A collection of signatures of the contents of a `SectionList`.
+pub type SectionListSignatures = BTreeMap<PublicId, sign::Signature>;
+
+/// A list of signatures of a section list
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable, Debug)]
+pub struct SignedSectionList {
+    pub list: SectionList,
+    pub signatures: SectionListSignatures,
 }
 
 impl SectionList {
@@ -261,9 +270,9 @@ pub struct SignedMessage {
     /// A request or response type message.
     content: RoutingMessage,
     /// Nodes sending the message (those expected to sign it)
-    src_sections: Vec<SectionList>,
-    /// The lists of the sections involved in routing this message, in chronological order.
-    // TODO: implement (JIRA 1677): sec_lists: Vec<SectionList>,
+    src_sections: Vec<SignedSectionList>,
+    /// The message was relayed by a node from each of these sections:
+    relay_sections: Vec<SignedSectionList>,
     /// The IDs and signatures of the source authority's members.
     signatures: BTreeMap<PublicId, sign::Signature>,
 }
@@ -274,20 +283,28 @@ impl SignedMessage {
     /// Requires the list `src_sections` of nodes who should sign this message.
     pub fn new(content: RoutingMessage,
                full_id: &FullId,
-               mut src_sections: Vec<SectionList>)
+               mut src_sections: Vec<SignedSectionList>)
                -> Result<SignedMessage, RoutingError> {
-        src_sections.sort_by_key(|list| list.prefix);
+        src_sections.sort_by_key(|list| list.list.prefix);
         let sig = sign::sign_detached(&serialise(&content)?, full_id.signing_private_key());
         Ok(SignedMessage {
             content: content,
             src_sections: src_sections,
+            relay_sections: vec![],
             signatures: iter::once((*full_id.public_id(), sig)).collect(),
         })
+    }
+
+    /// Add list of members of a relaying section
+    pub fn add_relaying_section(&mut self, section: SignedSectionList) {
+        self.relay_sections.push(section);
     }
 
     /// Confirms the signatures.
     // TODO (1677): verify the sending SectionLists via each hop's signed lists
     pub fn check_integrity(&self, min_section_size: usize) -> Result<(), RoutingError> {
+        // TODO: verify relay and sending section lists
+
         let signed_bytes = serialise(&self.content)?;
         if !self.find_invalid_sigs(signed_bytes).is_empty() {
             return Err(RoutingError::FailedSignature);
@@ -363,7 +380,7 @@ impl SignedMessage {
 
     // Returns true iff `pub_id` is in self.section_lists
     fn is_sender(&self, pub_id: &PublicId) -> bool {
-        self.src_sections.iter().any(|list| list.pub_ids.contains(pub_id))
+        self.src_sections.iter().any(|list| list.list.pub_ids.contains(pub_id))
     }
 
     // Returns a list of all invalid signatures (not from an expected key or not cryptographically
@@ -398,7 +415,7 @@ impl SignedMessage {
                 // Note: there should be exactly one source section, but we use safe code:
                 let valid_names: HashSet<_> = self.src_sections
                     .iter()
-                    .flat_map(|list| list.pub_ids.iter().map(PublicId::name))
+                    .flat_map(|list| list.list.pub_ids.iter().map(PublicId::name))
                     .sorted_by(|lhs, rhs| self.content.src.name().cmp_distance(lhs, rhs))
                     .into_iter()
                     .take(min_section_size)
@@ -416,7 +433,7 @@ impl SignedMessage {
             Section(_) => {
                 // Note: there should be exactly one source section, but we use safe code:
                 let num_sending =
-                    self.src_sections.iter().fold(0, |count, list| count + list.pub_ids.len());
+                    self.src_sections.iter().fold(0, |count, list| count + list.list.pub_ids.len());
                 let valid_sigs = self.signatures.len();
                 QUORUM * num_sending <= 100 * valid_sigs
             }
@@ -425,9 +442,9 @@ impl SignedMessage {
                 self.src_sections.iter().all(|list| {
                     let valid_sigs = self.signatures
                         .keys()
-                        .filter(|pub_id| list.pub_ids.contains(pub_id))
+                        .filter(|pub_id| list.list.pub_ids.contains(pub_id))
                         .count();
-                    QUORUM * list.pub_ids.len() <= 100 * valid_sigs
+                    QUORUM * list.list.pub_ids.len() <= 100 * valid_sigs
                 })
             }
             ManagedNode(_) | Client { .. } => self.signatures.len() == 1,
@@ -1275,10 +1292,14 @@ mod tests {
             content: part,
         };
 
-        let src_sections = vec![SectionList::from(prefix,
-                                                  vec![*full_id_0.public_id(),
-                                                       *full_id_1.public_id(),
-                                                       *full_id_2.public_id()])];
+        let list = SectionList::from(prefix,
+                                     vec![*full_id_0.public_id(),
+                                          *full_id_1.public_id(),
+                                          *full_id_2.public_id()]);
+        let src_sections = vec![SignedSectionList {
+                                    list: list,
+                                    signatures: Default::default(),
+                                }];
         let mut signed_msg = unwrap!(SignedMessage::new(routing_message, &full_id_0, src_sections));
         assert_eq!(signed_msg.signatures.len(), 1);
 

@@ -741,7 +741,7 @@ impl Node {
     // Verify the message, then, if it is for us, handle the enclosed routing message; if not,
     // forward it.
     fn handle_signed_message(&mut self,
-                             signed_msg: SignedMessage,
+                             mut signed_msg: SignedMessage,
                              route: u8,
                              hop_name: XorName,
                              sent_to: &BTreeSet<XorName>)
@@ -769,6 +769,9 @@ impl Node {
             return Ok(());
         }
 
+        signed_msg.add_relaying_section(self.section_list_sigs
+            .get_signed_list(self.our_prefix())
+            .ok_or(RoutingTableError::NoSecSigInCache)?);
         if let Err(error) = self.send_signed_message(signed_msg, route, &hop_name, sent_to) {
             debug!("{:?} Failed to send signed message: {:?}", self, error);
         }
@@ -1310,7 +1313,7 @@ impl Node {
 
         if let Some(prefix) = self.peer_mgr.routing_table().find_section_prefix(public_id.name()) {
             self.send_section_list_signature(prefix, None);
-            if prefix == *self.peer_mgr.routing_table().our_prefix() {
+            if prefix == *self.our_prefix() {
                 // if the node joined our section, send signatures for all section lists to it
                 for pfx in self.peer_mgr.routing_table().prefixes() {
                     self.send_section_list_signature(pfx, Some(*public_id.name()));
@@ -1395,7 +1398,7 @@ impl Node {
             }
             Ok(true) => {
                 // i.e. the section should split
-                let our_prefix = *self.peer_mgr.routing_table().our_prefix();
+                let our_prefix = *self.our_prefix();
                 // In the future we'll look to remove this restriction so we always call
                 // `send_section_split()` here and also check whether another round of splitting is
                 // required in `handle_section_split()` so splitting becomes recursive like merging.
@@ -1461,7 +1464,7 @@ impl Node {
         let members = self.peer_mgr.get_pub_ids(self.peer_mgr.routing_table().our_section());
 
         let content = MessageContent::SectionUpdate {
-            prefix: *self.peer_mgr.routing_table().our_prefix(),
+            prefix: *self.our_prefix(),
             members: members,
         };
 
@@ -2747,7 +2750,7 @@ impl Node {
         if details.was_in_our_section {
             self.reset_rt_timer();
             self.section_list_sigs
-                .remove_signatures_by(*pub_id, self.peer_mgr.routing_table().our_section().len());
+                .remove_signatures_by(pub_id, self.peer_mgr.routing_table().our_section().len());
         }
 
         if self.peer_mgr.routing_table().is_empty() {
@@ -2847,6 +2850,11 @@ impl Node {
         } else {
             self.send_message(&dst_id, Message::Direct(direct_message))
         }
+    }
+
+    /// Shortcut to get our prefix
+    fn our_prefix(&self) -> &Prefix<XorName> {
+        self.peer_mgr.routing_table().our_prefix()
     }
 
     // For the ongoing collection of `ResourceProofResponse` messages, returns a tuple comprising:
@@ -2983,10 +2991,10 @@ impl Node {
     }
 
     pub fn section_list_signatures(&self,
-                                   prefix: Prefix<XorName>)
+                                   prefix: &Prefix<XorName>)
                                    -> Result<BTreeMap<PublicId, sign::Signature>, RoutingError> {
-        if let Some(&(_, ref signatures)) = self.section_list_sigs.get_signatures(prefix) {
-            Ok(signatures.iter().map(|(&pub_id, &sig)| (pub_id, sig)).collect())
+        if let Some(ssl) = self.section_list_sigs.get_signed_list(prefix) {
+            Ok(ssl.signatures.iter().map(|(&pub_id, &sig)| (pub_id, sig)).collect())
         } else {
             Err(RoutingError::NotEnoughSignatures)
         }
@@ -3025,38 +3033,31 @@ impl Bootstrapped for Node {
             return Ok(());
         }
         use routing_table::Authority::*;
-        let sending_names = match routing_msg.src {
-            ClientManager(_) | NaeManager(_) | NodeManager(_) | ManagedNode(_) => {
-                let section = self.peer_mgr
-                    .routing_table()
-                    .get_section(self.name())
-                    .ok_or(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer))?;
-                let pub_ids = self.peer_mgr.get_pub_ids(section);
-                vec![SectionList::new(*self.peer_mgr.routing_table().our_prefix(), pub_ids)]
-            }
-            Section(_) => {
-                vec![SectionList::new(*self.peer_mgr.routing_table().our_prefix(),
-                                      self.peer_mgr
-                                          .get_pub_ids(self.peer_mgr
-                                              .routing_table()
-                                              .our_section()))]
+        let sending_sections = match routing_msg.src {
+            ClientManager(_) | NaeManager(_) | NodeManager(_) | ManagedNode(_) | Section(_) => {
+                vec![self.section_list_sigs
+                         .get_signed_list(self.our_prefix())
+                         .ok_or(RoutingTableError::NoSecSigInCache)?]
             }
             PrefixSection(ref prefix) => {
-                self.peer_mgr
+                let prefixes = self.peer_mgr
                     .routing_table()
-                    .all_sections()
+                    .prefixes()
                     .into_iter()
-                    .filter_map(|(p, members)| if prefix.is_compatible(&p) {
-                        Some(SectionList::new(p, self.peer_mgr.get_pub_ids(&members)))
-                    } else {
-                        None
-                    })
-                    .collect()
+                    .filter(|p| prefix.is_compatible(p))
+                    .collect_vec();
+                let mut v = Vec::with_capacity(prefixes.len());
+                for prefix in prefixes {
+                    v.push(self.section_list_sigs
+                        .get_signed_list(&prefix)
+                        .ok_or(RoutingTableError::NoSecSigInCache)?);
+                }
+                v
             }
             Client { .. } => vec![],
         };
 
-        let signed_msg = SignedMessage::new(routing_msg, &self.full_id, sending_names)?;
+        let signed_msg = SignedMessage::new(routing_msg, &self.full_id, sending_sections)?;
         if !self.add_to_pending_acks(&signed_msg, route) {
             debug!("{:?} already received an ack for {:?} - so not resending it.",
                    self,

@@ -126,7 +126,8 @@ impl SignatureAccumulator {
 mod tests {
     use id::{FullId, PublicId};
     use itertools::Itertools;
-    use messages::{DirectMessage, MessageContent, RoutingMessage, SectionList, SignedMessage};
+    use messages::{DirectMessage, MessageContent, RoutingMessage, SectionList, SignedMessage,
+                   SignedSectionList};
     use rand;
     use routing_table::Authority;
     use routing_table::Prefix;
@@ -152,8 +153,11 @@ mod tests {
                                                       rand::random()),
             };
             let prefix = Prefix::new(0, *unwrap!(all_ids.iter().next()).name());
-            let lists = vec![SectionList::new(prefix, all_ids)];
-            let signed_msg = unwrap!(SignedMessage::new(routing_msg, msg_sender_id, lists));
+            let ssl = vec![SignedSectionList {
+                               list: SectionList::new(prefix, all_ids),
+                               signatures: Default::default(),
+                           }];
+            let signed_msg = unwrap!(SignedMessage::new(routing_msg, msg_sender_id, ssl));
             let signature_msgs = other_ids.map(|id| {
                     unwrap!(signed_msg.routing_message().to_signature(id.signing_private_key()))
                 })
