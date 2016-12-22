@@ -46,7 +46,6 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use types::{MessageId, RoutingActionSender};
 use xor_name::XorName;
 
-type RoutingResult = Result<(), RoutingError>;
 
 /// A builder to configure and create a new `Node`.
 pub struct NodeBuilder {
@@ -166,7 +165,7 @@ impl NodeBuilder {
 pub struct Node {
     interface_result_tx: Sender<Result<(), InterfaceError>>,
     interface_result_rx: Receiver<Result<(), InterfaceError>>,
-    action_sender: ::types::RoutingActionSender,
+    action_sender: RoutingActionSender,
 
     #[cfg(feature = "use-mock-crust")]
     machine: RefCell<StateMachine>,

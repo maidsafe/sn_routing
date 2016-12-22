@@ -140,7 +140,9 @@ impl PrivAppendableData {
         self.owners = other.owners;
         self.data.extend(other.data);
         for ad in &self.deleted_data {
-            let _ = self.data.remove(ad);
+            if self.data.contains(ad) {
+                let _remove = self.data.remove(ad);
+            }
         }
         Ok(())
     }
@@ -175,8 +177,8 @@ impl PrivAppendableData {
         } || self.deleted_data.contains(&priv_appended_data) {
             return false;
         }
-        let _ = self.data.insert(priv_appended_data);
-        true
+        self.data
+            .insert(priv_appended_data)
     }
 
     /// Inserts the given wrapper item, or returns `false` if cannot
@@ -224,8 +226,10 @@ impl PrivAppendableData {
         }
         let data = self.data_to_sign()?;
         let sig = sign::sign_detached(&data, &keys.1);
-        let _ = self.signatures.insert(keys.0, sig);
-        Ok(((self.owners.len() / 2) + 1).saturating_sub(self.signatures.len()))
+        if self.signatures.insert(keys.0, sig).is_none() {
+            return Ok(((self.owners.len() / 2) + 1).saturating_sub(self.signatures.len()));
+        }
+        Err(RoutingError::FailedSignature)
     }
 
     /// Overwrite any existing signatures with the new signatures provided.
@@ -324,7 +328,7 @@ mod tests {
                                                 &data,
                                                 priv_appendable_data.get_signatures())
                     .is_err());
-                assert_eq!(priv_appendable_data.add_signature(&keys).unwrap(), 0);
+                assert!(priv_appendable_data.add_signature(&keys).is_ok());
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
                                                 priv_appendable_data.get_signatures())
@@ -349,7 +353,7 @@ mod tests {
                                       Filter::white_list(None),
                                       encrypt_keys.0) {
             Ok(mut priv_appendable_data) => {
-                assert_eq!(priv_appendable_data.add_signature(&other_keys).unwrap(), 0);
+                assert!(priv_appendable_data.add_signature(&other_keys).is_ok());
                 let data = match priv_appendable_data.data_to_sign() {
                     Ok(data) => data,
                     Err(error) => panic!("Error: {:?}", error),
@@ -462,7 +466,7 @@ mod tests {
                                                          BTreeSet::new(),
                                                          Filter::black_list(None),
                                                          encrypt_keys.0));
-        assert_eq!(ad_new.add_signature(&keys).unwrap(), 0);
+        assert!(ad_new.add_signature(&keys).is_ok());
         assert!(ad.update_with_other(ad_new).is_ok());
 
         let mut ad_fail = unwrap!(PrivAppendableData::new(name,
@@ -471,7 +475,7 @@ mod tests {
                                                           BTreeSet::new(),
                                                           Filter::black_list(None),
                                                           encrypt_keys.0));
-        assert_eq!(ad_fail.add_signature(&keys).unwrap(), 0);
+        assert!(ad_fail.add_signature(&keys).is_ok());
         assert!(ad.update_with_other(ad_fail).is_err());
     }
 }

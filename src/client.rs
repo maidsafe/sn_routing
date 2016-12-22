@@ -36,8 +36,6 @@ use types::MessageId;
 use types::RoutingActionSender;
 use xor_name::XorName;
 
-type RoutingResult = Result<(), RoutingError>;
-
 /// Interface for sending and receiving messages to and from a network of nodes in the role of a
 /// client.
 ///
@@ -46,7 +44,7 @@ type RoutingResult = Result<(), RoutingError>;
 pub struct Client {
     interface_result_tx: Sender<Result<(), InterfaceError>>,
     interface_result_rx: Receiver<Result<(), InterfaceError>>,
-    action_sender: ::types::RoutingActionSender,
+    action_sender: RoutingActionSender,
 
     #[cfg(feature = "use-mock-crust")]
     machine: RefCell<StateMachine>,

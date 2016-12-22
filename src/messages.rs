@@ -106,7 +106,7 @@ pub enum DirectMessage {
     /// Sent from the bootstrap node to a client in response to `ClientIdentify`.
     BootstrapIdentify {
         /// The bootstrap node's keys and name.
-        public_id: ::id::PublicId,
+        public_id: PublicId,
     },
     /// Sent to the client to indicate that this node is not available as a bootstrap node.
     BootstrapDeny,
@@ -1057,7 +1057,10 @@ impl UserMessageCache {
                -> Option<UserMessage> {
         {
             let entry = self.0.entry((hash, part_count)).or_insert_with(BTreeMap::new);
-            let _ = entry.insert(part_index, payload);
+            if let Some(value) = entry.insert(part_index, payload) {
+                debug!("Duplicate message with value {:?}", value);
+            }
+
             if entry.len() != part_count as usize {
                 return None;
             }
