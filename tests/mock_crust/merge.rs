@@ -50,7 +50,7 @@ fn merge(prefix_lengths: Vec<usize>) {
         info!("Killing {:?}", nodes[index].name());
         let _ = nodes.remove(index);
         poll_and_resend(&mut nodes, &mut []);
-        for node in &nodes {
+        for node in &*nodes {
             while let Ok(event) = node.event_rx.try_recv() {
                 match event {
                     Event::NodeAdded(..) |
