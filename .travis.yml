@@ -41,7 +41,7 @@ script:
   - if [ "${TRAVIS_RUST_VERSION}" = nightly ]; then
       (
        set -x;
-       cargo +nightly clippy
+       cargo clippy
       );
     fi
 before_cache:
