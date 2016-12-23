@@ -38,7 +38,7 @@ script:
         cargo test  --verbose --features use-mock-crust
       );
     else
-       cargo clippy
+       cargo clippy;
     fi
 before_cache:
   - cargo prune
