@@ -37,12 +37,8 @@ script:
         cargo rustc --verbose -- -Zno-trans &&
         cargo test  --verbose --features use-mock-crust
       );
-    fi
-  - if [ "${TRAVIS_RUST_VERSION}" = nightly ]; then
-      (
-       set -x;
+    else
        cargo clippy
-      );
     fi
 before_cache:
   - cargo prune
