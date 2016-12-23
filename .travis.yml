@@ -23,7 +23,7 @@ before_script:
   - (which cargo-prune && cargo install-update cargo-prune) || cargo install cargo-prune
   - if [ "${TRAVIS_RUST_VERSION}" = nightly ]; then
     (
-      (which clippy && cargo install-update clippy) || cargo install clippy
+      (which cargo-clippy && cargo install-update clippy) || cargo install clippy
     );
     fi
 script:
