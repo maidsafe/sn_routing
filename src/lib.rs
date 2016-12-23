@@ -54,7 +54,7 @@
 //! to the network through any node, and exchange public keys with it. That node becomes a
 //! bootstrap node for the client, and messages to and from the client will be routed over it.
 //!
-//! ```no_run
+//! ```ignore
 //! use std::sync::mpsc;
 //! use routing::{Client, Event, FullId};
 //!
@@ -76,13 +76,11 @@
 //! Creating a node looks even simpler:
 //!
 //! ```no_run
-//! use std::sync::mpsc;
-//! use routing::{Node, Event};
+//! use routing::Node;
 //!
 //! let min_group_size = 8;
 //!
-//! let (sender, _receiver) = mpsc::channel::<Event>();
-//! let _ = Node::builder().create(sender, min_group_size).unwrap();
+//! let _ = Node::builder().create(min_group_size).unwrap();
 //! ```
 //!
 //! Upon creation, the node will first connect to the network as a client. Once it has client
@@ -141,6 +139,9 @@ extern crate rust_sodium;
 extern crate rustc_serialize;
 extern crate tiny_keccak;
 
+#[macro_use]
+mod evented;
+
 mod ack_manager;
 mod action;
 mod client;
@@ -148,6 +149,7 @@ mod cache;
 mod data;
 mod error;
 mod event;
+mod event_stream;
 mod section_list_cache;
 mod id;
 mod message_filter;
@@ -193,6 +195,8 @@ pub use data::{AppendWrapper, AppendedData, Data, DataIdentifier, Filter, Immuta
                StructuredData};
 pub use error::{InterfaceError, RoutingError};
 pub use event::Event;
+pub use event_stream::EventStream;
+pub use evented::Evented;
 pub use id::{FullId, PublicId};
 pub use messages::{Request, Response};
 #[cfg(feature = "use-mock-crust")]

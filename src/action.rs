@@ -43,11 +43,6 @@ pub enum Action {
         priority: u8,
         result_tx: Sender<Result<(), InterfaceError>>,
     },
-    CloseGroup {
-        name: XorName,
-        count: usize,
-        result_tx: Sender<Option<Vec<XorName>>>,
-    },
     Name { result_tx: Sender<XorName> },
     Timeout(u64),
     Terminate,
@@ -67,7 +62,6 @@ impl Debug for Action {
                        content,
                        dst)
             }
-            Action::CloseGroup { .. } => write!(formatter, "Action::CloseGroup"),
             Action::Name { .. } => write!(formatter, "Action::Name"),
             Action::Timeout(token) => write!(formatter, "Action::Timeout({})", token),
             Action::Terminate => write!(formatter, "Action::Terminate"),

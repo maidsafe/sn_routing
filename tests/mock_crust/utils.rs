@@ -17,15 +17,15 @@
 
 use itertools::Itertools;
 use rand::Rng;
-use routing::{Authority, Cache, Client, Data, DataIdentifier, Event, FullId, ImmutableData, Node,
-              NullCache, Prefix, Request, Response, RoutingTable, XorName, Xorable,
-              verify_network_invariant};
+use routing::{Authority, Cache, Client, Data, DataIdentifier, Event, EventStream, FullId,
+              ImmutableData, Node, NullCache, Prefix, Request, Response, RoutingTable, XorName,
+              Xorable, verify_network_invariant};
 use routing::mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
 use std::{cmp, thread};
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
-use std::sync::mpsc;
+use std::sync::mpsc::TryRecvError;
 
 // Various utilities. Since this is all internal stuff we're a bit lax about the doc.
 #[allow(missing_docs)]
@@ -89,10 +89,26 @@ impl DerefMut for Nodes {
 
 // -----  TestNode and builder  -----
 
+impl EventStream for TestNode {
+    type Item = Event;
+    type Error = TryRecvError;
+
+    fn next_ev(&mut self) -> Result<Event, TryRecvError> {
+        self.inner.next_ev()
+    }
+
+    fn try_next_ev(&mut self) -> Result<Event, TryRecvError> {
+        self.inner.try_next_ev()
+    }
+
+    fn poll(&mut self) -> bool {
+        self.inner.poll()
+    }
+}
+
 pub struct TestNode {
     pub handle: ServiceHandle,
     pub inner: Node,
-    pub event_rx: mpsc::Receiver<Event>,
 }
 
 impl TestNode {
@@ -112,31 +128,18 @@ impl TestNode {
                endpoint: Option<Endpoint>,
                cache: Box<Cache>)
                -> Self {
-        let (event_tx, event_rx) = mpsc::channel();
         let handle = network.new_service_handle(config, endpoint);
         let node = mock_crust::make_current(&handle, || {
             unwrap!(Node::builder()
                 .cache(cache)
                 .first(first_node)
-                .create(event_tx, network.min_group_size()))
+                .create(network.min_group_size()))
         });
 
         TestNode {
             handle: handle,
             inner: node,
-            event_rx: event_rx,
         }
-    }
-
-    // Poll this node until there are no unprocessed events left.
-    pub fn poll(&mut self) -> bool {
-        let mut result = false;
-
-        while self.inner.poll() {
-            result = true;
-        }
-
-        result
     }
 
     pub fn name(&self) -> XorName {
@@ -153,6 +156,10 @@ impl TestNode {
 
     pub fn is_recipient(&self, dst: &Authority<XorName>) -> bool {
         self.inner.routing_table().map_or(false, |rt| rt.in_authority(dst))
+    }
+
+    pub fn resend_unacknowledged(&mut self) -> bool {
+        self.inner.resend_unacknowledged()
     }
 }
 
@@ -205,38 +212,28 @@ impl<'a> TestNodeBuilder<'a> {
 pub struct TestClient {
     pub handle: ServiceHandle,
     pub inner: Client,
-    pub event_rx: mpsc::Receiver<Event>,
 }
 
 impl TestClient {
     pub fn new(network: &Network, config: Option<Config>, endpoint: Option<Endpoint>) -> Self {
-        let (event_tx, event_rx) = mpsc::channel();
         let full_id = FullId::new();
         let handle = network.new_service_handle(config, endpoint);
         let client = mock_crust::make_current(&handle, || {
-            unwrap!(Client::new(event_tx, Some(full_id), network.min_group_size()))
+            unwrap!(Client::new(Some(full_id), network.min_group_size()))
         });
 
         TestClient {
             handle: handle,
             inner: client,
-            event_rx: event_rx,
         }
-    }
-
-    // Poll this node until there are no unprocessed events left.
-    pub fn poll(&mut self) -> bool {
-        let mut result = false;
-
-        while self.inner.poll() {
-            result = true;
-        }
-
-        result
     }
 
     pub fn name(&self) -> XorName {
         unwrap!(self.inner.name())
+    }
+
+    pub fn resend_unacknowledged(&mut self) -> bool {
+        self.inner.resend_unacknowledged()
     }
 }
 
@@ -280,11 +277,11 @@ pub fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
         let mut handled_message = false;
         if BALANCED_POLLING {
             // handle all current messages for each node in turn, then repeat (via outer loop):
-            nodes.iter_mut().foreach(|node| handled_message = node.inner.poll() || handled_message);
+            nodes.iter_mut().foreach(|node| handled_message = node.poll() || handled_message);
         } else {
             handled_message = nodes.iter_mut().any(TestNode::poll);
         }
-        handled_message = clients.iter_mut().any(TestClient::poll) || handled_message;
+        handled_message = clients.iter().any(|c| c.inner.poll()) || handled_message;
         if !handled_message {
             return result;
         }
@@ -299,10 +296,10 @@ pub fn poll_and_resend(nodes: &mut [TestNode], clients: &mut [TestClient]) {
     loop {
         let mut state_changed = poll_all(nodes, clients);
         for node in nodes.iter_mut() {
-            state_changed = state_changed || node.inner.resend_unacknowledged();
+            state_changed = state_changed || node.resend_unacknowledged();
         }
         for client in clients.iter_mut() {
-            state_changed = state_changed || client.inner.resend_unacknowledged();
+            state_changed = state_changed || client.resend_unacknowledged();
         }
         if state_changed {
             cleared_state = false;
@@ -347,12 +344,12 @@ pub fn create_connected_nodes_with_cache(network: &Network, size: usize, use_cac
 
     let n = cmp::min(nodes.len(), network.min_group_size()) - 1;
 
-    for node in &nodes {
+    for node in &mut nodes {
         expect_next_event!(node, Event::Connected);
 
         let mut node_added_count = 0;
 
-        while let Ok(event) = node.event_rx.try_recv() {
+        while let Ok(event) = node.try_next_ev() {
             match event {
                 Event::NodeAdded(..) => node_added_count += 1,
                 Event::NodeLost(..) |
@@ -448,8 +445,8 @@ pub fn create_connected_nodes_until_split(network: &Network,
                prefixes.iter().map(|prefix| prefix.bit_count()).collect_vec());
 
     // Clear all event queues and clear the `next_node_name` values.
-    for node in &nodes {
-        while let Ok(event) = node.event_rx.try_recv() {
+    for node in &mut nodes {
+        while let Ok(event) = node.try_next_ev() {
             match event {
                 Event::NodeAdded(..) |
                 Event::NodeLost(..) |
@@ -478,7 +475,7 @@ pub fn create_connected_clients(network: &Network,
         clients.push(client);
 
         let _ = poll_all(nodes, &mut clients);
-        expect_next_event!(clients[clients.len() - 1], Event::Connected);
+        expect_next_event!(unwrap!(clients.last_mut()), Event::Connected);
     }
 
     clients
@@ -551,7 +548,7 @@ fn add_node_to_group<T: Rng>(network: &Network,
                              rng: &mut T,
                              use_cache: bool) {
     let relocation_name = prefix.substituted_in(rng.gen());
-    nodes.iter().foreach(|node| node.inner.set_next_node_name(relocation_name));
+    nodes.iter_mut().foreach(|node| node.inner.set_next_node_name(relocation_name));
 
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
     let endpoint = Endpoint(nodes.len());
@@ -561,7 +558,7 @@ fn add_node_to_group<T: Rng>(network: &Network,
         .cache(use_cache)
         .create());
     poll_and_resend(nodes, &mut []);
-    expect_next_event!(nodes[nodes.len() - 1], Event::Connected);
+    expect_next_event!(unwrap!(nodes.last_mut()), Event::Connected);
     assert_eq!(relocation_name, nodes[nodes.len() - 1].name());
 }
 

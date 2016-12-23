@@ -17,10 +17,9 @@
 
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-use routing::{Authority, Data, DataIdentifier, Event, MessageId, Node, Prefix, Request, Response,
-              XorName};
+use routing::{Authority, Data, DataIdentifier, Event, EventStream, MessageId, Node, Prefix,
+              Request, Response, XorName};
 use std::collections::HashMap;
-use std::sync::mpsc;
 use std::time::Duration;
 use super::MIN_GROUP_SIZE;
 
@@ -28,10 +27,6 @@ use super::MIN_GROUP_SIZE;
 pub struct ExampleNode {
     /// The node interface to the Routing library.
     node: Node,
-    /// The receiver through which the Routing library will send events.
-    receiver: mpsc::Receiver<Event>,
-    /// A clone of the event sender passed to the Routing library.
-    sender: mpsc::Sender<Event>,
     /// A map of the data chunks this node is storing.
     db: HashMap<DataIdentifier, Data>,
     client_accounts: HashMap<XorName, u64>,
@@ -42,13 +37,10 @@ pub struct ExampleNode {
 impl ExampleNode {
     /// Creates a new node and attempts to establish a connection to the network.
     pub fn new(first: bool) -> ExampleNode {
-        let (sender, receiver) = mpsc::channel::<Event>();
-        let node = unwrap!(Node::builder().first(first).create(sender.clone(), MIN_GROUP_SIZE));
+        let node = unwrap!(Node::builder().first(first).create(MIN_GROUP_SIZE));
 
         ExampleNode {
             node: node,
-            receiver: receiver,
-            sender: sender,
             db: HashMap::new(),
             client_accounts: HashMap::new(),
             put_request_cache: LruCache::with_expiry_duration(Duration::from_secs(60 * 10)),
@@ -57,7 +49,7 @@ impl ExampleNode {
 
     /// Runs the event loop, handling events raised by the Routing library.
     pub fn run(&mut self) {
-        while let Ok(event) = self.receiver.recv() {
+        while let Ok(event) = self.node.next_ev() {
             match event {
                 Event::Request { request, src, dst } => self.handle_request(request, src, dst),
                 Event::Response { response, src, dst } => self.handle_response(response, src, dst),
@@ -84,8 +76,7 @@ impl ExampleNode {
                 }
                 Event::RestartRequired => {
                     info!("{} Received RestartRequired event", self.get_debug_name());
-                    self.node = unwrap!(Node::builder()
-                        .create(self.sender.clone(), MIN_GROUP_SIZE));
+                    self.node = unwrap!(Node::builder().create(MIN_GROUP_SIZE));
                 }
                 Event::GroupSplit(prefix) => {
                     trace!("{} Received GroupSplit event {:?}",

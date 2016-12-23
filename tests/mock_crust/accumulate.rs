@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use routing::{Authority, Event, MessageId, QUORUM, Response, XorName};
+use routing::{Authority, Event, EventStream, MessageId, QUORUM, Response, XorName};
 use routing::mock_crust::Network;
 use std::sync::mpsc;
 use super::{TestNode, create_connected_nodes, gen_immutable_data, poll_all,
