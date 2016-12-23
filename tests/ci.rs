@@ -34,12 +34,6 @@
 
 #![cfg(not(feature = "use-mock-crust"))]
 
-#![cfg_attr(feature="clippy", feature(plugin))]
-#![cfg_attr(feature="clippy", plugin(clippy))]
-#![cfg_attr(feature="clippy", deny(clippy, unicode_not_nfc, wrong_pub_self_convention,
-                                   option_unwrap_used))]
-#![cfg_attr(feature="clippy", allow(use_debug))]
-
 extern crate itertools;
 #[cfg(target_os = "macos")]
 extern crate libc;
@@ -285,7 +279,7 @@ fn closest_nodes(node_names: &[XorName], target: &XorName, min_group_size: usize
 }
 
 // TODO: Extract the individual tests into their own functions.
-#[cfg_attr(feature="clippy", allow(cyclomatic_complexity))]
+#[cfg_attr(feature="cargo-clippy", allow(cyclomatic_complexity))]
 fn core() {
     let min_group_size = 8;
     let (event_sender, event_receiver) = mpsc::channel();
