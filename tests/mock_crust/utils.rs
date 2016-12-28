@@ -385,10 +385,11 @@ pub fn create_connected_nodes_until_split(network: &Network,
     loop {
         let mut found_prefix = None;
         for node in &nodes {
-            if let Some(prefix_to_split) = unwrap!(node.inner.routing_table())
-                .prefixes()
-                .iter()
-                .find(|&prefix| !prefixes.contains(prefix)) {
+            if let Some(prefix_to_split) =
+                unwrap!(node.inner.routing_table())
+                    .prefixes()
+                    .iter()
+                    .find(|&prefix| !prefixes.contains(prefix)) {
                 // Assert that this can be split down to a desired prefix.
                 let is_valid = |prefix: &Prefix<XorName>| {
                     if prefix.is_compatible(prefix_to_split) {
