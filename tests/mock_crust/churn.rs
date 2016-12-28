@@ -17,7 +17,7 @@
 
 use itertools::Itertools;
 use rand::Rng;
-use routing::{Authority, DataIdentifier, Event, MessageId, QUORUM, Request, XorName};
+use routing::{Authority, DataIdentifier, Event, EventStream, MessageId, QUORUM, Request, XorName};
 use routing::mock_crust::{Config, Network};
 use std::cmp;
 use std::collections::{HashMap, HashSet};
@@ -72,11 +72,11 @@ impl ExpectedGets {
                        data_id: DataIdentifier,
                        src: Authority<XorName>,
                        dst: Authority<XorName>,
-                       nodes: &[TestNode],
+                       nodes: &mut [TestNode],
                        min_group_size: usize) {
         let msg_id = MessageId::new();
         let mut sent_count = 0;
-        for node in nodes.iter().filter(|node| node.is_recipient(&src)) {
+        for node in nodes.iter_mut().filter(|node| node.is_recipient(&src)) {
             unwrap!(node.inner.send_get_request(src, dst, data_id, msg_id));
             sent_count += 1;
         }
@@ -94,7 +94,7 @@ impl ExpectedGets {
     }
 
     /// Verifies that all sent messages have been received by the appropriate nodes.
-    fn verify(mut self, nodes: &[TestNode]) {
+    fn verify(mut self, nodes: &mut [TestNode]) {
         // The minimum of the group lengths when sending and now. If a churn event happened, both
         // cases are valid: that the message was received before or after that. The number of
         // recipients thus only needs to reach a quorum for the smaller of the group sizes.
@@ -110,7 +110,7 @@ impl ExpectedGets {
             .collect();
         let mut group_msgs_received = HashMap::new(); // The count of received group messages.
         for node in nodes {
-            while let Ok(event) = node.event_rx.try_recv() {
+            while let Ok(event) = node.try_next_ev() {
                 if let Event::Request { request: Request::Get(data_id, msg_id), src, dst } = event {
                     let key = (data_id, msg_id, src, dst);
                     if dst.is_multiple() {
@@ -194,15 +194,15 @@ fn churn() {
         let mut expected_gets = ExpectedGets::default();
 
         // Test messages from a node to itself, another node, a group and a section...
-        expected_gets.send_and_expect(data_id, auth_n0, auth_n0, &nodes, min_group_size);
-        expected_gets.send_and_expect(data_id, auth_n0, auth_n1, &nodes, min_group_size);
-        expected_gets.send_and_expect(data_id, auth_n0, auth_g0, &nodes, min_group_size);
-        expected_gets.send_and_expect(data_id, auth_n0, auth_s0, &nodes, min_group_size);
+        expected_gets.send_and_expect(data_id, auth_n0, auth_n0, &mut nodes, min_group_size);
+        expected_gets.send_and_expect(data_id, auth_n0, auth_n1, &mut nodes, min_group_size);
+        expected_gets.send_and_expect(data_id, auth_n0, auth_g0, &mut nodes, min_group_size);
+        expected_gets.send_and_expect(data_id, auth_n0, auth_s0, &mut nodes, min_group_size);
         // ... and from a group to itself, another group, a section and a node...
-        expected_gets.send_and_expect(data_id, auth_g0, auth_g0, &nodes, min_group_size);
-        expected_gets.send_and_expect(data_id, auth_g0, auth_g1, &nodes, min_group_size);
-        expected_gets.send_and_expect(data_id, auth_g0, auth_s0, &nodes, min_group_size);
-        expected_gets.send_and_expect(data_id, auth_g0, auth_n0, &nodes, min_group_size);
+        expected_gets.send_and_expect(data_id, auth_g0, auth_g0, &mut nodes, min_group_size);
+        expected_gets.send_and_expect(data_id, auth_g0, auth_g1, &mut nodes, min_group_size);
+        expected_gets.send_and_expect(data_id, auth_g0, auth_s0, &mut nodes, min_group_size);
+        expected_gets.send_and_expect(data_id, auth_g0, auth_n0, &mut nodes, min_group_size);
         // ... and from a section to itself, another section, a group and a node...
         // TODO: Enable these once MAID-1920 is fixed.
         // expected_gets.send_and_expect(data_id, auth_s0, auth_s0, &nodes, min_group_size);
@@ -212,7 +212,7 @@ fn churn() {
 
         poll_and_resend(&mut nodes, &mut []);
 
-        expected_gets.verify(&nodes);
+        expected_gets.verify(&mut nodes);
         verify_invariant_for_all_nodes(&nodes);
         verify_section_list_signatures(&nodes);
     }

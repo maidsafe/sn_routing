@@ -52,7 +52,7 @@ extern crate unwrap;
 macro_rules! expect_next_event {
     ($node:expr, $pattern:pat) => {
         loop {
-            match $node.event_rx.try_recv() {
+            match $node.inner.try_next_ev() {
                 Ok($pattern) => break,
                 Ok(Event::Tick) => (),
                 other => panic!("Expected Ok({}) at {}, got {:?}",
@@ -73,7 +73,7 @@ macro_rules! expect_any_event {
     };
     ($node:expr, $pattern:pat if $guard:expr) => {
         loop {
-            match $node.event_rx.try_recv() {
+            match $node.inner.try_next_ev() {
                 Ok($pattern) if $guard => break,
                 Ok(_) => (),
                 other => panic!("Expected Ok({}) at {}, got {:?}",
@@ -87,15 +87,15 @@ macro_rules! expect_any_event {
 
 /// Expects that the node raised no event, panics otherwise (ignores ticks).
 macro_rules! expect_no_event {
-    ($node:expr) => {
-        match $node.event_rx.try_recv() {
+    ($node:expr) => {{
+        match $node.inner.try_next_ev() {
             Ok(Event::Tick) => (),
             Err(mpsc::TryRecvError::Empty) => (),
             other => panic!("Expected no event at {}, got {:?}",
                 unwrap!($node.inner.name()),
                 other),
         }
-    }
+    }}
 }
 
 mod mock_crust;

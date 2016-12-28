@@ -49,8 +49,8 @@ use itertools::Itertools;
 use maidsafe_utilities::SeededRng;
 use maidsafe_utilities::thread::{self, Joiner};
 use rand::Rng;
-use routing::{Authority, Client, Data, Event, FullId, MessageId, Node, Request, Response,
-              StructuredData, XorName, Xorable};
+use routing::{Authority, Client, Data, Event, EventStream, FullId, MessageId, Node, Request,
+              Response, StructuredData, XorName, Xorable};
 use rust_sodium::crypto;
 use std::collections::{BTreeSet, HashSet};
 #[cfg(target_os = "macos")]
@@ -66,13 +66,22 @@ enum RecvWithTimeoutError {
 }
 
 /// Blocks until something is received on the `Receiver`, or timeout, whichever happens sooner.
-fn recv_with_timeout<T>(receiver: &Receiver<T>,
-                        timeout: Duration)
-                        -> Result<T, RecvWithTimeoutError> {
+fn recv_with_timeout(nodes: &mut [TestNode],
+                     sender: &Sender<TestEvent>,
+                     receiver: &Receiver<TestEvent>,
+                     timeout: Duration)
+                     -> Result<TestEvent, RecvWithTimeoutError> {
     let interval = Duration::from_millis(100);
     let mut elapsed = Duration::from_millis(0);
 
     loop {
+        // Try to step each node's state machine, and proxy any events found onto the channel.
+        for (index, node) in nodes.iter_mut().enumerate() {
+            while let Ok(ev) = node.node.try_next_ev() {
+                unwrap!(sender.send(TestEvent(index, ev)));
+            }
+        }
+
         match receiver.try_recv() {
             Ok(value) => return Ok(value),
             Err(TryRecvError::Disconnected) => return Err(RecvWithTimeoutError::Disconnected),
@@ -93,19 +102,12 @@ struct TestEvent(usize, Event);
 
 struct TestNode {
     node: Node,
-    _thread_joiner: Joiner,
 }
 
 impl TestNode {
     // If `index` is `0`, this will be treated as the first node of the network.
-    fn new(index: usize, main_sender: Sender<TestEvent>, min_group_size: usize) -> Self {
-        let thread_name = format!("TestNode {} event sender", index);
-        let (sender, joiner) = spawn_select_thread(index, main_sender, thread_name);
-
-        TestNode {
-            node: unwrap!(Node::builder().first(index == 0).create(sender, min_group_size)),
-            _thread_joiner: joiner,
-        }
+    fn new(index: usize, min_group_size: usize) -> Self {
+        TestNode { node: unwrap!(Node::builder().first(index == 0).create(min_group_size)) }
     }
 
     fn name(&self) -> XorName {
@@ -203,13 +205,17 @@ fn spawn_select_thread(index: usize,
     (sender, thread_handle)
 }
 
-fn wait_for_nodes_to_connect(nodes: &[TestNode],
+fn wait_for_nodes_to_connect(nodes: &mut [TestNode],
                              connection_counts: &mut [usize],
+                             event_sender: &Sender<TestEvent>,
                              event_receiver: &Receiver<TestEvent>,
                              min_group_size: usize) {
     // Wait for each node to connect to all the other nodes by counting churns.
     loop {
-        if let Ok(test_event) = recv_with_timeout(event_receiver, Duration::from_secs(30)) {
+        if let Ok(test_event) = recv_with_timeout(nodes,
+                                                  event_sender,
+                                                  event_receiver,
+                                                  Duration::from_secs(30)) {
             if let TestEvent(index, Event::NodeAdded(..)) = test_event {
                 connection_counts[index] += 1;
 
@@ -228,7 +234,7 @@ fn wait_for_nodes_to_connect(nodes: &[TestNode],
 }
 
 fn create_connected_nodes(count: usize,
-                          event_sender: Sender<TestEvent>,
+                          event_sender: &Sender<TestEvent>,
                           event_receiver: &Receiver<TestEvent>,
                           min_group_size: usize)
                           -> Vec<TestNode> {
@@ -236,7 +242,7 @@ fn create_connected_nodes(count: usize,
     let mut connection_counts = iter::repeat(0).take(count).collect::<Vec<usize>>();
 
     // Bootstrap node
-    nodes.push(TestNode::new(0, event_sender.clone(), min_group_size));
+    nodes.push(TestNode::new(0, min_group_size));
 
     // HACK: wait until the above node switches to accepting mode. Would be
     // nice to know exactly when it happens instead of having to thread::sleep...
@@ -246,9 +252,10 @@ fn create_connected_nodes(count: usize,
     // continuing.
     for _ in 1..count {
         let index = nodes.len();
-        nodes.push(TestNode::new(index, event_sender.clone(), min_group_size));
-        wait_for_nodes_to_connect(&nodes,
+        nodes.push(TestNode::new(index, min_group_size));
+        wait_for_nodes_to_connect(&mut nodes,
                                   &mut connection_counts,
+                                  event_sender,
                                   event_receiver,
                                   min_group_size);
     }
@@ -284,7 +291,7 @@ fn core() {
     let min_group_size = 8;
     let (event_sender, event_receiver) = mpsc::channel();
     let mut nodes = create_connected_nodes(min_group_size + 1,
-                                           event_sender.clone(),
+                                           &event_sender,
                                            &event_receiver,
                                            min_group_size);
     let mut rng = SeededRng::new();
@@ -296,7 +303,10 @@ fn core() {
         let message_id = MessageId::new();
 
         loop {
-            if let Ok(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
+            if let Ok(test_event) = recv_with_timeout(&mut nodes,
+                                                      &event_sender,
+                                                      &event_receiver,
+                                                      Duration::from_secs(20)) {
                 match test_event {
                     TestEvent(index, Event::Connected) if index == client.index => {
                         // The client is connected now. Send some request.
@@ -308,7 +318,7 @@ fn core() {
                     TestEvent(index, Event::Request { request, src, dst }) => {
                         // A node received request from the client. Reply with a success.
                         if let Request::Put(_, ref id) = request {
-                            let node = &nodes[index].node;
+                            let node = &mut nodes[index].node;
 
                             unwrap!(node.send_put_success(dst, src, data.identifier(), id.clone()));
                         }
@@ -338,7 +348,10 @@ fn core() {
         let mut close_group = closest_nodes(&node_names, client.name(), min_group_size);
 
         loop {
-            if let Ok(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
+            if let Ok(test_event) = recv_with_timeout(&mut nodes,
+                                                      &event_sender,
+                                                      &event_receiver,
+                                                      Duration::from_secs(20)) {
                 match test_event {
                     TestEvent(index, Event::Connected) if index == client.index => {
                         assert!(client.client
@@ -372,7 +385,10 @@ fn core() {
         let mut close_group = closest_nodes(&node_names, client.name(), min_group_size);
 
         loop {
-            if let Ok(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
+            if let Ok(test_event) = recv_with_timeout(&mut nodes,
+                                                      &event_sender,
+                                                      &event_receiver,
+                                                      Duration::from_secs(20)) {
                 match test_event {
                     TestEvent(index, Event::Connected) if index == client.index => {
                         assert!(client.client
@@ -425,7 +441,10 @@ fn core() {
         drop(node);
 
         loop {
-            if let Ok(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
+            if let Ok(test_event) = recv_with_timeout(&mut nodes,
+                                                      &event_sender,
+                                                      &event_receiver,
+                                                      Duration::from_secs(20)) {
                 match test_event {
                     TestEvent(index, Event::NodeLost(lost_name, _)) if index < nodes.len() &&
                                                                        lost_name == name => {
@@ -448,10 +467,13 @@ fn core() {
         let nodes_len = nodes.len();
         let mut churns = iter::repeat(false).take(nodes_len + 1).collect::<Vec<_>>();
         // a node joins...
-        nodes.push(TestNode::new(nodes_len, event_sender.clone(), min_group_size));
+        nodes.push(TestNode::new(nodes_len, min_group_size));
 
         loop {
-            if let Ok(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
+            if let Ok(test_event) = recv_with_timeout(&mut nodes,
+                                                      &event_sender,
+                                                      &event_receiver,
+                                                      Duration::from_secs(20)) {
                 match test_event {
                     TestEvent(index, Event::NodeAdded(..)) if index < nodes.len() => {
                         churns[index] = true;
@@ -473,7 +495,10 @@ fn core() {
         let client = TestClient::new(nodes.len(), event_sender.clone(), min_group_size);
         let data = gen_structured_data(client.full_id(), &mut rng);
 
-        while let Ok(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(5)) {
+        while let Ok(test_event) = recv_with_timeout(&mut nodes,
+                                                     &event_sender,
+                                                     &event_receiver,
+                                                     Duration::from_secs(5)) {
             match test_event {
                 TestEvent(index, Event::Connected) if index == client.index => {
                     assert!(client.client
@@ -519,7 +544,10 @@ fn core() {
         let mut received_ids = HashSet::new();
 
         loop {
-            if let Ok(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(5)) {
+            if let Ok(test_event) = recv_with_timeout(&mut nodes,
+                                                      &event_sender,
+                                                      &event_receiver,
+                                                      Duration::from_secs(5)) {
                 match test_event {
                     TestEvent(index, Event::Connected) if index == client.index => {
                         // The client is connected now. Send some request.

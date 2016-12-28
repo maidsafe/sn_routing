@@ -18,6 +18,8 @@
 use action::Action;
 use crust::{CrustEventSender, PeerId, Service};
 use crust::Event as CrustEvent;
+use event::Event;
+use evented::{Evented, ToEvented};
 use id::PublicId;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 #[cfg(feature = "use-mock-crust")]
@@ -25,6 +27,7 @@ use routing_table::{Prefix, RoutingTable};
 #[cfg(feature = "use-mock-crust")]
 use rust_sodium::crypto::sign;
 use states::{Bootstrapping, Client, Node};
+use states::common::Base;
 #[cfg(feature = "use-mock-crust")]
 use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Formatter};
@@ -32,7 +35,6 @@ use std::mem;
 use std::sync::mpsc::{self, Receiver};
 use timer::Timer;
 use types::RoutingActionSender;
-#[cfg(feature = "use-mock-crust")]
 use xor_name::XorName;
 
 /// Holds the current state and handles state transitions.
@@ -52,36 +54,53 @@ pub enum State {
 }
 
 impl State {
-    fn handle_action(&mut self, action: Action) -> Transition {
+    pub fn handle_action(&mut self, action: Action) -> Evented<Transition> {
         match *self {
             State::Bootstrapping(ref mut state) => state.handle_action(action),
             State::Client(ref mut state) => state.handle_action(action),
             State::Node(ref mut state) => state.handle_action(action),
-            State::Terminated => Transition::Terminate,
+            State::Terminated => Transition::Terminate.to_evented(),
         }
     }
 
-    fn handle_crust_event(&mut self, event: CrustEvent) -> Transition {
+    fn handle_crust_event(&mut self, event: CrustEvent) -> Evented<Transition> {
         match *self {
             State::Bootstrapping(ref mut state) => state.handle_crust_event(event),
             State::Client(ref mut state) => state.handle_crust_event(event),
             State::Node(ref mut state) => state.handle_crust_event(event),
-            State::Terminated => Transition::Terminate,
+            State::Terminated => Transition::Terminate.to_evented(),
         }
     }
 
-    fn into_bootstrapped(self, proxy_peer_id: PeerId, proxy_public_id: PublicId) -> Self {
+    fn into_bootstrapped(self, proxy_peer_id: PeerId, proxy_public_id: PublicId) -> Evented<Self> {
         match self {
             State::Bootstrapping(state) => {
                 if state.client_restriction() {
-                    State::Client(state.into_client(proxy_peer_id, proxy_public_id))
+                    state.into_client(proxy_peer_id, proxy_public_id).map(State::Client)
                 } else if let Some(state) = state.into_node(proxy_peer_id, proxy_public_id) {
-                    State::Node(state)
+                    State::Node(state).to_evented()
                 } else {
-                    State::Terminated
+                    State::Terminated.to_evented()
                 }
             }
             _ => unreachable!(),
+        }
+    }
+
+    fn name(&self) -> Option<XorName> {
+        self.base_state().map(|state| *state.name())
+    }
+
+    fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
+        self.base_state().and_then(|state| state.close_group(name, count))
+    }
+
+    fn base_state(&self) -> Option<&Base> {
+        match *self {
+            State::Node(ref node) => Some(node),
+            State::Bootstrapping(ref bootstrapping) => Some(bootstrapping),
+            State::Client(ref client) => Some(client),
+            State::Terminated => None,
         }
     }
 }
@@ -99,12 +118,12 @@ impl Debug for State {
 
 #[cfg(feature = "use-mock-crust")]
 impl State {
-    pub fn resend_unacknowledged(&mut self) -> bool {
+    pub fn resend_unacknowledged(&mut self) -> Evented<bool> {
         match *self {
             State::Client(ref mut state) => state.resend_unacknowledged(),
             State::Node(ref mut state) => state.resend_unacknowledged(),
             State::Bootstrapping(_) |
-            State::Terminated => false,
+            State::Terminated => false.to_evented(),
         }
     }
 
@@ -124,12 +143,12 @@ impl State {
         }
     }
 
-    pub fn clear_state(&mut self) {
+    pub fn clear_state(&mut self) -> Evented<()> {
         match *self {
             State::Node(ref mut state) => state.clear_state(),
             State::Bootstrapping(_) |
             State::Client(_) |
-            State::Terminated => (),
+            State::Terminated => Evented::empty(),
         }
     }
 
@@ -150,6 +169,7 @@ impl State {
 }
 
 /// Enum returned from many message handlers
+#[derive(PartialEq, Eq)]
 pub enum Transition {
     // Stay in the current state.
     Stay,
@@ -165,9 +185,10 @@ pub enum Transition {
 impl StateMachine {
     // Construct a new StateMachine by passing a function returning the initial
     // state.
-    pub fn new<F>(init_state: F) -> (RoutingActionSender, Self)
-        where F: FnOnce(Service, Timer) -> State
+    pub fn new<F>(init_state: F) -> Evented<(RoutingActionSender, Self)>
+        where F: FnOnce(Service, Timer) -> Evented<State>
     {
+        let mut events = Evented::empty();
         let (category_tx, category_rx) = mpsc::channel();
         let (crust_tx, crust_rx) = mpsc::channel();
         let (action_tx, action_rx) = mpsc::channel();
@@ -187,7 +208,7 @@ impl StateMachine {
 
         let timer = Timer::new(action_sender.clone());
 
-        let state = init_state(crust_service, timer);
+        let state = init_state(crust_service, timer).extract(&mut events);
         let is_running = match state {
             State::Terminated => false,
             _ => true,
@@ -201,40 +222,49 @@ impl StateMachine {
             is_running: is_running,
         };
 
-        (action_sender, machine)
+        events.with_value((action_sender, machine))
     }
 
-    fn handle_event(&mut self, category: MaidSafeEventCategory) {
+    // Handle an event from the given category and return any events produced for higher layers.
+    fn handle_event(&mut self, category: MaidSafeEventCategory) -> Evented<()> {
         let transition = match category {
             MaidSafeEventCategory::Routing => {
                 if let Ok(action) = self.action_rx.try_recv() {
                     self.state.handle_action(action)
                 } else {
-                    Transition::Terminate
+                    Transition::Terminate.to_evented()
                 }
             }
             MaidSafeEventCategory::Crust => {
                 if let Ok(crust_event) = self.crust_rx.try_recv() {
                     self.state.handle_crust_event(crust_event)
                 } else {
-                    Transition::Terminate
+                    Transition::Terminate.to_evented()
                 }
             }
         };
 
+        transition.and_then(|t| self.apply_transition(t))
+    }
+
+    pub fn apply_transition(&mut self, transition: Transition) -> Evented<()> {
+        let mut result = Evented::empty();
         match transition {
             Transition::Stay => (),
             Transition::IntoBootstrapped { proxy_peer_id, proxy_public_id } => {
                 // Temporarily switch to `Terminated` to allow moving out of the current
                 // state without moving `self`.
                 let prev_state = mem::replace(&mut self.state, State::Terminated);
-                self.state = prev_state.into_bootstrapped(proxy_peer_id, proxy_public_id);
+                self.state = prev_state.into_bootstrapped(proxy_peer_id, proxy_public_id)
+                    .extract(&mut result);
             }
             Transition::Terminate => self.terminate(),
         }
+        result
     }
 
     fn terminate(&mut self) {
+        debug!("{:?} Terminating state machine", self);
         self.is_running = false;
     }
 }
@@ -245,35 +275,36 @@ impl Debug for StateMachine {
     }
 }
 
-#[cfg(not(feature = "use-mock-crust"))]
 impl StateMachine {
-    /// Run the event loop for sending and receiving messages. Blocks until
-    /// the core is terminated, so it must be called in a separate thread.
-    pub fn run(&mut self) {
-        while self.is_running {
+    pub fn step(&mut self) -> Result<Vec<Event>, ()> {
+        if self.is_running {
             if let Ok(category) = self.category_rx.recv() {
-                self.handle_event(category);
-            } else {
-                break;
+                return Ok(self.handle_event(category).into_events());
             }
         }
+        Err(())
     }
-}
 
-#[cfg(feature = "use-mock-crust")]
-impl StateMachine {
-    /// If there is an event in the queue, processes it and returns true.
-    /// otherwise returns false. Never blocks.
-    pub fn poll(&mut self) -> bool {
-        match self.category_rx.try_recv() {
-            Ok(category) => {
-                self.handle_event(category);
-                true
-            }
-            _ => false,
+    pub fn try_step(&mut self) -> Result<Vec<Event>, ()> {
+        if self.is_running {
+            self.category_rx
+                .try_recv()
+                .map(|category| self.handle_event(category).into_events())
+                .map_err(|_| ())
+        } else {
+            Err(())
         }
     }
 
+    pub fn name(&self) -> Option<XorName> {
+        self.state.name()
+    }
+
+    pub fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
+        self.state.close_group(name, count)
+    }
+
+    #[cfg(feature = "use-mock-crust")]
     /// Get reference to the current state.
     pub fn current(&self) -> &State {
         &self.state

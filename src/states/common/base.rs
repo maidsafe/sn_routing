@@ -17,7 +17,7 @@
 
 use crust::{PeerId, Service};
 use error::RoutingError;
-use event::Event;
+use evented::{Evented, ToEvented};
 use id::FullId;
 use maidsafe_utilities::serialisation;
 use messages::Message;
@@ -32,18 +32,24 @@ pub trait Base: Debug {
     fn crust_service(&self) -> &Service;
     fn full_id(&self) -> &FullId;
     fn stats(&mut self) -> &mut Stats;
-    fn send_event(&self, event: Event);
     fn in_authority(&self, auth: &Authority<XorName>) -> bool;
 
-    fn handle_lost_peer(&mut self, _peer_id: PeerId) -> Transition {
-        Transition::Stay
+    fn handle_lost_peer(&mut self, _peer_id: PeerId) -> Evented<Transition> {
+        Transition::Stay.to_evented()
     }
 
     fn name(&self) -> &XorName {
         self.full_id().public_id().name()
     }
 
-    fn send_message(&mut self, peer_id: &PeerId, message: Message) -> Result<(), RoutingError> {
+    fn close_group(&self, _name: XorName, _count: usize) -> Option<Vec<XorName>> {
+        None
+    }
+
+    fn send_message(&mut self,
+                    peer_id: &PeerId,
+                    message: Message)
+                    -> Evented<Result<(), RoutingError>> {
         let priority = message.priority();
 
         let raw_bytes = match serialisation::serialise(&message) {
@@ -52,7 +58,7 @@ pub trait Base: Debug {
                        self,
                        message,
                        error);
-                return Err(error.into());
+                return Err(error.into()).to_evented();
             }
             Ok(bytes) => bytes,
         };
@@ -66,7 +72,7 @@ pub trait Base: Debug {
                     peer_id: &PeerId,
                     bytes: Vec<u8>,
                     priority: u8)
-                    -> Result<(), RoutingError> {
+                    -> Evented<Result<(), RoutingError>> {
         self.stats().count_bytes(bytes.len());
 
         if let Err(err) = self.crust_service().send(*peer_id, bytes.clone(), priority) {
@@ -74,10 +80,9 @@ pub trait Base: Debug {
                   self,
                   peer_id);
             self.crust_service().disconnect(*peer_id);
-            let _ = self.handle_lost_peer(*peer_id);
-            return Err(err.into());
+            return self.handle_lost_peer(*peer_id).map(|_| Err(err.into()));
         }
 
-        Ok(())
+        Ok(()).to_evented()
     }
 }
