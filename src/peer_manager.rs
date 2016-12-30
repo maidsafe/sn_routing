@@ -324,17 +324,11 @@ impl PeerManager {
 
     /// Populates the routing table.
     pub fn populate_routing_table(&mut self, groups: &[Group]) {
-        let min_group_size = self.routing_table.min_group_size();
-        let groups_prefixes = groups.into_iter()
-            .map(|&(ref prefix, _)| *prefix)
-            .collect_vec();
+        let groups_prefixes = groups.into_iter().map(|&(ref prefix, _)| *prefix).collect();
         // TODO - nothing can be done to recover from an error here - use `unwrap!` for now, but
         // consider refactoring to return an error which can be used to transition the state
         // machine to `Terminate`.
-        let new_rt = unwrap!(RoutingTable::new_with_groups(*self.our_public_id.name(),
-                                                           min_group_size,
-                                                           groups_prefixes));
-        self.routing_table = new_rt;
+        unwrap!(self.routing_table.add_prefixes(groups_prefixes));
     }
 
     /// Returns the routing table.
@@ -389,7 +383,7 @@ impl PeerManager {
         Ok(public_ids)
     }
 
-    pub fn verify_candidate(&mut self,
+    pub fn verify_candidate(&self,
                             node_name: XorName,
                             proof: Vec<u8>,
                             _leading_zero_bytes: u32,
@@ -437,8 +431,8 @@ impl PeerManager {
                 }
             }
         }
-        trace!("{:?} received NodeApproval for {:?}, but doesn't record it as a candidate \
-                or having its peer info",
+        trace!("{:?} received NodeApproval for {:?}, but doesn't record it as a \
+                candidate or having its peer info",
                self.routing_table.our_name(),
                candidate_name);
         // TODO: more specific return error
@@ -458,7 +452,7 @@ impl PeerManager {
                 self.candidate = None;
                 if let Some(peer) = self.peer_map.get_by_name(&candidate_name) {
                     if let PeerState::ConnectionInfoPreparing { .. } = peer.state {
-                        trace!("{:?} received NodeApproval for {:?} but not connected yet",
+                        trace!("{:?} received ApprovalConfirmation for {:?} but not connected yet",
                                self.routing_table.our_name(),
                                candidate_name);
                     } else if let Some(peer_id) = peer.peer_id() {
@@ -471,7 +465,7 @@ impl PeerManager {
                 }
             }
         }
-        trace!("{:?} received ApproalConfirmation for {:?}, but doesn't record it as a candidate \
+        trace!("{:?} received ApprovalConfirmation for {:?}, but doesn't record it as a candidate \
                 or having its peer info",
                self.routing_table.our_name(),
                candidate_name);
