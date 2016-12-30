@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use rand::Rng;
-use routing::{Authority, Data, Event, MessageId, Prefix, Request, Response};
+use routing::{Authority, Data, Event, EventStream, MessageId, Prefix, Request, Response};
 use routing::mock_crust::Network;
 use std::sync::mpsc;
 use super::{TestNode, create_connected_clients, create_connected_nodes_until_split,
@@ -65,9 +65,9 @@ fn response_caching() {
 
     poll_all(&mut nodes, &mut clients);
 
-    for node in &nodes {
+    for node in &mut *nodes {
         loop {
-            match node.event_rx.try_recv() {
+            match node.try_next_ev() {
                 Ok(Event::Request { request: Request::Get(req_data_id, req_message_id),
                                     src: req_src,
                                     dst: req_dst }) => {
@@ -97,7 +97,7 @@ fn response_caching() {
     );
 
     // Drain remaining events if any.
-    while let Ok(_) = clients[0].event_rx.try_recv() {}
+    while let Ok(_) = clients[0].inner.try_next_ev() {}
 
     let message_id = MessageId::new();
 
@@ -127,7 +127,7 @@ fn response_caching() {
 
     // The request should not be relayed to any other node, so no node should
     // raise Event::Request.
-    for node in nodes.iter().take(min_group_size) {
+    for node in nodes.iter_mut().take(min_group_size) {
         expect_no_event!(node);
     }
 }

@@ -129,7 +129,6 @@ use std::collections::{BTreeSet, HashMap, HashSet, hash_map, hash_set};
 use std::fmt::{Binary, Debug, Formatter};
 use std::fmt::Result as FmtResult;
 use std::hash::Hash;
-use std::thread;
 
 pub type Groups<T> = HashMap<Prefix<T>, HashSet<T>>;
 
@@ -151,7 +150,7 @@ pub struct Iter<'a, T: 'a + Binary + Clone + Copy + Default + Hash + Xorable> {
 impl<'a, T: 'a + Binary + Clone + Copy + Default + Hash + Xorable> Iterator for Iter<'a, T> {
     type Item = &'a T;
 
-    #[cfg_attr(feature="clippy", allow(while_let_on_iterator))]
+    #[cfg_attr(feature="cargo-clippy", allow(while_let_on_iterator))]
     fn next(&mut self) -> Option<&'a T> {
         while let Some(name) = self.inner.next() {
             if *name != self.our_name {
@@ -1025,14 +1024,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Binary for Rou
 impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Debug for RoutingTable<T> {
     fn fmt(&self, formatter: &mut Formatter) -> FmtResult {
         Binary::fmt(self, formatter)
-    }
-}
-
-impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Drop for RoutingTable<T> {
-    fn drop(&mut self) {
-        if thread::panicking() {
-            trace!("{:?}", self);
-        }
     }
 }
 

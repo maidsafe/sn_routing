@@ -54,7 +54,7 @@
 //! to the network through any node, and exchange public keys with it. That node becomes a
 //! bootstrap node for the client, and messages to and from the client will be routed over it.
 //!
-//! ```no_run
+//! ```ignore
 //! use std::sync::mpsc;
 //! use routing::{Client, Event, FullId};
 //!
@@ -76,13 +76,11 @@
 //! Creating a node looks even simpler:
 //!
 //! ```no_run
-//! use std::sync::mpsc;
-//! use routing::{Node, Event};
+//! use routing::Node;
 //!
 //! let min_group_size = 8;
 //!
-//! let (sender, _receiver) = mpsc::channel::<Event>();
-//! let _ = Node::builder().create(sender, min_group_size).unwrap();
+//! let _ = Node::builder().create(min_group_size).unwrap();
 //! ```
 //!
 //! Upon creation, the node will first connect to the network as a client. Once it has client
@@ -120,17 +118,13 @@
 #![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
          missing_debug_implementations, variant_size_differences)]
 
-#![cfg_attr(feature="clippy", feature(plugin))]
-#![cfg_attr(feature="clippy", plugin(clippy))]
-#![cfg_attr(feature="clippy", deny(clippy, unicode_not_nfc, wrong_pub_self_convention,
-                                   option_unwrap_used))]
-#![cfg_attr(feature="clippy", allow(use_debug))]
-
+#![cfg_attr(feature="cargo-clippy", deny(clippy, unicode_not_nfc, wrong_pub_self_convention,
+                                    option_unwrap_used))]
 #[macro_use]
 extern crate log;
 #[macro_use]
 extern crate maidsafe_utilities;
-#[cfg_attr(feature="clippy", allow(useless_attribute))]
+#[cfg_attr(feature="cargo-clippy", allow(useless_attribute))]
 #[allow(unused_extern_crates)]
 #[macro_use]
 extern crate quick_error;
@@ -145,6 +139,9 @@ extern crate rust_sodium;
 extern crate rustc_serialize;
 extern crate tiny_keccak;
 
+#[macro_use]
+mod evented;
+
 mod ack_manager;
 mod action;
 mod client;
@@ -152,6 +149,7 @@ mod cache;
 mod data;
 mod error;
 mod event;
+mod event_stream;
 mod section_list_cache;
 mod id;
 mod message_filter;
@@ -197,6 +195,8 @@ pub use data::{AppendWrapper, AppendedData, Data, DataIdentifier, Filter, Immuta
                StructuredData};
 pub use error::{InterfaceError, RoutingError};
 pub use event::Event;
+pub use event_stream::EventStream;
+pub use evented::Evented;
 pub use id::{FullId, PublicId};
 pub use messages::{Request, Response};
 #[cfg(feature = "use-mock-crust")]
@@ -214,7 +214,7 @@ mod tests {
     use super::QUORUM;
 
     #[test]
-    #[cfg_attr(feature="clippy", allow(eq_op))]
+    #[cfg_attr(feature="cargo-clippy", allow(eq_op))]
     fn quorum_percentage() {
         assert!(QUORUM <= 100 && QUORUM > 50,
                 "Quorum percentage isn't between 51 and 100");

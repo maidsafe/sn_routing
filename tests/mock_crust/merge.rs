@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use rand::Rng;
-use routing::Event;
+use routing::{Event, EventStream};
 use routing::mock_crust::Network;
 use super::{create_connected_nodes_until_split, poll_and_resend, verify_invariant_for_all_nodes};
 
@@ -48,10 +48,11 @@ fn merge(prefix_lengths: Vec<usize>) {
         }
 
         info!("Killing {:?}", nodes[index].name());
-        let _ = nodes.remove(index);
+        let removed = nodes.remove(index);
+        drop(removed);
         poll_and_resend(&mut nodes, &mut []);
-        for node in &nodes {
-            while let Ok(event) = node.event_rx.try_recv() {
+        for node in &mut *nodes {
+            while let Ok(event) = node.try_next_ev() {
                 match event {
                     Event::NodeAdded(..) |
                     Event::NodeLost(..) |

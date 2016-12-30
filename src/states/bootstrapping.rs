@@ -21,6 +21,7 @@ use crust::{PeerId, Service};
 use crust::Event as CrustEvent;
 use error::RoutingError;
 use event::Event;
+use evented::{Evented, ToEvented};
 use id::{FullId, PublicId};
 use maidsafe_utilities::serialisation;
 use messages::{DirectMessage, Message};
@@ -32,7 +33,6 @@ use stats::Stats;
 use std::collections::HashSet;
 use std::fmt::{self, Debug, Formatter};
 use std::net::SocketAddr;
-use std::sync::mpsc::Sender;
 use std::time::Duration;
 use super::{Client, Node};
 use super::common::Base;
@@ -49,7 +49,6 @@ pub struct Bootstrapping {
     cache: Box<Cache>,
     client_restriction: bool,
     crust_service: Service,
-    event_sender: Sender<Event>,
     full_id: FullId,
     min_group_size: usize,
     stats: Stats,
@@ -60,7 +59,6 @@ impl Bootstrapping {
     pub fn new(cache: Box<Cache>,
                client_restriction: bool,
                mut crust_service: Service,
-               event_sender: Sender<Event>,
                full_id: FullId,
                min_group_size: usize,
                timer: Timer)
@@ -73,7 +71,6 @@ impl Bootstrapping {
             cache: cache,
             client_restriction: client_restriction,
             crust_service: crust_service,
-            event_sender: event_sender,
             full_id: full_id,
             min_group_size: min_group_size,
             stats: Stats::new(),
@@ -81,7 +78,7 @@ impl Bootstrapping {
         }
     }
 
-    pub fn handle_action(&mut self, action: Action) -> Transition {
+    pub fn handle_action(&mut self, action: Action) -> Evented<Transition> {
         match action {
             Action::ClientSendRequest { ref result_tx, .. } |
             Action::NodeSendMessage { ref result_tx, .. } => {
@@ -95,20 +92,14 @@ impl Bootstrapping {
             }
             Action::Timeout(token) => self.handle_timeout(token),
             Action::Terminate => {
-                return Transition::Terminate;
-            }
-
-            // TODO: these actions make no sense in this state, but we handle
-            // them for now, to preserve the pre-refactor behaviour.
-            Action::CloseGroup { result_tx, .. } => {
-                let _ = result_tx.send(None);
+                return Transition::Terminate.to_evented();
             }
         }
 
-        Transition::Stay
+        Transition::Stay.to_evented()
     }
 
-    pub fn handle_crust_event(&mut self, crust_event: CrustEvent) -> Transition {
+    pub fn handle_crust_event(&mut self, crust_event: CrustEvent) -> Evented<Transition> {
         match crust_event {
             CrustEvent::BootstrapConnect(peer_id, socket_addr) => {
                 self.handle_bootstrap_connect(peer_id, socket_addr)
@@ -116,23 +107,22 @@ impl Bootstrapping {
             CrustEvent::BootstrapFailed => self.handle_bootstrap_failed(),
             CrustEvent::NewMessage(peer_id, bytes) => {
                 match self.handle_new_message(peer_id, bytes) {
-                    Ok(transition) => transition,
+                    Ok(transition) => transition.to_evented(),
                     Err(error) => {
                         debug!("{:?} - {:?}", self, error);
-                        Transition::Stay
+                        Transition::Stay.to_evented()
                     }
                 }
             }
             _ => {
                 debug!("{:?} Unhandled crust event {:?}", self, crust_event);
-                Transition::Stay
+                Transition::Stay.to_evented()
             }
         }
     }
 
-    pub fn into_client(self, proxy_peer_id: PeerId, proxy_public_id: PublicId) -> Client {
+    pub fn into_client(self, proxy_peer_id: PeerId, proxy_public_id: PublicId) -> Evented<Client> {
         Client::from_bootstrapping(self.crust_service,
-                                   self.event_sender,
                                    self.full_id,
                                    self.min_group_size,
                                    proxy_peer_id,
@@ -144,7 +134,6 @@ impl Bootstrapping {
     pub fn into_node(self, proxy_peer_id: PeerId, proxy_public_id: PublicId) -> Option<Node> {
         Node::from_bootstrapping(self.cache,
                                  self.crust_service,
-                                 self.event_sender,
                                  self.full_id,
                                  self.min_group_size,
                                  proxy_peer_id,
@@ -169,12 +158,16 @@ impl Bootstrapping {
         }
     }
 
-    fn handle_bootstrap_connect(&mut self, peer_id: PeerId, socket_addr: SocketAddr) -> Transition {
+    fn handle_bootstrap_connect(&mut self,
+                                peer_id: PeerId,
+                                socket_addr: SocketAddr)
+                                -> Evented<Transition> {
+        let mut results = Evented::empty();
         match self.bootstrap_connection {
             None => {
                 debug!("{:?} Received BootstrapConnect from {:?}.", self, peer_id);
                 // Established connection. Pending Validity checks
-                let _ = self.send_client_identify(peer_id);
+                let _ = self.send_client_identify(peer_id).extract(&mut results);
                 let _ = self.bootstrap_blacklist.insert(socket_addr);
             }
             Some((bootstrap_id, _)) if bootstrap_id == peer_id => {
@@ -187,13 +180,12 @@ impl Bootstrapping {
             }
         }
 
-        Transition::Stay
+        results.with_value(Transition::Stay)
     }
 
-    fn handle_bootstrap_failed(&mut self) -> Transition {
+    fn handle_bootstrap_failed(&mut self) -> Evented<Transition> {
         debug!("{:?} Failed to bootstrap.", self);
-        self.send_event(Event::Terminate);
-        Transition::Terminate
+        Evented::single(Event::Terminate, Transition::Terminate)
     }
 
     fn handle_new_message(&mut self,
@@ -250,13 +242,14 @@ impl Bootstrapping {
         Transition::Stay
     }
 
-    fn send_client_identify(&mut self, peer_id: PeerId) -> Result<(), RoutingError> {
+    fn send_client_identify(&mut self, peer_id: PeerId) -> Evented<Result<(), RoutingError>> {
         debug!("{:?} - Sending ClientIdentify to {:?}.", self, peer_id);
 
         let token = self.timer.schedule(Duration::from_secs(BOOTSTRAP_TIMEOUT_SECS));
         self.bootstrap_connection = Some((peer_id, token));
 
-        let serialised_public_id = serialisation::serialise(self.full_id.public_id())?;
+        let serialised_public_id = try_ev!(serialisation::serialise(self.full_id.public_id()),
+                                           Evented::empty());
         let signature = sign::sign_detached(&serialised_public_id,
                                             self.full_id.signing_private_key());
 
@@ -295,10 +288,6 @@ impl Base for Bootstrapping {
 
     fn full_id(&self) -> &FullId {
         &self.full_id
-    }
-
-    fn send_event(&self, event: Event) {
-        let _ = self.event_sender.send(event);
     }
 
     fn stats(&mut self) -> &mut Stats {

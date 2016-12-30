@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use routing::{Authority, Event, MessageId, QUORUM, Response, XorName};
+use routing::{Authority, Event, EventStream, MessageId, QUORUM, Response, XorName};
 use routing::mock_crust::Network;
 use std::sync::mpsc;
 use super::{TestNode, create_connected_nodes, gen_immutable_data, poll_all,
@@ -84,17 +84,17 @@ fn messages_accumulate_with_quorum() {
         send(node, &dst_grp, message_id);
     }
     let _ = poll_all(&mut nodes, &mut []);
-    for node in &mut nodes {
+    for node in &mut *nodes {
         expect_no_event!(node);
     }
     send(&mut nodes[quorum - 1], &dst_grp, message_id);
     let _ = poll_all(&mut nodes, &mut []);
-    for node in &mut nodes {
+    for node in &mut *nodes {
         expect_next_event!(node, Event::Response { response: Response::GetSuccess(..), .. });
     }
     send(&mut nodes[quorum], &dst_grp, message_id);
     let _ = poll_all(&mut nodes, &mut []);
-    for node in &mut nodes {
+    for node in &mut *nodes {
         expect_no_event!(node);
     }
 
@@ -106,17 +106,17 @@ fn messages_accumulate_with_quorum() {
         send(node, &dst_grp, message_id);
     }
     let _ = poll_all(&mut nodes, &mut []);
-    for node in &mut nodes {
+    for node in &mut *nodes {
         expect_no_event!(node);
     }
     send(&mut nodes[0], &dst_grp, message_id);
     let _ = poll_all(&mut nodes, &mut []);
-    for node in &mut nodes {
+    for node in &mut *nodes {
         expect_next_event!(node, Event::Response { response: Response::GetSuccess(..), .. });
     }
     send(&mut nodes[quorum + 1], &dst_grp, message_id);
     let _ = poll_all(&mut nodes, &mut []);
-    for node in &mut nodes {
+    for node in &mut *nodes {
         expect_no_event!(node);
     }
 }

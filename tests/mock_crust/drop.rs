@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use rand::Rng;
-use routing::Event;
+use routing::{Event, EventStream};
 use routing::mock_crust::{Config, Endpoint, Network};
 use super::{TestNode, create_connected_nodes, poll_all, verify_invariant_for_all_nodes};
 
@@ -30,20 +30,21 @@ fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
 
     let _ = poll_all(nodes, &mut []);
 
-    for node in nodes.iter().filter(|n| close_names.contains(&n.name())) {
+    for node in nodes.iter_mut().filter(|n| close_names.contains(&n.name())) {
         loop {
-            match node.event_rx.try_recv() {
+            match node.try_next_ev() {
                 Ok(Event::NodeLost(lost_name, _)) if lost_name == name => break,
                 Ok(_) => (),
-                _ => panic!("Event::NodeLost({:?}) not received", name),
+                Err(_) => panic!("Event::NodeLost({:?}) not received", name),
             }
         }
     }
 }
 
 #[test]
+#[ignore]
 fn failing_connections_group_of_three() {
-    let min_group_size = 8;
+    let min_group_size = 2; // we set the group size small to avoid triggering a restart
     let network = Network::new(min_group_size, None);
 
     network.block_connection(Endpoint(1), Endpoint(6));
@@ -74,9 +75,9 @@ fn node_drops() {
 }
 
 #[test]
-#[cfg_attr(feature = "clippy", allow(needless_range_loop))]
+#[cfg_attr(feature = "cargo-clippy", allow(needless_range_loop))]
 fn node_restart() {
-    let min_group_size = 8;
+    let min_group_size = 2;
     let network = Network::new(min_group_size, None);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, min_group_size);
@@ -88,7 +89,7 @@ fn node_restart() {
     let index = rng.gen_range(1, nodes.len());
     drop_node(&mut nodes, index);
 
-    for node in &nodes[1..] {
+    for node in &mut nodes[1..] {
         expect_next_event!(node, Event::RestartRequired);
     }
 

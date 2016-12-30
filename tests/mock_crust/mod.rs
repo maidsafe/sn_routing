@@ -23,14 +23,13 @@ mod merge;
 mod requests;
 mod utils;
 
-use routing::{Event, Prefix, XOR_NAME_LEN, XorName};
+use routing::{Event, EventStream, Prefix, XOR_NAME_LEN, XorName};
 use routing::mock_crust::{Config, Endpoint, Network};
 use routing::mock_crust::crust::PeerId;
-pub use self::utils::{TestClient, TestNode, create_connected_clients, create_connected_nodes,
-                      create_connected_nodes_until_split, gen_bytes, gen_immutable_data,
-                      gen_range_except, poll_all, poll_and_resend, sort_nodes_by_distance_to,
-                      verify_invariant_for_all_nodes};
-
+pub use self::utils::{Nodes, TestClient, TestNode, create_connected_clients,
+                      create_connected_nodes, create_connected_nodes_until_split, gen_bytes,
+                      gen_immutable_data, gen_range_except, poll_all, poll_and_resend,
+                      sort_nodes_by_distance_to, verify_invariant_for_all_nodes};
 
 // -----  Miscellaneous tests below  -----
 
@@ -53,7 +52,7 @@ fn disconnect_on_rebootstrap() {
     let _ = poll_all(&mut nodes, &mut []);
     // When retrying to bootstrap, we should have disconnected from the bootstrap node.
     assert!(!unwrap!(nodes.last()).handle.is_connected(&nodes[1].handle));
-    expect_next_event!(unwrap!(nodes.last()), Event::Terminate);
+    expect_next_event!(unwrap!(nodes.last_mut()), Event::Terminate);
 }
 
 #[test]
@@ -157,7 +156,7 @@ fn simultaneous_joining_nodes() {
     let (name0, name1) = (XorName([0u8; XOR_NAME_LEN]), XorName([255u8; XOR_NAME_LEN]));
     let prefix0 = Prefix::new(1, name0);
 
-    for node in &mut nodes {
+    for node in &mut *nodes {
         if prefix0.matches(&node.name()) {
             node.inner.set_next_node_name(name0);
         } else {
@@ -196,7 +195,8 @@ fn whitelist() {
     let network = Network::new(min_group_size, None);
     let mut nodes = create_connected_nodes(&network, min_group_size);
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
-    for node in &mut nodes {
+
+    for node in &mut *nodes {
         node.handle.0.borrow_mut().whitelist_peer(PeerId(min_group_size));
     }
     // The next node has peer ID `min_group_size`: It should be able to join.

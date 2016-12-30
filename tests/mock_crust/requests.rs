@@ -15,7 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use routing::{Authority, Data, DataIdentifier, Event, ImmutableData, MessageId, Request, Response};
+use routing::{Authority, Data, DataIdentifier, Event, EventStream, ImmutableData, MessageId,
+              Request, Response};
 use routing::mock_crust::Network;
 use super::{create_connected_clients, create_connected_nodes, gen_bytes, gen_immutable_data,
             poll_all};
@@ -40,9 +41,9 @@ fn successful_put_request() {
     let _ = poll_all(&mut nodes, &mut clients);
 
     let mut request_received_count = 0;
-    for node in nodes.iter().filter(|n| n.is_recipient(&dst)) {
+    for node in nodes.iter_mut().filter(|n| n.is_recipient(&dst)) {
         loop {
-            match node.event_rx.try_recv() {
+            match node.try_next_ev() {
                 Ok(Event::Request { request: Request::Put(ref immutable, ref id), .. }) => {
                     request_received_count += 1;
                     if data == *immutable && message_id == *id {
@@ -81,9 +82,9 @@ fn successful_get_request() {
 
     let mut request_received_count = 0;
 
-    for node in nodes.iter().filter(|n| n.is_recipient(&dst)) {
+    for node in nodes.iter_mut().filter(|n| n.is_recipient(&dst)) {
         loop {
-            match node.event_rx.try_recv() {
+            match node.try_next_ev() {
                 Ok(Event::Request { request: Request::Get(ref request, id), src, dst }) => {
                     request_received_count += 1;
                     if data_request == *request && message_id == id {
@@ -107,9 +108,9 @@ fn successful_get_request() {
 
     let mut response_received_count = 0;
 
-    for client in clients {
+    for client in &mut clients {
         loop {
-            match client.event_rx.try_recv() {
+            match client.inner.try_next_ev() {
                 Ok(Event::Response {
                     response: Response::GetSuccess(ref immutable, ref id),
                     ..
@@ -150,9 +151,9 @@ fn failed_get_request() {
 
     let mut request_received_count = 0;
 
-    for node in nodes.iter().filter(|n| n.is_recipient(&dst)) {
+    for node in nodes.iter_mut().filter(|n| n.is_recipient(&dst)) {
         loop {
-            match node.event_rx.try_recv() {
+            match node.try_next_ev() {
                 Ok(Event::Request { request: Request::Get(ref data_id, ref id), src, dst }) => {
                     request_received_count += 1;
                     if data_request == *data_id && message_id == *id {
@@ -176,9 +177,9 @@ fn failed_get_request() {
 
     let mut response_received_count = 0;
 
-    for client in clients {
+    for client in &mut clients {
         loop {
-            match client.event_rx.try_recv() {
+            match client.inner.try_next_ev() {
                 Ok(Event::Response { response: Response::GetFailure { ref id, .. }, .. }) => {
                     response_received_count += 1;
                     if message_id == *id {
@@ -217,9 +218,9 @@ fn disconnect_on_get_request() {
 
     let mut request_received_count = 0;
 
-    for node in nodes.iter().filter(|n| n.is_recipient(&dst)) {
+    for node in nodes.iter_mut().filter(|n| n.is_recipient(&dst)) {
         loop {
-            match node.event_rx.try_recv() {
+            match node.try_next_ev() {
                 Ok(Event::Request { request: Request::Get(ref request, ref id), src, dst }) => {
                     request_received_count += 1;
                     if data_request == *request && message_id == *id {
@@ -244,8 +245,8 @@ fn disconnect_on_get_request() {
 
     let _ = poll_all(&mut nodes, &mut clients);
 
-    for client in clients {
-        if let Ok(Event::Response { .. }) = client.event_rx.try_recv() {
+    for client in &mut clients {
+        if let Ok(Event::Response { .. }) = client.inner.try_next_ev() {
             panic!("Unexpected Event::Response received");
         }
     }

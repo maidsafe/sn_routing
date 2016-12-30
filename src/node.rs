@@ -20,11 +20,11 @@ use cache::{Cache, NullCache};
 use data::{Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use event::Event;
+use event_stream::{EventStepper, EventStream};
+use evented::{Evented, ToEvented};
 use id::FullId;
 #[cfg(feature = "use-mock-crust")]
 use id::PublicId;
-#[cfg(not(feature = "use-mock-crust"))]
-use maidsafe_utilities::thread;
 use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, RELOCATE_PRIORITY, Request, Response,
                UserMessage};
 #[cfg(feature = "use-mock-crust")]
@@ -37,15 +37,13 @@ use rust_sodium::crypto::sign;
 use state_machine::{State, StateMachine};
 use states;
 #[cfg(feature = "use-mock-crust")]
-use std::cell::RefCell;
-#[cfg(feature = "use-mock-crust")]
 use std::collections::BTreeMap;
+use std::collections::VecDeque;
 #[cfg(feature = "use-mock-crust")]
 use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use types::{MessageId, RoutingActionSender};
 use xor_name::XorName;
-
 
 /// A builder to configure and create a new `Node`.
 pub struct NodeBuilder {
@@ -76,79 +74,58 @@ impl NodeBuilder {
     /// request a new name and integrate itself into the network using the new name.
     ///
     /// The initial `Node` object will have newly generated keys.
-    #[cfg(not(feature = "use-mock-crust"))]
-    pub fn create(self,
-                  event_sender: Sender<Event>,
-                  min_group_size: usize)
-                  -> Result<Node, RoutingError> {
-        rust_sodium::init();  // enable shared global (i.e. safe to multithread now)
+    pub fn create(self, min_group_size: usize) -> Result<Node, RoutingError> {
+        // If we're not in a test environment where we might want to manually seed the crypto RNG
+        // then seed randomly.
+        #[cfg(not(feature = "use-mock-crust"))]
+        rust_sodium::init();
+
+        let mut ev_buffer = VecDeque::new();
 
         // start the handler for routing without a restriction to become a full node
-        let (action_sender, mut machine) = self.make_state_machine(event_sender, min_group_size);
+        let (_, machine) = self.make_state_machine(min_group_size).extract_to_buf(&mut ev_buffer);
 
-        let (tx, rx) = channel();
-
-        let raii_joiner = thread::named("Node thread", move || machine.run());
-
-        Ok(Node {
-            interface_result_tx: tx,
-            interface_result_rx: rx,
-            action_sender: action_sender,
-            _raii_joiner: raii_joiner,
-        })
-    }
-
-    /// Creates a new `Node` for unit testing.
-    #[cfg(feature = "use-mock-crust")]
-    pub fn create(self,
-                  event_sender: Sender<Event>,
-                  min_group_size: usize)
-                  -> Result<Node, RoutingError> {
-        // start the handler for routing without a restriction to become a full node
-        let (action_sender, machine) = self.make_state_machine(event_sender, min_group_size);
         let (tx, rx) = channel();
 
         Ok(Node {
             interface_result_tx: tx,
             interface_result_rx: rx,
-            action_sender: action_sender,
-            machine: RefCell::new(machine),
+            machine: machine,
+            event_buffer: ev_buffer,
         })
     }
 
     fn make_state_machine(self,
-                          event_sender: Sender<Event>,
                           min_group_size: usize)
-                          -> (RoutingActionSender, StateMachine) {
+                          -> Evented<(RoutingActionSender, StateMachine)> {
         let full_id = FullId::new();
 
         StateMachine::new(move |crust_service, timer| {
             if self.first {
                 if let Some(state) = states::Node::first(self.cache,
                                                          crust_service,
-                                                         event_sender,
                                                          full_id,
                                                          min_group_size,
                                                          timer) {
-                    State::Node(state)
-                } else {
-                    State::Terminated
-                }
+                        State::Node(state)
+                    } else {
+                        State::Terminated
+                    }
+                    .to_evented()
             } else if self.deny_other_local_nodes && crust_service.has_peers_on_lan() {
                 error!("Bootstrapping({:?}) More than 1 routing node found on LAN. Currently \
                         this is not supported",
                        full_id.public_id().name());
 
-                let _ = event_sender.send(Event::Terminate);
-                State::Terminated
+                Evented::single(Event::Terminate, State::Terminated)
             } else {
                 State::Bootstrapping(states::Bootstrapping::new(self.cache,
                                                                 false,
                                                                 crust_service,
-                                                                event_sender,
                                                                 full_id,
                                                                 min_group_size,
                                                                 timer))
+                    .to_evented()
             }
         })
     }
@@ -165,13 +142,8 @@ impl NodeBuilder {
 pub struct Node {
     interface_result_tx: Sender<Result<(), InterfaceError>>,
     interface_result_rx: Receiver<Result<(), InterfaceError>>,
-    action_sender: RoutingActionSender,
-
-    #[cfg(feature = "use-mock-crust")]
-    machine: RefCell<StateMachine>,
-
-    #[cfg(not(feature = "use-mock-crust"))]
-    _raii_joiner: ::maidsafe_utilities::thread::Joiner,
+    machine: StateMachine,
+    event_buffer: VecDeque<Event>,
 }
 
 impl Node {
@@ -185,7 +157,7 @@ impl Node {
     }
 
     /// Send a `Get` request to `dst` to retrieve data from the network.
-    pub fn send_get_request(&self,
+    pub fn send_get_request(&mut self,
                             src: Authority<XorName>,
                             dst: Authority<XorName>,
                             data_request: DataIdentifier,
@@ -196,7 +168,7 @@ impl Node {
     }
 
     /// Send a `Put` request to `dst` to store data on the network.
-    pub fn send_put_request(&self,
+    pub fn send_put_request(&mut self,
                             src: Authority<XorName>,
                             dst: Authority<XorName>,
                             data: Data,
@@ -207,7 +179,7 @@ impl Node {
     }
 
     /// Send a `Post` request to `dst` to modify data on the network.
-    pub fn send_post_request(&self,
+    pub fn send_post_request(&mut self,
                              src: Authority<XorName>,
                              dst: Authority<XorName>,
                              data: Data,
@@ -218,7 +190,7 @@ impl Node {
     }
 
     /// Send a `Delete` request to `dst` to remove data from the network.
-    pub fn send_delete_request(&self,
+    pub fn send_delete_request(&mut self,
                                src: Authority<XorName>,
                                dst: Authority<XorName>,
                                data: Data,
@@ -229,7 +201,7 @@ impl Node {
     }
 
     /// Respond to a `Get` request indicating success and sending the requested data.
-    pub fn send_get_success(&self,
+    pub fn send_get_success(&mut self,
                             src: Authority<XorName>,
                             dst: Authority<XorName>,
                             data: Data,
@@ -245,7 +217,7 @@ impl Node {
     }
 
     /// Respond to a `Get` request indicating failure.
-    pub fn send_get_failure(&self,
+    pub fn send_get_failure(&mut self,
                             src: Authority<XorName>,
                             dst: Authority<XorName>,
                             data_id: DataIdentifier,
@@ -266,7 +238,7 @@ impl Node {
     }
 
     /// Respond to a `Put` request indicating success.
-    pub fn send_put_success(&self,
+    pub fn send_put_success(&mut self,
                             src: Authority<XorName>,
                             dst: Authority<XorName>,
                             name: DataIdentifier,
@@ -277,7 +249,7 @@ impl Node {
     }
 
     /// Respond to a `Put` request indicating failure.
-    pub fn send_put_failure(&self,
+    pub fn send_put_failure(&mut self,
                             src: Authority<XorName>,
                             dst: Authority<XorName>,
                             data_id: DataIdentifier,
@@ -293,7 +265,7 @@ impl Node {
     }
 
     /// Respond to a `Post` request indicating success.
-    pub fn send_post_success(&self,
+    pub fn send_post_success(&mut self,
                              src: Authority<XorName>,
                              dst: Authority<XorName>,
                              name: DataIdentifier,
@@ -304,7 +276,7 @@ impl Node {
     }
 
     /// Respond to a `Post` request indicating failure.
-    pub fn send_post_failure(&self,
+    pub fn send_post_failure(&mut self,
                              src: Authority<XorName>,
                              dst: Authority<XorName>,
                              data_id: DataIdentifier,
@@ -320,7 +292,7 @@ impl Node {
     }
 
     /// Respond to a `Delete` request indicating success.
-    pub fn send_delete_success(&self,
+    pub fn send_delete_success(&mut self,
                                src: Authority<XorName>,
                                dst: Authority<XorName>,
                                name: DataIdentifier,
@@ -331,7 +303,7 @@ impl Node {
     }
 
     /// Respond to a `Delete` request indicating failure.
-    pub fn send_delete_failure(&self,
+    pub fn send_delete_failure(&mut self,
                                src: Authority<XorName>,
                                dst: Authority<XorName>,
                                data_id: DataIdentifier,
@@ -347,7 +319,7 @@ impl Node {
     }
 
     /// Respond to an `Append` request indicating success.
-    pub fn send_append_success(&self,
+    pub fn send_append_success(&mut self,
                                src: Authority<XorName>,
                                dst: Authority<XorName>,
                                name: DataIdentifier,
@@ -358,7 +330,7 @@ impl Node {
     }
 
     /// Respond to an `Append` request indicating failure.
-    pub fn send_append_failure(&self,
+    pub fn send_append_failure(&mut self,
                                src: Authority<XorName>,
                                dst: Authority<XorName>,
                                data_id: DataIdentifier,
@@ -374,7 +346,7 @@ impl Node {
     }
 
     /// Respond to a `GetAccountInfo` request indicating success.
-    pub fn send_get_account_info_success(&self,
+    pub fn send_get_account_info_success(&mut self,
                                          src: Authority<XorName>,
                                          dst: Authority<XorName>,
                                          data_stored: u64,
@@ -390,7 +362,7 @@ impl Node {
     }
 
     /// Respond to a `GetAccountInfo` request indicating failure.
-    pub fn send_get_account_info_failure(&self,
+    pub fn send_get_account_info_failure(&mut self,
                                          src: Authority<XorName>,
                                          dst: Authority<XorName>,
                                          external_error_indicator: Vec<u8>,
@@ -404,7 +376,7 @@ impl Node {
     }
 
     /// Send a `Refresh` request from `src` to `dst` to trigger churn.
-    pub fn send_refresh_request(&self,
+    pub fn send_refresh_request(&mut self,
                                 src: Authority<XorName>,
                                 dst: Authority<XorName>,
                                 content: Vec<u8>,
@@ -416,77 +388,91 @@ impl Node {
 
     /// Returns the first `count` names of the nodes in the routing table which are closest
     /// to the given one.
-    pub fn close_group(&self,
-                       name: XorName,
-                       count: usize)
-                       -> Result<Option<Vec<XorName>>, InterfaceError> {
-        let (result_tx, result_rx) = channel();
-        self.action_sender
-            .send(Action::CloseGroup {
-                name: name,
-                count: count,
-                result_tx: result_tx,
-            })?;
-
-        self.receive_action_result(&result_rx)
+    pub fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
+        self.machine.close_group(name, count)
     }
 
     /// Returns the name of this node.
-    pub fn name(&self) -> Result<XorName, InterfaceError> {
-        let (result_tx, result_rx) = channel();
-        self.action_sender.send(Action::Name { result_tx: result_tx })?;
-        self.receive_action_result(&result_rx)
+    pub fn name(&self) -> Result<XorName, RoutingError> {
+        self.machine.name().ok_or(RoutingError::Terminated)
     }
 
-    fn send_action(&self,
+    fn send_action(&mut self,
                    src: Authority<XorName>,
                    dst: Authority<XorName>,
                    user_msg: UserMessage,
                    priority: u8)
                    -> Result<(), InterfaceError> {
-        self.action_sender
-            .send(Action::NodeSendMessage {
-                src: src,
-                dst: dst,
-                content: user_msg,
-                priority: priority,
-                result_tx: self.interface_result_tx.clone(),
-            })?;
+        // Make sure the state machine has processed any outstanding crust events.
+        self.poll();
+
+        let action = Action::NodeSendMessage {
+            src: src,
+            dst: dst,
+            content: user_msg,
+            priority: priority,
+            result_tx: self.interface_result_tx.clone(),
+        };
+        let events = self.machine
+            .current_mut()
+            .handle_action(action)
+            .and_then(|transition| self.machine.apply_transition(transition))
+            .into_events();
+
+        self.event_buffer.extend(events);
 
         self.receive_action_result(&self.interface_result_rx)?
     }
 
-    #[cfg(not(feature = "use-mock-crust"))]
     fn receive_action_result<T>(&self, rx: &Receiver<T>) -> Result<T, InterfaceError> {
         Ok(rx.recv()?)
     }
 }
 
-#[cfg(feature = "use-mock-crust")]
-impl Node {
-    /// Poll and process all events in this node's `Core` instance.
-    pub fn poll(&self) -> bool {
-        self.machine.borrow_mut().poll()
+impl EventStepper for Node {
+    type Item = Event;
+
+    fn produce_events(&mut self) -> Result<Vec<Event>, ()> {
+        self.machine.step()
     }
 
+    fn try_produce_events(&mut self) -> Result<Vec<Event>, ()> {
+        self.machine.try_step()
+    }
+
+    fn buffer_items(&mut self, events: Vec<Event>) {
+        self.event_buffer.extend(events);
+    }
+
+    fn pop_item(&mut self) -> Option<Event> {
+        self.event_buffer.pop_front()
+    }
+}
+
+#[cfg(feature = "use-mock-crust")]
+impl Node {
     /// Resend all unacknowledged messages.
-    pub fn resend_unacknowledged(&self) -> bool {
-        self.machine.borrow_mut().current_mut().resend_unacknowledged()
+    pub fn resend_unacknowledged(&mut self) -> bool {
+        let mut events = Evented::empty();
+        let result = self.machine.current_mut().resend_unacknowledged().extract(&mut events);
+        self.event_buffer.extend(events.into_events());
+        result
     }
 
     /// Are there any unacknowledged messages?
-    pub fn has_unacknowledged(&self) -> bool {
-        self.machine.borrow().current().has_unacknowledged()
+    pub fn has_unacknowledged(&mut self) -> bool {
+        self.machine.current().has_unacknowledged()
     }
 
     /// Routing table of this node.
     pub fn routing_table(&self) -> Option<RoutingTable<XorName>> {
-        self.machine.borrow().current().routing_table().cloned()
+        self.machine.current().routing_table().cloned()
     }
 
     /// Resend all unacknowledged messages.
-    pub fn clear_state(&self) {
-        self.machine.borrow_mut().current_mut().clear_state()
+    pub fn clear_state(&mut self) {
+        let events = self.machine.current_mut().clear_state();
+        self.event_buffer.extend(events.into_events());
     }
 
     /// Returns a quorum of signatures for the neighbouring section's list or `None` if we don't
@@ -494,12 +480,12 @@ impl Node {
     pub fn section_list_signatures(&self,
                                    prefix: Prefix<XorName>)
                                    -> Option<BTreeMap<PublicId, sign::Signature>> {
-        self.machine.borrow().current().section_list_signatures(prefix)
+        self.machine.current().section_list_signatures(prefix)
     }
 
     /// Returns whether the current state is `Node`.
     pub fn is_node(&self) -> bool {
-        if let State::Node(..) = *self.machine.borrow().current() {
+        if let State::Node(..) = *self.machine.current() {
             true
         } else {
             false
@@ -507,33 +493,27 @@ impl Node {
     }
 
     /// Sets a name to be used when the next node relocation request is received by this node.
-    pub fn set_next_node_name(&self, relocation_name: XorName) {
-        self.machine.borrow_mut().current_mut().set_next_node_name(Some(relocation_name))
+    pub fn set_next_node_name(&mut self, relocation_name: XorName) {
+        self.machine.current_mut().set_next_node_name(Some(relocation_name))
     }
 
     /// Clears the name to be used when the next node relocation request is received by this node so
     /// the normal process is followed to calculate the relocated name.
-    pub fn clear_next_node_name(&self) {
-        self.machine.borrow_mut().current_mut().set_next_node_name(None)
-    }
-
-    fn receive_action_result<T>(&self, rx: &Receiver<T>) -> Result<T, InterfaceError> {
-        while self.poll() {}
-        Ok(rx.recv()?)
+    pub fn clear_next_node_name(&mut self) {
+        self.machine.current_mut().set_next_node_name(None)
     }
 }
 
 #[cfg(feature = "use-mock-crust")]
 impl Debug for Node {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        self.machine.borrow().fmt(formatter)
+        self.machine.fmt(formatter)
     }
 }
 
 impl Drop for Node {
     fn drop(&mut self) {
-        if let Err(err) = self.action_sender.send(Action::Terminate) {
-            debug!("Error {:?} sending event Core", err);
-        }
+        self.poll();
+        let _ = self.machine.current_mut().handle_action(Action::Terminate);
     }
 }
