@@ -77,6 +77,7 @@ pub struct Node {
     full_id: FullId,
     get_node_name_timer_token: Option<u64>,
     is_first_node: bool,
+    is_approved: bool,
     /// The queue of routing messages addressed to us. These do not themselves need
     /// forwarding, although they may wrap a message which needs forwarding.
     msg_queue: VecDeque<RoutingMessage>,
@@ -161,6 +162,7 @@ impl Node {
             full_id: full_id,
             get_node_name_timer_token: None,
             is_first_node: first_node,
+            is_approved: first_node,
             msg_queue: VecDeque::new(),
             peer_mgr: PeerManager::new(min_group_size, public_id),
             response_cache: cache,
@@ -876,29 +878,29 @@ impl Node {
     fn handle_node_approval(&mut self,
                             groups: Vec<(Prefix<XorName>, Vec<PublicId>)>)
                             -> Evented<Result<(), RoutingError>> {
-        let mut result = Evented::empty();
-        if !self.peer_mgr.routing_table().is_empty() {
+        let mut events = Evented::empty();
+        if self.is_approved {
             warn!("{:?} Received duplicate NodeApproval.", self);
-            return result.with_value(Ok(()));
+            return events.with_value(Ok(()));
         }
 
-        let candidates_infos = self.peer_mgr.peer_candidates();
         self.peer_mgr.populate_routing_table(&groups);
-        for peer_info in &candidates_infos {
-            self.add_to_routing_table(&peer_info.0, &peer_info.1).extract(&mut result);
-        }
 
         // TODO: is this neccssary as this node is not approved as a full node by the section yet
         let our_prefix = *self.peer_mgr.routing_table().our_prefix();
-        let _ = self.send_section_list_signature(our_prefix, None).extract(&mut result);
+        let _ = self.send_section_list_signature(our_prefix, None).extract(&mut events);
 
         let name = *self.name();
-        let _ = self.send_routing_message(RoutingMessage {
+        if let Err(error) = self.send_routing_message(RoutingMessage {
                 src: Authority::ManagedNode(name),
                 dst: Authority::Section(name),
                 content: MessageContent::ApprovalConfirmation,
             })
-            .extract(&mut result);
+            .extract(&mut events) {
+            debug!("{:?} Failed sending ApprovalConfirmation: {:?}", self, error);
+        }
+
+        trace!("{:?} received {:?} on NodeApproval.", self, groups);
 
         for group in &groups {
             for pub_id in &group.1 {
@@ -909,7 +911,7 @@ impl Node {
                     let src = Authority::ManagedNode(*self.name());
                     let node_auth = Authority::ManagedNode(*pub_id.name());
                     if let Err(error) = self.send_connection_info_request(*pub_id, src, node_auth)
-                        .extract(&mut result) {
+                        .extract(&mut events) {
                         debug!("{:?} - Failed to send connection info to {:?}: {:?}",
                                self,
                                pub_id,
@@ -919,7 +921,13 @@ impl Node {
             }
         }
 
-        result.map(Ok)
+        events.add_event(Event::Connected);
+        for name in self.peer_mgr.routing_table().iter() {
+            events.add_event(Event::NodeAdded(*name, self.peer_mgr.routing_table().clone()));
+        }
+        self.is_approved = true;
+
+        events.with_value(Ok(()))
     }
 
     fn handle_resource_proof_request(&mut self,
@@ -958,7 +966,9 @@ impl Node {
             info!("{:?} Sending CandidateApproval {:?} to group.",
                   self,
                   valid_candidate);
-            let _ = self.send_routing_message(response_msg).extract(&mut result);
+            if let Err(error) = self.send_routing_message(response_msg).extract(&mut result) {
+                debug!("{:?} Failed sending CandidateApproval: {:?}", self, error);
+            }
         }
 
         result.map(Ok)
@@ -1133,11 +1143,6 @@ impl Node {
     fn handle_node_identify(&mut self, public_id: PublicId, peer_id: PeerId) -> Evented<()> {
         let mut result = Evented::empty();
         debug!("{:?} Handling NodeIdentify from {:?}.", self, public_id.name());
-        if !self.is_first_node && self.peer_mgr.routing_table().is_empty() {
-            debug!("{:?} adding {:?} as peer candidate.", self, public_id.name());
-            self.peer_mgr.add_as_peer_candidate(&public_id, &peer_id);
-            return result;
-        }
         match self.peer_mgr.check_candidate(&public_id, &peer_id) {
             Ok(Some((tunnel, seed))) => {
                 if tunnel {
@@ -1223,13 +1228,14 @@ impl Node {
         }
 
         debug!("{:?} Added {:?} to routing table.", self, public_id.name());
-        if self.peer_mgr.routing_table().len() == 1 {
+        if self.is_first_node && self.peer_mgr.routing_table().len() == 1 {
             result.add_event(Event::Connected);
         }
 
-        let node_added_ev = Event::NodeAdded(*public_id.name(),
-                                             self.peer_mgr.routing_table().clone());
-        result.add_event(node_added_ev);
+        if self.is_approved {
+            result.add_event(Event::NodeAdded(*public_id.name(),
+                                              self.peer_mgr.routing_table().clone()));
+        }
 
         if self.peer_mgr.routing_table().is_in_our_group(public_id.name()) {
             // TODO: we probably don't need to send this if we're splitting, but in that case
