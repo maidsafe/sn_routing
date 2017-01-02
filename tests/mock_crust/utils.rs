@@ -157,10 +157,6 @@ impl TestNode {
     pub fn is_recipient(&self, dst: &Authority<XorName>) -> bool {
         self.inner.routing_table().map_or(false, |rt| rt.in_authority(dst))
     }
-
-    pub fn resend_unacknowledged(&mut self) -> bool {
-        self.inner.resend_unacknowledged()
-    }
 }
 
 pub struct TestNodeBuilder<'a> {
@@ -231,10 +227,6 @@ impl TestClient {
     pub fn name(&self) -> XorName {
         unwrap!(self.inner.name())
     }
-
-    pub fn resend_unacknowledged(&mut self) -> bool {
-        self.inner.resend_unacknowledged()
-    }
 }
 
 // -----  TestCache  -----
@@ -292,25 +284,9 @@ pub fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
 /// Polls and processes all events, until there are no unacknowledged messages left and clearing
 /// the nodes' state triggers no new events anymore.
 pub fn poll_and_resend(nodes: &mut [TestNode], clients: &mut [TestClient]) {
-    let mut cleared_state = true;
-    loop {
-        let mut state_changed = poll_all(nodes, clients);
-        for node in nodes.iter_mut() {
-            state_changed = state_changed || node.resend_unacknowledged();
-        }
-        for client in clients.iter_mut() {
-            state_changed = state_changed || client.resend_unacknowledged();
-        }
-        if state_changed {
-            cleared_state = false;
-        } else if cleared_state {
-            return;
-        } else {
-            for node in nodes.iter_mut() {
-                node.inner.clear_state();
-            }
-            cleared_state = true;
-        }
+    while poll_all(nodes, clients) {
+        while resend_unacknowledged(nodes, clients) && poll_all(nodes, clients) {}
+        nodes.iter_mut().foreach(|node| node.inner.clear_state());
     }
 }
 
@@ -505,6 +481,15 @@ pub fn gen_bytes<R: Rng>(rng: &mut R, size: usize) -> Vec<u8> {
 // Generate random immutable data with the given payload length.
 pub fn gen_immutable_data<R: Rng>(rng: &mut R, size: usize) -> Data {
     Data::Immutable(ImmutableData::new(gen_bytes(rng, size)))
+}
+
+/// Resends all unacknowledged messages. Returns `false` if none of the nodes or clients had any
+/// unacknowledged messages left.
+fn resend_unacknowledged(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
+    let node_resend = |node: &mut TestNode| node.inner.resend_unacknowledged();
+    let client_resend = |client: &mut TestClient| client.inner.resend_unacknowledged();
+    let or = |x, y| x || y;
+    nodes.iter_mut().map(node_resend).chain(clients.iter_mut().map(client_resend)).fold(false, or)
 }
 
 fn sanity_check(prefix_lengths: &[usize]) {
