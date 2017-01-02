@@ -135,6 +135,27 @@ pub enum DirectMessage {
     TunnelClosed(PeerId),
     /// Sent to a tunnel node to indicate the tunnel is not needed any more.
     TunnelDisconnect(PeerId),
+    /// Request a proof to be provided by the joining node
+    ///
+    /// This is sent from member of Group Y to the joining node
+    ResourceProof {
+        /// seed of proof
+        seed: Vec<u8>,
+        /// size of the proof
+        target_size: u32,
+        /// leading zero bits of the hash of the proof
+        difficulty: u32,
+    },
+    /// Provide a proof to the network
+    ///
+    /// This is sent from the joining node to member of Group Y
+    ResourceProofResponse {
+        /// Proof to be presented
+        proof: Vec<u8>,
+        /// Claimed leading zero bytes to be added to proof's header so that the hash matches
+        /// the difficulty requirement
+        leading_zero_bytes: u32,
+    },
 }
 
 impl DirectMessage {
@@ -463,7 +484,7 @@ impl RoutingMessage {
 /// ### Getting a new network name from the `NaeManager`
 ///
 /// Once in `Client` state, A sends a `GetNodeName` request to the `NaeManager` group authority X
-/// of A's current name. X computes a new name and sends it in an `ExpectCloseNode` request to  the
+/// of A's current name. X computes a new name and sends it in an `ExpectCloseNode` request to the
 /// `NaeManager` Y of A's new name. Each member of Y caches A's public ID, and Y sends a
 /// `GetNodeName` response back to A, which includes the public IDs of the members of Y.
 ///
@@ -479,8 +500,18 @@ impl RoutingMessage {
 /// `ConnectionInfo`.
 ///
 /// Once the connection between A and Z is established and a Crust `OnConnect` event is raised,
-/// they exchange `NodeIdentify` messages and add each other to their routing tables. When A
-/// receives its first `NodeIdentify`, it finally moves to the `Node` state.
+/// they exchange `NodeIdentify` messages.
+///
+///
+/// ### Resource Proof Evaluation to approve
+/// When nodes Z of section Y receive `NodeIdentify` from A, they respond with a `ResourceProof`
+/// request. Node A needs to answer these requests (resolving a hashing challenge) with
+/// `ResourceProofResponse`. Members of Y will send out `CandidateApproval` messages to vote for the
+/// approval in their section. Once the vote succeeds, the members of Y send `NodeApproval` to A.
+/// When A receives the `NodeApproval` message, it adds the members of Y to its routing table and
+/// replies `ApprovalConfirmation` to section Y. Members of Y add A to their routing table once
+/// receive `ApprovalConfirmation`.
+///
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
 pub enum MessageContent {
     // ---------- Internal ------------
@@ -533,9 +564,8 @@ pub enum MessageContent {
     GetNodeNameResponse {
         /// Supplied `PublicId`, but with the new name
         relocated_id: PublicId,
-        /// The routing table shared by the nodes in our group, including the `PublicId`s of our
-        /// contacts.
-        groups: Vec<(Prefix<XorName>, Vec<PublicId>)>,
+        /// The relocated group that the joining node shall connect to
+        group: Vec<PublicId>,
         /// The message's unique identifier.
         message_id: MessageId,
     },
@@ -581,6 +611,20 @@ pub enum MessageContent {
         /// The `part_index`-th part of the serialised user message.
         payload: Vec<u8>,
     },
+    /// Send among Group Y to vote for Accept or Reject a joining node
+    CandidateApproval(bool),
+    /// Approves the joining node as a routing node.
+    ///
+    /// Sent from Group Y to the joining node.
+    NodeApproval {
+        /// The routing table shared by the nodes in our group, including the `PublicId`s of our
+        /// contacts.
+        groups: Vec<(Prefix<XorName>, Vec<PublicId>)>,
+    },
+    /// Confirms the joining node has received `NodeApproval`.
+    ///
+    /// Sent from the joining node to Group Y.
+    ApprovalConfirmation,
 }
 
 impl MessageContent {
@@ -627,6 +671,19 @@ impl Debug for DirectMessage {
             }
             DirectMessage::TunnelDisconnect(peer_id) => {
                 write!(formatter, "TunnelDisconnect({:?})", peer_id)
+            }
+            DirectMessage::ResourceProof { ref seed, ref target_size, ref difficulty } => {
+                write!(formatter,
+                       "ResourceProof {{ seed: {:?}, target_size: {:?}, difficulty: {:?} }}",
+                       seed,
+                       target_size,
+                       difficulty)
+            }
+            DirectMessage::ResourceProofResponse { ref proof, ref leading_zero_bytes } => {
+                write!(formatter,
+                       "ResourceProofResponse {{ proof_len: {:?}, leading_zero_bytes: {:?} }}",
+                       proof.len(),
+                       leading_zero_bytes)
             }
         }
     }
@@ -679,13 +736,11 @@ impl Debug for MessageContent {
                        pub_id,
                        msg_id)
             }
-            MessageContent::GetNodeNameResponse { ref relocated_id,
-                                                  ref groups,
-                                                  ref message_id } => {
+            MessageContent::GetNodeNameResponse { ref relocated_id, ref group, ref message_id } => {
                 write!(formatter,
                        "GetNodeNameResponse {{ {:?}, {:?}, {:?} }}",
                        relocated_id,
-                       groups,
+                       group,
                        message_id)
             }
             MessageContent::SectionUpdate { ref prefix, ref members } => {
@@ -719,6 +774,13 @@ impl Debug for MessageContent {
                        cacheable,
                        hash)
             }
+            MessageContent::CandidateApproval(approval) => {
+                write!(formatter, "CandidateApproval({})", approval)
+            }
+            MessageContent::NodeApproval { ref groups } => {
+                write!(formatter, "NodeApproval {{ {:?} }}", groups)
+            }
+            MessageContent::ApprovalConfirmation => write!(formatter, "ApprovalConfirmation"),
         }
     }
 }

@@ -330,6 +330,7 @@ pub fn create_connected_nodes_with_cache(network: &Network, size: usize, use_cac
                 Event::NodeAdded(..) => node_added_count += 1,
                 Event::NodeLost(..) |
                 Event::GroupSplit(..) |
+                Event::RestartRequired |
                 Event::Tick => (),
                 event => panic!("Got unexpected event: {:?}", event),
             }
