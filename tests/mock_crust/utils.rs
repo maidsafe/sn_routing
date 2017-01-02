@@ -483,7 +483,7 @@ pub fn gen_immutable_data<R: Rng>(rng: &mut R, size: usize) -> Data {
     Data::Immutable(ImmutableData::new(gen_bytes(rng, size)))
 }
 
-/// Resends all unacknowledges messages. Returns `false` if none of the nodes or clients had any
+/// Resends all unacknowledged messages. Returns `false` if none of the nodes or clients had any
 /// unacknowledged messages left.
 fn resend_unacknowledged(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
     let node_resend = |node: &mut TestNode| node.inner.resend_unacknowledged();
