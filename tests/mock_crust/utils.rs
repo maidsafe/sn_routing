@@ -208,6 +208,7 @@ impl<'a> TestNodeBuilder<'a> {
 pub struct TestClient {
     pub handle: ServiceHandle,
     pub inner: Client,
+    pub full_id: FullId,
 }
 
 impl TestClient {
@@ -215,12 +216,13 @@ impl TestClient {
         let full_id = FullId::new();
         let handle = network.new_service_handle(config, endpoint);
         let client = mock_crust::make_current(&handle, || {
-            unwrap!(Client::new(Some(full_id), network.min_group_size()))
+            unwrap!(Client::new(Some(full_id.clone()), network.min_group_size()))
         });
 
         TestClient {
             handle: handle,
             inner: client,
+            full_id: full_id,
         }
     }
 
