@@ -272,6 +272,7 @@ impl PeerMap {
 }
 
 /// Holds the information of the joining node.
+#[derive(Debug)]
 struct Candidate {
     name: XorName,
     insertion_time: Instant,
@@ -432,9 +433,10 @@ impl PeerManager {
             }
         }
         trace!("{:?} received NodeApproval for {:?}, but doesn't record it as a \
-                candidate or having its peer info",
+                candidate or having its peer info.  Current candidate: {:?}",
                self.routing_table.our_name(),
-               candidate_name);
+               candidate_name,
+               self.candidate);
         // TODO: more specific return error
         Err(RoutingError::InvalidStateForOperation)
     }
@@ -465,28 +467,12 @@ impl PeerManager {
                 }
             }
         }
-        trace!("{:?} received ApprovalConfirmation for {:?}, but doesn't record it as a candidate \
-                or having its peer info",
+        trace!("{:?} received ApprovalConfirmation for {:?}, but doesn't record it as a \
+                candidate or having its peer info",
                self.routing_table.our_name(),
                candidate_name);
         // TODO: more specific return error
         Err(RoutingError::InvalidStateForOperation)
-    }
-
-    /// Returns peers in `Candidate` state
-    pub fn peer_candidates(&mut self) -> Vec<(PublicId, PeerId)> {
-        self.peer_map
-            .peers()
-            .filter(|peer| match peer.state {
-                PeerState::Candidate(_) => true,
-                _ => false,
-            })
-            .filter_map(|peer| if let Some(peer_id) = peer.peer_id {
-                Some((*peer.pub_id(), peer_id))
-            } else {
-                None
-            })
-            .collect_vec()
     }
 
     /// Update peer's state to `Candidate` if it is a node candidate
@@ -518,21 +504,6 @@ impl PeerManager {
             }
         }
         Ok(None)
-    }
-
-    /// Update peer's state to `Candidate`
-    pub fn add_as_peer_candidate(&mut self, pub_id: &PublicId, peer_id: &PeerId) {
-        let tunnel = match self.peer_map.remove(peer_id).map(|peer| peer.state) {
-            Some(PeerState::SearchingForTunnel) |
-            Some(PeerState::AwaitingNodeIdentify(true)) => true,
-            Some(PeerState::Routing(tunnel)) => {
-                error!("PeerCandidate {:?} already in state Routing.", peer_id);
-                tunnel
-            }
-            _ => false,
-        };
-        let state = PeerState::Candidate(tunnel);
-        let _ = self.peer_map.insert(Peer::new(*pub_id, Some(*peer_id), state));
     }
 
     /// Wraps the routing table function of the same name and maps `XorName`s to `PublicId`s.
