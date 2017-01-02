@@ -175,7 +175,7 @@ fn simultaneous_joining_nodes() {
         }
     }
 
-    let _ = poll_all(&mut nodes, &mut []);
+    poll_and_resend(&mut nodes, &mut []);
 
     verify_invariant_for_all_nodes(&nodes);
 }
