@@ -102,7 +102,7 @@ impl Bootstrapping {
     pub fn handle_crust_event(&mut self, crust_event: CrustEvent) -> Evented<Transition> {
         match crust_event {
             CrustEvent::BootstrapConnect(peer_id, socket_addr) => {
-                self.handle_bootstrap_connect(peer_id, socket_addr)
+                self.handle_bootstrap_connect(peer_id, socket_addr).to_evented()
             }
             CrustEvent::BootstrapFailed => self.handle_bootstrap_failed(),
             CrustEvent::NewMessage(peer_id, bytes) => {
@@ -158,16 +158,12 @@ impl Bootstrapping {
         }
     }
 
-    fn handle_bootstrap_connect(&mut self,
-                                peer_id: PeerId,
-                                socket_addr: SocketAddr)
-                                -> Evented<Transition> {
-        let mut results = Evented::empty();
+    fn handle_bootstrap_connect(&mut self, peer_id: PeerId, socket_addr: SocketAddr) -> Transition {
         match self.bootstrap_connection {
             None => {
                 debug!("{:?} Received BootstrapConnect from {:?}.", self, peer_id);
                 // Established connection. Pending Validity checks
-                let _ = self.send_client_identify(peer_id).extract(&mut results);
+                let _ = self.send_client_identify(peer_id);
                 let _ = self.bootstrap_blacklist.insert(socket_addr);
             }
             Some((bootstrap_id, _)) if bootstrap_id == peer_id => {
@@ -180,7 +176,7 @@ impl Bootstrapping {
             }
         }
 
-        results.with_value(Transition::Stay)
+        Transition::Stay
     }
 
     fn handle_bootstrap_failed(&mut self) -> Evented<Transition> {
@@ -242,14 +238,13 @@ impl Bootstrapping {
         Transition::Stay
     }
 
-    fn send_client_identify(&mut self, peer_id: PeerId) -> Evented<Result<(), RoutingError>> {
+    fn send_client_identify(&mut self, peer_id: PeerId) -> Result<(), RoutingError> {
         debug!("{:?} - Sending ClientIdentify to {:?}.", self, peer_id);
 
         let token = self.timer.schedule(Duration::from_secs(BOOTSTRAP_TIMEOUT_SECS));
         self.bootstrap_connection = Some((peer_id, token));
 
-        let serialised_public_id = try_ev!(serialisation::serialise(self.full_id.public_id()),
-                                           Evented::empty());
+        let serialised_public_id = serialisation::serialise(self.full_id.public_id())?;
         let signature = sign::sign_detached(&serialised_public_id,
                                             self.full_id.signing_private_key());
 

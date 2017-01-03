@@ -310,7 +310,6 @@ impl Bootstrapped for Client {
 
     fn resend_unacknowledged_timed_out_msgs(&mut self, token: u64) -> Evented<()> {
         let mut result = Evented::empty();
-
         if let Some((unacked_msg, ack)) = self.ack_mgr.find_timed_out(token) {
             trace!("{:?} - Timed out waiting for ack({}) {:?}",
                    self,
@@ -361,26 +360,14 @@ impl Bootstrapped for Client {
         let signed_msg = try_ev!(SignedMessage::new(routing_msg, self.full_id(), sending_nodes),
                                  Evented::empty());
 
-        if !self.add_to_pending_acks(&signed_msg, route) {
-            return Ok(()).to_evented();
-        }
-
-        let mut result = Evented::empty();
-
-        if !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_peer_id, route) {
+        if self.add_to_pending_acks(&signed_msg, route) &&
+           !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_peer_id, route) {
             let bytes = try_ev!(self.to_hop_bytes(signed_msg.clone(), route, BTreeSet::new()),
-                                result);
-
-            if let Err(error) = self.send_or_drop(&proxy_peer_id, bytes, signed_msg.priority())
-                .extract(&mut result) {
-                info!("{:?} - Error sending message to {:?}: {:?}.",
-                      self,
-                      proxy_peer_id,
-                      error);
-            }
+                                Evented::empty());
+            self.send_or_drop(&proxy_peer_id, bytes, signed_msg.priority());
         }
 
-        result.map(Ok)
+        Ok(()).to_evented()
     }
 
     fn routing_msg_filter(&mut self) -> &mut RoutingMessageFilter {
