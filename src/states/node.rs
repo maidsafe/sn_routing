@@ -1629,8 +1629,12 @@ impl Node {
 
         let prefix0 = prefix.pushed(false);
         let prefix1 = prefix.pushed(true);
-        try_evx!(self.send_section_list_signature(prefix0, None), events);
-        try_evx!(self.send_section_list_signature(prefix1, None), events);
+        if let Err(e) = self.send_section_list_signature(prefix0, None).extract(&mut events) {
+            warn!("{:?} Error sending section list signature for {:?}: {:?}", self, prefix0, e);
+        }
+        if let Err(e) = self.send_section_list_signature(prefix1, None).extract(&mut events) {
+            warn!("{:?} Error sending section list signature for {:?}: {:?}", self, prefix1, e);
+        }
 
         events.with_value(Ok(()))
     }
