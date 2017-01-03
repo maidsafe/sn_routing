@@ -1059,18 +1059,17 @@ impl PeerManager {
             }
             Some(Peer { state: PeerState::ConnectionInfoPreparing { us_as_src,
                                                              them_as_dst,
-                                                             their_info },
+                                                             their_info: None },
                         .. }) => {
-                if their_info.is_none() {
-                    let state = PeerState::ConnectionInfoPreparing {
-                        us_as_src: us_as_src,
-                        them_as_dst: them_as_dst,
-                        their_info: Some((peer_info, msg_id)),
-                    };
-                    self.insert_peer(pub_id, Some(peer_id), state);
-                }
+                let state = PeerState::ConnectionInfoPreparing {
+                    us_as_src: us_as_src,
+                    them_as_dst: them_as_dst,
+                    their_info: Some((peer_info, msg_id)),
+                };
+                self.insert_peer(pub_id, Some(peer_id), state);
                 Ok(ConnectionInfoReceivedResult::Waiting)
             }
+            Some(peer @ Peer { state: PeerState::ConnectionInfoPreparing { .. }, .. }) |
             Some(peer @ Peer { state: PeerState::CrustConnecting, .. }) => {
                 let _ = self.peer_map.insert(peer);
                 Ok(ConnectionInfoReceivedResult::Waiting)
