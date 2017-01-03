@@ -76,11 +76,11 @@ pub trait Base: Debug {
         self.stats().count_bytes(bytes.len());
 
         if let Err(err) = self.crust_service().send(*peer_id, bytes.clone(), priority) {
-            info!("{:?} Connection to {:?} failed. Calling crust::Service::disconnect.",
-                  self,
-                  peer_id);
-            self.crust_service().disconnect(*peer_id);
-            return self.handle_lost_peer(*peer_id).map(|_| Err(err.into()));
+            info!("{:?} Connection to {:?} failed: {:?}", self, peer_id, err);
+            // TODO: Handle lost peer, but avoid a cascade of sending messages and handling more
+            //       lost peers: https://maidsafe.atlassian.net/browse/MAID-1924
+            // self.crust_service().disconnect(*peer_id);
+            // return self.handle_lost_peer(*peer_id).map(|_| Err(err.into()));
         }
 
         Ok(()).to_evented()
