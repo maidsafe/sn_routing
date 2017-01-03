@@ -17,7 +17,7 @@
 
 use rand::Rng;
 use routing::{Event, EventStream};
-use routing::mock_crust::{Config, Endpoint, Network};
+use routing::mock_crust::{Config, Network};
 use super::{TestNode, create_connected_nodes, poll_all, verify_invariant_for_all_nodes};
 
 // Drop node at index and verify its close group receives NodeLost.
@@ -39,29 +39,6 @@ fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
             }
         }
     }
-}
-
-#[test]
-#[ignore]
-fn failing_connections_group_of_three() {
-    let min_group_size = 2; // we set the group size small to avoid triggering a restart
-    let network = Network::new(min_group_size, None);
-
-    network.block_connection(Endpoint(1), Endpoint(6));
-    network.block_connection(Endpoint(6), Endpoint(1));
-
-    network.block_connection(Endpoint(1), Endpoint(7));
-    network.block_connection(Endpoint(7), Endpoint(1));
-
-    network.block_connection(Endpoint(6), Endpoint(7));
-    network.block_connection(Endpoint(7), Endpoint(6));
-
-    let mut nodes = create_connected_nodes(&network, min_group_size);
-    verify_invariant_for_all_nodes(&nodes);
-    drop_node(&mut nodes, 0); // Drop the tunnel node. Node 1 should replace it.
-    verify_invariant_for_all_nodes(&nodes);
-    drop_node(&mut nodes, 5); // Drop a tunnel client. The others should be notified.
-    verify_invariant_for_all_nodes(&nodes);
 }
 
 #[test]
