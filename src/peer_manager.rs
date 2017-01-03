@@ -430,8 +430,10 @@ impl PeerManager {
                                candidate_name);
                     }
                 }
+                return Err(RoutingError::InvalidStateForOperation);
             }
         }
+        self.candidate = None;
         trace!("{:?} received NodeApproval for {:?}, but doesn't record it as a \
                 candidate or having its peer info.  Current candidate: {:?}",
                self.routing_table.our_name(),
@@ -1248,6 +1250,7 @@ impl PeerManager {
         }
 
         self.expected_peers.clear();
+        self.candidate = None;
     }
 }
 

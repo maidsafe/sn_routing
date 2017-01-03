@@ -121,7 +121,6 @@ fn node_joins_in_front() {
 
 #[test]
 fn multiple_joining_nodes() {
-    // Create a network with two sections:
     let min_group_size = 8;
     let network = Network::new(min_group_size, None);
     let mut nodes = create_connected_nodes(&network, min_group_size);
