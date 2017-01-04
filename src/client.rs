@@ -264,7 +264,7 @@ impl Client {
     }
 
     /// Step the underlying state machine if there are any events for it to process.
-    fn try_step(&self) -> Result<Vec<Event>, ()> {
+    fn try_step(&self) -> Result<Vec<Event>, TryRecvError> {
         self.machine.borrow_mut().try_step()
     }
 
