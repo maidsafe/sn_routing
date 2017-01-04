@@ -145,6 +145,9 @@ impl Node {
                                  min_section_size,
                                  Stats::new(),
                                  timer);
+        let prefix = *node.our_prefix();
+        node.send_section_list_signature(prefix, None);
+
         if let Err(error) = node.crust_service.start_listening_tcp() {
             error!("{:?} Failed to start listening: {:?}", node, error);
             None
@@ -747,10 +750,19 @@ impl Node {
             .routing_table()
             .find_section_prefix(&hop_name)
             .ok_or(RoutingTableError::NoSuchPeer)?;
-        let section_list = self.section_list_sigs
-            .get_signed_list(&hop_prefix)
-            .ok_or(RoutingError::NoSectionSigInCache)?;
-        signed_msg.check_integrity(self.min_section_size(), Some(&section_list.list))?;
+        let section_list = self.section_list_sigs.get_signed_list(&hop_prefix);
+        if section_list.is_none() && !signed_msg.routing_message().src.is_client() {
+            warn!("NoSectionSigInCache: sender {:?} of signed message {:?} to {:?} via hop {:?} \
+                cannot be verified",
+                  signed_msg.routing_message().src,
+                  signed_msg.routing_message().content,
+                  signed_msg.routing_message().dst,
+                  hop_name);
+        }
+
+        // Check the message's signatures, and (if we have a section list) the sender.
+        signed_msg.check_integrity(self.min_section_size(),
+                             section_list.as_ref().map(|sl| &sl.list))?;
 
         // TODO(MAID-1677): Remove this once messages are fully validated.
         // Expect group/section messages to be sent by at least a quorum of `min_section_size`.
@@ -781,6 +793,7 @@ impl Node {
             return Ok(());
         }
 
+        let section_list = section_list.ok_or(RoutingError::NoSectionSigInCache)?;
         signed_msg.add_relaying_section(section_list);
         if let Err(error) = self.send_signed_message(&signed_msg, route, &hop_name, sent_to) {
             debug!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);

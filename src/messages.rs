@@ -258,10 +258,20 @@ impl SectionList {
 pub type SectionListSignatures = BTreeMap<PublicId, sign::Signature>;
 
 /// A list of signatures of a section list
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable, Debug)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
 pub struct SignedSectionList {
     pub list: SectionList,
     pub signatures: SectionListSignatures,
+}
+
+impl Debug for SignedSectionList {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        // Printing out signatures is not very useful to us, and makes messages a lot longer
+        write!(f,
+               "SignedSectionList {{ list: {:?}, signatures: {} }}",
+               self.list,
+               self.signatures.len())
+    }
 }
 
 /// Wrapper around a routing message, signed by the originator of the message.
