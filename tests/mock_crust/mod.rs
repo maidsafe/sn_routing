@@ -126,17 +126,21 @@ fn multiple_joining_nodes() {
     let mut nodes = create_connected_nodes(&network, min_group_size);
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
 
-    // Try adding three nodes at once, to the same section. This makes sure one section can handle
-    // this (probably by rejecting some of the nodes).
-    nodes.push(TestNode::builder(&network).config(config.clone()).create());
-    nodes.push(TestNode::builder(&network).config(config.clone()).create());
-    nodes.push(TestNode::builder(&network).config(config.clone()).create());
+    while nodes.len() < 40 {
+        info!("Size {}", nodes.len());
 
-    let _ = poll_all(&mut nodes, &mut []);
-    nodes.retain(|node| !node.routing_table().is_empty());
-    let _ = poll_all(&mut nodes, &mut []);
+        // Try adding five nodes at once, possibly to the same section. This makes sure one section
+        // can handle this, either by adding the nodes in sequence or by rejecting some.
+        for _ in 0..5 {
+            nodes.push(TestNode::builder(&network).config(config.clone()).create());
+        }
 
-    verify_invariant_for_all_nodes(&nodes);
+        poll_and_resend(&mut nodes, &mut []);
+        nodes.retain(|node| !node.routing_table().is_empty());
+        poll_and_resend(&mut nodes, &mut []);
+
+        verify_invariant_for_all_nodes(&nodes);
+    }
 }
 
 #[test]

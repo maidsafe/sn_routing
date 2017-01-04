@@ -573,14 +573,28 @@ impl Node {
     fn send_section_list_signature(&mut self,
                                    prefix: Prefix<XorName>,
                                    dst: Option<XorName>)
-                                   -> Evented<Result<(), RoutingError>> {
+                                   -> Evented<()> {
         let mut result = Evented::empty();
-        // don't send signatures for our own group
-        if prefix == *self.peer_mgr.routing_table().our_prefix() {
-            return result.with_value(Ok(()));
-        }
-        let section = try_ev!(self.get_section_list(&prefix), result);
-        let serialised = try_ev!(serialisation::serialise(&section), result);
+        let section = match self.get_section_list(&prefix) {
+            Ok(section) => section,
+            Err(err) => {
+                warn!("{:?} Error sending section list signature for {:?}: {:?}",
+                      self,
+                      prefix,
+                      err);
+                return result;
+            }
+        };
+        let serialised = match serialisation::serialise(&section) {
+            Ok(serialised) => serialised,
+            Err(err) => {
+                warn!("{:?} Error sending section list signature for {:?}: {:?}",
+                      self,
+                      prefix,
+                      err);
+                return result;
+            }
+        };
         let sig = sign::sign_detached(&serialised, self.full_id.signing_private_key());
 
         self.section_list_sigs.add_signature(prefix,
@@ -615,7 +629,7 @@ impl Node {
             }
         }
 
-        result.map(Ok)
+        result
     }
 
     fn handle_section_list_signature(&mut self,
@@ -866,10 +880,10 @@ impl Node {
                                         result);
         self.add_to_routing_table(&pub_id, &peer_id).extract(&mut result);
         if let Some(prefix) = self.peer_mgr.routing_table().find_group_prefix(&candidate_name) {
-            let _ = self.send_section_list_signature(prefix, None).extract(&mut result);
-            for pfx in self.peer_mgr.routing_table().other_prefixes() {
-                let _ = self.send_section_list_signature(pfx, Some(candidate_name))
-                    .extract(&mut result);
+            self.send_section_list_signature(prefix, None).extract(&mut result);
+            // if the node joined our section, send signatures for all section lists to it
+            for pfx in self.peer_mgr.routing_table().prefixes() {
+                self.send_section_list_signature(pfx, Some(candidate_name)).extract(&mut result);
             }
         }
         result.map(Ok)
@@ -888,7 +902,7 @@ impl Node {
 
         // TODO: is this neccssary as this node is not approved as a full node by the section yet
         let our_prefix = *self.peer_mgr.routing_table().our_prefix();
-        let _ = self.send_section_list_signature(our_prefix, None).extract(&mut events);
+        self.send_section_list_signature(our_prefix, None).extract(&mut events);
 
         let name = *self.name();
         if let Err(error) = self.send_routing_message(RoutingMessage {
@@ -1183,12 +1197,12 @@ impl Node {
                 if let Some(prefix) = self.peer_mgr
                     .routing_table()
                     .find_group_prefix(public_id.name()) {
-                    let _ = self.send_section_list_signature(prefix, None).extract(&mut result);
+                    self.send_section_list_signature(prefix, None).extract(&mut result);
                     if prefix == *self.peer_mgr.routing_table().our_prefix() {
-                        // if the node joined our group, send signatures for all neighbouring group
-                        // lists to it
-                        for pfx in self.peer_mgr.routing_table().other_prefixes() {
-                            let _ = self.send_section_list_signature(pfx, Some(*public_id.name()))
+                        // if the node joined our section, send signatures for all section lists
+                        // to it
+                        for pfx in self.peer_mgr.routing_table().prefixes() {
+                            self.send_section_list_signature(pfx, Some(*public_id.name()))
                                 .extract(&mut result);
                         }
                     }
@@ -1237,11 +1251,9 @@ impl Node {
                                               self.peer_mgr.routing_table().clone()));
         }
 
-        if self.peer_mgr.routing_table().is_in_our_group(public_id.name()) {
-            // TODO: we probably don't need to send this if we're splitting, but in that case
-            // we should send something else instead. This will do for now.
-            self.send_section_update().extract(&mut result);
-        }
+        // TODO: we probably don't need to send this if we're splitting, but in that case
+        // we should send something else instead. This will do for now.
+        self.send_section_update().extract(&mut result);
 
         for dst_id in self.peer_mgr.peers_needing_tunnel() {
             trace!("{:?} Asking {:?} to serve as a tunnel for {:?}",
@@ -1741,6 +1753,18 @@ impl Node {
                              -> Evented<Result<(), RoutingError>> {
         let mut result = Evented::empty();
         trace!("{:?} Got section update for {:?}", self, prefix);
+        // Perform splits that we missed, according to the section update.
+        // TODO: This is a temporary fix and it shouldn't be necessary anymore once the new message
+        //       flow for joining nodes is in place and we send the routing table to the new node
+        //       at the point where it gets added to the group.
+        let pfx_name = prefix.lower_bound();
+        while let Some(rt_pfx) = self.peer_mgr.routing_table().find_group_prefix(&pfx_name) {
+            if rt_pfx.bit_count() >= prefix.bit_count() {
+                break;
+            }
+            trace!("{:?} Splitting {:?} on section update.", self, rt_pfx);
+            let _ = self.handle_group_split(rt_pfx, rt_pfx.lower_bound());
+        }
         // Filter list of members to just those we don't know about:
         let members =
             if let Some(section) = self.peer_mgr.routing_table().section_with_prefix(&prefix) {
@@ -1799,8 +1823,8 @@ impl Node {
 
         let prefix0 = prefix.pushed(false);
         let prefix1 = prefix.pushed(true);
-        try_evx!(self.send_section_list_signature(prefix0, None), events);
-        try_evx!(self.send_section_list_signature(prefix1, None), events);
+        self.send_section_list_signature(prefix0, None).extract(&mut events);
+        self.send_section_list_signature(prefix1, None).extract(&mut events);
 
         events.with_value(Ok(()))
     }
@@ -1824,16 +1848,10 @@ impl Node {
                        self,
                        self.peer_mgr.routing_table().prefixes());
                 self.merge_if_necessary().extract(&mut result);
-                // after the merge, half of our section won't have our signatures for the
-                // neighbouring sections - send them
-                for prefix in self.peer_mgr.routing_table().other_prefixes() {
-                    if let Err(e) = self.send_section_list_signature(prefix, None)
-                        .extract(&mut result) {
-                        warn!("{:?} Error sending section list signature for prefix {:?}: {:?}",
-                              self,
-                              prefix,
-                              e);
-                    }
+                // after the merge, half of our section won't have our signatures -
+                // - send them
+                for prefix in self.peer_mgr.routing_table().prefixes() {
+                    self.send_section_list_signature(prefix, None).extract(&mut result);
                 }
                 let src = Authority::Section(self.peer_mgr
                     .routing_table()
@@ -1886,7 +1904,7 @@ impl Node {
                self,
                self.peer_mgr.routing_table().prefixes());
         self.merge_if_necessary().extract(&mut result);
-        try_evx!(self.send_section_list_signature(prefix, None), result);
+        self.send_section_list_signature(prefix, None).extract(&mut result);
         result.with_value(Ok(()))
     }
 
@@ -2279,20 +2297,10 @@ impl Node {
 
         self.merge_if_necessary().extract(&mut result);
 
-        if !details.was_in_our_group {
-            self.peer_mgr.routing_table().find_group_prefix(&details.name).map_or((), |prefix| {
-                let _ = self.send_section_list_signature(prefix, None).extract(&mut result);
-            });
-        } else {
-            self.section_list_sigs
-                .remove_signatures_by(*pub_id, self.peer_mgr.routing_table().our_section().len());
-        }
-
-        if !details.was_in_our_group {
-            self.peer_mgr.routing_table().find_group_prefix(&details.name).map_or((), |prefix| {
-                let _ = self.send_section_list_signature(prefix, None);
-            });
-        } else {
+        self.peer_mgr.routing_table().find_group_prefix(&details.name).map_or((), |prefix| {
+            self.send_section_list_signature(prefix, None).extract(&mut result);
+        });
+        if details.was_in_our_group {
             self.section_list_sigs
                 .remove_signatures_by(*pub_id, self.peer_mgr.routing_table().our_section().len());
         }
