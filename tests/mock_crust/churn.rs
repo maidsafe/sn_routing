@@ -21,8 +21,8 @@ use routing::{Authority, DataIdentifier, Event, EventStream, MessageId, QUORUM, 
 use routing::mock_crust::{Config, Network};
 use std::cmp;
 use std::collections::{HashMap, HashSet};
-use super::{TestNode, create_connected_nodes, gen_range_except, poll_and_resend,
-            verify_invariant_for_all_nodes};
+use super::{TestClient, TestNode, create_connected_clients, create_connected_nodes,
+            gen_range_except, poll_and_resend, verify_invariant_for_all_nodes};
 
 // Randomly add or remove some nodes, causing churn.
 // If a new node was added, returns the index of this node. Otherwise
@@ -37,14 +37,14 @@ fn random_churn<R: Rng>(rng: &mut R,
     let len = nodes.len();
 
     if len > network.min_group_size() + 2 && rng.gen_weighted_bool(3) {
-        let _ = nodes.remove(rng.gen_range(0, len));
-        let _ = nodes.remove(rng.gen_range(0, len - 1));
-        let _ = nodes.remove(rng.gen_range(0, len - 2));
+        let _ = nodes.remove(rng.gen_range(1, len));
+        let _ = nodes.remove(rng.gen_range(1, len - 1));
+        let _ = nodes.remove(rng.gen_range(1, len - 2));
 
         None
     } else {
         let proxy = rng.gen_range(0, len);
-        let index = rng.gen_range(0, len + 1);
+        let index = rng.gen_range(1, len + 1);
         let config = Config::with_contacts(&[nodes[proxy].handle.endpoint()]);
 
         nodes.insert(index, TestNode::builder(network).config(config).create());
@@ -65,9 +65,8 @@ struct ExpectedGets {
 }
 
 impl ExpectedGets {
-    /// Sends a request using the nodes specified by `src`, and adds the expectation that the nodes
-    /// belonging to `dst` receive the message. Panics if not enough nodes sent a group message, or
-    /// if an individual sending node could not be found.
+    /// Sends a request using the nodes specified by `src`, and adds the expectation. Panics if not
+    /// enough nodes sent a group message, or if an individual sending node could not be found.
     fn send_and_expect(&mut self,
                        data_id: DataIdentifier,
                        src: Authority<XorName>,
@@ -85,16 +84,33 @@ impl ExpectedGets {
         } else {
             assert_eq!(sent_count, 1);
         }
+        self.expect(nodes, dst, (data_id, msg_id, src, dst));
+    }
+
+    /// Sends a request from the client, and adds the expectation.
+    fn client_send_and_expect(&mut self,
+                              data_id: DataIdentifier,
+                              client_auth: Authority<XorName>,
+                              dst: Authority<XorName>,
+                              client: &TestClient,
+                              nodes: &mut [TestNode]) {
+        let msg_id = MessageId::new();
+        unwrap!(client.inner.send_get_request(dst, data_id, msg_id));
+        self.expect(nodes, dst, (data_id, msg_id, client_auth, dst));
+    }
+
+    /// Adds the expectation that the nodes belonging to `dst` receive the message.
+    fn expect(&mut self, nodes: &mut [TestNode], dst: Authority<XorName>, key: GetKey) {
         if dst.is_multiple() && !self.groups.contains_key(&dst) {
             let is_recipient = |n: &&TestNode| n.is_recipient(&dst);
             let group = nodes.iter().filter(is_recipient).map(TestNode::name).collect();
             let _ = self.groups.insert(dst, group);
         }
-        self.messages.insert((data_id, msg_id, src, dst));
+        self.messages.insert(key);
     }
 
     /// Verifies that all sent messages have been received by the appropriate nodes.
-    fn verify(mut self, nodes: &mut [TestNode]) {
+    fn verify(mut self, nodes: &mut [TestNode], clients: &mut [TestClient]) {
         // The minimum of the group lengths when sending and now. If a churn event happened, both
         // cases are valid: that the message was received before or after that. The number of
         // recipients thus only needs to reach a quorum for the smaller of the group sizes.
@@ -131,6 +147,17 @@ impl ExpectedGets {
                 }
             }
         }
+        for client in clients {
+            while let Ok(event) = client.inner.try_next_ev() {
+                if let Event::Request { request: Request::Get(data_id, msg_id), src, dst } = event {
+                    let key = (data_id, msg_id, src, dst);
+                    assert!(self.messages.remove(&key),
+                            "Unexpected request for client {:?}: {:?}",
+                            client.name(),
+                            key);
+                }
+            }
+        }
         for key in self.messages {
             // All received messages for single nodes were removed: if any are left, they failed.
             assert!(key.3.is_multiple(), "Failed to receive request {:?}", key);
@@ -153,7 +180,11 @@ fn verify_section_list_signatures(nodes: &[TestNode]) {
         let section_size = rt.our_section().len();
         for prefix in rt.prefixes() {
             if prefix != *rt.our_prefix() {
-                let sigs = unwrap!(node.inner.section_list_signatures(prefix));
+                let sigs = unwrap!(node.inner.section_list_signatures(prefix),
+                                   "{:?} Tried to unwrap None returned from \
+                                    section_list_signatures({:?})",
+                                   node.name(),
+                                   prefix);
                 assert!(sigs.len() * 100 >= section_size * QUORUM,
                         "{:?} Not enough signatures for prefix {:?} - {}/{}\n\tSignatures from: \
                          {:?}",
@@ -173,6 +204,12 @@ fn churn() {
     let network = Network::new(min_group_size, None);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, 20);
+    let mut clients = create_connected_clients(&network, &mut nodes, 1);
+    let cl_auth = Authority::Client {
+        client_key: *clients[0].full_id.public_id().signing_public_key(),
+        proxy_node_name: nodes[0].name(),
+        peer_id: clients[0].handle.0.borrow().peer_id,
+    };
 
     for i in 0..CHURN_ITERATIONS {
         trace!("Iteration {}", i);
@@ -210,9 +247,16 @@ fn churn() {
         // expected_gets.send_and_expect(data_id, auth_s0, auth_g0, &nodes, min_group_size);
         // expected_gets.send_and_expect(data_id, auth_s0, auth_n0, &nodes, min_group_size);
 
-        poll_and_resend(&mut nodes, &mut []);
+        // Test messages from a client to a group and a section...
+        expected_gets.client_send_and_expect(data_id, cl_auth, auth_g0, &clients[0], &mut nodes);
+        expected_gets.client_send_and_expect(data_id, cl_auth, auth_s0, &clients[0], &mut nodes);
+        // ... and from group to the client
+        expected_gets.send_and_expect(data_id, auth_g1, cl_auth, &mut nodes, min_group_size);
 
-        expected_gets.verify(&mut nodes);
+        poll_and_resend(&mut nodes, &mut clients);
+
+        expected_gets.verify(&mut nodes, &mut clients);
+
         verify_invariant_for_all_nodes(&nodes);
         verify_section_list_signatures(&nodes);
     }

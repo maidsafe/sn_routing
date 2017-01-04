@@ -46,10 +46,7 @@ pub trait Base: Debug {
         None
     }
 
-    fn send_message(&mut self,
-                    peer_id: &PeerId,
-                    message: Message)
-                    -> Evented<Result<(), RoutingError>> {
+    fn send_message(&mut self, peer_id: &PeerId, message: Message) -> Result<(), RoutingError> {
         let priority = message.priority();
 
         let raw_bytes = match serialisation::serialise(&message) {
@@ -58,31 +55,26 @@ pub trait Base: Debug {
                        self,
                        message,
                        error);
-                return Err(error.into()).to_evented();
+                return Err(error.into());
             }
             Ok(bytes) => bytes,
         };
 
-        self.send_or_drop(peer_id, raw_bytes, priority)
+        self.send_or_drop(peer_id, raw_bytes, priority);
+        Ok(())
     }
 
     // Sends the given `bytes` to the peer with the given Crust `PeerId`. If that results in an
     // error, it disconnects from the peer.
-    fn send_or_drop(&mut self,
-                    peer_id: &PeerId,
-                    bytes: Vec<u8>,
-                    priority: u8)
-                    -> Evented<Result<(), RoutingError>> {
+    fn send_or_drop(&mut self, peer_id: &PeerId, bytes: Vec<u8>, priority: u8) {
         self.stats().count_bytes(bytes.len());
 
         if let Err(err) = self.crust_service().send(*peer_id, bytes.clone(), priority) {
-            info!("{:?} Connection to {:?} failed. Calling crust::Service::disconnect.",
-                  self,
-                  peer_id);
-            self.crust_service().disconnect(*peer_id);
-            return self.handle_lost_peer(*peer_id).map(|_| Err(err.into()));
+            info!("{:?} Connection to {:?} failed: {:?}", self, peer_id, err);
+            // TODO: Handle lost peer, but avoid a cascade of sending messages and handling more
+            //       lost peers: https://maidsafe.atlassian.net/browse/MAID-1924
+            // self.crust_service().disconnect(*peer_id);
+            // return self.handle_lost_peer(*peer_id).map(|_| Err(err.into()));
         }
-
-        Ok(()).to_evented()
     }
 }
