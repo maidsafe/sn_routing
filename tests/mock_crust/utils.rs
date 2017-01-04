@@ -25,7 +25,7 @@ use std::{cmp, thread};
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
-use std::sync::mpsc::TryRecvError;
+use std::sync::mpsc::{RecvError, TryRecvError};
 
 // Various utilities. Since this is all internal stuff we're a bit lax about the doc.
 #[allow(missing_docs)]
@@ -91,9 +91,8 @@ impl DerefMut for Nodes {
 
 impl EventStream for TestNode {
     type Item = Event;
-    type Error = TryRecvError;
 
-    fn next_ev(&mut self) -> Result<Event, TryRecvError> {
+    fn next_ev(&mut self) -> Result<Event, RecvError> {
         self.inner.next_ev()
     }
 

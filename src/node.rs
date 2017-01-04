@@ -41,7 +41,7 @@ use std::collections::BTreeMap;
 use std::collections::VecDeque;
 #[cfg(feature = "use-mock-crust")]
 use std::fmt::{self, Debug, Formatter};
-use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::mpsc::{Receiver, RecvError, Sender, TryRecvError, channel};
 use types::{MessageId, RoutingActionSender};
 use xor_name::XorName;
 
@@ -432,11 +432,11 @@ impl Node {
 impl EventStepper for Node {
     type Item = Event;
 
-    fn produce_events(&mut self) -> Result<Vec<Event>, ()> {
+    fn produce_events(&mut self) -> Result<Vec<Event>, RecvError> {
         self.machine.step()
     }
 
-    fn try_produce_events(&mut self) -> Result<Vec<Event>, ()> {
+    fn try_produce_events(&mut self) -> Result<Vec<Event>, TryRecvError> {
         self.machine.try_step()
     }
 
