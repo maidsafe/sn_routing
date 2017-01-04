@@ -750,7 +750,11 @@ impl Node {
             .routing_table()
             .find_section_prefix(&hop_name)
             .ok_or(RoutingTableError::NoSuchPeer)?;
-        let section_list = if signed_msg.routing_message().src.is_client() {
+        let section_list = if signed_msg.routing_message().src.is_client() ||
+                              self.in_authority(&signed_msg.routing_message().src) {
+            // No point verifying the route if from a client; we also don't need to verify if the
+            // message is from our own section.
+            // TODO: possibly we should if the message is from a PrefixSection.
             None
         } else {
             let list = self.section_list_sigs.get_signed_list(&hop_prefix);
