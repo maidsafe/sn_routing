@@ -756,7 +756,11 @@ impl Node {
             .routing_table()
             .find_section_prefix(&hop_name)
             .ok_or(RoutingTableError::NoSuchPeer)?;
-        let section_list = if signed_msg.routing_message().src.is_client() {
+        let section_list = if signed_msg.routing_message().src.is_client() ||
+                              self.in_authority(&signed_msg.routing_message().dst) {
+            // TODO: we should still verify the sending nodes when the sender is our own section
+            // or group, but doing so causes a lot of verification failures at the moment.
+            // (In any case don't call add_relaying_section if from our own section.)
             None
         } else {
             let list = self.section_list_sigs.get_signed_list(&hop_prefix);
