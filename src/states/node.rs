@@ -108,6 +108,11 @@ impl Node {
                   min_group_size,
                   Stats::new(),
                   timer)
+            .map(|mut node| {
+                let prefix = *node.our_prefix();
+                let _ = node.send_section_list_signature(prefix, None);
+                node
+            })
     }
 
     #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
@@ -668,15 +673,23 @@ impl Node {
                              sent_to: &BTreeSet<XorName>)
                              -> Evented<Result<(), RoutingError>> {
         let mut result = Evented::empty();
+
         let hop_prefix = try_ev!(self.peer_mgr
             .routing_table()
             .find_group_prefix(&hop_name)
             .ok_or(RoutingTableError::NoSuchPeer), result);
-        let section_list = try_ev!(self.section_list_sigs
-            .get_signed_list(&hop_prefix)
-            .ok_or(RoutingTableError::NoSecSigInCache), result);
-        try_ev!(signed_msg.check_integrity(self.min_group_size(), Some(&section_list.list)),
-            result);
+        let section_list = self.section_list_sigs.get_signed_list(&hop_prefix);
+        if section_list.is_none() && !signed_msg.routing_message().src.is_client() {
+            warn!("NoSecSigInCache: sender {:?} of signed message {:?} to {:?} via hop {:?} \
+                cannot be verified",
+                signed_msg.routing_message().src,
+                signed_msg.routing_message().content,
+                signed_msg.routing_message().dst, hop_name);
+        }
+
+        // Check that content signatures, and (if we have a section list) the sender.
+        try_ev!(signed_msg.check_integrity(self.min_group_size(),
+                section_list.as_ref().map(|sl| &sl.list)), result);
 
         match self.routing_msg_filter.filter_incoming(signed_msg.routing_message(), route) {
             FilteringResult::KnownMessageAndRoute => {
@@ -714,6 +727,7 @@ impl Node {
             return result.map(Ok);
         }
 
+        let section_list = try_ev!(section_list.ok_or(RoutingTableError::NoSecSigInCache), result);
         signed_msg.add_relaying_section(section_list);
         if let Err(error) = self.send_signed_message(&signed_msg, route, &hop_name, sent_to)
             .extract(&mut result) {
