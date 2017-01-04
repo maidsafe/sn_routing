@@ -101,7 +101,6 @@ pub trait Bootstrapped: Base {
 
     fn resend_unacknowledged_timed_out_msgs(&mut self, token: u64) -> Evented<()> {
         let mut result = Evented::empty();
-
         if let Some((unacked_msg, ack)) = self.ack_mgr_mut().find_timed_out(token) {
             trace!("{:?} - Timed out waiting for ack({}) {:?}",
                    self,
@@ -119,7 +118,6 @@ pub trait Bootstrapped: Base {
                 debug!("{:?} Failed to send message: {:?}", self, error);
             }
         }
-
         result
     }
 
