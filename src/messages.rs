@@ -818,9 +818,11 @@ impl Debug for HopMessage {
 impl Debug for SignedMessage {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter,
-               "SignedMessage {{ content: {:?}, sending nodes: {:?}, signatures: {:?} }}",
+               "SignedMessage {{ content: {:?}, sending sections: {:?}, relaying sections: {:?}, \
+                    signatures: {:?} }}",
                self.content,
                self.src_sections,
+               self.relay_sections,
                self.signatures.keys().collect_vec())
     }
 }
