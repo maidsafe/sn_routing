@@ -988,16 +988,6 @@ impl Node {
 
         self.add_to_routing_table(public_id, peer_id).extract(&mut result);
 
-        if let Some(prefix) = self.peer_mgr.routing_table().find_group_prefix(public_id.name()) {
-            self.send_section_list_signature(prefix, None);
-            if prefix == *self.peer_mgr.routing_table().our_prefix() {
-                // if the node joined our section, send signatures for all section lists
-                // to it
-                for pfx in self.peer_mgr.routing_table().prefixes() {
-                    self.send_section_list_signature(pfx, Some(*public_id.name()));
-                }
-            }
-        }
         result
     }
 
@@ -1037,10 +1027,6 @@ impl Node {
                                              self.peer_mgr.routing_table().clone());
         result.add_event(node_added_ev);
 
-        // TODO: we probably don't need to send this if we're splitting, but in that case
-        // we should send something else instead. This will do for now.
-        self.send_section_update().extract(&mut result);
-
         for dst_id in self.peer_mgr.peers_needing_tunnel() {
             trace!("{:?} Asking {:?} to serve as a tunnel for {:?}",
                    self,
@@ -1048,6 +1034,19 @@ impl Node {
                    dst_id);
             let tunnel_request = DirectMessage::TunnelRequest(dst_id);
             let _ = self.send_direct_message(&peer_id, tunnel_request);
+        }
+
+        if let Some(prefix) = self.peer_mgr.routing_table().find_group_prefix(public_id.name()) {
+            self.send_section_list_signature(prefix, None);
+            if prefix == *self.peer_mgr.routing_table().our_prefix() {
+                // if the node joined our section, send signatures for all section lists to it
+                for pfx in self.peer_mgr.routing_table().prefixes() {
+                    self.send_section_list_signature(pfx, Some(*public_id.name()));
+                }
+            }
+            // TODO: we probably don't need to send this if we're splitting, but in that case
+            // we should send something else instead. This will do for now.
+            self.send_section_update().extract(&mut result);
         }
 
         result
@@ -1063,19 +1062,16 @@ impl Node {
             .iter()
             .cloned()
             .sorted();
-
         let content = MessageContent::SectionUpdate {
             prefix: *self.peer_mgr.routing_table().our_prefix(),
             members: members,
         };
 
+        // Only send update to the neighbouring groups when node is joining us
         let neighbours = self.peer_mgr.routing_table().other_prefixes();
         for neighbour_pfx in neighbours {
             let request_msg = RoutingMessage {
-                src: Authority::Section(self.peer_mgr
-                    .routing_table()
-                    .our_prefix()
-                    .lower_bound()),
+                src: Authority::Section(self.peer_mgr.routing_table().our_prefix().lower_bound()),
                 dst: Authority::PrefixSection(neighbour_pfx),
                 content: content.clone(),
             };
@@ -1087,6 +1083,7 @@ impl Node {
                     err);
             }
         }
+
         result
     }
 
