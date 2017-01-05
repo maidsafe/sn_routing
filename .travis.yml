@@ -40,7 +40,11 @@ script:
         cargo test  --verbose --features use-mock-crust
       );
     elif [ "${TRAVIS_OS_NAME}" = linux ]; then
-      cargo clippy -- -D clippy;
+      (
+        set -x;
+        cargo clippy &&
+        cargo clippy --features=use-mock-crust
+      );
     fi
 before_cache:
  - cargo prune

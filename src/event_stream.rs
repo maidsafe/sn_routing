@@ -1,20 +1,18 @@
-use std::sync::mpsc::TryRecvError;
+use std::sync::mpsc::{RecvError, TryRecvError};
 
 /// Trait to fake a channel.
 pub trait EventStream {
     /// Item produced by this stream.
     type Item;
-    /// Error type produced if something goes wrong or no items are available.
-    type Error;
 
     /// Read the next available event from the stream, blocking until one becomes available.
-    fn next_ev(&mut self) -> Result<Self::Item, Self::Error>;
+    fn next_ev(&mut self) -> Result<Self::Item, RecvError>;
 
     /// Try to read the next available event from the stream without blocking.
     ///
     /// Implementations should return an error if there are no items available, OR
     /// a real error occurs.
-    fn try_next_ev(&mut self) -> Result<Self::Item, Self::Error>;
+    fn try_next_ev(&mut self) -> Result<Self::Item, TryRecvError>;
 
     /// Process events, storing them on the internal buffer.
     ///
@@ -26,12 +24,11 @@ pub trait EventStream {
 pub trait EventStepper {
     type Item;
 
-    /// Produce multiple events and return them, or Err(()) if something goes wrong.
-    /// TODO: propagate actual errors better.
-    fn produce_events(&mut self) -> Result<Vec<Self::Item>, ()>;
+    /// Produce multiple events and return them, or a `RecvError` if something goes wrong.
+    fn produce_events(&mut self) -> Result<Vec<Self::Item>, RecvError>;
 
-    // As for produce_events but non-blocking.
-    fn try_produce_events(&mut self) -> Result<Vec<Self::Item>, ()>;
+    // Produce multiple events in a non-blocking fashion.
+    fn try_produce_events(&mut self) -> Result<Vec<Self::Item>, TryRecvError>;
 
     /// Pop an item from this type's internal buffer.
     fn pop_item(&mut self) -> Option<Self::Item>;
@@ -45,26 +42,32 @@ impl<S> EventStream for S
     where S: EventStepper
 {
     type Item = <S as EventStepper>::Item;
-    type Error = TryRecvError;
 
-    fn next_ev(&mut self) -> Result<Self::Item, Self::Error> {
-        if let Some(cached_ev) = self.pop_item() {
-            return Ok(cached_ev);
+    fn next_ev(&mut self) -> Result<Self::Item, RecvError> {
+        // We loop blocking on `produce_events` until an event is produced.
+        loop {
+            if let Some(cached_ev) = self.pop_item() {
+                return Ok(cached_ev);
+            }
+
+            match self.produce_events() {
+                Ok(new_events) => self.buffer_items(new_events),
+                Err(RecvError) => return Err(RecvError),
+            }
         }
-        if let Ok(new_events) = self.produce_events() {
-            self.buffer_items(new_events);
-        }
-        self.pop_item().ok_or(TryRecvError::Disconnected)
     }
 
-    fn try_next_ev(&mut self) -> Result<Self::Item, Self::Error> {
+    fn try_next_ev(&mut self) -> Result<Self::Item, TryRecvError> {
         if let Some(cached_ev) = self.pop_item() {
             return Ok(cached_ev);
         }
-        if let Ok(new_events) = self.try_produce_events() {
-            self.buffer_items(new_events);
+        match self.try_produce_events() {
+            Ok(new_events) => {
+                self.buffer_items(new_events);
+                self.pop_item().ok_or(TryRecvError::Empty)
+            }
+            Err(err) => Err(err),
         }
-        self.pop_item().ok_or(TryRecvError::Empty)
     }
 
     fn poll(&mut self) -> bool {

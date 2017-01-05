@@ -32,7 +32,7 @@ use states::common::Base;
 use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Formatter};
 use std::mem;
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{self, Receiver, RecvError, TryRecvError};
 use timer::Timer;
 use types::RoutingActionSender;
 use xor_name::XorName;
@@ -276,23 +276,28 @@ impl Debug for StateMachine {
 }
 
 impl StateMachine {
-    pub fn step(&mut self) -> Result<Vec<Event>, ()> {
+    /// Block until the machine steps and returns some events.
+    ///
+    /// Errors are permanent failures due to either: state machine termination or
+    /// the permanent closing of the `category_rx` event channel.
+    pub fn step(&mut self) -> Result<Vec<Event>, RecvError> {
         if self.is_running {
-            if let Ok(category) = self.category_rx.recv() {
-                return Ok(self.handle_event(category).into_events());
-            }
+            self.category_rx
+                .recv()
+                .map(|category| self.handle_event(category).into_events())
+        } else {
+            Err(RecvError)
         }
-        Err(())
     }
 
-    pub fn try_step(&mut self) -> Result<Vec<Event>, ()> {
+    /// Query for a result, or yield: Err(NothingAvailable), Err(Disconnected) or Err(Terminated).
+    pub fn try_step(&mut self) -> Result<Vec<Event>, TryRecvError> {
         if self.is_running {
             self.category_rx
                 .try_recv()
                 .map(|category| self.handle_event(category).into_events())
-                .map_err(|_| ())
         } else {
-            Err(())
+            Err(TryRecvError::Disconnected)
         }
     }
 
