@@ -110,7 +110,7 @@ impl Node {
                   timer)
             .map(|mut node| {
                 let prefix = *node.our_prefix();
-                let _ = node.send_section_list_signature(prefix, None);
+                node.send_section_list_signature(prefix, None);
                 node
             })
     }
