@@ -44,18 +44,16 @@ impl<S> EventStream for S
     type Item = <S as EventStepper>::Item;
 
     fn next_ev(&mut self) -> Result<Self::Item, RecvError> {
-        if let Some(cached_ev) = self.pop_item() {
-            return Ok(cached_ev);
-        }
-        match self.produce_events() {
-            Ok(new_events) => {
-                self.buffer_items(new_events);
-                // Recursing here either returns one of the buffered events we just added,
-                // or in the case where `new_events` was empty, causes us to block again waiting
-                // on `produce_events`.
-                self.next_ev()
+        // We loop blocking on `produce_events` until an event is produced.
+        loop {
+            if let Some(cached_ev) = self.pop_item() {
+                return Ok(cached_ev);
             }
-            Err(RecvError) => Err(RecvError),
+
+            match self.produce_events() {
+                Ok(new_events) => self.buffer_items(new_events),
+                Err(RecvError) => return Err(RecvError),
+            }
         }
     }
 
