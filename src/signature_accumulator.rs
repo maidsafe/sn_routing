@@ -39,7 +39,7 @@ impl SignatureAccumulator {
     /// Adds the given signature to the list of pending signatures or to the appropriate
     /// `SignedMessage`. Returns the message, if it has enough signatures now.
     pub fn add_signature(&mut self,
-                         min_group_size: usize,
+                         min_section_size: usize,
                          hash: sha256::Digest,
                          sig: sign::Signature,
                          pub_id: PublicId)
@@ -52,14 +52,14 @@ impl SignatureAccumulator {
             sigs_vec.0.push((pub_id, sig));
             return None;
         }
-        self.remove_if_complete(min_group_size, &hash)
+        self.remove_if_complete(min_section_size, &hash)
     }
 
     /// Adds the given message to the list of pending messages. Returns it if it has enough
     /// signatures.
     pub fn add_message(&mut self,
                        mut msg: SignedMessage,
-                       min_group_size: usize,
+                       min_section_size: usize,
                        route: u8)
                        -> Option<(SignedMessage, u8)> {
         self.remove_expired();
@@ -83,7 +83,7 @@ impl SignatureAccumulator {
                 let _ = entry.insert((msg, route, Instant::now()));
             }
         }
-        self.remove_if_complete(min_group_size, &hash)
+        self.remove_if_complete(min_section_size, &hash)
     }
 
     fn remove_expired(&mut self) {
@@ -106,13 +106,13 @@ impl SignatureAccumulator {
     }
 
     fn remove_if_complete(&mut self,
-                          min_group_size: usize,
+                          min_section_size: usize,
                           hash: &sha256::Digest)
                           -> Option<(SignedMessage, u8)> {
         match self.msgs.get_mut(hash) {
             None => return None,
             Some(&mut (ref mut msg, _, _)) => {
-                if !msg.check_fully_signed(min_group_size) {
+                if !msg.check_fully_signed(min_section_size) {
                     return None;
                 }
             }
@@ -148,7 +148,8 @@ mod tests {
             let routing_msg = RoutingMessage {
                 src: Authority::ClientManager(rand::random()),
                 dst: Authority::ClientManager(rand::random()),
-                content: MessageContent::GroupSplit(Prefix::new(0, rand::random()), rand::random()),
+                content: MessageContent::SectionSplit(Prefix::new(0, rand::random()),
+                                                      rand::random()),
             };
             let prefix = Prefix::new(0, *unwrap!(all_ids.iter().next()).name());
             let lists = vec![SectionList::new(prefix, all_ids)];
@@ -200,7 +201,7 @@ mod tests {
     }
 
     #[test]
-    fn group_src_add_message_last() {
+    fn section_src_add_message_last() {
         let mut sig_accumulator = SignatureAccumulator::default();
         let env = Env::new();
 
@@ -230,7 +231,7 @@ mod tests {
             assert_eq!(pub_ids_and_sigs.len(), env.other_ids.len())
         });
 
-        // Add each message with the group list added - each should accumulate.
+        // Add each message with the section list added - each should accumulate.
         let mut expected_sigs_count = env.msgs_and_sigs.len();
         assert_eq!(sig_accumulator.sigs.len(), expected_sigs_count);
         assert!(sig_accumulator.msgs.is_empty());
@@ -253,11 +254,11 @@ mod tests {
     }
 
     #[test]
-    fn group_src_add_signature_last() {
+    fn section_src_add_signature_last() {
         let mut sig_accumulator = SignatureAccumulator::default();
         let env = Env::new();
 
-        // Add each message with the group list added - none should accumulate.
+        // Add each message with the section list added - none should accumulate.
         env.msgs_and_sigs.iter().enumerate().foreach(|(route, msg_and_sigs)| {
             let signed_msg = msg_and_sigs.signed_msg.clone();
             let result = sig_accumulator.add_message(signed_msg, env.num_nodes(), route as u8);

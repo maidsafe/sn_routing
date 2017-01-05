@@ -23,12 +23,12 @@ use super::{TestNode, create_connected_clients, create_connected_nodes_until_spl
             gen_immutable_data, poll_all};
 
 // Generate random immutable data, but make sure the first node in the given
-// node slice (the proxy node) is not in the data's group.
-fn gen_immutable_data_not_in_first_node_group<T: Rng>(rng: &mut T, nodes: &[TestNode]) -> Data {
+// node slice (the proxy node) is not in the data's section.
+fn gen_immutable_data_not_in_first_node_section<T: Rng>(rng: &mut T, nodes: &[TestNode]) -> Data {
     let first_name = nodes[0].name();
-    // We want to make sure the data is inserted into a different group. Since the
-    // root prefix uses 0 bits, we will have at least one group starting bit 0 and at
-    // least one starting bit 1. If this differs, the groups are guaranteed different.
+    // We want to make sure the data is inserted into a different section. Since the
+    // root prefix uses 0 bits, we will have at least one section starting bit 0 and at
+    // least one starting bit 1. If this differs, the sections are guaranteed different.
     let prefix = Prefix::new(1, first_name);
 
     loop {
@@ -41,8 +41,8 @@ fn gen_immutable_data_not_in_first_node_group<T: Rng>(rng: &mut T, nodes: &[Test
 
 #[test]
 fn response_caching() {
-    let min_group_size = 8;
-    let network = Network::new(min_group_size, None);
+    let min_section_size = 8;
+    let network = Network::new(min_section_size, None);
 
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1], true);
@@ -54,13 +54,13 @@ fn response_caching() {
     // because in that case the full response (as opposed to just a hash of it)
     // would originate from the proxy node and would never be relayed by it, thus
     // it would never be stored in the cache.
-    let data = gen_immutable_data_not_in_first_node_group(&mut rng, &nodes);
+    let data = gen_immutable_data_not_in_first_node_section(&mut rng, &nodes);
     let data_id = data.identifier();
     let message_id = MessageId::new();
     let dst = Authority::NaeManager(*data.name());
 
     // No node has the data cached yet, so this request should reach the nodes
-    // in the NAE manager group of the data.
+    // in the NAE manager section of the data.
     unwrap!(clients[0].inner.send_get_request(dst, data_id, message_id));
 
     poll_all(&mut nodes, &mut clients);
@@ -127,7 +127,7 @@ fn response_caching() {
 
     // The request should not be relayed to any other node, so no node should
     // raise Event::Request.
-    for node in nodes.iter_mut().take(min_group_size) {
+    for node in nodes.iter_mut().take(min_section_size) {
         expect_no_event!(node);
     }
 }

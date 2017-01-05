@@ -24,17 +24,17 @@
 //! [1]: ../kademlia_routing_table/index.html
 //! [2]: ../xor_name/struct.XorName.html
 //!
-//! Messages are exchanged between _authorities_, where an `Authority` can be an
-//! individual client or node, or a group of nodes. In both cases, messages are cryptographically
-//! signed by the sender, and in the latter case it is verified that a sufficient number of group
-//! members agree on the message: Only if that quorum is reached, the message is delivered. In
-//! addition, each message has a unique ID, and is delivered only once.
+//! Messages are exchanged between _authorities_, where an `Authority` can be an individual client
+//! or node, or a collection of nodes called a "section". In both cases, messages are
+//! cryptographically signed by the sender, and in the latter case it is verified that a sufficient
+//! number of section members agree on the message: only if that quorum is reached, the message is
+//! delivered. In addition, each message has a unique ID, and is delivered only once.
 //!
-//! Group authorities are also addressed using a single `XorName`. The members of that group are
+//! Section authorities are also addressed using a single `XorName`. The members of that section are
 //! the nodes that are closest to that name. Since nodes are assigned their name by the network,
-//! this provides redundancy and resilience: A node has no control over which group authorities it
-//! will be a member of, and without a majority in the group it cannot forge a message from that
-//! group.
+//! this provides redundancy and resilience: a node has no control over which section authority it
+//! will be a member of, and without a majority in the section it cannot forge a message from that
+//! section.
 //!
 //! The library also provides different types for the messages' data.
 //!
@@ -45,7 +45,7 @@
 //! network of nodes and receive responses.
 //!
 //! `Node` is used to handle and send requests within that network, and to implement its
-//! functionality, e. g. storing and retrieving data, validating permissions, managing metadata etc.
+//! functionality, e.g. storing and retrieving data, validating permissions, managing metadata, etc.
 //!
 //!
 //! ## Client creation
@@ -58,11 +58,11 @@
 //! use std::sync::mpsc;
 //! use routing::{Client, Event, FullId};
 //!
-//! let min_group_size = 8;
+//! let min_section_size = 8;
 //!
 //! let (sender, _receiver) = mpsc::channel::<Event>();
 //! let full_id = FullId::new(); // Generate new keys.
-//! let _ = Client::new(sender, Some(full_id.clone()), min_group_size).unwrap();
+//! let _ = Client::new(sender, Some(full_id.clone()), min_section_size).unwrap();
 //!
 //! let _ = full_id.public_id().name();
 //! ```
@@ -78,9 +78,9 @@
 //! ```no_run
 //! use routing::Node;
 //!
-//! let min_group_size = 8;
+//! let min_section_size = 8;
 //!
-//! let _ = Node::builder().create(min_group_size).unwrap();
+//! let _ = Node::builder().create(min_section_size).unwrap();
 //! ```
 //!
 //! Upon creation, the node will first connect to the network as a client. Once it has client
@@ -88,8 +88,8 @@
 //! that new name, adding close nodes to its routing table.
 //!
 //! Messages can be sent using the methods of `node`, and received as `Event`s from the `receiver`.
-//! The node can act as an individual node or as part of a group authority. Sending a message as a
-//! group authority only has an effect if sufficiently many other nodes in that authority send the
+//! The node can act as an individual node or as part of a section authority. Sending a message as a
+//! section authority only has an effect if sufficiently many other nodes in that authority send the
 //! same message.
 //!
 //!
@@ -183,7 +183,7 @@ pub const TYPE_TAG_SESSION_PACKET: u64 = 0;
 /// Structured Data Tag for DNS Packet Type
 pub const TYPE_TAG_DNS_PACKET: u64 = 5;
 
-/// The quorum, as a percentage of the group size.
+/// The quorum, as a percentage of the section size.
 pub const QUORUM: usize = 60;
 
 pub use cache::{Cache, NullCache};

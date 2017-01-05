@@ -24,23 +24,23 @@ quick_error! {
             description("Own name disallowed")
             display("Our own name is not allowed to be added to the routing table.")
         }
-        /// The peer name to be added doesn't fall within any group in the routing table.
+        /// The peer name to be added doesn't fall within any section in the routing table.
         PeerNameUnsuitable {
             description("Peer name unsuitable")
-            display("Peer's name can't be added to the routing table as it's outwith all groups.")
+            display("Peer's name can't be added to the routing table as it's outwith all sections.")
         }
         /// The peer name to be added already exists in the routing table.
         AlreadyExists {
             description("Peer name already exists")
             display("Peer's name has already been added to the routing table.")
         }
-        /// The destination group doesn't have enough members to satisfy the requested route.
+        /// The destination section doesn't have enough members to satisfy the requested route.
         CannotRoute {
             description("Can't use requested route")
-            display("Destination group doesn't have enough members to use requested route.")
+            display("Destination section doesn't have enough members to use requested route.")
         }
-        /// The target peer doesn't exist on the network.  (If it did, it would be in our own group
-        /// and we would know of it).
+        /// The target peer doesn't exist on the network.  (If it did, it would be in our own
+        /// section and we would know of it).
         NoSuchPeer {
             description("No such peer")
             display("Peer doesn't exist on the network.")

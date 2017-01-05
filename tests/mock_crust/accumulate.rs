@@ -23,8 +23,8 @@ use super::{TestNode, create_connected_nodes, gen_immutable_data, poll_all,
 
 #[test]
 fn messages_accumulate_with_quorum() {
-    let min_group_size = 8;
-    let network = Network::new(min_group_size, None);
+    let min_section_size = 8;
+    let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, 15);
 
@@ -40,9 +40,9 @@ fn messages_accumulate_with_quorum() {
 
     let dst = Authority::ManagedNode(nodes[0].name()); // The closest node.
     // The smallest number such that `quorum * 100 >= len * QUORUM`:
-    let quorum = (min_group_size * QUORUM - 1) / 100 + 1;
+    let quorum = (min_section_size * QUORUM - 1) / 100 + 1;
 
-    // Send a message from the group `src` to the node `dst`.
+    // Send a message from the section `src` to the node `dst`.
     // Only the `quorum`-th sender should cause accumulation and a
     // `Response` event. The event should only occur once.
     let message_id = MessageId::new();
@@ -74,11 +74,10 @@ fn messages_accumulate_with_quorum() {
     let _ = poll_all(&mut nodes, &mut []);
     expect_no_event!(nodes[0]);
 
-    let dst_grp = Authority::Section(src.name()); // The whole group.
+    let dst_grp = Authority::Section(src.name()); // The whole section.
 
-    // Send a message from the group `src` to the group `dst_grp`.
-    // Only the `quorum`-th sender should cause accumulation and a
-    // `Response` event. The event should only occur once.
+    // Send a message from the section `src` to the section `dst_grp`. Only the `quorum`-th sender
+    // should cause accumulation and a `Response` event. The event should only occur once.
     let message_id = MessageId::new();
     for node in nodes.iter_mut().take(quorum - 1) {
         send(node, &dst_grp, message_id);

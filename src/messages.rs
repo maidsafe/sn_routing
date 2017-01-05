@@ -98,10 +98,10 @@ impl Message {
 /// Allows routing to directly send specific messages between nodes.
 #[derive(RustcEncodable, RustcDecodable)]
 pub enum DirectMessage {
-    /// Sent from members of a group message's source authority to the first hop. The message will
+    /// Sent from members of a section message's source authority to the first hop. The message will
     /// only be relayed once enough signatures have been accumulated.
     MessageSignature(sha256::Digest, sign::Signature),
-    /// A signature for the current `BTreeSet` of group's node names
+    /// A signature for the current `BTreeSet` of section's node names
     SectionListSignature(Prefix<XorName>, SectionList, sign::Signature),
     /// Sent from the bootstrap node to a client in response to `ClientIdentify`.
     BootstrapIdentify {
@@ -153,7 +153,7 @@ impl DirectMessage {
 pub struct HopMessage {
     /// Wrapped signed message.
     pub content: SignedMessage,
-    /// Route number; corresponds to the index of the peer in the group of target peers being
+    /// Route number; corresponds to the index of the peer in the section of target peers being
     /// considered for the next hop.
     pub route: u8,
     /// Every node this has already been sent to.
@@ -192,7 +192,7 @@ impl HopMessage {
     }
 }
 
-/// A list of a group's public IDs, together with a list of signatures of a neighbouring group.
+/// A list of a section's public IDs, together with a list of signatures of a neighbouring section.
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable, Debug)]
 pub struct SectionList {
     prefix: Prefix<XorName>,
@@ -247,12 +247,12 @@ impl SignedMessage {
 
     /// Confirms the signatures.
     // TODO (1677): verify the sending SectionLists via each hop's signed lists
-    pub fn check_integrity(&self, min_group_size: usize) -> Result<(), RoutingError> {
+    pub fn check_integrity(&self, min_section_size: usize) -> Result<(), RoutingError> {
         let signed_bytes = serialise(&self.content)?;
         if !self.find_invalid_sigs(signed_bytes).is_empty() {
             return Err(RoutingError::FailedSignature);
         }
-        if !self.has_enough_sigs(min_group_size) {
+        if !self.has_enough_sigs(min_section_size) {
             return Err(RoutingError::NotEnoughSignatures);
         }
         Ok(())
@@ -262,8 +262,8 @@ impl SignedMessage {
         self.signatures.contains_key(pub_id)
     }
 
-    /// Adds the given signature if it is new, without validating it. If the collection of group
-    /// lists isn't empty, the signature is only added if `pub_id` is a member of the first group
+    /// Adds the given signature if it is new, without validating it. If the collection of section
+    /// lists isn't empty, the signature is only added if `pub_id` is a member of the first section
     /// list.
     pub fn add_signature(&mut self, pub_id: PublicId, sig: sign::Signature) {
         if self.content.src.is_multiple() && self.is_sender(&pub_id) {
@@ -294,8 +294,8 @@ impl SignedMessage {
     }
 
     /// Returns whether there are enough signatures from the sender.
-    pub fn check_fully_signed(&mut self, min_group_size: usize) -> bool {
-        if !self.has_enough_sigs(min_group_size) {
+    pub fn check_fully_signed(&mut self, min_section_size: usize) -> bool {
+        if !self.has_enough_sigs(min_section_size) {
             return false;
         }
 
@@ -320,7 +320,7 @@ impl SignedMessage {
             let _ = self.signatures.remove(invalid_signature);
         }
 
-        self.has_enough_sigs(min_group_size)
+        self.has_enough_sigs(min_section_size)
     }
 
     // Returns true iff `pub_id` is in self.section_lists
@@ -353,7 +353,7 @@ impl SignedMessage {
 
     // Returns true iff there are enough signatures (note that this method does not verify the
     // signatures, it only counts them; it also does not verify `self.src_sections`).
-    fn has_enough_sigs(&self, min_group_size: usize) -> bool {
+    fn has_enough_sigs(&self, min_section_size: usize) -> bool {
         use Authority::*;
         match self.content.src {
             ClientManager(_) | NaeManager(_) | NodeManager(_) => {
@@ -363,15 +363,15 @@ impl SignedMessage {
                     .flat_map(|list| list.pub_ids.iter().map(PublicId::name))
                     .sorted_by(|lhs, rhs| self.content.src.name().cmp_distance(lhs, rhs))
                     .into_iter()
-                    .take(min_group_size)
+                    .take(min_section_size)
                     .collect();
                 let valid_sigs = self.signatures
                     .keys()
                     .filter(|pub_id| valid_names.contains(pub_id.name()))
                     .count();
                 // TODO: we should consider replacing valid_names.len() with
-                // cmp::min(routing_table.len(), min_group_size)
-                // (or just min_group_size, but in that case we will not be able to handle user
+                // cmp::min(routing_table.len(), min_section_size)
+                // (or just min_section_size, but in that case we will not be able to handle user
                 // messages during boot-up).
                 QUORUM * valid_names.len() <= 100 * valid_sigs
             }
@@ -462,13 +462,13 @@ impl RoutingMessage {
 ///
 /// ### Getting a new network name from the `NaeManager`
 ///
-/// Once in `Client` state, A sends a `GetNodeName` request to the `NaeManager` group authority X
+/// Once in `Client` state, A sends a `GetNodeName` request to the `NaeManager` section authority X
 /// of A's current name. X computes a new name and sends it in an `ExpectCloseNode` request to  the
 /// `NaeManager` Y of A's new name. Each member of Y caches A's public ID, and Y sends a
 /// `GetNodeName` response back to A, which includes the public IDs of the members of Y.
 ///
 ///
-/// ### Connecting to the close group
+/// ### Connecting to the close section
 ///
 /// To the `ManagedNode` for each public ID it receives from members of Y, A sends its
 /// `ConnectionInfo`. It also caches the ID.
@@ -533,9 +533,9 @@ pub enum MessageContent {
     GetNodeNameResponse {
         /// Supplied `PublicId`, but with the new name
         relocated_id: PublicId,
-        /// The routing table shared by the nodes in our group, including the `PublicId`s of our
+        /// The routing table shared by the nodes in our section, including the `PublicId`s of our
         /// contacts.
-        groups: Vec<(Prefix<XorName>, Vec<PublicId>)>,
+        sections: Vec<(Prefix<XorName>, Vec<PublicId>)>,
         /// The message's unique identifier.
         message_id: MessageId,
     },
@@ -548,20 +548,20 @@ pub enum MessageContent {
         /// Members of the section
         members: Vec<PublicId>,
     },
-    /// Sent to all connected peers when our own group splits
-    GroupSplit(Prefix<XorName>, XorName),
-    /// Sent amongst members of a newly-merged group to allow synchronisation of their routing
+    /// Sent to all connected peers when our own section splits
+    SectionSplit(Prefix<XorName>, XorName),
+    /// Sent amongst members of a newly-merged section to allow synchronisation of their routing
     /// tables before notifying other connected peers of the merge.
-    OwnGroupMerge {
+    OwnSectionMerge {
         sender_prefix: Prefix<XorName>,
         merge_prefix: Prefix<XorName>,
-        groups: Vec<(Prefix<XorName>, Vec<PublicId>)>,
+        sections: Vec<(Prefix<XorName>, Vec<PublicId>)>,
     },
-    /// Sent by members of a newly-merged group to peers outwith the merged group to notify them of
-    /// the merge.
-    OtherGroupMerge {
+    /// Sent by members of a newly-merged section to peers outwith the merged section to notify them
+    /// of the merge.
+    OtherSectionMerge {
         prefix: Prefix<XorName>,
-        group: BTreeSet<PublicId>,
+        section: BTreeSet<PublicId>,
     },
     /// Acknowledge receipt of any message except an `Ack`. It contains the hash of the
     /// received message and the priority.
@@ -680,29 +680,34 @@ impl Debug for MessageContent {
                        msg_id)
             }
             MessageContent::GetNodeNameResponse { ref relocated_id,
-                                                  ref groups,
+                                                  ref sections,
                                                   ref message_id } => {
                 write!(formatter,
                        "GetNodeNameResponse {{ {:?}, {:?}, {:?} }}",
                        relocated_id,
-                       groups,
+                       sections,
                        message_id)
             }
             MessageContent::SectionUpdate { ref prefix, ref members } => {
                 write!(formatter, "SectionUpdate {{ {:?}, {:?} }}", prefix, members)
             }
-            MessageContent::GroupSplit(ref prefix, ref joining_node) => {
-                write!(formatter, "GroupSplit({:?}, {:?})", prefix, joining_node)
+            MessageContent::SectionSplit(ref prefix, ref joining_node) => {
+                write!(formatter, "SectionSplit({:?}, {:?})", prefix, joining_node)
             }
-            MessageContent::OwnGroupMerge { ref sender_prefix, ref merge_prefix, ref groups } => {
+            MessageContent::OwnSectionMerge { ref sender_prefix,
+                                              ref merge_prefix,
+                                              ref sections } => {
                 write!(formatter,
-                       "OwnGroupMerge {{ {:?}, {:?}, {:?} }}",
+                       "OwnSectionMerge {{ {:?}, {:?}, {:?} }}",
                        sender_prefix,
                        merge_prefix,
-                       groups)
+                       sections)
             }
-            MessageContent::OtherGroupMerge { ref prefix, ref group } => {
-                write!(formatter, "OtherGroupMerge {{ {:?}, {:?} }}", prefix, group)
+            MessageContent::OtherSectionMerge { ref prefix, ref section } => {
+                write!(formatter,
+                       "OtherSectionMerge {{ {:?}, {:?} }}",
+                       prefix,
+                       section)
             }
             MessageContent::Ack(ack, priority) => write!(formatter, "Ack({}, {})", ack, priority),
             MessageContent::UserMessagePart { hash,
@@ -1105,7 +1110,7 @@ mod tests {
 
     #[test]
     fn signed_message_check_integrity() {
-        let min_group_size = 1000;
+        let min_section_size = 1000;
         let name: XorName = rand::random();
         let full_id = FullId::new();
         let routing_message = RoutingMessage {
@@ -1115,7 +1120,7 @@ mod tests {
                 proxy_node_name: name,
             },
             dst: Authority::ClientManager(name),
-            content: MessageContent::GroupSplit(Prefix::new(0, name), name),
+            content: MessageContent::SectionSplit(Prefix::new(0, name), name),
         };
         let senders = iter::empty().collect();
         let signed_message_result = SignedMessage::new(routing_message.clone(), &full_id, senders);
@@ -1127,7 +1132,7 @@ mod tests {
         assert_eq!(Some(full_id.public_id()),
                    signed_message.signatures.keys().next());
 
-        unwrap!(signed_message.check_integrity(min_group_size));
+        unwrap!(signed_message.check_integrity(min_section_size));
 
         let full_id = FullId::new();
         let bytes_to_sign = unwrap!(serialise(&(&routing_message, full_id.public_id())));
@@ -1136,14 +1141,14 @@ mod tests {
         signed_message.signatures = iter::once((*full_id.public_id(), signature)).collect();
 
         // Invalid because it's not signed by the sender:
-        assert!(signed_message.check_integrity(min_group_size).is_err());
+        assert!(signed_message.check_integrity(min_section_size).is_err());
         // However, the signature itself should be valid:
-        assert!(signed_message.has_enough_sigs(min_group_size));
+        assert!(signed_message.has_enough_sigs(min_section_size));
     }
 
     #[test]
     fn msg_signatures() {
-        let min_group_size = 8;
+        let min_section_size = 8;
 
         let full_id_0 = FullId::new();
         let prefix = Prefix::new(0, *full_id_0.public_id().name());
@@ -1181,7 +1186,7 @@ mod tests {
         };
         assert_eq!(signed_msg.signatures.len(), 1);
         assert!(!signed_msg.signatures.contains_key(irrelevant_full_id.public_id()));
-        assert!(!signed_msg.check_fully_signed(min_group_size));
+        assert!(!signed_msg.check_fully_signed(min_section_size));
 
         // Add a valid signature for ID 1 and an invalid one for ID 2
         match unwrap!(signed_msg.routing_message().to_signature(full_id_1.signing_private_key())) {
@@ -1195,7 +1200,7 @@ mod tests {
         let bad_sig = sign::Signature([0; sign::SIGNATUREBYTES]);
         signed_msg.add_signature(*full_id_2.public_id(), bad_sig);
         assert_eq!(signed_msg.signatures.len(), 3);
-        assert!(signed_msg.check_fully_signed(min_group_size));
+        assert!(signed_msg.check_fully_signed(min_section_size));
 
         // Check the bad signature got removed (by check_fully_signed) properly.
         assert_eq!(signed_msg.signatures.len(), 2);
@@ -1213,7 +1218,7 @@ mod tests {
         let routing_message = RoutingMessage {
             src: Authority::ClientManager(name),
             dst: Authority::ClientManager(name),
-            content: MessageContent::GroupSplit(Prefix::new(0, name), name),
+            content: MessageContent::SectionSplit(Prefix::new(0, name), name),
         };
         let full_id = FullId::new();
         let senders = iter::empty().collect();

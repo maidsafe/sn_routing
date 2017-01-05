@@ -29,11 +29,11 @@ pub type PrefixMap<T> = HashMap<Prefix<XorName>, T>;
 
 #[derive(Default)]
 pub struct SectionListCache {
-    // all signatures for a group list for a given prefix
+    // all signatures for a section list for a given prefix
     signatures: PrefixMap<HashMap<SectionList, Signatures>>,
-    // group lists signed by a given public id
+    // section lists signed by a given public id
     signed_by: HashMap<PublicId, PrefixMap<SectionList>>,
-    // the latest group list for each prefix with a quorum of signatures
+    // the latest section list for each prefix with a quorum of signatures
     lists_cache: PrefixMap<(SectionList, Signatures)>,
 }
 
@@ -55,7 +55,7 @@ impl SectionListCache {
         }
     }
 
-    /// Adds a new signature for a group list
+    /// Adds a new signature for a section list
     pub fn add_signature(&mut self,
                          prefix: Prefix<XorName>,
                          pub_id: PublicId,
@@ -64,10 +64,10 @@ impl SectionListCache {
                          our_section_size: usize) {
         // remove all conflicting signatures
         self.remove_signatures_for_prefix_by(prefix, pub_id);
-        // remember that this public id signed this group list
+        // remember that this public id signed this section list
         let _ =
             self.signed_by.entry(pub_id).or_insert_with(HashMap::new).insert(prefix, list.clone());
-        // remember that this group list has a new signature
+        // remember that this section list has a new signature
         let _ = self.signatures
             .entry(prefix)
             .or_insert_with(HashMap::new)
@@ -77,7 +77,7 @@ impl SectionListCache {
         self.update_lists_cache(our_section_size);
     }
 
-    /// Returns the currently signed group list for `prefix` along with a quorum of signatures.
+    /// Returns the currently signed section list for `prefix` along with a quorum of signatures.
     // TODO: Remove this when the method is used in production
     #[cfg(feature="use-mock-crust")]
     pub fn get_signatures(&self, prefix: Prefix<XorName>) -> Option<&(SectionList, Signatures)> {
@@ -87,7 +87,7 @@ impl SectionListCache {
     fn prune(&mut self) {
         let mut to_remove = vec![];
         for (prefix, map) in &mut self.signatures {
-            // prune group lists with 0 signatures
+            // prune section lists with 0 signatures
             let lists_to_remove = map.iter()
                 .filter(|&(_, sigs)| sigs.is_empty())
                 .map(|(list, _)| list.clone())
@@ -99,7 +99,7 @@ impl SectionListCache {
                 to_remove.push(*prefix);
             }
         }
-        // prune prefixes with no group lists
+        // prune prefixes with no section lists
         for prefix in to_remove {
             let _ = self.signatures.remove(&prefix);
             // if we lose a prefix from `signatures`, there is no point in holding it in
@@ -136,7 +136,7 @@ impl SectionListCache {
     }
 
     fn remove_signatures_for_prefix_by(&mut self, prefix: Prefix<XorName>, author: PublicId) {
-        // vector of tuples (prefix, group list) to be removed
+        // vector of tuples (prefix, section list) to be removed
         let to_remove = self.signed_by
             .get(&author)
             .into_iter()
