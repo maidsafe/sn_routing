@@ -33,7 +33,7 @@ pub struct SectionListCache {
     // Section lists signed by a given public id
     signed_by: HashMap<PublicId, PrefixMap<SectionList>>,
     // The latest section list for each prefix with a quorum of signatures
-    lists_cache: PrefixMap<(SectionList, SectionListSignatures)>,
+    lists_cache: PrefixMap<SignedSectionList>,
 }
 
 impl SectionListCache {
@@ -78,13 +78,7 @@ impl SectionListCache {
 
     /// Returns the currently signed section list for `prefix` along with a quorum of signatures.
     pub fn get_signed_list(&self, prefix: &Prefix<XorName>) -> Option<SignedSectionList> {
-        // TODO: why not store this type directly? And do we need to clone?
-        self.lists_cache.get(prefix).cloned().map(|(list, sigs)| {
-            SignedSectionList {
-                list: list,
-                signatures: sigs,
-            }
-        })
+        self.lists_cache.get(prefix).cloned()
     }
 
     fn prune(&mut self) {
@@ -132,7 +126,11 @@ impl SectionListCache {
                 if 100 * sig_count >= QUORUM * our_section_size {
                     // we have a list with a quorum of signatures
                     let signatures = unwrap!(map.get(list));
-                    let _ = self.lists_cache.insert(*prefix, (list.clone(), signatures.clone()));
+                    let _ = self.lists_cache.insert(*prefix,
+                                                    SignedSectionList {
+                                                        list: list.clone(),
+                                                        signatures: signatures.clone(),
+                                                    });
                 }
             }
         }
