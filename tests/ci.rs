@@ -344,11 +344,11 @@ fn core() {
     }
 
     {
-        // request to section authority
+        // request to group authority
         let node_names = nodes.iter().map(|node| node.name()).collect_vec();
         let client = TestClient::new(nodes.len(), event_sender.clone(), min_section_size);
         let data = gen_structured_data(client.full_id(), &mut rng);
-        let mut close_section = closest_nodes(&node_names, client.name(), min_section_size);
+        let mut close_group = closest_nodes(&node_names, client.name(), min_section_size);
 
         loop {
             if let Ok(test_event) = recv_with_timeout(&mut nodes,
@@ -364,9 +364,9 @@ fn core() {
                             .is_ok());
                     }
                     TestEvent(index, Event::Request { request: Request::Put(..), .. }) => {
-                        close_section.retain(|&name| name != nodes[index].name());
+                        close_group.retain(|&name| name != nodes[index].name());
 
-                        if close_section.is_empty() {
+                        if close_group.is_empty() {
                             break;
                         }
                     }
@@ -377,15 +377,15 @@ fn core() {
             }
         }
 
-        assert!(close_section.is_empty());
+        assert!(close_group.is_empty());
     }
 
     {
-        // response from section authority
+        // response from group authority
         let node_names = nodes.iter().map(|node| node.name()).collect_vec();
         let client = TestClient::new(nodes.len(), event_sender.clone(), min_section_size);
         let data = gen_structured_data(client.full_id(), &mut rng);
-        let mut close_section = closest_nodes(&node_names, client.name(), min_section_size);
+        let mut close_group = closest_nodes(&node_names, client.name(), min_section_size);
 
         loop {
             if let Ok(test_event) = recv_with_timeout(&mut nodes,
@@ -419,9 +419,9 @@ fn core() {
                     }
                     TestEvent(index,
                               Event::Response { response: Response::PutFailure { .. }, .. }) => {
-                        close_section.retain(|&name| name != nodes[index].name());
+                        close_group.retain(|&name| name != nodes[index].name());
 
-                        if close_section.is_empty() {
+                        if close_group.is_empty() {
                             break;
                         }
                     }
@@ -432,7 +432,7 @@ fn core() {
             }
         }
 
-        assert!(close_section.is_empty());
+        assert!(close_group.is_empty());
     }
 
     {

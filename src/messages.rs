@@ -98,8 +98,8 @@ impl Message {
 /// Allows routing to directly send specific messages between nodes.
 #[derive(RustcEncodable, RustcDecodable)]
 pub enum DirectMessage {
-    /// Sent from members of a section message's source authority to the first hop. The message will
-    /// only be relayed once enough signatures have been accumulated.
+    /// Sent from members of a section or group message's source authority to the first hop. The
+    /// message will only be relayed once enough signatures have been accumulated.
     MessageSignature(sha256::Digest, sign::Signature),
     /// A signature for the current `BTreeSet` of section's node names
     SectionListSignature(Prefix<XorName>, SectionList, sign::Signature),
@@ -468,7 +468,7 @@ impl RoutingMessage {
 /// `GetNodeName` response back to A, which includes the public IDs of the members of Y.
 ///
 ///
-/// ### Connecting to the close section
+/// ### Connecting to the matching section
 ///
 /// To the `ManagedNode` for each public ID it receives from members of Y, A sends its
 /// `ConnectionInfo`. It also caches the ID.

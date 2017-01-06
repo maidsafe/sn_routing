@@ -20,11 +20,11 @@ use routing::{Event, EventStream};
 use routing::mock_crust::{Config, Endpoint, Network};
 use super::{TestNode, create_connected_nodes, poll_all, verify_invariant_for_all_nodes};
 
-// Drop node at index and verify its close section receives NodeLost.
+// Drop node at index and verify its own section receives NodeLost.
 fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
     let node = nodes.remove(index);
     let name = node.name();
-    let close_names = node.close_section();
+    let close_names = node.close_names();
 
     drop(node);
 

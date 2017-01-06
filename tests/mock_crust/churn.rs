@@ -55,12 +55,12 @@ fn random_churn<R: Rng>(rng: &mut R,
 /// The entries of a Get request: the data ID, message ID, source and destination authority.
 type GetKey = (DataIdentifier, MessageId, Authority<XorName>, Authority<XorName>);
 
-/// A set of expectations: Which nodes and sections are supposed to receive Get requests.
+/// A set of expectations: Which nodes, sections and groups are supposed to receive Get requests.
 #[derive(Default)]
 struct ExpectedGets {
     /// The Get requests expected to be received.
     messages: HashSet<GetKey>,
-    /// The section members of the receiving sections, at the time of sending.
+    /// The section or group members of the receiving sections or groups, at the time of sending.
     sections: HashMap<Authority<XorName>, HashSet<XorName>>,
 }
 
@@ -231,27 +231,27 @@ fn churn() {
 
         let mut expected_gets = ExpectedGets::default();
 
-        // Test messages from a node to itself, another node, a section and a section...
+        // Test messages from a node to itself, another node, a group and a section...
         expected_gets.send_and_expect(data_id, auth_n0, auth_n0, &mut nodes, min_section_size);
         expected_gets.send_and_expect(data_id, auth_n0, auth_n1, &mut nodes, min_section_size);
         expected_gets.send_and_expect(data_id, auth_n0, auth_g0, &mut nodes, min_section_size);
         expected_gets.send_and_expect(data_id, auth_n0, auth_s0, &mut nodes, min_section_size);
-        // ... and from a section to itself, another section, a section and a node...
+        // ... and from a group to itself, another group, a section and a node...
         expected_gets.send_and_expect(data_id, auth_g0, auth_g0, &mut nodes, min_section_size);
         expected_gets.send_and_expect(data_id, auth_g0, auth_g1, &mut nodes, min_section_size);
         expected_gets.send_and_expect(data_id, auth_g0, auth_s0, &mut nodes, min_section_size);
         expected_gets.send_and_expect(data_id, auth_g0, auth_n0, &mut nodes, min_section_size);
-        // ... and from a section to itself, another section, a section and a node...
+        // ... and from a section to itself, another section, a group and a node...
         // TODO: Enable these once MAID-1920 is fixed.
         // expected_gets.send_and_expect(data_id, auth_s0, auth_s0, &nodes, min_section_size);
         // expected_gets.send_and_expect(data_id, auth_s0, auth_s1, &nodes, min_section_size);
         // expected_gets.send_and_expect(data_id, auth_s0, auth_g0, &nodes, min_section_size);
         // expected_gets.send_and_expect(data_id, auth_s0, auth_n0, &nodes, min_section_size);
 
-        // Test messages from a client to a section and a section...
+        // Test messages from a client to a group and a section...
         expected_gets.client_send_and_expect(data_id, cl_auth, auth_g0, &clients[0], &mut nodes);
         expected_gets.client_send_and_expect(data_id, cl_auth, auth_s0, &clients[0], &mut nodes);
-        // ... and from section to the client
+        // ... and from group to the client
         expected_gets.send_and_expect(data_id, auth_g1, cl_auth, &mut nodes, min_section_size);
 
         poll_and_resend(&mut nodes, &mut clients);

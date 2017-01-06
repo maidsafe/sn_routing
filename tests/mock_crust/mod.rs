@@ -185,11 +185,11 @@ fn simultaneous_joining_nodes() {
 }
 
 #[test]
-fn check_close_sections_for_section_size_nodes() {
+fn check_close_names_for_min_section_size_nodes() {
     let min_section_size = 8;
     let nodes = create_connected_nodes(&Network::new(min_section_size, None), min_section_size);
     let close_sections_complete = nodes.iter()
-        .all(|n| nodes.iter().all(|m| m.close_section().contains(&n.name())));
+        .all(|n| nodes.iter().all(|m| m.close_names().contains(&n.name())));
     assert!(close_sections_complete);
 }
 

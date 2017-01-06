@@ -36,8 +36,8 @@
 // The *[XOR][3] distance* between two nodes with addresses `x` and `y` is `x ^ y`. This
 // [distance function][4] has the property that no two points ever have the same distance from a
 // given point, i. e. if `x ^ y == x ^ z`, then `y == z`. This property allows us to define the
-// `k`-*close section* of an address as the `k` closest nodes to that address, guaranteeing that the
-// close section will always have exactly `k` members (unless, of course, the whole network has less
+// `k`-*close group* of an address as the `k` closest nodes to that address, guaranteeing that the
+// close group will always have exactly `k` members (unless, of course, the whole network has less
 // than `k` nodes).
 //
 // [2]: trait.Xorable.html
@@ -71,17 +71,14 @@
 //
 // * If the destination is the address of a node, the message will reach that node after at most
 //   `B - 1` hops.
-// * Otherwise, if the destination is a `k`-close section with `k <= bucket_size`, the message will
-//   reach every member of the `k`-close section of the destination address, i. e. all `k` nodes in
-//   the network that are XOR-closest to that address, and each node knows whether it belongs to
-//   that section.
-// * Each node in a given address' close section is connected to each other node in that section. In
-//   particular, every node is connected to its own close section.
+// * Otherwise, if the destination is a `k`-close group with `k <= min_section_size`, the message
+//   will reach every member of the `k`-close group of the destination address, i.e. all `k` nodes
+//   in the network that are XOR-closest to that address, and each node knows whether it belongs to
+//   that group.
+// * Each node in a given address' close group is connected to each other node in that section. In
+//   particular, every node is connected to its own close group.
 // * The number of total hop messages created for each message is at most `B`.
-// * For each node there are at most `B * bucket_size` other nodes in the network that would
-//   accept a connection, at any point in time. All other nodes do not need to disclose their IP
-//   address.
-// * There are `bucket_size` different paths along which a message can be sent, to provide
+// * There are `min_section_size` different paths along which a message can be sent, to provide
 //   redundancy.
 //
 // However, to be able to make these guarantees, the routing table must be filled with sufficiently
@@ -100,7 +97,7 @@
 // redundancy against malfunctioning hop nodes. These paths are likely, but not guaranteed, to be
 // disjoint.
 //
-// The concept of close sections exists to provide resilience even against failures of the source or
+// The concept of sections exists to provide resilience even against failures of the source or
 // destination itself: If every member of a section tries to send the same message, it will arrive
 // even if some members fail. And if a message is sent to a whole section, it will arrive in most,
 // even if some of them malfunction.
@@ -666,21 +663,28 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// onwards.  In all non-error cases below, the returned collection will have the members of
     /// `exclude` removed, possibly resulting in an empty set being returned.
     ///
-    /// * If the destination is a section:
+    /// * If the destination is an `Authority::Section`:
     ///     - if our section is the closest on the network (i.e. our section's prefix is a prefix of
     ///       the destination), returns all other members of our section; otherwise
-    ///     - if the closest section has more than `route` members, returns the `route`-th member of
-    ///       this section; otherwise
-    ///     - returns `Err(Error::CannotRoute)`
+    ///     - returns the `route`-th closest member of the RT to the target
     ///
-    /// * If the destination is an individual node:
+    /// * If the destination is an `Authority::PrefixSection`:
+    ///     - if the prefix is compatible with our prefix and is fully-covered by prefixes in our
+    ///       RT, returns all members in these prefixes except ourself; otherwise
+    ///     - if the prefix is compatible with our prefix and is *not* fully-covered by prefixes in
+    ///       our RT, returns `Err(Error::CannotRoute)`; otherwise
+    ///     - returns the `route`-th closest member of the RT to the lower bound of the target
+    ///       prefix
+    ///
+    /// * If the destination is a group (`ClientManager`, `NaeManager` or `NodeManager`):
+    ///     - if our section is the closest on the network (i.e. our section's prefix is a prefix of
+    ///       the destination), returns all other members of our section; otherwise
+    ///     - returns the `route`-th closest member of the RT to the target
+    ///
+    /// * If the destination is an individual node (`ManagedNode` or `Client`):
     ///     - if our name *is* the destination, returns an empty set; otherwise
     ///     - if the destination name is an entry in the routing table, returns it; otherwise
-    ///     - if our section is the closest on the network (i.e. our section's prefix is a prefix of
-    ///       the destination), this returns `Err(Error::NoSuchPeer)`; otherwise
-    ///     - if the closest section has more than `route` members, returns the `route`-th member of
-    ///       this section; otherwise
-    ///     - returns `Err(Error::CannotRoute)`
+    ///     - returns the `route`-th closest member of the RT to the target
     pub fn targets(&self,
                    dst: &Authority<T>,
                    exclude: T,
@@ -708,9 +712,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             Authority::ClientManager(ref target_name) |
             Authority::NaeManager(ref target_name) |
             Authority::NodeManager(ref target_name) => {
-                if let Some(section) =
-                    self.other_closest_names(target_name, self.min_section_size) {
-                    return Ok(section.into_iter().cloned().collect());
+                if let Some(group) = self.other_closest_names(target_name, self.min_section_size) {
+                    return Ok(group.into_iter().cloned().collect());
                 }
                 candidates(target_name)
             }

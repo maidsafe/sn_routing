@@ -134,11 +134,10 @@ impl NodeBuilder {
 /// Interface for sending and receiving messages to and from other nodes, in the role of a full
 /// routing node.
 ///
-/// A node is a part of the network that can route messages and be member of a section authority.
-/// Its methods can be used to send requests and responses as either an individual `ManagedNode` or
-/// as a part of a section authority. Their `src` argument indicates that role, so it must always
-/// either be the `ManagedNode` with this node's name, or the `ClientManager` or `NodeManager` or
-/// `NaeManager` with the address of a client, node or data element that this node is close to.
+/// A node is a part of the network that can route messages and be a member of a section or group
+/// authority. Its methods can be used to send requests and responses as either an individual
+/// `ManagedNode` or as a part of a section or group authority. Their `src` argument indicates that
+/// role, and can be any [`Authority`](enum.Authority.html) other than `Client`.
 pub struct Node {
     interface_result_tx: Sender<Result<(), InterfaceError>>,
     interface_result_rx: Receiver<Result<(), InterfaceError>>,

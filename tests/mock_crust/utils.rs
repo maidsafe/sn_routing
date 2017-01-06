@@ -145,7 +145,7 @@ impl TestNode {
         unwrap!(self.inner.name())
     }
 
-    pub fn close_section(&self) -> HashSet<XorName> {
+    pub fn close_names(&self) -> HashSet<XorName> {
         unwrap!(unwrap!(self.inner.routing_table()).close_names(&self.name()))
     }
 

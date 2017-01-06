@@ -61,7 +61,7 @@ use xor_name::XorName;
 const TICK_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) after which a `GetNodeName` request is resent.
 const GET_NODE_NAME_TIMEOUT_SECS: u64 = 60;
-/// Time (in seconds) the new close section waits for a joining node it sent a network name to.
+/// Time (in seconds) the members of a section wait for a joining node they sent a network name to.
 const SENT_NETWORK_NAME_TIMEOUT_SECS: u64 = 30;
 
 pub struct Node {
@@ -1421,10 +1421,10 @@ impl Node {
                                     message_id: MessageId)
                                     -> Evented<Result<(), RoutingError>> {
         let hashed_key = sha256::hash(&client_key.0);
-        let close_section_to_client = XorName(hashed_key.0);
+        let section_matching_client_name = XorName(hashed_key.0);
 
         // Validate Client (relocating node) has contacted the correct Section-X
-        if close_section_to_client != dst_name {
+        if section_matching_client_name != dst_name {
             return Err(RoutingError::InvalidDestination).to_evented();
         }
 

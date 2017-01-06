@@ -25,16 +25,19 @@
 //! [2]: ../xor_name/struct.XorName.html
 //!
 //! Messages are exchanged between _authorities_, where an `Authority` can be an individual client
-//! or node, or a collection of nodes called a "section". In both cases, messages are
-//! cryptographically signed by the sender, and in the latter case it is verified that a sufficient
-//! number of section members agree on the message: only if that quorum is reached, the message is
-//! delivered. In addition, each message has a unique ID, and is delivered only once.
+//! or node, or a collection of nodes called a "section", or a subset of a section called a "group".
+//! In all cases, messages are cryptographically signed by the sender, and in the case of sections
+//! and groups, it is verified that a sufficient number of members agree on the message: only if
+//! that quorum is reached, the message is delivered. In addition, each message has a unique ID, and
+//! is delivered only once.
 //!
-//! Section authorities are also addressed using a single `XorName`. The members of that section are
-//! the nodes that are closest to that name. Since nodes are assigned their name by the network,
-//! this provides redundancy and resilience: a node has no control over which section authority it
-//! will be a member of, and without a majority in the section it cannot forge a message from that
-//! section.
+//! Section and group authorities are also addressed using a single `XorName`. The members are the
+//! nodes that are closest to that name. Sections contain a minimum number of nodes with the minimum
+//! value specified as a network-wide constant. Groups are of fixed size, defined as the above
+//! minimum section size. Since nodes are assigned their name by the network, this provides
+//! redundancy and resilience: a node has no control over which section or group authority it will
+//! be a member of, and without a majority in the section or group it cannot forge a message from
+//! there.
 //!
 //! The library also provides different types for the messages' data.
 //!
@@ -88,9 +91,9 @@
 //! that new name, adding close nodes to its routing table.
 //!
 //! Messages can be sent using the methods of `node`, and received as `Event`s from the `receiver`.
-//! The node can act as an individual node or as part of a section authority. Sending a message as a
-//! section authority only has an effect if sufficiently many other nodes in that authority send the
-//! same message.
+//! The node can act as an individual node or as part of a section or group authority. Sending a
+//! message as a section or group authority only has an effect if sufficiently many other nodes in
+//! that authority send the same message.
 //!
 //!
 //! # Sequence diagrams
@@ -183,7 +186,7 @@ pub const TYPE_TAG_SESSION_PACKET: u64 = 0;
 /// Structured Data Tag for DNS Packet Type
 pub const TYPE_TAG_DNS_PACKET: u64 = 5;
 
-/// The quorum, as a percentage of the section size.
+/// The quorum, as a percentage of the number of members of the authority.
 pub const QUORUM: usize = 60;
 
 pub use cache::{Cache, NullCache};
