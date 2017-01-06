@@ -330,7 +330,7 @@ pub fn create_connected_nodes_with_cache(network: &Network, size: usize, use_cac
             match event {
                 Event::NodeAdded(..) => node_added_count += 1,
                 Event::NodeLost(..) |
-                Event::GroupSplit(..) |
+                Event::SectionSplit(..) |
                 Event::Tick => (),
                 event => panic!("Got unexpected event: {:?}", event),
             }
@@ -428,7 +428,7 @@ pub fn create_connected_nodes_until_split(network: &Network,
                 Event::NodeAdded(..) |
                 Event::NodeLost(..) |
                 Event::Tick |
-                Event::GroupSplit(..) => (),
+                Event::SectionSplit(..) => (),
                 event => panic!("Got unexpected event: {:?}", event),
             }
         }

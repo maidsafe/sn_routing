@@ -75,14 +75,14 @@ impl ExampleNode {
                     info!("{} Received RestartRequired event", self.get_debug_name());
                     self.node = unwrap!(Node::builder().create(MIN_SECTION_SIZE));
                 }
-                Event::GroupSplit(prefix) => {
-                    trace!("{} Received GroupSplit event {:?}",
+                Event::SectionSplit(prefix) => {
+                    trace!("{} Received SectionSplit event {:?}",
                            self.get_debug_name(),
                            prefix);
                     self.handle_split(prefix);
                 }
-                Event::GroupMerge(prefix) => {
-                    trace!("{} Received GroupMerge event {:?}",
+                Event::SectionMerge(prefix) => {
+                    trace!("{} Received SectionMerge event {:?}",
                            self.get_debug_name(),
                            prefix);
                     let pfx = Prefix::new(prefix.bit_count() + 1, unwrap!(self.node.name()));

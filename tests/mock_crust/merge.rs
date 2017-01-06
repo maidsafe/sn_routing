@@ -57,7 +57,7 @@ fn merge(prefix_lengths: Vec<usize>) {
                     Event::NodeAdded(..) |
                     Event::NodeLost(..) |
                     Event::Tick => (),
-                    Event::GroupMerge(prefix) => {
+                    Event::SectionMerge(prefix) => {
                         got_merge_event = true;
                         if prefix.bit_count() == 0 {
                             return;

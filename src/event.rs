@@ -53,10 +53,10 @@ pub enum Event {
     /// A node has disconnected from us.
     NodeLost(XorName, RoutingTable<XorName>),
     /// Our own section has been split, resulting in the included `Prefix` for our new section.
-    GroupSplit(Prefix<XorName>),
+    SectionSplit(Prefix<XorName>),
     /// Our own section requires merged with others, resulting in the included `Prefix` for our new
     /// section.
-    GroupMerge(Prefix<XorName>),
+    SectionMerge(Prefix<XorName>),
     /// The client has successfully connected to a proxy node on the network.
     Connected,
     /// Disconnected or failed to connect - restart required.
@@ -93,8 +93,12 @@ impl Debug for Event {
             Event::NodeLost(ref node_name, _) => {
                 write!(formatter, "Event::NodeLost({:?}, routing_table)", node_name)
             }
-            Event::GroupSplit(ref prefix) => write!(formatter, "Event::GroupSplit({:?})", prefix),
-            Event::GroupMerge(ref prefix) => write!(formatter, "Event::GroupMerge({:?})", prefix),
+            Event::SectionSplit(ref prefix) => {
+                write!(formatter, "Event::SectionSplit({:?})", prefix)
+            }
+            Event::SectionMerge(ref prefix) => {
+                write!(formatter, "Event::SectionMerge({:?})", prefix)
+            }
             Event::Connected => write!(formatter, "Event::Connected"),
             Event::RestartRequired => write!(formatter, "Event::RestartRequired"),
             Event::Terminate => write!(formatter, "Event::Terminate"),

@@ -1607,7 +1607,7 @@ impl Node {
         // user about them.
         let (peers_to_drop, our_new_prefix) = self.peer_mgr.split_section(prefix);
         if let Some(new_prefix) = our_new_prefix {
-            events.add_event(Event::GroupSplit(new_prefix));
+            events.add_event(Event::SectionSplit(new_prefix));
         }
 
         for (name, peer_id) in peers_to_drop {
@@ -1642,7 +1642,7 @@ impl Node {
             OwnMergeState::AlreadyMerged => (),
             OwnMergeState::Completed { targets, merge_details } => {
                 // TODO - the event should maybe only fire once all new connections have been made?
-                result.add_event(Event::GroupMerge(merge_details.prefix));
+                result.add_event(Event::SectionMerge(merge_details.prefix));
                 trace!("{:?} Merge completed. Prefixes: {:?}",
                        self,
                        self.peer_mgr.routing_table().prefixes());
