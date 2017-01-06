@@ -61,13 +61,15 @@ use xor_name::XorName;
 const TICK_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) after which a `GetNodeName` request is resent.
 const GET_NODE_NAME_TIMEOUT_SECS: u64 = 60;
-/// in bits
+/// The number of required leading zero bits for the resource proof
 const RESOURCE_PROOF_DIFFICULTY: u32 = 10;
 
 // in Bytes
 fn resource_proof_target_size(min_size: usize, group_len: usize) -> u32 {
     let evaluators = cmp::max(min_size, group_len);
-    (40 / evaluators as u32) * 100 * 1024 / 2
+    // Default value: 2 MBytes sharing among the evaluators
+    // TODO: the algorithm need to be measured and refactored against the real network
+    2 * 1024 * 1024 / evaluators as u32
 }
 
 pub struct Node {
@@ -755,8 +757,8 @@ impl Node {
                                                   peer_id,
                                                   message_id)
             }
-            (GetNodeNameResponse { relocated_id, group, .. }, Section(_), dst) => {
-                self.handle_get_node_name_response(relocated_id, group, dst).map(Ok)
+            (GetNodeNameResponse { relocated_id, section, .. }, Section(_), dst) => {
+                self.handle_get_node_name_response(relocated_id, section, dst).map(Ok)
             }
             (ExpectCloseNode { expect_id, client_auth, message_id }, Section(_), Section(_)) => {
                 self.handle_expect_close_node_request(expect_id, client_auth, message_id)
@@ -791,8 +793,8 @@ impl Node {
             (CandidateApproval(validity), Section(_), Section(candidate_name)) => {
                 self.handle_node_approval_vote(candidate_name, validity)
             }
-            (NodeApproval { groups }, Section(_), Client { .. }) => {
-                self.handle_node_approval(groups)
+            (NodeApproval { sections }, Section(_), Client { .. }) => {
+                self.handle_node_approval(sections)
             }
             (ApprovalConfirmation, ManagedNode(_), Section(name)) => {
                 self.handle_approval_confirmation(name)
@@ -841,12 +843,12 @@ impl Node {
             result);
 
         if validity {
-            let groups = self.peer_mgr.get_sections(self.full_id.public_id());
+            let sections = self.peer_mgr.get_sections(self.full_id.public_id());
             info!("{:?} Sending NodeApproval to {:?}.", self, candidate_name);
             let _ = self.send_routing_message(RoutingMessage {
                     src: Authority::Section(candidate_name),
                     dst: client_auth,
-                    content: MessageContent::NodeApproval { groups: groups },
+                    content: MessageContent::NodeApproval { sections: sections },
                 })
                 .extract(&mut result);
         } else {
@@ -885,7 +887,7 @@ impl Node {
 
         self.peer_mgr.populate_routing_table(&groups);
 
-        // TODO: is this neccssary as this node is not approved as a full node by the section yet
+        // TODO: is this necessary as this node is not approved as a full node by the section yet
         let our_prefix = *self.peer_mgr.routing_table().our_prefix();
         self.send_section_list_signature(our_prefix, None);
 
@@ -922,6 +924,7 @@ impl Node {
 
         events.add_event(Event::Connected);
         for name in self.peer_mgr.routing_table().iter() {
+            // TODO: try to remove this as safe_core/safe_vault may not reqiring this notification
             events.add_event(Event::NodeAdded(*name, self.peer_mgr.routing_table().clone()));
         }
         self.is_approved = true;
@@ -935,6 +938,7 @@ impl Node {
                                      _target_size: u32,
                                      _difficulty: u32)
                                      -> Evented<Result<(), RoutingError>> {
+        // TODO: use proper hashing utility to generate the proof
         let direct_message = DirectMessage::ResourceProofResponse {
             proof: seed,
             leading_zero_bytes: 0,
@@ -1142,37 +1146,34 @@ impl Node {
         let mut result = Evented::empty();
         debug!("{:?} Handling NodeIdentify from {:?}.", self, public_id.name());
         match self.peer_mgr.check_candidate(&public_id, &peer_id) {
-            Ok(Some((tunnel, seed))) => {
-                if tunnel {
-                    /// if connection is in tunnel, vote NO directly, don't carry out profiling
-                    /// limitation: joining node ONLY carries out QUORAM valid evaluations
-                    info!("{:?} Sending CandidateApproval false to group rejecting {:?}.",
-                          self,
-                          public_id.name());
-                    // From Y -> Y
-                    let _ = self.send_routing_message(RoutingMessage {
-                            src: Authority::Section(*public_id.name()),
-                            dst: Authority::Section(*public_id.name()),
-                            content: MessageContent::CandidateApproval(false),
-                        })
-                        .extract(&mut result);
-                } else {
-                    // From Y -> A
-                    let direct_message = DirectMessage::ResourceProof {
-                        seed: seed,
-                        target_size: resource_proof_target_size(self.min_group_size(),
-                                                                self.peer_mgr
-                                                                    .routing_table()
-                                                                    .our_section()
-                                                                    .len()),
-                        difficulty: RESOURCE_PROOF_DIFFICULTY,
-                    };
-                    let _ = self.send_direct_message(peer_id, direct_message);
+            Ok(Some((true, _))) => {
+                /// if connection is in tunnel, vote NO directly, don't carry out profiling
+                /// limitation: joining node ONLY carries out QUORAM valid evaluations
+                info!("{:?} Sending CandidateApproval false to group rejecting {:?}.",
+                      self,
+                      public_id.name());
+                let _ = self.send_routing_message(RoutingMessage {
+                        src: Authority::Section(*public_id.name()),
+                        dst: Authority::Section(*public_id.name()),
+                        content: MessageContent::CandidateApproval(false),
+                    })
+                    .extract(&mut result);
+            }
+            Ok(Some((false, seed))) => {
+                let direct_message = DirectMessage::ResourceProof {
+                    seed: seed,
+                    target_size: resource_proof_target_size(self.min_group_size(),
+                                                            self.peer_mgr
+                                                                .routing_table()
+                                                                .our_section()
+                                                                .len()),
+                    difficulty: RESOURCE_PROOF_DIFFICULTY,
+                };
+                let _ = self.send_direct_message(peer_id, direct_message);
 
-                    debug!("{:?} requesting resource_proof from node candidate {:?}.",
-                           self,
-                           public_id.name());
-                }
+                debug!("{:?} requesting resource_proof from node candidate {:?}.",
+                       self,
+                       public_id.name());
             }
             Ok(None) => {
                 debug!("{:?} adding {:?} into routing table.", self, public_id.name());
@@ -1657,11 +1658,11 @@ impl Node {
         self.send_routing_message(request_msg)
     }
 
-    // Context: we're a new node joining a group. This message should have been
-    // sent by each node in the target group with the new node name and group for resource proving.
+    // Context: we're a new node joining a section. This message should have been sent by each node
+    // in the target section with the new node name and the section for resource proving.
     fn handle_get_node_name_response(&mut self,
                                      relocated_id: PublicId,
-                                     group: Vec<PublicId>,
+                                     section: Vec<PublicId>,
                                      dst: Authority<XorName>)
                                      -> Evented<()> {
         if !self.peer_mgr.routing_table().is_empty() {
@@ -1677,7 +1678,7 @@ impl Node {
                self.peer_mgr.routing_table().prefixes());
 
         let mut result = Evented::empty();
-        for pub_id in &group {
+        for pub_id in &section {
             debug!("{:?} Sending connection info to {:?} on GetNodeName response.",
                    self,
                    pub_id);
@@ -1695,8 +1696,7 @@ impl Node {
     }
 
     // Received by Y; From X -> Y
-    // Context: a node is joining our group. Sends the node our group if requiring resource prove,
-    // otherwise sends our routing_table.
+    // Context: a node is joining our section. Sends the node our section.
     fn handle_expect_close_node_request(&mut self,
                                         expect_id: PublicId,
                                         client_auth: Authority<XorName>,
@@ -1708,12 +1708,12 @@ impl Node {
         }
 
         // TODO - do we need to reply if `expect_id` triggers a failure here?
-        let own_group = try_ev!(self.peer_mgr
-            .expect_join_our_group(expect_id.name(), &client_auth, self.full_id.public_id()),
+        let own_section = try_ev!(self.peer_mgr
+            .expect_join_our_section(expect_id.name(), &client_auth, self.full_id.public_id()),
             Evented::empty());
         let response_content = MessageContent::GetNodeNameResponse {
             relocated_id: expect_id,
-            group: own_group,
+            section: own_section,
             message_id: message_id,
         };
 

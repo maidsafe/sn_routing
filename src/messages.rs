@@ -564,8 +564,8 @@ pub enum MessageContent {
     GetNodeNameResponse {
         /// Supplied `PublicId`, but with the new name
         relocated_id: PublicId,
-        /// The relocated group that the joining node shall connect to
-        group: Vec<PublicId>,
+        /// The relocated section that the joining node shall connect to
+        section: Vec<PublicId>,
         /// The message's unique identifier.
         message_id: MessageId,
     },
@@ -619,7 +619,7 @@ pub enum MessageContent {
     NodeApproval {
         /// The routing table shared by the nodes in our group, including the `PublicId`s of our
         /// contacts.
-        groups: Vec<(Prefix<XorName>, Vec<PublicId>)>,
+        sections: Vec<(Prefix<XorName>, Vec<PublicId>)>,
     },
     /// Confirms the joining node has received `NodeApproval`.
     ///
@@ -736,11 +736,13 @@ impl Debug for MessageContent {
                        pub_id,
                        msg_id)
             }
-            MessageContent::GetNodeNameResponse { ref relocated_id, ref group, ref message_id } => {
+            MessageContent::GetNodeNameResponse { ref relocated_id,
+                                                  ref section,
+                                                  ref message_id } => {
                 write!(formatter,
                        "GetNodeNameResponse {{ {:?}, {:?}, {:?} }}",
                        relocated_id,
-                       group,
+                       section,
                        message_id)
             }
             MessageContent::SectionUpdate { ref prefix, ref members } => {
@@ -777,8 +779,8 @@ impl Debug for MessageContent {
             MessageContent::CandidateApproval(approval) => {
                 write!(formatter, "CandidateApproval({})", approval)
             }
-            MessageContent::NodeApproval { ref groups } => {
-                write!(formatter, "NodeApproval {{ {:?} }}", groups)
+            MessageContent::NodeApproval { ref sections } => {
+                write!(formatter, "NodeApproval {{ {:?} }}", sections)
             }
             MessageContent::ApprovalConfirmation => write!(formatter, "ApprovalConfirmation"),
         }

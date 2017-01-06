@@ -434,11 +434,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
     }
 
-    /// Returns our group to which a peer joining should connect.
+    /// Returns our section to which a peer joining should connect.
     ///
-    /// Returns `Err(Error::PeerNameUnsuitable)` if `name` is not within our group, or
+    /// Returns `Err(Error::PeerNameUnsuitable)` if `name` is not within our section, or
     /// `Err(Error::AlreadyExists)` if `name` is already in our table.
-    pub fn expect_join_our_group(&self, name: &T) -> Result<HashSet<T>, Error> {
+    pub fn expect_join_our_section(&self, name: &T) -> Result<HashSet<T>, Error> {
         if !self.our_prefix.matches(name) {
             return Err(Error::PeerNameUnsuitable);
         }
