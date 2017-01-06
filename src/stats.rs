@@ -39,6 +39,7 @@ pub struct Stats {
     msg_direct_sig: usize,
     msg_direct_resource_proof: usize,
     msg_direct_resource_proof_rsp: usize,
+    msg_direct_sls: usize,
 
     msg_get: usize,
     msg_put: usize,
@@ -158,12 +159,20 @@ impl Stats {
 
     /// Increments the counter for the given direct message type.
     pub fn count_direct_message(&mut self, msg: &DirectMessage) {
+        use messages::DirectMessage::*;
         match *msg {
-            DirectMessage::NodeIdentify { .. } => self.msg_direct_node_identify += 1,
-            DirectMessage::MessageSignature(..) => self.msg_direct_sig += 1,
-            DirectMessage::ResourceProof { .. } => self.msg_direct_resource_proof += 1,
-            DirectMessage::ResourceProofResponse { .. } => self.msg_direct_resource_proof_rsp += 1,
-            _ => self.msg_other += 1,
+            NodeIdentify { .. } => self.msg_direct_node_identify += 1,
+            MessageSignature(..) => self.msg_direct_sig += 1,
+            SectionListSignature(..) => self.msg_direct_sls += 1,
+            ResourceProof { .. } => self.msg_direct_resource_proof += 1,
+            ResourceProofResponse { .. } => self.msg_direct_resource_proof_rsp += 1,
+            BootstrapIdentify { .. } |
+            BootstrapDeny |
+            ClientIdentify { .. } |
+            TunnelRequest(_) |
+            TunnelSuccess(_) |
+            TunnelClosed(_) |
+            TunnelDisconnect(_) => self.msg_other += 1,
         }
         self.increment_msg_total();
     }
@@ -186,11 +195,13 @@ impl Stats {
                   self.routes,
                   self.unacked_msgs);
             info!(target: "routing_stats",
-                  "Stats - Direct - NodeIdentify: {}, MessageSignature: {}, ResourceProof: {}/{}",
+                  "Stats - Direct - NodeIdentify: {}, MessageSignature: {}, ResourceProof: {}/{}, \
+                  SectionListSignature: {}",
                   self.msg_direct_node_identify,
                   self.msg_direct_sig,
                   self.msg_direct_resource_proof,
-                  self.msg_direct_resource_proof_rsp);
+                  self.msg_direct_resource_proof_rsp,
+                  self.msg_direct_sls);
             info!(target: "routing_stats",
                   "Stats - Hops (Request/Response) - GetNodeName: {}/{}, ExpectCloseNode: {}, \
                    SectionUpdate: {}, GroupSplit: {}, OwnGroupMerge: {}, OtherGroupMerge: {}, \

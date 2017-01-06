@@ -113,9 +113,9 @@ pub enum PeerState {
 
 impl PeerState {
     fn is_directly_connected(&self) -> bool {
-        match self {
-            &PeerState::Routing(false) |
-            &PeerState::Candidate(false) => true,
+        match *self {
+            PeerState::Routing(false) |
+            PeerState::Candidate(false) => true,
             _ => false,
         }
     }

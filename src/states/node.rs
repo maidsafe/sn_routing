@@ -864,15 +864,6 @@ impl Node {
         let (pub_id, peer_id) = try_ev!(self.peer_mgr.handle_approval_confirmation(candidate_name),
                                         result);
         self.add_to_routing_table(&pub_id, &peer_id).extract(&mut result);
-        if let Some(prefix) = self.peer_mgr.routing_table().find_group_prefix(&candidate_name) {
-            self.send_section_list_signature(prefix, None);
-            if prefix == *self.peer_mgr.routing_table().our_prefix() {
-                // if the node joined our section, send signatures for all section lists to it
-                for pfx in self.peer_mgr.routing_table().prefixes() {
-                    self.send_section_list_signature(pfx, Some(candidate_name));
-                }
-            }
-        }
         result.map(Ok)
     }
 
@@ -1178,19 +1169,6 @@ impl Node {
             Ok(None) => {
                 debug!("{:?} adding {:?} into routing table.", self, public_id.name());
                 self.add_to_routing_table(&public_id, &peer_id).extract(&mut result);
-
-                if let Some(prefix) = self.peer_mgr
-                    .routing_table()
-                    .find_group_prefix(public_id.name()) {
-                    self.send_section_list_signature(prefix, None);
-                    if prefix == *self.peer_mgr.routing_table().our_prefix() {
-                        // if the node joined our section, send signatures for all section lists
-                        // to it
-                        for pfx in self.peer_mgr.routing_table().prefixes() {
-                            self.send_section_list_signature(pfx, Some(*public_id.name()));
-                        }
-                    }
-                }
             }
             Err(err) => {
                 debug!("{:?} has un-expected connection {:?}/{:?}.", self, public_id.name(), err);
@@ -1247,6 +1225,16 @@ impl Node {
                    dst_id);
             let tunnel_request = DirectMessage::TunnelRequest(dst_id);
             let _ = self.send_direct_message(*peer_id, tunnel_request);
+        }
+
+        if let Some(prefix) = self.peer_mgr.routing_table().find_group_prefix(public_id.name()) {
+            self.send_section_list_signature(prefix, None);
+            if prefix == *self.peer_mgr.routing_table().our_prefix() {
+                // if the node joined our section, send signatures for all section lists to it
+                for pfx in self.peer_mgr.routing_table().prefixes() {
+                    self.send_section_list_signature(pfx, Some(*public_id.name()));
+                }
+            }
         }
 
         result
