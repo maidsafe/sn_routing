@@ -509,6 +509,7 @@ impl Node {
             TunnelDisconnect(dst_id) => self.handle_tunnel_disconnect(peer_id, dst_id).to_evented(),
             ResourceProof { seed, target_size, difficulty } => {
                 self.handle_resource_proof_request(peer_id, seed, target_size, difficulty)
+                    .to_evented()
             }
             ResourceProofResponse { proof, leading_zero_bytes } => {
                 self.handle_resource_proof_response(peer_id, proof, leading_zero_bytes)
@@ -928,13 +929,13 @@ impl Node {
                                      seed: Vec<u8>,
                                      _target_size: u32,
                                      _difficulty: u32)
-                                     -> Evented<Result<(), RoutingError>> {
+                                     -> Result<(), RoutingError> {
         // TODO: use proper hashing utility to generate the proof
         let direct_message = DirectMessage::ResourceProofResponse {
             proof: seed,
             leading_zero_bytes: 0,
         };
-        self.send_direct_message(peer_id, direct_message).to_evented()
+        self.send_direct_message(peer_id, direct_message)
     }
 
     fn handle_resource_proof_response(&mut self,

@@ -373,17 +373,6 @@ impl PeerManager {
         }
 
         let names = self.routing_table.expect_join_our_section(expected_name)?;
-        let public_ids = names.into_iter()
-            .filter_map(|name| {
-                if &name == our_public_id.name() {
-                    Some(*our_public_id)
-                } else if let Some(peer) = self.peer_map.get_by_name(&name) {
-                    Some(*peer.pub_id())
-                } else {
-                    None
-                }
-            })
-            .sorted();
 
         let mut rng = SeededRng::new();
         let seed = rng.gen_iter().take(10).collect();
@@ -395,7 +384,7 @@ impl PeerManager {
             approved: false,
         });
 
-        Ok(public_ids)
+        Ok(self.map_names_to_public_ids(names, our_public_id))
     }
 
     pub fn verify_candidate(&self,
@@ -522,18 +511,7 @@ impl PeerManager {
             .all_sections()
             .into_iter()
             .filter_map(|(prefix, names)| {
-                let public_ids = names.into_iter()
-                    .filter_map(|name| {
-                        if &name == our_public_id.name() {
-                            Some(*our_public_id)
-                        } else if let Some(peer) = self.peer_map.get_by_name(&name) {
-                            Some(*peer.pub_id())
-                        } else {
-                            None
-                        }
-                    })
-                    .sorted();
-                Some((prefix, public_ids))
+                Some((prefix, self.map_names_to_public_ids(names, our_public_id)))
             })
             .sorted()
     }
@@ -1234,6 +1212,23 @@ impl PeerManager {
                 self.proxy_peer_id = None;
             }
         }
+    }
+
+    fn map_names_to_public_ids(&self,
+                               names: HashSet<XorName>,
+                               our_public_id: &PublicId)
+                               -> Vec<PublicId> {
+        names.into_iter()
+            .filter_map(|name| {
+                if &name == our_public_id.name() {
+                    Some(*our_public_id)
+                } else if let Some(peer) = self.peer_map.get_by_name(&name) {
+                    Some(*peer.pub_id())
+                } else {
+                    None
+                }
+            })
+            .sorted()
     }
 }
 
