@@ -267,7 +267,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             if prefix.matches(&self.our_name) {
                 self.our_prefix = prefix;
             } else {
-                let _ = self.groups.insert(prefix, HashSet::new());
+                let _ = self.groups.entry(prefix).or_insert_with(HashSet::new);
             }
         }
         self.check_invariant(true)
@@ -882,7 +882,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         Ok(*RoutingTable::get_routeth_name(names, &target, route))
     }
 
-    fn check_invariant(&self, allow_empty_groups: bool) -> Result<(), Error> {
+    fn check_invariant(&self, allow_small_groups: bool) -> Result<(), Error> {
         if !self.our_prefix.matches(&self.our_name) {
             warn!("Our prefix does not match our name: {:?}", self);
             return Err(Error::InvariantViolation);
@@ -909,7 +909,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
         for (prefix, group) in &self.groups {
             if has_enough_nodes && group.len() < self.min_group_size {
-                if group.is_empty() && allow_empty_groups {
+                if group.len() <= 1 && allow_small_groups {
                     continue;
                 }
                 warn!("Minimum group size not met for group {:?}: {:?}",
