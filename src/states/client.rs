@@ -174,7 +174,17 @@ impl Client {
         }
 
         let signed_msg = hop_msg.content;
-        try_ev!(signed_msg.check_integrity(self.min_group_size()), result);
+        // TODO: verify with proxy's section list instead of passing None here:
+        match signed_msg.check_integrity(self.min_group_size(), None) {
+            Ok(()) => {}
+            Err(e) => {
+                warn!("{:?} Verification of {:?} failed: {:?}",
+                      self,
+                      signed_msg,
+                      e);
+                return result.with_value(Err(e.into()));
+            }
+        }
 
         let routing_msg = signed_msg.routing_message();
         let in_authority = self.in_authority(&routing_msg.dst);
