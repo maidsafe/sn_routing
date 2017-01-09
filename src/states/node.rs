@@ -795,7 +795,7 @@ impl Node {
                 self.handle_node_approval_vote(candidate_name, validity)
             }
             (NodeApproval { sections }, Section(_), Client { .. }) => {
-                self.handle_node_approval(sections)
+                self.handle_node_approval(&sections)
             }
             (ApprovalConfirmation, ManagedNode(_), Section(name)) => {
                 self.handle_approval_confirmation(name)
@@ -869,7 +869,7 @@ impl Node {
     }
 
     fn handle_node_approval(&mut self,
-                            groups: Vec<(Prefix<XorName>, Vec<PublicId>)>)
+                            groups: &[(Prefix<XorName>, Vec<PublicId>)])
                             -> Evented<Result<(), RoutingError>> {
         let mut events = Evented::empty();
         if self.is_approved {
@@ -877,7 +877,7 @@ impl Node {
             return events.with_value(Ok(()));
         }
 
-        self.peer_mgr.populate_routing_table(&groups);
+        self.peer_mgr.add_prefixes(groups.into_iter().map(|&(prefix, _)| prefix).collect());
 
         // TODO: is this necessary as this node is not approved as a full node by the section yet
         let our_prefix = *self.peer_mgr.routing_table().our_prefix();
@@ -895,7 +895,7 @@ impl Node {
 
         trace!("{:?} received {:?} on NodeApproval.", self, groups);
 
-        for group in &groups {
+        for group in groups {
             for pub_id in &group.1 {
                 if !self.peer_mgr.routing_table().has(pub_id.name()) {
                     debug!("{:?} Sending connection info to {:?} on NodeApproval.",
