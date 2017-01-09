@@ -330,17 +330,22 @@ impl PeerManager {
         let min_group_size = self.routing_table.min_group_size();
         self.our_public_id = our_public_id;
 
+        if !self.routing_table.is_empty() {
+            warn!("Reset to {:?} from non-empty routing table {:?}",
+                  our_public_id.name(),
+                  self.routing_table)
+        }
+
         let new_rt = RoutingTable::new(*our_public_id.name(), min_group_size);
         self.routing_table = new_rt;
     }
 
-    /// Populates the routing table.
-    pub fn populate_routing_table(&mut self, groups: &[Group]) {
-        let groups_prefixes = groups.into_iter().map(|&(ref prefix, _)| *prefix).collect();
+    /// Add prefixes into routing table.
+    pub fn add_prefixes(&mut self, prefixes: Vec<Prefix<XorName>>) {
         // TODO - nothing can be done to recover from an error here - use `unwrap!` for now, but
         // consider refactoring to return an error which can be used to transition the state
         // machine to `Terminate`.
-        unwrap!(self.routing_table.add_prefixes(groups_prefixes));
+        unwrap!(self.routing_table.add_prefixes(prefixes));
     }
 
     /// Returns the routing table.
