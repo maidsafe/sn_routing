@@ -74,7 +74,7 @@ impl NodeBuilder {
     /// request a new name and integrate itself into the network using the new name.
     ///
     /// The initial `Node` object will have newly generated keys.
-    pub fn create(self, min_group_size: usize) -> Result<Node, RoutingError> {
+    pub fn create(self, min_section_size: usize) -> Result<Node, RoutingError> {
         // If we're not in a test environment where we might want to manually seed the crypto RNG
         // then seed randomly.
         #[cfg(not(feature = "use-mock-crust"))]
@@ -83,7 +83,7 @@ impl NodeBuilder {
         let mut ev_buffer = VecDeque::new();
 
         // start the handler for routing without a restriction to become a full node
-        let (_, machine) = self.make_state_machine(min_group_size).extract_to_buf(&mut ev_buffer);
+        let (_, machine) = self.make_state_machine(min_section_size).extract_to_buf(&mut ev_buffer);
 
         let (tx, rx) = channel();
 
@@ -96,7 +96,7 @@ impl NodeBuilder {
     }
 
     fn make_state_machine(self,
-                          min_group_size: usize)
+                          min_section_size: usize)
                           -> Evented<(RoutingActionSender, StateMachine)> {
         let full_id = FullId::new();
 
@@ -105,7 +105,7 @@ impl NodeBuilder {
                 if let Some(state) = states::Node::first(self.cache,
                                                          crust_service,
                                                          full_id,
-                                                         min_group_size,
+                                                         min_section_size,
                                                          timer) {
                         State::Node(state)
                     } else {
@@ -123,7 +123,7 @@ impl NodeBuilder {
                                                                 false,
                                                                 crust_service,
                                                                 full_id,
-                                                                min_group_size,
+                                                                min_section_size,
                                                                 timer))
                     .to_evented()
             }
@@ -134,10 +134,10 @@ impl NodeBuilder {
 /// Interface for sending and receiving messages to and from other nodes, in the role of a full
 /// routing node.
 ///
-/// A node is a part of the network that can route messages and be member of a group authority. Its
-/// methods can be used to send requests and responses as either an individual `ManagedNode` or as
-/// a part of a group authority. Their `src` argument indicates that role, so it must always either
-/// be the `ManagedNode` with this node's name, or the `ClientManager` or `NodeManager` or
+/// A node is a part of the network that can route messages and be member of a section authority.
+/// Its methods can be used to send requests and responses as either an individual `ManagedNode` or
+/// as a part of a section authority. Their `src` argument indicates that role, so it must always
+/// either be the `ManagedNode` with this node's name, or the `ClientManager` or `NodeManager` or
 /// `NaeManager` with the address of a client, node or data element that this node is close to.
 pub struct Node {
     interface_result_tx: Sender<Result<(), InterfaceError>>,

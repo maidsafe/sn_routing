@@ -32,7 +32,7 @@ use super::{Prefix, Xorable};
 pub enum Authority<N: Xorable + Clone + Copy + Binary + Default> {
     /// Manager of a Client.  XorName is the hash of the Client's `client_key`.
     ClientManager(N),
-    /// Manager of a network-addressable element, i.e. the group matching this name.
+    /// Manager of a network-addressable element, i.e. the section matching this name.
     /// `XorName` is the name of the element in question.
     NaeManager(N),
     /// Manager of a ManagedNode.  XorName is that of the ManagedNode.
@@ -85,7 +85,7 @@ impl<N: Xorable + Clone + Copy + Binary + Default> Authority<N> {
         }
     }
 
-    /// Returns `true` if a client, `false` if a node or group.
+    /// Returns `true` if a client, `false` if a node or section.
     pub fn is_client(&self) -> bool {
         if let Authority::Client { .. } = *self {
             true

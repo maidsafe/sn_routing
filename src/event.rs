@@ -26,8 +26,8 @@ use xor_name::XorName;
 /// These are sent by routing to the library's user. It allows the user to handle requests and
 /// responses, and to react to changes in the network.
 ///
-/// `Request` and `Response` events from group authorities are only raised once the quorum has been
-/// reached, i. e. enough members of the group have sent the same message.
+/// `Request` and `Response` events from section authorities are only raised once the quorum has
+/// been reached, i.e. enough members of the section have sent the same message.
 #[derive(Clone, Eq, PartialEq)]
 pub enum Event {
     /// Received a request message.
@@ -48,14 +48,14 @@ pub enum Event {
         /// The destination authority that receives the response.
         dst: Authority<XorName>,
     },
-    /// A new node joined the network and may be a member of group authorities we also belong to.
+    /// A node has connected to us.
     NodeAdded(XorName, RoutingTable<XorName>),
-    /// A node left the network and may have been a member of group authorities we also belong to.
+    /// A node has disconnected from us.
     NodeLost(XorName, RoutingTable<XorName>),
-    /// Our own group has been split, resulting in the included `Prefix` for our new group.
+    /// Our own section has been split, resulting in the included `Prefix` for our new section.
     GroupSplit(Prefix<XorName>),
-    /// Our own group requires merged with others, resulting in the included `Prefix` for our new
-    /// group.
+    /// Our own section requires merged with others, resulting in the included `Prefix` for our new
+    /// section.
     GroupMerge(Prefix<XorName>),
     /// The client has successfully connected to a proxy node on the network.
     Connected,

@@ -22,13 +22,13 @@ use super::{create_connected_nodes_until_split, poll_and_resend, verify_invarian
 
 // See docs for `create_connected_nodes_with_cache_until_split` for details on `prefix_lengths`.
 fn merge(prefix_lengths: Vec<usize>) {
-    let min_group_size = 8;
-    let network = Network::new(min_group_size, None);
+    let min_section_size = 8;
+    let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split(&network, prefix_lengths, false);
     verify_invariant_for_all_nodes(&nodes);
 
-    // Drop nodes from a group with the shortest prefix until we get a merge event for the empty
+    // Drop nodes from a section with the shortest prefix until we get a merge event for the empty
     // prefix.
     let mut min_prefix = *nodes[0].routing_table().our_prefix();
     let mut got_merge_event;
@@ -75,21 +75,21 @@ fn merge(prefix_lengths: Vec<usize>) {
 }
 
 #[test]
-fn merge_three_groups_into_one() {
+fn merge_three_sections_into_one() {
     merge(vec![1, 2, 2])
 }
 
 #[test]
-fn merge_four_unbalanced_groups_into_one() {
+fn merge_four_unbalanced_sections_into_one() {
     merge(vec![1, 2, 3, 3])
 }
 
 #[test]
-fn merge_four_balanced_groups_into_one() {
+fn merge_four_balanced_sections_into_one() {
     merge(vec![2, 2, 2, 2])
 }
 
 #[test]
-fn merge_five_groups_into_one() {
+fn merge_five_sections_into_one() {
     merge(vec![1, 3, 3, 3, 3])
 }

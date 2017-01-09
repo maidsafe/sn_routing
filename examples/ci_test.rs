@@ -74,7 +74,7 @@ mod unnamed {
     use std::sync::{Arc, Condvar, Mutex};
     use std::time::Duration;
     use term::{self, color};
-    use utils::{ExampleClient, ExampleNode, MIN_GROUP_SIZE};
+    use utils::{ExampleClient, ExampleNode, MIN_SECTION_SIZE};
 
     const CHURN_MIN_WAIT_SEC: u64 = 20;
     const CHURN_MAX_WAIT_SEC: u64 = 30;
@@ -180,7 +180,7 @@ mod unnamed {
         io::stdout().flush().expect("Could not flush stdout");
 
         let kill_node = match nodes.len() {
-            size if size == MIN_GROUP_SIZE => false,
+            size if size == MIN_SECTION_SIZE => false,
             size if size == network_size => true,
             _ => random(),
         };
@@ -321,8 +321,8 @@ Options:
             unwrap!(log::init(false));
             let node_count = match args.arg_nodes {
                 Some(number) => {
-                    if number <= MIN_GROUP_SIZE {
-                        panic!("The number of nodes should be > {}.", MIN_GROUP_SIZE);
+                    if number <= MIN_SECTION_SIZE {
+                        panic!("The number of nodes should be > {}.", MIN_SECTION_SIZE);
                     }
 
                     number

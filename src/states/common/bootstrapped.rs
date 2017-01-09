@@ -34,7 +34,7 @@ use xor_name::XorName;
 pub trait Bootstrapped: Base {
     fn ack_mgr(&self) -> &AckManager;
     fn ack_mgr_mut(&mut self) -> &mut AckManager;
-    fn min_group_size(&self) -> usize;
+    fn min_section_size(&self) -> usize;
 
     fn send_routing_message_via_route(&mut self,
                                       routing_msg: RoutingMessage,
@@ -107,7 +107,7 @@ pub trait Bootstrapped: Base {
                    ack,
                    unacked_msg);
 
-            if unacked_msg.route as usize == self.min_group_size() {
+            if unacked_msg.route as usize == self.min_section_size() {
                 debug!("{:?} - Message unable to be acknowledged - giving up. {:?}",
                        self,
                        unacked_msg);

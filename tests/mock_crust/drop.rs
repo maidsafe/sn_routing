@@ -20,11 +20,11 @@ use routing::{Event, EventStream};
 use routing::mock_crust::{Config, Endpoint, Network};
 use super::{TestNode, create_connected_nodes, poll_all, verify_invariant_for_all_nodes};
 
-// Drop node at index and verify its close group receives NodeLost.
+// Drop node at index and verify its close section receives NodeLost.
 fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
     let node = nodes.remove(index);
     let name = node.name();
-    let close_names = node.close_group();
+    let close_names = node.close_section();
 
     drop(node);
 
@@ -42,9 +42,9 @@ fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
 }
 
 #[test]
-fn failing_connections_group_of_three() {
-    let min_group_size = 2; // we set the group size small to avoid triggering a restart
-    let network = Network::new(min_group_size, None);
+fn failing_connections_section_of_three() {
+    let min_section_size = 2; // we set the section size small to avoid triggering a restart
+    let network = Network::new(min_section_size, None);
 
     network.block_connection(Endpoint(1), Endpoint(2));
     network.block_connection(Endpoint(2), Endpoint(1));
@@ -65,9 +65,9 @@ fn failing_connections_group_of_three() {
 
 #[test]
 fn node_drops() {
-    let min_group_size = 8;
-    let network = Network::new(min_group_size, None);
-    let mut nodes = create_connected_nodes(&network, min_group_size + 2);
+    let min_section_size = 8;
+    let network = Network::new(min_section_size, None);
+    let mut nodes = create_connected_nodes(&network, min_section_size + 2);
     drop_node(&mut nodes, 0);
 
     verify_invariant_for_all_nodes(&nodes);
@@ -76,10 +76,10 @@ fn node_drops() {
 #[test]
 #[cfg_attr(feature = "cargo-clippy", allow(needless_range_loop))]
 fn node_restart() {
-    let min_group_size = 2;
-    let network = Network::new(min_group_size, None);
+    let min_section_size = 2;
+    let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes(&network, min_group_size);
+    let mut nodes = create_connected_nodes(&network, min_section_size);
 
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
 
