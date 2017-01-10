@@ -23,10 +23,10 @@ use super::{create_connected_clients, create_connected_nodes, gen_bytes, gen_imm
 
 #[test]
 fn successful_put_request() {
-    let min_group_size = 8;
-    let network = Network::new(min_group_size, None);
+    let min_section_size = 8;
+    let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes(&network, min_group_size + 1);
+    let mut nodes = create_connected_nodes(&network, min_section_size + 1);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
 
     let dst = Authority::ClientManager(clients[0].name());
@@ -57,15 +57,15 @@ fn successful_put_request() {
     }
 
     // TODO: Assert a quorum here.
-    assert!(2 * request_received_count > min_group_size);
+    assert!(2 * request_received_count > min_section_size);
 }
 
 #[test]
 fn successful_get_request() {
-    let min_group_size = 8;
-    let network = Network::new(min_group_size, None);
+    let min_section_size = 8;
+    let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes(&network, min_group_size + 1);
+    let mut nodes = create_connected_nodes(&network, min_section_size + 1);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
 
     let data = gen_immutable_data(&mut rng, 1024);
@@ -102,7 +102,7 @@ fn successful_get_request() {
     }
 
     // TODO: Assert a quorum here.
-    assert!(2 * request_received_count > min_group_size);
+    assert!(2 * request_received_count > min_section_size);
 
     let _ = poll_all(&mut nodes, &mut clients);
 
@@ -131,10 +131,10 @@ fn successful_get_request() {
 
 #[test]
 fn failed_get_request() {
-    let min_group_size = 8;
-    let network = Network::new(min_group_size, None);
+    let min_section_size = 8;
+    let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes(&network, min_group_size + 1);
+    let mut nodes = create_connected_nodes(&network, min_section_size + 1);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
 
     let data = gen_immutable_data(&mut rng, 1024);
@@ -171,7 +171,7 @@ fn failed_get_request() {
     }
 
     // TODO: Assert a quorum here.
-    assert!(2 * request_received_count > min_group_size);
+    assert!(2 * request_received_count > min_section_size);
 
     let _ = poll_all(&mut nodes, &mut clients);
 
@@ -197,10 +197,10 @@ fn failed_get_request() {
 
 #[test]
 fn disconnect_on_get_request() {
-    let min_group_size = 8;
-    let network = Network::new(min_group_size, None);
+    let min_section_size = 8;
+    let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes(&network, 2 * min_group_size);
+    let mut nodes = create_connected_nodes(&network, 2 * min_section_size);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
 
     let immutable_data = ImmutableData::new(gen_bytes(&mut rng, 1024));
@@ -238,7 +238,7 @@ fn disconnect_on_get_request() {
     }
 
     // TODO: Assert a quorum here.
-    assert!(2 * request_received_count > min_group_size);
+    assert!(2 * request_received_count > min_section_size);
 
     clients[0].handle.0.borrow_mut().disconnect(&nodes[0].handle.0.borrow().peer_id);
     nodes[0].handle.0.borrow_mut().disconnect(&clients[0].handle.0.borrow().peer_id);

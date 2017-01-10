@@ -45,10 +45,10 @@ pub fn format_binary_array<V: AsRef<[u8]>>(input: V) -> String {
 
 /// Compute the relocated name of a client with the given original name.
 ///
-/// This is used by each member of a joining node's group to choose a new name for the node. On the
-/// one hand, sufficiently many of them need to agree on the new name to reach quorum size, on the
-/// other hand, the joining node shall not be able to predict it so that it cannot choose where to
-/// be relocated to.
+/// This is used by each member of a joining node's section to choose a new name for the node. On
+/// the one hand, sufficiently many of them need to agree on the new name to reach quorum size, on
+/// the other hand, the joining node shall not be able to predict it so that it cannot choose where
+/// to be relocated to.
 ///
 /// To meet these requirements, the relocated name is computed from the two closest nodes and the
 /// joining node's original name: It is the SHA256 hash of:
@@ -77,7 +77,7 @@ mod tests {
 
     #[test]
     fn calculate_relocated_name() {
-        let min_group_size = 8;
+        let min_section_size = 8;
         let original_name: XorName = rand::random();
 
         // one entry
@@ -106,7 +106,7 @@ mod tests {
         // TODO: we're not using fixed sizes any more: this code should possibly change!
         // populated closed nodes
         let mut close_nodes: Vec<XorName> = Vec::new();
-        for _ in 0..min_group_size {
+        for _ in 0..min_section_size {
             close_nodes.push(rand::random());
         }
         let actual_relocated_name = super::calculate_relocated_name(close_nodes.clone(),

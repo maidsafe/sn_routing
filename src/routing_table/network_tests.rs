@@ -39,38 +39,38 @@ type OtherMergeInfo = (BTreeSet<Prefix<u64>>, OtherMergeDetails<u64>);
 /// generator.
 #[derive(Default)]
 struct Network {
-    min_group_size: usize,
+    min_section_size: usize,
     rng: SeededRng,
     nodes: HashMap<u64, RoutingTable<u64>>,
 }
 
 impl Network {
-    /// Creates a new empty network with specified minimum group size and a seeded random number
+    /// Creates a new empty network with specified minimum section size and a seeded random number
     /// generator.
-    fn new(min_group_size: usize, optional_seed: Option<[u32; 4]>) -> Network {
+    fn new(min_section_size: usize, optional_seed: Option<[u32; 4]>) -> Network {
         Network {
-            min_group_size: min_group_size,
+            min_section_size: min_section_size,
             rng: optional_seed.map_or_else(SeededRng::new, SeededRng::from_seed),
             nodes: HashMap::new(),
         }
     }
 
-    /// Get min_group_size
-    pub fn min_group_size(&self) -> usize {
-        self.min_group_size
+    /// Get min_section_size
+    pub fn min_section_size(&self) -> usize {
+        self.min_section_size
     }
 
-    /// Adds a new node to the network and makes it join its new group, splitting if necessary.
+    /// Adds a new node to the network and makes it join its new section, splitting if necessary.
     fn add_node(&mut self) {
         let name = self.random_free_name(); // The new node's name.
         if self.nodes.is_empty() {
             // If this is the first node, just add it and return.
-            let result = self.nodes.insert(name, RoutingTable::new(name, self.min_group_size));
+            let result = self.nodes.insert(name, RoutingTable::new(name, self.min_section_size));
             assert!(result.is_none());
             return;
         }
 
-        let mut new_table = RoutingTable::new(name, self.min_group_size);
+        let mut new_table = RoutingTable::new(name, self.min_section_size);
         {
             let close_node = self.close_node(name);
             let close_peer = &self.nodes[&close_node];
@@ -116,7 +116,7 @@ impl Network {
 
     // TODO: remove this when https://github.com/Manishearth/rust-clippy/issues/1279 is resolved
     #[cfg_attr(feature="cargo-clippy", allow(for_kv_map))]
-    /// Drops a node and, if necessary, merges groups to restore the group requirement.
+    /// Drops a node and, if necessary, merges sections to restore the section requirement.
     fn drop_node(&mut self) {
         let keys = self.keys();
         let name = *unwrap!(self.rng.choose(&keys));
@@ -125,11 +125,11 @@ impl Network {
         // TODO: needs to verify how to broadcasting such info
         for node in self.nodes.values_mut() {
             if node.iter().any(|&name_in_table| name_in_table == name) {
-                let removed_node_is_in_our_group = node.is_in_our_group(&name);
+                let removed_node_is_in_our_section = node.is_in_our_section(&name);
                 let removal_details = unwrap!(node.remove(&name));
                 assert_eq!(name, removal_details.name);
-                assert_eq!(removed_node_is_in_our_group,
-                           removal_details.was_in_our_group);
+                assert_eq!(removed_node_is_in_our_section,
+                           removal_details.was_in_our_section);
                 if let Some(info) = node.should_merge() {
                     Network::store_merge_info(&mut merge_own_info, *node.our_prefix(), info);
                 }
@@ -145,7 +145,7 @@ impl Network {
         let mut expected_peers = HashMap::new();
         while !merge_own_info.is_empty() {
             let mut merge_other_info: HashMap<Prefix<u64>, OtherMergeInfo> = HashMap::new();
-            // handle broadcast of merge_own_group
+            // handle broadcast of merge_own_section
             let own_info = merge_own_info;
             merge_own_info = HashMap::new();
             for (_, merge_own_details) in own_info {
@@ -154,10 +154,11 @@ impl Network {
                     let target_node = unwrap!(self.nodes.get_mut(&node));
                     let node_expected = expected_peers.entry(*node)
                         .or_insert_with(HashSet::new);
-                    for group in &merge_own_details.groups {
-                        node_expected.extend(group.1.iter().filter(|name| !target_node.has(name)));
+                    for section in &merge_own_details.sections {
+                        node_expected.extend(
+                            section.1.iter().filter(|name| !target_node.has(name)));
                     }
-                    match target_node.merge_own_group(merge_own_details.clone()) {
+                    match target_node.merge_own_section(merge_own_details.clone()) {
                         OwnMergeState::Ongoing |
                         OwnMergeState::AlreadyMerged => (),
                         OwnMergeState::Completed { targets, merge_details } => {
@@ -185,12 +186,12 @@ impl Network {
                 }
             }
 
-            // handle broadcast of merge_other_group
+            // handle broadcast of merge_other_section
             for (_, (target_prefixes, merge_other_details)) in merge_other_info {
                 let targets = self.nodes_covered_by_prefixes(&target_prefixes);
                 for target in targets {
                     let target_node = unwrap!(self.nodes.get_mut(&target));
-                    let contacts = target_node.merge_other_group(merge_other_details.clone());
+                    let contacts = target_node.merge_other_section(merge_other_details.clone());
                     // add missing contacts
                     for contact in contacts {
                         let _ = target_node.add(contact);
@@ -278,14 +279,14 @@ fn node_to_node_message() {
     for _ in 0..20 {
         let src = *unwrap!(network.rng.choose(&keys));
         let dst = *unwrap!(network.rng.choose(&keys));
-        for route in 0..network.min_group_size {
+        for route in 0..network.min_section_size {
             network.send_message(src, Authority::ManagedNode(dst), route);
         }
     }
 }
 
 #[test]
-fn node_to_group_message() {
+fn node_to_section_message() {
     let mut network = Network::new(8, None);
     for _ in 0..100 {
         network.add_node();
@@ -294,7 +295,7 @@ fn node_to_group_message() {
     for _ in 0..20 {
         let src = *unwrap!(network.rng.choose(&keys));
         let dst = network.rng.gen();
-        for route in 0..network.min_group_size {
+        for route in 0..network.min_section_size {
             network.send_message(src, Authority::Section(dst), route);
         }
     }
@@ -308,57 +309,57 @@ pub fn verify_network_invariant<'a, T, U>(nodes: U)
     where T: Binary + Clone + Copy + Debug + Default + Hash + Xorable + 'a,
           U: IntoIterator<Item = &'a RoutingTable<T>>
 {
-    let mut groups: HashMap<Prefix<T>, (T, HashSet<T>)> = HashMap::new();
-    // first, collect all groups in the network
+    let mut sections: HashMap<Prefix<T>, (T, HashSet<T>)> = HashMap::new();
+    // first, collect all sections in the network
     for node in nodes {
         node.verify_invariant();
         for prefix in node.prefixes() {
-            let group_content = if prefix == node.our_prefix {
+            let section_content = if prefix == node.our_prefix {
                 node.our_section.clone()
             } else {
-                node.groups[&prefix].clone()
+                node.sections[&prefix].clone()
             };
-            if let Some(&mut (ref mut src, ref mut group)) = groups.get_mut(&prefix) {
-                assert!(*group == group_content,
-                        "Group with prefix {:?} doesn't agree between nodes {:?} and {:?}\n\
+            if let Some(&mut (ref mut src, ref mut section)) = sections.get_mut(&prefix) {
+                assert!(*section == section_content,
+                        "Section with prefix {:?} doesn't agree between nodes {:?} and {:?}\n\
                         {:?}: {:?}, {:?}: {:?}",
                         prefix,
                         node.our_name,
                         src,
                         node.our_name,
-                        group_content,
+                        section_content,
                         src,
-                        group);
+                        section);
                 continue;
             }
-            let _ = groups.insert(prefix, (node.our_name, group_content));
+            let _ = sections.insert(prefix, (node.our_name, section_content));
         }
     }
     // check that prefixes are disjoint
-    for prefix1 in groups.keys() {
-        for prefix2 in groups.keys() {
+    for prefix1 in sections.keys() {
+        for prefix2 in sections.keys() {
             if prefix1 == prefix2 {
                 continue;
             }
             if prefix1.is_compatible(prefix2) {
-                panic!("Group prefixes should be disjoint, but these are not:\n\
-                    Group {:?}, according to node {:?}: {:?}\n\
-                    Group {:?}, according to node {:?}: {:?}",
+                panic!("Section prefixes should be disjoint, but these are not:\n\
+                    Section {:?}, according to node {:?}: {:?}\n\
+                    Section {:?}, according to node {:?}: {:?}",
                        prefix1,
-                       groups[prefix1].0,
-                       groups[prefix1].1,
+                       sections[prefix1].0,
+                       sections[prefix1].1,
                        prefix2,
-                       groups[prefix2].0,
-                       groups[prefix2].1);
+                       sections[prefix2].0,
+                       sections[prefix2].1);
             }
         }
     }
 
-    // check that each group contains names agreeing with its prefix
-    for (prefix, data) in &groups {
+    // check that each section contains names agreeing with its prefix
+    for (prefix, data) in &sections {
         for name in &data.1 {
             if !prefix.matches(name) {
-                panic!("Group members should match the prefix, but {:?} \
+                panic!("Section members should match the prefix, but {:?} \
                     does not match {:?}",
                        name,
                        prefix);
@@ -366,12 +367,12 @@ pub fn verify_network_invariant<'a, T, U>(nodes: U)
         }
     }
 
-    // check that groups cover the whole namespace
-    assert!(Prefix::default().is_covered_by(groups.keys()));
+    // check that sections cover the whole namespace
+    assert!(Prefix::default().is_covered_by(sections.keys()));
 }
 
 #[test]
-fn groups_have_identical_routing_tables() {
+fn sections_have_identical_routing_tables() {
     let mut network = Network::new(8, None);
     for _ in 0..100 {
         network.add_node();
@@ -380,7 +381,7 @@ fn groups_have_identical_routing_tables() {
 }
 
 #[test]
-fn merging_groups() {
+fn merging_sections() {
     let mut network = Network::new(8, None);
     for _ in 0..100 {
         network.add_node();
@@ -388,7 +389,7 @@ fn merging_groups() {
     }
     assert!(network.nodes
         .iter()
-        .all(|(_, table)| if table.num_of_groups() < 2 {
+        .all(|(_, table)| if table.num_of_sections() < 2 {
             trace!("{:?}", table);
             false
         } else {
@@ -400,7 +401,7 @@ fn merging_groups() {
     }
     assert!(network.nodes
         .iter()
-        .all(|(_, table)| if table.num_of_groups() > 0 {
+        .all(|(_, table)| if table.num_of_sections() > 0 {
             trace!("{:?}", table);
             false
         } else {

@@ -44,7 +44,7 @@ pub struct Client {
     ack_mgr: AckManager,
     crust_service: Service,
     full_id: FullId,
-    min_group_size: usize,
+    min_section_size: usize,
     proxy_peer_id: PeerId,
     proxy_public_id: PublicId,
     routing_msg_filter: RoutingMessageFilter,
@@ -57,7 +57,7 @@ impl Client {
     #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
     pub fn from_bootstrapping(crust_service: Service,
                               full_id: FullId,
-                              min_group_size: usize,
+                              min_section_size: usize,
                               proxy_peer_id: PeerId,
                               proxy_public_id: PublicId,
                               stats: Stats,
@@ -67,7 +67,7 @@ impl Client {
             ack_mgr: AckManager::new(),
             crust_service: crust_service,
             full_id: full_id,
-            min_group_size: min_group_size,
+            min_section_size: min_section_size,
             proxy_peer_id: proxy_peer_id,
             proxy_public_id: proxy_public_id,
             routing_msg_filter: RoutingMessageFilter::new(),
@@ -174,7 +174,7 @@ impl Client {
         }
 
         let signed_msg = hop_msg.content;
-        try_ev!(signed_msg.check_integrity(self.min_group_size()), result);
+        try_ev!(signed_msg.check_integrity(self.min_section_size()), result);
 
         let routing_msg = signed_msg.routing_message();
         let in_authority = self.in_authority(&routing_msg.dst);
@@ -304,8 +304,8 @@ impl Bootstrapped for Client {
         &mut self.ack_mgr
     }
 
-    fn min_group_size(&self) -> usize {
-        self.min_group_size
+    fn min_section_size(&self) -> usize {
+        self.min_section_size
     }
 
     fn resend_unacknowledged_timed_out_msgs(&mut self, token: u64) -> Evented<()> {
@@ -316,7 +316,7 @@ impl Bootstrapped for Client {
                    ack,
                    unacked_msg);
 
-            if unacked_msg.route as usize == self.min_group_size {
+            if unacked_msg.route as usize == self.min_section_size {
                 debug!("{:?} - Message unable to be acknowledged - giving up. {:?}",
                        self,
                        unacked_msg);
