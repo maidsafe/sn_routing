@@ -1724,6 +1724,7 @@ impl Node {
                              -> Evented<Result<(), RoutingError>> {
         let mut result = Evented::empty();
         trace!("{:?} Got section update for {:?}", self, prefix);
+
         // Perform splits that we missed, according to the section update.
         // TODO: This is a temporary fix and it shouldn't be necessary anymore once the new message
         //       flow for joining nodes is in place and we send the routing table to the new node
@@ -1770,9 +1771,9 @@ impl Node {
                           joining_node: XorName)
                           -> Evented<Result<(), RoutingError>> {
         let mut events = Evented::empty();
+        let split_us = prefix == *self.peer_mgr.routing_table().our_prefix();
         // Send GroupSplit notifications if we don't know of the new node yet
-        if prefix == *self.peer_mgr.routing_table().our_prefix() &&
-           !self.peer_mgr.routing_table().has(&joining_node) {
+        if split_us && !self.peer_mgr.routing_table().has(&joining_node) {
             self.send_group_split(prefix, joining_node).extract(&mut events);
         }
         // None of the `peers_to_drop` will have been in our group, so no need to notify Routing
@@ -1791,6 +1792,10 @@ impl Node {
                self.peer_mgr.routing_table().prefixes());
 
         self.merge_if_necessary().extract(&mut events);
+
+        if split_us {
+            self.send_section_update().extract(&mut events);
+        }
 
         let prefix0 = prefix.pushed(false);
         let prefix1 = prefix.pushed(true);
@@ -1819,8 +1824,12 @@ impl Node {
                        self,
                        self.peer_mgr.routing_table().prefixes());
                 self.merge_if_necessary().extract(&mut result);
-                // after the merge, half of our section won't have our signatures -
-                // - send them
+
+                if merge_prefix == *self.peer_mgr.routing_table().our_prefix() {
+                    self.send_section_update().extract(&mut result);
+                }
+
+                // after the merge, half of our section won't have our signatures -- send them
                 for prefix in self.peer_mgr.routing_table().prefixes() {
                     self.send_section_list_signature(prefix, None);
                 }
