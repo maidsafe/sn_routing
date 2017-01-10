@@ -50,7 +50,7 @@ pub struct Bootstrapping {
     client_restriction: bool,
     crust_service: Service,
     full_id: FullId,
-    min_group_size: usize,
+    min_section_size: usize,
     stats: Stats,
     timer: Timer,
 }
@@ -60,7 +60,7 @@ impl Bootstrapping {
                client_restriction: bool,
                mut crust_service: Service,
                full_id: FullId,
-               min_group_size: usize,
+               min_section_size: usize,
                timer: Timer)
                -> Self {
         let _ = crust_service.start_bootstrap(HashSet::new());
@@ -72,7 +72,7 @@ impl Bootstrapping {
             client_restriction: client_restriction,
             crust_service: crust_service,
             full_id: full_id,
-            min_group_size: min_group_size,
+            min_section_size: min_section_size,
             stats: Stats::new(),
             timer: timer,
         }
@@ -124,7 +124,7 @@ impl Bootstrapping {
     pub fn into_client(self, proxy_peer_id: PeerId, proxy_public_id: PublicId) -> Evented<Client> {
         Client::from_bootstrapping(self.crust_service,
                                    self.full_id,
-                                   self.min_group_size,
+                                   self.min_section_size,
                                    proxy_peer_id,
                                    proxy_public_id,
                                    self.stats,
@@ -135,7 +135,7 @@ impl Bootstrapping {
         Node::from_bootstrapping(self.cache,
                                  self.crust_service,
                                  self.full_id,
-                                 self.min_group_size,
+                                 self.min_section_size,
                                  proxy_peer_id,
                                  proxy_public_id,
                                  self.stats,

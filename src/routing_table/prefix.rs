@@ -21,7 +21,7 @@ use std::fmt::Result as FmtResult;
 use std::hash::{Hash, Hasher};
 use super::xorable::Xorable;
 
-/// A group prefix, i.e. a sequence of bits specifying the part of the network's name space
+/// A section prefix, i.e. a sequence of bits specifying the part of the network's name space
 /// consisting of all names that start with this sequence.
 #[derive(Clone, Copy, Default, Eq, RustcDecodable, RustcEncodable)]
 pub struct Prefix<T: Clone + Copy + Default + Binary + Xorable> {

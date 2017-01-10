@@ -33,7 +33,7 @@ pub struct Network(Rc<RefCell<NetworkImpl>>);
 
 pub struct NetworkImpl {
     services: HashMap<Endpoint, Weak<RefCell<ServiceImpl>>>,
-    min_group_size: usize,
+    min_section_size: usize,
     next_endpoint: usize,
     queue: HashMap<(Endpoint, Endpoint), VecDeque<Packet>>,
     blocked_connections: HashSet<(Endpoint, Endpoint)>,
@@ -42,7 +42,7 @@ pub struct NetworkImpl {
 
 impl Network {
     /// Create new mock Network.
-    pub fn new(min_group_size: usize, optional_seed: Option<[u32; 4]>) -> Self {
+    pub fn new(min_section_size: usize, optional_seed: Option<[u32; 4]>) -> Self {
         let mut rng = if let Some(seed) = optional_seed {
             SeededRng::from_seed(seed)
         } else {
@@ -51,7 +51,7 @@ impl Network {
         unwrap!(rust_sodium::init_with_rng(&mut rng));
         Network(Rc::new(RefCell::new(NetworkImpl {
             services: HashMap::new(),
-            min_group_size: min_group_size,
+            min_section_size: min_section_size,
             next_endpoint: 0,
             queue: HashMap::new(),
             blocked_connections: HashSet::new(),
@@ -79,9 +79,9 @@ impl Network {
         handle
     }
 
-    /// Get min_group_size
-    pub fn min_group_size(&self) -> usize {
-        self.0.borrow().min_group_size
+    /// Get min_section_size
+    pub fn min_section_size(&self) -> usize {
+        self.0.borrow().min_section_size
     }
 
     /// Generate unique Endpoint

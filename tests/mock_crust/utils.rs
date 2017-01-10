@@ -132,7 +132,7 @@ impl TestNode {
             unwrap!(Node::builder()
                 .cache(cache)
                 .first(first_node)
-                .create(network.min_group_size()))
+                .create(network.min_section_size()))
         });
 
         TestNode {
@@ -145,7 +145,7 @@ impl TestNode {
         unwrap!(self.inner.name())
     }
 
-    pub fn close_group(&self) -> HashSet<XorName> {
+    pub fn close_names(&self) -> HashSet<XorName> {
         unwrap!(unwrap!(self.inner.routing_table()).close_names(&self.name()))
     }
 
@@ -215,7 +215,7 @@ impl TestClient {
         let full_id = FullId::new();
         let handle = network.new_service_handle(config, endpoint);
         let client = mock_crust::make_current(&handle, || {
-            unwrap!(Client::new(Some(full_id.clone()), network.min_group_size()))
+            unwrap!(Client::new(Some(full_id.clone()), network.min_section_size()))
         });
 
         TestClient {
@@ -319,7 +319,7 @@ pub fn create_connected_nodes_with_cache(network: &Network, size: usize, use_cac
         verify_invariant_for_all_nodes(&nodes);
     }
 
-    let n = cmp::min(nodes.len(), network.min_group_size()) - 1;
+    let n = cmp::min(nodes.len(), network.min_section_size()) - 1;
 
     for node in &mut nodes {
         expect_next_event!(node, Event::Connected);
@@ -330,7 +330,7 @@ pub fn create_connected_nodes_with_cache(network: &Network, size: usize, use_cac
             match event {
                 Event::NodeAdded(..) => node_added_count += 1,
                 Event::NodeLost(..) |
-                Event::GroupSplit(..) |
+                Event::SectionSplit(..) |
                 Event::Tick => (),
                 event => panic!("Got unexpected event: {:?}", event),
             }
@@ -344,13 +344,13 @@ pub fn create_connected_nodes_with_cache(network: &Network, size: usize, use_cac
     Nodes(nodes)
 }
 
-// This creates new nodes (all with `use_cache` set to `true`) until the specified disjoint groups
+// This creates new nodes (all with `use_cache` set to `true`) until the specified disjoint sections
 // have formed.
 //
-// `prefix_lengths` is an array representing the required `bit_count`s of the group prefixes.  For
-// example passing [1, 2, 3, 3] could yield a network comprising groups [0, 100, 101, 11], or
+// `prefix_lengths` is an array representing the required `bit_count`s of the section prefixes.  For
+// example passing [1, 2, 3, 3] could yield a network comprising sections [0, 100, 101, 11], or
 // passing [2, 2, 3, 3, 3, 3] could yield [000, 001, 01, 100, 101, 11], while passing [1, 1] will
-// always yield groups [0, 1].
+// always yield sections [0, 1].
 //
 // The array is sanity checked (e.g. it would be an error to pass [1, 1, 1]), must comprise at
 // least two elements, and every element must be no more than `8`.
@@ -373,7 +373,7 @@ pub fn create_connected_nodes_until_split(network: &Network,
     let min_split_size = nodes[0].routing_table().min_split_size();
     for prefix in &prefixes {
         for _ in 0..min_split_size {
-            add_node_to_group(network, &mut nodes, prefix, &mut rng, use_cache);
+            add_node_to_section(network, &mut nodes, prefix, &mut rng, use_cache);
             if nodes.len() == 2 {
                 expect_next_event!(nodes[0], Event::Connected);
             }
@@ -405,7 +405,7 @@ pub fn create_connected_nodes_until_split(network: &Network,
             }
         }
         if let Some(prefix_to_split) = found_prefix {
-            add_node_to_group(network, &mut nodes, &prefix_to_split, &mut rng, use_cache);
+            add_node_to_section(network, &mut nodes, &prefix_to_split, &mut rng, use_cache);
         } else {
             break;
         }
@@ -428,7 +428,7 @@ pub fn create_connected_nodes_until_split(network: &Network,
                 Event::NodeAdded(..) |
                 Event::NodeLost(..) |
                 Event::Tick |
-                Event::GroupSplit(..) => (),
+                Event::SectionSplit(..) => (),
                 event => panic!("Got unexpected event: {:?}", event),
             }
         }
@@ -506,7 +506,7 @@ fn sanity_check(prefix_lengths: &[usize]) {
         panic!("The specified prefix lengths {:?} would not cover the entire address space",
                prefix_lengths);
     } else if sum > 256 {
-        panic!("The specified prefix lengths {:?} would require overlapping groups",
+        panic!("The specified prefix lengths {:?} would require overlapping sections",
                prefix_lengths);
     }
 }
@@ -528,11 +528,11 @@ fn prefixes<T: Rng>(prefix_lengths: &[usize], rng: &mut T) -> Vec<Prefix<XorName
     prefixes
 }
 
-fn add_node_to_group<T: Rng>(network: &Network,
-                             nodes: &mut Vec<TestNode>,
-                             prefix: &Prefix<XorName>,
-                             rng: &mut T,
-                             use_cache: bool) {
+fn add_node_to_section<T: Rng>(network: &Network,
+                               nodes: &mut Vec<TestNode>,
+                               prefix: &Prefix<XorName>,
+                               rng: &mut T,
+                               use_cache: bool) {
     let relocation_name = prefix.substituted_in(rng.gen());
     nodes.iter_mut().foreach(|node| node.inner.set_next_node_name(relocation_name));
 
@@ -565,20 +565,20 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "would require overlapping groups")]
-    fn sanity_check_overlapping_groups() {
+    #[should_panic(expected = "would require overlapping sections")]
+    fn sanity_check_overlapping_sections() {
         sanity_check(&[1, 2, 2, 2]);
     }
 
     #[test]
     #[should_panic(expected = "would not cover the entire address space")]
-    fn sanity_check_missing_groups() {
+    fn sanity_check_missing_sections() {
         sanity_check(&[1, 2]);
     }
 
     #[test]
     #[should_panic(expected = "must each be no more than 8")]
-    fn sanity_check_too_many_groups() {
+    fn sanity_check_too_many_sections() {
         sanity_check(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 9]);
     }
 }

@@ -45,7 +45,7 @@ use xor_name::XorName;
 /// client.
 ///
 /// A client is connected to the network via one or more nodes. Messages are never routed via a
-/// client, and a client cannot be part of a group authority.
+/// client, and a client cannot be part of a section authority.
 pub struct Client {
     interface_result_tx: Sender<Result<(), InterfaceError>>,
     interface_result_rx: Receiver<Result<(), InterfaceError>>,
@@ -70,18 +70,18 @@ impl Client {
     /// terminated.
     ///
     /// Keys will be exchanged with the `ClientAuthority` so that communication with the network is
-    /// cryptographically secure and uses group consensus. The restriction for the client name
+    /// cryptographically secure and uses section consensus. The restriction for the client name
     /// exists to ensure that the client cannot choose its `ClientAuthority`.
     #[cfg(not(feature = "use-mock-crust"))]
     pub fn new(event_sender: Sender<Event>,
                keys: Option<FullId>,
-               min_group_size: usize)
+               min_section_size: usize)
                -> Result<Client, RoutingError> {
         rust_sodium::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing with a restriction to become a full node
         let mut events = Evented::empty();
-        let (action_sender, mut machine) = Self::make_state_machine(keys, min_group_size)
+        let (action_sender, mut machine) = Self::make_state_machine(keys, min_section_size)
             .extract(&mut events);
 
         for ev in events.into_events() {
@@ -113,7 +113,7 @@ impl Client {
     }
 
     fn make_state_machine(keys: Option<FullId>,
-                          min_group_size: usize)
+                          min_section_size: usize)
                           -> Evented<(RoutingActionSender, StateMachine)> {
         let cache = Box::new(NullCache);
         let full_id = keys.unwrap_or_else(FullId::new);
@@ -123,7 +123,7 @@ impl Client {
                                                             true,
                                                             crust_service,
                                                             full_id,
-                                                            min_group_size,
+                                                            min_section_size,
                                                             timer))
                 .to_evented()
         })
@@ -222,11 +222,11 @@ impl Client {
 #[cfg(feature = "use-mock-crust")]
 impl Client {
     /// Create a new `Client` for unit testing.
-    pub fn new(keys: Option<FullId>, min_group_size: usize) -> Result<Client, RoutingError> {
+    pub fn new(keys: Option<FullId>, min_section_size: usize) -> Result<Client, RoutingError> {
         // start the handler for routing with a restriction to become a full node
         let mut events = VecDeque::new();
 
-        let (action_sender, machine) = Self::make_state_machine(keys, min_group_size)
+        let (action_sender, machine) = Self::make_state_machine(keys, min_section_size)
             .extract_to_buf(&mut events);
 
         let (tx, rx) = channel();
