@@ -423,6 +423,26 @@ impl PeerManager {
         (ids_to_drop, our_new_prefix)
     }
 
+    /// Adds the given prefix to the routing table, splitting or merging as necessary. Returns the
+    /// list of peers that have been dropped and need to be disconnected.
+    pub fn add_prefix(&mut self, prefix: Prefix<XorName>) -> Vec<(XorName, PeerId)> {
+        let names_to_drop = self.routing_table.add_prefix(prefix);
+        let old_expected_peers = mem::replace(&mut self.expected_peers, HashMap::new());
+        self.expected_peers = old_expected_peers.into_iter()
+            .filter(|&(ref name, _)| self.routing_table.need_to_add(name) == Ok(()))
+            .collect();
+        names_to_drop.into_iter()
+            .filter_map(|name| {
+                if let Some(peer) = self.peer_map.remove_by_name(&name) {
+                    self.cleanup_proxy_peer_id();
+                    peer.peer_id.map(|peer_id| (name, peer_id))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
     /// Checks whether we have a quorum of nodes in each section
     fn is_merging_possible(&self) -> bool {
         let prefixes = self.expected_peers

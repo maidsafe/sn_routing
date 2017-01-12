@@ -534,6 +534,28 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         (result, None)
     }
 
+    /// Adds the given prefix to the routing table, merging or splitting if necessary. Returns the
+    /// entries that have been dropped.
+    pub fn add_prefix(&mut self, prefix: Prefix<T>) -> Vec<T> {
+        let mut result = vec![];
+        if self.our_prefix == prefix || self.sections.contains_key(&prefix) {
+            return result; // We already have this section: Nothing to do!
+        } else if self.our_prefix.is_neighbour(&prefix) || self.our_prefix.is_compatible(&prefix) {
+            while let Some(&shorter_pfx) =
+                self.sections
+                    .keys()
+                    .chain(iter::once(&self.our_prefix))
+                    .find(|p| p.is_compatible(&prefix) && p.bit_count() < prefix.bit_count()) {
+                let (dropped_nodes, _opt_our_pfx) = self.split(shorter_pfx);
+                result.extend(dropped_nodes);
+            }
+            self.merge(&prefix);
+        }
+        // TODO: If it's neither our neighbour nor compatible, we need to merge until it is
+        //       compatible.
+        result
+    }
+
     /// Removes a contact from the routing table.
     ///
     /// If no entry with that name is found, `Err(Error::NoSuchPeer)` is returned.  Otherwise, the

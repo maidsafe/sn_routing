@@ -1615,13 +1615,23 @@ impl Node {
     }
 
     fn handle_rt_rsp(&mut self,
-                     _prefix: Prefix<XorName>,
+                     prefix: Prefix<XorName>,
                      members: BTreeSet<PublicId>,
                      message_id: MessageId)
                      -> Evented<Result<(), RoutingError>> {
         let mut result = Evented::empty();
         if Some(message_id) != self.rt_msg_id {
-            // TODO: If `prefix` is not in our RT, then split/merge as needed.
+            let old_prefix = *self.peer_mgr.routing_table().our_prefix();
+            for (name, peer_id) in self.peer_mgr.add_prefix(prefix) {
+                self.disconnect_peer(&peer_id);
+                info!("{:?} Dropped {:?} from the routing table.", self, name);
+            }
+            let new_prefix = *self.peer_mgr.routing_table().our_prefix();
+            if old_prefix.bit_count() < new_prefix.bit_count() {
+                result.add_event(Event::SectionSplit(new_prefix));
+            } else if old_prefix.bit_count() > new_prefix.bit_count() {
+                result.add_event(Event::SectionMerge(new_prefix));
+            }
             let src = Authority::ManagedNode(*self.name());
             for member in members {
                 if self.peer_mgr.routing_table().need_to_add(member.name()).is_ok() {
