@@ -79,7 +79,7 @@ mod unnamed {
 Usage:
   key_value_store
   key_value_store --node
-  key_value_store --first
+  key_value_store --first [--node]
   key_value_store --help
 
 Options:

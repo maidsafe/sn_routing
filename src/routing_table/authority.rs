@@ -25,8 +25,8 @@ use super::{Prefix, Xorable};
 /// `Client` and `ManagedNode` are single-node authorities (i.e. no verification of messages from
 /// additional sources needed); other authorities require agreement by a quorum of some set.
 /// `NodeManager`, `ClientManager` and `NaeManager` use _group_ verification of messages: they
-/// require quorum agreement from the `min_group_size` nodes closest to the source, while `Section`
-/// and `PrefixSection` use _section_ verification: the set from which a quorum is required is all
+/// require quorum agreement from the group of nodes closest to the source, while `Section` and
+/// `PrefixSection` use _section_ verification: the set from which a quorum is required is all
 /// members of the section (`Section`) or of all sections matching the prefix (`PrefixSection`).
 #[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Hash)]
 pub enum Authority<N: Xorable + Clone + Copy + Binary + Default> {
@@ -85,7 +85,7 @@ impl<N: Xorable + Clone + Copy + Binary + Default> Authority<N> {
         }
     }
 
-    /// Returns `true` if a client, `false` if a node or group.
+    /// Returns `true` if a client, `false` if a node or section.
     pub fn is_client(&self) -> bool {
         if let Authority::Client { .. } = *self {
             true

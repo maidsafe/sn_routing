@@ -21,7 +21,7 @@ use routing::{Authority, Data, DataIdentifier, Event, EventStream, MessageId, No
               Request, Response, XorName};
 use std::collections::HashMap;
 use std::time::Duration;
-use super::MIN_GROUP_SIZE;
+use super::MIN_SECTION_SIZE;
 
 /// A simple example node implementation for a network based on the Routing library.
 pub struct ExampleNode {
@@ -37,7 +37,7 @@ pub struct ExampleNode {
 impl ExampleNode {
     /// Creates a new node and attempts to establish a connection to the network.
     pub fn new(first: bool) -> ExampleNode {
-        let node = unwrap!(Node::builder().first(first).create(MIN_GROUP_SIZE));
+        let node = unwrap!(Node::builder().first(first).create(MIN_SECTION_SIZE));
 
         ExampleNode {
             node: node,
@@ -63,9 +63,6 @@ impl ExampleNode {
                     trace!("{} Received NodeLost event {:?}",
                            self.get_debug_name(),
                            name);
-                    // With DisjointGroup, node_lost shall no longer trigger, as data migration
-                    // shall only happens when a group merge happens
-                    // self.handle_node_lost(name);
                 }
                 Event::Connected => {
                     trace!("{} Received connected event", self.get_debug_name());
@@ -76,16 +73,16 @@ impl ExampleNode {
                 }
                 Event::RestartRequired => {
                     info!("{} Received RestartRequired event", self.get_debug_name());
-                    self.node = unwrap!(Node::builder().create(MIN_GROUP_SIZE));
+                    self.node = unwrap!(Node::builder().create(MIN_SECTION_SIZE));
                 }
-                Event::GroupSplit(prefix) => {
-                    trace!("{} Received GroupSplit event {:?}",
+                Event::SectionSplit(prefix) => {
+                    trace!("{} Received SectionSplit event {:?}",
                            self.get_debug_name(),
                            prefix);
                     self.handle_split(prefix);
                 }
-                Event::GroupMerge(prefix) => {
-                    trace!("{} Received GroupMerge event {:?}",
+                Event::SectionMerge(prefix) => {
+                    trace!("{} Received SectionMerge event {:?}",
                            self.get_debug_name(),
                            prefix);
                     let pfx = Prefix::new(prefix.bit_count() + 1, unwrap!(self.node.name()));
@@ -249,7 +246,7 @@ impl ExampleNode {
     }
 
     /// Receiving a refresh message means that a quorum has been reached: Enough other members in
-    /// the group agree, so we need to update our data accordingly.
+    /// the section agree, so we need to update our data accordingly.
     fn handle_refresh(&mut self, content: Vec<u8>, _id: MessageId) {
         match unwrap!(deserialise(&content)) {
             RefreshContent::Client { client_name, data } => {
