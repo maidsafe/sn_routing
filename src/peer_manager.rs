@@ -25,7 +25,7 @@ use routing_table::Error as RoutingTableError;
 use rust_sodium::crypto::hash::sha256;
 use rust_sodium::crypto::sign;
 use std::{error, fmt, mem};
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::collections::hash_map::Values;
 use std::time::{Duration, Instant};
 use super::QUORUM;
@@ -346,6 +346,31 @@ impl PeerManager {
         }
         result.sort();
         Ok(result)
+    }
+
+    /// Returns the public IDs of all routing table entries, sorted by section.
+    pub fn pub_ids_by_section(&self,
+                              our_public_id: &PublicId)
+                              -> BTreeMap<Prefix<XorName>, BTreeSet<PublicId>> {
+        self.routing_table
+            .all_sections()
+            .into_iter()
+            .map(|(prefix, names)| {
+                let pub_ids = names.into_iter()
+                    .filter_map(|name| {
+                        if name == *our_public_id.name() {
+                            Some(*our_public_id)
+                        } else if let Some(peer) = self.peer_map.get_by_name(&name) {
+                            Some(*peer.pub_id())
+                        } else {
+                            error!("Missing public ID for peer {:?}.", name);
+                            None
+                        }
+                    })
+                    .collect();
+                (prefix, pub_ids)
+            })
+            .collect()
     }
 
     /// Tries to add the given peer to the routing table. If successful, this returns `Ok(true)` if

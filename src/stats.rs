@@ -66,6 +66,8 @@ pub struct Stats {
     msg_section_split: usize,
     msg_own_section_merge: usize,
     msg_other_section_merge: usize,
+    msg_rt_req: usize,
+    msg_rt_rsp: usize,
     msg_get_node_name_rsp: usize,
     msg_ack: usize,
 
@@ -142,6 +144,8 @@ impl Stats {
             MessageContent::SectionSplit(..) => self.msg_section_split += 1,
             MessageContent::OwnSectionMerge { .. } => self.msg_own_section_merge += 1,
             MessageContent::OtherSectionMerge { .. } => self.msg_other_section_merge += 1,
+            MessageContent::RoutingTableRequest(_) => self.msg_rt_req += 1,
+            MessageContent::RoutingTableResponse { .. } => self.msg_rt_rsp += 1,
             MessageContent::GetNodeNameResponse { .. } => self.msg_get_node_name_rsp += 1,
             MessageContent::Ack(..) => self.msg_ack += 1,
             MessageContent::UserMessagePart { .. } => return, // Counted as request/response.
@@ -193,7 +197,7 @@ impl Stats {
             info!(target: "routing_stats",
                   "Stats - Hops (Request/Response) - GetNodeName: {}/{}, ExpectCloseNode: {}, \
                    SectionUpdate: {}, SectionSplit: {}, OwnSectionMerge: {}, \
-                   OtherSectionMerge: {}, ConnectionInfo: {}/{}, Ack: {}",
+                   OtherSectionMerge: {}, RoutingTable: {}/{}, ConnectionInfo: {}/{}, Ack: {}",
                   self.msg_get_node_name,
                   self.msg_get_node_name_rsp,
                   self.msg_expect_close_node,
@@ -201,6 +205,8 @@ impl Stats {
                   self.msg_section_split,
                   self.msg_own_section_merge,
                   self.msg_other_section_merge,
+                  self.msg_rt_req,
+                  self.msg_rt_rsp,
                   self.msg_connection_info_req,
                   self.msg_connection_info_rsp,
                   self.msg_ack);

@@ -548,6 +548,17 @@ pub enum MessageContent {
         /// Members of the section
         members: Vec<PublicId>,
     },
+    /// Sent from a node to its own section to request their current routing table.
+    RoutingTableRequest(MessageId),
+    /// Sent from a section to a node to update it about its prefix and its member list.
+    RoutingTableResponse {
+        /// The section's current prefix.
+        prefix: Prefix<XorName>,
+        /// Members of the section.
+        members: BTreeSet<PublicId>,
+        /// The message's unique identifier.
+        message_id: MessageId,
+    },
     /// Sent to all connected peers when our own section splits
     SectionSplit(Prefix<XorName>, XorName),
     /// Sent amongst members of a newly-merged section to allow synchronisation of their routing
@@ -690,6 +701,16 @@ impl Debug for MessageContent {
             }
             MessageContent::SectionUpdate { ref prefix, ref members } => {
                 write!(formatter, "SectionUpdate {{ {:?}, {:?} }}", prefix, members)
+            }
+            MessageContent::RoutingTableRequest(ref msg_id) => {
+                write!(formatter, "RoutingTableRequest({:?})", msg_id)
+            }
+            MessageContent::RoutingTableResponse { ref prefix, ref members, ref message_id } => {
+                write!(formatter,
+                       "RoutingTableResponse {{ {:?}, {:?}, {:?} }}",
+                       prefix,
+                       members,
+                       message_id)
             }
             MessageContent::SectionSplit(ref prefix, ref joining_node) => {
                 write!(formatter, "SectionSplit({:?}, {:?})", prefix, joining_node)

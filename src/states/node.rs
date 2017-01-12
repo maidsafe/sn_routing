@@ -44,7 +44,7 @@ use section_list_cache::SectionListCache;
 use signature_accumulator::SignatureAccumulator;
 use state_machine::Transition;
 use stats::Stats;
-use std::{fmt, iter};
+use std::{cmp, fmt, iter};
 use std::collections::{BTreeSet, HashSet, VecDeque};
 #[cfg(feature = "use-mock-crust")]
 use std::collections::BTreeMap;
@@ -63,6 +63,10 @@ const TICK_TIMEOUT_SECS: u64 = 60;
 const GET_NODE_NAME_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) the members of a section wait for a joining node they sent a network name to.
 const SENT_NETWORK_NAME_TIMEOUT_SECS: u64 = 30;
+/// Initial delay between a routing table change and sending a `RoutingTableRequest`, in seconds.
+const RT_MIN_TIMEOUT_SECS: u64 = 30;
+/// Maximal delay two subsequent `RoutingTableRequest`s, in seconds.
+const RT_MAX_TIMEOUT_SECS: u64 = 300;
 
 pub struct Node {
     ack_mgr: AckManager,
@@ -86,9 +90,15 @@ pub struct Node {
     timer: Timer,
     tunnels: Tunnels,
     user_msg_cache: UserMessageCache,
-    // Value which can be set in mock-crust tests to be used as the calculated name for the next
-    // relocation request received by this node.
+    /// Value which can be set in mock-crust tests to be used as the calculated name for the next
+    /// relocation request received by this node.
     next_node_name: Option<XorName>,
+    /// The message ID of the current `RoutingTableRequest` we sent to our section.
+    rt_msg_id: Option<MessageId>,
+    /// The current duration between `RoutingTableRequest` we send. Doubles with every message.
+    rt_timeout: Duration,
+    /// The timer token for sending the next `RoutingTableRequest`.
+    rt_timer_token: Option<u64>,
 }
 
 impl Node {
@@ -170,6 +180,9 @@ impl Node {
             tunnels: Default::default(),
             user_msg_cache: UserMessageCache::with_expiry_duration(user_msg_cache_duration),
             next_node_name: None,
+            rt_msg_id: None,
+            rt_timeout: Duration::from_secs(RT_MIN_TIMEOUT_SECS),
+            rt_timer_token: None,
         };
 
         if node.start_listening() {
@@ -769,6 +782,13 @@ impl Node {
             (SectionUpdate { prefix, members }, Section(_), PrefixSection(_)) => {
                 self.handle_section_update(prefix, members)
             }
+            (RoutingTableRequest(msg_id), src @ ManagedNode(_), dst @ PrefixSection(_)) => {
+                self.handle_rt_req(msg_id, src, dst);
+                Ok(()).to_evented()
+            }
+            (RoutingTableResponse { prefix, members, message_id },
+             PrefixSection(_),
+             ManagedNode(_)) => self.handle_rt_rsp(prefix, members, message_id),
             (SectionSplit(prefix, joining_node), _, _) => {
                 self.handle_section_split(prefix, joining_node)
             }
@@ -1009,6 +1029,10 @@ impl Node {
             Ok(false) => {
                 self.merge_if_necessary();
             }
+        }
+
+        if self.peer_mgr.routing_table().our_section().contains(public_id.name()) {
+            self.reset_rt_timer();
         }
 
         info!("{:?} Added {:?} to routing table.", self, public_id.name());
@@ -1561,6 +1585,53 @@ impl Node {
         result.with_value(Ok(()))
     }
 
+    fn handle_rt_req(&mut self,
+                     msg_id: MessageId,
+                     src: Authority<XorName>,
+                     dst: Authority<XorName>) {
+        // TODO: Compare the hash and don't send anything if he requester is up-to-date.
+        for (prefix, members) in self.peer_mgr.pub_ids_by_section(self.full_id.public_id()) {
+            let content = MessageContent::RoutingTableResponse {
+                message_id: msg_id,
+                prefix: prefix,
+                members: members,
+            };
+            let request_msg = RoutingMessage {
+                src: dst,
+                dst: src,
+                content: content,
+            };
+            if let Err(err) = self.send_routing_message(request_msg) {
+                debug!("{:?} Failed to send RoutingTableRequest: {:?}.", self, err);
+            }
+        }
+    }
+
+    fn handle_rt_rsp(&mut self,
+                     _prefix: Prefix<XorName>,
+                     members: BTreeSet<PublicId>,
+                     message_id: MessageId)
+                     -> Evented<Result<(), RoutingError>> {
+        let mut result = Evented::empty();
+        if Some(message_id) != self.rt_msg_id {
+            // TODO: If `prefix` is not in our RT, then split/merge as needed.
+            let src = Authority::ManagedNode(*self.name());
+            for member in members {
+                if self.peer_mgr.routing_table().need_to_add(member.name()).is_ok() {
+                    let dst = Authority::ManagedNode(*member.name());
+                    if let Err(error) = self.send_connection_info_request(member, src, dst)
+                        .extract(&mut result) {
+                        debug!("{:?} - Failed to send connection info to {:?}: {:?}",
+                            self,
+                            member,
+                            error);
+                    }
+                }
+            }
+        }
+        result.with_value(Ok(()))
+    }
+
     fn handle_section_split(&mut self,
                             prefix: Prefix<XorName>,
                             joining_node: XorName)
@@ -1592,6 +1663,8 @@ impl Node {
         let prefix1 = prefix.pushed(true);
         self.send_section_list_signature(prefix0, None);
         self.send_section_list_signature(prefix1, None);
+
+        self.reset_rt_timer();
 
         events.with_value(Ok(()))
     }
@@ -1643,6 +1716,7 @@ impl Node {
                        error);
             }
         }
+        self.reset_rt_timer();
         result.with_value(Ok(()))
     }
 
@@ -1672,6 +1746,7 @@ impl Node {
                self.peer_mgr.routing_table().prefixes());
         self.merge_if_necessary();
         self.send_section_list_signature(prefix, None);
+        self.reset_rt_timer();
         result.with_value(Ok(()))
     }
 
@@ -1703,6 +1778,22 @@ impl Node {
             return events.with_value(true);
         }
 
+        if self.rt_timer_token == Some(token) {
+            self.rt_timeout = cmp::min(Duration::from_secs(RT_MAX_TIMEOUT_SECS),
+                                       self.rt_timeout * 2);
+            self.rt_timer_token = Some(self.timer.schedule(self.rt_timeout));
+            let msg_id = MessageId::new();
+            self.rt_msg_id = Some(msg_id);
+            let request_msg = RoutingMessage {
+                src: Authority::ManagedNode(*self.name()),
+                dst: Authority::PrefixSection(*self.peer_mgr.routing_table().our_prefix()),
+                content: MessageContent::RoutingTableRequest(msg_id),
+            };
+            if let Err(err) = self.send_routing_message(request_msg) {
+                debug!("{:?} Failed to send RoutingTableRequest: {:?}.", self, err);
+            }
+        }
+
         self.resend_unacknowledged_timed_out_msgs(token);
 
         events.with_value(true)
@@ -1721,6 +1812,12 @@ impl Node {
         let serialised_connection_info =
             decipher_result.map_err(|()| RoutingError::AsymmetricDecryptionFailure)?;
         Ok(serialisation::deserialise(&serialised_connection_info)?)
+    }
+
+    fn reset_rt_timer(&mut self) {
+        self.rt_msg_id = None;
+        self.rt_timeout = Duration::from_secs(RT_MIN_TIMEOUT_SECS);
+        self.rt_timer_token = Some(self.timer.schedule(self.rt_timeout));
     }
 
     // ----- Send Functions -----------------------------------------------------------------------
@@ -2045,6 +2142,7 @@ impl Node {
             self.send_section_list_signature(prefix, None);
         });
         if details.was_in_our_section {
+            self.reset_rt_timer();
             self.section_list_sigs
                 .remove_signatures_by(*pub_id, self.peer_mgr.routing_table().our_section().len());
         }
