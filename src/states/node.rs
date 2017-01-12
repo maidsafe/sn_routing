@@ -31,7 +31,7 @@ use maidsafe_utilities::serialisation;
 use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, Message, MessageContent,
                RoutingMessage, SectionList, SignedMessage, UserMessage, UserMessageCache};
 use peer_manager::{ConnectionInfoPreparedResult, PeerManager, PeerState};
-use resource_proof::ResourceProof as ResourceProofUtil;
+use resource_proof::ResourceProof;
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use routing_table::{OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix, RemovalDetails,
                     Xorable};
@@ -63,7 +63,10 @@ const TICK_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) after which a `GetNodeName` request is resent.
 const GET_NODE_NAME_TIMEOUT_SECS: u64 = 60;
 /// The number of required leading zero bits for the resource proof
-const RESOURCE_PROOF_DIFFICULTY: u8 = 4;
+#[cfg(feature = "use-mock-crust")]
+const RESOURCE_PROOF_DIFFICULTY: u8 = 0;
+#[cfg(not(feature = "use-mock-crust"))]
+const RESOURCE_PROOF_DIFFICULTY: u8 = 8;
 
 pub struct Node {
     ack_mgr: AckManager,
@@ -922,7 +925,7 @@ impl Node {
                                      target_size: usize,
                                      difficulty: u8)
                                      -> Result<(), RoutingError> {
-        let rp_object = ResourceProofUtil::new(target_size, difficulty);
+        let rp_object = ResourceProof::new(target_size, difficulty);
         let mut proof = rp_object.create_proof_data(&seed);
         let direct_message = DirectMessage::ResourceProofResponse {
             proof: proof.clone(),

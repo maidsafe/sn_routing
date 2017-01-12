@@ -19,15 +19,18 @@ use crust::{PeerId, PrivConnectionInfo, PubConnectionInfo};
 use error::RoutingError;
 use id::PublicId;
 use itertools::Itertools;
-use maidsafe_utilities::SeededRng;
-use rand::{self, Rng};
+use rand;
+#[cfg(not(feature = "use-mock-crust"))]
+use rand::{Rng, thread_rng};
 use resource_proof::ResourceProof;
 use routing_table::{Authority, OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix,
                     RemovalDetails, RoutingTable};
 use routing_table::Error as RoutingTableError;
 use rust_sodium::crypto::hash::sha256;
 use rust_sodium::crypto::sign;
-use std::{cmp, error, fmt, mem};
+use std::{error, fmt, mem};
+#[cfg(not(feature = "use-mock-crust"))]
+use std::cmp;
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::collections::hash_map::Values;
 use std::time::{Duration, Instant};
@@ -51,6 +54,13 @@ const NODE_CONNECT_TIMEOUT_SECS: u64 = 60;
 type Section = (Prefix<XorName>, Vec<PublicId>);
 
 // in Bytes
+#[cfg(feature = "use-mock-crust")]
+fn resource_proof_target_size(_min_size: usize, _section_size: usize) -> usize {
+    10
+}
+
+// in Bytes
+#[cfg(not(feature = "use-mock-crust"))]
 fn resource_proof_target_size(min_size: usize, section_size: usize) -> usize {
     let evaluators = cmp::max(min_size, section_size);
     // Default value: 2 MBytes sharing among the evaluators
@@ -389,8 +399,11 @@ impl PeerManager {
 
         let names = self.routing_table.expect_join_our_section(expected_name)?;
 
-        let mut rng = SeededRng::new();
-        let seed = rng.gen_iter().take(10).collect();
+#[cfg(not(feature = "use-mock-crust"))]
+        let seed = thread_rng().gen_iter().take(10).collect();
+#[cfg(feature = "use-mock-crust")]
+        let seed = vec![5u8; 4];
+
         self.candidate = Some(Candidate {
             name: *expected_name,
             insertion_time: Instant::now(),
@@ -418,7 +431,7 @@ impl PeerManager {
                    insertion_time.elapsed() <
                    Duration::from_secs(RESOURCE_PROOF_EVALUATE_TIMEOUT_SECS) {
                     let rp_object = ResourceProof::new(*target_size, difficulty);
-                    return Some(rp_object.validate_all(&seed, &proof, leading_zero_bytes));
+                    Some(rp_object.validate_all(seed, &proof, leading_zero_bytes))
                 } else {
                     None
                 }
@@ -498,8 +511,8 @@ impl PeerManager {
     /// Returns:
     ///
     /// * Ok(None)                                  If the peer is not a node candidate for
-    /// *                                           resource proof or has been approved
-    /// * Ok(Some(is_tunnel, seed, target_size))    If the peer is a node candidate
+    ///                                             resource proof or has been approved
+    /// * Ok(Some(is_tunnel, target_size, seed))    If the peer is a node candidate
     /// * Err(AlreadyExists)                        If peer already a routing node
     pub fn check_candidate(&mut self,
                            pub_id: &PublicId,
