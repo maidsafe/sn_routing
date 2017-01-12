@@ -782,9 +782,8 @@ impl Node {
             (SectionUpdate { prefix, members }, Section(_), PrefixSection(_)) => {
                 self.handle_section_update(prefix, members)
             }
-            (RoutingTableRequest(msg_id), src @ ManagedNode(_), dst @ PrefixSection(_)) => {
-                self.handle_rt_req(msg_id, src, dst);
-                Ok(()).to_evented()
+            (RoutingTableRequest(msg_id, digest), src @ ManagedNode(_), dst @ PrefixSection(_)) => {
+                self.handle_rt_req(msg_id, digest, src, dst).to_evented()
             }
             (RoutingTableResponse { prefix, members, message_id },
              PrefixSection(_),
@@ -1587,10 +1586,17 @@ impl Node {
 
     fn handle_rt_req(&mut self,
                      msg_id: MessageId,
+                     digest: sha256::Digest,
                      src: Authority<XorName>,
-                     dst: Authority<XorName>) {
+                     dst: Authority<XorName>)
+                     -> Result<(), RoutingError> {
         // TODO: Compare the hash and don't send anything if he requester is up-to-date.
-        for (prefix, members) in self.peer_mgr.pub_ids_by_section(self.full_id.public_id()) {
+        let sections = self.peer_mgr.pub_ids_by_section(self.full_id.public_id());
+        let serialised_sections = serialisation::serialise(&sections)?;
+        if digest == sha256::hash(&serialised_sections) {
+            return Ok(());
+        }
+        for (prefix, members) in sections {
             let content = MessageContent::RoutingTableResponse {
                 message_id: msg_id,
                 prefix: prefix,
@@ -1605,6 +1611,7 @@ impl Node {
                 debug!("{:?} Failed to send RoutingTableRequest: {:?}.", self, err);
             }
         }
+        Ok(())
     }
 
     fn handle_rt_rsp(&mut self,
@@ -1755,7 +1762,7 @@ impl Node {
         Ok(())
     }
 
-    // Return true if the calling node should keep running, false for terminate.
+    /// Returns true if the calling node should keep running, false for terminate.
     fn handle_timeout(&mut self, token: u64) -> Evented<bool> {
         let mut events = Evented::empty();
         if self.get_node_name_timer_token == Some(token) {
@@ -1784,10 +1791,18 @@ impl Node {
             self.rt_timer_token = Some(self.timer.schedule(self.rt_timeout));
             let msg_id = MessageId::new();
             self.rt_msg_id = Some(msg_id);
+            let sections = self.peer_mgr.pub_ids_by_section(self.full_id.public_id());
+            let digest = sha256::hash(&match serialisation::serialise(&sections) {
+                Ok(serialised_sections) => serialised_sections,
+                Err(error) => {
+                    debug!("{:?} Failed to serialise routing table: {:?}", self, error);
+                    return events.with_value(true);
+                }
+            });
             let request_msg = RoutingMessage {
                 src: Authority::ManagedNode(*self.name()),
                 dst: Authority::PrefixSection(*self.peer_mgr.routing_table().our_prefix()),
-                content: MessageContent::RoutingTableRequest(msg_id),
+                content: MessageContent::RoutingTableRequest(msg_id, digest),
             };
             if let Err(err) = self.send_routing_message(request_msg) {
                 debug!("{:?} Failed to send RoutingTableRequest: {:?}.", self, err);

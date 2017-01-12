@@ -549,7 +549,7 @@ pub enum MessageContent {
         members: Vec<PublicId>,
     },
     /// Sent from a node to its own section to request their current routing table.
-    RoutingTableRequest(MessageId),
+    RoutingTableRequest(MessageId, sha256::Digest),
     /// Sent from a section to a node to update it about its prefix and its member list.
     RoutingTableResponse {
         /// The section's current prefix.
@@ -702,8 +702,11 @@ impl Debug for MessageContent {
             MessageContent::SectionUpdate { ref prefix, ref members } => {
                 write!(formatter, "SectionUpdate {{ {:?}, {:?} }}", prefix, members)
             }
-            MessageContent::RoutingTableRequest(ref msg_id) => {
-                write!(formatter, "RoutingTableRequest({:?})", msg_id)
+            MessageContent::RoutingTableRequest(ref msg_id, ref digest) => {
+                write!(formatter,
+                       "RoutingTableRequest({:?}, {})",
+                       msg_id,
+                       utils::format_binary_array(&digest.0))
             }
             MessageContent::RoutingTableResponse { ref prefix, ref members, ref message_id } => {
                 write!(formatter,

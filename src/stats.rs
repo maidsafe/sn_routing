@@ -144,7 +144,7 @@ impl Stats {
             MessageContent::SectionSplit(..) => self.msg_section_split += 1,
             MessageContent::OwnSectionMerge { .. } => self.msg_own_section_merge += 1,
             MessageContent::OtherSectionMerge { .. } => self.msg_other_section_merge += 1,
-            MessageContent::RoutingTableRequest(_) => self.msg_rt_req += 1,
+            MessageContent::RoutingTableRequest(..) => self.msg_rt_req += 1,
             MessageContent::RoutingTableResponse { .. } => self.msg_rt_rsp += 1,
             MessageContent::GetNodeNameResponse { .. } => self.msg_get_node_name_rsp += 1,
             MessageContent::Ack(..) => self.msg_ack += 1,
