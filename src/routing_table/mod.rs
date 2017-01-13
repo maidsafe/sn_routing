@@ -540,16 +540,32 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         let mut result = vec![];
         if self.our_prefix == prefix || self.sections.contains_key(&prefix) {
             return result; // We already have this section: Nothing to do!
-        } else if self.our_prefix.is_neighbour(&prefix) || self.our_prefix.is_compatible(&prefix) {
-            while let Some(&shorter_pfx) =
-                self.sections
-                    .keys()
-                    .chain(iter::once(&self.our_prefix))
-                    .find(|p| p.is_compatible(&prefix) && p.bit_count() < prefix.bit_count()) {
-                let (dropped_nodes, _opt_our_pfx) = self.split(shorter_pfx);
-                result.extend(dropped_nodes);
-            }
+        }
+        // While `prefix` extends an existing entry, split that entry.
+        while let Some(&shorter_pfx) =
+            self.sections
+                .keys()
+                .chain(iter::once(&self.our_prefix))
+                .find(|p| p.is_compatible(&prefix) && p.bit_count() < prefix.bit_count()) {
+            let (dropped_nodes, _opt_our_pfx) = self.split(shorter_pfx);
+            result.extend(dropped_nodes);
+        }
+        // Merge if necessary, then add empty sections to satisfy the invariant.
+        if self.our_prefix.is_neighbour(&prefix) || self.our_prefix.is_compatible(&prefix) {
             self.merge(&prefix);
+            let mut missing_pfxs = (0..self.our_prefix.bit_count())
+                .map(|i| self.our_prefix.with_flipped_bit(i))
+                .collect_vec();
+            while let Some(pfx) = missing_pfxs.pop() {
+                if !pfx.is_covered_by(self.sections.keys()) {
+                    if self.sections.keys().any(|p| pfx.is_compatible(p)) {
+                        missing_pfxs.push(pfx.pushed(true));
+                        missing_pfxs.push(pfx.pushed(false));
+                    } else {
+                        let _ = self.sections.insert(pfx, HashSet::new());
+                    }
+                }
+            }
         }
         // TODO: If it's neither our neighbour nor compatible, we need to merge until it is
         //       compatible.
@@ -1052,6 +1068,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Debug for Rout
 
 #[cfg(test)]
 mod tests {
+    use itertools::Itertools;
+    use std::collections::BTreeSet;
     use super::*;
 
     #[test]
@@ -1248,5 +1266,30 @@ mod tests {
         assert_eq!(*result[0], 0x0100);
         assert_eq!(*result[1], 0x0080);
         assert_eq!(*result[2], 0x0040);
+    }
+
+    #[test]
+    fn test_add_prefix() {
+        let our_name = 0u8;
+        let mut table = RoutingTable::new(our_name, 1);
+        // Add 10, 20, 30, 40, 50, 60, 70, 80, 90, A0, B0, C0, D0, E0 and F0.
+        for i in 1..0x10 {
+            unwrap!(table.add(i * 0x10));
+        }
+        assert_eq!(prefixes_from_strs(vec![b""]), table.prefixes());
+        assert_eq!(Vec::<u8>::new(), table.add_prefix(Prefix::from_str(b"01")));
+        assert_eq!(prefixes_from_strs(vec![b"1", b"00", b"01"]),
+                   table.prefixes());
+        assert_eq!(vec![0xc0, 0xd0, 0xe0, 0xf0u8],
+                   table.add_prefix(Prefix::from_str(b"111")).into_iter().sorted());
+        assert_eq!(prefixes_from_strs(vec![b"10", b"00", b"01"]),
+                   table.prefixes());
+        assert_eq!(Vec::<u8>::new(), table.add_prefix(Prefix::from_str(b"0")));
+        assert_eq!(prefixes_from_strs(vec![b"10", b"11", b"0"]),
+                   table.prefixes());
+    }
+
+    fn prefixes_from_strs(strs: Vec<&[u8]>) -> BTreeSet<Prefix<u8>> {
+        strs.into_iter().map(Prefix::from_str).collect()
     }
 }
