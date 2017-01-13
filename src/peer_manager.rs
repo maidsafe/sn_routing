@@ -41,7 +41,7 @@ const NODE_IDENTIFY_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) the node waits for connection from an expected node.
 const NODE_CONNECT_TIMEOUT_SECS: u64 = 60;
 
-type Section = (Prefix<XorName>, Vec<PublicId>);
+pub type SectionMap = BTreeMap<Prefix<XorName>, BTreeSet<PublicId>>;
 
 #[derive(Debug)]
 /// Errors that occur in peer status management.
@@ -290,15 +290,15 @@ impl PeerManager {
     }
 
     /// Clears the routing table and resets this node's public ID.
-    pub fn reset_routing_table(&mut self, our_public_id: PublicId, sections: &[Section]) {
+    pub fn reset_routing_table(&mut self, our_public_id: PublicId, sections: &SectionMap) {
         self.unknown_peers.clear();
         self.expected_peers.clear();
         let min_section_size = self.routing_table.min_section_size();
         self.our_public_id = our_public_id;
         self.expected_peers.extend(sections.iter()
-            .flat_map(|&(_, ref members)| members)
+            .flat_map(|(_, members)| members)
             .map(|id| (*id.name(), Instant::now())));
-        let prefixes = sections.iter().map(|&(ref prefix, _)| *prefix).collect_vec();
+        let prefixes = sections.iter().map(|(prefix, _)| *prefix).collect_vec();
         // TODO - nothing can be done to recover from an error here - use `unwrap!` for now, but
         // consider refactoring to return an error which can be used to transition the state
         // machine to `Terminate`.
@@ -324,52 +324,12 @@ impl PeerManager {
         let _ = self.expected_peers.insert(*id.name(), Instant::now());
     }
 
-    /// Wraps the routing table function of the same name and maps `XorName`s to `PublicId`s.
-    pub fn expect_add_to_our_section(&self,
-                                     expected_name: &XorName,
-                                     our_public_id: &PublicId)
-                                     -> Result<Vec<Section>, RoutingTableError> {
-        self.routing_table.validate_joining_node(expected_name)?;
-        let sections = self.routing_table.all_sections();
-        let mut result = vec![];
-        for (prefix, names) in sections {
-            let mut public_ids = vec![];
-            for name in names {
-                if name == *our_public_id.name() {
-                    public_ids.push(*our_public_id);
-                } else if let Some(peer) = self.peer_map.get_by_name(&name) {
-                    public_ids.push(*peer.pub_id())
-                }
-            }
-            public_ids.sort();
-            result.push((prefix, public_ids));
-        }
-        result.sort();
-        Ok(result)
-    }
-
     /// Returns the public IDs of all routing table entries, sorted by section.
-    pub fn pub_ids_by_section(&self,
-                              our_public_id: &PublicId)
-                              -> BTreeMap<Prefix<XorName>, BTreeSet<PublicId>> {
+    pub fn pub_ids_by_section(&self) -> SectionMap {
         self.routing_table
             .all_sections()
             .into_iter()
-            .map(|(prefix, names)| {
-                let pub_ids = names.into_iter()
-                    .filter_map(|name| {
-                        if name == *our_public_id.name() {
-                            Some(*our_public_id)
-                        } else if let Some(peer) = self.peer_map.get_by_name(&name) {
-                            Some(*peer.pub_id())
-                        } else {
-                            error!("Missing public ID for peer {:?}.", name);
-                            None
-                        }
-                    })
-                    .collect();
-                (prefix, pub_ids)
-            })
+            .map(|(prefix, names)| (prefix, self.get_pub_ids(&names)))
             .collect()
     }
 
@@ -487,11 +447,11 @@ impl PeerManager {
     pub fn merge_own_section(&mut self,
                              sender_prefix: Prefix<XorName>,
                              merge_prefix: Prefix<XorName>,
-                             sections: Vec<Section>)
+                             sections: SectionMap)
                              -> (OwnMergeState<XorName>, Vec<PublicId>) {
         self.remove_expired();
         let needed = sections.iter()
-            .flat_map(|&(_, ref pub_ids)| pub_ids)
+            .flat_map(|(_, pub_ids)| pub_ids)
             .filter(|pub_id| !self.routing_table.has(pub_id.name()))
             .cloned()
             .collect();
@@ -810,23 +770,17 @@ impl PeerManager {
     /// Returns the PublicIds of nodes given their names; the result is filtered to the names we
     /// know about (i.e. unknown names are ignored).
     pub fn get_pub_ids(&self, names: &HashSet<XorName>) -> BTreeSet<PublicId> {
-        let mut result_map = names.iter()
+        names.into_iter()
             .filter_map(|name| {
-                if let Some(peer) = self.peer_map.get_by_name(name) {
-                    Some((*name, peer.pub_id))
+                if name == self.our_public_id.name() {
+                    Some(self.our_public_id)
+                } else if let Some(peer) = self.peer_map.get_by_name(name) {
+                    Some(*peer.pub_id())
                 } else {
+                    error!("Missing public ID for peer {:?}.", name);
                     None
                 }
             })
-            .collect::<HashMap<_, _>>();
-
-        if names.contains(self.our_public_id.name()) {
-            let _ = result_map.insert(*self.our_public_id.name(), self.our_public_id);
-        }
-
-        names.iter()
-            .filter_map(|name| result_map.get(name))
-            .cloned()
             .collect()
     }
 

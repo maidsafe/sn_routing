@@ -28,6 +28,7 @@ use maidsafe_utilities;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 #[cfg(feature = "use-mock-crust")]
 use mock_crust::crust::PeerId;
+use peer_manager::SectionMap;
 use routing_table::{Prefix, Xorable};
 use routing_table::Authority;
 use rust_sodium::crypto::{box_, sign};
@@ -535,7 +536,7 @@ pub enum MessageContent {
         relocated_id: PublicId,
         /// The routing table shared by the nodes in our section, including the `PublicId`s of our
         /// contacts.
-        sections: Vec<(Prefix<XorName>, Vec<PublicId>)>,
+        sections: SectionMap,
         /// The message's unique identifier.
         message_id: MessageId,
     },
@@ -566,7 +567,7 @@ pub enum MessageContent {
     OwnSectionMerge {
         sender_prefix: Prefix<XorName>,
         merge_prefix: Prefix<XorName>,
-        sections: Vec<(Prefix<XorName>, Vec<PublicId>)>,
+        sections: SectionMap,
     },
     /// Sent by members of a newly-merged section to peers outwith the merged section to notify them
     /// of the merge.

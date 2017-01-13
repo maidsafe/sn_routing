@@ -30,7 +30,7 @@ use log::LogLevel;
 use maidsafe_utilities::serialisation;
 use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, Message, MessageContent,
                RoutingMessage, SectionList, SignedMessage, UserMessage, UserMessageCache};
-use peer_manager::{ConnectionInfoPreparedResult, PeerManager, PeerState};
+use peer_manager::{ConnectionInfoPreparedResult, PeerManager, PeerState, SectionMap};
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use routing_table::{OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix, RemovalDetails,
                     Xorable};
@@ -1455,7 +1455,7 @@ impl Node {
     // sent by each node in the target section with the new node name and routing table.
     fn handle_get_node_name_response(&mut self,
                                      relocated_id: PublicId,
-                                     sections: Vec<(Prefix<XorName>, Vec<PublicId>)>,
+                                     sections: SectionMap,
                                      dst: Authority<XorName>)
                                      -> Evented<()> {
         if !self.peer_mgr.routing_table().is_empty() {
@@ -1513,8 +1513,8 @@ impl Node {
         }
 
         // TODO - do we need to reply if `expect_id` triggers a failure here?
-        let sections = self.peer_mgr
-            .expect_add_to_our_section(expect_id.name(), self.full_id.public_id())?;
+        self.peer_mgr.routing_table().validate_joining_node(expect_id.name())?;
+        let sections = self.peer_mgr.pub_ids_by_section();
         self.sent_network_name_to = Some((*expect_id.name(), now));
         // From Y -> A (via B)
         let response_content = MessageContent::GetNodeNameResponse {
@@ -1590,7 +1590,7 @@ impl Node {
                      src: Authority<XorName>,
                      dst: Authority<XorName>)
                      -> Result<(), RoutingError> {
-        let sections = self.peer_mgr.pub_ids_by_section(self.full_id.public_id());
+        let sections = self.peer_mgr.pub_ids_by_section();
         let serialised_sections = serialisation::serialise(&sections)?;
         if digest == sha256::hash(&serialised_sections) {
             return Ok(());
@@ -1689,7 +1689,7 @@ impl Node {
     fn handle_own_section_merge(&mut self,
                                 sender_prefix: Prefix<XorName>,
                                 merge_prefix: Prefix<XorName>,
-                                sections: Vec<(Prefix<XorName>, Vec<PublicId>)>)
+                                sections: SectionMap)
                                 -> Evented<Result<(), RoutingError>> {
         let (merge_state, needed_peers) = self.peer_mgr
             .merge_own_section(sender_prefix, merge_prefix, sections);
@@ -1801,7 +1801,7 @@ impl Node {
             self.rt_timer_token = Some(self.timer.schedule(self.rt_timeout));
             let msg_id = MessageId::new();
             self.rt_msg_id = Some(msg_id);
-            let sections = self.peer_mgr.pub_ids_by_section(self.full_id.public_id());
+            let sections = self.peer_mgr.pub_ids_by_section();
             let digest = sha256::hash(&match serialisation::serialise(&sections) {
                 Ok(serialised_sections) => serialised_sections,
                 Err(error) => {
@@ -2209,9 +2209,9 @@ impl Node {
         let sections = merge_details.sections
             .into_iter()
             .map(|(prefix, members)| {
-                (prefix, self.peer_mgr.get_pub_ids(&members).into_iter().sorted())
+                (prefix, self.peer_mgr.get_pub_ids(&members).into_iter().collect())
             })
-            .sorted();
+            .collect();
         let request_content = MessageContent::OwnSectionMerge {
             sender_prefix: merge_details.sender_prefix,
             merge_prefix: merge_details.merge_prefix,
