@@ -1590,7 +1590,6 @@ impl Node {
                      src: Authority<XorName>,
                      dst: Authority<XorName>)
                      -> Result<(), RoutingError> {
-        // TODO: Compare the hash and don't send anything if he requester is up-to-date.
         let sections = self.peer_mgr.pub_ids_by_section(self.full_id.public_id());
         let serialised_sections = serialisation::serialise(&sections)?;
         if digest == sha256::hash(&serialised_sections) {
@@ -1621,28 +1620,29 @@ impl Node {
                      -> Evented<Result<(), RoutingError>> {
         let mut result = Evented::empty();
         if Some(message_id) != self.rt_msg_id {
-            let old_prefix = *self.peer_mgr.routing_table().our_prefix();
-            for (name, peer_id) in self.peer_mgr.add_prefix(prefix) {
-                self.disconnect_peer(&peer_id);
-                info!("{:?} Dropped {:?} from the routing table.", self, name);
-            }
-            let new_prefix = *self.peer_mgr.routing_table().our_prefix();
-            if old_prefix.bit_count() < new_prefix.bit_count() {
-                result.add_event(Event::SectionSplit(new_prefix));
-            } else if old_prefix.bit_count() > new_prefix.bit_count() {
-                result.add_event(Event::SectionMerge(new_prefix));
-            }
-            let src = Authority::ManagedNode(*self.name());
-            for member in members {
-                if self.peer_mgr.routing_table().need_to_add(member.name()).is_ok() {
-                    let dst = Authority::ManagedNode(*member.name());
-                    if let Err(error) = self.send_connection_info_request(member, src, dst)
-                        .extract(&mut result) {
-                        debug!("{:?} - Failed to send connection info to {:?}: {:?}",
+            return result.with_value(Ok(()));
+        }
+        let old_prefix = *self.peer_mgr.routing_table().our_prefix();
+        for (name, peer_id) in self.peer_mgr.add_prefix(prefix) {
+            self.disconnect_peer(&peer_id);
+            info!("{:?} Dropped {:?} from the routing table.", self, name);
+        }
+        let new_prefix = *self.peer_mgr.routing_table().our_prefix();
+        if old_prefix.bit_count() < new_prefix.bit_count() {
+            result.add_event(Event::SectionSplit(new_prefix));
+        } else if old_prefix.bit_count() > new_prefix.bit_count() {
+            result.add_event(Event::SectionMerge(new_prefix));
+        }
+        let src = Authority::ManagedNode(*self.name());
+        for member in members {
+            if self.peer_mgr.routing_table().need_to_add(member.name()).is_ok() {
+                let dst = Authority::ManagedNode(*member.name());
+                if let Err(error) = self.send_connection_info_request(member, src, dst)
+                    .extract(&mut result) {
+                    debug!("{:?} - Failed to send connection info to {:?}: {:?}",
                             self,
                             member,
                             error);
-                    }
                 }
             }
         }

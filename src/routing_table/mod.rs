@@ -550,7 +550,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             let (dropped_nodes, _opt_our_pfx) = self.split(shorter_pfx);
             result.extend(dropped_nodes);
         }
-        // Merge if necessary, then add empty sections to satisfy the invariant.
+        // Merge if necessary, then add empty sections to satisfy the requirement that for each
+        // `i`, the own prefix with the `i`-th bit flipped must be covered. To do this, split each
+        // such prefix recursively until all its parts are either covered or incompatible with the
+        // existing ones. Insert the incompatible ones to cover the required part of the name
+        // space.
         if self.our_prefix.is_neighbour(&prefix) || self.our_prefix.is_compatible(&prefix) {
             self.merge(&prefix);
             let mut missing_pfxs = (0..self.our_prefix.bit_count())
