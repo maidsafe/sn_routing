@@ -258,35 +258,18 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
     }
 
-    /// Creates a new `RoutingTable`, using an existing collection of sections.
-    pub fn new_with_sections(our_name: T,
-                             min_section_size: usize,
-                             prefixes: Vec<Prefix<T>>)
-                             -> Result<Self, Error> {
-        let mut our_prefix = Default::default();
-        let mut our_section = HashSet::new();
-        our_section.insert(our_name);
-        let sections = prefixes.into_iter()
-            .filter_map(|prefix| {
-                if prefix.matches(&our_name) {
-                    our_prefix = prefix;
-                    None
-                } else {
-                    Some((prefix, HashSet::new()))
-                }
-            })
-            .collect();
-        let result = RoutingTable {
-            our_name: our_name,
-            min_section_size: min_section_size,
-            our_prefix: our_prefix,
-            our_section: our_section,
-            sections: sections,
-            we_want_to_merge: false,
-            they_want_to_merge: false,
-        };
-        result.check_invariant()?;
-        Ok(result)
+    /// Adds the list of `Prefix`es as empty sections.
+    ///
+    /// Called once a node has been approved by its own section and is given its peers' tables.
+    pub fn add_prefixes(&mut self, prefixes: Vec<Prefix<T>>) -> Result<(), Error> {
+        for prefix in prefixes {
+            if prefix.matches(&self.our_name) {
+                self.our_prefix = prefix;
+            } else {
+                let _ = self.sections.entry(prefix).or_insert_with(HashSet::new);
+            }
+        }
+        self.check_invariant(true)
     }
 
     /// Returns the `Prefix` of our section
@@ -449,6 +432,20 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         } else {
             Err(Error::PeerNameUnsuitable)
         }
+    }
+
+    /// Returns our section to which a peer joining should connect.
+    ///
+    /// Returns `Err(Error::PeerNameUnsuitable)` if `name` is not within our section, or
+    /// `Err(Error::AlreadyExists)` if `name` is already in our table.
+    pub fn expect_join_our_section(&self, name: &T) -> Result<HashSet<T>, Error> {
+        if !self.our_prefix.matches(name) {
+            return Err(Error::PeerNameUnsuitable);
+        }
+        if self.our_section.contains(name) {
+            return Err(Error::AlreadyExists);
+        }
+        Ok(self.our_section.clone())
     }
 
     /// Validates a joining node's name.
@@ -896,7 +893,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         Ok(*RoutingTable::get_routeth_name(names, &target, route))
     }
 
-    fn check_invariant(&self) -> Result<(), Error> {
+    fn check_invariant(&self, allow_small_sections: bool) -> Result<(), Error> {
         if !self.our_prefix.matches(&self.our_name) {
             warn!("Our prefix does not match our name: {:?}", self);
             return Err(Error::InvariantViolation);
@@ -921,9 +918,13 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                 return Err(Error::InvariantViolation);
             }
         }
+
         for (prefix, section) in &self.sections {
             if has_enough_nodes && section.len() < self.min_section_size {
-                warn!("Minimum section size not met for section {:?}: {:?}",
+                if section.len() <= 1 && allow_small_sections {
+                    continue;
+                }
+                warn!("Minimum group size not met for group {:?}: {:?}",
                       prefix,
                       self);
                 return Err(Error::InvariantViolation);
@@ -961,7 +962,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// Runs the built-in invariant checker
     #[cfg(any(test, feature = "use-mock-crust"))]
     pub fn verify_invariant(&self) {
-        unwrap!(self.check_invariant(),
+        unwrap!(self.check_invariant(false),
                 "Invariant not satisfied for RT: {:?}",
                 self);
     }
@@ -1047,12 +1048,12 @@ mod tests {
     // add() and split() through set-up of random sections with invariant.
     #[test]
     fn test_routing_sections() {
-        // Use replicable random numbers to initialse a table:
+        // Use replicable random numbers to initialise a table:
         use rand::{Rng, SeedableRng, XorShiftRng};
         let mut rng: XorShiftRng = SeedableRng::from_seed([1315, 30, 61894, 315]);
         let our_name = rng.next_u32();
         let mut table = RoutingTable::new(our_name, 8);
-        unwrap!(table.check_invariant());
+        table.verify_invariant();
         let mut unknown_distant_name = None;
 
         for _ in 0..1000 {
@@ -1060,12 +1061,12 @@ mod tests {
             // Try to add new_name. We double-check the output to test this too.
             match table.add(new_name) {
                 Err(Error::AlreadyExists) => {
-                    unwrap!(table.check_invariant());
+                    table.verify_invariant();
                     assert!(table.iter().any(|u| *u == new_name));
                     // skip
                 }
                 Err(Error::PeerNameUnsuitable) => {
-                    unwrap!(table.check_invariant());
+                    table.verify_invariant();
                     assert!(table.sections.keys().all(|p| !p.matches(&new_name)));
                     // We should get a few of these. Save one for tests, but otherwise ignore.
                     unknown_distant_name = Some(new_name);
@@ -1074,14 +1075,14 @@ mod tests {
                     panic!("unexpected error: {}", e);
                 }
                 Ok(true) => {
-                    unwrap!(table.check_invariant());
+                    table.verify_invariant();
                     let our_prefix = *table.our_prefix();
                     assert!(our_prefix.matches(&new_name));
                     let _ = table.split(our_prefix);
-                    unwrap!(table.check_invariant());
+                    table.verify_invariant();
                 }
                 Ok(false) => {
-                    unwrap!(table.check_invariant());
+                    table.verify_invariant();
                     assert!(table.iter().any(|u| *u == new_name));
                     if table.is_in_our_section(&new_name) {
                         continue;   // add() already checked for necessary split
@@ -1106,7 +1107,7 @@ mod tests {
                     if new_section_size >= min_section_size &&
                        section_len - new_section_size >= min_section_size {
                         let _ = table.split(section_prefix);  // do the split
-                        unwrap!(table.check_invariant());
+                        table.verify_invariant();
                     }
                 }
             }

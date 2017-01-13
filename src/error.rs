@@ -59,6 +59,8 @@ pub enum RoutingError {
     BadAuthority,
     /// Failure to connect to an already connected node
     AlreadyConnected,
+    /// Failure to connect to a group in handling a joining request
+    AlreadyHandlingJoinRequest,
     /// Received message having unknown type
     UnknownMessageType,
     /// Failed signature check
