@@ -452,10 +452,7 @@ impl EventStepper for Node {
 impl Node {
     /// Resend all unacknowledged messages.
     pub fn resend_unacknowledged(&mut self) -> bool {
-        let mut events = Evented::empty();
-        let result = self.machine.current_mut().resend_unacknowledged().extract(&mut events);
-        self.event_buffer.extend(events.into_events());
-        result
+        self.machine.current_mut().resend_unacknowledged()
     }
 
     /// Are there any unacknowledged messages?
@@ -470,8 +467,7 @@ impl Node {
 
     /// Resend all unacknowledged messages.
     pub fn clear_state(&mut self) {
-        let events = self.machine.current_mut().clear_state();
-        self.event_buffer.extend(events.into_events());
+        self.machine.current_mut().clear_state();
     }
 
     /// Returns a quorum of signatures for the neighbouring section's list or `None` if we don't

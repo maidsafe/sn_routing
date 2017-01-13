@@ -18,7 +18,6 @@
 use ack_manager::{ACK_TIMEOUT_SECS, Ack, AckManager, UnacknowledgedMessage};
 use crust::PeerId;
 use error::RoutingError;
-use evented::Evented;
 use maidsafe_utilities::serialisation;
 use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage};
 use routing_message_filter::RoutingMessageFilter;
@@ -39,7 +38,7 @@ pub trait Bootstrapped: Base {
     fn send_routing_message_via_route(&mut self,
                                       routing_msg: RoutingMessage,
                                       route: u8)
-                                      -> Evented<Result<(), RoutingError>>;
+                                      -> Result<(), RoutingError>;
 
     fn routing_msg_filter(&mut self) -> &mut RoutingMessageFilter;
     fn timer(&mut self) -> &mut Timer;
@@ -99,8 +98,7 @@ pub trait Bootstrapped: Base {
         false
     }
 
-    fn resend_unacknowledged_timed_out_msgs(&mut self, token: u64) -> Evented<()> {
-        let mut result = Evented::empty();
+    fn resend_unacknowledged_timed_out_msgs(&mut self, token: u64) {
         if let Some((unacked_msg, ack)) = self.ack_mgr_mut().find_timed_out(token) {
             trace!("{:?} - Timed out waiting for ack({}) {:?}",
                    self,
@@ -113,47 +111,36 @@ pub trait Bootstrapped: Base {
                        unacked_msg);
                 self.stats().count_unacked();
             } else if let Err(error) =
-                self.send_routing_message_via_route(unacked_msg.routing_msg, unacked_msg.route)
-                    .extract(&mut result) {
+                self.send_routing_message_via_route(unacked_msg.routing_msg, unacked_msg.route) {
                 debug!("{:?} Failed to send message: {:?}", self, error);
             }
         }
-        result
     }
 
-    fn send_routing_message(&mut self,
-                            routing_msg: RoutingMessage)
-                            -> Evented<Result<(), RoutingError>> {
+    fn send_routing_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError> {
         self.send_routing_message_via_route(routing_msg, 0)
     }
 
-    fn send_ack(&mut self, routing_msg: &RoutingMessage, route: u8) -> Evented<()> {
-        self.send_ack_from(routing_msg, route, routing_msg.dst)
+    fn send_ack(&mut self, routing_msg: &RoutingMessage, route: u8) {
+        self.send_ack_from(routing_msg, route, routing_msg.dst);
     }
 
-    fn send_ack_from(&mut self,
-                     routing_msg: &RoutingMessage,
-                     route: u8,
-                     src: Authority<XorName>)
-                     -> Evented<()> {
+    fn send_ack_from(&mut self, routing_msg: &RoutingMessage, route: u8, src: Authority<XorName>) {
         if let MessageContent::Ack(..) = routing_msg.content {
-            return Evented::empty();
+            return;
         }
 
         let response = match RoutingMessage::ack_from(routing_msg, src) {
             Ok(response) => response,
             Err(error) => {
                 error!("{:?} - Failed to create ack: {:?}", self, error);
-                return Evented::empty();
+                return;
             }
         };
 
-        let mut result = Evented::empty();
-        if let Err(error) = self.send_routing_message_via_route(response, route)
-            .extract(&mut result) {
+        if let Err(error) = self.send_routing_message_via_route(response, route) {
             error!("{:?} - Failed to send ack: {:?}", self, error);
         }
-        result
     }
 
     // Serialise HopMessage containing the given signed message.

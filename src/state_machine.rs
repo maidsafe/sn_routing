@@ -118,12 +118,12 @@ impl Debug for State {
 
 #[cfg(feature = "use-mock-crust")]
 impl State {
-    pub fn resend_unacknowledged(&mut self) -> Evented<bool> {
+    pub fn resend_unacknowledged(&mut self) -> bool {
         match *self {
             State::Client(ref mut state) => state.resend_unacknowledged(),
             State::Node(ref mut state) => state.resend_unacknowledged(),
             State::Bootstrapping(_) |
-            State::Terminated => false.to_evented(),
+            State::Terminated => false,
         }
     }
 
@@ -143,12 +143,12 @@ impl State {
         }
     }
 
-    pub fn clear_state(&mut self) -> Evented<()> {
+    pub fn clear_state(&mut self) {
         match *self {
             State::Node(ref mut state) => state.clear_state(),
             State::Bootstrapping(_) |
             State::Client(_) |
-            State::Terminated => Evented::empty(),
+            State::Terminated => (),
         }
     }
 
