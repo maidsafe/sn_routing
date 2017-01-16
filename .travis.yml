@@ -37,7 +37,7 @@ script:
         cargo rustc --verbose --example ci_test -- -Zno-trans &&
         cargo rustc --verbose --example key_value_store -- -Zno-trans &&
         cargo rustc --verbose -- -Zno-trans &&
-        cargo test  --verbose --features use-mock-crust
+        env RUSTFLAGS="-C codegen-units=8" cargo test --release --verbose --features use-mock-crust
       );
     elif [ "${TRAVIS_OS_NAME}" = linux ]; then
       (
