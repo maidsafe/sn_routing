@@ -897,6 +897,7 @@ impl Node {
         for group in groups {
             for pub_id in &group.1 {
                 if !self.peer_mgr.routing_table().has(pub_id.name()) {
+                    self.peer_mgr.expect_peer(pub_id);
                     debug!("{:?} Sending connection info to {:?} on NodeApproval.",
                            self,
                            pub_id);
