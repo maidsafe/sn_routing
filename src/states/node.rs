@@ -30,7 +30,7 @@ use log::LogLevel;
 use maidsafe_utilities::serialisation;
 use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, Message, MessageContent,
                RoutingMessage, SectionList, SignedMessage, UserMessage, UserMessageCache};
-use peer_manager::{ConnectionInfoPreparedResult, PeerManager, PeerState};
+use peer_manager::{ConnectionInfoPreparedResult, PeerManager, PeerState, SectionMap};
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use routing_table::{OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix, RemovalDetails,
                     Xorable};
@@ -843,7 +843,7 @@ impl Node {
             result);
 
         if validity {
-            let sections = self.peer_mgr.get_sections(self.full_id.public_id());
+            let sections = self.peer_mgr.pub_ids_by_section();
             info!("{:?} Sending NodeApproval to {:?}.", self, candidate_name);
             let _ = self.send_routing_message(RoutingMessage {
                     src: Authority::Section(candidate_name),
@@ -867,16 +867,14 @@ impl Node {
         result.map(Ok)
     }
 
-    fn handle_node_approval(&mut self,
-                            groups: &[(Prefix<XorName>, Vec<PublicId>)])
-                            -> Evented<Result<(), RoutingError>> {
+    fn handle_node_approval(&mut self, sections: &SectionMap) -> Evented<Result<(), RoutingError>> {
         let mut events = Evented::empty();
         if self.is_approved {
             warn!("{:?} Received duplicate NodeApproval.", self);
             return events.with_value(Ok(()));
         }
 
-        self.peer_mgr.add_prefixes(groups.into_iter().map(|&(prefix, _)| prefix).collect());
+        self.peer_mgr.add_prefixes(sections.keys().into_iter().map(|&prefix| prefix).collect_vec());
 
         // TODO: is this necessary as this node is not approved as a full node by the section yet
         let our_prefix = *self.peer_mgr.routing_table().our_prefix();
@@ -892,10 +890,10 @@ impl Node {
             debug!("{:?} Failed sending ApprovalConfirmation: {:?}", self, error);
         }
 
-        trace!("{:?} received {:?} on NodeApproval.", self, groups);
+        trace!("{:?} received {:?} on NodeApproval.", self, sections);
 
-        for group in groups {
-            for pub_id in &group.1 {
+        for section in sections.values() {
+            for pub_id in section.iter() {
                 if !self.peer_mgr.routing_table().has(pub_id.name()) {
                     self.peer_mgr.expect_peer(pub_id);
                     debug!("{:?} Sending connection info to {:?} on NodeApproval.",
@@ -1245,11 +1243,7 @@ impl Node {
     fn send_section_update(&mut self) -> Evented<()> {
         let mut result = Evented::empty();
         trace!("{:?} Sending section update", self);
-        let members = self.peer_mgr
-            .get_pub_ids(self.peer_mgr.routing_table().our_section())
-            .iter()
-            .cloned()
-            .sorted();
+        let members = self.peer_mgr.get_pub_ids(self.peer_mgr.routing_table().our_section());
 
         let content = MessageContent::SectionUpdate {
             prefix: *self.peer_mgr.routing_table().our_prefix(),
@@ -1649,7 +1643,7 @@ impl Node {
     // in the target section with the new node name and the section for resource proving.
     fn handle_get_node_name_response(&mut self,
                                      relocated_id: PublicId,
-                                     section: Vec<PublicId>,
+                                     section: BTreeSet<PublicId>,
                                      dst: Authority<XorName>)
                                      -> Evented<()> {
         if !self.peer_mgr.routing_table().is_empty() {
@@ -1697,7 +1691,7 @@ impl Node {
 
         // TODO - do we need to reply if `expect_id` triggers a failure here?
         let own_section = try_ev!(self.peer_mgr
-            .expect_join_our_section(expect_id.name(), &client_auth, self.full_id.public_id()),
+            .expect_join_our_section(expect_id.name(), &client_auth),
             Evented::empty());
         let response_content = MessageContent::GetNodeNameResponse {
             relocated_id: expect_id,
@@ -1719,7 +1713,7 @@ impl Node {
 
     fn handle_section_update(&mut self,
                              prefix: Prefix<XorName>,
-                             members: Vec<PublicId>)
+                             members: BTreeSet<PublicId>)
                              -> Evented<Result<(), RoutingError>> {
         let mut result = Evented::empty();
         trace!("{:?} Got section update for {:?}", self, prefix);
@@ -1807,7 +1801,7 @@ impl Node {
     fn handle_own_section_merge(&mut self,
                                 sender_prefix: Prefix<XorName>,
                                 merge_prefix: Prefix<XorName>,
-                                sections: Vec<(Prefix<XorName>, Vec<PublicId>)>)
+                                sections: SectionMap)
                                 -> Evented<Result<(), RoutingError>> {
         let (merge_state, needed_peers) = self.peer_mgr
             .merge_own_section(sender_prefix, merge_prefix, sections);
@@ -2317,9 +2311,9 @@ impl Node {
         let sections = merge_details.sections
             .into_iter()
             .map(|(prefix, members)| {
-                (prefix, self.peer_mgr.get_pub_ids(&members).into_iter().sorted())
+                (prefix, self.peer_mgr.get_pub_ids(&members).into_iter().collect())
             })
-            .sorted();
+            .collect();
         let request_content = MessageContent::OwnSectionMerge {
             sender_prefix: merge_details.sender_prefix,
             merge_prefix: merge_details.merge_prefix,

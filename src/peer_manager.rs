@@ -27,7 +27,7 @@ use routing_table::Error as RoutingTableError;
 use rust_sodium::crypto::hash::sha256;
 use rust_sodium::crypto::sign;
 use std::{error, fmt, mem};
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::collections::hash_map::Values;
 use std::time::{Duration, Instant};
 use super::QUORUM;
@@ -47,7 +47,7 @@ const RESOURCE_PROOF_APPROVE_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) the node waits for connection from an expected node.
 const NODE_CONNECT_TIMEOUT_SECS: u64 = 60;
 
-type Section = (Prefix<XorName>, Vec<PublicId>);
+pub type SectionMap = BTreeMap<Prefix<XorName>, BTreeSet<PublicId>>;
 
 #[derive(Debug)]
 /// Errors that occur in peer status management.
@@ -367,9 +367,8 @@ impl PeerManager {
     /// * Ok(our_section)   If needs to carry out resource proof evaluate
     pub fn expect_join_our_section(&mut self,
                                    expected_name: &XorName,
-                                   client_auth: &Authority<XorName>,
-                                   our_public_id: &PublicId)
-                                   -> Result<Vec<PublicId>, RoutingError> {
+                                   client_auth: &Authority<XorName>)
+                                   -> Result<BTreeSet<PublicId>, RoutingError> {
         if let Some(Candidate { ref name, ref insertion_time, .. }) = self.candidate {
             if name == expected_name ||
                insertion_time.elapsed() < Duration::from_secs(RESOURCE_PROOF_APPROVE_TIMEOUT_SECS) {
@@ -389,7 +388,7 @@ impl PeerManager {
             approved: false,
         });
 
-        Ok(self.map_names_to_public_ids(names, our_public_id))
+        Ok(self.get_pub_ids(&names))
     }
 
     pub fn verify_candidate(&self,
@@ -510,17 +509,6 @@ impl PeerManager {
         Ok(None)
     }
 
-    /// Wraps the routing table function of the same name and maps `XorName`s to `PublicId`s.
-    pub fn get_sections(&self, our_public_id: &PublicId) -> Vec<Section> {
-        self.routing_table
-            .all_sections()
-            .into_iter()
-            .filter_map(|(prefix, names)| {
-                Some((prefix, self.map_names_to_public_ids(names, our_public_id)))
-            })
-            .sorted()
-    }
-
     /// Tries to add the given peer to the routing table. If successful, this returns `Ok(true)` if
     /// the addition should cause our section to split or `Ok(false)` if the addition shouldn't
     /// cause a split.
@@ -617,11 +605,11 @@ impl PeerManager {
     pub fn merge_own_section(&mut self,
                              sender_prefix: Prefix<XorName>,
                              merge_prefix: Prefix<XorName>,
-                             sections: Vec<Section>)
+                             sections: SectionMap)
                              -> (OwnMergeState<XorName>, Vec<PublicId>) {
         self.remove_expired();
         let needed = sections.iter()
-            .flat_map(|&(_, ref pub_ids)| pub_ids)
+            .flat_map(|(_, pub_ids)| pub_ids)
             .filter(|pub_id| !self.routing_table.has(pub_id.name()))
             .cloned()
             .collect();
@@ -1219,21 +1207,13 @@ impl PeerManager {
         }
     }
 
-    fn map_names_to_public_ids(&self,
-                               names: HashSet<XorName>,
-                               our_public_id: &PublicId)
-                               -> Vec<PublicId> {
-        names.into_iter()
-            .filter_map(|name| {
-                if &name == our_public_id.name() {
-                    Some(*our_public_id)
-                } else if let Some(peer) = self.peer_map.get_by_name(&name) {
-                    Some(*peer.pub_id())
-                } else {
-                    None
-                }
-            })
-            .sorted()
+    /// Returns the public IDs of all routing table entries, sorted by section.
+    pub fn pub_ids_by_section(&self) -> SectionMap {
+        self.routing_table
+            .all_sections()
+            .into_iter()
+            .map(|(prefix, names)| (prefix, self.get_pub_ids(&names)))
+            .collect()
     }
 }
 

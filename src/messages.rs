@@ -28,6 +28,7 @@ use maidsafe_utilities;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 #[cfg(feature = "use-mock-crust")]
 use mock_crust::crust::PeerId;
+use peer_manager::SectionMap;
 use routing_table::{Prefix, Xorable};
 use routing_table::Authority;
 use rust_sodium::crypto::{box_, sign};
@@ -565,7 +566,7 @@ pub enum MessageContent {
         /// Supplied `PublicId`, but with the new name
         relocated_id: PublicId,
         /// The relocated section that the joining node shall connect to
-        section: Vec<PublicId>,
+        section: BTreeSet<PublicId>,
         /// The message's unique identifier.
         message_id: MessageId,
     },
@@ -576,7 +577,7 @@ pub enum MessageContent {
         /// and neighbouring sections.
         prefix: Prefix<XorName>,
         /// Members of the section
-        members: Vec<PublicId>,
+        members: BTreeSet<PublicId>,
     },
     /// Sent to all connected peers when our own section splits
     SectionSplit(Prefix<XorName>, XorName),
@@ -585,7 +586,7 @@ pub enum MessageContent {
     OwnSectionMerge {
         sender_prefix: Prefix<XorName>,
         merge_prefix: Prefix<XorName>,
-        sections: Vec<(Prefix<XorName>, Vec<PublicId>)>,
+        sections: SectionMap,
     },
     /// Sent by members of a newly-merged section to peers outwith the merged section to notify them
     /// of the merge.
@@ -619,7 +620,7 @@ pub enum MessageContent {
     NodeApproval {
         /// The routing table shared by the nodes in our group, including the `PublicId`s of our
         /// contacts.
-        sections: Vec<(Prefix<XorName>, Vec<PublicId>)>,
+        sections: SectionMap,
     },
     /// Confirms the joining node has received `NodeApproval`.
     ///
