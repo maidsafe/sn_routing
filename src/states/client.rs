@@ -82,8 +82,7 @@ impl Client {
         Evented::single(Event::Connected, client)
     }
 
-    pub fn handle_action(&mut self, action: Action) -> Evented<Transition> {
-        let mut events = Evented::empty();
+    pub fn handle_action(&mut self, action: Action) -> Transition {
         match action {
             Action::ClientSendRequest { content, dst, priority, result_tx } => {
                 let src = Authority::Client {
@@ -93,8 +92,7 @@ impl Client {
                 };
 
                 let user_msg = UserMessage::Request(content);
-                let result = match self.send_user_message(src, dst, user_msg, priority)
-                    .extract(&mut events) {
+                let result = match self.send_user_message(src, dst, user_msg, priority) {
                     Err(RoutingError::Interface(err)) => Err(err),
                     Err(_) | Ok(_) => Ok(()),
                 };
@@ -107,13 +105,13 @@ impl Client {
             Action::Name { result_tx } => {
                 let _ = result_tx.send(*self.name());
             }
-            Action::Timeout(token) => self.handle_timeout(token).extract(&mut events),
+            Action::Timeout(token) => self.handle_timeout(token),
             Action::Terminate => {
-                return Transition::Terminate.to_evented();
+                return Transition::Terminate;
             }
         }
 
-        events.with_value(Transition::Stay)
+        Transition::Stay
     }
 
     pub fn handle_crust_event(&mut self, crust_event: CrustEvent) -> Evented<Transition> {
@@ -132,7 +130,7 @@ impl Client {
         Transition::Stay.to_evented()
     }
 
-    fn handle_timeout(&mut self, token: u64) -> Evented<()> {
+    fn handle_timeout(&mut self, token: u64) {
         self.resend_unacknowledged_timed_out_msgs(token)
     }
 
@@ -164,39 +162,37 @@ impl Client {
                           hop_msg: HopMessage,
                           peer_id: PeerId)
                           -> Evented<Result<Transition, RoutingError>> {
-        let mut result = Evented::empty();
-
         if self.proxy_peer_id == peer_id {
             try_ev!(hop_msg.verify(self.proxy_public_id.signing_public_key()),
-                    result);
+                    Evented::empty());
         } else {
-            return result.with_value(Err(RoutingError::UnknownConnection(peer_id)));
+            return Err(RoutingError::UnknownConnection(peer_id)).to_evented();
         }
 
         let signed_msg = hop_msg.content;
-        try_ev!(signed_msg.check_integrity(self.min_section_size()), result);
+        try_ev!(signed_msg.check_integrity(self.min_section_size()),
+                Evented::empty());
 
         let routing_msg = signed_msg.routing_message();
         let in_authority = self.in_authority(&routing_msg.dst);
         if in_authority {
-            self.send_ack(routing_msg, 0).extract(&mut result);
+            self.send_ack(routing_msg, 0);
         }
 
         // Prevents us repeatedly handling identical messages sent by a malicious peer.
         match self.routing_msg_filter.filter_incoming(routing_msg, hop_msg.route) {
             FilteringResult::KnownMessage |
             FilteringResult::KnownMessageAndRoute => {
-                return result.with_value(Err(RoutingError::FilterCheckFailed));
+                return Err(RoutingError::FilterCheckFailed).to_evented()
             }
             FilteringResult::NewMessage => (),
         }
 
         if !in_authority {
-            return result.with_value(Ok(Transition::Stay));
+            return Ok(Transition::Stay).to_evented();
         }
 
-        result.and(self.dispatch_routing_message(routing_msg.clone()))
-            .map(Ok)
+        self.dispatch_routing_message(routing_msg.clone()).map(Ok)
     }
 
     fn dispatch_routing_message(&mut self, routing_msg: RoutingMessage) -> Evented<Transition> {
@@ -238,18 +234,17 @@ impl Client {
                          dst: Authority<XorName>,
                          user_msg: UserMessage,
                          priority: u8)
-                         -> Evented<Result<(), RoutingError>> {
+                         -> Result<(), RoutingError> {
         self.stats.count_user_message(&user_msg);
-        let mut result = Evented::empty();
-        for part in try_ev!(user_msg.to_parts(priority), result) {
+        for part in user_msg.to_parts(priority)? {
             let message = RoutingMessage {
                 src: src,
                 dst: dst,
                 content: part,
             };
-            try_evx!(self.send_routing_message(message), result);
+            self.send_routing_message(message)?;
         }
-        result.map(Ok)
+        Ok(())
     }
 }
 
@@ -308,8 +303,7 @@ impl Bootstrapped for Client {
         self.min_section_size
     }
 
-    fn resend_unacknowledged_timed_out_msgs(&mut self, token: u64) -> Evented<()> {
-        let mut result = Evented::empty();
+    fn resend_unacknowledged_timed_out_msgs(&mut self, token: u64) {
         if let Some((unacked_msg, ack)) = self.ack_mgr.find_timed_out(token) {
             trace!("{:?} - Timed out waiting for ack({}) {:?}",
                    self,
@@ -322,22 +316,20 @@ impl Bootstrapped for Client {
                        unacked_msg);
                 self.stats.count_unacked();
             } else if let Err(error) =
-                self.send_routing_message_via_route(unacked_msg.routing_msg, unacked_msg.route)
-                    .extract(&mut result) {
+                self.send_routing_message_via_route(unacked_msg.routing_msg, unacked_msg.route) {
                 debug!("{:?} Failed to send message: {:?}", self, error);
             }
         }
-        result
     }
 
     fn send_routing_message_via_route(&mut self,
                                       routing_msg: RoutingMessage,
                                       route: u8)
-                                      -> Evented<Result<(), RoutingError>> {
+                                      -> Result<(), RoutingError> {
         self.stats.count_route(route);
 
         if routing_msg.dst.is_client() && self.in_authority(&routing_msg.dst) {
-            return Ok(()).to_evented(); // Message is for us.
+            return Ok(()); // Message is for us.
         }
 
         // Get PeerId of the proxy node
@@ -346,28 +338,26 @@ impl Bootstrapped for Client {
                 if *self.proxy_public_id.name() != *proxy_node_name {
                     error!("{:?} - Unable to find connection to proxy node in proxy map",
                            self);
-                    return Err(RoutingError::ProxyConnectionNotFound).to_evented();
+                    return Err(RoutingError::ProxyConnectionNotFound);
                 }
                 (self.proxy_peer_id, vec![])
             }
             _ => {
                 error!("{:?} - Source should be client if our state is a Client",
                        self);
-                return Err(RoutingError::InvalidSource).to_evented();
+                return Err(RoutingError::InvalidSource);
             }
         };
 
-        let signed_msg = try_ev!(SignedMessage::new(routing_msg, self.full_id(), sending_nodes),
-                                 Evented::empty());
+        let signed_msg = SignedMessage::new(routing_msg, self.full_id(), sending_nodes)?;
 
         if self.add_to_pending_acks(&signed_msg, route) &&
            !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_peer_id, route) {
-            let bytes = try_ev!(self.to_hop_bytes(signed_msg.clone(), route, BTreeSet::new()),
-                                Evented::empty());
+            let bytes = self.to_hop_bytes(signed_msg.clone(), route, BTreeSet::new())?;
             self.send_or_drop(&proxy_peer_id, bytes, signed_msg.priority());
         }
 
-        Ok(()).to_evented()
+        Ok(())
     }
 
     fn routing_msg_filter(&mut self) -> &mut RoutingMessageFilter {
@@ -382,13 +372,12 @@ impl Bootstrapped for Client {
 #[cfg(feature = "use-mock-crust")]
 impl Client {
     /// Resends all unacknowledged messages.
-    pub fn resend_unacknowledged(&mut self) -> Evented<bool> {
-        let mut result = Evented::empty();
+    pub fn resend_unacknowledged(&mut self) -> bool {
         let timer_tokens = self.ack_mgr.timer_tokens();
         for timer_token in &timer_tokens {
-            self.resend_unacknowledged_timed_out_msgs(*timer_token).extract(&mut result);
+            self.resend_unacknowledged_timed_out_msgs(*timer_token);
         }
-        result.with_value(!timer_tokens.is_empty())
+        !timer_tokens.is_empty()
     }
 
     /// Are there any unacknowledged messages?
