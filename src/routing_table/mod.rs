@@ -269,6 +269,16 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                 let _ = self.sections.entry(prefix).or_insert_with(HashSet::new);
             }
         }
+        // In case our section has split while we've been going through the approval process, we
+        // need to assign the original members of our section to the new appropriate sections.
+        let our_section = mem::replace(&mut self.our_section, HashSet::new());
+        for name in our_section {
+            if let Some(section) = self.get_section_mut(&name) {
+                let _ = section.insert(name);
+            } else {
+                return Err(Error::InvariantViolation);
+            }
+        }
         self.check_invariant(true)
     }
 
