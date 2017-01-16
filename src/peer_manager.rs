@@ -41,7 +41,7 @@ const CONNECTION_TIMEOUT_SECS: u64 = 90;
 /// Time (in seconds) the node waits for a `NodeIdentify` message.
 const NODE_IDENTIFY_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) the node candidate supposed to complete upload the proof.
-const RESOURCE_PROOF_EVALUATE_TIMEOUT_SECS: u64 = 40;
+pub const RESOURCE_PROOF_EVALUATE_TIMEOUT_SECS: u64 = 40;
 /// Time (in seconds) the node candidate supposed to be approved.
 const RESOURCE_PROOF_APPROVE_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) the node waits for connection from an expected node.
