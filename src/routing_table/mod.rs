@@ -550,29 +550,33 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             let (dropped_nodes, _opt_our_pfx) = self.split(shorter_pfx);
             result.extend(dropped_nodes);
         }
-        // Merge if necessary, then add empty sections to satisfy the requirement that for each
-        // `i`, the own prefix with the `i`-th bit flipped must be covered. To do this, split each
-        // such prefix recursively until all its parts are either covered or incompatible with the
-        // existing ones. Insert the incompatible ones to cover the required part of the name
-        // space.
-        if self.our_prefix.is_neighbour(&prefix) || self.our_prefix.is_compatible(&prefix) {
-            self.merge(&prefix);
-            let mut missing_pfxs = (0..self.our_prefix.bit_count())
-                .map(|i| self.our_prefix.with_flipped_bit(i))
-                .collect_vec();
-            while let Some(pfx) = missing_pfxs.pop() {
-                if !pfx.is_covered_by(self.sections.keys()) {
-                    if self.sections.keys().any(|p| pfx.is_compatible(p)) {
-                        missing_pfxs.push(pfx.pushed(true));
-                        missing_pfxs.push(pfx.pushed(false));
-                    } else {
-                        let _ = self.sections.insert(pfx, HashSet::new());
-                    }
+
+        // If it's neither our neighbour nor compatible, we need to merge our own until it is
+        // compatible.
+        let mut our_prefix = self.our_prefix;
+        while !our_prefix.is_neighbour(&prefix) && !our_prefix.is_compatible(&prefix) {
+            our_prefix = our_prefix.popped();
+        }
+        self.merge(&our_prefix);
+
+        // Merge if necessary, then add empty sections to satisfy the requirement that for each `i`,
+        // the own prefix with the `i`-th bit flipped must be covered. To do this, split each such
+        // prefix recursively until all its parts are either covered or incompatible with the
+        // existing ones. Insert the incompatible ones to cover the required part of the name space.
+        self.merge(&prefix);
+        let mut missing_pfxs = (0..self.our_prefix.bit_count())
+            .map(|i| self.our_prefix.with_flipped_bit(i))
+            .collect_vec();
+        while let Some(pfx) = missing_pfxs.pop() {
+            if !pfx.is_covered_by(self.sections.keys()) {
+                if self.sections.keys().any(|p| pfx.is_compatible(p)) {
+                    missing_pfxs.push(pfx.pushed(true));
+                    missing_pfxs.push(pfx.pushed(false));
+                } else {
+                    let _ = self.sections.insert(pfx, HashSet::new());
                 }
             }
         }
-        // TODO: If it's neither our neighbour nor compatible, we need to merge until it is
-        //       compatible.
         result
     }
 
@@ -1280,20 +1284,21 @@ mod tests {
         for i in 1..0x10 {
             unwrap!(table.add(i * 0x10));
         }
-        assert_eq!(prefixes_from_strs(vec![b""]), table.prefixes());
-        assert_eq!(Vec::<u8>::new(), table.add_prefix(Prefix::from_str(b"01")));
-        assert_eq!(prefixes_from_strs(vec![b"1", b"00", b"01"]),
-                   table.prefixes());
+        assert_eq!(prefixes_from_strs(vec![""]), table.prefixes());
+        assert_eq!(Vec::<u8>::new(), table.add_prefix(Prefix::from_str("01")));
+        assert_eq!(prefixes_from_strs(vec!["1", "00", "01"]), table.prefixes());
         assert_eq!(vec![0xc0, 0xd0, 0xe0, 0xf0u8],
-                   table.add_prefix(Prefix::from_str(b"111")).into_iter().sorted());
-        assert_eq!(prefixes_from_strs(vec![b"10", b"00", b"01"]),
+                   table.add_prefix(Prefix::from_str("111")).into_iter().sorted());
+        assert_eq!(prefixes_from_strs(vec!["110", "111", "10", "0"]),
                    table.prefixes());
-        assert_eq!(Vec::<u8>::new(), table.add_prefix(Prefix::from_str(b"0")));
-        assert_eq!(prefixes_from_strs(vec![b"10", b"11", b"0"]),
+        assert_eq!(Vec::<u8>::new(), table.add_prefix(Prefix::from_str("0")));
+        assert_eq!(prefixes_from_strs(vec!["110", "111", "10", "0"]),
                    table.prefixes());
+        assert_eq!(Vec::<u8>::new(), table.add_prefix(Prefix::from_str("")));
+        assert_eq!(prefixes_from_strs(vec![""]), table.prefixes());
     }
 
-    fn prefixes_from_strs(strs: Vec<&[u8]>) -> BTreeSet<Prefix<u8>> {
+    fn prefixes_from_strs(strs: Vec<&str>) -> BTreeSet<Prefix<u8>> {
         strs.into_iter().map(Prefix::from_str).collect()
     }
 }

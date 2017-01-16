@@ -65,7 +65,7 @@ const GET_NODE_NAME_TIMEOUT_SECS: u64 = 60;
 const SENT_NETWORK_NAME_TIMEOUT_SECS: u64 = 30;
 /// Initial delay between a routing table change and sending a `RoutingTableRequest`, in seconds.
 const RT_MIN_TIMEOUT_SECS: u64 = 30;
-/// Maximal delay two subsequent `RoutingTableRequest`s, in seconds.
+/// Maximal delay between two subsequent `RoutingTableRequest`s, in seconds.
 const RT_MAX_TIMEOUT_SECS: u64 = 300;
 
 pub struct Node {
@@ -95,7 +95,7 @@ pub struct Node {
     next_node_name: Option<XorName>,
     /// The message ID of the current `RoutingTableRequest` we sent to our section.
     rt_msg_id: Option<MessageId>,
-    /// The current duration between `RoutingTableRequest` we send. Doubles with every message.
+    /// The current duration between `RoutingTableRequest`s we send. Doubles with every message.
     rt_timeout: Duration,
     /// The timer token for sending the next `RoutingTableRequest`.
     rt_timer_token: Option<u64>,
