@@ -57,7 +57,7 @@ impl State {
     pub fn handle_action(&mut self, action: Action) -> Evented<Transition> {
         match *self {
             State::Bootstrapping(ref mut state) => state.handle_action(action),
-            State::Client(ref mut state) => state.handle_action(action),
+            State::Client(ref mut state) => state.handle_action(action).to_evented(),
             State::Node(ref mut state) => state.handle_action(action),
             State::Terminated => Transition::Terminate.to_evented(),
         }

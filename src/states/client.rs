@@ -82,8 +82,7 @@ impl Client {
         Evented::single(Event::Connected, client)
     }
 
-    pub fn handle_action(&mut self, action: Action) -> Evented<Transition> {
-        let mut events = Evented::empty();
+    pub fn handle_action(&mut self, action: Action) -> Transition {
         match action {
             Action::ClientSendRequest { content, dst, priority, result_tx } => {
                 let src = Authority::Client {
@@ -106,13 +105,13 @@ impl Client {
             Action::Name { result_tx } => {
                 let _ = result_tx.send(*self.name());
             }
-            Action::Timeout(token) => self.handle_timeout(token).extract(&mut events),
+            Action::Timeout(token) => self.handle_timeout(token),
             Action::Terminate => {
-                return Transition::Terminate.to_evented();
+                return Transition::Terminate;
             }
         }
 
-        events.with_value(Transition::Stay)
+        Transition::Stay
     }
 
     pub fn handle_crust_event(&mut self, crust_event: CrustEvent) -> Evented<Transition> {
@@ -131,8 +130,8 @@ impl Client {
         Transition::Stay.to_evented()
     }
 
-    fn handle_timeout(&mut self, token: u64) -> Evented<()> {
-        self.resend_unacknowledged_timed_out_msgs(token).to_evented()
+    fn handle_timeout(&mut self, token: u64) {
+        self.resend_unacknowledged_timed_out_msgs(token)
     }
 
     fn handle_new_message(&mut self, peer_id: PeerId, bytes: Vec<u8>) -> Evented<Transition> {
