@@ -1633,6 +1633,9 @@ impl Node {
         } else if old_prefix.bit_count() > new_prefix.bit_count() {
             result.add_event(Event::SectionMerge(new_prefix));
         }
+        trace!("{:?} Update on RoutingTableResponse completed. Prefixes: {:?}",
+               self,
+               self.peer_mgr.routing_table().prefixes());
         let src = Authority::ManagedNode(*self.name());
         for member in members {
             if self.peer_mgr.routing_table().need_to_add(member.name()).is_ok() {
