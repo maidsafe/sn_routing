@@ -209,39 +209,46 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Debug for Prefix<T> {
     }
 }
 
+#[cfg(test)]
+impl Prefix<u8> {
+    pub fn from_str(bits: &str) -> Prefix<u8> {
+        let mut name = 0u8;
+        for (i, bit) in bits.chars().enumerate() {
+            if bit == '1' {
+                name |= 1 << (7 - i);
+            } else if bit != '0' {
+                panic!("'{}' not allowed - the string must represent a binary number.",
+                       bit);
+            }
+        }
+        Prefix::new(bits.len(), name)
+    }
+}
 
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn str_to_prefix(bits: &[u8]) -> Prefix<u8> {
-        let mut name = 0u8;
-        for (i, bit) in bits.iter().enumerate() {
-            if *bit == b'1' {
-                name |= 1 << (7 - i);
-            }
-        }
-        Prefix::new(bits.len(), name)
-    }
-
     #[test]
     fn prefix() {
-        assert_eq!(str_to_prefix(b"101").pushed(true), str_to_prefix(b"1011"));
-        assert_eq!(str_to_prefix(b"101").pushed(false), str_to_prefix(b"1010"));
-        assert_eq!(str_to_prefix(b"1011").popped(), str_to_prefix(b"101"));
-        assert!(str_to_prefix(b"101").is_compatible(&str_to_prefix(b"1010")));
-        assert!(str_to_prefix(b"1010").is_compatible(&str_to_prefix(b"101")));
-        assert!(!str_to_prefix(b"1010").is_compatible(&str_to_prefix(b"1011")));
-        assert!(str_to_prefix(b"101").is_neighbour(&str_to_prefix(b"1111")));
-        assert!(!str_to_prefix(b"1010").is_neighbour(&str_to_prefix(b"1111")));
-        assert!(str_to_prefix(b"1010").is_neighbour(&str_to_prefix(b"10111")));
-        assert!(!str_to_prefix(b"101").is_neighbour(&str_to_prefix(b"10111")));
-        assert!(str_to_prefix(b"101").matches(&0b10101100));
-        assert!(!str_to_prefix(b"1011").matches(&0b10101100));
+        assert_eq!(Prefix::from_str("101").pushed(true),
+                   Prefix::from_str("1011"));
+        assert_eq!(Prefix::from_str("101").pushed(false),
+                   Prefix::from_str("1010"));
+        assert_eq!(Prefix::from_str("1011").popped(), Prefix::from_str("101"));
+        assert!(Prefix::from_str("101").is_compatible(&Prefix::from_str("1010")));
+        assert!(Prefix::from_str("1010").is_compatible(&Prefix::from_str("101")));
+        assert!(!Prefix::from_str("1010").is_compatible(&Prefix::from_str("1011")));
+        assert!(Prefix::from_str("101").is_neighbour(&Prefix::from_str("1111")));
+        assert!(!Prefix::from_str("1010").is_neighbour(&Prefix::from_str("1111")));
+        assert!(Prefix::from_str("1010").is_neighbour(&Prefix::from_str("10111")));
+        assert!(!Prefix::from_str("101").is_neighbour(&Prefix::from_str("10111")));
+        assert!(Prefix::from_str("101").matches(&0b10101100));
+        assert!(!Prefix::from_str("1011").matches(&0b10101100));
 
-        assert_eq!(str_to_prefix(b"0101").lower_bound(), 0b01010000);
-        assert_eq!(str_to_prefix(b"0101").upper_bound(), 0b01011111);
+        assert_eq!(Prefix::from_str("0101").lower_bound(), 0b01010000);
+        assert_eq!(Prefix::from_str("0101").upper_bound(), 0b01011111);
 
         // Check we handle passing an excessive `bit_count` to `new()`.
         assert_eq!(Prefix::<u64>::new(64, 0).bit_count(), 64);

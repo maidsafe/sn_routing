@@ -270,11 +270,7 @@ impl Client {
 
     /// Resend all unacknowledged messages.
     pub fn resend_unacknowledged(&self) -> bool {
-        let mut events = Evented::empty();
-        let result =
-            self.machine.borrow_mut().current_mut().resend_unacknowledged().extract(&mut events);
-        self.event_buffer.borrow_mut().extend(events.into_events());
-        result
+        self.machine.borrow_mut().current_mut().resend_unacknowledged()
     }
 
     /// Are there any unacknowledged messages?
