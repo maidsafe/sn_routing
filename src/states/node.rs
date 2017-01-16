@@ -30,7 +30,8 @@ use log::LogLevel;
 use maidsafe_utilities::serialisation;
 use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, Message, MessageContent,
                RoutingMessage, SectionList, SignedMessage, UserMessage, UserMessageCache};
-use peer_manager::{ConnectionInfoPreparedResult, PeerManager, PeerState, SectionMap};
+use peer_manager::{ConnectionInfoPreparedResult, PeerManager, PeerState,
+                   RESOURCE_PROOF_APPROVE_TIMEOUT_SECS, SectionMap};
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use routing_table::{OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix, RemovalDetails,
                     Xorable};
@@ -77,7 +78,7 @@ pub struct Node {
     cacheable_user_msg_cache: UserMessageCache,
     crust_service: Service,
     full_id: FullId,
-    get_node_name_timer_token: Option<u64>,
+    get_approval_timer_token: Option<u64>,
     is_first_node: bool,
     is_approved: bool,
     /// The queue of routing messages addressed to us. These do not themselves need
@@ -162,7 +163,7 @@ impl Node {
                 UserMessageCache::with_expiry_duration(user_msg_cache_duration),
             crust_service: crust_service,
             full_id: full_id,
-            get_node_name_timer_token: None,
+            get_approval_timer_token: None,
             is_first_node: first_node,
             is_approved: first_node,
             msg_queue: VecDeque::new(),
@@ -874,6 +875,8 @@ impl Node {
             return events.with_value(Ok(()));
         }
 
+        self.get_approval_timer_token = None;
+
         self.peer_mgr.add_prefixes(sections.keys().into_iter().map(|&prefix| prefix).collect_vec());
 
         // TODO: is this necessary as this node is not approved as a full node by the section yet
@@ -1043,7 +1046,7 @@ impl Node {
 
     fn relocate(&mut self) -> Evented<Result<(), RoutingError>> {
         let duration = Duration::from_secs(GET_NODE_NAME_TIMEOUT_SECS);
-        self.get_node_name_timer_token = Some(self.timer.schedule(duration));
+        self.get_approval_timer_token = Some(self.timer.schedule(duration));
 
         let request_content = MessageContent::GetNodeName {
             current_id: *self.full_id.public_id(),
@@ -1650,7 +1653,9 @@ impl Node {
             warn!("{:?} Received duplicate GetNodeName response.", self);
             return Evented::empty();
         }
-        self.get_node_name_timer_token = None;
+
+        let duration = Duration::from_secs(RESOURCE_PROOF_APPROVE_TIMEOUT_SECS);
+        self.get_approval_timer_token = Some(self.timer.schedule(duration));
 
         self.full_id.public_id_mut().set_name(*relocated_id.name());
         self.peer_mgr.reset_routing_table(*self.full_id.public_id());
@@ -1889,8 +1894,8 @@ impl Node {
     // Return true if the calling node should keep running, false for terminate.
     fn handle_timeout(&mut self, token: u64) -> Evented<bool> {
         let mut events = Evented::empty();
-        if self.get_node_name_timer_token == Some(token) {
-            info!("{:?} Failed to get GetNodeName response.", self);
+        if self.get_approval_timer_token == Some(token) {
+            info!("{:?} Failed to get approval from the network.", self);
             events.add_event(Event::RestartRequired);
             return events.with_value(false);
         }
