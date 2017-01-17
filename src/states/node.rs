@@ -32,10 +32,10 @@ use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, Message, MessageCont
                RoutingMessage, SectionList, SignedMessage, UserMessage, UserMessageCache};
 use peer_manager::{ConnectionInfoPreparedResult, PeerManager, PeerState,
                    RESOURCE_PROOF_APPROVE_TIMEOUT_SECS, SectionMap};
+use resource_proof::ResourceProof;
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
-use routing_table::{OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix, RemovalDetails,
-                    Xorable};
-use routing_table::Authority;
+use routing_table::{Authority, OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix,
+                    RemovalDetails, Xorable};
 use routing_table::Error as RoutingTableError;
 #[cfg(feature = "use-mock-crust")]
 use routing_table::RoutingTable;
@@ -63,15 +63,10 @@ const TICK_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) after which a `GetNodeName` request is resent.
 const GET_NODE_NAME_TIMEOUT_SECS: u64 = 60;
 /// The number of required leading zero bits for the resource proof
-const RESOURCE_PROOF_DIFFICULTY: u32 = 10;
-
-// in Bytes
-fn resource_proof_target_size(min_size: usize, group_len: usize) -> u32 {
-    let evaluators = cmp::max(min_size, group_len);
-    // Default value: 2 MBytes sharing among the evaluators
-    // TODO: the algorithm need to be measured and refactored against the real network
-    2 * 1024 * 1024 / evaluators as u32
-}
+#[cfg(feature = "use-mock-crust")]
+const RESOURCE_PROOF_DIFFICULTY: u8 = 0;
+#[cfg(not(feature = "use-mock-crust"))]
+const RESOURCE_PROOF_DIFFICULTY: u8 = 8;
 /// Initial delay between a routing table change and sending a `RoutingTableRequest`, in seconds.
 const RT_MIN_TIMEOUT_SECS: u64 = 30;
 /// Maximal delay between two subsequent `RoutingTableRequest`s, in seconds.
@@ -885,8 +880,6 @@ impl Node {
             return events.with_value(Ok(()));
         }
 
-        self.get_approval_timer_token = None;
-
         self.peer_mgr.add_prefixes(sections.keys().into_iter().cloned().collect_vec());
 
         // TODO: is this necessary as this node is not approved as a full node by the section yet
@@ -906,8 +899,8 @@ impl Node {
 
         trace!("{:?} received {:?} on NodeApproval.", self, sections);
 
-        for section in sections.values() {
-            for pub_id in section.iter() {
+        for section in sections {
+            for pub_id in section.1 {
                 if !self.peer_mgr.routing_table().has(pub_id.name()) {
                     self.peer_mgr.expect_peer(pub_id);
                     debug!("{:?} Sending connection info to {:?} on NodeApproval.",
@@ -942,21 +935,22 @@ impl Node {
     fn handle_resource_proof_request(&mut self,
                                      peer_id: PeerId,
                                      seed: Vec<u8>,
-                                     _target_size: u32,
-                                     _difficulty: u32)
+                                     target_size: usize,
+                                     difficulty: u8)
                                      -> Result<(), RoutingError> {
-        // TODO: use proper hashing utility to generate the proof
+        let rp_object = ResourceProof::new(target_size, difficulty);
+        let mut proof = rp_object.create_proof_data(&seed);
         let direct_message = DirectMessage::ResourceProofResponse {
-            proof: seed,
-            leading_zero_bytes: 0,
+            proof: proof.clone(),
+            leading_zero_bytes: rp_object.create_proof(&mut proof),
         };
         self.send_direct_message(peer_id, direct_message)
     }
 
     fn handle_resource_proof_response(&mut self,
                                       peer_id: PeerId,
-                                      proof: Vec<u8>,
-                                      leading_zero_bytes: u32) {
+                                      proof: VecDeque<u8>,
+                                      leading_zero_bytes: u64) {
         let name = if let Some(name) = self.peer_mgr.get_peer_name(&peer_id) {
             *name
         } else {
@@ -971,7 +965,7 @@ impl Node {
                 dst: Authority::Section(name),
                 content: response_content,
             };
-            info!("{:?} Sending CandidateApproval {:?} to group.",
+            info!("{:?} Sending CandidateApproval {:?} to section.",
                   self,
                   valid_candidate);
             if let Err(error) = self.send_routing_message(response_msg) {
@@ -1145,10 +1139,10 @@ impl Node {
                self,
                public_id.name());
         match self.peer_mgr.check_candidate(&public_id, &peer_id) {
-            Ok(Some((true, _))) => {
+            Ok(Some((true, _, _))) => {
                 /// if connection is in tunnel, vote NO directly, don't carry out profiling
                 /// limitation: joining node ONLY carries out QUORAM valid evaluations
-                info!("{:?} Sending CandidateApproval false to group rejecting {:?}.",
+                info!("{:?} Sending CandidateApproval false to section, rejecting {:?}.",
                       self,
                       public_id.name());
                 let _ = self.send_routing_message(RoutingMessage {
@@ -1157,14 +1151,10 @@ impl Node {
                     content: MessageContent::CandidateApproval(false),
                 });
             }
-            Ok(Some((false, seed))) => {
+            Ok(Some((false, target_size, seed))) => {
                 let direct_message = DirectMessage::ResourceProof {
                     seed: seed,
-                    target_size: resource_proof_target_size(self.min_section_size(),
-                                                            self.peer_mgr
-                                                                .routing_table()
-                                                                .our_section()
-                                                                .len()),
+                    target_size: target_size,
                     difficulty: RESOURCE_PROOF_DIFFICULTY,
                 };
                 let _ = self.send_direct_message(peer_id, direct_message);
