@@ -267,13 +267,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         let mut our_section = HashSet::new();
         our_section.insert(our_name);
         let sections = prefixes.into_iter()
-            .filter_map(|prefix| {
-                if prefix.matches(&our_name) {
-                    our_prefix = prefix;
-                    None
-                } else {
-                    Some((prefix, HashSet::new()))
-                }
+            .filter_map(|prefix| if prefix.matches(&our_name) {
+                our_prefix = prefix;
+                None
+            } else {
+                Some((prefix, HashSet::new()))
             })
             .collect();
         let result = RoutingTable {
@@ -1084,7 +1082,7 @@ mod tests {
                     unwrap!(table.check_invariant());
                     assert!(table.iter().any(|u| *u == new_name));
                     if table.is_in_our_section(&new_name) {
-                        continue;   // add() already checked for necessary split
+                        continue; // add() already checked for necessary split
                     }
 
                     // Not a split event for our section, but might be for a different section.
@@ -1105,7 +1103,7 @@ mod tests {
                     let min_section_size = table.min_split_size();
                     if new_section_size >= min_section_size &&
                        section_len - new_section_size >= min_section_size {
-                        let _ = table.split(section_prefix);  // do the split
+                        let _ = table.split(section_prefix); // do the split
                         unwrap!(table.check_invariant());
                     }
                 }

@@ -432,7 +432,8 @@ impl Node {
                     self.send_or_drop(&dst, bytes, content.priority());
                     Ok(()).to_evented()
                 } else {
-                    debug!("{:?} Invalid TunnelDirect message received via {:?}: {:?} -> {:?} {:?}",
+                    debug!("{:?} Invalid TunnelDirect message received via {:?}: {:?} -> {:?} \
+                            {:?}",
                            self,
                            peer_id,
                            src,
@@ -519,7 +520,9 @@ impl Node {
             if let Some((signed_msg, route)) =
                 self.sig_accumulator.add_signature(min_section_size, digest, sig, pub_id) {
                 let hop = *self.name(); // we accumulated the message, so now we act as the last hop
-                trace!("{:?} Message accumulated - handling: {:?}", self, signed_msg);
+                trace!("{:?} Message accumulated - handling: {:?}",
+                       self,
+                       signed_msg);
                 return self.handle_signed_message(signed_msg, route, hop, &BTreeSet::new());
             }
         } else {
@@ -596,10 +599,10 @@ impl Node {
             let msg = DirectMessage::SectionListSignature(prefix, section.clone(), sig);
             if let Err(e) = self.send_direct_message(&peer_id, msg) {
                 warn!("{:?} Error sending section list signature for {:?} to {:?}: {:?}",
-                       self,
-                       prefix,
-                       peer_id,
-                       e);
+                      self,
+                      prefix,
+                      peer_id,
+                      e);
             }
         }
     }
@@ -933,10 +936,10 @@ impl Node {
         if (client_restriction || !self.is_first_node) &&
            self.peer_mgr.routing_table().len() < self.min_section_size() - 1 {
             debug!("{:?} Client {:?} rejected: Routing table has {} entries. {} required.",
-                    self,
-                    public_id.name(),
-                    self.peer_mgr.routing_table().len(),
-                    self.min_section_size() - 1);
+                   self,
+                   public_id.name(),
+                   self.peer_mgr.routing_table().len(),
+                   self.min_section_size() - 1);
             return self.send_direct_message(&peer_id, DirectMessage::BootstrapDeny);
         }
 
@@ -1064,9 +1067,9 @@ impl Node {
 
             if let Err(err) = self.send_routing_message(request_msg) {
                 debug!("{:?} Failed to send section update to {:?}: {:?}",
-                    self,
-                    neighbour_pfx,
-                    err);
+                       self,
+                       neighbour_pfx,
+                       err);
             }
         }
     }
@@ -1082,9 +1085,9 @@ impl Node {
             Ok(encoded_connection_info) => encoded_connection_info,
             Err(err) => {
                 debug!("{:?} Failed to serialise connection info for {:?}: {:?}.",
-                   self,
-                   their_pub_id.name(),
-                   err);
+                       self,
+                       their_pub_id.name(),
+                       err);
                 return;
             }
         };
@@ -1179,12 +1182,10 @@ impl Node {
             _ => unreachable!(),
         };
         try_ev!(self.peer_mgr.allow_connect(name), result);
-        let their_connection_info = try_ev!(
-            self.decrypt_connection_info(&encrypted_connection_info,
-                                         &box_::Nonce(nonce_bytes),
-                                         &public_id),
-            result
-        );
+        let their_connection_info = try_ev!(self.decrypt_connection_info(&encrypted_connection_info,
+                                                 &box_::Nonce(nonce_bytes),
+                                                 &public_id),
+                    result);
         let peer_id = their_connection_info.id();
         use peer_manager::ConnectionInfoReceivedResult::*;
         match self.peer_mgr
@@ -1252,7 +1253,10 @@ impl Node {
                        peer_id);
                 if let Err(error) = self.crust_service.connect(our_info, their_info) {
                     debug!("{:?} Crust failed initiating a connection to  {:?} ({:?}): {:?}",
-                           self, public_id.name(), peer_id, error);
+                           self,
+                           public_id.name(),
+                           peer_id,
+                           error);
                 }
             }
             Ok(Prepare(_)) |
@@ -1260,7 +1264,10 @@ impl Node {
             Ok(IsClient) |
             Ok(IsJoiningNode) => {
                 warn!("{:?} Received connection info response from {:?} ({:?}) when we haven't \
-                      sent a corresponding request", self, public_id.name(), peer_id);
+                      sent a corresponding request",
+                      self,
+                      public_id.name(),
+                      peer_id);
             }
             Ok(Waiting) | Ok(IsConnected) => (),
             Err(error) => {
@@ -1457,9 +1464,9 @@ impl Node {
             if let Err(error) = self.send_connection_info_request(pub_id, dst, node_auth)
                 .extract(&mut result) {
                 debug!("{:?} - Failed to send connection info to {:?}: {:?}",
-                    self,
-                    pub_id,
-                    error);
+                       self,
+                       pub_id,
+                       error);
             }
         }
         result
@@ -1538,7 +1545,9 @@ impl Node {
                 let f = |id: &PublicId| !section.contains(id.name());
                 members.into_iter().filter(f).collect_vec()
             } else {
-                warn!("{:?} Section update received from unknown neighbour {:?}", self, prefix);
+                warn!("{:?} Section update received from unknown neighbour {:?}",
+                      self,
+                      prefix);
                 return Ok(()).to_evented();
             };
         let members = members.into_iter()
@@ -1553,9 +1562,9 @@ impl Node {
                                               Authority::ManagedNode(*pub_id.name()))
                 .extract(&mut result) {
                 debug!("{:?} - Failed to send connection info to {:?}: {:?}",
-                    self,
-                    pub_id,
-                    error);
+                       self,
+                       pub_id,
+                       error);
             }
         }
         result.with_value(Ok(()))
@@ -1972,13 +1981,13 @@ impl Node {
             our_priv_info.to_pub_connection_info()
         } else {
             trace!("{:?} Not sending connection info request to {:?}",
-                       self,
-                       their_name);
+                   self,
+                   their_name);
             return result.map(Ok);
         };
         trace!("{:?} Resending connection info request to {:?}",
-                   self,
-                   their_name);
+               self,
+               their_name);
         self.send_connection_info(our_pub_info, their_public_id, src, dst, None);
         result.with_value(Ok(()))
     }
@@ -2309,8 +2318,11 @@ impl Bootstrapped for Node {
                 vec![SectionList::new(*self.peer_mgr.routing_table().our_prefix(), pub_ids)]
             }
             Section(_) => {
-                vec![SectionList::new(*self.peer_mgr.routing_table().our_prefix(), self.peer_mgr
-                    .get_pub_ids(self.peer_mgr.routing_table().our_section()))]
+                vec![SectionList::new(*self.peer_mgr.routing_table().our_prefix(),
+                                      self.peer_mgr
+                                          .get_pub_ids(self.peer_mgr
+                                              .routing_table()
+                                              .our_section()))]
             }
             PrefixSection(ref prefix) => {
                 self.peer_mgr
@@ -2338,7 +2350,9 @@ impl Bootstrapped for Node {
         match self.get_signature_target(&signed_msg.routing_message().src, route) {
             None => Ok(()),
             Some(our_name) if our_name == *self.name() => {
-                trace!("{:?} Starting message accumulation for {:?}", self, signed_msg);
+                trace!("{:?} Starting message accumulation for {:?}",
+                       self,
+                       signed_msg);
                 let min_section_size = self.min_section_size();
                 if let Some((msg, route)) =
                     self.sig_accumulator.add_message(signed_msg, min_section_size, route) {

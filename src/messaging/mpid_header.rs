@@ -17,7 +17,7 @@
 
 /// Maximum allowed length for a [header's `metadata`](struct.MpidHeader.html#method.new) (128
 /// bytes).
-pub const MAX_HEADER_METADATA_SIZE: usize = 128;  // bytes
+pub const MAX_HEADER_METADATA_SIZE: usize = 128; // bytes
 
 use maidsafe_utilities::serialisation::serialise;
 use rand::{self, Rng};

@@ -196,10 +196,8 @@ fn spawn_select_thread(index: usize,
                        -> (Sender<Event>, Joiner) {
     let (sender, receiver) = mpsc::channel();
 
-    let thread_handle = thread::named(thread_name, move || {
-        for event in receiver.iter() {
-            unwrap!(main_sender.send(TestEvent(index, event)));
-        }
+    let thread_handle = thread::named(thread_name, move || for event in receiver.iter() {
+        unwrap!(main_sender.send(TestEvent(index, event)));
     });
 
     (sender, thread_handle)
