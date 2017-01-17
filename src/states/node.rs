@@ -846,12 +846,15 @@ impl Node {
         if validity {
             let sections = self.peer_mgr.pub_ids_by_section();
             info!("{:?} Sending NodeApproval to {:?}.", self, candidate_name);
-            let _ = self.send_routing_message(RoutingMessage {
+            if let Err(error) = self.send_routing_message(RoutingMessage {
                     src: Authority::Section(candidate_name),
                     dst: client_auth,
                     content: MessageContent::NodeApproval { sections: sections },
                 })
-                .extract(&mut result);
+                .extract(&mut result) {
+                debug!("{:?} Failed sending NodeApproval to {:?} / {:?}",
+                       self, candidate_name, error);
+            }
         } else {
             self.disconnect_peer(&peer_id);
         }
@@ -877,7 +880,7 @@ impl Node {
 
         self.get_approval_timer_token = None;
 
-        self.peer_mgr.add_prefixes(sections.keys().into_iter().map(|&prefix| prefix).collect_vec());
+        self.peer_mgr.add_prefixes(sections.keys().cloned().collect());
 
         // TODO: is this necessary as this node is not approved as a full node by the section yet
         let our_prefix = *self.peer_mgr.routing_table().our_prefix();
@@ -893,7 +896,8 @@ impl Node {
             debug!("{:?} Failed sending ApprovalConfirmation: {:?}", self, error);
         }
 
-        trace!("{:?} received {:?} on NodeApproval.", self, sections);
+        trace!("{:?} Node approval completed. Prefixes: {:?}",
+               self, self.peer_mgr.routing_table().prefixes());
 
         for section in sections.values() {
             for pub_id in section.iter() {
