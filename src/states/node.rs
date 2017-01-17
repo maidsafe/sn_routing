@@ -926,6 +926,9 @@ impl Node {
             }
         }
 
+        trace!("{:?} Node approval completed. Prefixes: {:?}",
+               self,
+               self.peer_mgr.routing_table().prefixes());
         events.add_event(Event::Connected);
         for name in self.peer_mgr.routing_table().iter() {
             // TODO: try to remove this as safe_core/safe_vault may not reqiring this notification
@@ -1218,6 +1221,9 @@ impl Node {
 
         debug!("{:?} Added {:?} to routing table.", self, public_id.name());
         if self.is_first_node && self.peer_mgr.routing_table().len() == 1 {
+            trace!("{:?} Node approval completed. Prefixes: {:?}",
+                   self,
+                   self.peer_mgr.routing_table().prefixes());
             result.add_event(Event::Connected);
         }
 
