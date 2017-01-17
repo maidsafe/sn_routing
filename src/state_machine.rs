@@ -57,7 +57,7 @@ impl State {
     pub fn handle_action(&mut self, action: Action) -> Evented<Transition> {
         match *self {
             State::Bootstrapping(ref mut state) => state.handle_action(action),
-            State::Client(ref mut state) => state.handle_action(action),
+            State::Client(ref mut state) => state.handle_action(action).to_evented(),
             State::Node(ref mut state) => state.handle_action(action),
             State::Terminated => Transition::Terminate.to_evented(),
         }
@@ -118,12 +118,12 @@ impl Debug for State {
 
 #[cfg(feature = "use-mock-crust")]
 impl State {
-    pub fn resend_unacknowledged(&mut self) -> Evented<bool> {
+    pub fn resend_unacknowledged(&mut self) -> bool {
         match *self {
             State::Client(ref mut state) => state.resend_unacknowledged(),
             State::Node(ref mut state) => state.resend_unacknowledged(),
             State::Bootstrapping(_) |
-            State::Terminated => false.to_evented(),
+            State::Terminated => false,
         }
     }
 
@@ -143,12 +143,12 @@ impl State {
         }
     }
 
-    pub fn clear_state(&mut self) -> Evented<()> {
+    pub fn clear_state(&mut self) {
         match *self {
             State::Node(ref mut state) => state.clear_state(),
             State::Bootstrapping(_) |
             State::Client(_) |
-            State::Terminated => Evented::empty(),
+            State::Terminated => (),
         }
     }
 
