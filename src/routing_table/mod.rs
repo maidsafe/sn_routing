@@ -1143,7 +1143,7 @@ mod tests {
                     table.verify_invariant();
                     assert!(table.iter().any(|u| *u == new_name));
                     if table.is_in_our_section(&new_name) {
-                        continue;   // add() already checked for necessary split
+                        continue; // add() already checked for necessary split
                     }
 
                     // Not a split event for our section, but might be for a different section.
@@ -1164,7 +1164,7 @@ mod tests {
                     let min_section_size = table.min_split_size();
                     if new_section_size >= min_section_size &&
                        section_len - new_section_size >= min_section_size {
-                        let _ = table.split(section_prefix);  // do the split
+                        let _ = table.split(section_prefix); // do the split
                         table.verify_invariant();
                     }
                 }
