@@ -1784,7 +1784,7 @@ impl Node {
                 content: content,
             };
             if let Err(err) = self.send_routing_message(request_msg) {
-                debug!("{:?} Failed to send RoutingTableRequest: {:?}.", self, err);
+                debug!("{:?} Failed to send RoutingTableResponse: {:?}.", self, err);
             }
         }
         Ok(())
