@@ -553,6 +553,17 @@ impl PeerManager {
             }
         }
 
+        if let Some(Candidate { name, approved, .. }) = self.candidate {
+            if !approved && !self.routing_table.our_prefix().matches(&name) {
+                self.candidate = None;
+                if let Some(_) = self.peer_map.get_by_name(&name) {
+                    trace!("{:?} removed unapproved candidate {:?} after split",
+                           self.routing_table.our_name(),
+                           name);
+                }
+            }
+        }
+
         let old_expected_peers = mem::replace(&mut self.expected_peers, HashMap::new());
         self.expected_peers = old_expected_peers.into_iter()
             .filter(|&(ref name, _)| self.routing_table.need_to_add(name) == Ok(()))
