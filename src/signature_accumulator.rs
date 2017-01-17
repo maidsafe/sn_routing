@@ -210,18 +210,16 @@ mod tests {
             msg_and_sigs.signature_msgs
                 .iter()
                 .zip(env.other_ids.iter())
-                .foreach(|(signature_msg, full_id)| {
-                    match *signature_msg {
-                        DirectMessage::MessageSignature(ref hash, ref sig) => {
-                            let result =
+                .foreach(|(signature_msg, full_id)| match *signature_msg {
+                    DirectMessage::MessageSignature(ref hash, ref sig) => {
+                        let result =
                                 sig_accumulator.add_signature(env.num_nodes(),
                                                               *hash,
                                                               *sig,
                                                               *full_id.public_id());
-                            assert!(result.is_none());
-                        }
-                        ref unexpected_msg => panic!("Unexpected message: {:?}", unexpected_msg),
+                        assert!(result.is_none());
                     }
+                    ref unexpected_msg => panic!("Unexpected message: {:?}", unexpected_msg),
                 });
         });
 

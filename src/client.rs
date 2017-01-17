@@ -77,7 +77,7 @@ impl Client {
                keys: Option<FullId>,
                min_section_size: usize)
                -> Result<Client, RoutingError> {
-        rust_sodium::init();  // enable shared global (i.e. safe to multithread now)
+        rust_sodium::init(); // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing with a restriction to become a full node
         let mut events = Evented::empty();
