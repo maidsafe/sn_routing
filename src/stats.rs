@@ -73,7 +73,6 @@ pub struct Stats {
     msg_get_node_name_rsp: usize,
     msg_candidate_approval: usize,
     msg_node_approval: usize,
-    msg_approval_confirmation: usize,
     msg_ack: usize,
 
     msg_other: usize,
@@ -154,7 +153,6 @@ impl Stats {
             MessageContent::Ack(..) => self.msg_ack += 1,
             MessageContent::CandidateApproval { .. } => self.msg_candidate_approval += 1,
             MessageContent::NodeApproval { .. } => self.msg_node_approval += 1,
-            MessageContent::ApprovalConfirmation { .. } => self.msg_approval_confirmation += 1,
             MessageContent::UserMessagePart { .. } => return, // Counted as request/response.
         }
         self.increment_msg_total();
@@ -211,7 +209,7 @@ impl Stats {
                   "Stats - Hops (Request/Response) - GetNodeName: {}/{}, ExpectCandidate: {}, \
                    AcceptAsCandidate: {}, SectionUpdate: {}, SectionSplit: {}, \
                    OwnSectionMerge: {}, OtherSectionMerge: {}, ConnectionInfo: {}/{}, \
-                   CandidateApproval: {}, NodeApproval: {}, ApprovalConfirmation: {}, Ack: {}",
+                   CandidateApproval: {}, NodeApproval: {}, Ack: {}",
                   self.msg_get_node_name,
                   self.msg_get_node_name_rsp,
                   self.msg_expect_candidate,
@@ -224,7 +222,6 @@ impl Stats {
                   self.msg_connection_info_rsp,
                   self.msg_candidate_approval,
                   self.msg_node_approval,
-                  self.msg_approval_confirmation,
                   self.msg_ack);
             info!(target: "routing_stats",
                   "Stats - User (Request/Success/Failure) - Get: {}/{}/{}, Put: {}/{}/{}, \

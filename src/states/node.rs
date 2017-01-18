@@ -804,14 +804,10 @@ impl Node {
                     .to_evented()
             }
             (CandidateApproval { sections }, Section(_), Section(candidate_name)) => {
-                self.handle_candidate_approval(candidate_name, sections);
-                Ok(()).to_evented()
+                self.handle_candidate_approval(candidate_name, sections)
             }
             (NodeApproval { sections }, Section(_), Client { .. }) => {
                 self.handle_node_approval(&sections)
-            }
-            (ApprovalConfirmation, ManagedNode(_), Section(name)) => {
-                self.handle_approval_confirmation(name)
             }
             (SectionUpdate { prefix, members }, Section(_), PrefixSection(_)) => {
                 self.handle_section_update(prefix, members)
@@ -845,7 +841,11 @@ impl Node {
         }
     }
 
-    fn handle_candidate_approval(&mut self, candidate_name: XorName, sections: SectionMap) {
+    fn handle_candidate_approval(&mut self,
+                                 candidate_name: XorName,
+                                 sections: SectionMap)
+                                 -> Evented<Result<(), RoutingError>> {
+        let mut result = Evented::empty();
         // Once the joining node joined, it may receive the vote regarding itself.
         // Or a node may receive CandidateApproval before connection established.
         let validity = !sections.is_empty();
@@ -857,7 +857,7 @@ impl Node {
                        self,
                        candidate_name,
                        error);
-                return;
+                return result.map(Ok);
             }
         };
 
@@ -873,19 +873,13 @@ impl Node {
                        candidate_name,
                        error);
             }
+            let (pub_id, peer_id) = try_ev!(self.peer_mgr
+                                                .handle_approval_confirmation(&candidate_name),
+                                            result);
+            self.add_to_routing_table(&pub_id, &peer_id).extract(&mut result);
         } else {
             self.disconnect_peer(&peer_id);
         }
-    }
-
-    fn handle_approval_confirmation(&mut self,
-                                    candidate_name: XorName)
-                                    -> Evented<Result<(), RoutingError>> {
-        let mut result = Evented::empty();
-        let (pub_id, peer_id) = try_ev!(self.peer_mgr
-                                            .handle_approval_confirmation(&candidate_name),
-                                        result);
-        self.add_to_routing_table(&pub_id, &peer_id).extract(&mut result);
         result.map(Ok)
     }
 
@@ -899,20 +893,12 @@ impl Node {
         self.get_approval_timer_token = None;
         self.peer_mgr.add_prefixes(sections.keys().cloned().collect());
 
-        // TODO: is this necessary as this node is not approved as a full node by the section yet
+        trace!("{:?} handle_node_approval completed. Prefixes: {:?}",
+               self,
+               self.peer_mgr.routing_table().prefixes());
+
         let our_prefix = *self.peer_mgr.routing_table().our_prefix();
         self.send_section_list_signature(our_prefix, None);
-
-        let name = *self.name();
-        if let Err(error) = self.send_routing_message(RoutingMessage {
-            src: Authority::ManagedNode(name),
-            dst: Authority::Section(name),
-            content: MessageContent::ApprovalConfirmation,
-        }) {
-            debug!("{:?} Failed sending ApprovalConfirmation: {:?}",
-                   self,
-                   error);
-        }
 
         for section in sections.values() {
             for pub_id in section.iter() {
@@ -934,9 +920,6 @@ impl Node {
             }
         }
 
-        trace!("{:?} Node approval completed. Prefixes: {:?}",
-               self,
-               self.peer_mgr.routing_table().prefixes());
         events.add_event(Event::Connected);
         for name in self.peer_mgr.routing_table().iter() {
             // TODO: try to remove this as safe_core/safe_vault may not reqiring this notification

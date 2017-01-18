@@ -518,10 +518,9 @@ impl RoutingMessage {
 /// When nodes Z of section Y receive `NodeIdentify` from A, they respond with a `ResourceProof`
 /// request. Node A needs to answer these requests (resolving a hashing challenge) with
 /// `ResourceProofResponse`. Members of Y will send out `CandidateApproval` messages to vote for the
-/// approval in their section. Once the vote succeeds, the members of Y send `NodeApproval` to A.
-/// When A receives the `NodeApproval` message, it adds the members of Y to its routing table and
-/// replies `ApprovalConfirmation` to section Y. Members of Y add A to their routing table once
-/// receive `ApprovalConfirmation`.
+/// approval in their section. Once the vote succeeds, the members of Y send `NodeApproval` to A and
+/// add it into their routing table. When A receives the `NodeApproval` message, it adds the members
+/// of Y to its routing table.
 ///
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
 pub enum MessageContent {
@@ -649,10 +648,6 @@ pub enum MessageContent {
         /// contacts.
         sections: SectionMap,
     },
-    /// Confirms the joining node has received `NodeApproval`.
-    ///
-    /// Sent from the joining node to Group Y.
-    ApprovalConfirmation,
 }
 
 impl MessageContent {
@@ -829,7 +824,6 @@ impl Debug for MessageContent {
             MessageContent::NodeApproval { ref sections } => {
                 write!(formatter, "NodeApproval {{ {:?} }}", sections)
             }
-            MessageContent::ApprovalConfirmation => write!(formatter, "ApprovalConfirmation"),
         }
     }
 }
