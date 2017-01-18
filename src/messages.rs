@@ -629,15 +629,16 @@ pub enum MessageContent {
         expect_id: PublicId,
         /// Client authority of the candidate
         client_auth: Authority<XorName>,
-        /// The relocated section that the joining node shall connect to
-        section: BTreeSet<PublicId>,
         /// The message's unique identifier.
         message_id: MessageId,
     },
-    /// Send among Group Y to vote for Accept or Reject a joining node
+    /// Sent among Group Y to vote to accept a joining node.
     CandidateApproval {
-        /// The routing table shared by the nodes in our group, including the `PublicId`s of our
-        /// contacts.
+        /// The `PublicId` of the candidate
+        candidate_id: PublicId,
+        /// Client authority of the candidate
+        client_auth: Authority<XorName>,
+        /// The `PublicId`s of all routing table contacts shared by the nodes in our section.
         sections: SectionMap,
     },
     /// Approves the joining node as a routing node.
@@ -809,17 +810,22 @@ impl Debug for MessageContent {
             }
             MessageContent::AcceptAsCandidate { ref expect_id,
                                                 ref client_auth,
-                                                ref section,
                                                 ref message_id } => {
                 write!(formatter,
-                       "AcceptAsCandidate {{ {:?}, {:?}, {:?}, {:?} }}",
+                       "AcceptAsCandidate {{ {:?}, {:?}, {:?} }}",
                        expect_id,
                        client_auth,
-                       section,
                        message_id)
             }
-            MessageContent::CandidateApproval { ref sections } => {
-                write!(formatter, "CandidateApproval {{ {:?} }}", sections)
+            MessageContent::CandidateApproval { ref candidate_id,
+                                                ref client_auth,
+                                                ref sections } => {
+                write!(formatter,
+                       "CandidateApproval {{ candidate_id: {:?}, client_auth: {:?}, sections: \
+                        {:?} }}",
+                       candidate_id,
+                       client_auth,
+                       sections)
             }
             MessageContent::NodeApproval { ref sections } => {
                 write!(formatter, "NodeApproval {{ {:?} }}", sections)
