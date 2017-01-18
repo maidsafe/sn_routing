@@ -48,7 +48,8 @@ pub struct Stats {
     msg_append: usize,
     msg_get_account_info: usize,
     msg_get_node_name: usize,
-    msg_expect_close_node: usize,
+    msg_expect_candidate: usize,
+    msg_accept_as_candidate: usize,
     msg_refresh: usize,
     msg_connection_info_req: usize,
     msg_connection_info_rsp: usize,
@@ -140,7 +141,8 @@ impl Stats {
     pub fn count_routing_message(&mut self, msg: &RoutingMessage) {
         match msg.content {
             MessageContent::GetNodeName { .. } => self.msg_get_node_name += 1,
-            MessageContent::ExpectCloseNode { .. } => self.msg_expect_close_node += 1,
+            MessageContent::ExpectCandidate { .. } => self.msg_expect_candidate += 1,
+            MessageContent::AcceptAsCandidate { .. } => self.msg_accept_as_candidate += 1,
             MessageContent::ConnectionInfoRequest { .. } => self.msg_connection_info_req += 1,
             MessageContent::ConnectionInfoResponse { .. } => self.msg_connection_info_rsp += 1,
             MessageContent::SectionUpdate { .. } => self.msg_section_update += 1,
@@ -203,13 +205,14 @@ impl Stats {
                   self.msg_direct_resource_proof_rsp,
                   self.msg_direct_sls);
             info!(target: "routing_stats",
-                  "Stats - Hops (Request/Response) - GetNodeName: {}/{}, ExpectCloseNode: {}, \
-                   SectionUpdate: {}, SectionSplit: {}, OwnSectionMerge: {}, \
-                   OtherSectionMerge: {}, ConnectionInfo: {}/{}, CandidateApproval: {}, \
-                   NodeApproval: {}, ApprovalConfirmation: {}, Ack: {}",
+                  "Stats - Hops (Request/Response) - GetNodeName: {}/{}, ExpectCandidate: {}, \
+                   AcceptAsCandidate: {}, SectionUpdate: {}, SectionSplit: {}, \
+                   OwnSectionMerge: {}, OtherSectionMerge: {}, ConnectionInfo: {}/{}, \
+                   CandidateApproval: {}, NodeApproval: {}, ApprovalConfirmation: {}, Ack: {}",
                   self.msg_get_node_name,
                   self.msg_get_node_name_rsp,
-                  self.msg_expect_close_node,
+                  self.msg_expect_candidate,
+                  self.msg_accept_as_candidate,
                   self.msg_section_update,
                   self.msg_section_split,
                   self.msg_own_section_merge,

@@ -485,9 +485,10 @@ impl RoutingMessage {
 /// ### Getting a new network name from the `NaeManager`
 ///
 /// Once in `Client` state, A sends a `GetNodeName` request to the `NaeManager` section authority X
-/// of A's current name. X computes a new name and sends it in an `ExpectCloseNode` request to the
-/// `NaeManager` Y of A's new name. Each member of Y caches A's public ID, and Y sends a
-/// `GetNodeName` response back to A, which includes the public IDs of the members of Y.
+/// of A's current name. X computes a new name and sends it in an `ExpectCandidate` request to the
+/// `NaeManager` Y of A's new name. Each member of Y caches A's public ID, and sends
+/// `AcceptAsCandidate` to self section. Once Y receives `AcceptAsCandidate`, sends a `GetNodeName`
+/// response back to A, which includes the public IDs of the members of Y.
 ///
 ///
 /// ### Connecting to the matching section
@@ -527,7 +528,7 @@ pub enum MessageContent {
         message_id: MessageId,
     },
     /// Notify a joining node's `NaeManager` so that it sends a `GetNodeNameResponse`.
-    ExpectCloseNode {
+    ExpectCandidate {
         /// The joining node's `PublicId` (public keys and name)
         expect_id: PublicId,
         /// The client's current authority.
@@ -611,6 +612,19 @@ pub enum MessageContent {
         cacheable: bool,
         /// The `part_index`-th part of the serialised user message.
         payload: Vec<u8>,
+    },
+    /// Confirm with section that the candidate is about to resource prove.
+    ///
+    /// Sent from the `NaeManager` to the `NaeManager`.
+    AcceptAsCandidate {
+        /// Supplied `PublicId`, but with the new name
+        expect_id: PublicId,
+        /// Client authority of the candidate
+        client_auth: Authority<XorName>,
+        /// The relocated section that the joining node shall connect to
+        section: BTreeSet<PublicId>,
+        /// The message's unique identifier.
+        message_id: MessageId,
     },
     /// Send among Group Y to vote for Accept or Reject a joining node
     CandidateApproval(bool),
@@ -718,9 +732,9 @@ impl Debug for MessageContent {
                        current_id,
                        message_id)
             }
-            MessageContent::ExpectCloseNode { ref expect_id, ref client_auth, ref message_id } => {
+            MessageContent::ExpectCandidate { ref expect_id, ref client_auth, ref message_id } => {
                 write!(formatter,
-                       "ExpectCloseNode {{ {:?}, {:?}, {:?} }}",
+                       "ExpectCandidate {{ {:?}, {:?}, {:?} }}",
                        expect_id,
                        client_auth,
                        message_id)
@@ -781,6 +795,17 @@ impl Debug for MessageContent {
                        priority,
                        cacheable,
                        hash)
+            }
+            MessageContent::AcceptAsCandidate { ref expect_id,
+                                                ref client_auth,
+                                                ref section,
+                                                ref message_id } => {
+                write!(formatter,
+                       "AcceptAsCandidate {{ {:?}, {:?}, {:?}, {:?} }}",
+                       expect_id,
+                       client_auth,
+                       section,
+                       message_id)
             }
             MessageContent::CandidateApproval(approval) => {
                 write!(formatter, "CandidateApproval({})", approval)
