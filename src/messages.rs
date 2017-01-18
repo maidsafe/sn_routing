@@ -636,7 +636,11 @@ pub enum MessageContent {
         message_id: MessageId,
     },
     /// Send among Group Y to vote for Accept or Reject a joining node
-    CandidateApproval(bool),
+    CandidateApproval {
+        /// The routing table shared by the nodes in our group, including the `PublicId`s of our
+        /// contacts.
+        sections: SectionMap,
+    },
     /// Approves the joining node as a routing node.
     ///
     /// Sent from Group Y to the joining node.
@@ -819,8 +823,8 @@ impl Debug for MessageContent {
                        section,
                        message_id)
             }
-            MessageContent::CandidateApproval(approval) => {
-                write!(formatter, "CandidateApproval({})", approval)
+            MessageContent::CandidateApproval { ref sections } => {
+                write!(formatter, "CandidateApproval {{ {:?} }}", sections)
             }
             MessageContent::NodeApproval { ref sections } => {
                 write!(formatter, "NodeApproval {{ {:?} }}", sections)

@@ -152,7 +152,7 @@ impl Stats {
             MessageContent::OtherSectionMerge { .. } => self.msg_other_section_merge += 1,
             MessageContent::GetNodeNameResponse { .. } => self.msg_get_node_name_rsp += 1,
             MessageContent::Ack(..) => self.msg_ack += 1,
-            MessageContent::CandidateApproval(_) => self.msg_candidate_approval += 1,
+            MessageContent::CandidateApproval { .. } => self.msg_candidate_approval += 1,
             MessageContent::NodeApproval { .. } => self.msg_node_approval += 1,
             MessageContent::ApprovalConfirmation { .. } => self.msg_approval_confirmation += 1,
             MessageContent::UserMessagePart { .. } => return, // Counted as request/response.

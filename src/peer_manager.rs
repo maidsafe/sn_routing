@@ -411,13 +411,13 @@ impl PeerManager {
         None
     }
 
-    /// Handles node_approval vote. `validity` indicates whether rejected or approved
+    /// Handles candidate approval vote. `validity` indicates whether rejected or approved
     ///
     /// Returns:
     ///
     /// * Ok(peer_info)   peer_info for the node candidate
     /// * Err()           peer is not the node candidate or missing peer_info
-    pub fn handle_node_approval_vote(&mut self,
+    pub fn handle_candidate_approval(&mut self,
                                      candidate_name: &XorName,
                                      validity: bool)
                                      -> Result<(Authority<XorName>, PeerId), RoutingError> {

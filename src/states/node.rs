@@ -803,8 +803,8 @@ impl Node {
                                                      dst)
                     .to_evented()
             }
-            (CandidateApproval(validity), Section(_), Section(candidate_name)) => {
-                self.handle_node_approval_vote(candidate_name, validity);
+            (CandidateApproval { sections }, Section(_), Section(candidate_name)) => {
+                self.handle_candidate_approval(candidate_name, sections);
                 Ok(()).to_evented()
             }
             (NodeApproval { sections }, Section(_), Client { .. }) => {
@@ -845,11 +845,12 @@ impl Node {
         }
     }
 
-    fn handle_node_approval_vote(&mut self, candidate_name: XorName, validity: bool) {
+    fn handle_candidate_approval(&mut self, candidate_name: XorName, sections: SectionMap) {
         // Once the joining node joined, it may receive the vote regarding itself.
         // Or a node may receive CandidateApproval before connection established.
+        let validity = !sections.is_empty();
         let (client_auth, peer_id) = match self.peer_mgr
-            .handle_node_approval_vote(&candidate_name, validity) {
+            .handle_candidate_approval(&candidate_name, validity) {
             Ok(candidate_info) => candidate_info,
             Err(error) => {
                 debug!("{:?} Failed handle node approval vote for {:?} / {:?}",
@@ -861,7 +862,6 @@ impl Node {
         };
 
         if validity {
-            let sections = self.peer_mgr.pub_ids_by_section();
             info!("{:?} Sending NodeApproval to {:?}.", self, candidate_name);
             if let Err(error) = self.send_routing_message(RoutingMessage {
                 src: Authority::Section(candidate_name),
@@ -976,15 +976,18 @@ impl Node {
         if let Some(valid_candidate) =
             self.peer_mgr
                 .verify_candidate(&name, proof, leading_zero_bytes, RESOURCE_PROOF_DIFFICULTY) {
-            let response_content = MessageContent::CandidateApproval(valid_candidate);
+            let sections = if valid_candidate {
+                self.peer_mgr.pub_ids_by_section()
+            } else {
+                BTreeMap::new()
+            };
+            let response_content = MessageContent::CandidateApproval { sections: sections };
             let response_msg = RoutingMessage {
                 src: Authority::Section(name),
                 dst: Authority::Section(name),
                 content: response_content,
             };
-            info!("{:?} Sending CandidateApproval {:?} to group.",
-                  self,
-                  valid_candidate);
+            info!("{:?} Sending CandidateApproval {:?}.", self, response_msg);
             if let Err(error) = self.send_routing_message(response_msg) {
                 debug!("{:?} Failed sending CandidateApproval: {:?}", self, error);
             }
@@ -1181,7 +1184,7 @@ impl Node {
                 if let Err(error) = self.send_routing_message(RoutingMessage {
                     src: Authority::Section(*public_id.name()),
                     dst: Authority::Section(*public_id.name()),
-                    content: MessageContent::CandidateApproval(false),
+                    content: MessageContent::CandidateApproval { sections: BTreeMap::new() },
                 }) {
                     info!("{:?} failed sending CandidateApproval false to rejecting {:?}:{:?}.",
                           self,
