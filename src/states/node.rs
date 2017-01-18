@@ -874,6 +874,10 @@ impl Node {
 
         self.peer_mgr.add_prefixes(sections.keys().cloned().collect());
 
+        trace!("{:?} handle_node_approval completed. Prefixes: {:?}",
+               self,
+               self.peer_mgr.routing_table().prefixes());
+
         // TODO: is this necessary as this node is not approved as a full node by the section yet
         let our_prefix = *self.peer_mgr.routing_table().our_prefix();
         self.send_section_list_signature(our_prefix, None);
