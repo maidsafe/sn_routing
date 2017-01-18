@@ -31,7 +31,7 @@ use maidsafe_utilities::serialisation;
 use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, Message, MessageContent,
                RoutingMessage, SectionList, SignedMessage, UserMessage, UserMessageCache};
 use peer_manager::{ConnectionInfoPreparedResult, PeerManager, PeerState,
-                   RESOURCE_PROOF_APPROVE_TIMEOUT_SECS, SectionMap};
+                   RESOURCE_PROOF_TIMEOUT_SECS, SectionMap};
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use routing_table::{OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix, RemovalDetails,
                     Xorable};
@@ -1694,7 +1694,7 @@ impl Node {
             return Evented::empty();
         }
 
-        let duration = Duration::from_secs(RESOURCE_PROOF_APPROVE_TIMEOUT_SECS);
+        let duration = Duration::from_secs(RESOURCE_PROOF_TIMEOUT_SECS);
         self.get_approval_timer_token = Some(self.timer.schedule(duration));
 
         self.full_id.public_id_mut().set_name(*relocated_id.name());

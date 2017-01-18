@@ -26,6 +26,7 @@ use routing_table::{Authority, OtherMergeDetails, OwnMergeDetails, OwnMergeState
 use routing_table::Error as RoutingTableError;
 use rust_sodium::crypto::hash::sha256;
 use rust_sodium::crypto::sign;
+use signature_accumulator::ACCUMULATION_TIMEOUT_SECS;
 use std::{error, fmt, mem};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::collections::hash_map::Values;
@@ -40,10 +41,8 @@ const JOINING_NODE_TIMEOUT_SECS: u64 = 300;
 const CONNECTION_TIMEOUT_SECS: u64 = 90;
 /// Time (in seconds) the node waits for a `NodeIdentify` message.
 const NODE_IDENTIFY_TIMEOUT_SECS: u64 = 60;
-/// Time (in seconds) the node candidate supposed to complete upload the proof.
-const RESOURCE_PROOF_EVALUATE_TIMEOUT_SECS: u64 = 40;
-/// Time (in seconds) the node candidate supposed to be approved.
-pub const RESOURCE_PROOF_APPROVE_TIMEOUT_SECS: u64 = 60;
+/// Time (in seconds) after which an unapproved candidate has failed to provide proof of resource.
+pub const RESOURCE_PROOF_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) the node waits for connection from an expected node.
 const NODE_CONNECT_TIMEOUT_SECS: u64 = 60;
 
@@ -208,8 +207,7 @@ impl Peer {
             PeerState::Routing(_) |
             PeerState::AwaitingNodeIdentify(_) => false,
             PeerState::Candidate(_) => {
-                self.timestamp.elapsed() >=
-                Duration::from_secs(RESOURCE_PROOF_EVALUATE_TIMEOUT_SECS)
+                self.timestamp.elapsed() > Duration::from_secs(RESOURCE_PROOF_TIMEOUT_SECS)
             }
         }
     }
@@ -293,11 +291,12 @@ struct Candidate {
 
 impl Candidate {
     fn is_timed_out(&self) -> bool {
-        self.insertion_time.elapsed() > Duration::from_secs(RESOURCE_PROOF_APPROVE_TIMEOUT_SECS)
+        self.insertion_time.elapsed() > Duration::from_secs(RESOURCE_PROOF_TIMEOUT_SECS)
     }
 
     fn is_slow(&self) -> bool {
-        self.insertion_time.elapsed() > Duration::from_secs(RESOURCE_PROOF_EVALUATE_TIMEOUT_SECS)
+        self.insertion_time.elapsed() >
+        Duration::from_secs(RESOURCE_PROOF_TIMEOUT_SECS - ACCUMULATION_TIMEOUT_SECS)
     }
 }
 
