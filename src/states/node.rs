@@ -767,8 +767,13 @@ impl Node {
             (GetNodeNameResponse { relocated_id, section, .. }, Section(_), dst) => {
                 self.handle_get_node_name_response(relocated_id, section, dst).map(Ok)
             }
-            (ExpectCloseNode { expect_id, client_auth, message_id }, Section(_), Section(_)) => {
-                self.handle_expect_close_node_request(expect_id, client_auth, message_id)
+            (ExpectCandidate { expect_id, client_auth, message_id }, Section(_), Section(_)) => {
+                self.handle_expect_candidate(expect_id, client_auth, message_id).to_evented()
+            }
+            (AcceptAsCandidate { expect_id, client_auth, section, message_id },
+             Section(_),
+             Section(_)) => {
+                self.handle_accept_as_candidate(expect_id, client_auth, section, message_id)
                     .to_evented()
             }
             (ConnectionInfoRequest { encrypted_conn_info, nonce, pub_id, msg_id },
@@ -1655,7 +1660,7 @@ impl Node {
         their_public_id.set_name(relocated_name);
 
         // From X -> Y; Send to close section of the relocated name
-        let request_content = MessageContent::ExpectCloseNode {
+        let request_content = MessageContent::ExpectCandidate {
             expect_id: their_public_id,
             client_auth: Authority::Client {
                 client_key: client_key,
@@ -1713,12 +1718,12 @@ impl Node {
     }
 
     // Received by Y; From X -> Y
-    // Context: a node is joining our section. Sends the node our section.
-    fn handle_expect_close_node_request(&mut self,
-                                        expect_id: PublicId,
-                                        client_auth: Authority<XorName>,
-                                        message_id: MessageId)
-                                        -> Result<(), RoutingError> {
+    // Context: a node is joining our section. Sends `AcceptAsCandidate` to our section.
+    fn handle_expect_candidate(&mut self,
+                               expect_id: PublicId,
+                               client_auth: Authority<XorName>,
+                               message_id: MessageId)
+                               -> Result<(), RoutingError> {
         if expect_id == *self.full_id.public_id() {
             // If we're the joining node: stop
             return Ok(());
@@ -1733,6 +1738,36 @@ impl Node {
                 return Err(error);
             }
         };
+
+        let response_content = MessageContent::AcceptAsCandidate {
+            expect_id: expect_id,
+            client_auth: client_auth,
+            section: own_section,
+            message_id: message_id,
+        };
+
+        trace!("{:?} Responding to section {:?}.", self, response_content);
+
+        self.send_routing_message(RoutingMessage {
+            src: Authority::Section(*expect_id.name()),
+            dst: Authority::Section(*expect_id.name()),
+            content: response_content,
+        })
+    }
+
+    // Received by Y; From Y -> Y
+    // Context: a node is joining our section. Sends the node our section.
+    fn handle_accept_as_candidate(&mut self,
+                                  expect_id: PublicId,
+                                  client_auth: Authority<XorName>,
+                                  own_section: BTreeSet<PublicId>,
+                                  message_id: MessageId)
+                                  -> Result<(), RoutingError> {
+        if expect_id == *self.full_id.public_id() {
+            // If we're the joining node: stop
+            return Ok(());
+        }
+
         let response_content = MessageContent::GetNodeNameResponse {
             relocated_id: expect_id,
             section: own_section,
