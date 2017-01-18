@@ -111,6 +111,8 @@ pub enum RoutingError {
     CannotTunnelThroughTunnel,
     /// Decoded a user message with an unexpected hash.
     HashMismatch,
+    /// Candidate is unknown
+    UnknownCandidate,
 }
 
 impl From<RoutingTableError> for RoutingError {

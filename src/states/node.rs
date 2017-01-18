@@ -381,14 +381,16 @@ impl Node {
 
         self.peer_mgr.connected_to(&peer_id);
 
-        debug!("{:?} Received ConnectSuccess from {:?}. Sending NodeIdentify.",
+        let id_type = if self.is_approved {
+            "NodeIdentify"
+        } else {
+            "CandidateIdentify"
+        };
+        debug!("{:?} Received ConnectSuccess from {:?}. Sending {}.",
                self,
-               peer_id);
-        if let Err(error) = self.send_node_identify(peer_id) {
-            warn!("{:?} Failed to send NodeIdentify to {:?}: {:?}",
-                  self,
-                  peer_id,
-                  error);
+               peer_id,
+               id_type);
+        if self.send_node_identify(peer_id).is_err() {
             self.disconnect_peer(&peer_id);
         }
     }
@@ -500,6 +502,17 @@ impl Node {
                     self.handle_node_identify(public_id, peer_id).map(Ok)
                 } else {
                     warn!("{:?} Signature check failed in NodeIdentify - Dropping peer {:?}",
+                          self,
+                          peer_id);
+                    self.disconnect_peer(&peer_id);
+                    Ok(()).to_evented()
+                }
+            }
+            CandidateIdentify { ref serialised_public_id, ref signature } => {
+                if let Ok(public_id) = verify_signed_public_id(serialised_public_id, signature) {
+                    self.handle_candidate_identify(public_id, peer_id).map(Ok)
+                } else {
+                    warn!("{:?} Signature check failed in CandidateIdentify - Dropping peer {:?}",
                           self,
                           peer_id);
                     self.disconnect_peer(&peer_id);
@@ -831,7 +844,7 @@ impl Node {
         // Once the joining node joined, it may receive the vote regarding itself.
         // Or a node may receive CandidateApproval before connection established.
         let (client_auth, peer_id) = match self.peer_mgr
-            .handle_node_approval_vote(candidate_name, validity) {
+            .handle_node_approval_vote(&candidate_name, validity) {
             Ok(candidate_info) => candidate_info,
             Err(error) => {
                 debug!("{:?} Failed handle node approval vote for {:?} / {:?}",
@@ -864,7 +877,8 @@ impl Node {
                                     candidate_name: XorName)
                                     -> Evented<Result<(), RoutingError>> {
         let mut result = Evented::empty();
-        let (pub_id, peer_id) = try_ev!(self.peer_mgr.handle_approval_confirmation(candidate_name),
+        let (pub_id, peer_id) = try_ev!(self.peer_mgr
+                                            .handle_approval_confirmation(&candidate_name),
                                         result);
         self.add_to_routing_table(&pub_id, &peer_id).extract(&mut result);
         result.map(Ok)
@@ -878,12 +892,7 @@ impl Node {
         }
 
         self.get_approval_timer_token = None;
-
         self.peer_mgr.add_prefixes(sections.keys().cloned().collect());
-
-        trace!("{:?} handle_node_approval completed. Prefixes: {:?}",
-               self,
-               self.peer_mgr.routing_table().prefixes());
 
         // TODO: is this necessary as this node is not approved as a full node by the section yet
         let our_prefix = *self.peer_mgr.routing_table().our_prefix();
@@ -899,10 +908,6 @@ impl Node {
                    self,
                    error);
         }
-
-        trace!("{:?} Node approval completed. Prefixes: {:?}",
-               self,
-               self.peer_mgr.routing_table().prefixes());
 
         for section in sections.values() {
             for pub_id in section.iter() {
@@ -924,6 +929,9 @@ impl Node {
             }
         }
 
+        trace!("{:?} Node approval completed. Prefixes: {:?}",
+               self,
+               self.peer_mgr.routing_table().prefixes());
         events.add_event(Event::Connected);
         for name in self.peer_mgr.routing_table().iter() {
             // TODO: try to remove this as safe_core/safe_vault may not reqiring this notification
@@ -962,7 +970,7 @@ impl Node {
         };
         if let Some(valid_candidate) =
             self.peer_mgr
-                .verify_candidate(name, proof, leading_zero_bytes, RESOURCE_PROOF_DIFFICULTY) {
+                .verify_candidate(&name, proof, leading_zero_bytes, RESOURCE_PROOF_DIFFICULTY) {
             let response_content = MessageContent::CandidateApproval(valid_candidate);
             let response_msg = RoutingMessage {
                 src: Authority::Section(name),
@@ -1142,7 +1150,26 @@ impl Node {
         debug!("{:?} Handling NodeIdentify from {:?}.",
                self,
                public_id.name());
-        match self.peer_mgr.check_candidate(&public_id, &peer_id) {
+        self.add_to_routing_table(&public_id, &peer_id).extract(&mut result);
+
+        if let Some(prefix) = self.peer_mgr.routing_table().find_section_prefix(public_id.name()) {
+            self.send_section_list_signature(prefix, None);
+            if prefix == *self.peer_mgr.routing_table().our_prefix() {
+                // if the node joined our section, send signatures for all section lists to it
+                for pfx in self.peer_mgr.routing_table().prefixes() {
+                    self.send_section_list_signature(pfx, Some(*public_id.name()));
+                }
+            }
+        }
+        result
+    }
+
+    fn handle_candidate_identify(&mut self, public_id: PublicId, peer_id: PeerId) -> Evented<()> {
+        let mut result = Evented::empty();
+        debug!("{:?} Handling CandidateIdentify from {:?}.",
+               self,
+               public_id.name());
+        match self.peer_mgr.handle_candidate_identify(&public_id, &peer_id) {
             Ok(Some((true, _))) => {
                 // if connection is in tunnel, vote NO directly, don't carry out profiling
                 // limitation: joining node ONLY carries out QUORAM valid evaluations
@@ -1180,11 +1207,10 @@ impl Node {
                        public_id.name());
                 self.add_to_routing_table(&public_id, &peer_id).extract(&mut result);
             }
-            Err(err) => {
-                debug!("{:?} has un-expected connection {:?}/{:?}.",
+            Err(_) => {
+                debug!("{:?} received unexpected CandidateIdentify from {:?}",
                        self,
-                       public_id.name(),
-                       err);
+                       public_id.name());
             }
         }
         result
@@ -1219,6 +1245,9 @@ impl Node {
 
         debug!("{:?} Added {:?} to routing table.", self, public_id.name());
         if self.is_first_node && self.peer_mgr.routing_table().len() == 1 {
+            trace!("{:?} Node approval completed. Prefixes: {:?}",
+                   self,
+                   self.peer_mgr.routing_table().prefixes());
             result.add_event(Event::Connected);
         }
 
@@ -2157,12 +2186,32 @@ impl Node {
         let serialised_public_id = serialisation::serialise(self.full_id().public_id())?;
         let signature = sign::sign_detached(&serialised_public_id,
                                             self.full_id().signing_private_key());
-        let direct_message = DirectMessage::NodeIdentify {
-            serialised_public_id: serialised_public_id,
-            signature: signature,
+        let direct_message = if self.is_approved {
+            DirectMessage::NodeIdentify {
+                serialised_public_id: serialised_public_id,
+                signature: signature,
+            }
+        } else {
+            DirectMessage::CandidateIdentify {
+                serialised_public_id: serialised_public_id,
+                signature: signature,
+            }
         };
 
-        self.send_direct_message(peer_id, direct_message)
+        let result = self.send_direct_message(peer_id, direct_message);
+        if let Err(ref error) = result {
+            let id_type = if self.is_approved {
+                "NodeIdentify"
+            } else {
+                "CandidateIdentify"
+            };
+            warn!("{:?} Failed to send {:?} to {:?}: {:?}",
+                  self,
+                  id_type,
+                  peer_id,
+                  error);
+        }
+        result
     }
 
     fn send_connection_info_request(&mut self,

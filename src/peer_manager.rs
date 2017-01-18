@@ -28,7 +28,6 @@ use rust_sodium::crypto::hash::sha256;
 use rust_sodium::crypto::sign;
 use std::{error, fmt, mem};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::collections::hash_map::Entry;
 use std::collections::hash_map::Values;
 use std::time::{Duration, Instant};
 use super::QUORUM;
@@ -316,7 +315,7 @@ pub struct PeerManager {
     proxy_peer_id: Option<PeerId>,
     routing_table: RoutingTable<XorName>,
     our_public_id: PublicId,
-    /// Joining nodes wants to join our section
+    /// Joining nodes which want to join our section
     candidates: HashMap<XorName, Candidate>,
 }
 
@@ -380,7 +379,7 @@ impl PeerManager {
                                    client_auth: &Authority<XorName>)
                                    -> Result<BTreeSet<PublicId>, RoutingError> {
         if self.candidates.contains_key(expected_name) ||
-           self.candidates.iter().any(|(_, ref candidate)| !candidate.is_timed_out()) {
+           self.candidates.iter().any(|(_, candidate)| !candidate.is_timed_out()) {
             return Err(RoutingError::AlreadyHandlingJoinRequest);
         }
 
@@ -399,15 +398,15 @@ impl PeerManager {
         Ok(self.get_pub_ids(&names))
     }
 
-    pub fn verify_candidate(&mut self,
-                            node_name: XorName,
+    pub fn verify_candidate(&self,
+                            node_name: &XorName,
                             proof: Vec<u8>,
                             _leading_zero_bytes: u32,
                             _difficulty: u32)
                             -> Option<bool> {
-        if let Entry::Occupied(candidate) = self.candidates.entry(node_name) {
-            if !candidate.get().is_slow() {
-                return Some(candidate.get().seed == proof);
+        if let Some(candidate) = self.candidates.get(node_name) {
+            if !candidate.is_slow() {
+                return Some(candidate.seed == proof);
             }
         }
         None
@@ -420,14 +419,14 @@ impl PeerManager {
     /// * Ok(peer_info)   peer_info for the node candidate
     /// * Err()           peer is not the node candidate or missing peer_info
     pub fn handle_node_approval_vote(&mut self,
-                                     candidate_name: XorName,
+                                     candidate_name: &XorName,
                                      validity: bool)
                                      -> Result<(Authority<XorName>, PeerId), RoutingError> {
-        if let Entry::Occupied(mut candidate) = self.candidates.entry(candidate_name) {
-            candidate.get_mut().approved = validity;
-            if let Some(peer) = self.peer_map.get_by_name(&candidate_name) {
+        if let Some(candidate) = self.candidates.get_mut(candidate_name) {
+            candidate.approved = validity;
+            if let Some(peer) = self.peer_map.get_by_name(candidate_name) {
                 if let Some(peer_id) = peer.peer_id() {
-                    return Ok((candidate.get().client_auth, *peer_id));
+                    return Ok((candidate.client_auth, *peer_id));
                 } else {
                     trace!("{:?} doesn't have peer_id for {:?}",
                            self.routing_table.our_name(),
@@ -452,12 +451,12 @@ impl PeerManager {
     ///
     /// * Ok(peer_info)   peer_info for the joining node
     /// * Err()           peer is not the node candidate or missing peer_info
-    pub fn handle_approval_confirmation(&mut self,
-                                        candidate_name: XorName)
+    pub fn handle_approval_confirmation(&self,
+                                        candidate_name: &XorName)
                                         -> Result<(PublicId, PeerId), RoutingError> {
-        if let Entry::Occupied(candidate) = self.candidates.entry(candidate_name) {
-            if candidate.get().approved {
-                if let Some(peer) = self.peer_map.get_by_name(&candidate_name) {
+        if let Some(candidate) = self.candidates.get(candidate_name) {
+            if candidate.approved {
+                if let Some(peer) = self.peer_map.get_by_name(candidate_name) {
                     if let Some(peer_id) = peer.peer_id() {
                         return Ok((*peer.pub_id(), *peer_id));
                     } else {
@@ -476,34 +475,34 @@ impl PeerManager {
         Err(RoutingError::InvalidStateForOperation)
     }
 
-    /// Update peer's state to `Candidate` if it is a node candidate
+    /// Updates peer's state to `Candidate` in the peer map if it is an unapproved candidate and
+    /// returns the seed to allow the challenge to begin.
     ///
     /// Returns:
     ///
-    /// * Ok(None)                   if the peer is not a node candidate for resource proof or has
-    /// *                            been approved
-    /// * Ok(Some(is_tunnel, seed))  if the peer is a node candidate
-    /// * Err(AlreadyExists)         If peer already a routing node
-    pub fn check_candidate(&mut self,
-                           pub_id: &PublicId,
-                           peer_id: &PeerId)
-                           -> Result<Option<(bool, Vec<u8>)>, RoutingError> {
-        if let Entry::Occupied(candidate) = self.candidates.entry(*pub_id.name()) {
-            if !candidate.get().seed.is_empty() {
+    /// * Ok(Some(is_tunnel, seed))  if the peer is an unapproved candidate
+    /// * Ok(None)                   if the peer has already been approved
+    /// * Err(UnknownCandidate)      if the peer is not in the candidate list
+    pub fn handle_candidate_identify(&mut self,
+                                     pub_id: &PublicId,
+                                     peer_id: &PeerId)
+                                     -> Result<Option<(bool, Vec<u8>)>, RoutingError> {
+        if let Some(candidate) = self.candidates.get(pub_id.name()) {
+            if candidate.approved {
+                Ok(None)
+            } else {
                 let tunnel = match self.peer_map.get(peer_id).map(|peer| &peer.state) {
                     Some(&PeerState::SearchingForTunnel) |
                     Some(&PeerState::AwaitingNodeIdentify(true)) => true,
-                    Some(&PeerState::Routing(_)) => {
-                        return Err(From::from(RoutingTableError::AlreadyExists));
-                    }
                     _ => false,
                 };
                 let state = PeerState::Candidate(tunnel);
                 let _ = self.peer_map.insert(Peer::new(*pub_id, Some(*peer_id), state));
-                return Ok(Some((tunnel, candidate.get().seed.clone())));
+                Ok(Some((tunnel, candidate.seed.clone())))
             }
+        } else {
+            Err(RoutingError::UnknownCandidate)
         }
-        Ok(None)
     }
 
     /// Tries to add the given peer to the routing table. If successful, this returns `Ok(true)` if
