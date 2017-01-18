@@ -121,8 +121,17 @@ pub enum DirectMessage {
         /// Indicate whether we intend to remain a client, as opposed to becoming a routing node.
         client_restriction: bool,
     },
-    /// Sent from a node to a node, to allow the latter to add the former to its routing table.
+    /// Sent from an established node (i.e. one which has successfully joined the network) to
+    /// another node, to allow the latter to add the former to its routing table.
     NodeIdentify {
+        /// Keys and claimed name, serialised outside routing.
+        serialised_public_id: Vec<u8>,
+        /// Signature of the originator of this message.
+        signature: sign::Signature,
+    },
+    /// Sent from a node which is still joining the network to another node, to allow the latter to
+    /// add the former to its routing table.
+    CandidateIdentify {
         /// Keys and claimed name, serialised outside routing.
         serialised_public_id: Vec<u8>,
         /// Signature of the originator of this message.
@@ -675,6 +684,9 @@ impl Debug for DirectMessage {
                 write!(formatter, "ClientIdentify (joining node)")
             }
             DirectMessage::NodeIdentify { .. } => write!(formatter, "NodeIdentify {{ .. }}"),
+            DirectMessage::CandidateIdentify { .. } => {
+                write!(formatter, "CandidateIdentify {{ .. }}")
+            }
             DirectMessage::TunnelRequest(peer_id) => {
                 write!(formatter, "TunnelRequest({:?})", peer_id)
             }

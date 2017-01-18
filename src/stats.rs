@@ -36,6 +36,7 @@ pub struct Stats {
     unacked_msgs: usize,
 
     msg_direct_node_identify: usize,
+    msg_direct_candidate_identify: usize,
     msg_direct_sig: usize,
     msg_direct_resource_proof: usize,
     msg_direct_resource_proof_rsp: usize,
@@ -164,6 +165,7 @@ impl Stats {
         use messages::DirectMessage::*;
         match *msg {
             NodeIdentify { .. } => self.msg_direct_node_identify += 1,
+            CandidateIdentify { .. } => self.msg_direct_candidate_identify += 1,
             MessageSignature(..) => self.msg_direct_sig += 1,
             SectionListSignature(..) => self.msg_direct_sls += 1,
             ResourceProof { .. } => self.msg_direct_resource_proof += 1,
@@ -197,9 +199,10 @@ impl Stats {
                   self.routes,
                   self.unacked_msgs);
             info!(target: "routing_stats",
-                  "Stats - Direct - NodeIdentify: {}, MessageSignature: {}, ResourceProof: {}/{}, \
-                  SectionListSignature: {}",
+                  "Stats - Direct - NodeIdentify: {}, CandidateIdentify: {}, MessageSignature: {}, \
+                  ResourceProof: {}/{}, SectionListSignature: {}",
                   self.msg_direct_node_identify,
+                  self.msg_direct_candidate_identify,
                   self.msg_direct_sig,
                   self.msg_direct_resource_proof,
                   self.msg_direct_resource_proof_rsp,
