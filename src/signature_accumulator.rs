@@ -27,7 +27,7 @@ use std::time::Instant;
 
 /// Time (in seconds) within which a message and a quorum of signatures need to arrive to
 /// accumulate.
-const ACCUMULATION_TIMEOUT_SECS: u64 = 30;
+pub const ACCUMULATION_TIMEOUT_SECS: u64 = 30;
 
 #[derive(Default)]
 pub struct SignatureAccumulator {
