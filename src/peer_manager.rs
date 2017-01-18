@@ -317,7 +317,7 @@ pub struct PeerManager {
     routing_table: RoutingTable<XorName>,
     our_public_id: PublicId,
     /// Joining nodes wants to join our section
-    candidates: HashMap<XorName, Candidate>
+    candidates: HashMap<XorName, Candidate>,
 }
 
 impl PeerManager {
@@ -390,11 +390,11 @@ impl PeerManager {
         let seed = rng.gen_iter().take(10).collect();
         let _ = self.candidates.insert(*expected_name,
                                        Candidate {
-                                            insertion_time: Instant::now(),
-                                            seed: seed,
-                                            client_auth: *client_auth,
-                                            approved: false,
-                                        });
+                                           insertion_time: Instant::now(),
+                                           seed: seed,
+                                           client_auth: *client_auth,
+                                           approved: false,
+                                       });
 
         Ok(self.get_pub_ids(&names))
     }
@@ -550,9 +550,11 @@ impl PeerManager {
             }
         }
 
-        let removal_keys = self.candidates.iter()
-            .find(|&(name, candidate)|
-                !candidate.approved && !self.routing_table.our_prefix().matches(name))
+        let removal_keys = self.candidates
+            .iter()
+            .find(|&(name, candidate)| {
+                !candidate.approved && !self.routing_table.our_prefix().matches(name)
+            })
             .map(|(name, _)| *name);
         for name in removal_keys.iter() {
             let _ = self.candidates.remove(name);
@@ -675,12 +677,10 @@ impl PeerManager {
 
     /// Returns the public ID of the given peer, if it is in `Routing` state.
     pub fn get_routing_peer(&self, peer_id: &PeerId) -> Option<&PublicId> {
-        self.peer_map.get(peer_id).and_then(|peer| {
-            if let PeerState::Routing(_) = peer.state {
-                Some(&peer.pub_id)
-            } else {
-                None
-            }
+        self.peer_map.get(peer_id).and_then(|peer| if let PeerState::Routing(_) = peer.state {
+            Some(&peer.pub_id)
+        } else {
+            None
         })
     }
 
@@ -894,12 +894,10 @@ impl PeerManager {
 
     /// Returns the public ID of the given peer, if it is in `CrustConnecting` state.
     pub fn get_connecting_peer(&self, peer_id: &PeerId) -> Option<&PublicId> {
-        self.peer_map.get(peer_id).and_then(|peer| {
-            if let PeerState::CrustConnecting = peer.state {
-                return Some(&peer.pub_id);
-            } else {
-                None
-            }
+        self.peer_map.get(peer_id).and_then(|peer| if let PeerState::CrustConnecting = peer.state {
+            return Some(&peer.pub_id);
+        } else {
+            None
         })
     }
 
@@ -911,15 +909,13 @@ impl PeerManager {
     /// Returns the peer with the given peer_id if it is already in one of the
     /// connected states.
     pub fn get_connected_peer(&self, peer_id: &PeerId) -> Option<&Peer> {
-        self.peer_map.get(peer_id).and_then(|peer| {
-            match peer.state {
-                PeerState::Client |
-                PeerState::JoiningNode |
-                PeerState::Proxy |
-                PeerState::Candidate(_) |
-                PeerState::Routing(_) => Some(peer),
-                _ => None,
-            }
+        self.peer_map.get(peer_id).and_then(|peer| match peer.state {
+            PeerState::Client |
+            PeerState::JoiningNode |
+            PeerState::Proxy |
+            PeerState::Candidate(_) |
+            PeerState::Routing(_) => Some(peer),
+            _ => None,
         })
     }
 
@@ -945,12 +941,10 @@ impl PeerManager {
     /// know about (i.e. unknown names are ignored).
     pub fn get_pub_ids(&self, names: &HashSet<XorName>) -> BTreeSet<PublicId> {
         let mut result_map = names.iter()
-            .filter_map(|name| {
-                if let Some(peer) = self.peer_map.get_by_name(name) {
-                    Some((*name, peer.pub_id))
-                } else {
-                    None
-                }
+            .filter_map(|name| if let Some(peer) = self.peer_map.get_by_name(name) {
+                Some((*name, peer.pub_id))
+            } else {
+                None
             })
             .collect::<HashMap<_, _>>();
 

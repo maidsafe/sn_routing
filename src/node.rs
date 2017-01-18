@@ -101,6 +101,9 @@ impl NodeBuilder {
         let full_id = FullId::new();
 
         StateMachine::new(move |crust_service, timer| {
+            let not_allowed_on_lan = self.deny_other_local_nodes &&
+                                     crust_service.has_peers_on_lan();
+
             if self.first {
                 if let Some(state) = states::Node::first(self.cache,
                                                          crust_service,
@@ -112,7 +115,7 @@ impl NodeBuilder {
                         State::Terminated
                     }
                     .to_evented()
-            } else if self.deny_other_local_nodes && crust_service.has_peers_on_lan() {
+            } else if not_allowed_on_lan {
                 error!("Bootstrapping({:?}) More than 1 routing node found on LAN. Currently \
                         this is not supported",
                        full_id.public_id().name());
