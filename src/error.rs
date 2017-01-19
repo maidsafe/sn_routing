@@ -113,6 +113,12 @@ pub enum RoutingError {
     HashMismatch,
     /// Candidate is unknown
     UnknownCandidate,
+    /// Operation timed out
+    TimedOut,
+    /// Failed validation of resource proof
+    FailedResourceProofValidation,
+    /// Candidate is connected via a tunnel
+    CandidateIsTunnelling,
 }
 
 impl From<RoutingTableError> for RoutingError {

@@ -770,10 +770,8 @@ impl Node {
             (ExpectCandidate { expect_id, client_auth, message_id }, Section(_), Section(_)) => {
                 self.handle_expect_candidate(expect_id, client_auth, message_id).to_evented()
             }
-            (AcceptAsCandidate { expect_id, client_auth, section, message_id },
-             Section(_),
-             Section(_)) => {
-                self.handle_accept_as_candidate(expect_id, client_auth, section, message_id)
+            (AcceptAsCandidate { expect_id, client_auth, message_id }, Section(_), Section(_)) => {
+                self.handle_accept_as_candidate(expect_id, client_auth, message_id)
                     .to_evented()
             }
             (ConnectionInfoRequest { encrypted_conn_info, nonce, pub_id, msg_id },
@@ -803,8 +801,8 @@ impl Node {
                                                      dst)
                     .to_evented()
             }
-            (CandidateApproval { sections }, Section(_), Section(candidate_name)) => {
-                self.handle_candidate_approval(candidate_name, sections)
+            (CandidateApproval { candidate_id, client_auth, sections }, Section(_), Section(_)) => {
+                self.handle_candidate_approval(candidate_id, client_auth, sections)
             }
             (NodeApproval { sections }, Section(_), Client { .. }) => {
                 self.handle_node_approval(&sections)
@@ -842,43 +840,46 @@ impl Node {
     }
 
     fn handle_candidate_approval(&mut self,
-                                 candidate_name: XorName,
+                                 candidate_id: PublicId,
+                                 client_auth: Authority<XorName>,
                                  sections: SectionMap)
                                  -> Evented<Result<(), RoutingError>> {
         let mut result = Evented::empty();
         // Once the joining node joined, it may receive the vote regarding itself.
         // Or a node may receive CandidateApproval before connection established.
-        let validity = !sections.is_empty();
-        let (client_auth, peer_id) = match self.peer_mgr
-            .handle_candidate_approval(&candidate_name, validity) {
-            Ok(candidate_info) => candidate_info,
-            Err(error) => {
-                debug!("{:?} Failed handle node approval vote for {:?} / {:?}",
-                       self,
-                       candidate_name,
-                       error);
-                return result.map(Ok);
+        let opt_peer_id = match self.peer_mgr
+            .handle_candidate_approval(*candidate_id.name(), client_auth) {
+            Ok(peer_id) => Some(peer_id),
+            Err(_) => {
+                let src = Authority::ManagedNode(*self.name());
+                let node_auth = Authority::ManagedNode(*candidate_id.name());
+                if let Err(error) = self.send_connection_info_request(candidate_id, src, node_auth)
+                    .extract(&mut result) {
+                    debug!("{:?} - Failed to send connection info to {:?}: {:?}",
+                           self,
+                           candidate_id,
+                           error);
+                }
+                None
             }
         };
 
-        if validity {
-            info!("{:?} Sending NodeApproval to {:?}.", self, candidate_name);
-            if let Err(error) = self.send_routing_message(RoutingMessage {
-                src: Authority::Section(candidate_name),
-                dst: client_auth,
-                content: MessageContent::NodeApproval { sections: sections },
-            }) {
-                debug!("{:?} Failed sending NodeApproval to {:?} / {:?}",
-                       self,
-                       candidate_name,
-                       error);
-            }
-            let (pub_id, peer_id) = try_ev!(self.peer_mgr
-                                                .handle_approval_confirmation(&candidate_name),
-                                            result);
-            self.add_to_routing_table(&pub_id, &peer_id).extract(&mut result);
-        } else {
-            self.disconnect_peer(&peer_id);
+        info!("{:?} Sending NodeApproval to {}.",
+              self,
+              candidate_id.name());
+        if let Err(error) = self.send_routing_message(RoutingMessage {
+            src: Authority::Section(*candidate_id.name()),
+            dst: client_auth,
+            content: MessageContent::NodeApproval { sections: sections },
+        }) {
+            debug!("{:?} Failed sending NodeApproval to {}: {:?}",
+                   self,
+                   candidate_id.name(),
+                   error);
+        }
+
+        if let Some(peer_id) = opt_peer_id {
+            self.add_to_routing_table(&candidate_id, &peer_id).extract(&mut result);
         }
         result.map(Ok)
     }
@@ -892,10 +893,6 @@ impl Node {
 
         self.get_approval_timer_token = None;
         self.peer_mgr.add_prefixes(sections.keys().cloned().collect());
-
-        trace!("{:?} handle_node_approval completed. Prefixes: {:?}",
-               self,
-               self.peer_mgr.routing_table().prefixes());
 
         let our_prefix = *self.peer_mgr.routing_table().our_prefix();
         self.send_section_list_signature(our_prefix, None);
@@ -920,6 +917,9 @@ impl Node {
             }
         }
 
+        trace!("{:?} Node approval completed. Prefixes: {:?}",
+               self,
+               self.peer_mgr.routing_table().prefixes());
         events.add_event(Event::Connected);
         for name in self.peer_mgr.routing_table().iter() {
             // TODO: try to remove this as safe_core/safe_vault may not reqiring this notification
@@ -951,29 +951,38 @@ impl Node {
         let name = if let Some(name) = self.peer_mgr.get_peer_name(&peer_id) {
             *name
         } else {
-            debug!("{:?} Failed handle resource proof response from {:?}",
+            debug!("{:?} Failed to handle resource proof response from {:?}",
                    self,
                    peer_id);
             return;
         };
-        if let Some(valid_candidate) =
-            self.peer_mgr
-                .verify_candidate(&name, proof, leading_zero_bytes, RESOURCE_PROOF_DIFFICULTY) {
-            let sections = if valid_candidate {
-                self.peer_mgr.pub_ids_by_section()
-            } else {
-                BTreeMap::new()
-            };
-            let response_content = MessageContent::CandidateApproval { sections: sections };
-            let response_msg = RoutingMessage {
-                src: Authority::Section(name),
-                dst: Authority::Section(name),
-                content: response_content,
-            };
-            info!("{:?} Sending CandidateApproval {:?}.", self, response_msg);
-            if let Err(error) = self.send_routing_message(response_msg) {
-                debug!("{:?} Failed sending CandidateApproval: {:?}", self, error);
+
+        let (candidate_id, client_auth, sections) = match self.peer_mgr
+            .verify_candidate(&name, proof, leading_zero_bytes, RESOURCE_PROOF_DIFFICULTY) {
+            Err(error) => {
+                debug!("{:?} Failed to verify candidate {}: {:?}",
+                       self,
+                       name,
+                       error);
+                return;
             }
+            Ok(info) => info,
+        };
+        let response_content = MessageContent::CandidateApproval {
+            candidate_id: candidate_id,
+            client_auth: client_auth,
+            sections: sections,
+        };
+        let response_msg = RoutingMessage {
+            src: Authority::Section(name),
+            dst: Authority::Section(name),
+            content: response_content,
+        };
+        info!("{:?} Candidate approved.  Sending {:?}.",
+              self,
+              response_msg);
+        if let Err(error) = self.send_routing_message(response_msg) {
+            debug!("{:?} Failed sending CandidateApproval: {:?}", self, error);
         }
     }
 
@@ -1161,21 +1170,7 @@ impl Node {
                self,
                public_id.name());
         match self.peer_mgr.handle_candidate_identify(&public_id, &peer_id) {
-            Ok(Some((true, _))) => {
-                // if connection is in tunnel, vote NO directly, don't carry out profiling
-                // limitation: joining node ONLY carries out QUORAM valid evaluations
-                if let Err(error) = self.send_routing_message(RoutingMessage {
-                    src: Authority::Section(*public_id.name()),
-                    dst: Authority::Section(*public_id.name()),
-                    content: MessageContent::CandidateApproval { sections: BTreeMap::new() },
-                }) {
-                    info!("{:?} failed sending CandidateApproval false to rejecting {:?}:{:?}.",
-                          self,
-                          public_id.name(),
-                          error);
-                }
-            }
-            Ok(Some((false, seed))) => {
+            Ok(Some(seed)) => {
                 let direct_message = DirectMessage::ResourceProof {
                     seed: seed,
                     target_size: resource_proof_target_size(self.min_section_size(),
@@ -1198,10 +1193,12 @@ impl Node {
                        public_id.name());
                 self.add_to_routing_table(&public_id, &peer_id).extract(&mut result);
             }
-            Err(_) => {
-                debug!("{:?} received unexpected CandidateIdentify from {:?}",
+            Err(error) => {
+                debug!("{:?} failed to handle CandidateIdentify from {:?}: {:?} - disconnecting",
                        self,
-                       public_id.name());
+                       public_id.name(),
+                       error);
+                self.disconnect_peer(&peer_id);
             }
         }
         result
@@ -1706,37 +1703,26 @@ impl Node {
     // Received by Y; From X -> Y
     // Context: a node is joining our section. Sends `AcceptAsCandidate` to our section.
     fn handle_expect_candidate(&mut self,
-                               expect_id: PublicId,
+                               candidate_id: PublicId,
                                client_auth: Authority<XorName>,
                                message_id: MessageId)
                                -> Result<(), RoutingError> {
-        if expect_id == *self.full_id.public_id() {
+        if candidate_id == *self.full_id.public_id() {
             // If we're the joining node: stop
             return Ok(());
         }
 
-        // TODO - do we need to reply if `expect_id` triggers a failure here?
-        let own_section = match self.peer_mgr
-            .expect_join_our_section(expect_id.name(), &client_auth) {
-            Ok(section) => section,
-            Err(error) => {
-                debug!("{:?} not expecting {:?}: {:?}.", self, expect_id, error);
-                return Err(error);
-            }
-        };
-
+        // TODO - do we need to reply if `candidate_id` triggers a failure here?
+        self.peer_mgr.expect_candidate(*candidate_id.name(), client_auth)?;
         let response_content = MessageContent::AcceptAsCandidate {
-            expect_id: expect_id,
+            expect_id: candidate_id,
             client_auth: client_auth,
-            section: own_section,
             message_id: message_id,
         };
-
         trace!("{:?} Responding to section {:?}.", self, response_content);
-
         self.send_routing_message(RoutingMessage {
-            src: Authority::Section(*expect_id.name()),
-            dst: Authority::Section(*expect_id.name()),
+            src: Authority::Section(*candidate_id.name()),
+            dst: Authority::Section(*candidate_id.name()),
             content: response_content,
         })
     }
@@ -1744,29 +1730,27 @@ impl Node {
     // Received by Y; From Y -> Y
     // Context: a node is joining our section. Sends the node our section.
     fn handle_accept_as_candidate(&mut self,
-                                  expect_id: PublicId,
+                                  candidate_id: PublicId,
                                   client_auth: Authority<XorName>,
-                                  own_section: BTreeSet<PublicId>,
                                   message_id: MessageId)
                                   -> Result<(), RoutingError> {
-        if expect_id == *self.full_id.public_id() {
+        if candidate_id == *self.full_id.public_id() {
             // If we're the joining node: stop
             return Ok(());
         }
 
+        let own_section = self.peer_mgr.accept_as_candidate(*candidate_id.name(), client_auth)?;
         let response_content = MessageContent::GetNodeNameResponse {
-            relocated_id: expect_id,
+            relocated_id: candidate_id,
             section: own_section,
             message_id: message_id,
         };
-
-        trace!("{:?} Responding to client {:?}: {:?}.",
+        trace!("{:?} Responding to candidate {:?}: {:?}.",
                self,
                client_auth,
                response_content);
-
         self.send_routing_message(RoutingMessage {
-            src: Authority::Section(*expect_id.name()),
+            src: Authority::Section(*candidate_id.name()),
             dst: client_auth,
             content: response_content,
         })

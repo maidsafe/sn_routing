@@ -190,15 +190,15 @@ impl Stats {
         if self.msg_total % MSG_LOG_COUNT == 0 {
             info!(target: "routing_stats",
                   "Stats - Sent {} messages in total, comprising {} bytes, {} uncategorised, \
-                  routes/failed: {:?}/{}",
+                   routes/failed: {:?}/{}",
                   self.msg_total,
                   self.msg_total_bytes,
                   self.msg_other,
                   self.routes,
                   self.unacked_msgs);
             info!(target: "routing_stats",
-                  "Stats - Direct - NodeIdentify: {}, CandidateIdentify: {}, MessageSignature: {}, \
-                  ResourceProof: {}/{}, SectionListSignature: {}",
+                  "Stats - Direct - NodeIdentify: {}, CandidateIdentify: {}, \
+                   MessageSignature: {}, ResourceProof: {}/{}, SectionListSignature: {}",
                   self.msg_direct_node_identify,
                   self.msg_direct_candidate_identify,
                   self.msg_direct_sig,

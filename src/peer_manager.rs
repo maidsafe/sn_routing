@@ -19,8 +19,9 @@ use crust::{PeerId, PrivConnectionInfo, PubConnectionInfo};
 use error::RoutingError;
 use id::PublicId;
 use itertools::Itertools;
-use maidsafe_utilities::SeededRng;
-use rand::{self, Rng};
+use rand;
+#[cfg(not(feature = "use-mock-crust"))]
+use rand::Rng;
 use routing_table::{Authority, OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix,
                     RemovalDetails, RoutingTable};
 use routing_table::Error as RoutingTableError;
@@ -280,23 +281,52 @@ impl PeerMap {
     }
 }
 
+#[derive(Debug)]
+enum CandidateState {
+    VotedFor,
+    AcceptedAsCandidate,
+    Approved,
+}
+
 /// Holds the information of the joining node.
 #[derive(Debug)]
 struct Candidate {
     insertion_time: Instant,
     seed: Vec<u8>,
     client_auth: Authority<XorName>,
-    approved: bool,
+    state: CandidateState,
 }
 
 impl Candidate {
-    fn is_timed_out(&self) -> bool {
+    fn new(client_auth: Authority<XorName>) -> Candidate {
+#[cfg(not(feature = "use-mock-crust"))]
+        let seed = rand::thread_rng().gen_iter().take(10).collect();
+#[cfg(feature = "use-mock-crust")]
+        let seed = vec![5u8; 4];
+
+        Candidate {
+            insertion_time: Instant::now(),
+            seed: seed,
+            client_auth: client_auth,
+            state: CandidateState::VotedFor,
+        }
+    }
+
+    fn is_expired(&self) -> bool {
         self.insertion_time.elapsed() > Duration::from_secs(RESOURCE_PROOF_TIMEOUT_SECS)
     }
 
     fn is_slow(&self) -> bool {
         self.insertion_time.elapsed() >
         Duration::from_secs(RESOURCE_PROOF_TIMEOUT_SECS - ACCUMULATION_TIMEOUT_SECS)
+    }
+
+    fn is_approved(&self) -> bool {
+        match self.state {
+            CandidateState::VotedFor |
+            CandidateState::AcceptedAsCandidate => false,
+            CandidateState::Approved => true,
+        }
     }
 }
 
@@ -367,107 +397,103 @@ impl PeerManager {
         let _ = self.expected_peers.insert(*id.name(), Instant::now());
     }
 
-    /// Wraps the routing table function of the same name and maps `XorName`s to `PublicId`s.
-    ///
-    /// Returns:
-    ///
-    /// * Err()             If already handling a joining request
-    /// * Ok(our_section)   If needs to carry out resource proof evaluate
-    pub fn expect_join_our_section(&mut self,
-                                   expected_name: &XorName,
-                                   client_auth: &Authority<XorName>)
-                                   -> Result<BTreeSet<PublicId>, RoutingError> {
-        if self.candidates.contains_key(expected_name) ||
-           self.candidates.iter().any(|(_, candidate)| !candidate.is_timed_out()) {
+    /// Adds a potential candidate to the candidate list setting its state to `VotedFor`.  If
+    /// another ongoing (i.e. unapproved) candidate exists, returns an error.
+    pub fn expect_candidate(&mut self,
+                            candidate_name: XorName,
+                            client_auth: Authority<XorName>)
+                            -> Result<(), RoutingError> {
+        if self.candidates.iter().any(|(_, candidate)| !candidate.is_approved()) {
+            debug!("{} rejected {} as a new candidate (still handling previous one).",
+                   self.routing_table.our_name(),
+                   candidate_name);
             return Err(RoutingError::AlreadyHandlingJoinRequest);
         }
-
-        let names = self.routing_table.expect_join_our_section(expected_name)?;
-
-        let mut rng = SeededRng::new();
-        let seed = rng.gen_iter().take(10).collect();
-        let _ = self.candidates.insert(*expected_name,
-                                       Candidate {
-                                           insertion_time: Instant::now(),
-                                           seed: seed,
-                                           client_auth: *client_auth,
-                                           approved: false,
-                                       });
-
-        Ok(self.get_pub_ids(&names))
+        // TODO - should check RT here for suitability?
+        let _ = self.candidates.insert(candidate_name, Candidate::new(client_auth));
+        Ok(())
     }
 
+    /// Our section has agreed that the candidate should be accepted pending proof of resource.
+    /// Replaces any other potential candidate we have previously voted for.  Sets the candidate
+    /// state to `AcceptedAsCandidate`.  Returns an error if the
+    pub fn accept_as_candidate(&mut self,
+                               candidate_name: XorName,
+                               client_auth: Authority<XorName>)
+                               -> Result<BTreeSet<PublicId>, RoutingError> {
+        self.remove_unapproved_candidates(&candidate_name);
+        {
+            let candidate = self.candidates
+                .entry(candidate_name)
+                .or_insert_with(|| Candidate::new(client_auth));
+            candidate.state = CandidateState::AcceptedAsCandidate;
+        }
+        // TODO - checks RT here - maybe shouldn't?
+        let our_section = self.routing_table.expect_join_our_section(&candidate_name)?;
+        Ok(self.get_pub_ids(&our_section))
+    }
+
+    /// Verifies proof of resource.  If the response is too close to the overall resource proof
+    /// timeout, or if it's not the current candidate, or if it fails validation, returns `Err`.
+    /// Otherwise returns a tuple containing the candidate's `PublicId`, its client `Authority` and
+    /// the `PublicId`s of all routing table entries.
     pub fn verify_candidate(&self,
-                            node_name: &XorName,
+                            candidate_name: &XorName,
                             proof: Vec<u8>,
                             _leading_zero_bytes: u32,
                             _difficulty: u32)
-                            -> Option<bool> {
-        if let Some(candidate) = self.candidates.get(node_name) {
-            if !candidate.is_slow() {
-                return Some(candidate.seed == proof);
+                            -> Result<(PublicId, Authority<XorName>, SectionMap), RoutingError> {
+        if let Some(candidate) = self.candidates.get(candidate_name) {
+            if candidate.is_slow() {
+                return Err(RoutingError::TimedOut);
             }
+            if candidate.seed == proof {
+                if let Some(peer) = self.peer_map.get_by_name(candidate_name) {
+                    Ok((*peer.pub_id(), candidate.client_auth, self.pub_ids_by_section()))
+                } else {
+                    Err(RoutingError::UnknownCandidate)
+                }
+            } else {
+                Err(RoutingError::FailedResourceProofValidation)
+            }
+        } else {
+            Err(RoutingError::UnknownCandidate)
         }
-        None
     }
 
-    /// Handles candidate approval vote. `validity` indicates whether rejected or approved
-    ///
-    /// Returns:
-    ///
-    /// * Ok(peer_info)   peer_info for the node candidate
-    /// * Err()           peer is not the node candidate or missing peer_info
+    /// Handles accumulated candidate approval.  Marks the candidate as `Approved` and returns the
+    /// candidate's `PeerId` if we're directly-connected to it (so we can add it to our routing
+    /// table); or `Err` if the peer is not the candidate or we are missing its info, or we're not
+    /// connected to it.
     pub fn handle_candidate_approval(&mut self,
-                                     candidate_name: &XorName,
-                                     validity: bool)
-                                     -> Result<(Authority<XorName>, PeerId), RoutingError> {
-        if let Some(candidate) = self.candidates.get_mut(candidate_name) {
-            candidate.approved = validity;
-            if let Some(peer) = self.peer_map.get_by_name(candidate_name) {
+                                     candidate_name: XorName,
+                                     client_auth: Authority<XorName>)
+                                     -> Result<PeerId, RoutingError> {
+        if let Some(candidate) = self.candidates.get_mut(&candidate_name) {
+            candidate.state = CandidateState::Approved;
+            if let Some(peer) = self.peer_map.get_by_name(&candidate_name) {
                 if let Some(peer_id) = peer.peer_id() {
-                    return Ok((candidate.client_auth, *peer_id));
+                    if peer.state().is_directly_connected() {
+                        return Ok(*peer_id);
+                    }
                 } else {
                     trace!("{:?} doesn't have peer_id for {:?}",
                            self.routing_table.our_name(),
                            candidate_name);
                 }
+            } else {
+                trace!("{:?} doesn't have peer for {:?}",
+                       self.routing_table.our_name(),
+                       candidate_name);
             }
             return Err(RoutingError::InvalidStateForOperation);
         }
 
-        trace!("{:?} received NodeApproval for {:?}, but doesn't record it as a \
-                candidate or having its peer info.  Current candidates: {:?}",
-               self.routing_table.our_name(),
-               candidate_name,
-               self.candidates);
-        // TODO: more specific return error
-        Err(RoutingError::InvalidStateForOperation)
-    }
-
-    /// Handles approval confirmation from the joining node
-    ///
-    /// Returns:
-    ///
-    /// * Ok(peer_info)   peer_info for the joining node
-    /// * Err()           peer is not the node candidate or missing peer_info
-    pub fn handle_approval_confirmation(&self,
-                                        candidate_name: &XorName)
-                                        -> Result<(PublicId, PeerId), RoutingError> {
-        if let Some(candidate) = self.candidates.get(candidate_name) {
-            if candidate.approved {
-                if let Some(peer) = self.peer_map.get_by_name(candidate_name) {
-                    if let Some(peer_id) = peer.peer_id() {
-                        return Ok((*peer.pub_id(), *peer_id));
-                    } else {
-                        trace!("{:?} doesn't have peer_id for {:?}",
-                               self.routing_table.our_name(),
-                               candidate_name);
-                    }
-                }
-            }
-        }
-        trace!("{:?} received ApprovalConfirmation for {:?}, but doesn't record it as a \
-                candidate or having its peer info",
+        self.remove_unapproved_candidates(&candidate_name);
+        let mut candidate = Candidate::new(client_auth);
+        candidate.state = CandidateState::Approved;
+        let _ = self.candidates.insert(candidate_name, candidate);
+        trace!("{:?} doesn't have candidate for {:?}",
                self.routing_table.our_name(),
                candidate_name);
         // TODO: more specific return error
@@ -479,15 +505,16 @@ impl PeerManager {
     ///
     /// Returns:
     ///
-    /// * Ok(Some(is_tunnel, seed))  if the peer is an unapproved candidate
-    /// * Ok(None)                   if the peer has already been approved
-    /// * Err(UnknownCandidate)      if the peer is not in the candidate list
+    /// * Ok(Some(seed))              if the peer is an unapproved candidate
+    /// * Ok(None)                    if the peer has already been approved
+    /// * Err(CandidateIsTunnelling)  if the peer is tunnelling
+    /// * Err(UnknownCandidate)       if the peer is not in the candidate list
     pub fn handle_candidate_identify(&mut self,
                                      pub_id: &PublicId,
                                      peer_id: &PeerId)
-                                     -> Result<Option<(bool, Vec<u8>)>, RoutingError> {
+                                     -> Result<Option<Vec<u8>>, RoutingError> {
         if let Some(candidate) = self.candidates.get(pub_id.name()) {
-            if candidate.approved {
+            if candidate.is_approved() {
                 Ok(None)
             } else {
                 let tunnel = match self.peer_map.get(peer_id).map(|peer| &peer.state) {
@@ -497,7 +524,11 @@ impl PeerManager {
                 };
                 let state = PeerState::Candidate(tunnel);
                 let _ = self.peer_map.insert(Peer::new(*pub_id, Some(*peer_id), state));
-                Ok(Some((tunnel, candidate.seed.clone())))
+                if tunnel {
+                    Err(RoutingError::CandidateIsTunnelling)
+                } else {
+                    Ok(Some(candidate.seed.clone()))
+                }
             }
         } else {
             Err(RoutingError::UnknownCandidate)
@@ -551,7 +582,7 @@ impl PeerManager {
         let removal_keys = self.candidates
             .iter()
             .find(|&(name, candidate)| {
-                !candidate.approved && !self.routing_table.our_prefix().matches(name)
+                !candidate.is_approved() && !self.routing_table.our_prefix().matches(name)
             })
             .map(|(name, _)| *name);
         for name in removal_keys.iter() {
@@ -1183,6 +1214,7 @@ impl PeerManager {
     fn remove_expired(&mut self) {
         self.remove_expired_peers();
         self.cleanup_proxy_peer_id();
+        self.remove_expired_candidates();
     }
 
     fn remove_expired_peers(&mut self) {
@@ -1205,6 +1237,20 @@ impl PeerManager {
                 self.proxy_peer_id = None;
             }
         }
+    }
+
+    fn remove_unapproved_candidates(&mut self, candidate_name: &XorName) {
+        let old_candidates = mem::replace(&mut self.candidates, HashMap::new());
+        self.candidates = old_candidates.into_iter()
+            .filter(|&(name, ref candidate)| name != *candidate_name && !candidate.is_approved())
+            .collect();
+    }
+
+    fn remove_expired_candidates(&mut self) {
+        let old_candidates = mem::replace(&mut self.candidates, HashMap::new());
+        self.candidates = old_candidates.into_iter()
+            .filter(|&(_, ref candidate)| candidate.is_expired())
+            .collect();
     }
 
     /// Returns the public IDs of all routing table entries, sorted by section.
