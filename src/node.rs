@@ -95,6 +95,8 @@ impl NodeBuilder {
         })
     }
 
+    // TODO - remove this `rustfmt_skip` once rustfmt stops adding trailing space at `else if`.
+    #[cfg_attr(rustfmt, rustfmt_skip)]
     fn make_state_machine(self,
                           min_section_size: usize)
                           -> Evented<(RoutingActionSender, StateMachine)> {
@@ -111,8 +113,7 @@ impl NodeBuilder {
                     State::Terminated
                 }
                 .to_evented()
-        } else if
-            self.deny_other_local_nodes && crust_service.has_peers_on_lan() {
+        } else if self.deny_other_local_nodes && crust_service.has_peers_on_lan() {
             error!("Bootstrapping({:?}) More than 1 routing node found on LAN. Currently this is \
                     not supported",
                    full_id.public_id().name());

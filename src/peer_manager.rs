@@ -28,7 +28,6 @@ use rust_sodium::crypto::hash::sha256;
 use rust_sodium::crypto::sign;
 use signature_accumulator::ACCUMULATION_TIMEOUT_SECS;
 use std::{error, fmt, mem};
-#[cfg(not(feature = "use-mock-crust"))]
 use std::cmp;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::collections::hash_map::Values;
@@ -51,18 +50,14 @@ const NODE_CONNECT_TIMEOUT_SECS: u64 = 60;
 pub type SectionMap = BTreeMap<Prefix<XorName>, BTreeSet<PublicId>>;
 
 // in Bytes
-#[cfg(feature = "use-mock-crust")]
-fn resource_proof_target_size(_min_size: usize, _section_size: usize) -> usize {
-    10
-}
-
-// in Bytes
-#[cfg(not(feature = "use-mock-crust"))]
 fn resource_proof_target_size(min_size: usize, section_size: usize) -> usize {
-    let evaluators = cmp::max(min_size, section_size);
-    // Default value: 2 MBytes sharing among the evaluators
-    // TODO: the algorithm need to be measured and refactored against the real network
-    2 * 1024 * 1024 / evaluators
+    if cfg!(feature = "use-mock-crust") {
+        10
+    } else {
+        let evaluators = cmp::max(min_size, section_size);
+        // TODO: the algorithm need to be measured and refactored against the real network
+        2 * 1024 * 1024 / evaluators
+    }
 }
 
 #[derive(Debug)]
