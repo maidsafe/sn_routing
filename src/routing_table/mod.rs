@@ -541,6 +541,52 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         (result, None)
     }
 
+    /// Adds the given prefix to the routing table, merging or splitting if necessary. Returns the
+    /// entries that have been dropped.
+    pub fn add_prefix(&mut self, prefix: Prefix<T>) -> Vec<T> {
+        let mut result = vec![];
+        if self.our_prefix == prefix || self.sections.contains_key(&prefix) {
+            return result; // We already have this section: Nothing to do!
+        }
+        // While `prefix` extends an existing entry, split that entry.
+        while let Some(&shorter_pfx) =
+            self.sections
+                .keys()
+                .chain(iter::once(&self.our_prefix))
+                .find(|p| p.is_compatible(&prefix) && p.bit_count() < prefix.bit_count()) {
+            let (dropped_nodes, _opt_our_pfx) = self.split(shorter_pfx);
+            result.extend(dropped_nodes);
+        }
+
+        // If it's neither our neighbour nor compatible, we need to merge our own until it is
+        // compatible.
+        let mut our_prefix = self.our_prefix;
+        while !our_prefix.is_neighbour(&prefix) && !our_prefix.is_compatible(&prefix) {
+            our_prefix = our_prefix.popped();
+        }
+        self.merge(&our_prefix);
+
+        // Merge if necessary, then add empty sections to satisfy the requirement that for each `i`,
+        // the own prefix with the `i`-th bit flipped must be covered. To do this, split each such
+        // prefix recursively until all its parts are either covered or incompatible with the
+        // existing ones. Insert the incompatible ones to cover the required part of the name space.
+        self.merge(&prefix);
+        let mut missing_pfxs = (0..self.our_prefix.bit_count())
+            .map(|i| self.our_prefix.with_flipped_bit(i))
+            .collect_vec();
+        while let Some(pfx) = missing_pfxs.pop() {
+            if !pfx.is_covered_by(self.sections.keys()) {
+                if self.sections.keys().any(|p| pfx.is_compatible(p)) {
+                    missing_pfxs.push(pfx.pushed(true));
+                    missing_pfxs.push(pfx.pushed(false));
+                } else {
+                    let _ = self.sections.insert(pfx, HashSet::new());
+                }
+            }
+        }
+        result
+    }
+
     /// Removes a contact from the routing table.
     ///
     /// If no entry with that name is found, `Err(Error::NoSuchPeer)` is returned.  Otherwise, the
@@ -1041,6 +1087,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Debug for Rout
 
 #[cfg(test)]
 mod tests {
+    use itertools::Itertools;
+    use std::collections::BTreeSet;
     use super::*;
 
     #[test]
@@ -1237,5 +1285,31 @@ mod tests {
         assert_eq!(*result[0], 0x0100);
         assert_eq!(*result[1], 0x0080);
         assert_eq!(*result[2], 0x0040);
+    }
+
+    #[test]
+    fn test_add_prefix() {
+        let our_name = 0u8;
+        let mut table = RoutingTable::new(our_name, 1);
+        // Add 10, 20, 30, 40, 50, 60, 70, 80, 90, A0, B0, C0, D0, E0 and F0.
+        for i in 1..0x10 {
+            unwrap!(table.add(i * 0x10));
+        }
+        assert_eq!(prefixes_from_strs(vec![""]), table.prefixes());
+        assert_eq!(Vec::<u8>::new(), table.add_prefix(Prefix::from_str("01")));
+        assert_eq!(prefixes_from_strs(vec!["1", "00", "01"]), table.prefixes());
+        assert_eq!(vec![0xc0, 0xd0, 0xe0, 0xf0u8],
+                   table.add_prefix(Prefix::from_str("111")).into_iter().sorted());
+        assert_eq!(prefixes_from_strs(vec!["110", "111", "10", "0"]),
+                   table.prefixes());
+        assert_eq!(Vec::<u8>::new(), table.add_prefix(Prefix::from_str("0")));
+        assert_eq!(prefixes_from_strs(vec!["110", "111", "10", "0"]),
+                   table.prefixes());
+        assert_eq!(Vec::<u8>::new(), table.add_prefix(Prefix::from_str("")));
+        assert_eq!(prefixes_from_strs(vec![""]), table.prefixes());
+    }
+
+    fn prefixes_from_strs(strs: Vec<&str>) -> BTreeSet<Prefix<u8>> {
+        strs.into_iter().map(Prefix::from_str).collect()
     }
 }

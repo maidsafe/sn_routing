@@ -22,6 +22,7 @@ use itertools::Itertools;
 use rand;
 #[cfg(not(feature = "use-mock-crust"))]
 use rand::Rng;
+use resource_proof::ResourceProof;
 use routing_table::{Authority, OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix,
                     RemovalDetails, RoutingTable};
 use routing_table::Error as RoutingTableError;
@@ -29,7 +30,9 @@ use rust_sodium::crypto::hash::sha256;
 use rust_sodium::crypto::sign;
 use signature_accumulator::ACCUMULATION_TIMEOUT_SECS;
 use std::{error, fmt, mem};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+#[cfg(not(feature = "use-mock-crust"))]
+use std::cmp;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::collections::hash_map::Values;
 use std::time::{Duration, Instant};
 use super::QUORUM;
@@ -48,6 +51,21 @@ pub const RESOURCE_PROOF_TIMEOUT_SECS: u64 = 60;
 const NODE_CONNECT_TIMEOUT_SECS: u64 = 60;
 
 pub type SectionMap = BTreeMap<Prefix<XorName>, BTreeSet<PublicId>>;
+
+// in Bytes
+#[cfg(feature = "use-mock-crust")]
+fn resource_proof_target_size(_min_size: usize, _section_size: usize) -> usize {
+    10
+}
+
+// in Bytes
+#[cfg(not(feature = "use-mock-crust"))]
+fn resource_proof_target_size(min_size: usize, section_size: usize) -> usize {
+    let evaluators = cmp::max(min_size, section_size);
+    // Default value: 2 MBytes sharing among the evaluators
+    // TODO: the algorithm need to be measured and refactored against the real network
+    2 * 1024 * 1024 / evaluators
+}
 
 #[derive(Debug)]
 /// Errors that occur in peer status management.
@@ -292,13 +310,14 @@ enum CandidateState {
 #[derive(Debug)]
 struct Candidate {
     insertion_time: Instant,
+    target_size: usize,
     seed: Vec<u8>,
     client_auth: Authority<XorName>,
     state: CandidateState,
 }
 
 impl Candidate {
-    fn new(client_auth: Authority<XorName>) -> Candidate {
+    fn new(client_auth: Authority<XorName>, target_size: usize) -> Candidate {
 #[cfg(not(feature = "use-mock-crust"))]
         let seed = rand::thread_rng().gen_iter().take(10).collect();
 #[cfg(feature = "use-mock-crust")]
@@ -306,6 +325,7 @@ impl Candidate {
 
         Candidate {
             insertion_time: Instant::now(),
+            target_size: target_size,
             seed: seed,
             client_auth: client_auth,
             state: CandidateState::VotedFor,
@@ -410,7 +430,9 @@ impl PeerManager {
             return Err(RoutingError::AlreadyHandlingJoinRequest);
         }
         // TODO - should check RT here for suitability?
-        let _ = self.candidates.insert(candidate_name, Candidate::new(client_auth));
+        let target_size = resource_proof_target_size(self.routing_table.min_section_size(),
+                                                     self.routing_table.our_section().len());
+        let _ = self.candidates.insert(candidate_name, Candidate::new(client_auth, target_size));
         Ok(())
     }
 
@@ -423,9 +445,11 @@ impl PeerManager {
                                -> Result<BTreeSet<PublicId>, RoutingError> {
         self.remove_unapproved_candidates(&candidate_name);
         {
+            let target_size = resource_proof_target_size(self.routing_table.min_section_size(),
+                                                         self.routing_table.our_section().len());
             let candidate = self.candidates
                 .entry(candidate_name)
-                .or_insert_with(|| Candidate::new(client_auth));
+                .or_insert_with(|| Candidate::new(client_auth, target_size));
             candidate.state = CandidateState::AcceptedAsCandidate;
         }
         // TODO - checks RT here - maybe shouldn't?
@@ -439,15 +463,16 @@ impl PeerManager {
     /// the `PublicId`s of all routing table entries.
     pub fn verify_candidate(&self,
                             candidate_name: &XorName,
-                            proof: Vec<u8>,
-                            _leading_zero_bytes: u32,
-                            _difficulty: u32)
+                            proof: VecDeque<u8>,
+                            leading_zero_bytes: u64,
+                            difficulty: u8)
                             -> Result<(PublicId, Authority<XorName>, SectionMap), RoutingError> {
         if let Some(candidate) = self.candidates.get(candidate_name) {
             if candidate.is_slow() {
                 return Err(RoutingError::TimedOut);
             }
-            if candidate.seed == proof {
+            let rp_object = ResourceProof::new(candidate.target_size, difficulty);
+            if rp_object.validate_all(&candidate.seed, &proof, leading_zero_bytes) {
                 if let Some(peer) = self.peer_map.get_by_name(candidate_name) {
                     Ok((*peer.pub_id(), candidate.client_auth, self.pub_ids_by_section()))
                 } else {
@@ -490,7 +515,7 @@ impl PeerManager {
         }
 
         self.remove_unapproved_candidates(&candidate_name);
-        let mut candidate = Candidate::new(client_auth);
+        let mut candidate = Candidate::new(client_auth, 0);
         candidate.state = CandidateState::Approved;
         let _ = self.candidates.insert(candidate_name, candidate);
         trace!("{:?} doesn't have candidate for {:?}",
@@ -505,14 +530,14 @@ impl PeerManager {
     ///
     /// Returns:
     ///
-    /// * Ok(Some(seed))              if the peer is an unapproved candidate
-    /// * Ok(None)                    if the peer has already been approved
-    /// * Err(CandidateIsTunnelling)  if the peer is tunnelling
-    /// * Err(UnknownCandidate)       if the peer is not in the candidate list
+    /// * Ok(Some((seed, target_size))) if the peer is an unapproved candidate
+    /// * Ok(None)                      if the peer has already been approved
+    /// * Err(CandidateIsTunnelling)    if the peer is tunnelling
+    /// * Err(UnknownCandidate)         if the peer is not in the candidate list
     pub fn handle_candidate_identify(&mut self,
                                      pub_id: &PublicId,
                                      peer_id: &PeerId)
-                                     -> Result<Option<Vec<u8>>, RoutingError> {
+                                     -> Result<Option<(Vec<u8>, usize)>, RoutingError> {
         if let Some(candidate) = self.candidates.get(pub_id.name()) {
             if candidate.is_approved() {
                 Ok(None)
@@ -527,7 +552,7 @@ impl PeerManager {
                 if tunnel {
                     Err(RoutingError::CandidateIsTunnelling)
                 } else {
-                    Ok(Some(candidate.seed.clone()))
+                    Ok(Some((candidate.seed.clone(), candidate.target_size)))
                 }
             }
         } else {
@@ -598,6 +623,24 @@ impl PeerManager {
             .collect();
 
         (ids_to_drop, our_new_prefix)
+    }
+
+    /// Adds the given prefix to the routing table, splitting or merging as necessary. Returns the
+    /// list of peers that have been dropped and need to be disconnected.
+    pub fn add_prefix(&mut self, prefix: Prefix<XorName>) -> Vec<(XorName, PeerId)> {
+        let names_to_drop = self.routing_table.add_prefix(prefix);
+        let old_expected_peers = mem::replace(&mut self.expected_peers, HashMap::new());
+        self.expected_peers = old_expected_peers.into_iter()
+            .filter(|&(ref name, _)| self.routing_table.need_to_add(name) == Ok(()))
+            .collect();
+        names_to_drop.into_iter()
+            .filter_map(|name| if let Some(peer) = self.peer_map.remove_by_name(&name) {
+                self.cleanup_proxy_peer_id();
+                peer.peer_id.map(|peer_id| (name, peer_id))
+            } else {
+                None
+            })
+            .collect()
     }
 
     /// Checks whether we have a quorum of nodes in each section
@@ -969,21 +1012,15 @@ impl PeerManager {
     /// Returns the PublicIds of nodes given their names; the result is filtered to the names we
     /// know about (i.e. unknown names are ignored).
     pub fn get_pub_ids(&self, names: &HashSet<XorName>) -> BTreeSet<PublicId> {
-        let mut result_map = names.iter()
-            .filter_map(|name| if let Some(peer) = self.peer_map.get_by_name(name) {
-                Some((*name, peer.pub_id))
+        names.into_iter()
+            .filter_map(|name| if name == self.our_public_id.name() {
+                Some(self.our_public_id)
+            } else if let Some(peer) = self.peer_map.get_by_name(name) {
+                Some(*peer.pub_id())
             } else {
+                error!("Missing public ID for peer {:?}.", name);
                 None
             })
-            .collect::<HashMap<_, _>>();
-
-        if names.contains(self.our_public_id.name()) {
-            let _ = result_map.insert(*self.our_public_id.name(), self.our_public_id);
-        }
-
-        names.iter()
-            .filter_map(|name| result_map.get(name))
-            .cloned()
             .collect()
     }
 
