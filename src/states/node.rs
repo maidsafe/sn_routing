@@ -102,6 +102,8 @@ pub struct Node {
     rt_timeout: Duration,
     /// The timer token for sending the next `RoutingTableRequest`.
     rt_timer_token: Option<u64>,
+    /// `RoutingMessage`s affecting the routing table that arrived before `NodeApproval`.
+    routing_msg_backlog: Vec<RoutingMessage>,
 }
 
 impl Node {
@@ -186,6 +188,7 @@ impl Node {
             rt_msg_id: None,
             rt_timeout: Duration::from_secs(RT_MIN_TIMEOUT_SECS),
             rt_timer_token: None,
+            routing_msg_backlog: vec![],
         };
 
         if node.start_listening() {
@@ -755,6 +758,27 @@ impl Node {
         use messages::MessageContent::*;
         use Authority::{Client, ManagedNode, PrefixSection, Section};
 
+        if !self.is_approved {
+            match routing_msg.content {
+                SectionSplit(..) |
+                OwnSectionMerge { .. } |
+                OtherSectionMerge { .. } |
+                ExpectCandidate { .. } |
+                AcceptAsCandidate { .. } |
+                CandidateApproval { .. } |
+                SectionUpdate { .. } |
+                RoutingTableRequest(..) |
+                RoutingTableResponse { .. } => {
+                    trace!("{:?} Not approved yet. Delaying message handling: {:?}",
+                           self,
+                           routing_msg);
+                    self.routing_msg_backlog.push(routing_msg);
+                    return Ok(()).to_evented();
+                }
+                _ => (),
+            }
+        }
+
         match routing_msg.content {
             Ack(..) => (),
             _ => trace!("{:?} Got routing message {:?}.", self, routing_msg),
@@ -947,7 +971,7 @@ impl Node {
             events.add_event(Event::NodeAdded(*name, self.peer_mgr.routing_table().clone()));
         }
         self.is_approved = true;
-        let _ = self.send_rt_request();
+        self.msg_queue.extend(self.routing_msg_backlog.drain(..));
         events.with_value(Ok(()))
     }
 
