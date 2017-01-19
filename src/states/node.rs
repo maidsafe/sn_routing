@@ -882,6 +882,10 @@ impl Node {
                                  client_auth: Authority<XorName>,
                                  sections: SectionMap)
                                  -> Evented<Result<(), RoutingError>> {
+        for peer_id in self.peer_mgr.remove_expired_candidates() {
+            self.disconnect_peer(&peer_id);
+        }
+
         let mut result = Evented::empty();
         // Once the joining node joined, it may receive the vote regarding itself.
         // Or a node may receive CandidateApproval before connection established.
@@ -890,9 +894,9 @@ impl Node {
             Ok(peer_id) => Some(peer_id),
             Err(_) => {
                 let src = Authority::ManagedNode(*self.name());
-                let node_auth = Authority::ManagedNode(*candidate_id.name());
-                if let Err(error) = self.send_connection_info_request(candidate_id, src, node_auth)
-                    .extract(&mut result) {
+                if let Err(error) =
+                    self.send_connection_info_request(candidate_id, src, client_auth)
+                        .extract(&mut result) {
                     debug!("{:?} - Failed to send connection info to {:?}: {:?}",
                            self,
                            candidate_id,
@@ -930,7 +934,10 @@ impl Node {
         }
 
         self.get_approval_timer_token = None;
-        self.peer_mgr.add_prefixes(sections.keys().cloned().collect());
+        if let Err(error) = self.peer_mgr.add_prefixes(sections.keys().cloned().collect()) {
+            events.add_event(Event::RestartRequired);
+            return events.with_value(Err(error));
+        }
 
         let our_prefix = *self.peer_mgr.routing_table().our_prefix();
         self.send_section_list_signature(our_prefix, None);
@@ -1746,6 +1753,10 @@ impl Node {
                                client_auth: Authority<XorName>,
                                message_id: MessageId)
                                -> Result<(), RoutingError> {
+        for peer_id in self.peer_mgr.remove_expired_candidates() {
+            self.disconnect_peer(&peer_id);
+        }
+
         if candidate_id == *self.full_id.public_id() {
             // If we're the joining node: stop
             return Ok(());
@@ -1773,6 +1784,10 @@ impl Node {
                                   client_auth: Authority<XorName>,
                                   message_id: MessageId)
                                   -> Result<(), RoutingError> {
+        for peer_id in self.peer_mgr.remove_expired_candidates() {
+            self.disconnect_peer(&peer_id);
+        }
+
         if candidate_id == *self.full_id.public_id() {
             // If we're the joining node: stop
             return Ok(());
