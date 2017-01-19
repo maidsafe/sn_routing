@@ -19,9 +19,7 @@ use crust::{PeerId, PrivConnectionInfo, PubConnectionInfo};
 use error::RoutingError;
 use id::PublicId;
 use itertools::Itertools;
-use rand;
-#[cfg(not(feature = "use-mock-crust"))]
-use rand::Rng;
+use rand::{self, Rng};
 use routing_table::{Authority, OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix,
                     RemovalDetails, RoutingTable};
 use routing_table::Error as RoutingTableError;
@@ -299,10 +297,11 @@ struct Candidate {
 
 impl Candidate {
     fn new(client_auth: Authority<XorName>) -> Candidate {
-#[cfg(not(feature = "use-mock-crust"))]
-        let seed = rand::thread_rng().gen_iter().take(10).collect();
-#[cfg(feature = "use-mock-crust")]
-        let seed = vec![5u8; 4];
+        let seed = if cfg!(feature = "use-mock-crust") {
+            vec![5u8; 4]
+        } else {
+            rand::thread_rng().gen_iter().take(10).collect()
+        };
 
         Candidate {
             insertion_time: Instant::now(),
@@ -1242,14 +1241,14 @@ impl PeerManager {
     fn remove_unapproved_candidates(&mut self, candidate_name: &XorName) {
         let old_candidates = mem::replace(&mut self.candidates, HashMap::new());
         self.candidates = old_candidates.into_iter()
-            .filter(|&(name, ref candidate)| name != *candidate_name && !candidate.is_approved())
+            .filter(|&(name, ref candidate)| name == *candidate_name || candidate.is_approved())
             .collect();
     }
 
     fn remove_expired_candidates(&mut self) {
         let old_candidates = mem::replace(&mut self.candidates, HashMap::new());
         self.candidates = old_candidates.into_iter()
-            .filter(|&(_, ref candidate)| candidate.is_expired())
+            .filter(|&(_, ref candidate)| !candidate.is_expired())
             .collect();
     }
 
