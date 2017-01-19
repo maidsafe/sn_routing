@@ -940,7 +940,7 @@ impl Node {
             events.add_event(Event::NodeAdded(*name, self.peer_mgr.routing_table().clone()));
         }
         self.is_approved = true;
-
+        let _ = self.send_rt_request();
         events.with_value(Ok(()))
     }
 
@@ -2047,29 +2047,30 @@ impl Node {
             self.rt_timeout = cmp::min(Duration::from_secs(RT_MAX_TIMEOUT_SECS),
                                        self.rt_timeout * 2);
             self.rt_timer_token = Some(self.timer.schedule(self.rt_timeout));
-            let msg_id = MessageId::new();
-            self.rt_msg_id = Some(msg_id);
-            let sections = self.peer_mgr.pub_ids_by_section();
-            let digest = sha256::hash(&match serialisation::serialise(&sections) {
-                Ok(serialised_sections) => serialised_sections,
-                Err(error) => {
-                    debug!("{:?} Failed to serialise routing table: {:?}", self, error);
-                    return events.with_value(true);
-                }
-            });
-            let request_msg = RoutingMessage {
-                src: Authority::ManagedNode(*self.name()),
-                dst: Authority::PrefixSection(*self.peer_mgr.routing_table().our_prefix()),
-                content: MessageContent::RoutingTableRequest(msg_id, digest),
-            };
-            if let Err(err) = self.send_routing_message(request_msg) {
-                debug!("{:?} Failed to send RoutingTableRequest: {:?}.", self, err);
+            if self.send_rt_request().is_err() {
+                return events.with_value(true);
             }
         }
 
         self.resend_unacknowledged_timed_out_msgs(token);
 
         events.with_value(true)
+    }
+
+    fn send_rt_request(&mut self) -> Result<(), RoutingError> {
+        let msg_id = MessageId::new();
+        self.rt_msg_id = Some(msg_id);
+        let sections = self.peer_mgr.pub_ids_by_section();
+        let digest = sha256::hash(&serialisation::serialise(&sections)?);
+        let request_msg = RoutingMessage {
+            src: Authority::ManagedNode(*self.name()),
+            dst: Authority::PrefixSection(*self.peer_mgr.routing_table().our_prefix()),
+            content: MessageContent::RoutingTableRequest(msg_id, digest),
+        };
+        if let Err(err) = self.send_routing_message(request_msg) {
+            debug!("{:?} Failed to send RoutingTableRequest: {:?}.", self, err);
+        }
+        Ok(())
     }
 
     fn decrypt_connection_info(&self,
