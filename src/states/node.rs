@@ -45,7 +45,7 @@ use section_list_cache::SectionListCache;
 use signature_accumulator::SignatureAccumulator;
 use state_machine::Transition;
 use stats::Stats;
-use std::{cmp, fmt, iter};
+use std::{cmp, fmt, iter, mem};
 use std::collections::{BTreeSet, HashSet, VecDeque};
 #[cfg(feature = "use-mock-crust")]
 use std::collections::BTreeMap;
@@ -766,6 +766,7 @@ impl Node {
                 ExpectCandidate { .. } |
                 AcceptAsCandidate { .. } |
                 CandidateApproval { .. } |
+                ConnectionInfoRequest { .. } |
                 SectionUpdate { .. } |
                 RoutingTableRequest(..) |
                 RoutingTableResponse { .. } => {
@@ -971,7 +972,8 @@ impl Node {
             events.add_event(Event::NodeAdded(*name, self.peer_mgr.routing_table().clone()));
         }
         self.is_approved = true;
-        self.msg_queue.extend(self.routing_msg_backlog.drain(..));
+        let backlog = mem::replace(&mut self.routing_msg_backlog, vec![]);
+        backlog.into_iter().rev().foreach(|msg| self.msg_queue.push_front(msg));
         events.with_value(Ok(()))
     }
 
