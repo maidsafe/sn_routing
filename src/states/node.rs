@@ -1828,7 +1828,7 @@ impl Node {
             if rt_pfx.bit_count() >= prefix.bit_count() {
                 break;
             }
-            trace!("{:?} Splitting {:?} on section update.", self, rt_pfx);
+            info!("{:?} Splitting {:?} on section update.", self, rt_pfx);
             let _ = self.handle_section_split(rt_pfx, rt_pfx.lower_bound());
         }
         // Filter list of members to just those we don't know about:
@@ -1911,9 +1911,9 @@ impl Node {
         } else if old_prefix.bit_count() > new_prefix.bit_count() {
             result.add_event(Event::SectionMerge(new_prefix));
         }
-        trace!("{:?} Update on RoutingTableResponse completed. Prefixes: {:?}",
-               self,
-               self.peer_mgr.routing_table().prefixes());
+        info!("{:?} Update on RoutingTableResponse completed. Prefixes: {:?}",
+              self,
+              self.peer_mgr.routing_table().prefixes());
         let src = Authority::ManagedNode(*self.name());
         for member in members {
             if self.peer_mgr.routing_table().need_to_add(member.name()).is_ok() {
@@ -1951,9 +1951,9 @@ impl Node {
             self.disconnect_peer(&peer_id);
             info!("{:?} Dropped {:?} from the routing table.", self, name);
         }
-        trace!("{:?} Split completed. Prefixes: {:?}",
-               self,
-               self.peer_mgr.routing_table().prefixes());
+        info!("{:?} Split completed. Prefixes: {:?}",
+              self,
+              self.peer_mgr.routing_table().prefixes());
 
         self.merge_if_necessary();
 
@@ -1986,9 +1986,9 @@ impl Node {
             OwnMergeState::Completed { targets, merge_details } => {
                 // TODO - the event should maybe only fire once all new connections have been made?
                 result.add_event(Event::SectionMerge(merge_details.prefix));
-                trace!("{:?} Merge completed. Prefixes: {:?}",
-                       self,
-                       self.peer_mgr.routing_table().prefixes());
+                info!("{:?} Own section merge completed. Prefixes: {:?}",
+                      self,
+                      self.peer_mgr.routing_table().prefixes());
                 self.merge_if_necessary();
 
                 if merge_prefix == *self.peer_mgr.routing_table().our_prefix() {
@@ -2047,9 +2047,9 @@ impl Node {
                 debug!("{:?} - Failed to send connection info: {:?}", self, error);
             }
         }
-        trace!("{:?} Other merge completed. Prefixes: {:?}",
-               self,
-               self.peer_mgr.routing_table().prefixes());
+        info!("{:?} Other section merge completed. Prefixes: {:?}",
+              self,
+              self.peer_mgr.routing_table().prefixes());
         self.merge_if_necessary();
         self.send_section_list_signature(prefix, None);
         self.reset_rt_timer();
