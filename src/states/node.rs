@@ -2661,6 +2661,17 @@ impl Base for Node {
     fn stats(&mut self) -> &mut Stats {
         &mut self.stats
     }
+
+    /// Sends the given `bytes` to the peer with the given Crust `PeerId`. If that results in an
+    /// error, it marks the peer as `Failed`. It will be dropped on the next tick.
+    fn send_or_drop(&mut self, peer_id: &PeerId, bytes: Vec<u8>, priority: u8) {
+        self.stats().count_bytes(bytes.len());
+
+        if let Err(err) = self.crust_service().send(*peer_id, bytes.clone(), priority) {
+            info!("{:?} Connection to {:?} failed: {:?}", self, peer_id, err);
+            self.peer_mgr.mark_as_failed(peer_id);
+        }
+    }
 }
 
 #[cfg(feature = "use-mock-crust")]
