@@ -258,33 +258,28 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
     }
 
-    /// Creates a new `RoutingTable`, using an existing collection of sections.
-    pub fn new_with_sections(our_name: T,
-                             min_section_size: usize,
-                             prefixes: Vec<Prefix<T>>)
-                             -> Result<Self, Error> {
-        let mut our_prefix = Default::default();
-        let mut our_section = HashSet::new();
-        our_section.insert(our_name);
-        let sections = prefixes.into_iter()
-            .filter_map(|prefix| if prefix.matches(&our_name) {
-                our_prefix = prefix;
-                None
+    /// Adds the list of `Prefix`es as empty sections.
+    ///
+    /// Called once a node has been approved by its own section and is given its peers' tables.
+    pub fn add_prefixes(&mut self, prefixes: Vec<Prefix<T>>) -> Result<(), Error> {
+        for prefix in prefixes {
+            if prefix.matches(&self.our_name) {
+                self.our_prefix = prefix;
             } else {
-                Some((prefix, HashSet::new()))
-            })
-            .collect();
-        let result = RoutingTable {
-            our_name: our_name,
-            min_section_size: min_section_size,
-            our_prefix: our_prefix,
-            our_section: our_section,
-            sections: sections,
-            we_want_to_merge: false,
-            they_want_to_merge: false,
-        };
-        result.check_invariant()?;
-        Ok(result)
+                let _ = self.sections.entry(prefix).or_insert_with(HashSet::new);
+            }
+        }
+        // In case our section has split while we've been going through the approval process, we
+        // need to assign the original members of our section to the new appropriate sections.
+        let our_section = mem::replace(&mut self.our_section, HashSet::new());
+        for name in our_section {
+            if let Some(section) = self.get_section_mut(&name) {
+                let _ = section.insert(name);
+            } else {
+                return Err(Error::InvariantViolation);
+            }
+        }
+        self.check_invariant(true)
     }
 
     /// Returns the `Prefix` of our section
@@ -449,6 +444,18 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
     }
 
+    /// Returns `Err(Error::PeerNameUnsuitable)` if `name` is not within our section, or
+    /// `Err(Error::AlreadyExists)` if `name` is already in our table.
+    pub fn should_join_our_section(&self, name: &T) -> Result<(), Error> {
+        if !self.our_prefix.matches(name) {
+            return Err(Error::PeerNameUnsuitable);
+        }
+        if self.our_section.contains(name) {
+            return Err(Error::AlreadyExists);
+        }
+        Ok(())
+    }
+
     /// Validates a joining node's name.
     pub fn validate_joining_node(&self, name: &T) -> Result<(), Error> {
         if !self.our_prefix.matches(name) {
@@ -530,6 +537,52 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             }
         }
         (result, None)
+    }
+
+    /// Adds the given prefix to the routing table, merging or splitting if necessary. Returns the
+    /// entries that have been dropped.
+    pub fn add_prefix(&mut self, prefix: Prefix<T>) -> Vec<T> {
+        let mut result = vec![];
+        if self.our_prefix == prefix || self.sections.contains_key(&prefix) {
+            return result; // We already have this section: Nothing to do!
+        }
+        // While `prefix` extends an existing entry, split that entry.
+        while let Some(&shorter_pfx) =
+            self.sections
+                .keys()
+                .chain(iter::once(&self.our_prefix))
+                .find(|p| p.is_compatible(&prefix) && p.bit_count() < prefix.bit_count()) {
+            let (dropped_nodes, _opt_our_pfx) = self.split(shorter_pfx);
+            result.extend(dropped_nodes);
+        }
+
+        // If it's neither our neighbour nor compatible, we need to merge our own until it is
+        // compatible.
+        let mut our_prefix = self.our_prefix;
+        while !our_prefix.is_neighbour(&prefix) && !our_prefix.is_compatible(&prefix) {
+            our_prefix = our_prefix.popped();
+        }
+        self.merge(&our_prefix);
+
+        // Merge if necessary, then add empty sections to satisfy the requirement that for each `i`,
+        // the own prefix with the `i`-th bit flipped must be covered. To do this, split each such
+        // prefix recursively until all its parts are either covered or incompatible with the
+        // existing ones. Insert the incompatible ones to cover the required part of the name space.
+        self.merge(&prefix);
+        let mut missing_pfxs = (0..self.our_prefix.bit_count())
+            .map(|i| self.our_prefix.with_flipped_bit(i))
+            .collect_vec();
+        while let Some(pfx) = missing_pfxs.pop() {
+            if !pfx.is_covered_by(self.sections.keys()) {
+                if self.sections.keys().any(|p| pfx.is_compatible(p)) {
+                    missing_pfxs.push(pfx.pushed(true));
+                    missing_pfxs.push(pfx.pushed(false));
+                } else {
+                    let _ = self.sections.insert(pfx, HashSet::new());
+                }
+            }
+        }
+        result
     }
 
     /// Removes a contact from the routing table.
@@ -894,7 +947,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         Ok(*RoutingTable::get_routeth_name(names, &target, route))
     }
 
-    fn check_invariant(&self) -> Result<(), Error> {
+    fn check_invariant(&self, allow_small_sections: bool) -> Result<(), Error> {
         if !self.our_prefix.matches(&self.our_name) {
             warn!("Our prefix does not match our name: {:?}", self);
             return Err(Error::InvariantViolation);
@@ -919,9 +972,13 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                 return Err(Error::InvariantViolation);
             }
         }
+
         for (prefix, section) in &self.sections {
             if has_enough_nodes && section.len() < self.min_section_size {
-                warn!("Minimum section size not met for section {:?}: {:?}",
+                if section.len() <= 1 && allow_small_sections {
+                    continue;
+                }
+                warn!("Minimum group size not met for group {:?}: {:?}",
                       prefix,
                       self);
                 return Err(Error::InvariantViolation);
@@ -959,7 +1016,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// Runs the built-in invariant checker
     #[cfg(any(test, feature = "use-mock-crust"))]
     pub fn verify_invariant(&self) {
-        unwrap!(self.check_invariant(),
+        unwrap!(self.check_invariant(false),
                 "Invariant not satisfied for RT: {:?}",
                 self);
     }
@@ -1028,6 +1085,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Debug for Rout
 
 #[cfg(test)]
 mod tests {
+    use itertools::Itertools;
+    use std::collections::BTreeSet;
     use super::*;
 
     #[test]
@@ -1045,12 +1104,12 @@ mod tests {
     // add() and split() through set-up of random sections with invariant.
     #[test]
     fn test_routing_sections() {
-        // Use replicable random numbers to initialse a table:
+        // Use replicable random numbers to initialise a table:
         use rand::{Rng, SeedableRng, XorShiftRng};
         let mut rng: XorShiftRng = SeedableRng::from_seed([1315, 30, 61894, 315]);
         let our_name = rng.next_u32();
         let mut table = RoutingTable::new(our_name, 8);
-        unwrap!(table.check_invariant());
+        table.verify_invariant();
         let mut unknown_distant_name = None;
 
         for _ in 0..1000 {
@@ -1058,12 +1117,12 @@ mod tests {
             // Try to add new_name. We double-check the output to test this too.
             match table.add(new_name) {
                 Err(Error::AlreadyExists) => {
-                    unwrap!(table.check_invariant());
+                    table.verify_invariant();
                     assert!(table.iter().any(|u| *u == new_name));
                     // skip
                 }
                 Err(Error::PeerNameUnsuitable) => {
-                    unwrap!(table.check_invariant());
+                    table.verify_invariant();
                     assert!(table.sections.keys().all(|p| !p.matches(&new_name)));
                     // We should get a few of these. Save one for tests, but otherwise ignore.
                     unknown_distant_name = Some(new_name);
@@ -1072,14 +1131,14 @@ mod tests {
                     panic!("unexpected error: {}", e);
                 }
                 Ok(true) => {
-                    unwrap!(table.check_invariant());
+                    table.verify_invariant();
                     let our_prefix = *table.our_prefix();
                     assert!(our_prefix.matches(&new_name));
                     let _ = table.split(our_prefix);
-                    unwrap!(table.check_invariant());
+                    table.verify_invariant();
                 }
                 Ok(false) => {
-                    unwrap!(table.check_invariant());
+                    table.verify_invariant();
                     assert!(table.iter().any(|u| *u == new_name));
                     if table.is_in_our_section(&new_name) {
                         continue; // add() already checked for necessary split
@@ -1104,7 +1163,7 @@ mod tests {
                     if new_section_size >= min_section_size &&
                        section_len - new_section_size >= min_section_size {
                         let _ = table.split(section_prefix); // do the split
-                        unwrap!(table.check_invariant());
+                        table.verify_invariant();
                     }
                 }
             }
@@ -1224,5 +1283,31 @@ mod tests {
         assert_eq!(*result[0], 0x0100);
         assert_eq!(*result[1], 0x0080);
         assert_eq!(*result[2], 0x0040);
+    }
+
+    #[test]
+    fn test_add_prefix() {
+        let our_name = 0u8;
+        let mut table = RoutingTable::new(our_name, 1);
+        // Add 10, 20, 30, 40, 50, 60, 70, 80, 90, A0, B0, C0, D0, E0 and F0.
+        for i in 1..0x10 {
+            unwrap!(table.add(i * 0x10));
+        }
+        assert_eq!(prefixes_from_strs(vec![""]), table.prefixes());
+        assert_eq!(Vec::<u8>::new(), table.add_prefix(Prefix::from_str("01")));
+        assert_eq!(prefixes_from_strs(vec!["1", "00", "01"]), table.prefixes());
+        assert_eq!(vec![0xc0, 0xd0, 0xe0, 0xf0u8],
+                   table.add_prefix(Prefix::from_str("111")).into_iter().sorted());
+        assert_eq!(prefixes_from_strs(vec!["110", "111", "10", "0"]),
+                   table.prefixes());
+        assert_eq!(Vec::<u8>::new(), table.add_prefix(Prefix::from_str("0")));
+        assert_eq!(prefixes_from_strs(vec!["110", "111", "10", "0"]),
+                   table.prefixes());
+        assert_eq!(Vec::<u8>::new(), table.add_prefix(Prefix::from_str("")));
+        assert_eq!(prefixes_from_strs(vec![""]), table.prefixes());
+    }
+
+    fn prefixes_from_strs(strs: Vec<&str>) -> BTreeSet<Prefix<u8>> {
+        strs.into_iter().map(Prefix::from_str).collect()
     }
 }

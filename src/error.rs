@@ -59,6 +59,8 @@ pub enum RoutingError {
     BadAuthority,
     /// Failure to connect to an already connected node
     AlreadyConnected,
+    /// Failure to connect to a group in handling a joining request
+    AlreadyHandlingJoinRequest,
     /// Received message having unknown type
     UnknownMessageType,
     /// Failed signature check
@@ -109,6 +111,14 @@ pub enum RoutingError {
     CannotTunnelThroughTunnel,
     /// Decoded a user message with an unexpected hash.
     HashMismatch,
+    /// Candidate is unknown
+    UnknownCandidate,
+    /// Operation timed out
+    TimedOut,
+    /// Failed validation of resource proof
+    FailedResourceProofValidation,
+    /// Candidate is connected via a tunnel
+    CandidateIsTunnelling,
 }
 
 impl From<RoutingTableError> for RoutingError {

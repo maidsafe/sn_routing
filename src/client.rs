@@ -73,10 +73,9 @@ impl Client {
     /// cryptographically secure and uses section consensus. The restriction for the client name
     /// exists to ensure that the client cannot choose its `ClientAuthority`.
     #[cfg(not(feature = "use-mock-crust"))]
-    pub fn new(event_sender: Sender<Event>,
-               keys: Option<FullId>,
-               min_section_size: usize)
-               -> Result<Client, RoutingError> {
+    pub fn new(event_sender: Sender<Event>, keys: Option<FullId>) -> Result<Client, RoutingError> {
+        // TODO - replace this hard-coded value
+        let min_section_size = 8;
         rust_sodium::init(); // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing with a restriction to become a full node

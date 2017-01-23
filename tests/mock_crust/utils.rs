@@ -331,6 +331,7 @@ pub fn create_connected_nodes_with_cache(network: &Network, size: usize, use_cac
                 Event::NodeAdded(..) => node_added_count += 1,
                 Event::NodeLost(..) |
                 Event::SectionSplit(..) |
+                Event::RestartRequired |
                 Event::Tick => (),
                 event => panic!("Got unexpected event: {:?}", event),
             }
@@ -544,7 +545,7 @@ fn add_node_to_section<T: Rng>(network: &Network,
         .cache(use_cache)
         .create());
     poll_and_resend(nodes, &mut []);
-    expect_next_event!(unwrap!(nodes.last_mut()), Event::Connected);
+    expect_any_event!(unwrap!(nodes.last_mut()), Event::Connected if true);
     assert_eq!(relocation_name, nodes[nodes.len() - 1].name());
 }
 

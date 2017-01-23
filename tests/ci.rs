@@ -123,7 +123,7 @@ struct TestClient {
 }
 
 impl TestClient {
-    fn new(index: usize, main_sender: Sender<TestEvent>, min_section_size: usize) -> Self {
+    fn new(index: usize, main_sender: Sender<TestEvent>) -> Self {
         let thread_name = format!("TestClient {} event sender", index);
         let (sender, joiner) = spawn_select_thread(index, main_sender, thread_name);
 
@@ -134,7 +134,7 @@ impl TestClient {
         TestClient {
             index: index,
             full_id: full_id.clone(),
-            client: unwrap!(Client::new(sender, Some(full_id), min_section_size)),
+            client: unwrap!(Client::new(sender, Some(full_id))),
             _thread_joiner: joiner,
         }
     }
@@ -299,7 +299,7 @@ fn core() {
 
     {
         // request and response
-        let client = TestClient::new(nodes.len(), event_sender.clone(), min_section_size);
+        let client = TestClient::new(nodes.len(), event_sender.clone());
         let data = gen_structured_data(client.full_id(), &mut rng);
         let message_id = MessageId::new();
 
@@ -344,7 +344,7 @@ fn core() {
     {
         // request to group authority
         let node_names = nodes.iter().map(|node| node.name()).collect_vec();
-        let client = TestClient::new(nodes.len(), event_sender.clone(), min_section_size);
+        let client = TestClient::new(nodes.len(), event_sender.clone());
         let data = gen_structured_data(client.full_id(), &mut rng);
         let mut close_group = closest_nodes(&node_names, client.name(), min_section_size);
 
@@ -381,7 +381,7 @@ fn core() {
     {
         // response from group authority
         let node_names = nodes.iter().map(|node| node.name()).collect_vec();
-        let client = TestClient::new(nodes.len(), event_sender.clone(), min_section_size);
+        let client = TestClient::new(nodes.len(), event_sender.clone());
         let data = gen_structured_data(client.full_id(), &mut rng);
         let mut close_group = closest_nodes(&node_names, client.name(), min_section_size);
 
@@ -493,7 +493,7 @@ fn core() {
 
     {
         // message from quorum - 1 section members
-        let client = TestClient::new(nodes.len(), event_sender.clone(), min_section_size);
+        let client = TestClient::new(nodes.len(), event_sender.clone());
         let data = gen_structured_data(client.full_id(), &mut rng);
 
         while let Ok(test_event) = recv_with_timeout(&mut nodes,
@@ -539,7 +539,7 @@ fn core() {
 
     {
         // message from more than quorum section members
-        let client = TestClient::new(nodes.len(), event_sender.clone(), min_section_size);
+        let client = TestClient::new(nodes.len(), event_sender.clone());
         let data = gen_structured_data(client.full_id(), &mut rng);
         let mut sent_ids = HashSet::new();
         let mut received_ids = HashSet::new();

@@ -28,11 +28,12 @@ use maidsafe_utilities;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 #[cfg(feature = "use-mock-crust")]
 use mock_crust::crust::PeerId;
+use peer_manager::SectionMap;
 use routing_table::{Prefix, Xorable};
 use routing_table::Authority;
 use rust_sodium::crypto::{box_, sign};
 use rust_sodium::crypto::hash::sha256;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 use std::fmt::{self, Debug, Formatter};
 use std::iter;
 use std::time::Duration;
@@ -120,8 +121,17 @@ pub enum DirectMessage {
         /// Indicate whether we intend to remain a client, as opposed to becoming a routing node.
         client_restriction: bool,
     },
-    /// Sent from a node to a node, to allow the latter to add the former to its routing table.
+    /// Sent from an established node (i.e. one which has successfully joined the network) to
+    /// another node, to allow the latter to add the former to its routing table.
     NodeIdentify {
+        /// Keys and claimed name, serialised outside routing.
+        serialised_public_id: Vec<u8>,
+        /// Signature of the originator of this message.
+        signature: sign::Signature,
+    },
+    /// Sent from a node which is still joining the network to another node, to allow the latter to
+    /// add the former to its routing table.
+    CandidateIdentify {
         /// Keys and claimed name, serialised outside routing.
         serialised_public_id: Vec<u8>,
         /// Signature of the originator of this message.
@@ -135,6 +145,27 @@ pub enum DirectMessage {
     TunnelClosed(PeerId),
     /// Sent to a tunnel node to indicate the tunnel is not needed any more.
     TunnelDisconnect(PeerId),
+    /// Request a proof to be provided by the joining node
+    ///
+    /// This is sent from member of Group Y to the joining node
+    ResourceProof {
+        /// seed of proof
+        seed: Vec<u8>,
+        /// size of the proof
+        target_size: usize,
+        /// leading zero bits of the hash of the proof
+        difficulty: u8,
+    },
+    /// Provide a proof to the network
+    ///
+    /// This is sent from the joining node to member of Group Y
+    ResourceProofResponse {
+        /// Proof to be presented
+        proof: VecDeque<u8>,
+        /// Claimed leading zero bytes to be added to proof's header so that the hash matches
+        /// the difficulty requirement
+        leading_zero_bytes: u64,
+    },
 }
 
 impl DirectMessage {
@@ -463,9 +494,10 @@ impl RoutingMessage {
 /// ### Getting a new network name from the `NaeManager`
 ///
 /// Once in `Client` state, A sends a `GetNodeName` request to the `NaeManager` section authority X
-/// of A's current name. X computes a new name and sends it in an `ExpectCloseNode` request to  the
-/// `NaeManager` Y of A's new name. Each member of Y caches A's public ID, and Y sends a
-/// `GetNodeName` response back to A, which includes the public IDs of the members of Y.
+/// of A's current name. X computes a new name and sends it in an `ExpectCandidate` request to the
+/// `NaeManager` Y of A's new name. Each member of Y caches A's public ID, and sends
+/// `AcceptAsCandidate` to self section. Once Y receives `AcceptAsCandidate`, sends a `GetNodeName`
+/// response back to A, which includes the public IDs of the members of Y.
 ///
 ///
 /// ### Connecting to the matching section
@@ -479,8 +511,17 @@ impl RoutingMessage {
 /// `ConnectionInfo`.
 ///
 /// Once the connection between A and Z is established and a Crust `OnConnect` event is raised,
-/// they exchange `NodeIdentify` messages and add each other to their routing tables. When A
-/// receives its first `NodeIdentify`, it finally moves to the `Node` state.
+/// they exchange `NodeIdentify` messages.
+///
+///
+/// ### Resource Proof Evaluation to approve
+/// When nodes Z of section Y receive `NodeIdentify` from A, they respond with a `ResourceProof`
+/// request. Node A needs to answer these requests (resolving a hashing challenge) with
+/// `ResourceProofResponse`. Members of Y will send out `CandidateApproval` messages to vote for the
+/// approval in their section. Once the vote succeeds, the members of Y send `NodeApproval` to A and
+/// add it into their routing table. When A receives the `NodeApproval` message, it adds the members
+/// of Y to its routing table.
+///
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
 pub enum MessageContent {
     // ---------- Internal ------------
@@ -495,7 +536,7 @@ pub enum MessageContent {
         message_id: MessageId,
     },
     /// Notify a joining node's `NaeManager` so that it sends a `GetNodeNameResponse`.
-    ExpectCloseNode {
+    ExpectCandidate {
         /// The joining node's `PublicId` (public keys and name)
         expect_id: PublicId,
         /// The client's current authority.
@@ -533,9 +574,8 @@ pub enum MessageContent {
     GetNodeNameResponse {
         /// Supplied `PublicId`, but with the new name
         relocated_id: PublicId,
-        /// The routing table shared by the nodes in our section, including the `PublicId`s of our
-        /// contacts.
-        sections: Vec<(Prefix<XorName>, Vec<PublicId>)>,
+        /// The relocated section that the joining node shall connect to
+        section: BTreeSet<PublicId>,
         /// The message's unique identifier.
         message_id: MessageId,
     },
@@ -546,7 +586,18 @@ pub enum MessageContent {
         /// and neighbouring sections.
         prefix: Prefix<XorName>,
         /// Members of the section
-        members: Vec<PublicId>,
+        members: BTreeSet<PublicId>,
+    },
+    /// Sent from a node to its own section to request their current routing table.
+    RoutingTableRequest(MessageId, sha256::Digest),
+    /// Sent from a section to a node to update it about its prefix and its member list.
+    RoutingTableResponse {
+        /// The section's current prefix.
+        prefix: Prefix<XorName>,
+        /// Members of the section.
+        members: BTreeSet<PublicId>,
+        /// The message's unique identifier.
+        message_id: MessageId,
     },
     /// Sent to all connected peers when our own section splits
     SectionSplit(Prefix<XorName>, XorName),
@@ -555,7 +606,7 @@ pub enum MessageContent {
     OwnSectionMerge {
         sender_prefix: Prefix<XorName>,
         merge_prefix: Prefix<XorName>,
-        sections: Vec<(Prefix<XorName>, Vec<PublicId>)>,
+        sections: SectionMap,
     },
     /// Sent by members of a newly-merged section to peers outwith the merged section to notify them
     /// of the merge.
@@ -581,6 +632,34 @@ pub enum MessageContent {
         /// The `part_index`-th part of the serialised user message.
         payload: Vec<u8>,
     },
+    /// Confirm with section that the candidate is about to resource prove.
+    ///
+    /// Sent from the `NaeManager` to the `NaeManager`.
+    AcceptAsCandidate {
+        /// Supplied `PublicId`, but with the new name
+        expect_id: PublicId,
+        /// Client authority of the candidate
+        client_auth: Authority<XorName>,
+        /// The message's unique identifier.
+        message_id: MessageId,
+    },
+    /// Sent among Group Y to vote to accept a joining node.
+    CandidateApproval {
+        /// The `PublicId` of the candidate
+        candidate_id: PublicId,
+        /// Client authority of the candidate
+        client_auth: Authority<XorName>,
+        /// The `PublicId`s of all routing table contacts shared by the nodes in our section.
+        sections: SectionMap,
+    },
+    /// Approves the joining node as a routing node.
+    ///
+    /// Sent from Group Y to the joining node.
+    NodeApproval {
+        /// The routing table shared by the nodes in our group, including the `PublicId`s of our
+        /// contacts.
+        sections: SectionMap,
+    },
 }
 
 impl MessageContent {
@@ -596,37 +675,44 @@ impl MessageContent {
 
 impl Debug for DirectMessage {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        use self::DirectMessage::*;
         match *self {
-            DirectMessage::MessageSignature(ref digest, _) => {
+            MessageSignature(ref digest, _) => {
                 write!(formatter,
                        "MessageSignature ({}, ..)",
                        utils::format_binary_array(&digest.0))
             }
-            DirectMessage::SectionListSignature(ref prefix, _, _) => {
+            SectionListSignature(ref prefix, _, _) => {
                 write!(formatter, "SectionListSignature({:?}, ..)", prefix)
             }
-            DirectMessage::BootstrapIdentify { ref public_id } => {
+            BootstrapIdentify { ref public_id } => {
                 write!(formatter, "BootstrapIdentify {{ {:?} }}", public_id)
             }
-            DirectMessage::BootstrapDeny => write!(formatter, "BootstrapDeny"),
-            DirectMessage::ClientIdentify { client_restriction: true, .. } => {
+            BootstrapDeny => write!(formatter, "BootstrapDeny"),
+            ClientIdentify { client_restriction: true, .. } => {
                 write!(formatter, "ClientIdentify (client only)")
             }
-            DirectMessage::ClientIdentify { client_restriction: false, .. } => {
+            ClientIdentify { client_restriction: false, .. } => {
                 write!(formatter, "ClientIdentify (joining node)")
             }
-            DirectMessage::NodeIdentify { .. } => write!(formatter, "NodeIdentify {{ .. }}"),
-            DirectMessage::TunnelRequest(peer_id) => {
-                write!(formatter, "TunnelRequest({:?})", peer_id)
+            NodeIdentify { .. } => write!(formatter, "NodeIdentify {{ .. }}"),
+            CandidateIdentify { .. } => write!(formatter, "CandidateIdentify {{ .. }}"),
+            TunnelRequest(peer_id) => write!(formatter, "TunnelRequest({:?})", peer_id),
+            TunnelSuccess(peer_id) => write!(formatter, "TunnelSuccess({:?})", peer_id),
+            TunnelClosed(peer_id) => write!(formatter, "TunnelClosed({:?})", peer_id),
+            TunnelDisconnect(peer_id) => write!(formatter, "TunnelDisconnect({:?})", peer_id),
+            ResourceProof { ref seed, ref target_size, ref difficulty } => {
+                write!(formatter,
+                       "ResourceProof {{ seed: {:?}, target_size: {:?}, difficulty: {:?} }}",
+                       seed,
+                       target_size,
+                       difficulty)
             }
-            DirectMessage::TunnelSuccess(peer_id) => {
-                write!(formatter, "TunnelSuccess({:?})", peer_id)
-            }
-            DirectMessage::TunnelClosed(peer_id) => {
-                write!(formatter, "TunnelClosed({:?})", peer_id)
-            }
-            DirectMessage::TunnelDisconnect(peer_id) => {
-                write!(formatter, "TunnelDisconnect({:?})", peer_id)
+            ResourceProofResponse { ref proof, ref leading_zero_bytes } => {
+                write!(formatter,
+                       "ResourceProofResponse {{ proof_len: {:?}, leading_zero_bytes: {:?} }}",
+                       proof.len(),
+                       leading_zero_bytes)
             }
         }
     }
@@ -653,69 +739,74 @@ impl Debug for SignedMessage {
 
 impl Debug for MessageContent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        use self::MessageContent::*;
         match *self {
-            MessageContent::GetNodeName { ref current_id, ref message_id } => {
+            GetNodeName { ref current_id, ref message_id } => {
                 write!(formatter,
                        "GetNodeName {{ {:?}, {:?} }}",
                        current_id,
                        message_id)
             }
-            MessageContent::ExpectCloseNode { ref expect_id, ref client_auth, ref message_id } => {
+            ExpectCandidate { ref expect_id, ref client_auth, ref message_id } => {
                 write!(formatter,
-                       "ExpectCloseNode {{ {:?}, {:?}, {:?} }}",
+                       "ExpectCandidate {{ {:?}, {:?}, {:?} }}",
                        expect_id,
                        client_auth,
                        message_id)
             }
-            MessageContent::ConnectionInfoRequest { ref pub_id, ref msg_id, .. } => {
+            ConnectionInfoRequest { ref pub_id, ref msg_id, .. } => {
                 write!(formatter,
                        "ConnectionInfoRequest {{ {:?}, {:?}, .. }}",
                        pub_id,
                        msg_id)
             }
-            MessageContent::ConnectionInfoResponse { ref pub_id, ref msg_id, .. } => {
+            ConnectionInfoResponse { ref pub_id, ref msg_id, .. } => {
                 write!(formatter,
                        "ConnectionInfoResponse {{ {:?}, {:?}, .. }}",
                        pub_id,
                        msg_id)
             }
-            MessageContent::GetNodeNameResponse { ref relocated_id,
-                                                  ref sections,
-                                                  ref message_id } => {
+            GetNodeNameResponse { ref relocated_id, ref section, ref message_id } => {
                 write!(formatter,
                        "GetNodeNameResponse {{ {:?}, {:?}, {:?} }}",
                        relocated_id,
-                       sections,
+                       section,
                        message_id)
             }
-            MessageContent::SectionUpdate { ref prefix, ref members } => {
+            SectionUpdate { ref prefix, ref members } => {
                 write!(formatter, "SectionUpdate {{ {:?}, {:?} }}", prefix, members)
             }
-            MessageContent::SectionSplit(ref prefix, ref joining_node) => {
+            RoutingTableRequest(ref msg_id, ref digest) => {
+                write!(formatter,
+                       "RoutingTableRequest({:?}, {})",
+                       msg_id,
+                       utils::format_binary_array(&digest.0))
+            }
+            RoutingTableResponse { ref prefix, ref members, ref message_id } => {
+                write!(formatter,
+                       "RoutingTableResponse {{ {:?}, {:?}, {:?} }}",
+                       prefix,
+                       members,
+                       message_id)
+            }
+            SectionSplit(ref prefix, ref joining_node) => {
                 write!(formatter, "SectionSplit({:?}, {:?})", prefix, joining_node)
             }
-            MessageContent::OwnSectionMerge { ref sender_prefix,
-                                              ref merge_prefix,
-                                              ref sections } => {
+            OwnSectionMerge { ref sender_prefix, ref merge_prefix, ref sections } => {
                 write!(formatter,
                        "OwnSectionMerge {{ {:?}, {:?}, {:?} }}",
                        sender_prefix,
                        merge_prefix,
                        sections)
             }
-            MessageContent::OtherSectionMerge { ref prefix, ref section } => {
+            OtherSectionMerge { ref prefix, ref section } => {
                 write!(formatter,
                        "OtherSectionMerge {{ {:?}, {:?} }}",
                        prefix,
                        section)
             }
-            MessageContent::Ack(ack, priority) => write!(formatter, "Ack({}, {})", ack, priority),
-            MessageContent::UserMessagePart { hash,
-                                              part_count,
-                                              part_index,
-                                              priority,
-                                              cacheable,
-                                              .. } => {
+            Ack(ack, priority) => write!(formatter, "Ack({}, {})", ack, priority),
+            UserMessagePart { hash, part_count, part_index, priority, cacheable, .. } => {
                 write!(formatter,
                        "UserMessagePart {{ {}/{}, priority: {}, cacheable: {}, {:x} }}",
                        part_index + 1,
@@ -724,6 +815,22 @@ impl Debug for MessageContent {
                        cacheable,
                        hash)
             }
+            AcceptAsCandidate { ref expect_id, ref client_auth, ref message_id } => {
+                write!(formatter,
+                       "AcceptAsCandidate {{ {:?}, {:?}, {:?} }}",
+                       expect_id,
+                       client_auth,
+                       message_id)
+            }
+            CandidateApproval { ref candidate_id, ref client_auth, ref sections } => {
+                write!(formatter,
+                       "CandidateApproval {{ candidate_id: {:?}, client_auth: {:?}, sections: \
+                        {:?} }}",
+                       candidate_id,
+                       client_auth,
+                       sections)
+            }
+            NodeApproval { ref sections } => write!(formatter, "NodeApproval {{ {:?} }}", sections),
         }
     }
 }

@@ -36,7 +36,10 @@ pub struct Stats {
     unacked_msgs: usize,
 
     msg_direct_node_identify: usize,
+    msg_direct_candidate_identify: usize,
     msg_direct_sig: usize,
+    msg_direct_resource_proof: usize,
+    msg_direct_resource_proof_rsp: usize,
     msg_direct_sls: usize,
 
     msg_get: usize,
@@ -46,7 +49,8 @@ pub struct Stats {
     msg_append: usize,
     msg_get_account_info: usize,
     msg_get_node_name: usize,
-    msg_expect_close_node: usize,
+    msg_expect_candidate: usize,
+    msg_accept_as_candidate: usize,
     msg_refresh: usize,
     msg_connection_info_req: usize,
     msg_connection_info_rsp: usize,
@@ -66,7 +70,11 @@ pub struct Stats {
     msg_section_split: usize,
     msg_own_section_merge: usize,
     msg_other_section_merge: usize,
+    msg_rt_req: usize,
+    msg_rt_rsp: usize,
     msg_get_node_name_rsp: usize,
+    msg_candidate_approval: usize,
+    msg_node_approval: usize,
     msg_ack: usize,
 
     msg_other: usize,
@@ -135,15 +143,20 @@ impl Stats {
     pub fn count_routing_message(&mut self, msg: &RoutingMessage) {
         match msg.content {
             MessageContent::GetNodeName { .. } => self.msg_get_node_name += 1,
-            MessageContent::ExpectCloseNode { .. } => self.msg_expect_close_node += 1,
+            MessageContent::ExpectCandidate { .. } => self.msg_expect_candidate += 1,
+            MessageContent::AcceptAsCandidate { .. } => self.msg_accept_as_candidate += 1,
             MessageContent::ConnectionInfoRequest { .. } => self.msg_connection_info_req += 1,
             MessageContent::ConnectionInfoResponse { .. } => self.msg_connection_info_rsp += 1,
             MessageContent::SectionUpdate { .. } => self.msg_section_update += 1,
             MessageContent::SectionSplit(..) => self.msg_section_split += 1,
             MessageContent::OwnSectionMerge { .. } => self.msg_own_section_merge += 1,
             MessageContent::OtherSectionMerge { .. } => self.msg_other_section_merge += 1,
+            MessageContent::RoutingTableRequest(..) => self.msg_rt_req += 1,
+            MessageContent::RoutingTableResponse { .. } => self.msg_rt_rsp += 1,
             MessageContent::GetNodeNameResponse { .. } => self.msg_get_node_name_rsp += 1,
             MessageContent::Ack(..) => self.msg_ack += 1,
+            MessageContent::CandidateApproval { .. } => self.msg_candidate_approval += 1,
+            MessageContent::NodeApproval { .. } => self.msg_node_approval += 1,
             MessageContent::UserMessagePart { .. } => return, // Counted as request/response.
         }
         self.increment_msg_total();
@@ -154,8 +167,11 @@ impl Stats {
         use messages::DirectMessage::*;
         match *msg {
             NodeIdentify { .. } => self.msg_direct_node_identify += 1,
+            CandidateIdentify { .. } => self.msg_direct_candidate_identify += 1,
             MessageSignature(..) => self.msg_direct_sig += 1,
             SectionListSignature(..) => self.msg_direct_sls += 1,
+            ResourceProof { .. } => self.msg_direct_resource_proof += 1,
+            ResourceProofResponse { .. } => self.msg_direct_resource_proof_rsp += 1,
             BootstrapIdentify { .. } |
             BootstrapDeny |
             ClientIdentify { .. } |
@@ -178,31 +194,40 @@ impl Stats {
         if self.msg_total % MSG_LOG_COUNT == 0 {
             info!(target: "routing_stats",
                   "Stats - Sent {} messages in total, comprising {} bytes, {} uncategorised, \
-                  routes/failed: {:?}/{}",
+                   routes/failed: {:?}/{}",
                   self.msg_total,
                   self.msg_total_bytes,
                   self.msg_other,
                   self.routes,
                   self.unacked_msgs);
             info!(target: "routing_stats",
-                  "Stats - Direct - NodeIdentify: {}, MessageSignature: {}, \
-                  SectionListSignature: {}",
+                  "Stats - Direct - NodeIdentify: {}, CandidateIdentify: {}, \
+                   MessageSignature: {}, ResourceProof: {}/{}, SectionListSignature: {}",
                   self.msg_direct_node_identify,
+                  self.msg_direct_candidate_identify,
                   self.msg_direct_sig,
+                  self.msg_direct_resource_proof,
+                  self.msg_direct_resource_proof_rsp,
                   self.msg_direct_sls);
             info!(target: "routing_stats",
-                  "Stats - Hops (Request/Response) - GetNodeName: {}/{}, ExpectCloseNode: {}, \
-                   SectionUpdate: {}, SectionSplit: {}, OwnSectionMerge: {}, \
-                   OtherSectionMerge: {}, ConnectionInfo: {}/{}, Ack: {}",
+                  "Stats - Hops (Request/Response) - GetNodeName: {}/{}, ExpectCandidate: {}, \
+                   AcceptAsCandidate: {}, SectionUpdate: {}, SectionSplit: {}, \
+                   OwnSectionMerge: {}, OtherSectionMerge: {}, RoutingTable: {}/{}, \
+                   ConnectionInfo: {}/{}, CandidateApproval: {}, NodeApproval: {}, Ack: {}",
                   self.msg_get_node_name,
                   self.msg_get_node_name_rsp,
-                  self.msg_expect_close_node,
+                  self.msg_expect_candidate,
+                  self.msg_accept_as_candidate,
                   self.msg_section_update,
                   self.msg_section_split,
                   self.msg_own_section_merge,
                   self.msg_other_section_merge,
+                  self.msg_rt_req,
+                  self.msg_rt_rsp,
                   self.msg_connection_info_req,
                   self.msg_connection_info_rsp,
+                  self.msg_candidate_approval,
+                  self.msg_node_approval,
                   self.msg_ack);
             info!(target: "routing_stats",
                   "Stats - User (Request/Success/Failure) - Get: {}/{}/{}, Put: {}/{}/{}, \

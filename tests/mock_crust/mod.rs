@@ -90,11 +90,11 @@ fn failing_connections_ring() {
 fn failing_connections_unidirectional() {
     let min_section_size = 8;
     let network = Network::new(min_section_size, None);
-    network.block_connection(Endpoint(1), Endpoint(2));
-    network.block_connection(Endpoint(1), Endpoint(3));
-    network.block_connection(Endpoint(2), Endpoint(3));
+    network.block_connection(Endpoint(1), Endpoint(6));
+    network.block_connection(Endpoint(1), Endpoint(7));
+    network.block_connection(Endpoint(6), Endpoint(7));
 
-    let nodes = create_connected_nodes(&network, 4);
+    let nodes = create_connected_nodes(&network, min_section_size);
     verify_invariant_for_all_nodes(&nodes);
 }
 
@@ -121,7 +121,6 @@ fn node_joins_in_front() {
 
 #[test]
 fn multiple_joining_nodes() {
-    // Create a network with two sections:
     let min_section_size = 8;
     let network = Network::new(min_section_size, None);
     let mut nodes = create_connected_nodes(&network, min_section_size);
@@ -179,7 +178,7 @@ fn simultaneous_joining_nodes() {
         }
     }
 
-    let _ = poll_all(&mut nodes, &mut []);
+    poll_and_resend(&mut nodes, &mut []);
 
     verify_invariant_for_all_nodes(&nodes);
 }
