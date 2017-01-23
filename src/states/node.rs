@@ -76,6 +76,7 @@ pub struct Node {
     ack_mgr: AckManager,
     cacheable_user_msg_cache: UserMessageCache,
     crust_service: Service,
+    failed_peers: BTreeSet<PeerId>,
     full_id: FullId,
     get_approval_timer_token: Option<u64>,
     is_first_node: bool,
@@ -171,6 +172,7 @@ impl Node {
             cacheable_user_msg_cache:
                 UserMessageCache::with_expiry_duration(user_msg_cache_duration),
             crust_service: crust_service,
+            failed_peers: BTreeSet::new(),
             full_id: full_id,
             get_approval_timer_token: None,
             is_first_node: first_node,
@@ -2087,6 +2089,13 @@ impl Node {
                 debug!("{:?} Disconnecting from timed out peer {:?}", self, peer_id);
                 let _ = self.crust_service.disconnect(peer_id);
             }
+            let failed_peers = mem::replace(&mut self.failed_peers, BTreeSet::new());
+            for peer_id in failed_peers {
+                self.crust_service.disconnect(peer_id);
+                if Transition::Terminate == self.handle_lost_peer(peer_id).extract(&mut events) {
+                    return events.with_value(false);
+                }
+            }
             self.merge_if_necessary();
 
             events.add_event(Event::Tick);
@@ -2704,6 +2713,17 @@ impl Base for Node {
 
     fn stats(&mut self) -> &mut Stats {
         &mut self.stats
+    }
+
+    /// Sends the given `bytes` to the peer with the given Crust `PeerId`. If that results in an
+    /// error, it marks the peer as `Failed`. It will be dropped on the next tick.
+    fn send_or_drop(&mut self, peer_id: &PeerId, bytes: Vec<u8>, priority: u8) {
+        self.stats().count_bytes(bytes.len());
+
+        if let Err(err) = self.crust_service().send(*peer_id, bytes.clone(), priority) {
+            info!("{:?} Connection to {:?} failed: {:?}", self, peer_id, err);
+            self.failed_peers.insert(*peer_id);
+        }
     }
 }
 
