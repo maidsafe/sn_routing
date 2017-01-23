@@ -122,6 +122,8 @@ pub enum PeerState {
     Candidate(bool),
     /// We are connected to the peer who is our proxy node.
     Proxy,
+    /// Sending a message to this peer failed.
+    Failed,
 }
 
 impl PeerState {
@@ -223,6 +225,7 @@ impl Peer {
             PeerState::Candidate(_) => {
                 self.timestamp.elapsed() > Duration::from_secs(RESOURCE_PROOF_TIMEOUT_SECS)
             }
+            PeerState::Failed => true,
         }
     }
 }
@@ -962,6 +965,13 @@ impl PeerManager {
         true
     }
 
+    /// Marks the given peer as `Failed`. Failed peers can be removed and disconnected from.
+    pub fn mark_as_failed(&mut self, peer_id: &PeerId) {
+        // Ignore the result: Failure is logged in `set_state` and means that the failed peer has
+        // already been removed anyway.
+        let _ = self.set_state(peer_id, PeerState::Failed);
+    }
+
     /// Returns the public ID of the given peer, if it is in `CrustConnecting` state.
     pub fn get_connecting_peer(&self, peer_id: &PeerId) -> Option<&PublicId> {
         self.peer_map.get(peer_id).and_then(|peer| if let PeerState::CrustConnecting = peer.state {
@@ -1172,7 +1182,8 @@ impl PeerManager {
             Some(&PeerState::JoiningNode) |
             Some(&PeerState::Proxy) |
             Some(&PeerState::Candidate(_)) |
-            Some(&PeerState::Routing(_)) => return None,
+            Some(&PeerState::Routing(_)) |
+            Some(&PeerState::Failed) => return None,
             Some(&PeerState::SearchingForTunnel) |
             None => (),
         }
