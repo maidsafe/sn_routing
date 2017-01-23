@@ -206,23 +206,22 @@ impl Peer {
         &self.state
     }
 
+    /// Returns `true` if the peer is not connected and has timed out. In this case, it can be
+    /// safely removed from the peer map.
     fn is_expired(&self) -> bool {
         match self.state {
-            PeerState::SearchingForTunnel => {
-                self.timestamp.elapsed() >= Duration::from_secs(CONNECTION_TIMEOUT_SECS)
-            }
-            PeerState::JoiningNode | PeerState::Proxy => {
-                self.timestamp.elapsed() >= Duration::from_secs(JOINING_NODE_TIMEOUT_SECS)
-            }
             PeerState::ConnectionInfoPreparing { .. } |
             PeerState::ConnectionInfoReady(_) |
             PeerState::CrustConnecting |
+            PeerState::SearchingForTunnel => {
+                self.timestamp.elapsed() >= Duration::from_secs(CONNECTION_TIMEOUT_SECS)
+            }
+            PeerState::JoiningNode |
+            PeerState::Proxy |
+            PeerState::Candidate(_) |
             PeerState::Client |
             PeerState::Routing(_) |
             PeerState::AwaitingNodeIdentify(_) => false,
-            PeerState::Candidate(_) => {
-                self.timestamp.elapsed() > Duration::from_secs(RESOURCE_PROOF_TIMEOUT_SECS)
-            }
         }
     }
 }
@@ -832,7 +831,9 @@ impl PeerManager {
         let expired_ids = self.peer_map
             .peers()
             .filter(|peer| match peer.state {
-                PeerState::JoiningNode | PeerState::Proxy => peer.is_expired(),
+                PeerState::JoiningNode | PeerState::Proxy => {
+                    peer.timestamp.elapsed() >= Duration::from_secs(JOINING_NODE_TIMEOUT_SECS)
+                }
                 _ => false,
             })
             .filter_map(|peer| peer.peer_id)
