@@ -2686,9 +2686,10 @@ impl Node {
 
     pub fn clear_state(&mut self) {
         self.ack_mgr.clear();
-        self.peer_mgr.remove_connecting_peers();
         self.routing_msg_filter.clear();
-        self.merge_if_necessary()
+        if self.peer_mgr.remove_connecting_peers() {
+            self.merge_if_necessary();
+        }
     }
 
     pub fn section_list_signatures(&self,
