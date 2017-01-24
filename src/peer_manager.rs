@@ -481,7 +481,9 @@ impl PeerManager {
         (&self)
          -> Result<(PublicId, Authority<XorName>, SectionMap), RoutingError> {
         if let Some((name, candidate)) =
-            self.candidates.iter().find(|&(_, candidate)| candidate.passed_our_challenge) {
+            self.candidates
+                .iter()
+                .find(|&(_, cand)| cand.passed_our_challenge && !cand.is_approved()) {
             if let Some(peer) = self.peer_map.get_by_name(name) {
                 Ok((*peer.pub_id(), candidate.client_auth, self.pub_ids_by_section()))
             } else {
