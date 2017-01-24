@@ -31,9 +31,7 @@ fn merge(prefix_lengths: Vec<usize>) {
     // Drop nodes from a section with the shortest prefix until we get a merge event for the empty
     // prefix.
     let mut min_prefix = *nodes[0].routing_table().our_prefix();
-    let mut got_merge_event;
     loop {
-        got_merge_event = false;
         rng.shuffle(&mut nodes);
         let mut index = nodes.len();
         for (i, node) in nodes.iter().enumerate() {
@@ -51,6 +49,7 @@ fn merge(prefix_lengths: Vec<usize>) {
         let removed = nodes.remove(index);
         drop(removed);
         poll_and_resend(&mut nodes, &mut []);
+        // let mut merge_events_missing = nodes.len();
         for node in &mut *nodes {
             while let Ok(event) = node.try_next_ev() {
                 match event {
@@ -58,19 +57,20 @@ fn merge(prefix_lengths: Vec<usize>) {
                     Event::NodeLost(..) |
                     Event::Tick => (),
                     Event::SectionMerge(prefix) => {
-                        got_merge_event = true;
                         if prefix.bit_count() == 0 {
                             return;
+                            // TODO: Wait for _all_ expected merge events, not just one.
+                            // merge_events_missing -= 1;
                         }
                     }
                     event => panic!("{} got unexpected event: {:?}", node.name(), event),
                 }
             }
         }
-        if got_merge_event {
-            info!("About to check invariant");
-        }
         verify_invariant_for_all_nodes(&nodes);
+        // if merge_events_missing == 0 {
+        //     return;
+        // }
     }
 }
 

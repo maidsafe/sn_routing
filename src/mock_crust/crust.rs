@@ -16,10 +16,9 @@
 // relating to use of the SAFE Network Software.
 
 use maidsafe_utilities::event_sender;
+use std::{fmt, io, thread};
 use std::cell::{RefCell, RefMut};
 use std::collections::HashSet;
-use std::fmt;
-use std::io;
 use std::net::SocketAddr;
 use std::rc::Rc;
 
@@ -163,7 +162,9 @@ impl Service {
 
 impl Drop for Service {
     fn drop(&mut self) {
-        self.lock_and_poll(|imp| imp.disconnect_all());
+        if !thread::panicking() {
+            self.lock_and_poll(|imp| imp.disconnect_all());
+        }
     }
 }
 
