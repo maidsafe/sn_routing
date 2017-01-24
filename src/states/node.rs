@@ -31,7 +31,7 @@ use maidsafe_utilities::serialisation;
 use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, Message, MessageContent,
                RoutingMessage, SectionList, SignedMessage, UserMessage, UserMessageCache};
 use peer_manager::{ConnectionInfoPreparedResult, PeerManager, PeerState,
-                   RESOURCE_PROOF_TIMEOUT_SECS, SectionMap};
+                   RESOURCE_PROOF_DURATION_SECS, SectionMap};
 use resource_proof::ResourceProof;
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use routing_table::{Authority, OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix,
@@ -42,7 +42,7 @@ use routing_table::RoutingTable;
 use rust_sodium::crypto::{box_, sign};
 use rust_sodium::crypto::hash::sha256;
 use section_list_cache::SectionListCache;
-use signature_accumulator::SignatureAccumulator;
+use signature_accumulator::{ACCUMULATION_TIMEOUT_SECS, SignatureAccumulator};
 use state_machine::Transition;
 use stats::Stats;
 use std::{cmp, fmt, iter, mem};
@@ -104,6 +104,8 @@ pub struct Node {
     rt_timer_token: Option<u64>,
     /// `RoutingMessage`s affecting the routing table that arrived before `NodeApproval`.
     routing_msg_backlog: Vec<RoutingMessage>,
+    /// The timer token for sending a `CandidateApproval` message.
+    candidate_timer_token: Option<u64>,
 }
 
 impl Node {
@@ -189,6 +191,7 @@ impl Node {
             rt_timeout: Duration::from_secs(RT_MIN_TIMEOUT_SECS),
             rt_timer_token: None,
             routing_msg_backlog: vec![],
+            candidate_timer_token: None,
         };
 
         if node.start_listening() {
@@ -996,41 +999,43 @@ impl Node {
                                       peer_id: PeerId,
                                       proof: VecDeque<u8>,
                                       leading_zero_bytes: u64) {
+        if self.candidate_timer_token.is_none() {
+            debug!("{:?} Won't handle resource proof response from {:?} - not currently waiting.",
+                   self,
+                   peer_id);
+            return;
+        }
+
         let name = if let Some(name) = self.peer_mgr.get_peer_name(&peer_id) {
             *name
         } else {
-            debug!("{:?} Failed to handle resource proof response from {:?}",
+            debug!("{:?} Failed to get peer name while handling resource proof response from {:?}",
                    self,
                    peer_id);
             return;
         };
 
-        let (candidate_id, client_auth, sections) = match self.peer_mgr
+        if let Err(error) = self.peer_mgr
             .verify_candidate(&name, proof, leading_zero_bytes, RESOURCE_PROOF_DIFFICULTY) {
-            Err(error) => {
-                debug!("{:?} Failed to verify candidate {}: {:?}",
-                       self,
-                       name,
-                       error);
-                return;
-            }
-            Ok(info) => info,
-        };
-        let response_content = MessageContent::CandidateApproval {
-            candidate_id: candidate_id,
-            client_auth: client_auth,
-            sections: sections,
-        };
-        let response_msg = RoutingMessage {
-            src: Authority::Section(name),
-            dst: Authority::Section(name),
-            content: response_content,
-        };
-        info!("{:?} Candidate approved.  Sending {:?}.",
-              self,
-              response_msg);
-        if let Err(error) = self.send_routing_message(response_msg) {
-            debug!("{:?} Failed sending CandidateApproval: {:?}", self, error);
+            debug!("{:?} Failed to verify candidate {}: {:?}",
+                   self,
+                   name,
+                   error);
+            self.candidate_timer_token = None;
+            return;
+        }
+        // For mock-crust tests, just send the `CandidateApproval` immediately.  Otherwise, wait for
+        // the timer to trigger sending the message in an effort to roughly synchronise this.
+        if cfg!(feature = "use-mock-crust") {
+            info!("{:?} Candidate {} passed our challenge.  Sending CandidateApproval.",
+                  self,
+                  name);
+            self.candidate_timer_token = None;
+            let _ = self.send_candidate_approval();
+        } else {
+            info!("{:?} Candidate {} passed our challenge.  Waiting to send CandidateApproval.",
+                  self,
+                  name);
         }
     }
 
@@ -1722,7 +1727,8 @@ impl Node {
             return Evented::empty();
         }
 
-        let duration = Duration::from_secs(RESOURCE_PROOF_TIMEOUT_SECS);
+        let duration = Duration::from_secs(RESOURCE_PROOF_DURATION_SECS +
+                                           ACCUMULATION_TIMEOUT_SECS);
         self.get_approval_timer_token = Some(self.timer.schedule(duration));
 
         self.full_id.public_id_mut().set_name(*relocated_id.name());
@@ -1794,6 +1800,9 @@ impl Node {
             // If we're the joining node: stop
             return Ok(());
         }
+
+        self.candidate_timer_token = Some(self.timer
+            .schedule(Duration::from_secs(RESOURCE_PROOF_DURATION_SECS)));
 
         let own_section = self.peer_mgr.accept_as_candidate(*candidate_id.name(), client_auth)?;
         let response_content = MessageContent::GetNodeNameResponse {
@@ -2091,6 +2100,11 @@ impl Node {
             if self.send_rt_request().is_err() {
                 return events.with_value(true);
             }
+        } else if self.candidate_timer_token == Some(token) {
+            self.candidate_timer_token = None;
+            if self.send_candidate_approval().is_err() {
+                return events.with_value(true);
+            }
         }
 
         self.resend_unacknowledged_timed_out_msgs(token);
@@ -2110,6 +2124,36 @@ impl Node {
         };
         if let Err(err) = self.send_routing_message(request_msg) {
             debug!("{:?} Failed to send RoutingTableRequest: {:?}.", self, err);
+        }
+        Ok(())
+    }
+
+    fn send_candidate_approval(&mut self) -> Result<(), RoutingError> {
+        let (candidate_id, client_auth, sections) = match self.peer_mgr.verified_candidate_info() {
+            Err(_) => {
+                trace!("{:?} No candidate for which to send CandidateApproval.",
+                       self);
+                return Err(RoutingError::UnknownCandidate);
+            }
+            Ok(info) => info,
+        };
+        let src = Authority::Section(*candidate_id.name());
+        let dst = src;
+        let response_content = MessageContent::CandidateApproval {
+            candidate_id: candidate_id,
+            client_auth: client_auth,
+            sections: sections,
+        };
+        let response_msg = RoutingMessage {
+            src: src,
+            dst: dst,
+            content: response_content,
+        };
+        info!("{:?} Resource proof duration has passed.  Sending {:?}.",
+              self,
+              response_msg);
+        if let Err(error) = self.send_routing_message(response_msg) {
+            debug!("{:?} Failed sending CandidateApproval: {:?}", self, error);
         }
         Ok(())
     }

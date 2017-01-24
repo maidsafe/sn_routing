@@ -26,7 +26,6 @@ use routing_table::{Authority, OtherMergeDetails, OwnMergeDetails, OwnMergeState
 use routing_table::Error as RoutingTableError;
 use rust_sodium::crypto::hash::sha256;
 use rust_sodium::crypto::sign;
-use signature_accumulator::ACCUMULATION_TIMEOUT_SECS;
 use std::{error, fmt, mem};
 use std::cmp;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
@@ -42,8 +41,10 @@ const JOINING_NODE_TIMEOUT_SECS: u64 = 900;
 const CONNECTION_TIMEOUT_SECS: u64 = 90;
 /// Time (in seconds) the node waits for a `NodeIdentify` message.
 const NODE_IDENTIFY_TIMEOUT_SECS: u64 = 60;
-/// Time (in seconds) after which an unapproved candidate has failed to provide proof of resource.
-pub const RESOURCE_PROOF_TIMEOUT_SECS: u64 = 600;
+/// Time (in seconds) between accepting a new candidate (i.e. receiving an `AcceptAsCandidate` from
+/// our section) and sending a `CandidateApproval` for this candidate.  If the candidate cannot
+/// satisfy the proof of resource challenge within this time, no `CandidateApproval` is sent.
+pub const RESOURCE_PROOF_DURATION_SECS: u64 = 300;
 /// Time (in seconds) after which a `VotedFor` candidate will be removed.
 const CANDIDATE_ACCEPT_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) the node waits for connection from an expected node.
@@ -308,6 +309,7 @@ struct Candidate {
     seed: Vec<u8>,
     client_auth: Authority<XorName>,
     state: CandidateState,
+    passed_our_challenge: bool,
 }
 
 impl Candidate {
@@ -324,6 +326,7 @@ impl Candidate {
             seed: seed,
             client_auth: client_auth,
             state: CandidateState::VotedFor,
+            passed_our_challenge: false,
         }
     }
 
@@ -331,14 +334,9 @@ impl Candidate {
         let timeout_duration = match self.state {
             CandidateState::VotedFor => Duration::from_secs(CANDIDATE_ACCEPT_TIMEOUT_SECS),
             CandidateState::AcceptedAsCandidate |
-            CandidateState::Approved => Duration::from_secs(RESOURCE_PROOF_TIMEOUT_SECS * 2),
+            CandidateState::Approved => Duration::from_secs(RESOURCE_PROOF_DURATION_SECS * 2),
         };
         self.insertion_time.elapsed() > timeout_duration
-    }
-
-    fn is_slow(&self) -> bool {
-        self.insertion_time.elapsed() >
-        Duration::from_secs(RESOURCE_PROOF_TIMEOUT_SECS - ACCUMULATION_TIMEOUT_SECS)
     }
 
     fn is_approved(&self) -> bool {
@@ -458,25 +456,36 @@ impl PeerManager {
     /// timeout, or if it's not the current candidate, or if it fails validation, returns `Err`.
     /// Otherwise returns a tuple containing the candidate's `PublicId`, its client `Authority` and
     /// the `PublicId`s of all routing table entries.
-    pub fn verify_candidate(&self,
+    pub fn verify_candidate(&mut self,
                             candidate_name: &XorName,
                             proof: VecDeque<u8>,
                             leading_zero_bytes: u64,
                             difficulty: u8)
-                            -> Result<(PublicId, Authority<XorName>, SectionMap), RoutingError> {
-        if let Some(candidate) = self.candidates.get(candidate_name) {
-            if candidate.is_slow() {
-                return Err(RoutingError::TimedOut);
-            }
+                            -> Result<(), RoutingError> {
+        if let Some(candidate) = self.candidates.get_mut(candidate_name) {
             let rp_object = ResourceProof::new(candidate.target_size, difficulty);
             if rp_object.validate_all(&candidate.seed, &proof, leading_zero_bytes) {
-                if let Some(peer) = self.peer_map.get_by_name(candidate_name) {
-                    Ok((*peer.pub_id(), candidate.client_auth, self.pub_ids_by_section()))
-                } else {
-                    Err(RoutingError::UnknownCandidate)
-                }
+                candidate.passed_our_challenge = true;
+                Ok(())
             } else {
                 Err(RoutingError::FailedResourceProofValidation)
+            }
+        } else {
+            Err(RoutingError::UnknownCandidate)
+        }
+    }
+
+    /// Returns a tuple containing the verified candidate's `PublicId`, its client `Authority` and
+    /// the `PublicId`s of all routing table entries.
+    pub fn verified_candidate_info
+        (&self)
+         -> Result<(PublicId, Authority<XorName>, SectionMap), RoutingError> {
+        if let Some((name, candidate)) =
+            self.candidates.iter().find(|&(_, candidate)| candidate.passed_our_challenge) {
+            if let Some(peer) = self.peer_map.get_by_name(name) {
+                Ok((*peer.pub_id(), candidate.client_auth, self.pub_ids_by_section()))
+            } else {
+                Err(RoutingError::UnknownCandidate)
             }
         } else {
             Err(RoutingError::UnknownCandidate)
