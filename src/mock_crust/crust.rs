@@ -142,6 +142,11 @@ impl Service {
         self.lock().is_peer_whitelisted(peer_id)
     }
 
+    /// Returns `true` if the specified peer's IP is hard-coded. (Always `true` in mock Crust.)
+    pub fn is_peer_hard_coded(&self, _peer_id: &PeerId) -> bool {
+        true
+    }
+
     /// Our `PeerId`.
     pub fn id(&self) -> PeerId {
         self.lock().peer_id
