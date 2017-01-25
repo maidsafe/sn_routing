@@ -496,8 +496,8 @@ impl Node {
             MessageSignature(digest, sig) => {
                 self.handle_message_signature(digest, sig, peer_id).to_evented()
             }
-            SectionListSignature(prefix, section_list, sig) => {
-                self.handle_section_list_signature(peer_id, prefix, section_list, sig).to_evented()
+            SectionListSignature(section_list, sig) => {
+                self.handle_section_list_signature(peer_id, section_list, sig).to_evented()
             }
             ClientIdentify { ref serialised_public_id, ref signature, client_restriction } => {
                 if let Ok(public_id) = verify_signed_public_id(serialised_public_id, signature) {
@@ -639,7 +639,7 @@ impl Node {
         };
 
         for peer_id in peers {
-            let msg = DirectMessage::SectionListSignature(prefix, section.clone(), sig);
+            let msg = DirectMessage::SectionListSignature(section.clone(), sig);
             if let Err(e) = self.send_direct_message(peer_id, msg) {
                 warn!("{:?} Error sending section list signature for {:?} to {:?}: {:?}",
                       self,
@@ -652,7 +652,6 @@ impl Node {
 
     fn handle_section_list_signature(&mut self,
                                      peer_id: PeerId,
-                                     prefix: Prefix<XorName>,
                                      section_list: SectionList,
                                      sig: sign::Signature)
                                      -> Result<(), RoutingError> {
@@ -661,7 +660,7 @@ impl Node {
         let serialised = serialisation::serialise(&section_list)?;
         if sign::verify_detached(&sig, &serialised, src_pub_id.signing_public_key()) {
             self.section_list_sigs
-                .add_signature(prefix,
+                .add_signature(section_list.prefix,
                                *src_pub_id,
                                section_list,
                                sig,
