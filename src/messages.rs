@@ -341,9 +341,7 @@ impl SignedMessage {
         let signed_bytes = match serialise(&self.content) {
             Ok(serialised) => serialised,
             Err(error) => {
-                info!("Failed to remove invalid signatures from {:?}: {:?}",
-                      self,
-                      error);
+                warn!("Failed to serialise {:?}: {:?}", self, error);
                 return false;
             }
         };
