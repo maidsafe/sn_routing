@@ -881,10 +881,12 @@ impl Node {
             (SectionSplit(prefix, joining_node), _, _) => {
                 self.handle_section_split(prefix, joining_node)
             }
-            (OwnSectionMerge { sender_prefix, merge_prefix, sections }, _, _) => {
+            (OwnSectionMerge { sender_prefix, merge_prefix, sections },
+             Section(_),
+             PrefixSection(_)) => {
                 self.handle_own_section_merge(sender_prefix, merge_prefix, sections)
             }
-            (OtherSectionMerge { prefix, section }, _, _) => {
+            (OtherSectionMerge { prefix, section }, Section(_), PrefixSection(_)) => {
                 self.handle_other_section_merge(prefix, section)
             }
             (Ack(ack, _), _, _) => self.handle_ack_response(ack).to_evented(),
