@@ -50,7 +50,7 @@ use std::collections::{BTreeSet, HashSet, VecDeque};
 #[cfg(feature = "use-mock-crust")]
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 use timer::Timer;
 use tunnels::Tunnels;
@@ -63,9 +63,6 @@ const TICK_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) after which a `GetNodeName` request is resent.
 const GET_NODE_NAME_TIMEOUT_SECS: u64 = 60;
 /// The number of required leading zero bits for the resource proof
-#[cfg(feature = "use-mock-crust")]
-const RESOURCE_PROOF_DIFFICULTY: u8 = 0;
-#[cfg(not(feature = "use-mock-crust"))]
 const RESOURCE_PROOF_DIFFICULTY: u8 = 8;
 /// Initial delay between a routing table change and sending a `RoutingTableRequest`, in seconds.
 const RT_MIN_TIMEOUT_SECS: u64 = 30;
@@ -986,8 +983,19 @@ impl Node {
                                      target_size: usize,
                                      difficulty: u8)
                                      -> Result<(), RoutingError> {
+        let start = Instant::now();
         let rp_object = ResourceProof::new(target_size, difficulty);
         let mut proof = rp_object.create_proof_data(&seed);
+        let elapsed = start.elapsed();
+        trace!("{:?} created proof data in {}.{:06} seconds.  Min section size: {}, Target size: \
+                {}, Difficulty: {}, Seed: {:?}",
+               self,
+               elapsed.as_secs(),
+               elapsed.subsec_nanos() / 1000,
+               self.min_section_size(),
+               target_size,
+               difficulty,
+               seed);
         let direct_message = DirectMessage::ResourceProofResponse {
             proof: proof.clone(),
             leading_zero_bytes: rp_object.create_proof(&mut proof),
@@ -1015,27 +1023,28 @@ impl Node {
             return;
         };
 
-        if let Err(error) = self.peer_mgr
-            .verify_candidate(&name, proof, leading_zero_bytes, RESOURCE_PROOF_DIFFICULTY) {
-            debug!("{:?} Failed to verify candidate {}: {:?}",
-                   self,
-                   name,
-                   error);
-            self.candidate_timer_token = None;
-            return;
-        }
-        // For mock-crust tests, just send the `CandidateApproval` immediately.  Otherwise, wait for
-        // the timer to trigger sending the message in an effort to roughly synchronise this.
-        if cfg!(feature = "use-mock-crust") {
-            info!("{:?} Candidate {} passed our challenge.  Sending CandidateApproval.",
-                  self,
-                  name);
-            self.candidate_timer_token = None;
-            let _ = self.send_candidate_approval();
-        } else {
-            info!("{:?} Candidate {} passed our challenge.  Waiting to send CandidateApproval.",
-                  self,
-                  name);
+        match self.peer_mgr.verify_candidate(&name, proof, leading_zero_bytes) {
+            Err(error) => {
+                debug!("{:?} Failed to verify candidate {}: {:?}",
+                       self,
+                       name,
+                       error);
+                self.candidate_timer_token = None;
+            }
+            Ok((target_size, difficulty)) if difficulty == 0 && target_size < 1000 => {
+                // Small tests don't require waiting for synchronisation. Send approval now.
+                info!("{:?} Candidate {} passed our challenge.  Sending CandidateApproval.",
+                      self,
+                      name);
+                self.candidate_timer_token = None;
+                let _ = self.send_candidate_approval();
+            }
+            Ok(_) => {
+                info!("{:?} Candidate {} passed our challenge.  Waiting to send \
+                       CandidateApproval.",
+                      self,
+                      name);
+            }
         }
     }
 
@@ -1222,12 +1231,18 @@ impl Node {
         debug!("{:?} Handling CandidateIdentify from {:?}.",
                self,
                public_id.name());
-        match self.peer_mgr.handle_candidate_identify(&public_id, &peer_id) {
+        let difficulty = if self.crust_service.is_peer_hard_coded(&peer_id) ||
+                            self.peer_mgr.get_joining_node(&peer_id).is_some() {
+            0
+        } else {
+            RESOURCE_PROOF_DIFFICULTY
+        };
+        match self.peer_mgr.handle_candidate_identify(&public_id, &peer_id, difficulty) {
             Ok(Some((seed, target_size))) => {
                 let direct_message = DirectMessage::ResourceProof {
                     seed: seed,
                     target_size: target_size,
-                    difficulty: RESOURCE_PROOF_DIFFICULTY,
+                    difficulty: difficulty,
                 };
                 if let Err(error) = self.send_direct_message(peer_id, direct_message) {
                     debug!("{:?} failed requesting resource_proof from node candidate {:?}/{:?}.",
