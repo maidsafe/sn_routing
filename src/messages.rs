@@ -171,7 +171,10 @@ pub enum DirectMessage {
 impl DirectMessage {
     /// The priority Crust should send this message with.
     pub fn priority(&self) -> u8 {
-        0 // Currently all direct messages are small and should be treated with high priority.
+        match *self {
+            DirectMessage::ResourceProofResponse { .. } => 9,
+            _ => 0,
+        }
     }
 }
 

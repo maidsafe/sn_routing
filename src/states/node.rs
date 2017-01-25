@@ -32,6 +32,7 @@ use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, Message, MessageCont
                RoutingMessage, SectionList, SignedMessage, UserMessage, UserMessageCache};
 use peer_manager::{ConnectionInfoPreparedResult, PeerManager, PeerState,
                    RESOURCE_PROOF_DURATION_SECS, SectionMap};
+use rand::{self, Rng};
 use resource_proof::ResourceProof;
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use routing_table::{Authority, OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix,
@@ -63,7 +64,9 @@ const TICK_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) after which a `GetNodeName` request is resent.
 const GET_NODE_NAME_TIMEOUT_SECS: u64 = 60;
 /// The number of required leading zero bits for the resource proof
-const RESOURCE_PROOF_DIFFICULTY: u8 = 8;
+const RESOURCE_PROOF_DIFFICULTY: u8 = 0;
+/// The total size of the resource proof data.
+const RESOURCE_PROOF_TARGET_SIZE: usize = 125 * 1024 * 1024;
 /// Initial delay between a routing table change and sending a `RoutingTableRequest`, in seconds.
 const RT_MIN_TIMEOUT_SECS: u64 = 30;
 /// Maximal delay between two subsequent `RoutingTableRequest`s, in seconds.
@@ -986,6 +989,10 @@ impl Node {
         let start = Instant::now();
         let rp_object = ResourceProof::new(target_size, difficulty);
         let mut proof = rp_object.create_proof_data(&seed);
+        let direct_message = DirectMessage::ResourceProofResponse {
+            proof: proof.clone(),
+            leading_zero_bytes: rp_object.create_proof(&mut proof),
+        };
         let elapsed = start.elapsed();
         trace!("{:?} created proof data in {}.{:06} seconds.  Min section size: {}, Target size: \
                 {}, Difficulty: {}, Seed: {:?}",
@@ -996,10 +1003,6 @@ impl Node {
                target_size,
                difficulty,
                seed);
-        let direct_message = DirectMessage::ResourceProofResponse {
-            proof: proof.clone(),
-            leading_zero_bytes: rp_object.create_proof(&mut proof),
-        };
         self.send_direct_message(peer_id, direct_message)
     }
 
@@ -1233,17 +1236,22 @@ impl Node {
 
     fn handle_candidate_identify(&mut self, public_id: PublicId, peer_id: PeerId) -> Evented<()> {
         let mut result = Evented::empty();
-        debug!("{:?} Handling CandidateIdentify from {:?}.",
-               self,
-               public_id.name());
-        let difficulty = if self.crust_service.is_peer_hard_coded(&peer_id) ||
-                            self.peer_mgr.get_joining_node(&peer_id).is_some() {
-            0
+        let name = public_id.name();
+        debug!("{:?} Handling CandidateIdentify from {:?}.", self, name);
+        let (difficulty, target_size) = if self.crust_service.is_peer_hard_coded(&peer_id) ||
+                                           self.peer_mgr.get_joining_node(&peer_id).is_some() {
+            (0, 1)
         } else {
-            RESOURCE_PROOF_DIFFICULTY
+            (RESOURCE_PROOF_DIFFICULTY,
+             RESOURCE_PROOF_TARGET_SIZE / (self.peer_mgr.routing_table().our_section().len() + 1))
         };
-        match self.peer_mgr.handle_candidate_identify(&public_id, &peer_id, difficulty) {
-            Ok(Some((seed, target_size))) => {
+        let seed: Vec<u8> = rand::thread_rng().gen_iter().take(10).collect();
+        match self.peer_mgr.handle_candidate_identify(&public_id,
+                                                      &peer_id,
+                                                      target_size,
+                                                      difficulty,
+                                                      seed.clone()) {
+            Ok(true) => {
                 let direct_message = DirectMessage::ResourceProof {
                     seed: seed,
                     target_size: target_size,
@@ -1252,20 +1260,18 @@ impl Node {
                 if let Err(error) = self.send_direct_message(peer_id, direct_message) {
                     debug!("{:?} failed requesting resource_proof from node candidate {:?}/{:?}.",
                            self,
-                           public_id.name(),
+                           name,
                            error);
                 }
             }
-            Ok(None) => {
-                debug!("{:?} adding {:?} into routing table.",
-                       self,
-                       public_id.name());
+            Ok(false) => {
+                debug!("{:?} adding {:?} into routing table.", self, name);
                 self.add_to_routing_table(&public_id, &peer_id).extract(&mut result);
             }
             Err(error) => {
                 debug!("{:?} failed to handle CandidateIdentify from {:?}: {:?} - disconnecting",
                        self,
-                       public_id.name(),
+                       name,
                        error);
                 self.disconnect_peer(&peer_id);
             }

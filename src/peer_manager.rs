@@ -19,7 +19,7 @@ use crust::{PeerId, PrivConnectionInfo, PubConnectionInfo};
 use error::RoutingError;
 use id::PublicId;
 use itertools::Itertools;
-use rand::{self, Rng};
+use rand;
 use resource_proof::ResourceProof;
 use routing_table::{Authority, OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix,
                     RemovalDetails, RoutingTable};
@@ -27,7 +27,6 @@ use routing_table::Error as RoutingTableError;
 use rust_sodium::crypto::hash::sha256;
 use rust_sodium::crypto::sign;
 use std::{error, fmt, mem};
-use std::cmp;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::collections::hash_map::Values;
 use std::time::{Duration, Instant};
@@ -512,7 +511,7 @@ impl PeerManager {
     }
 
     /// Updates peer's state to `Candidate` in the peer map if it is an unapproved candidate and
-    /// returns the seed to allow the challenge to begin.
+    /// returns the whether the candidate needs to perform the resource proof.
     ///
     /// Returns:
     ///
@@ -523,11 +522,13 @@ impl PeerManager {
     pub fn handle_candidate_identify(&mut self,
                                      pub_id: &PublicId,
                                      peer_id: &PeerId,
-                                     difficulty: u8)
-                                     -> Result<Option<(Vec<u8>, usize)>, RoutingError> {
+                                     target_size: usize,
+                                     difficulty: u8,
+                                     seed: Vec<u8>)
+                                     -> Result<bool, RoutingError> {
         if let Some(candidate) = self.candidates.get_mut(pub_id.name()) {
             if candidate.is_approved() {
-                Ok(None)
+                Ok(false)
             } else {
                 let tunnel = match self.peer_map.get(peer_id).map(|peer| &peer.state) {
                     Some(&PeerState::SearchingForTunnel) |
@@ -539,16 +540,8 @@ impl PeerManager {
                 if tunnel {
                     Err(RoutingError::CandidateIsTunnelling)
                 } else {
-                    let (target_size, seed) = if difficulty == 0 {
-                        (10, vec![5u8; 4])
-                    } else {
-                        let evaluators = cmp::max(self.routing_table.min_section_size(),
-                                                  self.routing_table.our_section().len());
-                        (100 * 1024 * 1024 / evaluators,
-                         rand::thread_rng().gen_iter().take(10).collect())
-                    };
-                    candidate.resource_proof = Some((target_size, difficulty, seed.clone()));
-                    Ok(Some((seed, target_size)))
+                    candidate.resource_proof = Some((target_size, difficulty, seed));
+                    Ok(true)
                 }
             }
         } else {
