@@ -365,15 +365,15 @@ impl PeerManager {
 
     /// Clears the routing table and resets this node's public ID.
     pub fn reset_routing_table(&mut self, our_public_id: PublicId) {
-        let min_section_size = self.routing_table.min_section_size();
-        self.our_public_id = our_public_id;
-
         if !self.routing_table.is_empty() {
-            warn!("Reset to {:?} from non-empty routing table {:?}",
+            warn!("{:?} Reset to {:?} from non-empty routing table {:?}.",
+                  self,
                   our_public_id.name(),
                   self.routing_table)
         }
 
+        let min_section_size = self.routing_table.min_section_size();
+        self.our_public_id = our_public_id;
         let new_rt = RoutingTable::new(*our_public_id.name(), min_section_size);
         self.routing_table = new_rt;
     }
@@ -402,8 +402,8 @@ impl PeerManager {
                             client_auth: Authority<XorName>)
                             -> Result<(), RoutingError> {
         if self.candidates.values().any(|candidate| !candidate.is_approved()) {
-            debug!("{} rejected {} as a new candidate (still handling previous one).",
-                   self.routing_table.our_name(),
+            debug!("{:?} Rejected {} as a new candidate: still handling previous one.",
+                   self,
                    candidate_name);
             return Err(RoutingError::AlreadyHandlingJoinRequest);
         }
@@ -490,12 +490,12 @@ impl PeerManager {
                         return Ok(*peer_id);
                     }
                 } else {
-                    trace!("{:?} doesn't have peer_id for {:?}",
+                    trace!("Node({:?}) No peer ID with name {:?}",
                            self.routing_table.our_name(),
                            candidate_name);
                 }
             } else {
-                trace!("{:?} doesn't have peer for {:?}",
+                trace!("Node({:?}) No peer with name {:?}",
                        self.routing_table.our_name(),
                        candidate_name);
             }
@@ -506,9 +506,7 @@ impl PeerManager {
         let mut candidate = Candidate::new(client_auth);
         candidate.state = CandidateState::Approved;
         let _ = self.candidates.insert(candidate_name, candidate);
-        trace!("{:?} doesn't have candidate for {:?}",
-               self.routing_table.our_name(),
-               candidate_name);
+        trace!("{:?} No candidate with name {:?}", self, candidate_name);
         // TODO: more specific return error
         Err(RoutingError::InvalidStateForOperation)
     }
@@ -574,7 +572,8 @@ impl PeerManager {
             Some(PeerState::AwaitingNodeIdentify(true)) => true,
             Some(PeerState::Candidate(tunnel)) => tunnel,
             Some(PeerState::Routing(tunnel)) => {
-                error!("Peer {:?} added to routing table, but already in state Routing.",
+                trace!("{:?} Peer {:?} added to routing table, but already in state Routing.",
+                       self,
                        peer_id);
                 tunnel
             }
@@ -610,8 +609,8 @@ impl PeerManager {
             .map(|(name, _)| *name);
         for name in removal_keys.iter() {
             let _ = self.candidates.remove(name);
-            trace!("{:?} removed unapproved candidate {:?} after split",
-                   self.routing_table.our_name(),
+            trace!("{:?} Removed unapproved candidate {:?} after split.",
+                   self,
                    name);
         }
 
@@ -650,9 +649,8 @@ impl PeerManager {
         if prefixes.contains(&None) {
             // we expect contacts that don't belong in any of the sections in our RT - so we have
             // no contacts from their section
-            warn!("Node({:?}) Expecting peers that don't have a corresponding section in the RT: \
-                   {:?}",
-                  self.routing_table.our_name(),
+            warn!("{:?} Expecting peers that don't have a corresponding section in the RT: {:?}",
+                  self,
                   self.expected_peers
                       .keys()
                       .filter(|&x| self.routing_table.find_section_prefix(x).is_none())
@@ -789,7 +787,7 @@ impl PeerManager {
     /// and should be disconnected.
     pub fn set_proxy(&mut self, peer_id: PeerId, pub_id: PublicId) -> bool {
         if let Some(proxy_peer_id) = self.proxy_peer_id {
-            debug!("Not accepting further bootstrap connections.");
+            debug!("{:?} Not accepting further bootstrap connections.", self);
             proxy_peer_id == peer_id
         } else {
             let _ = self.insert_peer(pub_id, Some(peer_id), PeerState::Proxy);
@@ -1018,7 +1016,7 @@ impl PeerManager {
             } else if let Some(peer) = self.peer_map.get_by_name(name) {
                 Some(*peer.pub_id())
             } else {
-                error!("Missing public ID for peer {:?}.", name);
+                error!("{:?} Missing public ID for peer {:?}.", self, name);
                 None
             })
             .collect()
@@ -1234,14 +1232,13 @@ impl PeerManager {
     fn set_state(&mut self, peer_id: &PeerId, state: PeerState) -> bool {
         if let Some(peer) = self.peer_map.get_mut(peer_id) {
             peer.state = state;
-            true
-        } else {
-            trace!("{:?}: {:?} not found. Cannot set state {:?}.",
-                   self.our_public_id.name(),
-                   peer_id,
-                   state);
-            false
+            return true;
         }
+        trace!("{:?}: {:?} not found. Cannot set state {:?}.",
+               self,
+               peer_id,
+               state);
+        false
     }
 
     fn insert_peer(&mut self, pub_id: PublicId, peer_id: Option<PeerId>, state: PeerState) -> bool {
@@ -1300,6 +1297,12 @@ impl PeerManager {
             .into_iter()
             .map(|(prefix, names)| (prefix, self.get_pub_ids(&names)))
             .collect()
+    }
+}
+
+impl fmt::Debug for PeerManager {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "Node({})", self.routing_table.our_name())
     }
 }
 
