@@ -1031,19 +1031,24 @@ impl Node {
                        error);
                 self.candidate_timer_token = None;
             }
-            Ok((target_size, difficulty)) if difficulty == 0 && target_size < 1000 => {
+            Ok((target_size, difficulty, elapsed)) if difficulty == 0 && target_size < 1000 => {
                 // Small tests don't require waiting for synchronisation. Send approval now.
-                info!("{:?} Candidate {} passed our challenge.  Sending CandidateApproval.",
+                info!("{:?} Candidate {} passed our challenge in {}.{:06} seconds.  Sending \
+                       CandidateApproval.",
                       self,
-                      name);
+                      name,
+                      elapsed.as_secs(),
+                      elapsed.subsec_nanos() / 1000);
                 self.candidate_timer_token = None;
                 let _ = self.send_candidate_approval();
             }
-            Ok(_) => {
-                info!("{:?} Candidate {} passed our challenge.  Waiting to send \
-                       CandidateApproval.",
+            Ok((_, _, elapsed)) => {
+                info!("{:?} Candidate {} passed our challenge in {}.{:06} seconds.  Waiting to \
+                       send CandidateApproval.",
                       self,
-                      name);
+                      name,
+                      elapsed.as_secs(),
+                      elapsed.subsec_nanos() / 1000);
             }
         }
     }

@@ -429,12 +429,13 @@ impl PeerManager {
     }
 
     /// Verifies proof of resource.  If the response is not the current candidate, or if it fails
-    /// validation, returns `Err`.  Otherwise returns the target size and difficulty.
+    /// validation, returns `Err`.  Otherwise returns the target size, difficulty and the time
+    /// elapsed since the candidate was inserted.
     pub fn verify_candidate(&mut self,
                             candidate_name: &XorName,
                             proof: VecDeque<u8>,
                             leading_zero_bytes: u64)
-                            -> Result<(usize, u8), RoutingError> {
+                            -> Result<(usize, u8, Duration), RoutingError> {
         let candidate = if let Some(candidate) = self.candidates.get_mut(candidate_name) {
             candidate
         } else {
@@ -448,7 +449,7 @@ impl PeerManager {
         let rp_object = ResourceProof::new(target_size, difficulty);
         if rp_object.validate_all(seed, &proof, leading_zero_bytes) {
             candidate.passed_our_challenge = true;
-            Ok((target_size, difficulty))
+            Ok((target_size, difficulty, candidate.insertion_time.elapsed()))
         } else {
             Err(RoutingError::FailedResourceProofValidation)
         }
