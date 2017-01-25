@@ -327,7 +327,7 @@ impl Node {
         while let Some(routing_msg) = self.msg_queue.pop_front() {
             if self.in_authority(&routing_msg.dst) {
                 if let Err(err) = self.dispatch_routing_message(routing_msg).extract(&mut result) {
-                    warn!("{:?} Routing message dispatch failed: {:?}", self, err);
+                    debug!("{:?} Routing message dispatch failed: {:?}", self, err);
                 }
             }
         }
@@ -342,7 +342,7 @@ impl Node {
         let mut result = Evented::empty();
 
         if self.is_first_node {
-            info!("{:?} - Started a new network as a seed node.", self);
+            info!("{:?} Started a new network as a seed node.", self);
             result.with_value(Transition::Stay)
         } else if let Err(error) = self.relocate() {
             error!("{:?} Failed to start relocation: {:?}", self, error);
@@ -414,10 +414,10 @@ impl Node {
         }
 
         if let Some(&pub_id) = self.peer_mgr.get_connecting_peer(&peer_id) {
-            info!("{:?} Failed to connect to peer {:?} with pub_id {:?}.",
-                  self,
-                  peer_id,
-                  pub_id);
+            debug!("{:?} Failed to connect to peer {:?} with pub_id {:?}.",
+                   self,
+                   peer_id,
+                   pub_id);
             self.find_tunnel_for_peer(peer_id, &pub_id);
         }
     }
@@ -595,7 +595,7 @@ impl Node {
         let section = match self.get_section_list(&prefix) {
             Ok(section) => section,
             Err(err) => {
-                warn!("{:?} Error sending section list signature for {:?}: {:?}",
+                warn!("{:?} Error getting section list for {:?}: {:?}",
                       self,
                       prefix,
                       err);
@@ -605,7 +605,7 @@ impl Node {
         let serialised = match serialisation::serialise(&section) {
             Ok(serialised) => serialised,
             Err(err) => {
-                warn!("{:?} Error sending section list signature for {:?}: {:?}",
+                warn!("{:?} Error serialising section list for {:?}: {:?}",
                       self,
                       prefix,
                       err);
@@ -718,10 +718,10 @@ impl Node {
 
         match self.routing_msg_filter.filter_incoming(signed_msg.routing_message(), route) {
             FilteringResult::KnownMessageAndRoute => {
-                warn!("{:?} Duplicate message received on route {}: {:?}",
-                      self,
-                      route,
-                      signed_msg.routing_message());
+                debug!("{:?} Duplicate message received on route {}: {:?}",
+                       self,
+                       route,
+                       signed_msg.routing_message());
                 return Ok(());
             }
             FilteringResult::KnownMessage => {
@@ -907,9 +907,9 @@ impl Node {
             }
         };
 
-        info!("{:?} Sending NodeApproval to {}.",
-              self,
-              candidate_id.name());
+        debug!("{:?} Sending NodeApproval to {}.",
+               self,
+               candidate_id.name());
         if let Err(error) = self.send_routing_message(RoutingMessage {
             src: Authority::Section(*candidate_id.name()),
             dst: client_auth,
@@ -1033,22 +1033,22 @@ impl Node {
             }
             Ok((target_size, difficulty, elapsed)) if difficulty == 0 && target_size < 1000 => {
                 // Small tests don't require waiting for synchronisation. Send approval now.
-                info!("{:?} Candidate {} passed our challenge in {}.{:06} seconds.  Sending \
+                debug!("{:?} Candidate {} passed our challenge in {}.{:06} seconds.  Sending \
                        CandidateApproval.",
-                      self,
-                      name,
-                      elapsed.as_secs(),
-                      elapsed.subsec_nanos() / 1000);
+                       self,
+                       name,
+                       elapsed.as_secs(),
+                       elapsed.subsec_nanos() / 1000);
                 self.candidate_timer_token = None;
                 let _ = self.send_candidate_approval();
             }
             Ok((_, _, elapsed)) => {
-                info!("{:?} Candidate {} passed our challenge in {}.{:06} seconds.  Waiting to \
+                debug!("{:?} Candidate {} passed our challenge in {}.{:06} seconds.  Waiting to \
                        send CandidateApproval.",
-                      self,
-                      name,
-                      elapsed.as_secs(),
-                      elapsed.subsec_nanos() / 1000);
+                       self,
+                       name,
+                       elapsed.as_secs(),
+                       elapsed.subsec_nanos() / 1000);
             }
         }
     }
@@ -1491,11 +1491,11 @@ impl Node {
         match self.peer_mgr
             .connection_info_received(src, dst, public_id, their_connection_info, message_id) {
             Ok(Ready(our_info, their_info)) => {
-                info!("{:?} Already sent a connection info request to {:?} ({:?}); resending our \
-                      same details as a response.",
-                      self,
-                      public_id.name(),
-                      peer_id);
+                debug!("{:?} Already sent a connection info request to {:?} ({:?}); resending \
+                        our same details as a response.",
+                       self,
+                       public_id.name(),
+                       peer_id);
                 self.send_connection_info(our_info.to_pub_connection_info(),
                                           public_id,
                                           dst,
@@ -1563,11 +1563,11 @@ impl Node {
             Ok(IsProxy) |
             Ok(IsClient) |
             Ok(IsJoiningNode) => {
-                warn!("{:?} Received connection info response from {:?} ({:?}) when we haven't \
+                debug!("{:?} Received connection info response from {:?} ({:?}) when we haven't \
                       sent a corresponding request",
-                      self,
-                      public_id.name(),
-                      peer_id);
+                       self,
+                       public_id.name(),
+                       peer_id);
             }
             Ok(Waiting) | Ok(IsConnected) => (),
             Err(error) => {
@@ -1857,7 +1857,7 @@ impl Node {
             if rt_pfx.bit_count() >= prefix.bit_count() {
                 break;
             }
-            info!("{:?} Splitting {:?} on section update.", self, rt_pfx);
+            debug!("{:?} Splitting {:?} on section update.", self, rt_pfx);
             let _ = self.handle_section_split(rt_pfx, rt_pfx.lower_bound());
         }
         // Filter list of members to just those we don't know about:
@@ -1940,7 +1940,7 @@ impl Node {
         } else if old_prefix.bit_count() > new_prefix.bit_count() {
             result.add_event(Event::SectionMerge(new_prefix));
         }
-        info!("{:?} Update on RoutingTableResponse completed. Prefixes: {:?}",
+        info!("{:?} Update on RoutingTableResponse completed. Section prefixes: {:?}",
               self,
               self.peer_mgr.routing_table().prefixes());
         let src = Authority::ManagedNode(*self.name());
@@ -1980,8 +1980,9 @@ impl Node {
             self.disconnect_peer(&peer_id);
             info!("{:?} Dropped {:?} from the routing table.", self, name);
         }
-        info!("{:?} Split completed. Prefixes: {:?}",
+        info!("{:?} Section split for {:?} completed. Prefixes: {:?}",
               self,
+              prefix,
               self.peer_mgr.routing_table().prefixes());
 
         self.merge_if_necessary();
@@ -2171,9 +2172,9 @@ impl Node {
             dst: dst,
             content: response_content,
         };
-        info!("{:?} Resource proof duration has passed.  Sending {:?}.",
-              self,
-              response_msg);
+        debug!("{:?} Resource proof duration has passed.  Sending {:?}.",
+               self,
+               response_msg);
         if let Err(error) = self.send_routing_message(response_msg) {
             debug!("{:?} Failed sending CandidateApproval: {:?}", self, error);
         }
@@ -2704,7 +2705,7 @@ impl Base for Node {
 
     fn handle_lost_peer(&mut self, peer_id: PeerId) -> Evented<Transition> {
         if peer_id == self.crust_service.id() {
-            error!("{:?} LostPeer fired with our crust peer id", self);
+            error!("{:?} LostPeer fired with our crust peer ID.", self);
             return Transition::Stay.to_evented();
         }
 
