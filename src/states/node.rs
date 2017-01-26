@@ -943,6 +943,9 @@ impl Node {
 
         self.get_approval_timer_token = None;
         if let Err(error) = self.peer_mgr.add_prefixes(sections.keys().cloned().collect()) {
+            info!("{:?} Received invalid prefixes in NodeApproval: {:?}. Restarting.",
+                  self,
+                  error);
             events.add_event(Event::RestartRequired);
             return events.with_value(Err(error));
         }
@@ -970,9 +973,9 @@ impl Node {
             }
         }
 
-        trace!("{:?} Node approval completed. Prefixes: {:?}",
-               self,
-               self.peer_mgr.routing_table().prefixes());
+        info!("{:?} Node approval completed. Prefixes: {:?}",
+              self,
+              self.peer_mgr.routing_table().prefixes());
         events.add_event(Event::Connected);
         for name in self.peer_mgr.routing_table().iter() {
             // TODO: try to remove this as safe_core/safe_vault may not reqiring this notification
