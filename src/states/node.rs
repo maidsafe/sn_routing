@@ -47,7 +47,7 @@ use signature_accumulator::{ACCUMULATION_TIMEOUT_SECS, SignatureAccumulator};
 use state_machine::Transition;
 use stats::Stats;
 use std::{cmp, fmt, iter, mem};
-use std::collections::{BTreeSet, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 #[cfg(feature = "use-mock-crust")]
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
@@ -66,7 +66,7 @@ const GET_NODE_NAME_TIMEOUT_SECS: u64 = 60;
 /// The number of required leading zero bits for the resource proof
 const RESOURCE_PROOF_DIFFICULTY: u8 = 0;
 /// The total size of the resource proof data.
-const RESOURCE_PROOF_TARGET_SIZE: usize = 125 * 1024 * 1024;
+const RESOURCE_PROOF_TARGET_SIZE: usize = 25 * 1024 * 1024;
 /// Initial delay between a routing table change and sending a `RoutingTableRequest`, in seconds.
 const RT_MIN_TIMEOUT_SECS: u64 = 30;
 /// Maximal delay between two subsequent `RoutingTableRequest`s, in seconds.
@@ -106,6 +106,8 @@ pub struct Node {
     routing_msg_backlog: Vec<RoutingMessage>,
     /// The timer token for sending a `CandidateApproval` message.
     candidate_timer_token: Option<u64>,
+    /// Map of ResourceProofResponse parts.
+    resource_proof_response_parts: HashMap<PeerId, Vec<DirectMessage>>,
 }
 
 impl Node {
@@ -192,6 +194,7 @@ impl Node {
             rt_timer_token: None,
             routing_msg_backlog: vec![],
             candidate_timer_token: None,
+            resource_proof_response_parts: HashMap::new(),
         };
 
         if node.start_listening() {
@@ -540,6 +543,10 @@ impl Node {
             ResourceProof { seed, target_size, difficulty } => {
                 self.handle_resource_proof_request(peer_id, seed, target_size, difficulty)
                     .to_evented()
+            }
+            ResourceProofResponseReceipt => {
+                self.handle_resource_proof_response_receipt(peer_id);
+                Ok(()).to_evented()
             }
             ResourceProofResponse { part_index, part_count, proof, leading_zero_bytes } => {
                 self.handle_resource_proof_response(peer_id,
@@ -978,12 +985,13 @@ impl Node {
               self.peer_mgr.routing_table().prefixes());
         events.add_event(Event::Connected);
         for name in self.peer_mgr.routing_table().iter() {
-            // TODO: try to remove this as safe_core/safe_vault may not reqiring this notification
+            // TODO: try to remove this as safe_core/safe_vault may not require this notification
             events.add_event(Event::NodeAdded(*name, self.peer_mgr.routing_table().clone()));
         }
         self.is_approved = true;
         let backlog = mem::replace(&mut self.routing_msg_backlog, vec![]);
         backlog.into_iter().rev().foreach(|msg| self.msg_queue.push_front(msg));
+        self.resource_proof_response_parts.clear();
         events.with_value(Ok(()))
     }
 
@@ -1003,15 +1011,22 @@ impl Node {
             .map(|chunk| chunk.collect_vec())
             .collect_vec();
         let part_count = parts.len();
-        for (part_index, part) in parts.into_iter().enumerate() {
-            let direct_message = DirectMessage::ResourceProofResponse {
-                part_index: part_index,
-                part_count: part_count,
-                proof: part,
-                leading_zero_bytes: leading_zero_bytes,
-            };
-            self.send_direct_message(peer_id, direct_message)?
-        }
+        let mut messages = parts.into_iter()
+            .enumerate()
+            .rev()
+            .map(|(part_index, part)| {
+                DirectMessage::ResourceProofResponse {
+                    part_index: part_index,
+                    part_count: part_count,
+                    proof: part,
+                    leading_zero_bytes: leading_zero_bytes,
+                }
+            })
+            .collect_vec();
+        // There will always be at least one part here - safe to unwrap.
+        let first_message = unwrap!(messages.pop());
+        let _ = self.resource_proof_response_parts.insert(peer_id, messages);
+        self.send_direct_message(peer_id, first_message)?;
         let elapsed = start.elapsed();
         trace!("{:?} created proof data in {}.{:06} seconds.  Min section size: {}, Target size: \
                 {}, Difficulty: {}, Seed: {:?}",
@@ -1023,6 +1038,23 @@ impl Node {
                difficulty,
                seed);
         Ok(())
+    }
+
+    fn handle_resource_proof_response_receipt(&mut self, peer_id: PeerId) {
+        let popped_message = if let Some(messages) = self.resource_proof_response_parts
+            .get_mut(&peer_id) {
+            messages.pop()
+        } else {
+            None
+        };
+        if let Some(message) = popped_message {
+            if let Err(error) = self.send_direct_message(peer_id, message) {
+                debug!("{:?} Failed to send ResourceProofResponse to {:?}: {:?}",
+                       self,
+                       peer_id,
+                       error);
+            }
+        }
     }
 
     fn handle_resource_proof_response(&mut self,
@@ -1062,6 +1094,8 @@ impl Node {
                        name,
                        part_index + 1,
                        part_count);
+                let _ =
+                    self.send_direct_message(peer_id, DirectMessage::ResourceProofResponseReceipt);
             }
             Ok(Some((target_size, difficulty, elapsed))) if difficulty == 0 &&
                                                             target_size < 1000 => {
