@@ -28,7 +28,7 @@ use id::{FullId, PublicId};
 use itertools::Itertools;
 use log::LogLevel;
 use maidsafe_utilities::serialisation;
-use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, Message, MessageContent,
+use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, MAX_PART_LEN, Message, MessageContent,
                RoutingMessage, SectionList, SignedMessage, UserMessage, UserMessageCache};
 use peer_manager::{ConnectionInfoPreparedResult, PeerManager, PeerState,
                    RESOURCE_PROOF_DURATION_SECS, SectionMap};
@@ -541,8 +541,12 @@ impl Node {
                 self.handle_resource_proof_request(peer_id, seed, target_size, difficulty)
                     .to_evented()
             }
-            ResourceProofResponse { proof, leading_zero_bytes } => {
-                self.handle_resource_proof_response(peer_id, proof, leading_zero_bytes);
+            ResourceProofResponse { part_index, part_count, proof, leading_zero_bytes } => {
+                self.handle_resource_proof_response(peer_id,
+                                                    part_index,
+                                                    part_count,
+                                                    proof,
+                                                    leading_zero_bytes);
                 Ok(()).to_evented()
             }
             msg @ BootstrapIdentify { .. } |
@@ -989,10 +993,22 @@ impl Node {
         let start = Instant::now();
         let rp_object = ResourceProof::new(target_size, difficulty);
         let mut proof = rp_object.create_proof_data(&seed);
-        let direct_message = DirectMessage::ResourceProofResponse {
-            proof: proof.clone(),
-            leading_zero_bytes: rp_object.create_proof(&mut proof),
-        };
+        let leading_zero_bytes = rp_object.create_proof(&mut proof);
+        let parts = proof.into_iter()
+            .chunks(MAX_PART_LEN)
+            .into_iter()
+            .map(|chunk| chunk.collect_vec())
+            .collect_vec();
+        let part_count = parts.len();
+        for (part_index, part) in parts.into_iter().enumerate() {
+            let direct_message = DirectMessage::ResourceProofResponse {
+                part_index: part_index,
+                part_count: part_count,
+                proof: part,
+                leading_zero_bytes: leading_zero_bytes,
+            };
+            self.send_direct_message(peer_id, direct_message)?
+        }
         let elapsed = start.elapsed();
         trace!("{:?} created proof data in {}.{:06} seconds.  Min section size: {}, Target size: \
                 {}, Difficulty: {}, Seed: {:?}",
@@ -1003,12 +1019,14 @@ impl Node {
                target_size,
                difficulty,
                seed);
-        self.send_direct_message(peer_id, direct_message)
+        Ok(())
     }
 
     fn handle_resource_proof_response(&mut self,
                                       peer_id: PeerId,
-                                      proof: VecDeque<u8>,
+                                      part_index: usize,
+                                      part_count: usize,
+                                      proof: Vec<u8>,
                                       leading_zero_bytes: u64) {
         if self.candidate_timer_token.is_none() {
             debug!("{:?} Won't handle resource proof response from {:?} - not currently waiting.",
@@ -1026,7 +1044,8 @@ impl Node {
             return;
         };
 
-        match self.peer_mgr.verify_candidate(&name, proof, leading_zero_bytes) {
+        match self.peer_mgr
+            .verify_candidate(&name, part_index, part_count, proof, leading_zero_bytes) {
             Err(error) => {
                 debug!("{:?} Failed to verify candidate {}: {:?}",
                        self,
@@ -1034,7 +1053,15 @@ impl Node {
                        error);
                 self.candidate_timer_token = None;
             }
-            Ok((target_size, difficulty, elapsed)) if difficulty == 0 && target_size < 1000 => {
+            Ok(None) => {
+                debug!("{:?} Candidate {} sent part {}/{}.",
+                       self,
+                       name,
+                       part_index + 1,
+                       part_count);
+            }
+            Ok(Some((target_size, difficulty, elapsed))) if difficulty == 0 &&
+                                                            target_size < 1000 => {
                 // Small tests don't require waiting for synchronisation. Send approval now.
                 debug!("{:?} Candidate {} passed our challenge in {}.{:06} seconds.  Sending \
                        CandidateApproval.",
@@ -1045,7 +1072,7 @@ impl Node {
                 self.candidate_timer_token = None;
                 let _ = self.send_candidate_approval();
             }
-            Ok((_, _, elapsed)) => {
+            Ok(Some((_, _, elapsed))) => {
                 debug!("{:?} Candidate {} passed our challenge in {}.{:06} seconds.  Waiting to \
                        send CandidateApproval.",
                        self,

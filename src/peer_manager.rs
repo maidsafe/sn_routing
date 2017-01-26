@@ -295,7 +295,7 @@ enum CandidateState {
 struct Candidate {
     insertion_time: Instant,
     /// The target size, difficulty and seed.
-    resource_proof: Option<(usize, u8, Vec<u8>)>,
+    resource_proof: Option<(usize, u8, Vec<u8>, VecDeque<u8>)>,
     client_auth: Authority<XorName>,
     state: CandidateState,
     passed_our_challenge: bool,
@@ -435,23 +435,30 @@ impl PeerManager {
     /// elapsed since the candidate was inserted.
     pub fn verify_candidate(&mut self,
                             candidate_name: &XorName,
-                            proof: VecDeque<u8>,
+                            part_index: usize,
+                            part_count: usize,
+                            proof_part: Vec<u8>,
                             leading_zero_bytes: u64)
-                            -> Result<(usize, u8, Duration), RoutingError> {
+                            -> Result<Option<(usize, u8, Duration)>, RoutingError> {
         let candidate = if let Some(candidate) = self.candidates.get_mut(candidate_name) {
             candidate
         } else {
             return Err(RoutingError::UnknownCandidate);
         };
-        let &(target_size, difficulty, ref seed) = if let Some(ref rp) = candidate.resource_proof {
+        let &mut (target_size, difficulty, ref seed, ref mut proof) = if let Some(ref mut rp) =
+            candidate.resource_proof {
             rp
         } else {
             return Err(RoutingError::FailedResourceProofValidation);
         };
+        proof.extend(proof_part);
+        if part_index + 1 != part_count {
+            return Ok(None);
+        }
         let rp_object = ResourceProof::new(target_size, difficulty);
-        if rp_object.validate_all(seed, &proof, leading_zero_bytes) {
+        if rp_object.validate_all(seed, proof, leading_zero_bytes) {
             candidate.passed_our_challenge = true;
-            Ok((target_size, difficulty, candidate.insertion_time.elapsed()))
+            Ok(Some((target_size, difficulty, candidate.insertion_time.elapsed())))
         } else {
             Err(RoutingError::FailedResourceProofValidation)
         }
@@ -543,7 +550,8 @@ impl PeerManager {
                 if tunnel {
                     Err(RoutingError::CandidateIsTunnelling)
                 } else {
-                    candidate.resource_proof = Some((target_size, difficulty, seed));
+                    candidate.resource_proof =
+                        Some((target_size, difficulty, seed, VecDeque::new()));
                     Ok(true)
                 }
             }

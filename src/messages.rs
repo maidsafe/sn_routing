@@ -33,7 +33,7 @@ use routing_table::{Prefix, Xorable};
 use routing_table::Authority;
 use rust_sodium::crypto::{box_, sign};
 use rust_sodium::crypto::hash::sha256;
-use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::{self, Debug, Formatter};
 use std::iter;
 use std::time::Duration;
@@ -43,7 +43,7 @@ use utils;
 use xor_name::XorName;
 
 /// The maximal length of a user message part, in bytes.
-const MAX_PART_LEN: usize = 20 * 1024;
+pub const MAX_PART_LEN: usize = 20 * 1024;
 
 /// Get and refresh messages from nodes have a high priority: They relocate data under churn and are
 /// critical to prevent data loss.
@@ -160,8 +160,12 @@ pub enum DirectMessage {
     ///
     /// This is sent from the joining node to member of Group Y
     ResourceProofResponse {
+        /// The index of this part of the resource proof.
+        part_index: usize,
+        /// The total number of parts.
+        part_count: usize,
         /// Proof to be presented
-        proof: VecDeque<u8>,
+        proof: Vec<u8>,
         /// Claimed leading zero bytes to be added to proof's header so that the hash matches
         /// the difficulty requirement
         leading_zero_bytes: u64,
@@ -709,9 +713,12 @@ impl Debug for DirectMessage {
                        target_size,
                        difficulty)
             }
-            ResourceProofResponse { ref proof, ref leading_zero_bytes } => {
+            ResourceProofResponse { part_index, part_count, ref proof, leading_zero_bytes } => {
                 write!(formatter,
-                       "ResourceProofResponse {{ proof_len: {:?}, leading_zero_bytes: {:?} }}",
+                       "ResourceProofResponse {{ part {}/{}, proof_len: {:?}, leading_zero_bytes: \
+                        {:?} }}",
+                       part_index + 1,
+                       part_count,
                        proof.len(),
                        leading_zero_bytes)
             }
@@ -1203,7 +1210,6 @@ mod tests {
     use std::collections::BTreeSet;
     use std::iter;
     use super::*;
-    use super::MAX_PART_LEN;
     use types::MessageId;
     use xor_name::XorName;
 
