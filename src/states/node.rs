@@ -1272,7 +1272,11 @@ impl Node {
             (RESOURCE_PROOF_DIFFICULTY,
              RESOURCE_PROOF_TARGET_SIZE / (self.peer_mgr.routing_table().our_section().len() + 1))
         };
-        let seed: Vec<u8> = rand::thread_rng().gen_iter().take(10).collect();
+        let seed: Vec<u8> = if cfg!(feature = "use-mock-crust") {
+            vec![5u8; 4]
+        } else {
+            rand::thread_rng().gen_iter().take(10).collect()
+        };
         match self.peer_mgr.handle_candidate_identify(&public_id,
                                                       &peer_id,
                                                       target_size,
