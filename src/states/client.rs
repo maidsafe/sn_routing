@@ -268,7 +268,7 @@ impl Base for Client {
 
     fn handle_lost_peer(&mut self, peer_id: PeerId) -> Evented<Transition> {
         if peer_id == self.crust_service().id() {
-            error!("{:?} LostPeer fired with our crust peer id", self);
+            error!("{:?} LostPeer fired with our crust peer ID", self);
             return Transition::Stay.to_evented();
         }
 
@@ -336,14 +336,14 @@ impl Bootstrapped for Client {
         let (proxy_peer_id, sending_nodes) = match routing_msg.src {
             Authority::Client { ref proxy_node_name, .. } => {
                 if *self.proxy_public_id.name() != *proxy_node_name {
-                    error!("{:?} - Unable to find connection to proxy node in proxy map",
+                    error!("{:?} Unable to find connection to proxy node in proxy map",
                            self);
                     return Err(RoutingError::ProxyConnectionNotFound);
                 }
                 (self.proxy_peer_id, vec![])
             }
             _ => {
-                error!("{:?} - Source should be client if our state is a Client",
+                error!("{:?} Source should be client if our state is a Client",
                        self);
                 return Err(RoutingError::InvalidSource);
             }
