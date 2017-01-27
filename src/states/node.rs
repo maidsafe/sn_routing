@@ -73,6 +73,10 @@ const RT_MIN_TIMEOUT_SECS: u64 = 30;
 const RT_MAX_TIMEOUT_SECS: u64 = 300;
 /// Interval between displaying info about ongoing approval progress, in seconds.
 const APPROVAL_PROGRESS_INTERVAL_SECS: u64 = 30;
+/// Used to decide the `Event` sent on approval timing out.  If the percentage of
+/// `ResourceProofResponse` parts delivered at timeout is below this value, the node will send
+/// `Terminate`, otherwise it will send `RestartRequired`.
+const APPROVAL_RETRY_THRESHOLD: usize = 95;
 
 pub struct Node {
     ack_mgr: AckManager,
@@ -1032,8 +1036,17 @@ impl Node {
                 }
             })
             .collect_vec();
-        // There will always be at least one part here - safe to unwrap.
-        let first_message = unwrap!(messages.pop());
+        let first_message = match messages.pop() {
+            Some(message) => message,
+            None => {
+                DirectMessage::ResourceProofResponse {
+                    part_index: 0,
+                    part_count: 1,
+                    proof: vec![],
+                    leading_zero_bytes: leading_zero_bytes,
+                }
+            }
+        };
         let _ = self.resource_proof_response_parts.insert(peer_id, messages);
         self.send_direct_message(peer_id, first_message)?;
         trace!("{:?} created proof data in {}.  Min section size: {}, Target size: {}, \
@@ -1048,12 +1061,8 @@ impl Node {
     }
 
     fn handle_resource_proof_response_receipt(&mut self, peer_id: PeerId) {
-        let popped_message = if let Some(messages) = self.resource_proof_response_parts
-            .get_mut(&peer_id) {
-            messages.pop()
-        } else {
-            None
-        };
+        let popped_message =
+            self.resource_proof_response_parts.get_mut(&peer_id).and_then(Vec::pop);
         if let Some(message) = popped_message {
             if let Err(error) = self.send_direct_message(peer_id, message) {
                 debug!("{:?} Failed to send ResourceProofResponse to {:?}: {:?}",
@@ -2175,10 +2184,29 @@ impl Node {
     fn handle_timeout(&mut self, token: u64) -> Evented<bool> {
         let mut events = Evented::empty();
         if self.get_approval_timer_token == Some(token) {
-            info!("{:?} Failed to get approval from the network. {}",
-                  self,
-                  self.resource_proof_response_progress());
-            events.add_event(Event::Terminate);
+            let (part_count, completed, incomplete, display_string) =
+                self.resource_proof_response_progress();
+            let progress = if part_count == 0 {
+                100
+            } else {
+                (((part_count * completed) + incomplete.iter().sum::<usize>()) * 100) /
+                (part_count * (completed + incomplete.len()))
+            };
+            if progress < APPROVAL_RETRY_THRESHOLD {
+                info!("{:?} Failed to get approval from the network.  {}  Approval process only \
+                       {}% complete, so terminating node.",
+                      self,
+                      display_string,
+                      progress);
+                events.add_event(Event::Terminate);
+            } else {
+                info!("{:?} Failed to get approval from the network.  {}  Approval process {}% \
+                       complete, so restarting node to retry.",
+                      self,
+                      display_string,
+                      progress);
+                events.add_event(Event::RestartRequired);
+            }
             return events.with_value(false);
         }
 
@@ -2219,7 +2247,7 @@ impl Node {
             };
             info!("{:?} Awaiting approval.  {}  Continuing to wait for a further {}.",
                   self,
-                  self.resource_proof_response_progress(),
+                  self.resource_proof_response_progress().3,
                   Self::format(duration));
         }
 
@@ -2644,10 +2672,8 @@ impl Node {
                 .remove_signatures_by(*pub_id, self.peer_mgr.routing_table().our_section().len());
         }
 
-        if self.peer_mgr.routing_table().len() < self.min_section_size() - 1 {
-            debug!("{:?} Lost connection, less than {} remaining.",
-                   self,
-                   self.min_section_size() - 1);
+        if self.peer_mgr.routing_table().is_empty() {
+            debug!("{:?} Lost all routing connections.", self);
             if !self.is_first_node {
                 result.add_event(Event::RestartRequired);
                 return result.with_value(false);
@@ -2773,7 +2799,11 @@ impl Node {
         }
     }
 
-    fn resource_proof_response_progress(&self) -> String {
+    // For the ongoing collection of `ResourceProofResponse` messages, returns a tuple comprising:
+    // the `part_count` they all use; the number of fully-completed ones; a vector for the
+    // incomplete ones specifying how many parts have been sent to each peer; and a `String`
+    // containing this info.
+    fn resource_proof_response_progress(&self) -> (usize, usize, Vec<usize>, String) {
         let mut total_parts = 0;
         let mut completed = 0;
         let mut incomplete = vec![];
@@ -2784,22 +2814,23 @@ impl Node {
                         total_parts = part_count;
                         incomplete.push(part_index);
                     }
-                    _ => return String::new(),  // invalid situation, but no need to panic
+                    _ => return (1, 0, vec![1], String::new()),  // invalid situation
                 }
             } else {
                 completed += 1;
             }
         }
 
-        if incomplete.is_empty() {
-            return format!("All {} resource proof responses fully sent.", completed);
-        }
-
-        format!("{} resource proof response(s) fully sent.  Remainder have sent \
-                 {:?} of {} parts each.",
-                completed,
-                incomplete,
-                total_parts)
+        let display_string = if incomplete.is_empty() {
+            format!("All {} resource proof responses fully sent.", completed)
+        } else {
+            format!("{} resource proof response(s) fully sent.  Remainder have sent \
+                     {:?} of {} parts each.",
+                    completed,
+                    incomplete,
+                    total_parts)
+        };
+        (total_parts, completed, incomplete, display_string)
     }
 
     fn format(duration: Duration) -> String {
