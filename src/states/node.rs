@@ -2182,34 +2182,11 @@ impl Node {
 
     /// Returns true if the calling node should keep running, false for terminate.
     fn handle_timeout(&mut self, token: u64) -> Evented<bool> {
-        let mut events = Evented::empty();
         if self.get_approval_timer_token == Some(token) {
-            let (part_count, completed, incomplete, display_string) =
-                self.resource_proof_response_progress();
-            let progress = if part_count == 0 {
-                100
-            } else {
-                (((part_count * completed) + incomplete.iter().sum::<usize>()) * 100) /
-                (part_count * (completed + incomplete.len()))
-            };
-            if progress < APPROVAL_RETRY_THRESHOLD {
-                info!("{:?} Failed to get approval from the network.  {}  Approval process only \
-                       {}% complete, so terminating node.",
-                      self,
-                      display_string,
-                      progress);
-                events.add_event(Event::Terminate);
-            } else {
-                info!("{:?} Failed to get approval from the network.  {}  Approval process {}% \
-                       complete, so restarting node to retry.",
-                      self,
-                      display_string,
-                      progress);
-                events.add_event(Event::RestartRequired);
-            }
-            return events.with_value(false);
+            return self.handle_approval_timeout();
         }
 
+        let mut events = Evented::empty();
         if self.tick_timer_token == token {
             let tick_period = Duration::from_secs(TICK_TIMEOUT_SECS);
             self.tick_timer_token = self.timer.schedule(tick_period);
@@ -2254,6 +2231,44 @@ impl Node {
         self.resend_unacknowledged_timed_out_msgs(token);
 
         events.with_value(true)
+    }
+
+    // This will be called if `GetNodeNameResponse` times out, or if the subsequent `NodeApproval`
+    // times out.
+    fn handle_approval_timeout(&mut self) -> Evented<bool> {
+        let mut events = Evented::empty();
+        if self.resource_proof_response_parts.is_empty() {
+            // `GetNodeNameResponse` has timed out.
+            info!("{:?} Failed to get relocated name from the network, so restarting.",
+                  self);
+            events.add_event(Event::RestartRequired);
+        } else {
+            // `NodeApproval` has timed out.
+            let (part_count, completed, incomplete, display_string) =
+                self.resource_proof_response_progress();
+            let progress = if part_count == 0 {
+                100
+            } else {
+                (((part_count * completed) + incomplete.iter().sum::<usize>()) * 100) /
+                (part_count * (completed + incomplete.len()))
+            };
+            if progress < APPROVAL_RETRY_THRESHOLD {
+                info!("{:?} Failed to get approval from the network.  {}  Approval process only \
+                       {}% complete, so terminating node.",
+                      self,
+                      display_string,
+                      progress);
+                events.add_event(Event::Terminate);
+            } else {
+                info!("{:?} Failed to get approval from the network.  {}  Approval process {}% \
+                       complete, so restarting node to retry.",
+                      self,
+                      display_string,
+                      progress);
+                events.add_event(Event::RestartRequired);
+            }
+        }
+        events.with_value(false)
     }
 
     fn send_rt_request(&mut self) -> Result<(), RoutingError> {
