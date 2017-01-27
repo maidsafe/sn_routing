@@ -66,11 +66,13 @@ const GET_NODE_NAME_TIMEOUT_SECS: u64 = 60;
 /// The number of required leading zero bits for the resource proof
 const RESOURCE_PROOF_DIFFICULTY: u8 = 0;
 /// The total size of the resource proof data.
-const RESOURCE_PROOF_TARGET_SIZE: usize = 25 * 1024 * 1024;
+const RESOURCE_PROOF_TARGET_SIZE: usize = 250 * 1024 * 1024;
 /// Initial delay between a routing table change and sending a `RoutingTableRequest`, in seconds.
 const RT_MIN_TIMEOUT_SECS: u64 = 30;
 /// Maximal delay between two subsequent `RoutingTableRequest`s, in seconds.
 const RT_MAX_TIMEOUT_SECS: u64 = 300;
+/// Interval between displaying info about ongoing approval progress, in seconds.
+const APPROVAL_PROGRESS_INTERVAL_SECS: u64 = 30;
 
 pub struct Node {
     ack_mgr: AckManager,
@@ -78,6 +80,8 @@ pub struct Node {
     crust_service: Service,
     full_id: FullId,
     get_approval_timer_token: Option<u64>,
+    approval_progress_timer_token: Option<u64>,
+    approval_expiry_time: Instant,
     is_first_node: bool,
     is_approved: bool,
     /// The queue of routing messages addressed to us. These do not themselves need
@@ -175,6 +179,8 @@ impl Node {
             crust_service: crust_service,
             full_id: full_id,
             get_approval_timer_token: None,
+            approval_progress_timer_token: None,
+            approval_expiry_time: Instant::now(),
             is_first_node: first_node,
             is_approved: first_node,
             msg_queue: VecDeque::new(),
@@ -949,6 +955,7 @@ impl Node {
         }
 
         self.get_approval_timer_token = None;
+        self.approval_progress_timer_token = None;
         if let Err(error) = self.peer_mgr.add_prefixes(sections.keys().cloned().collect()) {
             info!("{:?} Received invalid prefixes in NodeApproval: {:?}. Restarting.",
                   self,
@@ -992,6 +999,7 @@ impl Node {
         let backlog = mem::replace(&mut self.routing_msg_backlog, vec![]);
         backlog.into_iter().rev().foreach(|msg| self.msg_queue.push_front(msg));
         self.resource_proof_response_parts.clear();
+        self.reset_rt_timer();
         events.with_value(Ok(()))
     }
 
@@ -1005,6 +1013,7 @@ impl Node {
         let rp_object = ResourceProof::new(target_size, difficulty);
         let mut proof = rp_object.create_proof_data(&seed);
         let leading_zero_bytes = rp_object.create_proof(&mut proof);
+        let elapsed = start.elapsed();
         let parts = proof.into_iter()
             .chunks(MAX_PART_LEN)
             .into_iter()
@@ -1027,12 +1036,10 @@ impl Node {
         let first_message = unwrap!(messages.pop());
         let _ = self.resource_proof_response_parts.insert(peer_id, messages);
         self.send_direct_message(peer_id, first_message)?;
-        let elapsed = start.elapsed();
-        trace!("{:?} created proof data in {}.{:06} seconds.  Min section size: {}, Target size: \
-                {}, Difficulty: {}, Seed: {:?}",
+        trace!("{:?} created proof data in {}.  Min section size: {}, Target size: {}, \
+                Difficulty: {}, Seed: {:?}",
                self,
-               elapsed.as_secs(),
-               elapsed.subsec_nanos() / 1000,
+               Self::format(elapsed),
                self.min_section_size(),
                target_size,
                difficulty,
@@ -1100,22 +1107,19 @@ impl Node {
             Ok(Some((target_size, difficulty, elapsed))) if difficulty == 0 &&
                                                             target_size < 1000 => {
                 // Small tests don't require waiting for synchronisation. Send approval now.
-                debug!("{:?} Candidate {} passed our challenge in {}.{:06} seconds.  Sending \
-                       CandidateApproval.",
+                debug!("{:?} Candidate {} passed our challenge in {}.  Sending CandidateApproval.",
                        self,
                        name,
-                       elapsed.as_secs(),
-                       elapsed.subsec_nanos() / 1000);
+                       Self::format(elapsed));
                 self.candidate_timer_token = None;
                 let _ = self.send_candidate_approval();
             }
             Ok(Some((_, _, elapsed))) => {
-                debug!("{:?} Candidate {} passed our challenge in {}.{:06} seconds.  Waiting to \
-                       send CandidateApproval.",
+                debug!("{:?} Candidate {} passed our challenge in {}.  Waiting to send \
+                        CandidateApproval.",
                        self,
                        name,
-                       elapsed.as_secs(),
-                       elapsed.subsec_nanos() / 1000);
+                       Self::format(elapsed));
             }
         }
     }
@@ -1333,7 +1337,6 @@ impl Node {
                 }
             }
             Ok(false) => {
-                debug!("{:?} adding {:?} into routing table.", self, name);
                 self.add_to_routing_table(&public_id, &peer_id).extract(&mut result);
             }
             Err(error) => {
@@ -1823,7 +1826,10 @@ impl Node {
 
         let duration = Duration::from_secs(RESOURCE_PROOF_DURATION_SECS +
                                            ACCUMULATION_TIMEOUT_SECS);
+        self.approval_expiry_time = Instant::now() + duration;
         self.get_approval_timer_token = Some(self.timer.schedule(duration));
+        self.approval_progress_timer_token = Some(self.timer
+            .schedule(Duration::from_secs(APPROVAL_PROGRESS_INTERVAL_SECS)));
 
         self.full_id.public_id_mut().set_name(*relocated_id.name());
         self.peer_mgr.reset_routing_table(*self.full_id.public_id());
@@ -2169,8 +2175,10 @@ impl Node {
     fn handle_timeout(&mut self, token: u64) -> Evented<bool> {
         let mut events = Evented::empty();
         if self.get_approval_timer_token == Some(token) {
-            info!("{:?} Failed to get approval from the network.", self);
-            events.add_event(Event::RestartRequired);
+            info!("{:?} Failed to get approval from the network. {}",
+                  self,
+                  self.resource_proof_response_progress());
+            events.add_event(Event::Terminate);
             return events.with_value(false);
         }
 
@@ -2200,6 +2208,19 @@ impl Node {
             if self.send_candidate_approval().is_err() {
                 return events.with_value(true);
             }
+        } else if self.approval_progress_timer_token == Some(token) {
+            self.approval_progress_timer_token = Some(self.timer
+                .schedule(Duration::from_secs(APPROVAL_PROGRESS_INTERVAL_SECS)));
+            let now = Instant::now();
+            let duration = if now < self.approval_expiry_time {
+                self.approval_expiry_time - now
+            } else {
+                Duration::from_secs(0)
+            };
+            info!("{:?} Awaiting approval.  {}  Continuing to wait for a further {}.",
+                  self,
+                  self.resource_proof_response_progress(),
+                  Self::format(duration));
         }
 
         self.resend_unacknowledged_timed_out_msgs(token);
@@ -2750,6 +2771,41 @@ impl Node {
         } else {
             self.send_message(&dst_id, Message::Direct(direct_message))
         }
+    }
+
+    fn resource_proof_response_progress(&self) -> String {
+        let mut total_parts = 0;
+        let mut completed = 0;
+        let mut incomplete = vec![];
+        for messages in self.resource_proof_response_parts.values() {
+            if let Some(next_message) = messages.last() {
+                match *next_message {
+                    DirectMessage::ResourceProofResponse { part_index, part_count, .. } => {
+                        total_parts = part_count;
+                        incomplete.push(part_index);
+                    }
+                    _ => return String::new(),  // invalid situation, but no need to panic
+                }
+            } else {
+                completed += 1;
+            }
+        }
+
+        if incomplete.is_empty() {
+            return format!("All {} resource proof responses fully sent.", completed);
+        }
+
+        format!("{} resource proof response(s) fully sent.  Remainder have sent \
+                 {:?} of {} parts each.",
+                completed,
+                incomplete,
+                total_parts)
+    }
+
+    fn format(duration: Duration) -> String {
+        format!("{}.{:06} seconds",
+                duration.as_secs(),
+                duration.subsec_nanos() / 1000)
     }
 }
 
