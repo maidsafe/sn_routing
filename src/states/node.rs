@@ -231,7 +231,7 @@ impl Node {
            self.stats.tunnel_client_pairs != self.tunnels.client_count() {
             self.stats.tunnel_connections = self.tunnels.tunnel_count();
             self.stats.tunnel_client_pairs = self.tunnels.client_count();
-            info!(target: "routing_stats", "{:?} - Indirect connections: {}, tunneling for: {}",
+            info!(target: "routing_stats", "{:?} - Indirect connections: {}, tunnelling for: {}",
                   self,
                   self.stats.tunnel_connections,
                   self.stats.tunnel_client_pairs);
@@ -516,8 +516,8 @@ impl Node {
                 if let Ok(public_id) = verify_signed_public_id(serialised_public_id, signature) {
                     self.handle_client_identify(public_id, peer_id, client_restriction).to_evented()
                 } else {
-                    warn!("{:?} Signature check failed in ClientIdentify - Dropping connection \
-                           {:?}",
+                    warn!("{:?} Signature check failed in ClientIdentify, so dropping connection \
+                           {:?}.",
                           self,
                           peer_id);
                     self.disconnect_peer(&peer_id);
@@ -528,7 +528,7 @@ impl Node {
                 if let Ok(public_id) = verify_signed_public_id(serialised_public_id, signature) {
                     self.handle_node_identify(public_id, peer_id).map(Ok)
                 } else {
-                    warn!("{:?} Signature check failed in NodeIdentify - Dropping peer {:?}",
+                    warn!("{:?} Signature check failed in NodeIdentify, so dropping peer {:?}.",
                           self,
                           peer_id);
                     self.disconnect_peer(&peer_id);
@@ -539,7 +539,8 @@ impl Node {
                 if let Ok(public_id) = verify_signed_public_id(serialised_public_id, signature) {
                     self.handle_candidate_identify(public_id, peer_id).map(Ok)
                 } else {
-                    warn!("{:?} Signature check failed in CandidateIdentify - Dropping peer {:?}",
+                    warn!("{:?} Signature check failed in CandidateIdentify, so dropping peer \
+                           {:?}.",
                           self,
                           peer_id);
                     self.disconnect_peer(&peer_id);
@@ -568,7 +569,7 @@ impl Node {
             }
             msg @ BootstrapIdentify { .. } |
             msg @ BootstrapDeny => {
-                debug!("{:?} - Unhandled direct message: {:?}", self, msg);
+                debug!("{:?} Unhandled direct message: {:?}", self, msg);
                 Ok(()).to_evented()
             }
         }
@@ -1013,6 +1014,12 @@ impl Node {
                                      target_size: usize,
                                      difficulty: u8)
                                      -> Result<(), RoutingError> {
+        if self.resource_proof_response_parts.is_empty() {
+            info!("{:?} Starting approval process to test this node's resources. This will take \
+                   at least {} seconds.",
+                  self,
+                  RESOURCE_PROOF_DURATION_SECS);
+        }
         let start = Instant::now();
         let rp_object = ResourceProof::new(target_size, difficulty);
         let mut proof = rp_object.create_proof_data(&seed);
@@ -1228,9 +1235,8 @@ impl Node {
             content: request_content,
         };
 
-        info!("{:?} Sending GetNodeName request with: {:?}. This can take a while.",
-              self,
-              self.full_id.public_id());
+        info!("{:?} Requesting a relocated name from the network. This can take a while.",
+              self);
 
         self.send_routing_message(request_msg)
     }
@@ -1247,19 +1253,20 @@ impl Node {
                               client_restriction: bool)
                               -> Result<(), RoutingError> {
         if !client_restriction && !self.crust_service.is_peer_whitelisted(&peer_id) {
-            warn!("{:?} Client is not whitelisted - dropping", self);
+            warn!("{:?} Client is not whitelisted, so dropping connection.",
+                  self);
             self.disconnect_peer(&peer_id);
             return Ok(());
         }
         if *public_id.name() != XorName(sha256::hash(&public_id.signing_public_key().0).0) {
-            warn!("{:?} Incoming Connection not validated as a proper client - dropping",
+            warn!("{:?} Incoming connection not validated as a proper client, so dropping it.",
                   self);
             self.disconnect_peer(&peer_id);
             return Ok(());
         }
 
         for peer_id in self.peer_mgr.remove_expired_joining_nodes() {
-            debug!("{:?} Removing stale joining node with Crust ID {:?}",
+            debug!("{:?} Removing stale joining node with peer ID {:?}",
                    self,
                    peer_id);
             self.disconnect_peer(&peer_id);
@@ -1282,7 +1289,7 @@ impl Node {
         };
 
         if non_unique {
-            debug!("{:?} Received two ClientInfo from the same peer ID {:?}.",
+            debug!("{:?} Received two ClientInfo messages from the same peer ID {:?}.",
                    self,
                    peer_id);
         }
@@ -1845,6 +1852,9 @@ impl Node {
         trace!("{:?} GetNodeName completed. Prefixes: {:?}",
                self,
                self.peer_mgr.routing_table().prefixes());
+        info!("{:?} Received relocated name. Establishing connections to {} peers.",
+              self,
+              section.len());
         let mut result = Evented::empty();
 
         for pub_id in &section {
@@ -2222,7 +2232,7 @@ impl Node {
             } else {
                 Duration::from_secs(0)
             };
-            info!("{:?} Awaiting approval.  {}  Continuing to wait for a further {}.",
+            info!("{:?} Awaiting approval. {} Continuing to wait for a further {}.",
                   self,
                   self.resource_proof_response_progress().3,
                   Self::format(duration));
@@ -2253,14 +2263,14 @@ impl Node {
                 (part_count * (completed + incomplete.len()))
             };
             if progress < APPROVAL_RETRY_THRESHOLD {
-                info!("{:?} Failed to get approval from the network.  {}  Approval process only \
+                info!("{:?} Failed to get approval from the network. {} Approval process only \
                        {}% complete, so terminating node.",
                       self,
                       display_string,
                       progress);
                 events.add_event(Event::Terminate);
             } else {
-                info!("{:?} Failed to get approval from the network.  {}  Approval process {}% \
+                info!("{:?} Failed to get approval from the network. {} Approval process {}% \
                        complete, so restarting node to retry.",
                       self,
                       display_string,
@@ -2402,7 +2412,7 @@ impl Node {
             let serialised = self.to_tunnel_hop_bytes(signed_msg.clone(), route, sent_to, target)?;
             (tunnel_id, serialised)
         } else {
-            trace!("{:?} Not connected or tunneling to {:?}. Dropping peer.",
+            trace!("{:?} Not connected or tunnelling to {:?}. Dropping peer.",
                    self,
                    target);
             self.disconnect_peer(&target);
@@ -2520,12 +2530,12 @@ impl Node {
             if let Some(&peer_id) = self.peer_mgr.get_proxy_peer_id(proxy_node_name) {
                 Ok((BTreeSet::new(), vec![peer_id]))
             } else {
-                error!("{:?} - Unable to find connection to proxy node in proxy map",
+                error!("{:?} Unable to find connection to proxy node in proxy map.",
                        self);
                 Err(RoutingError::ProxyConnectionNotFound)
             }
         } else {
-            error!("{:?} - Source should be client if our state is a Client",
+            error!("{:?} Source should be client if our state is a Client.",
                    self);
             Err(RoutingError::InvalidSource)
         }
@@ -2837,7 +2847,13 @@ impl Node {
         }
 
         let display_string = if incomplete.is_empty() {
-            format!("All {} resource proof responses fully sent.", completed)
+            if self.resource_proof_response_parts.is_empty() {
+                "No resource proof challenges received yet; still establishing connections to \
+                 peers."
+                    .to_string()
+            } else {
+                format!("All {} resource proof responses fully sent.", completed)
+            }
         } else {
             format!("{} resource proof response(s) fully sent.  Remainder have sent \
                      {:?} of {} parts each.",
