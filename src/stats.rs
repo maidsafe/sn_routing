@@ -40,6 +40,7 @@ pub struct Stats {
     msg_direct_sig: usize,
     msg_direct_resource_proof: usize,
     msg_direct_resource_proof_rsp: usize,
+    msg_direct_resource_proof_rsp_receipt: usize,
     msg_direct_sls: usize,
 
     msg_get: usize,
@@ -172,6 +173,7 @@ impl Stats {
             SectionListSignature(..) => self.msg_direct_sls += 1,
             ResourceProof { .. } => self.msg_direct_resource_proof += 1,
             ResourceProofResponse { .. } => self.msg_direct_resource_proof_rsp += 1,
+            ResourceProofResponseReceipt => self.msg_direct_resource_proof_rsp_receipt += 1,
             BootstrapIdentify { .. } |
             BootstrapDeny |
             ClientIdentify { .. } |
@@ -202,12 +204,13 @@ impl Stats {
                   self.unacked_msgs);
             info!(target: "routing_stats",
                   "Stats - Direct - NodeIdentify: {}, CandidateIdentify: {}, \
-                   MessageSignature: {}, ResourceProof: {}/{}, SectionListSignature: {}",
+                   MessageSignature: {}, ResourceProof: {}/{}/{}, SectionListSignature: {}",
                   self.msg_direct_node_identify,
                   self.msg_direct_candidate_identify,
                   self.msg_direct_sig,
                   self.msg_direct_resource_proof,
                   self.msg_direct_resource_proof_rsp,
+                  self.msg_direct_resource_proof_rsp_receipt,
                   self.msg_direct_sls);
             info!(target: "routing_stats",
                   "Stats - Hops (Request/Response) - GetNodeName: {}/{}, ExpectCandidate: {}, \

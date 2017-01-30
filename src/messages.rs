@@ -170,6 +170,8 @@ pub enum DirectMessage {
         /// the difficulty requirement
         leading_zero_bytes: u64,
     },
+    /// Receipt of a part of a ResourceProofResponse
+    ResourceProofResponseReceipt,
 }
 
 impl DirectMessage {
@@ -722,6 +724,7 @@ impl Debug for DirectMessage {
                        proof.len(),
                        leading_zero_bytes)
             }
+            ResourceProofResponseReceipt => write!(formatter, "ResourceProofResponseReceipt"),
         }
     }
 }
