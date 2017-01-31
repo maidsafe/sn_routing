@@ -35,8 +35,7 @@ use peer_manager::{ConnectionInfoPreparedResult, PeerManager, PeerState,
 use rand::{self, Rng};
 use resource_proof::ResourceProof;
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
-use routing_table::{Authority, OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix,
-                    RemovalDetails, Xorable};
+use routing_table::{Authority, OtherMergeDetails, OwnMergeState, Prefix, RemovalDetails, Xorable};
 use routing_table::Error as RoutingTableError;
 #[cfg(feature = "use-mock-crust")]
 use routing_table::RoutingTable;
@@ -382,6 +381,7 @@ impl Node {
     }
 
     fn handle_bootstrap_connect(&mut self, peer_id: PeerId) {
+        // A mature node doesn't need a bootstrap connection
         self.disconnect_peer(&peer_id)
     }
 
@@ -789,8 +789,8 @@ impl Node {
         if !self.is_approved {
             match routing_msg.content {
                 SectionSplit(..) |
-                OwnSectionMerge { .. } |
-                OtherSectionMerge { .. } |
+                OwnSectionMerge(..) |
+                OtherSectionMerge(..) |
                 ExpectCandidate { .. } |
                 AcceptAsCandidate { .. } |
                 CandidateApproval { .. } |
@@ -881,13 +881,13 @@ impl Node {
             (SectionSplit(prefix, joining_node), _, _) => {
                 self.handle_section_split(prefix, joining_node)
             }
-            (OwnSectionMerge { sender_prefix, merge_prefix, sections },
-             Section(_),
-             PrefixSection(_)) => {
+            (OwnSectionMerge(sections),
+             PrefixSection(sender_prefix),
+             PrefixSection(merge_prefix)) => {
                 self.handle_own_section_merge(sender_prefix, merge_prefix, sections)
             }
-            (OtherSectionMerge { prefix, section }, Section(_), PrefixSection(_)) => {
-                self.handle_other_section_merge(prefix, section)
+            (OtherSectionMerge(section), PrefixSection(merge_prefix), PrefixSection(_)) => {
+                self.handle_other_section_merge(merge_prefix, section)
             }
             (Ack(ack, _), _, _) => self.handle_ack_response(ack).to_evented(),
             (UserMessagePart { hash, part_count, part_index, payload, .. }, src, dst) => {
@@ -2165,11 +2165,7 @@ impl Node {
                 for prefix in self.peer_mgr.routing_table().prefixes() {
                     self.send_section_list_signature(prefix, None);
                 }
-                let src = Authority::Section(self.peer_mgr
-                    .routing_table()
-                    .our_prefix()
-                    .lower_bound());
-                self.send_other_section_merge(targets, merge_details, src);
+                self.send_other_section_merge(targets, merge_details);
             }
         }
 
@@ -2193,10 +2189,10 @@ impl Node {
     }
 
     fn handle_other_section_merge(&mut self,
-                                  prefix: Prefix<XorName>,
+                                  merge_prefix: Prefix<XorName>,
                                   section: BTreeSet<PublicId>)
                                   -> Evented<Result<(), RoutingError>> {
-        let needed_peers = self.peer_mgr.merge_other_section(prefix, section);
+        let needed_peers = self.peer_mgr.merge_other_section(merge_prefix, section);
         let own_name = *self.name();
 
         let mut result = Evented::empty();
@@ -2217,7 +2213,7 @@ impl Node {
               self,
               self.peer_mgr.routing_table().prefixes());
         self.merge_if_necessary();
-        self.send_section_list_signature(prefix, None);
+        self.send_section_list_signature(merge_prefix, None);
         self.reset_rt_timer();
         result.with_value(Ok(()))
     }
@@ -2765,43 +2761,25 @@ impl Node {
     }
 
     fn merge_if_necessary(&mut self) {
-        if let Some(merge_details) = self.peer_mgr.should_merge() {
-            self.send_own_section_merge(merge_details);
-        }
-    }
-
-    fn send_own_section_merge(&mut self, merge_details: OwnMergeDetails<XorName>) {
-        let sections = merge_details.sections
-            .into_iter()
-            .map(|(prefix, members)| {
-                (prefix, self.peer_mgr.get_pub_ids(&members).into_iter().collect())
-            })
-            .collect();
-        let request_content = MessageContent::OwnSectionMerge {
-            sender_prefix: merge_details.sender_prefix,
-            merge_prefix: merge_details.merge_prefix,
-            sections: sections,
-        };
-        let src_name = self.peer_mgr.routing_table().our_prefix().lower_bound();
-        let src = Authority::Section(src_name);
-        let dst = Authority::PrefixSection(merge_details.merge_prefix);
-        if let Err(err) = self.send_routing_message(src, dst, request_content.clone()) {
-            debug!("{:?} Failed to send OwnSectionMerge: {:?}.", self, err);
+        if let Some((sender_prefix, merge_prefix, sections)) = self.peer_mgr.should_merge() {
+            let content = MessageContent::OwnSectionMerge(sections);
+            let src = Authority::PrefixSection(sender_prefix);
+            let dst = Authority::PrefixSection(merge_prefix);
+            if let Err(err) = self.send_routing_message(src, dst, content) {
+                debug!("{:?} Failed to send OwnSectionMerge: {:?}.", self, err);
+            }
         }
     }
 
     fn send_other_section_merge(&mut self,
                                 targets: BTreeSet<Prefix<XorName>>,
-                                merge_details: OtherMergeDetails<XorName>,
-                                src: Authority<XorName>) {
+                                merge_details: OtherMergeDetails<XorName>) {
         let section = self.peer_mgr.get_pub_ids(&merge_details.section);
         for target in &targets {
-            let request_content = MessageContent::OtherSectionMerge {
-                prefix: merge_details.prefix,
-                section: section.clone(),
-            };
+            let content = MessageContent::OtherSectionMerge(section.clone());
+            let src = Authority::PrefixSection(merge_details.prefix);
             let dst = Authority::PrefixSection(*target);
-            if let Err(err) = self.send_routing_message(src, dst, request_content) {
+            if let Err(err) = self.send_routing_message(src, dst, content) {
                 debug!("{:?} Failed to send OtherSectionMerge: {:?}.", self, err);
             }
         }
