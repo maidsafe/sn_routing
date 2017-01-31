@@ -1439,6 +1439,11 @@ impl Node {
     // Tell all neighbouring sections that our member list changed.
     // Currently we only send this when nodes join and it's only used to add missing members.
     fn send_section_update(&mut self) {
+        if !self.peer_mgr.routing_table().is_valid() {
+            trace!("{:?} Not sending section update since RT invariant not held.",
+                   self);
+            return;
+        }
         trace!("{:?} Sending section update", self);
         let members = self.peer_mgr.get_pub_ids(self.peer_mgr.routing_table().our_section());
 
