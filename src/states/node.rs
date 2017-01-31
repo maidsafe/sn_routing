@@ -943,11 +943,9 @@ impl Node {
               self,
               self.peer_mgr.routing_table().our_prefix(),
               candidate_id.name());
-        if let Err(error) = self.send_routing_message(RoutingMessage {
-            src: Authority::Section(*candidate_id.name()),
-            dst: client_auth,
-            content: MessageContent::NodeApproval { sections: sections },
-        }) {
+        let src = Authority::Section(*candidate_id.name());
+        let content = MessageContent::NodeApproval { sections: sections };
+        if let Err(error) = self.send_routing_message(src, client_auth, content) {
             debug!("{:?} Failed sending NodeApproval to {}: {:?}",
                    self,
                    candidate_id.name(),
@@ -1232,17 +1230,12 @@ impl Node {
             proxy_node_name: proxy_name,
             peer_id: self.crust_service.id(),
         };
-
-        let request_msg = RoutingMessage {
-            src: src,
-            dst: Authority::Section(*self.name()),
-            content: request_content,
-        };
+        let dst = Authority::Section(*self.name());
 
         info!("{:?} Requesting a relocated name from the network. This can take a while.",
               self);
 
-        self.send_routing_message(request_msg)
+        self.send_routing_message(src, dst, request_content)
     }
 
     fn send_bootstrap_identify(&mut self, peer_id: PeerId) -> Result<(), RoutingError> {
@@ -1473,16 +1466,10 @@ impl Node {
 
         let neighbours = self.peer_mgr.routing_table().other_prefixes();
         for neighbour_pfx in neighbours {
-            let request_msg = RoutingMessage {
-                src: Authority::Section(self.peer_mgr
-                    .routing_table()
-                    .our_prefix()
-                    .lower_bound()),
-                dst: Authority::PrefixSection(neighbour_pfx),
-                content: content.clone(),
-            };
+            let src = Authority::Section(self.peer_mgr.routing_table().our_prefix().lower_bound());
+            let dst = Authority::PrefixSection(neighbour_pfx);
 
-            if let Err(err) = self.send_routing_message(request_msg) {
+            if let Err(err) = self.send_routing_message(src, dst, content.clone()) {
                 debug!("{:?} Failed to send section update to {:?}: {:?}",
                        self,
                        neighbour_pfx,
@@ -1529,13 +1516,7 @@ impl Node {
             }
         };
 
-        let msg = RoutingMessage {
-            src: src,
-            dst: dst,
-            content: msg_content,
-        };
-
-        if let Err(err) = self.send_routing_message(msg) {
+        if let Err(err) = self.send_routing_message(src, dst, msg_content) {
             debug!("{:?} Failed to send connection info for {:?}: {:?}.",
                    self,
                    their_pub_id.name(),
@@ -1849,13 +1830,9 @@ impl Node {
             message_id: message_id,
         };
 
-        let request_msg = RoutingMessage {
-            src: Authority::Section(dst_name),
-            dst: Authority::Section(relocated_name),
-            content: request_content,
-        };
-
-        self.send_routing_message(request_msg)
+        let src = Authority::Section(dst_name);
+        let dst = Authority::Section(relocated_name);
+        self.send_routing_message(src, dst, request_content)
     }
 
     // Context: we're a new node joining a section. This message should have been sent by each node
@@ -1932,12 +1909,9 @@ impl Node {
                 client_auth: client_auth,
                 message_id: message_id,
             };
-            let request_msg = RoutingMessage {
-                src: Authority::Section(original_name),
-                dst: Authority::Section(*candidate_id.name()),
-                content: request_content,
-            };
-            return self.send_routing_message(request_msg);
+            let src = Authority::Section(original_name);
+            let dst = Authority::Section(*candidate_id.name());
+            return self.send_routing_message(src, dst, request_content);
         }
 
         if candidate_id == *self.full_id.public_id() {
@@ -1955,11 +1929,9 @@ impl Node {
               self,
               candidate_id.name(),
               client_auth);
-        self.send_routing_message(RoutingMessage {
-            src: Authority::Section(*candidate_id.name()),
-            dst: Authority::Section(*candidate_id.name()),
-            content: response_content,
-        })
+
+        let src = Authority::Section(*candidate_id.name());
+        self.send_routing_message(src, src, response_content)
     }
 
     // Received by Y; From Y -> Y
@@ -1995,11 +1967,9 @@ impl Node {
                self,
                response_content,
                client_auth);
-        self.send_routing_message(RoutingMessage {
-            src: Authority::Section(*candidate_id.name()),
-            dst: client_auth,
-            content: response_content,
-        })
+
+        let src = Authority::Section(*candidate_id.name());
+        self.send_routing_message(src, client_auth, response_content)
     }
 
     fn handle_section_update(&mut self,
@@ -2069,12 +2039,8 @@ impl Node {
                 prefix: prefix,
                 members: members,
             };
-            let response_msg = RoutingMessage {
-                src: dst,
-                dst: src,
-                content: content,
-            };
-            if let Err(err) = self.send_routing_message(response_msg) {
+            // We're sending a reply, so src and dst are swapped:
+            if let Err(err) = self.send_routing_message(dst, src, content) {
                 debug!("{:?} Failed to send RoutingTableResponse: {:?}.", self, err);
             }
         }
@@ -2368,12 +2334,11 @@ impl Node {
                    self,
                    msg_id,
                    utils::format_binary_array(&digest));
-            let request_msg = RoutingMessage {
-                src: Authority::ManagedNode(*self.name()),
-                dst: Authority::PrefixSection(*self.peer_mgr.routing_table().our_prefix()),
-                content: MessageContent::RoutingTableRequest(msg_id, digest),
-            };
-            if let Err(err) = self.send_routing_message(request_msg) {
+
+            let src = Authority::ManagedNode(*self.name());
+            let dst = Authority::PrefixSection(*self.peer_mgr.routing_table().our_prefix());
+            let content = MessageContent::RoutingTableRequest(msg_id, digest);
+            if let Err(err) = self.send_routing_message(src, dst, content) {
                 debug!("{:?} Failed to send RoutingTableRequest: {:?}.", self, err);
             }
         }
@@ -2390,22 +2355,17 @@ impl Node {
             Ok(info) => info,
         };
         let src = Authority::Section(*candidate_id.name());
-        let dst = src;
         let response_content = MessageContent::CandidateApproval {
             candidate_id: candidate_id,
             client_auth: client_auth,
             sections: sections,
         };
-        let response_msg = RoutingMessage {
-            src: src,
-            dst: dst,
-            content: response_content,
-        };
         info!("{:?} Resource proof duration has finished. Voting to approve candidate {}.",
               self,
               candidate_id.name());
-        trace!("{:?} Sending {:?}.", self, response_msg);
-        if let Err(error) = self.send_routing_message(response_msg) {
+        trace!("{:?} Sending {:?} to {:?}.", self, response_content, src);
+
+        if let Err(error) = self.send_routing_message(src, src, response_content) {
             debug!("{:?} Failed sending CandidateApproval: {:?}", self, error);
         }
         Ok(())
@@ -2445,12 +2405,7 @@ impl Node {
                          -> Result<(), RoutingError> {
         self.stats.count_user_message(&user_msg);
         for part in user_msg.to_parts(priority)? {
-            let message = RoutingMessage {
-                src: src,
-                dst: dst,
-                content: part,
-            };
-            self.send_routing_message(message)?;
+            self.send_routing_message(src, dst, part)?;
         }
         Ok(())
     }
@@ -2799,13 +2754,11 @@ impl Node {
 
     fn send_section_split(&mut self, our_prefix: Prefix<XorName>, joining_node: XorName) {
         for prefix in self.peer_mgr.routing_table().prefixes() {
-            let request_msg = RoutingMessage {
-                // this way of calculating the source avoids using the joining node as the route
-                src: Authority::Section(our_prefix.substituted_in(!joining_node)),
-                dst: Authority::PrefixSection(prefix),
-                content: MessageContent::SectionSplit(our_prefix, joining_node),
-            };
-            if let Err(err) = self.send_routing_message(request_msg) {
+            // this way of calculating the source avoids using the joining node as the route
+            let src = Authority::Section(our_prefix.substituted_in(!joining_node));
+            let dst = Authority::PrefixSection(prefix);
+            let content = MessageContent::SectionSplit(our_prefix, joining_node);
+            if let Err(err) = self.send_routing_message(src, dst, content) {
                 debug!("{:?} Failed to send SectionSplit: {:?}.", self, err);
             }
         }
@@ -2830,12 +2783,9 @@ impl Node {
             sections: sections,
         };
         let src_name = self.peer_mgr.routing_table().our_prefix().lower_bound();
-        let request_msg = RoutingMessage {
-            src: Authority::Section(src_name),
-            dst: Authority::PrefixSection(merge_details.merge_prefix),
-            content: request_content.clone(),
-        };
-        if let Err(err) = self.send_routing_message(request_msg) {
+        let src = Authority::Section(src_name);
+        let dst = Authority::PrefixSection(merge_details.merge_prefix);
+        if let Err(err) = self.send_routing_message(src, dst, request_content.clone()) {
             debug!("{:?} Failed to send OwnSectionMerge: {:?}.", self, err);
         }
     }
@@ -2850,13 +2800,8 @@ impl Node {
                 prefix: merge_details.prefix,
                 section: section.clone(),
             };
-            let request_msg = RoutingMessage {
-                src: src,
-                dst: Authority::PrefixSection(*target),
-                content: request_content,
-            };
-
-            if let Err(err) = self.send_routing_message(request_msg) {
+            let dst = Authority::PrefixSection(*target);
+            if let Err(err) = self.send_routing_message(src, dst, request_content) {
                 debug!("{:?} Failed to send OtherSectionMerge: {:?}.", self, err);
             }
         }
