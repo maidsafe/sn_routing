@@ -653,7 +653,8 @@ impl PeerManager {
         if prefixes.contains(&None) {
             // we expect contacts that don't belong in any of the sections in our RT - so we have
             // no contacts from their section
-            warn!("{:?} Expecting peers that don't have a corresponding section in the RT: {:?}",
+            warn!("{:?} Expecting peers that don't have a corresponding section in the routing \
+                   table: {:?}",
                   self,
                   self.expected_peers
                       .keys()
