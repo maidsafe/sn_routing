@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use ack_manager::{Ack, AckManager};
+use ack_manager::{ACK_TIMEOUT_SECS, Ack, AckManager};
 use action::Action;
 use cache::Cache;
 use crust::{ConnectionInfoResult, CrustError, PeerId, PrivConnectionInfo, PubConnectionInfo,
@@ -71,12 +71,13 @@ const RESOURCE_PROOF_TARGET_SIZE: usize = 250 * 1024 * 1024;
 const RT_MIN_TIMEOUT_SECS: u64 = 30;
 /// Maximal delay between two subsequent `RoutingTableRequest`s, in seconds.
 const RT_MAX_TIMEOUT_SECS: u64 = 300;
+/// Maximum time a new node will wait to receive `NodeApproval` after receiving a
+/// `GetNodeNameResponse`.  This covers the built-in delay of the process and also allows time for
+/// the message to accumulate and be sent via four different routes.
+const APPROVAL_TIMEOUT_SECS: u64 = RESOURCE_PROOF_DURATION_SECS + ACCUMULATION_TIMEOUT_SECS +
+                                   (4 * ACK_TIMEOUT_SECS);
 /// Interval between displaying info about ongoing approval progress, in seconds.
 const APPROVAL_PROGRESS_INTERVAL_SECS: u64 = 30;
-/// Used to decide the `Event` sent on approval timing out.  If the percentage of
-/// `ResourceProofResponse` parts delivered at timeout is below this value, the node will send
-/// `Terminate`, otherwise it will send `RestartRequired`.
-const APPROVAL_RETRY_THRESHOLD: usize = 95;
 
 pub struct Node {
     ack_mgr: AckManager,
@@ -116,6 +117,11 @@ pub struct Node {
     candidate_timer_token: Option<u64>,
     /// Map of ResourceProofResponse parts.
     resource_proof_response_parts: HashMap<PeerId, Vec<DirectMessage>>,
+    /// Number of expected resource proof challengers.
+    challenger_count: usize,
+    /// Whether our proxy is expected to be sending us a resource proof challenge (in which case it
+    /// will be trivial) or not.
+    proxy_is_resource_proof_challenger: bool,
 }
 
 impl Node {
@@ -205,6 +211,8 @@ impl Node {
             routing_msg_backlog: vec![],
             candidate_timer_token: None,
             resource_proof_response_parts: HashMap::new(),
+            challenger_count: 0,
+            proxy_is_resource_proof_challenger: false,
         };
 
         if node.start_listening() {
@@ -222,35 +230,45 @@ impl Node {
             if self.stats.cur_client_num > old_client_num {
                 self.stats.cumulative_client_num += self.stats.cur_client_num - old_client_num;
             }
-            info!(target: "routing_stats", "{:?} - Connected clients: {}, cumulative: {}",
+            if self.is_approved {
+                info!(target: "routing_stats", "{:?} - Connected clients: {}, cumulative: {}",
                   self,
                   self.stats.cur_client_num,
                   self.stats.cumulative_client_num);
+            }
         }
         if self.stats.tunnel_connections != self.tunnels.tunnel_count() ||
            self.stats.tunnel_client_pairs != self.tunnels.client_count() {
             self.stats.tunnel_connections = self.tunnels.tunnel_count();
             self.stats.tunnel_client_pairs = self.tunnels.client_count();
-            info!(target: "routing_stats", "{:?} - Indirect connections: {}, tunnelling for: {}",
-                  self,
-                  self.stats.tunnel_connections,
-                  self.stats.tunnel_client_pairs);
+            if self.is_approved {
+                info!(target: "routing_stats",
+                      "{:?} - Indirect connections: {}, tunnelling for: {}",
+                      self,
+                      self.stats.tunnel_connections,
+                      self.stats.tunnel_client_pairs);
+            }
         }
 
         if self.stats.cur_routing_table_size != self.peer_mgr.routing_table().len() {
             self.stats.cur_routing_table_size = self.peer_mgr.routing_table().len();
-
-            const TABLE_LVL: LogLevel = LogLevel::Info;
-            if log_enabled!(TABLE_LVL) {
-                let status_str = format!("{:?} {:?} - Routing Table size: {:3}",
-                                         self,
-                                         self.crust_service.id(),
-                                         self.stats.cur_routing_table_size);
-                let sep_str = iter::repeat('-').take(status_str.len()).collect::<String>();
-                log!(target: "routing_stats", TABLE_LVL, " -{}- ", sep_str);
-                log!(target: "routing_stats", TABLE_LVL, "| {} |", status_str);
-                log!(target: "routing_stats", TABLE_LVL, " -{}- ", sep_str);
+            if self.is_approved {
+                self.print_rt_size();
             }
+        }
+    }
+
+    fn print_rt_size(&self) {
+        const TABLE_LVL: LogLevel = LogLevel::Info;
+        if log_enabled!(TABLE_LVL) {
+            let status_str = format!("{:?} {:?} - Routing Table size: {:3}",
+                                     self,
+                                     self.crust_service.id(),
+                                     self.stats.cur_routing_table_size);
+            let sep_str = iter::repeat('-').take(status_str.len()).collect::<String>();
+            log!(target: "routing_stats", TABLE_LVL, " -{}- ", sep_str);
+            log!(target: "routing_stats", TABLE_LVL, "| {} |", status_str);
+            log!(target: "routing_stats", TABLE_LVL, " -{}- ", sep_str);
         }
     }
 
@@ -932,9 +950,11 @@ impl Node {
             }
         };
 
-        debug!("{:?} Sending NodeApproval to {}.",
-               self,
-               candidate_id.name());
+        info!("{:?} Our section with {:?} has approved candidate {}. Adding it to our routing \
+               table as a peer.",
+              self,
+              self.peer_mgr.routing_table().our_prefix(),
+              candidate_id.name());
         if let Err(error) = self.send_routing_message(RoutingMessage {
             src: Authority::Section(*candidate_id.name()),
             dst: client_auth,
@@ -992,9 +1012,13 @@ impl Node {
             }
         }
 
-        info!("{:?} Node approval completed. Prefixes: {:?}",
+        info!("{:?} Resource proof challenges completed. This node has been approved to join the \
+               network! Now establishing connections to all peers from the following sections: \
+               {:?}",
               self,
               self.peer_mgr.routing_table().prefixes());
+        self.print_rt_size();
+        self.stats.enable_logging();
         events.add_event(Event::Connected);
         for name in self.peer_mgr.routing_table().iter() {
             // TODO: try to remove this as safe_core/safe_vault may not require this notification
@@ -1056,7 +1080,7 @@ impl Node {
         };
         let _ = self.resource_proof_response_parts.insert(peer_id, messages);
         self.send_direct_message(peer_id, first_message)?;
-        trace!("{:?} created proof data in {}.  Min section size: {}, Target size: {}, \
+        trace!("{:?} created proof data in {}. Min section size: {}, Target size: {}, \
                 Difficulty: {}, Seed: {:?}",
                self,
                Self::format(elapsed),
@@ -1123,19 +1147,22 @@ impl Node {
             Ok(Some((target_size, difficulty, elapsed))) if difficulty == 0 &&
                                                             target_size < 1000 => {
                 // Small tests don't require waiting for synchronisation. Send approval now.
-                debug!("{:?} Candidate {} passed our challenge in {}.  Sending CandidateApproval.",
-                       self,
-                       name,
-                       Self::format(elapsed));
+                info!("{:?} Candidate {} passed our challenge in {}. Sending approval to our \
+                       section with {:?}.",
+                      self,
+                      name,
+                      Self::format(elapsed),
+                      self.peer_mgr.routing_table().our_prefix());
                 self.candidate_timer_token = None;
                 let _ = self.send_candidate_approval();
             }
             Ok(Some((_, _, elapsed))) => {
-                debug!("{:?} Candidate {} passed our challenge in {}.  Waiting to send \
-                        CandidateApproval.",
-                       self,
-                       name,
-                       Self::format(elapsed));
+                info!("{:?} Candidate {} passed our challenge in {}. Waiting to send approval to \
+                       our section with {:?}.",
+                      self,
+                      name,
+                      Self::format(elapsed),
+                      self.peer_mgr.routing_table().our_prefix());
             }
         }
     }
@@ -1350,9 +1377,17 @@ impl Node {
                            self,
                            name,
                            error);
+                } else {
+                    info!("{:?} Sending resource proof challenge to candidate {}",
+                          self,
+                          public_id.name());
                 }
             }
             Ok(false) => {
+                info!("{:?} Adding candidate {} to routing table without sending resource proof \
+                       challenge as section has already approved it.",
+                      self,
+                      public_id.name());
                 self.add_to_routing_table(&public_id, &peer_id).extract(&mut result);
             }
             Err(error) => {
@@ -1840,8 +1875,7 @@ impl Node {
             return Evented::empty();
         }
 
-        let duration = Duration::from_secs(RESOURCE_PROOF_DURATION_SECS +
-                                           ACCUMULATION_TIMEOUT_SECS);
+        let duration = Duration::from_secs(APPROVAL_TIMEOUT_SECS);
         self.approval_expiry_time = Instant::now() + duration;
         self.get_approval_timer_token = Some(self.timer.schedule(duration));
         self.approval_progress_timer_token = Some(self.timer
@@ -1849,6 +1883,14 @@ impl Node {
 
         self.full_id.public_id_mut().set_name(*relocated_id.name());
         self.peer_mgr.reset_routing_table(*self.full_id.public_id());
+        self.challenger_count = section.len();
+        if let Some((_, proxy_public_id)) = self.peer_mgr.proxy() {
+            if section.contains(proxy_public_id) {
+                self.proxy_is_resource_proof_challenger = true;
+                // exclude the proxy as it sends a trivial challenge
+                self.challenger_count -= 1;
+            }
+        }
         trace!("{:?} GetNodeName completed. Prefixes: {:?}",
                self,
                self.peer_mgr.routing_table().prefixes());
@@ -1889,14 +1931,16 @@ impl Node {
             return Ok(());
         }
 
-        // TODO - do we need to reply if `candidate_id` triggers a failure here?
         self.peer_mgr.expect_candidate(*candidate_id.name(), client_auth)?;
         let response_content = MessageContent::AcceptAsCandidate {
             expect_id: candidate_id,
             client_auth: client_auth,
             message_id: message_id,
         };
-        trace!("{:?} Responding to section {:?}.", self, response_content);
+        info!("{:?} Expecting candidate {} via {:?}.",
+              self,
+              candidate_id.name(),
+              client_auth);
         self.send_routing_message(RoutingMessage {
             src: Authority::Section(*candidate_id.name()),
             dst: Authority::Section(*candidate_id.name()),
@@ -1923,16 +1967,20 @@ impl Node {
         self.candidate_timer_token = Some(self.timer
             .schedule(Duration::from_secs(RESOURCE_PROOF_DURATION_SECS)));
 
-        let own_section = self.peer_mgr.accept_as_candidate(*candidate_id.name(), client_auth)?;
+        let own_section = self.peer_mgr.accept_as_candidate(*candidate_id.name(), client_auth);
         let response_content = MessageContent::GetNodeNameResponse {
             relocated_id: candidate_id,
             section: own_section,
             message_id: message_id,
         };
-        trace!("{:?} Responding to candidate {:?}: {:?}.",
+        info!("{:?} Our section with {:?} accepted {} as a candidate.",
+              self,
+              self.peer_mgr.routing_table().our_prefix(),
+              candidate_id.name());
+        trace!("{:?} Sending {:?} to {:?}",
                self,
-               client_auth,
-               response_content);
+               response_content,
+               client_auth);
         self.send_routing_message(RoutingMessage {
             src: Authority::Section(*candidate_id.name()),
             dst: client_auth,
@@ -2227,15 +2275,21 @@ impl Node {
             self.approval_progress_timer_token = Some(self.timer
                 .schedule(Duration::from_secs(APPROVAL_PROGRESS_INTERVAL_SECS)));
             let now = Instant::now();
-            let duration = if now < self.approval_expiry_time {
-                self.approval_expiry_time - now
+            let remaining_duration = if now < self.approval_expiry_time {
+                let duration = self.approval_expiry_time - now;
+                if duration.subsec_nanos() >= 500_000_000 {
+                    duration.as_secs() + 1
+                } else {
+                    duration.as_secs()
+                }
             } else {
-                Duration::from_secs(0)
+                0
             };
-            info!("{:?} Awaiting approval. {} Continuing to wait for a further {}.",
+            info!("{:?} {} {}/{} seconds remaining.",
                   self,
-                  self.resource_proof_response_progress().3,
-                  Self::format(duration));
+                  self.resource_proof_response_progress(),
+                  remaining_duration,
+                  APPROVAL_TIMEOUT_SECS);
         }
 
         self.resend_unacknowledged_timed_out_msgs(token);
@@ -2254,29 +2308,10 @@ impl Node {
             events.add_event(Event::RestartRequired);
         } else {
             // `NodeApproval` has timed out.
-            let (part_count, completed, incomplete, display_string) =
-                self.resource_proof_response_progress();
-            let progress = if part_count == 0 {
-                100
-            } else {
-                (((part_count * completed) + incomplete.iter().sum::<usize>()) * 100) /
-                (part_count * (completed + incomplete.len()))
-            };
-            if progress < APPROVAL_RETRY_THRESHOLD {
-                info!("{:?} Failed to get approval from the network. {} Approval process only \
-                       {}% complete, so terminating node.",
-                      self,
-                      display_string,
-                      progress);
-                events.add_event(Event::Terminate);
-            } else {
-                info!("{:?} Failed to get approval from the network. {} Approval process {}% \
-                       complete, so restarting node to retry.",
-                      self,
-                      display_string,
-                      progress);
-                events.add_event(Event::RestartRequired);
-            }
+            info!("{:?} Failed to get approval from the network. {} Terminating node.",
+                  self,
+                  self.resource_proof_response_progress());
+            events.add_event(Event::Terminate);
         }
         events.with_value(false)
     }
@@ -2320,9 +2355,10 @@ impl Node {
             dst: dst,
             content: response_content,
         };
-        debug!("{:?} Resource proof duration has passed.  Sending {:?}.",
-               self,
-               response_msg);
+        info!("{:?} Resource proof duration has finished. Voting to approve candidate {}.",
+              self,
+              candidate_id.name());
+        trace!("{:?} Sending {:?}.", self, response_msg);
         if let Err(error) = self.send_routing_message(response_msg) {
             debug!("{:?} Failed sending CandidateApproval: {:?}", self, error);
         }
@@ -2828,25 +2864,29 @@ impl Node {
     // the `part_count` they all use; the number of fully-completed ones; a vector for the
     // incomplete ones specifying how many parts have been sent to each peer; and a `String`
     // containing this info.
-    fn resource_proof_response_progress(&self) -> (usize, usize, Vec<usize>, String) {
-        let mut total_parts = 0;
-        let mut completed = 0;
+    fn resource_proof_response_progress(&self) -> String {
+        let mut parts_per_proof = 0;
+        let mut completed: usize = 0;
         let mut incomplete = vec![];
         for messages in self.resource_proof_response_parts.values() {
             if let Some(next_message) = messages.last() {
                 match *next_message {
                     DirectMessage::ResourceProofResponse { part_index, part_count, .. } => {
-                        total_parts = part_count;
+                        parts_per_proof = part_count;
                         incomplete.push(part_index);
                     }
-                    _ => return (1, 0, vec![1], String::new()),  // invalid situation
+                    _ => return String::new(),  // invalid situation
                 }
             } else {
                 completed += 1;
             }
         }
 
-        let display_string = if incomplete.is_empty() {
+        if self.proxy_is_resource_proof_challenger {
+            completed = completed.saturating_sub(1);
+        }
+
+        if incomplete.is_empty() {
             if self.resource_proof_response_parts.is_empty() {
                 "No resource proof challenges received yet; still establishing connections to \
                  peers."
@@ -2855,19 +2895,23 @@ impl Node {
                 format!("All {} resource proof responses fully sent.", completed)
             }
         } else {
-            format!("{} resource proof response(s) fully sent.  Remainder have sent \
-                     {:?} of {} parts each.",
+            let progress = (((parts_per_proof * completed) + incomplete.iter().sum::<usize>()) *
+                            100) /
+                           (parts_per_proof * self.challenger_count);
+            format!("{}/{} resource proof response(s) complete, {}% of data sent.",
                     completed,
-                    incomplete,
-                    total_parts)
-        };
-        (total_parts, completed, incomplete, display_string)
+                    self.challenger_count,
+                    progress)
+        }
     }
 
     fn format(duration: Duration) -> String {
-        format!("{}.{:06} seconds",
-                duration.as_secs(),
-                duration.subsec_nanos() / 1000)
+        format!("{} seconds",
+                if duration.subsec_nanos() >= 500_000_000 {
+                    duration.as_secs() + 1
+                } else {
+                    duration.as_secs()
+                })
     }
 }
 
