@@ -23,6 +23,7 @@ mod merge;
 mod requests;
 mod utils;
 
+use itertools::Itertools;
 use routing::{Event, EventStream, Prefix, XOR_NAME_LEN, XorName};
 use routing::mock_crust::{Config, Endpoint, Network};
 use routing::mock_crust::crust::PeerId;
@@ -131,12 +132,28 @@ fn multiple_joining_nodes() {
 
         // Try adding five nodes at once, possibly to the same section. This makes sure one section
         // can handle this, either by adding the nodes in sequence or by rejecting some.
-        for _ in 0..5 {
+        let count = 5;
+        for _ in 0..count {
             nodes.push(TestNode::builder(&network).config(config.clone()).create());
         }
 
         poll_and_resend(&mut nodes, &mut []);
-        nodes.retain(|node| !node.routing_table().is_empty());
+        let failed_to_join = nodes.iter_mut()
+            .enumerate()
+            .rev()
+            .take(count)
+            .filter_map(|(index, ref mut node)| {
+                while let Ok(event) = node.try_next_ev() {
+                    if let Event::Connected = event {
+                        return None;
+                    }
+                }
+                Some(index)
+            })
+            .collect_vec();
+        for index in failed_to_join {
+            let _ = nodes.remove(index);
+        }
         poll_and_resend(&mut nodes, &mut []);
 
         verify_invariant_for_all_nodes(&nodes);
