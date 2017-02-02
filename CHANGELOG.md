@@ -1,5 +1,8 @@
 # Routing - Change Log
 
+## [0.28.1]
+- Retry preparing connection info if Crust returns an error.
+
 ## [0.28.0]
 - Profile the bandwidth of nodes joining the network. Reject slow nodes.
 - Organise nodes into disjoint sections. Introduce the `Section` and

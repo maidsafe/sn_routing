@@ -7,10 +7,10 @@ license = "GPL-3.0"
 name = "routing"
 readme = "README.md"
 repository = "https://github.com/maidsafe/routing"
-version = "0.28.0"
+version = "0.28.1"
 
 [dependencies]
-crust = "0.20.1"
+crust = "0.20.2"
 itertools = "~0.5.9"
 log = "~0.3.6"
 lru_time_cache = "~0.5.0"
