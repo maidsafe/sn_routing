@@ -10,23 +10,23 @@ repository = "https://github.com/maidsafe/routing"
 version = "0.25.1"
 
 [dependencies]
-crust = { git = "https://github.com/afck/crust" }
-itertools = "~0.5.6"
+crust = "0.20.1"
+itertools = "~0.5.9"
 log = "~0.3.6"
 lru_time_cache = "~0.5.0"
 maidsafe_utilities = "~0.10.0"
 quick-error = "~1.1.0"
-rand = "~0.3.14"
+rand = "~0.3.15"
 resource_proof = "0.3.0-pre"
 rust_sodium = "~0.1.2"
-rustc-serialize = "~0.3.21"
+rustc-serialize = "~0.3.22"
 term = "~0.4.4"
 tiny-keccak = "~1.1.1"
 unwrap = "~1.1.0"
 
 [dev-dependencies]
 docopt = "~0.6.86"
-libc = "~0.2.17"
+libc = "~0.2.20"
 
 [[example]]
 bench = false
