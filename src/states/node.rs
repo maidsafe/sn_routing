@@ -1560,7 +1560,20 @@ impl Node {
                                        result: Result<PrivConnectionInfo, CrustError>) {
         let our_connection_info = match result {
             Err(err) => {
-                error!("{:?} Failed to prepare connection info: {:?}", self, err);
+                error!("{:?} Failed to prepare connection info: {:?}. Retrying.",
+                       self,
+                       err);
+                let new_token = match self.peer_mgr.get_new_connection_info_token(result_token) {
+                    Err(error) => {
+                        debug!("{:?} Failed to prepare connection info, but no entry found in \
+                               token map: {:?}",
+                               self,
+                               error);
+                        return;
+                    }
+                    Ok(new_token) => new_token,
+                };
+                self.crust_service.prepare_connection_info(new_token);
                 return;
             }
             Ok(connection_info) => connection_info,
@@ -2651,14 +2664,17 @@ impl Node {
             return result.map(Ok);
         }
 
-        let our_pub_info = if let Some(&PeerState::ConnectionInfoReady(ref our_priv_info)) =
-            self.peer_mgr.get_state_by_name(&their_name) {
-            our_priv_info.to_pub_connection_info()
-        } else {
-            trace!("{:?} Not sending connection info request to {:?}",
-                   self,
-                   their_name);
-            return result.map(Ok);
+        let our_pub_info = match self.peer_mgr.get_state_by_name(&their_name) {
+            Some(&PeerState::ConnectionInfoReady(ref our_priv_info)) => {
+                our_priv_info.to_pub_connection_info()
+            }
+            state => {
+                trace!("{:?} Not sending connection info request to {:?}. State: {:?}",
+                       self,
+                       their_name,
+                       state);
+                return result.map(Ok);
+            }
         };
         trace!("{:?} Resending connection info request to {:?}",
                self,

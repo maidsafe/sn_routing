@@ -1199,6 +1199,14 @@ impl PeerManager {
         Some(token)
     }
 
+    /// If preparing connection info failed with the given token, prepares and returns a new token.
+    pub fn get_new_connection_info_token(&mut self, token: u32) -> Result<u32, Error> {
+        let pub_id = self.connection_token_map.remove(&token).ok_or(Error::PeerNotFound)?;
+        let new_token = rand::random();
+        let _ = self.connection_token_map.insert(new_token, pub_id);
+        Ok(new_token)
+    }
+
     /// Returns all peers we are looking for a tunnel to.
     pub fn peers_needing_tunnel(&self) -> Vec<PeerId> {
         self.peer_map
