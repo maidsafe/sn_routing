@@ -404,9 +404,9 @@ impl PeerManager {
                             client_auth: Authority<XorName>)
                             -> Result<(), RoutingError> {
         if self.candidates.values().any(|candidate| !candidate.is_approved()) {
-            debug!("{:?} Rejected {} as a new candidate: still handling previous one.",
-                   self,
-                   candidate_name);
+            info!("{:?} Rejected {} as a new candidate: still handling previous one.",
+                  self,
+                  candidate_name);
             return Err(RoutingError::AlreadyHandlingJoinRequest);
         }
         self.routing_table.should_join_our_section(&candidate_name)?;
@@ -420,14 +420,14 @@ impl PeerManager {
     pub fn accept_as_candidate(&mut self,
                                candidate_name: XorName,
                                client_auth: Authority<XorName>)
-                               -> Result<BTreeSet<PublicId>, RoutingError> {
+                               -> BTreeSet<PublicId> {
         self.remove_unapproved_candidates(&candidate_name);
         self.candidates
             .entry(candidate_name)
             .or_insert_with(|| Candidate::new(client_auth))
             .state = CandidateState::AcceptedAsCandidate;
         let our_section = self.routing_table.our_section();
-        Ok(self.get_pub_ids(our_section))
+        self.get_pub_ids(our_section)
     }
 
     /// Verifies proof of resource.  If the response is not the current candidate, or if it fails
@@ -473,14 +473,20 @@ impl PeerManager {
             self.candidates
                 .iter()
                 .find(|&(_, cand)| cand.passed_our_challenge && !cand.is_approved()) {
-            if let Some(peer) = self.peer_map.get_by_name(name) {
+            return if let Some(peer) = self.peer_map.get_by_name(name) {
                 Ok((*peer.pub_id(), candidate.client_auth, self.pub_ids_by_section()))
             } else {
                 Err(RoutingError::UnknownCandidate)
-            }
-        } else {
-            Err(RoutingError::UnknownCandidate)
+            };
         }
+        if let Some((name, _)) = self.candidates.iter().find(|&(_, cand)| !cand.is_approved()) {
+            info!("{:?} Candidate {} has not passed our resource proof challenge in time. Not \
+                   sending approval vote to our section with {:?}",
+                  self,
+                  name,
+                  self.routing_table.our_prefix());
+        }
+        Err(RoutingError::UnknownCandidate)
     }
 
     /// Handles accumulated candidate approval.  Marks the candidate as `Approved` and returns the
@@ -525,8 +531,8 @@ impl PeerManager {
     ///
     /// Returns:
     ///
-    /// * Ok(Some((seed, target_size))) if the peer is an unapproved candidate
-    /// * Ok(None)                      if the peer has already been approved
+    /// * Ok(true)                      if the peer is an unapproved candidate
+    /// * Ok(false)                     if the peer has already been approved
     /// * Err(CandidateIsTunnelling)    if the peer is tunnelling
     /// * Err(UnknownCandidate)         if the peer is not in the candidate list
     pub fn handle_candidate_identify(&mut self,
