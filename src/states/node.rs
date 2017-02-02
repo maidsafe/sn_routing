@@ -1013,10 +1013,11 @@ impl Node {
         }
 
         info!("{:?} Resource proof challenges completed. This node has been approved to join the \
-               network! Now establishing connections to all peers from the following sections: \
-               {:?}",
-              self,
-              self.peer_mgr.routing_table().prefixes());
+               network!",
+              self);
+        trace!("{:?} Node approval completed. Prefixes: {:?}",
+               self,
+               self.peer_mgr.routing_table().prefixes());
         self.print_rt_size();
         self.stats.enable_logging();
         events.add_event(Event::Connected);
