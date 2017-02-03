@@ -103,7 +103,7 @@ pub enum DirectMessage {
     /// message will only be relayed once enough signatures have been accumulated.
     MessageSignature(sha256::Digest, sign::Signature),
     /// A signature for the current `BTreeSet` of section's node names
-    SectionListSignature(Prefix<XorName>, SectionList, sign::Signature),
+    SectionListSignature(SectionList, sign::Signature),
     /// Sent from the bootstrap node to a client in response to `ClientIdentify`.
     BootstrapIdentify {
         /// The bootstrap node's keys and name.
@@ -235,7 +235,7 @@ impl HopMessage {
 /// A list of a section's public IDs, together with a list of signatures of a neighbouring section.
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable, Debug)]
 pub struct SectionList {
-    prefix: Prefix<XorName>,
+    pub prefix: Prefix<XorName>,
     // TODO(MAID-1677): pub signatures: BTreeSet<(PublicId, sign::Signature)>,
     pub_ids: BTreeSet<PublicId>,
 }
@@ -689,8 +689,8 @@ impl Debug for DirectMessage {
                        "MessageSignature ({}, ..)",
                        utils::format_binary_array(&digest.0))
             }
-            SectionListSignature(ref prefix, _, _) => {
-                write!(formatter, "SectionListSignature({:?}, ..)", prefix)
+            SectionListSignature(ref sec_list, _) => {
+                write!(formatter, "SectionListSignature({:?}, ..)", sec_list.prefix)
             }
             BootstrapIdentify { ref public_id } => {
                 write!(formatter, "BootstrapIdentify {{ {:?} }}", public_id)
