@@ -1656,14 +1656,7 @@ impl Node {
                 try_ev!(self.send_node_identify(peer_id), result);
                 self.handle_node_identify(public_id, peer_id).extract(&mut result);
             }
-            Ok(Waiting) | Ok(IsConnected) => (),
-            Err(error) => {
-                warn!("{:?} Failed to insert connection info from {:?} ({:?}): {:?}",
-                      self,
-                      public_id.name(),
-                      peer_id,
-                      error)
-            }
+            Ok(Waiting) | Ok(IsConnected) | Err(_) => (),
         }
         result.with_value(Ok(()))
     }
@@ -2903,18 +2896,20 @@ impl Node {
             completed = completed.saturating_sub(1);
         }
 
-        if incomplete.is_empty() {
-            if self.resource_proof_response_parts.is_empty() {
-                "No resource proof challenges received yet; still establishing connections to \
-                 peers."
-                    .to_string()
-            } else {
-                format!("All {} resource proof responses fully sent.", completed)
-            }
+        if self.resource_proof_response_parts.is_empty() {
+            "No resource proof challenges received yet; still establishing connections to peers."
+                .to_string()
+        } else if self.challenger_count == completed {
+            format!("All {} resource proof responses fully sent.", completed)
         } else {
-            let progress = (((parts_per_proof * completed) + incomplete.iter().sum::<usize>()) *
-                            100) /
-                           (parts_per_proof * self.challenger_count);
+            let progress = if parts_per_proof == 0 {
+                // We've completed all challenges for those peers we've connected to, but are still
+                // waiting to connect to some more peers and receive their challenges.
+                completed * 100 / self.challenger_count
+            } else {
+                (((parts_per_proof * completed) + incomplete.iter().sum::<usize>()) * 100) /
+                (parts_per_proof * self.challenger_count)
+            };
             format!("{}/{} resource proof response(s) complete, {}% of data sent.",
                     completed,
                     self.challenger_count,
