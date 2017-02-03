@@ -403,10 +403,12 @@ impl PeerManager {
                             candidate_name: XorName,
                             client_auth: Authority<XorName>)
                             -> Result<(), RoutingError> {
-        if self.candidates.values().any(|candidate| !candidate.is_approved()) {
-            info!("{:?} Rejected {} as a new candidate: still handling previous one.",
+        if let Some((ongoing_name, _)) =
+            self.candidates.iter().find(|&(_, candidate)| !candidate.is_approved()) {
+            info!("{:?} Rejected {} as a new candidate: still handling attempt by {}.",
                   self,
-                  candidate_name);
+                  candidate_name,
+                  ongoing_name);
             return Err(RoutingError::AlreadyHandlingJoinRequest);
         }
         self.routing_table.should_join_our_section(&candidate_name)?;
@@ -1150,6 +1152,12 @@ impl PeerManager {
                 Ok(ConnectionInfoReceivedResult::IsConnected)
             }
             Some(peer) => {
+                warn!("{:?} Failed to insert connection info from {:?} ({:?}) as peer's current \
+                       state is {:?}",
+                      self,
+                      pub_id.name(),
+                      peer_id,
+                      peer.state);
                 let _ = self.peer_map.insert(peer);
                 Err(Error::UnexpectedState)
             }
