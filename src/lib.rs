@@ -158,6 +158,7 @@ mod id;
 mod message_filter;
 mod messages;
 mod node;
+mod outtray;
 mod peer_manager;
 mod routing_message_filter;
 mod routing_table;

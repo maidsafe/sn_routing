@@ -1,4 +1,5 @@
 use event::Event;
+use outtray::EventTray;
 use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::mem;
@@ -144,5 +145,13 @@ impl<T, Ev: Debug> Evented<T, Ev> {
 
     fn take_events(&mut self) -> Vec<Ev> {
         mem::replace(&mut self.events, vec![])
+    }
+}
+
+impl<T> Evented<T, Event> {
+    /// Extract the events to an EventTray
+    pub fn extract_to_tray(mut self, outtray: &mut EventTray) -> T {
+        outtray.send_events(self.take_events());
+        self.take_value()
     }
 }
