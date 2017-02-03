@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use ack_manager::{Ack, AckManager};
+use ack_manager::{ACK_TIMEOUT_SECS, Ack, AckManager};
 use action::Action;
 use cache::Cache;
 use crust::{ConnectionInfoResult, CrustError, PeerId, PrivConnectionInfo, PubConnectionInfo,
@@ -28,10 +28,11 @@ use id::{FullId, PublicId};
 use itertools::Itertools;
 use log::LogLevel;
 use maidsafe_utilities::serialisation;
-use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, Message, MessageContent,
+use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, MAX_PART_LEN, Message, MessageContent,
                RoutingMessage, SectionList, SignedMessage, UserMessage, UserMessageCache};
 use peer_manager::{ConnectionInfoPreparedResult, PeerManager, PeerState,
                    RESOURCE_PROOF_DURATION_SECS, SectionMap};
+use rand::{self, Rng};
 use resource_proof::ResourceProof;
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use routing_table::{Authority, OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix,
@@ -46,11 +47,11 @@ use signature_accumulator::{ACCUMULATION_TIMEOUT_SECS, SignatureAccumulator};
 use state_machine::Transition;
 use stats::Stats;
 use std::{cmp, fmt, iter, mem};
-use std::collections::{BTreeSet, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 #[cfg(feature = "use-mock-crust")]
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 use timer::Timer;
 use tunnels::Tunnels;
@@ -63,14 +64,20 @@ const TICK_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) after which a `GetNodeName` request is resent.
 const GET_NODE_NAME_TIMEOUT_SECS: u64 = 60;
 /// The number of required leading zero bits for the resource proof
-#[cfg(feature = "use-mock-crust")]
 const RESOURCE_PROOF_DIFFICULTY: u8 = 0;
-#[cfg(not(feature = "use-mock-crust"))]
-const RESOURCE_PROOF_DIFFICULTY: u8 = 8;
+/// The total size of the resource proof data.
+const RESOURCE_PROOF_TARGET_SIZE: usize = 250 * 1024 * 1024;
 /// Initial delay between a routing table change and sending a `RoutingTableRequest`, in seconds.
 const RT_MIN_TIMEOUT_SECS: u64 = 30;
 /// Maximal delay between two subsequent `RoutingTableRequest`s, in seconds.
 const RT_MAX_TIMEOUT_SECS: u64 = 300;
+/// Maximum time a new node will wait to receive `NodeApproval` after receiving a
+/// `GetNodeNameResponse`.  This covers the built-in delay of the process and also allows time for
+/// the message to accumulate and be sent via four different routes.
+const APPROVAL_TIMEOUT_SECS: u64 = RESOURCE_PROOF_DURATION_SECS + ACCUMULATION_TIMEOUT_SECS +
+                                   (4 * ACK_TIMEOUT_SECS);
+/// Interval between displaying info about ongoing approval progress, in seconds.
+const APPROVAL_PROGRESS_INTERVAL_SECS: u64 = 30;
 
 pub struct Node {
     ack_mgr: AckManager,
@@ -78,6 +85,8 @@ pub struct Node {
     crust_service: Service,
     full_id: FullId,
     get_approval_timer_token: Option<u64>,
+    approval_progress_timer_token: Option<u64>,
+    approval_expiry_time: Instant,
     is_first_node: bool,
     is_approved: bool,
     /// The queue of routing messages addressed to us. These do not themselves need
@@ -106,6 +115,13 @@ pub struct Node {
     routing_msg_backlog: Vec<RoutingMessage>,
     /// The timer token for sending a `CandidateApproval` message.
     candidate_timer_token: Option<u64>,
+    /// Map of ResourceProofResponse parts.
+    resource_proof_response_parts: HashMap<PeerId, Vec<DirectMessage>>,
+    /// Number of expected resource proof challengers.
+    challenger_count: usize,
+    /// Whether our proxy is expected to be sending us a resource proof challenge (in which case it
+    /// will be trivial) or not.
+    proxy_is_resource_proof_challenger: bool,
 }
 
 impl Node {
@@ -173,6 +189,8 @@ impl Node {
             crust_service: crust_service,
             full_id: full_id,
             get_approval_timer_token: None,
+            approval_progress_timer_token: None,
+            approval_expiry_time: Instant::now(),
             is_first_node: first_node,
             is_approved: first_node,
             msg_queue: VecDeque::new(),
@@ -192,6 +210,9 @@ impl Node {
             rt_timer_token: None,
             routing_msg_backlog: vec![],
             candidate_timer_token: None,
+            resource_proof_response_parts: HashMap::new(),
+            challenger_count: 0,
+            proxy_is_resource_proof_challenger: false,
         };
 
         if node.start_listening() {
@@ -209,35 +230,45 @@ impl Node {
             if self.stats.cur_client_num > old_client_num {
                 self.stats.cumulative_client_num += self.stats.cur_client_num - old_client_num;
             }
-            info!(target: "routing_stats", "{:?} - Connected clients: {}, cumulative: {}",
+            if self.is_approved {
+                info!(target: "routing_stats", "{:?} - Connected clients: {}, cumulative: {}",
                   self,
                   self.stats.cur_client_num,
                   self.stats.cumulative_client_num);
+            }
         }
         if self.stats.tunnel_connections != self.tunnels.tunnel_count() ||
            self.stats.tunnel_client_pairs != self.tunnels.client_count() {
             self.stats.tunnel_connections = self.tunnels.tunnel_count();
             self.stats.tunnel_client_pairs = self.tunnels.client_count();
-            info!(target: "routing_stats", "{:?} - Indirect connections: {}, tunneling for: {}",
-                  self,
-                  self.stats.tunnel_connections,
-                  self.stats.tunnel_client_pairs);
+            if self.is_approved {
+                info!(target: "routing_stats",
+                      "{:?} - Indirect connections: {}, tunnelling for: {}",
+                      self,
+                      self.stats.tunnel_connections,
+                      self.stats.tunnel_client_pairs);
+            }
         }
 
         if self.stats.cur_routing_table_size != self.peer_mgr.routing_table().len() {
             self.stats.cur_routing_table_size = self.peer_mgr.routing_table().len();
-
-            const TABLE_LVL: LogLevel = LogLevel::Info;
-            if log_enabled!(TABLE_LVL) {
-                let status_str = format!("{:?} {:?} - Routing Table size: {:3}",
-                                         self,
-                                         self.crust_service.id(),
-                                         self.stats.cur_routing_table_size);
-                let sep_str = iter::repeat('-').take(status_str.len()).collect::<String>();
-                log!(target: "routing_stats", TABLE_LVL, " -{}- ", sep_str);
-                log!(target: "routing_stats", TABLE_LVL, "| {} |", status_str);
-                log!(target: "routing_stats", TABLE_LVL, " -{}- ", sep_str);
+            if self.is_approved {
+                self.print_rt_size();
             }
+        }
+    }
+
+    fn print_rt_size(&self) {
+        const TABLE_LVL: LogLevel = LogLevel::Info;
+        if log_enabled!(TABLE_LVL) {
+            let status_str = format!("{:?} {:?} - Routing Table size: {:3}",
+                                     self,
+                                     self.crust_service.id(),
+                                     self.stats.cur_routing_table_size);
+            let sep_str = iter::repeat('-').take(status_str.len()).collect::<String>();
+            log!(target: "routing_stats", TABLE_LVL, " -{}- ", sep_str);
+            log!(target: "routing_stats", TABLE_LVL, "| {} |", status_str);
+            log!(target: "routing_stats", TABLE_LVL, " -{}- ", sep_str);
         }
     }
 
@@ -330,7 +361,7 @@ impl Node {
         while let Some(routing_msg) = self.msg_queue.pop_front() {
             if self.in_authority(&routing_msg.dst) {
                 if let Err(err) = self.dispatch_routing_message(routing_msg).extract(&mut result) {
-                    warn!("{:?} Routing message dispatch failed: {:?}", self, err);
+                    debug!("{:?} Routing message dispatch failed: {:?}", self, err);
                 }
             }
         }
@@ -345,7 +376,7 @@ impl Node {
         let mut result = Evented::empty();
 
         if self.is_first_node {
-            info!("{:?} - Started a new network as a seed node.", self);
+            info!("{:?} Started a new network as a seed node.", self);
             result.with_value(Transition::Stay)
         } else if let Err(error) = self.relocate() {
             error!("{:?} Failed to start relocation: {:?}", self, error);
@@ -417,10 +448,10 @@ impl Node {
         }
 
         if let Some(&pub_id) = self.peer_mgr.get_connecting_peer(&peer_id) {
-            info!("{:?} Failed to connect to peer {:?} with pub_id {:?}.",
-                  self,
-                  peer_id,
-                  pub_id);
+            debug!("{:?} Failed to connect to peer {:?} with pub_id {:?}.",
+                   self,
+                   peer_id,
+                   pub_id);
             self.find_tunnel_for_peer(peer_id, &pub_id);
         }
     }
@@ -503,8 +534,8 @@ impl Node {
                 if let Ok(public_id) = verify_signed_public_id(serialised_public_id, signature) {
                     self.handle_client_identify(public_id, peer_id, client_restriction).to_evented()
                 } else {
-                    warn!("{:?} Signature check failed in ClientIdentify - Dropping connection \
-                           {:?}",
+                    warn!("{:?} Signature check failed in ClientIdentify, so dropping connection \
+                           {:?}.",
                           self,
                           peer_id);
                     self.disconnect_peer(&peer_id);
@@ -515,7 +546,7 @@ impl Node {
                 if let Ok(public_id) = verify_signed_public_id(serialised_public_id, signature) {
                     self.handle_node_identify(public_id, peer_id).map(Ok)
                 } else {
-                    warn!("{:?} Signature check failed in NodeIdentify - Dropping peer {:?}",
+                    warn!("{:?} Signature check failed in NodeIdentify, so dropping peer {:?}.",
                           self,
                           peer_id);
                     self.disconnect_peer(&peer_id);
@@ -526,7 +557,8 @@ impl Node {
                 if let Ok(public_id) = verify_signed_public_id(serialised_public_id, signature) {
                     self.handle_candidate_identify(public_id, peer_id).map(Ok)
                 } else {
-                    warn!("{:?} Signature check failed in CandidateIdentify - Dropping peer {:?}",
+                    warn!("{:?} Signature check failed in CandidateIdentify, so dropping peer \
+                           {:?}.",
                           self,
                           peer_id);
                     self.disconnect_peer(&peer_id);
@@ -541,13 +573,21 @@ impl Node {
                 self.handle_resource_proof_request(peer_id, seed, target_size, difficulty)
                     .to_evented()
             }
-            ResourceProofResponse { proof, leading_zero_bytes } => {
-                self.handle_resource_proof_response(peer_id, proof, leading_zero_bytes);
+            ResourceProofResponseReceipt => {
+                self.handle_resource_proof_response_receipt(peer_id);
+                Ok(()).to_evented()
+            }
+            ResourceProofResponse { part_index, part_count, proof, leading_zero_bytes } => {
+                self.handle_resource_proof_response(peer_id,
+                                                    part_index,
+                                                    part_count,
+                                                    proof,
+                                                    leading_zero_bytes);
                 Ok(()).to_evented()
             }
             msg @ BootstrapIdentify { .. } |
             msg @ BootstrapDeny => {
-                debug!("{:?} - Unhandled direct message: {:?}", self, msg);
+                debug!("{:?} Unhandled direct message: {:?}", self, msg);
                 Ok(()).to_evented()
             }
         }
@@ -598,7 +638,7 @@ impl Node {
         let section = match self.get_section_list(&prefix) {
             Ok(section) => section,
             Err(err) => {
-                warn!("{:?} Error sending section list signature for {:?}: {:?}",
+                warn!("{:?} Error getting section list for {:?}: {:?}",
                       self,
                       prefix,
                       err);
@@ -608,7 +648,7 @@ impl Node {
         let serialised = match serialisation::serialise(&section) {
             Ok(serialised) => serialised,
             Err(err) => {
-                warn!("{:?} Error sending section list signature for {:?}: {:?}",
+                warn!("{:?} Error serialising section list for {:?}: {:?}",
                       self,
                       prefix,
                       err);
@@ -720,10 +760,10 @@ impl Node {
 
         match self.routing_msg_filter.filter_incoming(signed_msg.routing_message(), route) {
             FilteringResult::KnownMessageAndRoute => {
-                warn!("{:?} Duplicate message received on route {}: {:?}",
-                      self,
-                      route,
-                      signed_msg.routing_message());
+                debug!("{:?} Duplicate message received on route {}: {:?}",
+                       self,
+                       route,
+                       signed_msg.routing_message());
                 return Ok(());
             }
             FilteringResult::KnownMessage => {
@@ -909,8 +949,10 @@ impl Node {
             }
         };
 
-        info!("{:?} Sending NodeApproval to {}.",
+        info!("{:?} Our section with {:?} has approved candidate {}. Adding it to our routing \
+               table as a peer.",
               self,
+              self.peer_mgr.routing_table().our_prefix(),
               candidate_id.name());
         if let Err(error) = self.send_routing_message(RoutingMessage {
             src: Authority::Section(*candidate_id.name()),
@@ -937,7 +979,11 @@ impl Node {
         }
 
         self.get_approval_timer_token = None;
+        self.approval_progress_timer_token = None;
         if let Err(error) = self.peer_mgr.add_prefixes(sections.keys().cloned().collect()) {
+            info!("{:?} Received invalid prefixes in NodeApproval: {:?}. Restarting.",
+                  self,
+                  error);
             events.add_event(Event::RestartRequired);
             return events.with_value(Err(error));
         }
@@ -965,17 +1011,24 @@ impl Node {
             }
         }
 
+        info!("{:?} Resource proof challenges completed. This node has been approved to join the \
+               network!",
+              self);
         trace!("{:?} Node approval completed. Prefixes: {:?}",
                self,
                self.peer_mgr.routing_table().prefixes());
+        self.print_rt_size();
+        self.stats.enable_logging();
         events.add_event(Event::Connected);
         for name in self.peer_mgr.routing_table().iter() {
-            // TODO: try to remove this as safe_core/safe_vault may not reqiring this notification
+            // TODO: try to remove this as safe_core/safe_vault may not require this notification
             events.add_event(Event::NodeAdded(*name, self.peer_mgr.routing_table().clone()));
         }
         self.is_approved = true;
         let backlog = mem::replace(&mut self.routing_msg_backlog, vec![]);
         backlog.into_iter().rev().foreach(|msg| self.msg_queue.push_front(msg));
+        self.resource_proof_response_parts.clear();
+        self.reset_rt_timer();
         events.with_value(Ok(()))
     }
 
@@ -985,18 +1038,77 @@ impl Node {
                                      target_size: usize,
                                      difficulty: u8)
                                      -> Result<(), RoutingError> {
+        if self.resource_proof_response_parts.is_empty() {
+            info!("{:?} Starting approval process to test this node's resources. This will take \
+                   at least {} seconds.",
+                  self,
+                  RESOURCE_PROOF_DURATION_SECS);
+        }
+        let start = Instant::now();
         let rp_object = ResourceProof::new(target_size, difficulty);
         let mut proof = rp_object.create_proof_data(&seed);
-        let direct_message = DirectMessage::ResourceProofResponse {
-            proof: proof.clone(),
-            leading_zero_bytes: rp_object.create_proof(&mut proof),
+        let leading_zero_bytes = rp_object.create_proof(&mut proof);
+        let elapsed = start.elapsed();
+        let parts = proof.into_iter()
+            .chunks(MAX_PART_LEN)
+            .into_iter()
+            .map(|chunk| chunk.collect_vec())
+            .collect_vec();
+        let part_count = parts.len();
+        let mut messages = parts.into_iter()
+            .enumerate()
+            .rev()
+            .map(|(part_index, part)| {
+                DirectMessage::ResourceProofResponse {
+                    part_index: part_index,
+                    part_count: part_count,
+                    proof: part,
+                    leading_zero_bytes: leading_zero_bytes,
+                }
+            })
+            .collect_vec();
+        let first_message = match messages.pop() {
+            Some(message) => message,
+            None => {
+                DirectMessage::ResourceProofResponse {
+                    part_index: 0,
+                    part_count: 1,
+                    proof: vec![],
+                    leading_zero_bytes: leading_zero_bytes,
+                }
+            }
         };
-        self.send_direct_message(peer_id, direct_message)
+        let _ = self.resource_proof_response_parts.insert(peer_id, messages);
+        self.send_direct_message(peer_id, first_message)?;
+        trace!("{:?} created proof data in {}. Min section size: {}, Target size: {}, \
+                Difficulty: {}, Seed: {:?}",
+               self,
+               Self::format(elapsed),
+               self.min_section_size(),
+               target_size,
+               difficulty,
+               seed);
+        Ok(())
+    }
+
+    fn handle_resource_proof_response_receipt(&mut self, peer_id: PeerId) {
+        let popped_message =
+            self.resource_proof_response_parts.get_mut(&peer_id).and_then(Vec::pop);
+        if let Some(message) = popped_message {
+            if let Err(error) = self.send_direct_message(peer_id, message) {
+                debug!("{:?} Failed to send ResourceProofResponse to {:?}: {:?}",
+                       self,
+                       peer_id,
+                       error);
+            }
+        }
     }
 
     fn handle_resource_proof_response(&mut self,
                                       peer_id: PeerId,
-                                      proof: VecDeque<u8>,
+                                      part_index: usize,
+                                      part_count: usize,
+                                      proof: Vec<u8>,
                                       leading_zero_bytes: u64) {
         if self.candidate_timer_token.is_none() {
             debug!("{:?} Won't handle resource proof response from {:?} - not currently waiting.",
@@ -1014,27 +1126,44 @@ impl Node {
             return;
         };
 
-        if let Err(error) = self.peer_mgr
-            .verify_candidate(&name, proof, leading_zero_bytes, RESOURCE_PROOF_DIFFICULTY) {
-            debug!("{:?} Failed to verify candidate {}: {:?}",
-                   self,
-                   name,
-                   error);
-            self.candidate_timer_token = None;
-            return;
-        }
-        // For mock-crust tests, just send the `CandidateApproval` immediately.  Otherwise, wait for
-        // the timer to trigger sending the message in an effort to roughly synchronise this.
-        if cfg!(feature = "use-mock-crust") {
-            info!("{:?} Candidate {} passed our challenge.  Sending CandidateApproval.",
-                  self,
-                  name);
-            self.candidate_timer_token = None;
-            let _ = self.send_candidate_approval();
-        } else {
-            info!("{:?} Candidate {} passed our challenge.  Waiting to send CandidateApproval.",
-                  self,
-                  name);
+        match self.peer_mgr
+            .verify_candidate(&name, part_index, part_count, proof, leading_zero_bytes) {
+            Err(error) => {
+                debug!("{:?} Failed to verify candidate {}: {:?}",
+                       self,
+                       name,
+                       error);
+                self.candidate_timer_token = None;
+            }
+            Ok(None) => {
+                debug!("{:?} Candidate {} sent part {}/{}.",
+                       self,
+                       name,
+                       part_index + 1,
+                       part_count);
+                let _ =
+                    self.send_direct_message(peer_id, DirectMessage::ResourceProofResponseReceipt);
+            }
+            Ok(Some((target_size, difficulty, elapsed))) if difficulty == 0 &&
+                                                            target_size < 1000 => {
+                // Small tests don't require waiting for synchronisation. Send approval now.
+                info!("{:?} Candidate {} passed our challenge in {}. Sending approval to our \
+                       section with {:?}.",
+                      self,
+                      name,
+                      Self::format(elapsed),
+                      self.peer_mgr.routing_table().our_prefix());
+                self.candidate_timer_token = None;
+                let _ = self.send_candidate_approval();
+            }
+            Ok(Some((_, _, elapsed))) => {
+                info!("{:?} Candidate {} passed our challenge in {}. Waiting to send approval to \
+                       our section with {:?}.",
+                      self,
+                      name,
+                      Self::format(elapsed),
+                      self.peer_mgr.routing_table().our_prefix());
+            }
         }
     }
 
@@ -1133,9 +1262,8 @@ impl Node {
             content: request_content,
         };
 
-        info!("{:?} Sending GetNodeName request with: {:?}. This can take a while.",
-              self,
-              self.full_id.public_id());
+        info!("{:?} Requesting a relocated name from the network. This can take a while.",
+              self);
 
         self.send_routing_message(request_msg)
     }
@@ -1152,19 +1280,20 @@ impl Node {
                               client_restriction: bool)
                               -> Result<(), RoutingError> {
         if !client_restriction && !self.crust_service.is_peer_whitelisted(&peer_id) {
-            warn!("{:?} Client is not whitelisted - dropping", self);
+            warn!("{:?} Client is not whitelisted, so dropping connection.",
+                  self);
             self.disconnect_peer(&peer_id);
             return Ok(());
         }
         if *public_id.name() != XorName(sha256::hash(&public_id.signing_public_key().0).0) {
-            warn!("{:?} Incoming Connection not validated as a proper client - dropping",
+            warn!("{:?} Incoming connection not validated as a proper client, so dropping it.",
                   self);
             self.disconnect_peer(&peer_id);
             return Ok(());
         }
 
         for peer_id in self.peer_mgr.remove_expired_joining_nodes() {
-            debug!("{:?} Removing stale joining node with Crust ID {:?}",
+            debug!("{:?} Removing stale joining node with peer ID {:?}",
                    self,
                    peer_id);
             self.disconnect_peer(&peer_id);
@@ -1187,7 +1316,7 @@ impl Node {
         };
 
         if non_unique {
-            debug!("{:?} Received two ClientInfo from the same peer ID {:?}.",
+            debug!("{:?} Received two ClientInfo messages from the same peer ID {:?}.",
                    self,
                    peer_id);
         }
@@ -1218,33 +1347,53 @@ impl Node {
 
     fn handle_candidate_identify(&mut self, public_id: PublicId, peer_id: PeerId) -> Evented<()> {
         let mut result = Evented::empty();
-        debug!("{:?} Handling CandidateIdentify from {:?}.",
-               self,
-               public_id.name());
-        match self.peer_mgr.handle_candidate_identify(&public_id, &peer_id) {
-            Ok(Some((seed, target_size))) => {
+        let name = public_id.name();
+        debug!("{:?} Handling CandidateIdentify from {:?}.", self, name);
+        let (difficulty, target_size) = if self.crust_service.is_peer_hard_coded(&peer_id) ||
+                                           self.peer_mgr.get_joining_node(&peer_id).is_some() {
+            (0, 1)
+        } else {
+            (RESOURCE_PROOF_DIFFICULTY,
+             RESOURCE_PROOF_TARGET_SIZE / (self.peer_mgr.routing_table().our_section().len() + 1))
+        };
+        let seed: Vec<u8> = if cfg!(feature = "use-mock-crust") {
+            vec![5u8; 4]
+        } else {
+            rand::thread_rng().gen_iter().take(10).collect()
+        };
+        match self.peer_mgr.handle_candidate_identify(&public_id,
+                                                      &peer_id,
+                                                      target_size,
+                                                      difficulty,
+                                                      seed.clone()) {
+            Ok(true) => {
                 let direct_message = DirectMessage::ResourceProof {
                     seed: seed,
                     target_size: target_size,
-                    difficulty: RESOURCE_PROOF_DIFFICULTY,
+                    difficulty: difficulty,
                 };
                 if let Err(error) = self.send_direct_message(peer_id, direct_message) {
                     debug!("{:?} failed requesting resource_proof from node candidate {:?}/{:?}.",
                            self,
-                           public_id.name(),
+                           name,
                            error);
+                } else {
+                    info!("{:?} Sending resource proof challenge to candidate {}",
+                          self,
+                          public_id.name());
                 }
             }
-            Ok(None) => {
-                debug!("{:?} adding {:?} into routing table.",
-                       self,
-                       public_id.name());
+            Ok(false) => {
+                info!("{:?} Adding candidate {} to routing table without sending resource proof \
+                       challenge as section has already approved it.",
+                      self,
+                      public_id.name());
                 self.add_to_routing_table(&public_id, &peer_id).extract(&mut result);
             }
             Err(error) => {
                 debug!("{:?} failed to handle CandidateIdentify from {:?}: {:?} - disconnecting",
                        self,
-                       public_id.name(),
+                       name,
                        error);
                 self.disconnect_peer(&peer_id);
             }
@@ -1410,7 +1559,20 @@ impl Node {
                                        result: Result<PrivConnectionInfo, CrustError>) {
         let our_connection_info = match result {
             Err(err) => {
-                error!("{:?} Failed to prepare connection info: {:?}", self, err);
+                error!("{:?} Failed to prepare connection info: {:?}. Retrying.",
+                       self,
+                       err);
+                let new_token = match self.peer_mgr.get_new_connection_info_token(result_token) {
+                    Err(error) => {
+                        debug!("{:?} Failed to prepare connection info, but no entry found in \
+                               token map: {:?}",
+                               self,
+                               error);
+                        return;
+                    }
+                    Ok(new_token) => new_token,
+                };
+                self.crust_service.prepare_connection_info(new_token);
                 return;
             }
             Ok(connection_info) => connection_info,
@@ -1470,11 +1632,11 @@ impl Node {
         match self.peer_mgr
             .connection_info_received(src, dst, public_id, their_connection_info, message_id) {
             Ok(Ready(our_info, their_info)) => {
-                info!("{:?} Already sent a connection info request to {:?} ({:?}); resending our \
-                      same details as a response.",
-                      self,
-                      public_id.name(),
-                      peer_id);
+                debug!("{:?} Already sent a connection info request to {:?} ({:?}); resending \
+                        our same details as a response.",
+                       self,
+                       public_id.name(),
+                       peer_id);
                 self.send_connection_info(our_info.to_pub_connection_info(),
                                           public_id,
                                           dst,
@@ -1493,14 +1655,7 @@ impl Node {
                 try_ev!(self.send_node_identify(peer_id), result);
                 self.handle_node_identify(public_id, peer_id).extract(&mut result);
             }
-            Ok(Waiting) | Ok(IsConnected) => (),
-            Err(error) => {
-                warn!("{:?} Failed to insert connection info from {:?} ({:?}): {:?}",
-                      self,
-                      public_id.name(),
-                      peer_id,
-                      error)
-            }
+            Ok(Waiting) | Ok(IsConnected) | Err(_) => (),
         }
         result.with_value(Ok(()))
     }
@@ -1542,11 +1697,11 @@ impl Node {
             Ok(IsProxy) |
             Ok(IsClient) |
             Ok(IsJoiningNode) => {
-                warn!("{:?} Received connection info response from {:?} ({:?}) when we haven't \
+                debug!("{:?} Received connection info response from {:?} ({:?}) when we haven't \
                       sent a corresponding request",
-                      self,
-                      public_id.name(),
-                      peer_id);
+                       self,
+                       public_id.name(),
+                       peer_id);
             }
             Ok(Waiting) | Ok(IsConnected) => (),
             Err(error) => {
@@ -1726,15 +1881,28 @@ impl Node {
             return Evented::empty();
         }
 
-        let duration = Duration::from_secs(RESOURCE_PROOF_DURATION_SECS +
-                                           ACCUMULATION_TIMEOUT_SECS);
+        let duration = Duration::from_secs(APPROVAL_TIMEOUT_SECS);
+        self.approval_expiry_time = Instant::now() + duration;
         self.get_approval_timer_token = Some(self.timer.schedule(duration));
+        self.approval_progress_timer_token = Some(self.timer
+            .schedule(Duration::from_secs(APPROVAL_PROGRESS_INTERVAL_SECS)));
 
         self.full_id.public_id_mut().set_name(*relocated_id.name());
         self.peer_mgr.reset_routing_table(*self.full_id.public_id());
+        self.challenger_count = section.len();
+        if let Some((_, proxy_public_id)) = self.peer_mgr.proxy() {
+            if section.contains(proxy_public_id) {
+                self.proxy_is_resource_proof_challenger = true;
+                // exclude the proxy as it sends a trivial challenge
+                self.challenger_count -= 1;
+            }
+        }
         trace!("{:?} GetNodeName completed. Prefixes: {:?}",
                self,
                self.peer_mgr.routing_table().prefixes());
+        info!("{:?} Received relocated name. Establishing connections to {} peers.",
+              self,
+              section.len());
         let mut result = Evented::empty();
 
         for pub_id in &section {
@@ -1769,14 +1937,16 @@ impl Node {
             return Ok(());
         }
 
-        // TODO - do we need to reply if `candidate_id` triggers a failure here?
         self.peer_mgr.expect_candidate(*candidate_id.name(), client_auth)?;
         let response_content = MessageContent::AcceptAsCandidate {
             expect_id: candidate_id,
             client_auth: client_auth,
             message_id: message_id,
         };
-        trace!("{:?} Responding to section {:?}.", self, response_content);
+        info!("{:?} Expecting candidate {} via {:?}.",
+              self,
+              candidate_id.name(),
+              client_auth);
         self.send_routing_message(RoutingMessage {
             src: Authority::Section(*candidate_id.name()),
             dst: Authority::Section(*candidate_id.name()),
@@ -1803,16 +1973,20 @@ impl Node {
         self.candidate_timer_token = Some(self.timer
             .schedule(Duration::from_secs(RESOURCE_PROOF_DURATION_SECS)));
 
-        let own_section = self.peer_mgr.accept_as_candidate(*candidate_id.name(), client_auth)?;
+        let own_section = self.peer_mgr.accept_as_candidate(*candidate_id.name(), client_auth);
         let response_content = MessageContent::GetNodeNameResponse {
             relocated_id: candidate_id,
             section: own_section,
             message_id: message_id,
         };
-        trace!("{:?} Responding to candidate {:?}: {:?}.",
+        info!("{:?} Our section with {:?} accepted {} as a candidate.",
+              self,
+              self.peer_mgr.routing_table().our_prefix(),
+              candidate_id.name());
+        trace!("{:?} Sending {:?} to {:?}",
                self,
-               client_auth,
-               response_content);
+               response_content,
+               client_auth);
         self.send_routing_message(RoutingMessage {
             src: Authority::Section(*candidate_id.name()),
             dst: client_auth,
@@ -1836,7 +2010,7 @@ impl Node {
             if rt_pfx.bit_count() >= prefix.bit_count() {
                 break;
             }
-            info!("{:?} Splitting {:?} on section update.", self, rt_pfx);
+            debug!("{:?} Splitting {:?} on section update.", self, rt_pfx);
             let _ = self.handle_section_split(rt_pfx, rt_pfx.lower_bound());
         }
         // Filter list of members to just those we don't know about:
@@ -1959,8 +2133,9 @@ impl Node {
             self.disconnect_peer(&peer_id);
             info!("{:?} Dropped {:?} from the routing table.", self, name);
         }
-        info!("{:?} Split completed. Prefixes: {:?}",
+        info!("{:?} Section split for {:?} completed. Prefixes: {:?}",
               self,
+              prefix,
               self.peer_mgr.routing_table().prefixes());
 
         self.merge_if_necessary();
@@ -2071,13 +2246,11 @@ impl Node {
 
     /// Returns true if the calling node should keep running, false for terminate.
     fn handle_timeout(&mut self, token: u64) -> Evented<bool> {
-        let mut events = Evented::empty();
         if self.get_approval_timer_token == Some(token) {
-            info!("{:?} Failed to get approval from the network.", self);
-            events.add_event(Event::RestartRequired);
-            return events.with_value(false);
+            return self.handle_approval_timeout();
         }
 
+        let mut events = Evented::empty();
         if self.tick_timer_token == token {
             let tick_period = Duration::from_secs(TICK_TIMEOUT_SECS);
             self.tick_timer_token = self.timer.schedule(tick_period);
@@ -2104,6 +2277,25 @@ impl Node {
             if self.send_candidate_approval().is_err() {
                 return events.with_value(true);
             }
+        } else if self.approval_progress_timer_token == Some(token) {
+            self.approval_progress_timer_token = Some(self.timer
+                .schedule(Duration::from_secs(APPROVAL_PROGRESS_INTERVAL_SECS)));
+            let now = Instant::now();
+            let remaining_duration = if now < self.approval_expiry_time {
+                let duration = self.approval_expiry_time - now;
+                if duration.subsec_nanos() >= 500_000_000 {
+                    duration.as_secs() + 1
+                } else {
+                    duration.as_secs()
+                }
+            } else {
+                0
+            };
+            info!("{:?} {} {}/{} seconds remaining.",
+                  self,
+                  self.resource_proof_response_progress(),
+                  remaining_duration,
+                  APPROVAL_TIMEOUT_SECS);
         }
 
         self.resend_unacknowledged_timed_out_msgs(token);
@@ -2111,18 +2303,39 @@ impl Node {
         events.with_value(true)
     }
 
+    // This will be called if `GetNodeNameResponse` times out, or if the subsequent `NodeApproval`
+    // times out.
+    fn handle_approval_timeout(&mut self) -> Evented<bool> {
+        let mut events = Evented::empty();
+        if self.resource_proof_response_parts.is_empty() {
+            // `GetNodeNameResponse` has timed out.
+            info!("{:?} Failed to get relocated name from the network, so restarting.",
+                  self);
+            events.add_event(Event::RestartRequired);
+        } else {
+            // `NodeApproval` has timed out.
+            info!("{:?} Failed to get approval from the network. {} Terminating node.",
+                  self,
+                  self.resource_proof_response_progress());
+            events.add_event(Event::Terminate);
+        }
+        events.with_value(false)
+    }
+
     fn send_rt_request(&mut self) -> Result<(), RoutingError> {
-        let msg_id = MessageId::new();
-        self.rt_msg_id = Some(msg_id);
-        let sections = self.peer_mgr.pub_ids_by_section();
-        let digest = sha256::hash(&serialisation::serialise(&sections)?);
-        let request_msg = RoutingMessage {
-            src: Authority::ManagedNode(*self.name()),
-            dst: Authority::PrefixSection(*self.peer_mgr.routing_table().our_prefix()),
-            content: MessageContent::RoutingTableRequest(msg_id, digest),
-        };
-        if let Err(err) = self.send_routing_message(request_msg) {
-            debug!("{:?} Failed to send RoutingTableRequest: {:?}.", self, err);
+        if self.is_approved {
+            let msg_id = MessageId::new();
+            self.rt_msg_id = Some(msg_id);
+            let sections = self.peer_mgr.pub_ids_by_section();
+            let digest = sha256::hash(&serialisation::serialise(&sections)?);
+            let request_msg = RoutingMessage {
+                src: Authority::ManagedNode(*self.name()),
+                dst: Authority::PrefixSection(*self.peer_mgr.routing_table().our_prefix()),
+                content: MessageContent::RoutingTableRequest(msg_id, digest),
+            };
+            if let Err(err) = self.send_routing_message(request_msg) {
+                debug!("{:?} Failed to send RoutingTableRequest: {:?}.", self, err);
+            }
         }
         Ok(())
     }
@@ -2148,9 +2361,10 @@ impl Node {
             dst: dst,
             content: response_content,
         };
-        info!("{:?} Resource proof duration has passed.  Sending {:?}.",
+        info!("{:?} Resource proof duration has finished. Voting to approve candidate {}.",
               self,
-              response_msg);
+              candidate_id.name());
+        trace!("{:?} Sending {:?}.", self, response_msg);
         if let Err(error) = self.send_routing_message(response_msg) {
             debug!("{:?} Failed sending CandidateApproval: {:?}", self, error);
         }
@@ -2240,7 +2454,7 @@ impl Node {
             let serialised = self.to_tunnel_hop_bytes(signed_msg.clone(), route, sent_to, target)?;
             (tunnel_id, serialised)
         } else {
-            trace!("{:?} Not connected or tunneling to {:?}. Dropping peer.",
+            trace!("{:?} Not connected or tunnelling to {:?}. Dropping peer.",
                    self,
                    target);
             self.disconnect_peer(&target);
@@ -2358,12 +2572,12 @@ impl Node {
             if let Some(&peer_id) = self.peer_mgr.get_proxy_peer_id(proxy_node_name) {
                 Ok((BTreeSet::new(), vec![peer_id]))
             } else {
-                error!("{:?} - Unable to find connection to proxy node in proxy map",
+                error!("{:?} Unable to find connection to proxy node in proxy map.",
                        self);
                 Err(RoutingError::ProxyConnectionNotFound)
             }
         } else {
-            error!("{:?} - Source should be client if our state is a Client",
+            error!("{:?} Source should be client if our state is a Client.",
                    self);
             Err(RoutingError::InvalidSource)
         }
@@ -2442,14 +2656,17 @@ impl Node {
             return result.map(Ok);
         }
 
-        let our_pub_info = if let Some(&PeerState::ConnectionInfoReady(ref our_priv_info)) =
-            self.peer_mgr.get_state_by_name(&their_name) {
-            our_priv_info.to_pub_connection_info()
-        } else {
-            trace!("{:?} Not sending connection info request to {:?}",
-                   self,
-                   their_name);
-            return result.map(Ok);
+        let our_pub_info = match self.peer_mgr.get_state_by_name(&their_name) {
+            Some(&PeerState::ConnectionInfoReady(ref our_priv_info)) => {
+                our_priv_info.to_pub_connection_info()
+            }
+            state => {
+                trace!("{:?} Not sending connection info request to {:?}. State: {:?}",
+                       self,
+                       their_name,
+                       state);
+                return result.map(Ok);
+            }
         };
         trace!("{:?} Resending connection info request to {:?}",
                self,
@@ -2525,10 +2742,8 @@ impl Node {
                 .remove_signatures_by(*pub_id, self.peer_mgr.routing_table().our_section().len());
         }
 
-        if self.peer_mgr.routing_table().len() < self.min_section_size() - 1 {
-            debug!("{:?} Lost connection, less than {} remaining.",
-                   self,
-                   self.min_section_size() - 1);
+        if self.peer_mgr.routing_table().is_empty() {
+            debug!("{:?} Lost all routing connections.", self);
             if !self.is_first_node {
                 result.add_event(Event::RestartRequired);
                 return result.with_value(false);
@@ -2653,6 +2868,62 @@ impl Node {
             self.send_message(&dst_id, Message::Direct(direct_message))
         }
     }
+
+    // For the ongoing collection of `ResourceProofResponse` messages, returns a tuple comprising:
+    // the `part_count` they all use; the number of fully-completed ones; a vector for the
+    // incomplete ones specifying how many parts have been sent to each peer; and a `String`
+    // containing this info.
+    fn resource_proof_response_progress(&self) -> String {
+        let mut parts_per_proof = 0;
+        let mut completed: usize = 0;
+        let mut incomplete = vec![];
+        for messages in self.resource_proof_response_parts.values() {
+            if let Some(next_message) = messages.last() {
+                match *next_message {
+                    DirectMessage::ResourceProofResponse { part_index, part_count, .. } => {
+                        parts_per_proof = part_count;
+                        incomplete.push(part_index);
+                    }
+                    _ => return String::new(),  // invalid situation
+                }
+            } else {
+                completed += 1;
+            }
+        }
+
+        if self.proxy_is_resource_proof_challenger {
+            completed = completed.saturating_sub(1);
+        }
+
+        if self.resource_proof_response_parts.is_empty() {
+            "No resource proof challenges received yet; still establishing connections to peers."
+                .to_string()
+        } else if self.challenger_count == completed {
+            format!("All {} resource proof responses fully sent.", completed)
+        } else {
+            let progress = if parts_per_proof == 0 {
+                // We've completed all challenges for those peers we've connected to, but are still
+                // waiting to connect to some more peers and receive their challenges.
+                completed * 100 / self.challenger_count
+            } else {
+                (((parts_per_proof * completed) + incomplete.iter().sum::<usize>()) * 100) /
+                (parts_per_proof * self.challenger_count)
+            };
+            format!("{}/{} resource proof response(s) complete, {}% of data sent.",
+                    completed,
+                    self.challenger_count,
+                    progress)
+        }
+    }
+
+    fn format(duration: Duration) -> String {
+        format!("{} seconds",
+                if duration.subsec_nanos() >= 500_000_000 {
+                    duration.as_secs() + 1
+                } else {
+                    duration.as_secs()
+                })
+    }
 }
 
 impl Base for Node {
@@ -2681,7 +2952,7 @@ impl Base for Node {
 
     fn handle_lost_peer(&mut self, peer_id: PeerId) -> Evented<Transition> {
         if peer_id == self.crust_service.id() {
-            error!("{:?} LostPeer fired with our crust peer id", self);
+            error!("{:?} LostPeer fired with our crust peer ID.", self);
             return Transition::Stay.to_evented();
         }
 

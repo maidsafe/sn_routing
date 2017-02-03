@@ -82,7 +82,7 @@ impl Bootstrapping {
         match action {
             Action::ClientSendRequest { ref result_tx, .. } |
             Action::NodeSendMessage { ref result_tx, .. } => {
-                warn!("{:?} - Cannot handle {:?} - not bootstrapped", self, action);
+                warn!("{:?} Cannot handle {:?} - not bootstrapped", self, action);
                 // TODO: return Err here eventually. Returning Ok for now to
                 // preserve the pre-refactor behaviour.
                 let _ = result_tx.send(Ok(()));
@@ -218,8 +218,7 @@ impl Bootstrapping {
 
     fn handle_bootstrap_identify(&mut self, public_id: PublicId, peer_id: PeerId) -> Transition {
         if *public_id.name() == XorName(sha256::hash(&public_id.signing_public_key().0).0) {
-            warn!("{:?} Incoming Connection not validated as a proper node - dropping",
-                  self);
+            warn!("{:?} Incoming connection is client - dropping", self);
             self.rebootstrap();
             return Transition::Stay;
         }

@@ -57,7 +57,7 @@ pub trait Bootstrapped: Base {
         let ack = match Ack::compute(signed_msg.routing_message()) {
             Ok(ack) => ack,
             Err(error) => {
-                error!("Failed to create ack: {:?}", error);
+                error!("{:?} Failed to create ack: {:?}", self, error);
                 return true;
             }
         };
@@ -133,13 +133,13 @@ pub trait Bootstrapped: Base {
         let response = match RoutingMessage::ack_from(routing_msg, src) {
             Ok(response) => response,
             Err(error) => {
-                error!("{:?} - Failed to create ack: {:?}", self, error);
+                error!("{:?} Failed to create ack: {:?}", self, error);
                 return;
             }
         };
 
         if let Err(error) = self.send_routing_message_via_route(response, route) {
-            error!("{:?} - Failed to send ack: {:?}", self, error);
+            error!("{:?} Failed to send ack: {:?}", self, error);
         }
     }
 

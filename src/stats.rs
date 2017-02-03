@@ -18,7 +18,7 @@
 use messages::{DirectMessage, MessageContent, Request, Response, RoutingMessage, UserMessage};
 
 /// The number of messages after which the message statistics should be printed.
-const MSG_LOG_COUNT: usize = 1000;
+const MSG_LOG_COUNT: usize = 5000;
 
 /// A collection of counters to gather Routing statistics.
 #[derive(Default)]
@@ -40,6 +40,7 @@ pub struct Stats {
     msg_direct_sig: usize,
     msg_direct_resource_proof: usize,
     msg_direct_resource_proof_rsp: usize,
+    msg_direct_resource_proof_rsp_receipt: usize,
     msg_direct_sls: usize,
 
     msg_get: usize,
@@ -81,6 +82,8 @@ pub struct Stats {
 
     msg_total: usize,
     msg_total_bytes: u64,
+
+    should_log: bool,
 }
 
 impl Stats {
@@ -172,6 +175,7 @@ impl Stats {
             SectionListSignature(..) => self.msg_direct_sls += 1,
             ResourceProof { .. } => self.msg_direct_resource_proof += 1,
             ResourceProofResponse { .. } => self.msg_direct_resource_proof_rsp += 1,
+            ResourceProofResponseReceipt => self.msg_direct_resource_proof_rsp_receipt += 1,
             BootstrapIdentify { .. } |
             BootstrapDeny |
             ClientIdentify { .. } |
@@ -187,11 +191,15 @@ impl Stats {
         self.msg_total_bytes += len as u64;
     }
 
+    pub fn enable_logging(&mut self) {
+        self.should_log = true;
+    }
+
     /// Increments the total message count, and if the count is divisible by
     /// `MSG_LOG_COUNT` logs a message with the counts.
     fn increment_msg_total(&mut self) {
         self.msg_total += 1;
-        if self.msg_total % MSG_LOG_COUNT == 0 {
+        if self.should_log && self.msg_total % MSG_LOG_COUNT == 0 {
             info!(target: "routing_stats",
                   "Stats - Sent {} messages in total, comprising {} bytes, {} uncategorised, \
                    routes/failed: {:?}/{}",
@@ -202,12 +210,13 @@ impl Stats {
                   self.unacked_msgs);
             info!(target: "routing_stats",
                   "Stats - Direct - NodeIdentify: {}, CandidateIdentify: {}, \
-                   MessageSignature: {}, ResourceProof: {}/{}, SectionListSignature: {}",
+                   MessageSignature: {}, ResourceProof: {}/{}/{}, SectionListSignature: {}",
                   self.msg_direct_node_identify,
                   self.msg_direct_candidate_identify,
                   self.msg_direct_sig,
                   self.msg_direct_resource_proof,
                   self.msg_direct_resource_proof_rsp,
+                  self.msg_direct_resource_proof_rsp_receipt,
                   self.msg_direct_sls);
             info!(target: "routing_stats",
                   "Stats - Hops (Request/Response) - GetNodeName: {}/{}, ExpectCandidate: {}, \

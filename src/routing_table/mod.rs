@@ -656,9 +656,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         // TODO: Return an error if they are not compatible instead?
         if !self.our_prefix.is_compatible(&merge_details.merge_prefix) ||
            self.our_prefix.bit_count() != merge_details.merge_prefix.bit_count() + 1 {
-            warn!("{:?}: Attempt to call merge_own_section() for an already merged prefix {:?}",
-                  self.our_name,
-                  merge_details.merge_prefix);
+            debug!("{:?}: Attempt to call merge_own_section() for an already merged prefix {:?}",
+                   self.our_name,
+                   merge_details.merge_prefix);
             return OwnMergeState::AlreadyMerged;
         }
         for prefix in merge_details.sections.keys() {

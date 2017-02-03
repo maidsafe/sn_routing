@@ -22,7 +22,7 @@ before_script:
   - if [ "${TRAVIS_RUST_VERSION}" = stable ]; then
       rustfmt_vers=0.7.0;
       if ! cargo fmt -- --version | grep -q $rustfmt_vers; then
-        cargo install rustfmt --vers=$rustfmt_vers --force;
+        cargo install rustfmt --vers==$rustfmt_vers --force;
       fi
     elif [ "${TRAVIS_OS_NAME}" = linux ]; then
       clippy_vers=0.0.104;
@@ -39,7 +39,7 @@ script:
         cargo rustc --verbose --example ci_test -- -Zno-trans &&
         cargo rustc --verbose --example key_value_store -- -Zno-trans &&
         cargo rustc --verbose -- -Zno-trans &&
-        env RUSTFLAGS="-C codegen-units=8" cargo test --release --verbose --features use-mock-crust
+        env RUSTFLAGS="-C opt-level=2 -C codegen-units=8" cargo test --release --verbose --features use-mock-crust
       );
     elif [ "${TRAVIS_OS_NAME}" = linux ]; then
       (

@@ -1,5 +1,39 @@
 # Routing - Change Log
 
+## [0.28.1]
+- Retry preparing connection info if Crust returns an error.
+
+## [0.28.0]
+- Profile the bandwidth of nodes joining the network. Reject slow nodes.
+- Organise nodes into disjoint sections. Introduce the `Section` and
+  `PrefixSection` authorities.
+- Maintain lists of signatures of neighbouring sections, which will enable
+  secure  message validation.
+- Accumulate messages in the sending group/section, then send the messages with
+  all the signatures across a single route. This reduces the number of total
+  invididual hop messages that need to be sent.
+- Routes are now disjoint: Retrying to send a message along a different route
+  cannot potentially fail on the same node again.
+- Merge the routing_table crate into routing.
+- Remove the internal event handling thread. Events should be handled in the
+  upper library's event loop. That way, some message passing can be replaced by
+  direct calls to routing methods.
+- Remove the `PlainData` type which was only used in tests.
+
+## [0.27.1]
+- Increase the ID size limit by 10 kB.
+
+## [0.27.0]
+- add `NO_OWNER_PUB_KEY` to make data effectively immutable
+- disallow that key together with other owners (new error `InvalidOwners`)
+- provide API for data chunk size validation (new error `DataTooLarge`)
+- support new deletion paradigm for structured data
+
+## [0.26.0]
+- Add the public and private appendable data types.
+- Allow whitelisting nodes via the crust config file.
+- Randomise message handling order in the mock crust tests.
+
 ## [0.25.1]
 - Fix a panic in ack manager.
 
