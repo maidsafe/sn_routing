@@ -65,6 +65,11 @@ impl<Ev: Debug> Evented<(), Ev> {
         Evented::new(vec![], ())
     }
 
+    /// Construct a valueless Evented struct with some events
+    pub fn empty_with_events(events: Vec<Ev>) -> Self {
+        Evented::new(events, ())
+    }
+
     /// Add a value to a valueless Evented struct.
     pub fn with_value<T>(self, val: T) -> Evented<T, Ev> {
         Evented::new(self.into_events(), val)

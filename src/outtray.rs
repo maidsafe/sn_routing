@@ -43,6 +43,7 @@
 // impl OutTray for OutBox { ... }
 
 use event::Event;
+use evented::Evented;
 use std::default::Default;
 use std::mem;
 
@@ -78,6 +79,13 @@ impl EventTray {
     /// Extract the list of events (swapping in an empty list)
     pub fn take_events(&mut self) -> Vec<Event> {
         mem::replace(&mut self.events, vec![])
+    }
+
+    /// Convert to an Evented<()>
+    ///
+    /// Note: chain .with_value to add another value
+    pub fn into_evented(mut self) -> Evented<()> {
+        Evented::empty_with_events(self.take_events())
     }
 }
 
