@@ -290,12 +290,19 @@ enum CandidateState {
     Approved,
 }
 
+#[derive(Debug)]
+struct ChallengeResponse {
+    target_size: usize,
+    difficulty: u8,
+    seed: Vec<u8>,
+    proof: VecDeque<u8>,
+}
+
 /// Holds the information of the joining node.
 #[derive(Debug)]
 struct Candidate {
     insertion_time: Instant,
-    /// The target size, difficulty and seed.
-    resource_proof: Option<(usize, u8, Vec<u8>, VecDeque<u8>)>,
+    challenge_response: Option<ChallengeResponse>,
     client_auth: Authority<XorName>,
     state: CandidateState,
     passed_our_challenge: bool,
@@ -305,7 +312,7 @@ impl Candidate {
     fn new(client_auth: Authority<XorName>) -> Candidate {
         Candidate {
             insertion_time: Instant::now(),
-            resource_proof: None,
+            challenge_response: None,
             client_auth: client_auth,
             state: CandidateState::VotedFor,
             passed_our_challenge: false,
@@ -405,10 +412,10 @@ impl PeerManager {
                             -> Result<(), RoutingError> {
         if let Some((ongoing_name, _)) =
             self.candidates.iter().find(|&(_, candidate)| !candidate.is_approved()) {
-            info!("{:?} Rejected {} as a new candidate: still handling attempt by {}.",
-                  self,
-                  candidate_name,
-                  ongoing_name);
+            trace!("{:?} Rejected {} as a new candidate: still handling attempt by {}.",
+                   self,
+                   candidate_name,
+                   ongoing_name);
             return Err(RoutingError::AlreadyHandlingJoinRequest);
         }
         self.routing_table.should_join_our_section(&candidate_name)?;
@@ -447,20 +454,24 @@ impl PeerManager {
         } else {
             return Err(RoutingError::UnknownCandidate);
         };
-        let &mut (target_size, difficulty, ref seed, ref mut proof) = if let Some(ref mut rp) =
-            candidate.resource_proof {
+        let challenge_response = &mut (if let Some(ref mut rp) = candidate.challenge_response {
             rp
         } else {
             return Err(RoutingError::FailedResourceProofValidation);
-        };
-        proof.extend(proof_part);
+        });
+        challenge_response.proof.extend(proof_part);
         if part_index + 1 != part_count {
             return Ok(None);
         }
-        let rp_object = ResourceProof::new(target_size, difficulty);
-        if rp_object.validate_all(seed, proof, leading_zero_bytes) {
+        let rp_object = ResourceProof::new(challenge_response.target_size,
+                                           challenge_response.difficulty);
+        if rp_object.validate_all(&challenge_response.seed,
+                                  &challenge_response.proof,
+                                  leading_zero_bytes) {
             candidate.passed_our_challenge = true;
-            Ok(Some((target_size, difficulty, candidate.insertion_time.elapsed())))
+            Ok(Some((challenge_response.target_size,
+                     challenge_response.difficulty,
+                     candidate.insertion_time.elapsed())))
         } else {
             Err(RoutingError::FailedResourceProofValidation)
         }
@@ -558,14 +569,55 @@ impl PeerManager {
                 if tunnel {
                     Err(RoutingError::CandidateIsTunnelling)
                 } else {
-                    candidate.resource_proof =
-                        Some((target_size, difficulty, seed, VecDeque::new()));
+                    candidate.challenge_response = Some(ChallengeResponse {
+                        target_size: target_size,
+                        difficulty: difficulty,
+                        seed: seed,
+                        proof: VecDeque::new(),
+                    });
                     Ok(true)
                 }
             }
         } else {
             Err(RoutingError::UnknownCandidate)
         }
+    }
+
+    /// Logs info about ongoing candidate state, if any.
+    pub fn show_candidate_status(&self) {
+        let mut have_candidate = false;
+        for (name, candidate) in self.candidates.iter().filter(|&(_, cand)| !cand.is_expired()) {
+            have_candidate = true;
+            let mut log_msg = format!("{:?} Candidate {} ", self, name);
+            match candidate.challenge_response {
+                Some(ChallengeResponse { ref target_size, ref proof, .. }) => {
+                    if candidate.passed_our_challenge {
+                        log_msg = format!("{}has passed our challenge ", log_msg);
+                    } else if proof.is_empty() {
+                        log_msg = format!("{}hasn't responded to our challenge yet ", log_msg);
+                    } else {
+                        log_msg = format!("{}has sent {}% of resource proof ",
+                                          log_msg,
+                                          (proof.len() * 100) / target_size);
+                    }
+                    if candidate.is_approved() {
+                        log_msg = format!("{}and is approved by our section.", log_msg);
+                    } else {
+                        log_msg = format!("{}and is not yet approved by our section.", log_msg);
+                    }
+                }
+                None => {
+                    log_msg = format!("{}has not sent CandidateIdentify yet.", log_msg);
+                }
+            }
+            trace!("{}", log_msg);
+        }
+
+        if have_candidate {
+            return;
+        }
+
+        trace!("{:?} No candidate is currently being handled.", self);
     }
 
     /// Tries to add the given peer to the routing table. If successful, this returns `Ok(true)` if
