@@ -17,10 +17,10 @@
 
 use crust::{PeerId, Service};
 use error::RoutingError;
-use evented::{Evented, ToEvented};
 use id::FullId;
 use maidsafe_utilities::serialisation;
 use messages::Message;
+use outtray::EventTray;
 use routing_table::Authority;
 use state_machine::Transition;
 use stats::Stats;
@@ -34,8 +34,8 @@ pub trait Base: Debug {
     fn stats(&mut self) -> &mut Stats;
     fn in_authority(&self, auth: &Authority<XorName>) -> bool;
 
-    fn handle_lost_peer(&mut self, _peer_id: PeerId) -> Evented<Transition> {
-        Transition::Stay.to_evented()
+    fn handle_lost_peer(&mut self, _peer_id: PeerId, _outtray: &mut EventTray) -> Transition {
+        Transition::Stay
     }
 
     fn name(&self) -> &XorName {

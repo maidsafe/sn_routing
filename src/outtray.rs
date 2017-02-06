@@ -24,7 +24,6 @@
 //
 // pub trait EventTray {
 //     fn send_event(&mut self, event: Event);
-//     fn send_events(&mut self, events: Vec<Event>);
 // }
 // pub trait MessageTray {
 //     fn send_msg(&mut self, msg: Message);
@@ -43,7 +42,6 @@
 // impl OutTray for OutBox { ... }
 
 use event::Event;
-use evented::Evented;
 use std::default::Default;
 use std::mem;
 
@@ -66,11 +64,6 @@ impl EventTray {
         self.events.push(event)
     }
 
-    /// Send a `Vec` of events
-    pub fn send_events(&mut self, events: Vec<Event>) {
-        self.events.extend(events)
-    }
-
     /// Create an empty box
     pub fn new() -> Self {
         Default::default()
@@ -79,13 +72,6 @@ impl EventTray {
     /// Extract the list of events (swapping in an empty list)
     pub fn take_events(&mut self) -> Vec<Event> {
         mem::replace(&mut self.events, vec![])
-    }
-
-    /// Convert to an Evented<()>
-    ///
-    /// Note: chain .with_value to add another value
-    pub fn into_evented(mut self) -> Evented<()> {
-        Evented::empty_with_events(self.take_events())
     }
 }
 

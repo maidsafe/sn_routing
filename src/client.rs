@@ -20,11 +20,11 @@ use cache::NullCache;
 use data::{AppendWrapper, Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use event::Event;
-use evented::{Evented, ToEvented};
 use id::FullId;
 #[cfg(not(feature = "use-mock-crust"))]
 use maidsafe_utilities::thread::{self, Joiner};
 use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, Request};
+use outtray::EventTray;
 use routing_table::Authority;
 #[cfg(not(feature = "use-mock-crust"))]
 use rust_sodium;
@@ -79,11 +79,11 @@ impl Client {
         rust_sodium::init(); // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing with a restriction to become a full node
-        let mut events = Evented::empty();
-        let (action_sender, mut machine) = Self::make_state_machine(keys, min_section_size)
-            .extract(&mut events);
+        let mut outtray = EventTray::new();
+        let (action_sender, mut machine) =
+            Self::make_state_machine(keys, min_section_size, &mut outtray);
 
-        for ev in events.into_events() {
+        for ev in outtray.take_events() {
             event_sender.send(ev)?;
         }
 
@@ -112,16 +112,17 @@ impl Client {
     }
 
     fn make_state_machine(keys: Option<FullId>,
-                          min_section_size: usize)
-                          -> Evented<(RoutingActionSender, StateMachine)> {
+                          min_section_size: usize,
+                          outtray: &mut EventTray)
+                          -> (RoutingActionSender, StateMachine) {
         let cache = Box::new(NullCache);
         let full_id = keys.unwrap_or_else(FullId::new);
 
-        StateMachine::new(move |crust_service, timer| {
+        StateMachine::new(move |crust_service, timer, _outtray2| {
             states::Bootstrapping::new(cache, true, crust_service, full_id, min_section_size, timer)
                 .map_or(State::Terminated, State::Bootstrapping)
-                .to_evented()
-        })
+        },
+                          outtray)
     }
 
     /// Send a Get message with a `DataIdentifier` to an `Authority`, signed with given keys.
@@ -219,11 +220,12 @@ impl Client {
     /// Create a new `Client` for unit testing.
     pub fn new(keys: Option<FullId>, min_section_size: usize) -> Result<Client, RoutingError> {
         // start the handler for routing with a restriction to become a full node
-        let mut events = VecDeque::new();
+        let mut outtray = EventTray::new();
 
-        let (action_sender, machine) = Self::make_state_machine(keys, min_section_size)
-            .extract_to_buf(&mut events);
+        let (action_sender, machine) =
+            Self::make_state_machine(keys, min_section_size, &mut outtray);
 
+        let events = VecDeque::from(outtray.take_events());
         let (tx, rx) = channel();
 
         Ok(Client {

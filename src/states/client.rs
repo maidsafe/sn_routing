@@ -21,11 +21,11 @@ use crust::{PeerId, Service};
 use crust::Event as CrustEvent;
 use error::{InterfaceError, RoutingError};
 use event::Event;
-use evented::{Evented, ToEvented};
 use id::{FullId, PublicId};
 use maidsafe_utilities::serialisation;
 use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage, UserMessage,
                UserMessageCache};
+use outtray::EventTray;
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use routing_table::Authority;
 use state_machine::Transition;
@@ -61,8 +61,9 @@ impl Client {
                               proxy_peer_id: PeerId,
                               proxy_public_id: PublicId,
                               stats: Stats,
-                              timer: Timer)
-                              -> Evented<Self> {
+                              timer: Timer,
+                              outtray: &mut EventTray)
+                              -> Self {
         let client = Client {
             ack_mgr: AckManager::new(),
             crust_service: crust_service,
@@ -79,7 +80,8 @@ impl Client {
 
         debug!("{:?} - State changed to client.", client);
 
-        Evented::single(Event::Connected, client)
+        outtray.send_event(Event::Connected);
+        client
     }
 
     pub fn handle_action(&mut self, action: Action) -> Transition {
@@ -114,33 +116,38 @@ impl Client {
         Transition::Stay
     }
 
-    pub fn handle_crust_event(&mut self, crust_event: CrustEvent) -> Evented<Transition> {
+    pub fn handle_crust_event(&mut self,
+                              crust_event: CrustEvent,
+                              outtray: &mut EventTray)
+                              -> Transition {
         match crust_event {
-            CrustEvent::LostPeer(peer_id) => self.handle_lost_peer(peer_id),
-            CrustEvent::NewMessage(peer_id, bytes) => self.handle_new_message(peer_id, bytes),
+            CrustEvent::LostPeer(peer_id) => self.handle_lost_peer(peer_id, outtray),
+            CrustEvent::NewMessage(peer_id, bytes) => {
+                self.handle_new_message(peer_id, bytes, outtray)
+            }
             _ => {
                 debug!("{:?} Unhandled crust event {:?}", self, crust_event);
-                Transition::Stay.to_evented()
+                Transition::Stay
             }
         }
     }
 
-    fn handle_ack_response(&mut self, ack: Ack) -> Evented<Transition> {
+    fn handle_ack_response(&mut self, ack: Ack) -> Transition {
         self.ack_mgr.receive(ack);
-        Transition::Stay.to_evented()
+        Transition::Stay
     }
 
     fn handle_timeout(&mut self, token: u64) {
         self.resend_unacknowledged_timed_out_msgs(token)
     }
 
-    fn handle_new_message(&mut self, peer_id: PeerId, bytes: Vec<u8>) -> Evented<Transition> {
-        let mut result = Evented::empty();
-
+    fn handle_new_message(&mut self,
+                          peer_id: PeerId,
+                          bytes: Vec<u8>,
+                          outtray: &mut EventTray)
+                          -> Transition {
         let transition = match serialisation::deserialise(&bytes) {
-            Ok(Message::Hop(hop_msg)) => {
-                self.handle_hop_message(hop_msg, peer_id).extract(&mut result)
-            }
+            Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, peer_id, outtray),
             Ok(message) => {
                 debug!("{:?} - Unhandled new message: {:?}", self, message);
                 Ok(Transition::Stay)
@@ -149,29 +156,28 @@ impl Client {
         };
 
         match transition {
-            Ok(transition) => result.with_value(transition),
-            Err(RoutingError::FilterCheckFailed) => result.with_value(Transition::Stay),
+            Ok(transition) => transition,
+            Err(RoutingError::FilterCheckFailed) => Transition::Stay,
             Err(error) => {
                 debug!("{:?} - {:?}", self, error);
-                result.with_value(Transition::Stay)
+                Transition::Stay
             }
         }
     }
 
     fn handle_hop_message(&mut self,
                           hop_msg: HopMessage,
-                          peer_id: PeerId)
-                          -> Evented<Result<Transition, RoutingError>> {
+                          peer_id: PeerId,
+                          outtray: &mut EventTray)
+                          -> Result<Transition, RoutingError> {
         if self.proxy_peer_id == peer_id {
-            try_ev!(hop_msg.verify(self.proxy_public_id.signing_public_key()),
-                    Evented::empty());
+            hop_msg.verify(self.proxy_public_id.signing_public_key())?;
         } else {
-            return Err(RoutingError::UnknownConnection(peer_id)).to_evented();
+            return Err(RoutingError::UnknownConnection(peer_id));
         }
 
         let signed_msg = hop_msg.content;
-        try_ev!(signed_msg.check_integrity(self.min_section_size()),
-                Evented::empty());
+        signed_msg.check_integrity(self.min_section_size())?;
 
         let routing_msg = signed_msg.routing_message();
         let in_authority = self.in_authority(&routing_msg.dst);
@@ -182,26 +188,23 @@ impl Client {
         // Prevents us repeatedly handling identical messages sent by a malicious peer.
         match self.routing_msg_filter.filter_incoming(routing_msg, hop_msg.route) {
             FilteringResult::KnownMessage |
-            FilteringResult::KnownMessageAndRoute => {
-                return Err(RoutingError::FilterCheckFailed).to_evented()
-            }
+            FilteringResult::KnownMessageAndRoute => return Err(RoutingError::FilterCheckFailed),
             FilteringResult::NewMessage => (),
         }
 
         if !in_authority {
-            return Ok(Transition::Stay).to_evented();
+            return Ok(Transition::Stay);
         }
 
-        self.dispatch_routing_message(routing_msg.clone()).map(Ok)
+        Ok(self.dispatch_routing_message(routing_msg.clone(), outtray))
     }
 
-    fn dispatch_routing_message(&mut self, routing_msg: RoutingMessage) -> Evented<Transition> {
+    fn dispatch_routing_message(&mut self,
+                                routing_msg: RoutingMessage,
+                                outtray: &mut EventTray)
+                                -> Transition {
         match routing_msg.content {
-            MessageContent::Ack(ack, _) => {
-                let mut result = Evented::empty();
-                let transition = self.handle_ack_response(ack).extract(&mut result);
-                result.with_value(transition)
-            }
+            MessageContent::Ack(ack, _) => self.handle_ack_response(ack),
             MessageContent::UserMessagePart { hash, part_count, part_index, payload, .. } => {
                 trace!("{:?} Got UserMessagePart {:x}, {}/{} from {:?} to {:?}.",
                        self,
@@ -210,12 +213,11 @@ impl Client {
                        part_index,
                        routing_msg.src,
                        routing_msg.dst);
-                let mut result = Evented::empty();
                 if let Some(msg) = self.user_msg_cache.add(hash, part_count, part_index, payload) {
                     self.stats().count_user_message(&msg);
-                    result.add_event(msg.into_event(routing_msg.src, routing_msg.dst));
+                    outtray.send_event(msg.into_event(routing_msg.src, routing_msg.dst));
                 }
-                result.with_value(Transition::Stay)
+                Transition::Stay
             }
             content => {
                 debug!("{:?} - Unhandled routing message: {:?} from {:?} to {:?}",
@@ -223,7 +225,7 @@ impl Client {
                        content,
                        routing_msg.src,
                        routing_msg.dst);
-                Transition::Stay.to_evented()
+                Transition::Stay
             }
         }
     }
@@ -261,10 +263,10 @@ impl Base for Client {
         }
     }
 
-    fn handle_lost_peer(&mut self, peer_id: PeerId) -> Evented<Transition> {
+    fn handle_lost_peer(&mut self, peer_id: PeerId, outtray: &mut EventTray) -> Transition {
         if peer_id == self.crust_service().id() {
             error!("{:?} LostPeer fired with our crust peer ID", self);
-            return Transition::Stay.to_evented();
+            return Transition::Stay;
         }
 
         debug!("{:?} Received LostPeer - {:?}", self, peer_id);
@@ -274,9 +276,10 @@ impl Base for Client {
                    self,
                    self.proxy_public_id.name(),
                    peer_id);
-            Evented::single(Event::Terminate, Transition::Terminate)
+            outtray.send_event(Event::Terminate);
+            Transition::Terminate
         } else {
-            Transition::Stay.to_evented()
+            Transition::Stay
         }
     }
 

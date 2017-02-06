@@ -19,9 +19,9 @@ use action::Action;
 use crust::{CrustEventSender, PeerId, Service};
 use crust::Event as CrustEvent;
 use event::Event;
-use evented::{Evented, ToEvented};
 use id::PublicId;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
+use outtray::EventTray;
 #[cfg(feature = "use-mock-crust")]
 use routing_table::{Prefix, RoutingTable};
 #[cfg(feature = "use-mock-crust")]
@@ -54,33 +54,38 @@ pub enum State {
 }
 
 impl State {
-    pub fn handle_action(&mut self, action: Action) -> Evented<Transition> {
+    pub fn handle_action(&mut self, action: Action, outtray: &mut EventTray) -> Transition {
         match *self {
             State::Bootstrapping(ref mut state) => state.handle_action(action),
-            State::Client(ref mut state) => state.handle_action(action).to_evented(),
-            State::Node(ref mut state) => state.handle_action(action),
-            State::Terminated => Transition::Terminate.to_evented(),
+            State::Client(ref mut state) => state.handle_action(action),
+            State::Node(ref mut state) => state.handle_action(action, outtray),
+            State::Terminated => Transition::Terminate,
         }
     }
 
-    fn handle_crust_event(&mut self, event: CrustEvent) -> Evented<Transition> {
+    fn handle_crust_event(&mut self, event: CrustEvent, outtray: &mut EventTray) -> Transition {
         match *self {
-            State::Bootstrapping(ref mut state) => state.handle_crust_event(event),
-            State::Client(ref mut state) => state.handle_crust_event(event),
-            State::Node(ref mut state) => state.handle_crust_event(event),
-            State::Terminated => Transition::Terminate.to_evented(),
+            State::Bootstrapping(ref mut state) => state.handle_crust_event(event, outtray),
+            State::Client(ref mut state) => state.handle_crust_event(event, outtray),
+            State::Node(ref mut state) => state.handle_crust_event(event, outtray),
+            State::Terminated => Transition::Terminate,
         }
     }
 
-    fn into_bootstrapped(self, proxy_peer_id: PeerId, proxy_public_id: PublicId) -> Evented<Self> {
+    fn into_bootstrapped(self,
+                         proxy_peer_id: PeerId,
+                         proxy_public_id: PublicId,
+                         outtray: &mut EventTray)
+                         -> Self {
         match self {
             State::Bootstrapping(state) => {
                 if state.client_restriction() {
-                    state.into_client(proxy_peer_id, proxy_public_id).map(State::Client)
+                    State::Client(state.into_client(proxy_peer_id, proxy_public_id, outtray))
                 } else if let Some(state) = state.into_node(proxy_peer_id, proxy_public_id) {
-                    State::Node(state).to_evented()
+                    State::Node(state)
                 } else {
-                    Evented::single(Event::RestartRequired, State::Terminated)
+                    outtray.send_event(Event::RestartRequired);
+                    State::Terminated
                 }
             }
             _ => unreachable!(),
@@ -185,10 +190,9 @@ pub enum Transition {
 impl StateMachine {
     // Construct a new StateMachine by passing a function returning the initial
     // state.
-    pub fn new<F>(init_state: F) -> Evented<(RoutingActionSender, Self)>
-        where F: FnOnce(Service, Timer) -> Evented<State>
+    pub fn new<F>(init_state: F, outtray: &mut EventTray) -> (RoutingActionSender, Self)
+        where F: FnOnce(Service, Timer, &mut EventTray) -> State
     {
-        let mut events = Evented::empty();
         let (category_tx, category_rx) = mpsc::channel();
         let (crust_tx, crust_rx) = mpsc::channel();
         let (action_tx, action_rx) = mpsc::channel();
@@ -208,7 +212,7 @@ impl StateMachine {
 
         let timer = Timer::new(action_sender.clone());
 
-        let state = init_state(crust_service, timer).extract(&mut events);
+        let state = init_state(crust_service, timer, outtray);
         let is_running = match state {
             State::Terminated => false,
             _ => true,
@@ -222,45 +226,42 @@ impl StateMachine {
             is_running: is_running,
         };
 
-        events.with_value((action_sender, machine))
+        (action_sender, machine)
     }
 
-    // Handle an event from the given category and return any events produced for higher layers.
-    fn handle_event(&mut self, category: MaidSafeEventCategory) -> Evented<()> {
+    // Handle an event from the given category and send any events produced for higher layers.
+    fn handle_event(&mut self, category: MaidSafeEventCategory, outtray: &mut EventTray) {
         let transition = match category {
             MaidSafeEventCategory::Routing => {
                 if let Ok(action) = self.action_rx.try_recv() {
-                    self.state.handle_action(action)
+                    self.state.handle_action(action, outtray)
                 } else {
-                    Transition::Terminate.to_evented()
+                    Transition::Terminate
                 }
             }
             MaidSafeEventCategory::Crust => {
                 if let Ok(crust_event) = self.crust_rx.try_recv() {
-                    self.state.handle_crust_event(crust_event)
+                    self.state.handle_crust_event(crust_event, outtray)
                 } else {
-                    Transition::Terminate.to_evented()
+                    Transition::Terminate
                 }
             }
         };
 
-        transition.and_then(|t| self.apply_transition(t))
+        self.apply_transition(transition, outtray)
     }
 
-    pub fn apply_transition(&mut self, transition: Transition) -> Evented<()> {
-        let mut result = Evented::empty();
+    pub fn apply_transition(&mut self, transition: Transition, outtray: &mut EventTray) {
         match transition {
             Transition::Stay => (),
             Transition::IntoBootstrapped { proxy_peer_id, proxy_public_id } => {
                 // Temporarily switch to `Terminated` to allow moving out of the current
                 // state without moving `self`.
                 let prev_state = mem::replace(&mut self.state, State::Terminated);
-                self.state = prev_state.into_bootstrapped(proxy_peer_id, proxy_public_id)
-                    .extract(&mut result);
+                self.state = prev_state.into_bootstrapped(proxy_peer_id, proxy_public_id, outtray);
             }
             Transition::Terminate => self.terminate(),
         }
-        result
     }
 
     fn terminate(&mut self) {
@@ -282,9 +283,10 @@ impl StateMachine {
     /// the permanent closing of the `category_rx` event channel.
     pub fn step(&mut self) -> Result<Vec<Event>, RecvError> {
         if self.is_running {
-            self.category_rx
-                .recv()
-                .map(|category| self.handle_event(category).into_events())
+            let mut outtray = EventTray::new();
+            let category = self.category_rx.recv()?;
+            self.handle_event(category, &mut outtray);
+            Ok(outtray.take_events())
         } else {
             Err(RecvError)
         }
@@ -293,9 +295,10 @@ impl StateMachine {
     /// Query for a result, or yield: Err(NothingAvailable), Err(Disconnected) or Err(Terminated).
     pub fn try_step(&mut self) -> Result<Vec<Event>, TryRecvError> {
         if self.is_running {
-            self.category_rx
-                .try_recv()
-                .map(|category| self.handle_event(category).into_events())
+            let mut outtray = EventTray::new();
+            let category = self.category_rx.try_recv()?;
+            self.handle_event(category, &mut outtray);
+            Ok(outtray.take_events())
         } else {
             Err(TryRecvError::Disconnected)
         }
