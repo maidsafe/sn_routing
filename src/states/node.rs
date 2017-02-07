@@ -1934,12 +1934,10 @@ impl Node {
         }
 
         let original_name = *candidate_id.name();
-        while !self.peer_mgr.routing_table().has_min_prefix_len(candidate_id.name()) {
-            let relocated_name = utils::calculate_relocated_name(vec![], candidate_id.name());
-            candidate_id.set_name(relocated_name);
-        }
+        candidate_id.set_name(
+            self.peer_mgr.routing_table().assign_to_min_len_prefix(&original_name));
 
-        if !self.peer_mgr.routing_table().is_in_our_section(candidate_id.name()) {
+        if self.peer_mgr.routing_table().should_join_our_section(candidate_id.name()).is_err() {
             let request_content = MessageContent::ExpectCandidate {
                 expect_id: candidate_id,
                 client_auth: client_auth,
