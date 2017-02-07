@@ -79,6 +79,19 @@ impl error::Error for Error {
     }
 }
 
+/// The type of a connection with a peer in our routing table.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RoutingConnection {
+    /// We are/were the peer's proxy node.
+    JoiningNode(Instant),
+    /// The peer is/was our proxy node.
+    Proxy(Instant),
+    /// The peer is directly connected to us.
+    Direct,
+    /// The peer is connected via a tunnel.
+    Tunnel,
+}
+
 /// Our relationship status with a known peer.
 #[derive(Debug)]
 pub enum PeerState {
@@ -105,11 +118,10 @@ pub enum PeerState {
     Client,
     /// We are the proxy for the joining node
     JoiningNode,
-    /// We are approved and routing to that peer - via a tunnel if the field is `true`.
-    Routing(bool),
-    /// Connected peer is a joining node and waiting for approval of routing - via a tunnel if the
-    /// field is `true`.
-    Candidate(bool),
+    /// We are approved and routing to that peer.
+    Routing(RoutingConnection),
+    /// Connected peer is a joining node and waiting for approval of routing.
+    Candidate(RoutingConnection),
     /// We are connected to the peer who is our proxy node.
     Proxy,
 }
@@ -117,8 +129,8 @@ pub enum PeerState {
 impl PeerState {
     fn is_directly_connected(&self) -> bool {
         match *self {
-            PeerState::Routing(false) |
-            PeerState::Candidate(false) => true,
+            PeerState::Routing(conn) |
+            PeerState::Candidate(conn) if conn != RoutingConnection::Tunnel => true,
             _ => false,
         }
     }
@@ -212,6 +224,23 @@ impl Peer {
             PeerState::Client |
             PeerState::Routing(_) |
             PeerState::AwaitingNodeIdentify(_) => false,
+        }
+    }
+
+    /// Returns the `RoutingConnection` type for this peer when it is put in the routing table.
+    fn to_routing_connection(&self) -> RoutingConnection {
+        match self.state {
+            PeerState::SearchingForTunnel |
+            PeerState::AwaitingNodeIdentify(true) => RoutingConnection::Tunnel,
+            PeerState::Candidate(conn) |
+            PeerState::Routing(conn) => conn,
+            PeerState::Proxy => RoutingConnection::Proxy(self.timestamp),
+            PeerState::JoiningNode => RoutingConnection::JoiningNode(self.timestamp),
+            PeerState::AwaitingNodeIdentify(false) |
+            PeerState::ConnectionInfoPreparing { .. } |
+            PeerState::ConnectionInfoReady(_) |
+            PeerState::Client |
+            PeerState::CrustConnecting => RoutingConnection::Direct,
         }
     }
 }
@@ -559,14 +588,12 @@ impl PeerManager {
             if candidate.is_approved() {
                 Ok(false)
             } else {
-                let tunnel = match self.peer_map.get(peer_id).map(|peer| &peer.state) {
-                    Some(&PeerState::SearchingForTunnel) |
-                    Some(&PeerState::AwaitingNodeIdentify(true)) => true,
-                    _ => false,
-                };
-                let state = PeerState::Candidate(tunnel);
+                let conn = self.peer_map
+                    .get(peer_id)
+                    .map_or(RoutingConnection::Direct, Peer::to_routing_connection);
+                let state = PeerState::Candidate(conn);
                 let _ = self.peer_map.insert(Peer::new(*pub_id, Some(*peer_id), state));
-                if tunnel {
+                if conn == RoutingConnection::Tunnel {
                     Err(RoutingError::CandidateIsTunnelling)
                 } else {
                     candidate.challenge_response = Some(ChallengeResponse {
@@ -631,20 +658,11 @@ impl PeerManager {
         let _ = self.expected_peers.remove(pub_id.name());
 
         let should_split = self.routing_table.add(*pub_id.name())?;
-        let tunnel = match self.peer_map.remove(peer_id).map(|peer| peer.state) {
-            Some(PeerState::SearchingForTunnel) |
-            Some(PeerState::AwaitingNodeIdentify(true)) => true,
-            Some(PeerState::Candidate(tunnel)) => tunnel,
-            Some(PeerState::Routing(tunnel)) => {
-                trace!("{:?} Peer {:?} added to routing table, but already in state Routing.",
-                       self,
-                       peer_id);
-                tunnel
-            }
-            _ => false,
-        };
-        let state = PeerState::Routing(tunnel);
-        let _ = self.peer_map.insert(Peer::new(*pub_id, Some(*peer_id), state));
+        let conn = self.peer_map
+            .remove(peer_id)
+            .map_or(RoutingConnection::Direct,
+                    |peer| peer.to_routing_connection());
+        let _ = self.peer_map.insert(Peer::new(*pub_id, Some(*peer_id), PeerState::Routing(conn)));
         Ok(should_split)
     }
 
@@ -655,15 +673,34 @@ impl PeerManager {
                          -> (Vec<(XorName, PeerId)>, Option<Prefix<XorName>>) {
         let (names_to_drop, our_new_prefix) = self.routing_table.split(prefix);
 
-        let mut ids_to_drop = vec![];
-        for name in &names_to_drop {
-            if let Some(peer) = self.peer_map.remove_by_name(name) {
-                self.cleanup_proxy_peer_id();
-                if let Some(peer_id) = peer.peer_id {
-                    ids_to_drop.push((*name, peer_id));
+        let ids_to_drop = names_to_drop.into_iter()
+            .filter_map(|name| {
+                self.peer_map.remove_by_name(&name).and_then(|peer| match peer {
+                    Peer {
+                    state: PeerState::Routing(RoutingConnection::JoiningNode(timestamp)),
+                    .. } => {
+                    let _ = self.peer_map.insert(Peer {
+                        timestamp: timestamp,
+                        state: PeerState::JoiningNode,
+                        ..peer
+                    });
+                    None
                 }
-            }
-        }
+                    Peer { state: PeerState::Routing(RoutingConnection::Proxy(timestamp)), .. } => {
+                        let _ = self.peer_map.insert(Peer {
+                            timestamp: timestamp,
+                            state: PeerState::Proxy,
+                            ..peer
+                        });
+                        None
+                    }
+                    Peer { peer_id: Some(id), .. } => Some((name, id)),
+                    Peer { peer_id: None, .. } => None,
+                })
+            })
+            .collect_vec();
+
+        self.cleanup_proxy_peer_id();
 
         let removal_keys = self.candidates
             .iter()
