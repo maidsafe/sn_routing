@@ -80,7 +80,7 @@ impl State {
                 } else if let Some(state) = state.into_node(proxy_peer_id, proxy_public_id) {
                     State::Node(state).to_evented()
                 } else {
-                    State::Terminated.to_evented()
+                    Evented::single(Event::RestartRequired, State::Terminated)
                 }
             }
             _ => unreachable!(),
