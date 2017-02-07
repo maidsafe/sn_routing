@@ -910,6 +910,16 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         self.sections.keys().find(|&prefix| prefix.matches(name)).cloned()
     }
 
+    /// Returns whether the `name` belongs to one of the known prefixes with minimal section
+    /// length. I.e. it returns `false` if the `name` either doesn't belong to a known section or
+    /// there exists a known section with a shorter prefix length.
+    pub fn has_min_prefix_len(&self, name: &T) -> bool {
+        self.find_section_prefix(name).map_or(false, |prefix| {
+            prefix.bit_count() <= self.our_prefix.bit_count() &&
+            self.sections.keys().all(|other| prefix.bit_count() <= other.bit_count())
+        })
+    }
+
     /// Returns the prefix of the closest non-empty section to `name`, regardless of whether `name`
     /// belongs in that section or not, and the section itself.
     fn closest_section(&self, name: &T) -> (&Prefix<T>, &HashSet<T>) {

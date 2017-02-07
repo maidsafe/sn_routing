@@ -1922,14 +1922,35 @@ impl Node {
     }
 
     // Received by Y; From X -> Y
-    // Context: a node is joining our section. Sends `AcceptAsCandidate` to our section.
+    // Context: a node is joining our section. Sends `AcceptAsCandidate` to our section. If the
+    // network is unbalanced, sends `ExpectCandidate` on to a section with a shorter prefix.
     fn handle_expect_candidate(&mut self,
-                               candidate_id: PublicId,
+                               mut candidate_id: PublicId,
                                client_auth: Authority<XorName>,
                                message_id: MessageId)
                                -> Result<(), RoutingError> {
         for peer_id in self.peer_mgr.remove_expired_candidates() {
             self.disconnect_peer(&peer_id);
+        }
+
+        let original_name = *candidate_id.name();
+        while !self.peer_mgr.routing_table().has_min_prefix_len(candidate_id.name()) {
+            let relocated_name = utils::calculate_relocated_name(vec![], candidate_id.name());
+            candidate_id.set_name(relocated_name);
+        }
+
+        if !self.peer_mgr.routing_table().is_in_our_section(candidate_id.name()) {
+            let request_content = MessageContent::ExpectCandidate {
+                expect_id: candidate_id,
+                client_auth: client_auth,
+                message_id: message_id,
+            };
+            let request_msg = RoutingMessage {
+                src: Authority::Section(original_name),
+                dst: Authority::Section(*candidate_id.name()),
+                content: request_content,
+            };
+            return self.send_routing_message(request_msg);
         }
 
         if candidate_id == *self.full_id.public_id() {
