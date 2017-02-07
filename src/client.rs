@@ -118,12 +118,8 @@ impl Client {
         let full_id = keys.unwrap_or_else(FullId::new);
 
         StateMachine::new(move |crust_service, timer| {
-            State::Bootstrapping(states::Bootstrapping::new(cache,
-                                                            true,
-                                                            crust_service,
-                                                            full_id,
-                                                            min_section_size,
-                                                            timer))
+            states::Bootstrapping::new(cache, true, crust_service, full_id, min_section_size, timer)
+                .map_or(State::Terminated, State::Bootstrapping)
                 .to_evented()
         })
     }

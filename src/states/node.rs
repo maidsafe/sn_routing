@@ -138,13 +138,21 @@ impl Node {
         let name = XorName(sha256::hash(&full_id.public_id().name().0).0);
         full_id.public_id_mut().set_name(name);
 
-        Self::new(cache,
-                  crust_service,
-                  true,
-                  full_id,
-                  min_section_size,
-                  Stats::new(),
-                  timer)
+        let mut node = Self::new(cache,
+                                 crust_service,
+                                 true,
+                                 full_id,
+                                 min_section_size,
+                                 Stats::new(),
+                                 timer);
+        if let Err(error) = node.crust_service.start_listening_tcp() {
+            error!("{:?} Failed to start listening: {:?}", node, error);
+            None
+        } else {
+            debug!("{:?} State changed to node.", node);
+            info!("{:?} Started a new network as a seed node.", node);
+            Some(node)
+        }
     }
 
     #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
@@ -165,11 +173,14 @@ impl Node {
                                  stats,
                                  timer);
 
-        if let Some(ref mut node) = node {
-            let _ = node.peer_mgr.set_proxy(proxy_peer_id, proxy_public_id);
+        let _ = node.peer_mgr.set_proxy(proxy_peer_id, proxy_public_id);
+        if let Err(error) = node.relocate() {
+            error!("{:?} Failed to start relocation: {:?}", node, error);
+            None
+        } else {
+            debug!("{:?} State changed to node.", node);
+            Some(node)
         }
-
-        node
     }
 
     #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
@@ -180,13 +191,12 @@ impl Node {
            min_section_size: usize,
            stats: Stats,
            mut timer: Timer)
-           -> Option<Self> {
+           -> Self {
         let public_id = *full_id.public_id();
         let tick_period = Duration::from_secs(TICK_TIMEOUT_SECS);
         let tick_timer_token = timer.schedule(tick_period);
         let user_msg_cache_duration = Duration::from_secs(USER_MSG_CACHE_EXPIRY_DURATION_SECS);
-
-        let mut node = Node {
+        Node {
             ack_mgr: AckManager::new(),
             cacheable_user_msg_cache:
                 UserMessageCache::with_expiry_duration(user_msg_cache_duration),
@@ -218,13 +228,6 @@ impl Node {
             resource_proof_response_parts: HashMap::new(),
             challenger_count: 0,
             proxy_is_resource_proof_challenger: false,
-        };
-
-        if node.start_listening() {
-            debug!("{:?} - State changed to node.", node);
-            Some(node)
-        } else {
-            None
         }
     }
 
@@ -334,10 +337,9 @@ impl Node {
                 self.handle_connection_info_prepared(result_token, result)
             }
             CrustEvent::ListenerStarted(port) => {
-                if let Transition::Terminate = self.handle_listener_started(port)
-                    .extract(&mut events) {
-                    return events.with_value(Transition::Terminate);
-                }
+                trace!("{:?} Listener started on port {}.", self, port);
+                self.crust_service.set_service_discovery_listen(true);
+                return events.with_value(Transition::Stay);
             }
             CrustEvent::ListenerFailed => {
                 error!("{:?} Failed to start listening.", self);
@@ -372,24 +374,6 @@ impl Node {
         }
 
         result
-    }
-
-    fn handle_listener_started(&mut self, port: u16) -> Evented<Transition> {
-        trace!("{:?} Listener started on port {}.", self, port);
-        self.crust_service.set_service_discovery_listen(true);
-
-        let mut result = Evented::empty();
-
-        if self.is_first_node {
-            info!("{:?} Started a new network as a seed node.", self);
-            result.with_value(Transition::Stay)
-        } else if let Err(error) = self.relocate() {
-            error!("{:?} Failed to start relocation: {:?}", self, error);
-            result.add_event(Event::RestartRequired);
-            result.with_value(Transition::Terminate)
-        } else {
-            result.with_value(Transition::Stay)
-        }
     }
 
     fn handle_bootstrap_accept(&mut self, peer_id: PeerId) {
@@ -1221,15 +1205,6 @@ impl Node {
         Ok(false)
     }
 
-    fn start_listening(&mut self) -> bool {
-        if let Err(error) = self.crust_service.start_listening_tcp() {
-            error!("{:?} Failed to start listening: {:?}", self, error);
-            false
-        } else {
-            true
-        }
-    }
-
     fn relocate(&mut self) -> Result<(), RoutingError> {
         let duration = Duration::from_secs(GET_NODE_NAME_TIMEOUT_SECS);
         self.get_approval_timer_token = Some(self.timer.schedule(duration));
@@ -1292,6 +1267,13 @@ impl Node {
                    self,
                    peer_id);
             self.disconnect_peer(&peer_id);
+        }
+
+        if !self.is_approved {
+            debug!("{:?} Client {:?} rejected: We are not approved as a node yet.",
+                   self,
+                   public_id.name());
+            return self.send_direct_message(peer_id, DirectMessage::BootstrapDeny);
         }
 
         if (client_restriction || !self.is_first_node) &&
