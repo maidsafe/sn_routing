@@ -762,10 +762,6 @@ impl Node {
 
         match self.routing_msg_filter.filter_incoming(signed_msg.routing_message(), route) {
             FilteringResult::KnownMessageAndRoute => {
-                debug!("{:?} Duplicate message received on route {}: {:?}",
-                       self,
-                       route,
-                       signed_msg.routing_message());
                 return Ok(());
             }
             FilteringResult::KnownMessage => {
