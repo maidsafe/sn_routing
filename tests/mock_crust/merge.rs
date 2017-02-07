@@ -72,6 +72,7 @@ fn merge(prefix_lengths: Vec<usize>) {
     }
 }
 
+#[ignore]
 #[test]
 fn merge_three_sections_into_one() {
     merge(vec![1, 2, 2])
