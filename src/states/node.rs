@@ -62,7 +62,7 @@ use xor_name::XorName;
 /// Time (in seconds) after which a `Tick` event is sent.
 const TICK_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) after which a `GetNodeName` request is resent.
-const GET_NODE_NAME_TIMEOUT_SECS: u64 = 60;
+const GET_NODE_NAME_TIMEOUT_SECS: u64 = 60 + RESOURCE_PROOF_DURATION_SECS;
 /// The number of required leading zero bits for the resource proof
 const RESOURCE_PROOF_DIFFICULTY: u8 = 0;
 /// The total size of the resource proof data.
@@ -78,6 +78,8 @@ const APPROVAL_TIMEOUT_SECS: u64 = RESOURCE_PROOF_DURATION_SECS + ACCUMULATION_T
                                    (4 * ACK_TIMEOUT_SECS);
 /// Interval between displaying info about ongoing approval progress, in seconds.
 const APPROVAL_PROGRESS_INTERVAL_SECS: u64 = 30;
+/// Interval between displaying info about current candidate, in seconds.
+const CANDIDATE_STATUS_INTERVAL_SECS: u64 = 20;
 
 pub struct Node {
     ack_mgr: AckManager,
@@ -115,6 +117,8 @@ pub struct Node {
     routing_msg_backlog: Vec<RoutingMessage>,
     /// The timer token for sending a `CandidateApproval` message.
     candidate_timer_token: Option<u64>,
+    /// The timer token for displaying the current candidate status.
+    candidate_status_token: Option<u64>,
     /// Map of ResourceProofResponse parts.
     resource_proof_response_parts: HashMap<PeerId, Vec<DirectMessage>>,
     /// Number of expected resource proof challengers.
@@ -134,13 +138,21 @@ impl Node {
         let name = XorName(sha256::hash(&full_id.public_id().name().0).0);
         full_id.public_id_mut().set_name(name);
 
-        Self::new(cache,
-                  crust_service,
-                  true,
-                  full_id,
-                  min_section_size,
-                  Stats::new(),
-                  timer)
+        let mut node = Self::new(cache,
+                                 crust_service,
+                                 true,
+                                 full_id,
+                                 min_section_size,
+                                 Stats::new(),
+                                 timer);
+        if let Err(error) = node.crust_service.start_listening_tcp() {
+            error!("{:?} Failed to start listening: {:?}", node, error);
+            None
+        } else {
+            debug!("{:?} State changed to node.", node);
+            info!("{:?} Started a new network as a seed node.", node);
+            Some(node)
+        }
     }
 
     #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
@@ -161,11 +173,14 @@ impl Node {
                                  stats,
                                  timer);
 
-        if let Some(ref mut node) = node {
-            let _ = node.peer_mgr.set_proxy(proxy_peer_id, proxy_public_id);
+        let _ = node.peer_mgr.set_proxy(proxy_peer_id, proxy_public_id);
+        if let Err(error) = node.relocate() {
+            error!("{:?} Failed to start relocation: {:?}", node, error);
+            None
+        } else {
+            debug!("{:?} State changed to node.", node);
+            Some(node)
         }
-
-        node
     }
 
     #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
@@ -176,13 +191,12 @@ impl Node {
            min_section_size: usize,
            stats: Stats,
            mut timer: Timer)
-           -> Option<Self> {
+           -> Self {
         let public_id = *full_id.public_id();
         let tick_period = Duration::from_secs(TICK_TIMEOUT_SECS);
         let tick_timer_token = timer.schedule(tick_period);
         let user_msg_cache_duration = Duration::from_secs(USER_MSG_CACHE_EXPIRY_DURATION_SECS);
-
-        let mut node = Node {
+        Node {
             ack_mgr: AckManager::new(),
             cacheable_user_msg_cache:
                 UserMessageCache::with_expiry_duration(user_msg_cache_duration),
@@ -210,16 +224,10 @@ impl Node {
             rt_timer_token: None,
             routing_msg_backlog: vec![],
             candidate_timer_token: None,
+            candidate_status_token: None,
             resource_proof_response_parts: HashMap::new(),
             challenger_count: 0,
             proxy_is_resource_proof_challenger: false,
-        };
-
-        if node.start_listening() {
-            debug!("{:?} - State changed to node.", node);
-            Some(node)
-        } else {
-            None
         }
     }
 
@@ -329,10 +337,9 @@ impl Node {
                 self.handle_connection_info_prepared(result_token, result)
             }
             CrustEvent::ListenerStarted(port) => {
-                if let Transition::Terminate = self.handle_listener_started(port)
-                    .extract(&mut events) {
-                    return events.with_value(Transition::Terminate);
-                }
+                trace!("{:?} Listener started on port {}.", self, port);
+                self.crust_service.set_service_discovery_listen(true);
+                return events.with_value(Transition::Stay);
             }
             CrustEvent::ListenerFailed => {
                 error!("{:?} Failed to start listening.", self);
@@ -367,24 +374,6 @@ impl Node {
         }
 
         result
-    }
-
-    fn handle_listener_started(&mut self, port: u16) -> Evented<Transition> {
-        trace!("{:?} Listener started on port {}.", self, port);
-        self.crust_service.set_service_discovery_listen(true);
-
-        let mut result = Evented::empty();
-
-        if self.is_first_node {
-            info!("{:?} Started a new network as a seed node.", self);
-            result.with_value(Transition::Stay)
-        } else if let Err(error) = self.relocate() {
-            error!("{:?} Failed to start relocation: {:?}", self, error);
-            result.add_event(Event::RestartRequired);
-            result.with_value(Transition::Terminate)
-        } else {
-            result.with_value(Transition::Stay)
-        }
     }
 
     fn handle_bootstrap_accept(&mut self, peer_id: PeerId) {
@@ -603,9 +592,6 @@ impl Node {
             if let Some((signed_msg, route)) =
                 self.sig_accumulator.add_signature(min_section_size, digest, sig, pub_id) {
                 let hop = *self.name(); // we accumulated the message, so now we act as the last hop
-                trace!("{:?} Message accumulated - handling: {:?}",
-                       self,
-                       signed_msg);
                 return self.handle_signed_message(signed_msg, route, hop, &BTreeSet::new());
             }
         } else {
@@ -727,6 +713,10 @@ impl Node {
                 _ => *peer.name(),
             }
         } else {
+            debug!("{:?} Can't find sender {:?} of {:?}",
+                   self,
+                   peer_id,
+                   hop_msg);
             return Err(RoutingError::UnknownConnection(peer_id));
         };
 
@@ -760,10 +750,6 @@ impl Node {
 
         match self.routing_msg_filter.filter_incoming(signed_msg.routing_message(), route) {
             FilteringResult::KnownMessageAndRoute => {
-                debug!("{:?} Duplicate message received on route {}: {:?}",
-                       self,
-                       route,
-                       signed_msg.routing_message());
                 return Ok(());
             }
             FilteringResult::KnownMessage => {
@@ -1029,6 +1015,8 @@ impl Node {
         backlog.into_iter().rev().foreach(|msg| self.msg_queue.push_front(msg));
         self.resource_proof_response_parts.clear();
         self.reset_rt_timer();
+        self.candidate_status_token = Some(self.timer
+            .schedule(Duration::from_secs(CANDIDATE_STATUS_INTERVAL_SECS)));
         events.with_value(Ok(()))
     }
 
@@ -1136,11 +1124,6 @@ impl Node {
                 self.candidate_timer_token = None;
             }
             Ok(None) => {
-                debug!("{:?} Candidate {} sent part {}/{}.",
-                       self,
-                       name,
-                       part_index + 1,
-                       part_count);
                 let _ =
                     self.send_direct_message(peer_id, DirectMessage::ResourceProofResponseReceipt);
             }
@@ -1226,15 +1209,6 @@ impl Node {
         Ok(false)
     }
 
-    fn start_listening(&mut self) -> bool {
-        if let Err(error) = self.crust_service.start_listening_tcp() {
-            error!("{:?} Failed to start listening: {:?}", self, error);
-            false
-        } else {
-            true
-        }
-    }
-
     fn relocate(&mut self) -> Result<(), RoutingError> {
         let duration = Duration::from_secs(GET_NODE_NAME_TIMEOUT_SECS);
         self.get_approval_timer_token = Some(self.timer.schedule(duration));
@@ -1297,6 +1271,13 @@ impl Node {
                    self,
                    peer_id);
             self.disconnect_peer(&peer_id);
+        }
+
+        if !self.is_approved {
+            debug!("{:?} Client {:?} rejected: We are not approved as a node yet.",
+                   self,
+                   public_id.name());
+            return self.send_direct_message(peer_id, DirectMessage::BootstrapDeny);
         }
 
         if (client_restriction || !self.is_first_node) &&
@@ -1474,6 +1455,11 @@ impl Node {
     // Tell all neighbouring sections that our member list changed.
     // Currently we only send this when nodes join and it's only used to add missing members.
     fn send_section_update(&mut self) {
+        if !self.peer_mgr.routing_table().is_valid() {
+            trace!("{:?} Not sending section update since RT invariant not held.",
+                   self);
+            return;
+        }
         trace!("{:?} Sending section update", self);
         let members = self.peer_mgr.get_pub_ids(self.peer_mgr.routing_table().our_section());
 
@@ -1922,14 +1908,33 @@ impl Node {
     }
 
     // Received by Y; From X -> Y
-    // Context: a node is joining our section. Sends `AcceptAsCandidate` to our section.
+    // Context: a node is joining our section. Sends `AcceptAsCandidate` to our section. If the
+    // network is unbalanced, sends `ExpectCandidate` on to a section with a shorter prefix.
     fn handle_expect_candidate(&mut self,
-                               candidate_id: PublicId,
+                               mut candidate_id: PublicId,
                                client_auth: Authority<XorName>,
                                message_id: MessageId)
                                -> Result<(), RoutingError> {
         for peer_id in self.peer_mgr.remove_expired_candidates() {
             self.disconnect_peer(&peer_id);
+        }
+
+        let original_name = *candidate_id.name();
+        candidate_id.set_name(
+            self.peer_mgr.routing_table().assign_to_min_len_prefix(&original_name));
+
+        if self.peer_mgr.routing_table().should_join_our_section(candidate_id.name()).is_err() {
+            let request_content = MessageContent::ExpectCandidate {
+                expect_id: candidate_id,
+                client_auth: client_auth,
+                message_id: message_id,
+            };
+            let request_msg = RoutingMessage {
+                src: Authority::Section(original_name),
+                dst: Authority::Section(*candidate_id.name()),
+                content: request_content,
+            };
+            return self.send_routing_message(request_msg);
         }
 
         if candidate_id == *self.full_id.public_id() {
@@ -2053,6 +2058,10 @@ impl Node {
         let sections = self.peer_mgr.pub_ids_by_section();
         let serialised_sections = serialisation::serialise(&sections)?;
         if digest == sha256::hash(&serialised_sections) {
+            trace!("{:?} Ignoring RT request {:?} since our digest ({:?}) matches the request's.",
+                   self,
+                   msg_id,
+                   utils::format_binary_array(&digest));
             return Ok(());
         }
         for (prefix, members) in sections {
@@ -2061,12 +2070,12 @@ impl Node {
                 prefix: prefix,
                 members: members,
             };
-            let request_msg = RoutingMessage {
+            let response_msg = RoutingMessage {
                 src: dst,
                 dst: src,
                 content: content,
             };
-            if let Err(err) = self.send_routing_message(request_msg) {
+            if let Err(err) = self.send_routing_message(response_msg) {
                 debug!("{:?} Failed to send RoutingTableResponse: {:?}.", self, err);
             }
         }
@@ -2080,6 +2089,10 @@ impl Node {
                      -> Evented<Result<(), RoutingError>> {
         let mut result = Evented::empty();
         if Some(message_id) != self.rt_msg_id {
+            trace!("{:?} Ignoring RT response {:?}. Waiting for {:?}",
+                   self,
+                   message_id,
+                   self.rt_msg_id);
             return result.with_value(Ok(()));
         }
         let old_prefix = *self.peer_mgr.routing_table().our_prefix();
@@ -2089,8 +2102,14 @@ impl Node {
         }
         let new_prefix = *self.peer_mgr.routing_table().our_prefix();
         if old_prefix.bit_count() < new_prefix.bit_count() {
+            trace!("{:?} Found out about our section splitting via RT response {:?}",
+                   self,
+                   message_id);
             result.add_event(Event::SectionSplit(new_prefix));
         } else if old_prefix.bit_count() > new_prefix.bit_count() {
+            trace!("{:?} Found out about our section merging via RT response {:?}",
+                   self,
+                   message_id);
             result.add_event(Event::SectionMerge(new_prefix));
         }
         info!("{:?} Update on RoutingTableResponse completed. Prefixes: {:?}",
@@ -2244,7 +2263,7 @@ impl Node {
         Ok(())
     }
 
-    /// Returns true if the calling node should keep running, false for terminate.
+    /// Returns true if the calling node should keep running, false for terminate or restart.
     fn handle_timeout(&mut self, token: u64) -> Evented<bool> {
         if self.get_approval_timer_token == Some(token) {
             return self.handle_approval_timeout();
@@ -2268,6 +2287,9 @@ impl Node {
         if self.rt_timer_token == Some(token) {
             self.rt_timeout = cmp::min(Duration::from_secs(RT_MAX_TIMEOUT_SECS),
                                        self.rt_timeout * 2);
+            trace!("{:?} Scheduling next RT request for {} seconds from now.",
+                   self,
+                   self.rt_timeout.as_secs());
             self.rt_timer_token = Some(self.timer.schedule(self.rt_timeout));
             if self.send_rt_request().is_err() {
                 return events.with_value(true);
@@ -2277,6 +2299,10 @@ impl Node {
             if self.send_candidate_approval().is_err() {
                 return events.with_value(true);
             }
+        } else if self.candidate_status_token == Some(token) {
+            self.candidate_status_token = Some(self.timer
+                .schedule(Duration::from_secs(CANDIDATE_STATUS_INTERVAL_SECS)));
+            self.peer_mgr.show_candidate_status();
         } else if self.approval_progress_timer_token == Some(token) {
             self.approval_progress_timer_token = Some(self.timer
                 .schedule(Duration::from_secs(APPROVAL_PROGRESS_INTERVAL_SECS)));
@@ -2314,9 +2340,21 @@ impl Node {
             events.add_event(Event::RestartRequired);
         } else {
             // `NodeApproval` has timed out.
-            info!("{:?} Failed to get approval from the network. {} Terminating node.",
-                  self,
-                  self.resource_proof_response_progress());
+            let completed = self.resource_proof_response_parts
+                .values()
+                .filter(|parts| parts.is_empty())
+                .count();
+            if completed == self.challenger_count {
+                info!("{:?} All {} resource proof responses fully sent, but timed out waiting \
+                       for approval from the network. This could be due to the target section \
+                       experiencing churn. Terminating node.",
+                      self,
+                      completed);
+            } else {
+                info!("{:?} Failed to get approval from the network. {} Terminating node.",
+                      self,
+                      self.resource_proof_response_progress());
+            }
             events.add_event(Event::Terminate);
         }
         events.with_value(false)
@@ -2328,6 +2366,10 @@ impl Node {
             self.rt_msg_id = Some(msg_id);
             let sections = self.peer_mgr.pub_ids_by_section();
             let digest = sha256::hash(&serialisation::serialise(&sections)?);
+            trace!("{:?} Sending RT request {:?} with digest {:?}",
+                   self,
+                   msg_id,
+                   utils::format_binary_array(&digest));
             let request_msg = RoutingMessage {
                 src: Authority::ManagedNode(*self.name()),
                 dst: Authority::PrefixSection(*self.peer_mgr.routing_table().our_prefix()),
@@ -2387,6 +2429,10 @@ impl Node {
     }
 
     fn reset_rt_timer(&mut self) {
+        trace!("{:?} Scheduling a RT request for {} seconds from now. Previous rt_msg_id: {:?}",
+               self,
+               RT_MIN_TIMEOUT_SECS,
+               self.rt_msg_id);
         self.rt_msg_id = None;
         self.rt_timeout = Duration::from_secs(RT_MIN_TIMEOUT_SECS);
         self.rt_timer_token = Some(self.timer.schedule(self.rt_timeout));
@@ -3088,13 +3134,9 @@ impl Bootstrapped for Node {
         match self.get_signature_target(&signed_msg.routing_message().src, route) {
             None => Ok(()),
             Some(our_name) if our_name == *self.name() => {
-                trace!("{:?} Starting message accumulation for {:?}",
-                       self,
-                       signed_msg);
                 let min_section_size = self.min_section_size();
                 if let Some((msg, route)) =
                     self.sig_accumulator.add_message(signed_msg, min_section_size, route) {
-                    trace!("{:?} Message accumulated - sending: {:?}", self, msg);
                     if self.in_authority(&msg.routing_message().dst) {
                         self.handle_signed_message(msg, route, our_name, &BTreeSet::new())?;
                     } else {
@@ -3107,10 +3149,6 @@ impl Bootstrapped for Node {
                 if let Some(&peer_id) = self.peer_mgr.get_peer_id(&target_name) {
                     let direct_msg = signed_msg.routing_message()
                         .to_signature(self.full_id().signing_private_key())?;
-                    trace!("{:?} Sending signature for {:?} to {:?}",
-                           self,
-                           signed_msg,
-                           target_name);
                     self.send_direct_message(peer_id, direct_msg)
                 } else {
                     Err(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer))
@@ -3130,7 +3168,10 @@ impl Bootstrapped for Node {
 
 impl Debug for Node {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(formatter, "Node({})", self.name())
+        write!(formatter,
+               "Node({}({:b}))",
+               self.name(),
+               self.peer_mgr.routing_table().our_prefix())
     }
 }
 

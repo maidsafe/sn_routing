@@ -120,12 +120,12 @@ impl NodeBuilder {
 
             Evented::single(Event::Terminate, State::Terminated)
         } else {
-            State::Bootstrapping(states::Bootstrapping::new(self.cache,
-                                                            false,
-                                                            crust_service,
-                                                            full_id,
-                                                            min_section_size,
-                                                            timer))
+            states::Bootstrapping::new(self.cache,
+                                        false,
+                                        crust_service,
+                                        full_id,
+                                        min_section_size,
+                                        timer).map_or(State::Terminated, State::Bootstrapping)
                 .to_evented()
         })
     }

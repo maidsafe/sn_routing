@@ -279,7 +279,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                 return Err(Error::InvariantViolation);
             }
         }
-        self.check_invariant(true)
+        self.check_invariant(true, true)
     }
 
     /// Returns the `Prefix` of our section
@@ -825,9 +825,33 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         None
     }
 
-    /// Returns our name
+    /// Returns our name.
     pub fn our_name(&self) -> &T {
         &self.our_name
+    }
+
+    /// Returns whether the Routing invariant is currently held for this table or not.
+    pub fn is_valid(&self) -> bool {
+        self.check_invariant(false, false).is_ok()
+    }
+
+    /// Returns the prefix of the section in which `name` belongs, or `None` if there is no such
+    /// section in the routing table.
+    pub fn find_section_prefix(&self, name: &T) -> Option<Prefix<T>> {
+        if self.our_prefix.matches(name) {
+            return Some(self.our_prefix);
+        }
+        self.sections.keys().find(|&prefix| prefix.matches(name)).cloned()
+    }
+
+    /// Returns `name` modified so that it belongs to one of the known prefixes with minimal bit
+    /// length, favouring our own prefix if it is one of the shortest.
+    pub fn assign_to_min_len_prefix(&self, name: &T) -> T {
+        let target_prefix = iter::once(&self.our_prefix)
+            .chain(self.sections.keys())
+            .min_by_key(|prefix| prefix.bit_count())
+            .unwrap_or(&self.our_prefix);
+        target_prefix.substituted_in(*name)
     }
 
     fn split_our_section(&mut self) -> Vec<T> {
@@ -896,15 +920,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         None
     }
 
-    /// Returns the prefix of the section in which `name` belongs, or `None` if there is no such
-    /// section in the routing table.
-    pub fn find_section_prefix(&self, name: &T) -> Option<Prefix<T>> {
-        if self.our_prefix.matches(name) {
-            return Some(self.our_prefix);
-        }
-        self.sections.keys().find(|&prefix| prefix.matches(name)).cloned()
-    }
-
     /// Returns the prefix of the closest non-empty section to `name`, regardless of whether `name`
     /// belongs in that section or not, and the section itself.
     fn closest_section(&self, name: &T) -> (&Prefix<T>, &HashSet<T>) {
@@ -947,29 +962,34 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         Ok(*RoutingTable::get_routeth_name(names, &target, route))
     }
 
-    fn check_invariant(&self, allow_small_sections: bool) -> Result<(), Error> {
+    fn check_invariant(&self,
+                       allow_small_sections: bool,
+                       show_warnings: bool)
+                       -> Result<(), Error> {
+        let warn = |log_msg: String| -> Result<(), Error> {
+            if show_warnings {
+                warn!("{}", log_msg);
+            }
+            Err(Error::InvariantViolation)
+        };
         if !self.our_prefix.matches(&self.our_name) {
-            warn!("Our prefix does not match our name: {:?}", self);
-            return Err(Error::InvariantViolation);
+            return warn(format!("Our prefix does not match our name: {:?}", self));
         }
         if self.sections.contains_key(&self.our_prefix) {
-            warn!("Our own section is in the sections map: {:?}", self);
-            return Err(Error::InvariantViolation);
+            return warn(format!("Our own section is in the sections map: {:?}", self));
         }
         let has_enough_nodes = self.len() >= self.min_section_size;
         if has_enough_nodes && self.our_section.len() < self.min_section_size {
-            warn!("Minimum section size not met for section {:?}: {:?}",
-                  self.our_prefix,
-                  self);
-            return Err(Error::InvariantViolation);
+            return warn(format!("Minimum section size not met for section {:?}: {:?}",
+                                self.our_prefix,
+                                self));
         }
         for name in &self.our_section {
             if !self.our_prefix.matches(name) {
-                warn!("Name {} doesn't match section prefix {:?}: {:?}",
-                      name.debug_binary(),
-                      self.our_prefix,
-                      self);
-                return Err(Error::InvariantViolation);
+                return warn(format!("Name {} doesn't match section prefix {:?}: {:?}",
+                                    name.debug_binary(),
+                                    self.our_prefix,
+                                    self));
             }
         }
 
@@ -978,18 +998,16 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                 if section.len() <= 1 && allow_small_sections {
                     continue;
                 }
-                warn!("Minimum group size not met for group {:?}: {:?}",
-                      prefix,
-                      self);
-                return Err(Error::InvariantViolation);
+                return warn(format!("Minimum group size not met for group {:?}: {:?}",
+                                    prefix,
+                                    self));
             }
             for name in section {
                 if !prefix.matches(name) {
-                    warn!("Name {} doesn't match section prefix {:?}: {:?}",
-                          name.debug_binary(),
-                          prefix,
-                          self);
-                    return Err(Error::InvariantViolation);
+                    return warn(format!("Name {} doesn't match section prefix {:?}: {:?}",
+                                        name.debug_binary(),
+                                        prefix,
+                                        self));
                 }
             }
         }
@@ -1001,13 +1019,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                 .all(|i| self.our_prefix.with_flipped_bit(i).is_covered_by(&prefixes))
         };
         if !all_are_neighbours {
-            warn!("Some sections in the RT aren't neighbours of our section: {:?}",
-                  self);
-            return Err(Error::InvariantViolation);
+            return warn(format!("Some sections in the RT aren't neighbours of our section: {:?}",
+                                self));
         }
         if !all_neighbours_covered {
-            warn!("Some neighbours aren't fully covered by the RT: {:?}", self);
-            return Err(Error::InvariantViolation);
+            return warn(format!("Some neighbours aren't fully covered by the RT: {:?}", self));
         }
 
         Ok(())
@@ -1016,7 +1032,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// Runs the built-in invariant checker
     #[cfg(any(test, feature = "use-mock-crust"))]
     pub fn verify_invariant(&self) {
-        unwrap!(self.check_invariant(false),
+        unwrap!(self.check_invariant(false, true),
                 "Invariant not satisfied for RT: {:?}",
                 self);
     }

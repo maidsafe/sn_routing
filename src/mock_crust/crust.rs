@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+
 use maidsafe_utilities::event_sender;
 use std::{fmt, io, thread};
 use std::cell::{RefCell, RefMut};
@@ -56,8 +57,11 @@ impl Service {
     }
 
     /// Start the bootstrapping procedure.
-    pub fn start_bootstrap(&mut self, blacklist: HashSet<SocketAddr>) -> Result<(), CrustError> {
-        self.lock_and_poll(|imp| imp.start_bootstrap(blacklist));
+    pub fn start_bootstrap(&mut self,
+                           blacklist: HashSet<SocketAddr>,
+                           user: CrustUser)
+                           -> Result<(), CrustError> {
+        self.lock_and_poll(|imp| imp.start_bootstrap(blacklist, user));
         Ok(())
     }
 
@@ -249,3 +253,16 @@ pub struct ConnectionInfoResult {
 /// Mock version of `crust::CrustError`.
 #[derive(Debug)]
 pub struct CrustError;
+
+/// Specify crust user. Behaviour (for example in bootstrap phase) will be different for different
+/// variants. Node will request the Bootstrapee to connect back to this crust failing which it
+/// would mean it's not reachable from outside and hence should be rejected bootstrap attempts.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum CrustUser {
+    /// Crust user is a Node and should not be allowed to bootstrap if it's not reachable from
+    /// outside.
+    Node,
+    /// Crust user is a Client and should be allowed to bootstrap even if it's not reachable from
+    /// outside.
+    Client,
+}

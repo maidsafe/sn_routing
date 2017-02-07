@@ -62,12 +62,9 @@ impl AckManager {
     /// Handles a received ack (removes the corresponding message from the list of
     /// pending ones, and remembers that we have received this ack).
     pub fn receive(&mut self, ack: Ack) {
-        let _ack = self.pending
-            .remove(&ack)
-            .ok_or_else(|| debug!("received an Ack we were not expecting : {}", ack));
+        let _ack = self.pending.remove(&ack);
         // TODO - Should this insert an ack we were not expecting ??
-        let count = self.received.insert(&ack);
-        trace!("Received ack {} : {} times", ack, count);
+        let _ = self.received.insert(&ack);
     }
 
     /// Did we receive this ack?
@@ -133,19 +130,10 @@ impl Ack {
     }
 }
 
-impl fmt::Display for Ack {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(formatter,
-               "hash : {:02x}{:02x}..",
-               self.m_hash[0],
-               self.m_hash[1])
-    }
-}
-
 impl fmt::Debug for Ack {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         write!(formatter,
-               "Ack(hash : {:02X}{:02X}..)",
+               "Ack({:02x}{:02x}..)",
                self.m_hash[0],
                self.m_hash[1])
     }

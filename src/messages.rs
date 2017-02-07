@@ -816,7 +816,7 @@ impl Debug for MessageContent {
                        prefix,
                        section)
             }
-            Ack(ack, priority) => write!(formatter, "Ack({}, {})", ack, priority),
+            Ack(ack, priority) => write!(formatter, "Ack({:?}, {})", ack, priority),
             UserMessagePart { hash, part_count, part_index, priority, cacheable, .. } => {
                 write!(formatter,
                        "UserMessagePart {{ {}/{}, priority: {}, cacheable: {}, {:x} }}",
