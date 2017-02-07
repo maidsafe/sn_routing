@@ -713,6 +713,7 @@ impl Node {
                 _ => *peer.name(),
             }
         } else {
+            warn!("{:?} can't find {:?} for {:?}", self, peer_id, hop_msg);
             return Err(RoutingError::UnknownConnection(peer_id));
         };
 
