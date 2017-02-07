@@ -198,7 +198,7 @@ impl Bootstrapping {
     }
 
     fn handle_bootstrap_failed(&mut self) -> Evented<Transition> {
-        debug!("{:?} Failed to bootstrap.", self);
+        info!("{:?} Failed to bootstrap. Terminating.", self);
         Evented::single(Event::Terminate, Transition::Terminate)
     }
 
