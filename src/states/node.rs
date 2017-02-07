@@ -713,6 +713,10 @@ impl Node {
                 _ => *peer.name(),
             }
         } else {
+            debug!("{:?} Can't find sender {:?} of {:?}",
+                   self,
+                   peer_id,
+                   hop_msg);
             return Err(RoutingError::UnknownConnection(peer_id));
         };
 
@@ -1904,14 +1908,33 @@ impl Node {
     }
 
     // Received by Y; From X -> Y
-    // Context: a node is joining our section. Sends `AcceptAsCandidate` to our section.
+    // Context: a node is joining our section. Sends `AcceptAsCandidate` to our section. If the
+    // network is unbalanced, sends `ExpectCandidate` on to a section with a shorter prefix.
     fn handle_expect_candidate(&mut self,
-                               candidate_id: PublicId,
+                               mut candidate_id: PublicId,
                                client_auth: Authority<XorName>,
                                message_id: MessageId)
                                -> Result<(), RoutingError> {
         for peer_id in self.peer_mgr.remove_expired_candidates() {
             self.disconnect_peer(&peer_id);
+        }
+
+        let original_name = *candidate_id.name();
+        candidate_id.set_name(
+            self.peer_mgr.routing_table().assign_to_min_len_prefix(&original_name));
+
+        if self.peer_mgr.routing_table().should_join_our_section(candidate_id.name()).is_err() {
+            let request_content = MessageContent::ExpectCandidate {
+                expect_id: candidate_id,
+                client_auth: client_auth,
+                message_id: message_id,
+            };
+            let request_msg = RoutingMessage {
+                src: Authority::Section(original_name),
+                dst: Authority::Section(*candidate_id.name()),
+                content: request_content,
+            };
+            return self.send_routing_message(request_msg);
         }
 
         if candidate_id == *self.full_id.public_id() {
@@ -2047,11 +2070,6 @@ impl Node {
                 prefix: prefix,
                 members: members,
             };
-            trace!("{:?} Sending {:?} from {:?} to {:?}",
-                   self,
-                   content,
-                   dst,
-                   src);
             let response_msg = RoutingMessage {
                 src: dst,
                 dst: src,
@@ -2269,7 +2287,7 @@ impl Node {
         if self.rt_timer_token == Some(token) {
             self.rt_timeout = cmp::min(Duration::from_secs(RT_MAX_TIMEOUT_SECS),
                                        self.rt_timeout * 2);
-            trace!("{:?} Scheduling a RT request for {} seconds from now.",
+            trace!("{:?} Scheduling next RT request for {} seconds from now.",
                    self,
                    self.rt_timeout.as_secs());
             self.rt_timer_token = Some(self.timer.schedule(self.rt_timeout));
@@ -2411,14 +2429,12 @@ impl Node {
     }
 
     fn reset_rt_timer(&mut self) {
-        if let Some(msg_id) = self.rt_msg_id {
-            trace!("{:?} Cancelled waiting for RT response {:?}", self, msg_id);
-        }
+        trace!("{:?} Scheduling a RT request for {} seconds from now. Previous rt_msg_id: {:?}",
+               self,
+               RT_MIN_TIMEOUT_SECS,
+               self.rt_msg_id);
         self.rt_msg_id = None;
         self.rt_timeout = Duration::from_secs(RT_MIN_TIMEOUT_SECS);
-        trace!("{:?} Scheduling a RT request for {} seconds from now.",
-               self,
-               self.rt_timeout.as_secs());
         self.rt_timer_token = Some(self.timer.schedule(self.rt_timeout));
     }
 
@@ -3152,7 +3168,10 @@ impl Bootstrapped for Node {
 
 impl Debug for Node {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(formatter, "Node({})", self.name())
+        write!(formatter,
+               "Node({}({:b}))",
+               self.name(),
+               self.peer_mgr.routing_table().our_prefix())
     }
 }
 

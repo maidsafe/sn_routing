@@ -72,21 +72,25 @@ fn merge(prefix_lengths: Vec<usize>) {
     }
 }
 
+#[ignore]
 #[test]
 fn merge_three_sections_into_one() {
     merge(vec![1, 2, 2])
 }
 
+#[ignore]
 #[test]
 fn merge_four_unbalanced_sections_into_one() {
     merge(vec![1, 2, 3, 3])
 }
 
+#[ignore]
 #[test]
 fn merge_four_balanced_sections_into_one() {
     merge(vec![2, 2, 2, 2])
 }
 
+#[ignore]
 #[test]
 fn merge_five_sections_into_one() {
     merge(vec![1, 3, 3, 3, 3])
