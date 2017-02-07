@@ -100,13 +100,13 @@ pub trait Bootstrapped: Base {
 
     fn resend_unacknowledged_timed_out_msgs(&mut self, token: u64) {
         if let Some((unacked_msg, ack)) = self.ack_mgr_mut().find_timed_out(token) {
-            trace!("{:?} - Timed out waiting for ack({}) {:?}",
+            trace!("{:?} Timed out waiting for {:?}: {:?}",
                    self,
                    ack,
                    unacked_msg);
 
             if unacked_msg.route as usize == self.min_section_size() {
-                debug!("{:?} - Message unable to be acknowledged - giving up. {:?}",
+                debug!("{:?} Message unable to be acknowledged - giving up. {:?}",
                        self,
                        unacked_msg);
                 self.stats().count_unacked();
