@@ -1814,6 +1814,7 @@ impl Node {
             debug!("{:?} Disconnecting {:?} (indirect).", self, peer_id);
             let message = DirectMessage::TunnelDisconnect(*peer_id);
             let _ = self.send_direct_message(tunnel_id, message);
+            let _ = self.peer_mgr.remove_peer(peer_id);
         } else {
             debug!("{:?} Disconnecting {:?}. Calling crust::Service::disconnect.",
                    self,

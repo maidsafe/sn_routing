@@ -322,7 +322,7 @@ pub fn create_connected_nodes_with_cache(network: &Network, size: usize, use_cac
     let n = cmp::min(nodes.len(), network.min_section_size()) - 1;
 
     for node in &mut nodes {
-        expect_next_event!(node, Event::Connected);
+        expect_any_event!(node, Event::Connected if true);
 
         let mut node_added_count = 0;
 
