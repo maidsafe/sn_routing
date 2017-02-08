@@ -79,7 +79,7 @@ const APPROVAL_TIMEOUT_SECS: u64 = RESOURCE_PROOF_DURATION_SECS + ACCUMULATION_T
 /// Interval between displaying info about ongoing approval progress, in seconds.
 const APPROVAL_PROGRESS_INTERVAL_SECS: u64 = 30;
 /// Interval between displaying info about current candidate, in seconds.
-const CANDIDATE_STATUS_INTERVAL_SECS: u64 = 20;
+const CANDIDATE_STATUS_INTERVAL_SECS: u64 = 60;
 
 pub struct Node {
     ack_mgr: AckManager,
@@ -809,7 +809,8 @@ impl Node {
         }
 
         match routing_msg.content {
-            Ack(..) => (),
+            Ack(..) |
+            RoutingTableRequest(..) => (),
             _ => trace!("{:?} Got routing message {:?}.", self, routing_msg),
         }
 
@@ -2058,10 +2059,6 @@ impl Node {
         let sections = self.peer_mgr.pub_ids_by_section();
         let serialised_sections = serialisation::serialise(&sections)?;
         if digest == sha256::hash(&serialised_sections) {
-            trace!("{:?} Ignoring RT request {:?} since our digest ({:?}) matches the request's.",
-                   self,
-                   msg_id,
-                   utils::format_binary_array(&digest));
             return Ok(());
         }
         for (prefix, members) in sections {
@@ -2148,9 +2145,8 @@ impl Node {
             events.add_event(Event::SectionSplit(new_prefix));
         }
 
-        for (name, peer_id) in peers_to_drop {
+        for (_name, peer_id) in peers_to_drop {
             self.disconnect_peer(&peer_id);
-            info!("{:?} Dropped {:?} from the routing table.", self, name);
         }
         info!("{:?} Section split for {:?} completed. Prefixes: {:?}",
               self,

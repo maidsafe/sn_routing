@@ -613,9 +613,10 @@ impl PeerManager {
     /// Logs info about ongoing candidate state, if any.
     pub fn show_candidate_status(&self) {
         let mut have_candidate = false;
+        let log_prefix = format!("{:?} Candidate Status - ", self);
         for (name, candidate) in self.candidates.iter().filter(|&(_, cand)| !cand.is_expired()) {
             have_candidate = true;
-            let mut log_msg = format!("{:?} Candidate {} ", self, name);
+            let mut log_msg = format!("{}{} ", log_prefix, name);
             match candidate.challenge_response {
                 Some(ChallengeResponse { ref target_size, ref proof, .. }) => {
                     if candidate.passed_our_challenge {
@@ -644,7 +645,7 @@ impl PeerManager {
             return;
         }
 
-        trace!("{:?} No candidate is currently being handled.", self);
+        trace!("{}No candidate is currently being handled.", log_prefix);
     }
 
     /// Tries to add the given peer to the routing table. If successful, this returns `Ok(true)` if
@@ -675,6 +676,7 @@ impl PeerManager {
 
         let ids_to_drop = names_to_drop.into_iter()
             .filter_map(|name| {
+                info!("{:?} Dropped {:?} from the routing table.", self, name);
                 self.peer_map.remove_by_name(&name).and_then(|peer| match peer {
                     Peer {
                     state: PeerState::Routing(RoutingConnection::JoiningNode(timestamp)),
@@ -1418,7 +1420,10 @@ impl PeerManager {
 
 impl fmt::Debug for PeerManager {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(formatter, "Node({})", self.routing_table.our_name())
+        write!(formatter,
+               "Node({}({:b}))",
+               self.routing_table.our_name(),
+               self.routing_table.our_prefix())
     }
 }
 
