@@ -125,7 +125,6 @@
                                     option_unwrap_used))]
 #[macro_use]
 extern crate log;
-#[macro_use]
 extern crate maidsafe_utilities;
 #[cfg_attr(feature="cargo-clippy", allow(useless_attribute))]
 #[allow(unused_extern_crates)]
