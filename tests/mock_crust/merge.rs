@@ -55,6 +55,8 @@ fn merge(prefix_lengths: Vec<usize>) {
                 match event {
                     Event::NodeAdded(..) |
                     Event::NodeLost(..) |
+                    // TODO: possibly ban splitting here, we really should only be merging?
+                    Event::SectionSplit(_) |
                     Event::Tick => (),
                     Event::SectionMerge(prefix) => {
                         if prefix.bit_count() == 0 {

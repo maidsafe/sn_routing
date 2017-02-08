@@ -2016,7 +2016,7 @@ impl Node {
                 break;
             }
             debug!("{:?} Splitting {:?} on section update.", self, rt_pfx);
-            let _ = self.handle_section_split(rt_pfx, rt_pfx.lower_bound());
+            let _ = self.handle_section_split(rt_pfx, rt_pfx.lower_bound()).extract(&mut result);
         }
         // Filter list of members to just those we don't know about:
         let members =
@@ -2027,7 +2027,7 @@ impl Node {
                 warn!("{:?} Section update received from unknown neighbour {:?}",
                       self,
                       prefix);
-                return Ok(()).to_evented();
+                return result.with_value(Ok(()));
             };
         let members = members.into_iter()
             .filter(|id: &PublicId| !self.peer_mgr.is_expected(id.name()))
