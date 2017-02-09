@@ -939,10 +939,11 @@ impl Node {
         };
 
         info!("{:?} Our section with {:?} has approved candidate {}. Adding it to our routing \
-               table as a peer.",
+               table as a peer {:?}.",
               self,
               self.peer_mgr.routing_table().our_prefix(),
-              candidate_id.name());
+              candidate_id.name(),
+              opt_peer_id);
         let src = Authority::Section(*candidate_id.name());
         let content = MessageContent::NodeApproval { sections: sections };
         if let Err(error) = self.send_routing_message(src, client_auth, content) {
@@ -1367,6 +1368,9 @@ impl Node {
                       public_id.name());
                 self.add_to_routing_table(&public_id, &peer_id).extract(&mut result);
             }
+            Err(RoutingError::CandidateIsTunnelling) => {
+                debug!("{:?} handling a tunnelling candidate {:?}", self, name);
+            }
             Err(error) => {
                 debug!("{:?} failed to handle CandidateIdentify from {:?}: {:?} - disconnecting",
                        self,
@@ -1784,6 +1788,7 @@ impl Node {
             debug!("{:?} Disconnecting {:?} (indirect).", self, peer_id);
             let message = DirectMessage::TunnelDisconnect(*peer_id);
             let _ = self.send_direct_message(tunnel_id, message);
+            let _ = self.peer_mgr.remove_peer(peer_id);
         } else {
             debug!("{:?} Disconnecting {:?}. Calling crust::Service::disconnect.",
                    self,

@@ -88,6 +88,17 @@ fn failing_connections_ring() {
 }
 
 #[test]
+fn failing_connections_bidirectional() {
+    let min_section_size = 4;
+    let network = Network::new(min_section_size, None);
+    network.block_connection(Endpoint(2), Endpoint(3));
+    network.block_connection(Endpoint(3), Endpoint(2));
+
+    let nodes = create_connected_nodes(&network, min_section_size);
+    verify_invariant_for_all_nodes(&nodes);
+}
+
+#[test]
 fn failing_connections_unidirectional() {
     let min_section_size = 8;
     let network = Network::new(min_section_size, None);

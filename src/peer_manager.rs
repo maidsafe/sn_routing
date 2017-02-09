@@ -532,9 +532,7 @@ impl PeerManager {
     }
 
     /// Handles accumulated candidate approval.  Marks the candidate as `Approved` and returns the
-    /// candidate's `PeerId` if we're directly-connected to it (so we can add it to our routing
-    /// table); or `Err` if the peer is not the candidate or we are missing its info, or we're not
-    /// connected to it.
+    /// candidate's `PeerId`; or `Err` if the peer is not the candidate or we are missing its info.
     pub fn handle_candidate_approval(&mut self,
                                      candidate_name: XorName,
                                      client_auth: Authority<XorName>)
@@ -543,9 +541,7 @@ impl PeerManager {
             candidate.state = CandidateState::Approved;
             if let Some(peer) = self.peer_map.get_by_name(&candidate_name) {
                 if let Some(peer_id) = peer.peer_id() {
-                    if peer.state().is_directly_connected() {
-                        return Ok(*peer_id);
-                    }
+                    return Ok(*peer_id);
                 } else {
                     trace!("Node({:?}) No peer ID with name {:?}",
                            self.routing_table.our_name(),
