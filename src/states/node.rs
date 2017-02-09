@@ -1814,7 +1814,7 @@ impl Node {
             Some(close_section) => close_section.into_iter().collect(),
             None => return Err(RoutingError::InvalidDestination),
         };
-        let relocated_name = self.next_node_name.take().unwrap_or_else(|| {
+        let relocated_name = self.next_node_name.unwrap_or_else(|| {
             utils::calculate_relocated_name(close_section, their_public_id.name())
         });
         their_public_id.set_name(relocated_name);
@@ -1900,8 +1900,10 @@ impl Node {
         }
 
         let original_name = *candidate_id.name();
-        candidate_id.set_name(
-            self.peer_mgr.routing_table().assign_to_min_len_prefix(&original_name));
+        let relocated_name = self.next_node_name.take().unwrap_or_else(|| {
+            self.peer_mgr.routing_table().assign_to_min_len_prefix(&original_name)
+        });
+        candidate_id.set_name(relocated_name);
 
         if self.peer_mgr.routing_table().should_join_our_section(candidate_id.name()).is_err() {
             let request_content = MessageContent::ExpectCandidate {
