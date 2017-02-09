@@ -281,24 +281,22 @@ impl StateMachine {
     ///
     /// Errors are permanent failures due to either: state machine termination or
     /// the permanent closing of the `category_rx` event channel.
-    pub fn step(&mut self) -> Result<Vec<Event>, RecvError> {
+    pub fn step(&mut self, outtray: &mut EventTray) -> Result<(), RecvError> {
         if self.is_running {
-            let mut outtray = EventTray::new();
             let category = self.category_rx.recv()?;
-            self.handle_event(category, &mut outtray);
-            Ok(outtray.take_events())
+            self.handle_event(category, outtray);
+            Ok(())
         } else {
             Err(RecvError)
         }
     }
 
     /// Query for a result, or yield: Err(NothingAvailable), Err(Disconnected) or Err(Terminated).
-    pub fn try_step(&mut self) -> Result<Vec<Event>, TryRecvError> {
+    pub fn try_step(&mut self, outtray: &mut EventTray) -> Result<(), TryRecvError> {
         if self.is_running {
-            let mut outtray = EventTray::new();
             let category = self.category_rx.try_recv()?;
-            self.handle_event(category, &mut outtray);
-            Ok(outtray.take_events())
+            self.handle_event(category, outtray);
+            Ok(())
         } else {
             Err(TryRecvError::Disconnected)
         }

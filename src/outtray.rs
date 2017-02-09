@@ -42,40 +42,50 @@
 // impl OutTray for OutBox { ... }
 
 use event::Event;
+use std::collections::VecDeque;
 use std::default::Default;
 use std::mem;
 
 
 /// An event dispatcher. Collects things to deliver and "sends".
 ///
-/// For now, this is a struct (to enable static dispatch). The design allows switching this to a
-/// trait, updating only a few functions which use it at the top level.
-///
 /// The API doesn't specify whether objects get sent immediately synchronously or asynchronously,
 /// or collected and sent later.
-#[derive(Default)]
-pub struct EventTray {
-    events: Vec<Event>,
+pub trait EventTray {
+    /// Send an event
+    fn send_event(&mut self, event: Event);
 }
 
-impl EventTray {
-    /// Send an event
-    pub fn send_event(&mut self, event: Event) {
-        self.events.push(event)
-    }
+/// Implementor of `EventTray`; stores its events in a `VecDeque`.
+#[derive(Default)]
+pub struct EventBuf {
+    events: VecDeque<Event>,
+}
 
+impl EventTray for EventBuf {
+    fn send_event(&mut self, event: Event) {
+        self.events.push_back(event)
+    }
+}
+
+impl EventBuf {
     /// Create an empty box
     pub fn new() -> Self {
         Default::default()
     }
 
+    /// Take the first Event, if any is stored.
+    pub fn take_first(&mut self) -> Option<Event> {
+        self.events.pop_front()
+    }
+
     /// Extract the list of events (swapping in an empty list)
-    pub fn take_events(&mut self) -> Vec<Event> {
-        mem::replace(&mut self.events, vec![])
+    pub fn take_all(&mut self) -> VecDeque<Event> {
+        mem::replace(&mut self.events, Default::default())
     }
 }
 
-impl Drop for EventTray {
+impl Drop for EventBuf {
     fn drop(&mut self) {
         if !self.events.is_empty() {
             error!("EventTray dropped events: {:?}", self.events);

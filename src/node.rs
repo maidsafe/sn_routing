@@ -26,7 +26,7 @@ use id::FullId;
 use id::PublicId;
 use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, RELOCATE_PRIORITY, Request, Response,
                UserMessage};
-use outtray::EventTray;
+use outtray::{EventBuf, EventTray};
 #[cfg(feature = "use-mock-crust")]
 use routing_table::{Prefix, RoutingTable};
 use routing_table::Authority;
@@ -38,7 +38,6 @@ use state_machine::{State, StateMachine};
 use states;
 #[cfg(feature = "use-mock-crust")]
 use std::collections::BTreeMap;
-use std::collections::VecDeque;
 #[cfg(feature = "use-mock-crust")]
 use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::{Receiver, RecvError, Sender, TryRecvError, channel};
@@ -80,12 +79,11 @@ impl NodeBuilder {
         #[cfg(not(feature = "use-mock-crust"))]
         rust_sodium::init();
 
-        let mut outtray = EventTray::new();
+        let mut ev_buffer = EventBuf::new();
 
         // start the handler for routing without a restriction to become a full node
-        let (_, machine) = self.make_state_machine(min_section_size, &mut outtray);
+        let (_, machine) = self.make_state_machine(min_section_size, &mut ev_buffer);
 
-        let ev_buffer = VecDeque::from(outtray.take_events());
         let (tx, rx) = channel();
 
         Ok(Node {
@@ -142,7 +140,7 @@ pub struct Node {
     interface_result_tx: Sender<Result<(), InterfaceError>>,
     interface_result_rx: Receiver<Result<(), InterfaceError>>,
     machine: StateMachine,
-    event_buffer: VecDeque<Event>,
+    event_buffer: EventBuf,
 }
 
 impl Node {
@@ -413,11 +411,8 @@ impl Node {
             result_tx: self.interface_result_tx.clone(),
         };
 
-        let mut outtray = EventTray::new();
-        let transition = self.machine.current_mut().handle_action(action, &mut outtray);
-        self.machine.apply_transition(transition, &mut outtray);
-
-        self.event_buffer.extend(outtray.take_events());
+        let transition = self.machine.current_mut().handle_action(action, &mut self.event_buffer);
+        self.machine.apply_transition(transition, &mut self.event_buffer);
 
         self.receive_action_result(&self.interface_result_rx)?
     }
@@ -430,20 +425,16 @@ impl Node {
 impl EventStepper for Node {
     type Item = Event;
 
-    fn produce_events(&mut self) -> Result<Vec<Event>, RecvError> {
-        self.machine.step()
+    fn produce_events(&mut self) -> Result<(), RecvError> {
+        self.machine.step(&mut self.event_buffer)
     }
 
-    fn try_produce_events(&mut self) -> Result<Vec<Event>, TryRecvError> {
-        self.machine.try_step()
-    }
-
-    fn buffer_items(&mut self, events: Vec<Event>) {
-        self.event_buffer.extend(events);
+    fn try_produce_events(&mut self) -> Result<(), TryRecvError> {
+        self.machine.try_step(&mut self.event_buffer)
     }
 
     fn pop_item(&mut self) -> Option<Event> {
-        self.event_buffer.pop_front()
+        self.event_buffer.take_first()
     }
 }
 
@@ -508,8 +499,7 @@ impl Debug for Node {
 impl Drop for Node {
     fn drop(&mut self) {
         self.poll();
-        let mut outtray = EventTray::new();
-        let _ = self.machine.current_mut().handle_action(Action::Terminate, &mut outtray);
-        let _ = outtray.take_events();
+        let _ = self.machine.current_mut().handle_action(Action::Terminate, &mut self.event_buffer);
+        let _ = self.event_buffer.take_all();
     }
 }
