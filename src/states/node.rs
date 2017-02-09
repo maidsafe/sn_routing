@@ -15,12 +15,13 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 use ack_manager::{Ack, AckManager};
 use action::Action;
 use authority::Authority;
 use cache::Cache;
-use crust::{ConnectionInfoResult, CrustError, PeerId, PrivConnectionInfo, PubConnectionInfo,
-            Service};
+use crust::{ConnectionInfoResult, CrustError, PeerId, Service};
+use crust::{PrivConnectionInfo, PubConnectionInfo};
 #[cfg(feature = "use-mock-crust")]
 use crust::Config;
 use crust::Event as CrustEvent;
@@ -49,7 +50,6 @@ use std::collections::{BTreeSet, VecDeque};
 use std::fmt::{Debug, Formatter};
 use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
-use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 use timer::Timer;
 use tunnels::Tunnels;
 use types::MessageId;
@@ -1442,7 +1442,7 @@ impl Node {
         };
         if !acting_as_proxy && hop != self.name() &&
            self.peer_mgr.routing_table().is_in_our_group(hop) {
-            return Ok(());  // Avoid swarming back out to our own group.
+            return Ok(()); // Avoid swarming back out to our own group.
         }
 
         let target_peer_ids = self.get_targets(routing_msg, route, *hop)?;

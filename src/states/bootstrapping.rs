@@ -15,6 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::{Client, Node};
+use super::common::Base;
 use action::Action;
 use cache::Cache;
 use crust::{PeerId, Service};
@@ -35,8 +37,6 @@ use std::fmt::{self, Debug, Formatter};
 use std::net::SocketAddr;
 use std::sync::mpsc::Sender;
 use std::time::Duration;
-use super::{Client, Node};
-use super::common::Base;
 use timer::Timer;
 use xor_name::XorName;
 

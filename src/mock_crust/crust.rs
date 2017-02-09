@@ -15,6 +15,10 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+
+use super::support::{self, Endpoint, Network, ServiceHandle, ServiceImpl};
+
+pub use super::support::Config;
 use maidsafe_utilities::event_sender;
 use std::cell::{RefCell, RefMut};
 use std::collections::HashSet;
@@ -22,10 +26,6 @@ use std::fmt;
 use std::io;
 use std::net::SocketAddr;
 use std::rc::Rc;
-
-use super::support::{self, Endpoint, Network, ServiceHandle, ServiceImpl};
-
-pub use super::support::Config;
 
 /// TCP listener port
 pub const LISTENER_PORT: u16 = 5485;

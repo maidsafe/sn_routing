@@ -15,13 +15,13 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::routing_table::Error as RoutingTableError;
 use action::Action;
 use crust::{self, PeerId};
 use event::Event;
 use maidsafe_utilities::event_sender::{EventSenderError, MaidSafeEventCategory};
 use maidsafe_utilities::serialisation;
 use std::sync::mpsc::{RecvError, SendError};
-use super::routing_table::Error as RoutingTableError;
 
 #[derive(Debug)]
 /// The type of errors that can occur if routing is unable to handle a send request.

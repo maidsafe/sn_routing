@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 use ack_manager::{Ack, AckManager};
 use action::Action;
 use authority::Authority;
@@ -35,7 +36,6 @@ use stats::Stats;
 use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::Sender;
 use std::time::Duration;
-use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 use timer::Timer;
 
 /// A node connecting a user to the network, as opposed to a routing / data storage node.

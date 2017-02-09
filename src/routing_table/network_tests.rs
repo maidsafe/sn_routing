@@ -20,7 +20,9 @@
 #![cfg(any(test, feature = "use-mock-crust"))]
 #![allow(unused, missing_docs)]
 
-use ::MIN_GROUP_SIZE;
+use super::{Destination, Error, RoutingTable};
+use super::prefix::Prefix;
+use MIN_GROUP_SIZE;
 use maidsafe_utilities::SeededRng;
 use rand::Rng;
 use routing_table::{Iter, OtherMergeDetails, OwnMergeDetails, OwnMergeState};
@@ -29,8 +31,6 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::{Binary, Debug};
 use std::hash::Hash;
 use std::iter::IntoIterator;
-use super::{Destination, Error, RoutingTable};
-use super::prefix::Prefix;
 
 type OwnMergeInfo = (BTreeSet<Prefix<u64>>, OwnMergeDetails<u64>);
 type OtherMergeInfo = (BTreeSet<Prefix<u64>>, OtherMergeDetails<u64>);

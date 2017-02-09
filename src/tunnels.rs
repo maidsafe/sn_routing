@@ -184,9 +184,9 @@ impl Default for Tunnels {
 #[cfg(feature = "use-mock-crust")]
 #[cfg(test)]
 mod tests {
+    use super::*;
     use itertools::Itertools;
     use mock_crust::crust::PeerId;
-    use super::*;
 
     fn id(i: usize) -> PeerId {
         PeerId(i)

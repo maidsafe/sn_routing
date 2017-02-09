@@ -39,8 +39,6 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use types::{MessageId, RoutingActionSender};
 use xor_name::XorName;
 
-type RoutingResult = Result<(), RoutingError>;
-
 /// Interface for sending and receiving messages to and from a network of nodes in the role of a
 /// client.
 ///
@@ -50,7 +48,7 @@ type RoutingResult = Result<(), RoutingError>;
 pub struct Client {
     interface_result_tx: Sender<Result<(), InterfaceError>>,
     interface_result_rx: Receiver<Result<(), InterfaceError>>,
-    action_sender: ::types::RoutingActionSender,
+    action_sender: RoutingActionSender,
 
     #[cfg(feature = "use-mock-crust")]
     machine: RefCell<StateMachine>,
@@ -75,7 +73,7 @@ impl Client {
                keys: Option<FullId>,
                config: Option<Config>)
                -> Result<Client, RoutingError> {
-        rust_sodium::init();  // enable shared global (i.e. safe to multithread now)
+        rust_sodium::init(); // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing with a restriction to become a full node
         let (action_sender, mut machine) = Self::make_state_machine(event_sender, keys, config);

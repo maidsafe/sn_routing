@@ -22,7 +22,7 @@ use error::{InterfaceError, RoutingError};
 use event::Event;
 use id::FullId;
 #[cfg(not(feature = "use-mock-crust"))]
-use maidsafe_utilities::thread;
+use maidsafe_utilities::thread::{self, Joiner};
 use messages::{RELOCATE_PRIORITY, Request, UserMessage};
 #[cfg(feature = "use-mock-crust")]
 use routing_table::RoutingTable;
@@ -38,8 +38,6 @@ use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use types::{MessageId, RoutingActionSender};
 use xor_name::XorName;
-
-type RoutingResult = Result<(), RoutingError>;
 
 /// A builder to configure and create a new `Node`.
 pub struct NodeBuilder {
@@ -72,7 +70,7 @@ impl NodeBuilder {
     /// The initial `Node` object will have newly generated keys.
     #[cfg(not(feature = "use-mock-crust"))]
     pub fn create(self, event_sender: Sender<Event>) -> Result<Node, RoutingError> {
-        rust_sodium::init();  // enable shared global (i.e. safe to multithread now)
+        rust_sodium::init(); // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing without a restriction to become a full node
         let (action_sender, mut machine) = self.make_state_machine(event_sender);
@@ -109,34 +107,34 @@ impl NodeBuilder {
                           -> (RoutingActionSender, StateMachine) {
         let full_id = FullId::new();
 
-        StateMachine::new(move |crust_service, timer| {
-            if self.first {
-                if let Some(state) = states::Node::first(self.cache,
-                                                         crust_service,
-                                                         event_sender,
-                                                         full_id,
-                                                         timer) {
-                    State::Node(state)
-                } else {
-                    State::Terminated
-                }
-            } else if self.deny_other_local_nodes && crust_service.has_peers_on_lan() {
-                error!("Bootstrapping({:?}) More than 1 routing node found on LAN. Currently \
-                        this is not supported",
-                       full_id.public_id().name());
-
-                let _ = event_sender.send(Event::Terminate);
-                State::Terminated
+        let init_fn = move |crust_service, timer| if self.first {
+            if let Some(state) = states::Node::first(self.cache,
+                                                     crust_service,
+                                                     event_sender,
+                                                     full_id,
+                                                     timer) {
+                State::Node(state)
             } else {
-                State::Bootstrapping(states::Bootstrapping::new(self.cache,
-                                                                false,
-                                                                crust_service,
-                                                                event_sender,
-                                                                full_id,
-                                                                timer))
+                State::Terminated
             }
-        },
-                          None)
+        } else if self.deny_other_local_nodes &&
+                                                                 crust_service.has_peers_on_lan() {
+            error!("Bootstrapping({:?}) More than 1 routing node found on LAN. Currently this is \
+                    not supported",
+                   full_id.public_id().name());
+
+            let _ = event_sender.send(Event::Terminate);
+            State::Terminated
+        } else {
+            State::Bootstrapping(states::Bootstrapping::new(self.cache,
+                                                            false,
+                                                            crust_service,
+                                                            event_sender,
+                                                            full_id,
+                                                            timer))
+        };
+
+        StateMachine::new(init_fn, None)
     }
 }
 
@@ -151,13 +149,13 @@ impl NodeBuilder {
 pub struct Node {
     interface_result_tx: Sender<Result<(), InterfaceError>>,
     interface_result_rx: Receiver<Result<(), InterfaceError>>,
-    action_sender: ::types::RoutingActionSender,
+    action_sender: RoutingActionSender,
 
     #[cfg(feature = "use-mock-crust")]
     machine: RefCell<StateMachine>,
 
     #[cfg(not(feature = "use-mock-crust"))]
-    _raii_joiner: ::maidsafe_utilities::thread::Joiner,
+    _raii_joiner: Joiner,
 }
 
 impl Node {
