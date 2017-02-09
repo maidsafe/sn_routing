@@ -774,11 +774,22 @@ impl PeerManager {
     }
 
     /// Wraps `RoutingTable::should_merge` with an extra check.
-    pub fn should_merge(&self) -> Option<OwnMergeDetails<XorName>> {
+    ///
+    /// Returns sender prefix, merge prefix, then sections.
+    pub fn should_merge(&self) -> Option<(Prefix<XorName>, Prefix<XorName>, SectionMap)> {
         if !self.is_merging_possible() {
             return None;
         }
-        self.routing_table.should_merge()
+        self.routing_table.should_merge().map(|merge_details| {
+            let sections =
+                merge_details.sections
+                    .into_iter()
+                    .map(|(prefix, members)| {
+                        (prefix, self.get_pub_ids(&members).into_iter().collect())
+                    })
+                    .collect();
+            (merge_details.sender_prefix, merge_details.merge_prefix, sections)
+        })
     }
 
     // Returns the `OwnMergeState` from `RoutingTable` which defines what further action needs to be

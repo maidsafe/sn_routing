@@ -237,12 +237,7 @@ impl Client {
                          -> Result<(), RoutingError> {
         self.stats.count_user_message(&user_msg);
         for part in user_msg.to_parts(priority)? {
-            let message = RoutingMessage {
-                src: src,
-                dst: dst,
-                content: part,
-            };
-            self.send_routing_message(message)?;
+            self.send_routing_message(src, dst, part)?;
         }
         Ok(())
     }
