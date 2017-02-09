@@ -610,17 +610,15 @@ pub enum MessageContent {
     SectionSplit(Prefix<XorName>, XorName),
     /// Sent amongst members of a newly-merged section to allow synchronisation of their routing
     /// tables before notifying other connected peers of the merge.
-    OwnSectionMerge {
-        sender_prefix: Prefix<XorName>,
-        merge_prefix: Prefix<XorName>,
-        sections: SectionMap,
-    },
+    ///
+    /// The source and destination authorities are both `PrefixSection` types, conveying the
+    /// section sending this merge message and the target prefix of the merge respectively.
+    OwnSectionMerge(SectionMap),
     /// Sent by members of a newly-merged section to peers outwith the merged section to notify them
     /// of the merge.
-    OtherSectionMerge {
-        prefix: Prefix<XorName>,
-        section: BTreeSet<PublicId>,
-    },
+    ///
+    /// The source authority is a `PrefixSection` conveying the section which just merged.
+    OtherSectionMerge(BTreeSet<PublicId>),
     /// Acknowledge receipt of any message except an `Ack`. It contains the hash of the
     /// received message and the priority.
     Ack(Ack, u8),
@@ -803,19 +801,8 @@ impl Debug for MessageContent {
             SectionSplit(ref prefix, ref joining_node) => {
                 write!(formatter, "SectionSplit({:?}, {:?})", prefix, joining_node)
             }
-            OwnSectionMerge { ref sender_prefix, ref merge_prefix, ref sections } => {
-                write!(formatter,
-                       "OwnSectionMerge {{ {:?}, {:?}, {:?} }}",
-                       sender_prefix,
-                       merge_prefix,
-                       sections)
-            }
-            OtherSectionMerge { ref prefix, ref section } => {
-                write!(formatter,
-                       "OtherSectionMerge {{ {:?}, {:?} }}",
-                       prefix,
-                       section)
-            }
+            OwnSectionMerge(ref sections) => write!(formatter, "OwnSectionMerge({:?})", sections),
+            OtherSectionMerge(ref section) => write!(formatter, "OtherSectionMerge({:?})", section),
             Ack(ack, priority) => write!(formatter, "Ack({:?}, {})", ack, priority),
             UserMessagePart { hash, part_count, part_index, priority, cacheable, .. } => {
                 write!(formatter,
