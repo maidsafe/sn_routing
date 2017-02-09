@@ -20,7 +20,7 @@
 use maidsafe_utilities::event_sender::{MaidSafeEventCategory, MaidSafeObserver};
 use std::collections::HashSet;
 use std::sync::mpsc::{self, Receiver};
-use super::crust::{CrustEventSender, Event, Service};
+use super::crust::{CrustEventSender, CrustUser, Event, Service};
 use super::support::{Config, Network};
 
 fn get_event_sender() -> (CrustEventSender, Receiver<MaidSafeEventCategory>, Receiver<Event>) {
@@ -73,7 +73,7 @@ fn start_two_services_bootstrap_communicate_exit() {
 
     let mut service_1 = unwrap!(Service::with_handle(&handle1, event_sender_1));
 
-    unwrap!(service_1.start_bootstrap(HashSet::new()));
+    unwrap!(service_1.start_bootstrap(HashSet::new(), CrustUser::Node));
     let id_0 = expect_event!(event_rx_1, Event::BootstrapConnect(id, _) => id);
     let id_1 = expect_event!(event_rx_0, Event::BootstrapAccept(id) => id);
 
@@ -217,7 +217,7 @@ fn drop() {
     expect_event!(event_rx_0, Event::ListenerStarted(_));
 
     let mut service_1 = unwrap!(Service::with_handle(&handle1, event_sender_1));
-    unwrap!(service_1.start_bootstrap(HashSet::new()));
+    unwrap!(service_1.start_bootstrap(HashSet::new(), CrustUser::Node));
 
     let id_0 = expect_event!(event_rx_1, Event::BootstrapConnect(id, _) => id);
     expect_event!(event_rx_0, Event::BootstrapAccept(..));

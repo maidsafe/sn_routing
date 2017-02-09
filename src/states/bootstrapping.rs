@@ -17,7 +17,7 @@
 
 use action::Action;
 use cache::Cache;
-use crust::{PeerId, Service};
+use crust::{CrustUser, PeerId, Service};
 use crust::Event as CrustEvent;
 use error::RoutingError;
 use event::Event;
@@ -62,10 +62,13 @@ impl Bootstrapping {
                full_id: FullId,
                min_section_size: usize,
                timer: Timer)
-               -> Self {
-        let _ = crust_service.start_bootstrap(HashSet::new());
+               -> Option<Self> {
+        if let Err(error) = crust_service.start_listening_tcp() {
+            error!("Failed to start listening: {:?}", error);
+            return None;
+        }
 
-        Bootstrapping {
+        Some(Bootstrapping {
             bootstrap_blacklist: HashSet::new(),
             bootstrap_connection: None,
             cache: cache,
@@ -75,7 +78,7 @@ impl Bootstrapping {
             min_section_size: min_section_size,
             stats: Stats::new(),
             timer: timer,
-        }
+        })
     }
 
     pub fn handle_action(&mut self, action: Action) -> Evented<Transition> {
@@ -113,6 +116,21 @@ impl Bootstrapping {
                         Transition::Stay.to_evented()
                     }
                 }
+            }
+            CrustEvent::ListenerStarted(port) => {
+                trace!("{:?} Listener started on port {}.", self, port);
+                let crust_user = if self.client_restriction {
+                    CrustUser::Client
+                } else {
+                    self.crust_service.set_service_discovery_listen(true);
+                    CrustUser::Node
+                };
+                let _ = self.crust_service.start_bootstrap(HashSet::new(), crust_user);
+                Transition::Stay.to_evented()
+            }
+            CrustEvent::ListenerFailed => {
+                error!("{:?} Failed to start listening.", self);
+                Evented::single(Event::Terminate, Transition::Terminate)
             }
             _ => {
                 debug!("{:?} Unhandled crust event {:?}", self, crust_event);
@@ -180,7 +198,7 @@ impl Bootstrapping {
     }
 
     fn handle_bootstrap_failed(&mut self) -> Evented<Transition> {
-        debug!("{:?} Failed to bootstrap.", self);
+        info!("{:?} Failed to bootstrap. Terminating.", self);
         Evented::single(Event::Terminate, Transition::Terminate)
     }
 
@@ -270,7 +288,13 @@ impl Bootstrapping {
                    self,
                    bootstrap_id);
             self.crust_service.disconnect(bootstrap_id);
-            let _ = self.crust_service.start_bootstrap(self.bootstrap_blacklist.clone());
+            let crust_user = if self.client_restriction {
+                CrustUser::Client
+            } else {
+                CrustUser::Node
+            };
+            let _ = self.crust_service
+                .start_bootstrap(self.bootstrap_blacklist.clone(), crust_user);
         }
     }
 }

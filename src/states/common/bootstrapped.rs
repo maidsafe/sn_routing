@@ -117,7 +117,16 @@ pub trait Bootstrapped: Base {
         }
     }
 
-    fn send_routing_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError> {
+    fn send_routing_message(&mut self,
+                            src: Authority<XorName>,
+                            dst: Authority<XorName>,
+                            content: MessageContent)
+                            -> Result<(), RoutingError> {
+        let routing_msg = RoutingMessage {
+            src: src,
+            dst: dst,
+            content: content,
+        };
         self.send_routing_message_via_route(routing_msg, 0)
     }
 

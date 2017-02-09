@@ -24,8 +24,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::collections::hash_map::Entry;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::rc::{Rc, Weak};
-use super::crust::{ConnectionInfoResult, CrustEventSender, Event, PeerId, PrivConnectionInfo,
-                   PubConnectionInfo};
+use super::crust::{ConnectionInfoResult, CrustEventSender, CrustUser, Event, PeerId,
+                   PrivConnectionInfo, PubConnectionInfo};
 
 /// Mock network. Create one before testing with mocks. Use it to create `ServiceHandle`s.
 #[derive(Clone)]
@@ -249,7 +249,7 @@ impl ServiceImpl {
         self.start(event_sender)
     }
 
-    pub fn start_bootstrap(&mut self, blacklist: HashSet<SocketAddr>) {
+    pub fn start_bootstrap(&mut self, blacklist: HashSet<SocketAddr>, _: CrustUser) {
         let mut pending_bootstraps = 0;
 
         for endpoint in &self.config.hard_coded_contacts {

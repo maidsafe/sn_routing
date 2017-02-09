@@ -199,13 +199,13 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Binary for Prefix<T> {
     fn fmt(&self, formatter: &mut Formatter) -> FmtResult {
         let mut binary = self.name.binary();
         binary.truncate(self.bit_count());
-        write!(formatter, "Prefix({})", binary)
+        write!(formatter, "{}", binary)
     }
 }
 
 impl<T: Clone + Copy + Default + Binary + Xorable> Debug for Prefix<T> {
     fn fmt(&self, formatter: &mut Formatter) -> FmtResult {
-        Binary::fmt(self, formatter)
+        write!(formatter, "Prefix({:b})", self)
     }
 }
 
