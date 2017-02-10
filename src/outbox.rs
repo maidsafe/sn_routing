@@ -20,27 +20,6 @@
 //! The design allows the separate traits to handle dispatching of each type of message to an
 //! object handling the appropriate types of message.
 
-// The original design was like this:
-//
-// pub trait EventBox {
-//     fn send_event(&mut self, event: Event);
-// }
-// pub trait MessageBox {
-//     fn send_msg(&mut self, msg: Message);
-//     fn send_msgs(&mut self, msgs: Vec<Message>);
-// }
-// pub trait OutBox: EventBox + MessageBox {}
-//
-// pub struct EventBuf { ... }
-// impl EventBuf { ... }
-// impl EventBox for OutBuf { ... }
-//
-// pub struct OutBuf { ... }
-// impl OutBuf { ... }
-// impl EventBox for OutBuf { ... }
-// impl MessageBox for OutBuf { ... }
-// impl OutBox for OutBuf { ... }
-
 use event::Event;
 use std::collections::VecDeque;
 use std::default::Default;
