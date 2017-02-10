@@ -195,7 +195,7 @@ impl TestClient {
         let full_id = FullId::new();
         let handle = network.new_service_handle(config, endpoint);
         let client = mock_crust::make_current(&handle,
-                                              || unwrap!(Client::new(event_tx, Some(full_id))));
+                                              || unwrap!(Client::new(event_tx, Some(full_id), None)));
 
         TestClient {
             handle: handle,

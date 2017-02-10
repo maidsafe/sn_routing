@@ -15,13 +15,13 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::DataIdentifier;
 use client_error::ClientError;
 use maidsafe_utilities::serialisation::serialised_size;
 use rust_sodium::crypto::sign::PublicKey;
 use std::collections::BTreeSet;
 use std::collections::btree_map::{BTreeMap, Entry};
 use std::fmt::{self, Debug, Formatter};
-use super::DataIdentifier;
 use xor_name::XorName;
 
 /// Maximum allowed size for `MutableData` (1 MiB)
@@ -493,12 +493,12 @@ impl Debug for MutableData {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use client_error::ClientError;
     use rand;
     use rust_sodium::crypto::sign;
     use std::collections::{BTreeMap, BTreeSet};
     use std::iter;
-    use super::*;
 
     macro_rules! assert_err {
         ($left: expr, $err: path) => {{

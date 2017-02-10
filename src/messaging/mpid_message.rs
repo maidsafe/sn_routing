@@ -20,10 +20,10 @@
 pub const MAX_BODY_SIZE: usize = 102400 - 512 - super::MAX_HEADER_METADATA_SIZE;
 
 
+use super::{Error, MpidHeader};
 use maidsafe_utilities::serialisation::serialise;
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
 use std::fmt::{self, Debug, Formatter};
-use super::{Error, MpidHeader};
 use utils;
 use xor_name::XorName;
 
@@ -128,10 +128,10 @@ impl Debug for MpidMessage {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use messaging;
     use rand;
     use rust_sodium::crypto::sign;
-    use super::*;
     use xor_name::XorName;
 
     #[test]

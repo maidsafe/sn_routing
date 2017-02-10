@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::Base;
 use ack_manager::{ACK_TIMEOUT_SECS, Ack, AckManager, UnacknowledgedMessage};
 use authority::Authority;
 use crust::PeerId;
@@ -24,7 +25,6 @@ use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessag
 use peer_manager::MIN_GROUP_SIZE;
 use routing_message_filter::RoutingMessageFilter;
 use std::time::Duration;
-use super::Base;
 use timer::Timer;
 
 // Common functionality for states that are bootstrapped (have established a crust

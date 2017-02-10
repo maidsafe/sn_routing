@@ -424,12 +424,10 @@ impl PeerManager {
 
     /// Returns the public ID of the given peer, if it is in `Routing` state.
     pub fn get_routing_peer(&self, peer_id: &PeerId) -> Option<&PublicId> {
-        self.peer_map.get(peer_id).and_then(|peer| {
-            if let PeerState::Routing(_) = peer.state {
-                Some(&peer.pub_id)
-            } else {
-                None
-            }
+        self.peer_map.get(peer_id).and_then(|peer| if let PeerState::Routing(_) = peer.state {
+            Some(&peer.pub_id)
+        } else {
+            None
         })
     }
 
@@ -614,26 +612,22 @@ impl PeerManager {
 
     /// Returns the public ID of the given peer, if it is in `CrustConnecting` state.
     pub fn get_connecting_peer(&self, peer_id: &PeerId) -> Option<&PublicId> {
-        self.peer_map.get(peer_id).and_then(|peer| {
-            if let PeerState::CrustConnecting = peer.state {
-                return Some(&peer.pub_id);
-            } else {
-                None
-            }
+        self.peer_map.get(peer_id).and_then(|peer| if let PeerState::CrustConnecting = peer.state {
+            return Some(&peer.pub_id);
+        } else {
+            None
         })
     }
 
     /// Returns the peer with the given peer_id if it is already in one of the
     /// connected states.
     pub fn get_connected_peer(&self, peer_id: &PeerId) -> Option<&Peer> {
-        self.peer_map.get(peer_id).and_then(|peer| {
-            match peer.state {
-                PeerState::Client |
-                PeerState::JoiningNode |
-                PeerState::Proxy |
-                PeerState::Routing(_) => Some(peer),
-                _ => None,
-            }
+        self.peer_map.get(peer_id).and_then(|peer| match peer.state {
+            PeerState::Client |
+            PeerState::JoiningNode |
+            PeerState::Proxy |
+            PeerState::Routing(_) => Some(peer),
+            _ => None,
         })
     }
 
@@ -648,12 +642,10 @@ impl PeerManager {
     /// Return the PublicIds of nodes bearing the names.
     pub fn get_pub_ids(&self, names: &HashSet<XorName>) -> HashSet<PublicId> {
         let mut result_map = names.iter()
-            .filter_map(|name| {
-                if let Some(peer) = self.peer_map.get_by_name(name) {
-                    Some((*name, peer.pub_id))
-                } else {
-                    None
-                }
+            .filter_map(|name| if let Some(peer) = self.peer_map.get_by_name(name) {
+                Some((*name, peer.pub_id))
+            } else {
+                None
             })
             .collect::<HashMap<_, _>>();
 
@@ -940,11 +932,11 @@ impl PeerManager {
 
 #[cfg(all(test, feature = "use-mock-crust"))]
 mod tests {
+    use super::*;
     use authority::Authority;
     use id::FullId;
     use mock_crust::Endpoint;
     use mock_crust::crust::{PeerId, PrivConnectionInfo, PubConnectionInfo};
-    use super::*;
     use xor_name::{XOR_NAME_LEN, XorName};
 
     fn node_auth(byte: u8) -> Authority {

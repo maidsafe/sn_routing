@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use action::Action;
-use crust::{CrustEventSender, PeerId, Service};
+use crust::{Config, CrustEventSender, PeerId, Service};
 use crust::Event as CrustEvent;
 use id::PublicId;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
@@ -146,7 +146,7 @@ pub enum Transition {
 impl StateMachine {
     // Construct a new StateMachine by passing a function returning the initial
     // state.
-    pub fn new<F>(init_state: F) -> (RoutingActionSender, Self)
+    pub fn new<F>(init_state: F, config: Option<Config>) -> (RoutingActionSender, Self)
         where F: FnOnce(Service, Timer) -> State
     {
         let (category_tx, category_rx) = mpsc::channel();
@@ -160,7 +160,11 @@ impl StateMachine {
         let crust_sender =
             CrustEventSender::new(crust_tx, MaidSafeEventCategory::Crust, category_tx);
 
-        let mut crust_service = match Service::new(crust_sender) {
+        let crust_service = match config {
+            Some(c) => Service::with_config(crust_sender, c),
+            None => Service::new(crust_sender),
+        };
+        let mut crust_service = match crust_service {
             Ok(service) => service,
             Err(error) => panic!("Unable to start crust::Service {:?}", error),
         };
@@ -183,6 +187,17 @@ impl StateMachine {
         };
 
         (action_sender, machine)
+    }
+
+    /// Returns the `crust::Config` associated with the `Service` (if any).
+    #[cfg(feature = "use-mock-crust")]
+    pub fn bootstrap_config(&self) -> Option<Config> {
+        match self.state {
+            State::Bootstrapping(ref s) => Some(s.config()),
+            State::Client(ref s) => Some(s.config()),
+            State::Node(ref s) => Some(s.config()),
+            State::Terminated => None,
+        }
     }
 
     fn handle_event(&mut self, category: MaidSafeEventCategory) {

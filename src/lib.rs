@@ -60,7 +60,7 @@
 //!
 //! let (sender, _receiver) = mpsc::channel::<Event>();
 //! let full_id = FullId::new(); // Generate new keys.
-//! let _ = Client::new(sender, Some(full_id.clone())).unwrap();
+//! let _ = Client::new(sender, Some(full_id.clone()), None).unwrap();
 //!
 //! let _ = full_id.public_id().name();
 //! ```
@@ -168,6 +168,9 @@ mod types;
 mod utils;
 mod xor_name;
 
+/// Reexports `crust::Config`
+pub type BootstrapConfig = crust::Config;
+
 /// Mock crust
 #[cfg(feature = "use-mock-crust")]
 pub mod mock_crust;
@@ -183,13 +186,12 @@ pub use authority::Authority;
 pub use cache::{Cache, NullCache};
 pub use client::Client;
 pub use client_error::ClientError;
-pub use data::{Action, AppendWrapper, AppendedData, Data, DataIdentifier, EntryAction,
-               EntryActions, Filter, ImmutableData, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
-               MAX_MUTABLE_DATA_ENTRIES, MAX_MUTABLE_DATA_SIZE_IN_BYTES,
-               MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES, MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES,
-               MAX_STRUCTURED_DATA_SIZE_IN_BYTES, MutableData, NO_OWNER_PUB_KEY, PermissionSet,
-               PrivAppendableData, PrivAppendedData, PubAppendableData, StructuredData, User,
-               Value};
+pub use data::{Action, AppendWrapper, AppendedData, Data, DataIdentifier, EntryAction, EntryActions,
+               Filter, ImmutableData, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_MUTABLE_DATA_ENTRIES,
+               MAX_MUTABLE_DATA_SIZE_IN_BYTES, MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES,
+               MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES, MAX_STRUCTURED_DATA_SIZE_IN_BYTES,
+               MutableData, NO_OWNER_PUB_KEY, PermissionSet, PrivAppendableData, PrivAppendedData,
+               PubAppendableData, StructuredData, User, Value};
 pub use error::{InterfaceError, RoutingError};
 pub use event::Event;
 pub use id::{FullId, PublicId};

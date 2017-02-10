@@ -15,10 +15,13 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 use ack_manager::{Ack, AckManager};
 use action::Action;
 use authority::Authority;
 use crust::{PeerId, Service};
+#[cfg(feature = "use-mock-crust")]
+use crust::Config;
 use crust::Event as CrustEvent;
 use error::{InterfaceError, RoutingError};
 use event::Event;
@@ -33,7 +36,6 @@ use stats::Stats;
 use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::Sender;
 use std::time::Duration;
-use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 use timer::Timer;
 
 /// A node connecting a user to the network, as opposed to a routing / data storage node.
@@ -109,6 +111,9 @@ impl Client {
             Action::Name { result_tx } => {
                 let _ = result_tx.send(*self.name());
             }
+            Action::Config { result_tx } => {
+                let _ = result_tx.send(self.crust_service.config());
+            }
             Action::Timeout(token) => self.handle_timeout(token),
             Action::Terminate => {
                 return Transition::Terminate;
@@ -127,6 +132,11 @@ impl Client {
                 Transition::Stay
             }
         }
+    }
+
+    #[cfg(feature = "use-mock-crust")]
+    pub fn config(&self) -> Config {
+        self.crust_service.config()
     }
 
     fn handle_ack_response(&mut self, ack: Ack) -> Transition {

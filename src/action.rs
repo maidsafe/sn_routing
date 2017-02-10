@@ -16,6 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use authority::Authority;
+use crust::Config;
 use error::InterfaceError;
 use messages::{Request, UserMessage};
 use std::collections::HashSet;
@@ -49,6 +50,7 @@ pub enum Action {
         result_tx: Sender<Option<HashSet<XorName>>>,
     },
     Name { result_tx: Sender<XorName> },
+    Config { result_tx: Sender<Config> },
     Timeout(u64),
     Terminate,
 }
@@ -69,6 +71,7 @@ impl Debug for Action {
             }
             Action::CloseGroup { .. } => write!(formatter, "Action::CloseGroup"),
             Action::Name { .. } => write!(formatter, "Action::Name"),
+            Action::Config { .. } => write!(formatter, "Action::Config"),
             Action::Timeout(token) => write!(formatter, "Action::Timeout({})", token),
             Action::Terminate => write!(formatter, "Action::Terminate"),
         }

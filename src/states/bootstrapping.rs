@@ -15,9 +15,13 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::{Client, Node};
+use super::common::Base;
 use action::Action;
 use cache::Cache;
 use crust::{PeerId, Service};
+#[cfg(feature = "use-mock-crust")]
+use crust::Config;
 use crust::Event as CrustEvent;
 use error::RoutingError;
 use event::Event;
@@ -33,8 +37,6 @@ use std::fmt::{self, Debug, Formatter};
 use std::net::SocketAddr;
 use std::sync::mpsc::Sender;
 use std::time::Duration;
-use super::{Client, Node};
-use super::common::Base;
 use timer::Timer;
 use xor_name::XorName;
 
@@ -88,6 +90,9 @@ impl Bootstrapping {
             }
             Action::Name { result_tx } => {
                 let _ = result_tx.send(*self.name());
+            }
+            Action::Config { result_tx } => {
+                let _ = result_tx.send(self.crust_service.config());
             }
             Action::Timeout(token) => self.handle_timeout(token),
             Action::Terminate => {
@@ -149,6 +154,11 @@ impl Bootstrapping {
 
     pub fn client_restriction(&self) -> bool {
         self.client_restriction
+    }
+
+    #[cfg(feature = "use-mock-crust")]
+    pub fn config(&self) -> Config {
+        self.crust_service.config()
     }
 
     fn handle_timeout(&mut self, token: u64) {

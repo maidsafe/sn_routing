@@ -15,6 +15,10 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+
+use super::support::{self, Endpoint, Network, ServiceHandle, ServiceImpl};
+
+pub use super::support::Config;
 use maidsafe_utilities::event_sender;
 use std::cell::{RefCell, RefMut};
 use std::collections::HashSet;
@@ -22,8 +26,6 @@ use std::fmt;
 use std::io;
 use std::net::SocketAddr;
 use std::rc::Rc;
-
-use super::support::{self, Endpoint, Network, ServiceHandle, ServiceImpl};
 
 /// TCP listener port
 pub const LISTENER_PORT: u16 = 5485;
@@ -35,6 +37,14 @@ impl Service {
     /// Create new mock `Service` using the make_current/get_current mechanism to
     /// get the associated `ServiceHandle`.
     pub fn new(event_sender: CrustEventSender) -> Result<Self, CrustError> {
+        Self::with_handle(&support::get_current(), event_sender)
+    }
+
+    /// Create a new mock `Service` using the make_current/get_current mechanism to
+    /// get the associated `ServiceHandle`. Ignores configuration.
+    pub fn with_config(event_sender: CrustEventSender,
+                       _config: Config)
+                       -> Result<Self, CrustError> {
         Self::with_handle(&support::get_current(), event_sender)
     }
 
@@ -146,6 +156,11 @@ impl Service {
     /// Our `PeerId`.
     pub fn id(&self) -> PeerId {
         self.lock().peer_id
+    }
+
+    /// Returns the `Config` (which is unused anyway).
+    pub fn config(&self) -> Config {
+        Config::new()
     }
 
     fn lock(&self) -> RefMut<ServiceImpl> {

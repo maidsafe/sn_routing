@@ -133,11 +133,11 @@ impl TimestampedMessage {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use rand;
     use rand::Rng;
     use std::thread;
     use std::time::Duration;
-    use super::*;
 
     #[test]
     fn timeout() {

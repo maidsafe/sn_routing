@@ -12,7 +12,7 @@ version = "0.25.1"
 
 [dependencies]
 clippy = {version = "=0.0.99", optional = true}
-crust = "~0.19.0"
+crust = "~0.20.2"
 itertools = "~0.5.5"
 log = "~0.3.6"
 lru_time_cache = "~0.5.0"

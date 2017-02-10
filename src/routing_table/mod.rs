@@ -115,13 +115,13 @@ mod network_tests;
 mod prefix;
 mod xorable;
 
-use itertools::Itertools;
 pub use self::error::Error;
 
 #[cfg(any(test, feature = "use-mock-crust"))]
 pub use self::network_tests::verify_network_invariant;
 pub use self::prefix::Prefix;
 pub use self::xorable::Xorable;
+use itertools::Itertools;
 use std::{iter, mem};
 use std::collections::{BTreeSet, HashMap, HashSet, hash_map, hash_set};
 use std::fmt::{Binary, Debug, Formatter};
@@ -759,12 +759,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                                     -> OwnMergeState<T> {
         merge_details.sender_prefix = self.our_group_prefix;
         merge_details.groups
-            .extend(self.groups.iter().filter_map(|(prefix, names)| {
-                if names.is_empty() {
-                    None
-                } else {
-                    Some((*prefix, names.clone()))
-                }
+            .extend(self.groups.iter().filter_map(|(prefix, names)| if names.is_empty() {
+                None
+            } else {
+                Some((*prefix, names.clone()))
             }));
         let _ = unwrap!(merge_details.groups.get_mut(&self.our_group_prefix)).insert(self.our_name);
         OwnMergeState::Initialised {
@@ -1043,7 +1041,7 @@ mod tests {
                     unwrap!(table.check_invariant());
                     assert!(table.iter().any(|u| *u == new_name));
                     if table.is_in_our_group(&new_name) {
-                        continue;   // add() already checked for necessary split
+                        continue; // add() already checked for necessary split
                     }
 
                     // Not a split event for our group, but might be for a different group.
@@ -1055,12 +1053,14 @@ mod tests {
                         // one split possible; the arbitrariness is just which half we choose here).
                         (group.len(),
                          group.iter()
-                             .filter(|name| new_name.common_prefix(name) > group_prefix.bit_count())
+                             .filter(|name| {
+                                 new_name.common_prefix(name) > group_prefix.bit_count()
+                             })
                              .count())
                     };
                     let min_size = table.min_split_size();
                     if new_group_size >= min_size && group_len - new_group_size >= min_size {
-                        let _ = table.split(group_prefix);  // do the split
+                        let _ = table.split(group_prefix); // do the split
                         unwrap!(table.check_invariant());
                     }
                 }

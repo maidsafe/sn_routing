@@ -232,11 +232,11 @@ impl Decodable for XorName {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use maidsafe_utilities::serialisation::{deserialise, serialise};
     use rand;
     use routing_table::Xorable;
     use std::cmp::Ordering;
-    use super::*;
 
     #[test]
     fn serialisation_xor_name() {

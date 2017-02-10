@@ -249,8 +249,8 @@ impl_xorable!(u8);
 
 #[cfg(test)]
 mod tests {
-    use std::cmp::Ordering;
     use super::*;
+    use std::cmp::Ordering;
 
     #[test]
     fn common_prefix() {

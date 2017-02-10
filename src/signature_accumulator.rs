@@ -127,6 +127,7 @@ impl SignatureAccumulator {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use authority::Authority;
     use id::FullId;
     use itertools::Itertools;
@@ -134,7 +135,6 @@ mod tests {
     use rand;
     use routing_table::Prefix;
     use std::collections::BTreeSet;
-    use super::*;
 
     struct MessageAndSignatures {
         signed_msg: SignedMessage,
@@ -202,14 +202,12 @@ mod tests {
             msg_and_sigs.signature_msgs
                 .iter()
                 .zip(env.other_ids.iter())
-                .foreach(|(signature_msg, full_id)| {
-                    match *signature_msg {
-                        DirectMessage::MessageSignature(ref hash, ref sig) => {
-                            assert!(sig_accumulator.add_signature(*hash, *sig, *full_id.public_id())
-                                .is_none());
-                        }
-                        ref unexpected_msg => panic!("Unexpected message: {:?}", unexpected_msg),
+                .foreach(|(signature_msg, full_id)| match *signature_msg {
+                    DirectMessage::MessageSignature(ref hash, ref sig) => {
+                        assert!(sig_accumulator.add_signature(*hash, *sig, *full_id.public_id())
+                            .is_none());
                     }
+                    ref unexpected_msg => panic!("Unexpected message: {:?}", unexpected_msg),
                 });
         });
 

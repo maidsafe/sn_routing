@@ -19,6 +19,8 @@ mod request;
 mod response;
 
 
+pub use self::request::Request;
+pub use self::response::{AccountInfo, Response};
 use ack_manager::Ack;
 use authority::Authority;
 #[cfg(not(feature = "use-mock-crust"))]
@@ -35,8 +37,6 @@ use mock_crust::crust::PeerId;
 use routing_table::Prefix;
 use rust_sodium::crypto::{box_, sign};
 use rust_sodium::crypto::hash::sha256;
-pub use self::request::Request;
-pub use self::response::{AccountInfo, Response};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
 use std::iter;
@@ -112,7 +112,7 @@ pub enum DirectMessage {
     /// Sent from the bootstrap node to a client in response to `ClientIdentify`.
     BootstrapIdentify {
         /// The bootstrap node's keys and name.
-        public_id: ::id::PublicId,
+        public_id: PublicId,
     },
     /// Sent to the client to indicate that this node is not available as a bootstrap node.
     BootstrapDeny,
@@ -307,12 +307,10 @@ impl SignedMessage {
         if self.content.src.is_client() {
             return self.signatures.len() == 1;
         }
-        self.grp_lists.first().map_or(false, |grp_list| {
-            if self.content.src.is_group() {
-                QUORUM * grp_list.pub_ids.len() < 100 * self.signatures.len()
-            } else {
-                self.signatures.len() == 1
-            }
+        self.grp_lists.first().map_or(false, |grp_list| if self.content.src.is_group() {
+            QUORUM * grp_list.pub_ids.len() < 100 * self.signatures.len()
+        } else {
+            self.signatures.len() == 1
         })
     }
 
@@ -329,12 +327,12 @@ impl SignedMessage {
         };
         let invalid_signatures = self.signatures
             .iter()
-            .filter_map(|(pub_id, sig)| {
-                if sign::verify_detached(sig, &signed_bytes, pub_id.signing_public_key()) {
-                    None
-                } else {
-                    Some(*pub_id)
-                }
+            .filter_map(|(pub_id, sig)| if sign::verify_detached(sig,
+                                                                 &signed_bytes,
+                                                                 pub_id.signing_public_key()) {
+                None
+            } else {
+                Some(*pub_id)
             })
             .collect_vec();
         for invalid_signature in &invalid_signatures {
@@ -772,6 +770,7 @@ impl UserMessageCache {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use authority::Authority;
     use data::ImmutableData;
     use id::FullId;
@@ -781,7 +780,6 @@ mod tests {
     use rust_sodium::crypto::hash::sha256;
     use rust_sodium::crypto::sign;
     use std::iter;
-    use super::*;
     use types::MessageId;
     use xor_name::XorName;
 
@@ -918,7 +916,7 @@ mod tests {
 
     #[test]
     fn user_message_parts() {
-        let data_bytes: Vec<u8> = (0..(super::MAX_PART_LEN * 2)).map(|i| i as u8).collect();
+        let data_bytes: Vec<u8> = (0..(MAX_PART_LEN * 2)).map(|i| i as u8).collect();
         let data = ImmutableData::new(data_bytes);
         let user_msg = UserMessage::Request(Request::PutIData {
             data: data,
