@@ -632,7 +632,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         };
         if bit_count == 0 || self.we_want_to_merge ||
            !self.sections.contains_key(&self.our_prefix.with_flipped_bit(bit_count - 1)) ||
-           (self.our_section.len() >= self.min_section_size &&
+           (!self.they_want_to_merge && self.our_section.len() >= self.min_section_size &&
             self.sections.iter().all(doesnt_need_to_merge_with_us)) {
             return None;
         }
