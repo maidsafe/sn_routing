@@ -26,7 +26,7 @@ use id::FullId;
 use id::PublicId;
 use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, RELOCATE_PRIORITY, Request, Response,
                UserMessage};
-use outtray::{EventBuf, EventTray};
+use outbox::{EventBox, EventBuf};
 #[cfg(feature = "use-mock-crust")]
 use routing_table::{Prefix, RoutingTable};
 use routing_table::Authority;
@@ -97,35 +97,39 @@ impl NodeBuilder {
     // TODO - remove this `rustfmt_skip` once rustfmt stops adding trailing space at `else if`.
     #[cfg_attr(rustfmt, rustfmt_skip)]
     fn make_state_machine(self,
-                          min_section_size: usize, outtray: &mut EventTray)
+                          min_section_size: usize,
+                          outbox: &mut EventBox)
                           -> (RoutingActionSender, StateMachine) {
         let full_id = FullId::new();
 
-        StateMachine::new(move |crust_service, timer, outtray2| if self.first {
-            if let Some(state) = states::Node::first(self.cache,
-                                                     crust_service,
-                                                     full_id,
-                                                     min_section_size,
-                                                     timer) {
-                    State::Node(state)
-                } else {
-                    State::Terminated
-                }
-        } else if self.deny_other_local_nodes && crust_service.has_peers_on_lan() {
-            error!("Bootstrapping({:?}) More than 1 routing node found on LAN. Currently this is \
-                    not supported",
-                   full_id.public_id().name());
+        StateMachine::new(move |crust_service, timer, outbox2| if self.first {
+                              if let Some(state) = states::Node::first(self.cache,
+                                                                       crust_service,
+                                                                       full_id,
+                                                                       min_section_size,
+                                                                       timer) {
+                                  State::Node(state)
+                              } else {
+                                  State::Terminated
+                              }
+                          } else if
+                              self.deny_other_local_nodes && crust_service.has_peers_on_lan() {
+                              error!("Bootstrapping({:?}) More than 1 routing node found on LAN. \
+                                      Currently this is not supported",
+                                     full_id.public_id().name());
 
-            outtray2.send_event(Event::Terminate);
-            State::Terminated
-        } else {
-            states::Bootstrapping::new(self.cache,
-                                        false,
-                                        crust_service,
-                                        full_id,
-                                        min_section_size,
-                                        timer).map_or(State::Terminated, State::Bootstrapping)
-        }, outtray)
+                              outbox2.send_event(Event::Terminate);
+                              State::Terminated
+                          } else {
+                              states::Bootstrapping::new(self.cache,
+                                                         false,
+                                                         crust_service,
+                                                         full_id,
+                                                         min_section_size,
+                                                         timer)
+                                  .map_or(State::Terminated, State::Bootstrapping)
+                          },
+                          outbox)
     }
 }
 

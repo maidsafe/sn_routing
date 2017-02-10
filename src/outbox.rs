@@ -22,24 +22,24 @@
 
 // The original design was like this:
 //
-// pub trait EventTray {
+// pub trait EventBox {
 //     fn send_event(&mut self, event: Event);
 // }
-// pub trait MessageTray {
+// pub trait MessageBox {
 //     fn send_msg(&mut self, msg: Message);
 //     fn send_msgs(&mut self, msgs: Vec<Message>);
 // }
-// pub trait OutTray: EventTray + MessageTray {}
+// pub trait OutBox: EventBox + MessageBox {}
 //
-// pub struct EventBox { ... }
-// impl EventBox { ... }
-// impl EventTray for OutBox { ... }
+// pub struct EventBuf { ... }
+// impl EventBuf { ... }
+// impl EventBox for OutBuf { ... }
 //
-// pub struct OutBox { ... }
-// impl OutBox { ... }
-// impl EventTray for OutBox { ... }
-// impl MessageTray for OutBox { ... }
-// impl OutTray for OutBox { ... }
+// pub struct OutBuf { ... }
+// impl OutBuf { ... }
+// impl EventBox for OutBuf { ... }
+// impl MessageBox for OutBuf { ... }
+// impl OutBox for OutBuf { ... }
 
 use event::Event;
 use std::collections::VecDeque;
@@ -51,18 +51,18 @@ use std::mem;
 ///
 /// The API doesn't specify whether objects get sent immediately synchronously or asynchronously,
 /// or collected and sent later.
-pub trait EventTray {
+pub trait EventBox {
     /// Send an event
     fn send_event(&mut self, event: Event);
 }
 
-/// Implementor of `EventTray`; stores its events in a `VecDeque`.
+/// Implementor of `EventBox`; stores its events in a `VecDeque`.
 #[derive(Default)]
 pub struct EventBuf {
     events: VecDeque<Event>,
 }
 
-impl EventTray for EventBuf {
+impl EventBox for EventBuf {
     fn send_event(&mut self, event: Event) {
         self.events.push_back(event)
     }
@@ -88,7 +88,7 @@ impl EventBuf {
 impl Drop for EventBuf {
     fn drop(&mut self) {
         if !self.events.is_empty() {
-            error!("EventTray dropped events: {:?}", self.events);
+            error!("EventBox dropped events: {:?}", self.events);
         }
     }
 }

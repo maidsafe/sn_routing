@@ -24,7 +24,7 @@ use id::FullId;
 #[cfg(not(feature = "use-mock-crust"))]
 use maidsafe_utilities::thread::{self, Joiner};
 use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, Request};
-use outtray::{EventBuf, EventTray};
+use outbox::{EventBox, EventBuf};
 use routing_table::Authority;
 #[cfg(not(feature = "use-mock-crust"))]
 use rust_sodium;
@@ -111,16 +111,16 @@ impl Client {
 
     fn make_state_machine(keys: Option<FullId>,
                           min_section_size: usize,
-                          outtray: &mut EventTray)
+                          outbox: &mut EventBox)
                           -> (RoutingActionSender, StateMachine) {
         let cache = Box::new(NullCache);
         let full_id = keys.unwrap_or_else(FullId::new);
 
-        StateMachine::new(move |crust_service, timer, _outtray2| {
+        StateMachine::new(move |crust_service, timer, _outbox2| {
             states::Bootstrapping::new(cache, true, crust_service, full_id, min_section_size, timer)
                 .map_or(State::Terminated, State::Bootstrapping)
         },
-                          outtray)
+                          outbox)
     }
 
     /// Send a Get message with a `DataIdentifier` to an `Authority`, signed with given keys.

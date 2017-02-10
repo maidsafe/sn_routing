@@ -25,7 +25,7 @@ use id::{FullId, PublicId};
 use maidsafe_utilities::serialisation;
 use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage, UserMessage,
                UserMessageCache};
-use outtray::EventTray;
+use outbox::EventBox;
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use routing_table::Authority;
 use state_machine::Transition;
@@ -62,7 +62,7 @@ impl Client {
                               proxy_public_id: PublicId,
                               stats: Stats,
                               timer: Timer,
-                              outtray: &mut EventTray)
+                              outbox: &mut EventBox)
                               -> Self {
         let client = Client {
             ack_mgr: AckManager::new(),
@@ -80,7 +80,7 @@ impl Client {
 
         debug!("{:?} - State changed to client.", client);
 
-        outtray.send_event(Event::Connected);
+        outbox.send_event(Event::Connected);
         client
     }
 
@@ -118,12 +118,12 @@ impl Client {
 
     pub fn handle_crust_event(&mut self,
                               crust_event: CrustEvent,
-                              outtray: &mut EventTray)
+                              outbox: &mut EventBox)
                               -> Transition {
         match crust_event {
-            CrustEvent::LostPeer(peer_id) => self.handle_lost_peer(peer_id, outtray),
+            CrustEvent::LostPeer(peer_id) => self.handle_lost_peer(peer_id, outbox),
             CrustEvent::NewMessage(peer_id, bytes) => {
-                self.handle_new_message(peer_id, bytes, outtray)
+                self.handle_new_message(peer_id, bytes, outbox)
             }
             _ => {
                 debug!("{:?} Unhandled crust event {:?}", self, crust_event);
@@ -144,10 +144,10 @@ impl Client {
     fn handle_new_message(&mut self,
                           peer_id: PeerId,
                           bytes: Vec<u8>,
-                          outtray: &mut EventTray)
+                          outbox: &mut EventBox)
                           -> Transition {
         let transition = match serialisation::deserialise(&bytes) {
-            Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, peer_id, outtray),
+            Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, peer_id, outbox),
             Ok(message) => {
                 debug!("{:?} - Unhandled new message: {:?}", self, message);
                 Ok(Transition::Stay)
@@ -168,7 +168,7 @@ impl Client {
     fn handle_hop_message(&mut self,
                           hop_msg: HopMessage,
                           peer_id: PeerId,
-                          outtray: &mut EventTray)
+                          outbox: &mut EventBox)
                           -> Result<Transition, RoutingError> {
         if self.proxy_peer_id == peer_id {
             hop_msg.verify(self.proxy_public_id.signing_public_key())?;
@@ -196,12 +196,12 @@ impl Client {
             return Ok(Transition::Stay);
         }
 
-        Ok(self.dispatch_routing_message(routing_msg.clone(), outtray))
+        Ok(self.dispatch_routing_message(routing_msg.clone(), outbox))
     }
 
     fn dispatch_routing_message(&mut self,
                                 routing_msg: RoutingMessage,
-                                outtray: &mut EventTray)
+                                outbox: &mut EventBox)
                                 -> Transition {
         match routing_msg.content {
             MessageContent::Ack(ack, _) => self.handle_ack_response(ack),
@@ -215,7 +215,7 @@ impl Client {
                        routing_msg.dst);
                 if let Some(msg) = self.user_msg_cache.add(hash, part_count, part_index, payload) {
                     self.stats().count_user_message(&msg);
-                    outtray.send_event(msg.into_event(routing_msg.src, routing_msg.dst));
+                    outbox.send_event(msg.into_event(routing_msg.src, routing_msg.dst));
                 }
                 Transition::Stay
             }
@@ -263,7 +263,7 @@ impl Base for Client {
         }
     }
 
-    fn handle_lost_peer(&mut self, peer_id: PeerId, outtray: &mut EventTray) -> Transition {
+    fn handle_lost_peer(&mut self, peer_id: PeerId, outbox: &mut EventBox) -> Transition {
         if peer_id == self.crust_service().id() {
             error!("{:?} LostPeer fired with our crust peer ID", self);
             return Transition::Stay;
@@ -276,7 +276,7 @@ impl Base for Client {
                    self,
                    self.proxy_public_id.name(),
                    peer_id);
-            outtray.send_event(Event::Terminate);
+            outbox.send_event(Event::Terminate);
             Transition::Terminate
         } else {
             Transition::Stay

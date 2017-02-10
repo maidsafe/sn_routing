@@ -20,7 +20,7 @@ use error::RoutingError;
 use id::FullId;
 use maidsafe_utilities::serialisation;
 use messages::Message;
-use outtray::EventTray;
+use outbox::EventBox;
 use routing_table::Authority;
 use state_machine::Transition;
 use stats::Stats;
@@ -34,7 +34,7 @@ pub trait Base: Debug {
     fn stats(&mut self) -> &mut Stats;
     fn in_authority(&self, auth: &Authority<XorName>) -> bool;
 
-    fn handle_lost_peer(&mut self, _peer_id: PeerId, _outtray: &mut EventTray) -> Transition {
+    fn handle_lost_peer(&mut self, _peer_id: PeerId, _outbox: &mut EventBox) -> Transition {
         Transition::Stay
     }
 

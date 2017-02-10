@@ -24,7 +24,7 @@ use event::Event;
 use id::{FullId, PublicId};
 use maidsafe_utilities::serialisation;
 use messages::{DirectMessage, Message};
-use outtray::EventTray;
+use outbox::EventBox;
 use routing_table::Authority;
 use rust_sodium::crypto::hash::sha256;
 use rust_sodium::crypto::sign;
@@ -104,13 +104,13 @@ impl Bootstrapping {
 
     pub fn handle_crust_event(&mut self,
                               crust_event: CrustEvent,
-                              outtray: &mut EventTray)
+                              outbox: &mut EventBox)
                               -> Transition {
         match crust_event {
             CrustEvent::BootstrapConnect(peer_id, socket_addr) => {
                 self.handle_bootstrap_connect(peer_id, socket_addr)
             }
-            CrustEvent::BootstrapFailed => self.handle_bootstrap_failed(outtray),
+            CrustEvent::BootstrapFailed => self.handle_bootstrap_failed(outbox),
             CrustEvent::NewMessage(peer_id, bytes) => {
                 match self.handle_new_message(peer_id, bytes) {
                     Ok(transition) => transition,
@@ -133,7 +133,7 @@ impl Bootstrapping {
             }
             CrustEvent::ListenerFailed => {
                 error!("{:?} Failed to start listening.", self);
-                outtray.send_event(Event::Terminate);
+                outbox.send_event(Event::Terminate);
                 Transition::Terminate
             }
             _ => {
@@ -146,7 +146,7 @@ impl Bootstrapping {
     pub fn into_client(self,
                        proxy_peer_id: PeerId,
                        proxy_public_id: PublicId,
-                       outtray: &mut EventTray)
+                       outbox: &mut EventBox)
                        -> Client {
         Client::from_bootstrapping(self.crust_service,
                                    self.full_id,
@@ -155,7 +155,7 @@ impl Bootstrapping {
                                    proxy_public_id,
                                    self.stats,
                                    self.timer,
-                                   outtray)
+                                   outbox)
     }
 
     pub fn into_node(self, proxy_peer_id: PeerId, proxy_public_id: PublicId) -> Option<Node> {
@@ -206,9 +206,9 @@ impl Bootstrapping {
         Transition::Stay
     }
 
-    fn handle_bootstrap_failed(&mut self, outtray: &mut EventTray) -> Transition {
+    fn handle_bootstrap_failed(&mut self, outbox: &mut EventBox) -> Transition {
         info!("{:?} Failed to bootstrap. Terminating.", self);
-        outtray.send_event(Event::Terminate);
+        outbox.send_event(Event::Terminate);
         Transition::Terminate
     }
 
