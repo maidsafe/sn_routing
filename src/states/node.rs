@@ -272,9 +272,21 @@ impl Node {
                                      self,
                                      self.crust_service.id(),
                                      self.stats.cur_routing_table_size);
-            let sep_str = iter::repeat('-').take(status_str.len()).collect::<String>();
+            // Estimation of total number of nodes
+            let map = self.peer_mgr.pub_ids_by_section();
+            let count_vec = map.iter().map(|(pfx, ref map)| map.len() * (1 << pfx.bit_count()))
+                                           .collect::<Vec<usize>>();
+            let average = count_vec.iter().fold(0usize, |sum, i| sum + i) / count_vec.len();
+            let min = count_vec.iter().min().unwrap();
+            let max = count_vec.iter().max().unwrap();
+            let deviation = cmp::max(average - min, max - average);
+            let count_str = format!("Estimated vault count: {} ± {} (evaluated over {} sections)",
+                                    average, deviation, count_vec.iter().len());
+            let sep_len = cmp::max(status_str.len(), count_str.len());
+            let sep_str = iter::repeat('-').take(sep_len).collect::<String>();
             log!(target: "routing_stats", TABLE_LVL, " -{}- ", sep_str);
-            log!(target: "routing_stats", TABLE_LVL, "| {} |", status_str);
+            log!(target: "routing_stats", TABLE_LVL, "| {:<1$} |", status_str, sep_len);
+            log!(target: "routing_stats", TABLE_LVL, "| {:<1$} |", count_str, sep_len);
             log!(target: "routing_stats", TABLE_LVL, " -{}- ", sep_str);
         }
     }
