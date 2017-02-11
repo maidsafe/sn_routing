@@ -282,7 +282,8 @@ impl Node {
                 // Result is exact when the whole xor space is covered, even if sections are unbalanced.
                 (average, average)
             } else {
-                (count_vec.iter().fold((average, average), |mm, i| (cmp::min(mm.0, *i), cmp::max(mm.1, *i))))
+                (count_vec.iter().fold((average, average),
+                                       |mm, i| (cmp::min(mm.0, *i), cmp::max(mm.1, *i))))
             };
             let deviation = cmp::max(average - min, max - average);
             let count_str = format!("Estimated vault count: {} ± {} (evaluated over {} sections)",
