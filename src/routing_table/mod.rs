@@ -123,6 +123,7 @@ pub use self::xorable::Xorable;
 use std::{iter, mem};
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap, HashSet, hash_map, hash_set};
+use std::collections::hash_map::Entry;
 use std::fmt::{Binary, Debug, Formatter};
 use std::fmt::Result as FmtResult;
 use std::hash::Hash;
@@ -261,21 +262,23 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// Adds the list of `Prefix`es as empty sections.
     ///
     /// Called once a node has been approved by its own section and is given its peers' tables.
+    /// Expects the current sections to be empty.
     pub fn add_prefixes(&mut self, prefixes: Vec<Prefix<T>>) -> Result<(), Error> {
+        if !self.sections.is_empty() {
+            return Err(Error::InvariantViolation);
+        }
         for prefix in prefixes {
             if prefix.matches(&self.our_name) {
                 self.our_prefix = prefix;
-            } else {
-                let _ = self.sections.entry(prefix).or_insert_with(HashSet::new);
-            }
+            } else if self.sections.insert(prefix, HashSet::new()).is_some() {
+                return Err(Error::InvariantViolation);
+            };
         }
         // In case our section has split while we've been going through the approval process, we
         // need to assign the original members of our section to the new appropriate sections.
         let our_section = mem::replace(&mut self.our_section, HashSet::new());
         for name in our_section {
-            if let Some(section) = self.get_section_mut(&name) {
-                let _ = section.insert(name);
-            } else {
+            if self.get_section_mut(&name).map_or(true, |section| !section.insert(name)) {
                 return Err(Error::InvariantViolation);
             }
         }
@@ -294,9 +297,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     /// Returns the whole routing table, including our section and our name
     pub fn all_sections(&self) -> Sections<T> {
-        let mut result = self.sections.clone();
-        let _ = result.insert(self.our_prefix, self.our_section.clone());
-        result
+        self.sections
+            .clone()
+            .into_iter()
+            .chain(iter::once((self.our_prefix, self.our_section.clone())))
+            .collect()
     }
 
     /// Returns the section with the given prefix, if any (includes own name if is own section)
@@ -524,16 +529,12 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             let (section0, section1) = to_split.into_iter()
                 .partition::<HashSet<_>, _>(|name| prefix0.matches(name));
 
-            if self.our_prefix.is_neighbour(&prefix0) {
-                let _ = self.sections.insert(prefix0, section0);
-            } else {
-                result.extend(section0);
-            }
-
-            if self.our_prefix.is_neighbour(&prefix1) {
-                let _ = self.sections.insert(prefix1, section1);
-            } else {
-                result.extend(section1);
+            for (pfx, section) in vec![(prefix0, section0), (prefix1, section1)] {
+                if self.our_prefix.is_neighbour(&pfx) {
+                    self.insert_new_section(pfx, section);
+                } else {
+                    result.extend(section);
+                }
             }
         }
         (result, None)
@@ -578,7 +579,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                     missing_pfxs.push(pfx.pushed(true));
                     missing_pfxs.push(pfx.pushed(false));
                 } else {
-                    let _ = self.sections.insert(pfx, HashSet::new());
+                    self.insert_new_section(pfx, HashSet::new());
                 }
             }
         }
@@ -637,12 +638,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             return None;
         }
         let merge_prefix = self.our_prefix.popped();
-        let mut sections = self.sections.clone();
-        let _ = sections.insert(self.our_prefix, self.our_section().clone());
         Some(OwnMergeDetails {
             sender_prefix: self.our_prefix,
             merge_prefix: merge_prefix,
-            sections: sections,
+            sections: self.all_sections(),
         })
     }
 
@@ -868,11 +867,27 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             .filter(|prefix| !prefix.is_neighbour(&self.our_prefix))
             .cloned()
             .collect_vec();
-        let _ = self.sections.insert(other_prefix, other_section);
+        self.insert_new_section(other_prefix, other_section);
         sections_to_remove.into_iter()
             .filter_map(|prefix| self.sections.remove(&prefix))
             .flat_map(HashSet::into_iter)
             .collect()
+    }
+
+    /// Inserts the given section. Logs an error if it already exists.
+    fn insert_new_section(&mut self, prefix: Prefix<T>, section: HashSet<T>) {
+        match self.sections.entry(prefix) {
+            Entry::Vacant(entry) => {
+                let _section_ref = entry.insert(section);
+            }
+            Entry::Occupied(entry) => {
+                error!("{:?} Inserting section {:?}, but already has members {:?}. This is a bug!",
+                       self.our_name,
+                       prefix,
+                       entry.get());
+                entry.into_mut().extend(section);
+            }
+        }
     }
 
     fn finish_merging_own_section(&mut self,
@@ -895,17 +910,17 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     fn merge(&mut self, new_prefix: &Prefix<T>) {
         // Partition the sections into those for merging and the rest
         let original_sections = mem::replace(&mut self.sections, Sections::new());
-        let (sections_to_merge, mut sections) = original_sections.into_iter()
+        let (sections_to_merge, sections) = original_sections.into_iter()
             .partition::<HashMap<_, _>, _>(|&(prefix, _)| new_prefix.is_compatible(&prefix));
+        self.sections = sections;
         // Merge selected sections and add the merged section back in.
         let merged_names = sections_to_merge.into_iter().flat_map(|(_, names)| names).collect();
         if self.our_prefix.is_compatible(new_prefix) {
             self.our_section.extend(merged_names);
             self.our_prefix = *new_prefix;
         } else {
-            let _ = sections.insert(*new_prefix, merged_names);
+            self.insert_new_section(*new_prefix, merged_names);
         }
-        self.sections = sections;
     }
 
     /// Get a mutable reference to whichever section matches the given name. If our own section,
