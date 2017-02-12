@@ -274,22 +274,28 @@ impl Node {
                                      self.stats.cur_routing_table_size);
             // Estimation of total number of nodes
             let map = self.peer_mgr.pub_ids_by_section();
-            let count_vec = map.iter()
-                .map(|(pfx, map)| map.len() * (1 << pfx.bit_count()))
-                .collect::<Vec<usize>>();
-            let average = count_vec.iter().fold(0usize, |sum, i| sum + *i) / count_vec.len();
-            let (min, max) = if Prefix::default().is_covered_by(map.keys()) {
-                // Result is exact when the whole xor space is covered, even if sections are unbalanced.
-                (average, average)
+            let (average, (min, max)) = if Prefix::default().is_covered_by(map.keys()) {
+                // Result is exact when the whole xor space is covered by sections in our RT
+                // and is the sum of the sections size
+                let exact = map.iter()
+                               .fold(0usize, |sum, (_, map)| sum + map.len());
+                (exact, (exact, exact))
             } else {
-                (count_vec.iter().fold((average, average),
-                                       |mm, i| (cmp::min(mm.0, *i), cmp::max(mm.1, *i))))
+                // When RT contains a subset of sections, result is the mean of local estimations
+                // made for each section.
+                let count_vec = map.iter()
+                                   .map(|(pfx, map)| map.len() * (1 << pfx.bit_count()))
+                                   .collect::<Vec<usize>>();
+                let average = count_vec.iter().fold(0usize, |sum, i| sum + *i) / count_vec.len();
+                (average,
+                 (count_vec.iter().fold((average, average),
+                                        |mm, i| (cmp::min(mm.0, *i), cmp::max(mm.1, *i)))))
             };
             let deviation = cmp::max(average - min, max - average);
             let count_str = format!("Estimated vault count: {} ± {} (evaluated over {} sections)",
                                     average,
                                     deviation,
-                                    count_vec.iter().len());
+                                    map.len());
             let sep_len = cmp::max(status_str.len(), count_str.len());
             let sep_str = iter::repeat('-').take(sep_len).collect::<String>();
             log!(target: "routing_stats", TABLE_LVL, " -{}- ", sep_str);
