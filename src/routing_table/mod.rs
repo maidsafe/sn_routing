@@ -603,6 +603,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         Ok(removal_details)
     }
 
+    /// Returns whether the other section has already initiated a merge.
+    pub fn they_want_to_merge(&self) -> bool {
+        self.they_want_to_merge
+    }
+
     /// If our section is required to merge, returns the details to initiate merging.
     ///
     /// Merging is required if any section has dropped below the minimum size and can only restore
