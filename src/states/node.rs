@@ -278,14 +278,14 @@ impl Node {
                 // Result is exact when the whole xor space is covered by sections in our RT
                 // and is the sum of the sections size
                 let exact = map.iter()
-                               .fold(0usize, |sum, (_, map)| sum + map.len());
+                    .fold(0usize, |sum, (_, map)| sum + map.len());
                 (exact, (exact, exact))
             } else {
                 // When RT contains a subset of sections, result is the mean of local estimations
                 // made for each section.
                 let count_vec = map.iter()
-                                   .map(|(pfx, map)| map.len() * (1 << pfx.bit_count()))
-                                   .collect::<Vec<usize>>();
+                    .map(|(pfx, map)| map.len() * (1 << pfx.bit_count()))
+                    .collect::<Vec<usize>>();
                 let average = count_vec.iter().fold(0usize, |sum, i| sum + *i) / count_vec.len();
                 (average,
                  (count_vec.iter().fold((average, average),
