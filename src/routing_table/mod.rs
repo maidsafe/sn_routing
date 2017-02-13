@@ -570,19 +570,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         // prefix recursively until all its parts are either covered or incompatible with the
         // existing ones. Insert the incompatible ones to cover the required part of the name space.
         self.merge(&prefix);
-        let mut missing_pfxs = (0..self.our_prefix.bit_count())
-            .map(|i| self.our_prefix.with_flipped_bit(i))
-            .collect_vec();
-        while let Some(pfx) = missing_pfxs.pop() {
-            if !pfx.is_covered_by(self.sections.keys()) {
-                if self.sections.keys().any(|p| pfx.is_compatible(p)) {
-                    missing_pfxs.push(pfx.pushed(true));
-                    missing_pfxs.push(pfx.pushed(false));
-                } else {
-                    self.insert_new_section(pfx, HashSet::new());
-                }
-            }
-        }
+        self.add_missing_prefixes();
         result
     }
 
@@ -661,16 +649,15 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             return OwnMergeState::AlreadyMerged;
         }
         for prefix in merge_details.sections.keys() {
-            let compatible_with_ours = self.our_prefix.is_compatible(prefix);
-            // This may be a section which has been merged from multiple sections currently still
-            // in our RT, so fix up our RT first.
-            if merge_details.merge_prefix.is_compatible(prefix) &&
-               !self.sections.contains_key(prefix) && !compatible_with_ours {
-                self.merge(prefix);
-            }
-            // Add an empty section in the table.
-            if !compatible_with_ours {
-                let _ = self.sections.entry(*prefix).or_insert_with(HashSet::new);
+            if *prefix == self.our_prefix || self.sections.contains_key(prefix) {
+                continue; // Already in our routing table.
+            } else if self.our_prefix.is_compatible(prefix) ||
+                      self.sections.keys().any(|pfx| prefix.is_compatible(pfx)) {
+                error!("{:?} Received unsuitable prefix {:?} in OwnSectionMerge.",
+                       self.our_name,
+                       prefix);
+            } else {
+                self.insert_new_section(*prefix, HashSet::new());
             }
         }
 
@@ -681,7 +668,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
         if self.we_want_to_merge && self.they_want_to_merge {
             // We've heard from all merging sections - do the merge and return `Completed`.
-            self.finish_merging_own_section(merge_details)
+            self.finish_merging_own_section(merge_details.merge_prefix)
         } else {
             // We don't have the merge details from both sides yet.
             OwnMergeState::Ongoing
@@ -890,15 +877,14 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
     }
 
-    fn finish_merging_own_section(&mut self,
-                                  merge_details: OwnMergeDetails<T>)
-                                  -> OwnMergeState<T> {
+    fn finish_merging_own_section(&mut self, merge_prefix: Prefix<T>) -> OwnMergeState<T> {
         self.we_want_to_merge = false;
         self.they_want_to_merge = false;
-        self.merge(&merge_details.merge_prefix);
+        self.merge(&merge_prefix);
+        self.add_missing_prefixes();
         let targets = self.sections.keys().cloned().collect();
         let other_details = OtherMergeDetails {
-            prefix: merge_details.merge_prefix,
+            prefix: merge_prefix,
             section: self.our_section().clone(),
         };
         OwnMergeState::Completed {
@@ -920,6 +906,23 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             self.our_prefix = *new_prefix;
         } else {
             self.insert_new_section(*new_prefix, merged_names);
+        }
+    }
+
+    /// Inserts empty sections so that the prefixes cover all neighbouring areas of the namespace.
+    fn add_missing_prefixes(&mut self) {
+        let mut missing_pfxs = (0..self.our_prefix.bit_count())
+            .map(|i| self.our_prefix.with_flipped_bit(i))
+            .collect_vec();
+        while let Some(pfx) = missing_pfxs.pop() {
+            if !pfx.is_covered_by(self.sections.keys()) {
+                if self.sections.keys().any(|p| pfx.is_compatible(p)) {
+                    missing_pfxs.push(pfx.pushed(true));
+                    missing_pfxs.push(pfx.pushed(false));
+                } else {
+                    self.insert_new_section(pfx, HashSet::new());
+                }
+            }
         }
     }
 
