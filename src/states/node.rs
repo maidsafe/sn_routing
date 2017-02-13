@@ -2494,9 +2494,7 @@ impl Node {
                                sent_to: BTreeSet<XorName>)
                                -> Result<(), RoutingError> {
         let priority = signed_msg.priority();
-        //TODO: this fn has no side effects other than stats, right?
-        let filtered =
-            self.filter_outgoing_routing_msg(signed_msg.routing_message(), &target, route);
+        let routing_msg = signed_msg.routing_message().clone();
 
         let (peer_id, bytes) = if self.crust_service.is_connected(&target) {
             let serialised = self.to_hop_bytes(signed_msg, route, sent_to)?;
@@ -2511,7 +2509,7 @@ impl Node {
             self.disconnect_peer(&target);
             return Ok(());
         };
-        if !filtered {
+        if !self.filter_outgoing_routing_msg(&routing_msg, &target, route) {
             self.send_or_drop(&peer_id, bytes, priority);
         }
         Ok(())
