@@ -2493,10 +2493,11 @@ impl Node {
                                route: u8,
                                sent_to: BTreeSet<XorName>)
                                -> Result<(), RoutingError> {
-        if self.filter_outgoing_routing_msg(signed_msg.routing_message(), &target, route) {
-            return Ok(());
-        }
         let priority = signed_msg.priority();
+        //TODO: this fn has no side effects other than stats, right?
+        let filtered =
+            self.filter_outgoing_routing_msg(signed_msg.routing_message(), &target, route);
+
         let (peer_id, bytes) = if self.crust_service.is_connected(&target) {
             let serialised = self.to_hop_bytes(signed_msg, route, sent_to)?;
             (target, serialised)
@@ -2510,7 +2511,9 @@ impl Node {
             self.disconnect_peer(&target);
             return Ok(());
         };
-        self.send_or_drop(&peer_id, bytes, priority);
+        if !filtered {
+            self.send_or_drop(&peer_id, bytes, priority);
+        }
         Ok(())
     }
 
@@ -2836,8 +2839,6 @@ impl Node {
         let src = Authority::PrefixSection(merge_details.prefix);
         for target in &targets {
             let dst = Authority::PrefixSection(*target);
-
-
             if let Err(err) = self.send_routing_message(src, dst, content.clone()) {
                 debug!("{:?} Failed to send OtherSectionMerge: {:?}.", self, err);
             }
@@ -3088,9 +3089,11 @@ impl Bootstrapped for Node {
                     .filter(|p| prefix.is_compatible(p))
                     .collect_vec();
                 let mut v = Vec::with_capacity(prefixes.len());
-                for prefix in prefixes {
+                for p in prefixes {
+                    // `?` operator cannot be moved inside a `map` function, so we cannot use
+                    // an iterator chain here:
                     v.push(self.section_list_sigs
-                        .get_signed_list(&prefix)
+                        .get_signed_list(&p)
                         .ok_or(RoutingTableError::NoSecSigInCache)?);
                 }
                 v
