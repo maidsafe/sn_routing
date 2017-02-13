@@ -1843,7 +1843,7 @@ impl Node {
                                      section: BTreeSet<PublicId>,
                                      dst: Authority<XorName>,
                                      outbox: &mut EventBox) {
-        if !self.peer_mgr.routing_table().is_empty() {
+        if !self.full_id.public_id().is_client_id() {
             warn!("{:?} Received duplicate GetNodeName response.", self);
             return;
         }
