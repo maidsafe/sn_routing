@@ -21,12 +21,12 @@ use data::{Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use event::Event;
 use event_stream::{EventStepper, EventStream};
-use evented::{Evented, ToEvented};
 use id::FullId;
 #[cfg(feature = "use-mock-crust")]
 use id::PublicId;
 use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, RELOCATE_PRIORITY, Request, Response,
                UserMessage};
+use outbox::{EventBox, EventBuf};
 #[cfg(feature = "use-mock-crust")]
 use routing_table::{Prefix, RoutingTable};
 use routing_table::Authority;
@@ -38,7 +38,6 @@ use state_machine::{State, StateMachine};
 use states;
 #[cfg(feature = "use-mock-crust")]
 use std::collections::BTreeMap;
-use std::collections::VecDeque;
 #[cfg(feature = "use-mock-crust")]
 use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::{Receiver, RecvError, Sender, TryRecvError, channel};
@@ -80,10 +79,10 @@ impl NodeBuilder {
         #[cfg(not(feature = "use-mock-crust"))]
         rust_sodium::init();
 
-        let mut ev_buffer = VecDeque::new();
+        let mut ev_buffer = EventBuf::new();
 
         // start the handler for routing without a restriction to become a full node
-        let (_, machine) = self.make_state_machine(min_section_size).extract_to_buf(&mut ev_buffer);
+        let (_, machine) = self.make_state_machine(min_section_size, &mut ev_buffer);
 
         let (tx, rx) = channel();
 
@@ -98,36 +97,39 @@ impl NodeBuilder {
     // TODO - remove this `rustfmt_skip` once rustfmt stops adding trailing space at `else if`.
     #[cfg_attr(rustfmt, rustfmt_skip)]
     fn make_state_machine(self,
-                          min_section_size: usize)
-                          -> Evented<(RoutingActionSender, StateMachine)> {
+                          min_section_size: usize,
+                          outbox: &mut EventBox)
+                          -> (RoutingActionSender, StateMachine) {
         let full_id = FullId::new();
 
-        StateMachine::new(move |crust_service, timer| if self.first {
-            if let Some(state) = states::Node::first(self.cache,
-                                                     crust_service,
-                                                     full_id,
-                                                     min_section_size,
-                                                     timer) {
-                    State::Node(state)
-                } else {
-                    State::Terminated
-                }
-                .to_evented()
-        } else if self.deny_other_local_nodes && crust_service.has_peers_on_lan() {
-            error!("Bootstrapping({:?}) More than 1 routing node found on LAN. Currently this is \
-                    not supported",
-                   full_id.public_id().name());
+        StateMachine::new(move |crust_service, timer, outbox2| if self.first {
+                              if let Some(state) = states::Node::first(self.cache,
+                                                                       crust_service,
+                                                                       full_id,
+                                                                       min_section_size,
+                                                                       timer) {
+                                  State::Node(state)
+                              } else {
+                                  State::Terminated
+                              }
+                          } else if
+                              self.deny_other_local_nodes && crust_service.has_peers_on_lan() {
+                              error!("Bootstrapping({:?}) More than 1 routing node found on LAN. \
+                                      Currently this is not supported",
+                                     full_id.public_id().name());
 
-            Evented::single(Event::Terminate, State::Terminated)
-        } else {
-            states::Bootstrapping::new(self.cache,
-                                        false,
-                                        crust_service,
-                                        full_id,
-                                        min_section_size,
-                                        timer).map_or(State::Terminated, State::Bootstrapping)
-                .to_evented()
-        })
+                              outbox2.send_event(Event::Terminate);
+                              State::Terminated
+                          } else {
+                              states::Bootstrapping::new(self.cache,
+                                                         false,
+                                                         crust_service,
+                                                         full_id,
+                                                         min_section_size,
+                                                         timer)
+                                  .map_or(State::Terminated, State::Bootstrapping)
+                          },
+                          outbox)
     }
 }
 
@@ -142,7 +144,7 @@ pub struct Node {
     interface_result_tx: Sender<Result<(), InterfaceError>>,
     interface_result_rx: Receiver<Result<(), InterfaceError>>,
     machine: StateMachine,
-    event_buffer: VecDeque<Event>,
+    event_buffer: EventBuf,
 }
 
 impl Node {
@@ -412,13 +414,9 @@ impl Node {
             priority: priority,
             result_tx: self.interface_result_tx.clone(),
         };
-        let events = self.machine
-            .current_mut()
-            .handle_action(action)
-            .and_then(|transition| self.machine.apply_transition(transition))
-            .into_events();
 
-        self.event_buffer.extend(events);
+        let transition = self.machine.current_mut().handle_action(action, &mut self.event_buffer);
+        self.machine.apply_transition(transition, &mut self.event_buffer);
 
         self.receive_action_result(&self.interface_result_rx)?
     }
@@ -431,20 +429,16 @@ impl Node {
 impl EventStepper for Node {
     type Item = Event;
 
-    fn produce_events(&mut self) -> Result<Vec<Event>, RecvError> {
-        self.machine.step()
+    fn produce_events(&mut self) -> Result<(), RecvError> {
+        self.machine.step(&mut self.event_buffer)
     }
 
-    fn try_produce_events(&mut self) -> Result<Vec<Event>, TryRecvError> {
-        self.machine.try_step()
-    }
-
-    fn buffer_items(&mut self, events: Vec<Event>) {
-        self.event_buffer.extend(events);
+    fn try_produce_events(&mut self) -> Result<(), TryRecvError> {
+        self.machine.try_step(&mut self.event_buffer)
     }
 
     fn pop_item(&mut self) -> Option<Event> {
-        self.event_buffer.pop_front()
+        self.event_buffer.take_first()
     }
 }
 
@@ -509,6 +503,7 @@ impl Debug for Node {
 impl Drop for Node {
     fn drop(&mut self) {
         self.poll();
-        let _ = self.machine.current_mut().handle_action(Action::Terminate);
+        let _ = self.machine.current_mut().handle_action(Action::Terminate, &mut self.event_buffer);
+        let _ = self.event_buffer.take_all();
     }
 }

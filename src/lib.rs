@@ -142,9 +142,6 @@ extern crate rust_sodium;
 extern crate rustc_serialize;
 extern crate tiny_keccak;
 
-#[macro_use]
-mod evented;
-
 mod ack_manager;
 mod action;
 mod client;
@@ -158,6 +155,7 @@ mod id;
 mod message_filter;
 mod messages;
 mod node;
+mod outbox;
 mod peer_manager;
 mod routing_message_filter;
 mod routing_table;
@@ -199,7 +197,6 @@ pub use data::{AppendWrapper, AppendedData, Data, DataIdentifier, Filter, Immuta
 pub use error::{InterfaceError, RoutingError};
 pub use event::Event;
 pub use event_stream::EventStream;
-pub use evented::Evented;
 pub use id::{FullId, PublicId};
 pub use messages::{Request, Response};
 #[cfg(feature = "use-mock-crust")]

@@ -24,17 +24,15 @@ pub trait EventStream {
 pub trait EventStepper {
     type Item;
 
-    /// Produce multiple events and return them, or a `RecvError` if something goes wrong.
-    fn produce_events(&mut self) -> Result<Vec<Self::Item>, RecvError>;
+    /// Produce multiple events and store them internally, or return a `RecvError` if
+    /// something goes wrong.
+    fn produce_events(&mut self) -> Result<(), RecvError>;
 
     // Produce multiple events in a non-blocking fashion.
-    fn try_produce_events(&mut self) -> Result<Vec<Self::Item>, TryRecvError>;
+    fn try_produce_events(&mut self) -> Result<(), TryRecvError>;
 
     /// Pop an item from this type's internal buffer.
     fn pop_item(&mut self) -> Option<Self::Item>;
-
-    /// Push items to this type's internal buffer.
-    fn buffer_items(&mut self, items: Vec<Self::Item>);
 }
 
 /// Blanket implementation of `EventStream` for types implementing `EventStepper`.
@@ -51,7 +49,7 @@ impl<S> EventStream for S
             }
 
             match self.produce_events() {
-                Ok(new_events) => self.buffer_items(new_events),
+                Ok(()) => {}
                 Err(RecvError) => return Err(RecvError),
             }
         }
@@ -62,8 +60,7 @@ impl<S> EventStream for S
             return Ok(cached_ev);
         }
         match self.try_produce_events() {
-            Ok(new_events) => {
-                self.buffer_items(new_events);
+            Ok(()) => {
                 self.pop_item().ok_or(TryRecvError::Empty)
             }
             Err(err) => Err(err),
@@ -72,8 +69,7 @@ impl<S> EventStream for S
 
     fn poll(&mut self) -> bool {
         let mut result = false;
-        while let Ok(new_events) = self.try_produce_events() {
-            self.buffer_items(new_events);
+        while Ok(()) == self.try_produce_events() {
             result = true;
         }
         result

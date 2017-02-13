@@ -20,11 +20,11 @@ use cache::NullCache;
 use data::{AppendWrapper, Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use event::Event;
-use evented::{Evented, ToEvented};
 use id::FullId;
 #[cfg(not(feature = "use-mock-crust"))]
 use maidsafe_utilities::thread::{self, Joiner};
 use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, Request};
+use outbox::{EventBox, EventBuf};
 use routing_table::Authority;
 #[cfg(not(feature = "use-mock-crust"))]
 use rust_sodium;
@@ -32,8 +32,6 @@ use state_machine::{State, StateMachine};
 use states;
 #[cfg(feature = "use-mock-crust")]
 use std::cell::RefCell;
-#[cfg(feature = "use-mock-crust")]
-use std::collections::VecDeque;
 use std::sync::mpsc::{Receiver, Sender, channel};
 #[cfg(feature = "use-mock-crust")]
 use std::sync::mpsc::TryRecvError;
@@ -55,7 +53,7 @@ pub struct Client {
     machine: RefCell<StateMachine>,
 
     #[cfg(feature = "use-mock-crust")]
-    event_buffer: RefCell<VecDeque<Event>>,
+    event_buffer: RefCell<EventBuf>,
 
     #[cfg(not(feature = "use-mock-crust"))]
     _raii_joiner: Joiner,
@@ -79,11 +77,11 @@ impl Client {
         rust_sodium::init(); // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing with a restriction to become a full node
-        let mut events = Evented::empty();
-        let (action_sender, mut machine) = Self::make_state_machine(keys, min_section_size)
-            .extract(&mut events);
+        let mut event_buffer = EventBuf::new();
+        let (action_sender, mut machine) =
+            Self::make_state_machine(keys, min_section_size, &mut event_buffer);
 
-        for ev in events.into_events() {
+        for ev in event_buffer.take_all() {
             event_sender.send(ev)?;
         }
 
@@ -92,8 +90,8 @@ impl Client {
         let raii_joiner = thread::named("Client thread", move || {
             // Gather events from the state machine's event loop and proxy them over the
             // event_sender channel.
-            while let Ok(events) = machine.step() {
-                for ev in events {
+            while Ok(()) == machine.step(&mut event_buffer) {
+                for ev in event_buffer.take_all() {
                     // If sending the event fails, terminate this thread.
                     if event_sender.send(ev).is_err() {
                         return;
@@ -112,16 +110,17 @@ impl Client {
     }
 
     fn make_state_machine(keys: Option<FullId>,
-                          min_section_size: usize)
-                          -> Evented<(RoutingActionSender, StateMachine)> {
+                          min_section_size: usize,
+                          outbox: &mut EventBox)
+                          -> (RoutingActionSender, StateMachine) {
         let cache = Box::new(NullCache);
         let full_id = keys.unwrap_or_else(FullId::new);
 
-        StateMachine::new(move |crust_service, timer| {
+        StateMachine::new(move |crust_service, timer, _outbox2| {
             states::Bootstrapping::new(cache, true, crust_service, full_id, min_section_size, timer)
                 .map_or(State::Terminated, State::Bootstrapping)
-                .to_evented()
-        })
+        },
+                          outbox)
     }
 
     /// Send a Get message with a `DataIdentifier` to an `Authority`, signed with given keys.
@@ -219,10 +218,10 @@ impl Client {
     /// Create a new `Client` for unit testing.
     pub fn new(keys: Option<FullId>, min_section_size: usize) -> Result<Client, RoutingError> {
         // start the handler for routing with a restriction to become a full node
-        let mut events = VecDeque::new();
+        let mut event_buffer = EventBuf::new();
 
-        let (action_sender, machine) = Self::make_state_machine(keys, min_section_size)
-            .extract_to_buf(&mut events);
+        let (action_sender, machine) =
+            Self::make_state_machine(keys, min_section_size, &mut event_buffer);
 
         let (tx, rx) = channel();
 
@@ -231,7 +230,7 @@ impl Client {
             interface_result_rx: rx,
             action_sender: action_sender,
             machine: RefCell::new(machine),
-            event_buffer: RefCell::new(events),
+            event_buffer: RefCell::new(event_buffer),
         })
     }
 
@@ -239,28 +238,25 @@ impl Client {
     ///
     /// Either reads from the internal buffer, or prompts a state machine step.
     pub fn try_next_ev(&self) -> Result<Event, TryRecvError> {
-        if let Some(cached_ev) = self.event_buffer.borrow_mut().pop_front() {
+        if let Some(cached_ev) = self.event_buffer.borrow_mut().take_first() {
             return Ok(cached_ev);
         }
-        if let Ok(new_events) = self.try_step() {
-            self.event_buffer.borrow_mut().extend(new_events);
-        }
-        self.event_buffer.borrow_mut().pop_front().ok_or(TryRecvError::Empty)
+        self.try_step()?;
+        self.event_buffer.borrow_mut().take_first().ok_or(TryRecvError::Empty)
     }
 
     /// Process all inbound events and buffer any produced events on the internal buffer.
     pub fn poll(&self) -> bool {
         let mut result = false;
-        while let Ok(new_events) = self.try_step() {
-            self.event_buffer.borrow_mut().extend(new_events);
+        while Ok(()) == self.try_step() {
             result = true;
         }
         result
     }
 
     /// Step the underlying state machine if there are any events for it to process.
-    fn try_step(&self) -> Result<Vec<Event>, TryRecvError> {
-        self.machine.borrow_mut().try_step()
+    fn try_step(&self) -> Result<(), TryRecvError> {
+        self.machine.borrow_mut().try_step(&mut *self.event_buffer.borrow_mut())
     }
 
     /// Resend all unacknowledged messages.

@@ -21,10 +21,10 @@ use crust::{CrustUser, PeerId, Service};
 use crust::Event as CrustEvent;
 use error::RoutingError;
 use event::Event;
-use evented::{Evented, ToEvented};
 use id::{FullId, PublicId};
 use maidsafe_utilities::serialisation;
 use messages::{DirectMessage, Message};
+use outbox::EventBox;
 use routing_table::Authority;
 use rust_sodium::crypto::hash::sha256;
 use rust_sodium::crypto::sign;
@@ -81,7 +81,7 @@ impl Bootstrapping {
         })
     }
 
-    pub fn handle_action(&mut self, action: Action) -> Evented<Transition> {
+    pub fn handle_action(&mut self, action: Action) -> Transition {
         match action {
             Action::ClientSendRequest { ref result_tx, .. } |
             Action::NodeSendMessage { ref result_tx, .. } => {
@@ -95,25 +95,28 @@ impl Bootstrapping {
             }
             Action::Timeout(token) => self.handle_timeout(token),
             Action::Terminate => {
-                return Transition::Terminate.to_evented();
+                return Transition::Terminate;
             }
         }
 
-        Transition::Stay.to_evented()
+        Transition::Stay
     }
 
-    pub fn handle_crust_event(&mut self, crust_event: CrustEvent) -> Evented<Transition> {
+    pub fn handle_crust_event(&mut self,
+                              crust_event: CrustEvent,
+                              outbox: &mut EventBox)
+                              -> Transition {
         match crust_event {
             CrustEvent::BootstrapConnect(peer_id, socket_addr) => {
-                self.handle_bootstrap_connect(peer_id, socket_addr).to_evented()
+                self.handle_bootstrap_connect(peer_id, socket_addr)
             }
-            CrustEvent::BootstrapFailed => self.handle_bootstrap_failed(),
+            CrustEvent::BootstrapFailed => self.handle_bootstrap_failed(outbox),
             CrustEvent::NewMessage(peer_id, bytes) => {
                 match self.handle_new_message(peer_id, bytes) {
-                    Ok(transition) => transition.to_evented(),
+                    Ok(transition) => transition,
                     Err(error) => {
                         debug!("{:?} - {:?}", self, error);
-                        Transition::Stay.to_evented()
+                        Transition::Stay
                     }
                 }
             }
@@ -126,27 +129,33 @@ impl Bootstrapping {
                     CrustUser::Node
                 };
                 let _ = self.crust_service.start_bootstrap(HashSet::new(), crust_user);
-                Transition::Stay.to_evented()
+                Transition::Stay
             }
             CrustEvent::ListenerFailed => {
                 error!("{:?} Failed to start listening.", self);
-                Evented::single(Event::Terminate, Transition::Terminate)
+                outbox.send_event(Event::Terminate);
+                Transition::Terminate
             }
             _ => {
                 debug!("{:?} Unhandled crust event {:?}", self, crust_event);
-                Transition::Stay.to_evented()
+                Transition::Stay
             }
         }
     }
 
-    pub fn into_client(self, proxy_peer_id: PeerId, proxy_public_id: PublicId) -> Evented<Client> {
+    pub fn into_client(self,
+                       proxy_peer_id: PeerId,
+                       proxy_public_id: PublicId,
+                       outbox: &mut EventBox)
+                       -> Client {
         Client::from_bootstrapping(self.crust_service,
                                    self.full_id,
                                    self.min_section_size,
                                    proxy_peer_id,
                                    proxy_public_id,
                                    self.stats,
-                                   self.timer)
+                                   self.timer,
+                                   outbox)
     }
 
     pub fn into_node(self, proxy_peer_id: PeerId, proxy_public_id: PublicId) -> Option<Node> {
@@ -197,9 +206,10 @@ impl Bootstrapping {
         Transition::Stay
     }
 
-    fn handle_bootstrap_failed(&mut self) -> Evented<Transition> {
+    fn handle_bootstrap_failed(&mut self, outbox: &mut EventBox) -> Transition {
         info!("{:?} Failed to bootstrap. Terminating.", self);
-        Evented::single(Event::Terminate, Transition::Terminate)
+        outbox.send_event(Event::Terminate);
+        Transition::Terminate
     }
 
     fn handle_new_message(&mut self,
