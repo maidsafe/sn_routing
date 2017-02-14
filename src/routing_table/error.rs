@@ -50,11 +50,5 @@ quick_error! {
             description("Network invariant violation")
             display("The routing table state violates the network invariant.")
         }
-        /// Could not find a signed section list for some prefix in our cache. This might just be
-        /// because we didn't get enough signatures from neighbouring nodes yet.
-        NoSecSigInCache {
-            description("Signed section list not available")
-            display("There is not a signed section list for this prefix in our cache.")
-        }
     }
 }

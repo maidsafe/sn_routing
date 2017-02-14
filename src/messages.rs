@@ -239,6 +239,21 @@ pub struct SectionList {
     pub_ids: BTreeSet<PublicId>,
 }
 
+impl SectionList {
+    /// Create
+    pub fn new(prefix: Prefix<XorName>, pub_ids: BTreeSet<PublicId>) -> Self {
+        SectionList {
+            prefix: prefix,
+            pub_ids: pub_ids,
+        }
+    }
+
+    /// Create from any object convertable to an iterator
+    pub fn from<I: IntoIterator<Item = PublicId>>(prefix: Prefix<XorName>, pub_ids: I) -> Self {
+        Self::new(prefix, pub_ids.into_iter().collect())
+    }
+}
+
 /// A collection of signatures of the contents of a `SectionList`.
 pub type SectionListSignatures = BTreeMap<PublicId, sign::Signature>;
 
@@ -256,21 +271,6 @@ impl Debug for SignedSectionList {
                "SignedSectionList {{ list: {:?}, signatures: {} }}",
                self.list,
                self.signatures.len())
-    }
-}
-
-impl SectionList {
-    /// Create
-    pub fn new(prefix: Prefix<XorName>, pub_ids: BTreeSet<PublicId>) -> Self {
-        SectionList {
-            prefix: prefix,
-            pub_ids: pub_ids,
-        }
-    }
-
-    /// Create from any object convertable to an iterator
-    pub fn from<I: IntoIterator<Item = PublicId>>(prefix: Prefix<XorName>, pub_ids: I) -> Self {
-        Self::new(prefix, pub_ids.into_iter().collect())
     }
 }
 
@@ -348,7 +348,7 @@ impl SignedMessage {
                 last_verified = &prev_hop.list;
             }
 
-            // Now known_section should correspond to the accumulating section. We could directly
+            // Now last_verified should correspond to the accumulating section. We could directly
             // use this to verify all source sections, but the accumulating node's signed lists of
             // these sections may only include a quorum of signatures from its own understanding
             // of its section, so we resolve that and use that to verify the rest.
