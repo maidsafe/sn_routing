@@ -114,6 +114,11 @@ impl PublicId {
         &self.public_sign_key
     }
 
+    /// Returns whether our name is the hash of our public sign key.
+    pub fn is_client_id(&self) -> bool {
+        self.name.0 == hash::sha256::hash(&self.public_sign_key[..]).0
+    }
+
     fn new(public_encrypt_key: box_::PublicKey, public_sign_key: sign::PublicKey) -> PublicId {
         PublicId {
             public_encrypt_key: public_encrypt_key,

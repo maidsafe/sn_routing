@@ -31,7 +31,6 @@ use std::{error, fmt, mem};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::collections::hash_map::Values;
 use std::time::{Duration, Instant};
-use super::QUORUM;
 use types::MessageId;
 use xor_name::XorName;
 
@@ -739,41 +738,11 @@ impl PeerManager {
             .collect()
     }
 
-    /// Checks whether we have a quorum of nodes in each section
-    fn is_merging_possible(&self) -> bool {
-        let prefixes = self.expected_peers
-            .keys()
-            .map(|x| self.routing_table.find_section_prefix(x))
-            .collect::<HashSet<_>>();
-        if prefixes.contains(&None) {
-            // we expect contacts that don't belong in any of the sections in our RT - so we have
-            // no contacts from their section
-            warn!("{:?} Expecting peers that don't have a corresponding section in the routing \
-                   table: {:?}",
-                  self,
-                  self.expected_peers
-                      .keys()
-                      .filter(|&x| self.routing_table.find_section_prefix(x).is_none())
-                      .collect_vec());
-            return false;
-        }
-        // we use `flat_map` to unwrap `Option`s
-        for prefix in prefixes.into_iter().flat_map(|x| x) {
-            let missing_contacts = self.expected_peers.keys().filter(|x| prefix.matches(x)).count();
-            let present_contacts =
-                self.routing_table.section_with_prefix(&prefix).map_or(0, |section| section.len());
-            if QUORUM * (missing_contacts + present_contacts) > 100 * present_contacts {
-                return false;
-            }
-        }
-        true
-    }
-
     /// Wraps `RoutingTable::should_merge` with an extra check.
     ///
     /// Returns sender prefix, merge prefix, then sections.
     pub fn should_merge(&self) -> Option<(Prefix<XorName>, Prefix<XorName>, SectionMap)> {
-        if !self.is_merging_possible() {
+        if !self.routing_table.they_want_to_merge() && !self.expected_peers.is_empty() {
             return None;
         }
         self.routing_table.should_merge().map(|merge_details| {
