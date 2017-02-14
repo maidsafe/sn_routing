@@ -625,10 +625,12 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             section.len() >= self.min_section_size
         };
         if bit_count == 0 || self.we_want_to_merge ||
-           !self.sections.contains_key(&self.our_prefix.with_flipped_bit(bit_count - 1)) ||
-           (!self.they_want_to_merge && self.our_section.len() >= self.min_section_size &&
-            self.sections.iter().all(doesnt_need_to_merge_with_us)) {
-            return None;
+           !self.sections.contains_key(&self.our_prefix.with_flipped_bit(bit_count - 1)) {
+            return None; // We can't merge, or we already sent our merge message.
+        }
+        if !self.they_want_to_merge && self.our_section.len() >= self.min_section_size &&
+           self.sections.iter().all(doesnt_need_to_merge_with_us) {
+            return None; // There is no reason to merge.
         }
         let merge_prefix = self.our_prefix.popped();
         Some(OwnMergeDetails {
