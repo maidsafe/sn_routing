@@ -122,15 +122,15 @@ pub use self::prefix::Prefix;
 pub use self::xorable::Xorable;
 use std::{iter, mem};
 use std::cmp::Ordering;
-use std::collections::{BTreeSet, HashMap, HashSet, hash_map, hash_set};
+use std::collections::{BTreeMap, BTreeSet, HashSet, btree_map, hash_set};
 use std::fmt::{Binary, Debug, Formatter};
 use std::fmt::Result as FmtResult;
 use std::hash::Hash;
 
-pub type Sections<T> = HashMap<Prefix<T>, HashSet<T>>;
+pub type Sections<T> = BTreeMap<Prefix<T>, HashSet<T>>;
 
 type MemberIter<'a, T> = hash_set::Iter<'a, T>;
-type SectionIter<'a, T> = hash_map::Values<'a, Prefix<T>, HashSet<T>>;
+type SectionIter<'a, T> = btree_map::Values<'a, Prefix<T>, HashSet<T>>;
 type OtherSectionsIter<'a, T> = iter::FlatMap<SectionIter<'a, T>,
                                               MemberIter<'a, T>,
                                               FlatMapFn<'a, T>>;
@@ -252,7 +252,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             min_section_size: min_section_size,
             our_section: our_section,
             our_prefix: Default::default(),
-            sections: HashMap::new(),
+            sections: BTreeMap::new(),
             we_want_to_merge: false,
             they_want_to_merge: false,
         }
@@ -896,7 +896,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         // Partition the sections into those for merging and the rest
         let original_sections = mem::replace(&mut self.sections, Sections::new());
         let (sections_to_merge, mut sections) = original_sections.into_iter()
-            .partition::<HashMap<_, _>, _>(|&(prefix, _)| new_prefix.is_compatible(&prefix));
+            .partition::<BTreeMap<_, _>, _>(|&(prefix, _)| new_prefix.is_compatible(&prefix));
         // Merge selected sections and add the merged section back in.
         let merged_names = sections_to_merge.into_iter().flat_map(|(_, names)| names).collect();
         if self.our_prefix.is_compatible(new_prefix) {
