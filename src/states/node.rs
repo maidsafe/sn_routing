@@ -2160,24 +2160,25 @@ impl Node {
                     self.send_section_list_signature(prefix, None);
                 }
                 self.send_other_section_merge(targets, merge_details);
+
+                let own_name = *self.name();
+                for needed in &needed_peers {
+                    debug!("{:?} Sending connection info to {:?} due to merging own section.",
+                           self,
+                           needed);
+                    if let Err(error) = self.send_connection_info_request(*needed,
+                                                      Authority::ManagedNode(own_name),
+                                                      Authority::ManagedNode(*needed.name()),
+                                                      outbox) {
+                        debug!("{:?} - Failed to send connection info to {:?}: {:?}",
+                               self,
+                               needed,
+                               error);
+                    }
+                }
             }
         }
 
-        let own_name = *self.name();
-        for needed in &needed_peers {
-            debug!("{:?} Sending connection info to {:?} due to merging own section.",
-                   self,
-                   needed);
-            if let Err(error) = self.send_connection_info_request(*needed,
-                                              Authority::ManagedNode(own_name),
-                                              Authority::ManagedNode(*needed.name()),
-                                              outbox) {
-                debug!("{:?} - Failed to send connection info to {:?}: {:?}",
-                       self,
-                       needed,
-                       error);
-            }
-        }
         self.reset_rt_timer();
         Ok(())
     }
