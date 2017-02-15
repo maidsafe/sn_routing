@@ -1843,7 +1843,7 @@ impl Node {
                                      section: BTreeSet<PublicId>,
                                      dst: Authority<XorName>,
                                      outbox: &mut EventBox) {
-        if !self.peer_mgr.routing_table().is_empty() {
+        if !self.full_id.public_id().is_client_id() {
             warn!("{:?} Received duplicate GetNodeName response.", self);
             return;
         }
@@ -1897,6 +1897,10 @@ impl Node {
             self.disconnect_peer(&peer_id);
         }
 
+        if candidate_id.signing_public_key() == self.full_id.public_id().signing_public_key() {
+            return Ok(()); // This is a delayed message belonging to our own node name request.
+        }
+
         let original_name = *candidate_id.name();
         let relocated_name = self.next_node_name.take().unwrap_or_else(|| {
             self.peer_mgr.routing_table().assign_to_min_len_prefix(&original_name)
@@ -1912,11 +1916,6 @@ impl Node {
             let src = Authority::Section(original_name);
             let dst = Authority::Section(*candidate_id.name());
             return self.send_routing_message(src, dst, request_content);
-        }
-
-        if candidate_id == *self.full_id.public_id() {
-            // If we're the joining node: stop
-            return Ok(());
         }
 
         self.peer_mgr.expect_candidate(*candidate_id.name(), client_auth)?;

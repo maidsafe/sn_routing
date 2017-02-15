@@ -123,6 +123,7 @@ pub use self::xorable::Xorable;
 use std::{iter, mem};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashSet, btree_map, hash_set};
+use std::collections::btree_map::Entry;
 use std::fmt::{Binary, Debug, Formatter};
 use std::fmt::Result as FmtResult;
 use std::hash::Hash;
@@ -261,21 +262,23 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// Adds the list of `Prefix`es as empty sections.
     ///
     /// Called once a node has been approved by its own section and is given its peers' tables.
+    /// Expects the current sections to be empty.
     pub fn add_prefixes(&mut self, prefixes: Vec<Prefix<T>>) -> Result<(), Error> {
+        if !self.sections.is_empty() {
+            return Err(Error::InvariantViolation);
+        }
         for prefix in prefixes {
             if prefix.matches(&self.our_name) {
                 self.our_prefix = prefix;
-            } else {
-                let _ = self.sections.entry(prefix).or_insert_with(HashSet::new);
-            }
+            } else if self.sections.insert(prefix, HashSet::new()).is_some() {
+                return Err(Error::InvariantViolation);
+            };
         }
         // In case our section has split while we've been going through the approval process, we
         // need to assign the original members of our section to the new appropriate sections.
         let our_section = mem::replace(&mut self.our_section, HashSet::new());
         for name in our_section {
-            if let Some(section) = self.get_section_mut(&name) {
-                let _ = section.insert(name);
-            } else {
+            if self.get_section_mut(&name).map_or(true, |section| !section.insert(name)) {
                 return Err(Error::InvariantViolation);
             }
         }
@@ -294,9 +297,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     /// Returns the whole routing table, including our section and our name
     pub fn all_sections(&self) -> Sections<T> {
-        let mut result = self.sections.clone();
-        let _ = result.insert(self.our_prefix, self.our_section.clone());
-        result
+        self.sections
+            .clone()
+            .into_iter()
+            .chain(iter::once((self.our_prefix, self.our_section.clone())))
+            .collect()
     }
 
     /// Returns the section with the given prefix, if any (includes own name if is own section)
@@ -524,16 +529,12 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             let (section0, section1) = to_split.into_iter()
                 .partition::<HashSet<_>, _>(|name| prefix0.matches(name));
 
-            if self.our_prefix.is_neighbour(&prefix0) {
-                let _ = self.sections.insert(prefix0, section0);
-            } else {
-                result.extend(section0);
-            }
-
-            if self.our_prefix.is_neighbour(&prefix1) {
-                let _ = self.sections.insert(prefix1, section1);
-            } else {
-                result.extend(section1);
+            for (pfx, section) in vec![(prefix0, section0), (prefix1, section1)] {
+                if self.our_prefix.is_neighbour(&pfx) {
+                    self.insert_new_section(pfx, section);
+                } else {
+                    result.extend(section);
+                }
             }
         }
         (result, None)
@@ -569,19 +570,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         // prefix recursively until all its parts are either covered or incompatible with the
         // existing ones. Insert the incompatible ones to cover the required part of the name space.
         self.merge(&prefix);
-        let mut missing_pfxs = (0..self.our_prefix.bit_count())
-            .map(|i| self.our_prefix.with_flipped_bit(i))
-            .collect_vec();
-        while let Some(pfx) = missing_pfxs.pop() {
-            if !pfx.is_covered_by(self.sections.keys()) {
-                if self.sections.keys().any(|p| pfx.is_compatible(p)) {
-                    missing_pfxs.push(pfx.pushed(true));
-                    missing_pfxs.push(pfx.pushed(false));
-                } else {
-                    let _ = self.sections.insert(pfx, HashSet::new());
-                }
-            }
-        }
+        self.add_missing_prefixes();
         result
     }
 
@@ -614,6 +603,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         Ok(removal_details)
     }
 
+    /// Returns whether the other section has already initiated a merge.
+    pub fn they_want_to_merge(&self) -> bool {
+        self.they_want_to_merge
+    }
+
     /// If our section is required to merge, returns the details to initiate merging.
     ///
     /// Merging is required if any section has dropped below the minimum size and can only restore
@@ -631,18 +625,18 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             section.len() >= self.min_section_size
         };
         if bit_count == 0 || self.we_want_to_merge ||
-           !self.sections.contains_key(&self.our_prefix.with_flipped_bit(bit_count - 1)) ||
-           (self.our_section.len() >= self.min_section_size &&
-            self.sections.iter().all(doesnt_need_to_merge_with_us)) {
-            return None;
+           !self.sections.contains_key(&self.our_prefix.with_flipped_bit(bit_count - 1)) {
+            return None; // We can't merge, or we already sent our merge message.
+        }
+        if !self.they_want_to_merge && self.our_section.len() >= self.min_section_size &&
+           self.sections.iter().all(doesnt_need_to_merge_with_us) {
+            return None; // There is no reason to merge.
         }
         let merge_prefix = self.our_prefix.popped();
-        let mut sections = self.sections.clone();
-        let _ = sections.insert(self.our_prefix, self.our_section().clone());
         Some(OwnMergeDetails {
             sender_prefix: self.our_prefix,
             merge_prefix: merge_prefix,
-            sections: sections,
+            sections: self.all_sections(),
         })
     }
 
@@ -662,16 +656,15 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             return OwnMergeState::AlreadyMerged;
         }
         for prefix in merge_details.sections.keys() {
-            let compatible_with_ours = self.our_prefix.is_compatible(prefix);
-            // This may be a section which has been merged from multiple sections currently still
-            // in our RT, so fix up our RT first.
-            if merge_details.merge_prefix.is_compatible(prefix) &&
-               !self.sections.contains_key(prefix) && !compatible_with_ours {
-                self.merge(prefix);
-            }
-            // Add an empty section in the table.
-            if !compatible_with_ours {
-                let _ = self.sections.entry(*prefix).or_insert_with(HashSet::new);
+            if *prefix == self.our_prefix || self.sections.contains_key(prefix) {
+                continue; // Already in our routing table.
+            } else if self.our_prefix.is_compatible(prefix) ||
+                      self.sections.keys().any(|pfx| prefix.is_compatible(pfx)) {
+                error!("{:?} Received unsuitable prefix {:?} in OwnSectionMerge.",
+                       self.our_name,
+                       prefix);
+            } else {
+                self.insert_new_section(*prefix, HashSet::new());
             }
         }
 
@@ -682,7 +675,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
         if self.we_want_to_merge && self.they_want_to_merge {
             // We've heard from all merging sections - do the merge and return `Completed`.
-            self.finish_merging_own_section(merge_details)
+            self.finish_merging_own_section(merge_details.merge_prefix)
         } else {
             // We don't have the merge details from both sides yet.
             OwnMergeState::Ongoing
@@ -868,22 +861,37 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             .filter(|prefix| !prefix.is_neighbour(&self.our_prefix))
             .cloned()
             .collect_vec();
-        let _ = self.sections.insert(other_prefix, other_section);
+        self.insert_new_section(other_prefix, other_section);
         sections_to_remove.into_iter()
             .filter_map(|prefix| self.sections.remove(&prefix))
             .flat_map(HashSet::into_iter)
             .collect()
     }
 
-    fn finish_merging_own_section(&mut self,
-                                  merge_details: OwnMergeDetails<T>)
-                                  -> OwnMergeState<T> {
+    /// Inserts the given section. Logs an error if it already exists.
+    fn insert_new_section(&mut self, prefix: Prefix<T>, section: HashSet<T>) {
+        match self.sections.entry(prefix) {
+            Entry::Vacant(entry) => {
+                let _section_ref = entry.insert(section);
+            }
+            Entry::Occupied(entry) => {
+                error!("{:?} Inserting section {:?}, but already has members {:?}. This is a bug!",
+                       self.our_name,
+                       prefix,
+                       entry.get());
+                entry.into_mut().extend(section);
+            }
+        }
+    }
+
+    fn finish_merging_own_section(&mut self, merge_prefix: Prefix<T>) -> OwnMergeState<T> {
         self.we_want_to_merge = false;
         self.they_want_to_merge = false;
-        self.merge(&merge_details.merge_prefix);
+        self.merge(&merge_prefix);
+        self.add_missing_prefixes();
         let targets = self.sections.keys().cloned().collect();
         let other_details = OtherMergeDetails {
-            prefix: merge_details.merge_prefix,
+            prefix: merge_prefix,
             section: self.our_section().clone(),
         };
         OwnMergeState::Completed {
@@ -895,17 +903,34 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     fn merge(&mut self, new_prefix: &Prefix<T>) {
         // Partition the sections into those for merging and the rest
         let original_sections = mem::replace(&mut self.sections, Sections::new());
-        let (sections_to_merge, mut sections) = original_sections.into_iter()
+        let (sections_to_merge, sections) = original_sections.into_iter()
             .partition::<BTreeMap<_, _>, _>(|&(prefix, _)| new_prefix.is_compatible(&prefix));
+        self.sections = sections;
         // Merge selected sections and add the merged section back in.
         let merged_names = sections_to_merge.into_iter().flat_map(|(_, names)| names).collect();
         if self.our_prefix.is_compatible(new_prefix) {
             self.our_section.extend(merged_names);
             self.our_prefix = *new_prefix;
         } else {
-            let _ = sections.insert(*new_prefix, merged_names);
+            self.insert_new_section(*new_prefix, merged_names);
         }
-        self.sections = sections;
+    }
+
+    /// Inserts empty sections so that the prefixes cover all neighbouring areas of the namespace.
+    fn add_missing_prefixes(&mut self) {
+        let mut missing_pfxs = (0..self.our_prefix.bit_count())
+            .map(|i| self.our_prefix.with_flipped_bit(i))
+            .collect_vec();
+        while let Some(pfx) = missing_pfxs.pop() {
+            if !pfx.is_covered_by(self.sections.keys()) {
+                if self.sections.keys().any(|p| pfx.is_compatible(p)) {
+                    missing_pfxs.push(pfx.pushed(true));
+                    missing_pfxs.push(pfx.pushed(false));
+                } else {
+                    self.insert_new_section(pfx, HashSet::new());
+                }
+            }
+        }
     }
 
     /// Get a mutable reference to whichever section matches the given name. If our own section,
