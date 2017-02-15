@@ -352,6 +352,26 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
     }
 
+    /// Compute an estimate of the size of the network from the size of our routing table.
+    ///
+    /// Return (estimate, exact), with exact = true iff we have the whole network in our
+    /// routing table.
+    pub fn network_size_estimate(&self) -> (u64, bool) {
+        let known_prefixes = self.prefixes();
+        let is_exact = Prefix::default().is_covered_by(known_prefixes.iter());
+
+        // Estimated fraction of the network that we have in our RT.
+        // Computed as the sum of 1 / 2^(prefix.bit_count) for all known section prefixes.
+        let network_fraction: f64 = known_prefixes.iter()
+            .map(|p| 1.0 / (p.bit_count() as f64).exp2())
+            .sum();
+
+        // Total size estimate = known_nodes / network_fraction
+        let network_size = (self.len() + 1) as f64 / network_fraction;
+
+        (network_size.ceil() as u64, is_exact)
+    }
+
     /// Collects prefixes of all sections known by the routing table other than ours into a
     /// `BTreeSet`.
     pub fn other_prefixes(&self) -> BTreeSet<Prefix<T>> {

@@ -272,9 +272,15 @@ impl Node {
                                      self,
                                      self.crust_service.id(),
                                      self.stats.cur_routing_table_size);
-            let sep_str = iter::repeat('-').take(status_str.len()).collect::<String>();
+            let network_estimate = match self.peer_mgr.routing_table().network_size_estimate() {
+                (n, true) => format!("Exact network size: {}", n),
+                (n, false) => format!("Estimated network size: {}", n),
+            };
+            let sep_len = cmp::max(status_str.len(), network_estimate.len());
+            let sep_str = iter::repeat('-').take(sep_len).collect::<String>();
             log!(target: "routing_stats", TABLE_LVL, " -{}- ", sep_str);
-            log!(target: "routing_stats", TABLE_LVL, "| {} |", status_str);
+            log!(target: "routing_stats", TABLE_LVL, "| {:<1$} |", status_str, sep_len);
+            log!(target: "routing_stats", TABLE_LVL, "| {:<1$} |", network_estimate, sep_len);
             log!(target: "routing_stats", TABLE_LVL, " -{}- ", sep_str);
         }
     }
