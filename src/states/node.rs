@@ -144,6 +144,9 @@ impl Node {
                                  min_section_size,
                                  Stats::new(),
                                  timer);
+        let prefix = *node.our_prefix();
+        node.send_section_list_signature(prefix, None);
+
         if let Err(error) = node.crust_service.start_listening_tcp() {
             error!("{:?} Failed to start listening: {:?}", node, error);
             None
@@ -510,6 +513,7 @@ impl Node {
         }
     }
 
+    // Deconstruct a `DirectMessage` and handle or forward as appropriate.
     fn handle_direct_message(&mut self,
                              direct_message: DirectMessage,
                              peer_id: PeerId,
@@ -583,6 +587,8 @@ impl Node {
         }
     }
 
+    // Handle a signature of a `SignedMessage`, and if we have enough to verify the signed
+    // message then handle that.
     fn handle_message_signature(&mut self,
                                 digest: sha256::Digest,
                                 sig: sign::Signature,
@@ -668,7 +674,7 @@ impl Node {
         for peer_id in peers {
             let msg = DirectMessage::SectionListSignature(section.clone(), sig);
             if let Err(e) = self.send_direct_message(peer_id, msg) {
-                warn!("{:?} Error sending section list signature for {:?} to {:?}: {:?}",
+                warn!("{:?} Failed to send sending section list signature for {:?} to {:?}: {:?}",
                       self,
                       prefix,
                       peer_id,
@@ -728,43 +734,81 @@ impl Node {
     // Acknowledge reception of the message and broadcast to our section if necessary
     // The function is only called when we are in the destination authority
     fn ack_and_broadcast(&mut self,
-                         signed_msg: &SignedMessage,
+                         signed_msg: SignedMessage,
                          route: u8,
                          hop_name: XorName,
                          sent_to: &BTreeSet<XorName>) {
         self.send_ack(signed_msg.routing_message(), route);
         // If the destination is our section we need to forward it to the rest of the section
         if signed_msg.routing_message().dst.is_multiple() {
-            if let Err(error) = self.send_signed_message(signed_msg, route, &hop_name, sent_to) {
+            // TODO: maybe eventually don't clone signed_msg just so we can log it on error?
+            if let Err(error) =
+                self.send_signed_message(signed_msg.clone(), route, &hop_name, sent_to) {
                 debug!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);
             }
         }
     }
 
+    // Verify the message, then, if it is for us, handle the enclosed routing message; if not,
+    // forward it.
+    //
+    // If we are the originator or accumulator of the message, then `hop_name` is our name;
+    // otherwise, it is the name of the node which forwarded us the message.
     fn handle_signed_message(&mut self,
-                             signed_msg: SignedMessage,
+                             mut signed_msg: SignedMessage,
                              route: u8,
                              hop_name: XorName,
                              sent_to: &BTreeSet<XorName>)
                              -> Result<(), RoutingError> {
-        signed_msg.check_integrity(self.min_section_size())?;
+        let hop_prefix = self.peer_mgr
+            .routing_table()
+            .find_section_prefix(&hop_name)
+            .ok_or(RoutingTableError::NoSuchPeer)?;
+        let section_list = if signed_msg.routing_message().src.is_client() ||
+                              self.in_authority(&signed_msg.routing_message().src) {
+            // No point verifying the route if from a client; we also don't need to verify if the
+            // message is from our own section.
+            // TODO: possibly we should if the message is from a PrefixSection.
+            None
+        } else {
+            let list = self.section_list_sigs.get_signed_list(&hop_prefix);
+            if list.is_none() {
+                warn!("{:?} NoSectionSigInCache: sender {:?} of signed message {:?} to {:?} \
+                        via hop {:?} cannot be verified",
+                      self,
+                      signed_msg.routing_message().src,
+                      signed_msg.routing_message().content,
+                      signed_msg.routing_message().dst,
+                      hop_name);
+            }
+            list
+        };
+
+        // Check the message's signatures, and (if we have a section list) the sender.
+        match signed_msg.check_integrity(self.min_section_size(),
+                                         section_list.as_ref().map(|sl| &sl.list)) {
+            Ok(()) => {}
+            Err(e) => {
+                warn!("{:?} Verification of {:?} failed: {:?}",
+                      self,
+                      signed_msg,
+                      e);
+                return Err(e.into());
+            }
+        }
 
         match self.routing_msg_filter.filter_incoming(signed_msg.routing_message(), route) {
             FilteringResult::KnownMessageAndRoute => {
                 return Ok(());
             }
-            FilteringResult::KnownMessage => {
+            frslt @ FilteringResult::KnownMessage |
+            frslt @ FilteringResult::NewMessage => {
                 if self.in_authority(&signed_msg.routing_message().dst) {
-                    self.ack_and_broadcast(&signed_msg, route, hop_name, sent_to);
-                    return Ok(());
-                }
-                // known message, but new route - we still need to relay it in this case
-            }
-            FilteringResult::NewMessage => {
-                if self.in_authority(&signed_msg.routing_message().dst) {
-                    self.ack_and_broadcast(&signed_msg, route, hop_name, sent_to);
-                    // if addressed to us, then we just queue it and return
-                    self.msg_queue.push_back(signed_msg.into_routing_message());
+                    self.ack_and_broadcast(signed_msg.clone(), route, hop_name, sent_to);
+                    if frslt == FilteringResult::NewMessage {
+                        // if addressed to us, then we just queue it and return
+                        self.msg_queue.push_back(signed_msg.into_routing_message());
+                    }
                     return Ok(());
                 }
             }
@@ -774,7 +818,12 @@ impl Node {
             return Ok(());
         }
 
-        if let Err(error) = self.send_signed_message(&signed_msg, route, &hop_name, sent_to) {
+        if let Some(list) = section_list {
+            signed_msg.add_relaying_section(list);
+        }
+        // TODO: maybe eventually don't clone signed_msg just so we can log it on error?
+        if let Err(error) =
+            self.send_signed_message(signed_msg.clone(), route, &hop_name, sent_to) {
             debug!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);
         }
 
@@ -939,7 +988,7 @@ impl Node {
         info!("{:?} Our section with {:?} has approved candidate {}. Adding it to our routing \
                table as a peer {:?}.",
               self,
-              self.peer_mgr.routing_table().our_prefix(),
+              self.our_prefix(),
               candidate_id.name(),
               opt_peer_id);
         let src = Authority::Section(*candidate_id.name());
@@ -976,7 +1025,7 @@ impl Node {
             return Err(error);
         }
 
-        let our_prefix = *self.peer_mgr.routing_table().our_prefix();
+        let our_prefix = *self.our_prefix();
         self.send_section_list_signature(our_prefix, None);
 
         for section in sections.values() {
@@ -1137,7 +1186,7 @@ impl Node {
                       self,
                       name,
                       Self::format(elapsed),
-                      self.peer_mgr.routing_table().our_prefix());
+                      self.our_prefix());
                 self.candidate_timer_token = None;
                 let _ = self.send_candidate_approval();
             }
@@ -1147,7 +1196,7 @@ impl Node {
                       self,
                       name,
                       Self::format(elapsed),
-                      self.peer_mgr.routing_table().our_prefix());
+                      self.our_prefix());
             }
         }
     }
@@ -1315,7 +1364,7 @@ impl Node {
 
         if let Some(prefix) = self.peer_mgr.routing_table().find_section_prefix(public_id.name()) {
             self.send_section_list_signature(prefix, None);
-            if prefix == *self.peer_mgr.routing_table().our_prefix() {
+            if prefix == *self.our_prefix() {
                 // if the node joined our section, send signatures for all section lists to it
                 for pfx in self.peer_mgr.routing_table().prefixes() {
                     self.send_section_list_signature(pfx, Some(*public_id.name()));
@@ -1400,7 +1449,7 @@ impl Node {
             }
             Ok(true) => {
                 // i.e. the section should split
-                let our_prefix = *self.peer_mgr.routing_table().our_prefix();
+                let our_prefix = *self.our_prefix();
                 // In the future we'll look to remove this restriction so we always call
                 // `send_section_split()` here and also check whether another round of splitting is
                 // required in `handle_section_split()` so splitting becomes recursive like merging.
@@ -1445,7 +1494,7 @@ impl Node {
 
         if let Some(prefix) = self.peer_mgr.routing_table().find_section_prefix(public_id.name()) {
             self.send_section_list_signature(prefix, None);
-            if prefix == *self.peer_mgr.routing_table().our_prefix() {
+            if prefix == *self.our_prefix() {
                 // if the node joined our section, send signatures for all section lists to it
                 for pfx in self.peer_mgr.routing_table().prefixes() {
                     self.send_section_list_signature(pfx, Some(*public_id.name()));
@@ -1466,13 +1515,13 @@ impl Node {
         let members = self.peer_mgr.get_pub_ids(self.peer_mgr.routing_table().our_section());
 
         let content = MessageContent::SectionUpdate {
-            prefix: *self.peer_mgr.routing_table().our_prefix(),
+            prefix: *self.our_prefix(),
             members: members,
         };
 
         let neighbours = self.peer_mgr.routing_table().other_prefixes();
         for neighbour_pfx in neighbours {
-            let src = Authority::Section(self.peer_mgr.routing_table().our_prefix().lower_bound());
+            let src = Authority::Section(self.our_prefix().lower_bound());
             let dst = Authority::PrefixSection(neighbour_pfx);
 
             if let Err(err) = self.send_routing_message(src, dst, content.clone()) {
@@ -1966,7 +2015,7 @@ impl Node {
         };
         info!("{:?} Our section with {:?} accepted {} as a candidate.",
               self,
-              self.peer_mgr.routing_table().our_prefix(),
+              self.our_prefix(),
               candidate_id.name());
         trace!("{:?} Sending {:?} to {:?}",
                self,
@@ -2065,12 +2114,12 @@ impl Node {
                    self.rt_msg_id);
             return Ok(());
         }
-        let old_prefix = *self.peer_mgr.routing_table().our_prefix();
+        let old_prefix = *self.our_prefix();
         for (name, peer_id) in self.peer_mgr.add_prefix(prefix) {
             self.disconnect_peer(&peer_id);
             info!("{:?} Dropped {:?} from the routing table.", self, name);
         }
-        let new_prefix = *self.peer_mgr.routing_table().our_prefix();
+        let new_prefix = *self.our_prefix();
         if old_prefix.bit_count() < new_prefix.bit_count() {
             trace!("{:?} Found out about our section splitting via RT response {:?}",
                    self,
@@ -2105,7 +2154,7 @@ impl Node {
                             joining_node: XorName,
                             outbox: &mut EventBox)
                             -> Result<(), RoutingError> {
-        let split_us = prefix == *self.peer_mgr.routing_table().our_prefix();
+        let split_us = prefix == *self.our_prefix();
         // Send SectionSplit notifications if we don't know of the new node yet
         if split_us && !self.peer_mgr.routing_table().has(&joining_node) {
             self.send_section_split(prefix, joining_node);
@@ -2161,7 +2210,7 @@ impl Node {
                       self.peer_mgr.routing_table().prefixes());
                 self.merge_if_necessary();
 
-                if merge_prefix == *self.peer_mgr.routing_table().our_prefix() {
+                if merge_prefix == *self.our_prefix() {
                     self.send_section_update();
                 }
 
@@ -2333,7 +2382,7 @@ impl Node {
                    utils::format_binary_array(&digest));
 
             let src = Authority::ManagedNode(*self.name());
-            let dst = Authority::PrefixSection(*self.peer_mgr.routing_table().our_prefix());
+            let dst = Authority::PrefixSection(*self.our_prefix());
             let content = MessageContent::RoutingTableRequest(msg_id, digest);
             if let Err(err) = self.send_routing_message(src, dst, content) {
                 debug!("{:?} Failed to send RoutingTableRequest: {:?}.", self, err);
@@ -2407,8 +2456,12 @@ impl Node {
         Ok(())
     }
 
+    // Send signed_msg on route. Hop is the name of the peer we received this from, or our name if
+    // we are the first sender or the proxy for a client or joining node.
+    //
+    // Don't send to any nodes already sent_to.
     fn send_signed_message(&mut self,
-                           signed_msg: &SignedMessage,
+                           signed_msg: SignedMessage,
                            route: u8,
                            hop: &XorName,
                            sent_to: &BTreeSet<XorName>)
@@ -2418,36 +2471,45 @@ impl Node {
             self.stats.count_route(route);
         }
 
-        let routing_msg = signed_msg.routing_message();
+        let dst = signed_msg.routing_message().dst;
 
-        if let Authority::Client { ref peer_id, .. } = routing_msg.dst {
-            if *self.name() == routing_msg.dst.name() {
+        if let Authority::Client { ref peer_id, .. } = dst {
+            if *self.name() == dst.name() {
                 // This is a message for a client we are the proxy of. Relay it.
-                return self.relay_to_client(signed_msg.clone(), peer_id);
-            } else if self.in_authority(&routing_msg.dst) {
+                return self.relay_to_client(signed_msg, peer_id);
+            } else if self.in_authority(&dst) {
                 return Ok(()); // Message is for us as a client.
             }
         }
 
-        let (new_sent_to, target_peer_ids) = self.get_targets(routing_msg, route, hop, sent_to)?;
+        let (new_sent_to, target_peer_ids) =
+            self.get_targets(signed_msg.routing_message(), route, hop, sent_to)?;
 
         for target_peer_id in target_peer_ids {
-            self.send_signed_msg_to_peer(signed_msg, target_peer_id, route, new_sent_to.clone())?;
+            self.send_signed_msg_to_peer(signed_msg.clone(),
+                                         target_peer_id,
+                                         route,
+                                         new_sent_to.clone())?;
         }
         Ok(())
     }
 
+    // Filter, then convert the message to a `Hop` or `TunnelHop` `Message` and serialise.
+    // Send this byte string.
     fn send_signed_msg_to_peer(&mut self,
-                               signed_msg: &SignedMessage,
+                               signed_msg: SignedMessage,
                                target: PeerId,
                                route: u8,
                                sent_to: BTreeSet<XorName>)
                                -> Result<(), RoutingError> {
+        let priority = signed_msg.priority();
+        let routing_msg = signed_msg.routing_message().clone();
+
         let (peer_id, bytes) = if self.crust_service.is_connected(&target) {
-            let serialised = self.to_hop_bytes(signed_msg.clone(), route, sent_to)?;
+            let serialised = self.to_hop_bytes(signed_msg, route, sent_to)?;
             (target, serialised)
         } else if let Some(&tunnel_id) = self.tunnels.tunnel_for(&target) {
-            let serialised = self.to_tunnel_hop_bytes(signed_msg.clone(), route, sent_to, target)?;
+            let serialised = self.to_tunnel_hop_bytes(signed_msg, route, sent_to, target)?;
             (tunnel_id, serialised)
         } else {
             trace!("{:?} Not connected or tunnelling to {:?}. Dropping peer.",
@@ -2456,12 +2518,15 @@ impl Node {
             self.disconnect_peer(&target);
             return Ok(());
         };
-        if !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &target, route) {
-            self.send_or_drop(&peer_id, bytes, signed_msg.priority());
+        if !self.filter_outgoing_routing_msg(&routing_msg, &target, route) {
+            self.send_or_drop(&peer_id, bytes, priority);
         }
         Ok(())
     }
 
+    // Wraps the signed message in a `HopMessage` and sends it on.
+    //
+    // In the case that the `peer_id` is unknown, an ack is sent and the message dropped.
     fn relay_to_client(&mut self,
                        signed_msg: SignedMessage,
                        peer_id: &PeerId)
@@ -2530,11 +2595,12 @@ impl Node {
         }
     }
 
-    /// Returns a list of target peer IDs.
+    /// Returns a list of target peer IDs for a message sent via route.
+    /// Names in exclude and sent_to will be excluded from the result.
     fn get_targets(&self,
                    routing_msg: &RoutingMessage,
                    route: u8,
-                   hop: &XorName,
+                   exclude: &XorName,
                    sent_to: &BTreeSet<XorName>)
                    -> Result<(BTreeSet<XorName>, Vec<PeerId>), RoutingError> {
         let force_via_proxy = match routing_msg.content {
@@ -2548,7 +2614,7 @@ impl Node {
         if self.is_proper() && !force_via_proxy {
             let targets: HashSet<_> = self.peer_mgr
                 .routing_table()
-                .targets(&routing_msg.dst, *hop, route as usize)?
+                .targets(&routing_msg.dst, *exclude, route as usize)?
                 .into_iter()
                 .filter(|target| !sent_to.contains(target))
                 .collect();
@@ -2579,13 +2645,15 @@ impl Node {
         }
     }
 
+    // Wrap the `signed_msg` with a `HopMessage`, then wrap that with `Message::TunnelHop`.
+    // Serialise the result to a byte string.
     fn to_tunnel_hop_bytes(&self,
                            signed_msg: SignedMessage,
                            route: u8,
                            sent_to: BTreeSet<XorName>,
                            dst: PeerId)
                            -> Result<Vec<u8>, RoutingError> {
-        let hop_msg = HopMessage::new(signed_msg.clone(),
+        let hop_msg = HopMessage::new(signed_msg,
                                       route,
                                       sent_to,
                                       self.full_id.signing_private_key())?;
@@ -2733,7 +2801,7 @@ impl Node {
         if details.was_in_our_section {
             self.reset_rt_timer();
             self.section_list_sigs
-                .remove_signatures_by(*pub_id, self.peer_mgr.routing_table().our_section().len());
+                .remove_signatures_by(pub_id, self.peer_mgr.routing_table().our_section().len());
         }
 
         if self.peer_mgr.routing_table().is_empty() {
@@ -2774,11 +2842,11 @@ impl Node {
                                 targets: BTreeSet<Prefix<XorName>>,
                                 merge_details: OtherMergeDetails<XorName>) {
         let section = self.peer_mgr.get_pub_ids(&merge_details.section);
+        let content = MessageContent::OtherSectionMerge(section);
+        let src = Authority::PrefixSection(merge_details.prefix);
         for target in &targets {
-            let content = MessageContent::OtherSectionMerge(section.clone());
-            let src = Authority::PrefixSection(merge_details.prefix);
             let dst = Authority::PrefixSection(*target);
-            if let Err(err) = self.send_routing_message(src, dst, content) {
+            if let Err(err) = self.send_routing_message(src, dst, content.clone()) {
                 debug!("{:?} Failed to send OtherSectionMerge: {:?}.", self, err);
             }
         }
@@ -2831,6 +2899,10 @@ impl Node {
         } else {
             self.send_message(&dst_id, Message::Direct(direct_message))
         }
+    }
+
+    fn our_prefix(&self) -> &Prefix<XorName> {
+        self.peer_mgr.routing_table().our_prefix()
     }
 
     // For the ongoing collection of `ResourceProofResponse` messages, returns a tuple comprising:
@@ -2967,13 +3039,12 @@ impl Node {
     }
 
     pub fn section_list_signatures(&self,
-                                   prefix: Prefix<XorName>)
+                                   prefix: &Prefix<XorName>)
                                    -> Result<BTreeMap<PublicId, sign::Signature>, RoutingError> {
-        if let Some(&(_, ref signatures)) = self.section_list_sigs.get_signatures(prefix) {
-            Ok(signatures.iter().map(|(&pub_id, &sig)| (pub_id, sig)).collect())
-        } else {
-            Err(RoutingError::NotEnoughSignatures)
-        }
+        self.section_list_sigs
+            .get_signed_list(prefix)
+            .map(|ssl| ssl.signatures)
+            .ok_or(RoutingError::NotEnoughSignatures)
     }
 
     pub fn set_next_node_name(&mut self, relocation_name: Option<XorName>) {
@@ -2995,6 +3066,9 @@ impl Bootstrapped for Node {
     }
 
 
+    // Constructs a signed message, finds the node responsible for accumulation, and either sends
+    // this node a signature or tries to accumulate signatures for this message (on success, the
+    // accumulator handles or forwards the message).
     fn send_routing_message_via_route(&mut self,
                                       routing_msg: RoutingMessage,
                                       route: u8)
@@ -3006,38 +3080,33 @@ impl Bootstrapped for Node {
             return Ok(());
         }
         use routing_table::Authority::*;
-        let sending_names = match routing_msg.src {
-            ClientManager(_) | NaeManager(_) | NodeManager(_) | ManagedNode(_) => {
-                let section = self.peer_mgr
-                    .routing_table()
-                    .get_section(self.name())
-                    .ok_or(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer))?;
-                let pub_ids = self.peer_mgr.get_pub_ids(section);
-                vec![SectionList::new(*self.peer_mgr.routing_table().our_prefix(), pub_ids)]
-            }
-            Section(_) => {
-                vec![SectionList::new(*self.peer_mgr.routing_table().our_prefix(),
-                                      self.peer_mgr
-                                          .get_pub_ids(self.peer_mgr
-                                              .routing_table()
-                                              .our_section()))]
+        let sending_sections = match routing_msg.src {
+            ClientManager(_) | NaeManager(_) | NodeManager(_) | ManagedNode(_) | Section(_) => {
+                vec![self.section_list_sigs
+                         .get_signed_list(self.our_prefix())
+                         .ok_or(RoutingError::NoSectionSigInCache)?]
             }
             PrefixSection(ref prefix) => {
-                self.peer_mgr
+                let prefixes = self.peer_mgr
                     .routing_table()
-                    .all_sections()
+                    .prefixes()
                     .into_iter()
-                    .filter_map(|(p, members)| if prefix.is_compatible(&p) {
-                        Some(SectionList::new(p, self.peer_mgr.get_pub_ids(&members)))
-                    } else {
-                        None
-                    })
-                    .collect()
+                    .filter(|p| prefix.is_compatible(p))
+                    .collect_vec();
+                let mut v = Vec::with_capacity(prefixes.len());
+                for p in prefixes {
+                    // `?` operator cannot be moved inside a `map` function, so we cannot use
+                    // an iterator chain here:
+                    v.push(self.section_list_sigs
+                        .get_signed_list(&p)
+                        .ok_or(RoutingError::NoSectionSigInCache)?);
+                }
+                v
             }
             Client { .. } => vec![],
         };
 
-        let signed_msg = SignedMessage::new(routing_msg, &self.full_id, sending_names)?;
+        let signed_msg = SignedMessage::new(routing_msg, &self.full_id, sending_sections)?;
         if !self.add_to_pending_acks(&signed_msg, route) {
             debug!("{:?} already received an ack for {:?} - so not resending it.",
                    self,
@@ -3054,16 +3123,16 @@ impl Bootstrapped for Node {
                     if self.in_authority(&msg.routing_message().dst) {
                         self.handle_signed_message(msg, route, our_name, &BTreeSet::new())?;
                     } else {
-                        self.send_signed_message(&msg, route, &our_name, &BTreeSet::new())?;
+                        self.send_signed_message(msg, route, &our_name, &BTreeSet::new())?;
                     }
                 }
                 Ok(())
             }
             Some(target_name) => {
                 if let Some(&peer_id) = self.peer_mgr.get_peer_id(&target_name) {
-                    let direct_msg = signed_msg.routing_message()
+                    let message_signature = signed_msg.routing_message()
                         .to_signature(self.full_id().signing_private_key())?;
-                    self.send_direct_message(peer_id, direct_msg)
+                    self.send_direct_message(peer_id, message_signature)
                 } else {
                     Err(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer))
                 }
@@ -3082,10 +3151,7 @@ impl Bootstrapped for Node {
 
 impl Debug for Node {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(formatter,
-               "Node({}({:b}))",
-               self.name(),
-               self.peer_mgr.routing_table().our_prefix())
+        write!(formatter, "Node({}({:b}))", self.name(), self.our_prefix())
     }
 }
 

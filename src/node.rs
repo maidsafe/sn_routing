@@ -467,7 +467,7 @@ impl Node {
     /// Returns a quorum of signatures for the neighbouring section's list or `None` if we don't
     /// have one
     pub fn section_list_signatures(&self,
-                                   prefix: Prefix<XorName>)
+                                   prefix: &Prefix<XorName>)
                                    -> Option<BTreeMap<PublicId, sign::Signature>> {
         self.machine.current().section_list_signatures(prefix)
     }

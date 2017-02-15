@@ -158,7 +158,7 @@ impl State {
     }
 
     pub fn section_list_signatures(&self,
-                                   prefix: Prefix<XorName>)
+                                   prefix: &Prefix<XorName>)
                                    -> Option<BTreeMap<PublicId, sign::Signature>> {
         match *self {
             State::Node(ref state) => state.section_list_signatures(prefix).ok(),
