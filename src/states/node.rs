@@ -759,10 +759,10 @@ impl Node {
             .find_section_prefix(&hop_name)
             .ok_or(RoutingTableError::NoSuchPeer)?;
         let section_list = if signed_msg.routing_message().src.is_client() ||
-                              self.in_authority(&signed_msg.routing_message().dst) {
-            // TODO: we should still verify the sending nodes when the sender is our own section
-            // or group, but doing so causes a lot of verification failures at the moment.
-            // (In any case don't call add_relaying_section if from our own section.)
+                              self.in_authority(&signed_msg.routing_message().src) {
+            // No point verifying the route if from a client; we also don't need to verify if the
+            // message is from our own section.
+            // TODO: possibly we should if the message is from a PrefixSection.
             None
         } else {
             let list = self.section_list_sigs.get_signed_list(&hop_prefix);
@@ -778,7 +778,7 @@ impl Node {
             list
         };
 
-        // Check that content signatures, and (if we have a section list) the sender.
+        // Check the message's signatures, and (if we have a section list) the sender.
         match signed_msg.check_integrity(self.min_section_size(),
                                          section_list.as_ref().map(|sl| &sl.list)) {
             Ok(()) => {}

@@ -36,7 +36,6 @@ extern crate itertools;
 extern crate log;
 #[cfg_attr(feature="cargo-clippy", allow(useless_attribute))]
 #[allow(unused_extern_crates)]
-#[macro_use]
 extern crate maidsafe_utilities;
 extern crate rand;
 extern crate routing;
