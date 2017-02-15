@@ -2145,7 +2145,7 @@ impl Node {
             .merge_own_section(sender_prefix, merge_prefix, sections);
 
         match merge_state {
-            OwnMergeState::Ongoing |
+            OwnMergeState::Ongoing => self.merge_if_necessary(),
             OwnMergeState::AlreadyMerged => (),
             OwnMergeState::Completed { targets, merge_details } => {
                 // TODO - the event should maybe only fire once all new connections have been made?
@@ -2154,10 +2154,6 @@ impl Node {
                       self,
                       self.peer_mgr.routing_table().prefixes());
                 self.merge_if_necessary();
-
-                if merge_prefix == *self.peer_mgr.routing_table().our_prefix() {
-                    self.send_section_update();
-                }
 
                 // after the merge, half of our section won't have our signatures -- send them
                 for prefix in self.peer_mgr.routing_table().prefixes() {
