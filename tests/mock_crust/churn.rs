@@ -358,6 +358,20 @@ fn churn() {
         client_gets(&mut network, &mut nodes, min_section_size);
     }
 
+    info!("Churn [{} nodes, {} sections]: simultaneous adding and dropping nodes",
+          nodes.len(),
+          count_sections(&nodes));
+    for _ in 0..10 {
+        if nodes.len() < min_section_size {
+            break;
+        }
+        drop_random_nodes(&mut rng, &mut nodes, min_section_size);
+        let added_index = add_random_node(&mut rng, &network, &mut nodes, min_section_size);
+        poll_and_resend(&mut nodes, &mut []);
+        send_and_receive(&mut rng, &mut nodes, min_section_size, Some(added_index));
+        client_gets(&mut network, &mut nodes, min_section_size);
+    }
+
     info!("Churn [{} nodes, {} sections]: done",
           nodes.len(),
           count_sections(&nodes));
