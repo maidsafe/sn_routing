@@ -35,7 +35,6 @@
 
 #[macro_use]
 extern crate log;
-#[macro_use]
 extern crate maidsafe_utilities;
 extern crate rand;
 extern crate rustc_serialize;

@@ -37,7 +37,6 @@
 extern crate itertools;
 #[cfg(target_os = "macos")]
 extern crate libc;
-#[macro_use]
 extern crate maidsafe_utilities;
 extern crate rand;
 extern crate routing;
