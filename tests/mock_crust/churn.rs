@@ -38,14 +38,16 @@ fn drop_random_nodes<R: Rng>(rng: &mut R, nodes: &mut Vec<TestNode>, min_section
         let prefix = *nodes[i].routing_table().our_prefix();
 
         // Any network must allow at least one node to be lost:
-        let num_excess = cmp::min(nodes[i].routing_table().our_section().len() + 1 - min_quorum,
-                                  len - min_section_size);
+        let num_excess = cmp::max(1,
+                                  cmp::min(nodes[i].routing_table().our_section().len() -
+                                           min_quorum,
+                                           len - min_section_size));
         assert!(num_excess > 0);
 
-        let mut removed = 1;
+        let mut removed = 0;
         // Remove as many more as possible:
-        while num_excess - removed > 0 {
-            let i = rng.gen_range(0, len - removed);
+        while removed < num_excess {
+            let i = rng.gen_range(0, len - removed - 1);
             if *nodes[i].routing_table().our_prefix() != prefix {
                 continue;
             }
@@ -72,6 +74,7 @@ fn add_random_node<R: Rng>(rng: &mut R,
                            min_section_size: usize)
                            -> usize {
     let len = nodes.len();
+    // A non-first node without min_section_size nodes in routing table cannot be proxy
     let (proxy, index) = if len <= min_section_size {
         (0, rng.gen_range(1, len + 1))
     } else {
@@ -319,7 +322,6 @@ fn churn() {
     let mut network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
 
-    // TODO: debug failures when starting with a network < min_section_size
     // Create an initial network, increase until we have several sections, then
     // decrease back to min_section_size, then increase to again.
     let mut nodes = create_connected_nodes(&network, min_section_size);
@@ -361,10 +363,10 @@ fn churn() {
           count_sections(&nodes));
 }
 
-fn bootstrap_from(initial_nodes: usize, optional_seed: Option<[u32; 4]>) {
+fn bootstrap_from(initial_nodes: usize) {
     assert!(initial_nodes > 0);
     let min_section_size = 8;
-    let network = Network::new(min_section_size, optional_seed);
+    let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
 
     let mut nodes = if initial_nodes == 1 {
@@ -384,35 +386,35 @@ fn bootstrap_from(initial_nodes: usize, optional_seed: Option<[u32; 4]>) {
 
 #[test]
 fn bootstrap_1() {
-    bootstrap_from(1, None);
+    bootstrap_from(1);
 }
 
 #[test]
 fn bootstrap_2() {
-    bootstrap_from(2, None);
+    bootstrap_from(2);
 }
 
 #[test]
 fn bootstrap_3() {
-    bootstrap_from(3, None);
+    bootstrap_from(3);
 }
 
 #[test]
 fn bootstrap_4() {
-    bootstrap_from(4, None);
+    bootstrap_from(4);
 }
 
 #[test]
 fn bootstrap_5() {
-    bootstrap_from(5, None);
+    bootstrap_from(5);
 }
 
 #[test]
 fn bootstrap_6() {
-    bootstrap_from(6, None);
+    bootstrap_from(6);
 }
 
 #[test]
 fn bootstrap_7() {
-    bootstrap_from(7, None);
+    bootstrap_from(7);
 }
