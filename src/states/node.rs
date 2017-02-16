@@ -976,6 +976,13 @@ impl Node {
             return Err(error);
         }
 
+        self.is_approved = true;
+        outbox.send_event(Event::Connected);
+        for name in self.peer_mgr.routing_table().iter() {
+            // TODO: try to remove this as safe_core/safe_vault may not require this notification
+            outbox.send_event(Event::NodeAdded(*name, self.peer_mgr.routing_table().clone()));
+        }
+
         let our_prefix = *self.peer_mgr.routing_table().our_prefix();
         self.send_section_list_signature(our_prefix, None);
 
@@ -1007,12 +1014,7 @@ impl Node {
                self.peer_mgr.routing_table().prefixes());
         self.print_rt_size();
         self.stats.enable_logging();
-        outbox.send_event(Event::Connected);
-        for name in self.peer_mgr.routing_table().iter() {
-            // TODO: try to remove this as safe_core/safe_vault may not require this notification
-            outbox.send_event(Event::NodeAdded(*name, self.peer_mgr.routing_table().clone()));
-        }
-        self.is_approved = true;
+
         let backlog = mem::replace(&mut self.routing_msg_backlog, vec![]);
         backlog.into_iter().rev().foreach(|msg| self.msg_queue.push_front(msg));
         self.resource_proof_response_parts.clear();
@@ -2151,7 +2153,7 @@ impl Node {
             .merge_own_section(sender_prefix, merge_prefix, sections);
 
         match merge_state {
-            OwnMergeState::Ongoing |
+            OwnMergeState::Ongoing => self.merge_if_necessary(),
             OwnMergeState::AlreadyMerged => (),
             OwnMergeState::Completed { targets, merge_details } => {
                 // TODO - the event should maybe only fire once all new connections have been made?
@@ -2161,33 +2163,30 @@ impl Node {
                       self.peer_mgr.routing_table().prefixes());
                 self.merge_if_necessary();
 
-                if merge_prefix == *self.peer_mgr.routing_table().our_prefix() {
-                    self.send_section_update();
-                }
-
                 // after the merge, half of our section won't have our signatures -- send them
                 for prefix in self.peer_mgr.routing_table().prefixes() {
                     self.send_section_list_signature(prefix, None);
                 }
                 self.send_other_section_merge(targets, merge_details);
+
+                let own_name = *self.name();
+                for needed in &needed_peers {
+                    debug!("{:?} Sending connection info to {:?} due to merging own section.",
+                           self,
+                           needed);
+                    if let Err(error) = self.send_connection_info_request(*needed,
+                                                      Authority::ManagedNode(own_name),
+                                                      Authority::ManagedNode(*needed.name()),
+                                                      outbox) {
+                        debug!("{:?} - Failed to send connection info to {:?}: {:?}",
+                               self,
+                               needed,
+                               error);
+                    }
+                }
             }
         }
 
-        let own_name = *self.name();
-        for needed in &needed_peers {
-            debug!("{:?} Sending connection info to {:?} due to merging own section.",
-                   self,
-                   needed);
-            if let Err(error) = self.send_connection_info_request(*needed,
-                                              Authority::ManagedNode(own_name),
-                                              Authority::ManagedNode(*needed.name()),
-                                              outbox) {
-                debug!("{:?} - Failed to send connection info to {:?}: {:?}",
-                       self,
-                       needed,
-                       error);
-            }
-        }
         self.reset_rt_timer();
         Ok(())
     }
