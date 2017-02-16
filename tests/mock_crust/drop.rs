@@ -51,7 +51,6 @@ fn node_drops() {
 }
 
 #[test]
-#[cfg_attr(feature = "cargo-clippy", allow(needless_range_loop))]
 fn node_restart() {
     // Idea of test: if a node disconnects from all other nodes, it should restart
     // (with the exception of the first node which is special).
