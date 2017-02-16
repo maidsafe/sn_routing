@@ -15,9 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use rand::Rng;
 use routing::{Event, EventStream};
-use routing::mock_crust::{Config, Network};
+use routing::mock_crust::Network;
 use super::{TestNode, create_connected_nodes, poll_all, verify_invariant_for_all_nodes};
 
 // Drop node at index and verify its own section receives NodeLost.
@@ -52,29 +51,19 @@ fn node_drops() {
 }
 
 #[test]
-#[cfg_attr(feature = "cargo-clippy", allow(needless_range_loop))]
 fn node_restart() {
-    let min_section_size = 2;
+    // Idea of test: if a node disconnects from all other nodes, it should restart
+    // (with the exception of the first node which is special).
+    let min_section_size = 5;
     let network = Network::new(min_section_size, None);
-    let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, min_section_size);
 
-    let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
-
-    // Drop one node, causing the remaining nodes to end up with too few entries
-    // in their routing tables and to request a restart.
-    let index = rng.gen_range(1, nodes.len());
-    drop_node(&mut nodes, index);
-
-    for node in &mut nodes[1..] {
-        expect_next_event!(node, Event::RestartRequired);
+    // Drop all but last node:
+    while nodes.len() > 1 {
+        drop_node(&mut nodes, 0);
     }
 
-    // Restart the nodes that requested it
-    for index in 1..nodes.len() {
-        nodes[index] = TestNode::builder(&network).config(config.clone()).create();
-        poll_all(&mut nodes, &mut []);
-    }
+    poll_all(&mut nodes, &mut []);
 
-    verify_invariant_for_all_nodes(&nodes);
+    expect_next_event!(nodes[0], Event::RestartRequired);
 }
