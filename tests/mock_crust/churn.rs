@@ -72,7 +72,7 @@ fn add_random_node<R: Rng>(rng: &mut R,
                            network: &Network,
                            nodes: &mut Vec<TestNode>,
                            min_section_size: usize)
-                           -> usize {
+                           -> (usize, usize) {
     let len = nodes.len();
     // A non-first node without min_section_size nodes in routing table cannot be proxy
     let (proxy, index) = if len <= min_section_size {
@@ -83,7 +83,7 @@ fn add_random_node<R: Rng>(rng: &mut R,
     let config = Config::with_contacts(&[nodes[proxy].handle.endpoint()]);
 
     nodes.insert(index, TestNode::builder(network).config(config).create());
-    index
+    (index, proxy)
 }
 
 /// The entries of a Get request: the data ID, message ID, source and destination authority.
@@ -329,7 +329,7 @@ fn churn() {
           nodes.len(),
           count_sections(&nodes));
     loop {
-        let added_index = add_random_node(&mut rng, &network, &mut nodes, min_section_size);
+        let (added_index, _) = add_random_node(&mut rng, &network, &mut nodes, min_section_size);
         poll_and_resend(&mut nodes, &mut []);
         send_and_receive(&mut rng, &mut nodes, min_section_size, Some(added_index));
         if count_sections(&nodes) > 5 {
@@ -351,7 +351,7 @@ fn churn() {
           nodes.len(),
           count_sections(&nodes));
     while nodes.len() < 50 {
-        let added_index = add_random_node(&mut rng, &network, &mut nodes, min_section_size);
+        let (added_index, _) = add_random_node(&mut rng, &network, &mut nodes, min_section_size);
         poll_and_resend(&mut nodes, &mut []);
         send_and_receive(&mut rng, &mut nodes, min_section_size, Some(added_index));
         client_gets(&mut network, &mut nodes, min_section_size);
@@ -365,8 +365,18 @@ fn churn() {
             break;
         }
         drop_random_nodes(&mut rng, &mut nodes, min_section_size);
-        let added_index = add_random_node(&mut rng, &network, &mut nodes, min_section_size);
+        let (added_index, proxy_index) =
+            add_random_node(&mut rng, &network, &mut nodes, min_section_size);
         poll_and_resend(&mut nodes, &mut []);
+
+        // An candidate could be blocked if it connected to a pre-merge minority section.
+        // In that case, a restart of candidate shall be carried out.
+        if let Err(_) = nodes[added_index].inner.try_next_ev() {
+            let config = Config::with_contacts(&[nodes[proxy_index].handle.endpoint()]);
+            nodes[added_index] = TestNode::builder(&network).config(config).create();
+            poll_and_resend(&mut nodes, &mut []);
+        }
+
         send_and_receive(&mut rng, &mut nodes, min_section_size, Some(added_index));
         client_gets(&mut network, &mut nodes, min_section_size);
     }
@@ -389,7 +399,7 @@ fn bootstrap_from(initial_nodes: usize) {
     };
 
     while nodes.len() < min_section_size {
-        let added_index = add_random_node(&mut rng, &network, &mut nodes, min_section_size);
+        let (added_index, _) = add_random_node(&mut rng, &network, &mut nodes, min_section_size);
         let _ = poll_all(&mut nodes, &mut []);
         verify_invariant_for_all_nodes(&nodes);
         let section_size = nodes.len();
