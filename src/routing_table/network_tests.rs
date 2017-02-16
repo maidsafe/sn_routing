@@ -24,7 +24,7 @@ use maidsafe_utilities::SeededRng;
 use rand::Rng;
 use routing_table::{Iter, OtherMergeDetails, OwnMergeDetails, OwnMergeState};
 use routing_table::xorable::Xorable;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::{Binary, Debug};
 use std::hash::Hash;
 use std::iter::IntoIterator;
@@ -309,7 +309,7 @@ pub fn verify_network_invariant<'a, T, U>(nodes: U)
     where T: Binary + Clone + Copy + Debug + Default + Hash + Xorable + 'a,
           U: IntoIterator<Item = &'a RoutingTable<T>>
 {
-    let mut sections: HashMap<Prefix<T>, (T, HashSet<T>)> = HashMap::new();
+    let mut sections: BTreeMap<Prefix<T>, (T, BTreeSet<T>)> = BTreeMap::new();
     // first, collect all sections in the network
     for node in nodes {
         node.verify_invariant();
