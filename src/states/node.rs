@@ -970,6 +970,13 @@ impl Node {
             return Err(error);
         }
 
+        self.is_approved = true;
+        outbox.send_event(Event::Connected);
+        for name in self.peer_mgr.routing_table().iter() {
+            // TODO: try to remove this as safe_core/safe_vault may not require this notification
+            outbox.send_event(Event::NodeAdded(*name, self.peer_mgr.routing_table().clone()));
+        }
+
         let our_prefix = *self.peer_mgr.routing_table().our_prefix();
         self.send_section_list_signature(our_prefix, None);
 
@@ -1001,12 +1008,7 @@ impl Node {
                self.peer_mgr.routing_table().prefixes());
         self.print_rt_size();
         self.stats.enable_logging();
-        outbox.send_event(Event::Connected);
-        for name in self.peer_mgr.routing_table().iter() {
-            // TODO: try to remove this as safe_core/safe_vault may not require this notification
-            outbox.send_event(Event::NodeAdded(*name, self.peer_mgr.routing_table().clone()));
-        }
-        self.is_approved = true;
+
         let backlog = mem::replace(&mut self.routing_msg_backlog, vec![]);
         backlog.into_iter().rev().foreach(|msg| self.msg_queue.push_front(msg));
         self.resource_proof_response_parts.clear();
