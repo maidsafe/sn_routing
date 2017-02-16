@@ -15,11 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-extern crate log;
-extern crate routing;
-extern crate rust_sodium;
-extern crate maidsafe_utilities;
-
 use routing::{Authority, Client, Data, DataIdentifier, Event, FullId, MessageId, Response, XorName};
 use rust_sodium::crypto;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
