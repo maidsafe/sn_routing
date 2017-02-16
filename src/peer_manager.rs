@@ -774,7 +774,7 @@ impl PeerManager {
 
         let sections_as_names = sections.into_iter()
             .map(|(prefix, members)| {
-                (prefix, members.into_iter().map(|pub_id| *pub_id.name()).collect::<HashSet<_>>())
+                (prefix, members.into_iter().map(|pub_id| *pub_id.name()).collect::<BTreeSet<_>>())
             })
             .collect();
 
@@ -1089,7 +1089,7 @@ impl PeerManager {
 
     /// Returns the PublicIds of nodes given their names; the result is filtered to the names we
     /// know about (i.e. unknown names are ignored).
-    pub fn get_pub_ids(&self, names: &HashSet<XorName>) -> BTreeSet<PublicId> {
+    pub fn get_pub_ids(&self, names: &BTreeSet<XorName>) -> BTreeSet<PublicId> {
         names.into_iter()
             .filter_map(|name| if name == self.our_public_id.name() {
                 Some(self.our_public_id)

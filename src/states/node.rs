@@ -603,7 +603,7 @@ impl Node {
         Ok(())
     }
 
-    fn get_section(&self, prefix: &Prefix<XorName>) -> Result<HashSet<XorName>, RoutingError> {
+    fn get_section(&self, prefix: &Prefix<XorName>) -> Result<BTreeSet<XorName>, RoutingError> {
         let section = self.peer_mgr
             .routing_table()
             .get_section(&prefix.lower_bound())

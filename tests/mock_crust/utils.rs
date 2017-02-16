@@ -23,7 +23,7 @@ use routing::{Authority, Cache, Client, Data, DataIdentifier, Event, EventStream
 use routing::mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
 use std::{cmp, thread};
 use std::cell::RefCell;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 use std::ops::{Deref, DerefMut};
 use std::sync::mpsc::{RecvError, TryRecvError};
 
@@ -145,7 +145,7 @@ impl TestNode {
         unwrap!(self.inner.name())
     }
 
-    pub fn close_names(&self) -> HashSet<XorName> {
+    pub fn close_names(&self) -> BTreeSet<XorName> {
         unwrap!(unwrap!(self.inner.routing_table()).close_names(&self.name()))
     }
 

@@ -122,20 +122,20 @@ pub use self::prefix::Prefix;
 pub use self::xorable::Xorable;
 use std::{iter, mem};
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, BTreeSet, HashSet, btree_map, hash_set};
+use std::collections::{BTreeMap, BTreeSet, btree_map, btree_set};
 use std::collections::btree_map::Entry;
 use std::fmt::{Binary, Debug, Formatter};
 use std::fmt::Result as FmtResult;
 use std::hash::Hash;
 
-pub type Sections<T> = BTreeMap<Prefix<T>, HashSet<T>>;
+pub type Sections<T> = BTreeMap<Prefix<T>, BTreeSet<T>>;
 
-type MemberIter<'a, T> = hash_set::Iter<'a, T>;
-type SectionIter<'a, T> = btree_map::Values<'a, Prefix<T>, HashSet<T>>;
+type MemberIter<'a, T> = btree_set::Iter<'a, T>;
+type SectionIter<'a, T> = btree_map::Values<'a, Prefix<T>, BTreeSet<T>>;
 type OtherSectionsIter<'a, T> = iter::FlatMap<SectionIter<'a, T>,
                                               MemberIter<'a, T>,
                                               FlatMapFn<'a, T>>;
-type FlatMapFn<'a, T> = fn(&'a HashSet<T>) -> MemberIter<'a, T>;
+type FlatMapFn<'a, T> = fn(&'a BTreeSet<T>) -> MemberIter<'a, T>;
 
 // Amount added to `min_section_size` when deciding whether a bucket split can happen.  This helps
 // protect against rapid splitting and merging in the face of moderate churn.
@@ -143,7 +143,7 @@ const SPLIT_BUFFER: usize = 1;
 
 // Immutable iterator over the entries of a `RoutingTable`.
 pub struct Iter<'a, T: 'a + Binary + Clone + Copy + Default + Hash + Xorable> {
-    inner: iter::Chain<OtherSectionsIter<'a, T>, hash_set::Iter<'a, T>>,
+    inner: iter::Chain<OtherSectionsIter<'a, T>, btree_set::Iter<'a, T>>,
     our_name: T,
 }
 
@@ -182,7 +182,7 @@ pub struct OwnMergeDetails<T: Binary + Clone + Copy + Default + Hash + Xorable> 
 #[derive(Clone, Debug, PartialEq)]
 pub struct OtherMergeDetails<T: Binary + Clone + Copy + Default + Hash + Xorable> {
     pub prefix: Prefix<T>,
-    pub section: HashSet<T>,
+    pub section: BTreeSet<T>,
 }
 
 
@@ -234,7 +234,7 @@ pub struct RoutingTable<T: Binary + Clone + Copy + Debug + Default + Hash + Xora
     // Prefix of our section
     our_prefix: Prefix<T>,
     // Members of our section, including our own name
-    our_section: HashSet<T>,
+    our_section: BTreeSet<T>,
     // Other sections (excludes our own) (TODO: rename)
     sections: Sections<T>,
     // Whether we have sent our merge details to the other section.
@@ -246,7 +246,7 @@ pub struct RoutingTable<T: Binary + Clone + Copy + Debug + Default + Hash + Xora
 impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T> {
     /// Creates a new `RoutingTable`.
     pub fn new(our_name: T, min_section_size: usize) -> Self {
-        let mut our_section = HashSet::new();
+        let mut our_section = BTreeSet::new();
         our_section.insert(our_name);
         RoutingTable {
             our_name: our_name,
@@ -270,13 +270,13 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         for prefix in prefixes {
             if prefix.matches(&self.our_name) {
                 self.our_prefix = prefix;
-            } else if self.sections.insert(prefix, HashSet::new()).is_some() {
+            } else if self.sections.insert(prefix, BTreeSet::new()).is_some() {
                 return Err(Error::InvariantViolation);
             };
         }
         // In case our section has split while we've been going through the approval process, we
         // need to assign the original members of our section to the new appropriate sections.
-        let our_section = mem::replace(&mut self.our_section, HashSet::new());
+        let our_section = mem::replace(&mut self.our_section, BTreeSet::new());
         for name in our_section {
             if self.get_section_mut(&name).map_or(true, |section| !section.insert(name)) {
                 return Err(Error::InvariantViolation);
@@ -291,7 +291,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     }
 
     /// Returns our own section, including our own name.
-    pub fn our_section(&self) -> &HashSet<T> {
+    pub fn our_section(&self) -> &BTreeSet<T> {
         &self.our_section
     }
 
@@ -305,7 +305,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     }
 
     /// Returns the section with the given prefix, if any (includes own name if is own section)
-    pub fn section_with_prefix(&self, prefix: &Prefix<T>) -> Option<&HashSet<T>> {
+    pub fn section_with_prefix(&self, prefix: &Prefix<T>) -> Option<&BTreeSet<T>> {
         if *prefix == self.our_prefix {
             Some(&self.our_section)
         } else {
@@ -323,7 +323,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// Is the table empty? (Returns `true` if no nodes besides our own are known;
     /// empty sections are ignored.)
     pub fn is_empty(&self) -> bool {
-        self.our_section.len() == 1 && self.sections.values().all(HashSet::is_empty)
+        self.our_section.len() == 1 && self.sections.values().all(BTreeSet::is_empty)
     }
 
     /// Returns the minimum section size.
@@ -345,7 +345,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// Iterates over all nodes known by the routing table, excluding our own name.
     // TODO: do we need to exclude our name?
     pub fn iter(&self) -> Iter<T> {
-        let iter: fn(_) -> _ = HashSet::iter;
+        let iter: fn(_) -> _ = BTreeSet::iter;
         Iter {
             inner: self.sections.values().flat_map(iter).chain(self.our_section.iter()),
             our_name: self.our_name,
@@ -385,7 +385,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     /// If our section is the closest one to `name`, returns all names in our section *including
     /// ours*, otherwise returns `None`.
-    pub fn close_names(&self, name: &T) -> Option<HashSet<T>> {
+    pub fn close_names(&self, name: &T) -> Option<BTreeSet<T>> {
         if self.our_prefix.matches(name) {
             Some(self.our_section().clone())
         } else {
@@ -395,7 +395,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     /// If our section is the closest one to `name`, returns all names in our section *excluding
     /// ours*, otherwise returns `None`.
-    pub fn other_close_names(&self, name: &T) -> Option<HashSet<T>> {
+    pub fn other_close_names(&self, name: &T) -> Option<BTreeSet<T>> {
         if self.our_prefix.matches(name) {
             let mut section = self.our_section.clone();
             section.remove(&self.our_name);
@@ -512,7 +512,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
 
         let split_size = self.min_split_size();
-        let close_to_merging_with_us = |(prefix, section): (&Prefix<T>, &HashSet<T>)| {
+        let close_to_merging_with_us = |(prefix, section): (&Prefix<T>, &BTreeSet<T>)| {
             prefix.popped().is_compatible(&self.our_prefix) && section.len() < split_size
         };
         // If we're currently merging or are close to merging, we shouldn't split.
@@ -547,7 +547,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             let prefix0 = prefix.pushed(false);
             let prefix1 = prefix.pushed(true);
             let (section0, section1) = to_split.into_iter()
-                .partition::<HashSet<_>, _>(|name| prefix0.matches(name));
+                .partition::<BTreeSet<_>, _>(|name| prefix0.matches(name));
 
             for (pfx, section) in vec![(prefix0, section0), (prefix1, section1)] {
                 if self.our_prefix.is_neighbour(&pfx) {
@@ -640,7 +640,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// that, the section `0` will merge with section `1`.
     pub fn should_merge(&self) -> Option<OwnMergeDetails<T>> {
         let bit_count = self.our_prefix.bit_count();
-        let doesnt_need_to_merge_with_us = |(prefix, section): (&Prefix<T>, &HashSet<T>)| {
+        let doesnt_need_to_merge_with_us = |(prefix, section): (&Prefix<T>, &BTreeSet<T>)| {
             !prefix.popped().is_compatible(&self.our_prefix) ||
             section.len() >= self.min_section_size
         };
@@ -684,7 +684,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                        self.our_name,
                        prefix);
             } else {
-                self.insert_new_section(*prefix, HashSet::new());
+                self.insert_new_section(*prefix, BTreeSet::new());
             }
         }
 
@@ -708,10 +708,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// The appropriate targets (all contacts from `merge_details.sections` which are not currently
     /// held in the routing table) are returned so the caller can establish connections to these
     /// peers and subsequently add them.
-    pub fn merge_other_section(&mut self, merge_details: OtherMergeDetails<T>) -> HashSet<T> {
+    pub fn merge_other_section(&mut self, merge_details: OtherMergeDetails<T>) -> BTreeSet<T> {
         if self.our_prefix.is_compatible(&merge_details.prefix) {
             // We've already handled this particular merge via `merge_own_section()`.
-            return HashSet::new();
+            return BTreeSet::new();
         }
 
         self.merge(&merge_details.prefix);
@@ -720,7 +720,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         merge_details.section
             .difference(unwrap!(self.sections.get(&merge_details.prefix)))
             .cloned()
-            .collect::<HashSet<_>>()
+            .collect()
     }
 
     /// Returns a collection of nodes to which a message for the given `Authority` should be sent
@@ -753,20 +753,20 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                    dst: &Authority<T>,
                    exclude: T,
                    route: usize)
-                   -> Result<HashSet<T>, Error> {
+                   -> Result<BTreeSet<T>, Error> {
         let candidates = |target_name: &T| {
             self.closest_known_names(target_name, self.min_section_size)
                 .into_iter()
                 .filter(|name| **name != self.our_name)
                 .cloned()
-                .collect::<HashSet<T>>()
+                .collect::<BTreeSet<T>>()
         };
 
         let closest_section = match *dst {
             Authority::ManagedNode(ref target_name) |
             Authority::Client { proxy_node_name: ref target_name, .. } => {
                 if *target_name == self.our_name {
-                    return Ok(HashSet::new());
+                    return Ok(BTreeSet::new());
                 }
                 if self.has(target_name) {
                     return Ok(iter::once(*target_name).collect());
@@ -828,7 +828,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     /// Returns the section matching the given `name`, if present.
     /// Includes our own name in the case that our prefix matches `name`.
-    pub fn get_section(&self, name: &T) -> Option<&HashSet<T>> {
+    pub fn get_section(&self, name: &T) -> Option<&BTreeSet<T>> {
         if self.our_prefix.matches(name) {
             return Some(&self.our_section);
         }
@@ -873,7 +873,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         self.our_prefix = self.our_prefix.pushed(next_bit);
         let (our_new_section, other_section) = self.our_section
             .iter()
-            .partition::<HashSet<_>, _>(|name| self.our_prefix.matches(name));
+            .partition::<BTreeSet<_>, _>(|name| self.our_prefix.matches(name));
         self.our_section = our_new_section;
         // Drop sections that ceased to be our neighbours.
         let sections_to_remove = self.sections
@@ -884,12 +884,12 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         self.insert_new_section(other_prefix, other_section);
         sections_to_remove.into_iter()
             .filter_map(|prefix| self.sections.remove(&prefix))
-            .flat_map(HashSet::into_iter)
+            .flat_map(BTreeSet::into_iter)
             .collect()
     }
 
     /// Inserts the given section. Logs an error if it already exists.
-    fn insert_new_section(&mut self, prefix: Prefix<T>, section: HashSet<T>) {
+    fn insert_new_section(&mut self, prefix: Prefix<T>, section: BTreeSet<T>) {
         match self.sections.entry(prefix) {
             Entry::Vacant(entry) => {
                 let _section_ref = entry.insert(section);
@@ -947,7 +947,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                     missing_pfxs.push(pfx.pushed(true));
                     missing_pfxs.push(pfx.pushed(false));
                 } else {
-                    self.insert_new_section(pfx, HashSet::new());
+                    self.insert_new_section(pfx, BTreeSet::new());
                 }
             }
         }
@@ -955,7 +955,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     /// Get a mutable reference to whichever section matches the given name. If our own section,
     /// our name is included.
-    fn get_section_mut(&mut self, name: &T) -> Option<&mut HashSet<T>> {
+    fn get_section_mut(&mut self, name: &T) -> Option<&mut BTreeSet<T>> {
         if self.our_prefix.matches(name) {
             return Some(&mut self.our_section);
         }
@@ -967,7 +967,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     /// Returns the prefix of the closest non-empty section to `name`, regardless of whether `name`
     /// belongs in that section or not, and the section itself.
-    fn closest_section(&self, name: &T) -> (&Prefix<T>, &HashSet<T>) {
+    fn closest_section(&self, name: &T) -> (&Prefix<T>, &BTreeSet<T>) {
         let mut result = (&self.our_prefix, &self.our_section);
         for (prefix, section) in &self.sections {
             if !section.is_empty() && result.0.cmp_distance(prefix, name) == Ordering::Greater {
@@ -989,7 +989,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     /// Returns the `route`-th node in the given section, sorted by distance to `target`
     fn get_routeth_node(&self,
-                        section: &HashSet<T>,
+                        section: &BTreeSet<T>,
                         target: T,
                         exclude: Option<T>,
                         route: usize)
@@ -1097,15 +1097,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Binary for Rou
                  self.our_name,
                  self.our_name.debug_binary())?;
         writeln!(formatter, "\tour_prefix: {:?}", self.our_prefix)?;
-        let mut sections = self.sections
+        let sections = self.sections
             .iter()
             .chain(iter::once((&self.our_prefix, &self.our_section)))
-            .collect_vec();
-        sections.sort_by(|&(lhs_prefix, _), &(rhs_prefix, _)| {
-            lhs_prefix.cmp_distance(rhs_prefix, &self.our_name)
-        });
-        let sections_len = sections.len();
-        for (section_index, (prefix, section)) in sections.into_iter().enumerate() {
+            .collect::<BTreeSet<_>>();
+        for (section_index, &(prefix, section)) in sections.iter().enumerate() {
             write!(formatter,
                    "\tsection {} with {:?}: {{\n",
                    section_index,
@@ -1122,7 +1118,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Binary for Rou
                          name.debug_binary(),
                          comma)?;
             }
-            let comma = if section_index == sections_len - 1 {
+            let comma = if section_index == sections.len() - 1 {
                 ""
             } else {
                 ","
