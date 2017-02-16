@@ -45,9 +45,9 @@ fn drop_random_nodes<R: Rng>(rng: &mut R, nodes: &mut Vec<TestNode>, min_section
         assert!(num_excess > 0);
 
         let mut removed = 0;
-        // Remove as many more as possible:
+        // Remove nodes from the chosen section
         while removed < num_excess {
-            let i = rng.gen_range(0, len - removed - 1);
+            let i = rng.gen_range(0, nodes.len());
             if *nodes[i].routing_table().our_prefix() != prefix {
                 continue;
             }
@@ -360,10 +360,7 @@ fn churn() {
     info!("Churn [{} nodes, {} sections]: simultaneous adding and dropping nodes",
           nodes.len(),
           count_sections(&nodes));
-    for _ in 0..10 {
-        if nodes.len() < min_section_size {
-            break;
-        }
+    while nodes.len() > min_section_size + 1 {
         drop_random_nodes(&mut rng, &mut nodes, min_section_size);
         let (added_index, proxy_index) =
             add_random_node(&mut rng, &network, &mut nodes, min_section_size);
