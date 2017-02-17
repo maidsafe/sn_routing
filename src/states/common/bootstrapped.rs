@@ -54,7 +54,7 @@ pub trait Bootstrapped: Base {
             return true;
         }
 
-        let ack = match Ack::compute(&routing_msg) {
+        let ack = match Ack::compute(routing_msg) {
             Ok(ack) => ack,
             Err(error) => {
                 error!("{:?} Failed to create ack: {:?}", self, error);
