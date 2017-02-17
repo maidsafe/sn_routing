@@ -871,8 +871,8 @@ impl Node {
                                                      src_name,
                                                      dst)
             }
-            (CandidateApproval { candidate_id, client_auth, sections }, Section(_), Section(_)) => {
-                self.handle_candidate_approval(candidate_id, client_auth, sections, outbox)
+            (CandidateApproval { candidate_id, client_auth, .. }, Section(_), Section(_)) => {
+                self.handle_candidate_approval(candidate_id, client_auth, outbox)
             }
             (NodeApproval { sections }, Section(_), Client { .. }) => {
                 self.handle_node_approval(&sections, outbox)
@@ -919,7 +919,6 @@ impl Node {
     fn handle_candidate_approval(&mut self,
                                  candidate_id: PublicId,
                                  client_auth: Authority<XorName>,
-                                 sections: SectionMap,
                                  outbox: &mut EventBox)
                                  -> Result<(), RoutingError> {
         for peer_id in self.peer_mgr.remove_expired_candidates() {
@@ -951,7 +950,9 @@ impl Node {
               candidate_id.name(),
               opt_peer_id);
         let src = Authority::Section(*candidate_id.name());
-        let content = MessageContent::NodeApproval { sections: sections };
+        // Send the _current_ routing table. If this doesn't accumulate, we expect the candidate to
+        // disconnect from us.
+        let content = MessageContent::NodeApproval { sections: self.peer_mgr.pub_ids_by_section() };
         if let Err(error) = self.send_routing_message(src, client_auth, content) {
             debug!("{:?} Failed sending NodeApproval to {}: {:?}",
                    self,
