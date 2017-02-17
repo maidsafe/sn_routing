@@ -448,11 +448,10 @@ fn messages_during_churn() {
         expected_gets.send_and_expect(data_id, auth_g0, auth_s0, &mut nodes, min_section_size);
         expected_gets.send_and_expect(data_id, auth_g0, auth_n0, &mut nodes, min_section_size);
         // ... and from a section to itself, another section, a group and a node...
-        // TODO: Enable these once MAID-1920 is fixed.
-        // expected_gets.send_and_expect(data_id, auth_s0, auth_s0, &nodes, min_section_size);
-        // expected_gets.send_and_expect(data_id, auth_s0, auth_s1, &nodes, min_section_size);
-        // expected_gets.send_and_expect(data_id, auth_s0, auth_g0, &nodes, min_section_size);
-        // expected_gets.send_and_expect(data_id, auth_s0, auth_n0, &nodes, min_section_size);
+        expected_gets.send_and_expect(data_id, auth_s0, auth_s0, &nodes, min_section_size);
+        expected_gets.send_and_expect(data_id, auth_s0, auth_s1, &nodes, min_section_size);
+        expected_gets.send_and_expect(data_id, auth_s0, auth_g0, &nodes, min_section_size);
+        expected_gets.send_and_expect(data_id, auth_s0, auth_n0, &nodes, min_section_size);
 
         // Test messages from a client to a group and a section...
         expected_gets.client_send_and_expect(data_id, cl_auth, auth_g0, &clients[0], &mut nodes);
