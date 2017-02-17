@@ -596,9 +596,9 @@ impl Node {
                 return self.handle_signed_message(signed_msg, route, hop, &BTreeSet::new());
             }
         } else {
-            warn!("{:?} Received message signature from unknown peer {:?}",
-                  self,
-                  peer_id);
+            debug!("{:?} Received message signature from unknown peer {:?}",
+                   self,
+                   peer_id);
         }
         Ok(())
     }
@@ -625,10 +625,10 @@ impl Node {
         let section = match self.get_section_list(&prefix) {
             Ok(section) => section,
             Err(err) => {
-                warn!("{:?} Error getting section list for {:?}: {:?}",
-                      self,
-                      prefix,
-                      err);
+                debug!("{:?} Error getting section list for {:?}: {:?}",
+                       self,
+                       prefix,
+                       err);
                 return;
             }
         };
@@ -1681,14 +1681,7 @@ impl Node {
                        public_id.name(),
                        peer_id);
             }
-            Ok(Waiting) | Ok(IsConnected) => (),
-            Err(error) => {
-                warn!("{:?} Failed to insert connection info from {:?} ({:?}): {:?}",
-                      self,
-                      public_id.name(),
-                      peer_id,
-                      error)
-            }
+            Ok(Waiting) | Ok(IsConnected) | Err(_) => (),
         }
         Ok(())
     }
@@ -2004,9 +1997,9 @@ impl Node {
                 let f = |id: &PublicId| !section.contains(id.name());
                 members.into_iter().filter(f).collect_vec()
             } else {
-                warn!("{:?} Section update received from unknown neighbour {:?}",
-                      self,
-                      prefix);
+                debug!("{:?} Section update received from unknown neighbour {:?}",
+                       self,
+                       prefix);
                 return Ok(());
             };
         let members = members.into_iter()

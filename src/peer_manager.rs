@@ -1196,7 +1196,8 @@ impl PeerManager {
                 Ok(ConnectionInfoReceivedResult::Waiting)
             }
             Some(peer @ Peer { state: PeerState::ConnectionInfoPreparing { .. }, .. }) |
-            Some(peer @ Peer { state: PeerState::CrustConnecting, .. }) => {
+            Some(peer @ Peer { state: PeerState::CrustConnecting, .. }) |
+            Some(peer @ Peer { state: PeerState::AwaitingNodeIdentify(_), .. }) => {
                 let _ = self.peer_map.insert(peer);
                 Ok(ConnectionInfoReceivedResult::Waiting)
             }
