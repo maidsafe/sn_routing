@@ -303,7 +303,7 @@ impl SignedMessage {
         self.signatures.contains_key(pub_id)
     }
 
-    /// Returns the map of signatories and signature.
+    /// Returns the map of signatories and signatures.
     pub fn signatures(&self) -> &BTreeMap<PublicId, sign::Signature> {
         &self.signatures
     }
