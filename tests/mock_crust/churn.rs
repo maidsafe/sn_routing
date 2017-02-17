@@ -18,11 +18,11 @@
 use itertools::Itertools;
 use rand::Rng;
 use routing::{Authority, DataIdentifier, Event, EventStream, MessageId, QUORUM, Request, XorName};
-use routing::mock_crust::{Config, Endpoint, Network};
+use routing::mock_crust::{Config, Network};
 use std::cmp;
 use std::collections::{HashMap, HashSet};
-use super::{Nodes, TestClient, TestNode, create_connected_clients, create_connected_nodes,
-            gen_range_except, poll_all, poll_and_resend, verify_invariant_for_all_nodes};
+use super::{TestClient, TestNode, create_connected_clients, create_connected_nodes,
+            gen_range_except, poll_and_resend, verify_invariant_for_all_nodes};
 
 // Randomly remove some nodes.
 //
@@ -83,7 +83,11 @@ fn add_random_node<R: Rng>(rng: &mut R,
     let config = Config::with_contacts(&[nodes[proxy].handle.endpoint()]);
 
     nodes.insert(index, TestNode::builder(network).config(config).create());
-    (index, proxy)
+    if index <= proxy {
+        (index, proxy + 1)
+    } else {
+        (index, proxy)
+    }
 }
 
 /// The entries of a Get request: the data ID, message ID, source and destination authority.
@@ -328,13 +332,10 @@ fn churn() {
     info!("Churn [{} nodes, {} sections]: adding nodes",
           nodes.len(),
           count_sections(&nodes));
-    loop {
+    while count_sections(&nodes) <= 5 || nodes.len() < 50 {
         let (added_index, _) = add_random_node(&mut rng, &network, &mut nodes, min_section_size);
         poll_and_resend(&mut nodes, &mut []);
         send_and_receive(&mut rng, &mut nodes, min_section_size, Some(added_index));
-        if count_sections(&nodes) > 5 {
-            break;
-        }
     }
 
     info!("Churn [{} nodes, {} sections]: dropping nodes",
@@ -344,16 +345,6 @@ fn churn() {
         drop_random_nodes(&mut rng, &mut nodes, min_section_size);
         poll_and_resend(&mut nodes, &mut []);
         send_and_receive(&mut rng, &mut nodes, min_section_size, None);
-        client_gets(&mut network, &mut nodes, min_section_size);
-    }
-
-    info!("Churn [{} nodes, {} sections]: adding nodes",
-          nodes.len(),
-          count_sections(&nodes));
-    while nodes.len() < 50 {
-        let (added_index, _) = add_random_node(&mut rng, &network, &mut nodes, min_section_size);
-        poll_and_resend(&mut nodes, &mut []);
-        send_and_receive(&mut rng, &mut nodes, min_section_size, Some(added_index));
         client_gets(&mut network, &mut nodes, min_section_size);
     }
 
@@ -383,60 +374,4 @@ fn churn() {
     info!("Churn [{} nodes, {} sections]: done",
           nodes.len(),
           count_sections(&nodes));
-}
-
-fn bootstrap_from(initial_nodes: usize) {
-    assert!(initial_nodes > 0);
-    let min_section_size = 8;
-    let network = Network::new(min_section_size, None);
-    let mut rng = network.new_rng();
-
-    let mut nodes = if initial_nodes == 1 {
-        Nodes(vec![TestNode::builder(&network).first().endpoint(Endpoint(0)).create()])
-    } else {
-        create_connected_nodes(&network, initial_nodes)
-    };
-
-    while nodes.len() < min_section_size {
-        let (added_index, _) = add_random_node(&mut rng, &network, &mut nodes, min_section_size);
-        let _ = poll_all(&mut nodes, &mut []);
-        verify_invariant_for_all_nodes(&nodes);
-        let section_size = nodes.len();
-        send_and_receive(&mut rng, &mut nodes, section_size, Some(added_index));
-    }
-}
-
-#[test]
-fn bootstrap_1() {
-    bootstrap_from(1);
-}
-
-#[test]
-fn bootstrap_2() {
-    bootstrap_from(2);
-}
-
-#[test]
-fn bootstrap_3() {
-    bootstrap_from(3);
-}
-
-#[test]
-fn bootstrap_4() {
-    bootstrap_from(4);
-}
-
-#[test]
-fn bootstrap_5() {
-    bootstrap_from(5);
-}
-
-#[test]
-fn bootstrap_6() {
-    bootstrap_from(6);
-}
-
-#[test]
-fn bootstrap_7() {
-    bootstrap_from(7);
 }
