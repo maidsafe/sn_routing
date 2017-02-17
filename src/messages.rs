@@ -263,7 +263,7 @@ pub struct SignedMessage {
     /// Nodes sending the message (those expected to sign it)
     src_sections: Vec<SectionList>,
     /// The lists of the sections involved in routing this message, in chronological order.
-    // TODO: implement (JIRA 1677): sec_lists: Vec<SectionList>,
+    // TODO: implement (MAID-1677): sec_lists: Vec<SectionList>,
     /// The IDs and signatures of the source authority's members.
     signatures: BTreeMap<PublicId, sign::Signature>,
 }
@@ -286,7 +286,7 @@ impl SignedMessage {
     }
 
     /// Confirms the signatures.
-    // TODO (1677): verify the sending SectionLists via each hop's signed lists
+    // TODO (MAID-1677): verify the sending SectionLists via each hop's signed lists
     pub fn check_integrity(&self, min_section_size: usize) -> Result<(), RoutingError> {
         let signed_bytes = serialise(&self.content)?;
         if !self.find_invalid_sigs(signed_bytes).is_empty() {
@@ -297,9 +297,15 @@ impl SignedMessage {
         }
         Ok(())
     }
+
     /// Returns whether the message is signed by the given public ID.
     pub fn signed_by(&self, pub_id: &PublicId) -> bool {
         self.signatures.contains_key(pub_id)
+    }
+
+    /// Returns the number of nodes in the source authority.
+    pub fn src_size(&self) -> usize {
+        self.src_sections.iter().map(|sl| sl.pub_ids.len()).sum()
     }
 
     /// Adds the given signature if it is new, without validating it. If the collection of section
@@ -343,7 +349,7 @@ impl SignedMessage {
         // We also check (again) that all messages are from valid senders, because the message
         // may have been sent from another node, and we cannot trust that that node correctly
         // controlled which signatures were added.
-        // TODO (1677): we also need to check that the src_sections list corresponds to the
+        // TODO (MAID-1677): we also need to check that the src_sections list corresponds to the
         // section(s) at some point in recent history; i.e. that it was valid; but we shouldn't
         // force it to match our own because our routing table may have changed since.
 

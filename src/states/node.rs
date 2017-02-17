@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use ::QUORUM;
 use ack_manager::{ACK_TIMEOUT_SECS, Ack, AckManager};
 use action::Action;
 use cache::Cache;
@@ -749,6 +750,15 @@ impl Node {
                              -> Result<(), RoutingError> {
         signed_msg.check_integrity(self.min_section_size())?;
 
+        // TODO(MAID-1677): Remove this once messages are fully validated.
+        // Expect group/section messages to be sent by at least a quorum of `min_section_size`.
+        if self.peer_mgr.routing_table().our_prefix().bit_count() > 0 &&
+           signed_msg.routing_message().src.is_multiple() &&
+           signed_msg.src_size() * 100 < QUORUM * self.min_section_size() {
+            warn!("{:?} Not enough signatures in {:?}.", self, signed_msg);
+            return Err(RoutingError::NotEnoughSignatures);
+        }
+
         match self.routing_msg_filter.filter_incoming(signed_msg.routing_message(), route) {
             FilteringResult::KnownMessageAndRoute => {
                 return Ok(());
@@ -863,8 +873,8 @@ impl Node {
                                                      src_name,
                                                      dst)
             }
-            (CandidateApproval { candidate_id, client_auth, sections }, Section(_), Section(_)) => {
-                self.handle_candidate_approval(candidate_id, client_auth, sections, outbox)
+            (CandidateApproval { candidate_id, client_auth, .. }, Section(_), Section(_)) => {
+                self.handle_candidate_approval(candidate_id, client_auth, outbox)
             }
             (NodeApproval { sections }, Section(_), Client { .. }) => {
                 self.handle_node_approval(&sections, outbox)
@@ -872,12 +882,12 @@ impl Node {
             (SectionUpdate { prefix, members }, Section(_), PrefixSection(_)) => {
                 self.handle_section_update(prefix, members, outbox)
             }
-            (RoutingTableRequest(msg_id, digest), src @ ManagedNode(_), dst @ PrefixSection(_)) => {
+            (RoutingTableRequest(msg_id, digest), src @ ManagedNode(_), dst @ Section(_)) => {
                 self.handle_rt_req(msg_id, digest, src, dst)
             }
-            (RoutingTableResponse { prefix, members, message_id },
-             PrefixSection(_),
-             ManagedNode(_)) => self.handle_rt_rsp(prefix, members, message_id, outbox),
+            (RoutingTableResponse { prefix, members, message_id }, Section(_), ManagedNode(_)) => {
+                self.handle_rt_rsp(prefix, members, message_id, outbox)
+            }
             (SectionSplit(prefix, joining_node), _, _) => {
                 self.handle_section_split(prefix, joining_node, outbox)
             }
@@ -911,7 +921,6 @@ impl Node {
     fn handle_candidate_approval(&mut self,
                                  candidate_id: PublicId,
                                  client_auth: Authority<XorName>,
-                                 sections: SectionMap,
                                  outbox: &mut EventBox)
                                  -> Result<(), RoutingError> {
         for peer_id in self.peer_mgr.remove_expired_candidates() {
@@ -943,7 +952,9 @@ impl Node {
               candidate_id.name(),
               opt_peer_id);
         let src = Authority::Section(*candidate_id.name());
-        let content = MessageContent::NodeApproval { sections: sections };
+        // Send the _current_ routing table. If this doesn't accumulate, we expect the candidate to
+        // disconnect from us.
+        let content = MessageContent::NodeApproval { sections: self.peer_mgr.pub_ids_by_section() };
         if let Err(error) = self.send_routing_message(src, client_auth, content) {
             debug!("{:?} Failed sending NodeApproval to {}: {:?}",
                    self,
@@ -1314,16 +1325,6 @@ impl Node {
                self,
                public_id.name());
         self.add_to_routing_table(&public_id, &peer_id, outbox);
-
-        if let Some(prefix) = self.peer_mgr.routing_table().find_section_prefix(public_id.name()) {
-            self.send_section_list_signature(prefix, None);
-            if prefix == *self.peer_mgr.routing_table().our_prefix() {
-                // if the node joined our section, send signatures for all section lists to it
-                for pfx in self.peer_mgr.routing_table().prefixes() {
-                    self.send_section_list_signature(pfx, Some(*public_id.name()));
-                }
-            }
-        }
     }
 
     fn handle_candidate_identify(&mut self,
@@ -1430,11 +1431,23 @@ impl Node {
         if self.is_approved {
             outbox.send_event(Event::NodeAdded(*public_id.name(),
                                                self.peer_mgr.routing_table().clone()));
-        }
 
-        // TODO: we probably don't need to send this if we're splitting, but in that case
-        // we should send something else instead. This will do for now.
-        self.send_section_update();
+            // TODO: we probably don't need to send this if we're splitting, but in that case
+            // we should send something else instead. This will do for now.
+            self.send_section_update();
+
+            if let Some(prefix) = self.peer_mgr
+                .routing_table()
+                .find_section_prefix(public_id.name()) {
+                self.send_section_list_signature(prefix, None);
+                if prefix == *self.peer_mgr.routing_table().our_prefix() {
+                    // if the node joined our section, send signatures for all section lists to it
+                    for pfx in self.peer_mgr.routing_table().prefixes() {
+                        self.send_section_list_signature(pfx, Some(*public_id.name()));
+                    }
+                }
+            }
+        }
 
         for dst_id in self.peer_mgr.peers_needing_tunnel() {
             trace!("{:?} Asking {:?} to serve as a tunnel for {:?}",
@@ -1443,16 +1456,6 @@ impl Node {
                    dst_id);
             let tunnel_request = DirectMessage::TunnelRequest(dst_id);
             let _ = self.send_direct_message(*peer_id, tunnel_request);
-        }
-
-        if let Some(prefix) = self.peer_mgr.routing_table().find_section_prefix(public_id.name()) {
-            self.send_section_list_signature(prefix, None);
-            if prefix == *self.peer_mgr.routing_table().our_prefix() {
-                // if the node joined our section, send signatures for all section lists to it
-                for pfx in self.peer_mgr.routing_table().prefixes() {
-                    self.send_section_list_signature(pfx, Some(*public_id.name()));
-                }
-            }
         }
     }
 
@@ -2325,7 +2328,7 @@ impl Node {
                    utils::format_binary_array(&digest));
 
             let src = Authority::ManagedNode(*self.name());
-            let dst = Authority::PrefixSection(*self.peer_mgr.routing_table().our_prefix());
+            let dst = Authority::Section(*self.name());
             let content = MessageContent::RoutingTableRequest(msg_id, digest);
             if let Err(err) = self.send_routing_message(src, dst, content) {
                 debug!("{:?} Failed to send RoutingTableRequest: {:?}.", self, err);
@@ -2997,6 +3000,12 @@ impl Bootstrapped for Node {
                    routing_msg);
             return Ok(());
         }
+        if !self.add_to_pending_acks(&routing_msg, route) {
+            debug!("{:?} already received an ack for {:?} - so not resending it.",
+                   self,
+                   routing_msg);
+            return Ok(());
+        }
         use routing_table::Authority::*;
         let sending_names = match routing_msg.src {
             ClientManager(_) | NaeManager(_) | NodeManager(_) | ManagedNode(_) => {
@@ -3030,12 +3039,6 @@ impl Bootstrapped for Node {
         };
 
         let signed_msg = SignedMessage::new(routing_msg, &self.full_id, sending_names)?;
-        if !self.add_to_pending_acks(&signed_msg, route) {
-            debug!("{:?} already received an ack for {:?} - so not resending it.",
-                   self,
-                   signed_msg);
-            return Ok(());
-        }
 
         match self.get_signature_target(&signed_msg.routing_message().src, route) {
             None => Ok(()),
