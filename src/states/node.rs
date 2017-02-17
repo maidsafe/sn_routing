@@ -749,6 +749,14 @@ impl Node {
                              -> Result<(), RoutingError> {
         signed_msg.check_integrity(self.min_section_size())?;
 
+        // TODO(MAID-1677): Remove this once messages are fully validated.
+        // Expect group/section messages to have at least three signatures.
+        if self.peer_mgr.routing_table().our_prefix().bit_count() > 0 &&
+           signed_msg.routing_message().src.is_multiple() &&
+           signed_msg.signatures().len() < 3 {
+            return Err(RoutingError::NotEnoughSignatures);
+        }
+
         match self.routing_msg_filter.filter_incoming(signed_msg.routing_message(), route) {
             FilteringResult::KnownMessageAndRoute => {
                 return Ok(());
