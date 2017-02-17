@@ -303,9 +303,9 @@ impl SignedMessage {
         self.signatures.contains_key(pub_id)
     }
 
-    /// Returns the map of signatories and signatures.
-    pub fn signatures(&self) -> &BTreeMap<PublicId, sign::Signature> {
-        &self.signatures
+    /// Returns the number of nodes in the source authority.
+    pub fn src_size(&self) -> usize {
+        self.src_sections.iter().map(|sl| sl.pub_ids.len()).sum()
     }
 
     /// Adds the given signature if it is new, without validating it. If the collection of section

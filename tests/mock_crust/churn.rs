@@ -359,8 +359,8 @@ fn churn() {
     while count_sections(&nodes) <= 5 || nodes.len() < 50 {
         let (added_index, _) = add_random_node(&mut rng, &network, &mut nodes, min_section_size);
         poll_and_resend(&mut nodes, &mut []);
-        verify_invariant_for_all_nodes(nodes);
-        verify_section_list_signatures(nodes);
+        verify_invariant_for_all_nodes(&nodes);
+        verify_section_list_signatures(&nodes);
         send_and_receive(&mut rng, &mut nodes, min_section_size, Some(added_index));
     }
 
@@ -370,8 +370,8 @@ fn churn() {
     while nodes.len() > min_section_size {
         drop_random_nodes(&mut rng, &mut nodes, min_section_size);
         poll_and_resend(&mut nodes, &mut []);
-        verify_invariant_for_all_nodes(nodes);
-        verify_section_list_signatures(nodes);
+        verify_invariant_for_all_nodes(&nodes);
+        verify_section_list_signatures(&nodes);
         send_and_receive(&mut rng, &mut nodes, min_section_size, None);
         client_gets(&mut network, &mut nodes, min_section_size);
     }
@@ -386,8 +386,8 @@ fn churn() {
     //     let (added_index, proxy_index) =
     //         add_random_node(&mut rng, &network, &mut nodes, min_section_size);
     //     poll_and_resend(&mut nodes, &mut []);
-    //     verify_invariant_for_all_nodes(nodes);
-    //     verify_section_list_signatures(nodes);
+    //     verify_invariant_for_all_nodes(&nodes);
+    //     verify_section_list_signatures(&nodes);
 
     //     // An candidate could be blocked if it connected to a pre-merge minority section.
     //     // In that case, a restart of candidate shall be carried out.

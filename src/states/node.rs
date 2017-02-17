@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use ::QUORUM;
 use ack_manager::{ACK_TIMEOUT_SECS, Ack, AckManager};
 use action::Action;
 use cache::Cache;
@@ -750,10 +751,11 @@ impl Node {
         signed_msg.check_integrity(self.min_section_size())?;
 
         // TODO(MAID-1677): Remove this once messages are fully validated.
-        // Expect group/section messages to have at least three signatures.
+        // Expect group/section messages to be sent by at least a quorum of `min_section_size`.
         if self.peer_mgr.routing_table().our_prefix().bit_count() > 0 &&
            signed_msg.routing_message().src.is_multiple() &&
-           signed_msg.signatures().len() < 3 {
+           signed_msg.src_size() * 100 < QUORUM * self.min_section_size() {
+            warn!("{:?} Not enough signatures in {:?}.", self, signed_msg);
             return Err(RoutingError::NotEnoughSignatures);
         }
 
