@@ -1429,22 +1429,11 @@ impl Node {
         if self.is_approved {
             outbox.send_event(Event::NodeAdded(*public_id.name(),
                                                self.peer_mgr.routing_table().clone()));
-        }
 
-        // TODO: we probably don't need to send this if we're splitting, but in that case
-        // we should send something else instead. This will do for now.
-        self.send_section_update();
+            // TODO: we probably don't need to send this if we're splitting, but in that case
+            // we should send something else instead. This will do for now.
+            self.send_section_update();
 
-        for dst_id in self.peer_mgr.peers_needing_tunnel() {
-            trace!("{:?} Asking {:?} to serve as a tunnel for {:?}",
-                   self,
-                   peer_id,
-                   dst_id);
-            let tunnel_request = DirectMessage::TunnelRequest(dst_id);
-            let _ = self.send_direct_message(*peer_id, tunnel_request);
-        }
-
-        if self.is_approved {
             if let Some(prefix) = self.peer_mgr
                 .routing_table()
                 .find_section_prefix(public_id.name()) {
@@ -1456,6 +1445,15 @@ impl Node {
                     }
                 }
             }
+        }
+
+        for dst_id in self.peer_mgr.peers_needing_tunnel() {
+            trace!("{:?} Asking {:?} to serve as a tunnel for {:?}",
+                   self,
+                   peer_id,
+                   dst_id);
+            let tunnel_request = DirectMessage::TunnelRequest(dst_id);
+            let _ = self.send_direct_message(*peer_id, tunnel_request);
         }
     }
 
