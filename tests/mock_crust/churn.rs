@@ -375,7 +375,7 @@ fn aggressive_churn() {
 
         // An candidate could be blocked if it connected to a pre-merge minority section.
         // In that case, a restart of candidate shall be carried out.
-        if let Err(_) = nodes[added_index].inner.try_next_ev() {
+        if nodes[added_index].inner.try_next_ev().is_err() {
             let config = Config::with_contacts(&[nodes[proxy_index].handle.endpoint()]);
             nodes[added_index] = TestNode::builder(&network).config(config).create();
             poll_and_resend(&mut nodes, &mut []);
