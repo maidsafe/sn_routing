@@ -344,7 +344,7 @@ fn verify_section_list_signatures(nodes: &[TestNode]) {
 }
 
 #[test]
-fn churn() {
+fn aggressive_churn() {
     let min_section_size = 5;
     let mut network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
@@ -364,6 +364,30 @@ fn churn() {
         send_and_receive(&mut rng, &mut nodes, min_section_size, Some(added_index));
     }
 
+    info!("Churn [{} nodes, {} sections]: simultaneous adding and dropping nodes",
+          nodes.len(),
+          count_sections(&nodes));
+    while nodes.len() > 25 {
+        drop_random_nodes(&mut rng, &mut nodes, min_section_size);
+        let (added_index, proxy_index) =
+            add_random_node(&mut rng, &network, &mut nodes, min_section_size);
+        poll_and_resend(&mut nodes, &mut []);
+
+        // An candidate could be blocked if it connected to a pre-merge minority section.
+        // In that case, a restart of candidate shall be carried out.
+        if let Err(_) = nodes[added_index].inner.try_next_ev() {
+            let config = Config::with_contacts(&[nodes[proxy_index].handle.endpoint()]);
+            nodes[added_index] = TestNode::builder(&network).config(config).create();
+            poll_and_resend(&mut nodes, &mut []);
+        }
+
+        verify_invariant_for_all_nodes(&nodes);
+        verify_section_list_signatures(&nodes);
+
+        send_and_receive(&mut rng, &mut nodes, min_section_size, Some(added_index));
+        client_gets(&mut network, &mut nodes, min_section_size);
+    }
+
     info!("Churn [{} nodes, {} sections]: dropping nodes",
           nodes.len(),
           count_sections(&nodes));
@@ -376,38 +400,13 @@ fn churn() {
         client_gets(&mut network, &mut nodes, min_section_size);
     }
 
-    // TODO: enable this simultaneous test once the failure with seed
-    //       [2194699280, 3940493205, 215056915, 1020702999] got resolved
-    // info!("Churn [{} nodes, {} sections]: simultaneous adding and dropping nodes",
-    //       nodes.len(),
-    //       count_sections(&nodes));
-    // while nodes.len() > min_section_size + 1 {
-    //     drop_random_nodes(&mut rng, &mut nodes, min_section_size);
-    //     let (added_index, proxy_index) =
-    //         add_random_node(&mut rng, &network, &mut nodes, min_section_size);
-    //     poll_and_resend(&mut nodes, &mut []);
-    //     verify_invariant_for_all_nodes(&nodes);
-    //     verify_section_list_signatures(&nodes);
-
-    //     // An candidate could be blocked if it connected to a pre-merge minority section.
-    //     // In that case, a restart of candidate shall be carried out.
-    //     if let Err(_) = nodes[added_index].inner.try_next_ev() {
-    //         let config = Config::with_contacts(&[nodes[proxy_index].handle.endpoint()]);
-    //         nodes[added_index] = TestNode::builder(&network).config(config).create();
-    //         poll_and_resend(&mut nodes, &mut []);
-    //     }
-
-    //     send_and_receive(&mut rng, &mut nodes, min_section_size, Some(added_index));
-    //     client_gets(&mut network, &mut nodes, min_section_size);
-    // }
-
     info!("Churn [{} nodes, {} sections]: done",
           nodes.len(),
           count_sections(&nodes));
 }
 
 #[test]
-fn churn_with_messages() {
+fn messages_during_churn() {
     let min_section_size = 8;
     let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
