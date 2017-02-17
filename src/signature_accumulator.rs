@@ -27,7 +27,7 @@ use std::time::Instant;
 
 /// Time (in seconds) within which a message and a quorum of signatures need to arrive to
 /// accumulate.
-const ACCUMULATION_TIMEOUT_SECS: u64 = 30;
+pub const ACCUMULATION_TIMEOUT_SECS: u64 = 30;
 
 #[derive(Default)]
 pub struct SignatureAccumulator {
@@ -39,6 +39,7 @@ impl SignatureAccumulator {
     /// Adds the given signature to the list of pending signatures or to the appropriate
     /// `SignedMessage`. Returns the message, if it has enough signatures now.
     pub fn add_signature(&mut self,
+                         min_section_size: usize,
                          hash: sha256::Digest,
                          sig: sign::Signature,
                          pub_id: PublicId)
@@ -51,18 +52,16 @@ impl SignatureAccumulator {
             sigs_vec.0.push((pub_id, sig));
             return None;
         }
-        self.remove_if_complete(&hash)
+        self.remove_if_complete(min_section_size, &hash)
     }
 
     /// Adds the given message to the list of pending messages. Returns it if it has enough
     /// signatures.
     pub fn add_message(&mut self,
                        mut msg: SignedMessage,
+                       min_section_size: usize,
                        route: u8)
                        -> Option<(SignedMessage, u8)> {
-        if msg.is_fully_signed() {
-            return Some((msg, route));
-        }
         self.remove_expired();
         let hash = match serialisation::serialise(msg.routing_message()) {
             Ok(serialised_msg) => sha256::hash(&serialised_msg),
@@ -84,7 +83,7 @@ impl SignatureAccumulator {
                 let _ = entry.insert((msg, route, Instant::now()));
             }
         }
-        self.remove_if_complete(&hash)
+        self.remove_if_complete(min_section_size, &hash)
     }
 
     fn remove_expired(&mut self) {
@@ -106,15 +105,14 @@ impl SignatureAccumulator {
         }
     }
 
-    fn remove_if_complete(&mut self, hash: &sha256::Digest) -> Option<(SignedMessage, u8)> {
+    fn remove_if_complete(&mut self,
+                          min_section_size: usize,
+                          hash: &sha256::Digest)
+                          -> Option<(SignedMessage, u8)> {
         match self.msgs.get_mut(hash) {
             None => return None,
             Some(&mut (ref mut msg, _, _)) => {
-                if !msg.is_fully_signed() {
-                    return None;
-                }
-                msg.remove_invalid_signatures();
-                if !msg.is_fully_signed() {
+                if !msg.check_fully_signed(min_section_size) {
                     return None;
                 }
             }
@@ -124,15 +122,14 @@ impl SignatureAccumulator {
 }
 
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use authority::Authority;
-    use id::FullId;
+    use id::{FullId, PublicId};
     use itertools::Itertools;
-    use messages::{DirectMessage, GroupList, MessageContent, RoutingMessage, SignedMessage};
+    use messages::{DirectMessage, MessageContent, RoutingMessage, SectionList, SignedMessage};
     use rand;
+    use routing_table::Authority;
     use routing_table::Prefix;
     use std::collections::BTreeSet;
 
@@ -142,16 +139,21 @@ mod tests {
     }
 
     impl MessageAndSignatures {
-        fn new<'a, I>(msg_sender_id: &FullId, other_ids: I) -> MessageAndSignatures
+        fn new<'a, I>(msg_sender_id: &FullId,
+                      other_ids: I,
+                      all_ids: BTreeSet<PublicId>)
+                      -> MessageAndSignatures
             where I: Iterator<Item = &'a FullId>
         {
             let routing_msg = RoutingMessage {
                 src: Authority::ClientManager(rand::random()),
                 dst: Authority::ClientManager(rand::random()),
-                content: MessageContent::GroupSplit(Prefix::new(rand::random::<u8>() as usize,
-                                                                rand::random())),
+                content: MessageContent::SectionSplit(Prefix::new(0, rand::random()),
+                                                      rand::random()),
             };
-            let signed_msg = unwrap!(SignedMessage::new(routing_msg, msg_sender_id));
+            let prefix = Prefix::new(0, *unwrap!(all_ids.iter().next()).name());
+            let lists = vec![SectionList::new(prefix, all_ids)];
+            let signed_msg = unwrap!(SignedMessage::new(routing_msg, msg_sender_id, lists));
             let signature_msgs = other_ids.map(|id| {
                     unwrap!(signed_msg.routing_message().to_signature(id.signing_private_key()))
                 })
@@ -166,7 +168,7 @@ mod tests {
     struct Env {
         _msg_sender_id: FullId,
         other_ids: Vec<FullId>,
-        group_list: GroupList,
+        senders: BTreeSet<PublicId>,
         msgs_and_sigs: Vec<MessageAndSignatures>,
     }
 
@@ -181,19 +183,25 @@ mod tests {
                 other_ids.push(full_id);
             }
             let msgs_and_sigs = (0..5)
-                .map(|_| MessageAndSignatures::new(&msg_sender_id, other_ids.iter()))
+                .map(|_| {
+                    MessageAndSignatures::new(&msg_sender_id, other_ids.iter(), pub_ids.clone())
+                })
                 .collect();
             Env {
                 _msg_sender_id: msg_sender_id,
                 other_ids: other_ids,
-                group_list: GroupList { pub_ids: pub_ids },
+                senders: pub_ids,
                 msgs_and_sigs: msgs_and_sigs,
             }
+        }
+
+        fn num_nodes(&self) -> usize {
+            self.senders.len()
         }
     }
 
     #[test]
-    fn group_src_add_message_last() {
+    fn section_src_add_message_last() {
         let mut sig_accumulator = SignatureAccumulator::default();
         let env = Env::new();
 
@@ -204,8 +212,12 @@ mod tests {
                 .zip(env.other_ids.iter())
                 .foreach(|(signature_msg, full_id)| match *signature_msg {
                     DirectMessage::MessageSignature(ref hash, ref sig) => {
-                        assert!(sig_accumulator.add_signature(*hash, *sig, *full_id.public_id())
-                            .is_none());
+                        let result =
+                                sig_accumulator.add_signature(env.num_nodes(),
+                                                              *hash,
+                                                              *sig,
+                                                              *full_id.public_id());
+                        assert!(result.is_none());
                     }
                     ref unexpected_msg => panic!("Unexpected message: {:?}", unexpected_msg),
                 });
@@ -217,40 +229,38 @@ mod tests {
             assert_eq!(pub_ids_and_sigs.len(), env.other_ids.len())
         });
 
-        // Add each message with the group list added - each should accumulate.
+        // Add each message with the section list added - each should accumulate.
         let mut expected_sigs_count = env.msgs_and_sigs.len();
         assert_eq!(sig_accumulator.sigs.len(), expected_sigs_count);
         assert!(sig_accumulator.msgs.is_empty());
         env.msgs_and_sigs.iter().foreach(|msg_and_sigs| {
             expected_sigs_count -= 1;
-            let mut signed_msg = msg_and_sigs.signed_msg.clone();
-            signed_msg.add_group_list(env.group_list.clone());
+            let signed_msg = msg_and_sigs.signed_msg.clone();
             let route = rand::random();
-            let (returned_msg, returned_route) =
-                unwrap!(sig_accumulator.add_message(signed_msg.clone(), route));
+            let (mut returned_msg, returned_route) =
+                unwrap!(sig_accumulator.add_message(signed_msg.clone(), env.num_nodes(), route));
             assert_eq!(sig_accumulator.sigs.len(), expected_sigs_count);
             assert!(sig_accumulator.msgs.is_empty());
             assert_eq!(route, returned_route);
             assert_eq!(signed_msg.routing_message(), returned_msg.routing_message());
-            unwrap!(returned_msg.check_integrity());
-            assert!(returned_msg.is_fully_signed());
-            env.group_list
-                .pub_ids
+            unwrap!(returned_msg.check_integrity(1000));
+            assert!(returned_msg.check_fully_signed(env.num_nodes()));
+            env.senders
                 .iter()
                 .foreach(|pub_id| assert!(returned_msg.signed_by(pub_id)));
         });
     }
 
     #[test]
-    fn group_src_add_signature_last() {
+    fn section_src_add_signature_last() {
         let mut sig_accumulator = SignatureAccumulator::default();
         let env = Env::new();
 
-        // Add each message with the group list added - none should accumulate.
+        // Add each message with the section list added - none should accumulate.
         env.msgs_and_sigs.iter().enumerate().foreach(|(route, msg_and_sigs)| {
-            let mut signed_msg = msg_and_sigs.signed_msg.clone();
-            signed_msg.add_group_list(env.group_list.clone());
-            assert!(sig_accumulator.add_message(signed_msg.clone(), route as u8).is_none());
+            let signed_msg = msg_and_sigs.signed_msg.clone();
+            let result = sig_accumulator.add_message(signed_msg, env.num_nodes(), route as u8);
+            assert!(result.is_none());
         });
         let mut expected_msgs_count = env.msgs_and_sigs.len();
         assert_eq!(sig_accumulator.msgs.len(), expected_msgs_count);
@@ -264,19 +274,20 @@ mod tests {
                 .foreach(|(signature_msg, full_id)| {
                     let result = match *signature_msg {
                         DirectMessage::MessageSignature(hash, sig) => {
-                            sig_accumulator.add_signature(hash, sig, *full_id.public_id())
+                            sig_accumulator.add_signature(env.num_nodes(), hash, sig,
+                                *full_id.public_id())
                         }
                         ref unexpected_msg => panic!("Unexpected message: {:?}", unexpected_msg),
                     };
 
-                    if let Some((returned_msg, returned_route)) = result {
+                    if let Some((mut returned_msg, returned_route)) = result {
                         expected_msgs_count -= 1;
                         assert_eq!(sig_accumulator.msgs.len(), expected_msgs_count);
                         assert_eq!(route as u8, returned_route);
                         assert_eq!(msg_and_sigs.signed_msg.routing_message(),
                                    returned_msg.routing_message());
-                        unwrap!(returned_msg.check_integrity());
-                        assert!(returned_msg.is_fully_signed());
+                        unwrap!(returned_msg.check_integrity(1000));
+                        assert!(returned_msg.check_fully_signed(env.num_nodes()));
                     }
                 });
         });

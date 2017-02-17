@@ -17,37 +17,30 @@
 
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-use routing::{Authority, Data, DataIdentifier, Event, MessageId, Node, Prefix, Request, Response,
-              XorName};
+use routing::{Authority, Data, DataIdentifier, Event, EventStream, MessageId, Node, Prefix,
+              Request, Response, XorName};
 use std::collections::HashMap;
-use std::sync::mpsc;
 use std::time::Duration;
+use super::MIN_SECTION_SIZE;
 
 /// A simple example node implementation for a network based on the Routing library.
 pub struct ExampleNode {
     /// The node interface to the Routing library.
     node: Node,
-    /// The receiver through which the Routing library will send events.
-    receiver: mpsc::Receiver<Event>,
-    /// A clone of the event sender passed to the Routing library.
-    sender: mpsc::Sender<Event>,
     /// A map of the data chunks this node is storing.
     db: HashMap<DataIdentifier, Data>,
     client_accounts: HashMap<XorName, u64>,
     /// A cache that contains the data necessary to respond with a `PutSuccess` to a `Client`.
-    put_request_cache: LruCache<MessageId, (Authority, Authority)>,
+    put_request_cache: LruCache<MessageId, (Authority<XorName>, Authority<XorName>)>,
 }
 
 impl ExampleNode {
     /// Creates a new node and attempts to establish a connection to the network.
     pub fn new(first: bool) -> ExampleNode {
-        let (sender, receiver) = mpsc::channel::<Event>();
-        let node = unwrap!(Node::builder().first(first).create(sender.clone()));
+        let node = unwrap!(Node::builder().first(first).create(MIN_SECTION_SIZE));
 
         ExampleNode {
             node: node,
-            receiver: receiver,
-            sender: sender,
             db: HashMap::new(),
             client_accounts: HashMap::new(),
             put_request_cache: LruCache::with_expiry_duration(Duration::from_secs(60 * 10)),
@@ -56,23 +49,20 @@ impl ExampleNode {
 
     /// Runs the event loop, handling events raised by the Routing library.
     pub fn run(&mut self) {
-        while let Ok(event) = self.receiver.recv() {
+        while let Ok(event) = self.node.next_ev() {
             match event {
                 Event::Request { request, src, dst } => self.handle_request(request, src, dst),
                 Event::Response { response, src, dst } => self.handle_response(response, src, dst),
-                Event::NodeAdded(name) => {
+                Event::NodeAdded(name, _routing_table) => {
                     trace!("{} Received NodeAdded event {:?}",
                            self.get_debug_name(),
                            name);
                     self.handle_node_added(name);
                 }
-                Event::NodeLost(name) => {
+                Event::NodeLost(name, _routing_table) => {
                     trace!("{} Received NodeLost event {:?}",
                            self.get_debug_name(),
                            name);
-                    // With DisjointGroup, node_lost shall no longer trigger, as data migration
-                    // shall only happens when a group merge happens
-                    // self.handle_node_lost(name);
                 }
                 Event::Connected => {
                     trace!("{} Received connected event", self.get_debug_name());
@@ -83,19 +73,20 @@ impl ExampleNode {
                 }
                 Event::RestartRequired => {
                     info!("{} Received RestartRequired event", self.get_debug_name());
-                    self.node = unwrap!(Node::builder().create(self.sender.clone()));
+                    self.node = unwrap!(Node::builder().create(MIN_SECTION_SIZE));
                 }
-                Event::GroupSplit(prefix) => {
-                    trace!("{} Received GroupSplit event {:?}",
+                Event::SectionSplit(prefix) => {
+                    trace!("{} Received SectionSplit event {:?}",
                            self.get_debug_name(),
                            prefix);
                     self.handle_split(prefix);
                 }
-                Event::GroupMerge(prefix) => {
-                    trace!("{} Received GroupMerge event {:?}",
+                Event::SectionMerge(prefix) => {
+                    trace!("{} Received SectionMerge event {:?}",
                            self.get_debug_name(),
                            prefix);
-                    self.send_refresh(MessageId::from_lost_node(prefix.lower_bound()));
+                    let pfx = Prefix::new(prefix.bit_count() + 1, unwrap!(self.node.name()));
+                    self.send_refresh(MessageId::from_lost_node(pfx.lower_bound()));
                 }
                 event => {
                     trace!("{} Received {:?} event", self.get_debug_name(), event);
@@ -104,7 +95,10 @@ impl ExampleNode {
         }
     }
 
-    fn handle_request(&mut self, request: Request, src: Authority, dst: Authority) {
+    fn handle_request(&mut self,
+                      request: Request,
+                      src: Authority<XorName>,
+                      dst: Authority<XorName>) {
         match request {
             Request::Get(data_id, id) => {
                 self.handle_get_request(data_id, id, src, dst);
@@ -134,7 +128,10 @@ impl ExampleNode {
         }
     }
 
-    fn handle_response(&mut self, response: Response, _src: Authority, dst: Authority) {
+    fn handle_response(&mut self,
+                       response: Response,
+                       _src: Authority<XorName>,
+                       dst: Authority<XorName>) {
         match (response, dst) {
             (Response::PutSuccess(data_id, id), Authority::ClientManager(_name)) => {
                 if let Some((src, dst)) = self.put_request_cache.remove(&id) {
@@ -148,8 +145,8 @@ impl ExampleNode {
     fn handle_get_request(&mut self,
                           data_id: DataIdentifier,
                           id: MessageId,
-                          src: Authority,
-                          dst: Authority) {
+                          src: Authority<XorName>,
+                          dst: Authority<XorName>) {
         match (src, dst) {
             (src @ Authority::Client { .. }, dst @ Authority::NaeManager(_)) => {
                 if let Some(data) = self.db.get(&data_id) {
@@ -167,7 +164,11 @@ impl ExampleNode {
         }
     }
 
-    fn handle_put_request(&mut self, data: Data, id: MessageId, src: Authority, dst: Authority) {
+    fn handle_put_request(&mut self,
+                          data: Data,
+                          id: MessageId,
+                          src: Authority<XorName>,
+                          dst: Authority<XorName>) {
         match dst {
             Authority::NaeManager(_) => {
                 trace!("{:?} Storing : key {:?}, value {:?}",
@@ -245,7 +246,7 @@ impl ExampleNode {
     }
 
     /// Receiving a refresh message means that a quorum has been reached: Enough other members in
-    /// the group agree, so we need to update our data accordingly.
+    /// the section agree, so we need to update our data accordingly.
     fn handle_refresh(&mut self, content: Vec<u8>, _id: MessageId) {
         match unwrap!(deserialise(&content)) {
             RefreshContent::Client { client_name, data } => {

@@ -19,7 +19,6 @@
 /// bytes).
 pub const MAX_HEADER_METADATA_SIZE: usize = 128; // bytes
 
-
 use super::{Error, GUID_SIZE};
 use maidsafe_utilities::serialisation::serialise;
 use rand::{self, Rng};

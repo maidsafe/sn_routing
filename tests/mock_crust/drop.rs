@@ -15,85 +15,55 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use rand::Rng;
-use routing::{Event, MIN_GROUP_SIZE};
-use routing::mock_crust::{Config, Endpoint, Network};
+use routing::{Event, EventStream};
+use routing::mock_crust::Network;
 use super::{TestNode, create_connected_nodes, poll_all, verify_invariant_for_all_nodes};
 
-// Drop node at index and verify its close group receives NodeLost.
+// Drop node at index and verify its own section receives NodeLost.
 fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
     let node = nodes.remove(index);
     let name = node.name();
-    let close_names = node.close_group();
+    let close_names = node.close_names();
 
     drop(node);
 
     let _ = poll_all(nodes, &mut []);
 
-    for node in nodes.iter().filter(|n| close_names.contains(&n.name())) {
+    for node in nodes.iter_mut().filter(|n| close_names.contains(&n.name())) {
         loop {
-            match node.event_rx.try_recv() {
-                Ok(Event::NodeLost(lost_name)) if lost_name == name => break,
+            match node.try_next_ev() {
+                Ok(Event::NodeLost(lost_name, _)) if lost_name == name => break,
                 Ok(_) => (),
-                _ => panic!("Event::NodeLost({:?}) not received", name),
+                Err(_) => panic!("Event::NodeLost({:?}) not received", name),
             }
         }
     }
 }
 
 #[test]
-fn failing_connections_group_of_three() {
-    let network = Network::new(None);
-
-    network.block_connection(Endpoint(1), Endpoint(2));
-    network.block_connection(Endpoint(2), Endpoint(1));
-
-    network.block_connection(Endpoint(1), Endpoint(3));
-    network.block_connection(Endpoint(3), Endpoint(1));
-
-    network.block_connection(Endpoint(2), Endpoint(3));
-    network.block_connection(Endpoint(3), Endpoint(2));
-
-    let mut nodes = create_connected_nodes(&network, 5);
-    verify_invariant_for_all_nodes(&nodes);
-    drop_node(&mut nodes, 0); // Drop the tunnel node. Node 4 should replace it.
-    verify_invariant_for_all_nodes(&nodes);
-    drop_node(&mut nodes, 1); // Drop a tunnel client. The others should be notified.
-    verify_invariant_for_all_nodes(&nodes);
-}
-
-#[test]
 fn node_drops() {
-    let network = Network::new(None);
-    let mut nodes = create_connected_nodes(&network, MIN_GROUP_SIZE + 2);
+    let min_section_size = 8;
+    let network = Network::new(min_section_size, None);
+    let mut nodes = create_connected_nodes(&network, min_section_size + 2);
     drop_node(&mut nodes, 0);
 
     verify_invariant_for_all_nodes(&nodes);
 }
 
 #[test]
-#[cfg_attr(feature = "clippy", allow(needless_range_loop))]
 fn node_restart() {
-    let network = Network::new(None);
-    let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes(&network, MIN_GROUP_SIZE);
+    // Idea of test: if a node disconnects from all other nodes, it should restart
+    // (with the exception of the first node which is special).
+    let min_section_size = 5;
+    let network = Network::new(min_section_size, None);
+    let mut nodes = create_connected_nodes(&network, min_section_size);
 
-    let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
-
-    // Drop one node, causing the remaining nodes to end up with too few entries
-    // in their routing tables and to request a restart.
-    let index = rng.gen_range(1, nodes.len());
-    drop_node(&mut nodes, index);
-
-    for node in &nodes[1..] {
-        expect_next_event!(node, Event::RestartRequired);
+    // Drop all but last node:
+    while nodes.len() > 1 {
+        drop_node(&mut nodes, 0);
     }
 
-    // Restart the nodes that requested it
-    for index in 1..nodes.len() {
-        nodes[index] = TestNode::builder(&network).config(config.clone()).create();
-        poll_all(&mut nodes[..(index + 1)], &mut []);
-    }
+    poll_all(&mut nodes, &mut []);
 
-    verify_invariant_for_all_nodes(&nodes);
+    expect_next_event!(nodes[0], Event::RestartRequired);
 }

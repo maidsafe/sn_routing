@@ -15,15 +15,15 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-
-use super::crust::{ConnectionInfoResult, CrustEventSender, Event, PeerId, PrivConnectionInfo,
-                   PubConnectionInfo};
+use super::crust::{ConnectionInfoResult, CrustEventSender, CrustUser, Event, PeerId,
+                   PrivConnectionInfo, PubConnectionInfo};
 use maidsafe_utilities::SeededRng;
 use rand::{Rng, XorShiftRng};
 use rust_sodium;
 use std::cell::RefCell;
 use std::cmp;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::hash_map::Entry;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::rc::{Rc, Weak};
 
@@ -33,6 +33,7 @@ pub struct Network(Rc<RefCell<NetworkImpl>>);
 
 pub struct NetworkImpl {
     services: HashMap<Endpoint, Weak<RefCell<ServiceImpl>>>,
+    min_section_size: usize,
     next_endpoint: usize,
     queue: HashMap<(Endpoint, Endpoint), VecDeque<Packet>>,
     blocked_connections: HashSet<(Endpoint, Endpoint)>,
@@ -41,7 +42,7 @@ pub struct NetworkImpl {
 
 impl Network {
     /// Create new mock Network.
-    pub fn new(optional_seed: Option<[u32; 4]>) -> Self {
+    pub fn new(min_section_size: usize, optional_seed: Option<[u32; 4]>) -> Self {
         let mut rng = if let Some(seed) = optional_seed {
             SeededRng::from_seed(seed)
         } else {
@@ -50,6 +51,7 @@ impl Network {
         unwrap!(rust_sodium::init_with_rng(&mut rng));
         Network(Rc::new(RefCell::new(NetworkImpl {
             services: HashMap::new(),
+            min_section_size: min_section_size,
             next_endpoint: 0,
             queue: HashMap::new(),
             blocked_connections: HashSet::new(),
@@ -66,12 +68,20 @@ impl Network {
         let endpoint = self.gen_endpoint(opt_endpoint);
 
         let handle = ServiceHandle::new(self.clone(), config, endpoint);
-        let _ = self.0
+        if self.0
             .borrow_mut()
             .services
-            .insert(endpoint, Rc::downgrade(&handle.0));
+            .insert(endpoint, Rc::downgrade(&handle.0))
+            .is_some() {
+            debug!("Tried to insert duplicate service handle ");
+        }
 
         handle
+    }
+
+    /// Get min_section_size
+    pub fn min_section_size(&self) -> usize {
+        self.0.borrow().min_section_size
     }
 
     /// Generate unique Endpoint
@@ -118,7 +128,7 @@ impl Network {
             .push_back(packet);
     }
 
-    // Drop any pending messages on a specific route (does not automatically
+    // Drops any pending messages on a specific route (does not automatically
     // drop packets going the other way).
     fn drop_pending(&self, sender: Endpoint, receiver: Endpoint) {
         if let Some(deque) = self.0
@@ -127,6 +137,11 @@ impl Network {
             .get_mut(&(sender, receiver)) {
             deque.clear();
         }
+    }
+
+    // Drops all pending messages across the entire network.
+    fn drop_all_pending(&self) {
+        self.0.borrow_mut().queue.clear();
     }
 
     fn pop_packet(&self) -> Option<(Endpoint, Endpoint, Packet)> {
@@ -140,9 +155,12 @@ impl Network {
         let result = network_impl.queue
             .get_mut(&(sender, receiver))
             .and_then(|packets| packets.pop_front().map(|packet| (sender, receiver, packet)));
-        if result.is_some() &&
-           network_impl.queue.get(&(sender, receiver)).map_or(false, VecDeque::is_empty) {
-            let _ = network_impl.queue.remove(&(sender, receiver));
+        if result.is_some() {
+            if let Entry::Occupied(entry) = network_impl.queue.entry((sender, receiver)) {
+                if entry.get().is_empty() {
+                    let (_key, _value) = entry.remove_entry();
+                }
+            }
         }
         result
     }
@@ -165,12 +183,6 @@ impl Network {
 
     fn find_service(&self, endpoint: Endpoint) -> Option<Rc<RefCell<ServiceImpl>>> {
         self.0.borrow().services.get(&endpoint).and_then(|s| s.upgrade())
-    }
-}
-
-impl Default for Network {
-    fn default() -> Network {
-        Network::new(None)
     }
 }
 
@@ -237,7 +249,7 @@ impl ServiceImpl {
         self.start(event_sender)
     }
 
-    pub fn start_bootstrap(&mut self, blacklist: HashSet<SocketAddr>) {
+    pub fn start_bootstrap(&mut self, blacklist: HashSet<SocketAddr>, _: CrustUser) {
         let mut pending_bootstraps = 0;
 
         for endpoint in &self.config.hard_coded_contacts {
@@ -273,7 +285,10 @@ impl ServiceImpl {
     }
 
     pub fn whitelist_peer(&mut self, peer_id: PeerId) {
-        let _ = self.whitelist.insert(peer_id);
+        if !self.whitelist.insert(peer_id) {
+            debug!("Duplicate insert attempt whitelist for peer : {:?}",
+                   peer_id);
+        }
     }
 
     pub fn is_peer_whitelisted(&self, peer_id: &PeerId) -> bool {
@@ -470,6 +485,7 @@ impl ServiceImpl {
     }
 
     pub fn disconnect_all(&mut self) {
+        self.network.drop_all_pending();
         let endpoints = self.connections
             .drain(..)
             .map(|(_, ep)| ep)

@@ -31,19 +31,16 @@
 #![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
          missing_debug_implementations, variant_size_differences)]
 
-#![cfg_attr(feature="clippy", feature(plugin))]
-#![cfg_attr(feature="clippy", plugin(clippy))]
-#![cfg_attr(feature="clippy", deny(clippy, unicode_not_nfc, wrong_pub_self_convention,
-                                   option_unwrap_used))]
-#![cfg_attr(feature="clippy", allow(use_debug))]
-
 // extern crate itertools;
-// #[macro_use]
-// extern crate log;
+#[macro_use]
+extern crate log;
+#[cfg_attr(feature="cargo-clippy", allow(useless_attribute))]
+#[allow(unused_extern_crates)]
+extern crate maidsafe_utilities;
 // extern crate rand;
 // extern crate routing;
-// #[macro_use]
-// extern crate unwrap;
+#[macro_use]
+extern crate unwrap;
 
 // This module is a driver and defines macros. See `mock_crust` modules for
 // tests.
@@ -54,7 +51,7 @@
 macro_rules! expect_next_event {
     ($node:expr, $pattern:pat) => {
         loop {
-            match $node.event_rx.try_recv() {
+            match $node.inner.try_next_ev() {
                 Ok($pattern) => break,
                 Ok(Event::Tick) => (),
                 other => panic!("Expected Ok({}) at {}, got {:?}",
@@ -75,7 +72,7 @@ macro_rules! expect_any_event {
     };
     ($node:expr, $pattern:pat if $guard:expr) => {
         loop {
-            match $node.event_rx.try_recv() {
+            match $node.inner.try_next_ev() {
                 Ok($pattern) if $guard => break,
                 Ok(_) => (),
                 other => panic!("Expected Ok({}) at {}, got {:?}",
@@ -89,15 +86,15 @@ macro_rules! expect_any_event {
 
 /// Expects that the node raised no event, panics otherwise (ignores ticks).
 macro_rules! expect_no_event {
-    ($node:expr) => {
-        match $node.event_rx.try_recv() {
+    ($node:expr) => {{
+        match $node.inner.try_next_ev() {
             Ok(Event::Tick) => (),
             Err(mpsc::TryRecvError::Empty) => (),
             other => panic!("Expected no event at {}, got {:?}",
                 unwrap!($node.inner.name()),
                 other),
         }
-    }
+    }}
 }
 
 mod mock_crust;

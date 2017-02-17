@@ -117,7 +117,6 @@ mod implementation {
         use super::*;
         use action::Action;
         use maidsafe_utilities::event_sender::MaidSafeEventCategory;
-
         use std::sync::mpsc;
         use std::thread;
         use std::time::{Duration, Instant};

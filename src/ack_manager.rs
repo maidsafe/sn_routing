@@ -16,9 +16,10 @@
 // relating to use of the SAFE Network Software.
 
 use error::RoutingError;
-use maidsafe_utilities::{self, serialisation};
+use maidsafe_utilities::serialisation;
 use message_filter::MessageFilter;
 use messages::RoutingMessage;
+use sha3;
 use std::collections::HashMap;
 use std::fmt;
 use std::time::Duration;
@@ -43,7 +44,9 @@ pub struct AckManager {
 
 /// An identifier for a waiting-to-be-acknowledged message (a hash of the message).
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, RustcDecodable, RustcEncodable)]
-pub struct Ack(u64);
+pub struct Ack {
+    m_hash: [u8; 32],
+}
 
 impl AckManager {
     /// Creates a new manager, with empty lists.
@@ -56,10 +59,11 @@ impl AckManager {
         }
     }
 
-    // Handles a received ack (removes the corresponding message from the list of
-    // pending ones, and remembers that we have received this ack).
+    /// Handles a received ack (removes the corresponding message from the list of
+    /// pending ones, and remembers that we have received this ack).
     pub fn receive(&mut self, ack: Ack) {
-        let _ = self.pending.remove(&ack);
+        let _ack = self.pending.remove(&ack);
+        // TODO - Should this insert an ack we were not expecting ??
         let _ = self.received.insert(&ack);
     }
 
@@ -119,20 +123,18 @@ impl AckManager {
 }
 
 impl Ack {
+    /// Compute an `Ack` from a message.
     pub fn compute(routing_msg: &RoutingMessage) -> Result<Ack, RoutingError> {
         let hash_msg = serialisation::serialise(routing_msg)?;
-        Ok(Ack(maidsafe_utilities::big_endian_sip_hash(&hash_msg)))
-    }
-}
-
-impl fmt::Display for Ack {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(formatter, "{:016x}", self.0)
+        Ok(Ack { m_hash: sha3::hash(&hash_msg) })
     }
 }
 
 impl fmt::Debug for Ack {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(formatter, "Ack({:016x})", self.0)
+        write!(formatter,
+               "Ack({:02x}{:02x}..)",
+               self.m_hash[0],
+               self.m_hash[1])
     }
 }

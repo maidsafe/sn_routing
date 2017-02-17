@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 mod bootstrapping;
-mod common;
+pub mod common;
 mod client;
 mod node;
 

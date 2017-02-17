@@ -15,11 +15,10 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use authority::Authority;
 use crust::Config;
 use error::InterfaceError;
 use messages::{Request, UserMessage};
-use std::collections::HashSet;
+use routing_table::Authority;
 use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::Sender;
 use xor_name::XorName;
@@ -33,21 +32,17 @@ use xor_name::XorName;
 #[derive(Clone)]
 pub enum Action {
     NodeSendMessage {
-        src: Authority,
-        dst: Authority,
+        src: Authority<XorName>,
+        dst: Authority<XorName>,
         content: UserMessage,
         priority: u8,
         result_tx: Sender<Result<(), InterfaceError>>,
     },
     ClientSendRequest {
         content: Request,
-        dst: Authority,
+        dst: Authority<XorName>,
         priority: u8,
         result_tx: Sender<Result<(), InterfaceError>>,
-    },
-    CloseGroup {
-        name: XorName,
-        result_tx: Sender<Option<HashSet<XorName>>>,
     },
     Name { result_tx: Sender<XorName> },
     Config { result_tx: Sender<Config> },
@@ -69,7 +64,6 @@ impl Debug for Action {
                        content,
                        dst)
             }
-            Action::CloseGroup { .. } => write!(formatter, "Action::CloseGroup"),
             Action::Name { .. } => write!(formatter, "Action::Name"),
             Action::Config { .. } => write!(formatter, "Action::Config"),
             Action::Timeout(token) => write!(formatter, "Action::Timeout({})", token),

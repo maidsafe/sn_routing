@@ -25,7 +25,6 @@ use std::collections::{HashMap, HashSet};
 use std::collections::hash_map::Entry;
 use std::time::Duration;
 
-
 /// The maximum number of pairs of nodes that this node will act as a tunnel for.
 const MAX_TUNNEL_CLIENT_PAIRS: usize = 40;
 

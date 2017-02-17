@@ -15,9 +15,9 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use authority::Authority;
 use messages::{Request, Response};
-use routing_table::Prefix;
+use routing_table::{Prefix, RoutingTable};
+use routing_table::Authority;
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
 
@@ -26,8 +26,8 @@ use xor_name::XorName;
 /// These are sent by routing to the library's user. It allows the user to handle requests and
 /// responses, and to react to changes in the network.
 ///
-/// `Request` and `Response` events from group authorities are only raised once the quorum has been
-/// reached, i. e. enough members of the group have sent the same message.
+/// `Request` and `Response` events from section authorities are only raised once the quorum has
+/// been reached, i.e. enough members of the section have sent the same message.
 #[derive(Clone, Eq, PartialEq)]
 pub enum Event {
     /// Received a request message.
@@ -35,28 +35,28 @@ pub enum Event {
         /// The request message.
         request: Request,
         /// The source authority that sent the request.
-        src: Authority,
+        src: Authority<XorName>,
         /// The destination authority that receives the request.
-        dst: Authority,
+        dst: Authority<XorName>,
     },
     /// Received a response message.
     Response {
         /// The response message.
         response: Response,
         /// The source authority that sent the response.
-        src: Authority,
+        src: Authority<XorName>,
         /// The destination authority that receives the response.
-        dst: Authority,
+        dst: Authority<XorName>,
     },
-    /// A new node joined the network and may be a member of group authorities we also belong to.
-    NodeAdded(XorName),
-    /// A node left the network and may have been a member of group authorities we also belong to.
-    NodeLost(XorName),
-    /// Our own group has been split, resulting in the included `Prefix` for our new group.
-    GroupSplit(Prefix<XorName>),
-    /// Our own group requires merged with others, resulting in the included `Prefix` for our new
-    /// group.
-    GroupMerge(Prefix<XorName>),
+    /// A node has connected to us.
+    NodeAdded(XorName, RoutingTable<XorName>),
+    /// A node has disconnected from us.
+    NodeLost(XorName, RoutingTable<XorName>),
+    /// Our own section has been split, resulting in the included `Prefix` for our new section.
+    SectionSplit(Prefix<XorName>),
+    /// Our own section requires merged with others, resulting in the included `Prefix` for our new
+    /// section.
+    SectionMerge(Prefix<XorName>),
     /// The client has successfully connected to a proxy node on the network.
     Connected,
     /// Disconnected or failed to connect - restart required.
@@ -85,16 +85,20 @@ impl Debug for Event {
                        src,
                        dst)
             }
-            Event::NodeAdded(ref node_name) => {
+            Event::NodeAdded(ref node_name, _) => {
                 write!(formatter,
                        "Event::NodeAdded({:?}, routing_table)",
                        node_name)
             }
-            Event::NodeLost(ref node_name) => {
+            Event::NodeLost(ref node_name, _) => {
                 write!(formatter, "Event::NodeLost({:?}, routing_table)", node_name)
             }
-            Event::GroupSplit(ref prefix) => write!(formatter, "Event::GroupSplit({:?})", prefix),
-            Event::GroupMerge(ref prefix) => write!(formatter, "Event::GroupMerge({:?})", prefix),
+            Event::SectionSplit(ref prefix) => {
+                write!(formatter, "Event::SectionSplit({:?})", prefix)
+            }
+            Event::SectionMerge(ref prefix) => {
+                write!(formatter, "Event::SectionMerge({:?})", prefix)
+            }
             Event::Connected => write!(formatter, "Event::Connected"),
             Event::RestartRequired => write!(formatter, "Event::RestartRequired"),
             Event::Terminate => write!(formatter, "Event::Terminate"),

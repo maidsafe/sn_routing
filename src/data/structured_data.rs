@@ -146,8 +146,10 @@ impl StructuredData {
         }
         let data = self.data_to_sign()?;
         let sig = sign::sign_detached(&data, &keys.1);
-        let _ = self.signatures.insert(keys.0, sig);
-        Ok(((self.owners.len() / 2) + 1).saturating_sub(self.signatures.len()))
+        if self.signatures.insert(keys.0, sig).is_none() {
+            return Ok(((self.owners.len() / 2) + 1).saturating_sub(self.signatures.len()));
+        }
+        Err(RoutingError::FailedSignature)
     }
 
     /// Overwrite any existing signatures with the new signatures provided.
@@ -234,7 +236,7 @@ mod tests {
                                                 &data,
                                                 structured_data.get_signatures())
                     .is_err());
-                assert_eq!(structured_data.add_signature(&keys).unwrap(), 0);
+                assert!(structured_data.add_signature(&keys).is_ok());
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
                                                 structured_data.get_signatures())
@@ -253,7 +255,7 @@ mod tests {
 
         match StructuredData::new(0, rand::random(), 0, vec![], owner_keys.clone()) {
             Ok(mut structured_data) => {
-                assert_eq!(structured_data.add_signature(&other_keys).unwrap(), 0);
+                assert!(structured_data.add_signature(&other_keys).is_ok());
                 let data = match structured_data.data_to_sign() {
                     Ok(data) => data,
                     Err(error) => panic!("Error: {:?}", error),
@@ -279,11 +281,11 @@ mod tests {
 
         let mut sd = unwrap!(StructuredData::new(0, name, 0, vec![], owner));
         let mut sd_new = unwrap!(StructuredData::new(0, name, 1, vec![], new_owner.clone()));
-        assert_eq!(sd_new.add_signature(&keys).unwrap(), 0);
+        assert!(sd_new.add_signature(&keys).is_ok());
         assert!(sd.replace_with_other(sd_new).is_ok());
 
         let mut sd_fail = unwrap!(StructuredData::new(0, name, 2, vec![], new_owner));
-        assert_eq!(sd_fail.add_signature(&keys).unwrap(), 0);
+        assert!(sd_fail.add_signature(&keys).is_ok());
         assert!(sd.replace_with_other(sd_fail).is_err());
     }
 }

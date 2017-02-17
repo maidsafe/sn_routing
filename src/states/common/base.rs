@@ -17,10 +17,11 @@
 
 use crust::{PeerId, Service};
 use error::RoutingError;
-use event::Event;
 use id::FullId;
 use maidsafe_utilities::serialisation;
 use messages::Message;
+use outbox::EventBox;
+use routing_table::Authority;
 use state_machine::Transition;
 use stats::Stats;
 use std::fmt::Debug;
@@ -31,14 +32,18 @@ pub trait Base: Debug {
     fn crust_service(&self) -> &Service;
     fn full_id(&self) -> &FullId;
     fn stats(&mut self) -> &mut Stats;
-    fn send_event(&self, event: Event);
+    fn in_authority(&self, auth: &Authority<XorName>) -> bool;
 
-    fn handle_lost_peer(&mut self, _peer_id: PeerId) -> Transition {
+    fn handle_lost_peer(&mut self, _peer_id: PeerId, _outbox: &mut EventBox) -> Transition {
         Transition::Stay
     }
 
     fn name(&self) -> &XorName {
         self.full_id().public_id().name()
+    }
+
+    fn close_group(&self, _name: XorName, _count: usize) -> Option<Vec<XorName>> {
+        None
     }
 
     fn send_message(&mut self, peer_id: &PeerId, message: Message) -> Result<(), RoutingError> {
@@ -55,27 +60,21 @@ pub trait Base: Debug {
             Ok(bytes) => bytes,
         };
 
-        self.send_or_drop(peer_id, raw_bytes, priority)
+        self.send_or_drop(peer_id, raw_bytes, priority);
+        Ok(())
     }
 
     // Sends the given `bytes` to the peer with the given Crust `PeerId`. If that results in an
     // error, it disconnects from the peer.
-    fn send_or_drop(&mut self,
-                    peer_id: &PeerId,
-                    bytes: Vec<u8>,
-                    priority: u8)
-                    -> Result<(), RoutingError> {
+    fn send_or_drop(&mut self, peer_id: &PeerId, bytes: Vec<u8>, priority: u8) {
         self.stats().count_bytes(bytes.len());
 
-        if let Err(err) = self.crust_service().send(*peer_id, bytes.clone(), priority) {
-            info!("{:?} Connection to {:?} failed. Calling crust::Service::disconnect.",
-                  self,
-                  peer_id);
-            self.crust_service().disconnect(*peer_id);
-            let _ = self.handle_lost_peer(*peer_id);
-            return Err(err.into());
+        if let Err(err) = self.crust_service().send(*peer_id, bytes, priority) {
+            info!("{:?} Connection to {:?} failed: {:?}", self, peer_id, err);
+            // TODO: Handle lost peer, but avoid a cascade of sending messages and handling more
+            //       lost peers: https://maidsafe.atlassian.net/browse/MAID-1924
+            // self.crust_service().disconnect(*peer_id);
+            // return self.handle_lost_peer(*peer_id).map(|_| Err(err.into()));
         }
-
-        Ok(())
     }
 }

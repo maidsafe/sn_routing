@@ -138,6 +138,10 @@ impl Xorable for XorName {
     fn set_remaining(self, n: usize, val: bool) -> Self {
         XorName(self.0.set_remaining(n, val))
     }
+
+    fn from_hash<T: AsRef<[u8]>>(hash: T) -> Self {
+        XorName(Xorable::from_hash(hash))
+    }
 }
 
 impl fmt::Debug for XorName {
@@ -199,6 +203,16 @@ impl ops::Index<ops::RangeFull> for XorName {
     }
 }
 
+impl ops::Not for XorName {
+    type Output = XorName;
+    fn not(mut self) -> XorName {
+        for byte in &mut self.0 {
+            *byte = !*byte;
+        }
+        self
+    }
+}
+
 impl Encodable for XorName {
     fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), E::Error> {
         encoder.emit_seq(XOR_NAME_LEN, |encoder| {
@@ -247,7 +261,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(feature="clippy", allow(eq_op))]
+    #[cfg_attr(feature="cargo-clippy", allow(eq_op))]
     fn xor_name_ord() {
         let type1: XorName = XorName([1u8; XOR_NAME_LEN]);
         let type2: XorName = XorName([2u8; XOR_NAME_LEN]);

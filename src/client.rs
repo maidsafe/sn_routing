@@ -17,7 +17,6 @@
 
 use BootstrapConfig;
 use action::Action;
-use authority::Authority;
 use cache::NullCache;
 use crust::Config;
 use data::{EntryAction, ImmutableData, MutableData, PermissionSet, User, Value};
@@ -26,7 +25,8 @@ use event::Event;
 use id::FullId;
 #[cfg(not(feature = "use-mock-crust"))]
 use maidsafe_utilities::thread::{self, Joiner};
-use messages::Request;
+use outbox::{EventBox, EventBuf};
+use routing_table::Authority;
 #[cfg(not(feature = "use-mock-crust"))]
 use rust_sodium;
 use rust_sodium::crypto::sign;
@@ -36,22 +36,27 @@ use states;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::sync::mpsc::{Receiver, Sender, channel};
-use types::{MessageId, RoutingActionSender};
+#[cfg(feature = "use-mock-crust")]
+use std::sync::mpsc::TryRecvError;
+use types::MessageId;
+use types::RoutingActionSender;
 use xor_name::XorName;
 
 /// Interface for sending and receiving messages to and from a network of nodes in the role of a
 /// client.
 ///
 /// A client is connected to the network via one or more nodes. Messages are never routed via a
-/// client, and a client cannot be part of a group authority.
-#[allow(unused)] // <-- TODO: remove this
+/// client, and a client cannot be part of a section authority.
 pub struct Client {
-    interface_result_tx: Sender<Result<(), InterfaceError>>,
-    interface_result_rx: Receiver<Result<(), InterfaceError>>,
+    _interface_result_tx: Sender<Result<(), InterfaceError>>,
+    _interface_result_rx: Receiver<Result<(), InterfaceError>>,
     action_sender: RoutingActionSender,
 
     #[cfg(feature = "use-mock-crust")]
     machine: RefCell<StateMachine>,
+
+    #[cfg(feature = "use-mock-crust")]
+    event_buffer: RefCell<EventBuf>,
 
     #[cfg(not(feature = "use-mock-crust"))]
     _raii_joiner: Joiner,
@@ -66,50 +71,69 @@ impl Client {
     /// terminated.
     ///
     /// Keys will be exchanged with the `ClientAuthority` so that communication with the network is
-    /// cryptographically secure and uses group consensus. The restriction for the client name
+    /// cryptographically secure and uses section consensus. The restriction for the client name
     /// exists to ensure that the client cannot choose its `ClientAuthority`.
     #[cfg(not(feature = "use-mock-crust"))]
     pub fn new(event_sender: Sender<Event>,
                keys: Option<FullId>,
                config: Option<Config>)
                -> Result<Client, RoutingError> {
+        // TODO - replace this hard-coded value
+        let min_section_size = 8;
         rust_sodium::init(); // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing with a restriction to become a full node
-        let (action_sender, mut machine) = Self::make_state_machine(event_sender, keys, config);
+        let mut event_buffer = EventBuf::new();
+        let (action_sender, mut machine) =
+            Self::make_state_machine(keys, min_section_size, &mut event_buffer, config);
+
+        for ev in event_buffer.take_all() {
+            event_sender.send(ev)?;
+        }
+
         let (tx, rx) = channel();
 
-        let raii_joiner = thread::named("Client thread", move || machine.run());
+        let raii_joiner = thread::named("Client thread", move || {
+            // Gather events from the state machine's event loop and proxy them over the
+            // event_sender channel.
+            while Ok(()) == machine.step(&mut event_buffer) {
+                for ev in event_buffer.take_all() {
+                    // If sending the event fails, terminate this thread.
+                    if event_sender.send(ev).is_err() {
+                        return;
+                    }
+                }
+            }
+            // When there are no more events to process, terminate this thread.
+        });
 
         Ok(Client {
-            interface_result_tx: tx,
-            interface_result_rx: rx,
+            _interface_result_tx: tx,
+            _interface_result_rx: rx,
             action_sender: action_sender,
             _raii_joiner: raii_joiner,
         })
     }
 
-    fn make_state_machine(event_sender: Sender<Event>,
-                          keys: Option<FullId>,
+    fn make_state_machine(keys: Option<FullId>,
+                          min_section_size: usize,
+                          outbox: &mut EventBox,
                           config: Option<Config>)
                           -> (RoutingActionSender, StateMachine) {
         let cache = Box::new(NullCache);
         let full_id = keys.unwrap_or_else(FullId::new);
 
-        StateMachine::new(move |crust_service, timer| {
-            State::Bootstrapping(states::Bootstrapping::new(cache,
-                                                            true,
-                                                            crust_service,
-                                                            event_sender,
-                                                            full_id,
-                                                            timer))
+        StateMachine::new(move |crust_service, timer, _outbox2| {
+            states::Bootstrapping::new(cache, true, crust_service, full_id, min_section_size, timer)
+                .map_or(State::Terminated, State::Bootstrapping)
         },
+                          outbox,
                           config)
     }
 
     /// Gets MAID account information.
     pub fn get_account_info(&mut self,
-                            _dst: Authority,
+                            _dst: Authority<XorName>,
                             _msg_id: MessageId)
                             -> Result<(), InterfaceError> {
         unimplemented!()
@@ -118,27 +142,27 @@ impl Client {
     /// Puts ImmutableData to the network
     #[allow(unused)] // <-- TODO: remove this
     pub fn put_idata(&mut self,
-                     dst: Authority,
+                     dst: Authority<XorName>,
                      data: ImmutableData,
                      msg_id: MessageId)
                      -> Result<(), InterfaceError> {
-        unimplemented!();
+        unimplemented!()
     }
 
     /// Fetches ImmutableData from the network by the given name.
     #[allow(unused)] // <-- TODO: remove this
     pub fn get_idata(&mut self,
-                     dst: Authority,
+                     dst: Authority<XorName>,
                      name: XorName,
                      msg_id: MessageId)
                      -> Result<(), InterfaceError> {
-        unimplemented!();
+        unimplemented!()
     }
 
     /// Fetches a latest version number of the provided MutableData
     #[allow(unused)] // <-- TODO: remove this
     pub fn get_mdata_version(&self,
-                             dst: Authority,
+                             dst: Authority<XorName>,
                              name: XorName,
                              tag: u64,
                              msg_id: MessageId)
@@ -149,7 +173,7 @@ impl Client {
     /// Fetches a list of entries (keys + values) of the provided MutableData
     #[allow(unused)] // <-- TODO: remove this
     pub fn list_mdata_entries(&self,
-                              dst: Authority,
+                              dst: Authority<XorName>,
                               name: XorName,
                               tag: u64,
                               msg_id: MessageId)
@@ -160,7 +184,7 @@ impl Client {
     /// Fetches a list of keys of the provided MutableData
     #[allow(unused)] // <-- TODO: remove this
     pub fn list_mdata_keys(&self,
-                           dst: Authority,
+                           dst: Authority<XorName>,
                            name: XorName,
                            tag: u64,
                            msg_id: MessageId)
@@ -171,54 +195,54 @@ impl Client {
     /// Fetches a list of values of the provided MutableData
     #[allow(unused)] // <-- TODO: remove this
     pub fn list_mdata_values(&self,
-                             dst: Authority,
+                             dst: Authority<XorName>,
                              name: XorName,
                              tag: u64,
                              msg_id: MessageId)
                              -> Result<(), InterfaceError> {
-        unimplemented!();
+        unimplemented!()
     }
 
     /// Fetches a single value from the provided MutableData by the given key
     #[allow(unused)] // <-- TODO: remove this
     pub fn get_mdata_value(&self,
-                           dst: Authority,
+                           dst: Authority<XorName>,
                            name: XorName,
                            tag: u64,
                            key: Vec<u8>,
                            msg_id: MessageId)
                            -> Result<(), InterfaceError> {
-        unimplemented!();
+        unimplemented!()
     }
 
     /// Creates a new `MutableData` in the network
     #[allow(unused)] // <-- TODO: remove this
     pub fn put_mdata(&self,
-                     dst: Authority,
+                     dst: Authority<XorName>,
                      data: MutableData,
                      msg_id: MessageId,
                      requester: sign::PublicKey)
                      -> Result<(), InterfaceError> {
-        unimplemented!();
+        unimplemented!()
     }
 
     /// Updates `MutableData` entries in bulk
     #[allow(unused)] // <-- TODO: remove this
     pub fn mutate_mdata_entries(&self,
-                                dst: Authority,
+                                dst: Authority<XorName>,
                                 name: XorName,
                                 tag: u64,
                                 actions: BTreeMap<Vec<u8>, EntryAction>,
                                 msg_id: MessageId,
                                 requester: sign::PublicKey)
                                 -> Result<(), InterfaceError> {
-        unimplemented!();
+        unimplemented!()
     }
 
     /// Updates a single entry in the provided MutableData by the given key
     #[allow(unused)] // <-- TODO: remove this
     pub fn update_mdata_value(&self,
-                              dst: Authority,
+                              dst: Authority<XorName>,
                               name: XorName,
                               tag: u64,
                               key: Vec<u8>,
@@ -226,13 +250,13 @@ impl Client {
                               msg_id: MessageId,
                               requester: sign::PublicKey)
                               -> Result<(), InterfaceError> {
-        unimplemented!();
+        unimplemented!()
     }
 
     /// Inserts a new entry (key-value pair) to the provided MutableData
     #[allow(unused)] // <-- TODO: remove this
     pub fn insert_mdata_entry(&self,
-                              dst: Authority,
+                              dst: Authority<XorName>,
                               name: XorName,
                               tag: u64,
                               key: Vec<u8>,
@@ -240,13 +264,13 @@ impl Client {
                               msg_id: MessageId,
                               requester: sign::PublicKey)
                               -> Result<(), InterfaceError> {
-        unimplemented!();
+        unimplemented!()
     }
 
     /// Deletes a single entry from the provided MutableData by the given key
     #[allow(unused)] // <-- TODO: remove this
     pub fn delete_mdata_entry(&self,
-                              dst: Authority,
+                              dst: Authority<XorName>,
                               name: XorName,
                               tag: u64,
                               key: Vec<u8>,
@@ -254,36 +278,36 @@ impl Client {
                               msg_id: MessageId,
                               requester: sign::PublicKey)
                               -> Result<(), InterfaceError> {
-        unimplemented!();
+        unimplemented!()
     }
 
     /// Lists all permissions for a given `MutableData`
     #[allow(unused)] // <-- TODO: remove this
     pub fn list_mdata_permissions(&self,
-                                  dst: Authority,
+                                  dst: Authority<XorName>,
                                   name: XorName,
                                   tag: u64,
                                   msg_id: MessageId)
                                   -> Result<(), InterfaceError> {
-        unimplemented!();
+        unimplemented!()
     }
 
     /// Lists a permission set for a given user
     #[allow(unused)] // <-- TODO: remove this
     pub fn list_mdata_user_permissions(&self,
-                                       dst: Authority,
+                                       dst: Authority<XorName>,
                                        name: XorName,
                                        tag: u64,
                                        user: User,
                                        msg_id: MessageId)
                                        -> Result<(), InterfaceError> {
-        unimplemented!();
+        unimplemented!()
     }
 
     /// Updates or inserts a permission set for a given user
     #[allow(unused)] // <-- TODO: remove this
     pub fn set_mdata_user_permissions(&self,
-                                      dst: Authority,
+                                      dst: Authority<XorName>,
                                       name: XorName,
                                       tag: u64,
                                       user: User,
@@ -292,13 +316,13 @@ impl Client {
                                       msg_id: MessageId,
                                       requester: sign::PublicKey)
                                       -> Result<(), InterfaceError> {
-        unimplemented!();
+        unimplemented!()
     }
 
     /// Deletes a permission set for a given user
     #[allow(unused)] // <-- TODO: remove this
     pub fn del_mdata_user_permissions(&self,
-                                      dst: Authority,
+                                      dst: Authority<XorName>,
                                       name: XorName,
                                       tag: u64,
                                       user: User,
@@ -306,13 +330,13 @@ impl Client {
                                       msg_id: MessageId,
                                       requester: sign::PublicKey)
                                       -> Result<(), InterfaceError> {
-        unimplemented!();
+        unimplemented!()
     }
 
     /// Sends an ownership transfer request
     #[allow(unused)] // <-- TODO: remove this
     pub fn change_mdata_owner(&self,
-                              dst: Authority,
+                              dst: Authority<XorName>,
                               name: XorName,
                               tag: u64,
                               new_owner: sign::PublicKey,
@@ -320,35 +344,35 @@ impl Client {
                               message_id: MessageId,
                               requester: sign::PublicKey)
                               -> Result<(), InterfaceError> {
-        unimplemented!();
+        unimplemented!()
     }
 
     /// Fetches a list of authorised keys and version in MaidManager
     pub fn list_auth_keys_and_version(&self,
-                                      _dst: Authority,
+                                      _dst: Authority<XorName>,
                                       _message_id: MessageId)
                                       -> Result<(), InterfaceError> {
-        unimplemented!();
+        unimplemented!()
     }
 
     /// Adds a new authorised key to MaidManager
     pub fn ins_auth_key(&self,
-                        _dst: Authority,
+                        _dst: Authority<XorName>,
                         _key: sign::PublicKey,
                         _version: u64,
                         _message_id: MessageId)
                         -> Result<(), InterfaceError> {
-        unimplemented!();
+        unimplemented!()
     }
 
     /// Removes an authorised key from MaidManager
     pub fn del_auth_key(&self,
-                        _dst: Authority,
+                        _dst: Authority<XorName>,
                         _key: sign::PublicKey,
                         _version: u64,
                         _message_id: MessageId)
                         -> Result<(), InterfaceError> {
-        unimplemented!();
+        unimplemented!()
     }
 
     /// Returns the name of this node.
@@ -375,12 +399,13 @@ impl Client {
         rx.recv().unwrap_or_else(|_| BootstrapConfig::default())
     }
 
-    #[allow(unused)] // <-- TODO: remove this
+    // TODO: uncomment
+    /*
     fn send_action(&self,
-                   content: Request,
-                   dst: Authority,
-                   priority: u8)
-                   -> Result<(), InterfaceError> {
+                    content: Request,
+                    dst: Authority<XorName>,
+                    priority: u8)
+                    -> Result<(), InterfaceError> {
         let action = Action::ClientSendRequest {
             content: content,
             dst: dst,
@@ -391,9 +416,21 @@ impl Client {
         self.action_sender.send(action)?;
         self.receive_action_result(&self.interface_result_rx)?
     }
+    */
 
-    #[cfg(not(feature = "use-mock-crust"))]
+
+
+
+
+
+
+
     fn receive_action_result<T>(&self, rx: &Receiver<T>) -> Result<T, InterfaceError> {
+        // If we're running with mock_crust, then the state machine needs to be stepped
+        // manually in order to process the action we just sent it.
+        #[cfg(feature = "use-mock-crust")]
+        assert!(self.poll());
+
         Ok(rx.recv()?)
     }
 }
@@ -401,25 +438,50 @@ impl Client {
 #[cfg(feature = "use-mock-crust")]
 impl Client {
     /// Create a new `Client` for unit testing.
-    pub fn new(event_sender: Sender<Event>,
-               keys: Option<FullId>,
+    pub fn new(keys: Option<FullId>,
+               min_section_size: usize,
                config: Option<Config>)
                -> Result<Client, RoutingError> {
         // start the handler for routing with a restriction to become a full node
-        let (action_sender, machine) = Self::make_state_machine(event_sender, keys, config);
+        let mut event_buffer = EventBuf::new();
+
+        let (action_sender, machine) =
+            Self::make_state_machine(keys, min_section_size, &mut event_buffer, config);
+
         let (tx, rx) = channel();
 
         Ok(Client {
-            interface_result_tx: tx,
-            interface_result_rx: rx,
+            _interface_result_tx: tx,
+            _interface_result_rx: rx,
             action_sender: action_sender,
             machine: RefCell::new(machine),
+            event_buffer: RefCell::new(event_buffer),
         })
     }
 
-    /// Poll and process all events in this client's `Core` instance.
+    /// Get the next event in a non-blocking manner.
+    ///
+    /// Either reads from the internal buffer, or prompts a state machine step.
+    pub fn try_next_ev(&self) -> Result<Event, TryRecvError> {
+        if let Some(cached_ev) = self.event_buffer.borrow_mut().take_first() {
+            return Ok(cached_ev);
+        }
+        self.try_step()?;
+        self.event_buffer.borrow_mut().take_first().ok_or(TryRecvError::Empty)
+    }
+
+    /// Process all inbound events and buffer any produced events on the internal buffer.
     pub fn poll(&self) -> bool {
-        self.machine.borrow_mut().poll()
+        let mut result = false;
+        while Ok(()) == self.try_step() {
+            result = true;
+        }
+        result
+    }
+
+    /// Step the underlying state machine if there are any events for it to process.
+    fn try_step(&self) -> Result<(), TryRecvError> {
+        self.machine.borrow_mut().try_step(&mut *self.event_buffer.borrow_mut())
     }
 
     /// Resend all unacknowledged messages.
@@ -430,11 +492,6 @@ impl Client {
     /// Are there any unacknowledged messages?
     pub fn has_unacknowledged(&self) -> bool {
         self.machine.borrow().current().has_unacknowledged()
-    }
-
-    fn receive_action_result<T>(&self, rx: &Receiver<T>) -> Result<T, InterfaceError> {
-        while self.poll() {}
-        Ok(rx.recv()?)
     }
 }
 

@@ -18,17 +18,23 @@
 use action::Action;
 use crust::{Config, CrustEventSender, PeerId, Service};
 use crust::Event as CrustEvent;
+use event::Event;
 use id::PublicId;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
+use outbox::EventBox;
 #[cfg(feature = "use-mock-crust")]
-use routing_table::RoutingTable;
+use routing_table::{Prefix, RoutingTable};
+#[cfg(feature = "use-mock-crust")]
+use rust_sodium::crypto::sign;
 use states::{Bootstrapping, Client, Node};
+use states::common::Base;
+#[cfg(feature = "use-mock-crust")]
+use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Formatter};
 use std::mem;
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{self, Receiver, RecvError, TryRecvError};
 use timer::Timer;
 use types::RoutingActionSender;
-#[cfg(feature = "use-mock-crust")]
 use xor_name::XorName;
 
 /// Holds the current state and handles state transitions.
@@ -48,36 +54,58 @@ pub enum State {
 }
 
 impl State {
-    fn handle_action(&mut self, action: Action) -> Transition {
+    pub fn handle_action(&mut self, action: Action, outbox: &mut EventBox) -> Transition {
         match *self {
             State::Bootstrapping(ref mut state) => state.handle_action(action),
             State::Client(ref mut state) => state.handle_action(action),
-            State::Node(ref mut state) => state.handle_action(action),
+            State::Node(ref mut state) => state.handle_action(action, outbox),
             State::Terminated => Transition::Terminate,
         }
     }
 
-    fn handle_crust_event(&mut self, event: CrustEvent) -> Transition {
+    fn handle_crust_event(&mut self, event: CrustEvent, outbox: &mut EventBox) -> Transition {
         match *self {
-            State::Bootstrapping(ref mut state) => state.handle_crust_event(event),
-            State::Client(ref mut state) => state.handle_crust_event(event),
-            State::Node(ref mut state) => state.handle_crust_event(event),
+            State::Bootstrapping(ref mut state) => state.handle_crust_event(event, outbox),
+            State::Client(ref mut state) => state.handle_crust_event(event, outbox),
+            State::Node(ref mut state) => state.handle_crust_event(event, outbox),
             State::Terminated => Transition::Terminate,
         }
     }
 
-    fn into_bootstrapped(self, proxy_peer_id: PeerId, proxy_public_id: PublicId) -> Self {
+    fn into_bootstrapped(self,
+                         proxy_peer_id: PeerId,
+                         proxy_public_id: PublicId,
+                         outbox: &mut EventBox)
+                         -> Self {
         match self {
             State::Bootstrapping(state) => {
                 if state.client_restriction() {
-                    State::Client(state.into_client(proxy_peer_id, proxy_public_id))
+                    State::Client(state.into_client(proxy_peer_id, proxy_public_id, outbox))
                 } else if let Some(state) = state.into_node(proxy_peer_id, proxy_public_id) {
                     State::Node(state)
                 } else {
+                    outbox.send_event(Event::RestartRequired);
                     State::Terminated
                 }
             }
             _ => unreachable!(),
+        }
+    }
+
+    fn name(&self) -> Option<XorName> {
+        self.base_state().map(|state| *state.name())
+    }
+
+    fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
+        self.base_state().and_then(|state| state.close_group(name, count))
+    }
+
+    fn base_state(&self) -> Option<&Base> {
+        match *self {
+            State::Node(ref node) => Some(node),
+            State::Bootstrapping(ref bootstrapping) => Some(bootstrapping),
+            State::Client(ref client) => Some(client),
+            State::Terminated => None,
         }
     }
 }
@@ -113,10 +141,10 @@ impl State {
         }
     }
 
-    pub fn routing_table(&self) -> &RoutingTable<XorName> {
+    pub fn routing_table(&self) -> Option<&RoutingTable<XorName>> {
         match *self {
-            State::Node(ref state) => state.routing_table(),
-            _ => unreachable!(),
+            State::Node(ref state) => Some(state.routing_table()),
+            _ => None,
         }
     }
 
@@ -128,9 +156,25 @@ impl State {
             State::Terminated => (),
         }
     }
+
+    pub fn section_list_signatures(&self,
+                                   prefix: Prefix<XorName>)
+                                   -> Option<BTreeMap<PublicId, sign::Signature>> {
+        match *self {
+            State::Node(ref state) => state.section_list_signatures(prefix).ok(),
+            _ => None,
+        }
+    }
+
+    pub fn set_next_node_name(&mut self, relocation_name: Option<XorName>) {
+        if let State::Node(ref mut state) = *self {
+            state.set_next_node_name(relocation_name);
+        }
+    }
 }
 
 /// Enum returned from many message handlers
+#[derive(PartialEq, Eq)]
 pub enum Transition {
     // Stay in the current state.
     Stay,
@@ -146,8 +190,11 @@ pub enum Transition {
 impl StateMachine {
     // Construct a new StateMachine by passing a function returning the initial
     // state.
-    pub fn new<F>(init_state: F, config: Option<Config>) -> (RoutingActionSender, Self)
-        where F: FnOnce(Service, Timer) -> State
+    pub fn new<F>(init_state: F,
+                  outbox: &mut EventBox,
+                  config: Option<Config>)
+                  -> (RoutingActionSender, Self)
+        where F: FnOnce(Service, Timer, &mut EventBox) -> State
     {
         let (category_tx, category_rx) = mpsc::channel();
         let (crust_tx, crust_rx) = mpsc::channel();
@@ -172,7 +219,7 @@ impl StateMachine {
 
         let timer = Timer::new(action_sender.clone());
 
-        let state = init_state(crust_service, timer);
+        let state = init_state(crust_service, timer, outbox);
         let is_running = match state {
             State::Terminated => false,
             _ => true,
@@ -200,37 +247,42 @@ impl StateMachine {
         }
     }
 
-    fn handle_event(&mut self, category: MaidSafeEventCategory) {
+    fn handle_event(&mut self, category: MaidSafeEventCategory, outbox: &mut EventBox) {
         let transition = match category {
             MaidSafeEventCategory::Routing => {
                 if let Ok(action) = self.action_rx.try_recv() {
-                    self.state.handle_action(action)
+                    self.state.handle_action(action, outbox)
                 } else {
                     Transition::Terminate
                 }
             }
             MaidSafeEventCategory::Crust => {
                 if let Ok(crust_event) = self.crust_rx.try_recv() {
-                    self.state.handle_crust_event(crust_event)
+                    self.state.handle_crust_event(crust_event, outbox)
                 } else {
                     Transition::Terminate
                 }
             }
         };
 
+        self.apply_transition(transition, outbox)
+    }
+
+    pub fn apply_transition(&mut self, transition: Transition, outbox: &mut EventBox) {
         match transition {
             Transition::Stay => (),
             Transition::IntoBootstrapped { proxy_peer_id, proxy_public_id } => {
                 // Temporarily switch to `Terminated` to allow moving out of the current
                 // state without moving `self`.
                 let prev_state = mem::replace(&mut self.state, State::Terminated);
-                self.state = prev_state.into_bootstrapped(proxy_peer_id, proxy_public_id);
+                self.state = prev_state.into_bootstrapped(proxy_peer_id, proxy_public_id, outbox);
             }
             Transition::Terminate => self.terminate(),
         }
     }
 
     fn terminate(&mut self) {
+        debug!("{:?} Terminating state machine", self);
         self.is_running = false;
     }
 }
@@ -241,35 +293,41 @@ impl Debug for StateMachine {
     }
 }
 
-#[cfg(not(feature = "use-mock-crust"))]
 impl StateMachine {
-    /// Run the event loop for sending and receiving messages. Blocks until
-    /// the core is terminated, so it must be called in a separate thread.
-    pub fn run(&mut self) {
-        while self.is_running {
-            if let Ok(category) = self.category_rx.recv() {
-                self.handle_event(category);
-            } else {
-                break;
-            }
-        }
-    }
-}
-
-#[cfg(feature = "use-mock-crust")]
-impl StateMachine {
-    /// If there is an event in the queue, processes it and returns true.
-    /// otherwise returns false. Never blocks.
-    pub fn poll(&mut self) -> bool {
-        match self.category_rx.try_recv() {
-            Ok(category) => {
-                self.handle_event(category);
-                true
-            }
-            _ => false,
+    /// Block until the machine steps and returns some events.
+    ///
+    /// Errors are permanent failures due to either: state machine termination or
+    /// the permanent closing of the `category_rx` event channel.
+    pub fn step(&mut self, outbox: &mut EventBox) -> Result<(), RecvError> {
+        if self.is_running {
+            let category = self.category_rx.recv()?;
+            self.handle_event(category, outbox);
+            Ok(())
+        } else {
+            Err(RecvError)
         }
     }
 
+    /// Query for a result, or yield: Err(NothingAvailable), Err(Disconnected) or Err(Terminated).
+    pub fn try_step(&mut self, outbox: &mut EventBox) -> Result<(), TryRecvError> {
+        if self.is_running {
+            let category = self.category_rx.try_recv()?;
+            self.handle_event(category, outbox);
+            Ok(())
+        } else {
+            Err(TryRecvError::Disconnected)
+        }
+    }
+
+    pub fn name(&self) -> Option<XorName> {
+        self.state.name()
+    }
+
+    pub fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
+        self.state.close_group(name, count)
+    }
+
+    #[cfg(feature = "use-mock-crust")]
     /// Get reference to the current state.
     pub fn current(&self) -> &State {
         &self.state

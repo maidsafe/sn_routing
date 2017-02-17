@@ -15,21 +15,18 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-// TODO: uncomment and fix
-
-/*
-
-use routing::{Authority, Data, DataIdentifier, Destination, Event, ImmutableData, MIN_GROUP_SIZE,
-              MessageId, Request, Response};
+use routing::{Authority, Data, DataIdentifier, Event, EventStream, ImmutableData, MessageId,
+              Request, Response};
 use routing::mock_crust::Network;
 use super::{create_connected_clients, create_connected_nodes, gen_bytes, gen_immutable_data,
             poll_all};
 
 #[test]
 fn successful_put_request() {
-    let network = Network::new(None);
+    let min_section_size = 8;
+    let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes(&network, MIN_GROUP_SIZE + 1);
+    let mut nodes = create_connected_nodes(&network, min_section_size + 1);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
 
     let dst = Authority::ClientManager(clients[0].name());
@@ -44,10 +41,9 @@ fn successful_put_request() {
     let _ = poll_all(&mut nodes, &mut clients);
 
     let mut request_received_count = 0;
-    let client_dst = Destination::Group(clients[0].name());
-    for node in nodes.iter().filter(|n| n.routing_table().is_recipient(&client_dst)) {
+    for node in nodes.iter_mut().filter(|n| n.is_recipient(&dst)) {
         loop {
-            match node.event_rx.try_recv() {
+            match node.try_next_ev() {
                 Ok(Event::Request { request: Request::Put(ref immutable, ref id), .. }) => {
                     request_received_count += 1;
                     if data == *immutable && message_id == *id {
@@ -61,14 +57,15 @@ fn successful_put_request() {
     }
 
     // TODO: Assert a quorum here.
-    assert!(2 * request_received_count > MIN_GROUP_SIZE);
+    assert!(2 * request_received_count > min_section_size);
 }
 
 #[test]
 fn successful_get_request() {
-    let network = Network::new(None);
+    let min_section_size = 8;
+    let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes(&network, MIN_GROUP_SIZE + 1);
+    let mut nodes = create_connected_nodes(&network, min_section_size + 1);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
 
     let data = gen_immutable_data(&mut rng, 1024);
@@ -85,10 +82,9 @@ fn successful_get_request() {
 
     let mut request_received_count = 0;
 
-    let data_dst = Destination::Group(*data.name());
-    for node in nodes.iter().filter(|n| n.routing_table().is_recipient(&data_dst)) {
+    for node in nodes.iter_mut().filter(|n| n.is_recipient(&dst)) {
         loop {
-            match node.event_rx.try_recv() {
+            match node.try_next_ev() {
                 Ok(Event::Request { request: Request::Get(ref request, id), src, dst }) => {
                     request_received_count += 1;
                     if data_request == *request && message_id == id {
@@ -106,15 +102,15 @@ fn successful_get_request() {
     }
 
     // TODO: Assert a quorum here.
-    assert!(2 * request_received_count > MIN_GROUP_SIZE);
+    assert!(2 * request_received_count > min_section_size);
 
     let _ = poll_all(&mut nodes, &mut clients);
 
     let mut response_received_count = 0;
 
-    for client in clients {
+    for client in &mut clients {
         loop {
-            match client.event_rx.try_recv() {
+            match client.inner.try_next_ev() {
                 Ok(Event::Response {
                     response: Response::GetSuccess(ref immutable, ref id),
                     ..
@@ -135,9 +131,10 @@ fn successful_get_request() {
 
 #[test]
 fn failed_get_request() {
-    let network = Network::new(None);
+    let min_section_size = 8;
+    let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes(&network, MIN_GROUP_SIZE + 1);
+    let mut nodes = create_connected_nodes(&network, min_section_size + 1);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
 
     let data = gen_immutable_data(&mut rng, 1024);
@@ -154,10 +151,9 @@ fn failed_get_request() {
 
     let mut request_received_count = 0;
 
-    let data_dst = Destination::Group(*data.name());
-    for node in nodes.iter().filter(|n| n.routing_table().is_recipient(&data_dst)) {
+    for node in nodes.iter_mut().filter(|n| n.is_recipient(&dst)) {
         loop {
-            match node.event_rx.try_recv() {
+            match node.try_next_ev() {
                 Ok(Event::Request { request: Request::Get(ref data_id, ref id), src, dst }) => {
                     request_received_count += 1;
                     if data_request == *data_id && message_id == *id {
@@ -175,15 +171,15 @@ fn failed_get_request() {
     }
 
     // TODO: Assert a quorum here.
-    assert!(2 * request_received_count > MIN_GROUP_SIZE);
+    assert!(2 * request_received_count > min_section_size);
 
     let _ = poll_all(&mut nodes, &mut clients);
 
     let mut response_received_count = 0;
 
-    for client in clients {
+    for client in &mut clients {
         loop {
-            match client.event_rx.try_recv() {
+            match client.inner.try_next_ev() {
                 Ok(Event::Response { response: Response::GetFailure { ref id, .. }, .. }) => {
                     response_received_count += 1;
                     if message_id == *id {
@@ -201,9 +197,10 @@ fn failed_get_request() {
 
 #[test]
 fn disconnect_on_get_request() {
-    let network = Network::new(None);
+    let min_section_size = 8;
+    let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes(&network, 2 * MIN_GROUP_SIZE);
+    let mut nodes = create_connected_nodes(&network, 2 * min_section_size);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
 
     let immutable_data = ImmutableData::new(gen_bytes(&mut rng, 1024));
@@ -221,10 +218,9 @@ fn disconnect_on_get_request() {
 
     let mut request_received_count = 0;
 
-    let data_dst = Destination::Group(*data.name());
-    for node in nodes.iter().filter(|n| n.routing_table().is_recipient(&data_dst)) {
+    for node in nodes.iter_mut().filter(|n| n.is_recipient(&dst)) {
         loop {
-            match node.event_rx.try_recv() {
+            match node.try_next_ev() {
                 Ok(Event::Request { request: Request::Get(ref request, ref id), src, dst }) => {
                     request_received_count += 1;
                     if data_request == *request && message_id == *id {
@@ -242,18 +238,16 @@ fn disconnect_on_get_request() {
     }
 
     // TODO: Assert a quorum here.
-    assert!(2 * request_received_count > MIN_GROUP_SIZE);
+    assert!(2 * request_received_count > min_section_size);
 
     clients[0].handle.0.borrow_mut().disconnect(&nodes[0].handle.0.borrow().peer_id);
     nodes[0].handle.0.borrow_mut().disconnect(&clients[0].handle.0.borrow().peer_id);
 
     let _ = poll_all(&mut nodes, &mut clients);
 
-    for client in clients {
-        if let Ok(Event::Response { .. }) = client.event_rx.try_recv() {
+    for client in &mut clients {
+        if let Ok(Event::Response { .. }) = client.inner.try_next_ev() {
             panic!("Unexpected Event::Response received");
         }
     }
 }
-
-*/

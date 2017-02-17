@@ -17,8 +17,7 @@
 
 // These tests are almost straight up copied from crust::service::tests
 
-
-use super::crust::{CrustEventSender, Event, Service};
+use super::crust::{CrustEventSender, CrustUser, Event, Service};
 use super::support::{Config, Network};
 use maidsafe_utilities::event_sender::{MaidSafeEventCategory, MaidSafeObserver};
 use std::collections::HashSet;
@@ -53,7 +52,8 @@ macro_rules! expect_event {
 
 #[test]
 fn start_two_services_bootstrap_communicate_exit() {
-    let network = Network::new(None);
+    let min_section_size = 8;
+    let network = Network::new(min_section_size, None);
     let endpoint0 = network.gen_endpoint(None);
     let endpoint1 = network.gen_endpoint(None);
     let config = Config::with_contacts(&[endpoint0, endpoint1]);
@@ -73,7 +73,7 @@ fn start_two_services_bootstrap_communicate_exit() {
 
     let mut service_1 = unwrap!(Service::with_handle(&handle1, event_sender_1));
 
-    unwrap!(service_1.start_bootstrap(HashSet::new()));
+    unwrap!(service_1.start_bootstrap(HashSet::new(), CrustUser::Node));
     let id_0 = expect_event!(event_rx_1, Event::BootstrapConnect(id, _) => id);
     let id_1 = expect_event!(event_rx_0, Event::BootstrapAccept(id) => id);
 
@@ -109,7 +109,8 @@ fn start_two_services_bootstrap_communicate_exit() {
 fn start_two_services_rendezvous_connect() {
     const PREPARE_CI_TOKEN: u32 = 1;
 
-    let network = Network::new(None);
+    let min_section_size = 8;
+    let network = Network::new(min_section_size, None);
     let handle0 = network.new_service_handle(None, None);
     let handle1 = network.new_service_handle(None, None);
 
@@ -167,7 +168,8 @@ fn start_two_services_rendezvous_connect() {
 fn unidirectional_rendezvous_connect() {
     const PREPARE_CI_TOKEN: u32 = 1;
 
-    let network = Network::new(None);
+    let min_section_size = 8;
+    let network = Network::new(min_section_size, None);
     let handle0 = network.new_service_handle(None, None);
     let handle1 = network.new_service_handle(None, None);
 
@@ -199,7 +201,8 @@ fn unidirectional_rendezvous_connect() {
 fn drop() {
     use std::mem;
 
-    let network = Network::new(None);
+    let min_section_size = 8;
+    let network = Network::new(min_section_size, None);
     let handle0 = network.new_service_handle(None, None);
 
     let config = Config::with_contacts(&[handle0.endpoint()]);
@@ -214,7 +217,7 @@ fn drop() {
     expect_event!(event_rx_0, Event::ListenerStarted(_));
 
     let mut service_1 = unwrap!(Service::with_handle(&handle1, event_sender_1));
-    unwrap!(service_1.start_bootstrap(HashSet::new()));
+    unwrap!(service_1.start_bootstrap(HashSet::new(), CrustUser::Node));
 
     let id_0 = expect_event!(event_rx_1, Event::BootstrapConnect(id, _) => id);
     expect_event!(event_rx_0, Event::BootstrapAccept(..));
