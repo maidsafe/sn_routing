@@ -1314,16 +1314,6 @@ impl Node {
                self,
                public_id.name());
         self.add_to_routing_table(&public_id, &peer_id, outbox);
-
-        if let Some(prefix) = self.peer_mgr.routing_table().find_section_prefix(public_id.name()) {
-            self.send_section_list_signature(prefix, None);
-            if prefix == *self.peer_mgr.routing_table().our_prefix() {
-                // if the node joined our section, send signatures for all section lists to it
-                for pfx in self.peer_mgr.routing_table().prefixes() {
-                    self.send_section_list_signature(pfx, Some(*public_id.name()));
-                }
-            }
-        }
     }
 
     fn handle_candidate_identify(&mut self,
@@ -1445,12 +1435,16 @@ impl Node {
             let _ = self.send_direct_message(*peer_id, tunnel_request);
         }
 
-        if let Some(prefix) = self.peer_mgr.routing_table().find_section_prefix(public_id.name()) {
-            self.send_section_list_signature(prefix, None);
-            if prefix == *self.peer_mgr.routing_table().our_prefix() {
-                // if the node joined our section, send signatures for all section lists to it
-                for pfx in self.peer_mgr.routing_table().prefixes() {
-                    self.send_section_list_signature(pfx, Some(*public_id.name()));
+        if self.is_approved {
+            if let Some(prefix) = self.peer_mgr
+                .routing_table()
+                .find_section_prefix(public_id.name()) {
+                self.send_section_list_signature(prefix, None);
+                if prefix == *self.peer_mgr.routing_table().our_prefix() {
+                    // if the node joined our section, send signatures for all section lists to it
+                    for pfx in self.peer_mgr.routing_table().prefixes() {
+                        self.send_section_list_signature(pfx, Some(*public_id.name()));
+                    }
                 }
             }
         }
