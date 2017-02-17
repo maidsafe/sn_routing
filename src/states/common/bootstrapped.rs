@@ -48,13 +48,13 @@ pub trait Bootstrapped: Base {
     ///
     /// This short-circuits when the message is an ack or is not from us; in
     /// these cases no ack is expected and the function returns true.
-    fn add_to_pending_acks(&mut self, signed_msg: &SignedMessage, route: u8) -> bool {
+    fn add_to_pending_acks(&mut self, routing_msg: &RoutingMessage, route: u8) -> bool {
         // If this is not an ack and we're the source, expect to receive an ack for this.
-        if let MessageContent::Ack(..) = signed_msg.routing_message().content {
+        if let MessageContent::Ack(..) = routing_msg.content {
             return true;
         }
 
-        let ack = match Ack::compute(signed_msg.routing_message()) {
+        let ack = match Ack::compute(&routing_msg) {
             Ok(ack) => ack,
             Err(error) => {
                 error!("{:?} Failed to create ack: {:?}", self, error);
@@ -68,7 +68,7 @@ pub trait Bootstrapped: Base {
 
         let token = self.timer().schedule(Duration::from_secs(ACK_TIMEOUT_SECS));
         let unacked_msg = UnacknowledgedMessage {
-            routing_msg: signed_msg.routing_message().clone(),
+            routing_msg: routing_msg.clone(),
             route: route,
             timer_token: token,
         };

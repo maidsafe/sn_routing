@@ -2991,6 +2991,12 @@ impl Bootstrapped for Node {
                    routing_msg);
             return Ok(());
         }
+        if !self.add_to_pending_acks(&routing_msg, route) {
+            debug!("{:?} already received an ack for {:?} - so not resending it.",
+                   self,
+                   routing_msg);
+            return Ok(());
+        }
         use routing_table::Authority::*;
         let sending_names = match routing_msg.src {
             ClientManager(_) | NaeManager(_) | NodeManager(_) | ManagedNode(_) => {
@@ -3024,12 +3030,6 @@ impl Bootstrapped for Node {
         };
 
         let signed_msg = SignedMessage::new(routing_msg, &self.full_id, sending_names)?;
-        if !self.add_to_pending_acks(&signed_msg, route) {
-            debug!("{:?} already received an ack for {:?} - so not resending it.",
-                   self,
-                   signed_msg);
-            return Ok(());
-        }
 
         match self.get_signature_target(&signed_msg.routing_message().src, route) {
             None => Ok(()),
