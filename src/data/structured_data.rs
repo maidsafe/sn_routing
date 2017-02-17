@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use super::{DataIdentifier, NO_OWNER_PUB_KEY};
+use super::NO_OWNER_PUB_KEY;
 use error::RoutingError;
 use maidsafe_utilities::serialisation::{serialise, serialised_size};
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
@@ -82,11 +82,6 @@ impl StructuredData {
     /// Returns the name.
     pub fn name(&self) -> &XorName {
         &self.name
-    }
-
-    /// Returns `DataIdentifier` for this data element.
-    pub fn identifier(&self) -> DataIdentifier {
-        DataIdentifier::Structured(self.name, self.type_tag)
     }
 
     /// Deletes the data by clearing all its fields, if the `other` data would be a valid

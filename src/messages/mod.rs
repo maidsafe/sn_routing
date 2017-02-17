@@ -771,6 +771,7 @@ impl UserMessageCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::MAX_PART_LEN;
     use authority::Authority;
     use data::ImmutableData;
     use id::FullId;

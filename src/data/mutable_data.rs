@@ -15,7 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use super::DataIdentifier;
 use client_error::ClientError;
 use maidsafe_utilities::serialisation::serialised_size;
 use rust_sodium::crypto::sign::PublicKey;
@@ -236,11 +235,6 @@ impl MutableData {
     /// Returns the name.
     pub fn name(&self) -> &XorName {
         &self.name
-    }
-
-    /// Returns `DataIdentifier` for this data element.
-    pub fn identifier(&self) -> DataIdentifier {
-        DataIdentifier::Mutable(self.name)
     }
 
     /// Returns the type tag of this MutableData
