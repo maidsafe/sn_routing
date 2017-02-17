@@ -872,12 +872,12 @@ impl Node {
             (SectionUpdate { prefix, members }, Section(_), PrefixSection(_)) => {
                 self.handle_section_update(prefix, members, outbox)
             }
-            (RoutingTableRequest(msg_id, digest), src @ ManagedNode(_), dst @ PrefixSection(_)) => {
+            (RoutingTableRequest(msg_id, digest), src @ ManagedNode(_), dst @ Section(_)) => {
                 self.handle_rt_req(msg_id, digest, src, dst)
             }
-            (RoutingTableResponse { prefix, members, message_id },
-             PrefixSection(_),
-             ManagedNode(_)) => self.handle_rt_rsp(prefix, members, message_id, outbox),
+            (RoutingTableResponse { prefix, members, message_id }, Section(_), ManagedNode(_)) => {
+                self.handle_rt_rsp(prefix, members, message_id, outbox)
+            }
             (SectionSplit(prefix, joining_node), _, _) => {
                 self.handle_section_split(prefix, joining_node, outbox)
             }
@@ -2319,7 +2319,7 @@ impl Node {
                    utils::format_binary_array(&digest));
 
             let src = Authority::ManagedNode(*self.name());
-            let dst = Authority::PrefixSection(*self.peer_mgr.routing_table().our_prefix());
+            let dst = Authority::Section(*self.name());
             let content = MessageContent::RoutingTableRequest(msg_id, digest);
             if let Err(err) = self.send_routing_message(src, dst, content) {
                 debug!("{:?} Failed to send RoutingTableRequest: {:?}.", self, err);
