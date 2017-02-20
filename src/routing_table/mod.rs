@@ -909,7 +909,14 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         self.they_want_to_merge = false;
         self.merge(&merge_prefix);
         self.add_missing_prefixes();
-        let targets = self.sections.keys().cloned().collect();
+        // The update needs to be sent to all neighbouring sections. However, while those are
+        // merging/splitting, our own section might not agree on their prefixes and the message can
+        // fail to accumulate. So also include results of flipping one bit in the `merge_prefix`.
+        let targets = self.sections
+            .keys()
+            .cloned()
+            .chain((0..merge_prefix.bit_count()).map(|i| merge_prefix.with_flipped_bit(i)))
+            .collect();
         let other_details = OtherMergeDetails {
             prefix: merge_prefix,
             section: self.our_section().clone(),
