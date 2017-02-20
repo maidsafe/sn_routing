@@ -209,13 +209,6 @@ impl MutableData {
                data: BTreeMap<Vec<u8>, Value>,
                owners: BTreeSet<PublicKey>)
                -> Result<MutableData, ClientError> {
-        if owners.len() > 1 {
-            return Err(ClientError::InvalidOwners);
-        }
-        if data.len() >= (MAX_MUTABLE_DATA_ENTRIES + 1) as usize {
-            return Err(ClientError::TooManyEntries);
-        }
-
         let md = MutableData {
             name: name,
             tag: tag,
@@ -225,11 +218,24 @@ impl MutableData {
             owners: owners,
         };
 
-        if serialised_size(&md) > MAX_MUTABLE_DATA_SIZE_IN_BYTES {
+        md.validate()?;
+        Ok(md)
+    }
+
+    /// Validate this data.
+    pub fn validate(&self) -> Result<(), ClientError> {
+        if self.owners.len() > 1 {
+            return Err(ClientError::InvalidOwners);
+        }
+        if self.data.len() >= (MAX_MUTABLE_DATA_ENTRIES + 1) as usize {
+            return Err(ClientError::TooManyEntries);
+        }
+
+        if serialised_size(self) > MAX_MUTABLE_DATA_SIZE_IN_BYTES {
             return Err(ClientError::DataTooLarge);
         }
 
-        Ok(md)
+        Ok(())
     }
 
     /// Returns the name.

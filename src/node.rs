@@ -17,31 +17,56 @@
 
 use action::Action;
 use cache::{Cache, NullCache};
+use client_error::ClientError;
+use data::{ImmutableData, MutableData};
 use error::{InterfaceError, RoutingError};
 use event::Event;
 use event_stream::{EventStepper, EventStream};
 use id::FullId;
 #[cfg(feature = "use-mock-crust")]
 use id::PublicId;
+use messages::{AccountInfo, CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, RELOCATE_PRIORITY, Request,
+               Response, UserMessage};
 use outbox::{EventBox, EventBuf};
 #[cfg(feature = "use-mock-crust")]
 use routing_table::{Prefix, RoutingTable};
-// use routing_table::Authority;
+use routing_table::Authority;
 #[cfg(not(feature = "use-mock-crust"))]
 use rust_sodium;
-#[cfg(feature = "use-mock-crust")]
 use rust_sodium::crypto::sign;
 use state_machine::{State, StateMachine};
 use states;
 #[cfg(feature = "use-mock-crust")]
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 #[cfg(feature = "use-mock-crust")]
 use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::{Receiver, RecvError, Sender, TryRecvError, channel};
-use types::RoutingActionSender;
+use types::{MessageId, RoutingActionSender};
 use xor_name::XorName;
 
-type RoutingResult = Result<(), RoutingError>;
+// Helper macro to implement response sending methods.
+macro_rules! impl_response {
+    ($method:ident, $message:ident, $payload:ty, $priority:expr) => {
+        #[allow(missing_docs)]
+        pub fn $method(&mut self,
+                       src: Authority<XorName>,
+                       dst: Authority<XorName>,
+                       res: Result<$payload, ClientError>,
+                       msg_id: MessageId)
+                       -> Result<(), InterfaceError> {
+            let msg = UserMessage::Response(Response::$message {
+                res: res,
+                msg_id: msg_id,
+            });
+            self.send_action(src, dst, msg, $priority)
+        }
+    };
+
+    ($method:ident, $message:ident) => {
+        impl_response!($method, $message, (), DEFAULT_PRIORITY);
+    }
+}
 
 /// A builder to configure and create a new `Node`.
 pub struct NodeBuilder {
@@ -86,8 +111,8 @@ impl NodeBuilder {
         let (tx, rx) = channel();
 
         Ok(Node {
-            _interface_result_tx: tx,
-            _interface_result_rx: rx,
+            interface_result_tx: tx,
+            interface_result_rx: rx,
             machine: machine,
             event_buffer: ev_buffer,
         })
@@ -140,8 +165,8 @@ impl NodeBuilder {
 /// `ManagedNode` or as a part of a section or group authority. Their `src` argument indicates that
 /// role, and can be any [`Authority`](enum.Authority.html) other than `Client`.
 pub struct Node {
-    _interface_result_tx: Sender<Result<(), InterfaceError>>,
-    _interface_result_rx: Receiver<Result<(), InterfaceError>>,
+    interface_result_tx: Sender<Result<(), InterfaceError>>,
+    interface_result_rx: Receiver<Result<(), InterfaceError>>,
     machine: StateMachine,
     event_buffer: EventBuf,
 }
@@ -156,53 +181,100 @@ impl Node {
         }
     }
 
-    // TODO: implement the new idata/mdata operations
-
-    /*
-    /// Send a `Get` request to `dst` to retrieve data from the network.
-    pub fn send_get_request(&mut self,
-                            src: Authority<XorName>,
-                            dst: Authority<XorName>,
-                            data_request: DataIdentifier,
-                            id: MessageId)
-                            -> Result<(), InterfaceError> {
-        let user_msg = UserMessage::Request(Request::Get(data_request, id));
+    /// Send a `GetIData` request to `dst` to retrieve data from the network.
+    pub fn send_get_idata_request(&mut self,
+                                  src: Authority<XorName>,
+                                  dst: Authority<XorName>,
+                                  name: XorName,
+                                  msg_id: MessageId)
+                                  -> Result<(), InterfaceError> {
+        let user_msg = UserMessage::Request(Request::GetIData {
+            name: name,
+            msg_id: msg_id,
+        });
         self.send_action(src, dst, user_msg, RELOCATE_PRIORITY)
     }
 
-    /// Send a `Put` request to `dst` to store data on the network.
-    pub fn send_put_request(&mut self,
-                            src: Authority<XorName>,
-                            dst: Authority<XorName>,
-                            data: Data,
-                            id: MessageId)
-                            -> Result<(), InterfaceError> {
-        let user_msg = UserMessage::Request(Request::Put(data, id));
-        self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
+    /// Send a `PutIData` request to `dst` to store data on the network.
+    pub fn send_put_idata_request(&mut self,
+                                  src: Authority<XorName>,
+                                  dst: Authority<XorName>,
+                                  data: ImmutableData,
+                                  msg_id: MessageId)
+                                  -> Result<(), InterfaceError> {
+        let msg = UserMessage::Request(Request::PutIData {
+            data: data,
+            msg_id: msg_id,
+        });
+        self.send_action(src, dst, msg, DEFAULT_PRIORITY)
     }
 
-    /// Send a `Post` request to `dst` to modify data on the network.
-    pub fn send_post_request(&mut self,
-                             src: Authority<XorName>,
-                             dst: Authority<XorName>,
-                             data: Data,
-                             id: MessageId)
-                             -> Result<(), InterfaceError> {
-        let user_msg = UserMessage::Request(Request::Post(data, id));
-        self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
+    /// Send a `PutMData` request.
+    pub fn send_put_mdata_request(&mut self,
+                                  src: Authority<XorName>,
+                                  dst: Authority<XorName>,
+                                  data: MutableData,
+                                  msg_id: MessageId,
+                                  requester: sign::PublicKey)
+                                  -> Result<(), InterfaceError> {
+        let msg = UserMessage::Request(Request::PutMData {
+            data: data,
+            msg_id: msg_id,
+            requester: requester,
+        });
+
+        self.send_action(src, dst, msg, DEFAULT_PRIORITY)
     }
 
-    /// Send a `Delete` request to `dst` to remove data from the network.
-    pub fn send_delete_request(&mut self,
-                               src: Authority<XorName>,
-                               dst: Authority<XorName>,
-                               data: Data,
-                               id: MessageId)
-                               -> Result<(), InterfaceError> {
-        let user_msg = UserMessage::Request(Request::Delete(data, id));
-        self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
+    /// Send a `Refresh` request from `src` to `dst` to trigger churn.
+    pub fn send_refresh_request(&mut self,
+                                src: Authority<XorName>,
+                                dst: Authority<XorName>,
+                                content: Vec<u8>,
+                                id: MessageId)
+                                -> Result<(), InterfaceError> {
+        let user_msg = UserMessage::Request(Request::Refresh(content, id));
+        self.send_action(src, dst, user_msg, RELOCATE_PRIORITY)
     }
 
+    /// Respond to a `GetAccountInfo` request.
+    impl_response!(send_get_account_info_response,
+                   GetAccountInfo,
+                   AccountInfo,
+                   CLIENT_GET_PRIORITY);
+
+    /// Respond to a `PutIData` request.
+    impl_response!(send_put_idata_response, PutIData);
+
+    /// Respond to a `PutMData` request.
+    impl_response!(send_put_mdata_response, PutMData);
+
+    /// Respond to a `MutateMDataEntries` request.
+    impl_response!(send_mutate_mdata_entries_response, MutateMDataEntries);
+
+    /// Respond to a `SetMDataUserPermissions` request.
+    impl_response!(send_set_mdata_user_permissions_response,
+                   SetMDataUserPermissions);
+
+    /// Respond to a `ListAuthKeysAndVersion` request.
+    impl_response!(send_list_auth_keys_and_version_response,
+        ListAuthKeysAndVersion,
+        (BTreeSet<sign::PublicKey>, u64),
+        CLIENT_GET_PRIORITY);
+
+    /// Respond to a `InsAuthKey` request.
+    impl_response!(send_ins_auth_key_response, InsAuthKey);
+
+    /// Respond to a `DelAuthKey` request.
+    impl_response!(send_del_auth_key_response, DelAuthKey);
+
+    /// Respond to a `DelMDataUserPermissions` request.
+    impl_response!(send_del_mdata_user_permissions_response, DelMDataUserPermissions);
+
+    /// Respond to a `ChangeMDataOwner` request.
+    impl_response!(send_change_mdata_owner_response, ChangeMDataOwner);
+
+    /*
     /// Respond to a `Get` request indicating success and sending the requested data.
     pub fn send_get_success(&mut self,
                             src: Authority<XorName>,
@@ -240,154 +312,6 @@ impl Node {
         self.send_action(src, dst, user_msg, priority)
     }
 
-    /// Respond to a `Put` request indicating success.
-    pub fn send_put_success(&mut self,
-                            src: Authority<XorName>,
-                            dst: Authority<XorName>,
-                            name: DataIdentifier,
-                            id: MessageId)
-                            -> Result<(), InterfaceError> {
-        let user_msg = UserMessage::Response(Response::PutSuccess(name, id));
-        self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
-    }
-
-    /// Respond to a `Put` request indicating failure.
-    pub fn send_put_failure(&mut self,
-                            src: Authority<XorName>,
-                            dst: Authority<XorName>,
-                            data_id: DataIdentifier,
-                            external_error_indicator: Vec<u8>,
-                            id: MessageId)
-                            -> Result<(), InterfaceError> {
-        let user_msg = UserMessage::Response(Response::PutFailure {
-            id: id,
-            data_id: data_id,
-            external_error_indicator: external_error_indicator,
-        });
-        self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
-    }
-
-    /// Respond to a `Post` request indicating success.
-    pub fn send_post_success(&mut self,
-                             src: Authority<XorName>,
-                             dst: Authority<XorName>,
-                             name: DataIdentifier,
-                             id: MessageId)
-                             -> Result<(), InterfaceError> {
-        let user_msg = UserMessage::Response(Response::PostSuccess(name, id));
-        self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
-    }
-
-    /// Respond to a `Post` request indicating failure.
-    pub fn send_post_failure(&mut self,
-                             src: Authority<XorName>,
-                             dst: Authority<XorName>,
-                             data_id: DataIdentifier,
-                             external_error_indicator: Vec<u8>,
-                             id: MessageId)
-                             -> Result<(), InterfaceError> {
-        let user_msg = UserMessage::Response(Response::PostFailure {
-            id: id,
-            data_id: data_id,
-            external_error_indicator: external_error_indicator,
-        });
-        self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
-    }
-
-    /// Respond to a `Delete` request indicating success.
-    pub fn send_delete_success(&mut self,
-                               src: Authority<XorName>,
-                               dst: Authority<XorName>,
-                               name: DataIdentifier,
-                               id: MessageId)
-                               -> Result<(), InterfaceError> {
-        let user_msg = UserMessage::Response(Response::DeleteSuccess(name, id));
-        self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
-    }
-
-    /// Respond to a `Delete` request indicating failure.
-    pub fn send_delete_failure(&mut self,
-                               src: Authority<XorName>,
-                               dst: Authority<XorName>,
-                               data_id: DataIdentifier,
-                               external_error_indicator: Vec<u8>,
-                               id: MessageId)
-                               -> Result<(), InterfaceError> {
-        let user_msg = UserMessage::Response(Response::DeleteFailure {
-            id: id,
-            data_id: data_id,
-            external_error_indicator: external_error_indicator,
-        });
-        self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
-    }
-
-    /// Respond to an `Append` request indicating success.
-    pub fn send_append_success(&mut self,
-                               src: Authority<XorName>,
-                               dst: Authority<XorName>,
-                               name: DataIdentifier,
-                               id: MessageId)
-                               -> Result<(), InterfaceError> {
-        let user_msg = UserMessage::Response(Response::AppendSuccess(name, id));
-        self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
-    }
-
-    /// Respond to an `Append` request indicating failure.
-    pub fn send_append_failure(&mut self,
-                               src: Authority<XorName>,
-                               dst: Authority<XorName>,
-                               data_id: DataIdentifier,
-                               external_error_indicator: Vec<u8>,
-                               id: MessageId)
-                               -> Result<(), InterfaceError> {
-        let user_msg = UserMessage::Response(Response::AppendFailure {
-            id: id,
-            data_id: data_id,
-            external_error_indicator: external_error_indicator,
-        });
-        self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
-    }
-
-    /// Respond to a `GetAccountInfo` request indicating success.
-    pub fn send_get_account_info_success(&mut self,
-                                         src: Authority<XorName>,
-                                         dst: Authority<XorName>,
-                                         data_stored: u64,
-                                         space_available: u64,
-                                         id: MessageId)
-                                         -> Result<(), InterfaceError> {
-        let user_msg = UserMessage::Response(Response::GetAccountInfoSuccess {
-            id: id,
-            data_stored: data_stored,
-            space_available: space_available,
-        });
-        self.send_action(src, dst, user_msg, CLIENT_GET_PRIORITY)
-    }
-
-    /// Respond to a `GetAccountInfo` request indicating failure.
-    pub fn send_get_account_info_failure(&mut self,
-                                         src: Authority<XorName>,
-                                         dst: Authority<XorName>,
-                                         external_error_indicator: Vec<u8>,
-                                         id: MessageId)
-                                         -> Result<(), InterfaceError> {
-        let user_msg = UserMessage::Response(Response::GetAccountInfoFailure {
-            id: id,
-            external_error_indicator: external_error_indicator,
-        });
-        self.send_action(src, dst, user_msg, CLIENT_GET_PRIORITY)
-    }
-
-    /// Send a `Refresh` request from `src` to `dst` to trigger churn.
-    pub fn send_refresh_request(&mut self,
-                                src: Authority<XorName>,
-                                dst: Authority<XorName>,
-                                content: Vec<u8>,
-                                id: MessageId)
-                                -> Result<(), InterfaceError> {
-        let user_msg = UserMessage::Request(Request::Refresh(content, id));
-        self.send_action(src, dst, user_msg, RELOCATE_PRIORITY)
-    }
     */
 
     /// Returns the first `count` names of the nodes in the routing table which are closest
@@ -401,14 +325,12 @@ impl Node {
         self.machine.name().ok_or(RoutingError::Terminated)
     }
 
-    // TODO: uncomment
-    /*
     fn send_action(&mut self,
-                    src: Authority<XorName>,
-                    dst: Authority<XorName>,
-                    user_msg: UserMessage,
-                    priority: u8)
-                    -> Result<(), InterfaceError> {
+                   src: Authority<XorName>,
+                   dst: Authority<XorName>,
+                   user_msg: UserMessage,
+                   priority: u8)
+                   -> Result<(), InterfaceError> {
         // Make sure the state machine has processed any outstanding crust events.
         self.poll();
 
@@ -429,7 +351,6 @@ impl Node {
     fn receive_action_result<T>(&self, rx: &Receiver<T>) -> Result<T, InterfaceError> {
         Ok(rx.recv()?)
     }
-    */
 }
 
 impl EventStepper for Node {
