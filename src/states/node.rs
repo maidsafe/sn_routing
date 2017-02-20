@@ -2032,8 +2032,9 @@ impl Node {
                      dst: Authority<XorName>)
                      -> Result<(), RoutingError> {
         let sections = self.peer_mgr.pub_ids_by_section();
-        let serialised_sections = serialisation::serialise(&sections)?;
-        if digest == sha256::hash(&serialised_sections) {
+        let prefixes = self.peer_mgr.routing_table().prefixes();
+        let serialised_rt = serialisation::serialise(&(&sections, prefixes))?;
+        if digest == sha256::hash(&serialised_rt) {
             return Ok(());
         }
         for (prefix, members) in sections {
@@ -2321,7 +2322,8 @@ impl Node {
             let msg_id = MessageId::new();
             self.rt_msg_id = Some(msg_id);
             let sections = self.peer_mgr.pub_ids_by_section();
-            let digest = sha256::hash(&serialisation::serialise(&sections)?);
+            let prefixes = self.peer_mgr.routing_table().prefixes();
+            let digest = sha256::hash(&serialisation::serialise(&(sections, prefixes))?);
             trace!("{:?} Sending RT request {:?} with digest {:?}",
                    self,
                    msg_id,
