@@ -16,7 +16,6 @@
 // relating to use of the SAFE Network Software.
 
 use crust::{PeerId, Service};
-use error::RoutingError;
 use id::FullId;
 use maidsafe_utilities::serialisation;
 use messages::Message;
@@ -46,22 +45,23 @@ pub trait Base: Debug {
         None
     }
 
-    fn send_message(&mut self, peer_id: &PeerId, message: Message) -> Result<(), RoutingError> {
+    fn send_message(&mut self, peer_id: &PeerId, message: Message) {
         let priority = message.priority();
 
-        let raw_bytes = match serialisation::serialise(&message) {
+        match serialisation::serialise(&message) {
+            Ok(bytes) => {
+                self.send_or_drop(peer_id, bytes, priority);
+            }
             Err(error) => {
                 error!("{:?} Failed to serialise message {:?}: {:?}",
                        self,
                        message,
                        error);
-                return Err(error.into());
+                // The caller can't do much to handle this except log more messages, so just stop
+                // trying to send here and let other mechanisms handle the lost message. If the
+                // node drops too many messages, it should fail to join the network anyway.
             }
-            Ok(bytes) => bytes,
         };
-
-        self.send_or_drop(peer_id, raw_bytes, priority);
-        Ok(())
     }
 
     // Sends the given `bytes` to the peer with the given Crust `PeerId`. If that results in an
