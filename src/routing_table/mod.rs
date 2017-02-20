@@ -410,6 +410,17 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         self.closest_names(name, count).is_some()
     }
 
+    /// Sets the merge status
+    pub fn set_merge_status(&mut self, we_want_to_merge: bool, they_want_to_merge: bool) {
+        self.we_want_to_merge = we_want_to_merge;
+        self.they_want_to_merge = they_want_to_merge;
+    }
+
+    /// Gets the merge status
+    pub fn get_merge_status(&self) -> (bool, bool) {
+        (self.we_want_to_merge, self.they_want_to_merge)
+    }
+
     // Finds the `count` names closest to `name` in the whole routing table
     fn closest_known_names(&self, name: &T, count: usize) -> Vec<&T> {
         self.sections

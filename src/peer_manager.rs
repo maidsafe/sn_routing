@@ -738,6 +738,11 @@ impl PeerManager {
             .collect()
     }
 
+    /// Sets the routing_table's merge status on approval
+    pub fn set_merge_status(&mut self, we_want_to_merge: bool, they_want_to_merge: bool) {
+        self.routing_table.set_merge_status(we_want_to_merge, they_want_to_merge)
+    }
+
     /// Wraps `RoutingTable::should_merge` with an extra check.
     ///
     /// Returns sender prefix, merge prefix, then sections.
