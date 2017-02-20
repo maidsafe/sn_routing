@@ -876,8 +876,10 @@ impl Node {
             (CandidateApproval { candidate_id, client_auth, .. }, Section(_), Section(_)) => {
                 self.handle_candidate_approval(candidate_id, client_auth, outbox)
             }
-            (NodeApproval { sections }, Section(_), Client { .. }) => {
-                self.handle_node_approval(&sections, outbox)
+            (NodeApproval { sections, we_want_to_merge, they_want_to_merge },
+             Section(_),
+             Client { .. }) => {
+                self.handle_node_approval(&sections, we_want_to_merge, they_want_to_merge, outbox)
             }
             (SectionUpdate { prefix, members }, Section(_), PrefixSection(_)) => {
                 self.handle_section_update(prefix, members, outbox)
@@ -954,7 +956,13 @@ impl Node {
         let src = Authority::Section(*candidate_id.name());
         // Send the _current_ routing table. If this doesn't accumulate, we expect the candidate to
         // disconnect from us.
-        let content = MessageContent::NodeApproval { sections: self.peer_mgr.pub_ids_by_section() };
+        let (we_want_to_merge, they_want_to_merge) =
+            self.peer_mgr.routing_table().get_merge_status();
+        let content = MessageContent::NodeApproval {
+            sections: self.peer_mgr.pub_ids_by_section(),
+            we_want_to_merge: we_want_to_merge,
+            they_want_to_merge: they_want_to_merge,
+        };
         if let Err(error) = self.send_routing_message(src, client_auth, content) {
             debug!("{:?} Failed sending NodeApproval to {}: {:?}",
                    self,
@@ -970,6 +978,8 @@ impl Node {
 
     fn handle_node_approval(&mut self,
                             sections: &SectionMap,
+                            we_want_to_merge: bool,
+                            they_want_to_merge: bool,
                             outbox: &mut EventBox)
                             -> Result<(), RoutingError> {
         if self.is_approved {
@@ -986,6 +996,7 @@ impl Node {
             outbox.send_event(Event::RestartRequired);
             return Err(error);
         }
+        self.peer_mgr.set_merge_status(we_want_to_merge, they_want_to_merge);
 
         self.is_approved = true;
         outbox.send_event(Event::Connected);

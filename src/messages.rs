@@ -670,6 +670,10 @@ pub enum MessageContent {
         /// The routing table shared by the nodes in our group, including the `PublicId`s of our
         /// contacts.
         sections: SectionMap,
+        /// Whether we have sent our merge details to the other section.
+        we_want_to_merge: bool,
+        // Whether the other section has sent their merge details to us.
+        they_want_to_merge: bool,
     },
 }
 
@@ -834,7 +838,13 @@ impl Debug for MessageContent {
                        client_auth,
                        sections)
             }
-            NodeApproval { ref sections } => write!(formatter, "NodeApproval {{ {:?} }}", sections),
+            NodeApproval { ref sections, ref we_want_to_merge, ref they_want_to_merge } => {
+                write!(formatter,
+                       "NodeApproval {{ {:?}, {:?}, {:?} }}",
+                       sections,
+                       we_want_to_merge,
+                       they_want_to_merge)
+            }
         }
     }
 }
