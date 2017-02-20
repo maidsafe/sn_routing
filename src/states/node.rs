@@ -951,15 +951,21 @@ impl Node {
               self.peer_mgr.routing_table().our_prefix(),
               candidate_id.name(),
               opt_peer_id);
-        let src = Authority::Section(*candidate_id.name());
-        // Send the _current_ routing table. If this doesn't accumulate, we expect the candidate to
-        // disconnect from us.
-        let content = MessageContent::NodeApproval { sections: self.peer_mgr.pub_ids_by_section() };
-        if let Err(error) = self.send_routing_message(src, client_auth, content) {
-            debug!("{:?} Failed sending NodeApproval to {}: {:?}",
-                   self,
-                   candidate_id.name(),
-                   error);
+        if self.peer_mgr.routing_table().is_merge_in_process() {
+            debug!("{:?} Not sending NodeApproval since our section is currently merging.",
+                   self);
+        } else {
+            let src = Authority::Section(*candidate_id.name());
+            // Send the _current_ routing table. If this doesn't accumulate, we expect the candidate
+            // to disconnect from us.
+            let content =
+                MessageContent::NodeApproval { sections: self.peer_mgr.pub_ids_by_section() };
+            if let Err(error) = self.send_routing_message(src, client_auth, content) {
+                debug!("{:?} Failed sending NodeApproval to {}: {:?}",
+                       self,
+                       candidate_id.name(),
+                       error);
+            }
         }
 
         if let Some(peer_id) = opt_peer_id {
@@ -2348,6 +2354,15 @@ impl Node {
             }
             Ok(info) => info,
         };
+
+        if self.peer_mgr.routing_table().is_merge_in_process() {
+            debug!("{:?} Resource proof duration has finished, but not voting to approve \
+                   candidate {} since our section is currently merging.",
+                   self,
+                   candidate_id.name());
+            return Ok(());
+        }
+
         let src = Authority::Section(*candidate_id.name());
         let response_content = MessageContent::CandidateApproval {
             candidate_id: candidate_id,

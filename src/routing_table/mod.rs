@@ -867,6 +867,12 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         target_prefix.substituted_in(*name)
     }
 
+    /// Returns true if we're currently handling a merge of our own section (i.e. we've received an
+    /// `OwnSectionMerge` from either our own section or our immediate neighbour).
+    pub fn is_merge_in_process(&self) -> bool {
+        self.we_want_to_merge || self.they_want_to_merge
+    }
+
     fn split_our_section(&mut self) -> Vec<T> {
         let next_bit = self.our_name.bit(self.our_prefix.bit_count());
         let other_prefix = self.our_prefix.pushed(!next_bit);
