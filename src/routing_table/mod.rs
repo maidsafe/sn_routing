@@ -714,13 +714,22 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             return BTreeSet::new();
         }
 
-        self.merge(&merge_details.prefix);
+        let should_merge = |prefix: &Prefix<T>| {
+            prefix.is_compatible(&merge_details.prefix) &&
+            prefix.bit_count() > merge_details.prefix.bit_count()
+        };
 
-        // Establish list of provided contacts which are currently missing from our table.
-        merge_details.section
-            .difference(unwrap!(self.sections.get(&merge_details.prefix)))
-            .cloned()
-            .collect()
+        if self.sections.keys().any(should_merge) {
+            self.merge(&merge_details.prefix);
+            // Establish list of provided contacts which are currently missing from our table.
+            merge_details.section
+                .difference(unwrap!(self.sections.get(&merge_details.prefix)))
+                .cloned()
+                .collect()
+        } else {
+            // We've already handled this particular merge.
+            BTreeSet::new()
+        }
     }
 
     /// Returns a collection of nodes to which a message for the given `Authority` should be sent
