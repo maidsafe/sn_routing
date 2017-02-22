@@ -405,7 +405,7 @@ impl Node {
         if let Some(tunnel_id) = self.tunnels.remove_tunnel_for(&peer_id) {
             debug!("{:?} Removing unwanted tunnel for {:?}", self, peer_id);
             let message = DirectMessage::TunnelDisconnect(peer_id);
-            let _ = self.send_direct_message(tunnel_id, message);
+            self.send_direct_message(tunnel_id, message);
         } else if let Some(pub_id) = self.peer_mgr.get_routing_peer(&peer_id) {
             warn!("{:?} Received ConnectSuccess from {:?}, but node {:?} is already in routing \
                    state in peer_map.",
@@ -426,9 +426,7 @@ impl Node {
                self,
                peer_id,
                id_type);
-        if self.send_node_identify(peer_id).is_err() {
-            self.disconnect_peer(&peer_id);
-        }
+        self.send_node_identify(peer_id);
     }
 
     fn handle_connect_failure(&mut self, peer_id: PeerId) {
@@ -454,7 +452,7 @@ impl Node {
                    name,
                    peer_id);
             let tunnel_request = DirectMessage::TunnelRequest(peer_id);
-            let _ = self.send_direct_message(dst_peer_id, tunnel_request);
+            self.send_direct_message(dst_peer_id, tunnel_request);
         }
     }
 
@@ -476,7 +474,7 @@ impl Node {
                     self.send_or_drop(&dst, bytes, content.priority());
                     Ok(())
                 } else if self.tunnels.accept_clients(src, dst) {
-                    self.send_direct_message(dst, DirectMessage::TunnelSuccess(src))?;
+                    self.send_direct_message(dst, DirectMessage::TunnelSuccess(src));
                     self.send_or_drop(&dst, bytes, content.priority());
                     Ok(())
                 } else {
@@ -518,9 +516,9 @@ impl Node {
                              -> Result<(), RoutingError> {
         use messages::DirectMessage::*;
         match direct_message {
-            MessageSignature(digest, sig) => self.handle_message_signature(digest, sig, peer_id),
+            MessageSignature(digest, sig) => self.handle_message_signature(digest, sig, peer_id)?,
             SectionListSignature(section_list, sig) => {
-                self.handle_section_list_signature(peer_id, section_list, sig)
+                self.handle_section_list_signature(peer_id, section_list, sig)?
             }
             ClientIdentify { ref serialised_public_id, ref signature, client_restriction } => {
                 if let Ok(public_id) = verify_signed_public_id(serialised_public_id, signature) {
@@ -531,30 +529,27 @@ impl Node {
                           self,
                           peer_id);
                     self.disconnect_peer(&peer_id);
-                    Ok(())
                 }
             }
             NodeIdentify { ref serialised_public_id, ref signature } => {
                 if let Ok(public_id) = verify_signed_public_id(serialised_public_id, signature) {
-                    Ok(self.handle_node_identify(public_id, peer_id, outbox))
+                    self.handle_node_identify(public_id, peer_id, outbox)
                 } else {
                     warn!("{:?} Signature check failed in NodeIdentify, so dropping peer {:?}.",
                           self,
                           peer_id);
                     self.disconnect_peer(&peer_id);
-                    Ok(())
                 }
             }
             CandidateIdentify { ref serialised_public_id, ref signature } => {
                 if let Ok(public_id) = verify_signed_public_id(serialised_public_id, signature) {
-                    Ok(self.handle_candidate_identify(public_id, peer_id, outbox))
+                    self.handle_candidate_identify(public_id, peer_id, outbox);
                 } else {
                     warn!("{:?} Signature check failed in CandidateIdentify, so dropping peer \
                            {:?}.",
                           self,
                           peer_id);
                     self.disconnect_peer(&peer_id);
-                    Ok(())
                 }
             }
             TunnelRequest(dst_id) => self.handle_tunnel_request(peer_id, dst_id),
@@ -562,11 +557,10 @@ impl Node {
             TunnelClosed(dst_id) => self.handle_tunnel_closed(peer_id, dst_id, outbox),
             TunnelDisconnect(dst_id) => self.handle_tunnel_disconnect(peer_id, dst_id),
             ResourceProof { seed, target_size, difficulty } => {
-                self.handle_resource_proof_request(peer_id, seed, target_size, difficulty)
+                self.handle_resource_proof_request(peer_id, seed, target_size, difficulty)?
             }
             ResourceProofResponseReceipt => {
                 self.handle_resource_proof_response_receipt(peer_id);
-                Ok(())
             }
             ResourceProofResponse { part_index, part_count, proof, leading_zero_bytes } => {
                 self.handle_resource_proof_response(peer_id,
@@ -574,14 +568,13 @@ impl Node {
                                                     part_count,
                                                     proof,
                                                     leading_zero_bytes);
-                Ok(())
             }
             msg @ BootstrapIdentify { .. } |
             msg @ BootstrapDeny => {
                 debug!("{:?} Unhandled direct message: {:?}", self, msg);
-                Ok(())
             }
         }
+        Ok(())
     }
 
     fn handle_message_signature(&mut self,
@@ -668,13 +661,7 @@ impl Node {
 
         for peer_id in peers {
             let msg = DirectMessage::SectionListSignature(section.clone(), sig);
-            if let Err(e) = self.send_direct_message(peer_id, msg) {
-                warn!("{:?} Error sending section list signature for {:?} to {:?}: {:?}",
-                      self,
-                      prefix,
-                      peer_id,
-                      e);
-            }
+            self.send_direct_message(peer_id, msg);
         }
     }
 
@@ -1088,7 +1075,7 @@ impl Node {
             }
         };
         let _ = self.resource_proof_response_parts.insert(peer_id, messages);
-        self.send_direct_message(peer_id, first_message)?;
+        self.send_direct_message(peer_id, first_message);
         trace!("{:?} created proof data in {}. Min section size: {}, Target size: {}, \
                 Difficulty: {}, Seed: {:?}",
                self,
@@ -1104,12 +1091,7 @@ impl Node {
         let popped_message =
             self.resource_proof_response_parts.get_mut(&peer_id).and_then(Vec::pop);
         if let Some(message) = popped_message {
-            if let Err(error) = self.send_direct_message(peer_id, message) {
-                debug!("{:?} Failed to send ResourceProofResponse to {:?}: {:?}",
-                       self,
-                       peer_id,
-                       error);
-            }
+            self.send_direct_message(peer_id, message);
         }
     }
 
@@ -1145,8 +1127,7 @@ impl Node {
                 self.candidate_timer_token = None;
             }
             Ok(None) => {
-                let _ =
-                    self.send_direct_message(peer_id, DirectMessage::ResourceProofResponseReceipt);
+                self.send_direct_message(peer_id, DirectMessage::ResourceProofResponseReceipt);
             }
             Ok(Some((target_size, difficulty, elapsed))) if difficulty == 0 &&
                                                             target_size < 1000 => {
@@ -1258,28 +1239,27 @@ impl Node {
         self.send_routing_message(src, dst, request_content)
     }
 
-    fn send_bootstrap_identify(&mut self, peer_id: PeerId) -> Result<(), RoutingError> {
+    fn send_bootstrap_identify(&mut self, peer_id: PeerId) {
         let direct_message =
             DirectMessage::BootstrapIdentify { public_id: *self.full_id.public_id() };
-        self.send_direct_message(peer_id, direct_message)
+        self.send_direct_message(peer_id, direct_message);
     }
 
     fn handle_client_identify(&mut self,
                               public_id: PublicId,
                               peer_id: PeerId,
-                              client_restriction: bool)
-                              -> Result<(), RoutingError> {
+                              client_restriction: bool) {
         if !client_restriction && !self.crust_service.is_peer_whitelisted(&peer_id) {
             warn!("{:?} Client is not whitelisted, so dropping connection.",
                   self);
             self.disconnect_peer(&peer_id);
-            return Ok(());
+            return;
         }
         if *public_id.name() != XorName(sha256::hash(&public_id.signing_public_key().0).0) {
             warn!("{:?} Incoming connection not validated as a proper client, so dropping it.",
                   self);
             self.disconnect_peer(&peer_id);
-            return Ok(());
+            return;
         }
 
         for peer_id in self.peer_mgr.remove_expired_joining_nodes() {
@@ -1293,7 +1273,8 @@ impl Node {
             debug!("{:?} Client {:?} rejected: We are not approved as a node yet.",
                    self,
                    public_id.name());
-            return self.send_direct_message(peer_id, DirectMessage::BootstrapDeny);
+            self.send_direct_message(peer_id, DirectMessage::BootstrapDeny);
+            return;
         }
 
         if (client_restriction || !self.is_first_node) &&
@@ -1303,7 +1284,8 @@ impl Node {
                    public_id.name(),
                    self.peer_mgr.routing_table().len(),
                    self.min_section_size() - 1);
-            return self.send_direct_message(peer_id, DirectMessage::BootstrapDeny);
+            self.send_direct_message(peer_id, DirectMessage::BootstrapDeny);
+            return;
         }
 
         let non_unique = if client_restriction {
@@ -1362,16 +1344,10 @@ impl Node {
                     target_size: target_size,
                     difficulty: difficulty,
                 };
-                if let Err(error) = self.send_direct_message(peer_id, direct_message) {
-                    debug!("{:?} failed requesting resource_proof from node candidate {:?}/{:?}.",
-                           self,
-                           name,
-                           error);
-                } else {
-                    info!("{:?} Sending resource proof challenge to candidate {}",
-                          self,
-                          public_id.name());
-                }
+                info!("{:?} Sending resource proof challenge to candidate {}",
+                      self,
+                      public_id.name());
+                self.send_direct_message(peer_id, direct_message);
             }
             Ok(false) => {
                 info!("{:?} Adding candidate {} to routing table without sending resource proof \
@@ -1461,7 +1437,7 @@ impl Node {
                    peer_id,
                    dst_id);
             let tunnel_request = DirectMessage::TunnelRequest(dst_id);
-            let _ = self.send_direct_message(*peer_id, tunnel_request);
+            self.send_direct_message(*peer_id, tunnel_request);
         }
     }
 
@@ -1639,7 +1615,7 @@ impl Node {
             Ok(IsProxy) |
             Ok(IsClient) |
             Ok(IsJoiningNode) => {
-                self.send_node_identify(peer_id)?;
+                self.send_node_identify(peer_id);
                 self.handle_node_identify(public_id, peer_id, outbox);
             }
             Ok(Waiting) | Ok(IsConnected) | Err(_) => (),
@@ -1696,17 +1672,14 @@ impl Node {
     }
 
     /// Handle a request by `peer_id` to act as a tunnel connecting it with `dst_id`.
-    fn handle_tunnel_request(&mut self,
-                             peer_id: PeerId,
-                             dst_id: PeerId)
-                             -> Result<(), RoutingError> {
+    fn handle_tunnel_request(&mut self, peer_id: PeerId, dst_id: PeerId) {
         if self.peer_mgr.can_tunnel_for(&peer_id, &dst_id) {
             if let Some((id0, id1)) = self.tunnels.consider_clients(peer_id, dst_id) {
                 debug!("{:?} Accepted tunnel request from {:?} for {:?}.",
                        self,
                        peer_id,
                        dst_id);
-                return self.send_direct_message(id0, DirectMessage::TunnelSuccess(id1));
+                self.send_direct_message(id0, DirectMessage::TunnelSuccess(id1));
             }
         } else {
             debug!("{:?} Rejected tunnel request from {:?} for {:?}.",
@@ -1714,37 +1687,28 @@ impl Node {
                    peer_id,
                    dst_id);
         }
-        Ok(())
     }
 
     /// Handle a `TunnelSuccess` response from `peer_id`: It will act as a tunnel to `dst_id`.
-    fn handle_tunnel_success(&mut self,
-                             peer_id: PeerId,
-                             dst_id: PeerId)
-                             -> Result<(), RoutingError> {
+    fn handle_tunnel_success(&mut self, peer_id: PeerId, dst_id: PeerId) {
         if !self.peer_mgr.tunnelling_to(&dst_id) {
             debug!("{:?} Received TunnelSuccess for a peer we are already connected to: {:?}",
                    self,
                    dst_id);
             let message = DirectMessage::TunnelDisconnect(dst_id);
-            return self.send_direct_message(peer_id, message);
+            self.send_direct_message(peer_id, message);
         }
         if self.tunnels.add(dst_id, peer_id) {
             debug!("{:?} Adding {:?} as a tunnel node for {:?}.",
                    self,
                    peer_id,
                    dst_id);
-            return self.send_node_identify(dst_id);
+            self.send_node_identify(dst_id);
         }
-        Ok(())
     }
 
     /// Handle a `TunnelClosed` message from `peer_id`: `dst_id` disconnected.
-    fn handle_tunnel_closed(&mut self,
-                            peer_id: PeerId,
-                            dst_id: PeerId,
-                            outbox: &mut EventBox)
-                            -> Result<(), RoutingError> {
+    fn handle_tunnel_closed(&mut self, peer_id: PeerId, dst_id: PeerId, outbox: &mut EventBox) {
         if self.tunnels.remove(dst_id, peer_id) {
             debug!("{:?} Tunnel to {:?} via {:?} closed.",
                    self,
@@ -1754,22 +1718,16 @@ impl Node {
                 self.dropped_peer(&dst_id, outbox);
             }
         }
-        Ok(())
     }
 
     /// Handle a `TunnelDisconnect` message from `peer_id` who wants to disconnect `dst_id`.
-    fn handle_tunnel_disconnect(&mut self,
-                                peer_id: PeerId,
-                                dst_id: PeerId)
-                                -> Result<(), RoutingError> {
+    fn handle_tunnel_disconnect(&mut self, peer_id: PeerId, dst_id: PeerId) {
         debug!("{:?} Closing tunnel connecting {:?} and {:?}.",
                self,
                dst_id,
                peer_id);
         if self.tunnels.drop_client_pair(dst_id, peer_id) {
-            self.send_direct_message(dst_id, DirectMessage::TunnelClosed(peer_id))
-        } else {
-            Ok(())
+            self.send_direct_message(dst_id, DirectMessage::TunnelClosed(peer_id));
         }
     }
 
@@ -1793,7 +1751,7 @@ impl Node {
         } else if let Some(tunnel_id) = self.tunnels.remove_tunnel_for(peer_id) {
             debug!("{:?} Disconnecting {:?} (indirect).", self, peer_id);
             let message = DirectMessage::TunnelDisconnect(*peer_id);
-            let _ = self.send_direct_message(tunnel_id, message);
+            self.send_direct_message(tunnel_id, message);
             let _ = self.peer_mgr.remove_peer(peer_id);
         } else {
             debug!("{:?} Disconnecting {:?}. Calling crust::Service::disconnect.",
@@ -2615,8 +2573,14 @@ impl Node {
         Ok(serialisation::serialise(&message)?)
     }
 
-    fn send_node_identify(&mut self, peer_id: PeerId) -> Result<(), RoutingError> {
-        let serialised_public_id = serialisation::serialise(self.full_id().public_id())?;
+    fn send_node_identify(&mut self, peer_id: PeerId) {
+        let serialised_public_id = match serialisation::serialise(self.full_id().public_id()) {
+            Ok(rslt) => rslt,
+            Err(e) => {
+                error!("Failed to serialise public ID: {:?}", e);
+                return;
+            }
+        };
         let signature = sign::sign_detached(&serialised_public_id,
                                             self.full_id().signing_private_key());
         let direct_message = if self.is_approved {
@@ -2631,20 +2595,7 @@ impl Node {
             }
         };
 
-        let result = self.send_direct_message(peer_id, direct_message);
-        if let Err(ref error) = result {
-            let id_type = if self.is_approved {
-                "NodeIdentify"
-            } else {
-                "CandidateIdentify"
-            };
-            warn!("{:?} Failed to send {:?} to {:?}: {:?}",
-                  self,
-                  id_type,
-                  peer_id,
-                  error);
-        }
-        result
+        self.send_direct_message(peer_id, direct_message);
     }
 
     fn send_connection_info_request(&mut self,
@@ -2657,7 +2608,7 @@ impl Node {
         if let Some(peer_id) = self.peer_mgr
             .get_proxy_or_client_or_joining_node_peer_id(&their_public_id) {
 
-            self.send_node_identify(peer_id)?;
+            self.send_node_identify(peer_id);
             self.handle_node_identify(their_public_id, peer_id, outbox);
             return Ok(());
         }
@@ -2816,7 +2767,7 @@ impl Node {
     fn dropped_tunnel_client(&mut self, peer_id: &PeerId) {
         for other_id in self.tunnels.drop_client(peer_id) {
             let message = DirectMessage::TunnelClosed(*peer_id);
-            let _ = self.send_direct_message(other_id, message);
+            self.send_direct_message(other_id, message);
         }
     }
 
@@ -2844,10 +2795,7 @@ impl Node {
         self.is_first_node || self.peer_mgr.routing_table().len() >= 1
     }
 
-    fn send_direct_message(&mut self,
-                           dst_id: PeerId,
-                           direct_message: DirectMessage)
-                           -> Result<(), RoutingError> {
+    fn send_direct_message(&mut self, dst_id: PeerId, direct_message: DirectMessage) {
         self.stats().count_direct_message(&direct_message);
 
         if let Some(&tunnel_id) = self.tunnels.tunnel_for(&dst_id) {
@@ -2856,9 +2804,9 @@ impl Node {
                 src: self.crust_service.id(),
                 dst: dst_id,
             };
-            self.send_message(&tunnel_id, message)
+            self.send_message(&tunnel_id, message);
         } else {
-            self.send_message(&dst_id, Message::Direct(direct_message))
+            self.send_message(&dst_id, Message::Direct(direct_message));
         }
     }
 
@@ -3092,7 +3040,8 @@ impl Bootstrapped for Node {
                 if let Some(&peer_id) = self.peer_mgr.get_peer_id(&target_name) {
                     let direct_msg = signed_msg.routing_message()
                         .to_signature(self.full_id().signing_private_key())?;
-                    self.send_direct_message(peer_id, direct_msg)
+                    self.send_direct_message(peer_id, direct_msg);
+                    Ok(())
                 } else {
                     Err(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer))
                 }
