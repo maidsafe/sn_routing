@@ -535,12 +535,19 @@ impl PeerManager {
     pub fn handle_candidate_approval(&mut self,
                                      candidate_name: XorName,
                                      client_auth: Authority<XorName>)
-                                     -> Result<PeerId, RoutingError> {
+                                     -> Result<Option<PeerId>, RoutingError> {
         if let Some(candidate) = self.candidates.get_mut(&candidate_name) {
             candidate.state = CandidateState::Approved;
             if let Some(peer) = self.peer_map.get_by_name(&candidate_name) {
                 if let Some(peer_id) = peer.peer_id() {
-                    return Ok(*peer_id);
+                    if let PeerState::Candidate(_) = *peer.state() {
+                        return Ok(Some(*peer_id));
+                    } else {
+                        trace!("Node({:?}) Candidate {:?} not yet connected to us.",
+                               self.routing_table.our_name(),
+                               candidate_name);
+                        return Ok(None);
+                    };
                 } else {
                     trace!("Node({:?}) No peer ID with name {:?}",
                            self.routing_table.our_name(),
@@ -650,6 +657,26 @@ impl PeerManager {
                                 pub_id: &PublicId,
                                 peer_id: &PeerId)
                                 -> Result<bool, RoutingTableError> {
+        if let Some(peer) = self.peer_map.get(peer_id) {
+            match peer.state {
+                PeerState::ConnectionInfoPreparing { .. } |
+                PeerState::ConnectionInfoReady(_) |
+                PeerState::CrustConnecting |
+                PeerState::SearchingForTunnel |
+                PeerState::Routing(_) => {
+                    trace!("{:?} Unexpected peer state {:?} while adding {:?} to routing table.",
+                           self,
+                           peer.state,
+                           peer_id)
+                }
+                _ => (),
+            }
+        } else {
+            trace!("{:?} Add to routing table called for {:?} not found in peer_map",
+                   self,
+                   peer_id);
+        }
+
         let _ = self.unknown_peers.remove(peer_id);
         let _ = self.expected_peers.remove(pub_id.name());
 
