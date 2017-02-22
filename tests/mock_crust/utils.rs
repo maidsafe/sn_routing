@@ -291,6 +291,29 @@ pub fn poll_and_resend(nodes: &mut [TestNode], clients: &mut [TestClient]) {
     }
 }
 
+/// Checks each of the last `count` members of `nodes` for a `Connected` event, and removes those
+/// which don't fire one. Returns the number of removed nodes.
+pub fn remove_nodes_which_failed_to_connect(nodes: &mut Vec<TestNode>, count: usize) -> usize {
+    let failed_to_join = nodes.iter_mut()
+        .enumerate()
+        .rev()
+        .take(count)
+        .filter_map(|(index, ref mut node)| {
+            while let Ok(event) = node.try_next_ev() {
+                if let Event::Connected = event {
+                    return None;
+                }
+            }
+            Some(index)
+        })
+        .collect_vec();
+    for index in &failed_to_join {
+        let _ = nodes.remove(*index);
+    }
+    poll_and_resend(nodes, &mut []);
+    failed_to_join.len()
+}
+
 pub fn create_connected_nodes(network: &Network, size: usize) -> Nodes {
     create_connected_nodes_with_cache(network, size, false)
 }

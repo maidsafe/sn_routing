@@ -714,13 +714,22 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             return BTreeSet::new();
         }
 
-        self.merge(&merge_details.prefix);
+        let should_merge = |prefix: &Prefix<T>| {
+            prefix.is_compatible(&merge_details.prefix) &&
+            prefix.bit_count() > merge_details.prefix.bit_count()
+        };
 
-        // Establish list of provided contacts which are currently missing from our table.
-        merge_details.section
-            .difference(unwrap!(self.sections.get(&merge_details.prefix)))
-            .cloned()
-            .collect()
+        if self.sections.keys().any(should_merge) {
+            self.merge(&merge_details.prefix);
+            // Establish list of provided contacts which are currently missing from our table.
+            merge_details.section
+                .difference(unwrap!(self.sections.get(&merge_details.prefix)))
+                .cloned()
+                .collect()
+        } else {
+            // We've already handled this particular merge.
+            BTreeSet::new()
+        }
     }
 
     /// Returns a collection of nodes to which a message for the given `Authority` should be sent
@@ -867,6 +876,12 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         target_prefix.substituted_in(*name)
     }
 
+    /// Returns true if we're currently handling a merge of our own section (i.e. we've received an
+    /// `OwnSectionMerge` from either our own section or our immediate neighbour).
+    pub fn is_merge_in_process(&self) -> bool {
+        self.we_want_to_merge || self.they_want_to_merge
+    }
+
     fn split_our_section(&mut self) -> Vec<T> {
         let next_bit = self.our_name.bit(self.our_prefix.bit_count());
         let other_prefix = self.our_prefix.pushed(!next_bit);
@@ -909,7 +924,14 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         self.they_want_to_merge = false;
         self.merge(&merge_prefix);
         self.add_missing_prefixes();
-        let targets = self.sections.keys().cloned().collect();
+        // The update needs to be sent to all neighbouring sections. However, while those are
+        // merging/splitting, our own section might not agree on their prefixes and the message can
+        // fail to accumulate. So also include results of flipping one bit in the `merge_prefix`.
+        let targets = self.sections
+            .keys()
+            .cloned()
+            .chain((0..merge_prefix.bit_count()).map(|i| merge_prefix.with_flipped_bit(i)))
+            .collect();
         let other_details = OtherMergeDetails {
             prefix: merge_prefix,
             section: self.our_section().clone(),

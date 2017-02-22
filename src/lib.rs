@@ -58,14 +58,14 @@
 //! bootstrap node for the client, and messages to and from the client will be routed over it.
 //!
 //! ```no_run
+//! # #![allow(unused)]
 //! use std::sync::mpsc;
 //! use routing::{Client, Event, FullId};
 //!
+//! let (sender, receiver) = mpsc::channel::<Event>();
 //! let full_id = FullId::new(); // Generate new keys.
-//! let min_section_size = 8;
-//! let _ = Client::new(Some(full_id.clone()), min_section_size, None).unwrap();
-//!
-//! let _ = full_id.public_id().name();
+//! # #[cfg(not(feature = "use-mock-crust"))]
+//! let client = Client::new(sender, Some(full_id)).unwrap();
 //! ```
 //!
 //! Messages can be sent using the methods of `client`, and received as `Event`s from the
@@ -77,11 +77,11 @@
 //! Creating a node looks even simpler:
 //!
 //! ```no_run
+//! # #![allow(unused)]
 //! use routing::Node;
 //!
 //! let min_section_size = 8;
-//!
-//! let _ = Node::builder().create(min_section_size).unwrap();
+//! let node = Node::builder().create(min_section_size).unwrap();
 //! ```
 //!
 //! Upon creation, the node will first connect to the network as a client. Once it has client

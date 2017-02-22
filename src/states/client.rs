@@ -359,7 +359,7 @@ impl Bootstrapped for Client {
 
         let signed_msg = SignedMessage::new(routing_msg, self.full_id(), sending_nodes)?;
 
-        if self.add_to_pending_acks(&signed_msg, route) &&
+        if self.add_to_pending_acks(signed_msg.routing_message(), route) &&
            !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_peer_id, route) {
             let bytes = self.to_hop_bytes(signed_msg.clone(), route, BTreeSet::new())?;
             self.send_or_drop(&proxy_peer_id, bytes, signed_msg.priority());
