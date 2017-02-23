@@ -18,7 +18,7 @@
 use action::Action;
 use cache::{Cache, NullCache};
 use client_error::ClientError;
-use data::{ImmutableData, MutableData};
+use data::{ImmutableData, MutableData, PermissionSet, User, Value};
 use error::{InterfaceError, RoutingError};
 use event::Event;
 use event_stream::{EventStepper, EventStream};
@@ -36,9 +36,7 @@ use rust_sodium;
 use rust_sodium::crypto::sign;
 use state_machine::{State, StateMachine};
 use states;
-#[cfg(feature = "use-mock-crust")]
-use std::collections::BTreeMap;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 #[cfg(feature = "use-mock-crust")]
 use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::{Receiver, RecvError, Sender, TryRecvError, channel};
@@ -243,18 +241,80 @@ impl Node {
                    AccountInfo,
                    CLIENT_GET_PRIORITY);
 
+    /// Respond to a `GetIData` request.
+    pub fn send_get_idata_response(&mut self,
+                                   src: Authority<XorName>,
+                                   dst: Authority<XorName>,
+                                   res: Result<ImmutableData, ClientError>,
+                                   msg_id: MessageId)
+                                   -> Result<(), InterfaceError> {
+        let msg = UserMessage::Response(Response::GetIData {
+            res: res,
+            msg_id: msg_id,
+        });
+
+        let priority = if dst.is_client() {
+            CLIENT_GET_PRIORITY
+        } else {
+            RELOCATE_PRIORITY
+        };
+
+        self.send_action(src, dst, msg, priority)
+    }
+
     /// Respond to a `PutIData` request.
     impl_response!(send_put_idata_response, PutIData);
 
     /// Respond to a `PutMData` request.
     impl_response!(send_put_mdata_response, PutMData);
 
+    /// Respond to a `GetMDataVersion` request.
+    impl_response!(send_get_mdata_version_response,
+                   GetMDataVersion,
+                   u64,
+                   CLIENT_GET_PRIORITY);
+
+    /// Respond to a `ListMDataEntries` request.
+    impl_response!(send_list_mdata_entries_response,
+                   ListMDataEntries,
+                   BTreeMap<Vec<u8>, Value>,
+                   CLIENT_GET_PRIORITY);
+
+    /// Respond to a `ListMDataKeys` request.
+    impl_response!(send_list_mdata_keys_response,
+                   ListMDataKeys,
+                   BTreeSet<Vec<u8>>,
+                   CLIENT_GET_PRIORITY);
+
+    /// Respond to a `ListMDataValues` request.
+    impl_response!(send_list_mdata_values_response,
+                   ListMDataValues,
+                   Vec<Value>,
+                   CLIENT_GET_PRIORITY);
+
+    /// Respond to a `GetMDataValue` request.
+    impl_response!(send_get_mdata_value_response,
+                   GetMDataValue,
+                   Value,
+                   CLIENT_GET_PRIORITY);
+
     /// Respond to a `MutateMDataEntries` request.
     impl_response!(send_mutate_mdata_entries_response, MutateMDataEntries);
 
+    /// Respond to a `ListMDataPermissions` request.
+    impl_response!(send_list_mdata_permissions_response,
+                   ListMDataPermissions,
+                   BTreeMap<User, PermissionSet>,
+                   CLIENT_GET_PRIORITY);
+
+    /// Respond to a `ListMDataUserPermissions` request.
+    impl_response!(send_list_mdata_user_permissions_response,
+                   ListMDataUserPermissions,
+                   PermissionSet,
+                   CLIENT_GET_PRIORITY);
+
     /// Respond to a `SetMDataUserPermissions` request.
-    impl_response!(send_set_mdata_user_permissions_response,
-                   SetMDataUserPermissions);
+    impl_response!(send_set_mdata_user_permissions_response, SetMDataUserPermissions);
 
     /// Respond to a `ListAuthKeysAndVersion` request.
     impl_response!(send_list_auth_keys_and_version_response,
@@ -273,46 +333,6 @@ impl Node {
 
     /// Respond to a `ChangeMDataOwner` request.
     impl_response!(send_change_mdata_owner_response, ChangeMDataOwner);
-
-    /*
-    /// Respond to a `Get` request indicating success and sending the requested data.
-    pub fn send_get_success(&mut self,
-                            src: Authority<XorName>,
-                            dst: Authority<XorName>,
-                            data: Data,
-                            id: MessageId)
-                            -> Result<(), InterfaceError> {
-        let user_msg = UserMessage::Response(Response::GetSuccess(data, id));
-        let priority = if dst.is_client() {
-            CLIENT_GET_PRIORITY
-        } else {
-            RELOCATE_PRIORITY
-        };
-        self.send_action(src, dst, user_msg, priority)
-    }
-
-    /// Respond to a `Get` request indicating failure.
-    pub fn send_get_failure(&mut self,
-                            src: Authority<XorName>,
-                            dst: Authority<XorName>,
-                            data_id: DataIdentifier,
-                            external_error_indicator: Vec<u8>,
-                            id: MessageId)
-                            -> Result<(), InterfaceError> {
-        let user_msg = UserMessage::Response(Response::GetFailure {
-            id: id,
-            data_id: data_id,
-            external_error_indicator: external_error_indicator,
-        });
-        let priority = if dst.is_client() {
-            CLIENT_GET_PRIORITY
-        } else {
-            RELOCATE_PRIORITY
-        };
-        self.send_action(src, dst, user_msg, priority)
-    }
-
-    */
 
     /// Returns the first `count` names of the nodes in the routing table which are closest
     /// to the given one.
