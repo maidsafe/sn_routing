@@ -712,10 +712,12 @@ impl PeerManager {
                 self.peer_map.remove_by_name(name).and_then(|peer| match peer {
                     Peer {
                         state: PeerState::Routing(RoutingConnection::JoiningNode(timestamp)),
-                        .. } |
+                        ..
+                    } |
                     Peer {
                         state: PeerState::Candidate(RoutingConnection::JoiningNode(timestamp)),
-                        .. } => {
+                        ..
+                    } => {
                         debug!("{:?} still acts as proxy of {:?}, re-insert peer as JoiningNode",
                                self,
                                name);
