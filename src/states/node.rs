@@ -744,8 +744,7 @@ impl Node {
 
         // TODO(MAID-1677): Remove this once messages are fully validated.
         // Expect group/section messages to be sent by at least a quorum of `min_section_size`.
-        if self.peer_mgr.routing_table().our_prefix().bit_count() > 0 &&
-           signed_msg.routing_message().src.is_multiple() &&
+        if self.our_prefix().bit_count() > 0 && signed_msg.routing_message().src.is_multiple() &&
            signed_msg.src_size() * 100 < QUORUM * self.min_section_size() {
             warn!("{:?} Not enough signatures in {:?}.", self, signed_msg);
             return Err(RoutingError::NotEnoughSignatures);
@@ -936,7 +935,7 @@ impl Node {
         info!("{:?} Our section with {:?} has approved candidate {}. Adding it to our routing \
                table as a peer {:?}.",
               self,
-              self.peer_mgr.routing_table().our_prefix(),
+              self.our_prefix(),
               candidate_id.name(),
               opt_peer_id);
         if self.peer_mgr.routing_table().is_merge_in_process() {
@@ -988,7 +987,7 @@ impl Node {
             outbox.send_event(Event::NodeAdded(*name, self.peer_mgr.routing_table().clone()));
         }
 
-        let our_prefix = *self.peer_mgr.routing_table().our_prefix();
+        let our_prefix = *self.our_prefix();
         self.send_section_list_signature(our_prefix, None);
 
         for section in sections.values() {
@@ -1138,7 +1137,7 @@ impl Node {
                       self,
                       name,
                       Self::format(elapsed),
-                      self.peer_mgr.routing_table().our_prefix());
+                      self.our_prefix());
                 self.candidate_timer_token = None;
                 let _ = self.send_candidate_approval();
             }
@@ -1148,7 +1147,7 @@ impl Node {
                       self,
                       name,
                       Self::format(elapsed),
-                      self.peer_mgr.routing_table().our_prefix());
+                      self.our_prefix());
             }
         }
     }
@@ -1386,7 +1385,7 @@ impl Node {
             }
             Ok(true) => {
                 // i.e. the section should split
-                let our_prefix = *self.peer_mgr.routing_table().our_prefix();
+                let our_prefix = *self.our_prefix();
                 // In the future we'll look to remove this restriction so we always call
                 // `send_section_split()` here and also check whether another round of splitting is
                 // required in `handle_section_split()` so splitting becomes recursive like merging.
@@ -1423,7 +1422,7 @@ impl Node {
                 .routing_table()
                 .find_section_prefix(public_id.name()) {
                 self.send_section_list_signature(prefix, None);
-                if prefix == *self.peer_mgr.routing_table().our_prefix() {
+                if prefix == *self.our_prefix() {
                     // if the node joined our section, send signatures for all section lists to it
                     for pfx in self.peer_mgr.routing_table().prefixes() {
                         self.send_section_list_signature(pfx, Some(*public_id.name()));
@@ -1454,13 +1453,13 @@ impl Node {
         let members = self.peer_mgr.get_pub_ids(self.peer_mgr.routing_table().our_section());
 
         let content = MessageContent::SectionUpdate {
-            prefix: *self.peer_mgr.routing_table().our_prefix(),
+            prefix: *self.our_prefix(),
             members: members,
         };
 
         let neighbours = self.peer_mgr.routing_table().other_prefixes();
         for neighbour_pfx in neighbours {
-            let src = Authority::Section(self.peer_mgr.routing_table().our_prefix().lower_bound());
+            let src = Authority::Section(self.our_prefix().lower_bound());
             let dst = Authority::PrefixSection(neighbour_pfx);
 
             if let Err(err) = self.send_routing_message(src, dst, content.clone()) {
@@ -1929,7 +1928,7 @@ impl Node {
         };
         info!("{:?} Our section with {:?} accepted {} as a candidate.",
               self,
-              self.peer_mgr.routing_table().our_prefix(),
+              self.our_prefix(),
               candidate_id.name());
         trace!("{:?} Sending {:?} to {:?}",
                self,
@@ -2029,12 +2028,12 @@ impl Node {
                    self.rt_msg_id);
             return Ok(());
         }
-        let old_prefix = *self.peer_mgr.routing_table().our_prefix();
+        let old_prefix = *self.our_prefix();
         for (name, peer_id) in self.peer_mgr.add_prefix(prefix) {
             self.disconnect_peer(&peer_id);
             info!("{:?} Dropped {:?} from the routing table.", self, name);
         }
-        let new_prefix = *self.peer_mgr.routing_table().our_prefix();
+        let new_prefix = *self.our_prefix();
         if old_prefix.bit_count() < new_prefix.bit_count() {
             trace!("{:?} Found out about our section splitting via RT response {:?}",
                    self,
@@ -2069,7 +2068,7 @@ impl Node {
                             joining_node: XorName,
                             outbox: &mut EventBox)
                             -> Result<(), RoutingError> {
-        let split_us = prefix == *self.peer_mgr.routing_table().our_prefix();
+        let split_us = prefix == *self.our_prefix();
         // Send SectionSplit notifications if we don't know of the new node yet
         if split_us && !self.peer_mgr.routing_table().has(&joining_node) {
             self.send_section_split(prefix, joining_node);
@@ -2813,6 +2812,10 @@ impl Node {
         }
     }
 
+    fn our_prefix(&self) -> &Prefix<XorName> {
+        self.peer_mgr.routing_table().our_prefix()
+    }
+
     // For the ongoing collection of `ResourceProofResponse` messages, returns a tuple comprising:
     // the `part_count` they all use; the number of fully-completed ones; a vector for the
     // incomplete ones specifying how many parts have been sent to each peer; and a `String`
@@ -3002,10 +3005,10 @@ impl Bootstrapped for Node {
                     .get_section(self.name())
                     .ok_or(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer))?;
                 let pub_ids = self.peer_mgr.get_pub_ids(section);
-                vec![SectionList::new(*self.peer_mgr.routing_table().our_prefix(), pub_ids)]
+                vec![SectionList::new(*self.our_prefix(), pub_ids)]
             }
             Section(_) => {
-                vec![SectionList::new(*self.peer_mgr.routing_table().our_prefix(),
+                vec![SectionList::new(*self.our_prefix(),
                                       self.peer_mgr
                                           .get_pub_ids(self.peer_mgr
                                               .routing_table()
@@ -3066,10 +3069,7 @@ impl Bootstrapped for Node {
 
 impl Debug for Node {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(formatter,
-               "Node({}({:b}))",
-               self.name(),
-               self.peer_mgr.routing_table().our_prefix())
+        write!(formatter, "Node({}({:b}))", self.name(), self.our_prefix())
     }
 }
 
