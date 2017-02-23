@@ -1178,6 +1178,16 @@ mod tests {
         assert_eq!(table.iter().count(), 0);
     }
 
+    // Adds `min_split_size() - 1` entries to `table`, starting at `name` and incrementing it by 1
+    // each time.
+    fn add_sequential_entries(table: &mut RoutingTable<u16>, name: &mut u16) {
+        for _ in 1..table.min_split_size() {
+            assert_eq!(table.add(*name), Ok(false));
+            table.verify_invariant();
+            *name += 1;
+        }
+    }
+
     // Test explicitly covers `close_names()`, `other_close_names()`, `is_in_our_section()` and
     // `need_to_add()` while also implicitly testing `add()` and `split()`.
     #[test]
@@ -1194,15 +1204,9 @@ mod tests {
         let mut expected_rt_len = 0; // doesn't include own name
         let mut section_00_name = our_name + 1;
         let mut section_10_name = our_name.with_flipped_bit(0);
-        for _ in 1..table.min_split_size() {
-            assert_eq!(table.add(section_00_name), Ok(false));
-            table.verify_invariant();
-            assert_eq!(table.add(section_10_name), Ok(false));
-            table.verify_invariant();
-            section_00_name += 1;
-            section_10_name += 1;
-            expected_rt_len += 2;
-        }
+        add_sequential_entries(&mut table, &mut section_00_name);
+        add_sequential_entries(&mut table, &mut section_10_name);
+        expected_rt_len += 2 * (table.min_split_size() - 1);
 
         // Add one name to the other half to trigger the split to sections 0 and 1.
         assert_eq!(table.add(section_10_name), Ok(true));
@@ -1223,15 +1227,9 @@ mod tests {
         // split again.
         let mut section_01_name = our_name.with_flipped_bit(1);
         let mut section_11_name = section_10_name.with_flipped_bit(1);
-        for _ in 1..table.min_split_size() {
-            assert_eq!(table.add(section_01_name), Ok(false));
-            table.verify_invariant();
-            assert_eq!(table.add(section_11_name), Ok(false));
-            table.verify_invariant();
-            section_01_name += 1;
-            section_11_name += 1;
-            expected_rt_len += 2;
-        }
+        add_sequential_entries(&mut table, &mut section_01_name);
+        add_sequential_entries(&mut table, &mut section_11_name);
+        expected_rt_len += 2 * (table.min_split_size() - 1);
 
         // Trigger split in our own section first to yield sections 00, 01 and 1.
         assert_eq!(table.add(section_01_name), Ok(true));
@@ -1268,18 +1266,12 @@ mod tests {
         // ready to split.
         let mut section_001_name = our_name.with_flipped_bit(2);
         let mut section_011_name = section_001_name.with_flipped_bit(1);
-        for _ in 1..table.min_split_size() {
-            assert_eq!(table.add(section_001_name), Ok(false));
-            table.verify_invariant();
-            assert_eq!(table.add(section_011_name), Ok(false));
-            table.verify_invariant();
-            section_001_name += 1;
-            section_011_name += 1;
-            expected_rt_len += 2;
-        }
+        add_sequential_entries(&mut table, &mut section_001_name);
+        add_sequential_entries(&mut table, &mut section_011_name);
+        expected_rt_len += 2 * (table.min_split_size() - 1);
 
-        // Trigger split in other section (i.e. section 01) first this time to yield sections
-        // 00, 010, 011 and 10.
+        // Trigger split in other section (i.e. section 01) first this time to yield sections 00,
+        // 010, 011 and 10.
         assert_eq!(table.add(section_011_name), Ok(false));
         expected_rt_len += 1;
         assert_eq!(*table.our_prefix(), expected_own_prefix);
