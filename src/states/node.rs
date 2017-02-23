@@ -916,9 +916,11 @@ impl Node {
 
         // Once the joining node joined, it may receive the vote regarding itself.
         // Or a node may receive CandidateApproval before connection established.
+        // If we are not connected to the candidate, we do not want to add them
+        // to our RT.
         let opt_peer_id = match self.peer_mgr
             .handle_candidate_approval(*candidate_id.name(), client_auth) {
-            Ok(peer_id) => Some(peer_id),
+            Ok(peer_id) => peer_id,
             Err(_) => {
                 let src = Authority::ManagedNode(*self.name());
                 if let Err(error) =
@@ -932,12 +934,10 @@ impl Node {
             }
         };
 
-        info!("{:?} Our section with {:?} has approved candidate {}. Adding it to our routing \
-               table as a peer {:?}.",
+        info!("{:?} Our section with {:?} has approved candidate {}.",
               self,
               self.our_prefix(),
-              candidate_id.name(),
-              opt_peer_id);
+              candidate_id.name());
         if self.peer_mgr.routing_table().is_merge_in_process() {
             debug!("{:?} Not sending NodeApproval since our section is currently merging.",
                    self);
@@ -1995,6 +1995,10 @@ impl Node {
                      src: Authority<XorName>,
                      dst: Authority<XorName>)
                      -> Result<(), RoutingError> {
+        if self.peer_mgr.routing_table().is_merge_in_process() {
+            return Ok(());
+        }
+
         let sections = self.peer_mgr.pub_ids_by_section();
         let prefixes = self.peer_mgr.routing_table().prefixes();
         let serialised_rt = serialisation::serialise(&(&sections, prefixes))?;
@@ -2021,7 +2025,8 @@ impl Node {
                      message_id: MessageId,
                      outbox: &mut EventBox)
                      -> Result<(), RoutingError> {
-        if Some(message_id) != self.rt_msg_id {
+        if Some(message_id) != self.rt_msg_id ||
+           self.peer_mgr.routing_table().is_merge_in_process() {
             trace!("{:?} Ignoring RT response {:?}. Waiting for {:?}",
                    self,
                    message_id,
@@ -2732,7 +2737,9 @@ impl Node {
     fn send_section_split(&mut self, our_prefix: Prefix<XorName>, joining_node: XorName) {
         for prefix in self.peer_mgr.routing_table().prefixes() {
             // this way of calculating the source avoids using the joining node as the route
-            let src = Authority::Section(our_prefix.substituted_in(!joining_node));
+            // src authority is a PrefixSection and not Section to help resend failed messages
+            // even if we handle the split and move on.
+            let src = Authority::PrefixSection(our_prefix);
             let dst = Authority::PrefixSection(prefix);
             let content = MessageContent::SectionSplit(our_prefix, joining_node);
             if let Err(err) = self.send_routing_message(src, dst, content) {
@@ -2746,6 +2753,11 @@ impl Node {
             let content = MessageContent::OwnSectionMerge(sections);
             let src = Authority::PrefixSection(sender_prefix);
             let dst = Authority::PrefixSection(merge_prefix);
+            debug!("{:?} Sending OwnSectionMerge from {:?} to {:?} with content {:?}",
+                   self,
+                   src,
+                   dst,
+                   content);
             if let Err(err) = self.send_routing_message(src, dst, content) {
                 debug!("{:?} Failed to send OwnSectionMerge: {:?}.", self, err);
             }
@@ -2760,6 +2772,11 @@ impl Node {
         let src = Authority::PrefixSection(merge_details.prefix);
         for target in &targets {
             let dst = Authority::PrefixSection(*target);
+            debug!("{:?} Sending OtherSectionMerge from {:?} to {:?} with content {:?}",
+                   self,
+                   src,
+                   dst,
+                   content);
             if let Err(err) = self.send_routing_message(src, dst, content.clone()) {
                 debug!("{:?} Failed to send OtherSectionMerge: {:?}.", self, err);
             }
