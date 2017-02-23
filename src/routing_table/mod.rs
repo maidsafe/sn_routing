@@ -139,7 +139,7 @@ type FlatMapFn<'a, T> = fn(&'a BTreeSet<T>) -> MemberIter<'a, T>;
 
 // Amount added to `min_section_size` when deciding whether a bucket split can happen.  This helps
 // protect against rapid splitting and merging in the face of moderate churn.
-const SPLIT_BUFFER: usize = 1;
+const SPLIT_BUFFER: usize = 3;
 
 // Immutable iterator over the entries of a `RoutingTable`.
 pub struct Iter<'a, T: 'a + Binary + Clone + Copy + Default + Hash + Xorable> {
