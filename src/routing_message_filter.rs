@@ -26,6 +26,7 @@ const INCOMING_EXPIRY_DURATION_SECS: u64 = 60 * 20;
 const OUTGOING_EXPIRY_DURATION_SECS: u64 = 60 * 10;
 
 /// An enum representing a result of message filtering
+#[derive(Eq, PartialEq)]
 pub enum FilteringResult {
     /// We don't have the message in the filter yet
     NewMessage,
