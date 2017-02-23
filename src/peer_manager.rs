@@ -695,21 +695,37 @@ impl PeerManager {
                          prefix: Prefix<XorName>)
                          -> (Vec<(XorName, PeerId)>, Option<Prefix<XorName>>) {
         let (names_to_drop, our_new_prefix) = self.routing_table.split(prefix);
+        for name in &names_to_drop {
+            info!("{:?} Dropped {:?} from the routing table.", self, name);
+        }
 
-        let ids_to_drop = names_to_drop.into_iter()
+        let removal_keys = self.candidates
+            .iter()
+            .find(|&(name, candidate)| {
+                !candidate.is_approved() && !self.routing_table.our_prefix().matches(name)
+            })
+            .map(|(name, _)| *name);
+
+        let ids_to_drop = names_to_drop.iter()
+            .chain(removal_keys.iter())
             .filter_map(|name| {
-                info!("{:?} Dropped {:?} from the routing table.", self, name);
-                self.peer_map.remove_by_name(&name).and_then(|peer| match peer {
+                self.peer_map.remove_by_name(name).and_then(|peer| match peer {
                     Peer {
-                    state: PeerState::Routing(RoutingConnection::JoiningNode(timestamp)),
-                    .. } => {
-                    let _ = self.peer_map.insert(Peer {
-                        timestamp: timestamp,
-                        state: PeerState::JoiningNode,
-                        ..peer
-                    });
-                    None
-                }
+                        state: PeerState::Routing(RoutingConnection::JoiningNode(timestamp)),
+                        .. } |
+                    Peer {
+                        state: PeerState::Candidate(RoutingConnection::JoiningNode(timestamp)),
+                        .. } => {
+                        debug!("{:?} still acts as proxy of {:?}, re-insert peer as JoiningNode",
+                               self,
+                               name);
+                        let _ = self.peer_map.insert(Peer {
+                            timestamp: timestamp,
+                            state: PeerState::JoiningNode,
+                            ..peer
+                        });
+                        None
+                    }
                     Peer { state: PeerState::Routing(RoutingConnection::Proxy(timestamp)), .. } => {
                         let _ = self.peer_map.insert(Peer {
                             timestamp: timestamp,
@@ -718,7 +734,7 @@ impl PeerManager {
                         });
                         None
                     }
-                    Peer { peer_id: Some(id), .. } => Some((name, id)),
+                    Peer { peer_id: Some(id), .. } => Some((*name, id)),
                     Peer { peer_id: None, .. } => None,
                 })
             })
@@ -726,12 +742,6 @@ impl PeerManager {
 
         self.cleanup_proxy_peer_id();
 
-        let removal_keys = self.candidates
-            .iter()
-            .find(|&(name, candidate)| {
-                !candidate.is_approved() && !self.routing_table.our_prefix().matches(name)
-            })
-            .map(|(name, _)| *name);
         for name in removal_keys.iter() {
             let _ = self.candidates.remove(name);
             trace!("{:?} Removed unapproved candidate {:?} after split.",
