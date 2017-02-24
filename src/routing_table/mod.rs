@@ -1178,155 +1178,176 @@ mod tests {
         assert_eq!(table.iter().count(), 0);
     }
 
-    // Test explicitly covers close_names(),  other_close_names(),
-    // is_in_our_section() and need_to_add() while also implicitly testing
-    // add() and split() through set-up of random sections with invariant.
-    //
-    // TODO: this test is ignored due to the change of split_buffer modifies expectation.
-    //       as requested by the task MAID-1976, it needs to be updated.
+    // Adds `min_split_size() - 1` entries to `table`, starting at `name` and incrementing it by 1
+    // each time.
+    fn add_sequential_entries(table: &mut RoutingTable<u16>, name: &mut u16) {
+        for _ in 1..table.min_split_size() {
+            assert_eq!(table.add(*name), Ok(false));
+            table.verify_invariant();
+            *name += 1;
+        }
+    }
+
+    // Test explicitly covers `close_names()`, `other_close_names()`, `is_in_our_section()` and
+    // `need_to_add()` while also implicitly testing `add()` and `split()`.
     #[test]
-    #[ignore]
     fn test_routing_sections() {
-        // Use replicable random numbers to initialise a table:
-        use rand::{Rng, SeedableRng, XorShiftRng};
-        let mut rng: XorShiftRng = SeedableRng::from_seed([1315, 30, 61894, 315]);
-        let our_name = rng.next_u32();
-        let mut table = RoutingTable::new(our_name, 8);
+        assert!(SPLIT_BUFFER < 3818,
+                "Given the chosen values for 'our_name' and RT type (u16), this requires the \
+                 SPLIT_BUFFER to be less than 3818.");
+        let our_name = 0b_0001_0001_0001_0001u16;
+        let mut table = RoutingTable::new(our_name, 5);
         table.verify_invariant();
-        let mut unknown_distant_name = None;
 
-        for _ in 0..1000 {
-            let new_name = rng.next_u32();
-            // Try to add new_name. We double-check the output to test this too.
-            match table.add(new_name) {
-                Err(Error::AlreadyExists) => {
-                    table.verify_invariant();
-                    assert!(table.iter().any(|u| *u == new_name));
-                    // skip
-                }
-                Err(Error::PeerNameUnsuitable) => {
-                    table.verify_invariant();
-                    assert!(table.sections.keys().all(|p| !p.matches(&new_name)));
-                    // We should get a few of these. Save one for tests, but otherwise ignore.
-                    unknown_distant_name = Some(new_name);
-                }
-                Err(e) => {
-                    panic!("unexpected error: {}", e);
-                }
-                Ok(true) => {
-                    table.verify_invariant();
-                    let our_prefix = *table.our_prefix();
-                    assert!(our_prefix.matches(&new_name));
-                    let _ = table.split(our_prefix);
-                    table.verify_invariant();
-                }
-                Ok(false) => {
-                    table.verify_invariant();
-                    assert!(table.iter().any(|u| *u == new_name));
-                    if table.is_in_our_section(&new_name) {
-                        continue; // add() already checked for necessary split
-                    }
+        // Set up initial section so the half with our prefix has `min_split_size` entries and the
+        // other half has one less (i.e. so it's ready to split).
+        let mut expected_rt_len = 0; // doesn't include own name
+        let mut section_00_name = our_name + 1;
+        let mut section_10_name = our_name.with_flipped_bit(0);
+        add_sequential_entries(&mut table, &mut section_00_name);
+        add_sequential_entries(&mut table, &mut section_10_name);
+        expected_rt_len += 2 * (table.min_split_size() - 1);
 
-                    // Not a split event for our section, but might be for a different section.
-                    let section_prefix = table.find_section_prefix(&new_name)
-                        .expect("get section added to");
-                    let (section_len, new_section_size) = {
-                        let section =
-                            table.sections.get(&section_prefix).expect("get section from prefix");
-                        // Count size of section after an arbitrary split (note that there is only
-                        // one split possible; the arbitrariness is just which half we choose here).
-                        (section.len(),
-                         section.iter()
-                             .filter(|name| {
-                                 new_name.common_prefix(name) > section_prefix.bit_count()
-                             })
-                             .count())
-                    };
-                    let min_section_size = table.min_split_size();
-                    if new_section_size >= min_section_size &&
-                       section_len - new_section_size >= min_section_size {
-                        let _ = table.split(section_prefix); // do the split
-                        table.verify_invariant();
-                    }
-                }
-            }
-        }
+        // Add one name to the other half to trigger the split to sections 0 and 1.
+        assert_eq!(table.add(section_10_name), Ok(true));
+        expected_rt_len += 1;
+        let mut expected_own_prefix = Prefix::new(0, our_name);
+        assert_eq!(*table.our_prefix(), expected_own_prefix);
+        let (nodes_to_drop, our_new_prefix) = table.split(expected_own_prefix);
+        expected_own_prefix = Prefix::new(1, our_name);
+        assert_eq!(*table.our_prefix(), expected_own_prefix);
+        assert_eq!(unwrap!(our_new_prefix), expected_own_prefix);
+        assert!(nodes_to_drop.is_empty());
+        table.verify_invariant();
+        assert_eq!(table.len(), expected_rt_len);
+        assert_eq!(table.all_sections().len(), 2);
+        assert_eq!(table.our_section().len(), table.min_split_size());
 
-        let unknown_neighbour;
-        loop {
-            let new_name = rng.next_u32();
-            if table.our_prefix.matches(&new_name) {
-                continue;
-            }
-            if let Some(prefix) = table.sections.keys().find(|p| p.matches(&new_name)) {
-                if !unwrap!(table.sections.get(&prefix)).contains(&new_name) {
-                    unknown_neighbour = new_name;
-                    break;
-                }
-            }
-        }
+        // Add `min_split_size - 1` with names 01... and names 11... to get both sections ready to
+        // split again.
+        let mut section_01_name = our_name.with_flipped_bit(1);
+        let mut section_11_name = section_10_name.with_flipped_bit(1);
+        add_sequential_entries(&mut table, &mut section_01_name);
+        add_sequential_entries(&mut table, &mut section_11_name);
+        expected_rt_len += 2 * (table.min_split_size() - 1);
 
-        let unknown_distant_name = unwrap!(unknown_distant_name);
-        // These numbers depend on distribution of names
-        let num_known_nodes = 104;
-        let num_sections = 8;
-        let len_our_section = 13;
-        assert_eq!(table.len(), num_known_nodes);
-        assert_eq!(table.sections.len(), num_sections - 1);
-        assert_eq!(table.our_section.len(), len_our_section);
-        assert_eq!(our_name, table.our_name);
+        // Trigger split in our own section first to yield sections 00, 01 and 1.
+        assert_eq!(table.add(section_01_name), Ok(true));
+        expected_rt_len += 1;
+        assert_eq!(*table.our_prefix(), expected_own_prefix);
+        let (nodes_to_drop, our_new_prefix) = table.split(expected_own_prefix);
+        expected_own_prefix = Prefix::new(2, our_name);
+        assert_eq!(*table.our_prefix(), expected_own_prefix);
+        assert_eq!(unwrap!(our_new_prefix), expected_own_prefix);
+        assert!(nodes_to_drop.is_empty());
+        table.verify_invariant();
+        assert_eq!(table.len(), expected_rt_len);
+        assert_eq!(table.all_sections().len(), 3);
+        assert_eq!(table.our_section().len(), table.min_split_size());
 
-        // Get some names
-        // TODO: the filter step here may not be needed if the definition of `iter()` is changed
-        let close_name: u32 =
-            *unwrap!(table.our_section.iter().filter(|name| **name != our_name).nth(4));
-        let mut known_neighbour: Option<u32> = None;
-        for (prefix, section) in &table.sections {
-            if *prefix == table.our_prefix {
-                continue;
-            }
-            known_neighbour = Some(*unwrap!(section.iter().next()));
-            break;
-        }
-        let known_neighbour = unwrap!(known_neighbour);
-        assert!(!table.our_prefix.matches(&known_neighbour));
+        // Now trigger split in section 1, which should cause section 11 to get ejected, leaving
+        // sections 00, 01 and 10.
+        assert_eq!(table.add(section_11_name), Ok(false));
+        expected_rt_len += 1;
+        assert_eq!(*table.our_prefix(), expected_own_prefix);
+        let (nodes_to_drop, our_new_prefix) = table.split(Prefix::new(1, section_11_name));
+        assert_eq!(*table.our_prefix(), expected_own_prefix);
+        assert!(our_new_prefix.is_none());
+        assert_eq!(nodes_to_drop.len(), table.min_split_size());
+        let mut drop_prefix = Prefix::new(2, section_11_name);
+        assert!(nodes_to_drop.iter().all(|name| drop_prefix.matches(name)));
+        expected_rt_len -= nodes_to_drop.len();
+        table.verify_invariant();
+        assert_eq!(table.len(), expected_rt_len);
+        assert_eq!(table.all_sections().len(), 3);
+        assert_eq!(table.our_section().len(), table.min_split_size());
 
-        assert!(table.iter().any(|u| *u == close_name));
-        assert!(table.iter().any(|u| *u == known_neighbour));
-        assert!(table.iter().all(|u| *u != unknown_neighbour));
-        assert!(table.iter().all(|u| *u != unknown_distant_name));
-        assert!(table.is_in_our_section(&close_name));
-        assert!(!table.is_in_our_section(&known_neighbour));
+        // Add `min_split_size - 1` with names 001... and names 011... to get sections 00 and 01
+        // ready to split.
+        let mut section_001_name = our_name.with_flipped_bit(2);
+        let mut section_011_name = section_001_name.with_flipped_bit(1);
+        add_sequential_entries(&mut table, &mut section_001_name);
+        add_sequential_entries(&mut table, &mut section_011_name);
+        expected_rt_len += 2 * (table.min_split_size() - 1);
 
-        // Tests on close_names
-        assert_eq!(table.close_names(&close_name).unwrap().len(),
-                   len_our_section);
-        assert!(table.close_names(&known_neighbour).is_none());
-        assert!(table.close_names(&unknown_neighbour).is_none());
-        assert!(table.close_names(&unknown_distant_name).is_none());
+        // Trigger split in other section (i.e. section 01) first this time to yield sections 00,
+        // 010, 011 and 10.
+        assert_eq!(table.add(section_011_name), Ok(false));
+        expected_rt_len += 1;
+        assert_eq!(*table.our_prefix(), expected_own_prefix);
+        let (nodes_to_drop, our_new_prefix) = table.split(Prefix::new(2, section_011_name));
+        assert_eq!(*table.our_prefix(), expected_own_prefix);
+        assert!(our_new_prefix.is_none());
+        assert!(nodes_to_drop.is_empty());
+        table.verify_invariant();
+        assert_eq!(table.len(), expected_rt_len);
+        assert_eq!(table.all_sections().len(), 4);
+        assert_eq!(table.our_section().len(), 2 * table.min_split_size() - 1);
 
-        // Tests on other_close_names
-        assert_eq!(table.other_close_names(&close_name).unwrap().len(),
-                   len_our_section - 1);
-        assert!(table.other_close_names(&known_neighbour).is_none());
-        assert!(table.other_close_names(&unknown_neighbour).is_none());
-        assert!(table.other_close_names(&unknown_distant_name).is_none());
+        // Now trigger split in own section (i.e. section 00), which should cause section 011 to get
+        // ejected, leaving sections 000, 001, 010 and 10.
+        assert_eq!(table.add(section_001_name), Ok(true));
+        expected_rt_len += 1;
+        assert_eq!(*table.our_prefix(), expected_own_prefix);
+        let (nodes_to_drop, our_new_prefix) = table.split(expected_own_prefix);
+        expected_own_prefix = Prefix::new(3, our_name);
+        assert_eq!(*table.our_prefix(), expected_own_prefix);
+        assert_eq!(unwrap!(our_new_prefix), expected_own_prefix);
+        assert_eq!(nodes_to_drop.len(), table.min_split_size());
+        drop_prefix = Prefix::new(3, section_011_name);
+        assert!(nodes_to_drop.iter().all(|name| drop_prefix.matches(name)));
+        expected_rt_len -= nodes_to_drop.len();
+        table.verify_invariant();
+        assert_eq!(table.len(), expected_rt_len);
+        assert_eq!(table.all_sections().len(), 4);
+        assert_eq!(table.our_section().len(), table.min_split_size());
 
-        // Tests on is_in_our_section
+        // Try to add a name which is already in the RT.
+        assert_eq!(table.add(section_001_name), Err(Error::AlreadyExists));
+        table.verify_invariant();
+        assert_eq!(table.len(), expected_rt_len);
+
+        // Try to add our own name.
+        assert_eq!(table.add(our_name), Err(Error::OwnNameDisallowed));
+        table.verify_invariant();
+        assert_eq!(table.len(), expected_rt_len);
+
+        // Try to add a name which doesn't fit any section.
+        assert_eq!(table.add(nodes_to_drop[0]), Err(Error::PeerNameUnsuitable));
+        table.verify_invariant();
+        assert_eq!(table.len(), expected_rt_len);
+
+        // Check `is_in_our_section()`.
         assert!(table.is_in_our_section(&our_name));
-        assert!(table.is_in_our_section(&close_name));
-        assert!(!table.is_in_our_section(&known_neighbour));
-        assert!(!table.is_in_our_section(&unknown_neighbour));
-        assert!(!table.is_in_our_section(&unknown_distant_name));
+        assert!(table.is_in_our_section(&(section_00_name - 1)));
+        assert!(!table.is_in_our_section(&section_001_name));
+        assert!(!table.is_in_our_section(&section_10_name));
 
-        // Tests on need_to_add
-        assert_eq!(table.need_to_add(&our_name), Err(Error::OwnNameDisallowed));
-        assert_eq!(table.need_to_add(&close_name), Err(Error::AlreadyExists));
-        assert_eq!(table.need_to_add(&known_neighbour),
+        // Check `close_names()`.
+        let our_section = table.our_section().clone();
+        assert!(our_section.contains(&our_name));
+        assert_eq!(unwrap!(table.close_names(&our_name)), our_section);
+        assert_eq!(unwrap!(table.close_names(&section_00_name)), our_section);
+        assert!(table.close_names(&section_001_name).is_none());
+        assert!(table.close_names(&section_10_name).is_none());
+
+        // Check `other_close_names()`.
+        let our_section_without_us =
+            our_section.into_iter().filter(|name| *name != our_name).collect::<BTreeSet<_>>();
+        assert_eq!(unwrap!(table.other_close_names(&our_name)),
+                   our_section_without_us);
+        assert_eq!(unwrap!(table.other_close_names(&section_00_name)),
+                   our_section_without_us);
+        assert!(table.other_close_names(&section_001_name).is_none());
+        assert!(table.other_close_names(&section_10_name).is_none());
+
+        // Check `need_to_add()`.
+        assert_eq!(table.need_to_add(&section_001_name),
                    Err(Error::AlreadyExists));
-        assert_eq!(table.need_to_add(&unknown_neighbour), Ok(()));
-        assert_eq!(table.need_to_add(&unknown_distant_name),
+        assert_eq!(table.need_to_add(&our_name), Err(Error::OwnNameDisallowed));
+        assert_eq!(table.need_to_add(&nodes_to_drop[0]),
                    Err(Error::PeerNameUnsuitable));
+        assert_eq!(table.need_to_add(&(section_001_name + 1)), Ok(()));
     }
 
     #[test]
