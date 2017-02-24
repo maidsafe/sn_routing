@@ -206,9 +206,10 @@ impl Client {
         match routing_msg.content {
             MessageContent::Ack(ack, _) => self.handle_ack_response(ack),
             MessageContent::UserMessagePart { hash, part_count, part_index, payload, .. } => {
-                trace!("{:?} Got UserMessagePart {:x}, {}/{} from {:?} to {:?}.",
+                trace!("{:?} Got UserMessagePart {:02x}{:02x}, {}/{} from {:?} to {:?}.",
                        self,
-                       hash,
+                       hash[0],
+                       hash[1],
                        part_count,
                        part_index,
                        routing_msg.src,
