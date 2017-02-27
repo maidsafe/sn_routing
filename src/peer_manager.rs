@@ -661,15 +661,31 @@ impl PeerManager {
             match peer.state {
                 PeerState::ConnectionInfoPreparing { .. } |
                 PeerState::ConnectionInfoReady(_) |
-                PeerState::CrustConnecting |
                 PeerState::SearchingForTunnel |
-                PeerState::Routing(_) => {
-                    trace!("{:?} Unexpected peer state {:?} while adding {:?} to routing table.",
+                PeerState::Routing(RoutingConnection::Proxy(_)) |
+                PeerState::Routing(RoutingConnection::Direct) |
+                PeerState::Routing(RoutingConnection::Tunnel) => {
+                    trace!("{:?} Unexpected peer state {:?} while adding {:?} into routing table.",
                            self,
                            peer.state,
                            peer_id)
                 }
-                _ => (),
+                PeerState::CrustConnecting if !self.unknown_peers.contains_key(peer_id) => {
+                    trace!("{:?} Unexpected peer state {:?} while adding {:?} into routing table.",
+                           self,
+                           peer.state,
+                           peer_id)
+                }
+                PeerState::CrustConnecting |
+                PeerState::AwaitingNodeIdentify(_) |
+                PeerState::Client |
+                PeerState::JoiningNode |
+                // This state is not unexpected; the peer may have been previously added via a
+                // section update, and we handle it in `self.routing_table.add()` below by returning
+                // an `AlreadyExists` error.
+                PeerState::Routing(RoutingConnection::JoiningNode(_)) |
+                PeerState::Candidate(_) |
+                PeerState::Proxy => (),
             }
         } else {
             trace!("{:?} Add to routing table called for {:?} not found in peer_map",
@@ -972,6 +988,7 @@ impl PeerManager {
     /// Also removes timed out expected peers (those we tried to connect to), but doesn't return
     /// those.
     pub fn remove_expired_connections(&mut self) -> Vec<PeerId> {
+        self.remove_expired();
         let mut expired_connections = Vec::new();
 
         for (peer_id, xor_name) in &self.peer_map.names {
@@ -1139,6 +1156,51 @@ impl PeerManager {
                 None
             })
             .collect()
+    }
+
+    /// Returns the `PeerId`s and names of all the peers held in the RT, and whether they are
+    /// connected via a tunnel or not.
+    pub fn get_routing_peer_details(&self) -> Vec<(PeerId, XorName, bool)> {
+        self.routing_table
+            .iter()
+            .filter_map(|name| -> Option<(PeerId, XorName, bool)> {
+                let peer = match self.peer_map.get_by_name(name) {
+                    Some(peer) => peer,
+                    None => {
+                        error!("{:?} has {} in RT, but has no entry in peer_map for it.",
+                               self,
+                               name);
+                        return None;
+                    }
+                };
+                let peer_id = match peer.peer_id {
+                    Some(peer_id) => peer_id,
+                    None => {
+                        error!("{:?} has {} in RT, but has no peer ID for it.", self, name);
+                        return None;
+                    }
+                };
+                let is_tunnel = match peer.state {
+                    PeerState::Routing(RoutingConnection::Tunnel) => true,
+                    PeerState::Routing(_) => false,
+                    _ => {
+                        error!("{:?} has {} in RT, but has state {:?} for it.",
+                               self,
+                               name,
+                               peer.state);
+                        return None;
+                    }
+                };
+                Some((peer_id, *name, is_tunnel))
+            })
+            .collect()
+    }
+
+    pub fn correct_routing_state_to_direct(&mut self, peer_id: &PeerId) {
+        if let Some(mut peer) = self.peer_map.remove(peer_id) {
+            peer.state = PeerState::Routing(RoutingConnection::Direct);
+            let _ = self.peer_map.insert(peer);
+        }
     }
 
     /// Sets the given peer to state `SearchingForTunnel` and returns querying candidates.
@@ -1382,21 +1444,14 @@ impl PeerManager {
     }
 
     fn remove_expired(&mut self) {
-        self.remove_expired_peers();
-        self.cleanup_proxy_peer_id();
-    }
-
-    fn remove_expired_peers(&mut self) {
         let expired_names = self.peer_map
             .peers()
             .filter(|peer| peer.is_expired())
             .map(|peer| *peer.name())
             .collect_vec();
-
         for name in expired_names {
             let _ = self.peer_map.remove_by_name(&name);
         }
-
         self.cleanup_proxy_peer_id();
     }
 

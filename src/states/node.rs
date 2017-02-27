@@ -534,7 +534,10 @@ impl Node {
             }
             NodeIdentify { ref serialised_public_id, ref signature } => {
                 if let Ok(public_id) = verify_signed_public_id(serialised_public_id, signature) {
-                    self.handle_node_identify(public_id, peer_id, outbox)
+                    debug!("{:?} Handling NodeIdentify from {:?}.",
+                           self,
+                           public_id.name());
+                    self.add_to_routing_table(&public_id, &peer_id, outbox);
                 } else {
                     warn!("{:?} Signature check failed in NodeIdentify, so dropping peer {:?}.",
                           self,
@@ -809,7 +812,8 @@ impl Node {
 
         match routing_msg.content {
             Ack(..) |
-            RoutingTableRequest(..) => (),
+            RoutingTableRequest(..) |
+            UserMessagePart { .. } => (),
             _ => trace!("{:?} Got routing message {:?}.", self, routing_msg),
         }
 
@@ -1305,16 +1309,6 @@ impl Node {
         self.send_bootstrap_identify(peer_id)
     }
 
-    fn handle_node_identify(&mut self,
-                            public_id: PublicId,
-                            peer_id: PeerId,
-                            outbox: &mut EventBox) {
-        debug!("{:?} Handling NodeIdentify from {:?}.",
-               self,
-               public_id.name());
-        self.add_to_routing_table(&public_id, &peer_id, outbox);
-    }
-
     fn handle_candidate_identify(&mut self,
                                  public_id: PublicId,
                                  peer_id: PeerId,
@@ -1616,7 +1610,7 @@ impl Node {
             Ok(IsClient) |
             Ok(IsJoiningNode) => {
                 self.send_node_identify(peer_id);
-                self.handle_node_identify(public_id, peer_id, outbox);
+                self.add_to_routing_table(&public_id, &peer_id, outbox);
             }
             Ok(Waiting) | Ok(IsConnected) | Err(_) => (),
         }
@@ -2205,10 +2199,10 @@ impl Node {
                 debug!("{:?} Disconnecting from timed out peer {:?}", self, peer_id);
                 let _ = self.crust_service.disconnect(peer_id);
             }
+            let terminate = self.purge_invalid_rt_entries(outbox);
             self.merge_if_necessary();
-
             outbox.send_event(Event::Tick);
-            return true;
+            return terminate;
         }
 
         if self.rt_timer_token == Some(token) {
@@ -2284,6 +2278,59 @@ impl Node {
             outbox.send_event(Event::Terminate);
         }
         false
+    }
+
+    // Drop peers to which we think we have a direct or tunnel connection, but where Crust reports
+    // that we're not connected to the peer or tunnel node respectively.
+    fn purge_invalid_rt_entries(&mut self, outbox: &mut EventBox) -> bool {
+        let mut peer_ids_to_drop = vec![];
+        for (peer_id, name, is_tunnel) in self.peer_mgr.get_routing_peer_details() {
+            if is_tunnel {
+                match self.tunnels.tunnel_for(&peer_id) {
+                    Some(tunnel_peer_id) => {
+                        if !self.crust_service.is_connected(tunnel_peer_id) {
+                            debug!("{:?} Should have a tunnel connection to {} {:?} via {:?}, \
+                                    but tunnel not connected.",
+                                   self,
+                                   name,
+                                   peer_id,
+                                   tunnel_peer_id);
+                            peer_ids_to_drop.push(*tunnel_peer_id);
+                        }
+                    }
+                    None => {
+                        if self.crust_service.is_connected(&peer_id) {
+                            debug!("{:?} Should have a tunnel connection to {} {:?}, but instead \
+                                    have a direct connection.",
+                                   self,
+                                   name,
+                                   peer_id);
+                            self.peer_mgr.correct_routing_state_to_direct(&peer_id);
+                        } else {
+                            debug!("{:?} Should have a tunnel connection to {} {:?}, but no \
+                                    tunnel or direct connection exists.",
+                                   self,
+                                   name,
+                                   peer_id);
+                            peer_ids_to_drop.push(peer_id);
+                        }
+                    }
+                }
+            } else if !self.crust_service.is_connected(&peer_id) {
+                error!("{:?} Should have a direct connection to {} {:?}, but don't.",
+                       self,
+                       name,
+                       peer_id);
+                peer_ids_to_drop.push(peer_id);
+            }
+        }
+        let mut terminate = false;
+        for peer_id in peer_ids_to_drop {
+            if let Transition::Terminate = self.handle_lost_peer(peer_id, outbox) {
+                terminate = true;
+            }
+        }
+        terminate
     }
 
     fn send_rt_request(&mut self) -> Result<(), RoutingError> {
@@ -2628,7 +2675,7 @@ impl Node {
             .get_proxy_or_client_or_joining_node_peer_id(&their_public_id) {
 
             self.send_node_identify(peer_id);
-            self.handle_node_identify(their_public_id, peer_id, outbox);
+            self.add_to_routing_table(&their_public_id, &peer_id, outbox);
             return Ok(());
         }
 
