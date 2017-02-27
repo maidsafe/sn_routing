@@ -368,7 +368,19 @@ pub fn create_connected_nodes_with_cache(network: &Network, size: usize, use_cac
     Nodes(nodes)
 }
 
-// This creates new nodes (all with `use_cache` set to `true`) until the specified disjoint sections
+pub fn create_connected_nodes_until_split(network: &Network,
+                                          prefix_lengths: Vec<usize>,
+                                          use_cache: bool)
+                                          -> Nodes {
+    // Start first node.
+    let mut nodes =
+        vec![TestNode::builder(network).first().endpoint(Endpoint(0)).cache(use_cache).create()];
+    nodes[0].poll();
+    add_connected_nodes_until_split(network, &mut nodes, prefix_lengths, use_cache);
+    Nodes(nodes)
+}
+
+// This adds new nodes (all with `use_cache` set to `true`) until the specified disjoint sections
 // have formed.
 //
 // `prefix_lengths` is an array representing the required `bit_count`s of the section prefixes.  For
@@ -378,26 +390,26 @@ pub fn create_connected_nodes_with_cache(network: &Network, size: usize, use_cac
 //
 // The array is sanity checked (e.g. it would be an error to pass [1, 1, 1]), must comprise at
 // least two elements, and every element must be no more than `8`.
-pub fn create_connected_nodes_until_split(network: &Network,
-                                          mut prefix_lengths: Vec<usize>,
-                                          use_cache: bool)
-                                          -> Nodes {
+pub fn add_connected_nodes_until_split(network: &Network,
+                                       nodes: &mut Vec<TestNode>,
+                                       mut prefix_lengths: Vec<usize>,
+                                       use_cache: bool) {
     // Get sorted list of prefixes to suit requested lengths.
     sanity_check(&prefix_lengths);
     prefix_lengths.sort();
     let mut rng = network.new_rng();
     let prefixes = prefixes(&prefix_lengths, &mut rng);
 
-    // Start first node.
-    let mut nodes =
-        vec![TestNode::builder(network).first().endpoint(Endpoint(0)).cache(use_cache).create()];
-    nodes[0].poll();
+    // Cleanup the previous event queue
+    for node in nodes.iter_mut() {
+        while let Ok(_) = node.try_next_ev() {}
+    }
 
     // Start enough new nodes under each target prefix to trigger a split eventually.
     let min_split_size = nodes[0].routing_table().min_split_size();
     for prefix in &prefixes {
         for _ in 0..min_split_size {
-            add_node_to_section(network, &mut nodes, prefix, &mut rng, use_cache);
+            add_node_to_section(network, nodes, prefix, &mut rng, use_cache);
             if nodes.len() == 2 {
                 expect_next_event!(nodes[0], Event::Connected);
             }
@@ -409,7 +421,7 @@ pub fn create_connected_nodes_until_split(network: &Network,
     // Find and add nodes to sections which still need to split to trigger this.
     loop {
         let mut found_prefix = None;
-        for node in &nodes {
+        for node in nodes.iter() {
             if let Some(prefix_to_split) =
                 unwrap!(node.inner.routing_table())
                     .prefixes()
@@ -429,7 +441,7 @@ pub fn create_connected_nodes_until_split(network: &Network,
             }
         }
         if let Some(prefix_to_split) = found_prefix {
-            add_node_to_section(network, &mut nodes, &prefix_to_split, &mut rng, use_cache);
+            add_node_to_section(network, nodes, &prefix_to_split, &mut rng, use_cache);
         } else {
             break;
         }
@@ -437,7 +449,7 @@ pub fn create_connected_nodes_until_split(network: &Network,
 
     // Gather all the actual prefixes and check they are as expected.
     let mut actual_prefixes = BTreeSet::<Prefix<XorName>>::new();
-    for node in &nodes {
+    for node in nodes.iter() {
         actual_prefixes.append(&mut unwrap!(node.inner.routing_table()).prefixes());
     }
     assert_eq!(prefixes.iter().cloned().collect::<BTreeSet<_>>(),
@@ -446,7 +458,7 @@ pub fn create_connected_nodes_until_split(network: &Network,
                prefixes.iter().map(|prefix| prefix.bit_count()).collect_vec());
 
     // Clear all event queues and clear the `next_node_name` values.
-    for node in &mut nodes {
+    for node in nodes.iter_mut() {
         while let Ok(event) = node.try_next_ev() {
             match event {
                 Event::NodeAdded(..) |
@@ -460,7 +472,6 @@ pub fn create_connected_nodes_until_split(network: &Network,
     }
 
     trace!("Created testnet comprising {:?}", prefixes);
-    Nodes(nodes)
 }
 
 // Create `size` clients, all of whom are connected to `nodes[0]`.
