@@ -63,7 +63,9 @@ impl Bootstrapping {
                min_section_size: usize,
                timer: Timer)
                -> Option<Self> {
-        if let Err(error) = crust_service.start_listening_tcp() {
+        if client_restriction {
+            let _ = crust_service.start_bootstrap(HashSet::new(), CrustUser::Client);
+        } else if let Err(error) = crust_service.start_listening_tcp() {
             error!("Failed to start listening: {:?}", error);
             return None;
         }
@@ -121,18 +123,22 @@ impl Bootstrapping {
                 }
             }
             CrustEvent::ListenerStarted(port) => {
+                if self.client_restriction {
+                    error!("{:?} A client must not run a crust listener.", self);
+                    outbox.send_event(Event::Terminate);
+                    return Transition::Terminate;
+                }
                 trace!("{:?} Listener started on port {}.", self, port);
-                let crust_user = if self.client_restriction {
-                    CrustUser::Client
-                } else {
-                    self.crust_service.set_service_discovery_listen(true);
-                    CrustUser::Node
-                };
-                let _ = self.crust_service.start_bootstrap(HashSet::new(), crust_user);
+                self.crust_service.set_service_discovery_listen(true);
+                let _ = self.crust_service.start_bootstrap(HashSet::new(), CrustUser::Node);
                 Transition::Stay
             }
             CrustEvent::ListenerFailed => {
-                error!("{:?} Failed to start listening.", self);
+                if self.client_restriction {
+                    error!("{:?} A client must not run a crust listener.", self);
+                } else {
+                    error!("{:?} Failed to start listening.", self);
+                }
                 outbox.send_event(Event::Terminate);
                 Transition::Terminate
             }
