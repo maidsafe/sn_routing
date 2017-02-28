@@ -109,6 +109,12 @@ impl Network {
         imp.blocked_connections.insert((sender, receiver));
     }
 
+    /// Make all packets from `sender` to `receiver` succeed.
+    pub fn unblock_connection(&self, sender: Endpoint, receiver: Endpoint) {
+        let mut imp = self.0.borrow_mut();
+        let _ = imp.blocked_connections.remove(&(sender, receiver));
+    }
+
     /// Construct a new [`XorShiftRng`](https://doc.rust-lang.org/rand/rand/struct.XorShiftRng.html)
     /// using a seed generated from random data provided by `self`.
     pub fn new_rng(&self) -> XorShiftRng {
