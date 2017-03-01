@@ -139,6 +139,11 @@ impl Tunnels {
         self.tunnels.remove(dst_id)
     }
 
+    /// Is the given `tunnel_id` acting as a tunnel node?
+    pub fn is_tunnel_node(&self, tunnel_id: &PeerId) -> bool {
+        self.tunnels.values().any(|id| id == tunnel_id)
+    }
+
     /// Removes the given tunnel node and returns a list of all peers it was acting as a tunnel
     /// for.
     pub fn remove_tunnel(&mut self, tunnel_id: &PeerId) -> Vec<PeerId> {

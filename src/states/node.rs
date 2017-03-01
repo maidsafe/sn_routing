@@ -303,7 +303,7 @@ impl Node {
                 let _ = result_tx.send(*self.name());
             }
             Action::Timeout(token) => {
-                if !self.handle_timeout(token, outbox) {
+                if let Transition::Terminate = self.handle_timeout(token, outbox) {
                     return Transition::Terminate;
                 }
             }
@@ -323,7 +323,9 @@ impl Node {
                               -> Transition {
         match crust_event {
             CrustEvent::BootstrapAccept(peer_id) => self.handle_bootstrap_accept(peer_id),
-            CrustEvent::BootstrapConnect(peer_id, _) => self.handle_bootstrap_connect(peer_id),
+            CrustEvent::BootstrapConnect(peer_id, _) => {
+                self.handle_bootstrap_connect(peer_id, outbox)
+            }
             CrustEvent::ConnectSuccess(peer_id) => self.handle_connect_success(peer_id),
             CrustEvent::ConnectFailure(peer_id) => self.handle_connect_failure(peer_id),
             CrustEvent::LostPeer(peer_id) => {
@@ -382,9 +384,9 @@ impl Node {
         // TODO: Keep track of that peer to make sure we receive a message from them.
     }
 
-    fn handle_bootstrap_connect(&mut self, peer_id: PeerId) {
+    fn handle_bootstrap_connect(&mut self, peer_id: PeerId, outbox: &mut EventBox) {
         // A mature node doesn't need a bootstrap connection
-        self.disconnect_peer(&peer_id)
+        self.disconnect_peer(&peer_id, Some(outbox))
     }
 
     fn handle_connect_success(&mut self, peer_id: PeerId) {
@@ -397,7 +399,7 @@ impl Node {
             debug!("{:?} Received ConnectSuccess, but {:?} is not whitelisted.",
                    self,
                    peer_id);
-            self.disconnect_peer(&peer_id);
+            self.disconnect_peer(&peer_id, None);
             return;
         }
 
@@ -523,23 +525,26 @@ impl Node {
             }
             ClientIdentify { ref serialised_public_id, ref signature, client_restriction } => {
                 if let Ok(public_id) = verify_signed_public_id(serialised_public_id, signature) {
-                    self.handle_client_identify(public_id, peer_id, client_restriction)
+                    self.handle_client_identify(public_id, peer_id, client_restriction, outbox)
                 } else {
                     warn!("{:?} Signature check failed in ClientIdentify, so dropping connection \
                            {:?}.",
                           self,
                           peer_id);
-                    self.disconnect_peer(&peer_id);
+                    self.disconnect_peer(&peer_id, Some(outbox));
                 }
             }
             NodeIdentify { ref serialised_public_id, ref signature } => {
                 if let Ok(public_id) = verify_signed_public_id(serialised_public_id, signature) {
-                    self.handle_node_identify(public_id, peer_id, outbox)
+                    debug!("{:?} Handling NodeIdentify from {:?}.",
+                           self,
+                           public_id.name());
+                    self.add_to_routing_table(&public_id, &peer_id, outbox);
                 } else {
                     warn!("{:?} Signature check failed in NodeIdentify, so dropping peer {:?}.",
                           self,
                           peer_id);
-                    self.disconnect_peer(&peer_id);
+                    self.disconnect_peer(&peer_id, Some(outbox));
                 }
             }
             CandidateIdentify { ref serialised_public_id, ref signature } => {
@@ -550,7 +555,7 @@ impl Node {
                            {:?}.",
                           self,
                           peer_id);
-                    self.disconnect_peer(&peer_id);
+                    self.disconnect_peer(&peer_id, Some(outbox));
                 }
             }
             TunnelRequest(dst_id) => self.handle_tunnel_request(peer_id, dst_id),
@@ -809,7 +814,8 @@ impl Node {
 
         match routing_msg.content {
             Ack(..) |
-            RoutingTableRequest(..) => (),
+            RoutingTableRequest(..) |
+            UserMessagePart { .. } => (),
             _ => trace!("{:?} Got routing message {:?}.", self, routing_msg),
         }
 
@@ -828,10 +834,10 @@ impl Node {
                 Ok(self.handle_get_node_name_response(relocated_id, section, dst, outbox))
             }
             (ExpectCandidate { expect_id, client_auth, message_id }, Section(_), Section(_)) => {
-                self.handle_expect_candidate(expect_id, client_auth, message_id)
+                self.handle_expect_candidate(expect_id, client_auth, message_id, outbox)
             }
             (AcceptAsCandidate { expect_id, client_auth, message_id }, Section(_), Section(_)) => {
-                self.handle_accept_as_candidate(expect_id, client_auth, message_id)
+                self.handle_accept_as_candidate(expect_id, client_auth, message_id, outbox)
             }
             (ConnectionInfoRequest { encrypted_conn_info, nonce, pub_id, msg_id },
              src @ Client { .. },
@@ -911,7 +917,7 @@ impl Node {
                                  outbox: &mut EventBox)
                                  -> Result<(), RoutingError> {
         for peer_id in self.peer_mgr.remove_expired_candidates() {
-            self.disconnect_peer(&peer_id);
+            self.disconnect_peer(&peer_id, Some(outbox));
         }
 
         // Once the joining node joined, it may receive the vote regarding itself.
@@ -1248,17 +1254,18 @@ impl Node {
     fn handle_client_identify(&mut self,
                               public_id: PublicId,
                               peer_id: PeerId,
-                              client_restriction: bool) {
+                              client_restriction: bool,
+                              outbox: &mut EventBox) {
         if !client_restriction && !self.crust_service.is_peer_whitelisted(&peer_id) {
             warn!("{:?} Client is not whitelisted, so dropping connection.",
                   self);
-            self.disconnect_peer(&peer_id);
+            self.disconnect_peer(&peer_id, Some(outbox));
             return;
         }
         if *public_id.name() != XorName(sha256::hash(&public_id.signing_public_key().0).0) {
             warn!("{:?} Incoming connection not validated as a proper client, so dropping it.",
                   self);
-            self.disconnect_peer(&peer_id);
+            self.disconnect_peer(&peer_id, Some(outbox));
             return;
         }
 
@@ -1266,7 +1273,7 @@ impl Node {
             debug!("{:?} Removing stale joining node with peer ID {:?}",
                    self,
                    peer_id);
-            self.disconnect_peer(&peer_id);
+            self.disconnect_peer(&peer_id, Some(outbox));
         }
 
         if !self.is_approved {
@@ -1303,16 +1310,6 @@ impl Node {
         debug!("{:?} Accepted client {:?}.", self, public_id.name());
 
         self.send_bootstrap_identify(peer_id)
-    }
-
-    fn handle_node_identify(&mut self,
-                            public_id: PublicId,
-                            peer_id: PeerId,
-                            outbox: &mut EventBox) {
-        debug!("{:?} Handling NodeIdentify from {:?}.",
-               self,
-               public_id.name());
-        self.add_to_routing_table(&public_id, &peer_id, outbox);
     }
 
     fn handle_candidate_identify(&mut self,
@@ -1364,7 +1361,7 @@ impl Node {
                        self,
                        name,
                        error);
-                self.disconnect_peer(&peer_id);
+                self.disconnect_peer(&peer_id, Some(outbox));
             }
         }
     }
@@ -1380,7 +1377,7 @@ impl Node {
                        self,
                        peer_id,
                        error);
-                self.disconnect_peer(peer_id);
+                self.disconnect_peer(peer_id, Some(outbox));
                 return;
             }
             Ok(true) => {
@@ -1616,7 +1613,7 @@ impl Node {
             Ok(IsClient) |
             Ok(IsJoiningNode) => {
                 self.send_node_identify(peer_id);
-                self.handle_node_identify(public_id, peer_id, outbox);
+                self.add_to_routing_table(&public_id, &peer_id, outbox);
             }
             Ok(Waiting) | Ok(IsConnected) | Err(_) => (),
         }
@@ -1733,7 +1730,7 @@ impl Node {
 
     /// Disconnects from the given peer, via Crust or by dropping the tunnel node, if the peer is
     /// not a proxy, client or routing table entry.
-    fn disconnect_peer(&mut self, peer_id: &PeerId) {
+    fn disconnect_peer(&mut self, peer_id: &PeerId, outbox: Option<&mut EventBox>) {
         if let Some(&pub_id) = self.peer_mgr.get_routing_peer(peer_id) {
             debug!("{:?} Not disconnecting routing table entry {:?} ({:?}).",
                    self,
@@ -1759,6 +1756,23 @@ impl Node {
                    peer_id);
             let _ = self.crust_service.disconnect(*peer_id);
             let _ = self.peer_mgr.remove_peer(peer_id);
+            self.dropped_tunnel_client(peer_id);
+            // FIXME: `outbox` is optional here primarily to avoid passing an `EventBox` through
+            //        many of the `send_xxx` functions. We're relying on `purge_invalid_rt_entries`
+            //        to clean up any tunnel clients left in the RT which are left with no tunnel
+            //        node and hence can't be contacted. There should be a better way to handle
+            //        this.
+            match outbox {
+                Some(event_box) => self.dropped_tunnel_node(peer_id, event_box),
+                None => {
+                    if self.tunnels.is_tunnel_node(peer_id) {
+                        debug!("{:?} Disconnected from {:?} which was acting as tunnel node. \
+                                Some uncontactable peers will remain until RT purge next runs.",
+                               self,
+                               peer_id);
+                    }
+                }
+            }
         }
     }
 
@@ -1859,10 +1873,11 @@ impl Node {
     fn handle_expect_candidate(&mut self,
                                mut candidate_id: PublicId,
                                client_auth: Authority<XorName>,
-                               message_id: MessageId)
+                               message_id: MessageId,
+                               outbox: &mut EventBox)
                                -> Result<(), RoutingError> {
         for peer_id in self.peer_mgr.remove_expired_candidates() {
-            self.disconnect_peer(&peer_id);
+            self.disconnect_peer(&peer_id, Some(outbox));
         }
 
         if candidate_id.signing_public_key() == self.full_id.public_id().signing_public_key() {
@@ -1906,10 +1921,11 @@ impl Node {
     fn handle_accept_as_candidate(&mut self,
                                   candidate_id: PublicId,
                                   client_auth: Authority<XorName>,
-                                  message_id: MessageId)
+                                  message_id: MessageId,
+                                  outbox: &mut EventBox)
                                   -> Result<(), RoutingError> {
         for peer_id in self.peer_mgr.remove_expired_candidates() {
-            self.disconnect_peer(&peer_id);
+            self.disconnect_peer(&peer_id, Some(outbox));
         }
 
         if candidate_id == *self.full_id.public_id() {
@@ -2035,7 +2051,7 @@ impl Node {
         }
         let old_prefix = *self.our_prefix();
         for (name, peer_id) in self.peer_mgr.add_prefix(prefix) {
-            self.disconnect_peer(&peer_id);
+            self.disconnect_peer(&peer_id, Some(outbox));
             info!("{:?} Dropped {:?} from the routing table.", self, name);
         }
         let new_prefix = *self.our_prefix();
@@ -2086,7 +2102,7 @@ impl Node {
         }
 
         for (_name, peer_id) in peers_to_drop {
-            self.disconnect_peer(&peer_id);
+            self.disconnect_peer(&peer_id, Some(outbox));
         }
         info!("{:?} Section split for {:?} completed. Prefixes: {:?}",
               self,
@@ -2191,10 +2207,10 @@ impl Node {
         Ok(())
     }
 
-    /// Returns true if the calling node should keep running, false for terminate or restart.
-    fn handle_timeout(&mut self, token: u64, outbox: &mut EventBox) -> bool {
+    fn handle_timeout(&mut self, token: u64, outbox: &mut EventBox) -> Transition {
         if self.get_approval_timer_token == Some(token) {
-            return self.handle_approval_timeout(outbox);
+            self.handle_approval_timeout(outbox);
+            return Transition::Terminate;
         }
 
         if self.tick_timer_token == token {
@@ -2205,10 +2221,10 @@ impl Node {
                 debug!("{:?} Disconnecting from timed out peer {:?}", self, peer_id);
                 let _ = self.crust_service.disconnect(peer_id);
             }
+            let transition = self.purge_invalid_rt_entries(outbox);
             self.merge_if_necessary();
-
             outbox.send_event(Event::Tick);
-            return true;
+            return transition;
         }
 
         if self.rt_timer_token == Some(token) {
@@ -2219,12 +2235,12 @@ impl Node {
                    self.rt_timeout.as_secs());
             self.rt_timer_token = Some(self.timer.schedule(self.rt_timeout));
             if self.send_rt_request().is_err() {
-                return true;
+                return Transition::Stay;
             }
         } else if self.candidate_timer_token == Some(token) {
             self.candidate_timer_token = None;
             if self.send_candidate_approval().is_err() {
-                return true;
+                return Transition::Stay;
             }
         } else if self.candidate_status_token == Some(token) {
             self.candidate_status_token = Some(self.timer
@@ -2253,12 +2269,12 @@ impl Node {
 
         self.resend_unacknowledged_timed_out_msgs(token);
 
-        true
+        Transition::Stay
     }
 
     // This will be called if `GetNodeNameResponse` times out, or if the subsequent `NodeApproval`
     // times out.
-    fn handle_approval_timeout(&mut self, outbox: &mut EventBox) -> bool {
+    fn handle_approval_timeout(&mut self, outbox: &mut EventBox) {
         if self.resource_proof_response_parts.is_empty() {
             // `GetNodeNameResponse` has timed out.
             info!("{:?} Failed to get relocated name from the network, so restarting.",
@@ -2283,7 +2299,59 @@ impl Node {
             }
             outbox.send_event(Event::Terminate);
         }
-        false
+    }
+
+    // Drop peers to which we think we have a direct or tunnel connection, but where Crust reports
+    // that we're not connected to the peer or tunnel node respectively.
+    fn purge_invalid_rt_entries(&mut self, outbox: &mut EventBox) -> Transition {
+        let mut peer_ids_to_drop = vec![];
+        for (peer_id, name, is_tunnel) in self.peer_mgr.get_routing_peer_details() {
+            if is_tunnel {
+                match self.tunnels.tunnel_for(&peer_id) {
+                    Some(tunnel_node_id) => {
+                        if !self.crust_service.is_connected(tunnel_node_id) {
+                            debug!("{:?} Should have a tunnel connection to {} {:?} via {:?}, \
+                                    but tunnel node not connected.",
+                                   self,
+                                   name,
+                                   peer_id,
+                                   tunnel_node_id);
+                            peer_ids_to_drop.push(*tunnel_node_id);
+                        }
+                    }
+                    None => {
+                        if self.crust_service.is_connected(&peer_id) {
+                            debug!("{:?} Should have a tunnel connection to {} {:?}, but instead \
+                                    have a direct connection.",
+                                   self,
+                                   name,
+                                   peer_id);
+                            self.peer_mgr.correct_routing_state_to_direct(&peer_id);
+                        } else {
+                            debug!("{:?} Should have a tunnel connection to {} {:?}, but no \
+                                    tunnel node or direct connection exists.",
+                                   self,
+                                   name,
+                                   peer_id);
+                            peer_ids_to_drop.push(peer_id);
+                        }
+                    }
+                }
+            } else if !self.crust_service.is_connected(&peer_id) {
+                error!("{:?} Should have a direct connection to {} {:?}, but don't.",
+                       self,
+                       name,
+                       peer_id);
+                peer_ids_to_drop.push(peer_id);
+            }
+        }
+        let mut transition = Transition::Stay;
+        for peer_id in peer_ids_to_drop {
+            if let Transition::Terminate = self.handle_lost_peer(peer_id, outbox) {
+                transition = Transition::Terminate;
+            }
+        }
+        transition
     }
 
     fn send_rt_request(&mut self) -> Result<(), RoutingError> {
@@ -2441,7 +2509,7 @@ impl Node {
             trace!("{:?} Not connected or tunnelling to {:?}. Dropping peer.",
                    self,
                    target);
-            self.disconnect_peer(&target);
+            self.disconnect_peer(&target, None);
             return Ok(());
         };
         if !self.filter_outgoing_routing_msg(&routing_msg, &target, route) {
@@ -2628,7 +2696,7 @@ impl Node {
             .get_proxy_or_client_or_joining_node_peer_id(&their_public_id) {
 
             self.send_node_identify(peer_id);
-            self.handle_node_identify(their_public_id, peer_id, outbox);
+            self.add_to_routing_table(&their_public_id, &peer_id, outbox);
             return Ok(());
         }
 

@@ -1167,6 +1167,7 @@ mod tests {
     use itertools::Itertools;
     use std::collections::BTreeSet;
     use super::*;
+    use super::SPLIT_BUFFER;
 
     #[test]
     fn small() {
