@@ -115,6 +115,12 @@ impl Network {
         let _ = imp.blocked_connections.remove(&(sender, receiver));
     }
 
+    /// Simulates a crust event being sent to the node.
+    pub fn send_crust_event(&self, node: Endpoint, crust_event: Event) {
+        let service = unwrap!(self.find_service(node), "Cannot fetch service of {:?}.", node);
+        service.borrow_mut().send_event(crust_event);
+    }
+
     /// Construct a new [`XorShiftRng`](https://doc.rust-lang.org/rand/rand/struct.XorShiftRng.html)
     /// using a seed generated from random data provided by `self`.
     pub fn new_rng(&self) -> XorShiftRng {

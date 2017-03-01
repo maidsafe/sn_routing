@@ -18,6 +18,7 @@
 use itertools::Itertools;
 use routing::{XOR_NAME_LEN, XorName};
 use routing::mock_crust::{Config, Endpoint, Network};
+use routing::mock_crust::crust::{Event, PeerId};
 use super::{TestNode, add_connected_nodes_until_split, create_connected_nodes, poll_all,
             poll_and_resend, verify_invariant_for_all_nodes};
 
@@ -145,5 +146,23 @@ fn tunnel_clients() {
     remove_nodes_from_section_till_merge(&XorName([64u8; XOR_NAME_LEN]),
                                          &mut nodes,
                                          min_section_size);
+    verify_invariant_for_all_nodes(&nodes);
+}
+
+#[test]
+fn tunnel_peer_connect_failure() {
+    let min_section_size = 5;
+    let network = Network::new(min_section_size, None);
+    network.block_connection(Endpoint(2), Endpoint(3));
+    network.block_connection(Endpoint(3), Endpoint(2));
+    let mut nodes = create_connected_nodes(&network, min_section_size);
+    let _ = poll_all(&mut nodes, &mut []);
+    verify_invariant_for_all_nodes(&nodes);
+
+    network.send_crust_event(Endpoint(2), Event::ConnectFailure(PeerId(3)));
+    let _ = poll_all(&mut nodes, &mut []);
+    verify_invariant_for_all_nodes(&nodes);
+
+    add_connected_nodes_until_split(&network, &mut nodes, vec![1, 1], false);
     verify_invariant_for_all_nodes(&nodes);
 }
