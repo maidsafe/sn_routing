@@ -303,7 +303,7 @@ impl Node {
                 let _ = result_tx.send(*self.name());
             }
             Action::Timeout(token) => {
-                if !self.handle_timeout(token, outbox) {
+                if let Transition::Terminate = self.handle_timeout(token, outbox) {
                     return Transition::Terminate;
                 }
             }
@@ -2185,10 +2185,10 @@ impl Node {
         Ok(())
     }
 
-    /// Returns true if the calling node should keep running, false for terminate or restart.
-    fn handle_timeout(&mut self, token: u64, outbox: &mut EventBox) -> bool {
+    fn handle_timeout(&mut self, token: u64, outbox: &mut EventBox) -> Transition {
         if self.get_approval_timer_token == Some(token) {
-            return self.handle_approval_timeout(outbox);
+            self.handle_approval_timeout(outbox);
+            return Transition::Terminate;
         }
 
         if self.tick_timer_token == token {
@@ -2199,10 +2199,10 @@ impl Node {
                 debug!("{:?} Disconnecting from timed out peer {:?}", self, peer_id);
                 let _ = self.crust_service.disconnect(peer_id);
             }
-            let terminate = self.purge_invalid_rt_entries(outbox);
+            let transition = self.purge_invalid_rt_entries(outbox);
             self.merge_if_necessary();
             outbox.send_event(Event::Tick);
-            return terminate;
+            return transition;
         }
 
         if self.rt_timer_token == Some(token) {
@@ -2213,12 +2213,12 @@ impl Node {
                    self.rt_timeout.as_secs());
             self.rt_timer_token = Some(self.timer.schedule(self.rt_timeout));
             if self.send_rt_request().is_err() {
-                return true;
+                return Transition::Stay;
             }
         } else if self.candidate_timer_token == Some(token) {
             self.candidate_timer_token = None;
             if self.send_candidate_approval().is_err() {
-                return true;
+                return Transition::Stay;
             }
         } else if self.candidate_status_token == Some(token) {
             self.candidate_status_token = Some(self.timer
@@ -2247,12 +2247,12 @@ impl Node {
 
         self.resend_unacknowledged_timed_out_msgs(token);
 
-        true
+        Transition::Stay
     }
 
     // This will be called if `GetNodeNameResponse` times out, or if the subsequent `NodeApproval`
     // times out.
-    fn handle_approval_timeout(&mut self, outbox: &mut EventBox) -> bool {
+    fn handle_approval_timeout(&mut self, outbox: &mut EventBox) {
         if self.resource_proof_response_parts.is_empty() {
             // `GetNodeNameResponse` has timed out.
             info!("{:?} Failed to get relocated name from the network, so restarting.",
@@ -2277,25 +2277,24 @@ impl Node {
             }
             outbox.send_event(Event::Terminate);
         }
-        false
     }
 
     // Drop peers to which we think we have a direct or tunnel connection, but where Crust reports
     // that we're not connected to the peer or tunnel node respectively.
-    fn purge_invalid_rt_entries(&mut self, outbox: &mut EventBox) -> bool {
+    fn purge_invalid_rt_entries(&mut self, outbox: &mut EventBox) -> Transition {
         let mut peer_ids_to_drop = vec![];
         for (peer_id, name, is_tunnel) in self.peer_mgr.get_routing_peer_details() {
             if is_tunnel {
                 match self.tunnels.tunnel_for(&peer_id) {
-                    Some(tunnel_peer_id) => {
-                        if !self.crust_service.is_connected(tunnel_peer_id) {
+                    Some(tunnel_node_id) => {
+                        if !self.crust_service.is_connected(tunnel_node_id) {
                             debug!("{:?} Should have a tunnel connection to {} {:?} via {:?}, \
-                                    but tunnel not connected.",
+                                    but tunnel node not connected.",
                                    self,
                                    name,
                                    peer_id,
-                                   tunnel_peer_id);
-                            peer_ids_to_drop.push(*tunnel_peer_id);
+                                   tunnel_node_id);
+                            peer_ids_to_drop.push(*tunnel_node_id);
                         }
                     }
                     None => {
@@ -2308,7 +2307,7 @@ impl Node {
                             self.peer_mgr.correct_routing_state_to_direct(&peer_id);
                         } else {
                             debug!("{:?} Should have a tunnel connection to {} {:?}, but no \
-                                    tunnel or direct connection exists.",
+                                    tunnel node or direct connection exists.",
                                    self,
                                    name,
                                    peer_id);
@@ -2324,13 +2323,13 @@ impl Node {
                 peer_ids_to_drop.push(peer_id);
             }
         }
-        let mut terminate = false;
+        let mut transition = Transition::Stay;
         for peer_id in peer_ids_to_drop {
             if let Transition::Terminate = self.handle_lost_peer(peer_id, outbox) {
-                terminate = true;
+                transition = Transition::Terminate;
             }
         }
-        terminate
+        transition
     }
 
     fn send_rt_request(&mut self) -> Result<(), RoutingError> {

@@ -1197,10 +1197,7 @@ impl PeerManager {
     }
 
     pub fn correct_routing_state_to_direct(&mut self, peer_id: &PeerId) {
-        if let Some(mut peer) = self.peer_map.remove(peer_id) {
-            peer.state = PeerState::Routing(RoutingConnection::Direct);
-            let _ = self.peer_map.insert(peer);
-        }
+        let _ = self.set_state(peer_id, PeerState::Routing(RoutingConnection::Direct));
     }
 
     /// Sets the given peer to state `SearchingForTunnel` and returns querying candidates.
