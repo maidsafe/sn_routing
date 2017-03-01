@@ -172,6 +172,12 @@ impl Tunnels {
     pub fn tunnel_count(&self) -> usize {
         self.tunnels.len()
     }
+
+    /// Clears the new_clients filter, removing all the entries.
+    #[cfg(feature = "use-mock-crust")]
+    pub fn clear(&mut self) {
+        self.new_clients.clear();
+    }
 }
 
 impl Default for Tunnels {

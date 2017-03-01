@@ -3048,6 +3048,7 @@ impl Node {
         if self.peer_mgr.remove_connecting_peers() {
             self.merge_if_necessary();
         }
+        self.tunnels.clear();
     }
 
     pub fn section_list_signatures(&self,
