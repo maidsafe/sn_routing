@@ -148,6 +148,13 @@ impl State {
         }
     }
 
+    pub fn has_tunnel_clients(&self, client_1: PeerId, client_2: PeerId) -> bool {
+        match *self {
+            State::Node(ref state) => state.has_tunnel_clients(client_1, client_2),
+            _ => false,
+        }
+    }
+
     pub fn clear_state(&mut self) {
         match *self {
             State::Node(ref mut state) => state.clear_state(),

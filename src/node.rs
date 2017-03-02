@@ -17,6 +17,8 @@
 
 use action::Action;
 use cache::{Cache, NullCache};
+#[cfg(feature = "use-mock-crust")]
+use crust::PeerId;
 use data::{Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use event::Event;
@@ -457,6 +459,11 @@ impl Node {
     /// Routing table of this node.
     pub fn routing_table(&self) -> Option<RoutingTable<XorName>> {
         self.machine.current().routing_table().cloned()
+    }
+
+    /// Check whether this node acts as a tunnel node between `client_1` and `client_2`.
+    pub fn has_tunnel_clients(&self, client_1: PeerId, client_2: PeerId) -> bool {
+        self.machine.current().has_tunnel_clients(client_1, client_2)
     }
 
     /// Resend all unacknowledged messages.
