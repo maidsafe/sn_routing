@@ -24,14 +24,16 @@ mod churn;
 mod drop;
 mod merge;
 mod requests;
+mod tunnel;
 mod utils;
 
 use routing::{Event, EventStream, Prefix, XOR_NAME_LEN, XorName};
 use routing::mock_crust::{Config, Endpoint, Network};
 use routing::mock_crust::crust::PeerId;
-pub use self::utils::{Nodes, TestClient, TestNode, create_connected_clients,
-                      create_connected_nodes, create_connected_nodes_until_split, gen_bytes,
-                      gen_immutable_data, gen_range_except, poll_all, poll_and_resend,
+pub use self::utils::{Nodes, TestClient, TestNode, add_connected_nodes_until_split,
+                      create_connected_clients, create_connected_nodes,
+                      create_connected_nodes_until_split, gen_bytes, gen_immutable_data,
+                      gen_range_except, poll_all, poll_and_resend,
                       remove_nodes_which_failed_to_connect, sort_nodes_by_distance_to,
                       verify_invariant_for_all_nodes};
 
@@ -72,45 +74,6 @@ fn equal_section_size_nodes() {
 #[test]
 fn more_than_section_size_nodes() {
     test_nodes(600);
-}
-
-#[test]
-fn failing_connections_ring() {
-    let min_section_size = 8;
-    let network = Network::new(min_section_size, None);
-    let len = min_section_size * 2;
-    for i in 0..(len - 1) {
-        let ep0 = Endpoint(1 + i);
-        let ep1 = Endpoint(1 + (i % len));
-
-        network.block_connection(ep0, ep1);
-        network.block_connection(ep1, ep0);
-    }
-    let nodes = create_connected_nodes(&network, len);
-    verify_invariant_for_all_nodes(&nodes);
-}
-
-#[test]
-fn failing_connections_bidirectional() {
-    let min_section_size = 4;
-    let network = Network::new(min_section_size, None);
-    network.block_connection(Endpoint(2), Endpoint(3));
-    network.block_connection(Endpoint(3), Endpoint(2));
-
-    let nodes = create_connected_nodes(&network, min_section_size);
-    verify_invariant_for_all_nodes(&nodes);
-}
-
-#[test]
-fn failing_connections_unidirectional() {
-    let min_section_size = 8;
-    let network = Network::new(min_section_size, None);
-    network.block_connection(Endpoint(1), Endpoint(6));
-    network.block_connection(Endpoint(1), Endpoint(7));
-    network.block_connection(Endpoint(6), Endpoint(7));
-
-    let nodes = create_connected_nodes(&network, min_section_size);
-    verify_invariant_for_all_nodes(&nodes);
 }
 
 #[test]

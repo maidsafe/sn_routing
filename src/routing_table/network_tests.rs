@@ -18,22 +18,19 @@
 // This is used two ways: inline tests, and integration tests (with use-mock-crust).
 // There's no point configuring each item which is only used in one of these.
 #![cfg(any(test, feature = "use-mock-crust"))]
-#![allow(unused, missing_docs)]
+#![allow(dead_code, missing_docs)]
 
 use super::{Error, RoutingTable};
 use super::authority::Authority;
 use super::prefix::Prefix;
 use maidsafe_utilities::SeededRng;
 use rand::Rng;
-use routing_table::{Iter, OtherMergeDetails, OwnMergeDetails, OwnMergeState};
+use routing_table::{OwnMergeDetails, OwnMergeState};
 use routing_table::xorable::Xorable;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{Binary, Debug};
 use std::hash::Hash;
 use std::iter::IntoIterator;
-
-type OwnMergeInfo = (BTreeSet<Prefix<u64>>, OwnMergeDetails<u64>);
-type OtherMergeInfo = (BTreeSet<Prefix<u64>>, OtherMergeDetails<u64>);
 
 /// A simulated network, consisting of a set of "nodes" (routing tables) and a random number
 /// generator.
@@ -41,7 +38,7 @@ type OtherMergeInfo = (BTreeSet<Prefix<u64>>, OtherMergeDetails<u64>);
 struct Network {
     min_section_size: usize,
     rng: SeededRng,
-    nodes: HashMap<u64, RoutingTable<u64>>,
+    nodes: BTreeMap<u64, RoutingTable<u64>>,
 }
 
 impl Network {
@@ -51,7 +48,7 @@ impl Network {
         Network {
             min_section_size: min_section_size,
             rng: optional_seed.map_or_else(SeededRng::new, SeededRng::from_seed),
-            nodes: HashMap::new(),
+            nodes: BTreeMap::new(),
         }
     }
 
@@ -78,11 +75,10 @@ impl Network {
         }
 
         let mut split_prefixes = BTreeSet::new();
-        // TODO: needs to verify how to broadcasting such info
         for node in self.nodes.values_mut() {
             match node.add(name) {
                 Ok(true) => {
-                    split_prefixes.insert(*node.our_prefix());
+                    let _ = split_prefixes.insert(*node.our_prefix());
                 }
                 Ok(false) => {}
                 Err(e) => trace!("failed to add node with error {:?}", e),
@@ -90,12 +86,14 @@ impl Network {
             match new_table.add(*node.our_name()) {
                 Ok(true) => {
                     let prefix = *new_table.our_prefix();
+                    let _ = split_prefixes.insert(prefix);
                     let _ = new_table.split(prefix);
                 }
                 Ok(false) => {}
                 Err(e) => trace!("failed to add node into new with error {:?}", e),
             }
         }
+
         assert!(self.nodes.insert(name, new_table).is_none());
         for split_prefix in &split_prefixes {
             for node in self.nodes.values_mut() {
@@ -104,7 +102,7 @@ impl Network {
         }
     }
 
-    fn store_merge_info<T: PartialEq + Debug>(merge_info: &mut HashMap<Prefix<u64>, T>,
+    fn store_merge_info<T: PartialEq + Debug>(merge_info: &mut BTreeMap<Prefix<u64>, T>,
                                               prefix: Prefix<u64>,
                                               new_info: T) {
         if let Some(content) = merge_info.get(&prefix) {
@@ -121,7 +119,7 @@ impl Network {
         let keys = self.keys();
         let name = *unwrap!(self.rng.choose(&keys));
         let _ = self.nodes.remove(&name);
-        let mut merge_own_info: HashMap<Prefix<u64>, OwnMergeDetails<u64>> = HashMap::new();
+        let mut merge_own_info: BTreeMap<Prefix<u64>, OwnMergeDetails<u64>> = BTreeMap::new();
         // TODO: needs to verify how to broadcasting such info
         for node in self.nodes.values_mut() {
             if node.iter().any(|&name_in_table| name_in_table == name) {
@@ -142,18 +140,18 @@ impl Network {
             }
         }
 
-        let mut expected_peers = HashMap::new();
+        let mut expected_peers = BTreeMap::new();
         while !merge_own_info.is_empty() {
-            let mut merge_other_info: HashMap<Prefix<u64>, OtherMergeInfo> = HashMap::new();
+            let mut merge_other_info = BTreeMap::new();
             // handle broadcast of merge_own_section
             let own_info = merge_own_info;
-            merge_own_info = HashMap::new();
+            merge_own_info = BTreeMap::new();
             for (_, merge_own_details) in own_info {
                 let nodes = self.nodes_covered_by_prefixes(&[merge_own_details.merge_prefix]);
                 for node in &nodes {
                     let target_node = unwrap!(self.nodes.get_mut(&node));
                     let node_expected = expected_peers.entry(*node)
-                        .or_insert_with(HashSet::new);
+                        .or_insert_with(BTreeSet::new);
                     for section in &merge_own_details.sections {
                         node_expected.extend(
                             section.1.iter().filter(|name| !target_node.has(name)));
@@ -230,7 +228,7 @@ impl Network {
     /// given `route`.
     fn send_message(&self, src: u64, dst: Authority<u64>, route: usize) {
         let mut received = Vec::new(); // These nodes have received but not handled the message.
-        let mut handled = HashSet::new(); // These nodes have received and handled the message.
+        let mut handled = BTreeSet::new(); // These nodes have received and handled the message.
         received.push(src);
         while let Some(node) = received.pop() {
             handled.insert(node); // `node` is now handling the message and relaying it.

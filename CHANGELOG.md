@@ -1,5 +1,12 @@
 # Routing - Change Log
 
+## [0.28.2]
+- Extend the tests for tunnelling and the churn tests.
+- Fix several peer manager issues related to tunnel nodes and candidates.
+- Send `SectionSplit` messages as `PrefixSection` authority to allow resending.
+- Fix several issues related to merging sections.
+- Some improvements to the log messages.
+
 ## [0.28.1]
 - Retry preparing connection info if Crust returns an error.
 

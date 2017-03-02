@@ -65,7 +65,9 @@ impl Bootstrapping {
                min_section_size: usize,
                timer: Timer)
                -> Option<Self> {
-        if let Err(error) = crust_service.start_listening_tcp() {
+        if client_restriction {
+            let _ = crust_service.start_bootstrap(HashSet::new(), CrustUser::Client);
+        } else if let Err(error) = crust_service.start_listening_tcp() {
             error!("Failed to start listening: {:?}", error);
             return None;
         }
@@ -126,18 +128,22 @@ impl Bootstrapping {
                 }
             }
             CrustEvent::ListenerStarted(port) => {
+                if self.client_restriction {
+                    error!("{:?} A client must not run a crust listener.", self);
+                    outbox.send_event(Event::Terminate);
+                    return Transition::Terminate;
+                }
                 trace!("{:?} Listener started on port {}.", self, port);
-                let crust_user = if self.client_restriction {
-                    CrustUser::Client
-                } else {
-                    self.crust_service.set_service_discovery_listen(true);
-                    CrustUser::Node
-                };
-                let _ = self.crust_service.start_bootstrap(HashSet::new(), crust_user);
+                self.crust_service.set_service_discovery_listen(true);
+                let _ = self.crust_service.start_bootstrap(HashSet::new(), CrustUser::Node);
                 Transition::Stay
             }
             CrustEvent::ListenerFailed => {
-                error!("{:?} Failed to start listening.", self);
+                if self.client_restriction {
+                    error!("{:?} A client must not run a crust listener.", self);
+                } else {
+                    error!("{:?} Failed to start listening.", self);
+                }
                 outbox.send_event(Event::Terminate);
                 Transition::Terminate
             }
@@ -200,7 +206,7 @@ impl Bootstrapping {
             None => {
                 debug!("{:?} Received BootstrapConnect from {:?}.", self, peer_id);
                 // Established connection. Pending Validity checks
-                let _ = self.send_client_identify(peer_id);
+                self.send_client_identify(peer_id);
                 let _ = self.bootstrap_blacklist.insert(socket_addr);
             }
             Some((bootstrap_id, _)) if bootstrap_id == peer_id => {
@@ -275,13 +281,19 @@ impl Bootstrapping {
         Transition::Stay
     }
 
-    fn send_client_identify(&mut self, peer_id: PeerId) -> Result<(), RoutingError> {
+    fn send_client_identify(&mut self, peer_id: PeerId) {
         debug!("{:?} - Sending ClientIdentify to {:?}.", self, peer_id);
 
         let token = self.timer.schedule(Duration::from_secs(BOOTSTRAP_TIMEOUT_SECS));
         self.bootstrap_connection = Some((peer_id, token));
 
-        let serialised_public_id = serialisation::serialise(self.full_id.public_id())?;
+        let serialised_public_id = match serialisation::serialise(self.full_id.public_id()) {
+            Ok(rslt) => rslt,
+            Err(e) => {
+                error!("Failed to serialise public ID: {:?}", e);
+                return;
+            }
+        };
         let signature = sign::sign_detached(&serialised_public_id,
                                             self.full_id.signing_private_key());
 
@@ -292,7 +304,7 @@ impl Bootstrapping {
         };
 
         self.stats().count_direct_message(&direct_message);
-        self.send_message(&peer_id, Message::Direct(direct_message))
+        self.send_message(&peer_id, Message::Direct(direct_message));
     }
 
     fn disconnect_peer(&mut self, peer_id: &PeerId) {
