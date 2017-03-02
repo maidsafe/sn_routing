@@ -16,9 +16,9 @@
 // relating to use of the SAFE Network Software.
 
 use itertools::Itertools;
-use routing::{XOR_NAME_LEN, XorName};
+use routing::{Event, EventStream, XOR_NAME_LEN, XorName};
 use routing::mock_crust::{Config, Endpoint, Network};
-use routing::mock_crust::crust::{Event, PeerId};
+use routing::mock_crust::crust::{self, PeerId};
 use super::{TestNode, add_connected_nodes_until_split, create_connected_nodes, poll_all,
             poll_and_resend, verify_invariant_for_all_nodes};
 
@@ -122,7 +122,6 @@ fn tunnel_clients() {
                                  XorName([0u8; XOR_NAME_LEN]),
                                  XorName([253u8; XOR_NAME_LEN]),
                                  false);
-    let _ = poll_all(&mut nodes, &mut []);
     let _ = add_a_pair(&network,
                        &mut nodes,
                        XorName([1u8; XOR_NAME_LEN]),
@@ -156,13 +155,66 @@ fn tunnel_peer_connect_failure() {
     network.block_connection(Endpoint(2), Endpoint(3));
     network.block_connection(Endpoint(3), Endpoint(2));
     let mut nodes = create_connected_nodes(&network, min_section_size);
+
+    network.send_crust_event(Endpoint(2), crust::Event::ConnectFailure(PeerId(3)));
     let _ = poll_all(&mut nodes, &mut []);
     verify_invariant_for_all_nodes(&nodes);
+}
 
-    network.send_crust_event(Endpoint(2), Event::ConnectFailure(PeerId(3)));
-    let _ = poll_all(&mut nodes, &mut []);
-    verify_invariant_for_all_nodes(&nodes);
+// Verifies tunnel switched.
+fn verify_tunnel_switch(nodes: &mut Vec<TestNode>, node: usize, client_1: usize, client_2: usize) {
+    while let Ok(event) = nodes[client_1].inner.try_next_ev() {
+        match event {
+            Event::NodeLost(name, _) => {
+                assert!(name == nodes[node].name() || name == nodes[client_2].name());
+            }
+            Event::NodeAdded(name, _) => assert!(name == nodes[client_2].name()),
+            _ => {
+                panic!("{:?} received unexpected event {:?}",
+                       nodes[client_1].name(),
+                       event)
+            }
+        }
+    }
+    while let Ok(event) = nodes[client_2].inner.try_next_ev() {
+        match event {
+            Event::NodeLost(name, _) => assert!(name == nodes[client_1].name()),
+            Event::NodeAdded(name, _) => assert!(name == nodes[client_1].name()),
+            _ => {
+                panic!("{:?} received unexpected event {:?}",
+                       nodes[client_2].name(),
+                       event)
+            }
+        }
+    }
+}
 
-    add_connected_nodes_until_split(&network, &mut nodes, vec![1, 1], false);
-    verify_invariant_for_all_nodes(&nodes);
+#[test]
+fn tunnel_node_disrupted() {
+    let min_section_size = 5;
+    let network = Network::new(min_section_size, None);
+    network.block_connection(Endpoint(2), Endpoint(3));
+    network.block_connection(Endpoint(3), Endpoint(2));
+    let mut nodes = create_connected_nodes(&network, min_section_size);
+
+    network.send_crust_event(Endpoint(2), crust::Event::LostPeer(PeerId(0)));
+    network.send_crust_event(Endpoint(0), crust::Event::LostPeer(PeerId(2)));
+    poll_and_resend(&mut nodes, &mut []);
+    verify_tunnel_switch(&mut nodes, 0, 2, 3);
+}
+
+#[test]
+fn tunnel_node_blocked() {
+    let min_section_size = 5;
+    let network = Network::new(min_section_size, None);
+    network.block_connection(Endpoint(2), Endpoint(3));
+    network.block_connection(Endpoint(3), Endpoint(2));
+    let mut nodes = create_connected_nodes(&network, min_section_size);
+
+    network.block_connection(Endpoint(2), Endpoint(0));
+    network.block_connection(Endpoint(0), Endpoint(2));
+    network.send_crust_event(Endpoint(2), crust::Event::LostPeer(PeerId(0)));
+    network.send_crust_event(Endpoint(0), crust::Event::LostPeer(PeerId(2)));
+    poll_and_resend(&mut nodes, &mut []);
+    verify_tunnel_switch(&mut nodes, 0, 2, 3);
 }
