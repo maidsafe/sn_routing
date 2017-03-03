@@ -443,7 +443,14 @@ impl Node {
                    self,
                    peer_id,
                    pub_id);
-            self.find_tunnel_for_peer(peer_id, &pub_id);
+            if self.tunnels.tunnel_for(&peer_id).is_none() {
+                self.find_tunnel_for_peer(peer_id, &pub_id);
+            } else {
+                debug!("{:?} already has tunnel to peer {:?} with pub_id {:?}.",
+                       self,
+                       peer_id,
+                       pub_id);
+            }
         }
     }
 
@@ -3010,6 +3017,11 @@ impl Node {
     /// Routing table of this node.
     pub fn routing_table(&self) -> &RoutingTable<XorName> {
         self.peer_mgr.routing_table()
+    }
+
+    /// Check whether this node acts as a tunnel node between `client_1` and `client_2`.
+    pub fn has_tunnel_clients(&self, client_1: PeerId, client_2: PeerId) -> bool {
+        self.tunnels.has_clients(client_1, client_2)
     }
 
     /// Resends all unacknowledged messages.
