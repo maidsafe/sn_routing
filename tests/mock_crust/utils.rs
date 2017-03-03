@@ -406,8 +406,17 @@ pub fn add_connected_nodes_until_split(network: &Network,
     }
 
     // Start enough new nodes under each target prefix to trigger a split eventually.
-    let min_split_size = nodes[0].routing_table().min_split_size();
     for prefix in &prefixes {
+        let num_in_section = nodes.iter().filter(|node| prefix.matches(&node.name())).count();
+        // To ensure you don't hit this assert, don't have more than `min_split_size()` entries in
+        // `nodes` when calling this function.
+        assert!(num_in_section <= nodes[0].routing_table().min_split_size(),
+                "The existing nodes' names disallow creation of the requested prefixes. There \
+                 are {} nodes which all belong in {:?} which exceeds the limit here of {}.",
+                num_in_section,
+                prefix,
+                nodes[0].routing_table().min_split_size());
+        let min_split_size = nodes[0].routing_table().min_split_size() - num_in_section;
         for _ in 0..min_split_size {
             add_node_to_section(network, nodes, prefix, &mut rng, use_cache);
             if nodes.len() == 2 {
