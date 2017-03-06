@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -15,10 +15,13 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use ::QUORUM;
+use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
+use QUORUM;
 use ack_manager::{ACK_TIMEOUT_SECS, Ack, AckManager};
 use action::Action;
 use cache::Cache;
+// TODO - Added to work around bug in rustfmt v0.8.0.  Remove once bug resolved.
+#[cfg_attr(rustfmt, rustfmt_skip)]
 use crust::{ConnectionInfoResult, CrustError, PeerId, PrivConnectionInfo, PubConnectionInfo,
             Service};
 use crust::Event as CrustEvent;
@@ -52,7 +55,6 @@ use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
 use std::time::{Duration, Instant};
-use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 use timer::Timer;
 use tunnels::Tunnels;
 use types::MessageId;
@@ -657,12 +659,19 @@ impl Node {
                                              *self.full_id.public_id(),
                                              section.clone(),
                                              sig,
-                                             self.peer_mgr.routing_table().our_section().len());
+                                             self.peer_mgr
+                                                 .routing_table()
+                                                 .our_section()
+                                                 .len());
 
         // this defines whom we are sending signature to: our section if dst is None, or given
         // name if it's Some
         let peers = if let Some(dst) = dst {
-            self.peer_mgr.get_peer_id(&dst).into_iter().cloned().collect_vec()
+            self.peer_mgr
+                .get_peer_id(&dst)
+                .into_iter()
+                .cloned()
+                .collect_vec()
         } else {
             self.peer_mgr
                 .routing_table()
@@ -685,16 +694,19 @@ impl Node {
                                      section_list: SectionList,
                                      sig: sign::Signature)
                                      -> Result<(), RoutingError> {
-        let src_pub_id =
-            self.peer_mgr.get_routing_peer(&peer_id).ok_or(RoutingError::InvalidSource)?;
+        let src_pub_id = self.peer_mgr
+            .get_routing_peer(&peer_id)
+            .ok_or(RoutingError::InvalidSource)?;
         let serialised = serialisation::serialise(&section_list)?;
         if sign::verify_detached(&sig, &serialised, src_pub_id.signing_public_key()) {
-            self.section_list_sigs
-                .add_signature(section_list.prefix,
-                               *src_pub_id,
-                               section_list,
-                               sig,
-                               self.peer_mgr.routing_table().our_section().len());
+            self.section_list_sigs.add_signature(section_list.prefix,
+                                                 *src_pub_id,
+                                                 section_list,
+                                                 sig,
+                                                 self.peer_mgr
+                                                     .routing_table()
+                                                     .our_section()
+                                                     .len());
             Ok(())
         } else {
             Err(RoutingError::FailedSignature)
@@ -931,13 +943,15 @@ impl Node {
         // Or a node may receive CandidateApproval before connection established.
         // If we are not connected to the candidate, we do not want to add them
         // to our RT.
-        let opt_peer_id = match self.peer_mgr
-            .handle_candidate_approval(*candidate_id.name(), client_auth) {
+        let opt_peer_id = match self.peer_mgr.handle_candidate_approval(*candidate_id.name(),
+                                                      client_auth) {
             Ok(peer_id) => peer_id,
             Err(_) => {
                 let src = Authority::ManagedNode(*self.name());
-                if let Err(error) =
-                    self.send_connection_info_request(candidate_id, src, client_auth, outbox) {
+                if let Err(error) = self.send_connection_info_request(candidate_id,
+                                                                      src,
+                                                                      client_auth,
+                                                                      outbox) {
                     debug!("{:?} - Failed to send connection info to {:?}: {:?}",
                            self,
                            candidate_id,
@@ -1012,8 +1026,10 @@ impl Node {
                            pub_id);
                     let src = Authority::ManagedNode(*self.name());
                     let node_auth = Authority::ManagedNode(*pub_id.name());
-                    if let Err(error) =
-                        self.send_connection_info_request(*pub_id, src, node_auth, outbox) {
+                    if let Err(error) = self.send_connection_info_request(*pub_id,
+                                                                          src,
+                                                                          node_auth,
+                                                                          outbox) {
                         debug!("{:?} - Failed to send connection info to {:?}: {:?}",
                                self,
                                pub_id,
@@ -1036,8 +1052,8 @@ impl Node {
         backlog.into_iter().rev().foreach(|msg| self.msg_queue.push_front(msg));
         self.resource_proof_response_parts.clear();
         self.reset_rt_timer();
-        self.candidate_status_token = Some(self.timer
-            .schedule(Duration::from_secs(CANDIDATE_STATUS_INTERVAL_SECS)));
+        self.candidate_status_token =
+            Some(self.timer.schedule(Duration::from_secs(CANDIDATE_STATUS_INTERVAL_SECS)));
         Ok(())
     }
 
@@ -1130,8 +1146,11 @@ impl Node {
             return;
         };
 
-        match self.peer_mgr
-            .verify_candidate(&name, part_index, part_count, proof, leading_zero_bytes) {
+        match self.peer_mgr.verify_candidate(&name,
+                                             part_index,
+                                             part_count,
+                                             proof,
+                                             leading_zero_bytes) {
             Err(error) => {
                 debug!("{:?} Failed to verify candidate {}: {:?}",
                        self,
@@ -1330,7 +1349,11 @@ impl Node {
             (0, 1)
         } else {
             (RESOURCE_PROOF_DIFFICULTY,
-             RESOURCE_PROOF_TARGET_SIZE / (self.peer_mgr.routing_table().our_section().len() + 1))
+             RESOURCE_PROOF_TARGET_SIZE /
+             (self.peer_mgr
+                  .routing_table()
+                  .our_section()
+                  .len() + 1))
         };
         let seed: Vec<u8> = if cfg!(feature = "use-mock-crust") {
             vec![5u8; 4]
@@ -1402,7 +1425,10 @@ impl Node {
             }
         }
 
-        if self.peer_mgr.routing_table().our_section().contains(public_id.name()) {
+        if self.peer_mgr
+               .routing_table()
+               .our_section()
+               .contains(public_id.name()) {
             self.reset_rt_timer();
         }
 
@@ -1423,8 +1449,8 @@ impl Node {
             self.send_section_update();
 
             if let Some(prefix) = self.peer_mgr
-                .routing_table()
-                .find_section_prefix(public_id.name()) {
+                   .routing_table()
+                   .find_section_prefix(public_id.name()) {
                 self.send_section_list_signature(prefix, None);
                 if prefix == *self.our_prefix() {
                     // if the node joined our section, send signatures for all section lists to it
@@ -1591,13 +1617,17 @@ impl Node {
             _ => unreachable!(),
         };
         self.peer_mgr.allow_connect(name)?;
-        let their_connection_info = self.decrypt_connection_info(&encrypted_connection_info,
-                                     &box_::Nonce(nonce_bytes),
-                                     &public_id)?;
+        let their_connection_info =
+            self.decrypt_connection_info(&encrypted_connection_info,
+                                         &box_::Nonce(nonce_bytes),
+                                         &public_id)?;
         let peer_id = their_connection_info.id();
         use peer_manager::ConnectionInfoReceivedResult::*;
-        match self.peer_mgr
-            .connection_info_received(src, dst, public_id, their_connection_info, message_id) {
+        match self.peer_mgr.connection_info_received(src,
+                                                     dst,
+                                                     public_id,
+                                                     their_connection_info,
+                                                     message_id) {
             Ok(Ready(our_info, their_info)) => {
                 debug!("{:?} Already sent a connection info request to {:?} ({:?}); resending \
                         our same details as a response.",
@@ -1636,17 +1666,17 @@ impl Node {
                                        dst: Authority<XorName>)
                                        -> Result<(), RoutingError> {
         self.peer_mgr.allow_connect(&src)?;
-        let their_connection_info = self.decrypt_connection_info(&encrypted_connection_info,
-                                     &box_::Nonce(nonce_bytes),
-                                     &public_id)?;
+        let their_connection_info =
+            self.decrypt_connection_info(&encrypted_connection_info,
+                                         &box_::Nonce(nonce_bytes),
+                                         &public_id)?;
         let peer_id = their_connection_info.id();
         use peer_manager::ConnectionInfoReceivedResult::*;
-        match self.peer_mgr
-            .connection_info_received(Authority::ManagedNode(src),
-                                      dst,
-                                      public_id,
-                                      their_connection_info,
-                                      message_id) {
+        match self.peer_mgr.connection_info_received(Authority::ManagedNode(src),
+                                                     dst,
+                                                     public_id,
+                                                     their_connection_info,
+                                                     message_id) {
             Ok(Ready(our_info, their_info)) => {
                 trace!("{:?} Received connection info response. Trying to connect to {:?} ({:?}).",
                        self,
@@ -1840,8 +1870,8 @@ impl Node {
         let duration = Duration::from_secs(APPROVAL_TIMEOUT_SECS);
         self.approval_expiry_time = Instant::now() + duration;
         self.get_approval_timer_token = Some(self.timer.schedule(duration));
-        self.approval_progress_timer_token = Some(self.timer
-            .schedule(Duration::from_secs(APPROVAL_PROGRESS_INTERVAL_SECS)));
+        self.approval_progress_timer_token =
+            Some(self.timer.schedule(Duration::from_secs(APPROVAL_PROGRESS_INTERVAL_SECS)));
 
         self.full_id.public_id_mut().set_name(*relocated_id.name());
         self.peer_mgr.reset_routing_table(*self.full_id.public_id());
@@ -1897,7 +1927,10 @@ impl Node {
         });
         candidate_id.set_name(relocated_name);
 
-        if self.peer_mgr.routing_table().should_join_our_section(candidate_id.name()).is_err() {
+        if self.peer_mgr
+               .routing_table()
+               .should_join_our_section(candidate_id.name())
+               .is_err() {
             let request_content = MessageContent::ExpectCandidate {
                 expect_id: candidate_id,
                 client_auth: client_auth,
@@ -1940,8 +1973,8 @@ impl Node {
             return Ok(());
         }
 
-        self.candidate_timer_token = Some(self.timer
-            .schedule(Duration::from_secs(RESOURCE_PROOF_DURATION_SECS)));
+        self.candidate_timer_token =
+            Some(self.timer.schedule(Duration::from_secs(RESOURCE_PROOF_DURATION_SECS)));
 
         let own_section = self.peer_mgr.accept_as_candidate(*candidate_id.name(), client_auth);
         let response_content = MessageContent::GetNodeNameResponse {
@@ -1999,10 +2032,11 @@ impl Node {
         let own_name = *self.name();
         for pub_id in members {
             self.peer_mgr.expect_peer(&pub_id);
-            if let Err(error) = self.send_connection_info_request(pub_id,
-                                              Authority::ManagedNode(own_name),
-                                              Authority::ManagedNode(*pub_id.name()),
-                                              outbox) {
+            if let Err(error) =
+                self.send_connection_info_request(pub_id,
+                                                  Authority::ManagedNode(own_name),
+                                                  Authority::ManagedNode(*pub_id.name()),
+                                                  outbox) {
                 debug!("{:?} - Failed to send connection info to {:?}: {:?}",
                        self,
                        pub_id,
@@ -2078,7 +2112,10 @@ impl Node {
               self.peer_mgr.routing_table().prefixes());
         let src = Authority::ManagedNode(*self.name());
         for member in members {
-            if self.peer_mgr.routing_table().need_to_add(member.name()).is_ok() {
+            if self.peer_mgr
+                   .routing_table()
+                   .need_to_add(member.name())
+                   .is_ok() {
                 let dst = Authority::ManagedNode(*member.name());
                 if let Err(error) = self.send_connection_info_request(member, src, dst, outbox) {
                     debug!("{:?} - Failed to send connection info to {:?}: {:?}",
@@ -2138,8 +2175,8 @@ impl Node {
                                 sections: SectionMap,
                                 outbox: &mut EventBox)
                                 -> Result<(), RoutingError> {
-        let (merge_state, needed_peers) = self.peer_mgr
-            .merge_own_section(sender_prefix, merge_prefix, sections);
+        let (merge_state, needed_peers) =
+            self.peer_mgr.merge_own_section(sender_prefix, merge_prefix, sections);
 
         match merge_state {
             OwnMergeState::Ongoing => self.merge_if_necessary(),
@@ -2163,10 +2200,11 @@ impl Node {
                     debug!("{:?} Sending connection info to {:?} due to merging own section.",
                            self,
                            needed);
-                    if let Err(error) = self.send_connection_info_request(*needed,
-                                                      Authority::ManagedNode(own_name),
-                                                      Authority::ManagedNode(*needed.name()),
-                                                      outbox) {
+                    if let Err(error) =
+                        self.send_connection_info_request(*needed,
+                                                          Authority::ManagedNode(own_name),
+                                                          Authority::ManagedNode(*needed.name()),
+                                                          outbox) {
                         debug!("{:?} - Failed to send connection info to {:?}: {:?}",
                                self,
                                needed,
@@ -2193,10 +2231,11 @@ impl Node {
                    self,
                    needed);
             let needed_name = *needed.name();
-            if let Err(error) = self.send_connection_info_request(needed,
-                                              Authority::ManagedNode(own_name),
-                                              Authority::ManagedNode(needed_name),
-                                              outbox) {
+            if let Err(error) =
+                self.send_connection_info_request(needed,
+                                                  Authority::ManagedNode(own_name),
+                                                  Authority::ManagedNode(needed_name),
+                                                  outbox) {
                 debug!("{:?} - Failed to send connection info: {:?}", self, error);
             }
         }
@@ -2250,12 +2289,12 @@ impl Node {
                 return Transition::Stay;
             }
         } else if self.candidate_status_token == Some(token) {
-            self.candidate_status_token = Some(self.timer
-                .schedule(Duration::from_secs(CANDIDATE_STATUS_INTERVAL_SECS)));
+            self.candidate_status_token =
+                Some(self.timer.schedule(Duration::from_secs(CANDIDATE_STATUS_INTERVAL_SECS)));
             self.peer_mgr.show_candidate_status();
         } else if self.approval_progress_timer_token == Some(token) {
-            self.approval_progress_timer_token = Some(self.timer
-                .schedule(Duration::from_secs(APPROVAL_PROGRESS_INTERVAL_SECS)));
+            self.approval_progress_timer_token =
+                Some(self.timer.schedule(Duration::from_secs(APPROVAL_PROGRESS_INTERVAL_SECS)));
             let now = Instant::now();
             let remaining_duration = if now < self.approval_expiry_time {
                 let duration = self.approval_expiry_time - now;
@@ -2700,7 +2739,7 @@ impl Node {
                                     -> Result<(), RoutingError> {
         let their_name = *their_public_id.name();
         if let Some(peer_id) = self.peer_mgr
-            .get_proxy_or_client_or_joining_node_peer_id(&their_public_id) {
+               .get_proxy_or_client_or_joining_node_peer_id(&their_public_id) {
 
             self.send_node_identify(peer_id);
             self.add_to_routing_table(&their_public_id, &peer_id, outbox);
@@ -2789,13 +2828,18 @@ impl Node {
 
         self.merge_if_necessary();
 
-        self.peer_mgr.routing_table().find_section_prefix(&details.name).map_or((), |prefix| {
-            self.send_section_list_signature(prefix, None);
-        });
+        self.peer_mgr
+            .routing_table()
+            .find_section_prefix(&details.name)
+            .map_or((),
+                    |prefix| { self.send_section_list_signature(prefix, None); });
         if details.was_in_our_section {
             self.reset_rt_timer();
-            self.section_list_sigs
-                .remove_signatures_by(*pub_id, self.peer_mgr.routing_table().our_section().len());
+            self.section_list_sigs.remove_signatures_by(*pub_id,
+                                                        self.peer_mgr
+                                                            .routing_table()
+                                                            .our_section()
+                                                            .len());
         }
 
         if self.peer_mgr.routing_table().is_empty() {
@@ -2870,8 +2914,10 @@ impl Node {
             .remove_tunnel(peer_id)
             .into_iter()
             .filter_map(|dst_id| {
-                self.peer_mgr.get_routing_peer(&dst_id).map(|dst_pub_id| (dst_id, *dst_pub_id))
-            })
+                            self.peer_mgr.get_routing_peer(&dst_id).map(|dst_pub_id| {
+                                                                            (dst_id, *dst_pub_id)
+                                                                        })
+                        })
             .collect_vec();
         for (dst_id, pub_id) in peers {
             self.dropped_peer(&dst_id, outbox);
@@ -3097,19 +3143,19 @@ impl Bootstrapped for Node {
         use routing_table::Authority::*;
         let sending_names = match routing_msg.src {
             ClientManager(_) | NaeManager(_) | NodeManager(_) | ManagedNode(_) => {
-                let section = self.peer_mgr
-                    .routing_table()
-                    .get_section(self.name())
-                    .ok_or(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer))?;
+                let section =
+                    self.peer_mgr
+                        .routing_table()
+                        .get_section(self.name())
+                        .ok_or(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer))?;
                 let pub_ids = self.peer_mgr.get_pub_ids(section);
                 vec![SectionList::new(*self.our_prefix(), pub_ids)]
             }
             Section(_) => {
                 vec![SectionList::new(*self.our_prefix(),
-                                      self.peer_mgr
-                                          .get_pub_ids(self.peer_mgr
-                                              .routing_table()
-                                              .our_section()))]
+                                      self.peer_mgr.get_pub_ids(self.peer_mgr
+                                                                    .routing_table()
+                                                                    .our_section()))]
             }
             PrefixSection(ref prefix) => {
                 self.peer_mgr
@@ -3117,10 +3163,10 @@ impl Bootstrapped for Node {
                     .all_sections()
                     .into_iter()
                     .filter_map(|(p, members)| if prefix.is_compatible(&p) {
-                        Some(SectionList::new(p, self.peer_mgr.get_pub_ids(&members)))
-                    } else {
-                        None
-                    })
+                                    Some(SectionList::new(p, self.peer_mgr.get_pub_ids(&members)))
+                                } else {
+                                    None
+                                })
                     .collect()
             }
             Client { .. } => vec![],

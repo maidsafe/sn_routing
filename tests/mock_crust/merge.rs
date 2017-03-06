@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -15,10 +15,10 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::{create_connected_nodes_until_split, poll_and_resend, verify_invariant_for_all_nodes};
 use rand::Rng;
 use routing::{Event, EventStream};
 use routing::mock_crust::Network;
-use super::{create_connected_nodes_until_split, poll_and_resend, verify_invariant_for_all_nodes};
 
 // See docs for `create_connected_nodes_with_cache_until_split` for details on `prefix_lengths`.
 fn merge(prefix_lengths: Vec<usize>) {

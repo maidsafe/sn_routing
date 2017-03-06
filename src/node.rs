@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -89,11 +89,11 @@ impl NodeBuilder {
         let (tx, rx) = channel();
 
         Ok(Node {
-            interface_result_tx: tx,
-            interface_result_rx: rx,
-            machine: machine,
-            event_buffer: ev_buffer,
-        })
+               interface_result_tx: tx,
+               interface_result_rx: rx,
+               machine: machine,
+               event_buffer: ev_buffer,
+           })
     }
 
     // TODO - remove this `rustfmt_skip` once rustfmt stops adding trailing space at `else if`.
@@ -228,10 +228,10 @@ impl Node {
                             id: MessageId)
                             -> Result<(), InterfaceError> {
         let user_msg = UserMessage::Response(Response::GetFailure {
-            id: id,
-            data_id: data_id,
-            external_error_indicator: external_error_indicator,
-        });
+                                                 id: id,
+                                                 data_id: data_id,
+                                                 external_error_indicator: external_error_indicator,
+                                             });
         let priority = if dst.is_client() {
             CLIENT_GET_PRIORITY
         } else {
@@ -260,10 +260,10 @@ impl Node {
                             id: MessageId)
                             -> Result<(), InterfaceError> {
         let user_msg = UserMessage::Response(Response::PutFailure {
-            id: id,
-            data_id: data_id,
-            external_error_indicator: external_error_indicator,
-        });
+                                                 id: id,
+                                                 data_id: data_id,
+                                                 external_error_indicator: external_error_indicator,
+                                             });
         self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
     }
 
@@ -287,10 +287,10 @@ impl Node {
                              id: MessageId)
                              -> Result<(), InterfaceError> {
         let user_msg = UserMessage::Response(Response::PostFailure {
-            id: id,
-            data_id: data_id,
-            external_error_indicator: external_error_indicator,
-        });
+                                                 id: id,
+                                                 data_id: data_id,
+                                                 external_error_indicator: external_error_indicator,
+                                             });
         self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
     }
 
@@ -314,10 +314,10 @@ impl Node {
                                id: MessageId)
                                -> Result<(), InterfaceError> {
         let user_msg = UserMessage::Response(Response::DeleteFailure {
-            id: id,
-            data_id: data_id,
-            external_error_indicator: external_error_indicator,
-        });
+                                                 id: id,
+                                                 data_id: data_id,
+                                                 external_error_indicator: external_error_indicator,
+                                             });
         self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
     }
 
@@ -341,10 +341,10 @@ impl Node {
                                id: MessageId)
                                -> Result<(), InterfaceError> {
         let user_msg = UserMessage::Response(Response::AppendFailure {
-            id: id,
-            data_id: data_id,
-            external_error_indicator: external_error_indicator,
-        });
+                                                 id: id,
+                                                 data_id: data_id,
+                                                 external_error_indicator: external_error_indicator,
+                                             });
         self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
     }
 
@@ -357,10 +357,10 @@ impl Node {
                                          id: MessageId)
                                          -> Result<(), InterfaceError> {
         let user_msg = UserMessage::Response(Response::GetAccountInfoSuccess {
-            id: id,
-            data_stored: data_stored,
-            space_available: space_available,
-        });
+                                                 id: id,
+                                                 data_stored: data_stored,
+                                                 space_available: space_available,
+                                             });
         self.send_action(src, dst, user_msg, CLIENT_GET_PRIORITY)
     }
 
@@ -372,9 +372,9 @@ impl Node {
                                          id: MessageId)
                                          -> Result<(), InterfaceError> {
         let user_msg = UserMessage::Response(Response::GetAccountInfoFailure {
-            id: id,
-            external_error_indicator: external_error_indicator,
-        });
+                                                 id: id,
+                                                 external_error_indicator: external_error_indicator,
+                                             });
         self.send_action(src, dst, user_msg, CLIENT_GET_PRIORITY)
     }
 
@@ -458,7 +458,10 @@ impl Node {
 
     /// Routing table of this node.
     pub fn routing_table(&self) -> Option<RoutingTable<XorName>> {
-        self.machine.current().routing_table().cloned()
+        self.machine
+            .current()
+            .routing_table()
+            .cloned()
     }
 
     /// Check whether this node acts as a tunnel node between `client_1` and `client_2`.

@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -102,11 +102,11 @@ impl Client {
         });
 
         Ok(Client {
-            interface_result_tx: tx,
-            interface_result_rx: rx,
-            action_sender: action_sender,
-            _raii_joiner: raii_joiner,
-        })
+               interface_result_tx: tx,
+               interface_result_rx: rx,
+               action_sender: action_sender,
+               _raii_joiner: raii_joiner,
+           })
     }
 
     fn make_state_machine(keys: Option<FullId>,
@@ -226,12 +226,12 @@ impl Client {
         let (tx, rx) = channel();
 
         Ok(Client {
-            interface_result_tx: tx,
-            interface_result_rx: rx,
-            action_sender: action_sender,
-            machine: RefCell::new(machine),
-            event_buffer: RefCell::new(event_buffer),
-        })
+               interface_result_tx: tx,
+               interface_result_rx: rx,
+               action_sender: action_sender,
+               machine: RefCell::new(machine),
+               event_buffer: RefCell::new(event_buffer),
+           })
     }
 
     /// Get the next event in a non-blocking manner.
@@ -242,7 +242,10 @@ impl Client {
             return Ok(cached_ev);
         }
         self.try_step()?;
-        self.event_buffer.borrow_mut().take_first().ok_or(TryRecvError::Empty)
+        self.event_buffer
+            .borrow_mut()
+            .take_first()
+            .ok_or(TryRecvError::Empty)
     }
 
     /// Process all inbound events and buffer any produced events on the internal buffer.
@@ -261,12 +264,18 @@ impl Client {
 
     /// Resend all unacknowledged messages.
     pub fn resend_unacknowledged(&self) -> bool {
-        self.machine.borrow_mut().current_mut().resend_unacknowledged()
+        self.machine
+            .borrow_mut()
+            .current_mut()
+            .resend_unacknowledged()
     }
 
     /// Are there any unacknowledged messages?
     pub fn has_unacknowledged(&self) -> bool {
-        self.machine.borrow().current().has_unacknowledged()
+        self.machine
+            .borrow()
+            .current()
+            .has_unacknowledged()
     }
 }
 

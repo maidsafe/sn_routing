@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -15,6 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::crust::{ConnectionInfoResult, CrustEventSender, CrustUser, Event, PeerId,
+                   PrivConnectionInfo, PubConnectionInfo};
 use maidsafe_utilities::SeededRng;
 use rand::{Rng, XorShiftRng};
 use rust_sodium;
@@ -24,8 +26,6 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::collections::hash_map::Entry;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::rc::{Rc, Weak};
-use super::crust::{ConnectionInfoResult, CrustEventSender, CrustUser, Event, PeerId,
-                   PrivConnectionInfo, PubConnectionInfo};
 
 /// Mock network. Create one before testing with mocks. Use it to create `ServiceHandle`s.
 #[derive(Clone)]
@@ -50,13 +50,13 @@ impl Network {
         };
         unwrap!(rust_sodium::init_with_rng(&mut rng));
         Network(Rc::new(RefCell::new(NetworkImpl {
-            services: HashMap::new(),
-            min_section_size: min_section_size,
-            next_endpoint: 0,
-            queue: HashMap::new(),
-            blocked_connections: HashSet::new(),
-            rng: SeededRng::new(),
-        })))
+                                         services: HashMap::new(),
+                                         min_section_size: min_section_size,
+                                         next_endpoint: 0,
+                                         queue: HashMap::new(),
+                                         blocked_connections: HashSet::new(),
+                                         rng: SeededRng::new(),
+                                     })))
     }
 
     /// Create new ServiceHandle.
@@ -69,10 +69,10 @@ impl Network {
 
         let handle = ServiceHandle::new(self.clone(), config, endpoint);
         if self.0
-            .borrow_mut()
-            .services
-            .insert(endpoint, Rc::downgrade(&handle.0))
-            .is_some() {
+               .borrow_mut()
+               .services
+               .insert(endpoint, Rc::downgrade(&handle.0))
+               .is_some() {
             debug!("Tried to insert duplicate service handle ");
         }
 
@@ -117,18 +117,26 @@ impl Network {
 
     /// Simulates a crust event being sent to the node.
     pub fn send_crust_event(&self, node: Endpoint, crust_event: Event) {
-        let service = unwrap!(self.find_service(node), "Cannot fetch service of {:?}.", node);
+        let service = unwrap!(self.find_service(node),
+                              "Cannot fetch service of {:?}.",
+                              node);
         service.borrow_mut().send_event(crust_event);
     }
 
     /// Construct a new [`XorShiftRng`](https://doc.rust-lang.org/rand/rand/struct.XorShiftRng.html)
     /// using a seed generated from random data provided by `self`.
     pub fn new_rng(&self) -> XorShiftRng {
-        self.0.borrow_mut().rng.new_rng()
+        self.0
+            .borrow_mut()
+            .rng
+            .new_rng()
     }
 
     fn connection_blocked(&self, sender: Endpoint, receiver: Endpoint) -> bool {
-        self.0.borrow().blocked_connections.contains(&(sender, receiver))
+        self.0
+            .borrow()
+            .blocked_connections
+            .contains(&(sender, receiver))
     }
 
     fn send(&self, sender: Endpoint, receiver: Endpoint, packet: Packet) {
@@ -144,29 +152,36 @@ impl Network {
     // drop packets going the other way).
     fn drop_pending(&self, sender: Endpoint, receiver: Endpoint) {
         if let Some(deque) = self.0
-            .borrow_mut()
-            .queue
-            .get_mut(&(sender, receiver)) {
+               .borrow_mut()
+               .queue
+               .get_mut(&(sender, receiver)) {
             deque.clear();
         }
     }
 
     // Drops all pending messages across the entire network.
     fn drop_all_pending(&self) {
-        self.0.borrow_mut().queue.clear();
+        self.0
+            .borrow_mut()
+            .queue
+            .clear();
     }
 
     fn pop_packet(&self) -> Option<(Endpoint, Endpoint, Packet)> {
         let mut network_impl = self.0.borrow_mut();
-        let keys: Vec<_> = network_impl.queue.keys().cloned().collect();
+        let keys: Vec<_> = network_impl.queue
+            .keys()
+            .cloned()
+            .collect();
         let (sender, receiver) = if let Some(key) = network_impl.rng.choose(&keys) {
             *key
         } else {
             return None;
         };
-        let result = network_impl.queue
-            .get_mut(&(sender, receiver))
-            .and_then(|packets| packets.pop_front().map(|packet| (sender, receiver, packet)));
+        let result =
+            network_impl.queue.get_mut(&(sender, receiver)).and_then(|packets| {
+                packets.pop_front().map(|packet| (sender, receiver, packet))
+            });
         if result.is_some() {
             if let Entry::Occupied(entry) = network_impl.queue.entry((sender, receiver)) {
                 if entry.get().is_empty() {
@@ -194,7 +209,11 @@ impl Network {
     }
 
     fn find_service(&self, endpoint: Endpoint) -> Option<Rc<RefCell<ServiceImpl>>> {
-        self.0.borrow().services.get(&endpoint).and_then(|s| s.upgrade())
+        self.0
+            .borrow()
+            .services
+            .get(&endpoint)
+            .and_then(|s| s.upgrade())
     }
 }
 
@@ -275,9 +294,9 @@ impl ServiceImpl {
         // immediately.
         if pending_bootstraps == 0 {
             unwrap!(self.event_sender
-                .as_ref()
-                .unwrap()
-                .send(Event::BootstrapFailed));
+                        .as_ref()
+                        .unwrap()
+                        .send(Event::BootstrapFailed));
         }
 
         self.pending_bootstraps = pending_bootstraps;
@@ -442,9 +461,7 @@ impl ServiceImpl {
     // Remove connected peer with the given peer id and return its endpoint,
     // or None if no such peer exists.
     fn remove_connection_by_peer_id(&mut self, peer_id: &PeerId) -> Option<Endpoint> {
-        if let Some(i) = self.connections
-            .iter()
-            .position(|&(id, _)| id == *peer_id) {
+        if let Some(i) = self.connections.iter().position(|&(id, _)| id == *peer_id) {
             Some(self.connections.swap_remove(i).1)
         } else {
             None
@@ -452,9 +469,7 @@ impl ServiceImpl {
     }
 
     fn remove_connection_by_endpoint(&mut self, endpoint: Endpoint) -> Option<PeerId> {
-        if let Some(i) = self.connections
-            .iter()
-            .position(|&(_, ep)| ep == endpoint) {
+        if let Some(i) = self.connections.iter().position(|&(_, ep)| ep == endpoint) {
             Some(self.connections.swap_remove(i).0)
         } else {
             None
@@ -591,11 +606,11 @@ pub fn make_current<F, R>(handle: &ServiceHandle, f: F) -> R
     where F: FnOnce() -> R
 {
     CURRENT.with(|current| {
-        *current.borrow_mut() = Some(handle.clone());
-        let result = f();
-        *current.borrow_mut() = None;
-        result
-    })
+                     *current.borrow_mut() = Some(handle.clone());
+                     let result = f();
+                     *current.borrow_mut() = None;
+                     result
+                 })
 }
 
 pub fn get_current() -> ServiceHandle {

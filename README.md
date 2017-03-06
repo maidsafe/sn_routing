@@ -4,12 +4,12 @@
 
 Routing - a specialised storage DHT
 
-|Crate|Linux/OS X|ARM (Linux)|Windows|Coverage|Issues|
-|:---:|:--------:|:---------:|:-----:|:------:|:----:|
-|[![](http://meritbadge.herokuapp.com/routing)](https://crates.io/crates/routing)|[![Build Status](https://travis-ci.org/maidsafe/routing.svg?branch=master)](https://travis-ci.org/maidsafe/routing)|[![Build Status](http://ci.maidsafe.net:8080/buildStatus/icon?job=routing_arm_status_badge)](http://ci.maidsafe.net:8080/job/routing_arm_status_badge/)|[![Build status](https://ci.appveyor.com/api/projects/status/2w1joqd2h64o4xrh/branch/master?svg=true)](https://ci.appveyor.com/project/MaidSafe-QA/routing/branch/master)|[![Coverage Status](https://coveralls.io/repos/maidsafe/routing/badge.svg)](https://coveralls.io/r/maidsafe/routing)|[![Stories in Ready](https://badge.waffle.io/maidsafe/routing.png?label=ready&title=Ready)](https://waffle.io/maidsafe/routing)|
+|Crate|Documentation|Linux/OS X|Windows|Issues|
+|:---:|:-----------:|:--------:|:-----:|:----:|
+|[![](http://meritbadge.herokuapp.com/routing)](https://crates.io/crates/routing)|[![Documentation](https://docs.rs/routing/badge.svg)](https://docs.rs/routing)|[![Build Status](https://travis-ci.org/maidsafe/routing.svg?branch=master)](https://travis-ci.org/maidsafe/routing)|[![Build status](https://ci.appveyor.com/api/projects/status/2w1joqd2h64o4xrh/branch/master?svg=true)](https://ci.appveyor.com/project/MaidSafe-QA/routing/branch/master)|[![Stories in Ready](https://badge.waffle.io/maidsafe/routing.png?label=ready&title=Ready)](https://waffle.io/maidsafe/routing)|
 
-| [![Documentation](https://docs.rs/routing/badge.svg)](https://docs.rs/routing) | [MaidSafe website](https://maidsafe.net) | [SAFE Dev Forum](https://forum.safedev.org) | [SAFE Network Forum](https://safenetforum.org) |
-|:------:|:-------:|:-------:|:-------:|
+| [MaidSafe website](https://maidsafe.net) | [SAFE Dev Forum](https://forum.safedev.org) | [SAFE Network Forum](https://safenetforum.org) |
+|:----------------------------------------:|:-------------------------------------------:|:----------------------------------------------:|
 
 ## Overview
 
@@ -51,6 +51,5 @@ at your option.
 ## Contribution
 
 Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the
-work by you, as defined in the MaidSafe Contributor Agreement, version 1.1 ([CONTRIBUTOR]
-(CONTRIBUTOR)), shall be dual licensed as above, and you agree to be bound by the terms of the
-MaidSafe Contributor Agreement, version 1.1.
+work by you, as defined in the MaidSafe Contributor Agreement ([CONTRIBUTOR](CONTRIBUTOR)), shall be
+dual licensed as above, and you agree to be bound by the terms of the MaidSafe Contributor Agreement.
