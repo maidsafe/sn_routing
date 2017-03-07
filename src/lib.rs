@@ -155,6 +155,7 @@ mod messages;
 mod node;
 mod outbox;
 mod peer_manager;
+mod route_manager;
 mod routing_message_filter;
 mod routing_table;
 mod signature_accumulator;
