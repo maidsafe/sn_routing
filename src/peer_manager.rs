@@ -48,6 +48,8 @@ pub const RESOURCE_PROOF_DURATION_SECS: u64 = 300;
 const CANDIDATE_ACCEPT_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) the node waits for connection from an expected node.
 const NODE_CONNECT_TIMEOUT_SECS: u64 = 60;
+/// Number of close nodes we try to use to establish a tunnel
+const NUM_TUNNEL_VIA_NODES: usize = 10;
 
 pub type SectionMap = BTreeMap<Prefix<XorName>, BTreeSet<PublicId>>;
 
@@ -1200,6 +1202,26 @@ impl PeerManager {
         let _ = self.set_state(peer_id, PeerState::Routing(RoutingConnection::Direct));
     }
 
+    /// Get potential tunnel nodes for us.
+    ///
+    /// To be qualified: peer must be in our section, within NUM_TUNNEL_VIA_NODES closest and
+    ///                  directly connected to us
+    pub fn potential_tunnel_nodes(&self) -> Vec<(XorName, PeerId)> {
+        let our_section = self.routing_table
+            .other_close_names(self.our_public_id.name())
+            .unwrap_or_default();
+        self.peer_map
+            .peers()
+            .filter_map(|peer| if our_section.contains(peer.name()) &&
+                                  peer.state.is_directly_connected() {
+                peer.peer_id.map_or(None, |peer_id| Some((*peer.name(), peer_id)))
+            } else {
+                None
+            })
+            .take(NUM_TUNNEL_VIA_NODES)
+            .collect()
+    }
+
     /// Sets the given peer to state `SearchingForTunnel` and returns querying candidates.
     /// Returns empty vector of candidates if it is already in Routing state.
     pub fn set_searching_for_tunnel(&mut self,
@@ -1216,13 +1238,7 @@ impl PeerManager {
         }
 
         let _ = self.insert_peer(pub_id, Some(peer_id), PeerState::SearchingForTunnel);
-
-        let close_section = self.routing_table.other_close_names(pub_id.name()).unwrap_or_default();
-        self.peer_map
-            .peers()
-            .filter_map(|peer| peer.peer_id.map(|peer_id| (*peer.name(), peer_id)))
-            .filter(|&(name, _)| close_section.contains(&name))
-            .collect()
+        self.potential_tunnel_nodes()
     }
 
     /// Inserts the given connection info in the map to wait for the peer's info, or returns both
