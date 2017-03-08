@@ -720,11 +720,7 @@ impl Node {
                    self,
                    peer_id,
                    hop_msg);
-            if hop_msg.content.routing_message().src.is_multiple() {
-                *self.name()
-            } else {
-                return Err(RoutingError::UnknownConnection(peer_id));
-            }
+            *self.name()
         };
 
         let HopMessage { content, route, sent_to, .. } = hop_msg;
@@ -1734,7 +1730,7 @@ impl Node {
                    dst_id,
                    peer_id);
             if !self.crust_service.is_connected(&dst_id) {
-                self.dropped_peer(&dst_id, outbox);
+                self.dropped_peer(&dst_id, outbox, true);
             }
         }
     }
@@ -2752,7 +2748,11 @@ impl Node {
 
     // Handle dropped peer with the given peer id. Returns true if we should keep running, false if
     // we should terminate.
-    fn dropped_peer(&mut self, peer_id: &PeerId, outbox: &mut EventBox) -> bool {
+    fn dropped_peer(&mut self,
+                    peer_id: &PeerId,
+                    outbox: &mut EventBox,
+                    try_reconnect: bool)
+                    -> bool {
         let (peer, removal_result) = match self.peer_mgr.remove_peer(peer_id) {
             Some(result) => result,
             None => return true,
@@ -2786,6 +2786,22 @@ impl Node {
                 }
             }
             _ => (),
+        }
+
+        if try_reconnect && !peer.pub_id().is_client_id() {
+            debug!("{:?} Sending connection info to {:?} due to dropped peer.",
+                   self,
+                   peer.pub_id());
+            let own_name = *self.name();
+            if let Err(error) = self.send_connection_info_request(*peer.pub_id(),
+                                              Authority::ManagedNode(own_name),
+                                              Authority::ManagedNode(*peer.name()),
+                                              outbox) {
+                debug!("{:?} - Failed to send connection info to {:?}: {:?}",
+                       self,
+                       peer.pub_id(),
+                       error);
+            }
         }
 
         true
@@ -2891,7 +2907,7 @@ impl Node {
             })
             .collect_vec();
         for (dst_id, pub_id) in peers {
-            self.dropped_peer(&dst_id, outbox);
+            self.dropped_peer(&dst_id, outbox, false);
             debug!("{:?} Lost tunnel for peer {:?} ({:?}). Requesting new tunnel.",
                    self,
                    dst_id,
@@ -3017,7 +3033,7 @@ impl Base for Node {
         self.dropped_tunnel_client(&peer_id);
         self.dropped_tunnel_node(&peer_id, outbox);
 
-        if self.dropped_peer(&peer_id, outbox) {
+        if self.dropped_peer(&peer_id, outbox, true) {
             Transition::Stay
         } else {
             Transition::Terminate

@@ -251,6 +251,7 @@ fn tunnel_node_disrupted() {
     assert!(tunnel_node_index != unwrap!(locate_tunnel_node(&nodes, PeerId(2), PeerId(3))));
 }
 
+#[ignore]
 #[test]
 fn tunnel_node_blocked() {
     let min_section_size = 5;
