@@ -813,13 +813,15 @@ impl Debug for MessageContent {
             Ack(ack, priority) => write!(formatter, "Ack({:?}, {})", ack, priority),
             UserMessagePart { hash, part_count, part_index, priority, cacheable, .. } => {
                 write!(formatter,
-                       "UserMessagePart {{ {}/{}, priority: {}, cacheable: {}, {:02x}{:02x}.. }}",
+                       "UserMessagePart {{ {}/{}, priority: {}, cacheable: {}, \
+                        {:02x}{:02x}{:02x}.. }}",
                        part_index + 1,
                        part_count,
                        priority,
                        cacheable,
                        hash[0],
-                       hash[1])
+                       hash[1],
+                       hash[2])
             }
             AcceptAsCandidate { ref expect_id, ref client_auth, ref message_id } => {
                 write!(formatter,
@@ -1175,11 +1177,13 @@ impl UserMessageCache {
         {
             let entry = self.0.entry((hash, part_count)).or_insert_with(BTreeMap::new);
             if entry.insert(part_index, payload).is_some() {
-                debug!("Duplicate UserMessagePart {}/{} with hash {:02x}{:02x}.. added to cache.",
+                debug!("Duplicate UserMessagePart {}/{} with hash {:02x}{:02x}{:02x}.. \
+                        added to cache.",
                        part_index + 1,
                        part_count,
                        hash[0],
-                       hash[1]);
+                       hash[1],
+                       hash[2]);
             }
 
             if entry.len() != part_count as usize {
