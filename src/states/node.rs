@@ -1870,6 +1870,7 @@ impl Node {
 
         self.full_id.public_id_mut().set_name(*relocated_id.name());
         self.route_mgr.reset_routing_table(*self.full_id.public_id().name());
+        self.peer_mgr.update_our_id(*self.full_id.public_id());
         self.challenger_count = section.len();
         if let Some((_, proxy_public_id)) = self.peer_mgr.proxy() {
             if section.contains(proxy_public_id) {

@@ -393,6 +393,11 @@ impl PeerManager {
         }
     }
 
+    /// Update the PeerManager's idea of our own ID (due to relocation).
+    pub fn update_our_id(&mut self, relocated_id: PublicId) {
+        self.our_public_id = relocated_id;
+    }
+
     /// Adds a potential candidate to the candidate list setting its state to `VotedFor`.  If
     /// another ongoing (i.e. unapproved) candidate exists, or if the candidate is unsuitable for
     /// adding to our section, returns an error.
@@ -642,7 +647,7 @@ impl PeerManager {
                 PeerState::Proxy => (),
             }
         } else {
-            trace!("{:?} Add to routing table called for {:?} not found in peer_map",
+            trace!("{:?} Set to full node called for {:?} not found in peer_map",
                    self,
                    peer_id);
         }
