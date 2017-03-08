@@ -613,9 +613,8 @@ impl PeerManager {
         trace!("{}No candidate is currently being handled.", log_prefix);
     }
 
-    /// Set as a full routing node (called at the same time as
-    /// `RouteManager::add_to_routing_table()`).
-    pub fn set_to_full_node(&mut self, pub_id: &PublicId, peer_id: &PeerId) {
+    /// Called just before `RouteManager::add_to_routing_table()`.
+    pub fn pre_add_to_table(&mut self, peer_id: &PeerId) {
         if let Some(peer) = self.peer_map.get(peer_id) {
             match peer.state {
                 PeerState::ConnectionInfoPreparing { .. } |
@@ -654,6 +653,10 @@ impl PeerManager {
 
         let _ = self.unknown_peers.remove(peer_id);
 
+    }
+
+    /// Set as a full routing node (called after `RouteManager::add_to_routing_table()`).
+    pub fn set_to_full_node(&mut self, pub_id: &PublicId, peer_id: &PeerId) {
         let conn = self.peer_map
             .remove(peer_id)
             .map_or(RoutingConnection::Direct,

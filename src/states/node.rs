@@ -1395,7 +1395,7 @@ impl Node {
                             public_id: &PublicId,
                             peer_id: &PeerId,
                             outbox: &mut EventBox) {
-        self.peer_mgr.set_to_full_node(public_id, peer_id);
+        self.peer_mgr.pre_add_to_table(peer_id);
         match self.route_mgr.add_to_routing_table(public_id) {
             Err(RoutingTableError::AlreadyExists) => return,  // already in RT
             Err(error) => {
@@ -1407,6 +1407,7 @@ impl Node {
                 return;
             }
             Ok(true) => {
+                self.peer_mgr.set_to_full_node(public_id, peer_id);
                 // i.e. the section should split
                 let our_prefix = *self.our_prefix();
                 // In the future we'll look to remove this restriction so we always call
@@ -1417,6 +1418,7 @@ impl Node {
                 }
             }
             Ok(false) => {
+                self.peer_mgr.set_to_full_node(public_id, peer_id);
                 self.merge_if_necessary();
             }
         }
