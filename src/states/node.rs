@@ -498,8 +498,7 @@ impl Node {
                 }
             }
             Ok(Message::TunnelHop { content, src, dst }) => {
-                if dst == self.crust_service.id() &&
-                   self.tunnels.tunnel_for(&src) == Some(&peer_id) {
+                if dst == self.crust_service.id() {
                     self.handle_hop_message(content, src)
                 } else if self.tunnels.has_clients(src, dst) {
                     self.send_or_drop(&dst, bytes, content.content.priority());
@@ -721,7 +720,11 @@ impl Node {
                    self,
                    peer_id,
                    hop_msg);
-            return Err(RoutingError::UnknownConnection(peer_id));
+            if hop_msg.content.routing_message().src.is_multiple() {
+                *self.name()
+            } else {
+                return Err(RoutingError::UnknownConnection(peer_id));
+            }
         };
 
         let HopMessage { content, route, sent_to, .. } = hop_msg;
@@ -888,7 +891,7 @@ impl Node {
             (RoutingTableResponse { prefix, members, message_id }, Section(_), ManagedNode(_)) => {
                 self.handle_rt_rsp(prefix, members, message_id, outbox)
             }
-            (SectionSplit(prefix, joining_node), _, _) => {
+            (SectionSplit(prefix, joining_node), PrefixSection(_), PrefixSection(_)) => {
                 self.handle_section_split(prefix, joining_node, outbox)
             }
             (OwnSectionMerge(sections),
