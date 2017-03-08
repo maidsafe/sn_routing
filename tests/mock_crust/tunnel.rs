@@ -270,3 +270,36 @@ fn tunnel_node_blocked() {
     verify_tunnel_switch(&mut nodes, tunnel_node_index, 2, 3);
     assert!(tunnel_node_index != unwrap!(locate_tunnel_node(&nodes, PeerId(2), PeerId(3))));
 }
+
+#[test]
+fn avoid_tunnelling_when_proxying() {
+    let min_section_size = 5;
+    let network = Network::new(min_section_size, None);
+    network.block_connection(Endpoint(2), Endpoint(3));
+    network.block_connection(Endpoint(3), Endpoint(2));
+    let mut nodes = create_connected_nodes(&network, min_section_size);
+    verify_invariant_for_all_nodes(&nodes);
+    // Nodes[0] acts as proxy to others, shall not be chosen as tunnel node.
+    assert!(unwrap!(locate_tunnel_node(&nodes, PeerId(2), PeerId(3))) != 0);
+
+    let config = Config::with_contacts(&[nodes[1].handle.endpoint()]);
+    let endpoint = Endpoint(nodes.len());
+    nodes.push(TestNode::builder(&network)
+        .config(config.clone())
+        .endpoint(endpoint)
+        .cache(false)
+        .create());
+    poll_and_resend(&mut nodes, &mut []);
+    let endpoint = Endpoint(nodes.len());
+    nodes.push(TestNode::builder(&network)
+        .config(config.clone())
+        .endpoint(endpoint)
+        .cache(false)
+        .create());
+    network.block_connection(Endpoint(nodes.len() - 1), Endpoint(0));
+    network.block_connection(Endpoint(0), Endpoint(nodes.len() - 1));
+    poll_and_resend(&mut nodes, &mut []);
+    verify_invariant_for_all_nodes(&nodes);
+    assert_eq!(nodes.len() - 2,
+               unwrap!(locate_tunnel_node(&nodes, PeerId(0), PeerId(nodes.len() - 1))));
+}

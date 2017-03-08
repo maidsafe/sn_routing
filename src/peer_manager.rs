@@ -124,10 +124,10 @@ pub enum PeerState {
 }
 
 impl PeerState {
-    fn is_directly_connected(&self) -> bool {
+    fn can_tunnel_for(&self) -> bool {
         match *self {
-            PeerState::Routing(conn) |
-            PeerState::Candidate(conn) if conn != RoutingConnection::Tunnel => true,
+            PeerState::Routing(RoutingConnection::Direct) |
+            PeerState::Candidate(RoutingConnection::Direct) => true,
             _ => false,
         }
     }
@@ -737,9 +737,7 @@ impl PeerManager {
         let peer_state = self.get_state(peer_id);
         let dst_state = self.get_state(dst_id);
         match (peer_state, dst_state) {
-            (Some(peer1), Some(peer2)) => {
-                peer1.is_directly_connected() && peer2.is_directly_connected()
-            }
+            (Some(peer1), Some(peer2)) => peer1.can_tunnel_for() && peer2.can_tunnel_for(),
             _ => false,
         }
     }
@@ -1039,17 +1037,15 @@ impl PeerManager {
         let _ = self.set_state(peer_id, PeerState::Routing(RoutingConnection::Direct));
     }
 
-    /// Get potential tunnel nodes for us.
-    ///
-    /// To be qualified: peer must be in our section, within NUM_TUNNEL_VIA_NODES closest and
-    ///                  directly connected to us
+    /// Returns the `NUM_TUNNEL_VIA_NODES` closest peers from our section which can be potential
+    /// tunnel node.
     pub fn potential_tunnel_nodes(&self,
                                   our_section: &BTreeSet<XorName>)
                                   -> Vec<(XorName, PeerId)> {
         self.peer_map
             .peers()
             .filter_map(|peer| if our_section.contains(peer.name()) &&
-                                  peer.state.is_directly_connected() {
+                                  peer.state.can_tunnel_for() {
                 peer.peer_id.map_or(None, |peer_id| Some((*peer.name(), peer_id)))
             } else {
                 None
