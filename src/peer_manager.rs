@@ -393,6 +393,11 @@ impl PeerManager {
         }
     }
 
+    /// Update the PeerManager's idea of our own ID (due to relocation).
+    pub fn update_our_id(&mut self, relocated_id: PublicId) {
+        self.our_public_id = relocated_id;
+    }
+
     /// Adds a potential candidate to the candidate list setting its state to `VotedFor`.  If
     /// another ongoing (i.e. unapproved) candidate exists, or if the candidate is unsuitable for
     /// adding to our section, returns an error.
@@ -608,9 +613,8 @@ impl PeerManager {
         trace!("{}No candidate is currently being handled.", log_prefix);
     }
 
-    /// Set as a full routing node (called at the same time as
-    /// `RouteManager::add_to_routing_table()`).
-    pub fn set_to_full_node(&mut self, pub_id: &PublicId, peer_id: &PeerId) {
+    /// Called just before `RouteManager::add_to_routing_table()`.
+    pub fn pre_add_to_table(&mut self, peer_id: &PeerId) {
         if let Some(peer) = self.peer_map.get(peer_id) {
             match peer.state {
                 PeerState::ConnectionInfoPreparing { .. } |
@@ -642,13 +646,17 @@ impl PeerManager {
                 PeerState::Proxy => (),
             }
         } else {
-            trace!("{:?} Add to routing table called for {:?} not found in peer_map",
+            trace!("{:?} Set to full node called for {:?} not found in peer_map",
                    self,
                    peer_id);
         }
 
         let _ = self.unknown_peers.remove(peer_id);
 
+    }
+
+    /// Set as a full routing node (called after `RouteManager::add_to_routing_table()`).
+    pub fn set_to_full_node(&mut self, pub_id: &PublicId, peer_id: &PeerId) {
         let conn = self.peer_map
             .remove(peer_id)
             .map_or(RoutingConnection::Direct,

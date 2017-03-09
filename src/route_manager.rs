@@ -86,8 +86,7 @@ impl RouteManager {
     pub fn add_to_routing_table(&mut self, pub_id: &PublicId) -> Result<bool, RoutingTableError> {
         let _ = self.expected_peers.remove(pub_id.name());
 
-        let should_split = self.routing_table.add(*pub_id.name())?;
-        Ok(should_split)
+        self.routing_table.add(*pub_id.name())
     }
 
     /// Splits the indicated section and returns the `PeerId`s of any peers to which we should not
