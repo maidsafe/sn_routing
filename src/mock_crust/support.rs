@@ -115,6 +115,17 @@ impl Network {
         let _ = imp.blocked_connections.remove(&(sender, receiver));
     }
 
+    /// Simulates the loss of a connection.
+    pub fn lost_connection(&self, node_1: Endpoint, node_2: Endpoint) {
+        let service_1 = unwrap!(self.find_service(node_1), "Cannot fetch service of {:?}.", node_1);
+        let _ = service_1.borrow_mut().remove_connection_by_endpoint(node_2);
+        let service_2 = unwrap!(self.find_service(node_2), "Cannot fetch service of {:?}.", node_2);
+        let _ = service_2.borrow_mut().remove_connection_by_endpoint(node_1);
+
+        service_1.borrow_mut().send_event(Event::LostPeer(PeerId(node_2.0)));
+        service_2.borrow_mut().send_event(Event::LostPeer(PeerId(node_1.0)));
+    }
+
     /// Simulates a crust event being sent to the node.
     pub fn send_crust_event(&self, node: Endpoint, crust_event: Event) {
         let service = unwrap!(self.find_service(node),

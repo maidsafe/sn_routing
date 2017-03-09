@@ -242,10 +242,7 @@ fn tunnel_node_disrupted() {
     let mut nodes = create_connected_nodes(&network, min_section_size);
     let tunnel_node_index = unwrap!(locate_tunnel_node(&nodes, PeerId(2), PeerId(3)));
 
-    network.send_crust_event(Endpoint(2),
-                             crust::Event::LostPeer(PeerId(tunnel_node_index)));
-    network.send_crust_event(Endpoint(tunnel_node_index),
-                             crust::Event::LostPeer(PeerId(2)));
+    network.lost_connection(Endpoint(2), Endpoint(tunnel_node_index));
     poll_and_resend(&mut nodes, &mut []);
     verify_tunnel_switch(&mut nodes, tunnel_node_index, 2, 3);
     assert!(tunnel_node_index != unwrap!(locate_tunnel_node(&nodes, PeerId(2), PeerId(3))));
@@ -263,10 +260,7 @@ fn tunnel_node_blocked() {
 
     network.block_connection(Endpoint(2), Endpoint(tunnel_node_index));
     network.block_connection(Endpoint(tunnel_node_index), Endpoint(2));
-    network.send_crust_event(Endpoint(2),
-                             crust::Event::LostPeer(PeerId(tunnel_node_index)));
-    network.send_crust_event(Endpoint(tunnel_node_index),
-                             crust::Event::LostPeer(PeerId(2)));
+    network.lost_connection(Endpoint(2), Endpoint(tunnel_node_index));
     poll_and_resend(&mut nodes, &mut []);
     verify_tunnel_switch(&mut nodes, tunnel_node_index, 2, 3);
     assert!(tunnel_node_index != unwrap!(locate_tunnel_node(&nodes, PeerId(2), PeerId(3))));
