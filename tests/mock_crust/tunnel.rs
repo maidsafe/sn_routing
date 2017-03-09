@@ -203,7 +203,7 @@ fn verify_tunnel_switch(nodes: &mut Vec<TestNode>, node: usize, client_1: usize,
                 event_count += 1;
             }
             Event::NodeAdded(name, _) => {
-                assert!(name == nodes[client_2].name());
+                assert!(name == nodes[node].name() || name == nodes[client_2].name());
                 assert_eq!(event_count, 2);
             }
             _ => {
@@ -249,9 +249,9 @@ fn tunnel_node_disrupted() {
     poll_and_resend(&mut nodes, &mut []);
     verify_tunnel_switch(&mut nodes, tunnel_node_index, 2, 3);
     assert!(tunnel_node_index != unwrap!(locate_tunnel_node(&nodes, PeerId(2), PeerId(3))));
+    verify_invariant_for_all_nodes(&nodes);
 }
 
-#[ignore]
 #[test]
 fn tunnel_node_blocked() {
     let min_section_size = 5;
@@ -270,8 +270,8 @@ fn tunnel_node_blocked() {
     poll_and_resend(&mut nodes, &mut []);
     verify_tunnel_switch(&mut nodes, tunnel_node_index, 2, 3);
     assert!(tunnel_node_index != unwrap!(locate_tunnel_node(&nodes, PeerId(2), PeerId(3))));
+    verify_invariant_for_all_nodes(&nodes);
 }
-
 
 #[test]
 fn tunnel_node_dropped() {
@@ -288,8 +288,8 @@ fn tunnel_node_dropped() {
     let _ = nodes.remove(tunnel_node_index);
 
     poll_and_resend(&mut nodes, &mut []);
-    expect_any_event!(nodes[1], Event::NodeAdded(..) if true);
-    expect_any_event!(nodes[2], Event::NodeAdded(..) if true);
+    expect_any_event!(nodes[1], Event::NodeAdded(..));
+    expect_any_event!(nodes[2], Event::NodeAdded(..));
     verify_invariant_for_all_nodes(&nodes);
     assert!(tunnel_node_index != unwrap!(locate_tunnel_node(&nodes, PeerId(2), PeerId(3))));
 }

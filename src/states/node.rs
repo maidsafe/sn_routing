@@ -720,6 +720,10 @@ impl Node {
                    self,
                    peer_id,
                    hop_msg);
+            // TODO - We could return `UnknownConnection` here and not handle the message, but we
+            //        could be handling a tunnelled message here immediately after the tunnel
+            //        closed.  Since we no longer have the peer's name available, we just use our
+            //        own instead, as this is almost equivalent to passing no name at all.
             *self.name()
         };
 
@@ -2751,7 +2755,7 @@ impl Node {
     fn dropped_peer(&mut self,
                     peer_id: &PeerId,
                     outbox: &mut EventBox,
-                    try_reconnect: bool)
+                    mut try_reconnect: bool)
                     -> bool {
         let (peer, removal_result) = match self.peer_mgr.remove_peer(peer_id) {
             Some(result) => result,
@@ -2784,6 +2788,7 @@ impl Node {
                     outbox.send_event(Event::Terminate);
                     return false;
                 }
+                try_reconnect = false;
             }
             _ => (),
         }
@@ -3077,7 +3082,7 @@ impl Node {
         if self.peer_mgr.remove_connecting_peers() {
             self.merge_if_necessary();
         }
-        self.tunnels.clear();
+        self.tunnels.clear_new_clients();
     }
 
     pub fn section_list_signatures(&self,

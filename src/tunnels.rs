@@ -175,7 +175,7 @@ impl Tunnels {
 
     /// Clears the new_clients filter, removing all the entries.
     #[cfg(feature = "use-mock-crust")]
-    pub fn clear(&mut self) {
+    pub fn clear_new_clients(&mut self) {
         self.new_clients.clear();
     }
 }
@@ -190,9 +190,7 @@ impl Default for Tunnels {
     }
 }
 
-
-#[cfg(feature = "use-mock-crust")]
-#[cfg(test)]
+#[cfg(all(test, feature = "use-mock-crust"))]
 mod tests {
     use itertools::Itertools;
     use mock_crust::crust::PeerId;
