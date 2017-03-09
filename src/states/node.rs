@@ -483,6 +483,10 @@ impl Node {
                     self.send_or_drop(&dst, bytes, content.priority());
                     Ok(())
                 } else if self.tunnels.accept_clients(src, dst) {
+                    debug!("{:?} agreed to act as tunnel_node for {:?} - {:?}",
+                           self,
+                           src,
+                           dst);
                     self.send_direct_message(dst, DirectMessage::TunnelSuccess(src));
                     self.send_or_drop(&dst, bytes, content.priority());
                     Ok(())
@@ -1708,8 +1712,9 @@ impl Node {
     /// Handle a `TunnelSuccess` response from `peer_id`: It will act as a tunnel to `dst_id`.
     fn handle_tunnel_success(&mut self, peer_id: PeerId, dst_id: PeerId) {
         if !self.peer_mgr.tunnelling_to(&dst_id) {
-            debug!("{:?} Received TunnelSuccess for a peer we are already connected to: {:?}",
+            debug!("{:?} Received TunnelSuccess from {:?} for an already connected peer {:?}",
                    self,
+                   peer_id,
                    dst_id);
             let message = DirectMessage::TunnelDisconnect(dst_id);
             self.send_direct_message(peer_id, message);
