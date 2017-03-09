@@ -120,7 +120,9 @@ impl Network {
         let service_1 = unwrap!(self.find_service(node_1),
                                 "Cannot fetch service of {:?}.",
                                 node_1);
-        let _ = service_1.borrow_mut().remove_connection_by_endpoint(node_2);
+        if service_1.borrow_mut().remove_connection_by_endpoint(node_2).is_none() {
+            return;
+        }
         let service_2 = unwrap!(self.find_service(node_2),
                                 "Cannot fetch service of {:?}.",
                                 node_2);

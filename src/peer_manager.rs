@@ -1218,16 +1218,19 @@ impl PeerManager {
     /// Returns the `NUM_TUNNEL_VIA_NODES` closest peers from our section which can be potential
     /// tunnel node.
     pub fn potential_tunnel_nodes(&self) -> Vec<(XorName, PeerId)> {
-        let our_section = self.routing_table
-            .other_close_names(self.our_public_id.name())
+        let closest_nodes = self.routing_table
+            .other_closest_names(self.our_public_id.name(), self.routing_table.len() + 1)
             .unwrap_or_default();
-        self.peer_map
-            .peers()
-            .filter_map(|peer| if our_section.contains(peer.name()) &&
-                                  peer.state.can_tunnel_for() {
-                peer.peer_id.map_or(None, |peer_id| Some((*peer.name(), peer_id)))
-            } else {
-                None
+        closest_nodes.iter()
+            .filter_map(|name| {
+                self.peer_map.get_by_name(name).map_or(None,
+                                                       |peer| if peer.state.can_tunnel_for() {
+                                                           peer.peer_id().map_or(None, |peer_id| {
+                                                               Some((**name, *peer_id))
+                                                           })
+                                                       } else {
+                                                           None
+                                                       })
             })
             .take(NUM_TUNNEL_VIA_NODES)
             .collect()
