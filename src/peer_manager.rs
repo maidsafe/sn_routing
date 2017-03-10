@@ -376,8 +376,9 @@ impl Candidate {
 pub struct PeerManager {
     connection_token_map: HashMap<u32, PublicId>,
     peer_map: PeerMap,
-    /// Peers we connected to but don't know about yet
-    unknown_peers: HashMap<PeerId, Instant>,
+    /// Peers we connected to but don't know about yet. The bool is true if the peer is
+    /// tunnel-connected or false if directly-connected.
+    unknown_peers: HashMap<PeerId, (bool, Instant)>,
     /// Peers we expect to connect to
     expected_peers: HashMap<XorName, Instant>,
     proxy_peer_id: Option<PeerId>,
@@ -689,20 +690,34 @@ impl PeerManager {
                 PeerState::Candidate(_) |
                 PeerState::Proxy => (),
             }
-        } else {
-            trace!("{:?} Add to routing table called for {:?} not found in peer_map",
+        } else if !self.unknown_peers.contains_key(peer_id) {
+            trace!("{:?} Add to routing table called for {:?} not found in peer_map/unknown_peers",
                    self,
                    peer_id);
         }
 
-        let _ = self.unknown_peers.remove(peer_id);
+        let unknown_connection = if let Some((is_tunnel, _)) = self.unknown_peers.remove(peer_id) {
+            if is_tunnel {
+                RoutingConnection::Tunnel
+            } else {
+                // This would cover the case of a tunnel client establishing a direct connection.
+                if let Some(peer @ &mut Peer {
+                        state: PeerState::Routing(RoutingConnection::Tunnel), .. }) =
+                    self.peer_map.get_mut(peer_id) {
+                    peer.state = PeerState::Routing(RoutingConnection::Direct);
+                }
+                RoutingConnection::Direct
+            }
+        } else {
+            RoutingConnection::Direct
+        };
         let _ = self.expected_peers.remove(pub_id.name());
 
+        // If we've updated the state from tunnel to direct above, we now return here.
         let should_split = self.routing_table.add(*pub_id.name())?;
         let conn = self.peer_map
             .remove(peer_id)
-            .map_or(RoutingConnection::Direct,
-                    |peer| peer.to_routing_connection());
+            .map_or(unknown_connection, |peer| peer.to_routing_connection());
         let _ = self.peer_map.insert(Peer::new(*pub_id, Some(*peer_id), PeerState::Routing(conn)));
         Ok(should_split)
     }
@@ -1007,7 +1022,7 @@ impl PeerManager {
 
         let mut expired_unknown_peers = Vec::new();
 
-        for (peer_id, timestamp) in &self.unknown_peers {
+        for (peer_id, &(_, timestamp)) in &self.unknown_peers {
             if timestamp.elapsed() >= Duration::from_secs(NODE_IDENTIFY_TIMEOUT_SECS) {
                 expired_unknown_peers.push(*peer_id);
             }
@@ -1078,7 +1093,7 @@ impl PeerManager {
     /// Marks the given peer as "connected and waiting for `NodeIdentify`".
     pub fn connected_to(&mut self, peer_id: &PeerId) {
         if !self.set_state(peer_id, PeerState::AwaitingNodeIdentify(false)) {
-            let _ = self.unknown_peers.insert(*peer_id, Instant::now());
+            let _ = self.unknown_peers.insert(*peer_id, (false, Instant::now()));
         }
     }
 
@@ -1093,7 +1108,7 @@ impl PeerManager {
             _ => (),
         }
         if !self.set_state(peer_id, PeerState::AwaitingNodeIdentify(true)) {
-            let _ = self.unknown_peers.insert(*peer_id, Instant::now());
+            let _ = self.unknown_peers.insert(*peer_id, (true, Instant::now()));
         }
         true
     }
@@ -1329,16 +1344,7 @@ impl PeerManager {
                 let _ = self.peer_map.insert(peer);
                 Ok(ConnectionInfoReceivedResult::IsConnected)
             }
-            Some(peer) => {
-                warn!("{:?} Failed to insert connection info from {:?} ({:?}) as peer's current \
-                       state is {:?}",
-                      self,
-                      pub_id.name(),
-                      peer_id,
-                      peer.state);
-                let _ = self.peer_map.insert(peer);
-                Err(Error::UnexpectedState)
-            }
+            Some(Peer { state: PeerState::SearchingForTunnel, .. }) |
             None => {
                 let state = PeerState::ConnectionInfoPreparing {
                     us_as_src: dst,

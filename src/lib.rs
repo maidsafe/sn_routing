@@ -183,7 +183,7 @@ pub const TYPE_TAG_SESSION_PACKET: u64 = 0;
 pub const TYPE_TAG_DNS_PACKET: u64 = 5;
 
 /// The quorum, as a percentage of the number of members of the authority.
-pub const QUORUM: usize = 60;
+pub const QUORUM: usize = 51;
 
 pub use cache::{Cache, NullCache};
 pub use client::Client;
