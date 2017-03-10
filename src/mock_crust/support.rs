@@ -128,7 +128,9 @@ impl Network {
 
     /// Simulates a crust event being sent to the node.
     pub fn send_crust_event(&self, node: Endpoint, crust_event: Event) {
-        let service = unwrap!(self.find_service(node), "Cannot fetch service of {:?}.", node);
+        let service = unwrap!(self.find_service(node),
+                              "Cannot fetch service of {:?}.",
+                              node);
         service.borrow_mut().send_event(crust_event);
     }
 
