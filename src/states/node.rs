@@ -453,7 +453,14 @@ impl Node {
                    self,
                    peer_id,
                    pub_id);
-            self.find_tunnel_for_peer(peer_id, &pub_id);
+            if self.tunnels.tunnel_for(&peer_id).is_none() {
+                self.find_tunnel_for_peer(peer_id, &pub_id);
+            } else {
+                debug!("{:?} already has tunnel to peer {:?} with pub_id {:?}.",
+                       self,
+                       peer_id,
+                       pub_id);
+            }
         }
     }
 
@@ -486,6 +493,10 @@ impl Node {
                     self.send_or_drop(&dst, bytes, content.priority());
                     Ok(())
                 } else if self.tunnels.accept_clients(src, dst) {
+                    debug!("{:?} agreed to act as tunnel_node for {:?} - {:?}",
+                           self,
+                           src,
+                           dst);
                     self.send_direct_message(dst, DirectMessage::TunnelSuccess(src));
                     self.send_or_drop(&dst, bytes, content.priority());
                     Ok(())
@@ -811,14 +822,22 @@ impl Node {
                 ConnectionInfoRequest { .. } |
                 SectionUpdate { .. } |
                 RoutingTableRequest(..) |
-                RoutingTableResponse { .. } => {
+                RoutingTableResponse { .. } |
+                UserMessagePart { .. } => {
+                    // These messages should not be handled before node approval
                     trace!("{:?} Not approved yet. Delaying message handling: {:?}",
                            self,
                            routing_msg);
                     self.routing_msg_backlog.push(routing_msg);
                     return Ok(());
                 }
-                _ => (),
+                GetNodeName { .. } |
+                ConnectionInfoResponse { .. } |
+                GetNodeNameResponse { .. } |
+                Ack(..) |
+                NodeApproval { .. } => {
+                    // Handle like normal
+                }
             }
         }
 
@@ -1155,7 +1174,7 @@ impl Node {
                       Self::format(elapsed),
                       self.our_prefix());
                 self.candidate_timer_token = None;
-                let _ = self.send_candidate_approval();
+                self.send_candidate_approval();
             }
             Ok(Some((_, _, elapsed))) => {
                 info!("{:?} Candidate {} passed our challenge in {}. Waiting to send approval to \
@@ -1438,13 +1457,17 @@ impl Node {
             }
         }
 
-        for dst_id in self.peer_mgr.peers_needing_tunnel() {
-            trace!("{:?} Asking {:?} to serve as a tunnel for {:?}",
-                   self,
-                   peer_id,
-                   dst_id);
-            let tunnel_request = DirectMessage::TunnelRequest(dst_id);
-            self.send_direct_message(*peer_id, tunnel_request);
+        let peers_needing_tunnel = self.peer_mgr.peers_needing_tunnel();
+        if !peers_needing_tunnel.is_empty() &&
+           self.peer_mgr.potential_tunnel_nodes().contains(&(*public_id.name(), *peer_id)) {
+            for dst_id in peers_needing_tunnel {
+                trace!("{:?} Asking {:?} to serve as a tunnel for {:?}",
+                       self,
+                       peer_id,
+                       dst_id);
+                let tunnel_request = DirectMessage::TunnelRequest(dst_id);
+                self.send_direct_message(*peer_id, tunnel_request);
+            }
         }
     }
 
@@ -1699,8 +1722,9 @@ impl Node {
     /// Handle a `TunnelSuccess` response from `peer_id`: It will act as a tunnel to `dst_id`.
     fn handle_tunnel_success(&mut self, peer_id: PeerId, dst_id: PeerId) {
         if !self.peer_mgr.tunnelling_to(&dst_id) {
-            debug!("{:?} Received TunnelSuccess for a peer we are already connected to: {:?}",
+            debug!("{:?} Received TunnelSuccess from {:?} for an already connected peer {:?}",
                    self,
+                   peer_id,
                    dst_id);
             let message = DirectMessage::TunnelDisconnect(dst_id);
             self.send_direct_message(peer_id, message);
@@ -2244,14 +2268,10 @@ impl Node {
                    self,
                    self.rt_timeout.as_secs());
             self.rt_timer_token = Some(self.timer.schedule(self.rt_timeout));
-            if self.send_rt_request().is_err() {
-                return Transition::Stay;
-            }
+            self.send_rt_request();
         } else if self.candidate_timer_token == Some(token) {
             self.candidate_timer_token = None;
-            if self.send_candidate_approval().is_err() {
-                return Transition::Stay;
-            }
+            self.send_candidate_approval();
         } else if self.candidate_status_token == Some(token) {
             self.candidate_status_token = Some(self.timer
                 .schedule(Duration::from_secs(CANDIDATE_STATUS_INTERVAL_SECS)));
@@ -2275,9 +2295,11 @@ impl Node {
                   self.resource_proof_response_progress(),
                   remaining_duration,
                   APPROVAL_TIMEOUT_SECS);
+        } else {
+            // Each token has only one purpose, so we only need to call this if none of the above
+            // matched:
+            self.resend_unacknowledged_timed_out_msgs(token);
         }
-
-        self.resend_unacknowledged_timed_out_msgs(token);
 
         Transition::Stay
     }
@@ -2364,13 +2386,19 @@ impl Node {
         transition
     }
 
-    fn send_rt_request(&mut self) -> Result<(), RoutingError> {
+    fn send_rt_request(&mut self) {
         if self.is_approved {
             let msg_id = MessageId::new();
             self.rt_msg_id = Some(msg_id);
             let sections = self.peer_mgr.pub_ids_by_section();
             let prefixes = self.peer_mgr.routing_table().prefixes();
-            let digest = sha256::hash(&serialisation::serialise(&(sections, prefixes))?);
+            let digest = sha256::hash(&match serialisation::serialise(&(sections, prefixes)) {
+                Ok(serialised) => serialised,
+                Err(e) => {
+                    warn!("{:?} Serialisation failed: {:?}", self, e);
+                    return;
+                }
+            });
             trace!("{:?} Sending RT request {:?} with digest {:?}",
                    self,
                    msg_id,
@@ -2383,15 +2411,14 @@ impl Node {
                 debug!("{:?} Failed to send RoutingTableRequest: {:?}.", self, err);
             }
         }
-        Ok(())
     }
 
-    fn send_candidate_approval(&mut self) -> Result<(), RoutingError> {
+    fn send_candidate_approval(&mut self) {
         let (candidate_id, client_auth, sections) = match self.peer_mgr.verified_candidate_info() {
             Err(_) => {
                 trace!("{:?} No candidate for which to send CandidateApproval.",
                        self);
-                return Err(RoutingError::UnknownCandidate);
+                return;
             }
             Ok(info) => info,
         };
@@ -2401,7 +2428,7 @@ impl Node {
                    candidate {} since our section is currently merging.",
                    self,
                    candidate_id.name());
-            return Ok(());
+            return;
         }
 
         let src = Authority::Section(*candidate_id.name());
@@ -2418,7 +2445,6 @@ impl Node {
         if let Err(error) = self.send_routing_message(src, src, response_content) {
             debug!("{:?} Failed sending CandidateApproval: {:?}", self, error);
         }
-        Ok(())
     }
 
     fn decrypt_connection_info(&self,
@@ -3020,6 +3046,11 @@ impl Node {
     /// Routing table of this node.
     pub fn routing_table(&self) -> &RoutingTable<XorName> {
         self.peer_mgr.routing_table()
+    }
+
+    /// Check whether this node acts as a tunnel node between `client_1` and `client_2`.
+    pub fn has_tunnel_clients(&self, client_1: PeerId, client_2: PeerId) -> bool {
+        self.tunnels.has_clients(client_1, client_2)
     }
 
     /// Resends all unacknowledged messages.

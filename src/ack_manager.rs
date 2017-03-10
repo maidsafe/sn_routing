@@ -23,6 +23,7 @@ use sha3;
 use std::collections::HashMap;
 use std::fmt;
 use std::time::Duration;
+use tiny_keccak::sha3_256;
 
 /// Time (in seconds) after which a message is resent due to being unacknowledged by recipient.
 pub const ACK_TIMEOUT_SECS: u64 = 20;
@@ -45,7 +46,7 @@ pub struct AckManager {
 /// An identifier for a waiting-to-be-acknowledged message (a hash of the message).
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, RustcDecodable, RustcEncodable)]
 pub struct Ack {
-    m_hash: [u8; 32],
+    m_hash: sha3::Digest256,
 }
 
 impl AckManager {
@@ -126,7 +127,7 @@ impl Ack {
     /// Compute an `Ack` from a message.
     pub fn compute(routing_msg: &RoutingMessage) -> Result<Ack, RoutingError> {
         let hash_msg = serialisation::serialise(routing_msg)?;
-        Ok(Ack { m_hash: sha3::hash(&hash_msg) })
+        Ok(Ack { m_hash: sha3_256(&hash_msg) })
     }
 }
 

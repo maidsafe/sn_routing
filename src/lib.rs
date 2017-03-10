@@ -124,8 +124,6 @@
 #[macro_use]
 extern crate log;
 extern crate maidsafe_utilities;
-#[cfg_attr(feature="cargo-clippy", allow(useless_attribute))]
-#[allow(unused_extern_crates)]
 #[macro_use]
 extern crate quick_error;
 #[macro_use]
@@ -167,7 +165,6 @@ mod tunnels;
 mod types;
 mod utils;
 mod xor_name;
-mod sha3;
 
 /// Reexports `crust::Config`
 pub type BootstrapConfig = crust::Config;
@@ -175,6 +172,9 @@ pub type BootstrapConfig = crust::Config;
 /// Mock crust
 #[cfg(feature = "use-mock-crust")]
 pub mod mock_crust;
+
+/// SHA-3 type alias.
+pub mod sha3;
 
 /// Messaging infrastructure
 pub mod messaging;

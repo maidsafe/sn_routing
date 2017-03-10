@@ -27,6 +27,8 @@ use id::FullId;
 use id::PublicId;
 use messages::{AccountInfo, CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, RELOCATE_PRIORITY, Request,
                Response, UserMessage};
+#[cfg(feature = "use-mock-crust")]
+use mock_crust::crust::PeerId;
 use outbox::{EventBox, EventBuf};
 #[cfg(feature = "use-mock-crust")]
 use routing_table::{Prefix, RoutingTable};
@@ -404,6 +406,11 @@ impl Node {
     /// Routing table of this node.
     pub fn routing_table(&self) -> Option<RoutingTable<XorName>> {
         self.machine.current().routing_table().cloned()
+    }
+
+    /// Check whether this node acts as a tunnel node between `client_1` and `client_2`.
+    pub fn has_tunnel_clients(&self, client_1: PeerId, client_2: PeerId) -> bool {
+        self.machine.current().has_tunnel_clients(client_1, client_2)
     }
 
     /// Resend all unacknowledged messages.

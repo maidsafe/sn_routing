@@ -10,7 +10,7 @@ os:
   - osx
 language: rust
 rust:
-  - stable
+  - 1.14.0
   - nightly-2016-12-19
 sudo: false
 cache:
@@ -18,7 +18,7 @@ cache:
 before_script:
   - (which cargo-install-update && cargo install-update cargo-update) || cargo install cargo-update
   - (which cargo-prune && cargo install-update cargo-prune) || cargo install cargo-prune
-  - if [ "${TRAVIS_RUST_VERSION}" = stable ]; then
+  - if [ "${TRAVIS_RUST_VERSION}" = 1.14.0 ]; then
       rustfmt_vers=0.7.0;
       if ! cargo fmt -- --version | grep -q $rustfmt_vers; then
         cargo install rustfmt --vers==$rustfmt_vers --force;
@@ -30,7 +30,7 @@ before_script:
       fi
     fi
 script:
-  - if [ "${TRAVIS_RUST_VERSION}" = stable ]; then
+  - if [ "${TRAVIS_RUST_VERSION}" = 1.14.0 ]; then
       (
         set -x;
         cargo fmt -- --write-mode=diff &&
