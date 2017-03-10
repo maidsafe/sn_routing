@@ -79,6 +79,7 @@ impl RoutingMessageFilter {
             let hash = sha3_256(&msg_bytes);
             self.outgoing.insert((hash, *peer_id, route), ()).is_some()
         } else {
+            trace!("Tried to filter oversized routing message: {:?}", msg);
             false
         }
     }
