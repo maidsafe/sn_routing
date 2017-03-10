@@ -24,7 +24,6 @@ use event::Event;
 use id::{FullId, PublicId};
 use itertools::Itertools;
 use lru_time_cache::LruCache;
-use maidsafe_utilities;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 #[cfg(feature = "use-mock-crust")]
 use mock_crust::crust::PeerId;
@@ -33,11 +32,13 @@ use routing_table::{Prefix, Xorable};
 use routing_table::Authority;
 use rust_sodium::crypto::{box_, sign};
 use rust_sodium::crypto::hash::sha256;
+use sha3;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::{self, Debug, Formatter};
 use std::iter;
 use std::time::Duration;
 use super::QUORUM;
+use tiny_keccak::sha3_256;
 use types::MessageId;
 use utils;
 use xor_name::XorName;
@@ -631,7 +632,7 @@ pub enum MessageContent {
     /// Part of a user-facing message
     UserMessagePart {
         /// The hash of this user message.
-        hash: u64,
+        hash: sha3::Digest256,
         /// The number of parts.
         part_count: u32,
         /// The index of this part.
@@ -812,12 +813,15 @@ impl Debug for MessageContent {
             Ack(ack, priority) => write!(formatter, "Ack({:?}, {})", ack, priority),
             UserMessagePart { hash, part_count, part_index, priority, cacheable, .. } => {
                 write!(formatter,
-                       "UserMessagePart {{ {}/{}, priority: {}, cacheable: {}, {:x} }}",
+                       "UserMessagePart {{ {}/{}, priority: {}, cacheable: {}, \
+                        {:02x}{:02x}{:02x}.. }}",
                        part_index + 1,
                        part_count,
                        priority,
                        cacheable,
-                       hash)
+                       hash[0],
+                       hash[1],
+                       hash[2])
             }
             AcceptAsCandidate { ref expect_id, ref client_auth, ref message_id } => {
                 write!(formatter,
@@ -852,9 +856,8 @@ impl UserMessage {
     /// Splits up the message into smaller `MessageContent` parts, which can individually be sent
     /// and routed, and then be put back together by the receiver.
     pub fn to_parts(&self, priority: u8) -> Result<Vec<MessageContent>, RoutingError> {
-        // TODO: This internally serialises the message - remove that duplicated work!
-        let hash = maidsafe_utilities::big_endian_sip_hash(self);
         let payload = serialise(self)?;
+        let hash = sha3_256(&payload);
         let len = payload.len();
         let part_count = (len + MAX_PART_LEN - 1) / MAX_PART_LEN;
 
@@ -874,7 +877,7 @@ impl UserMessage {
 
     /// Puts the given parts of a serialised message together and verifies that it matches the
     /// given hash code. If it does, returns the `UserMessage`.
-    pub fn from_parts<'a, I: Iterator<Item = &'a Vec<u8>>>(hash: u64,
+    pub fn from_parts<'a, I: Iterator<Item = &'a Vec<u8>>>(hash: sha3::Digest256,
                                                            parts: I)
                                                            -> Result<UserMessage, RoutingError> {
         let mut payload = Vec::new();
@@ -882,7 +885,7 @@ impl UserMessage {
             payload.extend_from_slice(part);
         }
         let user_msg = deserialise(&payload[..])?;
-        if hash != maidsafe_utilities::big_endian_sip_hash(&user_msg) {
+        if hash != sha3_256(&payload) {
             Err(RoutingError::HashMismatch)
         } else {
             Ok(user_msg)
@@ -1156,7 +1159,7 @@ impl Debug for Response {
 /// This assembles `UserMessage`s from `UserMessagePart`s.
 /// It maps `(hash, part_count)` of an incoming `UserMessage` to the map containing
 /// all `UserMessagePart`s that have already arrived, by `part_index`.
-pub struct UserMessageCache(LruCache<(u64, u32), BTreeMap<u32, Vec<u8>>>);
+pub struct UserMessageCache(LruCache<(sha3::Digest256, u32), BTreeMap<u32, Vec<u8>>>);
 
 impl UserMessageCache {
     pub fn with_expiry_duration(duration: Duration) -> Self {
@@ -1166,7 +1169,7 @@ impl UserMessageCache {
     /// Adds the given one to the cache of received message parts, returning a `UserMessage` if the
     /// given part was the last missing piece of it.
     pub fn add(&mut self,
-               hash: u64,
+               hash: sha3::Digest256,
                part_count: u32,
                part_index: u32,
                payload: Vec<u8>)
@@ -1174,10 +1177,13 @@ impl UserMessageCache {
         {
             let entry = self.0.entry((hash, part_count)).or_insert_with(BTreeMap::new);
             if entry.insert(part_index, payload).is_some() {
-                debug!("Duplicate UserMessagePart {}/{} with hash {:x} added to cache.",
+                debug!("Duplicate UserMessagePart {}/{} with hash {:02x}{:02x}{:02x}.. \
+                        added to cache.",
                        part_index + 1,
                        part_count,
-                       hash);
+                       hash[0],
+                       hash[1],
+                       hash[2]);
             }
 
             if entry.len() != part_count as usize {
@@ -1198,7 +1204,6 @@ mod tests {
     use crust::PeerId;
     use data::{Data, ImmutableData};
     use id::FullId;
-    use maidsafe_utilities;
     use maidsafe_utilities::serialisation::serialise;
     #[cfg(feature = "use-mock-crust")]
     use mock_crust::crust::PeerId;
@@ -1209,6 +1214,7 @@ mod tests {
     use std::collections::BTreeSet;
     use std::iter;
     use super::*;
+    use tiny_keccak::sha3_256;
     use types::MessageId;
     use xor_name::XorName;
 
@@ -1359,7 +1365,7 @@ mod tests {
         let data_bytes: Vec<u8> = (0..(MAX_PART_LEN * 2)).map(|i| i as u8).collect();
         let data = Data::Immutable(ImmutableData::new(data_bytes));
         let user_msg = UserMessage::Request(Request::Put(data, MessageId::new()));
-        let msg_hash = maidsafe_utilities::big_endian_sip_hash(&user_msg);
+        let msg_hash = sha3_256(&unwrap!(serialise(&user_msg)));
         let parts = unwrap!(user_msg.to_parts(42));
         assert_eq!(parts.len(), 3);
         let payloads: Vec<Vec<u8>> = parts.into_iter()
