@@ -45,6 +45,30 @@ use std::sync::mpsc::{Receiver, RecvError, Sender, TryRecvError, channel};
 use types::{MessageId, RoutingActionSender};
 use xor_name::XorName;
 
+// Helper macro to implement request sending methods.
+macro_rules! impl_request {
+    ($method:ident, $message:ident { $($pname:ident : $ptype:ty),*, }, $priority:expr) => {
+        #[allow(missing_docs)]
+        pub fn $method(&mut self,
+                       src: Authority<XorName>,
+                       dst: Authority<XorName>,
+                       $($pname: $ptype),*,
+                       msg_id: MessageId)
+                       -> Result<(), InterfaceError> {
+            let msg = UserMessage::Request(Request::$message {
+                $($pname: $pname),*,
+                msg_id: msg_id,
+            });
+
+            self.send_action(src, dst, msg, $priority)
+        }
+    };
+
+    ($method:ident, $message:ident { $($pname:ident : $ptype:ty),* }, $priority:expr) => {
+        impl_request!($method, $message { $($pname:$ptype),*, }, $priority);
+    };
+}
+
 // Helper macro to implement response sending methods.
 macro_rules! impl_response {
     ($method:ident, $message:ident, $payload:ty, $priority:expr) => {
@@ -62,10 +86,6 @@ macro_rules! impl_response {
             self.send_action(src, dst, msg, $priority)
         }
     };
-
-    ($method:ident, $message:ident) => {
-        impl_response!($method, $message, (), DEFAULT_PRIORITY);
-    }
 }
 
 /// A builder to configure and create a new `Node`.
@@ -182,32 +202,14 @@ impl Node {
     }
 
     /// Send a `GetIData` request to `dst` to retrieve data from the network.
-    pub fn send_get_idata_request(&mut self,
-                                  src: Authority<XorName>,
-                                  dst: Authority<XorName>,
-                                  name: XorName,
-                                  msg_id: MessageId)
-                                  -> Result<(), InterfaceError> {
-        let user_msg = UserMessage::Request(Request::GetIData {
-            name: name,
-            msg_id: msg_id,
-        });
-        self.send_action(src, dst, user_msg, RELOCATE_PRIORITY)
-    }
+    impl_request!(send_get_idata_request,
+                  GetIData { name: XorName },
+                  RELOCATE_PRIORITY);
 
     /// Send a `PutIData` request to `dst` to store data on the network.
-    pub fn send_put_idata_request(&mut self,
-                                  src: Authority<XorName>,
-                                  dst: Authority<XorName>,
-                                  data: ImmutableData,
-                                  msg_id: MessageId)
-                                  -> Result<(), InterfaceError> {
-        let msg = UserMessage::Request(Request::PutIData {
-            data: data,
-            msg_id: msg_id,
-        });
-        self.send_action(src, dst, msg, DEFAULT_PRIORITY)
-    }
+    impl_request!(send_put_idata_request,
+                  PutIData { data: ImmutableData },
+                  DEFAULT_PRIORITY);
 
     /// Send a `PutMData` request.
     pub fn send_put_mdata_request(&mut self,
@@ -222,19 +224,29 @@ impl Node {
             msg_id: msg_id,
             requester: requester,
         });
-
         self.send_action(src, dst, msg, DEFAULT_PRIORITY)
     }
+
+
+    /// Send a `GetMDataValue` request.
+    impl_request!(send_get_mdata_value_request,
+                  GetMDataValue {
+                      name: XorName,
+                      tag: u64,
+                      key: Vec<u8>,
+                  },
+                  // TODO (adam): is this the correct priority?
+                  RELOCATE_PRIORITY);
 
     /// Send a `Refresh` request from `src` to `dst` to trigger churn.
     pub fn send_refresh_request(&mut self,
                                 src: Authority<XorName>,
                                 dst: Authority<XorName>,
                                 content: Vec<u8>,
-                                id: MessageId)
+                                msg_id: MessageId)
                                 -> Result<(), InterfaceError> {
-        let user_msg = UserMessage::Request(Request::Refresh(content, id));
-        self.send_action(src, dst, user_msg, RELOCATE_PRIORITY)
+        let msg = UserMessage::Request(Request::Refresh(content, msg_id));
+        self.send_action(src, dst, msg, RELOCATE_PRIORITY)
     }
 
     /// Respond to a `GetAccountInfo` request.
@@ -265,10 +277,10 @@ impl Node {
     }
 
     /// Respond to a `PutIData` request.
-    impl_response!(send_put_idata_response, PutIData);
+    impl_response!(send_put_idata_response, PutIData, (), DEFAULT_PRIORITY);
 
     /// Respond to a `PutMData` request.
-    impl_response!(send_put_mdata_response, PutMData);
+    impl_response!(send_put_mdata_response, PutMData, (), DEFAULT_PRIORITY);
 
     /// Respond to a `GetMDataVersion` request.
     impl_response!(send_get_mdata_version_response,
@@ -301,7 +313,10 @@ impl Node {
                    CLIENT_GET_PRIORITY);
 
     /// Respond to a `MutateMDataEntries` request.
-    impl_response!(send_mutate_mdata_entries_response, MutateMDataEntries);
+    impl_response!(send_mutate_mdata_entries_response,
+                   MutateMDataEntries,
+                   (),
+                   DEFAULT_PRIORITY);
 
     /// Respond to a `ListMDataPermissions` request.
     impl_response!(send_list_mdata_permissions_response,
@@ -316,25 +331,34 @@ impl Node {
                    CLIENT_GET_PRIORITY);
 
     /// Respond to a `SetMDataUserPermissions` request.
-    impl_response!(send_set_mdata_user_permissions_response, SetMDataUserPermissions);
+    impl_response!(send_set_mdata_user_permissions_response,
+                   SetMDataUserPermissions,
+                   (),
+                   DEFAULT_PRIORITY);
 
     /// Respond to a `ListAuthKeysAndVersion` request.
     impl_response!(send_list_auth_keys_and_version_response,
-        ListAuthKeysAndVersion,
-        (BTreeSet<sign::PublicKey>, u64),
-        CLIENT_GET_PRIORITY);
+                   ListAuthKeysAndVersion,
+                   (BTreeSet<sign::PublicKey>, u64),
+                   CLIENT_GET_PRIORITY);
 
     /// Respond to a `InsAuthKey` request.
-    impl_response!(send_ins_auth_key_response, InsAuthKey);
+    impl_response!(send_ins_auth_key_response, InsAuthKey, (), DEFAULT_PRIORITY);
 
     /// Respond to a `DelAuthKey` request.
-    impl_response!(send_del_auth_key_response, DelAuthKey);
+    impl_response!(send_del_auth_key_response, DelAuthKey, (), DEFAULT_PRIORITY);
 
     /// Respond to a `DelMDataUserPermissions` request.
-    impl_response!(send_del_mdata_user_permissions_response, DelMDataUserPermissions);
+    impl_response!(send_del_mdata_user_permissions_response,
+                   DelMDataUserPermissions,
+                   (),
+                   DEFAULT_PRIORITY);
 
     /// Respond to a `ChangeMDataOwner` request.
-    impl_response!(send_change_mdata_owner_response, ChangeMDataOwner);
+    impl_response!(send_change_mdata_owner_response,
+                   ChangeMDataOwner,
+                   (),
+                   DEFAULT_PRIORITY);
 
     /// Returns the first `count` names of the nodes in the routing table which are closest
     /// to the given one.

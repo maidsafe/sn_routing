@@ -425,6 +425,7 @@ impl Client {
 
 
 
+
     fn receive_action_result<T>(&self, rx: &Receiver<T>) -> Result<T, InterfaceError> {
         // If we're running with mock_crust, then the state machine needs to be stepped
         // manually in order to process the action we just sent it.
