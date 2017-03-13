@@ -482,6 +482,13 @@ impl Node {
                 } else if self.tunnels.has_clients(src, dst) {
                     self.send_or_drop(&dst, bytes, content.priority());
                     Ok(())
+                } else if !self.peer_mgr.can_tunnel_for(&src, &dst) {
+                    debug!("{:?} mistakenly accepted to act as tunnel_node for {:?} - {:?}",
+                           self,
+                           src,
+                           dst);
+                    self.send_direct_message(src, DirectMessage::TunnelClosed(dst));
+                    Err(RoutingError::InvalidDestination)
                 } else if self.tunnels.accept_clients(src, dst) {
                     debug!("{:?} agreed to act as tunnel_node for {:?} - {:?}",
                            self,
@@ -1722,7 +1729,10 @@ impl Node {
             let message = DirectMessage::TunnelDisconnect(dst_id);
             self.send_direct_message(peer_id, message);
         }
-        if self.tunnels.add(dst_id, peer_id) {
+        if self.peer_mgr
+            .get_connected_peer(&peer_id)
+            .map_or(false, |peer| peer.state().can_tunnel_for()) &&
+           self.tunnels.add(dst_id, peer_id) {
             debug!("{:?} Adding {:?} as a tunnel node for {:?}.",
                    self,
                    peer_id,
