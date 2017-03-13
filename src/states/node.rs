@@ -2372,6 +2372,7 @@ impl Node {
         }
         let mut transition = Transition::Stay;
         for peer_id in peer_ids_to_drop {
+            debug!("{:?} Purging {:?} from routing table.", self, peer_id);
             if let Transition::Terminate = self.handle_lost_peer(peer_id, outbox) {
                 transition = Transition::Terminate;
             }
