@@ -68,7 +68,7 @@ macro_rules! expect_next_event {
 /// Panics if the event channel is exhausted before matching event is found.
 macro_rules! expect_any_event {
     ($node:expr, $pattern:pat) => {
-        expect_any_event!($node, $pattern if true => ())
+        expect_any_event!($node, $pattern if true)
     };
     ($node:expr, $pattern:pat if $guard:expr) => {
         loop {

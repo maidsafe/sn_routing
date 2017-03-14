@@ -48,6 +48,8 @@ pub const RESOURCE_PROOF_DURATION_SECS: u64 = 300;
 const CANDIDATE_ACCEPT_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) the node waits for connection from an expected node.
 const NODE_CONNECT_TIMEOUT_SECS: u64 = 60;
+/// Number of close nodes we try to use to establish a tunnel
+const NUM_TUNNEL_VIA_NODES: usize = 10;
 
 pub type SectionMap = BTreeMap<Prefix<XorName>, BTreeSet<PublicId>>;
 
@@ -126,10 +128,10 @@ pub enum PeerState {
 }
 
 impl PeerState {
-    fn is_directly_connected(&self) -> bool {
+    pub fn can_tunnel_for(&self) -> bool {
         match *self {
-            PeerState::Routing(conn) |
-            PeerState::Candidate(conn) if conn != RoutingConnection::Tunnel => true,
+            PeerState::Routing(RoutingConnection::Direct) |
+            PeerState::Candidate(RoutingConnection::Direct) => true,
             _ => false,
         }
     }
@@ -374,8 +376,9 @@ impl Candidate {
 pub struct PeerManager {
     connection_token_map: HashMap<u32, PublicId>,
     peer_map: PeerMap,
-    /// Peers we connected to but don't know about yet
-    unknown_peers: HashMap<PeerId, Instant>,
+    /// Peers we connected to but don't know about yet. The bool is true if the peer is
+    /// tunnel-connected or false if directly-connected.
+    unknown_peers: HashMap<PeerId, (bool, Instant)>,
     /// Peers we expect to connect to
     expected_peers: HashMap<XorName, Instant>,
     proxy_peer_id: Option<PeerId>,
@@ -687,18 +690,33 @@ impl PeerManager {
                 PeerState::Candidate(_) |
                 PeerState::Proxy => (),
             }
-        } else {
-            trace!("{:?} Add to routing table called for {:?} not found in peer_map",
+        } else if !self.unknown_peers.contains_key(peer_id) {
+            trace!("{:?} Add to routing table called for {:?} not found in peer_map/unknown_peers",
                    self,
                    peer_id);
         }
 
-        let _ = self.unknown_peers.remove(peer_id);
+        let unknown_connection = if let Some((is_tunnel, _)) = self.unknown_peers.remove(peer_id) {
+            if is_tunnel {
+                RoutingConnection::Tunnel
+            } else {
+                // This would cover the case of a tunnel client establishing a direct connection.
+                if let Some(peer @ &mut Peer {
+                        state: PeerState::Routing(RoutingConnection::Tunnel), .. }) =
+                    self.peer_map.get_mut(peer_id) {
+                    peer.state = PeerState::Routing(RoutingConnection::Direct);
+                }
+                RoutingConnection::Direct
+            }
+        } else {
+            RoutingConnection::Direct
+        };
         let _ = self.expected_peers.remove(pub_id.name());
 
+        // If we've updated the state from tunnel to direct above, we now return here.
         let should_split = self.routing_table.add(*pub_id.name())?;
         let conn =
-            self.peer_map.remove(peer_id).map_or(RoutingConnection::Direct,
+            self.peer_map.remove(peer_id).map_or(unknown_connection,
                                                  |peer| peer.to_routing_connection());
         let _ = self.peer_map.insert(Peer::new(*pub_id, Some(*peer_id), PeerState::Routing(conn)));
         Ok(should_split)
@@ -870,9 +888,7 @@ impl PeerManager {
         let peer_state = self.get_state(peer_id);
         let dst_state = self.get_state(dst_id);
         match (peer_state, dst_state) {
-            (Some(peer1), Some(peer2)) => {
-                peer1.is_directly_connected() && peer2.is_directly_connected()
-            }
+            (Some(peer1), Some(peer2)) => peer1.can_tunnel_for() && peer2.can_tunnel_for(),
             _ => false,
         }
     }
@@ -1011,7 +1027,7 @@ impl PeerManager {
 
         let mut expired_unknown_peers = Vec::new();
 
-        for (peer_id, timestamp) in &self.unknown_peers {
+        for (peer_id, &(_, timestamp)) in &self.unknown_peers {
             if timestamp.elapsed() >= Duration::from_secs(NODE_IDENTIFY_TIMEOUT_SECS) {
                 expired_unknown_peers.push(*peer_id);
             }
@@ -1082,7 +1098,7 @@ impl PeerManager {
     /// Marks the given peer as "connected and waiting for `NodeIdentify`".
     pub fn connected_to(&mut self, peer_id: &PeerId) {
         if !self.set_state(peer_id, PeerState::AwaitingNodeIdentify(false)) {
-            let _ = self.unknown_peers.insert(*peer_id, Instant::now());
+            let _ = self.unknown_peers.insert(*peer_id, (false, Instant::now()));
         }
     }
 
@@ -1097,7 +1113,7 @@ impl PeerManager {
             _ => (),
         }
         if !self.set_state(peer_id, PeerState::AwaitingNodeIdentify(true)) {
-            let _ = self.unknown_peers.insert(*peer_id, Instant::now());
+            let _ = self.unknown_peers.insert(*peer_id, (true, Instant::now()));
         }
         true
     }
@@ -1204,6 +1220,23 @@ impl PeerManager {
         let _ = self.set_state(peer_id, PeerState::Routing(RoutingConnection::Direct));
     }
 
+    /// Returns the `NUM_TUNNEL_VIA_NODES` closest peers from our section which can be potential
+    /// tunnel node.
+    pub fn potential_tunnel_nodes(&self) -> Vec<(XorName, PeerId)> {
+        let our_section =
+            self.routing_table.other_close_names(self.our_public_id.name()).unwrap_or_default();
+        self.peer_map
+            .peers()
+            .filter_map(|peer| if our_section.contains(peer.name()) &&
+                                  peer.state.can_tunnel_for() {
+                            peer.peer_id.map_or(None, |peer_id| Some((*peer.name(), peer_id)))
+                        } else {
+                            None
+                        })
+            .take(NUM_TUNNEL_VIA_NODES)
+            .collect()
+    }
+
     /// Sets the given peer to state `SearchingForTunnel` and returns querying candidates.
     /// Returns empty vector of candidates if it is already in Routing state.
     pub fn set_searching_for_tunnel(&mut self,
@@ -1220,13 +1253,7 @@ impl PeerManager {
         }
 
         let _ = self.insert_peer(pub_id, Some(peer_id), PeerState::SearchingForTunnel);
-
-        let close_section = self.routing_table.other_close_names(pub_id.name()).unwrap_or_default();
-        self.peer_map
-            .peers()
-            .filter_map(|peer| peer.peer_id.map(|peer_id| (*peer.name(), peer_id)))
-            .filter(|&(name, _)| close_section.contains(&name))
-            .collect()
+        self.potential_tunnel_nodes()
     }
 
     /// Inserts the given connection info in the map to wait for the peer's info, or returns both
@@ -1323,16 +1350,7 @@ impl PeerManager {
                 let _ = self.peer_map.insert(peer);
                 Ok(ConnectionInfoReceivedResult::IsConnected)
             }
-            Some(peer) => {
-                warn!("{:?} Failed to insert connection info from {:?} ({:?}) as peer's current \
-                       state is {:?}",
-                      self,
-                      pub_id.name(),
-                      peer_id,
-                      peer.state);
-                let _ = self.peer_map.insert(peer);
-                Err(Error::UnexpectedState)
-            }
+            Some(Peer { state: PeerState::SearchingForTunnel, .. }) |
             None => {
                 let state = PeerState::ConnectionInfoPreparing {
                     us_as_src: dst,

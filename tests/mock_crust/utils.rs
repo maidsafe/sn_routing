@@ -594,7 +594,7 @@ fn add_node_to_section<T: Rng>(network: &Network,
                    .cache(use_cache)
                    .create());
     poll_and_resend(nodes, &mut []);
-    expect_any_event!(unwrap!(nodes.last_mut()), Event::Connected if true);
+    expect_any_event!(unwrap!(nodes.last_mut()), Event::Connected);
     assert_eq!(relocation_name, nodes[nodes.len() - 1].name());
 }
 

@@ -17,11 +17,11 @@ lru_time_cache = "~0.5.0"
 maidsafe_utilities = "~0.10.0"
 quick-error = "~1.1.0"
 rand = "~0.3.15"
-resource_proof = "0.3.0-pre"
+resource_proof = "~0.3.1"
 rust_sodium = "~0.1.2"
 rustc-serialize = "~0.3.22"
 term = "~0.4.4"
-tiny-keccak = "~1.1.1"
+tiny-keccak = "~1.2.0"
 unwrap = "~1.1.0"
 
 [dev-dependencies]

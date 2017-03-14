@@ -18,7 +18,7 @@
 use super::{TestNode, add_connected_nodes_until_split, create_connected_nodes, poll_all,
             poll_and_resend, verify_invariant_for_all_nodes};
 use itertools::Itertools;
-use routing::{Event, EventStream, XOR_NAME_LEN, XorName};
+use routing::{Event, EventStream, XOR_NAME_LEN, XorName, Xorable};
 use routing::mock_crust::{Config, Endpoint, Network};
 use routing::mock_crust::crust::{self, PeerId};
 
@@ -203,7 +203,7 @@ fn verify_tunnel_switch(nodes: &mut Vec<TestNode>, node: usize, client_1: usize,
                 event_count += 1;
             }
             Event::NodeAdded(name, _) => {
-                assert!(name == nodes[client_2].name());
+                assert!(name == nodes[node].name() || name == nodes[client_2].name());
                 assert_eq!(event_count, 2);
             }
             _ => {
@@ -242,13 +242,11 @@ fn tunnel_node_disrupted() {
     let mut nodes = create_connected_nodes(&network, min_section_size);
     let tunnel_node_index = unwrap!(locate_tunnel_node(&nodes, PeerId(2), PeerId(3)));
 
-    network.send_crust_event(Endpoint(2),
-                             crust::Event::LostPeer(PeerId(tunnel_node_index)));
-    network.send_crust_event(Endpoint(tunnel_node_index),
-                             crust::Event::LostPeer(PeerId(2)));
+    network.lost_connection(Endpoint(2), Endpoint(tunnel_node_index));
     poll_and_resend(&mut nodes, &mut []);
     verify_tunnel_switch(&mut nodes, tunnel_node_index, 2, 3);
     assert!(tunnel_node_index != unwrap!(locate_tunnel_node(&nodes, PeerId(2), PeerId(3))));
+    verify_invariant_for_all_nodes(&nodes);
 }
 
 #[test]
@@ -262,11 +260,87 @@ fn tunnel_node_blocked() {
 
     network.block_connection(Endpoint(2), Endpoint(tunnel_node_index));
     network.block_connection(Endpoint(tunnel_node_index), Endpoint(2));
-    network.send_crust_event(Endpoint(2),
-                             crust::Event::LostPeer(PeerId(tunnel_node_index)));
-    network.send_crust_event(Endpoint(tunnel_node_index),
-                             crust::Event::LostPeer(PeerId(2)));
+    network.lost_connection(Endpoint(2), Endpoint(tunnel_node_index));
     poll_and_resend(&mut nodes, &mut []);
     verify_tunnel_switch(&mut nodes, tunnel_node_index, 2, 3);
     assert!(tunnel_node_index != unwrap!(locate_tunnel_node(&nodes, PeerId(2), PeerId(3))));
+    verify_invariant_for_all_nodes(&nodes);
+}
+
+#[test]
+fn tunnel_node_dropped() {
+    let min_section_size = 5;
+    let network = Network::new(min_section_size, None);
+    network.block_connection(Endpoint(2), Endpoint(3));
+    network.block_connection(Endpoint(3), Endpoint(2));
+    let mut nodes = create_connected_nodes(&network, min_section_size);
+    let _ = poll_all(&mut nodes, &mut []);
+    verify_invariant_for_all_nodes(&nodes);
+
+    let tunnel_node_index = unwrap!(locate_tunnel_node(&nodes, PeerId(2), PeerId(3)));
+    assert_eq!(1, tunnel_node_index);
+    let _ = nodes.remove(tunnel_node_index);
+
+    poll_and_resend(&mut nodes, &mut []);
+    expect_any_event!(nodes[1], Event::NodeAdded(..));
+    expect_any_event!(nodes[2], Event::NodeAdded(..));
+    verify_invariant_for_all_nodes(&nodes);
+    assert!(tunnel_node_index != unwrap!(locate_tunnel_node(&nodes, PeerId(2), PeerId(3))));
+}
+
+#[test]
+fn tunnel_node_split_out() {
+    let min_section_size = 3;
+    let network = Network::new(min_section_size, None);
+    let mut nodes = create_connected_nodes(&network, min_section_size);
+
+    let tunnel_clients_name = nodes[1].name().with_flipped_bit(0).with_flipped_bit(1);
+    let _ = add_a_pair(&network,
+                       &mut nodes,
+                       tunnel_clients_name,
+                       tunnel_clients_name.with_flipped_bit(4),
+                       true);
+    let (tunnel_client_1, tunnel_client_2) = (nodes.len() - 1, nodes.len() - 2);
+    let (peer_id_1, peer_id_2) = (PeerId(tunnel_client_1), PeerId(tunnel_client_2));
+    verify_invariant_for_all_nodes(&nodes);
+    let tunnel_node_index = unwrap!(locate_tunnel_node(&nodes, peer_id_1, peer_id_2));
+    assert_eq!(1, tunnel_node_index);
+
+    add_connected_nodes_until_split(&network, &mut nodes, vec![2, 2, 2, 2], false);
+
+    verify_invariant_for_all_nodes(&nodes);
+    assert!(tunnel_node_index != unwrap!(locate_tunnel_node(&nodes, peer_id_1, peer_id_2)));
+}
+
+#[test]
+fn avoid_tunnelling_when_proxying() {
+    let min_section_size = 5;
+    let network = Network::new(min_section_size, None);
+    network.block_connection(Endpoint(2), Endpoint(3));
+    network.block_connection(Endpoint(3), Endpoint(2));
+    let mut nodes = create_connected_nodes(&network, min_section_size);
+    verify_invariant_for_all_nodes(&nodes);
+    // Nodes[0] acts as proxy to others, shall not be chosen as tunnel node.
+    assert!(unwrap!(locate_tunnel_node(&nodes, PeerId(2), PeerId(3))) != 0);
+
+    let config = Config::with_contacts(&[nodes[1].handle.endpoint()]);
+    let endpoint = Endpoint(nodes.len());
+    nodes.push(TestNode::builder(&network)
+                   .config(config.clone())
+                   .endpoint(endpoint)
+                   .cache(false)
+                   .create());
+    poll_and_resend(&mut nodes, &mut []);
+    let endpoint = Endpoint(nodes.len());
+    nodes.push(TestNode::builder(&network)
+                   .config(config.clone())
+                   .endpoint(endpoint)
+                   .cache(false)
+                   .create());
+    network.block_connection(Endpoint(nodes.len() - 1), Endpoint(0));
+    network.block_connection(Endpoint(0), Endpoint(nodes.len() - 1));
+    poll_and_resend(&mut nodes, &mut []);
+    verify_invariant_for_all_nodes(&nodes);
+    assert_eq!(nodes.len() - 2,
+               unwrap!(locate_tunnel_node(&nodes, PeerId(0), PeerId(nodes.len() - 1))));
 }
