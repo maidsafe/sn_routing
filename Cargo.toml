@@ -1,8 +1,8 @@
 [package]
 authors = ["MaidSafe Developers <dev@maidsafe.net>"]
 description = "A secured storage DHT"
-documentation = "https://docs.rs/routing/"
-homepage = "http://maidsafe.net"
+documentation = "https://docs.rs/routing"
+homepage = "https://maidsafe.net"
 license = "GPL-3.0"
 name = "routing"
 readme = "README.md"
@@ -31,12 +31,10 @@ libc = "~0.2.20"
 [[example]]
 bench = false
 name = "key_value_store"
-test = false
 
 [[example]]
 bench = false
 name = "ci_test"
-test = false
 
 [features]
 use-mock-crust = []

@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -15,11 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::{TestNode, create_connected_nodes, gen_immutable_data, poll_all,
+            sort_nodes_by_distance_to};
 use routing::{Authority, Event, EventStream, MessageId, QUORUM, Response, XorName};
 use routing::mock_crust::Network;
 use std::sync::mpsc;
-use super::{TestNode, create_connected_nodes, gen_immutable_data, poll_all,
-            sort_nodes_by_distance_to};
 
 #[test]
 fn messages_accumulate_with_quorum() {
@@ -33,9 +33,7 @@ fn messages_accumulate_with_quorum() {
     sort_nodes_by_distance_to(&mut nodes, &src.name());
 
     let send = |node: &mut TestNode, dst: &Authority<XorName>, message_id: MessageId| {
-        assert!(node.inner
-            .send_get_success(src, *dst, data.clone(), message_id)
-            .is_ok());
+        assert!(node.inner.send_get_success(src, *dst, data.clone(), message_id).is_ok());
     };
 
     let dst = Authority::ManagedNode(nodes[0].name()); // The closest node.

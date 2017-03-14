@@ -3,10 +3,16 @@ environment:
     RUST_BACKTRACE: 1
   matrix:
     - RUST_VERSION: stable
+
 branches:
   only:
     - master
     - stable
+
+cache:
+  - '%USERPROFILE%\.cargo'
+  - '%APPVEYOR_BUILD_FOLDER%\target'
+
 clone_depth: 1
 
 install:
@@ -23,7 +29,7 @@ configuration:
   - Release
 
 build_script:
-  - cargo rustc --verbose --release -- --test -Zno-trans
+  - cargo rustc --verbose --release --profile test --lib -- -Zno-trans
 
 test_script:
   - cargo test --verbose --release --features use-mock-crust

@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -15,14 +15,14 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::{TestClient, TestNode, create_connected_clients, create_connected_nodes,
+            gen_range_except, poll_and_resend, verify_invariant_for_all_nodes};
 use itertools::Itertools;
 use rand::Rng;
 use routing::{Authority, DataIdentifier, Event, EventStream, MessageId, QUORUM, Request, XorName};
 use routing::mock_crust::{Config, Network};
 use std::cmp;
 use std::collections::{HashMap, HashSet};
-use super::{TestClient, TestNode, create_connected_clients, create_connected_nodes,
-            gen_range_except, poll_and_resend, verify_invariant_for_all_nodes};
 
 // Randomly removes some nodes.
 //
@@ -167,7 +167,10 @@ impl ExpectedGets {
     fn expect(&mut self, nodes: &mut [TestNode], dst: Authority<XorName>, key: GetKey) {
         if dst.is_multiple() && !self.sections.contains_key(&dst) {
             let is_recipient = |n: &&TestNode| n.is_recipient(&dst);
-            let section = nodes.iter().filter(is_recipient).map(TestNode::name).collect();
+            let section = nodes.iter()
+                .filter(is_recipient)
+                .map(TestNode::name)
+                .collect();
             let _ = self.sections.insert(dst, section);
         }
         self.messages.insert(key);
@@ -182,8 +185,10 @@ impl ExpectedGets {
             .iter_mut()
             .map(|(dst, section)| {
                 let is_recipient = |n: &&TestNode| n.is_recipient(dst);
-                let new_section =
-                    nodes.iter().filter(is_recipient).map(TestNode::name).collect_vec();
+                let new_section = nodes.iter()
+                    .filter(is_recipient)
+                    .map(TestNode::name)
+                    .collect_vec();
                 let count = cmp::min(section.len(), new_section.len());
                 section.extend(new_section);
                 (*dst, count)
@@ -195,9 +200,8 @@ impl ExpectedGets {
                 if let Event::Request { request: Request::Get(data_id, msg_id), src, dst } = event {
                     let key = (data_id, msg_id, src, dst);
                     if dst.is_multiple() {
-                        assert!(self.sections
-                                    .get(&key.3)
-                                    .map_or(false, |entry| entry.contains(&node.name())),
+                        let contains = |section: &HashSet<_>| section.contains(&node.name());
+                        assert!(self.sections.get(&key.3).map_or(false, contains),
                                 "Unexpected request for node {:?}: {:?} / {:?}",
                                 node.name(),
                                 key,
@@ -290,7 +294,11 @@ fn client_gets(network: &mut Network, mut nodes: &mut [TestNode], min_section_si
     let cl_auth = Authority::Client {
         client_key: *clients[0].full_id.public_id().signing_public_key(),
         proxy_node_name: nodes[0].name(),
-        peer_id: clients[0].handle.0.borrow().peer_id,
+        peer_id: clients[0]
+            .handle
+            .0
+            .borrow()
+            .peer_id,
     };
 
     let mut rng = network.new_rng();
@@ -415,7 +423,11 @@ fn messages_during_churn() {
     let cl_auth = Authority::Client {
         client_key: *clients[0].full_id.public_id().signing_public_key(),
         proxy_node_name: nodes[0].name(),
-        peer_id: clients[0].handle.0.borrow().peer_id,
+        peer_id: clients[0]
+            .handle
+            .0
+            .borrow()
+            .peer_id,
     };
 
     for i in 0..100 {

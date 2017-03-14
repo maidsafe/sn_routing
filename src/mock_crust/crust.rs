@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -16,14 +16,13 @@
 // relating to use of the SAFE Network Software.
 
 
+use super::support::{self, Endpoint, Network, ServiceHandle, ServiceImpl};
 use maidsafe_utilities::event_sender;
 use std::{fmt, io, thread};
 use std::cell::{RefCell, RefMut};
 use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::rc::Rc;
-
-use super::support::{self, Endpoint, Network, ServiceHandle, ServiceImpl};
 
 /// TCP listener port
 pub const LISTENER_PORT: u16 = 5485;
@@ -43,7 +42,10 @@ impl Service {
     pub fn with_handle(handle: &ServiceHandle,
                        event_sender: CrustEventSender)
                        -> Result<Self, CrustError> {
-        let network = handle.0.borrow().network.clone();
+        let network = handle.0
+            .borrow()
+            .network
+            .clone();
         let service = Service(handle.0.clone(), network);
         service.lock_and_poll(|imp| imp.start(event_sender));
 

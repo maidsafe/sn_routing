@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -14,7 +14,6 @@
 //
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
-
 
 // A routing table to manage contacts for a node in a [Kademlia][1] distributed hash table.
 //
@@ -113,13 +112,13 @@ mod network_tests;
 mod prefix;
 mod xorable;
 
-use itertools::Itertools;
 pub use self::authority::Authority;
 pub use self::error::Error;
 #[cfg(any(test, feature = "use-mock-crust"))]
 pub use self::network_tests::verify_network_invariant;
 pub use self::prefix::Prefix;
 pub use self::xorable::Xorable;
+use itertools::Itertools;
 use std::{iter, mem};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, btree_map, btree_set};
@@ -347,7 +346,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     pub fn iter(&self) -> Iter<T> {
         let iter: fn(_) -> _ = BTreeSet::iter;
         Iter {
-            inner: self.sections.values().flat_map(iter).chain(self.our_section.iter()),
+            inner: self.sections
+                .values()
+                .flat_map(iter)
+                .chain(self.our_section.iter()),
             our_name: self.our_name,
         }
     }
@@ -362,9 +364,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
         // Estimated fraction of the network that we have in our RT.
         // Computed as the sum of 1 / 2^(prefix.bit_count) for all known section prefixes.
-        let network_fraction: f64 = known_prefixes.iter()
-            .map(|p| 1.0 / (p.bit_count() as f64).exp2())
-            .sum();
+        let network_fraction: f64 =
+            known_prefixes.iter().map(|p| 1.0 / (p.bit_count() as f64).exp2()).sum();
 
         // Total size estimate = known_nodes / network_fraction
         let network_size = (self.len() + 1) as f64 / network_fraction;
@@ -375,12 +376,19 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// Collects prefixes of all sections known by the routing table other than ours into a
     /// `BTreeSet`.
     pub fn other_prefixes(&self) -> BTreeSet<Prefix<T>> {
-        self.sections.keys().cloned().collect()
+        self.sections
+            .keys()
+            .cloned()
+            .collect()
     }
 
     /// Collects prefixes of all sections known by the routing table into a `BTreeSet`.
     pub fn prefixes(&self) -> BTreeSet<Prefix<T>> {
-        self.sections.keys().cloned().chain(iter::once(self.our_prefix)).collect()
+        self.sections
+            .keys()
+            .cloned()
+            .chain(iter::once(self.our_prefix))
+            .collect()
     }
 
     /// If our section is the closest one to `name`, returns all names in our section *including
@@ -418,8 +426,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             .sorted_by(|&(pfx0, _), &(pfx1, _)| pfx0.cmp_distance(pfx1, name))
             .into_iter()
             .flat_map(|(_, section)| {
-                section.iter().sorted_by(|name0, name1| name.cmp_distance(name0, name1))
-            })
+                          section.iter().sorted_by(|name0, name1| name.cmp_distance(name0, name1))
+                      })
             .take(count)
             .collect_vec()
     }
@@ -440,9 +448,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// isn't among `count` names closest to `name`.
     pub fn other_closest_names(&self, name: &T, count: usize) -> Option<Vec<&T>> {
         self.closest_names(name, count).map(|mut result| {
-            result.retain(|name| *name != &self.our_name);
-            result
-        })
+                                                result.retain(|name| *name != &self.our_name);
+                                                result
+                                            })
     }
 
     /// Returns true if `name` is in our section (including if it is our own name).
@@ -546,8 +554,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         if let Some(to_split) = self.sections.remove(&prefix) {
             let prefix0 = prefix.pushed(false);
             let prefix1 = prefix.pushed(true);
-            let (section0, section1) = to_split.into_iter()
-                .partition::<BTreeSet<_>, _>(|name| prefix0.matches(name));
+            let (section0, section1) =
+                to_split.into_iter().partition::<BTreeSet<_>, _>(|name| prefix0.matches(name));
 
             for (pfx, section) in vec![(prefix0, section0), (prefix1, section1)] {
                 if self.our_prefix.is_neighbour(&pfx) {
@@ -654,10 +662,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
         let merge_prefix = self.our_prefix.popped();
         Some(OwnMergeDetails {
-            sender_prefix: self.our_prefix,
-            merge_prefix: merge_prefix,
-            sections: self.all_sections(),
-        })
+                 sender_prefix: self.our_prefix,
+                 merge_prefix: merge_prefix,
+                 sections: self.all_sections(),
+             })
     }
 
     /// When a merge of our own section is triggered (either from our own section or a neighbouring
@@ -807,9 +815,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                     // intentionally short prefixes
                     if prefix.is_covered_by(self.prefixes().iter()) {
                         return Ok(self.iter()
-                            .filter(|name| prefix.matches(name) && **name != self.our_name)
-                            .cloned()
-                            .collect());
+                                      .filter(|name| {
+                                                  prefix.matches(name) && **name != self.our_name
+                                              })
+                                      .cloned()
+                                      .collect());
                     } else {
                         return Err(Error::CannotRoute);
                     }
@@ -818,7 +828,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             }
         };
         Ok(iter::once(self.get_routeth_node(&closest_section, dst.name(), Some(exclude), route)?)
-            .collect())
+               .collect())
     }
 
     /// Returns whether we are a part of the given authority.
@@ -863,7 +873,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         if self.our_prefix.matches(name) {
             return Some(self.our_prefix);
         }
-        self.sections.keys().find(|&prefix| prefix.matches(name)).cloned()
+        self.sections
+            .keys()
+            .find(|&prefix| prefix.matches(name))
+            .cloned()
     }
 
     /// Returns `name` modified so that it belongs to one of the known prefixes with minimal bit
@@ -886,9 +899,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         let next_bit = self.our_name.bit(self.our_prefix.bit_count());
         let other_prefix = self.our_prefix.pushed(!next_bit);
         self.our_prefix = self.our_prefix.pushed(next_bit);
-        let (our_new_section, other_section) = self.our_section
-            .iter()
-            .partition::<BTreeSet<_>, _>(|name| self.our_prefix.matches(name));
+        let (our_new_section, other_section) =
+            self.our_section.iter().partition::<BTreeSet<_>, _>(|name| {
+                                                                    self.our_prefix.matches(name)
+                                                                });
         self.our_section = our_new_section;
         // Drop sections that ceased to be our neighbours.
         let sections_to_remove = self.sections
@@ -1004,8 +1018,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                                                            dst_name: &T,
                                                            route: usize)
                                                            -> &'a T {
-        let sorted_names = names.into_iter()
-            .sorted_by(|&lhs, &rhs| dst_name.cmp_distance(lhs, rhs));
+        let sorted_names =
+            names.into_iter().sorted_by(|&lhs, &rhs| dst_name.cmp_distance(lhs, rhs));
         sorted_names[route % sorted_names.len()]
     }
 
@@ -1082,8 +1096,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         let all_are_neighbours = self.sections.keys().all(|&x| self.our_prefix.is_neighbour(&x));
         let all_neighbours_covered = {
             let prefixes = self.prefixes();
-            (0..self.our_prefix.bit_count())
-                .all(|i| self.our_prefix.with_flipped_bit(i).is_covered_by(&prefixes))
+            (0..self.our_prefix.bit_count()).all(|i| {
+                                                     self.our_prefix
+                                                         .with_flipped_bit(i)
+                                                         .is_covered_by(&prefixes)
+                                                 })
         };
         if !all_are_neighbours {
             return warn(format!("Some sections in the RT aren't neighbours of our section: {:?}",
@@ -1164,10 +1181,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Debug for Rout
 
 #[cfg(test)]
 mod tests {
-    use itertools::Itertools;
-    use std::collections::BTreeSet;
     use super::*;
     use super::SPLIT_BUFFER;
+    use itertools::Itertools;
+    use std::collections::BTreeSet;
 
     #[test]
     fn small() {
