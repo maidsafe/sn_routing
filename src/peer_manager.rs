@@ -128,7 +128,7 @@ pub enum PeerState {
 }
 
 impl PeerState {
-    fn can_tunnel_for(&self) -> bool {
+    pub fn can_tunnel_for(&self) -> bool {
         match *self {
             PeerState::Routing(RoutingConnection::Direct) |
             PeerState::Candidate(RoutingConnection::Direct) => true,
