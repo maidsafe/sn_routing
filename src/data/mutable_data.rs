@@ -238,6 +238,19 @@ impl MutableData {
         Ok(())
     }
 
+    /// Returns the shell of this data. Shell contains the same fields as the data itself,
+    /// except the entries.
+    pub fn shell(&self) -> MutableData {
+        MutableData {
+            name: self.name,
+            tag: self.tag,
+            data: BTreeMap::new(),
+            permissions: self.permissions.clone(),
+            version: self.version,
+            owners: self.owners.clone(),
+        }
+    }
+
     /// Returns the name.
     pub fn name(&self) -> &XorName {
         &self.name

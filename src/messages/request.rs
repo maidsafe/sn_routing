@@ -67,6 +67,15 @@ pub enum Request {
         /// Unique message identifier
         msg_id: MsgId,
     },
+    /// Fetches the shell (everthing except the entries).
+    GetMDataShell {
+        /// Network identifier of MutableData
+        name: XorName,
+        /// Type tag
+        tag: u64,
+        /// Unique message identifier
+        msg_id: MsgId,
+    },
 
     // Data Actions
     /// Fetches a list of entries (keys + values).

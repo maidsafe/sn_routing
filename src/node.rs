@@ -52,12 +52,10 @@ macro_rules! impl_request {
         pub fn $method(&mut self,
                        src: Authority<XorName>,
                        dst: Authority<XorName>,
-                       $($pname: $ptype),*,
-                       msg_id: MessageId)
+                       $($pname: $ptype),*)
                        -> Result<(), InterfaceError> {
             let msg = UserMessage::Request(Request::$message {
                 $($pname: $pname),*,
-                msg_id: msg_id,
             });
 
             self.send_action(src, dst, msg, $priority)
@@ -203,30 +201,38 @@ impl Node {
 
     /// Send a `GetIData` request to `dst` to retrieve data from the network.
     impl_request!(send_get_idata_request,
-                  GetIData { name: XorName },
+                  GetIData {
+                      name: XorName,
+                      msg_id: MessageId,
+                  },
                   RELOCATE_PRIORITY);
 
     /// Send a `PutIData` request to `dst` to store data on the network.
     impl_request!(send_put_idata_request,
-                  PutIData { data: ImmutableData },
+                  PutIData {
+                      data: ImmutableData,
+                      msg_id: MessageId,
+                  },
                   DEFAULT_PRIORITY);
 
     /// Send a `PutMData` request.
-    pub fn send_put_mdata_request(&mut self,
-                                  src: Authority<XorName>,
-                                  dst: Authority<XorName>,
-                                  data: MutableData,
-                                  msg_id: MessageId,
-                                  requester: sign::PublicKey)
-                                  -> Result<(), InterfaceError> {
-        let msg = UserMessage::Request(Request::PutMData {
-            data: data,
-            msg_id: msg_id,
-            requester: requester,
-        });
-        self.send_action(src, dst, msg, DEFAULT_PRIORITY)
-    }
+    impl_request!(send_put_mdata_request,
+                  PutMData {
+                      data: MutableData,
+                      msg_id: MessageId,
+                      requester: sign::PublicKey,
+                  },
+                  DEFAULT_PRIORITY);
 
+    /// Send a `GetMDataShell` request.
+    impl_request!(send_get_mdata_shell_request,
+                  GetMDataShell {
+                      name: XorName,
+                      tag: u64,
+                      msg_id: MessageId,
+                  },
+                  // TODO (adam): is this the correct priority?
+                  RELOCATE_PRIORITY);
 
     /// Send a `GetMDataValue` request.
     impl_request!(send_get_mdata_value_request,
@@ -234,6 +240,7 @@ impl Node {
                       name: XorName,
                       tag: u64,
                       key: Vec<u8>,
+                      msg_id: MessageId,
                   },
                   // TODO (adam): is this the correct priority?
                   RELOCATE_PRIORITY);
@@ -286,6 +293,13 @@ impl Node {
     impl_response!(send_get_mdata_version_response,
                    GetMDataVersion,
                    u64,
+                   CLIENT_GET_PRIORITY);
+
+    /// Respond to a `GetMDataShell` request.
+    impl_response!(send_get_mdata_shell_response,
+                   GetMDataShell,
+                   MutableData,
+                   // TODO (adam): is this the correct priority?
                    CLIENT_GET_PRIORITY);
 
     /// Respond to a `ListMDataEntries` request.
@@ -343,10 +357,16 @@ impl Node {
                    CLIENT_GET_PRIORITY);
 
     /// Respond to a `InsAuthKey` request.
-    impl_response!(send_ins_auth_key_response, InsAuthKey, (), DEFAULT_PRIORITY);
+    impl_response!(send_ins_auth_key_response,
+                   InsAuthKey,
+                   (),
+                   DEFAULT_PRIORITY);
 
     /// Respond to a `DelAuthKey` request.
-    impl_response!(send_del_auth_key_response, DelAuthKey, (), DEFAULT_PRIORITY);
+    impl_response!(send_del_auth_key_response,
+                   DelAuthKey,
+                   (),
+                   DEFAULT_PRIORITY);
 
     /// Respond to a `DelMDataUserPermissions` request.
     impl_response!(send_del_mdata_user_permissions_response,
