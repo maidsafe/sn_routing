@@ -158,6 +158,7 @@ impl Network {
                     }
                     match target_node.merge_own_section(merge_own_details.clone()) {
                         OwnMergeState::Ongoing |
+                        OwnMergeState::OutOfSequence |
                         OwnMergeState::AlreadyMerged => (),
                         OwnMergeState::Completed { targets, merge_details } => {
                             Network::store_merge_info(&mut merge_other_info,
