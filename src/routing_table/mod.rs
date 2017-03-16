@@ -806,8 +806,16 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                     // this is to prevent spamming the network by sending messages with
                     // intentionally short prefixes
                     if prefix.is_covered_by(self.prefixes().iter()) {
-                        return Ok(self.iter()
-                            .filter(|name| prefix.matches(name) && **name != self.our_name)
+                        let is_compatible = |(pfx, section)| if prefix.is_compatible(pfx) {
+                            Some(section)
+                        } else {
+                            None
+                        };
+                        return Ok(self.sections
+                            .iter()
+                            .filter_map(is_compatible)
+                            .flat_map(BTreeSet::iter)
+                            .chain(self.our_section.iter().filter(|name| **name != self.our_name))
                             .cloned()
                             .collect());
                     } else {
@@ -831,7 +839,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             Authority::NaeManager(ref name) |
             Authority::NodeManager(ref name) => self.is_closest(name, self.min_section_size),
             Authority::Section(ref name) => self.our_prefix.matches(name),
-            Authority::PrefixSection(ref prefix) => prefix.matches(&self.our_name),
+            Authority::PrefixSection(ref prefix) => self.our_prefix.is_compatible(prefix),
         }
     }
 
