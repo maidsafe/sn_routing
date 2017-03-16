@@ -237,9 +237,9 @@ impl ExpectedGets {
                             .get(&key.3)
                             .map_or(false, |entry| entry.contains(&node.name())) {
                             trace!("Unexpected request for node {:?}: {:?} / {:?}",
-                                    node.name(),
-                                    key,
-                                    self.sections);
+                                   node.name(),
+                                   key,
+                                   self.sections);
                             unexpected_receive += 1;
                         }
                         *section_msgs_received.entry(key).or_insert(0usize) += 1;

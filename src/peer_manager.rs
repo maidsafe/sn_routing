@@ -22,7 +22,7 @@ use itertools::Itertools;
 use rand;
 use resource_proof::ResourceProof;
 use routing_table::{Authority, OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix,
-                    RemovalDetails, RoutingTable};
+                    RemovalDetails, RoutingTable, Xorable};
 use routing_table::Error as RoutingTableError;
 use rust_sodium::crypto::hash::sha256;
 use rust_sodium::crypto::sign;
@@ -48,8 +48,6 @@ pub const RESOURCE_PROOF_DURATION_SECS: u64 = 300;
 const CANDIDATE_ACCEPT_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) the node waits for connection from an expected node.
 const NODE_CONNECT_TIMEOUT_SECS: u64 = 60;
-/// Number of close nodes we try to use to establish a tunnel
-const NUM_TUNNEL_VIA_NODES: usize = 10;
 
 pub type SectionMap = BTreeMap<Prefix<XorName>, BTreeSet<PublicId>>;
 
@@ -1215,24 +1213,27 @@ impl PeerManager {
         let _ = self.set_state(peer_id, PeerState::Routing(RoutingConnection::Direct));
     }
 
-    /// Returns the `NUM_TUNNEL_VIA_NODES` closest peers from our section which can be potential
-    /// tunnel node.
-    pub fn potential_tunnel_nodes(&self) -> Vec<(XorName, PeerId)> {
-        let closest_nodes = self.routing_table
-            .other_closest_names(self.our_public_id.name(), self.routing_table.len() + 1)
-            .unwrap_or_default();
-        closest_nodes.iter()
+    /// Returns the closest section to the peer and the closest section to own.
+    pub fn potential_tunnel_nodes(&self, name: &XorName) -> Vec<(XorName, PeerId)> {
+        self.routing_table
+            .our_section()
+            .iter()
+            .chain(self.routing_table.closest_section(name).1.iter())
+            .sorted_by(|name0, name1| name.cmp_distance(name0, name1))
+            .into_iter()
             .filter_map(|name| {
+                if name == self.our_public_id.name() {
+                    return None;
+                }
                 self.peer_map.get_by_name(name).map_or(None,
                                                        |peer| if peer.state.can_tunnel_for() {
                                                            peer.peer_id().map_or(None, |peer_id| {
-                                                               Some((**name, *peer_id))
+                                                               Some((*name, *peer_id))
                                                            })
                                                        } else {
                                                            None
                                                        })
             })
-            .take(NUM_TUNNEL_VIA_NODES)
             .collect()
     }
 
@@ -1252,7 +1253,7 @@ impl PeerManager {
         }
 
         let _ = self.insert_peer(pub_id, Some(peer_id), PeerState::SearchingForTunnel);
-        self.potential_tunnel_nodes()
+        self.potential_tunnel_nodes(pub_id.name())
     }
 
     /// Inserts the given connection info in the map to wait for the peer's info, or returns both
@@ -1403,11 +1404,13 @@ impl PeerManager {
     }
 
     /// Returns all peers we are looking for a tunnel to.
-    pub fn peers_needing_tunnel(&self) -> Vec<PeerId> {
+    pub fn peers_needing_tunnel(&self) -> Vec<(PeerId, XorName)> {
         self.peer_map
             .peers()
             .filter_map(|peer| match peer.state {
-                PeerState::SearchingForTunnel => peer.peer_id,
+                PeerState::SearchingForTunnel => {
+                    peer.peer_id.map_or(None, |peer_id| Some((peer_id, *peer.name())))
+                }
                 _ => None,
             })
             .collect()
