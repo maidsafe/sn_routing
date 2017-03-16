@@ -385,6 +385,28 @@ impl MutableData {
         Ok(())
     }
 
+    /// Mutates single entry withou performing any validations, except the version
+    /// check (new version must be higher than the existing one).
+    /// If the entry doesn't exist yet, inserts it, otherwise, updates it.
+    /// Returns true if the version check passed and the entry was mutated,
+    /// false otherwise.
+    pub fn mutate_entry_without_validation(&mut self, key: Vec<u8>, value: Value) -> bool {
+        match self.data.entry(key) {
+            Entry::Occupied(mut entry) => {
+                if value.entry_version > entry.get().entry_version {
+                    let _ = entry.insert(value);
+                    true
+                } else {
+                    false
+                }
+            }
+            Entry::Vacant(entry) => {
+                let _ = entry.insert(value);
+                true
+            }
+        }
+    }
+
     /// Gets a complete list of permissions
     pub fn permissions(&self) -> &BTreeMap<User, PermissionSet> {
         &self.permissions
