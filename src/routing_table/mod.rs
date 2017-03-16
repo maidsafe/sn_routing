@@ -214,6 +214,8 @@ pub enum OwnMergeState<T: Binary + Clone + Copy + Default + Hash + Xorable> {
     },
     // The merge has already completed, implying that no further action by the caller is required.
     AlreadyMerged,
+    // Being asked to merge into a grand prefix.
+    OutOfSequence,
 }
 
 
@@ -669,11 +671,16 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     pub fn merge_own_section(&mut self, merge_details: OwnMergeDetails<T>) -> OwnMergeState<T> {
         // TODO: Return an error if they are not compatible instead?
         if !self.our_prefix.is_compatible(&merge_details.merge_prefix) ||
-           self.our_prefix.bit_count() != merge_details.merge_prefix.bit_count() + 1 {
+           self.our_prefix.bit_count() < merge_details.merge_prefix.bit_count() + 1 {
             debug!("{:?}: Attempt to call merge_own_section() for an already merged prefix {:?}",
                    self.our_name,
                    merge_details.merge_prefix);
             return OwnMergeState::AlreadyMerged;
+        } else if self.our_prefix.bit_count() > merge_details.merge_prefix.bit_count() + 1 {
+            debug!("{:?}: Attempt to call merge_own_section() for a grand prefix {:?}",
+                   self.our_name,
+                   merge_details.merge_prefix);
+            return OwnMergeState::OutOfSequence;
         }
         for prefix in merge_details.sections.keys() {
             if *prefix == self.our_prefix || self.sections.contains_key(prefix) {

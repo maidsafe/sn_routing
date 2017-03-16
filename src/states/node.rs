@@ -27,6 +27,7 @@ use event::Event;
 use id::{FullId, PublicId};
 use itertools::Itertools;
 use log::LogLevel;
+use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation;
 use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, MAX_PART_LEN, Message, MessageContent,
                RoutingMessage, SectionList, SignedMessage, UserMessage, UserMessageCache};
@@ -48,7 +49,6 @@ use state_machine::Transition;
 use stats::Stats;
 use std::{cmp, fmt, iter, mem};
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
-#[cfg(feature = "use-mock-crust")]
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
 use std::time::{Duration, Instant};
@@ -103,6 +103,8 @@ pub struct Node {
     tick_timer_token: u64,
     timer: Timer,
     tunnels: Tunnels,
+    /// Key is dst, value is BTreeMap<src, sections>
+    out_of_seq_own_merge: LruCache<Prefix<XorName>, BTreeMap<Prefix<XorName>, SectionMap>>,
     user_msg_cache: UserMessageCache,
     /// Value which can be set in mock-crust tests to be used as the calculated name for the next
     /// relocation request received by this node.
@@ -218,6 +220,7 @@ impl Node {
             timer: timer,
             tunnels: Default::default(),
             user_msg_cache: UserMessageCache::with_expiry_duration(user_msg_cache_duration),
+            out_of_seq_own_merge: LruCache::with_expiry_duration(Duration::from_secs(30)),
             next_node_name: None,
             rt_msg_id: None,
             rt_timeout: Duration::from_secs(RT_MIN_TIMEOUT_SECS),
@@ -2169,10 +2172,30 @@ impl Node {
                                 outbox: &mut EventBox)
                                 -> Result<(), RoutingError> {
         let (merge_state, needed_peers) = self.peer_mgr
-            .merge_own_section(sender_prefix, merge_prefix, sections);
+            .merge_own_section(sender_prefix, merge_prefix, sections.clone());
 
         match merge_state {
-            OwnMergeState::Ongoing => self.merge_if_necessary(),
+            OwnMergeState::Ongoing => {
+                match self.out_of_seq_own_merge.remove(&merge_prefix) {
+                    None => self.merge_if_necessary(),
+                    Some(records) => {
+                        for (sender, sections) in records {
+                            if sender.is_neighbour(&sender_prefix) {
+                                debug!("{:?} handle out of seq OwnSectionMerge from {:?} to {:?} \
+                                        with content {:?}",
+                                       self,
+                                       sender,
+                                       merge_prefix,
+                                       sections);
+                                return self.handle_own_section_merge(sender,
+                                                                     merge_prefix,
+                                                                     sections,
+                                                                     outbox);
+                            }
+                        }
+                    }
+                }
+            }
             OwnMergeState::AlreadyMerged => (),
             OwnMergeState::Completed { targets, merge_details } => {
                 // TODO - the event should maybe only fire once all new connections have been made?
@@ -2203,6 +2226,44 @@ impl Node {
                                error);
                     }
                 }
+
+                if let Some((_sender_prefix, merge_prefix, _sections)) =
+                    self.peer_mgr.should_merge() {
+                    if let Some(records) = self.out_of_seq_own_merge
+                        .get(&merge_prefix)
+                        .iter()
+                        .filter(|records| records.len() == 2)
+                        .cloned()
+                        .next()
+                        .cloned() {
+                        let _ = self.out_of_seq_own_merge.remove(&merge_prefix);
+                        for (sender, sections) in records {
+                            debug!("{:?} handle out of seq OwnSectionMerge from {:?} to {:?} \
+                                    with content {:?}",
+                                   self,
+                                   sender,
+                                   merge_prefix,
+                                   sections);
+                            let _ =
+                                self.handle_own_section_merge(sender,
+                                                              merge_prefix,
+                                                              sections,
+                                                              outbox);
+                        }
+                    }
+                }
+            }
+            OwnMergeState::OutOfSequence => {
+                debug!("{:?} insert out of seq OwnSectionMerge from {:?} to {:?} with content \
+                        {:?}",
+                       self,
+                       sender_prefix,
+                       merge_prefix,
+                       sections);
+                let entry = self.out_of_seq_own_merge
+                    .entry(merge_prefix)
+                    .or_insert_with(BTreeMap::new);
+                let _ = entry.insert(sender_prefix, sections);
             }
         }
 
