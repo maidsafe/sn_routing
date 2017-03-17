@@ -126,6 +126,11 @@ pub struct Node {
     /// Whether our proxy is expected to be sending us a resource proof challenge (in which case it
     /// will be trivial) or not.
     proxy_is_resource_proof_challenger: bool,
+    /// Cache of prefixes of sections other than our own which sent us a message indicating their
+    /// section's prefix had changed. The cache is only populated while we're undergoing a merge and
+    /// is drained when that merge completes, at which point we send each listed section a
+    /// `SectionUpdateRequest`.
+    cached_section_update_requests: BTreeSet<Prefix<XorName>>,
 }
 
 impl Node {
@@ -228,6 +233,7 @@ impl Node {
             resource_proof_response_parts: HashMap::new(),
             challenger_count: 0,
             proxy_is_resource_proof_challenger: false,
+            cached_section_update_requests: BTreeSet::new(),
         }
     }
 
@@ -820,6 +826,7 @@ impl Node {
                 AcceptAsCandidate { .. } |
                 CandidateApproval { .. } |
                 ConnectionInfoRequest { .. } |
+                SectionUpdateRequest { .. } |
                 SectionUpdate { .. } |
                 RoutingTableRequest(..) |
                 RoutingTableResponse { .. } |
@@ -900,6 +907,10 @@ impl Node {
             }
             (NodeApproval { sections }, Section(_), Client { .. }) => {
                 self.handle_node_approval(&sections, outbox)
+            }
+            (SectionUpdateRequest { our_prefix }, ManagedNode(_), PrefixSection(_)) => {
+                self.handle_section_update_request(our_prefix);
+                Ok(())
             }
             (SectionUpdate { prefix, members }, Section(_), PrefixSection(_)) => {
                 self.handle_section_update(prefix, members, outbox)
@@ -1442,7 +1453,7 @@ impl Node {
 
             // TODO: we probably don't need to send this if we're splitting, but in that case
             // we should send something else instead. This will do for now.
-            self.send_section_update();
+            self.send_section_update(None);
 
             if let Some(prefix) = self.peer_mgr
                 .routing_table()
@@ -1471,9 +1482,13 @@ impl Node {
         }
     }
 
-    // Tell all neighbouring sections that our member list changed.
-    // Currently we only send this when nodes join and it's only used to add missing members.
-    fn send_section_update(&mut self) {
+    // Tell neighbouring sections that our member list changed. If `dst_prefix` is `Some`, only tell
+    // that section, otherwise tell all neighbouring sections.
+    //
+    // Currently we only send this when nodes join or when specifically requested (i.e. we receive a
+    // `SectionUpdateRequest` from a neighbouring section) and it's only used to add missing members
+    // or split a section.
+    fn send_section_update(&mut self, dst_prefix: Option<Prefix<XorName>>) {
         if !self.peer_mgr.routing_table().is_valid() {
             trace!("{:?} Not sending section update since RT invariant not held.",
                    self);
@@ -1487,7 +1502,10 @@ impl Node {
             members: members,
         };
 
-        let neighbours = self.peer_mgr.routing_table().other_prefixes();
+        let neighbours = match dst_prefix {
+            Some(prefix) => iter::once(prefix).collect(),
+            None => self.peer_mgr.routing_table().other_prefixes(),
+        };
         for neighbour_pfx in neighbours {
             let src = Authority::Section(self.our_prefix().lower_bound());
             let dst = Authority::PrefixSection(neighbour_pfx);
@@ -1992,6 +2010,11 @@ impl Node {
         self.send_routing_message(src, client_auth, response_content)
     }
 
+    fn handle_section_update_request(&mut self, prefix: Prefix<XorName>) {
+        trace!("{:?} Got section update request from {:?}", self, prefix);
+        self.send_section_update(Some(prefix));
+    }
+
     fn handle_section_update(&mut self,
                              prefix: Prefix<XorName>,
                              members: BTreeSet<PublicId>,
@@ -2039,6 +2062,7 @@ impl Node {
                        error);
             }
         }
+        self.cache_section_update_request(prefix);
         Ok(())
     }
 
@@ -2149,7 +2173,9 @@ impl Node {
         self.merge_if_necessary();
 
         if split_us {
-            self.send_section_update();
+            self.send_section_update(None);
+        } else {
+            self.cache_section_update_request(prefix);
         }
 
         let prefix0 = prefix.pushed(false);
@@ -2203,6 +2229,17 @@ impl Node {
                                error);
                     }
                 }
+                let cached_section_update_requests =
+                    mem::replace(&mut self.cached_section_update_requests, BTreeSet::new());
+                for prefix in cached_section_update_requests {
+                    let src = Authority::ManagedNode(*self.name());
+                    let dst = Authority::PrefixSection(prefix);
+                    let content =
+                        MessageContent::SectionUpdateRequest { our_prefix: *self.our_prefix() };
+                    if let Err(err) = self.send_routing_message(src, dst, content) {
+                        debug!("{:?} Failed to send SectionUpdateRequest: {:?}.", self, err);
+                    }
+                }
             }
         }
 
@@ -2236,6 +2273,7 @@ impl Node {
         self.merge_if_necessary();
         self.send_section_list_signature(merge_prefix, None);
         self.reset_rt_timer();
+        self.cache_section_update_request(merge_prefix);
         Ok(())
     }
 
@@ -3006,6 +3044,14 @@ impl Node {
                     completed,
                     self.challenger_count,
                     progress)
+        }
+    }
+
+    fn cache_section_update_request(&mut self, other_section_prefix: Prefix<XorName>) {
+        if self.peer_mgr.routing_table().should_merge().is_some() ||
+           self.peer_mgr.routing_table().is_merge_in_process() {
+            // We don't care about duplicate cached prefixes - ignore result.
+            let _ = self.cached_section_update_requests.insert(other_section_prefix);
         }
     }
 
