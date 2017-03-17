@@ -658,7 +658,8 @@ impl PeerManager {
     /// cause a split.
     pub fn add_to_routing_table(&mut self,
                                 pub_id: &PublicId,
-                                peer_id: &PeerId)
+                                peer_id: &PeerId,
+                                want_to_merge: bool)
                                 -> Result<bool, RoutingTableError> {
         if let Some(peer) = self.peer_map.get(peer_id) {
             match peer.state {
@@ -714,7 +715,7 @@ impl PeerManager {
         let _ = self.expected_peers.remove(pub_id.name());
 
         // If we've updated the state from tunnel to direct above, we now return here.
-        let should_split = self.routing_table.add(*pub_id.name())?;
+        let should_split = self.routing_table.add(*pub_id.name(), want_to_merge)?;
         let conn = self.peer_map
             .remove(peer_id)
             .map_or(unknown_connection, |peer| peer.to_routing_connection());
@@ -813,11 +814,14 @@ impl PeerManager {
     /// Wraps `RoutingTable::should_merge` with an extra check.
     ///
     /// Returns sender prefix, merge prefix, then sections.
-    pub fn should_merge(&self) -> Option<(Prefix<XorName>, Prefix<XorName>, SectionMap)> {
-        if !self.routing_table.they_want_to_merge() && !self.expected_peers.is_empty() {
+    pub fn should_merge(&self,
+                        we_want_to_merge: bool,
+                        they_want_to_merge: bool)
+                        -> Option<(Prefix<XorName>, Prefix<XorName>, SectionMap)> {
+        if !they_want_to_merge && !self.expected_peers.is_empty() {
             return None;
         }
-        self.routing_table.should_merge().map(|merge_details| {
+        self.routing_table.should_merge(we_want_to_merge, they_want_to_merge).map(|merge_details| {
             let sections =
                 merge_details.sections
                     .into_iter()
