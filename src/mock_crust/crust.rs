@@ -191,7 +191,7 @@ impl fmt::Debug for PeerId {
 #[derive(Debug)]
 pub enum Event {
     /// Invoked when a bootstrap peer connects to us
-    BootstrapAccept(PeerId),
+    BootstrapAccept(PeerId, CrustUser),
     /// Invoked when we get a bootstrap connection to a new peer.
     BootstrapConnect(PeerId, SocketAddr),
     /// Invoked when we failed to connect to all bootstrap contacts.
