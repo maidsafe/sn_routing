@@ -19,8 +19,8 @@ use ::QUORUM;
 use ack_manager::{ACK_TIMEOUT_SECS, Ack, AckManager};
 use action::Action;
 use cache::Cache;
-use crust::{ConnectionInfoResult, CrustError, PeerId, PrivConnectionInfo, PubConnectionInfo,
-            Service};
+use crust::{ConnectionInfoResult, CrustError, CrustUser, PeerId, PrivConnectionInfo,
+            PubConnectionInfo, Service};
 use crust::Event as CrustEvent;
 use error::{InterfaceError, RoutingError};
 use event::Event;
@@ -83,6 +83,8 @@ const APPROVAL_PROGRESS_INTERVAL_SECS: u64 = 30;
 const CANDIDATE_STATUS_INTERVAL_SECS: u64 = 60;
 /// Duration for which `OwnSectionMerge` messages are kept in the cache, in seconds.
 const MERGE_TIMEOUT_SECS: u64 = 300;
+/// Duration to hold the bootstrappers
+const BOOTSTRAPPER_HOLD_DUR_SEC: u64 = 300;
 
 pub struct Node {
     ack_mgr: AckManager,
@@ -136,6 +138,8 @@ pub struct Node {
     /// is drained when that merge completes, at which point we send each listed section a
     /// `SectionUpdateRequest`.
     cached_section_update_requests: BTreeSet<Prefix<XorName>>,
+    /// Hold the kind of bootstrappers
+    bootstrappers: LruCache<PeerId, CrustUser>,
 }
 
 impl Node {
@@ -240,6 +244,8 @@ impl Node {
             challenger_count: 0,
             proxy_is_resource_proof_challenger: false,
             cached_section_update_requests: BTreeSet::new(),
+            bootstrappers:
+                LruCache::with_expiry_duration(Duration::from_secs(BOOTSTRAPPER_HOLD_DUR_SEC)),
         }
     }
 
@@ -334,7 +340,9 @@ impl Node {
                               outbox: &mut EventBox)
                               -> Transition {
         match crust_event {
-            CrustEvent::BootstrapAccept(peer_id) => self.handle_bootstrap_accept(peer_id),
+            CrustEvent::BootstrapAccept(peer_id, peer_kind) => {
+                self.handle_bootstrap_accept(peer_id, peer_kind)
+            }
             CrustEvent::BootstrapConnect(peer_id, _) => {
                 self.handle_bootstrap_connect(peer_id, outbox)
             }
@@ -391,8 +399,17 @@ impl Node {
         }
     }
 
-    fn handle_bootstrap_accept(&mut self, peer_id: PeerId) {
-        trace!("{:?} Received BootstrapAccept from {:?}.", self, peer_id);
+    fn handle_bootstrap_accept(&mut self, peer_id: PeerId, peer_kind: CrustUser) {
+        trace!("{:?} Received BootstrapAccept from {:?} as {:?}.",
+               self,
+               peer_id,
+               peer_kind);
+        if let Some(peer) = self.bootstrappers.insert(peer_id, peer_kind) {
+            trace!("{:?} Replacing Bootstrapper {:?} who was previously registered as {:?}",
+                   self,
+                   peer_id,
+                   peer);
+        }
         // TODO: Keep track of that peer to make sure we receive a message from them.
     }
 
@@ -553,6 +570,31 @@ impl Node {
                 self.handle_section_list_signature(peer_id, section_list, sig)?
             }
             ClientIdentify { ref serialised_public_id, ref signature, client_restriction } => {
+                let drop = match self.bootstrappers.remove(&peer_id) {
+                    Some(kind) => {
+                        if kind == CrustUser::Client && client_restriction ||
+                           kind == CrustUser::Node && !client_restriction {
+                            false
+                        } else {
+                            debug!("{:?} Peer bootstrapped to us as {:?} but is sending messages \
+                                    as a with client_restriction: {}",
+                                   self,
+                                   kind,
+                                   client_restriction);
+                            true
+                        }
+                    }
+                    None => {
+                        debug!("{:?} No mention of peer {:?} as a bootstrapper",
+                               self,
+                               peer_id);
+                        true
+                    }
+                };
+                if drop {
+                    return Ok(self.disconnect_peer(&peer_id, Some(outbox)));
+                }
+
                 if let Ok(public_id) = verify_signed_public_id(serialised_public_id, signature) {
                     self.handle_client_identify(public_id, peer_id, client_restriction, outbox)
                 } else {
