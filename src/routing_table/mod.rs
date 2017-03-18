@@ -989,7 +989,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     /// Returns the prefix of the closest non-empty section to `name`, regardless of whether `name`
     /// belongs in that section or not, and the section itself.
-    pub fn closest_section(&self, name: &T) -> (&Prefix<T>, &BTreeSet<T>) {
+    fn closest_section(&self, name: &T) -> (&Prefix<T>, &BTreeSet<T>) {
         let mut result = (&self.our_prefix, &self.our_section);
         for (prefix, section) in &self.sections {
             if !section.is_empty() && result.0.cmp_distance(prefix, name) == Ordering::Greater {

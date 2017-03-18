@@ -22,7 +22,7 @@ use itertools::Itertools;
 use rand;
 use resource_proof::ResourceProof;
 use routing_table::{Authority, OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix,
-                    RemovalDetails, RoutingTable, Xorable};
+                    RemovalDetails, RoutingTable};
 use routing_table::Error as RoutingTableError;
 use rust_sodium::crypto::hash::sha256;
 use rust_sodium::crypto::sign;
@@ -1213,28 +1213,31 @@ impl PeerManager {
         let _ = self.set_state(peer_id, PeerState::Routing(RoutingConnection::Direct));
     }
 
-    /// Returns the closest section to the peer and the closest section to own.
+    /// Returns direct-connected peers in our section and in the peer's section.
     pub fn potential_tunnel_nodes(&self, name: &XorName) -> Vec<(XorName, PeerId)> {
-        self.routing_table
-            .our_section()
-            .iter()
-            .chain(self.routing_table.closest_section(name).1.iter())
-            .sorted_by(|name0, name1| name.cmp_distance(name0, name1))
-            .into_iter()
+        let potential_tunnel_nodes =
+            self.routing_table.our_section() |
+            self.routing_table.get_section(name).unwrap_or(&BTreeSet::new());
+        potential_tunnel_nodes.iter()
             .filter_map(|name| {
                 if name == self.our_public_id.name() {
                     return None;
                 }
-                self.peer_map.get_by_name(name).map_or(None,
-                                                       |peer| if peer.state.can_tunnel_for() {
-                                                           peer.peer_id().map_or(None, |peer_id| {
-                                                               Some((*name, *peer_id))
-                                                           })
-                                                       } else {
-                                                           None
-                                                       })
+                self.peer_map.get_by_name(name).and_then(|peer| if peer.state.can_tunnel_for() {
+                    peer.peer_id().and_then(|peer_id| Some((*name, *peer_id)))
+                } else {
+                    None
+                })
             })
             .collect()
+    }
+
+    /// Returns true if peer is direct-connected and in our section or in tunnel_client's section.
+    pub fn is_potential_tunnel_node(&self, peer: &PublicId, tunnel_client: &XorName) -> bool {
+        (self.routing_table.our_prefix().matches(peer.name()) ||
+         (self.routing_table.get_section(peer.name()) ==
+          self.routing_table.get_section(tunnel_client))) &&
+        self.get_state_by_name(peer.name()).map_or(false, PeerState::can_tunnel_for)
     }
 
     /// Sets the given peer to state `SearchingForTunnel` and returns querying candidates.
@@ -1409,7 +1412,7 @@ impl PeerManager {
             .peers()
             .filter_map(|peer| match peer.state {
                 PeerState::SearchingForTunnel => {
-                    peer.peer_id.map_or(None, |peer_id| Some((peer_id, *peer.name())))
+                    peer.peer_id.and_then(|peer_id| Some((peer_id, *peer.name())))
                 }
                 _ => None,
             })
