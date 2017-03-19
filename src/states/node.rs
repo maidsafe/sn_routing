@@ -2076,12 +2076,14 @@ impl Node {
         //       flow for joining nodes is in place and we send the routing table to the new node
         //       at the point where it gets added to the section.
         let pfx_name = prefix.lower_bound();
-        while let Some(rt_pfx) = self.peer_mgr.routing_table().find_section_prefix(&pfx_name) {
-            if rt_pfx.bit_count() >= prefix.bit_count() {
-                break;
+        if !prefix.is_compatible(self.our_prefix()) {
+            while let Some(rt_pfx) = self.peer_mgr.routing_table().find_section_prefix(&pfx_name) {
+                if rt_pfx.bit_count() >= prefix.bit_count() {
+                    break;
+                }
+                debug!("{:?} Splitting {:?} on section update.", self, rt_pfx);
+                let _ = self.handle_section_split(rt_pfx, rt_pfx.lower_bound(), outbox);
             }
-            debug!("{:?} Splitting {:?} on section update.", self, rt_pfx);
-            let _ = self.handle_section_split(rt_pfx, rt_pfx.lower_bound(), outbox);
         }
         // Filter list of members to just those we don't know about:
         let members =
@@ -3153,8 +3155,10 @@ impl Node {
             .routing_table()
             .should_merge(self.we_want_to_merge(), self.they_want_to_merge())
             .is_some() || self.we_want_to_merge() || self.they_want_to_merge() {
-            // We don't care about duplicate cached prefixes - ignore result.
-            let _ = self.cached_section_update_requests.insert(other_section_prefix);
+            if other_section_prefix != self.our_prefix().sibling() {
+                // We don't care about duplicate cached prefixes - ignore result.
+                let _ = self.cached_section_update_requests.insert(other_section_prefix);
+            }
         }
     }
 
