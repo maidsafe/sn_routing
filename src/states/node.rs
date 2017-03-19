@@ -3149,8 +3149,10 @@ impl Node {
     }
 
     fn cache_section_update_request(&mut self, other_section_prefix: Prefix<XorName>) {
-        if self.peer_mgr.routing_table().should_merge().is_some() ||
-           self.peer_mgr.routing_table().is_merge_in_process() {
+        if self.peer_mgr
+            .routing_table()
+            .should_merge(self.we_want_to_merge(), self.they_want_to_merge())
+            .is_some() || self.we_want_to_merge() || self.they_want_to_merge() {
             // We don't care about duplicate cached prefixes - ignore result.
             let _ = self.cached_section_update_requests.insert(other_section_prefix);
         }
