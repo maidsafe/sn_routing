@@ -75,7 +75,7 @@ fn start_two_services_bootstrap_communicate_exit() {
 
     unwrap!(service_1.start_bootstrap(HashSet::new(), CrustUser::Node));
     let id_0 = expect_event!(event_rx_1, Event::BootstrapConnect(id, _) => id);
-    let id_1 = expect_event!(event_rx_0, Event::BootstrapAccept(id) => id);
+    let id_1 = expect_event!(event_rx_0, Event::BootstrapAccept(id, CrustUser::Node) => id);
 
     assert!(id_0 != id_1);
 

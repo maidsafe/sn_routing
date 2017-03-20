@@ -48,8 +48,6 @@ pub const RESOURCE_PROOF_DURATION_SECS: u64 = 300;
 const CANDIDATE_ACCEPT_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) the node waits for connection from an expected node.
 const NODE_CONNECT_TIMEOUT_SECS: u64 = 60;
-/// Number of close nodes we try to use to establish a tunnel
-const NUM_TUNNEL_VIA_NODES: usize = 10;
 
 pub type SectionMap = BTreeMap<Prefix<XorName>, BTreeSet<PublicId>>;
 
@@ -658,7 +656,8 @@ impl PeerManager {
     /// cause a split.
     pub fn add_to_routing_table(&mut self,
                                 pub_id: &PublicId,
-                                peer_id: &PeerId)
+                                peer_id: &PeerId,
+                                want_to_merge: bool)
                                 -> Result<bool, RoutingTableError> {
         if let Some(peer) = self.peer_map.get(peer_id) {
             match peer.state {
@@ -714,7 +713,7 @@ impl PeerManager {
         let _ = self.expected_peers.remove(pub_id.name());
 
         // If we've updated the state from tunnel to direct above, we now return here.
-        let should_split = self.routing_table.add(*pub_id.name())?;
+        let should_split = self.routing_table.add(*pub_id.name(), want_to_merge)?;
         let conn = self.peer_map
             .remove(peer_id)
             .map_or(unknown_connection, |peer| peer.to_routing_connection());
@@ -813,11 +812,14 @@ impl PeerManager {
     /// Wraps `RoutingTable::should_merge` with an extra check.
     ///
     /// Returns sender prefix, merge prefix, then sections.
-    pub fn should_merge(&self) -> Option<(Prefix<XorName>, Prefix<XorName>, SectionMap)> {
-        if !self.routing_table.they_want_to_merge() && !self.expected_peers.is_empty() {
+    pub fn should_merge(&self,
+                        we_want_to_merge: bool,
+                        they_want_to_merge: bool)
+                        -> Option<(Prefix<XorName>, Prefix<XorName>, SectionMap)> {
+        if !they_want_to_merge && !self.expected_peers.is_empty() {
             return None;
         }
-        self.routing_table.should_merge().map(|merge_details| {
+        self.routing_table.should_merge(we_want_to_merge, they_want_to_merge).map(|merge_details| {
             let sections =
                 merge_details.sections
                     .into_iter()
@@ -1215,22 +1217,31 @@ impl PeerManager {
         let _ = self.set_state(peer_id, PeerState::Routing(RoutingConnection::Direct));
     }
 
-    /// Returns the `NUM_TUNNEL_VIA_NODES` closest peers from our section which can be potential
-    /// tunnel node.
-    pub fn potential_tunnel_nodes(&self) -> Vec<(XorName, PeerId)> {
-        let our_section = self.routing_table
-            .other_close_names(self.our_public_id.name())
-            .unwrap_or_default();
-        self.peer_map
-            .peers()
-            .filter_map(|peer| if our_section.contains(peer.name()) &&
-                                  peer.state.can_tunnel_for() {
-                peer.peer_id.map_or(None, |peer_id| Some((*peer.name(), peer_id)))
-            } else {
-                None
+    /// Returns direct-connected peers in our section and in the peer's section.
+    pub fn potential_tunnel_nodes(&self, name: &XorName) -> Vec<(XorName, PeerId)> {
+        let potential_tunnel_nodes =
+            self.routing_table.our_section() |
+            self.routing_table.get_section(name).unwrap_or(&BTreeSet::new());
+        potential_tunnel_nodes.iter()
+            .filter_map(|name| {
+                if name == self.our_public_id.name() {
+                    return None;
+                }
+                self.peer_map.get_by_name(name).and_then(|peer| if peer.state.can_tunnel_for() {
+                    peer.peer_id().and_then(|peer_id| Some((*name, *peer_id)))
+                } else {
+                    None
+                })
             })
-            .take(NUM_TUNNEL_VIA_NODES)
             .collect()
+    }
+
+    /// Returns true if peer is direct-connected and in our section or in tunnel_client's section.
+    pub fn is_potential_tunnel_node(&self, peer: &PublicId, tunnel_client: &XorName) -> bool {
+        (self.routing_table.our_prefix().matches(peer.name()) ||
+         (self.routing_table.get_section(peer.name()) ==
+          self.routing_table.get_section(tunnel_client))) &&
+        self.get_state_by_name(peer.name()).map_or(false, PeerState::can_tunnel_for)
     }
 
     /// Sets the given peer to state `SearchingForTunnel` and returns querying candidates.
@@ -1249,7 +1260,7 @@ impl PeerManager {
         }
 
         let _ = self.insert_peer(pub_id, Some(peer_id), PeerState::SearchingForTunnel);
-        self.potential_tunnel_nodes()
+        self.potential_tunnel_nodes(pub_id.name())
     }
 
     /// Inserts the given connection info in the map to wait for the peer's info, or returns both
@@ -1400,11 +1411,13 @@ impl PeerManager {
     }
 
     /// Returns all peers we are looking for a tunnel to.
-    pub fn peers_needing_tunnel(&self) -> Vec<PeerId> {
+    pub fn peers_needing_tunnel(&self) -> Vec<(PeerId, XorName)> {
         self.peer_map
             .peers()
             .filter_map(|peer| match peer.state {
-                PeerState::SearchingForTunnel => peer.peer_id,
+                PeerState::SearchingForTunnel => {
+                    peer.peer_id.and_then(|peer_id| Some((peer_id, *peer.name())))
+                }
                 _ => None,
             })
             .collect()
