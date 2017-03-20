@@ -146,8 +146,8 @@ impl Network {
             let own_info = merge_own_info;
             merge_own_info = BTreeMap::new();
             for (_, merge_own_details) in own_info {
-                let nodes =
-                    self.nodes_covered_by_prefixes(&[merge_own_details.sender_prefix.popped()]);
+                let nodes = self.nodes_covered_by_prefixes(&[merge_own_details.sender_prefix
+                                                                 .popped()]);
                 for node in &nodes {
                     let target_node = unwrap!(self.nodes.get_mut(&node));
                     let node_expected = expected_peers.entry(*node).or_insert_with(BTreeSet::new);
@@ -171,12 +171,10 @@ impl Network {
                                 }
                                 node_expected.remove(&name);
                             }
-                            if node_expected.is_empty() {
-                                if target_node.should_merge() {
-                                    Network::store_merge_info(&mut merge_own_info,
-                                                              *target_node.our_prefix(),
-                                                              target_node.merge_details());
-                                }
+                            if node_expected.is_empty() && target_node.should_merge() {
+                                Network::store_merge_info(&mut merge_own_info,
+                                                          *target_node.our_prefix(),
+                                                          target_node.merge_details());
                             }
                         }
                     }
