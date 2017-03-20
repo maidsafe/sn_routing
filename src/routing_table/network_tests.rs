@@ -146,7 +146,8 @@ impl Network {
             let own_info = merge_own_info;
             merge_own_info = BTreeMap::new();
             for (_, merge_own_details) in own_info {
-                let nodes = self.nodes_covered_by_prefixes(&[merge_own_details.merge_prefix]);
+                let nodes =
+                    self.nodes_covered_by_prefixes(&[merge_own_details.sender_prefix.popped()]);
                 for node in &nodes {
                     let target_node = unwrap!(self.nodes.get_mut(&node));
                     let node_expected = expected_peers.entry(*node).or_insert_with(BTreeSet::new);
@@ -156,7 +157,6 @@ impl Network {
                                                                      }));
                     }
                     match target_node.merge_own_section(merge_own_details.clone()) {
-                        OwnMergeState::Ongoing |
                         OwnMergeState::AlreadyMerged => (),
                         OwnMergeState::Completed { targets, merge_details } => {
                             Network::store_merge_info(&mut merge_other_info,
