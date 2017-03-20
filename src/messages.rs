@@ -609,6 +609,8 @@ pub enum MessageContent {
         prefix: Prefix<XorName>,
         /// Members of the section
         members: BTreeSet<PublicId>,
+        /// Whether the recipient should process merges implied by this update.
+        merge: bool,
     },
     /// Sent from a node to its own section to request their current routing table.
     RoutingTableRequest(MessageId, sha256::Digest),
@@ -800,8 +802,12 @@ impl Debug for MessageContent {
             SectionUpdateRequest { ref our_prefix } => {
                 write!(formatter, "SectionUpdateRequest {{ {:?} }}", our_prefix)
             }
-            SectionUpdate { ref prefix, ref members } => {
-                write!(formatter, "SectionUpdate {{ {:?}, {:?} }}", prefix, members)
+            SectionUpdate { ref prefix, ref members, ref merge } => {
+                write!(formatter,
+                       "SectionUpdate {{ {:?}, {:?}, {:?} }}",
+                       prefix,
+                       members,
+                       merge)
             }
             RoutingTableRequest(ref msg_id, ref digest) => {
                 write!(formatter,

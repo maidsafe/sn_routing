@@ -960,8 +960,8 @@ impl Node {
                 self.handle_section_update_request(our_prefix);
                 Ok(())
             }
-            (SectionUpdate { prefix, members }, Section(_), PrefixSection(_)) => {
-                self.handle_section_update(prefix, members, outbox)
+            (SectionUpdate { prefix, members, merge }, Section(_), PrefixSection(_)) => {
+                self.handle_section_update(prefix, members, merge, outbox)
             }
             (RoutingTableRequest(msg_id, digest), src @ ManagedNode(_), dst @ Section(_)) => {
                 self.handle_rt_req(msg_id, digest, src, dst)
@@ -1547,6 +1547,7 @@ impl Node {
         let content = MessageContent::SectionUpdate {
             prefix: *self.our_prefix(),
             members: members,
+            merge: dst_prefix.is_some(),
         };
 
         let neighbours = match dst_prefix {
@@ -2065,6 +2066,7 @@ impl Node {
     fn handle_section_update(&mut self,
                              prefix: Prefix<XorName>,
                              members: BTreeSet<PublicId>,
+                             merge: bool,
                              outbox: &mut EventBox)
                              -> Result<(), RoutingError> {
         trace!("{:?} Got section update for {:?}", self, prefix);
@@ -2074,15 +2076,24 @@ impl Node {
         //       flow for joining nodes is in place and we send the routing table to the new node
         //       at the point where it gets added to the section.
         let pfx_name = prefix.lower_bound();
-        if !prefix.is_compatible(self.our_prefix()) {
-            while let Some(rt_pfx) = self.peer_mgr.routing_table().find_section_prefix(&pfx_name) {
-                if rt_pfx.bit_count() >= prefix.bit_count() {
-                    break;
+        // if !prefix.is_compatible(self.our_prefix()) {
+        while let Some(rt_pfx) = self.peer_mgr.routing_table().find_section_prefix(&pfx_name) {
+            if merge && rt_pfx.bit_count() > prefix.bit_count() {
+                for (name, peer_id) in self.peer_mgr.add_prefix(prefix) {
+                    self.disconnect_peer(&peer_id, Some(outbox));
+                    info!("{:?} Dropped {:?} from the routing table.", self, name);
                 }
-                debug!("{:?} Splitting {:?} on section update.", self, rt_pfx);
-                let _ = self.handle_section_split(rt_pfx, rt_pfx.lower_bound(), outbox);
+                info!("{:?} Merge on SectionUpdate completed. Prefixes: {:?}",
+                      self,
+                      self.peer_mgr.routing_table().prefixes());
             }
+            if rt_pfx.bit_count() >= prefix.bit_count() {
+                break;
+            }
+            debug!("{:?} Splitting {:?} on section update.", self, rt_pfx);
+            let _ = self.handle_section_split(rt_pfx, rt_pfx.lower_bound(), outbox);
         }
+        // }
         // Filter list of members to just those we don't know about:
         let members =
             if let Some(section) = self.peer_mgr.routing_table().section_with_prefix(&prefix) {
