@@ -21,6 +21,7 @@ use routing::{Authority, DataIdentifier, Event, EventStream, MessageId, QUORUM, 
 use routing::mock_crust::{Config, Network};
 use std::cmp;
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::iter;
 use super::{TestClient, TestNode, create_connected_clients, create_connected_nodes,
             gen_range_except, poll_and_resend, verify_invariant_for_all_nodes};
 
@@ -89,10 +90,8 @@ fn add_random_node<R: Rng>(rng: &mut R,
     };
 
     if len > (2 * min_section_size) {
-        let mut block_peer = gen_range_except(rng, 0, nodes.len() - 1, Some(new_node));
-        if block_peer == proxy {
-            block_peer += 1;
-        }
+        let exclude: BTreeSet<_> = vec![new_node, proxy].into_iter().collect();
+        let block_peer = gen_range_except(rng, 0, nodes.len(), &exclude);
         network.block_connection(nodes[new_node].handle.endpoint(),
                                  nodes[block_peer].handle.endpoint());
         network.block_connection(nodes[block_peer].handle.endpoint(),
@@ -123,7 +122,7 @@ fn random_churn<R: Rng>(rng: &mut R,
 
         if nodes.len() > 2 * network.min_section_size() {
             let peer_1 = rng.gen_range(1, len);
-            let peer_2 = gen_range_except(rng, 1, len, Some(peer_1));
+            let peer_2 = gen_range_except(rng, 1, len, &iter::once(peer_1).collect());
             network.lost_connection(nodes[peer_1].handle.endpoint(),
                                     nodes[peer_2].handle.endpoint());
         }
@@ -137,11 +136,8 @@ fn random_churn<R: Rng>(rng: &mut R,
                 // When new node sits before the proxy node, proxy index increases by 1
                 proxy += 1;
             }
-
-            let mut block_peer = gen_range_except(rng, 1, nodes.len() - 1, Some(index));
-            if block_peer == proxy {
-                block_peer += 1;
-            }
+            let exclude: BTreeSet<_> = vec![index, proxy].into_iter().collect();
+            let block_peer = gen_range_except(rng, 0, nodes.len(), &exclude);
             network.block_connection(nodes[index].handle.endpoint(),
                                      nodes[block_peer].handle.endpoint());
             network.block_connection(nodes[block_peer].handle.endpoint(),
@@ -292,8 +288,10 @@ fn send_and_receive<R: Rng>(mut rng: &mut R,
                             added_index: Option<usize>) {
     // Create random data ID and pick random sending and receiving nodes.
     let data_id = DataIdentifier::Immutable(rng.gen());
-    let index0 = gen_range_except(&mut rng, 0, nodes.len(), added_index);
-    let index1 = gen_range_except(&mut rng, 0, nodes.len(), added_index);
+    let exclude: BTreeSet<_> =
+        added_index.map_or(BTreeSet::new(), |index| iter::once(index).collect());
+    let index0 = gen_range_except(&mut rng, 0, nodes.len(), &exclude);
+    let index1 = gen_range_except(&mut rng, 0, nodes.len(), &exclude);
     let auth_n0 = Authority::ManagedNode(nodes[index0].name());
     let auth_n1 = Authority::ManagedNode(nodes[index1].name());
     let auth_g0 = Authority::NaeManager(rng.gen());
@@ -407,7 +405,7 @@ fn aggressive_churn() {
     while count_sections(&nodes) <= 5 || nodes.len() < 50 {
         if nodes.len() > (2 * min_section_size) {
             let peer_1 = rng.gen_range(0, nodes.len());
-            let peer_2 = gen_range_except(&mut rng, 0, nodes.len(), Some(peer_1));
+            let peer_2 = gen_range_except(&mut rng, 0, nodes.len(), &iter::once(peer_1).collect());
             info!("lost connection between {:?} and {:?}",
                   nodes[peer_1].name(),
                   nodes[peer_2].name());
@@ -488,8 +486,10 @@ fn messages_during_churn() {
 
         // Create random data ID and pick random sending and receiving nodes.
         let data_id = DataIdentifier::Immutable(rng.gen());
-        let index0 = gen_range_except(&mut rng, 0, nodes.len(), added_index);
-        let index1 = gen_range_except(&mut rng, 0, nodes.len(), added_index);
+        let exclude: BTreeSet<_> =
+            added_index.map_or(BTreeSet::new(), |index| iter::once(index).collect());
+        let index0 = gen_range_except(&mut rng, 0, nodes.len(), &exclude);
+        let index1 = gen_range_except(&mut rng, 0, nodes.len(), &exclude);
         let auth_n0 = Authority::ManagedNode(nodes[index0].name());
         let auth_n1 = Authority::ManagedNode(nodes[index1].name());
         let auth_g0 = Authority::NaeManager(rng.gen());

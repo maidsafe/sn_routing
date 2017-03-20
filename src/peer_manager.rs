@@ -1234,10 +1234,11 @@ impl PeerManager {
 
     /// Returns true if peer is direct-connected and in our section or in tunnel_client's section.
     pub fn is_potential_tunnel_node(&self, peer: &PublicId, tunnel_client: &XorName) -> bool {
+        self.our_public_id != *peer &&
         (self.routing_table.our_prefix().matches(peer.name()) ||
-         (self.routing_table.get_section(peer.name()) ==
-          self.routing_table.get_section(tunnel_client))) &&
-        self.get_state_by_name(peer.name()).map_or(false, PeerState::can_tunnel_for)
+         self.routing_table.get_section(peer.name()).map_or(false, |section| {
+            Some(section) == self.routing_table.get_section(tunnel_client)
+        })) && self.get_state_by_name(peer.name()).map_or(false, PeerState::can_tunnel_for)
     }
 
     /// Sets the given peer to state `SearchingForTunnel` and returns querying candidates.
