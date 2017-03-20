@@ -1517,10 +1517,8 @@ impl Node {
             }
         }
 
-        let peers_needing_tunnel = self.peer_mgr.peers_needing_tunnel();
-        if !peers_needing_tunnel.is_empty() &&
-           self.peer_mgr.potential_tunnel_nodes().contains(&(*public_id.name(), *peer_id)) {
-            for dst_id in peers_needing_tunnel {
+        for (dst_id, peer_name) in self.peer_mgr.peers_needing_tunnel() {
+            if self.peer_mgr.is_potential_tunnel_node(public_id, &peer_name) {
                 trace!("{:?} Asking {:?} to serve as a tunnel for {:?}",
                        self,
                        peer_id,
