@@ -2543,7 +2543,7 @@ impl Node {
             self.process_own_section_merge(their_prefix,
                                            their_sections,
                                            &our_merged_section,
-                                           outbox)?;
+                                           outbox);
         }
         self.merge_if_necessary();
         Ok(())
@@ -2562,8 +2562,7 @@ impl Node {
                                  sender_prefix: Prefix<XorName>,
                                  sections: SectionMap,
                                  our_merged_section: &BTreeSet<XorName>,
-                                 outbox: &mut EventBox)
-                                 -> Result<(), RoutingError> {
+                                 outbox: &mut EventBox) {
         match self.peer_mgr.merge_own_section(sender_prefix, sections) {
             (OwnMergeState::AlreadyMerged, _needed_peers) => (),
             (OwnMergeState::Completed {
@@ -2621,7 +2620,6 @@ impl Node {
         }
 
         self.reset_rt_timer();
-        Ok(())
     }
 
     fn handle_other_section_merge(&mut self,

@@ -147,8 +147,8 @@ impl Network {
             let own_info = merge_own_info;
             merge_own_info = BTreeMap::new();
             for (_, merge_own_details) in own_info {
-                let nodes =
-                    self.nodes_covered_by_prefixes(&[merge_own_details.sender_prefix.popped()]);
+                let nodes = self.nodes_covered_by_prefixes(&[merge_own_details.sender_prefix
+                                                                 .popped()]);
                 for node in &nodes {
                     let target_node = unwrap!(self.nodes.get_mut(&node));
                     let node_expected = expected_peers.entry(*node).or_insert_with(BTreeSet::new);
