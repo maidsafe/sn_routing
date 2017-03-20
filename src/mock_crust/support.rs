@@ -280,12 +280,12 @@ impl ServiceImpl {
         self.start(event_sender)
     }
 
-    pub fn start_bootstrap(&mut self, blacklist: HashSet<SocketAddr>, _: CrustUser) {
+    pub fn start_bootstrap(&mut self, blacklist: HashSet<SocketAddr>, kind: CrustUser) {
         let mut pending_bootstraps = 0;
 
         for endpoint in &self.config.hard_coded_contacts {
             if *endpoint != self.endpoint && !blacklist.contains(&to_socket_addr(endpoint)) {
-                self.send_packet(*endpoint, Packet::BootstrapRequest(self.peer_id));
+                self.send_packet(*endpoint, Packet::BootstrapRequest(self.peer_id, kind));
                 pending_bootstraps += 1;
             }
         }
@@ -355,7 +355,9 @@ impl ServiceImpl {
 
     fn receive_packet(&mut self, sender: Endpoint, packet: Packet) {
         match packet {
-            Packet::BootstrapRequest(peer_id) => self.handle_bootstrap_request(sender, peer_id),
+            Packet::BootstrapRequest(peer_id, kind) => {
+                self.handle_bootstrap_request(sender, peer_id, kind)
+            }
             Packet::BootstrapSuccess(peer_id) => self.handle_bootstrap_success(sender, peer_id),
             Packet::BootstrapFailure => self.handle_bootstrap_failure(sender),
             Packet::ConnectRequest(their_id, _) => self.handle_connect_request(sender, their_id),
@@ -366,18 +368,24 @@ impl ServiceImpl {
         }
     }
 
-    fn handle_bootstrap_request(&mut self, peer_endpoint: Endpoint, peer_id: PeerId) {
+    fn handle_bootstrap_request(&mut self,
+                                peer_endpoint: Endpoint,
+                                peer_id: PeerId,
+                                kind: CrustUser) {
         if self.is_listening() {
-            self.handle_bootstrap_accept(peer_endpoint, peer_id);
+            self.handle_bootstrap_accept(peer_endpoint, peer_id, kind);
             self.send_packet(peer_endpoint, Packet::BootstrapSuccess(self.peer_id));
         } else {
             self.send_packet(peer_endpoint, Packet::BootstrapFailure);
         }
     }
 
-    fn handle_bootstrap_accept(&mut self, peer_endpoint: Endpoint, peer_id: PeerId) {
+    fn handle_bootstrap_accept(&mut self,
+                               peer_endpoint: Endpoint,
+                               peer_id: PeerId,
+                               kind: CrustUser) {
         self.add_connection(peer_id, peer_endpoint);
-        self.send_event(Event::BootstrapAccept(peer_id));
+        self.send_event(Event::BootstrapAccept(peer_id, kind));
     }
 
     fn handle_bootstrap_success(&mut self, peer_endpoint: Endpoint, peer_id: PeerId) {
@@ -573,7 +581,7 @@ pub struct Endpoint(pub usize);
 
 #[derive(Clone, Debug)]
 enum Packet {
-    BootstrapRequest(PeerId),
+    BootstrapRequest(PeerId, CrustUser),
     BootstrapSuccess(PeerId),
     BootstrapFailure,
 

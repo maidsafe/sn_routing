@@ -593,6 +593,14 @@ pub enum MessageContent {
         /// The message's unique identifier.
         message_id: MessageId,
     },
+    /// Sent to request a `SectionUpdate` from a neighbouring section. Only sent if we receive a
+    /// message from that section indicating its section prefix has altered while we've been in the
+    /// process of handling a merge ourself.
+    SectionUpdateRequest {
+        /// Section prefix of the sender. Included as the message is sent from a `ManagedNode`, but
+        /// the response should be sent to `PrefixSection` indicated by `our_prefix`.
+        our_prefix: Prefix<XorName>,
+    },
     /// Sent to notify neighbours and own members when our section's member list changed (for now,
     /// only when new nodes join).
     SectionUpdate {
@@ -601,6 +609,8 @@ pub enum MessageContent {
         prefix: Prefix<XorName>,
         /// Members of the section
         members: BTreeSet<PublicId>,
+        /// Whether the recipient should process merges implied by this update.
+        merge: bool,
     },
     /// Sent from a node to its own section to request their current routing table.
     RoutingTableRequest(MessageId, sha256::Digest),
@@ -789,8 +799,15 @@ impl Debug for MessageContent {
                        section,
                        message_id)
             }
-            SectionUpdate { ref prefix, ref members } => {
-                write!(formatter, "SectionUpdate {{ {:?}, {:?} }}", prefix, members)
+            SectionUpdateRequest { ref our_prefix } => {
+                write!(formatter, "SectionUpdateRequest {{ {:?} }}", our_prefix)
+            }
+            SectionUpdate { ref prefix, ref members, ref merge } => {
+                write!(formatter,
+                       "SectionUpdate {{ {:?}, {:?}, {:?} }}",
+                       prefix,
+                       members,
+                       merge)
             }
             RoutingTableRequest(ref msg_id, ref digest) => {
                 write!(formatter,
