@@ -690,15 +690,12 @@ impl PeerManager {
         trace!("{}No candidate is currently being handled.", log_prefix);
     }
 
-    /// Tries to add the given peer to the routing table. If successful, this returns `Ok(true)` if
-    /// the addition should cause our section to split or `Ok(false)` if the addition shouldn't
-    /// cause a split.
+    /// Tries to add the given peer to the routing table.
     pub fn add_to_routing_table(&mut self,
                                 pub_id: &PublicId,
                                 peer_id: &PeerId,
-                                want_to_merge: bool,
                                 is_tunnel: bool)
-                                -> Result<bool, RoutingTableError> {
+                                -> Result<(), RoutingTableError> {
         if let Some(peer) = self.peer_map.get(peer_id) {
             match peer.state {
                 PeerState::ConnectionInfoPreparing { .. } |
@@ -740,12 +737,7 @@ impl PeerManager {
             Some((false, _)) | None => RoutingConnection::Direct,
         };
         let _ = self.expected_peers.remove(pub_id.name());
-
-        let res = match self.routing_table.add(*pub_id.name(), want_to_merge) {
-            x @ Ok(_) |
-            x @ Err(RoutingTableError::AlreadyExists) => x,
-            Err(e) => return Err(e),
-        };
+        self.routing_table.add(*pub_id.name())?;
 
         let conn = self.peer_map
             .remove(peer_id)
@@ -758,7 +750,7 @@ impl PeerManager {
                pub_id.name(),
                PeerState::Routing(conn));
 
-        res
+        Ok(())
     }
 
     /// Splits the indicated section and returns the `PeerId`s of any peers to which we should not
@@ -854,28 +846,20 @@ impl PeerManager {
             .collect()
     }
 
-    /// Wraps `RoutingTable::should_merge` with an extra check.
-    ///
-    /// Returns sender prefix, merge prefix, then sections.
-    pub fn should_merge(&self,
-                        we_want_to_merge: bool,
-                        they_want_to_merge: bool)
-                        -> Option<(Prefix<XorName>, Prefix<XorName>, SectionMap)> {
-        if !they_want_to_merge && !self.expected_peers.is_empty() {
-            return None;
-        }
-        self.routing_table
-            .should_merge(we_want_to_merge, they_want_to_merge)
-            .map(|merge_details| {
-                let sections = merge_details
-                    .sections
-                    .into_iter()
-                    .map(|(prefix, members)| {
-                             (prefix, self.get_pub_ids(&members).into_iter().collect())
-                         })
-                    .collect();
-                (merge_details.sender_prefix, merge_details.merge_prefix, sections)
-            })
+    /// Returns whether we should initiate a merge.
+    pub fn should_merge(&self) -> bool {
+        self.expected_peers.is_empty() && self.routing_table.should_merge()
+    }
+
+    /// Returns the sender prefix, merge prefix and sections to prepare a merge.
+    pub fn merge_details(&self) -> (Prefix<XorName>, Prefix<XorName>, SectionMap) {
+        let merge_details = self.routing_table.merge_details();
+        let sections = merge_details
+            .sections
+            .into_iter()
+            .map(|(prefix, members)| (prefix, self.get_pub_ids(&members).into_iter().collect()))
+            .collect();
+        (merge_details.sender_prefix, merge_details.merge_prefix, sections)
     }
 
     // Returns the `OwnMergeState` from `RoutingTable` which defines what further action needs to be

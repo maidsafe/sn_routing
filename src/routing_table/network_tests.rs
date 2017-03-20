@@ -77,21 +77,19 @@ impl Network {
 
         let mut split_prefixes = BTreeSet::new();
         for node in self.nodes.values_mut() {
-            match node.add(name, false) {
-                Ok(true) => {
-                    let _ = split_prefixes.insert(*node.our_prefix());
-                }
-                Ok(false) => {}
-                Err(e) => trace!("failed to add node with error {:?}", e),
+            if let Err(e) = node.add(name) {
+                trace!("failed to add node with error {:?}", e);
             }
-            match new_table.add(*node.our_name(), false) {
-                Ok(true) => {
-                    let prefix = *new_table.our_prefix();
-                    let _ = split_prefixes.insert(prefix);
-                    let _ = new_table.split(prefix);
-                }
-                Ok(false) => {}
-                Err(e) => trace!("failed to add node into new with error {:?}", e),
+            if node.should_split() {
+                let _ = split_prefixes.insert(*node.our_prefix());
+            }
+            if let Err(e) = new_table.add(*node.our_name()) {
+                trace!("failed to add node into new with error {:?}", e);
+            }
+            if new_table.should_split() {
+                let prefix = *new_table.our_prefix();
+                let _ = split_prefixes.insert(prefix);
+                let _ = new_table.split(prefix);
             }
         }
 
@@ -129,7 +127,8 @@ impl Network {
                 assert_eq!(name, removal_details.name);
                 assert_eq!(removed_node_is_in_our_section,
                            removal_details.was_in_our_section);
-                if let Some(info) = node.should_merge(false, false) {
+                if node.should_merge() {
+                    let info = node.merge_details();
                     Network::store_merge_info(&mut merge_own_info, *node.our_prefix(), info);
                 }
             } else {
@@ -171,17 +170,15 @@ impl Network {
                             for name in node_expected.clone() {
                                 // Try adding each node we should be connected to.
                                 // Ignore failures and ignore splits.
-                                if let Err(e) = target_node.add(name, false) {
+                                if let Err(e) = target_node.add(name) {
                                     panic!("Error adding node: {:?}", e);
                                 }
                                 node_expected.remove(&name);
                             }
-                            if node_expected.is_empty() {
-                                if let Some(info) = target_node.should_merge(false, false) {
-                                    Network::store_merge_info(&mut merge_own_info,
-                                                              *target_node.our_prefix(),
-                                                              info);
-                                }
+                            if node_expected.is_empty() && target_node.should_merge() {
+                                Network::store_merge_info(&mut merge_own_info,
+                                                          *target_node.our_prefix(),
+                                                          target_node.merge_details());
                             }
                         }
                     }
@@ -196,12 +193,12 @@ impl Network {
                     let contacts = target_node.merge_other_section(merge_other_details.clone());
                     // add missing contacts
                     for contact in contacts {
-                        let _ = target_node.add(contact, false);
+                        let _ = target_node.add(contact);
                     }
-                    if let Some(info) = target_node.should_merge(false, false) {
+                    if target_node.should_merge() {
                         Network::store_merge_info(&mut merge_own_info,
                                                   *target_node.our_prefix(),
-                                                  info);
+                                                  target_node.merge_details());
                     }
                 }
             }
