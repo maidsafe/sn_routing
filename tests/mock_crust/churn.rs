@@ -90,7 +90,7 @@ fn add_random_node<R: Rng>(rng: &mut R,
     };
 
     if len > (2 * min_section_size) {
-        let exclude: BTreeSet<_> = vec![new_node, proxy].into_iter().collect();
+        let exclude = vec![new_node, proxy].into_iter().collect();
         let block_peer = gen_range_except(rng, 0, nodes.len(), &exclude);
         network.block_connection(nodes[new_node].handle.endpoint(),
                                  nodes[block_peer].handle.endpoint());
@@ -136,7 +136,7 @@ fn random_churn<R: Rng>(rng: &mut R,
                 // When new node sits before the proxy node, proxy index increases by 1
                 proxy += 1;
             }
-            let exclude: BTreeSet<_> = vec![index, proxy].into_iter().collect();
+            let exclude = vec![index, proxy].into_iter().collect();
             let block_peer = gen_range_except(rng, 0, nodes.len(), &exclude);
             network.block_connection(nodes[index].handle.endpoint(),
                                      nodes[block_peer].handle.endpoint());
@@ -288,8 +288,7 @@ fn send_and_receive<R: Rng>(mut rng: &mut R,
                             added_index: Option<usize>) {
     // Create random data ID and pick random sending and receiving nodes.
     let data_id = DataIdentifier::Immutable(rng.gen());
-    let exclude: BTreeSet<_> =
-        added_index.map_or(BTreeSet::new(), |index| iter::once(index).collect());
+    let exclude = added_index.map_or(BTreeSet::new(), |index| iter::once(index).collect());
     let index0 = gen_range_except(&mut rng, 0, nodes.len(), &exclude);
     let index1 = gen_range_except(&mut rng, 0, nodes.len(), &exclude);
     let auth_n0 = Authority::ManagedNode(nodes[index0].name());
@@ -486,8 +485,7 @@ fn messages_during_churn() {
 
         // Create random data ID and pick random sending and receiving nodes.
         let data_id = DataIdentifier::Immutable(rng.gen());
-        let exclude: BTreeSet<_> =
-            added_index.map_or(BTreeSet::new(), |index| iter::once(index).collect());
+        let exclude = added_index.map_or(BTreeSet::new(), |index| iter::once(index).collect());
         let index0 = gen_range_except(&mut rng, 0, nodes.len(), &exclude);
         let index1 = gen_range_except(&mut rng, 0, nodes.len(), &exclude);
         let auth_n0 = Authority::ManagedNode(nodes[index0].name());
