@@ -90,7 +90,7 @@ fn add_random_node<R: Rng>(rng: &mut R,
 
     if len > (2 * min_section_size) {
         let mut block_peer = gen_range_except(rng, 0, nodes.len() - 1, Some(new_node));
-        if block_peer == proxy {
+        if block_peer >= proxy {
             block_peer += 1;
         }
         network.block_connection(nodes[new_node].handle.endpoint(),
@@ -139,7 +139,7 @@ fn random_churn<R: Rng>(rng: &mut R,
             }
 
             let mut block_peer = gen_range_except(rng, 1, nodes.len() - 1, Some(index));
-            if block_peer == proxy {
+            if block_peer >= proxy {
                 block_peer += 1;
             }
             network.block_connection(nodes[index].handle.endpoint(),
