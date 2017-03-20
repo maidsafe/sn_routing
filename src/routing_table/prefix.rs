@@ -161,6 +161,15 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
         }
         name
     }
+
+    /// Returns the same prefix, with the last bit flipped, or unchanged, if empty.
+    pub fn sibling(&self) -> Prefix<T> {
+        if self.bit_count > 0 {
+            self.with_flipped_bit((self.bit_count - 1) as usize)
+        } else {
+            *self
+        }
+    }
 }
 
 impl<T: Clone + Copy + Default + Binary + Xorable> PartialEq<Prefix<T>> for Prefix<T> {
