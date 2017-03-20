@@ -851,15 +851,15 @@ impl PeerManager {
         self.expected_peers.is_empty() && self.routing_table.should_merge()
     }
 
-    /// Returns the sender prefix, merge prefix and sections to prepare a merge.
-    pub fn merge_details(&self) -> (Prefix<XorName>, Prefix<XorName>, SectionMap) {
+    /// Returns the sender prefix and sections to prepare a merge.
+    pub fn merge_details(&self) -> (Prefix<XorName>, SectionMap) {
         let merge_details = self.routing_table.merge_details();
         let sections = merge_details
             .sections
             .into_iter()
             .map(|(prefix, members)| (prefix, self.get_pub_ids(&members).into_iter().collect()))
             .collect();
-        (merge_details.sender_prefix, merge_details.merge_prefix, sections)
+        (merge_details.sender_prefix, sections)
     }
 
     // Returns the `OwnMergeState` from `RoutingTable` which defines what further action needs to be
@@ -867,7 +867,6 @@ impl PeerManager {
     // the merging sections for now).
     pub fn merge_own_section(&mut self,
                              sender_prefix: Prefix<XorName>,
-                             merge_prefix: Prefix<XorName>,
                              sections: SectionMap)
                              -> (OwnMergeState<XorName>, Vec<PublicId>) {
         self.remove_expired();
@@ -891,7 +890,6 @@ impl PeerManager {
 
         let own_merge_details = OwnMergeDetails {
             sender_prefix: sender_prefix,
-            merge_prefix: merge_prefix,
             sections: sections_as_names,
         };
         let mut expected_peers = mem::replace(&mut self.expected_peers, HashMap::new());

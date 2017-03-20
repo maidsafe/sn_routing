@@ -2540,7 +2540,6 @@ impl Node {
                 .flat_map(|(_, peers)| peers)
                 .map(|peer| *peer.name())
                 .collect();
-            self.process_own_section_merge(our_prefix, our_sections, &our_merged_section, outbox)?;
             self.process_own_section_merge(their_prefix,
                                            their_sections,
                                            &our_merged_section,
@@ -2565,18 +2564,13 @@ impl Node {
                                  our_merged_section: &BTreeSet<XorName>,
                                  outbox: &mut EventBox)
                                  -> Result<(), RoutingError> {
-        let merge_prefix = sender_prefix.popped();
-        let (merge_state, needed_peers) =
-            self.peer_mgr
-                .merge_own_section(sender_prefix, merge_prefix, sections);
-
-        match merge_state {
-            OwnMergeState::Ongoing |
-            OwnMergeState::AlreadyMerged => (),
-            OwnMergeState::Completed {
-                targets,
-                mut merge_details,
-            } => {
+        match self.peer_mgr.merge_own_section(sender_prefix, sections) {
+            (OwnMergeState::AlreadyMerged, _needed_peers) => (),
+            (OwnMergeState::Completed {
+                 targets,
+                 mut merge_details,
+             },
+             needed_peers) => {
                 // TODO - the event should maybe only fire once all new connections have been made?
                 outbox.send_event(Event::SectionMerge(merge_details.prefix));
                 info!("{:?} Own section merge completed. Prefixes: {:?}",
@@ -3332,10 +3326,10 @@ impl Node {
 
     fn merge_if_necessary(&mut self) {
         if !self.we_want_to_merge() && (self.they_want_to_merge() || self.peer_mgr.should_merge()) {
-            let (sender_prefix, merge_prefix, sections) = self.peer_mgr.merge_details();
+            let (sender_prefix, sections) = self.peer_mgr.merge_details();
             let content = MessageContent::OwnSectionMerge(sections);
             let src = Authority::PrefixSection(sender_prefix);
-            let dst = Authority::PrefixSection(merge_prefix);
+            let dst = Authority::PrefixSection(sender_prefix.popped());
             debug!("{:?} Sending OwnSectionMerge from {:?} to {:?} with content {:?}",
                    self,
                    src,
