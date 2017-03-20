@@ -1459,6 +1459,7 @@ impl Node {
                             peer_id: &PeerId,
                             outbox: &mut EventBox) {
         let want_to_merge = self.we_want_to_merge() || self.they_want_to_merge();
+        let mut need_split = false;
         match self.peer_mgr.add_to_routing_table(public_id, peer_id, want_to_merge) {
             Err(RoutingTableError::AlreadyExists) => return,  // already in RT
             Err(error) => {
@@ -1476,6 +1477,7 @@ impl Node {
                 // `send_section_split()` here and also check whether another round of splitting is
                 // required in `handle_section_split()` so splitting becomes recursive like merging.
                 if our_prefix.matches(public_id.name()) {
+                    need_split = true;
                     self.send_section_split(our_prefix, *public_id.name());
                 }
             }
@@ -1500,9 +1502,9 @@ impl Node {
             outbox.send_event(Event::NodeAdded(*public_id.name(),
                                                self.peer_mgr.routing_table().clone()));
 
-            // TODO: we probably don't need to send this if we're splitting, but in that case
-            // we should send something else instead. This will do for now.
-            self.send_section_update(None);
+            if !need_split && self.our_prefix().matches(public_id.name()) {
+                self.send_section_update(None);
+            }
 
             if let Some(prefix) = self.peer_mgr
                 .routing_table()
@@ -1537,11 +1539,15 @@ impl Node {
     // or split a section.
     fn send_section_update(&mut self, dst_prefix: Option<Prefix<XorName>>) {
         if !self.peer_mgr.routing_table().is_valid() {
-            trace!("{:?} Not sending section update since RT invariant not held.",
+            warn!("{:?} Not sending section update since RT invariant not held.",
+                  self);
+            return;
+        } else if self.they_want_to_merge() || self.we_want_to_merge() {
+            trace!("{:?} Not sending section update since we are in the process of merging.",
                    self);
             return;
         }
-        trace!("{:?} Sending section update", self);
+
         let members = self.peer_mgr.get_pub_ids(self.peer_mgr.routing_table().our_section());
 
         let content = MessageContent::SectionUpdate {
@@ -1554,6 +1560,9 @@ impl Node {
             Some(prefix) => iter::once(prefix).collect(),
             None => self.peer_mgr.routing_table().other_prefixes(),
         };
+
+        trace!("{:?} Sending section update to {:?}", self, neighbours);
+
         for neighbour_pfx in neighbours {
             let src = Authority::Section(self.our_prefix().lower_bound());
             let dst = Authority::PrefixSection(neighbour_pfx);
