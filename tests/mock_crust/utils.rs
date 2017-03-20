@@ -40,18 +40,15 @@ const BALANCED_POLLING: bool = true;
 pub fn gen_range_except<T: Rng>(rng: &mut T,
                                 low: usize,
                                 high: usize,
-                                exclude: Option<usize>)
+                                exclude: &BTreeSet<usize>)
                                 -> usize {
-    match exclude {
-        None => rng.gen_range(low, high),
-        Some(exclude) => {
-            let mut r = rng.gen_range(low, high - 1);
-            if r >= exclude {
-                r += 1
-            }
-            r
+    let mut x = rng.gen_range(low, high - exclude.len());
+    for e in exclude {
+        if x >= *e {
+            x += 1;
         }
     }
+    x
 }
 
 
