@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+
 use error::InterfaceError;
 use messages::{Request, UserMessage};
 use routing_table::Authority;
@@ -29,6 +30,8 @@ use xor_name::XorName;
 ///       pending events should be handled.
 ///       After completion `Core` will send `Event::Terminated`.
 #[derive(Clone)]
+// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
+#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
 pub enum Action {
     NodeSendMessage {
         src: Authority<XorName>,

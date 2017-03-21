@@ -119,7 +119,7 @@ fn successful_get_request() {
         }
     }
 
-    assert!(response_received_count == 1);
+    assert_eq!(response_received_count, 1);
 }
 
 #[test]
@@ -185,7 +185,7 @@ fn failed_get_request() {
         }
     }
 
-    assert!(response_received_count == 1);
+    assert_eq!(response_received_count, 1);
 }
 
 #[test]

@@ -276,6 +276,8 @@ impl ExampleNode {
 
 /// Refresh messages.
 #[derive(RustcEncodable, RustcDecodable)]
+// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
+#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
 enum RefreshContent {
     /// A message to a `ClientManager` to insert a new client.
     Client { client_name: XorName, data: u64 },

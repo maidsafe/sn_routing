@@ -23,8 +23,10 @@ use maidsafe_utilities::event_sender::{EventSenderError, MaidSafeEventCategory};
 use maidsafe_utilities::serialisation;
 use std::sync::mpsc::{RecvError, SendError};
 
-#[derive(Debug)]
 /// The type of errors that can occur if routing is unable to handle a send request.
+#[derive(Debug)]
+// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
+#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
 pub enum InterfaceError {
     /// We are not connected to the network.
     NotConnected,
@@ -48,8 +50,10 @@ impl From<RecvError> for InterfaceError {
     }
 }
 
-#[derive(Debug)]
 /// The type of errors that can occur during handling of routing events.
+#[derive(Debug)]
+// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
+#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
 pub enum RoutingError {
     /// The node/client has not bootstrapped yet
     NotBootstrapped,

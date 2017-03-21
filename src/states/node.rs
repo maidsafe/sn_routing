@@ -33,7 +33,7 @@ use maidsafe_utilities::serialisation;
 use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, MAX_PART_LEN, Message, MessageContent,
                RoutingMessage, SectionList, SignedMessage, UserMessage, UserMessageCache};
 use outbox::EventBox;
-use peer_manager::{ConnectionInfoPreparedResult, PeerManager, PeerState,
+use peer_manager::{ConnectionInfoPreparedResult, Peer, PeerManager, PeerState,
                    RESOURCE_PROOF_DURATION_SECS, SectionMap};
 use rand::{self, Rng};
 use resource_proof::ResourceProof;
@@ -1832,9 +1832,9 @@ impl Node {
             let message = DirectMessage::TunnelDisconnect(dst_id);
             self.send_direct_message(peer_id, message);
         }
-        if self.peer_mgr.get_connected_peer(&peer_id).map_or(false, |peer| {
-            peer.state().can_tunnel_for()
-        }) && self.tunnels.add(dst_id, peer_id) {
+        let can_tunnel_for = |peer: &Peer| peer.state().can_tunnel_for();
+        if self.peer_mgr.get_connected_peer(&peer_id).map_or(false, can_tunnel_for) &&
+           self.tunnels.add(dst_id, peer_id) {
             debug!("{:?} Adding {:?} as a tunnel node for {:?}.",
                    self,
                    peer_id,

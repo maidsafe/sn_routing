@@ -34,7 +34,7 @@ fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
             match node.try_next_ev() {
                 Ok(Event::NodeLost(lost_name, _)) if lost_name == name => break,
                 Ok(_) => (),
-                Err(_) => panic!("Event::NodeLost({:?}) not received", name),
+                _ => panic!("Event::NodeLost({:?}) not received", name),
             }
         }
     }

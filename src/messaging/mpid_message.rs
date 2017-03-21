@@ -155,7 +155,7 @@ mod tests {
                                                recipient.clone(),
                                                body.clone(),
                                                &secret_key));
-        assert!(*message.body() == body);
+        assert_eq!(*message.body(), body);
         body.push(0);
         assert!(MpidMessage::new(sender.clone(),
                                  metadata.clone(),

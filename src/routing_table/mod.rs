@@ -1171,6 +1171,7 @@ mod tests {
     use super::SPLIT_BUFFER;
     use itertools::Itertools;
     use std::collections::BTreeSet;
+    use std::str::FromStr;
 
     #[test]
     fn small() {
@@ -1404,20 +1405,23 @@ mod tests {
             unwrap!(table.add(i * 0x10, false));
         }
         assert_eq!(prefixes_from_strs(vec![""]), table.prefixes());
-        assert_eq!(Vec::<u8>::new(), table.add_prefix(Prefix::from_str("01")));
+        assert_eq!(Vec::<u8>::new(),
+                   table.add_prefix(unwrap!(Prefix::from_str("01"))));
         assert_eq!(prefixes_from_strs(vec!["1", "00", "01"]), table.prefixes());
         assert_eq!(vec![0xc0, 0xd0, 0xe0, 0xf0u8],
-                   table.add_prefix(Prefix::from_str("111")).into_iter().sorted());
+                   table.add_prefix(unwrap!(Prefix::from_str("111"))).into_iter().sorted());
         assert_eq!(prefixes_from_strs(vec!["110", "111", "10", "0"]),
                    table.prefixes());
-        assert_eq!(Vec::<u8>::new(), table.add_prefix(Prefix::from_str("0")));
+        assert_eq!(Vec::<u8>::new(),
+                   table.add_prefix(unwrap!(Prefix::from_str("0"))));
         assert_eq!(prefixes_from_strs(vec!["110", "111", "10", "0"]),
                    table.prefixes());
-        assert_eq!(Vec::<u8>::new(), table.add_prefix(Prefix::from_str("")));
+        assert_eq!(Vec::<u8>::new(),
+                   table.add_prefix(unwrap!(Prefix::from_str(""))));
         assert_eq!(prefixes_from_strs(vec![""]), table.prefixes());
     }
 
     fn prefixes_from_strs(strs: Vec<&str>) -> BTreeSet<Prefix<u8>> {
-        strs.into_iter().map(Prefix::from_str).collect()
+        strs.into_iter().map(|s| unwrap!(Prefix::from_str(s))).collect()
     }
 }

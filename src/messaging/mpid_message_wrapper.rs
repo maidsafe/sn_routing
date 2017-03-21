@@ -21,6 +21,8 @@ use xor_name::XorName;
 /// A serialisable wrapper to allow multiplexing all MPID message types and actions via a single
 /// type.
 #[derive(PartialEq, Eq, Hash, Clone, Debug, RustcDecodable, RustcEncodable)]
+// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
+#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
 pub enum MpidMessageWrapper {
     /// Sent by a Client to its MpidManagers to notify them that it has just connected to the
     /// network.

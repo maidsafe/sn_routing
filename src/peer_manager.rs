@@ -93,6 +93,8 @@ pub enum RoutingConnection {
 
 /// Our relationship status with a known peer.
 #[derive(Debug)]
+// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
+#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
 pub enum PeerState {
     /// Waiting for Crust to prepare our `PrivConnectionInfo`. Contains source and destination for
     /// sending it to the peer, and their connection info with the associated request's message ID,

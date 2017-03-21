@@ -48,9 +48,8 @@ pub fn verify_signatures(owners: &BTreeSet<PublicKey>,
     }
 
     // Refuse if there is any invalid signature
-    if !signatures.iter().all(|(pub_key, sig)| {
-                                  owners.contains(pub_key) && verify_detached(sig, data, pub_key)
-                              }) {
+    let verify = |(pub_key, sig)| owners.contains(pub_key) && verify_detached(sig, data, pub_key);
+    if !signatures.iter().all(verify) {
         return Err(RoutingError::FailedSignature);
     }
     Ok(())

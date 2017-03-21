@@ -321,16 +321,17 @@ pub fn verify_network_invariant<'a, T, U>(nodes: U)
                 node.sections[&prefix].clone()
             };
             if let Some(&mut (ref mut src, ref mut section)) = sections.get_mut(&prefix) {
-                assert!(*section == section_content,
-                        "Section with prefix {:?} doesn't agree between nodes {:?} and {:?}\n\
-                        {:?}: {:?}, {:?}: {:?}",
-                        prefix,
-                        node.our_name,
-                        src,
-                        node.our_name,
-                        section_content,
-                        src,
-                        section);
+                assert_eq!(*section,
+                           section_content,
+                           "Section with prefix {:?} doesn't agree between nodes {:?} and {:?}\n\
+                            {:?}: {:?}, {:?}: {:?}",
+                           prefix,
+                           node.our_name,
+                           src,
+                           node.our_name,
+                           section_content,
+                           src,
+                           section);
                 continue;
             }
             let _ = sections.insert(prefix, (node.our_name, section_content));

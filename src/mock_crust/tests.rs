@@ -77,7 +77,7 @@ fn start_two_services_bootstrap_communicate_exit() {
     let id_0 = expect_event!(event_rx_1, Event::BootstrapConnect(id, _) => id);
     let id_1 = expect_event!(event_rx_0, Event::BootstrapAccept(id, CrustUser::Node) => id);
 
-    assert!(id_0 != id_1);
+    assert_ne!(id_0, id_1);
 
     // send data from 0 to 1
     let data_sent = vec![0, 1, 255, 254, 222, 1];

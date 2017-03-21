@@ -59,6 +59,8 @@ pub const CLIENT_GET_PRIORITY: u8 = 3;
 ///
 /// This is the only type allowed to be sent / received on the network.
 #[derive(Debug, RustcEncodable, RustcDecodable)]
+// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
+#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
 pub enum Message {
     /// A message sent between two nodes directly
     Direct(DirectMessage),
@@ -545,6 +547,8 @@ impl RoutingMessage {
 /// of Y to its routing table.
 ///
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
+// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
+#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
 pub enum MessageContent {
     // ---------- Internal ------------
     /// Ask the network to alter your `PublicId` name.
@@ -948,6 +952,8 @@ impl UserMessage {
 
 /// Request message types
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
+// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
+#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
 pub enum Request {
     /// Message from upper layers sending network state on any network churn event.
     Refresh(Vec<u8>, MessageId),

@@ -110,7 +110,7 @@ Options:
         Put(String, String),
     }
 
-    fn read_user_commands(command_sender: Sender<UserCommand>) {
+    fn read_user_commands(command_sender: &Sender<UserCommand>) {
         loop {
             let mut command = String::new();
             let stdin = io::stdin();
@@ -153,7 +153,7 @@ Options:
                 command_receiver: command_receiver,
                 exit: false,
                 _joiner: thread::named("Command reader",
-                                       move || read_user_commands(command_sender)),
+                                       move || read_user_commands(&command_sender)),
             }
         }
 
