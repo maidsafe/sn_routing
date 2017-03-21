@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+#[cfg(feature = "use-mock-crust")]
 use BootstrapConfig;
 use action::Action;
 use cache::NullCache;
@@ -22,9 +23,8 @@ use crust::Config;
 use data::{EntryAction, ImmutableData, MutableData, PermissionSet, User, Value};
 use error::{InterfaceError, RoutingError};
 use event::Event;
+use event_stream::{EventStepper, EventStream};
 use id::FullId;
-#[cfg(not(feature = "use-mock-crust"))]
-use maidsafe_utilities::thread::{self, Joiner};
 use outbox::{EventBox, EventBuf};
 use routing_table::Authority;
 #[cfg(not(feature = "use-mock-crust"))]
@@ -32,14 +32,9 @@ use rust_sodium;
 use rust_sodium::crypto::sign;
 use state_machine::{State, StateMachine};
 use states;
-#[cfg(feature = "use-mock-crust")]
-use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::sync::mpsc::{Receiver, Sender, channel};
-#[cfg(feature = "use-mock-crust")]
-use std::sync::mpsc::TryRecvError;
+use std::sync::mpsc::{Receiver, RecvError, Sender, TryRecvError, channel};
 use types::MessageId;
-use types::RoutingActionSender;
 use xor_name::XorName;
 
 /// Interface for sending and receiving messages to and from a network of nodes in the role of a
@@ -50,16 +45,8 @@ use xor_name::XorName;
 pub struct Client {
     _interface_result_tx: Sender<Result<(), InterfaceError>>,
     _interface_result_rx: Receiver<Result<(), InterfaceError>>,
-    action_sender: RoutingActionSender,
-
-    #[cfg(feature = "use-mock-crust")]
-    machine: RefCell<StateMachine>,
-
-    #[cfg(feature = "use-mock-crust")]
-    event_buffer: RefCell<EventBuf>,
-
-    #[cfg(not(feature = "use-mock-crust"))]
-    _raii_joiner: Joiner,
+    machine: StateMachine,
+    event_buffer: EventBuf,
 }
 
 impl Client {
@@ -73,45 +60,26 @@ impl Client {
     /// Keys will be exchanged with the `ClientAuthority` so that communication with the network is
     /// cryptographically secure and uses section consensus. The restriction for the client name
     /// exists to ensure that the client cannot choose its `ClientAuthority`.
-    #[cfg(not(feature = "use-mock-crust"))]
-    pub fn new(event_sender: Sender<Event>,
-               keys: Option<FullId>,
-               config: Option<Config>)
+    pub fn new(keys: Option<FullId>,
+               config: Option<Config>,
+               min_section_size: usize)
                -> Result<Client, RoutingError> {
-        // TODO - replace this hard-coded value
-        let min_section_size = 8;
+        // If we're not in a test environment where we might want to manually seed the crypto RNG
+        // then seed randomly.
+        #[cfg(not(feature = "use-mock-crust"))]
         rust_sodium::init(); // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing with a restriction to become a full node
         let mut event_buffer = EventBuf::new();
-        let (action_sender, mut machine) =
-            Self::make_state_machine(keys, min_section_size, &mut event_buffer, config);
-
-        for ev in event_buffer.take_all() {
-            event_sender.send(ev)?;
-        }
+        let machine = Self::make_state_machine(keys, min_section_size, &mut event_buffer, config);
 
         let (tx, rx) = channel();
-
-        let raii_joiner = thread::named("Client thread", move || {
-            // Gather events from the state machine's event loop and proxy them over the
-            // event_sender channel.
-            while Ok(()) == machine.step(&mut event_buffer) {
-                for ev in event_buffer.take_all() {
-                    // If sending the event fails, terminate this thread.
-                    if event_sender.send(ev).is_err() {
-                        return;
-                    }
-                }
-            }
-            // When there are no more events to process, terminate this thread.
-        });
 
         Ok(Client {
             _interface_result_tx: tx,
             _interface_result_rx: rx,
-            action_sender: action_sender,
-            _raii_joiner: raii_joiner,
+            machine: machine,
+            event_buffer: event_buffer,
         })
     }
 
@@ -119,7 +87,7 @@ impl Client {
                           min_section_size: usize,
                           outbox: &mut EventBox,
                           config: Option<Config>)
-                          -> (RoutingActionSender, StateMachine) {
+                          -> StateMachine {
         let cache = Box::new(NullCache);
         let full_id = keys.unwrap_or_else(FullId::new);
 
@@ -376,27 +344,8 @@ impl Client {
     }
 
     /// Returns the name of this node.
-    pub fn name(&self) -> Result<XorName, InterfaceError> {
-        let (result_tx, result_rx) = channel();
-        self.action_sender.send(Action::Name { result_tx: result_tx })?;
-
-        self.receive_action_result(&result_rx)
-    }
-
-    /// Returns the `crust::Config` associated with the `crust::Service` (if any).
-    #[cfg(feature = "use-mock-crust")]
-    pub fn bootstrap_config(&self) -> BootstrapConfig {
-        self.machine.borrow().bootstrap_config().unwrap_or_else(BootstrapConfig::default)
-    }
-
-    /// Returns the `crust::Config` associated with the `crust::Service` (if any).
-    #[cfg(not(feature = "use-mock-crust"))]
-    pub fn bootstrap_config(&self) -> BootstrapConfig {
-        let (tx, rx) = channel();
-        if self.action_sender.send(Action::Config { result_tx: tx }).is_err() {
-            return BootstrapConfig::default();
-        }
-        rx.recv().unwrap_or_else(|_| BootstrapConfig::default())
+    pub fn name(&self) -> Result<XorName, RoutingError> {
+        self.machine.name().ok_or(RoutingError::Terminated)
     }
 
     // TODO: uncomment
@@ -416,90 +365,51 @@ impl Client {
         self.action_sender.send(action)?;
         self.receive_action_result(&self.interface_result_rx)?
     }
-    */
-
-
-
-
-
-
-
-
 
     fn receive_action_result<T>(&self, rx: &Receiver<T>) -> Result<T, InterfaceError> {
-        // If we're running with mock_crust, then the state machine needs to be stepped
-        // manually in order to process the action we just sent it.
-        #[cfg(feature = "use-mock-crust")]
-        assert!(self.poll());
-
         Ok(rx.recv()?)
     }
+    */
 }
 
 #[cfg(feature = "use-mock-crust")]
 impl Client {
-    /// Create a new `Client` for unit testing.
-    pub fn new(keys: Option<FullId>,
-               min_section_size: usize,
-               config: Option<Config>)
-               -> Result<Client, RoutingError> {
-        // start the handler for routing with a restriction to become a full node
-        let mut event_buffer = EventBuf::new();
-
-        let (action_sender, machine) =
-            Self::make_state_machine(keys, min_section_size, &mut event_buffer, config);
-
-        let (tx, rx) = channel();
-
-        Ok(Client {
-            _interface_result_tx: tx,
-            _interface_result_rx: rx,
-            action_sender: action_sender,
-            machine: RefCell::new(machine),
-            event_buffer: RefCell::new(event_buffer),
-        })
-    }
-
-    /// Get the next event in a non-blocking manner.
-    ///
-    /// Either reads from the internal buffer, or prompts a state machine step.
-    pub fn try_next_ev(&self) -> Result<Event, TryRecvError> {
-        if let Some(cached_ev) = self.event_buffer.borrow_mut().take_first() {
-            return Ok(cached_ev);
-        }
-        self.try_step()?;
-        self.event_buffer.borrow_mut().take_first().ok_or(TryRecvError::Empty)
-    }
-
-    /// Process all inbound events and buffer any produced events on the internal buffer.
-    pub fn poll(&self) -> bool {
-        let mut result = false;
-        while Ok(()) == self.try_step() {
-            result = true;
-        }
-        result
-    }
-
-    /// Step the underlying state machine if there are any events for it to process.
-    fn try_step(&self) -> Result<(), TryRecvError> {
-        self.machine.borrow_mut().try_step(&mut *self.event_buffer.borrow_mut())
-    }
-
     /// Resend all unacknowledged messages.
-    pub fn resend_unacknowledged(&self) -> bool {
-        self.machine.borrow_mut().current_mut().resend_unacknowledged()
+    pub fn resend_unacknowledged(&mut self) -> bool {
+        self.machine.current_mut().resend_unacknowledged()
     }
 
     /// Are there any unacknowledged messages?
     pub fn has_unacknowledged(&self) -> bool {
-        self.machine.borrow().current().has_unacknowledged()
+        self.machine.current().has_unacknowledged()
+    }
+
+    /// Returns the `crust::Config` associated with the `crust::Service` (if any).
+    pub fn bootstrap_config(&self) -> BootstrapConfig {
+        self.machine.bootstrap_config().unwrap_or_else(BootstrapConfig::default)
+    }
+}
+
+impl EventStepper for Client {
+    type Item = Event;
+
+    fn produce_events(&mut self) -> Result<(), RecvError> {
+        self.machine.step(&mut self.event_buffer)
+    }
+
+    fn try_produce_events(&mut self) -> Result<(), TryRecvError> {
+        self.machine.try_step(&mut self.event_buffer)
+    }
+
+    fn pop_item(&mut self) -> Option<Event> {
+        self.event_buffer.take_first()
     }
 }
 
 impl Drop for Client {
     fn drop(&mut self) {
-        if let Err(err) = self.action_sender.send(Action::Terminate) {
-            debug!("Error {:?} sending event to Core", err);
-        }
+        self.poll();
+        let _ = self.machine.current_mut().handle_action(Action::Terminate, &mut self.event_buffer);
+        let _ = self.event_buffer.take_all();
     }
 }

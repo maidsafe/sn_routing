@@ -31,16 +31,11 @@
 #![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
          missing_debug_implementations, variant_size_differences)]
 
-// extern crate itertools;
-#[macro_use]
-extern crate log;
 #[cfg_attr(feature="cargo-clippy", allow(useless_attribute))]
 #[allow(unused_extern_crates)]
 extern crate maidsafe_utilities;
 // extern crate rand;
 // extern crate routing;
-#[macro_use]
-extern crate unwrap;
 
 // This module is a driver and defines macros. See `mock_crust` modules for
 // tests.

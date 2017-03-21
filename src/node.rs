@@ -42,7 +42,7 @@ use std::collections::{BTreeMap, BTreeSet};
 #[cfg(feature = "use-mock-crust")]
 use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::{Receiver, RecvError, Sender, TryRecvError, channel};
-use types::{MessageId, RoutingActionSender};
+use types::MessageId;
 use xor_name::XorName;
 
 // Helper macro to implement request sending methods.
@@ -124,8 +124,7 @@ impl NodeBuilder {
         let mut ev_buffer = EventBuf::new();
 
         // start the handler for routing without a restriction to become a full node
-        let (_, machine) = self.make_state_machine(min_section_size, &mut ev_buffer);
-
+        let machine = self.make_state_machine(min_section_size, &mut ev_buffer);
         let (tx, rx) = channel();
 
         Ok(Node {
@@ -141,7 +140,7 @@ impl NodeBuilder {
     fn make_state_machine(self,
                           min_section_size: usize,
                           outbox: &mut EventBox)
-                          -> (RoutingActionSender, StateMachine) {
+                          -> StateMachine {
         let full_id = FullId::new();
 
         StateMachine::new(move |crust_service, timer, outbox2| if self.first {

@@ -18,12 +18,11 @@
 use data::{EntryAction, ImmutableData, MutableData, PermissionSet, User};
 use rust_sodium::crypto::sign;
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::{self, Debug, Formatter};
 use types::MessageId as MsgId;
 use xor_name::XorName;
 
 /// Request message types
-#[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, RustcDecodable, RustcEncodable)]
 pub enum Request {
     /// Represents a refresh message sent between vaults. Vec<u8> is the message content.
     Refresh(Vec<u8>, MsgId),
@@ -254,40 +253,5 @@ impl Request {
         } else {
             false
         }
-    }
-}
-
-impl Debug for Request {
-    fn fmt(&self, _formatter: &mut Formatter) -> fmt::Result {
-        /*
-        match *self {
-            Request::Refresh(ref data, ref message_id) => {
-                write!(formatter,
-                       "Refresh({}, {:?})",
-                       utils::format_binary_array(data),
-                       message_id)
-            }
-            Request::Get(ref data_request, ref message_id) => {
-                write!(formatter, "Get({:?}, {:?})", data_request, message_id)
-            }
-            Request::Put(ref data, ref message_id) => {
-                write!(formatter, "Put({:?}, {:?})", data, message_id)
-            }
-            Request::Post(ref data, ref message_id) => {
-                write!(formatter, "Post({:?}, {:?})", data, message_id)
-            }
-            Request::Delete(ref data, ref message_id) => {
-                write!(formatter, "Delete({:?}, {:?})", data, message_id)
-            }
-            Request::Append(ref wrapper, ref message_id) => {
-                write!(formatter, "Append({:?}, {:?})", wrapper, message_id)
-            }
-            Request::GetAccountInfo(ref message_id) => {
-                write!(formatter, "GetAccountInfo({:?})", message_id)
-            }
-        }
-        */
-
-        unimplemented!()
     }
 }
