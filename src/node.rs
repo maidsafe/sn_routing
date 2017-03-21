@@ -409,12 +409,7 @@ impl Node {
 
         let transition = self.machine.current_mut().handle_action(action, &mut self.event_buffer);
         self.machine.apply_transition(transition, &mut self.event_buffer);
-
-        self.receive_action_result(&self.interface_result_rx)?
-    }
-
-    fn receive_action_result<T>(&self, rx: &Receiver<T>) -> Result<T, InterfaceError> {
-        Ok(rx.recv()?)
+        self.interface_result_rx.recv()?
     }
 }
 
