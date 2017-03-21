@@ -31,7 +31,7 @@
 #![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
          missing_debug_implementations, variant_size_differences)]
 
-#![cfg_attr(feature = "use-mock-crust", allow(unused_extern_crates))]
+#![cfg_attr(feature = "use-mock-crust", allow(unused_extern_crates, unused_imports))]
 
 #[macro_use]
 extern crate log;
