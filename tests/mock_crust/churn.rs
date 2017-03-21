@@ -137,7 +137,7 @@ fn random_churn<R: Rng>(rng: &mut R,
                 proxy += 1;
             }
             let exclude = vec![index, proxy].into_iter().collect();
-            let block_peer = gen_range_except(rng, 0, nodes.len(), &exclude);
+            let block_peer = gen_range_except(rng, 1, nodes.len(), &exclude);
             network.block_connection(nodes[index].handle.endpoint(),
                                      nodes[block_peer].handle.endpoint());
             network.block_connection(nodes[block_peer].handle.endpoint(),
