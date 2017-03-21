@@ -33,6 +33,9 @@ use std::sync::mpsc::{RecvError, TryRecvError};
 // Poll one event per node. Otherwise, all events in a single node are polled before moving on.
 const BALANCED_POLLING: bool = true;
 
+// Maximum number of times to try and poll in a loop.  This is several orders higher than the
+// anticipated upper limit for any test, and if hit is likely to indicate an infinite loop.
+const MAX_POLL_CALLS: usize = 1000;
 
 // -----  Random number generation  -----
 
@@ -263,7 +266,7 @@ impl Cache for TestCache {
 /// Process all events. Returns whether there were any events.
 pub fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
     let mut result = false;
-    loop {
+    for _ in 0..MAX_POLL_CALLS {
         let mut handled_message = false;
         if BALANCED_POLLING {
             // handle all current messages for each node in turn, then repeat (via outer loop):
@@ -277,15 +280,28 @@ pub fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
         }
         result = true;
     }
+    panic!("Polling has been called {} times.", MAX_POLL_CALLS);
 }
 
 /// Polls and processes all events, until there are no unacknowledged messages left and clearing
 /// the nodes' state triggers no new events anymore.
 pub fn poll_and_resend(nodes: &mut [TestNode], clients: &mut [TestClient]) {
-    while poll_all(nodes, clients) {
-        while resend_unacknowledged(nodes, clients) && poll_all(nodes, clients) {}
-        nodes.iter_mut().foreach(|node| node.inner.clear_state());
+    for _ in 0..MAX_POLL_CALLS {
+        if poll_all(nodes, clients) {
+            let mut call_count = 1;
+            while resend_unacknowledged(nodes, clients) && poll_all(nodes, clients) {
+                call_count += 1;
+                assert_ne!(call_count,
+                           MAX_POLL_CALLS,
+                           "Polling and resending unacknowledged has been called {} times.",
+                           MAX_POLL_CALLS);
+            }
+            nodes.iter_mut().foreach(|node| node.inner.clear_state());
+        } else {
+            return;
+        }
     }
+    panic!("Polling has been called {} times.", MAX_POLL_CALLS);
 }
 
 /// Checks each of the last `count` members of `nodes` for a `Connected` event, and removes those

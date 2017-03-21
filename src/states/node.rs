@@ -2267,10 +2267,10 @@ impl Node {
            merge_prefix.bit_count() + 1 != sender_prefix.bit_count() ||
            !merge_prefix.is_compatible(self.our_prefix()) ||
            merge_prefix.bit_count() >= self.our_prefix().bit_count() {
-            warn!("{:?} Received OwnSectionMerge with merge prefix {:?} from prefix {:?}.",
-                  self,
-                  merge_prefix,
-                  sender_prefix);
+            debug!("{:?} Received OwnSectionMerge with merge prefix {:?} from prefix {:?}.",
+                   self,
+                   merge_prefix,
+                   sender_prefix);
             return Err(RoutingError::BadAuthority);
         }
         if let Some(previous_sections) = self.merge_cache.insert(sender_prefix, sections) {
