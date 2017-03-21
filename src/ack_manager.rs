@@ -87,9 +87,7 @@ impl AckManager {
     // returns None.
     pub fn find_timed_out(&mut self, token: u64) -> Option<(UnacknowledgedMessage, Ack)> {
         let timed_out_ack = if let Some((sip_hash, _)) =
-            self.pending
-                .iter()
-                .find(|&(_, unacked_msg)| unacked_msg.timer_token == token) {
+            self.pending.iter().find(|&(_, unacked_msg)| unacked_msg.timer_token == token) {
             *sip_hash
         } else {
             return None;

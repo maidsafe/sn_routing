@@ -15,11 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::{create_connected_nodes_until_split, poll_and_resend, verify_invariant_for_all_nodes};
 use rand::Rng;
 use routing::{Event, EventStream, Prefix, XOR_NAME_LEN, XorName};
 use routing::mock_crust::Network;
 use std::collections::{BTreeMap, BTreeSet};
-use super::{create_connected_nodes_until_split, poll_and_resend, verify_invariant_for_all_nodes};
 
 // See docs for `create_connected_nodes_with_cache_until_split` for details on `prefix_lengths`.
 fn merge(prefix_lengths: Vec<usize>) {
@@ -118,8 +118,8 @@ fn concurrent_merge() {
     // `min_section_size`.
     for (prefix, len) in &mut section_map {
         while *len >= min_section_size {
-            let index = unwrap!(nodes.iter()
-                .position(|node| node.routing_table().our_prefix() == prefix));
+            let index =
+                unwrap!(nodes.iter().position(|node| node.routing_table().our_prefix() == prefix));
             let removed = nodes.remove(index);
             drop(removed);
             *len -= 1;

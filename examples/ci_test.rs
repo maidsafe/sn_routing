@@ -148,7 +148,8 @@ mod unnamed {
                     let wait_for = wait_range.ind_sample(&mut rng);
 
                     while !*stop_condition && !wait_timed_out {
-                        let wake_up_result = unwrap!(condvar.wait_timeout(stop_condition,
+                        let wake_up_result =
+                            unwrap!(condvar.wait_timeout(stop_condition,
                                                          Duration::from_secs(wait_for)));
                         stop_condition = wake_up_result.0;
                         wait_timed_out = wake_up_result.1.timed_out();

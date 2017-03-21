@@ -74,7 +74,11 @@ pub fn debug_format(input: String) -> String {
     if input.len() <= 20 {
         return input;
     }
-    input.chars().take(8).chain("...".chars()).chain(input.chars().skip(input.len() - 8)).collect()
+    input.chars()
+        .take(8)
+        .chain("...".chars())
+        .chain(input.chars().skip(input.len() - 8))
+        .collect()
 }
 
 macro_rules! impl_xorable_for_array {
@@ -298,8 +302,8 @@ impl_xorable!(u8);
 
 #[cfg(test)]
 mod tests {
-    use std::cmp::Ordering;
     use super::*;
+    use std::cmp::Ordering;
 
     #[test]
     fn common_prefix() {

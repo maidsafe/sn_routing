@@ -15,13 +15,13 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::MIN_SECTION_SIZE;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-use routing::{Authority, Data, DataIdentifier, Event, EventStream, MessageId, Node, Prefix,
-              Request, Response, XorName};
+use routing::{Authority, Data, DataIdentifier, Event, EventStream, MessageId, Node, Prefix, Request,
+              Response, XorName};
 use std::collections::HashMap;
 use std::time::Duration;
-use super::MIN_SECTION_SIZE;
 
 /// A simple example node implementation for a network based on the Routing library.
 pub struct ExampleNode {
@@ -175,8 +175,7 @@ impl ExampleNode {
                        self.get_debug_name(),
                        data.name(),
                        data);
-                let _ = self.node
-                    .send_put_success(dst, src, data.identifier(), id);
+                let _ = self.node.send_put_success(dst, src, data.identifier(), id);
                 let _ = self.db.insert(data.identifier(), data);
             }
             Authority::ClientManager(_) => {

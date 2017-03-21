@@ -21,14 +21,14 @@ mod priv_appendable_data;
 mod pub_appendable_data;
 mod structured_data;
 
-use error::RoutingError;
-use rust_sodium::crypto::sign::{self, PublicKey, Signature};
 pub use self::append_types::{AppendWrapper, AppendedData, Filter};
 pub use self::immutable_data::{ImmutableData, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES};
 pub use self::priv_appendable_data::{MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES, PrivAppendableData,
                                      PrivAppendedData};
 pub use self::pub_appendable_data::{MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES, PubAppendableData};
 pub use self::structured_data::{MAX_STRUCTURED_DATA_SIZE_IN_BYTES, StructuredData};
+use error::RoutingError;
+use rust_sodium::crypto::sign::{self, PublicKey, Signature};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
@@ -48,8 +48,9 @@ pub fn verify_signatures(owners: &BTreeSet<PublicKey>,
     }
 
     // Refuse if there is any invalid signature
-    if !signatures.iter()
-        .all(|(pub_key, sig)| owners.contains(pub_key) && verify_detached(sig, data, pub_key)) {
+    if !signatures.iter().all(|(pub_key, sig)| {
+                                  owners.contains(pub_key) && verify_detached(sig, data, pub_key)
+                              }) {
         return Err(RoutingError::FailedSignature);
     }
     Ok(())
@@ -144,10 +145,10 @@ impl DataIdentifier {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use rand;
     use rust_sodium::crypto::hash::sha256;
     use std::collections::BTreeSet;
-    use super::*;
     use xor_name::XorName;
 
     #[test]

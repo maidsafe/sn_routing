@@ -24,15 +24,15 @@ mod requests;
 mod tunnel;
 mod utils;
 
-use routing::{Event, EventStream, Prefix, XOR_NAME_LEN, XorName};
-use routing::mock_crust::{Config, Endpoint, Network};
-use routing::mock_crust::crust::PeerId;
 pub use self::utils::{Nodes, TestClient, TestNode, add_connected_nodes_until_split,
                       create_connected_clients, create_connected_nodes,
                       create_connected_nodes_until_split, gen_bytes, gen_immutable_data,
                       gen_range_except, poll_all, poll_and_resend,
                       remove_nodes_which_failed_to_connect, sort_nodes_by_distance_to,
                       verify_invariant_for_all_nodes};
+use routing::{Event, EventStream, Prefix, XOR_NAME_LEN, XorName};
+use routing::mock_crust::{Config, Endpoint, Network};
+use routing::mock_crust::crust::PeerId;
 
 // -----  Miscellaneous tests below  -----
 
@@ -168,8 +168,8 @@ fn simultaneous_joining_nodes() {
 fn check_close_names_for_min_section_size_nodes() {
     let min_section_size = 8;
     let nodes = create_connected_nodes(&Network::new(min_section_size, None), min_section_size);
-    let close_sections_complete = nodes.iter()
-        .all(|n| nodes.iter().all(|m| m.close_names().contains(&n.name())));
+    let close_sections_complete =
+        nodes.iter().all(|n| nodes.iter().all(|m| m.close_names().contains(&n.name())));
     assert!(close_sections_complete);
 }
 
@@ -181,7 +181,10 @@ fn whitelist() {
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
 
     for node in &mut *nodes {
-        node.handle.0.borrow_mut().whitelist_peer(PeerId(min_section_size));
+        node.handle
+            .0
+            .borrow_mut()
+            .whitelist_peer(PeerId(min_section_size));
     }
     // The next node has peer ID `min_section_size`: It should be able to join.
     nodes.push(TestNode::builder(&network).config(config.clone()).create());

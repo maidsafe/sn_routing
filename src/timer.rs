@@ -63,7 +63,10 @@ mod implementation {
             self.next_token = token.wrapping_add(1);
             let &(ref mutex, ref cond_var) = &*self.detail_and_cond_var;
             let mut detail = mutex.lock().expect("Failed to lock.");
-            detail.deadlines.entry(Instant::now() + duration).or_insert_with(Vec::new).push(token);
+            detail.deadlines
+                .entry(Instant::now() + duration)
+                .or_insert_with(Vec::new)
+                .push(token);
             cond_var.notify_one();
             token
         }
@@ -94,8 +97,11 @@ mod implementation {
                     detail = cond_var.wait(detail).expect("Failed to lock.");
                 } else {
                     // Safe to call `expect()` as `deadlines` has at least one entry.
-                    let nearest =
-                        detail.deadlines.keys().next().cloned().expect("Bug in `BTreeMap`.");
+                    let nearest = detail.deadlines
+                        .keys()
+                        .next()
+                        .cloned()
+                        .expect("Bug in `BTreeMap`.");
                     let duration = nearest - now;
                     detail = cond_var.wait_timeout(detail, duration).expect("Failed to lock.").0;
                 }
@@ -114,12 +120,12 @@ mod implementation {
 
     #[cfg(test)]
     mod tests {
+        use super::*;
         use action::Action;
         use maidsafe_utilities::event_sender::MaidSafeEventCategory;
         use std::sync::mpsc;
         use std::thread;
         use std::time::{Duration, Instant};
-        use super::*;
         use types::RoutingActionSender;
 
         #[test]

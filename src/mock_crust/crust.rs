@@ -16,14 +16,14 @@
 // relating to use of the SAFE Network Software.
 
 
+
+use super::support::{self, Endpoint, Network, ServiceHandle, ServiceImpl};
 use maidsafe_utilities::event_sender;
 use std::{fmt, io, thread};
 use std::cell::{RefCell, RefMut};
 use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::rc::Rc;
-
-use super::support::{self, Endpoint, Network, ServiceHandle, ServiceImpl};
 
 /// TCP listener port
 pub const LISTENER_PORT: u16 = 5485;
@@ -43,7 +43,10 @@ impl Service {
     pub fn with_handle(handle: &ServiceHandle,
                        event_sender: CrustEventSender)
                        -> Result<Self, CrustError> {
-        let network = handle.0.borrow().network.clone();
+        let network = handle.0
+            .borrow()
+            .network
+            .clone();
         let service = Service(handle.0.clone(), network);
         service.lock_and_poll(|imp| imp.start(event_sender));
 

@@ -15,11 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::{create_connected_clients, create_connected_nodes, gen_bytes, gen_immutable_data,
+            poll_all};
 use routing::{Authority, Data, DataIdentifier, Event, EventStream, ImmutableData, MessageId,
               Request, Response};
 use routing::mock_crust::Network;
-use super::{create_connected_clients, create_connected_nodes, gen_bytes, gen_immutable_data,
-            poll_all};
 
 #[test]
 fn successful_put_request() {
@@ -33,10 +33,7 @@ fn successful_put_request() {
     let data = gen_immutable_data(&mut rng, 1024);
     let message_id = MessageId::new();
 
-    assert!(clients[0]
-        .inner
-        .send_put_request(dst, data.clone(), message_id)
-        .is_ok());
+    assert!(clients[0].inner.send_put_request(dst, data.clone(), message_id).is_ok());
 
     let _ = poll_all(&mut nodes, &mut clients);
 
@@ -73,10 +70,7 @@ fn successful_get_request() {
     let data_request = data.identifier();
     let message_id = MessageId::new();
 
-    assert!(clients[0]
-        .inner
-        .send_get_request(dst, data_request, message_id)
-        .is_ok());
+    assert!(clients[0].inner.send_get_request(dst, data_request, message_id).is_ok());
 
     let _ = poll_all(&mut nodes, &mut clients);
 
@@ -88,8 +82,7 @@ fn successful_get_request() {
                 Ok(Event::Request { request: Request::Get(ref request, id), src, dst }) => {
                     request_received_count += 1;
                     if data_request == *request && message_id == id {
-                        if let Err(err) = node.inner
-                            .send_get_success(dst, src, data.clone(), id) {
+                        if let Err(err) = node.inner.send_get_success(dst, src, data.clone(), id) {
                             trace!("Failed to send GetSuccess response: {:?}", err);
                         }
                         break;
@@ -142,10 +135,7 @@ fn failed_get_request() {
     let data_request = data.identifier();
     let message_id = MessageId::new();
 
-    assert!(clients[0]
-        .inner
-        .send_get_request(dst, data_request, message_id)
-        .is_ok());
+    assert!(clients[0].inner.send_get_request(dst, data_request, message_id).is_ok());
 
     let _ = poll_all(&mut nodes, &mut clients);
 
@@ -157,8 +147,11 @@ fn failed_get_request() {
                 Ok(Event::Request { request: Request::Get(ref data_id, ref id), src, dst }) => {
                     request_received_count += 1;
                     if data_request == *data_id && message_id == *id {
-                        if let Err(err) = node.inner
-                            .send_get_failure(dst, src, *data_id, vec![], *id) {
+                        if let Err(err) = node.inner.send_get_failure(dst,
+                                                                      src,
+                                                                      *data_id,
+                                                                      vec![],
+                                                                      *id) {
                             trace!("Failed to send GetFailure response: {:?}", err);
                         }
                         break;
@@ -209,10 +202,7 @@ fn disconnect_on_get_request() {
     let data_request = DataIdentifier::Immutable(*data.name());
     let message_id = MessageId::new();
 
-    assert!(clients[0]
-        .inner
-        .send_get_request(dst, data_request.clone(), message_id)
-        .is_ok());
+    assert!(clients[0].inner.send_get_request(dst, data_request.clone(), message_id).is_ok());
 
     let _ = poll_all(&mut nodes, &mut clients);
 
@@ -224,8 +214,7 @@ fn disconnect_on_get_request() {
                 Ok(Event::Request { request: Request::Get(ref request, ref id), src, dst }) => {
                     request_received_count += 1;
                     if data_request == *request && message_id == *id {
-                        if let Err(err) = node.inner
-                            .send_get_success(dst, src, data.clone(), *id) {
+                        if let Err(err) = node.inner.send_get_success(dst, src, data.clone(), *id) {
                             trace!("Failed to send GetSuccess response: {:?}", err);
                         }
                         break;
@@ -240,8 +229,24 @@ fn disconnect_on_get_request() {
     // TODO: Assert a quorum here.
     assert!(2 * request_received_count > min_section_size);
 
-    clients[0].handle.0.borrow_mut().disconnect(&nodes[0].handle.0.borrow().peer_id);
-    nodes[0].handle.0.borrow_mut().disconnect(&clients[0].handle.0.borrow().peer_id);
+    clients[0]
+        .handle
+        .0
+        .borrow_mut()
+        .disconnect(&nodes[0]
+                         .handle
+                         .0
+                         .borrow()
+                         .peer_id);
+    nodes[0]
+        .handle
+        .0
+        .borrow_mut()
+        .disconnect(&clients[0]
+                         .handle
+                         .0
+                         .borrow()
+                         .peer_id);
 
     let _ = poll_all(&mut nodes, &mut clients);
 

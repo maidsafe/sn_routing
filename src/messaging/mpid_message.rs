@@ -19,10 +19,10 @@
 /// bytes).
 pub const MAX_BODY_SIZE: usize = 102400 - 512 - super::MAX_HEADER_METADATA_SIZE;
 
+use super::{Error, MpidHeader};
 use maidsafe_utilities::serialisation::serialise;
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
 use std::fmt::{self, Debug, Formatter};
-use super::{Error, MpidHeader};
 use utils;
 use xor_name::XorName;
 
@@ -74,10 +74,10 @@ impl MpidMessage {
 
         let recipient_and_body = serialise(&detail)?;
         Ok(MpidMessage {
-            header: header,
-            detail: detail,
-            signature: sign::sign_detached(&recipient_and_body, secret_key),
-        })
+               header: header,
+               detail: detail,
+               signature: sign::sign_detached(&recipient_and_body, secret_key),
+           })
     }
 
     /// Getter for `MpidHeader` member, created when calling `new()`.
@@ -127,10 +127,10 @@ impl Debug for MpidMessage {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use messaging;
     use rand;
     use rust_sodium::crypto::sign;
-    use super::*;
     use xor_name::XorName;
 
     #[test]
@@ -162,7 +162,7 @@ mod tests {
                                  recipient.clone(),
                                  body.clone(),
                                  &secret_key)
-            .is_err());
+                        .is_err());
         let _ = body.pop();
 
         // Check verify function with a valid and invalid key

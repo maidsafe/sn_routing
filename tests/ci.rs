@@ -217,9 +217,10 @@ fn wait_for_nodes_to_connect(nodes: &mut [TestNode],
                 connection_counts[index] += 1;
 
                 let k = nodes.len();
-                let all_events_received = (0..k)
-                    .map(|i| connection_counts[i])
-                    .all(|n| n >= k - 1 || n >= min_section_size);
+                let all_events_received =
+                    (0..k).map(|i| connection_counts[i]).all(|n| {
+                                                                 n >= k - 1 || n >= min_section_size
+                                                             });
                 if all_events_received {
                     break;
                 }
@@ -268,7 +269,7 @@ fn gen_structured_data<R: Rng>(full_id: &FullId, rng: &mut R) -> Data {
                                      0,
                                      rng.gen_iter().take(10).collect(),
                                      owner)
-        .expect("Cannot create structured data for test");
+            .expect("Cannot create structured data for test");
     let _ = sd.add_signature(&(owner_pubkey, full_id.signing_private_key().clone()));
     Data::Structured(sd)
 }
@@ -403,15 +404,18 @@ fn core() {
                                                dst: Authority::ClientManager(name) }) => {
                         let src = Authority::ClientManager(name);
                         let dst = Authority::NaeManager(*data.name());
-                        unwrap!(nodes[index]
-                            .node
-                            .send_put_request(src, dst, data.clone(), id.clone()));
+                        unwrap!(nodes[index].node.send_put_request(src,
+                                                                   dst,
+                                                                   data.clone(),
+                                                                   id.clone()));
                     }
                     TestEvent(index, Event::Request { request, src, dst }) => {
                         if let Request::Put(data, id) = request {
-                            unwrap!(nodes[index]
-                                .node
-                                .send_put_failure(dst, src, data.identifier(), vec![], id));
+                            unwrap!(nodes[index].node.send_put_failure(dst,
+                                                                       src,
+                                                                       data.identifier(),
+                                                                       vec![],
+                                                                       id));
                         }
                     }
                     TestEvent(index,
@@ -502,10 +506,10 @@ fn core() {
             match test_event {
                 TestEvent(index, Event::Connected) if index == client.index => {
                     assert!(client.client
-                        .send_put_request(Authority::ClientManager(*client.name()),
-                                          data.clone(),
-                                          MessageId::new())
-                        .is_ok());
+                                .send_put_request(Authority::ClientManager(*client.name()),
+                                                  data.clone(),
+                                                  MessageId::new())
+                                .is_ok());
                 }
                 TestEvent(index,
                           Event::Request { request: Request::Put(data, id),
@@ -513,16 +517,16 @@ fn core() {
                                            dst: Authority::ClientManager(name) }) => {
                     let src = Authority::ClientManager(name);
                     let dst = Authority::NaeManager(*data.name());
-                    unwrap!(nodes[index]
-                        .node
-                        .send_put_request(src, dst, data.clone(), id.clone()));
+                    unwrap!(nodes[index].node.send_put_request(src, dst, data.clone(), id.clone()));
                 }
                 TestEvent(index, Event::Request { request, src, dst }) => {
                     if let Request::Put(data, id) = request {
                         if 2 * (index + 1) < min_section_size {
-                            unwrap!(nodes[index]
-                                .node
-                                .send_put_failure(dst, src, data.identifier(), vec![], id));
+                            unwrap!(nodes[index].node.send_put_failure(dst,
+                                                                       src,
+                                                                       data.identifier(),
+                                                                       vec![],
+                                                                       id));
                         }
                     }
                 }
@@ -561,9 +565,7 @@ fn core() {
                         // A node received request from the client. Reply with a success.
                         let data_id = data.identifier();
                         if let Request::Put(_, id) = request {
-                            unwrap!(nodes[index]
-                                .node
-                                .send_put_success(dst, src, data_id, id));
+                            unwrap!(nodes[index].node.send_put_success(dst, src, data_id, id));
                         }
                     }
                     TestEvent(index,

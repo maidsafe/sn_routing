@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::{AppendWrapper, AppendedData, DataIdentifier, Filter, NO_OWNER_PUB_KEY};
 use error::RoutingError;
 use maidsafe_utilities::serialisation::{deserialise, serialise, serialised_size};
 use rust_sodium::crypto::{box_, sealedbox};
@@ -22,7 +23,6 @@ use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
 use rustc_serialize::{Decodable, Decoder};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
-use super::{AppendWrapper, AppendedData, DataIdentifier, Filter, NO_OWNER_PUB_KEY};
 use xor_name::XorName;
 
 /// Maximum allowed size for a private appendable data to grow to
@@ -108,15 +108,15 @@ impl PrivAppendableData {
         }
 
         Ok(PrivAppendableData {
-            name: name,
-            version: version,
-            filter: filter,
-            encrypt_key: encrypt_key,
-            deleted_data: deleted_data,
-            owners: owners,
-            signatures: BTreeMap::new(),
-            data: BTreeSet::new(),
-        })
+               name: name,
+               version: version,
+               filter: filter,
+               encrypt_key: encrypt_key,
+               deleted_data: deleted_data,
+               owners: owners,
+               signatures: BTreeMap::new(),
+               data: BTreeSet::new(),
+           })
     }
 
     /// Updates this data item with the given updated version if the update is valid, otherwise
@@ -172,13 +172,12 @@ impl PrivAppendableData {
     /// recently been deleted.
     pub fn append(&mut self, priv_appended_data: PrivAppendedData, sign_key: &PublicKey) -> bool {
         if match self.filter {
-            Filter::WhiteList(ref white_list) => !white_list.contains(sign_key),
-            Filter::BlackList(ref black_list) => black_list.contains(sign_key),
-        } || self.deleted_data.contains(&priv_appended_data) {
+               Filter::WhiteList(ref white_list) => !white_list.contains(sign_key),
+               Filter::BlackList(ref black_list) => black_list.contains(sign_key),
+           } || self.deleted_data.contains(&priv_appended_data) {
             return false;
         }
-        self.data
-            .insert(priv_appended_data)
+        self.data.insert(priv_appended_data)
     }
 
     /// Inserts the given wrapper item, or returns `false` if cannot
@@ -207,7 +206,10 @@ impl PrivAppendableData {
         // handling is OK
         let sd = SerialisablePrivAppendableData {
             name: self.name,
-            version: self.version.to_string().as_bytes().to_vec(),
+            version: self.version
+                .to_string()
+                .as_bytes()
+                .to_vec(),
             filter: &self.filter,
             encrypt_key: &self.encrypt_key,
             owners: &self.owners,
@@ -287,12 +289,12 @@ struct SerialisablePrivAppendableData<'a> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use data::{self, AppendWrapper, AppendedData, DataIdentifier, Filter};
     use maidsafe_utilities::serialisation::serialise;
     use rand;
     use rust_sodium::crypto::{box_, sign};
     use std::collections::BTreeSet;
-    use super::*;
     use xor_name::XorName;
 
     #[test]
@@ -327,12 +329,12 @@ mod tests {
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
                                                 priv_appendable_data.get_signatures())
-                    .is_err());
+                                .is_err());
                 assert!(priv_appendable_data.add_signature(&keys).is_ok());
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
                                                 priv_appendable_data.get_signatures())
-                    .is_ok());
+                                .is_ok());
             }
             Err(error) => panic!("Error: {:?}", error),
         }
@@ -361,7 +363,7 @@ mod tests {
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
                                                 priv_appendable_data.get_signatures())
-                    .is_err());
+                                .is_err());
             }
             Err(error) => panic!("Error: {:?}", error),
         }
@@ -375,12 +377,13 @@ mod tests {
         let white_key = sign::gen_keypair();
         let black_key = sign::gen_keypair();
 
-        let mut priv_appendable_data = unwrap!(PrivAppendableData::new(rand::random(),
-                                            0,
-                                            BTreeSet::new(),
-                                            BTreeSet::new(),
-                                            Filter::white_list(vec![white_key.0]),
-                                            encrypt_keys.0));
+        let data = PrivAppendableData::new(rand::random(),
+                                           0,
+                                           BTreeSet::new(),
+                                           BTreeSet::new(),
+                                           Filter::white_list(vec![white_key.0]),
+                                           encrypt_keys.0);
+        let mut priv_appendable_data = unwrap!(data);
 
         let pointer = DataIdentifier::Structured(rand::random(), 10000);
         let appended_data = unwrap!(AppendedData::new(pointer, keys.0, &keys.1));
@@ -398,12 +401,13 @@ mod tests {
         let white_key = sign::gen_keypair();
         let black_key = sign::gen_keypair();
 
-        let mut priv_appendable_data = unwrap!(PrivAppendableData::new(rand::random(),
-                                            0,
-                                            BTreeSet::new(),
-                                            BTreeSet::new(),
-                                            Filter::black_list(vec![black_key.0]),
-                                            encrypt_keys.0));
+        let data = PrivAppendableData::new(rand::random(),
+                                           0,
+                                           BTreeSet::new(),
+                                           BTreeSet::new(),
+                                           Filter::black_list(vec![black_key.0]),
+                                           encrypt_keys.0);
+        let mut priv_appendable_data = unwrap!(data);
 
         let pointer = DataIdentifier::Structured(rand::random(), 10000);
         let appended_data = unwrap!(AppendedData::new(pointer, keys.0, &keys.1));
@@ -419,12 +423,13 @@ mod tests {
         let encrypt_keys = box_::gen_keypair();
         let name: XorName = rand::random();
 
-        let mut priv_appendable_data = unwrap!(PrivAppendableData::new(name,
-                                                                       0,
-                                                                       BTreeSet::new(),
-                                                                       BTreeSet::new(),
-                                                                       Filter::black_list(None),
-                                                                       encrypt_keys.0));
+        let data = PrivAppendableData::new(name,
+                                           0,
+                                           BTreeSet::new(),
+                                           BTreeSet::new(),
+                                           Filter::black_list(None),
+                                           encrypt_keys.0);
+        let mut priv_appendable_data = unwrap!(data);
 
         let pointer = DataIdentifier::Structured(rand::random(), 10000);
         let appended_data = unwrap!(AppendedData::new(pointer, keys.0, &keys.1));
@@ -454,27 +459,30 @@ mod tests {
         let name: XorName = rand::random();
         let encrypt_keys = box_::gen_keypair();
 
-        let mut ad = unwrap!(PrivAppendableData::new(name,
-                                                     0,
-                                                     owner,
-                                                     BTreeSet::new(),
-                                                     Filter::black_list(None),
-                                                     encrypt_keys.0));
-        let mut ad_new = unwrap!(PrivAppendableData::new(name,
-                                                         1,
-                                                         new_owner.clone(),
-                                                         BTreeSet::new(),
-                                                         Filter::black_list(None),
-                                                         encrypt_keys.0));
+        let mut data = PrivAppendableData::new(name,
+                                               0,
+                                               owner,
+                                               BTreeSet::new(),
+                                               Filter::black_list(None),
+                                               encrypt_keys.0);
+        let mut ad = unwrap!(data);
+        data = PrivAppendableData::new(name,
+                                       1,
+                                       new_owner.clone(),
+                                       BTreeSet::new(),
+                                       Filter::black_list(None),
+                                       encrypt_keys.0);
+        let mut ad_new = unwrap!(data);
         assert!(ad_new.add_signature(&keys).is_ok());
         assert!(ad.update_with_other(ad_new).is_ok());
 
-        let mut ad_fail = unwrap!(PrivAppendableData::new(name,
-                                                          2,
-                                                          new_owner.clone(),
-                                                          BTreeSet::new(),
-                                                          Filter::black_list(None),
-                                                          encrypt_keys.0));
+        data = PrivAppendableData::new(name,
+                                       2,
+                                       new_owner.clone(),
+                                       BTreeSet::new(),
+                                       Filter::black_list(None),
+                                       encrypt_keys.0);
+        let mut ad_fail = unwrap!(data);
         assert!(ad_fail.add_signature(&keys).is_ok());
         assert!(ad.update_with_other(ad_fail).is_err());
     }

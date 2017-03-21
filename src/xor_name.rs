@@ -65,7 +65,10 @@ impl XorName {
 
     /// Returns the number of bits in which `self` differs from `other`.
     pub fn count_differing_bits(&self, other: &XorName) -> u32 {
-        self.0.iter().zip(other.0.iter()).fold(0, |acc, (a, b)| acc + (a ^ b).count_ones())
+        self.0
+            .iter()
+            .zip(other.0.iter())
+            .fold(0, |acc, (a, b)| acc + (a ^ b).count_ones())
     }
 
     /// Hex-decode a `XorName` from a `&str`.
@@ -246,11 +249,11 @@ impl Decodable for XorName {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use maidsafe_utilities::serialisation::{deserialise, serialise};
     use rand;
     use routing_table::Xorable;
     use std::cmp::Ordering;
-    use super::*;
 
     #[test]
     fn serialisation_xor_name() {

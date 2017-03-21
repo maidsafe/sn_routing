@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::Base;
 use ack_manager::{ACK_TIMEOUT_SECS, Ack, AckManager, UnacknowledgedMessage};
 use crust::PeerId;
 use error::RoutingError;
@@ -24,7 +25,6 @@ use routing_message_filter::RoutingMessageFilter;
 use routing_table::Authority;
 use std::collections::BTreeSet;
 use std::time::Duration;
-use super::Base;
 use timer::Timer;
 use xor_name::XorName;
 

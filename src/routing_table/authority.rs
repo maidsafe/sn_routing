@@ -15,10 +15,10 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::{Prefix, Xorable};
 use crust::PeerId;
 use rust_sodium::crypto::{hash, sign};
 use std::fmt::{self, Binary, Debug, Display, Formatter};
-use super::{Prefix, Xorable};
 
 /// An entity that can act as a source or destination of a message.
 ///

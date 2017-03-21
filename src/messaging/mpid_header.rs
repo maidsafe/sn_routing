@@ -19,12 +19,12 @@
 /// bytes).
 pub const MAX_HEADER_METADATA_SIZE: usize = 128; // bytes
 
+use super::{Error, GUID_SIZE};
 use maidsafe_utilities::serialisation::serialise;
 use rand::{self, Rng};
 use rust_sodium::crypto::hash::sha256;
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
 use std::fmt::{self, Debug, Formatter};
-use super::{Error, GUID_SIZE};
 use utils;
 use xor_name::XorName;
 
@@ -75,9 +75,9 @@ impl MpidHeader {
 
         let encoded = serialise(&detail)?;
         Ok(MpidHeader {
-            detail: detail,
-            signature: sign::sign_detached(&encoded, secret_key),
-        })
+               detail: detail,
+               signature: sign::sign_detached(&encoded, secret_key),
+           })
     }
 
     /// The name of the original creator of the message.
@@ -129,10 +129,10 @@ impl Debug for MpidHeader {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use messaging;
     use rand;
     use rust_sodium::crypto::sign;
-    use super::*;
     use xor_name::XorName;
 
     #[test]

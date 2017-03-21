@@ -15,11 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::{TestNode, create_connected_nodes, gen_immutable_data, poll_all,
+            sort_nodes_by_distance_to};
 use routing::{Authority, Event, EventStream, MessageId, QUORUM, Response, XorName};
 use routing::mock_crust::Network;
 use std::sync::mpsc;
-use super::{TestNode, create_connected_nodes, gen_immutable_data, poll_all,
-            sort_nodes_by_distance_to};
 
 #[test]
 fn messages_accumulate_with_quorum() {
@@ -33,9 +33,7 @@ fn messages_accumulate_with_quorum() {
     sort_nodes_by_distance_to(&mut nodes, &src.name());
 
     let send = |node: &mut TestNode, dst: &Authority<XorName>, message_id: MessageId| {
-        assert!(node.inner
-            .send_get_success(src, *dst, data.clone(), message_id)
-            .is_ok());
+        assert!(node.inner.send_get_success(src, *dst, data.clone(), message_id).is_ok());
     };
 
     let dst = Authority::ManagedNode(nodes[0].name()); // The closest node.

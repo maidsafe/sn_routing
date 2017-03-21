@@ -15,12 +15,12 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::{TestNode, create_connected_clients, create_connected_nodes_until_split,
+            gen_immutable_data, poll_all};
 use rand::Rng;
 use routing::{Authority, Data, Event, EventStream, MessageId, Prefix, Request, Response};
 use routing::mock_crust::Network;
 use std::sync::mpsc;
-use super::{TestNode, create_connected_clients, create_connected_nodes_until_split,
-            gen_immutable_data, poll_all};
 
 // Generate random immutable data, but make sure the first node in the given
 // node slice (the proxy node) is not in the data's section.
@@ -72,8 +72,10 @@ fn response_caching() {
                                     src: req_src,
                                     dst: req_dst }) => {
                     if req_data_id == data_id && req_message_id == message_id {
-                        unwrap!(node.inner
-                            .send_get_success(req_dst, req_src, data.clone(), req_message_id));
+                        unwrap!(node.inner.send_get_success(req_dst,
+                                                            req_src,
+                                                            data.clone(),
+                                                            req_message_id));
                         break;
                     }
                 }

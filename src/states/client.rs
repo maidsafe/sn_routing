@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 use ack_manager::{Ack, AckManager};
 use action::Action;
 use crust::{PeerId, Service};
@@ -33,7 +34,6 @@ use stats::Stats;
 use std::collections::BTreeSet;
 use std::fmt::{self, Debug, Formatter};
 use std::time::Duration;
-use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 use timer::Timer;
 use xor_name::XorName;
 

@@ -94,9 +94,9 @@ impl Tunnels {
             .collect_vec();
         pairs.into_iter()
             .map(|pair| {
-                self.clients.remove(&pair);
-                if pair.0 == *peer_id { pair.1 } else { pair.0 }
-            })
+                     self.clients.remove(&pair);
+                     if pair.0 == *peer_id { pair.1 } else { pair.0 }
+                 })
             .collect()
     }
 
@@ -192,9 +192,9 @@ impl Default for Tunnels {
 
 #[cfg(all(test, feature = "use-mock-crust"))]
 mod tests {
+    use super::*;
     use itertools::Itertools;
     use mock_crust::crust::PeerId;
-    use super::*;
 
     fn id(i: usize) -> PeerId {
         PeerId(i)
@@ -219,9 +219,7 @@ mod tests {
         tunnels.add(id(1), id(0));
         tunnels.add(id(2), id(0));
         tunnels.add(id(3), id(4));
-        let removed_peers = tunnels.remove_tunnel(&id(0))
-            .into_iter()
-            .sorted();
+        let removed_peers = tunnels.remove_tunnel(&id(0)).into_iter().sorted();
         assert_eq!(&[id(1), id(2)], &*removed_peers);
         assert_eq!(None, tunnels.tunnel_for(&id(1)));
         assert_eq!(None, tunnels.tunnel_for(&id(2)));

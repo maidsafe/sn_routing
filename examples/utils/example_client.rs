@@ -79,10 +79,9 @@ impl ExampleClient {
     /// This is a blocking call and will wait indefinitely for the response.
     pub fn get(&mut self, request: DataIdentifier) -> Option<Data> {
         let message_id = MessageId::new();
-        unwrap!(self.routing_client
-            .send_get_request(Authority::NaeManager(*request.name()),
-                              request.clone(),
-                              message_id));
+        unwrap!(self.routing_client.send_get_request(Authority::NaeManager(*request.name()),
+                                                     request.clone(),
+                                                     message_id));
 
         // Wait for Get success event from Routing
         loop {
@@ -120,8 +119,9 @@ impl ExampleClient {
     pub fn put(&self, data: Data) -> Result<(), ()> {
         let data_id = data.identifier();
         let message_id = MessageId::new();
-        unwrap!(self.routing_client
-            .send_put_request(Authority::ClientManager(*self.name()), data, message_id));
+        unwrap!(self.routing_client.send_put_request(Authority::ClientManager(*self.name()),
+                                                     data,
+                                                     message_id));
 
         // Wait for Put success event from Routing
         loop {

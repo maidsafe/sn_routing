@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::QUORUM;
 use ack_manager::Ack;
 #[cfg(not(feature = "use-mock-crust"))]
 use crust::PeerId;
@@ -37,7 +38,6 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::{self, Debug, Formatter};
 use std::iter;
 use std::time::Duration;
-use super::QUORUM;
 use tiny_keccak::sha3_256;
 use types::MessageId;
 use utils;
@@ -212,11 +212,11 @@ impl HopMessage {
                -> Result<HopMessage, RoutingError> {
         let bytes_to_sign = serialise(&content)?;
         Ok(HopMessage {
-            content: content,
-            route: route,
-            sent_to: sent_to,
-            signature: sign::sign_detached(&bytes_to_sign, signing_key),
-        })
+               content: content,
+               route: route,
+               sent_to: sent_to,
+               signature: sign::sign_detached(&bytes_to_sign, signing_key),
+           })
     }
 
     /// Validate that the message is signed by `verification_key` contained in message.
@@ -280,10 +280,10 @@ impl SignedMessage {
         src_sections.sort_by_key(|list| list.prefix);
         let sig = sign::sign_detached(&serialise(&content)?, full_id.signing_private_key());
         Ok(SignedMessage {
-            content: content,
-            src_sections: src_sections,
-            signatures: iter::once((*full_id.public_id(), sig)).collect(),
-        })
+               content: content,
+               src_sections: src_sections,
+               signatures: iter::once((*full_id.public_id(), sig)).collect(),
+           })
     }
 
     /// Confirms the signatures.
@@ -306,7 +306,10 @@ impl SignedMessage {
 
     /// Returns the number of nodes in the source authority.
     pub fn src_size(&self) -> usize {
-        self.src_sections.iter().map(|sl| sl.pub_ids.len()).sum()
+        self.src_sections
+            .iter()
+            .map(|sl| sl.pub_ids.len())
+            .sum()
     }
 
     /// Adds the given signature if it is new, without validating it. If the collection of section
@@ -406,7 +409,12 @@ impl SignedMessage {
                 let valid_names: HashSet<_> = self.src_sections
                     .iter()
                     .flat_map(|list| list.pub_ids.iter().map(PublicId::name))
-                    .sorted_by(|lhs, rhs| self.content.src.name().cmp_distance(lhs, rhs))
+                    .sorted_by(|lhs, rhs| {
+                                   self.content
+                                       .src
+                                       .name()
+                                       .cmp_distance(lhs, rhs)
+                               })
                     .into_iter()
                     .take(min_section_size)
                     .collect();
@@ -457,10 +465,10 @@ impl RoutingMessage {
     /// Create ack for the given message
     pub fn ack_from(msg: &RoutingMessage, src: Authority<XorName>) -> Result<Self, RoutingError> {
         Ok(RoutingMessage {
-            src: src,
-            dst: msg.src,
-            content: MessageContent::Ack(Ack::compute(msg)?, msg.priority()),
-        })
+               src: src,
+               dst: msg.src,
+               content: MessageContent::Ack(Ack::compute(msg)?, msg.priority()),
+           })
     }
 
     /// Returns the priority Crust should send this message with.
@@ -879,17 +887,17 @@ impl UserMessage {
         let part_count = (len + MAX_PART_LEN - 1) / MAX_PART_LEN;
 
         Ok((0..part_count)
-            .map(|i| {
-                MessageContent::UserMessagePart {
-                    hash: hash,
-                    part_count: part_count as u32,
-                    part_index: i as u32,
-                    cacheable: self.is_cacheable(),
-                    payload: payload[(i * len / part_count)..((i + 1) * len / part_count)].to_vec(),
-                    priority: priority,
-                }
-            })
-            .collect())
+               .map(|i| {
+            MessageContent::UserMessagePart {
+                hash: hash,
+                part_count: part_count as u32,
+                part_index: i as u32,
+                cacheable: self.is_cacheable(),
+                payload: payload[(i * len / part_count)..((i + 1) * len / part_count)].to_vec(),
+                priority: priority,
+            }
+        })
+               .collect())
     }
 
     /// Puts the given parts of a serialised message together and verifies that it matches the
@@ -1208,15 +1216,18 @@ impl UserMessageCache {
             }
         }
 
-        self.0
-            .remove(&(hash, part_count))
-            .and_then(|part_map| UserMessage::from_parts(hash, part_map.values()).ok())
+        self.0.remove(&(hash, part_count)).and_then(|part_map| {
+                                                        UserMessage::from_parts(hash,
+                                                                                part_map.values())
+                                                                .ok()
+                                                    })
     }
 }
 
 #[cfg(test)]
 mod tests {
 
+    use super::*;
     #[cfg(not(feature = "use-mock-crust"))]
     use crust::PeerId;
     use data::{Data, ImmutableData};
@@ -1230,7 +1241,6 @@ mod tests {
     use rust_sodium::crypto::sign;
     use std::collections::BTreeSet;
     use std::iter;
-    use super::*;
     use tiny_keccak::sha3_256;
     use types::MessageId;
     use xor_name::XorName;
@@ -1388,21 +1398,21 @@ mod tests {
         let payloads: Vec<Vec<u8>> = parts.into_iter()
             .enumerate()
             .map(|(i, msg)| match msg {
-                MessageContent::UserMessagePart { hash,
-                                                  part_count,
-                                                  part_index,
-                                                  payload,
-                                                  priority,
-                                                  cacheable } => {
-                    assert_eq!(msg_hash, hash);
-                    assert_eq!(3, part_count);
-                    assert_eq!(i, part_index as usize);
-                    assert_eq!(42, priority);
-                    assert!(!cacheable);
-                    payload
-                }
-                msg => panic!("Unexpected message {:?}", msg),
-            })
+                     MessageContent::UserMessagePart { hash,
+                                                       part_count,
+                                                       part_index,
+                                                       payload,
+                                                       priority,
+                                                       cacheable } => {
+                assert_eq!(msg_hash, hash);
+                assert_eq!(3, part_count);
+                assert_eq!(i, part_index as usize);
+                assert_eq!(42, priority);
+                assert!(!cacheable);
+                payload
+            }
+                     msg => panic!("Unexpected message {:?}", msg),
+                 })
             .collect();
         let deserialised_user_msg = unwrap!(UserMessage::from_parts(msg_hash, payloads.iter()));
         assert_eq!(user_msg, deserialised_user_msg);
