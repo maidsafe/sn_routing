@@ -391,6 +391,8 @@ fn verify_section_list_signatures(nodes: &[TestNode]) {
 #[test]
 fn aggressive_churn() {
     let min_section_size = 5;
+    let target_section_num = 5;
+    let target_network_size = 50;
     let mut network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
 
@@ -401,7 +403,7 @@ fn aggressive_churn() {
     info!("Churn [{} nodes, {} sections]: adding nodes",
           nodes.len(),
           count_sections(&nodes));
-    while count_sections(&nodes) <= 5 || nodes.len() < 50 {
+    while count_sections(&nodes) <= target_section_num || nodes.len() < target_network_size {
         if nodes.len() > (2 * min_section_size) {
             let peer_1 = rng.gen_range(0, nodes.len());
             let peer_2 = gen_range_except(&mut rng, 0, nodes.len(), &iter::once(peer_1).collect());
@@ -422,7 +424,7 @@ fn aggressive_churn() {
     info!("Churn [{} nodes, {} sections]: simultaneous adding and dropping nodes",
           nodes.len(),
           count_sections(&nodes));
-    while nodes.len() > 25 {
+    while nodes.len() > target_network_size / 2 {
         drop_random_nodes(&mut rng, &mut nodes, min_section_size);
         let (added_index, proxy_index) =
             add_random_node(&mut rng, &network, &mut nodes, min_section_size);
