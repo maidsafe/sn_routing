@@ -75,8 +75,8 @@ impl Tunnels {
     /// `consider_clients` must be called with the client pair before this.
     pub fn accept_clients(&mut self, src_id: PeerId, dst_id: PeerId) -> bool {
         let pair = (src_id, dst_id);
-        // TODO(afck): Remove the pair from the new clients once message_filter supports that.
         if self.new_clients.contains(&pair) {
+            self.new_clients.remove(&pair);
             self.clients.insert(pair);
             true
         } else {
