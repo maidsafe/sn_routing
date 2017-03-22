@@ -1226,32 +1226,35 @@ impl PeerManager {
         let _ = self.set_state(peer_id, PeerState::Routing(RoutingConnection::Direct));
     }
 
-    /// Returns direct-connected peers in our section and in the peer's section.
-    pub fn potential_tunnel_nodes(&self, name: &XorName) -> Vec<(XorName, PeerId)> {
-        let potential_tunnel_nodes =
-            self.routing_table.our_section() |
-            self.routing_table.get_section(name).unwrap_or(&BTreeSet::new());
-        potential_tunnel_nodes.iter()
+    /// Returns direct-connected peers suitable as a tunnel node for `client_name`.
+    pub fn potential_tunnel_nodes(&self, client_name: &XorName) -> Vec<(XorName, PeerId)> {
+        self.routing_table
+            .iter()
+            .filter(|tunnel_name| self.is_potential_tunnel_node(tunnel_name, client_name))
             .filter_map(|name| {
-                if name == self.our_public_id.name() {
-                    return None;
-                }
-                self.peer_map.get_by_name(name).and_then(|peer| if peer.state.can_tunnel_for() {
-                    peer.peer_id().and_then(|peer_id| Some((*name, *peer_id)))
-                } else {
-                    None
-                })
-            })
+                            self.peer_map
+                    .get_by_name(name)
+                    .and_then(|peer| peer.peer_id().and_then(|peer_id| Some((*name, *peer_id))))
+                        })
             .collect()
     }
 
-    /// Returns true if peer is direct-connected and in our section or in tunnel_client's section.
-    pub fn is_potential_tunnel_node(&self, peer: &PublicId, tunnel_client: &XorName) -> bool {
-        self.our_public_id != *peer &&
-        (self.routing_table.our_prefix().matches(peer.name()) ||
-         self.routing_table.get_section(peer.name()).map_or(false, |section| {
-            Some(section) == self.routing_table.get_section(tunnel_client)
-        })) && self.get_state_by_name(peer.name()).map_or(false, PeerState::can_tunnel_for)
+    /// Returns `true` if `tunnel_name` is directly connected and in our section or in
+    /// `client_name`'s section. If those sections are the same, `tunnel_name` is also allowed to
+    /// match our sibling prefix instead.
+    pub fn is_potential_tunnel_node(&self, tunnel_name: &XorName, client_name: &XorName) -> bool {
+        if self.our_public_id.name() == tunnel_name || self.our_public_id.name() == client_name ||
+           !self.get_state_by_name(tunnel_name).map_or(false, PeerState::can_tunnel_for) {
+            return false;
+        }
+        let our_prefix = self.routing_table.our_prefix();
+        if our_prefix.matches(client_name) {
+            our_prefix.popped().matches(tunnel_name)
+        } else {
+            self.routing_table.find_section_prefix(tunnel_name).map_or(false, |pfx| {
+                pfx.matches(client_name) || pfx == *our_prefix
+            })
+        }
     }
 
     /// Sets the given peer to state `SearchingForTunnel` and returns querying candidates.

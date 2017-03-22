@@ -85,6 +85,14 @@ impl<Message: Hash> MessageFilter<Message> {
         self.entries.iter().any(|entry| entry.hash_code == hash_code)
     }
 
+    /// Remove the entry for `message`, regardless of how many times it was previously inserted.
+    pub fn remove(&mut self, message: &Message) {
+        let hash_code = hash(message);
+        if let Some(index) = self.entries.iter().position(|t| t.hash_code == hash_code) {
+            let _old_val = self.entries.remove(index);
+        }
+    }
+
     /// Clears the filter, removing all the entries.
     #[cfg(feature = "use-mock-crust")]
     pub fn clear(&mut self) {

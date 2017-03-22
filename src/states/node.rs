@@ -505,24 +505,36 @@ impl Node {
                 self.handle_direct_message(direct_msg, peer_id, outbox)
             }
             Ok(Message::TunnelDirect { content, src, dst }) => {
-                if dst == self.crust_service.id() &&
-                   self.tunnels.tunnel_for(&src) == Some(&peer_id) {
-                    self.handle_direct_message(content, src, outbox)
+                if dst == self.crust_service.id() {
+                    if self.tunnels.tunnel_for(&src) == Some(&peer_id) {
+                        self.handle_direct_message(content, src, outbox)
+                    } else {
+                        debug!("{:?} Message recd via unregistered tunnel node {:?} from src {:?}",
+                               self,
+                               peer_id,
+                               src);
+                        Err(RoutingError::InvalidDestination)
+                    }
                 } else if self.tunnels.has_clients(src, dst) {
                     self.send_or_drop(&dst, bytes, content.priority());
                     Ok(())
                 } else if !self.peer_mgr.can_tunnel_for(&src, &dst) {
-                    debug!("{:?} mistakenly accepted to act as tunnel_node for {:?} - {:?}",
+                    debug!("{:?} Can no longer accept as a tunnel node for {:?} - {:?}",
                            self,
                            src,
                            dst);
                     self.send_direct_message(src, DirectMessage::TunnelClosed(dst));
                     Err(RoutingError::InvalidDestination)
-                } else if self.tunnels.accept_clients(src, dst) {
-                    debug!("{:?} agreed to act as tunnel_node for {:?} - {:?}",
+                } else if match content {
+                              DirectMessage::CandidateIdentify { .. } |
+                              DirectMessage::NodeIdentify { .. } => true,
+                              _ => false,
+                          } && self.tunnels.accept_clients(src, dst) {
+                    debug!("{:?} Agreed to act as tunnel node for {:?} - {:?}",
                            self,
                            src,
                            dst);
+
                     self.send_direct_message(dst, DirectMessage::TunnelSuccess(src));
                     self.send_or_drop(&dst, bytes, content.priority());
                     Ok(())
@@ -1544,7 +1556,7 @@ impl Node {
         }
 
         for (dst_id, peer_name) in self.peer_mgr.peers_needing_tunnel() {
-            if self.peer_mgr.is_potential_tunnel_node(public_id, &peer_name) {
+            if self.peer_mgr.is_potential_tunnel_node(public_id.name(), &peer_name) {
                 trace!("{:?} Asking {:?} to serve as a tunnel for {:?}",
                        self,
                        peer_id,
@@ -3115,6 +3127,10 @@ impl Node {
 
     fn dropped_tunnel_client(&mut self, peer_id: &PeerId) {
         for other_id in self.tunnels.drop_client(peer_id) {
+            trace!("{:?} Closing tunnel client connection between {:?} and {:?}",
+                   self,
+                   peer_id,
+                   other_id);
             let message = DirectMessage::TunnelClosed(*peer_id);
             self.send_direct_message(other_id, message);
         }
