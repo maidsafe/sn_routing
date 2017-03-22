@@ -3015,7 +3015,7 @@ impl Node {
             _ => (),
         }
 
-        if try_reconnect && !peer.pub_id().is_client_id() {
+        if try_reconnect && self.is_approved && !peer.pub_id().is_client_id() {
             debug!("{:?} Sending connection info to {:?} due to dropped peer.",
                    self,
                    peer.pub_id());
