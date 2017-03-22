@@ -1,5 +1,15 @@
 # Routing - Change Log
 
+## [0.28.3]
+- Use SHA3 everywhere instead of SipHash.
+- `PrefixSection` authorities now always refer to all sections _compatible_
+  with the given prefix.
+- Cache `OwnSectionMerge` messages until both merging sections have sent one.
+  Only then update the routing table.
+- Cache any routing table updates while merging, and relay them afterwards.
+- Other merge and tunnel fixes, and additional tests for merging and tunnels.
+- Try to reconnect after a connection drops.
+
 ## [0.28.2]
 - Extend the tests for tunnelling and the churn tests.
 - Fix several peer manager issues related to tunnel nodes and candidates.
