@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -15,12 +15,12 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::{AppendWrapper, AppendedData, DataIdentifier, Filter, NO_OWNER_PUB_KEY};
 use error::RoutingError;
 use maidsafe_utilities::serialisation::{serialise, serialised_size};
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
-use super::{AppendWrapper, AppendedData, DataIdentifier, Filter, NO_OWNER_PUB_KEY};
 use xor_name::XorName;
 
 /// Maximum allowed size for a public appendable data to grow to
@@ -65,14 +65,14 @@ impl PubAppendableData {
         }
 
         Ok(PubAppendableData {
-            name: name,
-            version: version,
-            filter: filter,
-            deleted_data: deleted_data,
-            owners: owners,
-            signatures: BTreeMap::new(),
-            data: BTreeSet::new(),
-        })
+               name: name,
+               version: version,
+               filter: filter,
+               deleted_data: deleted_data,
+               owners: owners,
+               signatures: BTreeMap::new(),
+               data: BTreeSet::new(),
+           })
     }
 
     /// Updates this data item with the given updated version if the update is valid, otherwise
@@ -106,9 +106,9 @@ impl PubAppendableData {
     /// recently been deleted.
     pub fn append(&mut self, appended_data: AppendedData) -> bool {
         if match self.filter {
-            Filter::WhiteList(ref white_list) => !white_list.contains(&appended_data.sign_key),
-            Filter::BlackList(ref black_list) => black_list.contains(&appended_data.sign_key),
-        } || self.deleted_data.contains(&appended_data) {
+               Filter::WhiteList(ref white_list) => !white_list.contains(&appended_data.sign_key),
+               Filter::BlackList(ref black_list) => black_list.contains(&appended_data.sign_key),
+           } || self.deleted_data.contains(&appended_data) {
             return false;
         }
         self.data.insert(appended_data)
@@ -163,7 +163,10 @@ impl PubAppendableData {
         let sd = SerialisablePubAppendableData {
             name: self.name,
             owners: &self.owners,
-            version: self.version.to_string().as_bytes().to_vec(),
+            version: self.version
+                .to_string()
+                .as_bytes()
+                .to_vec(),
             filter: &self.filter,
             deleted_data: &self.deleted_data,
         };
@@ -241,11 +244,11 @@ struct SerialisablePubAppendableData<'a> {
 
 #[cfg(test)]
 mod test {
+    use super::*;
     use data::{self, AppendWrapper, AppendedData, DataIdentifier, Filter};
     use rand;
     use rust_sodium::crypto::sign;
     use std::collections::BTreeSet;
-    use super::*;
     use xor_name::XorName;
 
     #[test]
@@ -267,12 +270,12 @@ mod test {
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
                                                 pub_appendable_data.get_signatures())
-                    .is_err());
+                                .is_err());
                 assert!(pub_appendable_data.add_signature(&keys).is_ok());
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
                                                 pub_appendable_data.get_signatures())
-                    .is_ok());
+                                .is_ok());
             }
             Err(error) => panic!("Error: {:?}", error),
         }
@@ -299,7 +302,7 @@ mod test {
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
                                                 pub_appendable_data.get_signatures())
-                    .is_err());
+                                .is_err());
             }
             Err(error) => panic!("Error: {:?}", error),
         }
@@ -310,11 +313,12 @@ mod test {
         let black_key = sign::gen_keypair();
         let white_key = sign::gen_keypair();
 
-        let mut pub_appendable_data = unwrap!(PubAppendableData::new(rand::random(),
-                                              0,
-                                              BTreeSet::new(),
-                                              BTreeSet::new(),
-                                              Filter::white_list(vec![white_key.0]),));
+        let data = PubAppendableData::new(rand::random(),
+                                          0,
+                                          BTreeSet::new(),
+                                          BTreeSet::new(),
+                                          Filter::white_list(vec![white_key.0]));
+        let mut pub_appendable_data = unwrap!(data);
 
         let pointer = DataIdentifier::Structured(rand::random(), 10000);
         let black_appended_data = unwrap!(AppendedData::new(pointer, black_key.0, &black_key.1));
@@ -329,11 +333,12 @@ mod test {
         let black_key = sign::gen_keypair();
         let white_key = sign::gen_keypair();
 
-        let mut pub_appendable_data = unwrap!(PubAppendableData::new(rand::random(),
-                                              0,
-                                              BTreeSet::new(),
-                                              BTreeSet::new(),
-                                              Filter::black_list(vec![black_key.0])));
+        let data = PubAppendableData::new(rand::random(),
+                                          0,
+                                          BTreeSet::new(),
+                                          BTreeSet::new(),
+                                          Filter::black_list(vec![black_key.0]));
+        let mut pub_appendable_data = unwrap!(data);
 
         let pointer = DataIdentifier::Structured(rand::random(), 10000);
         let black_appended_data = unwrap!(AppendedData::new(pointer, black_key.0, &black_key.1));
@@ -348,11 +353,12 @@ mod test {
         let keys = sign::gen_keypair();
         let name: XorName = rand::random();
 
-        let mut pub_appendable_data = unwrap!(PubAppendableData::new(name,
-                                                                     0,
-                                                                     BTreeSet::new(),
-                                                                     BTreeSet::new(),
-                                                                     Filter::black_list(None)));
+        let data = PubAppendableData::new(name,
+                                          0,
+                                          BTreeSet::new(),
+                                          BTreeSet::new(),
+                                          Filter::black_list(None));
+        let mut pub_appendable_data = unwrap!(data);
         let pointer = DataIdentifier::Structured(rand::random(), 10000);
         let appended_data = unwrap!(AppendedData::new(pointer, keys.0, &keys.1));
 
@@ -375,24 +381,24 @@ mod test {
         new_owner.insert(other_keys.0);
         let name: XorName = rand::random();
 
-        let mut ad = unwrap!(PubAppendableData::new(name,
-                                                    0,
-                                                    owner,
-                                                    BTreeSet::new(),
-                                                    Filter::black_list(None)));
-        let mut ad_new = unwrap!(PubAppendableData::new(name,
-                                                        1,
-                                                        new_owner.clone(),
-                                                        BTreeSet::new(),
-                                                        Filter::black_list(None)));
+        let mut data =
+            PubAppendableData::new(name, 0, owner, BTreeSet::new(), Filter::black_list(None));
+        let mut ad = unwrap!(data);
+        data = PubAppendableData::new(name,
+                                      1,
+                                      new_owner.clone(),
+                                      BTreeSet::new(),
+                                      Filter::black_list(None));
+        let mut ad_new = unwrap!(data);
         assert!(ad_new.add_signature(&keys).is_ok());
         assert!(ad.update_with_other(ad_new).is_ok());
 
-        let mut ad_fail = unwrap!(PubAppendableData::new(name,
-                                                         2,
-                                                         new_owner.clone(),
-                                                         BTreeSet::new(),
-                                                         Filter::black_list(None)));
+        data = PubAppendableData::new(name,
+                                      2,
+                                      new_owner.clone(),
+                                      BTreeSet::new(),
+                                      Filter::black_list(None));
+        let mut ad_fail = unwrap!(data);
         assert!(ad_fail.add_signature(&keys).is_ok());
         assert!(ad.update_with_other(ad_fail).is_err());
     }

@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -94,9 +94,9 @@ impl Tunnels {
             .collect_vec();
         pairs.into_iter()
             .map(|pair| {
-                self.clients.remove(&pair);
-                if pair.0 == *peer_id { pair.1 } else { pair.0 }
-            })
+                     self.clients.remove(&pair);
+                     if pair.0 == *peer_id { pair.1 } else { pair.0 }
+                 })
             .collect()
     }
 
@@ -192,9 +192,9 @@ impl Default for Tunnels {
 
 #[cfg(all(test, feature = "use-mock-crust"))]
 mod tests {
+    use super::*;
     use itertools::Itertools;
     use mock_crust::crust::PeerId;
-    use super::*;
 
     fn id(i: usize) -> PeerId {
         PeerId(i)
@@ -219,9 +219,7 @@ mod tests {
         tunnels.add(id(1), id(0));
         tunnels.add(id(2), id(0));
         tunnels.add(id(3), id(4));
-        let removed_peers = tunnels.remove_tunnel(&id(0))
-            .into_iter()
-            .sorted();
+        let removed_peers = tunnels.remove_tunnel(&id(0)).into_iter().sorted();
         assert_eq!(&[id(1), id(2)], &*removed_peers);
         assert_eq!(None, tunnels.tunnel_for(&id(1)));
         assert_eq!(None, tunnels.tunnel_for(&id(2)));

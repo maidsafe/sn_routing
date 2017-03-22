@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -130,9 +130,9 @@ impl TestNode {
         let handle = network.new_service_handle(config, endpoint);
         let node = mock_crust::make_current(&handle, || {
             unwrap!(Node::builder()
-                .cache(cache)
-                .first(first_node)
-                .create(network.min_section_size()))
+                        .cache(cache)
+                        .first(first_node)
+                        .create(network.min_section_size()))
         });
 
         TestNode {
@@ -336,10 +336,10 @@ pub fn create_connected_nodes_with_cache(network: &Network, size: usize, use_cac
 
     // Create the seed node.
     nodes.push(TestNode::builder(network)
-        .first()
-        .endpoint(Endpoint(0))
-        .cache(use_cache)
-        .create());
+                   .first()
+                   .endpoint(Endpoint(0))
+                   .cache(use_cache)
+                   .create());
     nodes[0].poll();
 
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
@@ -347,10 +347,10 @@ pub fn create_connected_nodes_with_cache(network: &Network, size: usize, use_cac
     // Create other nodes using the seed node endpoint as bootstrap contact.
     for i in 1..size {
         nodes.push(TestNode::builder(network)
-            .config(config.clone())
-            .endpoint(Endpoint(i))
-            .cache(use_cache)
-            .create());
+                       .config(config.clone())
+                       .endpoint(Endpoint(i))
+                       .cache(use_cache)
+                       .create());
         poll_and_resend(&mut nodes, &mut []);
         verify_invariant_for_all_nodes(&nodes);
     }
@@ -386,8 +386,11 @@ pub fn create_connected_nodes_until_split(network: &Network,
                                           use_cache: bool)
                                           -> Nodes {
     // Start first node.
-    let mut nodes =
-        vec![TestNode::builder(network).first().endpoint(Endpoint(0)).cache(use_cache).create()];
+    let mut nodes = vec![TestNode::builder(network)
+                             .first()
+                             .endpoint(Endpoint(0))
+                             .cache(use_cache)
+                             .create()];
     nodes[0].poll();
     add_connected_nodes_until_split(network, &mut nodes, prefix_lengths, use_cache);
     Nodes(nodes)
@@ -547,7 +550,10 @@ fn resend_unacknowledged(nodes: &mut [TestNode], clients: &mut [TestClient]) -> 
     let node_resend = |node: &mut TestNode| node.inner.resend_unacknowledged();
     let client_resend = |client: &mut TestClient| client.inner.resend_unacknowledged();
     let or = |x, y| x || y;
-    nodes.iter_mut().map(node_resend).chain(clients.iter_mut().map(client_resend)).fold(false, or)
+    nodes.iter_mut()
+        .map(node_resend)
+        .chain(clients.iter_mut().map(client_resend))
+        .fold(false, or)
 }
 
 fn sanity_check(prefix_lengths: &[usize]) {
@@ -596,10 +602,10 @@ fn add_node_to_section<T: Rng>(network: &Network,
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
     let endpoint = Endpoint(nodes.len());
     nodes.push(TestNode::builder(network)
-        .config(config.clone())
-        .endpoint(endpoint)
-        .cache(use_cache)
-        .create());
+                   .config(config.clone())
+                   .endpoint(endpoint)
+                   .cache(use_cache)
+                   .create());
     poll_and_resend(nodes, &mut []);
     expect_any_event!(unwrap!(nodes.last_mut()), Event::Connected);
     assert_eq!(relocation_name, nodes[nodes.len() - 1].name());

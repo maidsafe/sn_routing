@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -15,14 +15,14 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::QUORUM;
+use super::XorName;
 use id::PublicId;
 use itertools::Itertools;
 use messages::SectionList;
 use routing_table::Prefix;
 use rust_sodium::crypto::sign::Signature;
 use std::collections::HashMap;
-use super::QUORUM;
-use super::XorName;
 
 pub type Signatures = HashMap<PublicId, Signature>;
 pub type PrefixMap<T> = HashMap<Prefix<XorName>, T>;
@@ -65,8 +65,10 @@ impl SectionListCache {
         // remove all conflicting signatures
         self.remove_signatures_for_prefix_by(prefix, pub_id);
         // remember that this public id signed this section list
-        let _ =
-            self.signed_by.entry(pub_id).or_insert_with(HashMap::new).insert(prefix, list.clone());
+        let _ = self.signed_by
+            .entry(pub_id)
+            .or_insert_with(HashMap::new)
+            .insert(prefix, list.clone());
         // remember that this section list has a new signature
         let _ = self.signatures
             .entry(prefix)
@@ -121,9 +123,10 @@ impl SectionListCache {
     fn update_lists_cache(&mut self, our_section_size: usize) {
         for (prefix, map) in &self.signatures {
             // find the entries with the most signatures
-            let entries = map.iter()
-                .map(|(list, sigs)| (list, sigs.len()))
-                .sorted_by(|lhs, rhs| rhs.1.cmp(&lhs.1));
+            let entries =
+                map.iter().map(|(list, sigs)| (list, sigs.len())).sorted_by(|lhs, rhs| {
+                                                                                rhs.1.cmp(&lhs.1)
+                                                                            });
             if let Some(&(list, sig_count)) = entries.first() {
                 // entry.0 = list, entry.1 = num of signatures
                 if 100 * sig_count >= QUORUM * our_section_size {

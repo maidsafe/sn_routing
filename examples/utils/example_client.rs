@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -79,10 +79,9 @@ impl ExampleClient {
     /// This is a blocking call and will wait indefinitely for the response.
     pub fn get(&mut self, request: DataIdentifier) -> Option<Data> {
         let message_id = MessageId::new();
-        unwrap!(self.routing_client
-            .send_get_request(Authority::NaeManager(*request.name()),
-                              request.clone(),
-                              message_id));
+        unwrap!(self.routing_client.send_get_request(Authority::NaeManager(*request.name()),
+                                                     request.clone(),
+                                                     message_id));
 
         // Wait for Get success event from Routing
         loop {
@@ -120,8 +119,9 @@ impl ExampleClient {
     pub fn put(&self, data: Data) -> Result<(), ()> {
         let data_id = data.identifier();
         let message_id = MessageId::new();
-        unwrap!(self.routing_client
-            .send_put_request(Authority::ClientManager(*self.name()), data, message_id));
+        unwrap!(self.routing_client.send_put_request(Authority::ClientManager(*self.name()),
+                                                     data,
+                                                     message_id));
 
         // Wait for Put success event from Routing
         loop {

@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -20,6 +20,9 @@
 #![cfg(any(test, feature = "use-mock-crust"))]
 #![allow(dead_code, missing_docs)]
 
+use super::{Error, RoutingTable};
+use super::authority::Authority;
+use super::prefix::Prefix;
 use maidsafe_utilities::SeededRng;
 use rand::Rng;
 use routing_table::{OwnMergeDetails, OwnMergeState};
@@ -28,9 +31,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{Binary, Debug};
 use std::hash::Hash;
 use std::iter::IntoIterator;
-use super::{Error, RoutingTable};
-use super::authority::Authority;
-use super::prefix::Prefix;
 
 /// A simulated network, consisting of a set of "nodes" (routing tables) and a random number
 /// generator.
@@ -150,11 +150,11 @@ impl Network {
                 let nodes = self.nodes_covered_by_prefixes(&[merge_own_details.merge_prefix]);
                 for node in &nodes {
                     let target_node = unwrap!(self.nodes.get_mut(&node));
-                    let node_expected = expected_peers.entry(*node)
-                        .or_insert_with(BTreeSet::new);
+                    let node_expected = expected_peers.entry(*node).or_insert_with(BTreeSet::new);
                     for section in &merge_own_details.sections {
-                        node_expected.extend(
-                            section.1.iter().filter(|name| !target_node.has(name)));
+                        node_expected.extend(section.1.iter().filter(|name| {
+                                                                         !target_node.has(name)
+                                                                     }));
                     }
                     match target_node.merge_own_section(merge_own_details.clone()) {
                         OwnMergeState::Ongoing |
@@ -256,14 +256,17 @@ impl Network {
     fn close_node(&self, address: u64) -> u64 {
         let target = Authority::Section(address);
         unwrap!(self.nodes
-            .iter()
-            .find(|&(_, table)| table.in_authority(&target))
-            .map(|(&peer, _)| peer))
+                    .iter()
+                    .find(|&(_, table)| table.in_authority(&target))
+                    .map(|(&peer, _)| peer))
     }
 
     /// Returns all node names.
     fn keys(&self) -> Vec<u64> {
-        self.nodes.keys().cloned().collect()
+        self.nodes
+            .keys()
+            .cloned()
+            .collect()
     }
 }
 
@@ -318,16 +321,17 @@ pub fn verify_network_invariant<'a, T, U>(nodes: U)
                 node.sections[&prefix].clone()
             };
             if let Some(&mut (ref mut src, ref mut section)) = sections.get_mut(&prefix) {
-                assert!(*section == section_content,
-                        "Section with prefix {:?} doesn't agree between nodes {:?} and {:?}\n\
-                        {:?}: {:?}, {:?}: {:?}",
-                        prefix,
-                        node.our_name,
-                        src,
-                        node.our_name,
-                        section_content,
-                        src,
-                        section);
+                assert_eq!(*section,
+                           section_content,
+                           "Section with prefix {:?} doesn't agree between nodes {:?} and {:?}\n\
+                            {:?}: {:?}, {:?}: {:?}",
+                           prefix,
+                           node.our_name,
+                           src,
+                           node.our_name,
+                           section_content,
+                           src,
+                           section);
                 continue;
             }
             let _ = sections.insert(prefix, (node.our_name, section_content));
@@ -385,24 +389,20 @@ fn merging_sections() {
         network.add_node();
         verify_invariant(&network);
     }
-    assert!(network.nodes
-        .iter()
-        .all(|(_, table)| if table.num_of_sections() < 2 {
-            trace!("{:?}", table);
-            false
-        } else {
-            true
-        }));
+    assert!(network.nodes.iter().all(|(_, table)| if table.num_of_sections() < 2 {
+                                         trace!("{:?}", table);
+                                         false
+                                     } else {
+                                         true
+                                     }));
     for _ in 0..95 {
         network.drop_node();
         verify_invariant(&network);
     }
-    assert!(network.nodes
-        .iter()
-        .all(|(_, table)| if table.num_of_sections() > 0 {
-            trace!("{:?}", table);
-            false
-        } else {
-            true
-        }));
+    assert!(network.nodes.iter().all(|(_, table)| if table.num_of_sections() > 0 {
+                                         trace!("{:?}", table);
+                                         false
+                                     } else {
+                                         true
+                                     }));
 }

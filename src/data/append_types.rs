@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -15,11 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::{DataIdentifier, PrivAppendedData, verify_detached};
 use error::RoutingError;
 use maidsafe_utilities::serialisation::serialise;
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
 use std::collections::BTreeSet;
-use super::{DataIdentifier, PrivAppendedData, verify_detached};
 use xor_name::XorName;
 
 /// The type of access filter for appendable data.
@@ -63,10 +63,10 @@ impl AppendedData {
         let data_to_sign = serialise(&(&pointer, &pub_key))?;
         let signature = sign::sign_detached(&data_to_sign, secret_key);
         Ok(AppendedData {
-            pointer: pointer,
-            sign_key: pub_key,
-            signature: signature,
-        })
+               pointer: pointer,
+               sign_key: pub_key,
+               signature: signature,
+           })
     }
 
     /// Returns `true` if the signature matches the data.
@@ -125,12 +125,12 @@ impl AppendWrapper {
         let data_to_sign = serialise(&(&append_to, &data, &sign_pair.0, &version))?;
         let signature = sign::sign_detached(&data_to_sign, sign_pair.1);
         Ok(AppendWrapper::Priv {
-            append_to: append_to,
-            data: data,
-            sign_key: *sign_pair.0,
-            version: version,
-            signature: signature,
-        })
+               append_to: append_to,
+               data: data,
+               sign_key: *sign_pair.0,
+               version: version,
+               signature: signature,
+           })
     }
 
     /// Returns the identifier of the data to append to.
@@ -194,10 +194,10 @@ impl AppendWrapper {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use data::{DataIdentifier, PrivAppendedData};
     use rand;
     use rust_sodium::crypto::{box_, sign};
-    use super::*;
 
     #[test]
     fn pub_signatures() {

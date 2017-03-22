@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -15,6 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::{Client, Node};
+use super::common::Base;
 use action::Action;
 use cache::Cache;
 use crust::{CrustUser, PeerId, Service};
@@ -34,8 +36,6 @@ use std::collections::HashSet;
 use std::fmt::{self, Debug, Formatter};
 use std::net::SocketAddr;
 use std::time::Duration;
-use super::{Client, Node};
-use super::common::Base;
 use timer::Timer;
 use xor_name::XorName;
 
@@ -71,16 +71,16 @@ impl Bootstrapping {
         }
 
         Some(Bootstrapping {
-            bootstrap_blacklist: HashSet::new(),
-            bootstrap_connection: None,
-            cache: cache,
-            client_restriction: client_restriction,
-            crust_service: crust_service,
-            full_id: full_id,
-            min_section_size: min_section_size,
-            stats: Stats::new(),
-            timer: timer,
-        })
+                 bootstrap_blacklist: HashSet::new(),
+                 bootstrap_connection: None,
+                 cache: cache,
+                 client_restriction: client_restriction,
+                 crust_service: crust_service,
+                 full_id: full_id,
+                 min_section_size: min_section_size,
+                 stats: Stats::new(),
+                 timer: timer,
+             })
     }
 
     pub fn handle_action(&mut self, action: Action) -> Transition {
@@ -315,8 +315,8 @@ impl Bootstrapping {
             } else {
                 CrustUser::Node
             };
-            let _ = self.crust_service
-                .start_bootstrap(self.bootstrap_blacklist.clone(), crust_user);
+            let _ = self.crust_service.start_bootstrap(self.bootstrap_blacklist.clone(),
+                                                       crust_user);
         }
     }
 }

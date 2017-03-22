@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -65,7 +65,10 @@ impl XorName {
 
     /// Returns the number of bits in which `self` differs from `other`.
     pub fn count_differing_bits(&self, other: &XorName) -> u32 {
-        self.0.iter().zip(other.0.iter()).fold(0, |acc, (a, b)| acc + (a ^ b).count_ones())
+        self.0
+            .iter()
+            .zip(other.0.iter())
+            .fold(0, |acc, (a, b)| acc + (a ^ b).count_ones())
     }
 
     /// Hex-decode a `XorName` from a `&str`.
@@ -246,11 +249,11 @@ impl Decodable for XorName {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use maidsafe_utilities::serialisation::{deserialise, serialise};
     use rand;
     use routing_table::Xorable;
     use std::cmp::Ordering;
-    use super::*;
 
     #[test]
     fn serialisation_xor_name() {
@@ -265,9 +268,9 @@ mod tests {
     fn xor_name_ord() {
         let type1: XorName = XorName([1u8; XOR_NAME_LEN]);
         let type2: XorName = XorName([2u8; XOR_NAME_LEN]);
-        assert!(Ord::cmp(&type1, &type1) == Ordering::Equal);
-        assert!(Ord::cmp(&type1, &type2) == Ordering::Less);
-        assert!(Ord::cmp(&type2, &type1) == Ordering::Greater);
+        assert_eq!(Ord::cmp(&type1, &type1), Ordering::Equal);
+        assert_eq!(Ord::cmp(&type1, &type2), Ordering::Less);
+        assert_eq!(Ord::cmp(&type2, &type1), Ordering::Greater);
         assert!(type1 < type2);
         assert!(type1 <= type2);
         assert!(type1 <= type1);
@@ -286,9 +289,8 @@ mod tests {
         let type1_clone = type1;
         let type2: XorName = rand::random();
         assert_eq!(type1, type1_clone);
-        assert!(type1 == type1_clone);
         assert!(!(type1 != type1_clone));
-        assert!(type1 != type2);
+        assert_ne!(type1, type2);
     }
 
     #[test]
