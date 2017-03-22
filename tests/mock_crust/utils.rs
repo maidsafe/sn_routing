@@ -45,13 +45,13 @@ pub fn gen_range_except<T: Rng>(rng: &mut T,
                                 high: usize,
                                 exclude: &BTreeSet<usize>)
                                 -> usize {
-    let mut x = rng.gen_range(low, high - exclude.len());
+    let mut x = rng.gen_range(low as u32, (high - exclude.len()) as u32);
     for e in exclude {
-        if x >= *e {
+        if x as usize >= *e {
             x += 1;
         }
     }
-    x
+    x as usize
 }
 
 

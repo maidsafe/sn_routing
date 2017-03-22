@@ -46,7 +46,7 @@ fn drop_random_nodes<R: Rng>(rng: &mut R, nodes: &mut Vec<TestNode>, min_section
         let mut removed = 0;
         // Remove nodes from the chosen section
         while removed < num_excess {
-            let i = rng.gen_range(0, nodes.len());
+            let i = rng.gen_range(0, nodes.len() as u32) as usize;
             if *nodes[i].routing_table().our_prefix() != prefix {
                 continue;
             }
@@ -59,7 +59,7 @@ fn drop_random_nodes<R: Rng>(rng: &mut R, nodes: &mut Vec<TestNode>, min_section
         let num_excess = cmp::min(min_section_size - min_quorum, len - min_section_size);
         let mut removed = 0;
         while num_excess - removed > 0 {
-            let _ = nodes.remove(rng.gen_range(0, len - removed));
+            let _ = nodes.remove(rng.gen_range(0, (len - removed) as u32) as usize);
             removed += 1;
         }
     }
@@ -76,9 +76,9 @@ fn add_random_node<R: Rng>(rng: &mut R,
     let len = nodes.len();
     // A non-first node without min_section_size nodes in routing table cannot be proxy
     let (proxy, index) = if len <= min_section_size {
-        (0, rng.gen_range(1, len + 1))
+        (0, rng.gen_range(1, (len + 1) as u32) as usize)
     } else {
-        (rng.gen_range(0, len), rng.gen_range(0, len + 1))
+        (rng.gen_range(0, len as u32) as usize, rng.gen_range(0, (len + 1) as u32) as usize)
     };
     let config = Config::with_contacts(&[nodes[proxy].handle.endpoint()]);
 
@@ -114,17 +114,17 @@ fn random_churn<R: Rng>(rng: &mut R,
     let len = nodes.len();
 
     if count_sections(nodes) > 1 && rng.gen_weighted_bool(3) {
-        let _ = nodes.remove(rng.gen_range(1, len));
-        let _ = nodes.remove(rng.gen_range(1, len - 1));
-        let _ = nodes.remove(rng.gen_range(1, len - 2));
+        let _ = nodes.remove(rng.gen_range(1, len as u32) as usize);
+        let _ = nodes.remove(rng.gen_range(1, (len - 1) as u32) as usize);
+        let _ = nodes.remove(rng.gen_range(1, (len - 2) as u32) as usize);
 
         None
     } else {
-        let mut proxy = rng.gen_range(0, len);
-        let index = rng.gen_range(1, len + 1);
+        let mut proxy = rng.gen_range(0, len as u32) as usize;
+        let index = rng.gen_range(1, (len + 1) as u32) as usize;
 
         if nodes.len() > 2 * network.min_section_size() {
-            let peer_1 = rng.gen_range(1, len);
+            let peer_1 = rng.gen_range(1, len as u32) as usize;
             let peer_2 = gen_range_except(rng, 1, len, &iter::once(peer_1).collect());
             debug!("Lost connection between {} and {}",
                    nodes[peer_1].name(),
@@ -429,7 +429,7 @@ fn aggressive_churn() {
           count_sections(&nodes));
     while count_sections(&nodes) <= target_section_num || nodes.len() < target_network_size {
         if nodes.len() > (2 * min_section_size) {
-            let peer_1 = rng.gen_range(0, nodes.len());
+            let peer_1 = rng.gen_range(0, nodes.len() as u32) as usize;
             let peer_2 = gen_range_except(&mut rng, 0, nodes.len(), &iter::once(peer_1).collect());
             debug!("Lost connection between {} and {}",
                    nodes[peer_1].name(),
