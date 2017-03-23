@@ -19,7 +19,7 @@ use std::collections::{HashMap, VecDeque};
 use std::collections::hash_map::{DefaultHasher, Entry};
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant};
 
 fn hash<T: Hash>(t: &T) -> u64 {
     let mut hasher = DefaultHasher::new();
@@ -32,9 +32,9 @@ fn hash<T: Hash>(t: &T) -> u64 {
 pub struct MessageFilter<Message> {
     /// The number of times each message has been received so far, and the timestamp of the last
     /// insertion.
-    count: HashMap<u64, (usize, SystemTime)>,
+    count: HashMap<u64, (usize, Instant)>,
     /// A record of message hashes and the timestamps of all insertions, ordered chronologically.
-    timeout_queue: VecDeque<(u64, SystemTime)>,
+    timeout_queue: VecDeque<(u64, Instant)>,
     time_to_live: Duration,
     phantom: PhantomData<Message>,
 }
@@ -62,7 +62,7 @@ impl<Message: Hash> MessageFilter<Message> {
     pub fn insert(&mut self, message: &Message) -> usize {
         self.remove_expired();
         let hash_code = hash(message);
-        let now = SystemTime::now();
+        let now = Instant::now();
         self.timeout_queue.push_back((hash_code, now));
         match self.count.entry(hash_code) {
             Entry::Occupied(entry) => {
@@ -101,13 +101,15 @@ impl<Message: Hash> MessageFilter<Message> {
     }
 
     fn remove_expired(&mut self) {
-        let expiry = SystemTime::now() - self.time_to_live; // Older than this means expired.
+        let now = Instant::now();
         while let Some((hash_code, time)) = self.timeout_queue.pop_front() {
-            if time >= expiry {
+            if now.duration_since(time) <= self.time_to_live {
                 self.timeout_queue.push_front((hash_code, time));
                 return;
-            } else if self.count.get(&hash_code).map_or(false, |&(_, ref t)| *t < expiry) {
-                let _removed_pair = self.count.remove(&hash_code);
+            } else if let Some(&(_, t)) = self.count.get(&hash_code) {
+                if now.duration_since(t) > self.time_to_live {
+                    let _removed_pair = self.count.remove(&hash_code);
+                }
             }
         }
     }
