@@ -91,7 +91,10 @@ fn add_random_node<R: Rng>(rng: &mut R,
 
     if len > (2 * min_section_size) {
         let exclude = vec![new_node, proxy].into_iter().collect();
-        let block_peer = gen_range_except(rng, 0, nodes.len(), &exclude);
+        let block_peer = gen_range_except(rng, 1, nodes.len(), &exclude);
+        debug!("Connection between {} and {} blocked.",
+               nodes[new_node].name(),
+               nodes[block_peer].name());
         network.block_connection(nodes[new_node].handle.endpoint(),
                                  nodes[block_peer].handle.endpoint());
         network.block_connection(nodes[block_peer].handle.endpoint(),
@@ -110,7 +113,7 @@ fn random_churn<R: Rng>(rng: &mut R,
                         -> Option<usize> {
     let len = nodes.len();
 
-    if len > network.min_section_size() + 2 && rng.gen_weighted_bool(3) {
+    if count_sections(nodes) > 1 && rng.gen_weighted_bool(3) {
         let _ = nodes.remove(rng.gen_range(1, len));
         let _ = nodes.remove(rng.gen_range(1, len - 1));
         let _ = nodes.remove(rng.gen_range(1, len - 2));
@@ -123,6 +126,9 @@ fn random_churn<R: Rng>(rng: &mut R,
         if nodes.len() > 2 * network.min_section_size() {
             let peer_1 = rng.gen_range(1, len);
             let peer_2 = gen_range_except(rng, 1, len, &iter::once(peer_1).collect());
+            debug!("Lost connection between {} and {}",
+                   nodes[peer_1].name(),
+                   nodes[peer_2].name());
             network.lost_connection(nodes[peer_1].handle.endpoint(),
                                     nodes[peer_2].handle.endpoint());
         }
@@ -138,6 +144,9 @@ fn random_churn<R: Rng>(rng: &mut R,
             }
             let exclude = vec![index, proxy].into_iter().collect();
             let block_peer = gen_range_except(rng, 1, nodes.len(), &exclude);
+            debug!("Connection between {} and {} blocked.",
+                   nodes[index].name(),
+                   nodes[block_peer].name());
             network.block_connection(nodes[index].handle.endpoint(),
                                      nodes[block_peer].handle.endpoint());
             network.block_connection(nodes[block_peer].handle.endpoint(),
@@ -239,12 +248,12 @@ impl ExpectedGets {
                             // in this test), and shall have at most one for each message.
                             if let Authority::NaeManager(_) = dst {
                                 assert!(unexpected_receive.insert(msg_id),
-                                        "Unexpected request for node {:?}: {:?} / {:?}",
+                                        "Unexpected request for node {}: {:?} / {:?}",
                                         node.name(),
                                         key,
                                         self.sections);
                             } else {
-                                panic!("Unexpected request for node {:?}: {:?} / {:?}",
+                                panic!("Unexpected request for node {}: {:?} / {:?}",
                                        node.name(),
                                        key,
                                        self.sections);
@@ -254,7 +263,7 @@ impl ExpectedGets {
                     } else {
                         assert_eq!(node.name(), dst.name());
                         assert!(self.messages.remove(&key),
-                                "Unexpected request for node {:?}: {:?}",
+                                "Unexpected request for node {}: {:?}",
                                 node.name(),
                                 key);
                     }
@@ -266,7 +275,7 @@ impl ExpectedGets {
                 if let Event::Request { request: Request::Get(data_id, msg_id), src, dst } = event {
                     let key = (data_id, msg_id, src, dst);
                     assert!(self.messages.remove(&key),
-                            "Unexpected request for client {:?}: {:?}",
+                            "Unexpected request for client {}: {:?}",
                             client.name(),
                             key);
                 }
@@ -415,15 +424,15 @@ fn aggressive_churn() {
         if nodes.len() > (2 * min_section_size) {
             let peer_1 = rng.gen_range(0, nodes.len());
             let peer_2 = gen_range_except(&mut rng, 0, nodes.len(), &iter::once(peer_1).collect());
-            info!("lost connection between {:?} and {:?}",
-                  nodes[peer_1].name(),
-                  nodes[peer_2].name());
+            debug!("Lost connection between {} and {}",
+                   nodes[peer_1].name(),
+                   nodes[peer_2].name());
             network.lost_connection(nodes[peer_1].handle.endpoint(),
                                     nodes[peer_2].handle.endpoint());
         }
         let (added_index, _) = add_random_node(&mut rng, &network, &mut nodes, min_section_size);
         poll_and_resend(&mut nodes, &mut []);
-        info!("added {:?}", nodes[added_index].name());
+        debug!("Added {}", nodes[added_index].name());
         verify_invariant_for_all_nodes(&nodes);
         verify_section_list_signatures(&nodes);
         send_and_receive(&mut rng, &mut nodes, min_section_size, Some(added_index));
@@ -437,7 +446,7 @@ fn aggressive_churn() {
         let (added_index, proxy_index) =
             add_random_node(&mut rng, &network, &mut nodes, min_section_size);
         poll_and_resend(&mut nodes, &mut []);
-        info!("simultaneous added {:?}", nodes[added_index].name());
+        debug!("Simultaneous added {}", nodes[added_index].name());
         // An candidate could be blocked if it connected to a pre-merge minority section.
         // Or be rejected when the proxy node's RT is not large enough due to a lost tunnel.
         // In that case, a restart of candidate shall be carried out.
@@ -461,8 +470,9 @@ fn aggressive_churn() {
     info!("Churn [{} nodes, {} sections]: dropping nodes",
           nodes.len(),
           count_sections(&nodes));
-    while nodes.len() > min_section_size {
-        info!("dropping ------ {}", nodes.len());
+    while count_sections(&nodes) > 1 && nodes.len() > min_section_size {
+        debug!("Dropping random nodes.  Current node count: {}",
+               nodes.len());
         drop_random_nodes(&mut rng, &mut nodes, min_section_size);
         poll_and_resend(&mut nodes, &mut []);
         verify_invariant_for_all_nodes(&nodes);
