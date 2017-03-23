@@ -1,6 +1,8 @@
 # Routing - Change Log
 
-## [0.28.3]
+## [0.28.4]
+- Don't try to reconnect to candidates that are not yet approved.
+- Don't include peers in `sent_to` that are not directly connected.
 - Use SHA3 everywhere instead of SipHash.
 - `PrefixSection` authorities now always refer to all sections _compatible_
   with the given prefix.
