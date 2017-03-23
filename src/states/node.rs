@@ -34,7 +34,7 @@ use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, MAX_PART_LEN, Messag
                RoutingMessage, SectionList, SignedMessage, UserMessage, UserMessageCache};
 use outbox::EventBox;
 use peer_manager::{ConnectionInfoPreparedResult, Peer, PeerManager, PeerState,
-                   RESOURCE_PROOF_DURATION_SECS, SectionMap};
+                   RESOURCE_PROOF_DURATION_SECS, RoutingConnection, SectionMap};
 use rand::{self, Rng};
 use resource_proof::ResourceProof;
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
@@ -2860,7 +2860,11 @@ impl Node {
                 .collect();
             let new_sent_to = if self.in_authority(&routing_msg.dst) {
                 sent_to.iter()
-                    .chain(targets.iter())
+                    .chain(targets.iter()
+                        .filter(|target| match self.peer_mgr.get_state_by_name(target) {
+                            Some(&PeerState::Routing(RoutingConnection::Tunnel)) => false,
+                            _ => true,
+                        }))
                     .chain(iter::once(self.name()))
                     .cloned()
                     .collect()
