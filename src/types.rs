@@ -15,8 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+#[cfg(test)]
 use maidsafe_utilities::SeededRng;
 use maidsafe_utilities::event_sender::MaidSafeObserver;
+#[cfg(not(test))]
+use rand;
 use xor_name::XorName;
 
 pub type RoutingActionSender = MaidSafeObserver<::action::Action>;
@@ -31,9 +34,16 @@ pub struct MessageId(XorName);
 
 impl MessageId {
     /// Generate a new `MessageId` with random content.
+    #[cfg(test)]
     pub fn new() -> MessageId {
         let mut rng = SeededRng::thread_rng();
         MessageId(rng.gen())
+    }
+
+    /// Generate a new `MessageId` with random content.
+    #[cfg(not(test))]
+    pub fn new() -> MessageId {
+        MessageId(rand::random())
     }
 
     /// Generate a `MessageId` with value 0. This should only be used for messages where there is
