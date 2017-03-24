@@ -512,18 +512,18 @@ impl PeerManager {
                     if let PeerState::Candidate(_) = *peer.state() {
                         return Ok(Some(*peer_id));
                     } else {
-                        trace!("Node({:?}) Candidate {:?} not yet connected to us.",
+                        trace!("Node({}) Candidate {} not yet connected to us.",
                                self.our_public_id.name(),
                                candidate_name);
                         return Ok(None);
                     };
                 } else {
-                    trace!("Node({:?}) No peer ID with name {:?}",
+                    trace!("Node({}) No peer ID with name {}",
                            self.our_public_id.name(),
                            candidate_name);
                 }
             } else {
-                trace!("Node({:?}) No peer with name {:?}",
+                trace!("Node({}) No peer with name {}",
                        self.our_public_id.name(),
                        candidate_name);
             }
@@ -534,7 +534,7 @@ impl PeerManager {
         let mut candidate = Candidate::new(client_auth);
         candidate.state = CandidateState::Approved;
         let _ = self.candidates.insert(candidate_name, candidate);
-        trace!("{:?} No candidate with name {:?}", self, candidate_name);
+        trace!("{:?} No candidate with name {}", self, candidate_name);
         // TODO: more specific return error
         Err(RoutingError::InvalidStateForOperation)
     }
@@ -705,7 +705,7 @@ impl PeerManager {
                         state: PeerState::Candidate(RoutingConnection::JoiningNode(timestamp)),
                         ..
                     } => {
-                        debug!("{:?} still acts as proxy of {:?}, re-insert peer as JoiningNode",
+                        debug!("{:?} Still acts as proxy of {:?}, re-insert peer as JoiningNode",
                                self,
                                name);
                         let _ = self.peer_map.insert(Peer {
@@ -757,10 +757,19 @@ impl PeerManager {
     pub fn can_tunnel_for(&self, peer_id: &PeerId, dst_id: &PeerId) -> bool {
         let peer_state = self.get_state(peer_id);
         let dst_state = self.get_state(dst_id);
-        match (peer_state, dst_state) {
+        let result = match (peer_state, dst_state) {
             (Some(peer1), Some(peer2)) => peer1.can_tunnel_for() && peer2.can_tunnel_for(),
             _ => false,
+        };
+        if !result {
+            trace!("{:?} Can't tunnel from {:?} with state {:?} to {:?} with state {:?}.",
+                   self,
+                   peer_id,
+                   peer_state,
+                   dst_id,
+                   dst_state);
         }
+        result
     }
 
     /// Returns `true` if directly connected to this peer.
@@ -1037,7 +1046,7 @@ impl PeerManager {
         let peer = match self.peer_map.get_by_name(name) {
             Some(peer) => peer,
             None => {
-                error!("{:?} has {} in RT, but has no entry in peer_map for it.",
+                error!("{:?} Have {} in RT, but have no entry in peer_map for it.",
                        self,
                        name);
                 return None;
@@ -1046,7 +1055,9 @@ impl PeerManager {
         let peer_id = match peer.peer_id {
             Some(peer_id) => peer_id,
             None => {
-                error!("{:?} has {} in RT, but has no peer ID for it.", self, name);
+                error!("{:?} Have {} in RT, but have no peer ID for it.",
+                       self,
+                       name);
                 return None;
             }
         };
@@ -1054,7 +1065,7 @@ impl PeerManager {
             PeerState::Routing(RoutingConnection::Tunnel) => true,
             PeerState::Routing(_) => false,
             _ => {
-                error!("{:?} has {} in RT, but has state {:?} for it.",
+                error!("{:?} Have {} in RT, but have state {:?} for it.",
                        self,
                        name,
                        peer.state);
@@ -1273,7 +1284,7 @@ impl PeerManager {
             peer.state = state;
             return true;
         }
-        trace!("{:?}: {:?} not found. Cannot set state {:?}.",
+        trace!("{:?} {:?} not found. Cannot set state {:?}.",
                self,
                peer_id,
                state);
