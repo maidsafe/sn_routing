@@ -864,7 +864,7 @@ impl PeerManager {
 
     /// Finds all joining nodes that have timed out and returns their peer IDs.
     pub fn remove_expired_joining_nodes(&mut self) -> Vec<PeerId> {
-        let expired_ids = self.peer_map
+        self.peer_map
             .peers()
             .filter(|peer| match peer.state {
                         PeerState::JoiningNode | PeerState::Proxy => {
@@ -874,9 +874,7 @@ impl PeerManager {
                         _ => false,
                     })
             .filter_map(|peer| peer.peer_id)
-            .collect_vec();
-
-        expired_ids
+            .collect_vec()
     }
 
     /// Removes all timed out connections to unknown peers (i.e. whose public id we don't have yet)
