@@ -18,7 +18,7 @@
 use action::Action;
 use cache::{Cache, NullCache};
 use client_error::ClientError;
-use data::{ImmutableData, MutableData, PermissionSet, User, Value};
+use data::{EntryAction, ImmutableData, MutableData, PermissionSet, User, Value};
 use error::{InterfaceError, RoutingError};
 use event::Event;
 use event_stream::{EventStepper, EventStream};
@@ -223,6 +223,17 @@ impl Node {
                   },
                   DEFAULT_PRIORITY);
 
+    /// Send a `MutateMDataEntries` request.
+    impl_request!(send_mutate_mdata_entries_request,
+                  MutateMDataEntries {
+                      name: XorName,
+                      tag: u64,
+                      actions: BTreeMap<Vec<u8>, EntryAction>,
+                      msg_id: MessageId,
+                      requester: sign::PublicKey,
+                  },
+                  DEFAULT_PRIORITY);
+
     /// Send a `GetMDataShell` request.
     impl_request!(send_get_mdata_shell_request,
                   GetMDataShell {
@@ -243,6 +254,39 @@ impl Node {
                   },
                   // TODO (adam): is this the correct priority?
                   RELOCATE_PRIORITY);
+
+    /// Send a `SetMDataUserPermissions` request.
+    impl_request!(send_set_mdata_user_permissions_request,
+                  SetMDataUserPermissions {
+                      name: XorName,
+                      tag: u64,
+                      user: User,
+                      permissions: PermissionSet,
+                      version: u64,
+                      msg_id: MessageId,
+                      requester: sign::PublicKey,
+                  }, DEFAULT_PRIORITY);
+
+    /// Send a `DelMDataUserPermissions` request.
+    impl_request!(send_del_mdata_user_permissions_request,
+                  DelMDataUserPermissions {
+                      name: XorName,
+                      tag: u64,
+                      user: User,
+                      version: u64,
+                      msg_id: MessageId,
+                      requester: sign::PublicKey,
+                  }, DEFAULT_PRIORITY);
+
+    /// Send a `ChangeMDataOwner` request.
+    impl_request!(send_change_mdata_owner_request,
+                  ChangeMDataOwner {
+                      name: XorName,
+                      tag: u64,
+                      new_owners: BTreeSet<sign::PublicKey>,
+                      version: u64,
+                      msg_id: MessageId,
+                  }, DEFAULT_PRIORITY);
 
     /// Send a `Refresh` request from `src` to `dst` to trigger churn.
     pub fn send_refresh_request(&mut self,
