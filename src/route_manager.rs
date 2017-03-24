@@ -92,42 +92,6 @@ impl RouteManager {
         self.routing_table.add(*pub_id.name(), want_to_merge)
     }
 
-    /// Returns direct-connected peers suitable as a tunnel node for `client_name`.
-    pub fn potential_tunnel_nodes(&self,
-                                  peer_mgr: &PeerManager,
-                                  client_name: &XorName)
-                                  -> Vec<(XorName, PeerId)> {
-        self.routing_table
-            .iter()
-            .filter(|tunnel_name| self.is_potential_tunnel_node(peer_mgr, tunnel_name, client_name))
-            .filter_map(|name| {
-                            peer_mgr.get_peer_id(name).and_then(|peer_id| Some((*name, *peer_id)))
-                        })
-            .collect()
-    }
-
-    /// Returns `true` if `tunnel_name` is directly connected and in our section or in
-    /// `client_name`'s section. If those sections are the same, `tunnel_name` is also allowed to
-    /// match our sibling prefix instead.
-    pub fn is_potential_tunnel_node(&self,
-                                    peer_mgr: &PeerManager,
-                                    tunnel_name: &XorName,
-                                    client_name: &XorName)
-                                    -> bool {
-        if peer_mgr.name() == tunnel_name || peer_mgr.name() == client_name ||
-           !peer_mgr.can_tunnel_for_name(tunnel_name) {
-            return false;
-        }
-        let our_prefix = self.routing_table.our_prefix();
-        if our_prefix.matches(client_name) {
-            our_prefix.popped().matches(tunnel_name)
-        } else {
-            self.routing_table.find_section_prefix(tunnel_name).map_or(false, |pfx| {
-                pfx.matches(client_name) || pfx == *our_prefix
-            })
-        }
-    }
-
     /// Splits the indicated section and returns the `PeerId`s of any peers to which we should not
     /// remain connected.
     pub fn split_section(&mut self,

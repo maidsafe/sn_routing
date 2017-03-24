@@ -21,7 +21,7 @@ use id::PublicId;
 use itertools::Itertools;
 use rand;
 use resource_proof::ResourceProof;
-use routing_table::{Authority, Prefix};
+use routing_table::{Authority, Prefix, RoutingTable};
 use rust_sodium::crypto::hash::sha256;
 use rust_sodium::crypto::sign;
 use signature_accumulator::ACCUMULATION_TIMEOUT_SECS;
@@ -392,11 +392,6 @@ impl PeerManager {
             our_public_id: our_public_id,
             candidates: HashMap::new(),
         }
-    }
-
-    /// Returns our name
-    pub fn name(&self) -> &XorName {
-        self.our_public_id.name()
     }
 
     /// Update the PeerManager's idea of our own ID (due to relocation).
@@ -1075,6 +1070,41 @@ impl PeerManager {
 
     pub fn correct_routing_state_to_direct(&mut self, peer_id: &PeerId) {
         let _ = self.set_state(peer_id, PeerState::Routing(RoutingConnection::Direct));
+    }
+
+    /// Returns direct-connected peers suitable as a tunnel node for `client_name`.
+    pub fn potential_tunnel_nodes(&self,
+                                  routing_table: &RoutingTable<XorName>,
+                                  client_name: &XorName)
+                                  -> Vec<(XorName, PeerId)> {
+        routing_table.iter()
+            .filter(|tunnel_name| {
+                        self.is_potential_tunnel_node(routing_table, tunnel_name, client_name)
+                    })
+            .filter_map(|name| self.get_peer_id(name).and_then(|peer_id| Some((*name, *peer_id))))
+            .collect()
+    }
+
+    /// Returns `true` if `tunnel_name` is directly connected and in our section or in
+    /// `client_name`'s section. If those sections are the same, `tunnel_name` is also allowed to
+    /// match our sibling prefix instead.
+    pub fn is_potential_tunnel_node(&self,
+                                    routing_table: &RoutingTable<XorName>,
+                                    tunnel_name: &XorName,
+                                    client_name: &XorName)
+                                    -> bool {
+        if self.our_public_id.name() == tunnel_name || self.our_public_id.name() == client_name ||
+           !self.can_tunnel_for_name(tunnel_name) {
+            return false;
+        }
+        let our_prefix = routing_table.our_prefix();
+        if our_prefix.matches(client_name) {
+            our_prefix.popped().matches(tunnel_name)
+        } else {
+            routing_table.find_section_prefix(tunnel_name).map_or(false, |pfx| {
+                pfx.matches(client_name) || pfx == *our_prefix
+            })
+        }
     }
 
     /// Sets the given peer to state `SearchingForTunnel` and returns querying candidates.

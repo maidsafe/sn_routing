@@ -490,7 +490,8 @@ impl Node {
         if self.peer_mgr.set_searching_for_tunnel(peer_id, *pub_id) {
             return;
         }
-        let potential_nodes = self.route_mgr.potential_tunnel_nodes(&self.peer_mgr, pub_id.name());
+        let potential_nodes =
+            self.peer_mgr.potential_tunnel_nodes(self.route_mgr.routing_table(), pub_id.name());
         for (name, dst_peer_id) in potential_nodes {
             trace!("{:?} Asking {:?} to serve as a tunnel for {:?}.",
                    self,
@@ -1569,9 +1570,9 @@ impl Node {
         }
 
         for (dst_id, peer_name) in self.peer_mgr.peers_needing_tunnel() {
-            if self.route_mgr.is_potential_tunnel_node(&self.peer_mgr,
-                                                       public_id.name(),
-                                                       &peer_name) {
+            if self.peer_mgr.is_potential_tunnel_node(self.route_mgr.routing_table(),
+                                                      public_id.name(),
+                                                      &peer_name) {
                 trace!("{:?} Asking {:?} to serve as a tunnel for {:?}",
                        self,
                        peer_id,
