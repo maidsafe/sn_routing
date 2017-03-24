@@ -30,10 +30,10 @@ fn hash<T: Hash>(t: &T) -> u64 {
 /// A time based message filter that takes any generic type as a key and will drop keys after a
 /// time period (LRU Cache pattern).
 pub struct MessageFilter<Message> {
-    /// The number of times each message has been received so far, and the timestamp of the last
-    /// insertion.
+    /// The number of times each message has been received so far, and the expiry timestamp.
     count: HashMap<u64, (usize, Instant)>,
-    /// A record of message hashes and the timestamps of all insertions, ordered chronologically.
+    /// A record of message hashes and the expiry timestamps of all insertions, ordered
+    /// chronologically. The timestamps are out of date if the same hash has been inserted again.
     timeout_queue: VecDeque<(u64, Instant)>,
     time_to_live: Duration,
     phantom: PhantomData<Message>,
@@ -62,16 +62,16 @@ impl<Message: Hash> MessageFilter<Message> {
     pub fn insert(&mut self, message: &Message) -> usize {
         self.remove_expired();
         let hash_code = hash(message);
-        let now = Instant::now();
-        self.timeout_queue.push_back((hash_code, now));
+        let expiry = Instant::now() + self.time_to_live;
+        self.timeout_queue.push_back((hash_code, expiry));
         match self.count.entry(hash_code) {
             Entry::Occupied(entry) => {
                 let &mut (ref mut c, ref mut t) = entry.into_mut();
-                *t = now;
+                *t = expiry;
                 *c += 1;
                 *c
             }
-            Entry::Vacant(entry) => entry.insert((1, now)).0,
+            Entry::Vacant(entry) => entry.insert((1, expiry)).0,
         }
     }
 
@@ -102,13 +102,11 @@ impl<Message: Hash> MessageFilter<Message> {
 
     fn remove_expired(&mut self) {
         let now = Instant::now();
-        while let Some((hash_code, time)) = self.timeout_queue.pop_front() {
-            if now.duration_since(time) <= self.time_to_live {
-                self.timeout_queue.push_front((hash_code, time));
-                return;
-            } else if let Some(&(_, t)) = self.count.get(&hash_code) {
-                if now.duration_since(t) > self.time_to_live {
-                    let _removed_pair = self.count.remove(&hash_code);
+        while self.timeout_queue.front().map_or(false, |&(_, ref t)| *t <= now) {
+            let (hash_code, _) = unwrap!(self.timeout_queue.pop_front());
+            if let Entry::Occupied(entry) = self.count.entry(hash_code) {
+                if entry.get().1 <= now {
+                    let _removed_pair = entry.remove_entry();
                 }
             }
         }
