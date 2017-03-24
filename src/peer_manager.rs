@@ -753,11 +753,12 @@ impl PeerManager {
             .filter(|&(name, candidate)| {
                         !candidate.is_approved() && !self.routing_table.our_prefix().matches(name)
                     })
-            .map(|(name, _)| name);
+            .map(|(name, _)| *name)
+            .collect::<Vec<_>>();
 
         let ids_to_drop = names_to_drop
             .iter()
-            .chain(removal_keys)
+            .chain(removal_keys.iter())
             .filter_map(|name| {
                 self.peer_map.remove_by_name(name).and_then(|peer| match peer {
                     Peer {
@@ -794,7 +795,7 @@ impl PeerManager {
 
         self.cleanup_proxy_peer_id();
 
-        for name in removal_keys {
+        for name in removal_keys.iter() {
             let _ = self.candidates.remove(name);
             trace!("{:?} Removed unapproved candidate {:?} after split.",
                    self,
