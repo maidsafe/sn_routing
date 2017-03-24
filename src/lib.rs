@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -102,7 +102,7 @@
 
 #![doc(html_logo_url =
            "https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png",
-       html_favicon_url = "http://maidsafe.net/img/favicon.ico",
+       html_favicon_url = "https://maidsafe.net/img/favicon.ico",
        html_root_url = "https://docs.rs/routing")]
 
 // For explanation of lint checks, run `rustc -W help` or see
@@ -124,8 +124,6 @@
 #[macro_use]
 extern crate log;
 extern crate maidsafe_utilities;
-#[cfg_attr(feature="cargo-clippy", allow(useless_attribute))]
-#[allow(unused_extern_crates)]
 #[macro_use]
 extern crate quick_error;
 #[macro_use]
@@ -167,11 +165,13 @@ mod tunnels;
 mod types;
 mod utils;
 mod xor_name;
-mod sha3;
 
 /// Mock crust
 #[cfg(feature = "use-mock-crust")]
 pub mod mock_crust;
+
+/// SHA-3 type alias.
+pub mod sha3;
 
 /// Messaging infrastructure
 pub mod messaging;
@@ -184,7 +184,7 @@ pub const TYPE_TAG_SESSION_PACKET: u64 = 0;
 pub const TYPE_TAG_DNS_PACKET: u64 = 5;
 
 /// The quorum, as a percentage of the number of members of the authority.
-pub const QUORUM: usize = 60;
+pub const QUORUM: usize = 51;
 
 pub use cache::{Cache, NullCache};
 pub use client::Client;

@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -34,7 +34,7 @@
 #![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
          missing_debug_implementations, variant_size_differences)]
 
-#![cfg_attr(feature = "use-mock-crust", allow(unused_extern_crates))]
+#![cfg_attr(feature = "use-mock-crust", allow(unused_extern_crates, unused_imports))]
 
 #[macro_use]
 extern crate log;
@@ -110,7 +110,7 @@ Options:
         Put(String, String),
     }
 
-    fn read_user_commands(command_sender: Sender<UserCommand>) {
+    fn read_user_commands(command_sender: &Sender<UserCommand>) {
         loop {
             let mut command = String::new();
             let stdin = io::stdin();
@@ -129,8 +129,8 @@ Options:
             } else if parts.len() == 2 && parts[0] == "get" {
                 let _ = command_sender.send(UserCommand::Get(parts[1].to_string()));
             } else if parts.len() == 3 && parts[0] == "put" {
-                let _ =
-                command_sender.send(UserCommand::Put(parts[1].to_string(), parts[2].to_string()));
+                let _ = command_sender.send(UserCommand::Put(parts[1].to_string(),
+                                                             parts[2].to_string()));
             } else {
                 println!("Unrecognised command");
             }
@@ -153,7 +153,7 @@ Options:
                 command_receiver: command_receiver,
                 exit: false,
                 _joiner: thread::named("Command reader",
-                                       move || read_user_commands(command_sender)),
+                                       move || read_user_commands(&command_sender)),
             }
         }
 

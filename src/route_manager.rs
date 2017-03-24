@@ -83,10 +83,49 @@ impl RouteManager {
     /// Tries to add the given peer to the routing table. If successful, this returns `Ok(true)` if
     /// the addition should cause our section to split or `Ok(false)` if the addition shouldn't
     /// cause a split.
-    pub fn add_to_routing_table(&mut self, pub_id: &PublicId) -> Result<bool, RoutingTableError> {
+    pub fn add_to_routing_table(&mut self,
+                                pub_id: &PublicId,
+                                want_to_merge: bool)
+                                -> Result<bool, RoutingTableError> {
         let _ = self.expected_peers.remove(pub_id.name());
 
-        self.routing_table.add(*pub_id.name())
+        self.routing_table.add(*pub_id.name(), want_to_merge)
+    }
+
+    /// Returns direct-connected peers suitable as a tunnel node for `client_name`.
+    pub fn potential_tunnel_nodes(&self,
+                                  peer_mgr: &PeerManager,
+                                  client_name: &XorName)
+                                  -> Vec<(XorName, PeerId)> {
+        self.routing_table
+            .iter()
+            .filter(|tunnel_name| self.is_potential_tunnel_node(peer_mgr, tunnel_name, client_name))
+            .filter_map(|name| {
+                            peer_mgr.get_peer_id(name).and_then(|peer_id| Some((*name, *peer_id)))
+                        })
+            .collect()
+    }
+
+    /// Returns `true` if `tunnel_name` is directly connected and in our section or in
+    /// `client_name`'s section. If those sections are the same, `tunnel_name` is also allowed to
+    /// match our sibling prefix instead.
+    pub fn is_potential_tunnel_node(&self,
+                                    peer_mgr: &PeerManager,
+                                    tunnel_name: &XorName,
+                                    client_name: &XorName)
+                                    -> bool {
+        if peer_mgr.name() == tunnel_name || peer_mgr.name() == client_name ||
+           !peer_mgr.can_tunnel_for_name(tunnel_name) {
+            return false;
+        }
+        let our_prefix = self.routing_table.our_prefix();
+        if our_prefix.matches(client_name) {
+            our_prefix.popped().matches(tunnel_name)
+        } else {
+            self.routing_table.find_section_prefix(tunnel_name).map_or(false, |pfx| {
+                pfx.matches(client_name) || pfx == *our_prefix
+            })
+        }
     }
 
     /// Splits the indicated section and returns the `PeerId`s of any peers to which we should not
@@ -128,20 +167,24 @@ impl RouteManager {
     ///
     /// Returns sender prefix, merge prefix, then sections.
     pub fn should_merge(&self,
-                        peer_mgr: &PeerManager)
+                        peer_mgr: &PeerManager,
+                        we_want_to_merge: bool,
+                        they_want_to_merge: bool)
                         -> Option<(Prefix<XorName>, Prefix<XorName>, SectionMap)> {
-        if !self.routing_table.they_want_to_merge() && !self.expected_peers.is_empty() {
+        if !they_want_to_merge && !self.expected_peers.is_empty() {
             return None;
         }
-        self.routing_table.should_merge().map(|merge_details| {
-            let sections = merge_details.sections
-                .into_iter()
-                .map(|(prefix, members)| {
-                    (prefix, peer_mgr.get_pub_ids(&members).into_iter().collect())
-                })
-                .collect();
-            (merge_details.sender_prefix, merge_details.merge_prefix, sections)
-        })
+        self.routing_table
+            .should_merge(we_want_to_merge, they_want_to_merge)
+            .map(|merge_details| {
+                let sections = merge_details.sections
+                    .into_iter()
+                    .map(|(prefix, members)| {
+                             (prefix, peer_mgr.get_pub_ids(&members).into_iter().collect())
+                         })
+                    .collect();
+                (merge_details.sender_prefix, merge_details.merge_prefix, sections)
+            })
     }
 
     // Returns the `OwnMergeState` from `RoutingTable` which defines what further action needs to be
@@ -160,8 +203,9 @@ impl RouteManager {
 
         let sections_as_names = sections.into_iter()
             .map(|(prefix, members)| {
-                (prefix, members.into_iter().map(|pub_id| *pub_id.name()).collect::<BTreeSet<_>>())
-            })
+                     (prefix,
+                      members.into_iter().map(|pub_id| *pub_id.name()).collect::<BTreeSet<_>>())
+                 })
             .collect();
 
         let own_merge_details = OwnMergeDetails {
@@ -171,13 +215,13 @@ impl RouteManager {
         };
         let mut expected_peers = mem::replace(&mut self.expected_peers, HashMap::new());
         expected_peers.extend(own_merge_details.sections
-            .values()
-            .flat_map(|section| section.iter())
-            .filter_map(|name| if self.routing_table.has(name) {
-                None
-            } else {
-                Some((*name, Instant::now()))
-            }));
+                                  .values()
+                                  .flat_map(|section| section.iter())
+                                  .filter_map(|name| if self.routing_table.has(name) {
+                                                  None
+                                              } else {
+                                                  Some((*name, Instant::now()))
+                                              }));
         self.expected_peers = expected_peers;
         (self.routing_table.merge_own_section(own_merge_details), needed)
     }

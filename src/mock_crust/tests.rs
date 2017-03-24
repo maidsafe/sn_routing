@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -17,11 +17,11 @@
 
 // These tests are almost straight up copied from crust::service::tests
 
+use super::crust::{CrustEventSender, CrustUser, Event, Service};
+use super::support::{Config, Network};
 use maidsafe_utilities::event_sender::{MaidSafeEventCategory, MaidSafeObserver};
 use std::collections::HashSet;
 use std::sync::mpsc::{self, Receiver};
-use super::crust::{CrustEventSender, CrustUser, Event, Service};
-use super::support::{Config, Network};
 
 fn get_event_sender() -> (CrustEventSender, Receiver<MaidSafeEventCategory>, Receiver<Event>) {
     let (category_tx, category_rx) = mpsc::channel();
@@ -75,16 +75,17 @@ fn start_two_services_bootstrap_communicate_exit() {
 
     unwrap!(service_1.start_bootstrap(HashSet::new(), CrustUser::Node));
     let id_0 = expect_event!(event_rx_1, Event::BootstrapConnect(id, _) => id);
-    let id_1 = expect_event!(event_rx_0, Event::BootstrapAccept(id) => id);
+    let id_1 = expect_event!(event_rx_0, Event::BootstrapAccept(id, CrustUser::Node) => id);
 
-    assert!(id_0 != id_1);
+    assert_ne!(id_0, id_1);
 
     // send data from 0 to 1
     let data_sent = vec![0, 1, 255, 254, 222, 1];
     unwrap!(service_0.send(id_1, data_sent.clone(), 0));
 
     // 1 should rx data
-    let (data_recvd, peer_id) = expect_event!(event_rx_1,
+    let (data_recvd, peer_id) =
+        expect_event!(event_rx_1,
                       Event::NewMessage(their_id, msg) => (msg, their_id));
 
     assert_eq!(data_recvd, data_sent);
@@ -95,7 +96,8 @@ fn start_two_services_bootstrap_communicate_exit() {
     unwrap!(service_1.send(id_0, data_sent.clone(), 0));
 
     // 0 should rx data
-    let (data_recvd, peer_id) = expect_event!(event_rx_0,
+    let (data_recvd, peer_id) =
+        expect_event!(event_rx_0,
                       Event::NewMessage(their_id, msg) => (msg, their_id));
 
     assert_eq!(data_recvd, data_sent);
@@ -146,7 +148,8 @@ fn start_two_services_rendezvous_connect() {
     unwrap!(service_0.send(id_1, data_sent.clone(), 0));
 
     // 1 should rx data
-    let (data_recvd, peer_id) = expect_event!(event_rx_1,
+    let (data_recvd, peer_id) =
+        expect_event!(event_rx_1,
                       Event::NewMessage(their_id, msg) => (msg, their_id));
 
     assert_eq!(data_recvd, data_sent);
@@ -157,7 +160,8 @@ fn start_two_services_rendezvous_connect() {
     unwrap!(service_1.send(id_0, data_sent.clone(), 0));
 
     // 0 should rx data
-    let (data_recvd, peer_id) = expect_event!(event_rx_0,
+    let (data_recvd, peer_id) =
+        expect_event!(event_rx_0,
                       Event::NewMessage(their_id, msg) => (msg, their_id));
 
     assert_eq!(data_recvd, data_sent);

@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::QUORUM;
 use ack_manager::Ack;
 #[cfg(not(feature = "use-mock-crust"))]
 use crust::PeerId;
@@ -24,7 +25,6 @@ use event::Event;
 use id::{FullId, PublicId};
 use itertools::Itertools;
 use lru_time_cache::LruCache;
-use maidsafe_utilities;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 #[cfg(feature = "use-mock-crust")]
 use mock_crust::crust::PeerId;
@@ -33,11 +33,12 @@ use routing_table::{Prefix, Xorable};
 use routing_table::Authority;
 use rust_sodium::crypto::{box_, sign};
 use rust_sodium::crypto::hash::sha256;
+use sha3;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::{self, Debug, Formatter};
 use std::iter;
 use std::time::Duration;
-use super::QUORUM;
+use tiny_keccak::sha3_256;
 use types::MessageId;
 use utils;
 use xor_name::XorName;
@@ -58,6 +59,8 @@ pub const CLIENT_GET_PRIORITY: u8 = 3;
 ///
 /// This is the only type allowed to be sent / received on the network.
 #[derive(Debug, RustcEncodable, RustcDecodable)]
+// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
+#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
 pub enum Message {
     /// A message sent between two nodes directly
     Direct(DirectMessage),
@@ -211,11 +214,11 @@ impl HopMessage {
                -> Result<HopMessage, RoutingError> {
         let bytes_to_sign = serialise(&content)?;
         Ok(HopMessage {
-            content: content,
-            route: route,
-            sent_to: sent_to,
-            signature: sign::sign_detached(&bytes_to_sign, signing_key),
-        })
+               content: content,
+               route: route,
+               sent_to: sent_to,
+               signature: sign::sign_detached(&bytes_to_sign, signing_key),
+           })
     }
 
     /// Validate that the message is signed by `verification_key` contained in message.
@@ -279,10 +282,10 @@ impl SignedMessage {
         src_sections.sort_by_key(|list| list.prefix);
         let sig = sign::sign_detached(&serialise(&content)?, full_id.signing_private_key());
         Ok(SignedMessage {
-            content: content,
-            src_sections: src_sections,
-            signatures: iter::once((*full_id.public_id(), sig)).collect(),
-        })
+               content: content,
+               src_sections: src_sections,
+               signatures: iter::once((*full_id.public_id(), sig)).collect(),
+           })
     }
 
     /// Confirms the signatures.
@@ -305,7 +308,10 @@ impl SignedMessage {
 
     /// Returns the number of nodes in the source authority.
     pub fn src_size(&self) -> usize {
-        self.src_sections.iter().map(|sl| sl.pub_ids.len()).sum()
+        self.src_sections
+            .iter()
+            .map(|sl| sl.pub_ids.len())
+            .sum()
     }
 
     /// Adds the given signature if it is new, without validating it. If the collection of section
@@ -405,7 +411,12 @@ impl SignedMessage {
                 let valid_names: HashSet<_> = self.src_sections
                     .iter()
                     .flat_map(|list| list.pub_ids.iter().map(PublicId::name))
-                    .sorted_by(|lhs, rhs| self.content.src.name().cmp_distance(lhs, rhs))
+                    .sorted_by(|lhs, rhs| {
+                                   self.content
+                                       .src
+                                       .name()
+                                       .cmp_distance(lhs, rhs)
+                               })
                     .into_iter()
                     .take(min_section_size)
                     .collect();
@@ -456,10 +467,10 @@ impl RoutingMessage {
     /// Create ack for the given message
     pub fn ack_from(msg: &RoutingMessage, src: Authority<XorName>) -> Result<Self, RoutingError> {
         Ok(RoutingMessage {
-            src: src,
-            dst: msg.src,
-            content: MessageContent::Ack(Ack::compute(msg)?, msg.priority()),
-        })
+               src: src,
+               dst: msg.src,
+               content: MessageContent::Ack(Ack::compute(msg)?, msg.priority()),
+           })
     }
 
     /// Returns the priority Crust should send this message with.
@@ -536,6 +547,8 @@ impl RoutingMessage {
 /// of Y to its routing table.
 ///
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
+// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
+#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
 pub enum MessageContent {
     // ---------- Internal ------------
     /// Ask the network to alter your `PublicId` name.
@@ -592,6 +605,14 @@ pub enum MessageContent {
         /// The message's unique identifier.
         message_id: MessageId,
     },
+    /// Sent to request a `SectionUpdate` from a neighbouring section. Only sent if we receive a
+    /// message from that section indicating its section prefix has altered while we've been in the
+    /// process of handling a merge ourself.
+    SectionUpdateRequest {
+        /// Section prefix of the sender. Included as the message is sent from a `ManagedNode`, but
+        /// the response should be sent to `PrefixSection` indicated by `our_prefix`.
+        our_prefix: Prefix<XorName>,
+    },
     /// Sent to notify neighbours and own members when our section's member list changed (for now,
     /// only when new nodes join).
     SectionUpdate {
@@ -600,6 +621,8 @@ pub enum MessageContent {
         prefix: Prefix<XorName>,
         /// Members of the section
         members: BTreeSet<PublicId>,
+        /// Whether the recipient should process merges implied by this update.
+        merge: bool,
     },
     /// Sent from a node to its own section to request their current routing table.
     RoutingTableRequest(MessageId, sha256::Digest),
@@ -631,7 +654,7 @@ pub enum MessageContent {
     /// Part of a user-facing message
     UserMessagePart {
         /// The hash of this user message.
-        hash: u64,
+        hash: sha3::Digest256,
         /// The number of parts.
         part_count: u32,
         /// The index of this part.
@@ -788,8 +811,15 @@ impl Debug for MessageContent {
                        section,
                        message_id)
             }
-            SectionUpdate { ref prefix, ref members } => {
-                write!(formatter, "SectionUpdate {{ {:?}, {:?} }}", prefix, members)
+            SectionUpdateRequest { ref our_prefix } => {
+                write!(formatter, "SectionUpdateRequest {{ {:?} }}", our_prefix)
+            }
+            SectionUpdate { ref prefix, ref members, ref merge } => {
+                write!(formatter,
+                       "SectionUpdate {{ {:?}, {:?}, {:?} }}",
+                       prefix,
+                       members,
+                       merge)
             }
             RoutingTableRequest(ref msg_id, ref digest) => {
                 write!(formatter,
@@ -812,12 +842,15 @@ impl Debug for MessageContent {
             Ack(ack, priority) => write!(formatter, "Ack({:?}, {})", ack, priority),
             UserMessagePart { hash, part_count, part_index, priority, cacheable, .. } => {
                 write!(formatter,
-                       "UserMessagePart {{ {}/{}, priority: {}, cacheable: {}, {:x} }}",
+                       "UserMessagePart {{ {}/{}, priority: {}, cacheable: {}, \
+                        {:02x}{:02x}{:02x}.. }}",
                        part_index + 1,
                        part_count,
                        priority,
                        cacheable,
-                       hash)
+                       hash[0],
+                       hash[1],
+                       hash[2])
             }
             AcceptAsCandidate { ref expect_id, ref client_auth, ref message_id } => {
                 write!(formatter,
@@ -852,29 +885,28 @@ impl UserMessage {
     /// Splits up the message into smaller `MessageContent` parts, which can individually be sent
     /// and routed, and then be put back together by the receiver.
     pub fn to_parts(&self, priority: u8) -> Result<Vec<MessageContent>, RoutingError> {
-        // TODO: This internally serialises the message - remove that duplicated work!
-        let hash = maidsafe_utilities::big_endian_sip_hash(self);
         let payload = serialise(self)?;
+        let hash = sha3_256(&payload);
         let len = payload.len();
         let part_count = (len + MAX_PART_LEN - 1) / MAX_PART_LEN;
 
         Ok((0..part_count)
-            .map(|i| {
-                MessageContent::UserMessagePart {
-                    hash: hash,
-                    part_count: part_count as u32,
-                    part_index: i as u32,
-                    cacheable: self.is_cacheable(),
-                    payload: payload[(i * len / part_count)..((i + 1) * len / part_count)].to_vec(),
-                    priority: priority,
-                }
-            })
-            .collect())
+               .map(|i| {
+            MessageContent::UserMessagePart {
+                hash: hash,
+                part_count: part_count as u32,
+                part_index: i as u32,
+                cacheable: self.is_cacheable(),
+                payload: payload[(i * len / part_count)..((i + 1) * len / part_count)].to_vec(),
+                priority: priority,
+            }
+        })
+               .collect())
     }
 
     /// Puts the given parts of a serialised message together and verifies that it matches the
     /// given hash code. If it does, returns the `UserMessage`.
-    pub fn from_parts<'a, I: Iterator<Item = &'a Vec<u8>>>(hash: u64,
+    pub fn from_parts<'a, I: Iterator<Item = &'a Vec<u8>>>(hash: sha3::Digest256,
                                                            parts: I)
                                                            -> Result<UserMessage, RoutingError> {
         let mut payload = Vec::new();
@@ -882,7 +914,7 @@ impl UserMessage {
             payload.extend_from_slice(part);
         }
         let user_msg = deserialise(&payload[..])?;
-        if hash != maidsafe_utilities::big_endian_sip_hash(&user_msg) {
+        if hash != sha3_256(&payload) {
             Err(RoutingError::HashMismatch)
         } else {
             Ok(user_msg)
@@ -920,6 +952,8 @@ impl UserMessage {
 
 /// Request message types
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
+// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
+#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
 pub enum Request {
     /// Message from upper layers sending network state on any network churn event.
     Refresh(Vec<u8>, MessageId),
@@ -1156,7 +1190,7 @@ impl Debug for Response {
 /// This assembles `UserMessage`s from `UserMessagePart`s.
 /// It maps `(hash, part_count)` of an incoming `UserMessage` to the map containing
 /// all `UserMessagePart`s that have already arrived, by `part_index`.
-pub struct UserMessageCache(LruCache<(u64, u32), BTreeMap<u32, Vec<u8>>>);
+pub struct UserMessageCache(LruCache<(sha3::Digest256, u32), BTreeMap<u32, Vec<u8>>>);
 
 impl UserMessageCache {
     pub fn with_expiry_duration(duration: Duration) -> Self {
@@ -1166,7 +1200,7 @@ impl UserMessageCache {
     /// Adds the given one to the cache of received message parts, returning a `UserMessage` if the
     /// given part was the last missing piece of it.
     pub fn add(&mut self,
-               hash: u64,
+               hash: sha3::Digest256,
                part_count: u32,
                part_index: u32,
                payload: Vec<u8>)
@@ -1174,10 +1208,13 @@ impl UserMessageCache {
         {
             let entry = self.0.entry((hash, part_count)).or_insert_with(BTreeMap::new);
             if entry.insert(part_index, payload).is_some() {
-                debug!("Duplicate UserMessagePart {}/{} with hash {:x} added to cache.",
+                debug!("Duplicate UserMessagePart {}/{} with hash {:02x}{:02x}{:02x}.. \
+                        added to cache.",
                        part_index + 1,
                        part_count,
-                       hash);
+                       hash[0],
+                       hash[1],
+                       hash[2]);
             }
 
             if entry.len() != part_count as usize {
@@ -1185,20 +1222,22 @@ impl UserMessageCache {
             }
         }
 
-        self.0
-            .remove(&(hash, part_count))
-            .and_then(|part_map| UserMessage::from_parts(hash, part_map.values()).ok())
+        self.0.remove(&(hash, part_count)).and_then(|part_map| {
+                                                        UserMessage::from_parts(hash,
+                                                                                part_map.values())
+                                                                .ok()
+                                                    })
     }
 }
 
 #[cfg(test)]
 mod tests {
 
+    use super::*;
     #[cfg(not(feature = "use-mock-crust"))]
     use crust::PeerId;
     use data::{Data, ImmutableData};
     use id::FullId;
-    use maidsafe_utilities;
     use maidsafe_utilities::serialisation::serialise;
     #[cfg(feature = "use-mock-crust")]
     use mock_crust::crust::PeerId;
@@ -1208,7 +1247,7 @@ mod tests {
     use rust_sodium::crypto::sign;
     use std::collections::BTreeSet;
     use std::iter;
-    use super::*;
+    use tiny_keccak::sha3_256;
     use types::MessageId;
     use xor_name::XorName;
 
@@ -1359,27 +1398,27 @@ mod tests {
         let data_bytes: Vec<u8> = (0..(MAX_PART_LEN * 2)).map(|i| i as u8).collect();
         let data = Data::Immutable(ImmutableData::new(data_bytes));
         let user_msg = UserMessage::Request(Request::Put(data, MessageId::new()));
-        let msg_hash = maidsafe_utilities::big_endian_sip_hash(&user_msg);
+        let msg_hash = sha3_256(&unwrap!(serialise(&user_msg)));
         let parts = unwrap!(user_msg.to_parts(42));
         assert_eq!(parts.len(), 3);
         let payloads: Vec<Vec<u8>> = parts.into_iter()
             .enumerate()
             .map(|(i, msg)| match msg {
-                MessageContent::UserMessagePart { hash,
-                                                  part_count,
-                                                  part_index,
-                                                  payload,
-                                                  priority,
-                                                  cacheable } => {
-                    assert_eq!(msg_hash, hash);
-                    assert_eq!(3, part_count);
-                    assert_eq!(i, part_index as usize);
-                    assert_eq!(42, priority);
-                    assert!(!cacheable);
-                    payload
-                }
-                msg => panic!("Unexpected message {:?}", msg),
-            })
+                     MessageContent::UserMessagePart { hash,
+                                                       part_count,
+                                                       part_index,
+                                                       payload,
+                                                       priority,
+                                                       cacheable } => {
+                assert_eq!(msg_hash, hash);
+                assert_eq!(3, part_count);
+                assert_eq!(i, part_index as usize);
+                assert_eq!(42, priority);
+                assert!(!cacheable);
+                payload
+            }
+                     msg => panic!("Unexpected message {:?}", msg),
+                 })
             .collect();
         let deserialised_user_msg = unwrap!(UserMessage::from_parts(msg_hash, payloads.iter()));
         assert_eq!(user_msg, deserialised_user_msg);

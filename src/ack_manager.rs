@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -23,6 +23,7 @@ use sha3;
 use std::collections::HashMap;
 use std::fmt;
 use std::time::Duration;
+use tiny_keccak::sha3_256;
 
 /// Time (in seconds) after which a message is resent due to being unacknowledged by recipient.
 pub const ACK_TIMEOUT_SECS: u64 = 20;
@@ -45,7 +46,7 @@ pub struct AckManager {
 /// An identifier for a waiting-to-be-acknowledged message (a hash of the message).
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, RustcDecodable, RustcEncodable)]
 pub struct Ack {
-    m_hash: [u8; 32],
+    m_hash: sha3::Digest256,
 }
 
 impl AckManager {
@@ -86,9 +87,7 @@ impl AckManager {
     // returns None.
     pub fn find_timed_out(&mut self, token: u64) -> Option<(UnacknowledgedMessage, Ack)> {
         let timed_out_ack = if let Some((sip_hash, _)) =
-            self.pending
-                .iter()
-                .find(|&(_, unacked_msg)| unacked_msg.timer_token == token) {
+            self.pending.iter().find(|&(_, unacked_msg)| unacked_msg.timer_token == token) {
             *sip_hash
         } else {
             return None;
@@ -126,7 +125,7 @@ impl Ack {
     /// Compute an `Ack` from a message.
     pub fn compute(routing_msg: &RoutingMessage) -> Result<Ack, RoutingError> {
         let hash_msg = serialisation::serialise(routing_msg)?;
-        Ok(Ack { m_hash: sha3::hash(&hash_msg) })
+        Ok(Ack { m_hash: sha3_256(&hash_msg) })
     }
 }
 

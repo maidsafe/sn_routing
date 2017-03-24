@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -15,12 +15,12 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::{DataIdentifier, NO_OWNER_PUB_KEY};
 use error::RoutingError;
 use maidsafe_utilities::serialisation::{serialise, serialised_size};
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
-use super::{DataIdentifier, NO_OWNER_PUB_KEY};
 use utils;
 use xor_name::XorName;
 
@@ -54,13 +54,13 @@ impl StructuredData {
         }
 
         Ok(StructuredData {
-            type_tag: type_tag,
-            name: name,
-            data: data,
-            version: version,
-            owners: owners,
-            signatures: BTreeMap::new(),
-        })
+               type_tag: type_tag,
+               name: name,
+               data: data,
+               version: version,
+               owners: owners,
+               signatures: BTreeMap::new(),
+           })
     }
 
     /// Replaces this data item with the given updated version if the update is valid, otherwise
@@ -132,10 +132,16 @@ impl StructuredData {
         // Seems overkill to use serialisation here, but done to ensure cross platform signature
         // handling is OK
         let sd = SerialisableStructuredData {
-            type_tag: self.type_tag.to_string().as_bytes().to_vec(),
+            type_tag: self.type_tag
+                .to_string()
+                .as_bytes()
+                .to_vec(),
             name: self.name,
             data: &self.data,
-            version: self.version.to_string().as_bytes().to_vec(),
+            version: self.version
+                .to_string()
+                .as_bytes()
+                .to_vec(),
             owners: &self.owners,
         };
 
@@ -218,11 +224,11 @@ struct SerialisableStructuredData<'a> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use data;
     use rand;
     use rust_sodium::crypto::sign;
     use std::collections::BTreeSet;
-    use super::*;
     use xor_name::XorName;
 
     #[test]
@@ -240,12 +246,12 @@ mod tests {
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
                                                 structured_data.get_signatures())
-                    .is_err());
+                                .is_err());
                 assert!(structured_data.add_signature(&keys).is_ok());
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
                                                 structured_data.get_signatures())
-                    .is_ok());
+                                .is_ok());
             }
             Err(error) => panic!("Error: {:?}", error),
         }
@@ -268,7 +274,7 @@ mod tests {
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
                                                 structured_data.get_signatures())
-                    .is_err());
+                                .is_err());
             }
             Err(error) => panic!("Error: {:?}", error),
         }

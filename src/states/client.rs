@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 use ack_manager::{Ack, AckManager};
 use action::Action;
 use crust::{PeerId, Service};
@@ -33,7 +34,6 @@ use stats::Stats;
 use std::collections::BTreeSet;
 use std::fmt::{self, Debug, Formatter};
 use std::time::Duration;
-use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 use timer::Timer;
 use xor_name::XorName;
 
@@ -206,9 +206,11 @@ impl Client {
         match routing_msg.content {
             MessageContent::Ack(ack, _) => self.handle_ack_response(ack),
             MessageContent::UserMessagePart { hash, part_count, part_index, payload, .. } => {
-                trace!("{:?} Got UserMessagePart {:x}, {}/{} from {:?} to {:?}.",
+                trace!("{:?} Got UserMessagePart {:02x}{:02x}{:02x}.., {}/{} from {:?} to {:?}.",
                        self,
-                       hash,
+                       hash[0],
+                       hash[1],
+                       hash[2],
                        part_count,
                        part_index,
                        routing_msg.src,

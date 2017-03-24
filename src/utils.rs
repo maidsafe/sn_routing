@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -85,7 +85,7 @@ mod tests {
         close_nodes_one_entry.push(rand::random());
         let actual_relocated_name_one_entry =
             super::calculate_relocated_name(close_nodes_one_entry.clone(), &original_name);
-        assert!(original_name != actual_relocated_name_one_entry);
+        assert_ne!(original_name, actual_relocated_name_one_entry);
 
         let mut combined_one_node_vec: Vec<XorName> = Vec::new();
         combined_one_node_vec.push(original_name);
@@ -111,7 +111,7 @@ mod tests {
         }
         let actual_relocated_name = super::calculate_relocated_name(close_nodes.clone(),
                                                                     &original_name);
-        assert!(original_name != actual_relocated_name);
+        assert_ne!(original_name, actual_relocated_name);
         close_nodes.sort_by(|a, b| original_name.cmp_distance(a, b));
         let first_closest = close_nodes[0];
         let second_closest = close_nodes[1];
@@ -141,6 +141,6 @@ mod tests {
             invalid_combined.push(*i);
         }
         let invalid_relocated_name = XorName(sha256::hash(&invalid_combined).0);
-        assert!(invalid_relocated_name != actual_relocated_name);
+        assert_ne!(invalid_relocated_name, actual_relocated_name);
     }
 }

@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -67,6 +67,7 @@ pub struct Stats {
     msg_append_failure: usize,
     msg_get_account_info_success: usize,
     msg_get_account_info_failure: usize,
+    msg_section_update_req: usize,
     msg_section_update: usize,
     msg_section_split: usize,
     msg_own_section_merge: usize,
@@ -150,6 +151,7 @@ impl Stats {
             MessageContent::AcceptAsCandidate { .. } => self.msg_accept_as_candidate += 1,
             MessageContent::ConnectionInfoRequest { .. } => self.msg_connection_info_req += 1,
             MessageContent::ConnectionInfoResponse { .. } => self.msg_connection_info_rsp += 1,
+            MessageContent::SectionUpdateRequest { .. } => self.msg_section_update_req += 1,
             MessageContent::SectionUpdate { .. } => self.msg_section_update += 1,
             MessageContent::SectionSplit(..) => self.msg_section_split += 1,
             MessageContent::OwnSectionMerge(..) => self.msg_own_section_merge += 1,
@@ -220,13 +222,14 @@ impl Stats {
                   self.msg_direct_sls);
             info!(target: "routing_stats",
                   "Stats - Hops (Request/Response) - GetNodeName: {}/{}, ExpectCandidate: {}, \
-                   AcceptAsCandidate: {}, SectionUpdate: {}, SectionSplit: {}, \
+                   AcceptAsCandidate: {}, SectionUpdate: {}/{}, SectionSplit: {}, \
                    OwnSectionMerge: {}, OtherSectionMerge: {}, RoutingTable: {}/{}, \
                    ConnectionInfo: {}/{}, CandidateApproval: {}, NodeApproval: {}, Ack: {}",
                   self.msg_get_node_name,
                   self.msg_get_node_name_rsp,
                   self.msg_expect_candidate,
                   self.msg_accept_as_candidate,
+                  self.msg_section_update_req,
                   self.msg_section_update,
                   self.msg_section_split,
                   self.msg_own_section_merge,
