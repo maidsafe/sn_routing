@@ -620,7 +620,7 @@ impl PeerManager {
     }
 
     /// Called just before `RouteManager::add_to_routing_table()`.
-    pub fn pre_add_to_table(&mut self, peer_id: &PeerId) {
+    pub fn pre_add_to_table(&self, peer_id: &PeerId) {
         if let Some(peer) = self.peer_map.get(peer_id) {
             match peer.state {
                 PeerState::ConnectionInfoPreparing { .. } |
