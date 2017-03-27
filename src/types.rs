@@ -15,11 +15,13 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#[cfg(test)]
+#[cfg(any(test, feature = "use-mock-crust"))]
 use maidsafe_utilities::SeededRng;
 use maidsafe_utilities::event_sender::MaidSafeObserver;
-#[cfg(not(test))]
+#[cfg(all(not(test), not(feature = "use-mock-crust")))]
 use rand;
+#[cfg(any(test, feature = "use-mock-crust"))]
+use rand::Rng;
 use xor_name::XorName;
 
 pub type RoutingActionSender = MaidSafeObserver<::action::Action>;
@@ -34,14 +36,14 @@ pub struct MessageId(XorName);
 
 impl MessageId {
     /// Generate a new `MessageId` with random content.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "use-mock-crust"))]
     pub fn new() -> MessageId {
         let mut rng = SeededRng::thread_rng();
         MessageId(rng.gen())
     }
 
     /// Generate a new `MessageId` with random content.
-    #[cfg(not(test))]
+    #[cfg(all(not(test), not(feature = "use-mock-crust")))]
     pub fn new() -> MessageId {
         MessageId(rand::random())
     }
