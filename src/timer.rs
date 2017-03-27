@@ -21,48 +21,52 @@ pub use self::implementation::Timer;
 mod implementation {
     use action::Action;
     use itertools::Itertools;
-    use maidsafe_utilities::thread::{self, Joiner};
+    use maidsafe_utilities::thread;
     use std::collections::BTreeMap;
     use std::sync::{Arc, Condvar, Mutex};
     use std::time::{Duration, Instant};
     use types::RoutingActionSender;
 
     struct Detail {
+        next_token: u64,
         deadlines: BTreeMap<Instant, Vec<u64>>,
-        cancelled: bool,
+        use_count: u32,
     }
 
-    /// Simple timer.
+    /// A device for scheduling wake-ups, delivered via a message sender. This device can be
+    /// cloned with all wakeups sent via the same sender.
+    ///
+    /// The worker thread terminates when all associated `Timer` devices are destroyed.
     pub struct Timer {
-        next_token: u64,
         detail_and_cond_var: Arc<(Mutex<Detail>, Condvar)>,
-        _worker: Joiner,
     }
 
     impl Timer {
         /// Creates a new timer, passing a channel sender used to send `Timeout` events.
         pub fn new(sender: RoutingActionSender) -> Self {
             let detail = Detail {
+                next_token: 0,
                 deadlines: BTreeMap::new(),
-                cancelled: false,
+                use_count: 1,
             };
             let detail_and_cond_var = Arc::new((Mutex::new(detail), Condvar::new()));
             let detail_and_cond_var_clone = detail_and_cond_var.clone();
+
             let worker = thread::named("Timer", move || Self::run(sender, detail_and_cond_var));
-            Timer {
-                next_token: 0,
-                detail_and_cond_var: detail_and_cond_var_clone,
-                _worker: worker,
-            }
+            // TODO: confirm whether it is reasonable to disown the worker like this. Rationale is
+            // that it allows `Timer` to be cloned without a separate `Joiner`.
+            worker.detach();
+
+            Timer { detail_and_cond_var: detail_and_cond_var_clone }
         }
 
         /// Schedules a timeout event after `duration`. Returns a token that can be used to identify
         /// the timeout event.
         pub fn schedule(&mut self, duration: Duration) -> u64 {
-            let token = self.next_token;
-            self.next_token = token.wrapping_add(1);
             let &(ref mutex, ref cond_var) = &*self.detail_and_cond_var;
             let mut detail = mutex.lock().expect("Failed to lock.");
+            let token = detail.next_token;
+            detail.next_token = token.wrapping_add(1);
             detail.deadlines
                 .entry(Instant::now() + duration)
                 .or_insert_with(Vec::new)
@@ -74,7 +78,10 @@ mod implementation {
         fn run(sender: RoutingActionSender, detail_and_cond_var: Arc<(Mutex<Detail>, Condvar)>) {
             let &(ref mutex, ref cond_var) = &*detail_and_cond_var;
             let mut detail = mutex.lock().expect("Failed to lock.");
-            while !detail.cancelled {
+            // We could _almost_ use Arc::strong_count(&detail_and_cond_var) instead of use_count
+            // here, except that Timer::drop() could not decrement the count before calling
+            // cond_var.notify_one().
+            while detail.use_count > 0 {
                 // Handle expired deadlines.
                 let now = Instant::now();
                 let expired_list = detail.deadlines
@@ -109,11 +116,20 @@ mod implementation {
         }
     }
 
+    impl Clone for Timer {
+        fn clone(&self) -> Self {
+            let &(ref mutex, _) = &*self.detail_and_cond_var;
+            let mut detail = mutex.lock().expect("Failed to lock.");
+            detail.use_count += 1;
+            Timer { detail_and_cond_var: self.detail_and_cond_var.clone() }
+        }
+    }
+
     impl Drop for Timer {
         fn drop(&mut self) {
             let &(ref mutex, ref cond_var) = &*self.detail_and_cond_var;
             let mut detail = mutex.lock().expect("Failed to lock.");
-            detail.cancelled = true;
+            detail.use_count -= 1;
             cond_var.notify_one();
         }
     }
@@ -150,6 +166,7 @@ mod implementation {
             };
             {
                 let mut timer = Timer::new(sender);
+                let mut timer2 = timer.clone();
 
                 // Add deadlines, the first to time out after 2.5s, the second after 2.0s, and so on
                 // down to 500ms.
@@ -187,7 +204,7 @@ mod implementation {
                 // Add deadline and check that dropping `timer` doesn't fire a timeout notification,
                 // and that dropping doesn't block until the deadline has expired.
                 instant_when_added = Instant::now();
-                let _ = timer.schedule(interval);
+                let _ = timer2.schedule(interval);
             }
 
             assert!(Instant::now() - instant_when_added < interval,
