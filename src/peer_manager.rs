@@ -904,7 +904,7 @@ impl PeerManager {
     pub fn merge_other_section(&mut self,
                                prefix: Prefix<XorName>,
                                section: BTreeSet<PublicId>)
-                               -> HashSet<PublicId> {
+                               -> BTreeSet<PublicId> {
         self.remove_expired();
 
         let merge_details = OtherMergeDetails {
