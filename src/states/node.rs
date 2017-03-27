@@ -1068,6 +1068,9 @@ impl Node {
         if self.we_want_to_merge() || self.they_want_to_merge() {
             debug!("{:?} Not sending NodeApproval since our section is currently merging.",
                    self);
+        } else if !self.peer_mgr.routing_table().is_valid() {
+            debug!("{:?} Not sending NodeApproval since our routing table isn't valid.",
+                   self);
         } else {
             let src = Authority::Section(*candidate_id.name());
             // Send the _current_ routing table. If this doesn't accumulate, we expect the candidate
@@ -1095,6 +1098,21 @@ impl Node {
         if self.is_approved {
             warn!("{:?} Received duplicate NodeApproval.", self);
             return Ok(());
+        }
+
+        let mapped_sections = sections.iter()
+            .map(|(prefix, section)| {
+                     let names: BTreeSet<XorName> =
+                    section.iter().map(|pub_id| *pub_id.name()).collect();
+                     (*prefix, names)
+                 })
+            .collect();
+        if let Err(error) = self.peer_mgr.routing_table().check_node_approval_msg(mapped_sections) {
+            info!("{:?} Received invalid sections in NodeApproval: {:?}. Restarting.",
+                  self,
+                  error);
+            outbox.send_event(Event::RestartRequired);
+            return Err(From::from(error));
         }
 
         self.get_approval_timer_token = None;
@@ -1584,9 +1602,8 @@ impl Node {
     // or split a section.
     fn send_section_update(&mut self, dst_prefix: Option<Prefix<XorName>>) {
         if dst_prefix.is_none() && !self.peer_mgr.routing_table().is_valid() {
-            warn!("{:?} Not sending section update since RT invariant not held.\n{:?}",
-                  self,
-                  self.peer_mgr.routing_table());
+            warn!("{:?} Not sending section update since RT invariant not held.",
+                  self);
             return;
         } else if self.they_want_to_merge() || self.we_want_to_merge() {
             trace!("{:?} Not sending section update since we are in the process of merging.",
@@ -2360,8 +2377,17 @@ impl Node {
                 }
                 Some(their_sections) => their_sections,
             };
-            self.process_own_section_merge(our_prefix, our_sections, outbox)?;
-            self.process_own_section_merge(their_prefix, their_sections, outbox)?;
+            let our_merged_section: BTreeSet<_> = our_sections.iter()
+                .chain(their_sections.iter())
+                .filter(|&(prefix, _)| prefix.popped() == self.our_prefix().popped())
+                .flat_map(|(_, peers)| peers)
+                .map(|peer| *peer.name())
+                .collect();
+            self.process_own_section_merge(our_prefix, our_sections, &our_merged_section, outbox)?;
+            self.process_own_section_merge(their_prefix,
+                                           their_sections,
+                                           &our_merged_section,
+                                           outbox)?;
         }
         self.merge_if_necessary();
         Ok(())
@@ -2378,6 +2404,7 @@ impl Node {
     fn process_own_section_merge(&mut self,
                                  sender_prefix: Prefix<XorName>,
                                  sections: SectionMap,
+                                 our_merged_section: &BTreeSet<XorName>,
                                  outbox: &mut EventBox)
                                  -> Result<(), RoutingError> {
         let merge_prefix = sender_prefix.popped();
@@ -2387,17 +2414,23 @@ impl Node {
         match merge_state {
             OwnMergeState::Ongoing |
             OwnMergeState::AlreadyMerged => (),
-            OwnMergeState::Completed { targets, merge_details } => {
+            OwnMergeState::Completed { targets, mut merge_details } => {
                 // TODO - the event should maybe only fire once all new connections have been made?
                 outbox.send_event(Event::SectionMerge(merge_details.prefix));
                 info!("{:?} Own section merge completed. Prefixes: {:?}",
                       self,
-                      self.peer_mgr.routing_table().prefixes());
+                      self.peer_mgr.routing_table().our_section());
 
-                // after the merge, half of our section won't have our signatures -- send them
+                // After the merge, half of our section won't have our signatures -- send them
                 for prefix in self.peer_mgr.routing_table().prefixes() {
                     self.send_section_list_signature(prefix, None);
                 }
+
+                // Send an `OtherSectionMerge` containing just the prefix to ensure accumulation,
+                // followed by a second one with the full details of the our section.
+                merge_details.section.clear();
+                self.send_other_section_merge(targets.clone(), merge_details.clone());
+                merge_details.section = our_merged_section.clone();
                 self.send_other_section_merge(targets, merge_details);
 
                 let own_name = *self.name();

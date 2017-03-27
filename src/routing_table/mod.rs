@@ -279,6 +279,18 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         self.check_invariant(true, true)
     }
 
+    /// Checks that the `NodeApproval` message contains a valid `RoutingTable`.
+    pub fn check_node_approval_msg(&self,
+                                   sections: BTreeMap<Prefix<T>, BTreeSet<T>>)
+                                   -> Result<(), Error> {
+        let mut temp_rt = RoutingTable::new(self.our_name, self.min_section_size);
+        temp_rt.add_prefixes(sections.keys().cloned().collect())?;
+        for peer in sections.values().flat_map(BTreeSet::iter) {
+            let _ = temp_rt.add(*peer, false);
+        }
+        temp_rt.check_invariant(false, true)
+    }
+
     /// Returns the `Prefix` of our section
     pub fn our_prefix(&self) -> &Prefix<T> {
         &self.our_prefix
@@ -706,14 +718,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// held in the routing table) are returned so the caller can establish connections to these
     /// peers and subsequently add them.
     pub fn merge_other_section(&mut self, merge_details: OtherMergeDetails<T>) -> BTreeSet<T> {
-        if self.our_prefix.is_compatible(&merge_details.prefix) {
-            // We've already handled this particular merge via `merge_own_section()`.
-            return BTreeSet::new();
-        }
-
         let should_merge = |prefix: &Prefix<T>| {
             prefix.is_compatible(&merge_details.prefix) &&
-            prefix.bit_count() > merge_details.prefix.bit_count()
+            prefix.bit_count() >= merge_details.prefix.bit_count()
         };
 
         if self.sections.keys().any(should_merge) {
@@ -953,12 +960,16 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             .partition::<BTreeMap<_, _>, _>(|&(prefix, _)| new_prefix.is_compatible(&prefix));
         self.sections = sections;
         // Merge selected sections and add the merged section back in.
-        let merged_names = sections_to_merge.into_iter().flat_map(|(_, names)| names).collect();
+        let merged_names: BTreeSet<_> =
+            sections_to_merge.into_iter().flat_map(|(_, names)| names).collect();
         if self.our_prefix.is_compatible(new_prefix) {
             self.our_section.extend(merged_names);
             self.our_prefix = *new_prefix;
         } else {
-            self.insert_new_section(*new_prefix, merged_names);
+            self.sections
+                .entry(*new_prefix)
+                .or_insert_with(BTreeSet::new)
+                .extend(merged_names)
         }
     }
 
