@@ -172,7 +172,6 @@ impl<'a, T: 'a + Binary + Clone + Copy + Default + Hash + Xorable> Iterator for 
 #[derive(Clone, Debug, PartialEq)]
 pub struct OwnMergeDetails<T: Binary + Clone + Copy + Default + Hash + Xorable> {
     pub sender_prefix: Prefix<T>,
-    pub merge_prefix: Prefix<T>,
     pub sections: Sections<T>,
 }
 
@@ -200,10 +199,6 @@ pub struct RemovalDetails<T: Binary + Clone + Copy + Default + Hash + Xorable> {
 
 // Details returned by `RoutingTable::merge_own_section()`.
 pub enum OwnMergeState<T: Binary + Clone + Copy + Default + Hash + Xorable> {
-    // If an ongoing merge is happening, and this call to `merge_own_section()` doesn't complete the
-    // merge (i.e. at least one of the merging sections hasn't yet sent us its merge details), then
-    // `Ongoing` is returned, implying that no further action by the caller is required.
-    Ongoing,
     // If an ongoing merge is happening, and this call to `merge_own_section()` completes the merge
     // (i.e. all merging sections have sent us their merge details), then `Completed` is returned,
     // containing the appropriate targets (the `Prefix`es of all sections outwith the merging ones)
@@ -498,10 +493,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// Adds a contact to the routing table.
     ///
     /// Returns `Err` if `name` already existed in the routing table, or it doesn't fall within any
-    /// of our sections, or it's our own name.  Otherwise it returns `Ok(true)` if the addition
-    /// succeeded and should cause our section to split or `Ok(false)` if the addition succeeded and
-    /// shouldn't cause a split.
-    pub fn add(&mut self, name: T, want_to_merge: bool) -> Result<bool, Error> {
+    /// of our sections, or it's our own name.
+    pub fn add(&mut self, name: T) -> Result<(), Error> {
         if name == self.our_name {
             return Err(Error::OwnNameDisallowed);
         }
@@ -513,14 +506,18 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         } else {
             return Err(Error::PeerNameUnsuitable);
         }
+        Ok(())
+    }
 
+    /// Returns whether we should split into two sections.
+    pub fn should_split(&self) -> bool {
         let split_size = self.min_split_size();
         let close_to_merging_with_us = |(prefix, section): (&Prefix<T>, &BTreeSet<T>)| {
             prefix.popped().is_compatible(&self.our_prefix) && section.len() < split_size
         };
         // If we're currently merging or are close to merging, we shouldn't split.
-        if want_to_merge || self.sections.iter().any(close_to_merging_with_us) {
-            return Ok(false);
+        if self.sections.iter().any(close_to_merging_with_us) {
+            return false;
         }
 
         // Count the number of names which will end up in each new section if our section is split.
@@ -529,7 +526,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             .filter(|name| self.our_name.common_prefix(name) > self.our_prefix.bit_count())
             .count();
         // If either of the two new sections will not contain enough entries, return `false`.
-        Ok(new_size >= split_size && self.our_section().len() >= split_size + new_size)
+        new_size >= split_size && self.our_section().len() >= split_size + new_size
     }
 
     /// Splits a section.
@@ -625,7 +622,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         Ok(removal_details)
     }
 
-    /// If our section is required to merge, returns the details to initiate merging.
+    /// Returns whether we should merge with our sibling section.
     ///
     /// Merging is required if any section has dropped below the minimum size and can only restore
     /// it by ultimately merging with us.
@@ -635,29 +632,29 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// then this will return `true` only in the latter two. Once they are merged and have
     /// established all their new connections, it will return `true` in `01` and `00`. Only after
     /// that, the section `0` will merge with section `1`.
-    pub fn should_merge(&self,
-                        we_want_to_merge: bool,
-                        they_want_to_merge: bool)
-                        -> Option<OwnMergeDetails<T>> {
+    pub fn should_merge(&self) -> bool {
         let bit_count = self.our_prefix.bit_count();
         let doesnt_need_to_merge_with_us = |(prefix, section): (&Prefix<T>, &BTreeSet<T>)| {
             !prefix.popped().is_compatible(&self.our_prefix) ||
             section.len() >= self.min_section_size
         };
-        if bit_count == 0 || we_want_to_merge ||
+        if bit_count == 0 ||
            !self.sections.contains_key(&self.our_prefix.with_flipped_bit(bit_count - 1)) {
-            return None; // We can't merge, or we already sent our merge message.
+            return false; // We can't merge, or we already sent our merge message.
         }
-        if !they_want_to_merge && self.our_section.len() >= self.min_section_size &&
+        if self.our_section.len() >= self.min_section_size &&
            self.sections.iter().all(doesnt_need_to_merge_with_us) {
-            return None; // There is no reason to merge.
+            return false; // There is no reason to merge.
         }
-        let merge_prefix = self.our_prefix.popped();
-        Some(OwnMergeDetails {
-                 sender_prefix: self.our_prefix,
-                 merge_prefix: merge_prefix,
-                 sections: self.all_sections(),
-             })
+        true
+    }
+
+    /// Returns the details that need to be sent to the sibling section in case of a merge.
+    pub fn merge_details(&self) -> OwnMergeDetails<T> {
+        OwnMergeDetails {
+            sender_prefix: self.our_prefix,
+            sections: self.all_sections(),
+        }
     }
 
     /// When a merge of our own section is triggered (either from our own section or a neighbouring
@@ -667,12 +664,14 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// The actual merge of the section is only done once all expected merging sections have
     /// provided details.  See the docs for `OwnMergeState` for full details of the return value.
     pub fn merge_own_section(&mut self, merge_details: OwnMergeDetails<T>) -> OwnMergeState<T> {
+        let merge_prefix = merge_details.sender_prefix.popped();
         // TODO: Return an error if they are not compatible instead?
-        if !self.our_prefix.is_compatible(&merge_details.merge_prefix) ||
-           self.our_prefix.bit_count() != merge_details.merge_prefix.bit_count() + 1 {
+        if !self.our_prefix.is_compatible(&merge_prefix) ||
+           self.our_prefix.bit_count() != merge_prefix.bit_count() + 1 ||
+           self.our_prefix == merge_details.sender_prefix {
             debug!("{:?}: Attempt to call merge_own_section() for an already merged prefix {:?}",
                    self.our_name,
-                   merge_details.merge_prefix);
+                   merge_prefix);
             return OwnMergeState::AlreadyMerged;
         }
         for prefix in merge_details.sections.keys() {
@@ -688,14 +687,23 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             }
         }
 
-        // We currently handle this first for our own section, then for the sibling.
-        // TODO: Pass all merge details in and handle them at once. Remove `Ongoing` state.
-        if merge_details.sender_prefix != self.our_prefix {
-            // We've heard from all merging sections - do the merge and return `Completed`.
-            self.finish_merging_own_section(merge_details.merge_prefix)
-        } else {
-            // We don't have the merge details from both sides yet.
-            OwnMergeState::Ongoing
+        self.merge(&merge_prefix);
+        self.add_missing_prefixes();
+        // The update needs to be sent to all neighbouring sections. However, while those are
+        // merging/splitting, our own section might not agree on their prefixes and the message can
+        // fail to accumulate. So also include results of flipping one bit in the `merge_prefix`.
+        let targets = self.sections
+            .keys()
+            .cloned()
+            .chain((0..merge_prefix.bit_count()).map(|i| merge_prefix.with_flipped_bit(i)))
+            .collect();
+        let other_details = OtherMergeDetails {
+            prefix: merge_prefix,
+            section: self.our_section().clone(),
+        };
+        OwnMergeState::Completed {
+            targets: targets,
+            merge_details: other_details,
         }
     }
 
@@ -922,27 +930,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                        entry.get());
                 entry.into_mut().extend(section);
             }
-        }
-    }
-
-    fn finish_merging_own_section(&mut self, merge_prefix: Prefix<T>) -> OwnMergeState<T> {
-        self.merge(&merge_prefix);
-        self.add_missing_prefixes();
-        // The update needs to be sent to all neighbouring sections. However, while those are
-        // merging/splitting, our own section might not agree on their prefixes and the message can
-        // fail to accumulate. So also include results of flipping one bit in the `merge_prefix`.
-        let targets = self.sections
-            .keys()
-            .cloned()
-            .chain((0..merge_prefix.bit_count()).map(|i| merge_prefix.with_flipped_bit(i)))
-            .collect();
-        let other_details = OtherMergeDetails {
-            prefix: merge_prefix,
-            section: self.our_section().clone(),
-        };
-        OwnMergeState::Completed {
-            targets: targets,
-            merge_details: other_details,
         }
     }
 
@@ -1187,7 +1174,8 @@ mod tests {
     // each time.
     fn add_sequential_entries(table: &mut RoutingTable<u16>, name: &mut u16) {
         for _ in 1..table.min_split_size() {
-            assert_eq!(table.add(*name, false), Ok(false));
+            assert_eq!(table.add(*name), Ok(()));
+            assert!(!table.should_split());
             table.verify_invariant();
             *name += 1;
         }
@@ -1214,7 +1202,8 @@ mod tests {
         expected_rt_len += 2 * (table.min_split_size() - 1);
 
         // Add one name to the other half to trigger the split to sections 0 and 1.
-        assert_eq!(table.add(section_10_name, false), Ok(true));
+        assert_eq!(table.add(section_10_name), Ok(()));
+        assert!(table.should_split());
         expected_rt_len += 1;
         let mut expected_own_prefix = Prefix::new(0, our_name);
         assert_eq!(*table.our_prefix(), expected_own_prefix);
@@ -1237,7 +1226,8 @@ mod tests {
         expected_rt_len += 2 * (table.min_split_size() - 1);
 
         // Trigger split in our own section first to yield sections 00, 01 and 1.
-        assert_eq!(table.add(section_01_name, false), Ok(true));
+        assert_eq!(table.add(section_01_name), Ok(()));
+        assert!(table.should_split());
         expected_rt_len += 1;
         assert_eq!(*table.our_prefix(), expected_own_prefix);
         let (nodes_to_drop, our_new_prefix) = table.split(expected_own_prefix);
@@ -1252,7 +1242,8 @@ mod tests {
 
         // Now trigger split in section 1, which should cause section 11 to get ejected, leaving
         // sections 00, 01 and 10.
-        assert_eq!(table.add(section_11_name, false), Ok(false));
+        assert_eq!(table.add(section_11_name), Ok(()));
+        assert!(!table.should_split());
         expected_rt_len += 1;
         assert_eq!(*table.our_prefix(), expected_own_prefix);
         let (nodes_to_drop, our_new_prefix) = table.split(Prefix::new(1, section_11_name));
@@ -1277,7 +1268,8 @@ mod tests {
 
         // Trigger split in other section (i.e. section 01) first this time to yield sections 00,
         // 010, 011 and 10.
-        assert_eq!(table.add(section_011_name, false), Ok(false));
+        assert_eq!(table.add(section_011_name), Ok(()));
+        assert!(!table.should_split());
         expected_rt_len += 1;
         assert_eq!(*table.our_prefix(), expected_own_prefix);
         let (nodes_to_drop, our_new_prefix) = table.split(Prefix::new(2, section_011_name));
@@ -1291,7 +1283,8 @@ mod tests {
 
         // Now trigger split in own section (i.e. section 00), which should cause section 011 to get
         // ejected, leaving sections 000, 001, 010 and 10.
-        assert_eq!(table.add(section_001_name, false), Ok(true));
+        assert_eq!(table.add(section_001_name), Ok(()));
+        assert!(table.should_split());
         expected_rt_len += 1;
         assert_eq!(*table.our_prefix(), expected_own_prefix);
         let (nodes_to_drop, our_new_prefix) = table.split(expected_own_prefix);
@@ -1308,19 +1301,17 @@ mod tests {
         assert_eq!(table.our_section().len(), table.min_split_size());
 
         // Try to add a name which is already in the RT.
-        assert_eq!(table.add(section_001_name, false),
-                   Err(Error::AlreadyExists));
+        assert_eq!(table.add(section_001_name), Err(Error::AlreadyExists));
         table.verify_invariant();
         assert_eq!(table.len(), expected_rt_len);
 
         // Try to add our own name.
-        assert_eq!(table.add(our_name, false), Err(Error::OwnNameDisallowed));
+        assert_eq!(table.add(our_name), Err(Error::OwnNameDisallowed));
         table.verify_invariant();
         assert_eq!(table.len(), expected_rt_len);
 
         // Try to add a name which doesn't fit any section.
-        assert_eq!(table.add(nodes_to_drop[0], false),
-                   Err(Error::PeerNameUnsuitable));
+        assert_eq!(table.add(nodes_to_drop[0]), Err(Error::PeerNameUnsuitable));
         table.verify_invariant();
         assert_eq!(table.len(), expected_rt_len);
 
@@ -1362,16 +1353,16 @@ mod tests {
         let our_name = 0u16;
         let mut table = RoutingTable::new(our_name, 8);
         // initialize the table
-        unwrap!(table.add(0x8000, false));
-        unwrap!(table.add(0x4000, false));
-        unwrap!(table.add(0x2000, false));
-        unwrap!(table.add(0x1000, false));
-        unwrap!(table.add(0x0800, false));
-        unwrap!(table.add(0x0400, false));
-        unwrap!(table.add(0x0200, false));
-        unwrap!(table.add(0x0100, false));
-        unwrap!(table.add(0x0080, false));
-        unwrap!(table.add(0x0040, false));
+        unwrap!(table.add(0x8000));
+        unwrap!(table.add(0x4000));
+        unwrap!(table.add(0x2000));
+        unwrap!(table.add(0x1000));
+        unwrap!(table.add(0x0800));
+        unwrap!(table.add(0x0400));
+        unwrap!(table.add(0x0200));
+        unwrap!(table.add(0x0100));
+        unwrap!(table.add(0x0080));
+        unwrap!(table.add(0x0040));
 
         let mut name = 0xFFFF;
         assert!(table.closest_names(&name, 10).is_none());
@@ -1402,7 +1393,7 @@ mod tests {
         let mut table = RoutingTable::new(our_name, 1);
         // Add 10, 20, 30, 40, 50, 60, 70, 80, 90, A0, B0, C0, D0, E0 and F0.
         for i in 1..0x10 {
-            unwrap!(table.add(i * 0x10, false));
+            unwrap!(table.add(i * 0x10));
         }
         assert_eq!(prefixes_from_strs(vec![""]), table.prefixes());
         assert_eq!(Vec::<u8>::new(),
