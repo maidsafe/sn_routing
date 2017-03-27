@@ -72,7 +72,11 @@ impl Network {
         {
             let close_node = self.close_node(name);
             let close_peer = &self.nodes[&close_node];
-            unwrap!(new_table.add_prefixes(close_peer.prefixes().into_iter().collect()));
+            unwrap!(new_table.add_prefixes(close_peer
+                                               .all_sections()
+                                               .into_iter()
+                                               .map(|(pfx, (version, _))| (version, pfx))
+                                               .collect()));
         }
 
         let mut split_prefixes = BTreeSet::new();
@@ -81,22 +85,23 @@ impl Network {
                 trace!("failed to add node with error {:?}", e);
             }
             if node.should_split() {
-                let _ = split_prefixes.insert(*node.our_prefix());
+                let _ = split_prefixes.insert((node.our_version(), *node.our_prefix()));
             }
             if let Err(e) = new_table.add(*node.our_name()) {
                 trace!("failed to add node into new with error {:?}", e);
             }
             if new_table.should_split() {
                 let prefix = *new_table.our_prefix();
-                let _ = split_prefixes.insert(prefix);
-                let _ = new_table.split(prefix);
+                let version = new_table.our_version();
+                let _ = split_prefixes.insert((version, prefix));
+                let _ = new_table.split(prefix, version);
             }
         }
 
         assert!(self.nodes.insert(name, new_table).is_none());
-        for split_prefix in &split_prefixes {
+        for &(split_version, split_prefix) in &split_prefixes {
             for node in self.nodes.values_mut() {
-                let _ = node.split(*split_prefix);
+                let _ = node.split(split_prefix, split_version);
             }
         }
     }
@@ -147,22 +152,22 @@ impl Network {
             let own_info = merge_own_info;
             merge_own_info = BTreeMap::new();
             for (_, merge_own_details) in own_info {
-                let nodes = self.nodes_covered_by_prefixes(&[merge_own_details.sender_prefix
-                                                                 .popped()]);
+                let nodes =
+                    self.nodes_covered_by_prefixes(&[merge_own_details.sender_prefix.popped()]);
                 for node in &nodes {
                     let target_node = unwrap!(self.nodes.get_mut(&node));
                     let node_expected = expected_peers.entry(*node).or_insert_with(BTreeSet::new);
-                    for section in &merge_own_details.sections {
-                        node_expected.extend(section.1.iter().filter(|name| {
-                                                                         !target_node.has(name)
-                                                                     }));
+                    for (_, &(_, ref section)) in &merge_own_details.sections {
+                        node_expected.extend(section.iter().filter(|name| !target_node.has(name)));
                     }
                     match target_node.merge_own_section(merge_own_details.clone()) {
-                        OwnMergeState::AlreadyMerged => (),
-                        OwnMergeState::Completed {
-                            targets,
-                            merge_details,
-                        } => {
+                        (OwnMergeState::AlreadyMerged, dropped) => assert!(dropped.is_empty()),
+                        (OwnMergeState::Completed {
+                             targets,
+                             merge_details,
+                         },
+                         dropped) => {
+                            assert!(dropped.is_empty());
                             Network::store_merge_info(&mut merge_other_info,
                                                       *target_node.our_prefix(),
                                                       (targets, merge_details));
@@ -308,13 +313,13 @@ pub fn verify_network_invariant<'a, T, U>(nodes: U)
     where T: Binary + Clone + Copy + Debug + Default + Hash + Xorable + 'a,
           U: IntoIterator<Item = &'a RoutingTable<T>>
 {
-    let mut sections: BTreeMap<Prefix<T>, (T, BTreeSet<T>)> = BTreeMap::new();
+    let mut sections: BTreeMap<Prefix<T>, _> = BTreeMap::new();
     // first, collect all sections in the network
     for node in nodes {
         node.verify_invariant();
         for prefix in node.prefixes() {
             let section_content = if prefix == node.our_prefix {
-                node.our_section.clone()
+                (node.our_version, node.our_section.clone())
             } else {
                 node.sections[&prefix].clone()
             };
@@ -356,8 +361,8 @@ pub fn verify_network_invariant<'a, T, U>(nodes: U)
     }
 
     // check that each section contains names agreeing with its prefix
-    for (prefix, data) in &sections {
-        for name in &data.1 {
+    for (prefix, &(_, (_, ref data))) in &sections {
+        for name in data {
             if !prefix.matches(name) {
                 panic!("Section members should match the prefix, but {:?} \
                     does not match {:?}",

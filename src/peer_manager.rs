@@ -50,7 +50,7 @@ const CANDIDATE_ACCEPT_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) the node waits for connection from an expected node.
 const NODE_CONNECT_TIMEOUT_SECS: u64 = 60;
 
-pub type SectionMap = BTreeMap<Prefix<XorName>, BTreeSet<PublicId>>;
+pub type SectionMap = BTreeMap<Prefix<XorName>, (u64, BTreeSet<PublicId>)>;
 
 #[derive(Default)]
 pub struct PeerDetails {
@@ -440,7 +440,9 @@ impl PeerManager {
     }
 
     /// Add prefixes into routing table.
-    pub fn add_prefixes(&mut self, prefixes: Vec<Prefix<XorName>>) -> Result<(), RoutingError> {
+    pub fn add_prefixes(&mut self,
+                        prefixes: Vec<(u64, Prefix<XorName>)>)
+                        -> Result<(), RoutingError> {
         Ok(self.routing_table.add_prefixes(prefixes)?)
     }
 
@@ -753,12 +755,50 @@ impl PeerManager {
         Ok(())
     }
 
+    fn remove_name(&mut self, name: XorName) -> Option<(XorName, PeerId)> {
+        let peer = match self.peer_map.remove_by_name(&name) {
+            Some(peer) => peer,
+            None => return None,
+        };
+        match peer {
+            Peer {
+                state: PeerState::Routing(RoutingConnection::JoiningNode(timestamp)), ..
+            } |
+            Peer {
+                state: PeerState::Candidate(RoutingConnection::JoiningNode(timestamp)), ..
+            } => {
+                debug!("{:?} Still acts as proxy of {:?}, re-insert peer as JoiningNode",
+                       self,
+                       name);
+                let _ = self.peer_map
+                    .insert(Peer {
+                                timestamp: timestamp,
+                                state: PeerState::JoiningNode,
+                                ..peer
+                            });
+                None
+            }
+            Peer { state: PeerState::Routing(RoutingConnection::Proxy(timestamp)), .. } => {
+                let _ = self.peer_map
+                    .insert(Peer {
+                                timestamp: timestamp,
+                                state: PeerState::Proxy,
+                                ..peer
+                            });
+                None
+            }
+            Peer { peer_id: Some(id), .. } => Some((name, id)),
+            Peer { peer_id: None, .. } => None,
+        }
+    }
+
     /// Splits the indicated section and returns the `PeerId`s of any peers to which we should not
     /// remain connected.
     pub fn split_section(&mut self,
-                         prefix: Prefix<XorName>)
+                         prefix: Prefix<XorName>,
+                         version: u64)
                          -> (Vec<(XorName, PeerId)>, Option<Prefix<XorName>>) {
-        let (names_to_drop, our_new_prefix) = self.routing_table.split(prefix);
+        let (names_to_drop, our_new_prefix) = self.routing_table.split(prefix, version);
         for name in &names_to_drop {
             info!("{:?} Dropped {:?} from the routing table.", self, name);
         }
@@ -772,40 +812,9 @@ impl PeerManager {
             .collect::<Vec<_>>();
 
         let ids_to_drop = names_to_drop
-            .iter()
-            .chain(removal_keys.iter())
-            .filter_map(|name| {
-                self.peer_map.remove_by_name(name).and_then(|peer| match peer {
-                    Peer {
-                        state: PeerState::Routing(RoutingConnection::JoiningNode(timestamp)),
-                        ..
-                    } |
-                    Peer {
-                        state: PeerState::Candidate(RoutingConnection::JoiningNode(timestamp)),
-                        ..
-                    } => {
-                        debug!("{:?} Still acts as proxy of {:?}, re-insert peer as JoiningNode",
-                               self,
-                               name);
-                        let _ = self.peer_map.insert(Peer {
-                            timestamp: timestamp,
-                            state: PeerState::JoiningNode,
-                            ..peer
-                        });
-                        None
-                    }
-                    Peer { state: PeerState::Routing(RoutingConnection::Proxy(timestamp)), .. } => {
-                        let _ = self.peer_map.insert(Peer {
-                            timestamp: timestamp,
-                            state: PeerState::Proxy,
-                            ..peer
-                        });
-                        None
-                    }
-                    Peer { peer_id: Some(id), .. } => Some((*name, id)),
-                    Peer { peer_id: None, .. } => None,
-                })
-            })
+            .into_iter()
+            .chain(removal_keys.iter().cloned())
+            .filter_map(|name| self.remove_name(name))
             .collect_vec();
 
         self.cleanup_proxy_peer_id();
@@ -828,8 +837,8 @@ impl PeerManager {
 
     /// Adds the given prefix to the routing table, splitting or merging as necessary. Returns the
     /// list of peers that have been dropped and need to be disconnected.
-    pub fn add_prefix(&mut self, prefix: Prefix<XorName>) -> Vec<(XorName, PeerId)> {
-        let names_to_drop = self.routing_table.add_prefix(prefix);
+    pub fn add_prefix(&mut self, prefix: Prefix<XorName>, version: u64) -> Vec<(XorName, PeerId)> {
+        let names_to_drop = self.routing_table.add_prefix(prefix, version);
         let old_expected_peers = mem::replace(&mut self.expected_peers, HashMap::new());
         self.expected_peers = old_expected_peers
             .into_iter()
@@ -857,57 +866,68 @@ impl PeerManager {
         let sections = merge_details
             .sections
             .into_iter()
-            .map(|(prefix, members)| (prefix, self.get_pub_ids(&members).into_iter().collect()))
+            .map(|(prefix, (v, members))| {
+                     (prefix, (v, self.get_pub_ids(&members).into_iter().collect()))
+                 })
             .collect();
         (merge_details.sender_prefix, sections)
     }
 
-    // Returns the `OwnMergeState` from `RoutingTable` which defines what further action needs to be
-    // taken by the node, and the list of peers to which we should now connect (only those within
-    // the merging sections for now).
+    /// Returns the `OwnMergeState` from `RoutingTable` which defines what further action needs to
+    /// be taken by the node, and the list of peers we should disconnect from as well as those we
+    /// should now connect to.
     pub fn merge_own_section(&mut self,
                              sender_prefix: Prefix<XorName>,
+                             merge_version: u64,
                              sections: SectionMap)
-                             -> (OwnMergeState<XorName>, Vec<PublicId>) {
+                             -> (OwnMergeState<XorName>, Vec<(XorName, PeerId)>, Vec<PublicId>) {
         self.remove_expired();
         let needed = sections
             .iter()
-            .flat_map(|(_, pub_ids)| pub_ids)
+            .flat_map(|(_, &(_, ref pub_ids))| pub_ids)
             .filter(|pub_id| !self.routing_table.has(pub_id.name()))
             .cloned()
             .collect();
 
         let sections_as_names = sections
             .into_iter()
-            .map(|(prefix, members)| {
+            .map(|(prefix, (v, members))| {
                      (prefix,
-                      members
-                          .into_iter()
-                          .map(|pub_id| *pub_id.name())
-                          .collect::<BTreeSet<_>>())
+                      (v,
+                       members
+                           .into_iter()
+                           .map(|pub_id| *pub_id.name())
+                           .collect::<BTreeSet<_>>()))
                  })
             .collect();
 
         let own_merge_details = OwnMergeDetails {
             sender_prefix: sender_prefix,
+            merge_version: merge_version,
             sections: sections_as_names,
         };
         let mut expected_peers = mem::replace(&mut self.expected_peers, HashMap::new());
         expected_peers.extend(own_merge_details
                                   .sections
                                   .values()
-                                  .flat_map(|section| section.iter())
+                                  .flat_map(|&(_, ref section)| section.iter())
                                   .filter_map(|name| if self.routing_table.has(name) {
                                                   None
                                               } else {
                                                   Some((*name, Instant::now()))
                                               }));
         self.expected_peers = expected_peers;
-        (self.routing_table.merge_own_section(own_merge_details), needed)
+        let (merge_state, dropped) = self.routing_table.merge_own_section(own_merge_details);
+        let ids_to_drop = dropped
+            .into_iter()
+            .filter_map(|name| self.remove_name(name))
+            .collect_vec();
+        (merge_state, ids_to_drop, needed)
     }
 
     pub fn merge_other_section(&mut self,
                                prefix: Prefix<XorName>,
+                               version: u64,
                                section: BTreeSet<PublicId>)
                                -> BTreeSet<PublicId> {
         self.remove_expired();
@@ -918,6 +938,7 @@ impl PeerManager {
                 .iter()
                 .map(|public_id| *public_id.name())
                 .collect(),
+            version: version,
         };
         let needed_names = self.routing_table.merge_other_section(merge_details);
         self.expected_peers
@@ -1676,7 +1697,7 @@ impl PeerManager {
         self.routing_table
             .all_sections()
             .into_iter()
-            .map(|(prefix, names)| (prefix, self.get_pub_ids(&names)))
+            .map(|(prefix, (v, names))| (prefix, (v, self.get_pub_ids(&names))))
             .collect()
     }
 }

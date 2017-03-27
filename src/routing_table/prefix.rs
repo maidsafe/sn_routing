@@ -73,6 +73,12 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
         i >= self.bit_count() || i >= other.bit_count()
     }
 
+    /// Returns `true` if `other` is compatible but strictly shorter than `self`.
+    pub fn extends(&self, other: &Prefix<T>) -> bool {
+        let i = self.name.common_prefix(&other.name);
+        i >= other.bit_count() && self.bit_count() > other.bit_count()
+    }
+
     /// Returns `true` if the `other` prefix differs in exactly one bit from this one.
     pub fn is_neighbour(&self, other: &Prefix<T>) -> bool {
         let i = self.name.common_prefix(&other.name);
@@ -87,11 +93,6 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
     /// Returns the number of common leading bits with the input name, capped with prefix length.
     pub fn common_prefix(&self, name: &T) -> usize {
         cmp::min(self.bit_count(), self.name.common_prefix(name))
-    }
-
-    /// Returns the number of common leading bits with the input name.
-    pub fn max_identical_index(&self, name: &T) -> usize {
-        self.name.common_prefix(name)
     }
 
     /// Returns `true` if this is a prefix of the given `name`.

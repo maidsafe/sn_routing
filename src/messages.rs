@@ -629,10 +629,10 @@ pub enum MessageContent {
         /// Section prefix. Included because this message is sent to both the section's own members
         /// and neighbouring sections.
         prefix: Prefix<XorName>,
+        /// The section's current version.
+        version: u64,
         /// Members of the section
         members: BTreeSet<PublicId>,
-        /// Whether the recipient should process merges implied by this update.
-        merge: bool,
     },
     /// Sent from a node to its own section to request their current routing table.
     RoutingTableRequest(MessageId, sha256::Digest),
@@ -640,13 +640,15 @@ pub enum MessageContent {
     RoutingTableResponse {
         /// The section's current prefix.
         prefix: Prefix<XorName>,
+        /// The section's current version.
+        version: u64,
         /// Members of the section.
         members: BTreeSet<PublicId>,
         /// The message's unique identifier.
         message_id: MessageId,
     },
     /// Sent to all connected peers when our own section splits
-    SectionSplit(Prefix<XorName>, XorName),
+    SectionSplit(Prefix<XorName>, u64, XorName),
     /// Sent amongst members of a newly-merged section to allow synchronisation of their routing
     /// tables before notifying other connected peers of the merge.
     ///
@@ -657,7 +659,7 @@ pub enum MessageContent {
     /// of the merge.
     ///
     /// The source authority is a `PrefixSection` conveying the section which just merged.
-    OtherSectionMerge(BTreeSet<PublicId>),
+    OtherSectionMerge(BTreeSet<PublicId>, u64),
     /// Acknowledge receipt of any message except an `Ack`. It contains the hash of the
     /// received message and the priority.
     Ack(Ack, u8),
@@ -854,14 +856,14 @@ impl Debug for MessageContent {
             }
             SectionUpdate {
                 ref prefix,
+                ref version,
                 ref members,
-                ref merge,
             } => {
                 write!(formatter,
                        "SectionUpdate {{ {:?}, {:?}, {:?} }}",
                        prefix,
-                       members,
-                       merge)
+                       version,
+                       members)
             }
             RoutingTableRequest(ref msg_id, ref digest) => {
                 write!(formatter,
@@ -871,20 +873,28 @@ impl Debug for MessageContent {
             }
             RoutingTableResponse {
                 ref prefix,
+                ref version,
                 ref members,
                 ref message_id,
             } => {
                 write!(formatter,
-                       "RoutingTableResponse {{ {:?}, {:?}, {:?} }}",
+                       "RoutingTableResponse {{ {:?}, {:?}, {:?}, {:?} }}",
                        prefix,
+                       version,
                        members,
                        message_id)
             }
-            SectionSplit(ref prefix, ref joining_node) => {
-                write!(formatter, "SectionSplit({:?}, {:?})", prefix, joining_node)
+            SectionSplit(ref prefix, ref version, ref joining_node) => {
+                write!(formatter,
+                       "SectionSplit({:?}, {:?}, {:?})",
+                       prefix,
+                       version,
+                       joining_node)
             }
             OwnSectionMerge(ref sections) => write!(formatter, "OwnSectionMerge({:?})", sections),
-            OtherSectionMerge(ref section) => write!(formatter, "OtherSectionMerge({:?})", section),
+            OtherSectionMerge(ref section, ref version) => {
+                write!(formatter, "OtherSectionMerge({:?}, {:?})", section, version)
+            }
             Ack(ack, priority) => write!(formatter, "Ack({:?}, {})", ack, priority),
             UserMessagePart {
                 hash,
@@ -1343,7 +1353,7 @@ mod tests {
                 proxy_node_name: name,
             },
             dst: Authority::ClientManager(name),
-            content: MessageContent::SectionSplit(Prefix::new(0, name), name),
+            content: MessageContent::SectionSplit(Prefix::new(0, name), 0, name),
         };
         let senders = iter::empty().collect();
         let signed_message_result = SignedMessage::new(routing_message.clone(), &full_id, senders);
@@ -1449,7 +1459,7 @@ mod tests {
         let routing_message = RoutingMessage {
             src: Authority::ClientManager(name),
             dst: Authority::ClientManager(name),
-            content: MessageContent::SectionSplit(Prefix::new(0, name), name),
+            content: MessageContent::SectionSplit(Prefix::new(0, name), 1, name),
         };
         let full_id = FullId::new();
         let senders = iter::empty().collect();
