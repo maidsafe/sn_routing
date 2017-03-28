@@ -204,7 +204,7 @@ impl Node {
            full_id: FullId,
            min_section_size: usize,
            stats: Stats,
-           mut timer: Timer)
+           timer: Timer)
            -> Self {
         let public_id = *full_id.public_id();
         let tick_period = Duration::from_secs(TICK_TIMEOUT_SECS);
