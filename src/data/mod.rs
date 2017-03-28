@@ -22,7 +22,8 @@ mod mutable_data;
 pub use self::immutable_data::{ImmutableData, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES};
 pub use self::mutable_data::{Action, EntryAction, EntryActions, MutableData, PermissionSet, User,
                              Value};
-pub use self::mutable_data::{MAX_MUTABLE_DATA_ENTRIES, MAX_MUTABLE_DATA_SIZE_IN_BYTES};
+pub use self::mutable_data::{MAX_MUTABLE_DATA_ENTRIES, MAX_MUTABLE_DATA_ENTRY_ACTIONS,
+                             MAX_MUTABLE_DATA_SIZE_IN_BYTES};
 pub use self::structured_data::{MAX_STRUCTURED_DATA_SIZE_IN_BYTES, StructuredData};
 use error::RoutingError;
 use rust_sodium::crypto::sign::{self, PublicKey, Signature};

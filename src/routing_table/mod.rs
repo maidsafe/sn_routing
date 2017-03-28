@@ -1164,10 +1164,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Debug for Rout
 
 #[cfg(test)]
 mod tests {
-    use itertools::Itertools;
-    use std::collections::BTreeSet;
     use super::*;
     use super::SPLIT_BUFFER;
+    use itertools::Itertools;
+    use std::collections::BTreeSet;
 
     #[test]
     fn small() {

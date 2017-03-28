@@ -15,7 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use ::QUORUM;
+use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
+use QUORUM;
 use ack_manager::{ACK_TIMEOUT_SECS, Ack, AckManager};
 use action::Action;
 use cache::Cache;
@@ -54,7 +55,6 @@ use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
 use std::time::{Duration, Instant};
-use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 use timer::Timer;
 use tunnels::Tunnels;
 use types::MessageId;
