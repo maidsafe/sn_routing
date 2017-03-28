@@ -121,7 +121,11 @@ impl<N: Xorable + Clone + Copy + Binary + Default + Display> Debug for Authority
                 write!(formatter, "PrefixSection(prefix: {:?})", prefix)
             }
             Authority::ManagedNode(ref name) => write!(formatter, "ManagedNode(name: {})", name),
-            Authority::Client { ref client_key, ref proxy_node_name, ref peer_id } => {
+            Authority::Client {
+                ref client_key,
+                ref proxy_node_name,
+                ref peer_id,
+            } => {
                 write!(formatter,
                        "Client {{ client_name: {}, proxy_node_name: {}, peer_id: {:?} }}",
                        N::from_hash(hash::sha256::hash(&client_key[..]).0),

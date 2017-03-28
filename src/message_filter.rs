@@ -56,14 +56,17 @@ impl<Message: Hash> MessageFilter<Message> {
     pub fn insert(&mut self, message: &Message) -> usize {
         self.remove_expired();
         let hash_code = hash(message);
-        if let Some(index) = self.entries.iter().position(|t| t.hash_code == hash_code) {
+        if let Some(index) = self.entries
+               .iter()
+               .position(|t| t.hash_code == hash_code) {
             let mut timestamped_message = self.entries.remove(index);
             timestamped_message.update_expiry_point(self.time_to_live);
             let count = timestamped_message.increment_count();
             self.entries.push(timestamped_message);
             count
         } else {
-            self.entries.push(TimestampedMessage::new(hash_code, self.time_to_live));
+            self.entries
+                .push(TimestampedMessage::new(hash_code, self.time_to_live));
             1
         }
     }
@@ -82,13 +85,17 @@ impl<Message: Hash> MessageFilter<Message> {
     pub fn contains(&mut self, message: &Message) -> bool {
         self.remove_expired();
         let hash_code = hash(message);
-        self.entries.iter().any(|entry| entry.hash_code == hash_code)
+        self.entries
+            .iter()
+            .any(|entry| entry.hash_code == hash_code)
     }
 
     /// Remove the entry for `message`, regardless of how many times it was previously inserted.
     pub fn remove(&mut self, message: &Message) {
         let hash_code = hash(message);
-        if let Some(index) = self.entries.iter().position(|t| t.hash_code == hash_code) {
+        if let Some(index) = self.entries
+               .iter()
+               .position(|t| t.hash_code == hash_code) {
             let _old_val = self.entries.remove(index);
         }
     }
@@ -104,7 +111,9 @@ impl<Message: Hash> MessageFilter<Message> {
         // The entries are sorted from oldest to newest, so just split off the vector at the
         // first unexpired entry and the returned vector is the remaining unexpired values.  If
         // we don't find any unexpired value, just clear the vector.
-        if let Some(at) = self.entries.iter().position(|entry| entry.expiry_point > now) {
+        if let Some(at) = self.entries
+               .iter()
+               .position(|entry| entry.expiry_point > now) {
             self.entries = self.entries.split_off(at)
         } else {
             self.entries.clear();

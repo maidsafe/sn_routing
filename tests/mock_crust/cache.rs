@@ -68,9 +68,11 @@ fn response_caching() {
     for node in &mut *nodes {
         loop {
             match node.try_next_ev() {
-                Ok(Event::Request { request: Request::Get(req_data_id, req_message_id),
-                                    src: req_src,
-                                    dst: req_dst }) => {
+                Ok(Event::Request {
+                       request: Request::Get(req_data_id, req_message_id),
+                       src: req_src,
+                       dst: req_dst,
+                   }) => {
                     if req_data_id == data_id && req_message_id == message_id {
                         unwrap!(node.inner.send_get_success(req_dst,
                                                             req_src,

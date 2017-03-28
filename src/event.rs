@@ -73,14 +73,22 @@ pub enum Event {
 impl Debug for Event {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            Event::Request { ref request, ref src, ref dst } => {
+            Event::Request {
+                ref request,
+                ref src,
+                ref dst,
+            } => {
                 write!(formatter,
                        "Event::Request {{ request: {:?}, src: {:?}, dst: {:?} }}",
                        request,
                        src,
                        dst)
             }
-            Event::Response { ref response, ref src, ref dst } => {
+            Event::Response {
+                ref response,
+                ref src,
+                ref dst,
+            } => {
                 write!(formatter,
                        "Event::Response {{ response: {:?}, src: {:?}, dst: {:?} }}",
                        response,

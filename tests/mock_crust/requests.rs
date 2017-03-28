@@ -79,7 +79,11 @@ fn successful_get_request() {
     for node in nodes.iter_mut().filter(|n| n.is_recipient(&dst)) {
         loop {
             match node.try_next_ev() {
-                Ok(Event::Request { request: Request::Get(ref request, id), src, dst }) => {
+                Ok(Event::Request {
+                       request: Request::Get(ref request, id),
+                       src,
+                       dst,
+                   }) => {
                     request_received_count += 1;
                     if data_request == *request && message_id == id {
                         if let Err(err) = node.inner.send_get_success(dst, src, data.clone(), id) {
@@ -105,9 +109,8 @@ fn successful_get_request() {
         loop {
             match client.inner.try_next_ev() {
                 Ok(Event::Response {
-                    response: Response::GetSuccess(ref immutable, ref id),
-                    ..
-                }) => {
+                       response: Response::GetSuccess(ref immutable, ref id), ..
+                   }) => {
                     response_received_count += 1;
                     if data == *immutable && message_id == *id {
                         break;
@@ -144,14 +147,15 @@ fn failed_get_request() {
     for node in nodes.iter_mut().filter(|n| n.is_recipient(&dst)) {
         loop {
             match node.try_next_ev() {
-                Ok(Event::Request { request: Request::Get(ref data_id, ref id), src, dst }) => {
+                Ok(Event::Request {
+                       request: Request::Get(ref data_id, ref id),
+                       src,
+                       dst,
+                   }) => {
                     request_received_count += 1;
                     if data_request == *data_id && message_id == *id {
-                        if let Err(err) = node.inner.send_get_failure(dst,
-                                                                      src,
-                                                                      *data_id,
-                                                                      vec![],
-                                                                      *id) {
+                        if let Err(err) = node.inner
+                               .send_get_failure(dst, src, *data_id, vec![], *id) {
                             trace!("Failed to send GetFailure response: {:?}", err);
                         }
                         break;
@@ -211,7 +215,11 @@ fn disconnect_on_get_request() {
     for node in nodes.iter_mut().filter(|n| n.is_recipient(&dst)) {
         loop {
             match node.try_next_ev() {
-                Ok(Event::Request { request: Request::Get(ref request, ref id), src, dst }) => {
+                Ok(Event::Request {
+                       request: Request::Get(ref request, ref id),
+                       src,
+                       dst,
+                   }) => {
                     request_received_count += 1;
                     if data_request == *request && message_id == *id {
                         if let Err(err) = node.inner.send_get_success(dst, src, data.clone(), *id) {
@@ -233,20 +241,12 @@ fn disconnect_on_get_request() {
         .handle
         .0
         .borrow_mut()
-        .disconnect(&nodes[0]
-                         .handle
-                         .0
-                         .borrow()
-                         .peer_id);
+        .disconnect(&nodes[0].handle.0.borrow().peer_id);
     nodes[0]
         .handle
         .0
         .borrow_mut()
-        .disconnect(&clients[0]
-                         .handle
-                         .0
-                         .borrow()
-                         .peer_id);
+        .disconnect(&clients[0].handle.0.borrow().peer_id);
 
     let _ = poll_all(&mut nodes, &mut clients);
 

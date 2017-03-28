@@ -187,7 +187,8 @@ impl Client {
     /// Returns the name of this node.
     pub fn name(&self) -> Result<XorName, InterfaceError> {
         let (result_tx, result_rx) = channel();
-        self.action_sender.send(Action::Name { result_tx: result_tx })?;
+        self.action_sender
+            .send(Action::Name { result_tx: result_tx })?;
 
         self.receive_action_result(&result_rx)
     }
@@ -264,7 +265,9 @@ impl Client {
 
     /// Step the underlying state machine if there are any events for it to process.
     fn try_step(&self) -> Result<(), TryRecvError> {
-        self.machine.borrow_mut().try_step(&mut *self.event_buffer.borrow_mut())
+        self.machine
+            .borrow_mut()
+            .try_step(&mut *self.event_buffer.borrow_mut())
     }
 
     /// Resend all unacknowledged messages.
@@ -277,10 +280,7 @@ impl Client {
 
     /// Are there any unacknowledged messages?
     pub fn has_unacknowledged(&self) -> bool {
-        self.machine
-            .borrow()
-            .current()
-            .has_unacknowledged()
+        self.machine.borrow().current().has_unacknowledged()
     }
 }
 

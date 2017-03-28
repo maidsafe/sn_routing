@@ -103,11 +103,15 @@ mod implementation {
                 };
 
                 if let Some(Detail { expiry, token }) = r {
-                    deadlines.entry(expiry).or_insert_with(Vec::new).push(token);
+                    deadlines
+                        .entry(expiry)
+                        .or_insert_with(Vec::new)
+                        .push(token);
                 }
 
                 let now = Instant::now();
-                let expired_list = deadlines.keys()
+                let expired_list = deadlines
+                    .keys()
                     .take_while(|&&deadline| deadline < now)
                     .cloned()
                     .collect_vec();

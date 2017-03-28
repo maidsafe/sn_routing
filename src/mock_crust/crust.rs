@@ -41,10 +41,7 @@ impl Service {
     pub fn with_handle(handle: &ServiceHandle,
                        event_sender: CrustEventSender)
                        -> Result<Self, CrustError> {
-        let network = handle.0
-            .borrow()
-            .network
-            .clone();
+        let network = handle.0.borrow().network.clone();
         let service = Service(handle.0.clone(), network);
         service.lock_and_poll(|imp| imp.start(event_sender));
 

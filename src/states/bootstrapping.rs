@@ -130,7 +130,8 @@ impl Bootstrapping {
                 }
                 trace!("{:?} Listener started on port {}.", self, port);
                 self.crust_service.set_service_discovery_listen(true);
-                let _ = self.crust_service.start_bootstrap(HashSet::new(), CrustUser::Node);
+                let _ = self.crust_service
+                    .start_bootstrap(HashSet::new(), CrustUser::Node);
                 Transition::Stay
             }
             CrustEvent::ListenerFailed => {
@@ -274,7 +275,8 @@ impl Bootstrapping {
     fn send_client_identify(&mut self, peer_id: PeerId) {
         debug!("{:?} - Sending ClientIdentify to {:?}.", self, peer_id);
 
-        let token = self.timer.schedule(Duration::from_secs(BOOTSTRAP_TIMEOUT_SECS));
+        let token = self.timer
+            .schedule(Duration::from_secs(BOOTSTRAP_TIMEOUT_SECS));
         self.bootstrap_connection = Some((peer_id, token));
 
         let serialised_public_id = match serialisation::serialise(self.full_id.public_id()) {
@@ -315,8 +317,8 @@ impl Bootstrapping {
             } else {
                 CrustUser::Node
             };
-            let _ = self.crust_service.start_bootstrap(self.bootstrap_blacklist.clone(),
-                                                       crust_user);
+            let _ = self.crust_service
+                .start_bootstrap(self.bootstrap_blacklist.clone(), crust_user);
         }
     }
 }

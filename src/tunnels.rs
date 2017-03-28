@@ -92,7 +92,8 @@ impl Tunnels {
             .filter(|pair| pair.0 == *peer_id || pair.1 == *peer_id)
             .cloned()
             .collect_vec();
-        pairs.into_iter()
+        pairs
+            .into_iter()
             .map(|pair| {
                      self.clients.remove(&pair);
                      if pair.0 == *peer_id { pair.1 } else { pair.0 }

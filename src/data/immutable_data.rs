@@ -102,10 +102,7 @@ mod tests {
 
         // Normal
         let immutable_data = ImmutableData::new(value);
-        let immutable_data_name = immutable_data.name()
-            .0
-            .as_ref()
-            .to_hex();
+        let immutable_data_name = immutable_data.name().0.as_ref().to_hex();
         let expected_name = "ec0775555a7a6afba5f6e0a1deaa06f8928da80cf6ca94742ecc2a00c31033d3";
 
         assert_eq!(&expected_name, &immutable_data_name);

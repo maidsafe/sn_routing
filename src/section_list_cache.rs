@@ -46,9 +46,12 @@ impl SectionListCache {
     pub fn remove_signatures_by(&mut self, author: PublicId, our_section_size: usize) {
         if let Some(lists) = self.signed_by.remove(&author) {
             for (prefix, list) in lists {
-                let _ = self.signatures.get_mut(&prefix).map_or(None, |map| {
-                    map.get_mut(&list).map_or(None, |sigmap| sigmap.remove(&author))
-                });
+                let _ = self.signatures
+                    .get_mut(&prefix)
+                    .map_or(None, |map| {
+                        map.get_mut(&list)
+                            .map_or(None, |sigmap| sigmap.remove(&author))
+                    });
             }
             self.prune();
             self.update_lists_cache(our_section_size);
@@ -123,16 +126,16 @@ impl SectionListCache {
     fn update_lists_cache(&mut self, our_section_size: usize) {
         for (prefix, map) in &self.signatures {
             // find the entries with the most signatures
-            let entries =
-                map.iter().map(|(list, sigs)| (list, sigs.len())).sorted_by(|lhs, rhs| {
-                                                                                rhs.1.cmp(&lhs.1)
-                                                                            });
+            let entries = map.iter()
+                .map(|(list, sigs)| (list, sigs.len()))
+                .sorted_by(|lhs, rhs| rhs.1.cmp(&lhs.1));
             if let Some(&(list, sig_count)) = entries.first() {
                 // entry.0 = list, entry.1 = num of signatures
                 if 100 * sig_count >= QUORUM * our_section_size {
                     // we have a list with a quorum of signatures
                     let signatures = unwrap!(map.get(list));
-                    let _ = self.lists_cache.insert(*prefix, (list.clone(), signatures.clone()));
+                    let _ = self.lists_cache
+                        .insert(*prefix, (list.clone(), signatures.clone()));
                 }
             }
         }
@@ -149,11 +152,16 @@ impl SectionListCache {
             .collect_vec();
         for (prefix, list) in to_remove {
             // remove the signatures from self.signatures
-            let _ = self.signatures.get_mut(&prefix).map_or(None, |map| {
-                map.get_mut(&list).map_or(None, |sigmap| sigmap.remove(&author))
-            });
+            let _ = self.signatures
+                .get_mut(&prefix)
+                .map_or(None, |map| {
+                    map.get_mut(&list)
+                        .map_or(None, |sigmap| sigmap.remove(&author))
+                });
             // remove those entries from self.signed_by
-            let _ = self.signed_by.get_mut(&author).map_or(None, |map| map.remove(&prefix));
+            let _ = self.signed_by
+                .get_mut(&author)
+                .map_or(None, |map| map.remove(&prefix));
         }
 
         self.prune();

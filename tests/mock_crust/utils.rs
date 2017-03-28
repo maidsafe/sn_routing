@@ -154,7 +154,9 @@ impl TestNode {
     }
 
     pub fn is_recipient(&self, dst: &Authority<XorName>) -> bool {
-        self.inner.routing_table().map_or(false, |rt| rt.in_authority(dst))
+        self.inner
+            .routing_table()
+            .map_or(false, |rt| rt.in_authority(dst))
     }
 }
 
@@ -270,7 +272,9 @@ pub fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
         let mut handled_message = false;
         if BALANCED_POLLING {
             // handle all current messages for each node in turn, then repeat (via outer loop):
-            nodes.iter_mut().foreach(|node| handled_message = node.poll() || handled_message);
+            nodes
+                .iter_mut()
+                .foreach(|node| handled_message = node.poll() || handled_message);
         } else {
             handled_message = nodes.iter_mut().any(TestNode::poll);
         }
@@ -307,18 +311,19 @@ pub fn poll_and_resend(nodes: &mut [TestNode], clients: &mut [TestClient]) {
 /// Checks each of the last `count` members of `nodes` for a `Connected` event, and removes those
 /// which don't fire one. Returns the number of removed nodes.
 pub fn remove_nodes_which_failed_to_connect(nodes: &mut Vec<TestNode>, count: usize) -> usize {
-    let failed_to_join = nodes.iter_mut()
+    let failed_to_join = nodes
+        .iter_mut()
         .enumerate()
         .rev()
         .take(count)
         .filter_map(|(index, ref mut node)| {
-            while let Ok(event) = node.try_next_ev() {
-                if let Event::Connected = event {
-                    return None;
-                }
-            }
-            Some(index)
-        })
+                        while let Ok(event) = node.try_next_ev() {
+                            if let Event::Connected = event {
+                                return None;
+                            }
+                        }
+                        Some(index)
+                    })
         .collect_vec();
     for index in &failed_to_join {
         let _ = nodes.remove(*index);
@@ -423,7 +428,10 @@ pub fn add_connected_nodes_until_split(network: &Network,
 
     // Start enough new nodes under each target prefix to trigger a split eventually.
     for prefix in &prefixes {
-        let num_in_section = nodes.iter().filter(|node| prefix.matches(&node.name())).count();
+        let num_in_section = nodes
+            .iter()
+            .filter(|node| prefix.matches(&node.name()))
+            .count();
         // To ensure you don't hit this assert, don't have more than `min_split_size()` entries in
         // `nodes` when calling this function.
         assert!(num_in_section <= nodes[0].routing_table().min_split_size(),
@@ -550,7 +558,8 @@ fn resend_unacknowledged(nodes: &mut [TestNode], clients: &mut [TestClient]) -> 
     let node_resend = |node: &mut TestNode| node.inner.resend_unacknowledged();
     let client_resend = |client: &mut TestClient| client.inner.resend_unacknowledged();
     let or = |x, y| x || y;
-    nodes.iter_mut()
+    nodes
+        .iter_mut()
         .map(node_resend)
         .chain(clients.iter_mut().map(client_resend))
         .fold(false, or)
@@ -559,12 +568,14 @@ fn resend_unacknowledged(nodes: &mut [TestNode], clients: &mut [TestClient]) -> 
 fn sanity_check(prefix_lengths: &[usize]) {
     assert!(prefix_lengths.len() > 1,
             "There should be at least two specified prefix lengths");
-    let sum = prefix_lengths.iter().fold(0, |accumulated, &bit_count| {
-        assert!(bit_count <= 8,
+    let sum = prefix_lengths
+        .iter()
+        .fold(0, |accumulated, &bit_count| {
+            assert!(bit_count <= 8,
                 "The specified prefix lengths {:?} must each be no more than 8",
                 prefix_lengths);
-        accumulated + (1 << (8 - bit_count))
-    });
+            accumulated + (1 << (8 - bit_count))
+        });
     if sum < 256 {
         panic!("The specified prefix lengths {:?} would not cover the entire address space",
                prefix_lengths);
@@ -575,16 +586,20 @@ fn sanity_check(prefix_lengths: &[usize]) {
 }
 
 fn prefixes<T: Rng>(prefix_lengths: &[usize], rng: &mut T) -> Vec<Prefix<XorName>> {
-    let _ = prefix_lengths.iter().fold(0, |previous, &current| {
-        assert!(previous <= current,
+    let _ = prefix_lengths
+        .iter()
+        .fold(0, |previous, &current| {
+            assert!(previous <= current,
                 "Slice {:?} should be sorted.",
                 prefix_lengths);
-        current
-    });
+            current
+        });
     let mut prefixes = vec![Prefix::new(prefix_lengths[0], rng.gen())];
     while prefixes.len() < prefix_lengths.len() {
         let new_prefix = Prefix::new(prefix_lengths[prefixes.len()], rng.gen());
-        if prefixes.iter().all(|prefix| !prefix.is_compatible(&new_prefix)) {
+        if prefixes
+               .iter()
+               .all(|prefix| !prefix.is_compatible(&new_prefix)) {
             prefixes.push(new_prefix);
         }
     }
@@ -597,7 +612,9 @@ fn add_node_to_section<T: Rng>(network: &Network,
                                rng: &mut T,
                                use_cache: bool) {
     let relocation_name = prefix.substituted_in(rng.gen());
-    nodes.iter_mut().foreach(|node| node.inner.set_next_node_name(relocation_name));
+    nodes
+        .iter_mut()
+        .foreach(|node| node.inner.set_next_node_name(relocation_name));
 
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
     let endpoint = Endpoint(nodes.len());
