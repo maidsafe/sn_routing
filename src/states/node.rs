@@ -2310,6 +2310,7 @@ impl Node {
                     self.disconnect_peer(&peer_id, Some(outbox));
                     info!("{:?} Dropped {:?} from the routing table.", self, name);
                 }
+                self.send_section_list_signature(prefix, None);
                 info!("{:?} Merge on SectionUpdate completed. Prefixes: {:?}",
                       self,
                       self.peer_mgr.routing_table().prefixes());
@@ -2561,7 +2562,7 @@ impl Node {
                 outbox.send_event(Event::SectionMerge(merge_details.prefix));
                 info!("{:?} Own section merge completed. Prefixes: {:?}",
                       self,
-                      self.peer_mgr.routing_table().our_section());
+                      self.peer_mgr.routing_table().prefixes());
 
                 // After the merge, half of our section won't have our signatures -- send them
                 for prefix in self.peer_mgr.routing_table().prefixes() {
@@ -2635,9 +2636,15 @@ impl Node {
               self,
               self.peer_mgr.routing_table().prefixes());
         self.merge_if_necessary();
-        self.send_section_list_signature(merge_prefix, None);
-        self.reset_rt_timer();
-        self.cache_section_update_request(merge_prefix);
+
+        if self.peer_mgr
+               .routing_table()
+               .section_with_prefix(&merge_prefix)
+               .is_some() {
+            self.send_section_list_signature(merge_prefix, None);
+            self.reset_rt_timer();
+            self.cache_section_update_request(merge_prefix);
+        }
         Ok(())
     }
 

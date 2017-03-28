@@ -691,7 +691,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         if !self.our_prefix
                 .is_compatible(&merge_details.merge_prefix) ||
            self.our_prefix.bit_count() != merge_details.merge_prefix.bit_count() + 1 {
-            debug!("{:?}: Attempt to call merge_own_section() for an already merged prefix {:?}",
+            debug!("{:?} Attempt to call merge_own_section() for an already merged prefix {:?}",
                    self.our_name,
                    merge_details.merge_prefix);
             return OwnMergeState::AlreadyMerged;
@@ -729,6 +729,14 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// held in the routing table) are returned so the caller can establish connections to these
     /// peers and subsequently add them.
     pub fn merge_other_section(&mut self, merge_details: OtherMergeDetails<T>) -> BTreeSet<T> {
+        if self.our_prefix.is_compatible(&merge_details.prefix) {
+            error!("{:?} Attempt to merge other section {:?} when our prefix is {:?}",
+                   self,
+                   merge_details.prefix,
+                   self.our_prefix);
+            return BTreeSet::new();
+        }
+
         let should_merge = |prefix: &Prefix<T>| {
             prefix.is_compatible(&merge_details.prefix) &&
             prefix.bit_count() >= merge_details.prefix.bit_count()
