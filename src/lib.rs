@@ -121,6 +121,8 @@
 
 #![cfg_attr(feature="cargo-clippy", deny(unicode_not_nfc, wrong_pub_self_convention,
                                     option_unwrap_used))]
+
+extern crate accumulator;
 #[macro_use]
 extern crate log;
 extern crate maidsafe_utilities;

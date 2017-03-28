@@ -33,7 +33,10 @@ fn successful_put_request() {
     let data = gen_immutable_data(&mut rng, 1024);
     let message_id = MessageId::new();
 
-    assert!(clients[0].inner.send_put_request(dst, data.clone(), message_id).is_ok());
+    assert!(clients[0]
+                .inner
+                .send_put_request(dst, data.clone(), message_id)
+                .is_ok());
 
     let _ = poll_all(&mut nodes, &mut clients);
 
@@ -70,7 +73,10 @@ fn successful_get_request() {
     let data_request = data.identifier();
     let message_id = MessageId::new();
 
-    assert!(clients[0].inner.send_get_request(dst, data_request, message_id).is_ok());
+    assert!(clients[0]
+                .inner
+                .send_get_request(dst, data_request, message_id)
+                .is_ok());
 
     let _ = poll_all(&mut nodes, &mut clients);
 
@@ -138,7 +144,10 @@ fn failed_get_request() {
     let data_request = data.identifier();
     let message_id = MessageId::new();
 
-    assert!(clients[0].inner.send_get_request(dst, data_request, message_id).is_ok());
+    assert!(clients[0]
+                .inner
+                .send_get_request(dst, data_request, message_id)
+                .is_ok());
 
     let _ = poll_all(&mut nodes, &mut clients);
 
@@ -206,7 +215,10 @@ fn disconnect_on_get_request() {
     let data_request = DataIdentifier::Immutable(*data.name());
     let message_id = MessageId::new();
 
-    assert!(clients[0].inner.send_get_request(dst, data_request.clone(), message_id).is_ok());
+    assert!(clients[0]
+                .inner
+                .send_get_request(dst, data_request.clone(), message_id)
+                .is_ok());
 
     let _ = poll_all(&mut nodes, &mut clients);
 

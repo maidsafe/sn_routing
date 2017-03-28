@@ -488,7 +488,10 @@ pub fn add_connected_nodes_until_split(network: &Network,
     assert_eq!(prefixes.iter().cloned().collect::<BTreeSet<_>>(),
                actual_prefixes);
     assert_eq!(prefix_lengths,
-               prefixes.iter().map(|prefix| prefix.bit_count()).collect_vec());
+               prefixes
+                   .iter()
+                   .map(|prefix| prefix.bit_count())
+                   .collect_vec());
 
     // Clear all event queues and clear the `next_node_name` values.
     for node in nodes.iter_mut() {
@@ -572,8 +575,8 @@ fn sanity_check(prefix_lengths: &[usize]) {
         .iter()
         .fold(0, |accumulated, &bit_count| {
             assert!(bit_count <= 8,
-                "The specified prefix lengths {:?} must each be no more than 8",
-                prefix_lengths);
+                    "The specified prefix lengths {:?} must each be no more than 8",
+                    prefix_lengths);
             accumulated + (1 << (8 - bit_count))
         });
     if sum < 256 {
@@ -590,8 +593,8 @@ fn prefixes<T: Rng>(prefix_lengths: &[usize], rng: &mut T) -> Vec<Prefix<XorName
         .iter()
         .fold(0, |previous, &current| {
             assert!(previous <= current,
-                "Slice {:?} should be sorted.",
-                prefix_lengths);
+                    "Slice {:?} should be sorted.",
+                    prefix_lengths);
             current
         });
     let mut prefixes = vec![Prefix::new(prefix_lengths[0], rng.gen())];

@@ -17,6 +17,7 @@
 
 use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 use QUORUM;
+use accumulator::Accumulator;
 use ack_manager::{ACK_TIMEOUT_SECS, Ack, AckManager};
 use action::Action;
 use cache::Cache;
@@ -83,8 +84,11 @@ const APPROVAL_PROGRESS_INTERVAL_SECS: u64 = 30;
 const CANDIDATE_STATUS_INTERVAL_SECS: u64 = 60;
 /// Duration for which `OwnSectionMerge` messages are kept in the cache, in seconds.
 const MERGE_TIMEOUT_SECS: u64 = 300;
-/// Duration to hold the bootstrappers
-const BOOTSTRAPPER_HOLD_DUR_SEC: u64 = 300;
+/// Duration for which to hold the bootstrappers, in seconds.
+const BOOTSTRAPPER_HOLD_DUR_SECS: u64 = 300;
+/// The number of `SectionUpdateRequests` required to be accumulated for a given `Prefix` before
+/// responding to them.
+const SECTION_UPDATE_REQUESTS_QUORUM: usize = 3;
 
 pub struct Node {
     ack_mgr: AckManager,
@@ -137,8 +141,10 @@ pub struct Node {
     /// section's prefix had changed. The cache is only populated while we're undergoing a merge and
     /// is drained when that merge completes, at which point we send each listed section a
     /// `SectionUpdateRequest`.
-    cached_section_update_requests: BTreeSet<Prefix<XorName>>,
-    /// Hold the kind of bootstrappers
+    neighbouring_prefix_change_cache: BTreeSet<Prefix<XorName>>,
+    /// Accumulator of received `SectionUpdateRequest`s.
+    section_update_requests_accumulator: Accumulator<Prefix<XorName>, XorName>,
+    /// Hold the kind of bootstrappers.
     bootstrappers: LruCache<PeerId, CrustUser>,
 }
 
@@ -243,9 +249,12 @@ impl Node {
             resource_proof_response_parts: HashMap::new(),
             challenger_count: 0,
             proxy_is_resource_proof_challenger: false,
-            cached_section_update_requests: BTreeSet::new(),
+            neighbouring_prefix_change_cache: BTreeSet::new(),
+            section_update_requests_accumulator:
+                Accumulator::with_duration(SECTION_UPDATE_REQUESTS_QUORUM,
+                                           Duration::from_secs(MERGE_TIMEOUT_SECS)),
             bootstrappers:
-                LruCache::with_expiry_duration(Duration::from_secs(BOOTSTRAPPER_HOLD_DUR_SEC)),
+                LruCache::with_expiry_duration(Duration::from_secs(BOOTSTRAPPER_HOLD_DUR_SECS)),
         }
     }
 
@@ -1055,8 +1064,8 @@ impl Node {
             (NodeApproval { sections }, Section(_), Client { .. }) => {
                 self.handle_node_approval(&sections, outbox)
             }
-            (SectionUpdateRequest { our_prefix }, ManagedNode(_), PrefixSection(_)) => {
-                self.handle_section_update_request(our_prefix);
+            (SectionUpdateRequest { our_prefix }, ManagedNode(src), PrefixSection(_)) => {
+                self.handle_section_update_request(our_prefix, src);
                 Ok(())
             }
             (SectionUpdate {
@@ -1153,6 +1162,9 @@ impl Node {
         if self.we_want_to_merge() || self.they_want_to_merge() {
             debug!("{:?} Not sending NodeApproval since our section is currently merging.",
                    self);
+        } else if !self.peer_mgr.routing_table().is_valid() {
+            debug!("{:?} Not sending NodeApproval since our routing table isn't valid.",
+                   self);
         } else {
             let src = Authority::Section(*candidate_id.name());
             // Send the _current_ routing table. If this doesn't accumulate, we expect the candidate
@@ -1180,6 +1192,24 @@ impl Node {
         if self.is_approved {
             warn!("{:?} Received duplicate NodeApproval.", self);
             return Ok(());
+        }
+
+        let mapped_sections = sections
+            .iter()
+            .map(|(prefix, section)| {
+                     let names: BTreeSet<XorName> =
+                         section.iter().map(|pub_id| *pub_id.name()).collect();
+                     (*prefix, names)
+                 })
+            .collect();
+        if let Err(error) = self.peer_mgr
+               .routing_table()
+               .check_node_approval_msg(mapped_sections) {
+            info!("{:?} Received invalid sections in NodeApproval: {:?}. Restarting.",
+                  self,
+                  error);
+            outbox.send_event(Event::RestartRequired);
+            return Err(From::from(error));
         }
 
         self.get_approval_timer_token = None;
@@ -1676,7 +1706,7 @@ impl Node {
     // `SectionUpdateRequest` from a neighbouring section) and it's only used to add missing members
     // or split a section.
     fn send_section_update(&mut self, dst_prefix: Option<Prefix<XorName>>) {
-        if !self.peer_mgr.routing_table().is_valid() {
+        if dst_prefix.is_none() && !self.peer_mgr.routing_table().is_valid() {
             warn!("{:?} Not sending section update since RT invariant not held.",
                   self);
             return;
@@ -2234,9 +2264,17 @@ impl Node {
         self.send_routing_message(src, client_auth, response_content)
     }
 
-    fn handle_section_update_request(&mut self, prefix: Prefix<XorName>) {
-        trace!("{:?} Got section update request from {:?}", self, prefix);
-        self.send_section_update(Some(prefix));
+    fn handle_section_update_request(&mut self, prefix: Prefix<XorName>, src: XorName) {
+        trace!("{:?} Got section update request from {} for {:?}",
+               self,
+               src,
+               prefix);
+        if self.section_update_requests_accumulator
+               .add(prefix, src)
+               .is_some() {
+            self.section_update_requests_accumulator.delete(&prefix);
+            self.send_section_update(Some(prefix));
+        }
     }
 
     fn handle_section_update(&mut self,
@@ -2252,26 +2290,33 @@ impl Node {
         //       flow for joining nodes is in place and we send the routing table to the new node
         //       at the point where it gets added to the section.
         let pfx_name = prefix.lower_bound();
-        // if !prefix.is_compatible(self.our_prefix()) {
-        while let Some(rt_pfx) = self.peer_mgr
-                  .routing_table()
-                  .find_section_prefix(&pfx_name) {
+        if !prefix.is_compatible(self.our_prefix()) {
+            while let Some(rt_pfx) = self.peer_mgr
+                      .routing_table()
+                      .find_section_prefix(&pfx_name) {
+                if rt_pfx.bit_count() >= prefix.bit_count() {
+                    break;
+                }
+                debug!("{:?} Splitting {:?} on section update.", self, rt_pfx);
+                let _ = self.handle_section_split(rt_pfx, rt_pfx.lower_bound(), outbox);
+            }
+        }
+
+        if let Some(rt_pfx) = self.peer_mgr
+               .routing_table()
+               .find_section_prefix(&pfx_name) {
             if merge && rt_pfx.bit_count() > prefix.bit_count() {
                 for (name, peer_id) in self.peer_mgr.add_prefix(prefix) {
                     self.disconnect_peer(&peer_id, Some(outbox));
                     info!("{:?} Dropped {:?} from the routing table.", self, name);
                 }
+                self.send_section_list_signature(prefix, None);
                 info!("{:?} Merge on SectionUpdate completed. Prefixes: {:?}",
                       self,
                       self.peer_mgr.routing_table().prefixes());
             }
-            if rt_pfx.bit_count() >= prefix.bit_count() {
-                break;
-            }
-            debug!("{:?} Splitting {:?} on section update.", self, rt_pfx);
-            let _ = self.handle_section_split(rt_pfx, rt_pfx.lower_bound(), outbox);
         }
-        // }
+
         // Filter list of members to just those we don't know about:
         let members = if let Some(section) = self.peer_mgr
                .routing_table()
@@ -2280,8 +2325,8 @@ impl Node {
             members.into_iter().filter(f).collect_vec()
         } else {
             debug!("{:?} Section update received from unknown neighbour {:?}",
-                       self,
-                       prefix);
+                   self,
+                   prefix);
             return Ok(());
         };
         let members = members
@@ -2469,8 +2514,18 @@ impl Node {
                 }
                 Some(their_sections) => their_sections,
             };
-            self.process_own_section_merge(our_prefix, our_sections, outbox)?;
-            self.process_own_section_merge(their_prefix, their_sections, outbox)?;
+            let our_merged_section: BTreeSet<_> = our_sections
+                .iter()
+                .chain(their_sections.iter())
+                .filter(|&(prefix, _)| prefix.popped() == self.our_prefix().popped())
+                .flat_map(|(_, peers)| peers)
+                .map(|peer| *peer.name())
+                .collect();
+            self.process_own_section_merge(our_prefix, our_sections, &our_merged_section, outbox)?;
+            self.process_own_section_merge(their_prefix,
+                                           their_sections,
+                                           &our_merged_section,
+                                           outbox)?;
         }
         self.merge_if_necessary();
         Ok(())
@@ -2488,6 +2543,7 @@ impl Node {
     fn process_own_section_merge(&mut self,
                                  sender_prefix: Prefix<XorName>,
                                  sections: SectionMap,
+                                 our_merged_section: &BTreeSet<XorName>,
                                  outbox: &mut EventBox)
                                  -> Result<(), RoutingError> {
         let merge_prefix = sender_prefix.popped();
@@ -2500,7 +2556,7 @@ impl Node {
             OwnMergeState::AlreadyMerged => (),
             OwnMergeState::Completed {
                 targets,
-                merge_details,
+                mut merge_details,
             } => {
                 // TODO - the event should maybe only fire once all new connections have been made?
                 outbox.send_event(Event::SectionMerge(merge_details.prefix));
@@ -2508,10 +2564,16 @@ impl Node {
                       self,
                       self.peer_mgr.routing_table().prefixes());
 
-                // after the merge, half of our section won't have our signatures -- send them
+                // After the merge, half of our section won't have our signatures -- send them
                 for prefix in self.peer_mgr.routing_table().prefixes() {
                     self.send_section_list_signature(prefix, None);
                 }
+
+                // Send an `OtherSectionMerge` containing just the prefix to ensure accumulation,
+                // followed by a second one with the full details of the our section.
+                merge_details.section.clear();
+                self.send_other_section_merge(targets.clone(), merge_details.clone());
+                merge_details.section = our_merged_section.clone();
                 self.send_other_section_merge(targets, merge_details);
 
                 let own_name = *self.name();
@@ -2530,9 +2592,10 @@ impl Node {
                                error);
                     }
                 }
-                let cached_section_update_requests =
-                    mem::replace(&mut self.cached_section_update_requests, BTreeSet::new());
-                for prefix in cached_section_update_requests {
+                let neighbouring_prefix_change_cache =
+                    mem::replace(&mut self.neighbouring_prefix_change_cache, BTreeSet::new());
+                for prefix in neighbouring_prefix_change_cache {
+                    trace!("{:?} Sending SectionUpdateRequest to {:?}", self, prefix);
                     let src = Authority::ManagedNode(*self.name());
                     let dst = Authority::PrefixSection(prefix);
                     let content =
@@ -2573,9 +2636,15 @@ impl Node {
               self,
               self.peer_mgr.routing_table().prefixes());
         self.merge_if_necessary();
-        self.send_section_list_signature(merge_prefix, None);
-        self.reset_rt_timer();
-        self.cache_section_update_request(merge_prefix);
+
+        if self.peer_mgr
+               .routing_table()
+               .section_with_prefix(&merge_prefix)
+               .is_some() {
+            self.send_section_list_signature(merge_prefix, None);
+            self.reset_rt_timer();
+            self.cache_section_update_request(merge_prefix);
+        }
         Ok(())
     }
 
@@ -3379,7 +3448,7 @@ impl Node {
                 .is_some() || self.we_want_to_merge() || self.they_want_to_merge()) &&
            other_section_prefix != self.our_prefix().sibling() {
             // We don't care about duplicate cached prefixes - ignore result.
-            let _ = self.cached_section_update_requests
+            let _ = self.neighbouring_prefix_change_cache
                 .insert(other_section_prefix);
         }
     }
@@ -3540,9 +3609,10 @@ impl Bootstrapped for Node {
             }
             Section(_) => {
                 vec![SectionList::new(*self.our_prefix(),
-                                      self.peer_mgr.get_pub_ids(self.peer_mgr
-                                                                    .routing_table()
-                                                                    .our_section()))]
+                                      self.peer_mgr
+                                          .get_pub_ids(self.peer_mgr
+                                                           .routing_table()
+                                                           .our_section()))]
             }
             PrefixSection(ref prefix) => {
                 self.peer_mgr

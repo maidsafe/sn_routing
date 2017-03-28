@@ -61,7 +61,9 @@ fn response_caching() {
 
     // No node has the data cached yet, so this request should reach the nodes
     // in the NAE manager section of the data.
-    unwrap!(clients[0].inner.send_get_request(dst, data_id, message_id));
+    unwrap!(clients[0]
+                .inner
+                .send_get_request(dst, data_id, message_id));
 
     poll_all(&mut nodes, &mut clients);
 
@@ -74,10 +76,11 @@ fn response_caching() {
                        dst: req_dst,
                    }) => {
                     if req_data_id == data_id && req_message_id == message_id {
-                        unwrap!(node.inner.send_get_success(req_dst,
-                                                            req_src,
-                                                            data.clone(),
-                                                            req_message_id));
+                        unwrap!(node.inner
+                                    .send_get_success(req_dst,
+                                                      req_src,
+                                                      data.clone(),
+                                                      req_message_id));
                         break;
                     }
                 }

@@ -280,6 +280,18 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         self.check_invariant(true, true)
     }
 
+    /// Checks that the `NodeApproval` message contains a valid `RoutingTable`.
+    pub fn check_node_approval_msg(&self,
+                                   sections: BTreeMap<Prefix<T>, BTreeSet<T>>)
+                                   -> Result<(), Error> {
+        let mut temp_rt = RoutingTable::new(self.our_name, self.min_section_size);
+        temp_rt.add_prefixes(sections.keys().cloned().collect())?;
+        for peer in sections.values().flat_map(BTreeSet::iter) {
+            let _ = temp_rt.add(*peer, false);
+        }
+        temp_rt.check_invariant(false, true)
+    }
+
     /// Returns the `Prefix` of our section
     pub fn our_prefix(&self) -> &Prefix<T> {
         &self.our_prefix
@@ -679,7 +691,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         if !self.our_prefix
                 .is_compatible(&merge_details.merge_prefix) ||
            self.our_prefix.bit_count() != merge_details.merge_prefix.bit_count() + 1 {
-            debug!("{:?}: Attempt to call merge_own_section() for an already merged prefix {:?}",
+            debug!("{:?} Attempt to call merge_own_section() for an already merged prefix {:?}",
                    self.our_name,
                    merge_details.merge_prefix);
             return OwnMergeState::AlreadyMerged;
@@ -718,13 +730,16 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// peers and subsequently add them.
     pub fn merge_other_section(&mut self, merge_details: OtherMergeDetails<T>) -> BTreeSet<T> {
         if self.our_prefix.is_compatible(&merge_details.prefix) {
-            // We've already handled this particular merge via `merge_own_section()`.
+            error!("{:?} Attempt to merge other section {:?} when our prefix is {:?}",
+                   self,
+                   merge_details.prefix,
+                   self.our_prefix);
             return BTreeSet::new();
         }
 
         let should_merge = |prefix: &Prefix<T>| {
             prefix.is_compatible(&merge_details.prefix) &&
-            prefix.bit_count() > merge_details.prefix.bit_count()
+            prefix.bit_count() >= merge_details.prefix.bit_count()
         };
 
         if self.sections.keys().any(should_merge) {
@@ -967,7 +982,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                 .partition::<BTreeMap<_, _>, _>(|&(prefix, _)| new_prefix.is_compatible(&prefix));
         self.sections = sections;
         // Merge selected sections and add the merged section back in.
-        let merged_names = sections_to_merge
+        let merged_names: BTreeSet<_> = sections_to_merge
             .into_iter()
             .flat_map(|(_, names)| names)
             .collect();
@@ -975,7 +990,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             self.our_section.extend(merged_names);
             self.our_prefix = *new_prefix;
         } else {
-            self.insert_new_section(*new_prefix, merged_names);
+            self.sections
+                .entry(*new_prefix)
+                .or_insert_with(BTreeSet::new)
+                .extend(merged_names)
         }
     }
 
@@ -1280,7 +1298,9 @@ mod tests {
         assert!(our_new_prefix.is_none());
         assert_eq!(nodes_to_drop.len(), table.min_split_size());
         let mut drop_prefix = Prefix::new(2, section_11_name);
-        assert!(nodes_to_drop.iter().all(|name| drop_prefix.matches(name)));
+        assert!(nodes_to_drop
+                    .iter()
+                    .all(|name| drop_prefix.matches(name)));
         expected_rt_len -= nodes_to_drop.len();
         table.verify_invariant();
         assert_eq!(table.len(), expected_rt_len);
@@ -1320,7 +1340,9 @@ mod tests {
         assert_eq!(unwrap!(our_new_prefix), expected_own_prefix);
         assert_eq!(nodes_to_drop.len(), table.min_split_size());
         drop_prefix = Prefix::new(3, section_011_name);
-        assert!(nodes_to_drop.iter().all(|name| drop_prefix.matches(name)));
+        assert!(nodes_to_drop
+                    .iter()
+                    .all(|name| drop_prefix.matches(name)));
         expected_rt_len -= nodes_to_drop.len();
         table.verify_invariant();
         assert_eq!(table.len(), expected_rt_len);
@@ -1431,7 +1453,10 @@ mod tests {
                    table.add_prefix(unwrap!(Prefix::from_str("01"))));
         assert_eq!(prefixes_from_strs(vec!["1", "00", "01"]), table.prefixes());
         assert_eq!(vec![0xc0, 0xd0, 0xe0, 0xf0u8],
-                   table.add_prefix(unwrap!(Prefix::from_str("111"))).into_iter().sorted());
+                   table
+                       .add_prefix(unwrap!(Prefix::from_str("111")))
+                       .into_iter()
+                       .sorted());
         assert_eq!(prefixes_from_strs(vec!["110", "111", "10", "0"]),
                    table.prefixes());
         assert_eq!(Vec::<u8>::new(),

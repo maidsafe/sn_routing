@@ -163,8 +163,9 @@ mod tests {
             let signed_msg = unwrap!(SignedMessage::new(routing_msg, msg_sender_id, lists));
             let signature_msgs = other_ids
                 .map(|id| {
-                         unwrap!(signed_msg.routing_message()
-                                              .to_signature(id.signing_private_key()))
+                         unwrap!(signed_msg
+                                     .routing_message()
+                                     .to_signature(id.signing_private_key()))
                      })
                 .collect();
             MessageAndSignatures {
@@ -247,8 +248,7 @@ mod tests {
             .sigs
             .values()
             .foreach(|&(ref pub_ids_and_sigs, _)| {
-                         assert_eq!(pub_ids_and_sigs.len(),
-                                                             env.other_ids.len())
+                         assert_eq!(pub_ids_and_sigs.len(), env.other_ids.len())
                      });
 
         // Add each message with the section list added - each should accumulate.
@@ -262,7 +262,9 @@ mod tests {
                 let signed_msg = msg_and_sigs.signed_msg.clone();
                 let route = rand::random();
                 let (mut returned_msg, returned_route) =
-                unwrap!(sig_accumulator.add_message(signed_msg.clone(), env.num_nodes(), route));
+                    unwrap!(sig_accumulator.add_message(signed_msg.clone(),
+                                                        env.num_nodes(),
+                                                        route));
                 assert_eq!(sig_accumulator.sigs.len(), expected_sigs_count);
                 assert!(sig_accumulator.msgs.is_empty());
                 assert_eq!(route, returned_route);

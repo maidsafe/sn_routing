@@ -119,7 +119,9 @@ fn concurrent_merge() {
     for (prefix, len) in &mut section_map {
         while *len >= min_section_size {
             let index =
-                unwrap!(nodes.iter().position(|node| node.routing_table().our_prefix() == prefix));
+                unwrap!(nodes
+                            .iter()
+                            .position(|node| node.routing_table().our_prefix() == prefix));
             let removed = nodes.remove(index);
             drop(removed);
             *len -= 1;

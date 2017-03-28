@@ -390,20 +390,26 @@ fn merging_sections() {
         network.add_node();
         verify_invariant(&network);
     }
-    assert!(network.nodes.iter().all(|(_, table)| if table.num_of_sections() < 2 {
-                                         trace!("{:?}", table);
-                                         false
-                                     } else {
-                                         true
-                                     }));
+    assert!(network
+                .nodes
+                .iter()
+                .all(|(_, table)| if table.num_of_sections() < 2 {
+                         trace!("{:?}", table);
+                         false
+                     } else {
+                         true
+                     }));
     for _ in 0..95 {
         network.drop_node();
         verify_invariant(&network);
     }
-    assert!(network.nodes.iter().all(|(_, table)| if table.num_of_sections() > 0 {
-                                         trace!("{:?}", table);
-                                         false
-                                     } else {
-                                         true
-                                     }));
+    assert!(network
+                .nodes
+                .iter()
+                .all(|(_, table)| if table.num_of_sections() > 0 {
+                         trace!("{:?}", table);
+                         false
+                     } else {
+                         true
+                     }));
 }
