@@ -216,7 +216,8 @@ mod unnamed {
         let mut term = term::stdout().expect("Could not open stdout.");
         term.fg(color).expect("Failed to set color");
         print!("{}", text);
-        term.reset().expect("Failed to restore stdout attributes.");
+        term.reset()
+            .expect("Failed to restore stdout attributes.");
         io::stdout().flush().expect("Could not flush stdout");
     }
 

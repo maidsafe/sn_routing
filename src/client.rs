@@ -76,18 +76,21 @@ impl Client {
         let min_section_size = 8;
         rust_sodium::init(); // enable shared global (i.e. safe to multithread now)
 
-        // start the handler for routing with a restriction to become a full node
-        let mut event_buffer = EventBuf::new();
-        let (action_sender, mut machine) =
-            Self::make_state_machine(keys, min_section_size, &mut event_buffer);
-
-        for ev in event_buffer.take_all() {
-            event_sender.send(ev)?;
-        }
-
         let (tx, rx) = channel();
+        let (get_action_sender_tx, get_action_sender_rx) = channel();
 
         let raii_joiner = thread::named("Client thread", move || {
+            // start the handler for routing with a restriction to become a full node
+            let mut event_buffer = EventBuf::new();
+            let (action_sender, mut machine) =
+                Self::make_state_machine(keys, min_section_size, &mut event_buffer);
+
+            for ev in event_buffer.take_all() {
+                unwrap!(event_sender.send(ev));
+            }
+
+            unwrap!(get_action_sender_tx.send(action_sender));
+
             // Gather events from the state machine's event loop and proxy them over the
             // event_sender channel.
             while Ok(()) == machine.step(&mut event_buffer) {
@@ -100,6 +103,8 @@ impl Client {
             }
             // When there are no more events to process, terminate this thread.
         });
+
+        let action_sender = unwrap!(get_action_sender_rx.recv());
 
         Ok(Client {
                interface_result_tx: tx,
@@ -182,7 +187,8 @@ impl Client {
     /// Returns the name of this node.
     pub fn name(&self) -> Result<XorName, InterfaceError> {
         let (result_tx, result_rx) = channel();
-        self.action_sender.send(Action::Name { result_tx: result_tx })?;
+        self.action_sender
+            .send(Action::Name { result_tx: result_tx })?;
 
         self.receive_action_result(&result_rx)
     }
@@ -259,7 +265,9 @@ impl Client {
 
     /// Step the underlying state machine if there are any events for it to process.
     fn try_step(&self) -> Result<(), TryRecvError> {
-        self.machine.borrow_mut().try_step(&mut *self.event_buffer.borrow_mut())
+        self.machine
+            .borrow_mut()
+            .try_step(&mut *self.event_buffer.borrow_mut())
     }
 
     /// Resend all unacknowledged messages.
@@ -272,10 +280,7 @@ impl Client {
 
     /// Are there any unacknowledged messages?
     pub fn has_unacknowledged(&self) -> bool {
-        self.machine
-            .borrow()
-            .current()
-            .has_unacknowledged()
+        self.machine.borrow().current().has_unacknowledged()
     }
 }
 

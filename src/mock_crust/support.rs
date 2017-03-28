@@ -120,16 +120,25 @@ impl Network {
         let service_1 = unwrap!(self.find_service(node_1),
                                 "Cannot fetch service of {:?}.",
                                 node_1);
-        if service_1.borrow_mut().remove_connection_by_endpoint(node_2).is_none() {
+        if service_1
+               .borrow_mut()
+               .remove_connection_by_endpoint(node_2)
+               .is_none() {
             return;
         }
         let service_2 = unwrap!(self.find_service(node_2),
                                 "Cannot fetch service of {:?}.",
                                 node_2);
-        let _ = service_2.borrow_mut().remove_connection_by_endpoint(node_1);
+        let _ = service_2
+            .borrow_mut()
+            .remove_connection_by_endpoint(node_1);
 
-        service_1.borrow_mut().send_event(Event::LostPeer(PeerId(node_2.0)));
-        service_2.borrow_mut().send_event(Event::LostPeer(PeerId(node_1.0)));
+        service_1
+            .borrow_mut()
+            .send_event(Event::LostPeer(PeerId(node_2.0)));
+        service_2
+            .borrow_mut()
+            .send_event(Event::LostPeer(PeerId(node_1.0)));
     }
 
     /// Simulates a crust event being sent to the node.
@@ -143,10 +152,7 @@ impl Network {
     /// Construct a new [`XorShiftRng`](https://doc.rust-lang.org/rand/rand/struct.XorShiftRng.html)
     /// using a seed generated from random data provided by `self`.
     pub fn new_rng(&self) -> XorShiftRng {
-        self.0
-            .borrow_mut()
-            .rng
-            .new_rng()
+        self.0.borrow_mut().rng.new_rng()
     }
 
     fn connection_blocked(&self, sender: Endpoint, receiver: Endpoint) -> bool {
@@ -168,37 +174,32 @@ impl Network {
     // Drops any pending messages on a specific route (does not automatically
     // drop packets going the other way).
     fn drop_pending(&self, sender: Endpoint, receiver: Endpoint) {
-        if let Some(deque) = self.0
-               .borrow_mut()
-               .queue
-               .get_mut(&(sender, receiver)) {
+        if let Some(deque) = self.0.borrow_mut().queue.get_mut(&(sender, receiver)) {
             deque.clear();
         }
     }
 
     // Drops all pending messages across the entire network.
     fn drop_all_pending(&self) {
-        self.0
-            .borrow_mut()
-            .queue
-            .clear();
+        self.0.borrow_mut().queue.clear();
     }
 
     fn pop_packet(&self) -> Option<(Endpoint, Endpoint, Packet)> {
         let mut network_impl = self.0.borrow_mut();
-        let keys: Vec<_> = network_impl.queue
-            .keys()
-            .cloned()
-            .collect();
+        let keys: Vec<_> = network_impl.queue.keys().cloned().collect();
         let (sender, receiver) = if let Some(key) = network_impl.rng.choose(&keys) {
             *key
         } else {
             return None;
         };
-        let result =
-            network_impl.queue.get_mut(&(sender, receiver)).and_then(|packets| {
-                packets.pop_front().map(|packet| (sender, receiver, packet))
-            });
+        let result = network_impl
+            .queue
+            .get_mut(&(sender, receiver))
+            .and_then(|packets| {
+                          packets
+                              .pop_front()
+                              .map(|packet| (sender, receiver, packet))
+                      });
         if result.is_some() {
             if let Entry::Occupied(entry) = network_impl.queue.entry((sender, receiver)) {
                 if entry.get().is_empty() {
@@ -251,7 +252,9 @@ impl ServiceHandle {
 
     /// Returns `true` if this service is connected to the given one.
     pub fn is_connected(&self, handle: &ServiceHandle) -> bool {
-        self.0.borrow().is_peer_connected(&handle.0.borrow().peer_id)
+        self.0
+            .borrow()
+            .is_peer_connected(&handle.0.borrow().peer_id)
     }
 }
 
@@ -469,7 +472,9 @@ impl ServiceImpl {
     }
 
     fn add_connection(&mut self, peer_id: PeerId, peer_endpoint: Endpoint) -> bool {
-        if self.connections.iter().any(|&(id, ep)| id == peer_id && ep == peer_endpoint) {
+        if self.connections
+               .iter()
+               .any(|&(id, ep)| id == peer_id && ep == peer_endpoint) {
             // Connection already exists
             return false;
         }
@@ -486,7 +491,9 @@ impl ServiceImpl {
     // Remove connected peer with the given peer id and return its endpoint,
     // or None if no such peer exists.
     fn remove_connection_by_peer_id(&mut self, peer_id: &PeerId) -> Option<Endpoint> {
-        if let Some(i) = self.connections.iter().position(|&(id, _)| id == *peer_id) {
+        if let Some(i) = self.connections
+               .iter()
+               .position(|&(id, _)| id == *peer_id) {
             Some(self.connections.swap_remove(i).1)
         } else {
             None
@@ -494,7 +501,9 @@ impl ServiceImpl {
     }
 
     fn remove_connection_by_endpoint(&mut self, endpoint: Endpoint) -> Option<PeerId> {
-        if let Some(i) = self.connections.iter().position(|&(_, ep)| ep == endpoint) {
+        if let Some(i) = self.connections
+               .iter()
+               .position(|&(_, ep)| ep == endpoint) {
             Some(self.connections.swap_remove(i).0)
         } else {
             None
@@ -516,7 +525,9 @@ impl ServiceImpl {
     }
 
     fn is_connected(&self, endpoint: &Endpoint, peer_id: &PeerId) -> bool {
-        self.connections.iter().any(|&conn| conn == (*peer_id, *endpoint))
+        self.connections
+            .iter()
+            .any(|&conn| conn == (*peer_id, *endpoint))
     }
 
     pub fn disconnect(&mut self, peer_id: &PeerId) -> bool {

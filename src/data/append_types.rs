@@ -145,11 +145,13 @@ impl AppendWrapper {
     pub fn verify_signature(&self) -> bool {
         match *self {
             AppendWrapper::Pub { ref data, .. } => data.verify_signature(),
-            AppendWrapper::Priv { ref append_to,
-                                  ref data,
-                                  ref sign_key,
-                                  ref version,
-                                  ref signature } => {
+            AppendWrapper::Priv {
+                ref append_to,
+                ref data,
+                ref sign_key,
+                ref version,
+                ref signature,
+            } => {
                 let data_to_sign = match serialise(&(append_to, data, sign_key, version)) {
                     Err(_) => return false,
                     Ok(data) => data,

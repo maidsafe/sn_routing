@@ -74,7 +74,8 @@ pub fn debug_format(input: String) -> String {
     if input.len() <= 20 {
         return input;
     }
-    input.chars()
+    input
+        .chars()
         .take(8)
         .chain("...".chars())
         .chain(input.chars().skip(input.len() - 8))

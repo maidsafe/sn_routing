@@ -132,16 +132,10 @@ impl StructuredData {
         // Seems overkill to use serialisation here, but done to ensure cross platform signature
         // handling is OK
         let sd = SerialisableStructuredData {
-            type_tag: self.type_tag
-                .to_string()
-                .as_bytes()
-                .to_vec(),
+            type_tag: self.type_tag.to_string().as_bytes().to_vec(),
             name: self.name,
             data: &self.data,
-            version: self.version
-                .to_string()
-                .as_bytes()
-                .to_vec(),
+            version: self.version.to_string().as_bytes().to_vec(),
             owners: &self.owners,
         };
 

@@ -65,7 +65,8 @@ fn failing_connections_unidirectional() {
 fn remove_nodes_from_section_till_merge(prefix_name: &XorName,
                                         nodes: &mut Vec<TestNode>,
                                         min_section_size: usize) {
-    let section_indexes: Vec<usize> = nodes.iter()
+    let section_indexes: Vec<usize> = nodes
+        .iter()
         .enumerate()
         .rev()
         .filter_map(|(index, node)| if node.routing_table().our_prefix().matches(prefix_name) {
@@ -74,7 +75,8 @@ fn remove_nodes_from_section_till_merge(prefix_name: &XorName,
                         None
                     })
         .collect();
-    section_indexes.iter()
+    section_indexes
+        .iter()
         .take(section_indexes.len() - min_section_size + 1)
         .foreach(|index| { let _ = nodes.remove(*index); });
     poll_and_resend(nodes, &mut []);
@@ -90,12 +92,20 @@ fn add_a_pair(network: &Network,
               -> (Endpoint, Endpoint) {
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
 
-    nodes.iter_mut().foreach(|node| node.inner.set_next_node_name(name0));
-    nodes.push(TestNode::builder(network).config(config.clone()).create());
+    nodes
+        .iter_mut()
+        .foreach(|node| node.inner.set_next_node_name(name0));
+    nodes.push(TestNode::builder(network)
+                   .config(config.clone())
+                   .create());
     poll_and_resend(nodes, &mut []);
 
-    nodes.iter_mut().foreach(|node| node.inner.set_next_node_name(name1));
-    nodes.push(TestNode::builder(network).config(config.clone()).create());
+    nodes
+        .iter_mut()
+        .foreach(|node| node.inner.set_next_node_name(name1));
+    nodes.push(TestNode::builder(network)
+                   .config(config.clone())
+                   .create());
 
     let endpoints = (Endpoint(nodes.len() - 2), Endpoint(nodes.len() - 1));
     if is_tunnel {
@@ -108,7 +118,8 @@ fn add_a_pair(network: &Network,
 }
 
 fn locate_tunnel_node(nodes: &[TestNode], client_1: PeerId, client_2: PeerId) -> Option<usize> {
-    let tunnel_node_indexes: Vec<usize> = nodes.iter()
+    let tunnel_node_indexes: Vec<usize> = nodes
+        .iter()
         .enumerate()
         .filter_map(|(index, node)| if node.inner.has_tunnel_clients(client_1, client_2) {
                         Some(index)
