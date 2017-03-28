@@ -79,9 +79,10 @@ impl ExampleClient {
     /// This is a blocking call and will wait indefinitely for the response.
     pub fn get(&mut self, request: DataIdentifier) -> Option<Data> {
         let message_id = MessageId::new();
-        unwrap!(self.routing_client.send_get_request(Authority::NaeManager(*request.name()),
-                                                     request.clone(),
-                                                     message_id));
+        unwrap!(self.routing_client
+                    .send_get_request(Authority::NaeManager(*request.name()),
+                                      request.clone(),
+                                      message_id));
 
         // Wait for Get success event from Routing
         loop {
@@ -97,8 +98,8 @@ impl ExampleClient {
                     return Some(data);
                 }
                 Some(Event::Response {
-                    response: Response::GetFailure { external_error_indicator, .. },
-                .. }) => {
+                         response: Response::GetFailure { external_error_indicator, .. }, ..
+                     }) => {
                     error!("Failed to Get {:?}: {:?}",
                            request.name(),
                            unwrap!(String::from_utf8(external_error_indicator)));
@@ -119,14 +120,17 @@ impl ExampleClient {
     pub fn put(&self, data: Data) -> Result<(), ()> {
         let data_id = data.identifier();
         let message_id = MessageId::new();
-        unwrap!(self.routing_client.send_put_request(Authority::ClientManager(*self.name()),
-                                                     data,
-                                                     message_id));
+        unwrap!(self.routing_client
+                    .send_put_request(Authority::ClientManager(*self.name()),
+                                      data,
+                                      message_id));
 
         // Wait for Put success event from Routing
         loop {
             match recv_with_timeout(&self.receiver, Duration::from_secs(RESPONSE_TIMEOUT_SECS)) {
-                Some(Event::Response { response: Response::PutSuccess(rec_data_id, id), .. }) => {
+                Some(Event::Response {
+                         response: Response::PutSuccess(rec_data_id, id), ..
+                     }) => {
                     if message_id != id {
                         error!("Stored {:?}, but with wrong message_id {:?} instead of {:?}.",
                                data_id.name(),

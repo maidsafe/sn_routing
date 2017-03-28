@@ -79,7 +79,9 @@ impl<Message: Hash> MessageFilter<Message> {
     #[cfg(test)]
     pub fn count(&self, message: &Message) -> usize {
         let hash_code = hash(message);
-        self.count.get(&hash_code).map_or(0, |&(count, _)| count)
+        self.count
+            .get(&hash_code)
+            .map_or(0, |&(count, _)| count)
     }
 
     /// Removes any expired messages, then returns whether `message` exists in the filter or not.
@@ -102,7 +104,9 @@ impl<Message: Hash> MessageFilter<Message> {
 
     fn remove_expired(&mut self) {
         let now = Instant::now();
-        while self.timeout_queue.front().map_or(false, |&(_, ref t)| *t <= now) {
+        while self.timeout_queue
+                  .front()
+                  .map_or(false, |&(_, ref t)| *t <= now) {
             let (hash_code, _) = unwrap!(self.timeout_queue.pop_front());
             if let Entry::Occupied(entry) = self.count.entry(hash_code) {
                 if entry.get().1 <= now {

@@ -208,7 +208,8 @@ impl ExpectedGets {
     fn expect(&mut self, nodes: &mut [TestNode], dst: Authority<XorName>, key: GetKey) {
         if dst.is_multiple() && !self.sections.contains_key(&dst) {
             let is_recipient = |n: &&TestNode| n.is_recipient(&dst);
-            let section = nodes.iter()
+            let section = nodes
+                .iter()
                 .filter(is_recipient)
                 .map(TestNode::name)
                 .collect();
@@ -226,7 +227,8 @@ impl ExpectedGets {
             .iter_mut()
             .map(|(dst, section)| {
                 let is_recipient = |n: &&TestNode| n.is_recipient(dst);
-                let new_section = nodes.iter()
+                let new_section = nodes
+                    .iter()
                     .filter(is_recipient)
                     .map(TestNode::name)
                     .collect_vec();
@@ -239,11 +241,16 @@ impl ExpectedGets {
         let mut unexpected_receive = BTreeSet::new();
         for node in nodes {
             while let Ok(event) = node.try_next_ev() {
-                if let Event::Request { request: Request::Get(data_id, msg_id), src, dst } = event {
+                if let Event::Request {
+                           request: Request::Get(data_id, msg_id),
+                           src,
+                           dst,
+                       } = event {
                     let key = (data_id, msg_id, src, dst);
                     if dst.is_multiple() {
-                        if !self.sections.get(&key.3).map_or(false,
-                                                             |entry| entry.contains(&node.name())) {
+                        if !self.sections
+                                .get(&key.3)
+                                .map_or(false, |entry| entry.contains(&node.name())) {
                             // Unexpected receive shall only happen for group (only used NaeManager
                             // in this test), and shall have at most one for each message.
                             if let Authority::NaeManager(_) = dst {
@@ -272,7 +279,11 @@ impl ExpectedGets {
         }
         for client in clients {
             while let Ok(event) = client.inner.try_next_ev() {
-                if let Event::Request { request: Request::Get(data_id, msg_id), src, dst } = event {
+                if let Event::Request {
+                           request: Request::Get(data_id, msg_id),
+                           src,
+                           dst,
+                       } = event {
                     let key = (data_id, msg_id, src, dst);
                     assert!(self.messages.remove(&key),
                             "Unexpected request for client {}: {:?}",
@@ -348,11 +359,7 @@ fn client_gets(network: &mut Network, mut nodes: &mut [TestNode], min_section_si
     let cl_auth = Authority::Client {
         client_key: *clients[0].full_id.public_id().signing_public_key(),
         proxy_node_name: nodes[0].name(),
-        peer_id: clients[0]
-            .handle
-            .0
-            .borrow()
-            .peer_id,
+        peer_id: clients[0].handle.0.borrow().peer_id,
     };
 
     let mut rng = network.new_rng();
@@ -496,11 +503,7 @@ fn messages_during_churn() {
     let cl_auth = Authority::Client {
         client_key: *clients[0].full_id.public_id().signing_public_key(),
         proxy_node_name: nodes[0].name(),
-        peer_id: clients[0]
-            .handle
-            .0
-            .borrow()
-            .peer_id,
+        peer_id: clients[0].handle.0.borrow().peer_id,
     };
 
     for i in 0..100 {

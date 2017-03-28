@@ -163,10 +163,7 @@ impl PubAppendableData {
         let sd = SerialisablePubAppendableData {
             name: self.name,
             owners: &self.owners,
-            version: self.version
-                .to_string()
-                .as_bytes()
-                .to_vec(),
+            version: self.version.to_string().as_bytes().to_vec(),
             filter: &self.filter,
             deleted_data: &self.deleted_data,
         };

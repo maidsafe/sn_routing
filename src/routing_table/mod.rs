@@ -272,7 +272,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         // need to assign the original members of our section to the new appropriate sections.
         let our_section = mem::replace(&mut self.our_section, BTreeSet::new());
         for name in our_section {
-            if self.get_section_mut(&name).map_or(true, |section| !section.insert(name)) {
+            if self.get_section_mut(&name)
+                   .map_or(true, |section| !section.insert(name)) {
                 return Err(Error::InvariantViolation);
             }
         }
@@ -322,8 +323,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// Returns the total number of entries in the routing table, excluding our own name.
     // TODO: refactor to include our name?
     pub fn len(&self) -> usize {
-        self.sections.values().fold(0, |acc, section| acc + section.len()) +
-        self.our_section.len() - 1
+        self.sections
+            .values()
+            .fold(0, |acc, section| acc + section.len()) + self.our_section.len() - 1
     }
 
     /// Is the table empty? (Returns `true` if no nodes besides our own are known;
@@ -345,7 +347,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     /// Returns whether the table contains the given `name`.
     pub fn has(&self, name: &T) -> bool {
-        self.get_section(name).map_or(false, |section| section.contains(name))
+        self.get_section(name)
+            .map_or(false, |section| section.contains(name))
     }
 
     /// Iterates over all nodes known by the routing table, excluding our own name.
@@ -371,8 +374,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
         // Estimated fraction of the network that we have in our RT.
         // Computed as the sum of 1 / 2^(prefix.bit_count) for all known section prefixes.
-        let network_fraction: f64 =
-            known_prefixes.iter().map(|p| 1.0 / (p.bit_count() as f64).exp2()).sum();
+        let network_fraction: f64 = known_prefixes
+            .iter()
+            .map(|p| 1.0 / (p.bit_count() as f64).exp2())
+            .sum();
 
         // Total size estimate = known_nodes / network_fraction
         let network_size = (self.len() + 1) as f64 / network_fraction;
@@ -383,10 +388,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// Collects prefixes of all sections known by the routing table other than ours into a
     /// `BTreeSet`.
     pub fn other_prefixes(&self) -> BTreeSet<Prefix<T>> {
-        self.sections
-            .keys()
-            .cloned()
-            .collect()
+        self.sections.keys().cloned().collect()
     }
 
     /// Collects prefixes of all sections known by the routing table into a `BTreeSet`.
@@ -433,7 +435,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             .sorted_by(|&(pfx0, _), &(pfx1, _)| pfx0.cmp_distance(pfx1, name))
             .into_iter()
             .flat_map(|(_, section)| {
-                          section.iter().sorted_by(|name0, name1| name.cmp_distance(name0, name1))
+                          section
+                              .iter()
+                              .sorted_by(|name0, name1| name.cmp_distance(name0, name1))
                       })
             .take(count)
             .collect_vec()
@@ -454,10 +458,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// our own name, sorted by ascending distance to `name` -  or `None`, if our name
     /// isn't among `count` names closest to `name`.
     pub fn other_closest_names(&self, name: &T, count: usize) -> Option<Vec<&T>> {
-        self.closest_names(name, count).map(|mut result| {
-                                                result.retain(|name| *name != &self.our_name);
-                                                result
-                                            })
+        self.closest_names(name, count)
+            .map(|mut result| {
+                     result.retain(|name| *name != &self.our_name);
+                     result
+                 })
     }
 
     /// Returns true if `name` is in our section (including if it is our own name).
@@ -561,7 +566,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             let prefix0 = prefix.pushed(false);
             let prefix1 = prefix.pushed(true);
             let (section0, section1) =
-                to_split.into_iter().partition::<BTreeSet<_>, _>(|name| prefix0.matches(name));
+                to_split
+                    .into_iter()
+                    .partition::<BTreeSet<_>, _>(|name| prefix0.matches(name));
 
             for (pfx, section) in vec![(prefix0, section0), (prefix1, section1)] {
                 if self.our_prefix.is_neighbour(&pfx) {
@@ -657,7 +664,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             section.len() >= self.min_section_size
         };
         if bit_count == 0 || we_want_to_merge ||
-           !self.sections.contains_key(&self.our_prefix.with_flipped_bit(bit_count - 1)) {
+           !self.sections
+                .contains_key(&self.our_prefix.with_flipped_bit(bit_count - 1)) {
             return None; // We can't merge, or we already sent our merge message.
         }
         if !they_want_to_merge && self.our_section.len() >= self.min_section_size &&
@@ -680,7 +688,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// provided details.  See the docs for `OwnMergeState` for full details of the return value.
     pub fn merge_own_section(&mut self, merge_details: OwnMergeDetails<T>) -> OwnMergeState<T> {
         // TODO: Return an error if they are not compatible instead?
-        if !self.our_prefix.is_compatible(&merge_details.merge_prefix) ||
+        if !self.our_prefix
+                .is_compatible(&merge_details.merge_prefix) ||
            self.our_prefix.bit_count() != merge_details.merge_prefix.bit_count() + 1 {
             debug!("{:?}: Attempt to call merge_own_section() for an already merged prefix {:?}",
                    self.our_name,
@@ -691,7 +700,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             if *prefix == self.our_prefix || self.sections.contains_key(prefix) {
                 continue; // Already in our routing table.
             } else if self.our_prefix.is_compatible(prefix) ||
-                      self.sections.keys().any(|pfx| prefix.is_compatible(pfx)) {
+                      self.sections
+                          .keys()
+                          .any(|pfx| prefix.is_compatible(pfx)) {
                 error!("{:?} Received unsuitable prefix {:?} in OwnSectionMerge.",
                        self.our_name,
                        prefix);
@@ -726,7 +737,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         if self.sections.keys().any(should_merge) {
             self.merge(&merge_details.prefix);
             // Establish list of provided contacts which are currently missing from our table.
-            merge_details.section
+            merge_details
+                .section
                 .difference(unwrap!(self.sections.get(&merge_details.prefix)))
                 .cloned()
                 .collect()
@@ -819,10 +831,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                                       .iter()
                                       .filter_map(is_compatible)
                                       .flat_map(BTreeSet::iter)
-                                      .chain(self.our_section.iter().filter(|name| {
-                                                                                **name !=
-                                                                                self.our_name
-                                                                            }))
+                                      .chain(self.our_section
+                                                 .iter()
+                                                 .filter(|name| **name != self.our_name))
                                       .cloned()
                                       .collect());
                     } else {
@@ -899,9 +910,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         let other_prefix = self.our_prefix.pushed(!next_bit);
         self.our_prefix = self.our_prefix.pushed(next_bit);
         let (our_new_section, other_section) =
-            self.our_section.iter().partition::<BTreeSet<_>, _>(|name| {
-                                                                    self.our_prefix.matches(name)
-                                                                });
+            self.our_section
+                .iter()
+                .partition::<BTreeSet<_>, _>(|name| self.our_prefix.matches(name));
         self.our_section = our_new_section;
         // Drop sections that ceased to be our neighbours.
         let sections_to_remove = self.sections
@@ -910,7 +921,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             .cloned()
             .collect_vec();
         self.insert_new_section(other_prefix, other_section);
-        sections_to_remove.into_iter()
+        sections_to_remove
+            .into_iter()
             .filter_map(|prefix| self.sections.remove(&prefix))
             .flat_map(BTreeSet::into_iter)
             .collect()
@@ -956,12 +968,16 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     fn merge(&mut self, new_prefix: &Prefix<T>) {
         // Partition the sections into those for merging and the rest
         let original_sections = mem::replace(&mut self.sections, Sections::new());
-        let (sections_to_merge, sections) = original_sections.into_iter()
-            .partition::<BTreeMap<_, _>, _>(|&(prefix, _)| new_prefix.is_compatible(&prefix));
+        let (sections_to_merge, sections) =
+            original_sections
+                .into_iter()
+                .partition::<BTreeMap<_, _>, _>(|&(prefix, _)| new_prefix.is_compatible(&prefix));
         self.sections = sections;
         // Merge selected sections and add the merged section back in.
-        let merged_names: BTreeSet<_> =
-            sections_to_merge.into_iter().flat_map(|(_, names)| names).collect();
+        let merged_names: BTreeSet<_> = sections_to_merge
+            .into_iter()
+            .flat_map(|(_, names)| names)
+            .collect();
         if self.our_prefix.is_compatible(new_prefix) {
             self.our_section.extend(merged_names);
             self.our_prefix = *new_prefix;
@@ -1019,8 +1035,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                                                            dst_name: &T,
                                                            route: usize)
                                                            -> &'a T {
-        let sorted_names =
-            names.into_iter().sorted_by(|&lhs, &rhs| dst_name.cmp_distance(lhs, rhs));
+        let sorted_names = names
+            .into_iter()
+            .sorted_by(|&lhs, &rhs| dst_name.cmp_distance(lhs, rhs));
         sorted_names[route % sorted_names.len()]
     }
 
@@ -1094,7 +1111,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             }
         }
 
-        let all_are_neighbours = self.sections.keys().all(|&x| self.our_prefix.is_neighbour(&x));
+        let all_are_neighbours = self.sections
+            .keys()
+            .all(|&x| self.our_prefix.is_neighbour(&x));
         let all_neighbours_covered = {
             let prefixes = self.prefixes();
             (0..self.our_prefix.bit_count()).all(|i| {
@@ -1271,7 +1290,9 @@ mod tests {
         assert!(our_new_prefix.is_none());
         assert_eq!(nodes_to_drop.len(), table.min_split_size());
         let mut drop_prefix = Prefix::new(2, section_11_name);
-        assert!(nodes_to_drop.iter().all(|name| drop_prefix.matches(name)));
+        assert!(nodes_to_drop
+                    .iter()
+                    .all(|name| drop_prefix.matches(name)));
         expected_rt_len -= nodes_to_drop.len();
         table.verify_invariant();
         assert_eq!(table.len(), expected_rt_len);
@@ -1311,7 +1332,9 @@ mod tests {
         assert_eq!(unwrap!(our_new_prefix), expected_own_prefix);
         assert_eq!(nodes_to_drop.len(), table.min_split_size());
         drop_prefix = Prefix::new(3, section_011_name);
-        assert!(nodes_to_drop.iter().all(|name| drop_prefix.matches(name)));
+        assert!(nodes_to_drop
+                    .iter()
+                    .all(|name| drop_prefix.matches(name)));
         expected_rt_len -= nodes_to_drop.len();
         table.verify_invariant();
         assert_eq!(table.len(), expected_rt_len);
@@ -1350,8 +1373,10 @@ mod tests {
         assert!(table.close_names(&section_10_name).is_none());
 
         // Check `other_close_names()`.
-        let our_section_without_us =
-            our_section.into_iter().filter(|name| *name != our_name).collect::<BTreeSet<_>>();
+        let our_section_without_us = our_section
+            .into_iter()
+            .filter(|name| *name != our_name)
+            .collect::<BTreeSet<_>>();
         assert_eq!(unwrap!(table.other_close_names(&our_name)),
                    our_section_without_us);
         assert_eq!(unwrap!(table.other_close_names(&section_00_name)),
@@ -1420,7 +1445,10 @@ mod tests {
                    table.add_prefix(unwrap!(Prefix::from_str("01"))));
         assert_eq!(prefixes_from_strs(vec!["1", "00", "01"]), table.prefixes());
         assert_eq!(vec![0xc0, 0xd0, 0xe0, 0xf0u8],
-                   table.add_prefix(unwrap!(Prefix::from_str("111"))).into_iter().sorted());
+                   table
+                       .add_prefix(unwrap!(Prefix::from_str("111")))
+                       .into_iter()
+                       .sorted());
         assert_eq!(prefixes_from_strs(vec!["110", "111", "10", "0"]),
                    table.prefixes());
         assert_eq!(Vec::<u8>::new(),
@@ -1433,6 +1461,8 @@ mod tests {
     }
 
     fn prefixes_from_strs(strs: Vec<&str>) -> BTreeSet<Prefix<u8>> {
-        strs.into_iter().map(|s| unwrap!(Prefix::from_str(s))).collect()
+        strs.into_iter()
+            .map(|s| unwrap!(Prefix::from_str(s)))
+            .collect()
     }
 }

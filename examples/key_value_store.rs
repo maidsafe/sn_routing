@@ -119,7 +119,8 @@ Options:
             let _ = io::stdout().flush();
             let _ = stdin.read_line(&mut command);
 
-            let parts = command.trim_right_matches(|c| c == '\r' || c == '\n')
+            let parts = command
+                .trim_right_matches(|c| c == '\r' || c == '\n')
                 .split(' ')
                 .collect::<Vec<_>>();
 
@@ -190,7 +191,8 @@ Options:
         /// Get data from the network.
         pub fn get(&mut self, what: String) {
             let name = KeyValueStore::calculate_key_name(&what);
-            let data = self.example_client.get(DataIdentifier::Structured(name, 10000));
+            let data = self.example_client
+                .get(DataIdentifier::Structured(name, 10000));
             match data {
                 Some(data) => {
                     let sd = if let Data::Structured(sd) = data {

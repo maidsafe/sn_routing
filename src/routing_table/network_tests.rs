@@ -62,7 +62,8 @@ impl Network {
         let name = self.random_free_name(); // The new node's name.
         if self.nodes.is_empty() {
             // If this is the first node, just add it and return.
-            let result = self.nodes.insert(name, RoutingTable::new(name, self.min_section_size));
+            let result = self.nodes
+                .insert(name, RoutingTable::new(name, self.min_section_size));
             assert!(result.is_none());
             return;
         }
@@ -159,7 +160,10 @@ impl Network {
                     match target_node.merge_own_section(merge_own_details.clone()) {
                         OwnMergeState::Ongoing |
                         OwnMergeState::AlreadyMerged => (),
-                        OwnMergeState::Completed { targets, merge_details } => {
+                        OwnMergeState::Completed {
+                            targets,
+                            merge_details,
+                        } => {
                             Network::store_merge_info(&mut merge_other_info,
                                                       *target_node.our_prefix(),
                                                       (targets, merge_details));
@@ -263,10 +267,7 @@ impl Network {
 
     /// Returns all node names.
     fn keys(&self) -> Vec<u64> {
-        self.nodes
-            .keys()
-            .cloned()
-            .collect()
+        self.nodes.keys().cloned().collect()
     }
 }
 
@@ -389,20 +390,26 @@ fn merging_sections() {
         network.add_node();
         verify_invariant(&network);
     }
-    assert!(network.nodes.iter().all(|(_, table)| if table.num_of_sections() < 2 {
-                                         trace!("{:?}", table);
-                                         false
-                                     } else {
-                                         true
-                                     }));
+    assert!(network
+                .nodes
+                .iter()
+                .all(|(_, table)| if table.num_of_sections() < 2 {
+                         trace!("{:?}", table);
+                         false
+                     } else {
+                         true
+                     }));
     for _ in 0..95 {
         network.drop_node();
         verify_invariant(&network);
     }
-    assert!(network.nodes.iter().all(|(_, table)| if table.num_of_sections() > 0 {
-                                         trace!("{:?}", table);
-                                         false
-                                     } else {
-                                         true
-                                     }));
+    assert!(network
+                .nodes
+                .iter()
+                .all(|(_, table)| if table.num_of_sections() > 0 {
+                         trace!("{:?}", table);
+                         false
+                     } else {
+                         true
+                     }));
 }

@@ -206,10 +206,7 @@ impl PrivAppendableData {
         // handling is OK
         let sd = SerialisablePrivAppendableData {
             name: self.name,
-            version: self.version
-                .to_string()
-                .as_bytes()
-                .to_vec(),
+            version: self.version.to_string().as_bytes().to_vec(),
             filter: &self.filter,
             encrypt_key: &self.encrypt_key,
             owners: &self.owners,
