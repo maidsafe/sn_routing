@@ -122,7 +122,7 @@ pub use self::xorable::Xorable;
 use itertools::Itertools;
 use std::{iter, mem};
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, BTreeSet, btree_map, btree_set};
+use std::collections::{BTreeMap, BTreeSet};
 use std::collections::btree_map::Entry;
 use std::fmt::{Binary, Debug, Formatter};
 use std::fmt::Result as FmtResult;
@@ -130,20 +130,13 @@ use std::hash::Hash;
 
 pub type Sections<T> = BTreeMap<Prefix<T>, (u64, BTreeSet<T>)>;
 
-type MemberIter<'a, T> = btree_set::Iter<'a, T>;
-type SectionIter<'a, T> = btree_map::Values<'a, Prefix<T>, (u64, BTreeSet<T>)>;
-type OtherSectionsIter<'a, T> = iter::FlatMap<SectionIter<'a, T>,
-                                              MemberIter<'a, T>,
-                                              FlatMapFn<'a, T>>;
-type FlatMapFn<'a, T> = fn(&'a (u64, BTreeSet<T>)) -> MemberIter<'a, T>;
-
 // Amount added to `min_section_size` when deciding whether a bucket split can happen.  This helps
 // protect against rapid splitting and merging in the face of moderate churn.
 const SPLIT_BUFFER: usize = 3;
 
 // Immutable iterator over the entries of a `RoutingTable`.
 pub struct Iter<'a, T: 'a + Binary + Clone + Copy + Default + Hash + Xorable> {
-    inner: iter::Chain<OtherSectionsIter<'a, T>, btree_set::Iter<'a, T>>,
+    inner: Box<Iterator<Item=&'a T> + 'a>,
     our_name: T,
 }
 
@@ -368,15 +361,12 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// Iterates over all nodes known by the routing table, excluding our own name.
     // TODO: do we need to exclude our name?
     pub fn iter(&self) -> Iter<T> {
-        fn iter_fn<U>(&(_, ref section): &(u64, BTreeSet<U>)) -> btree_set::Iter<U> {
-            section.iter()
-        }
-        let iter: fn(_) -> _ = iter_fn;
+        let iter = self.sections
+            .values()
+            .flat_map(|&(_, ref section)| section.iter())
+            .chain(self.our_section.iter());
         Iter {
-            inner: self.sections
-                .values()
-                .flat_map(iter)
-                .chain(self.our_section.iter()),
+            inner: Box::new(iter),
             our_name: self.our_name,
         }
     }
