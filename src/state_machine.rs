@@ -207,7 +207,7 @@ impl StateMachine {
     // Construct a new StateMachine by passing a function returning the initial
     // state.
     pub fn new<F>(init_state: F, outbox: &mut EventBox) -> (RoutingActionSender, Self)
-        where F: FnOnce(Service, Timer, &mut EventBox) -> State
+        where F: FnOnce(RoutingActionSender, Service, Timer, &mut EventBox) -> State
     {
         let (category_tx, category_rx) = mpsc::channel();
         let (crust_tx, crust_rx) = mpsc::channel();
@@ -228,7 +228,7 @@ impl StateMachine {
 
         let timer = Timer::new(action_sender.clone());
 
-        let state = init_state(crust_service, timer, outbox);
+        let state = init_state(action_sender.clone(), crust_service, timer, outbox);
         let is_running = match state {
             State::Terminated => false,
             _ => true,

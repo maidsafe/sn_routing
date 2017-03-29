@@ -60,7 +60,7 @@ use std::iter::Iterator;
 use std::time::{Duration, Instant};
 use timer::Timer;
 use tunnels::Tunnels;
-use types::MessageId;
+use types::{MessageId, RoutingActionSender};
 use utils;
 use xor_name::XorName;
 
@@ -95,6 +95,9 @@ const SECTION_UPDATE_REQUESTS_QUORUM: usize = 3;
 
 pub struct Node {
     ack_mgr: AckManager,
+    /// Copy of the action sender, used to allow worker threads to contact us
+    #[allow(unused)]    // TODO
+    action_sender: RoutingActionSender,
     cacheable_user_msg_cache: UserMessageCache,
     crust_service: Service,
     full_id: FullId,
@@ -152,7 +155,8 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn first(cache: Box<Cache>,
+    pub fn first(action_sender: RoutingActionSender,
+                 cache: Box<Cache>,
                  crust_service: Service,
                  mut full_id: FullId,
                  min_section_size: usize,
@@ -161,7 +165,8 @@ impl Node {
         let name = XorName(sha256::hash(&full_id.public_id().name().0).0);
         full_id.public_id_mut().set_name(name);
 
-        let mut node = Self::new(cache,
+        let mut node = Self::new(action_sender,
+                                 cache,
                                  crust_service,
                                  true,
                                  full_id,
@@ -179,7 +184,8 @@ impl Node {
     }
 
     #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
-    pub fn from_bootstrapping(cache: Box<Cache>,
+    pub fn from_bootstrapping(action_sender: RoutingActionSender,
+                              cache: Box<Cache>,
                               crust_service: Service,
                               full_id: FullId,
                               min_section_size: usize,
@@ -188,7 +194,8 @@ impl Node {
                               stats: Stats,
                               timer: Timer)
                               -> Option<Self> {
-        let mut node = Self::new(cache,
+        let mut node = Self::new(action_sender,
+                                 cache,
                                  crust_service,
                                  false,
                                  full_id,
@@ -207,7 +214,8 @@ impl Node {
     }
 
     #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
-    fn new(cache: Box<Cache>,
+    fn new(action_sender: RoutingActionSender,
+           cache: Box<Cache>,
            crust_service: Service,
            first_node: bool,
            full_id: FullId,
@@ -221,6 +229,7 @@ impl Node {
         let user_msg_cache_duration = Duration::from_secs(USER_MSG_CACHE_EXPIRY_DURATION_SECS);
         Node {
             ack_mgr: AckManager::new(),
+            action_sender: action_sender,
             cacheable_user_msg_cache:
                 UserMessageCache::with_expiry_duration(user_msg_cache_duration),
             crust_service: crust_service,
