@@ -37,6 +37,7 @@ use std::fmt::{self, Debug, Formatter};
 use std::net::SocketAddr;
 use std::time::Duration;
 use timer::Timer;
+use types::RoutingActionSender;
 use xor_name::XorName;
 
 // Time (in seconds) after which bootstrap is cancelled (and possibly retried).
@@ -44,6 +45,7 @@ const BOOTSTRAP_TIMEOUT_SECS: u64 = 20;
 
 // State of Client or Node while bootstrapping.
 pub struct Bootstrapping {
+    action_sender: RoutingActionSender,
     bootstrap_blacklist: HashSet<SocketAddr>,
     bootstrap_connection: Option<(PeerId, u64)>,
     cache: Box<Cache>,
@@ -56,7 +58,8 @@ pub struct Bootstrapping {
 }
 
 impl Bootstrapping {
-    pub fn new(cache: Box<Cache>,
+    pub fn new(action_sender: RoutingActionSender,
+               cache: Box<Cache>,
                client_restriction: bool,
                mut crust_service: Service,
                full_id: FullId,
@@ -71,6 +74,7 @@ impl Bootstrapping {
         }
 
         Some(Bootstrapping {
+                 action_sender: action_sender,
                  bootstrap_blacklist: HashSet::new(),
                  bootstrap_connection: None,
                  cache: cache,
@@ -166,7 +170,8 @@ impl Bootstrapping {
     }
 
     pub fn into_node(self, proxy_peer_id: PeerId, proxy_public_id: PublicId) -> Option<Node> {
-        Node::from_bootstrapping(self.cache,
+        Node::from_bootstrapping(self.action_sender,
+                                 self.cache,
                                  self.crust_service,
                                  self.full_id,
                                  self.min_section_size,
