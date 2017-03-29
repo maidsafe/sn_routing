@@ -539,19 +539,34 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         Ok(())
     }
 
+    /// Return true if any neighbouring section needs to merge with our section.
+    fn neighbour_needs_merge(&self) -> bool {
+        self.neighbour_size_is_below(self.min_section_size)
+    }
+
+    /// Return true if any neighbouring section might soon need to merge with our section.
+    fn neighbour_might_need_merge(&self) -> bool {
+        self.neighbour_size_is_below(self.min_split_size())
+    }
+
+    /// Return true if any neighbouring section is below the given size threshold.
+    fn neighbour_size_is_below(&self, threshold: usize) -> bool {
+        self.sections.iter()
+            .any(|(prefix, &(_, ref section))| {
+                prefix.popped().is_compatible(&self.our_prefix) &&
+                section.len() < threshold
+            })
+    }
+
     /// Returns whether we should split into two sections.
     pub fn should_split(&self) -> bool {
-        let split_size = self.min_split_size();
-        let close_to_merging_with_us = |(prefix, &(_, ref section)): (&Prefix<T>,
-                                                                      &(u64, BTreeSet<T>))| {
-            prefix.popped().is_compatible(&self.our_prefix) && section.len() < split_size
-        };
         // If we're currently merging or are close to merging, we shouldn't split.
-        if self.sections.iter().any(close_to_merging_with_us) {
+        if self.neighbour_might_need_merge() {
             return false;
         }
 
         // Count the number of names which will end up in each new section if our section is split.
+        let split_size = self.min_split_size();
         let new_size = self.our_section
             .iter()
             .filter(|name| self.our_name.common_prefix(name) > self.our_prefix.bit_count())
@@ -680,16 +695,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// that, the section `0` will merge with section `1`.
     pub fn should_merge(&self) -> bool {
         let bit_count = self.our_prefix.bit_count();
-        let doesnt_need_to_merge_with_us = |(prefix, &(_, ref section)): (&Prefix<T>,
-                                                                          &(u64, BTreeSet<T>))| {
-            !prefix.popped().is_compatible(&self.our_prefix) ||
-            section.len() >= self.min_section_size
-        };
+
         if bit_count == 0 || !self.sections.contains_key(&self.our_prefix.sibling()) {
             return false; // We can't merge, or we already sent our merge message.
         }
-        if self.our_section.len() >= self.min_section_size &&
-           self.sections.iter().all(doesnt_need_to_merge_with_us) {
+        if self.our_section.len() >= self.min_section_size && !self.neighbour_needs_merge() {
             return false; // There is no reason to merge.
         }
         true
