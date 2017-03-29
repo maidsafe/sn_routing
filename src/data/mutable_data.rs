@@ -471,14 +471,7 @@ impl MutableData {
     }
 
     /// Change owner of the mutable data.
-    pub fn change_owner(&mut self,
-                        new_owner: PublicKey,
-                        version: u64,
-                        requester: PublicKey)
-                        -> Result<(), ClientError> {
-        if !self.owners.contains(&requester) {
-            return Err(ClientError::AccessDenied);
-        }
+    pub fn change_owner(&mut self, new_owner: PublicKey, version: u64) -> Result<(), ClientError> {
         if version != self.version + 1 {
             return Err(ClientError::InvalidSuccessor);
         }
@@ -734,12 +727,9 @@ mod tests {
         let mut md =
             unwrap!(MutableData::new(rand::random(), 0, BTreeMap::new(), BTreeMap::new(), owners));
 
-        // Try to do ownership transfer from a non-owner requester
-        assert_err!(md.change_owner(pk1, 1, pk1), ClientError::AccessDenied);
-
-        // Transfer ownership from an owner
-        assert!(md.change_owner(pk1, 1, owner).is_ok());
-        assert_err!(md.change_owner(owner, 1, owner), ClientError::AccessDenied);
+        assert!(md.change_owner(pk1, 1).is_ok());
+        assert!(md.owners().contains(&pk1));
+        assert!(!md.owners().contains(&owner));
     }
 
     #[test]
