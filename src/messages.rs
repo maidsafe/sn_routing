@@ -626,19 +626,6 @@ pub enum MessageContent {
         /// Members of the section
         members: BTreeSet<PublicId>,
     },
-    /// Sent from a node to its own section to request their current routing table.
-    RoutingTableRequest(MessageId, sha256::Digest),
-    /// Sent from a section to a node to update it about its prefix and its member list.
-    RoutingTableResponse {
-        /// The section's current prefix.
-        prefix: Prefix<XorName>,
-        /// The section's current version.
-        version: u64,
-        /// Members of the section.
-        members: BTreeSet<PublicId>,
-        /// The message's unique identifier.
-        message_id: MessageId,
-    },
     /// Sent to all connected peers when our own section splits
     SectionSplit(Prefix<XorName>, u64, XorName),
     /// Sent amongst members of a newly-merged section to allow synchronisation of their routing
@@ -853,25 +840,6 @@ impl Debug for MessageContent {
                        prefix,
                        version,
                        members)
-            }
-            RoutingTableRequest(ref msg_id, ref digest) => {
-                write!(formatter,
-                       "RoutingTableRequest({:?}, {})",
-                       msg_id,
-                       utils::format_binary_array(&digest.0))
-            }
-            RoutingTableResponse {
-                ref prefix,
-                ref version,
-                ref members,
-                ref message_id,
-            } => {
-                write!(formatter,
-                       "RoutingTableResponse {{ {:?}, {:?}, {:?}, {:?} }}",
-                       prefix,
-                       version,
-                       members,
-                       message_id)
             }
             SectionSplit(ref prefix, ref version, ref joining_node) => {
                 write!(formatter,

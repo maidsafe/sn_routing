@@ -115,12 +115,10 @@ pub struct Node {
     /// Value which can be set in mock-crust tests to be used as the calculated name for the next
     /// relocation request received by this node.
     next_node_name: Option<XorName>,
-    /// The message ID of the current `RoutingTableRequest` we sent to our section.
-    rt_msg_id: Option<MessageId>,
     /// The current duration between `RoutingTableRequest`s we send. Doubles with every message.
-    rt_timeout: Duration,
+    su_timeout: Duration,
     /// The timer token for sending the next `RoutingTableRequest`.
-    rt_timer_token: Option<u64>,
+    su_timer_token: Option<u64>,
     /// `RoutingMessage`s affecting the routing table that arrived before `NodeApproval`.
     routing_msg_backlog: Vec<RoutingMessage>,
     /// Cache of `OwnSectionMerge` messages we have received, by sender section prefix.
@@ -231,9 +229,8 @@ impl Node {
             tunnels: Default::default(),
             user_msg_cache: UserMessageCache::with_expiry_duration(user_msg_cache_duration),
             next_node_name: None,
-            rt_msg_id: None,
-            rt_timeout: Duration::from_secs(RT_MIN_TIMEOUT_SECS),
-            rt_timer_token: None,
+            su_timeout: Duration::from_secs(RT_MIN_TIMEOUT_SECS),
+            su_timer_token: None,
             routing_msg_backlog: vec![],
             merge_cache: LruCache::with_expiry_duration(Duration::from_secs(MERGE_TIMEOUT_SECS)),
             candidate_timer_token: None,
@@ -926,8 +923,6 @@ impl Node {
                 CandidateApproval { .. } |
                 ConnectionInfoRequest { .. } |
                 SectionUpdate { .. } |
-                RoutingTableRequest(..) |
-                RoutingTableResponse { .. } |
                 UserMessagePart { .. } => {
                     // These messages should not be handled before node approval
                     trace!("{:?} Not approved yet. Delaying message handling: {:?}",
@@ -948,7 +943,6 @@ impl Node {
 
         match routing_msg.content {
             Ack(..) |
-            RoutingTableRequest(..) |
             UserMessagePart { .. } => (),
             _ => trace!("{:?} Got routing message {:?}.", self, routing_msg),
         }
@@ -1060,17 +1054,6 @@ impl Node {
              },
              Section(_),
              PrefixSection(_)) => self.handle_section_update(prefix, version, members, outbox),
-            (RoutingTableRequest(msg_id, digest), src @ ManagedNode(_), dst @ Section(_)) => {
-                self.handle_rt_req(msg_id, digest, src, dst)
-            }
-            (RoutingTableResponse {
-                 prefix,
-                 version,
-                 members,
-                 message_id,
-             },
-             Section(_),
-             ManagedNode(_)) => self.handle_rt_rsp(prefix, version, members, message_id, outbox),
             (SectionSplit(prefix, version, joining_node), PrefixSection(_), PrefixSection(_)) => {
                 self.handle_section_split(prefix, version, joining_node, outbox)
             }
@@ -1265,7 +1248,7 @@ impl Node {
             .rev()
             .foreach(|msg| self.msg_queue.push_front(msg));
         self.resource_proof_response_parts.clear();
-        self.reset_rt_timer();
+        self.reset_su_timer();
         self.candidate_status_token =
             Some(self.timer
                      .schedule(Duration::from_secs(CANDIDATE_STATUS_INTERVAL_SECS)));
@@ -1647,13 +1630,6 @@ impl Node {
             self.merge_if_necessary();
         }
 
-        if self.peer_mgr
-               .routing_table()
-               .our_section()
-               .contains(public_id.name()) {
-            self.reset_rt_timer();
-        }
-
         debug!("{:?} Added {:?} to routing table.", self, public_id.name());
         if self.is_first_node && self.peer_mgr.routing_table().len() == 1 {
             trace!("{:?} Node approval completed. Prefixes: {:?}",
@@ -1672,6 +1648,7 @@ impl Node {
                 self.send_section_list_signature(prefix, None);
                 if prefix == *self.our_prefix() {
                     self.send_section_update(None);
+                    self.reset_su_timer();
                     // if the node joined our section, send signatures for all section lists to it
                     for pfx in self.peer_mgr.routing_table().prefixes() {
                         self.send_section_list_signature(pfx, Some(*public_id.name()));
@@ -1717,21 +1694,21 @@ impl Node {
             members: members,
         };
 
-        let neighbours = match dst_prefix {
+        let prefixes = match dst_prefix {
             Some(prefix) => iter::once(prefix).collect(),
-            None => self.peer_mgr.routing_table().other_prefixes(),
+            None => self.peer_mgr.routing_table().prefixes(),
         };
 
-        trace!("{:?} Sending section update to {:?}", self, neighbours);
+        trace!("{:?} Sending section update to {:?}", self, prefixes);
 
-        for neighbour_pfx in neighbours {
+        for pfx in prefixes {
             let src = Authority::Section(self.our_prefix().lower_bound());
-            let dst = Authority::PrefixSection(neighbour_pfx);
+            let dst = Authority::PrefixSection(pfx);
 
             if let Err(err) = self.send_routing_message(src, dst, content.clone()) {
                 debug!("{:?} Failed to send section update to {:?}: {:?}",
                        self,
-                       neighbour_pfx,
+                       pfx,
                        err);
             }
         }
@@ -2313,90 +2290,6 @@ impl Node {
         Ok(())
     }
 
-    fn handle_rt_req(&mut self,
-                     msg_id: MessageId,
-                     digest: sha256::Digest,
-                     src: Authority<XorName>,
-                     dst: Authority<XorName>)
-                     -> Result<(), RoutingError> {
-        if self.we_want_to_merge() || self.they_want_to_merge() {
-            return Ok(());
-        }
-
-        let sections = self.peer_mgr.pub_ids_by_section();
-        let prefixes = self.peer_mgr.routing_table().prefixes();
-        let serialised_rt = serialisation::serialise(&(&sections, prefixes))?;
-        if digest == sha256::hash(&serialised_rt) {
-            return Ok(());
-        }
-        for (prefix, (version, members)) in sections {
-            let content = MessageContent::RoutingTableResponse {
-                message_id: msg_id,
-                prefix: prefix,
-                version: version,
-                members: members,
-            };
-            // We're sending a reply, so src and dst are swapped:
-            if let Err(err) = self.send_routing_message(dst, src, content) {
-                debug!("{:?} Failed to send RoutingTableResponse: {:?}.", self, err);
-            }
-        }
-        Ok(())
-    }
-
-    fn handle_rt_rsp(&mut self,
-                     prefix: Prefix<XorName>,
-                     version: u64,
-                     members: BTreeSet<PublicId>,
-                     message_id: MessageId,
-                     outbox: &mut EventBox)
-                     -> Result<(), RoutingError> {
-        if Some(message_id) != self.rt_msg_id || self.we_want_to_merge() ||
-           self.they_want_to_merge() {
-            trace!("{:?} Ignoring RT response {:?}. Waiting for {:?}",
-                   self,
-                   message_id,
-                   self.rt_msg_id);
-            return Ok(());
-        }
-        let old_prefix = *self.our_prefix();
-        for (name, peer_id) in self.peer_mgr.add_prefix(prefix, version) {
-            self.disconnect_peer(&peer_id, Some(outbox));
-            info!("{:?} Dropped {:?} from the routing table.", self, name);
-        }
-        let new_prefix = *self.our_prefix();
-        if old_prefix.bit_count() < new_prefix.bit_count() {
-            trace!("{:?} Found out about our section splitting via RT response {:?}",
-                   self,
-                   message_id);
-            outbox.send_event(Event::SectionSplit(new_prefix));
-        } else if old_prefix.bit_count() > new_prefix.bit_count() {
-            trace!("{:?} Found out about our section merging via RT response {:?}",
-                   self,
-                   message_id);
-            outbox.send_event(Event::SectionMerge(new_prefix));
-        }
-        info!("{:?} Update on RoutingTableResponse completed. Prefixes: {:?}",
-              self,
-              self.peer_mgr.routing_table().prefixes());
-        let src = Authority::ManagedNode(*self.name());
-        for member in members {
-            if self.peer_mgr
-                   .routing_table()
-                   .need_to_add(member.name())
-                   .is_ok() {
-                let dst = Authority::ManagedNode(*member.name());
-                if let Err(error) = self.send_connection_info_request(member, src, dst, outbox) {
-                    debug!("{:?} - Failed to send connection info to {:?}: {:?}",
-                           self,
-                           member,
-                           error);
-                }
-            }
-        }
-        Ok(())
-    }
-
     fn handle_section_split(&mut self,
                             prefix: Prefix<XorName>,
                             version: u64,
@@ -2432,7 +2325,7 @@ impl Node {
         self.send_section_list_signature(prefix0, None);
         self.send_section_list_signature(prefix1, None);
 
-        self.reset_rt_timer();
+        self.reset_su_timer();
 
         Ok(())
     }
@@ -2561,7 +2454,7 @@ impl Node {
             }
         }
 
-        self.reset_rt_timer();
+        self.reset_su_timer();
     }
 
     fn handle_other_section_merge(&mut self,
@@ -2597,7 +2490,7 @@ impl Node {
                .section_with_prefix(&merge_prefix)
                .is_some() {
             self.send_section_list_signature(merge_prefix, None);
-            self.reset_rt_timer();
+            self.reset_su_timer();
             self.send_section_update(Some(merge_prefix));
         }
         Ok(())
@@ -2628,14 +2521,14 @@ impl Node {
             return transition;
         }
 
-        if self.rt_timer_token == Some(token) {
-            self.rt_timeout = cmp::min(Duration::from_secs(RT_MAX_TIMEOUT_SECS),
-                                       self.rt_timeout * 2);
+        if self.su_timer_token == Some(token) {
+            self.su_timeout = cmp::min(Duration::from_secs(RT_MAX_TIMEOUT_SECS),
+                                       self.su_timeout * 2);
             trace!("{:?} Scheduling next RT request for {} seconds from now.",
                    self,
-                   self.rt_timeout.as_secs());
-            self.rt_timer_token = Some(self.timer.schedule(self.rt_timeout));
-            self.send_rt_request();
+                   self.su_timeout.as_secs());
+            self.su_timer_token = Some(self.timer.schedule(self.su_timeout));
+            self.send_section_update(None);
         } else if self.candidate_timer_token == Some(token) {
             self.candidate_timer_token = None;
             self.send_candidate_approval();
@@ -2769,33 +2662,6 @@ impl Node {
         transition
     }
 
-    fn send_rt_request(&mut self) {
-        if self.is_approved {
-            let msg_id = MessageId::new();
-            self.rt_msg_id = Some(msg_id);
-            let sections = self.peer_mgr.pub_ids_by_section();
-            let prefixes = self.peer_mgr.routing_table().prefixes();
-            let digest = sha256::hash(&match serialisation::serialise(&(sections, prefixes)) {
-                                           Ok(serialised) => serialised,
-                                           Err(e) => {
-                warn!("{:?} Serialisation failed: {:?}", self, e);
-                return;
-            }
-                                       });
-            trace!("{:?} Sending RT request {:?} with digest {:?}",
-                   self,
-                   msg_id,
-                   utils::format_binary_array(&digest));
-
-            let src = Authority::ManagedNode(*self.name());
-            let dst = Authority::Section(*self.name());
-            let content = MessageContent::RoutingTableRequest(msg_id, digest);
-            if let Err(err) = self.send_routing_message(src, dst, content) {
-                debug!("{:?} Failed to send RoutingTableRequest: {:?}.", self, err);
-            }
-        }
-    }
-
     fn send_candidate_approval(&mut self) {
         let (candidate_id, client_auth, sections) = match self.peer_mgr.verified_candidate_info() {
             Err(_) => {
@@ -2845,14 +2711,12 @@ impl Node {
         Ok(serialisation::deserialise(&serialised_connection_info)?)
     }
 
-    fn reset_rt_timer(&mut self) {
-        trace!("{:?} Scheduling a RT request for {} seconds from now. Previous rt_msg_id: {:?}",
+    fn reset_su_timer(&mut self) {
+        trace!("{:?} Scheduling a SectionUpdate for {} seconds from now.",
                self,
-               RT_MIN_TIMEOUT_SECS,
-               self.rt_msg_id);
-        self.rt_msg_id = None;
-        self.rt_timeout = Duration::from_secs(RT_MIN_TIMEOUT_SECS);
-        self.rt_timer_token = Some(self.timer.schedule(self.rt_timeout));
+               RT_MIN_TIMEOUT_SECS);
+        self.su_timeout = Duration::from_secs(RT_MIN_TIMEOUT_SECS);
+        self.su_timer_token = Some(self.timer.schedule(self.su_timeout));
     }
 
     // ----- Send Functions -----------------------------------------------------------------------
@@ -3236,7 +3100,7 @@ impl Node {
             .map_or((),
                     |prefix| { self.send_section_list_signature(prefix, None); });
         if details.was_in_our_section {
-            self.reset_rt_timer();
+            self.reset_su_timer();
             self.section_list_sigs
                 .remove_signatures(name, self.peer_mgr.routing_table().our_section().len());
         }
