@@ -23,7 +23,7 @@ use std::hash::{Hash, Hasher};
 
 /// A group prefix, i.e. a sequence of bits specifying the part of the network's name space
 /// consisting of all names that start with this sequence.
-#[derive(Clone, Copy, Default, Eq, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Copy, Default, Eq, Deserialize, Serialize)]
 pub struct Prefix<T: Clone + Copy + Default + Binary + Xorable> {
     bit_count: u16,
     name: T,

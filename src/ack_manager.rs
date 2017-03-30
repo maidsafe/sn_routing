@@ -16,12 +16,14 @@
 // relating to use of the SAFE Network Software.
 
 use error::RoutingError;
-use maidsafe_utilities::{self, serialisation};
+use maidsafe_utilities::serialisation;
 use message_filter::MessageFilter;
 use messages::RoutingMessage;
+use sha3;
 use std::collections::HashMap;
 use std::fmt;
 use std::time::Duration;
+use tiny_keccak::sha3_256;
 
 /// Time (in seconds) after which a message is resent due to being unacknowledged by recipient.
 pub const ACK_TIMEOUT_SECS: u64 = 20;
@@ -42,8 +44,10 @@ pub struct AckManager {
 }
 
 /// An identifier for a waiting-to-be-acknowledged message (a hash of the message).
-#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, RustcDecodable, RustcEncodable)]
-pub struct Ack(u64);
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, Deserialize, Serialize)]
+pub struct Ack {
+    m_hash: sha3::Digest256,
+}
 
 impl AckManager {
     /// Creates a new manager, with empty lists.
@@ -121,18 +125,15 @@ impl AckManager {
 impl Ack {
     pub fn compute(routing_msg: &RoutingMessage) -> Result<Ack, RoutingError> {
         let hash_msg = serialisation::serialise(routing_msg)?;
-        Ok(Ack(maidsafe_utilities::big_endian_sip_hash(&hash_msg)))
-    }
-}
-
-impl fmt::Display for Ack {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(formatter, "{:016x}", self.0)
+        Ok(Ack { m_hash: sha3_256(&hash_msg) })
     }
 }
 
 impl fmt::Debug for Ack {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(formatter, "Ack({:016x})", self.0)
+        write!(formatter,
+               "Ack({:02x}{:02x}..)",
+               self.m_hash[0],
+               self.m_hash[1])
     }
 }

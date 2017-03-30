@@ -20,7 +20,8 @@ use error::RoutingError;
 use maidsafe_utilities::serialisation::{deserialise, serialise, serialised_size};
 use rust_sodium::crypto::{box_, sealedbox};
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
-use rustc_serialize::{Decodable, Decoder};
+use serde::{Deserialize, Deserializer};
+use serde::de::Error;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
@@ -29,10 +30,10 @@ use xor_name::XorName;
 pub const MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES: u64 = 102400;
 
 /// Maximum size of a serialised `PrivAppendedData` item, in bytes.
-pub const MAX_PRIV_APPENDED_DATA_BYTES: usize = 220;
+pub const MAX_PRIV_APPENDED_DATA_BYTES: usize = 212;
 
 /// A private appended data item: an encrypted `AppendedData`.
-#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcEncodable, Debug)]
+#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, Serialize, Debug)]
 pub struct PrivAppendedData(pub Vec<u8>);
 
 impl PrivAppendedData {
@@ -56,11 +57,13 @@ impl PrivAppendedData {
     }
 }
 
-impl Decodable for PrivAppendedData {
-    fn decode<D: Decoder>(d: &mut D) -> Result<Self, D::Error> {
-        let data: Vec<u8> = Decodable::decode(d)?;
+impl Deserialize for PrivAppendedData {
+    fn deserialize<D>(d: D) -> Result<Self, D::Error>
+        where D: Deserializer
+    {
+        let data: Vec<u8> = Deserialize::deserialize(d)?;
         if data.len() > MAX_PRIV_APPENDED_DATA_BYTES {
-            return Err(d.error("wrong private appended data size"));
+            return Err(D::Error::custom("wrong private appended data size"));
         }
         Ok(PrivAppendedData(data))
     }
@@ -72,7 +75,7 @@ impl Decodable for PrivAppendedData {
 /// set to the same keys. Updates require a signature to validate.
 ///
 /// Data can be appended by any key that is not excluded by the filter.
-#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable)]
+#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, Deserialize, Serialize)]
 pub struct PrivAppendableData {
     /// The name of this data chunk.
     pub name: XorName,
@@ -95,7 +98,7 @@ pub struct PrivAppendableData {
 
 impl PrivAppendableData {
     /// Creates a new `PubAppendableData` signed with `signing_key`.
-    #[cfg_attr(feature="clippy", allow(too_many_arguments))]
+    #[cfg_attr(feature="cargo-clippy", allow(too_many_arguments))]
     pub fn new(name: XorName,
                version: u64,
                owners: BTreeSet<PublicKey>,
@@ -271,7 +274,7 @@ impl Debug for PrivAppendableData {
     }
 }
 
-#[derive(RustcEncodable)]
+#[derive(Serialize)]
 struct SerialisablePrivAppendableData<'a> {
     name: XorName,
     version: Vec<u8>,
@@ -282,7 +285,7 @@ struct SerialisablePrivAppendableData<'a> {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
     use data::{self, AppendWrapper, AppendedData, DataIdentifier, Filter};
     use maidsafe_utilities::serialisation::serialise;

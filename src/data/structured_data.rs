@@ -31,7 +31,7 @@ pub const MAX_STRUCTURED_DATA_SIZE_IN_BYTES: u64 = 102400;
 ///
 /// These types may be stored unsigned with previous and current owner keys
 /// set to the same keys. Updates require a signature to validate.
-#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable)]
+#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, Deserialize, Serialize)]
 pub struct StructuredData {
     type_tag: u64,
     name: XorName,
@@ -205,7 +205,7 @@ impl Debug for StructuredData {
     }
 }
 
-#[derive(RustcEncodable)]
+#[derive(Serialize)]
 struct SerialisableStructuredData<'a> {
     type_tag: Vec<u8>,
     name: XorName,

@@ -29,7 +29,7 @@ use std::fmt::{self, Debug, Formatter};
 use utils;
 use xor_name::XorName;
 
-#[derive(PartialEq, Eq, Hash, Clone, RustcDecodable, RustcEncodable)]
+#[derive(PartialEq, Eq, Hash, Clone, Deserialize, Serialize)]
 struct Detail {
     sender: XorName,
     guid: [u8; GUID_SIZE],
@@ -37,7 +37,7 @@ struct Detail {
 }
 
 /// Minimal information about a given message which can be used as a notification to the receiver.
-#[derive(PartialEq, Eq, Hash, Clone, RustcDecodable, RustcEncodable)]
+#[derive(PartialEq, Eq, Hash, Clone, Deserialize, Serialize)]
 pub struct MpidHeader {
     detail: Detail,
     signature: Signature,

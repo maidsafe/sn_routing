@@ -31,7 +31,7 @@ pub const MAX_MUTABLE_DATA_SIZE_IN_BYTES: u64 = 1024 * 1024;
 pub const MAX_MUTABLE_DATA_ENTRIES: u64 = 100;
 
 /// Mutable data.
-#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable)]
+#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, Deserialize, Serialize)]
 pub struct MutableData {
     /// Network address
     name: XorName,
@@ -51,7 +51,7 @@ pub struct MutableData {
 }
 
 /// A value in `MutableData`
-#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable, Debug)]
+#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, Deserialize, Serialize, Debug)]
 pub struct Value {
     /// Content of the entry.
     pub content: Vec<u8>,
@@ -60,7 +60,7 @@ pub struct Value {
 }
 
 /// Subject of permissions
-#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable, Debug)]
+#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, Deserialize, Serialize, Debug)]
 pub enum User {
     /// Permissions apply to anyone.
     Anyone,
@@ -69,7 +69,7 @@ pub enum User {
 }
 
 /// Action a permission applies to
-#[derive(Debug, Hash, Eq, PartialEq, PartialOrd, Ord, Copy, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Debug, Hash, Eq, PartialEq, PartialOrd, Ord, Copy, Clone, Serialize, Deserialize)]
 pub enum Action {
     /// Permission to insert new entries.
     Insert,
@@ -82,7 +82,7 @@ pub enum Action {
 }
 
 /// Set of user permissions.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord, RustcEncodable, RustcDecodable,
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord, Serialize, Deserialize,
          Default)]
 pub struct PermissionSet {
     insert: Option<bool>,
@@ -147,7 +147,7 @@ impl PermissionSet {
 }
 
 /// Action performed on a single entry: insert, update or delete.
-#[derive(Hash, Debug, Eq, PartialEq, Clone, PartialOrd, Ord, RustcDecodable, RustcEncodable)]
+#[derive(Hash, Debug, Eq, PartialEq, Clone, PartialOrd, Ord, Deserialize, Serialize)]
 pub enum EntryAction {
     /// Inserts a new entry
     Ins(Value),

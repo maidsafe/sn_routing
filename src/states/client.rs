@@ -218,9 +218,11 @@ impl Client {
                 payload,
                 ..
             } => {
-                trace!("{:?} Got UserMessagePart {:x}, {}/{} from {:?} to {:?}.",
+                trace!("{:?} Got UserMessagePart {:02x}{:02x}{:02x}.., {}/{} from {:?} to {:?}.",
                        self,
-                       hash,
+                       hash[0],
+                       hash[1],
+                       hash[2],
                        part_count,
                        part_index,
                        routing_msg.src,
@@ -320,7 +322,7 @@ impl Bootstrapped for Client {
 
     fn resend_unacknowledged_timed_out_msgs(&mut self, token: u64) {
         if let Some((unacked_msg, ack)) = self.ack_mgr.find_timed_out(token) {
-            trace!("{:?} - Timed out waiting for ack({}) {:?}",
+            trace!("{:?} - Timed out waiting for {:?} {:?}",
                    self,
                    ack,
                    unacked_msg);

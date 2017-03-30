@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -15,15 +15,13 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-
 use super::support::{self, Endpoint, Network, ServiceHandle, ServiceImpl};
 
 pub use super::support::Config;
 use maidsafe_utilities::event_sender;
+use std::{fmt, io, thread};
 use std::cell::{RefCell, RefMut};
 use std::collections::HashSet;
-use std::fmt;
-use std::io;
 use std::net::SocketAddr;
 use std::rc::Rc;
 
@@ -67,8 +65,11 @@ impl Service {
     }
 
     /// Start the bootstrapping procedure.
-    pub fn start_bootstrap(&mut self, blacklist: HashSet<SocketAddr>) -> Result<(), CrustError> {
-        self.lock_and_poll(|imp| imp.start_bootstrap(blacklist));
+    pub fn start_bootstrap(&mut self,
+                           blacklist: HashSet<SocketAddr>,
+                           user: CrustUser)
+                           -> Result<(), CrustError> {
+        self.lock_and_poll(|imp| imp.start_bootstrap(blacklist, user));
         Ok(())
     }
 
@@ -153,6 +154,11 @@ impl Service {
         self.lock().is_peer_whitelisted(peer_id)
     }
 
+    /// Returns `true` if the specified peer's IP is hard-coded. (Always `true` in mock Crust.)
+    pub fn is_peer_hard_coded(&self, _peer_id: &PeerId) -> bool {
+        true
+    }
+
     /// Our `PeerId`.
     pub fn id(&self) -> PeerId {
         self.lock().peer_id
@@ -178,12 +184,14 @@ impl Service {
 
 impl Drop for Service {
     fn drop(&mut self) {
-        self.lock_and_poll(|imp| imp.disconnect_all());
+        if !thread::panicking() {
+            self.lock_and_poll(|imp| imp.disconnect_all());
+        }
     }
 }
 
 /// Mock version of `crust::PeerId`.
-#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, RustcEncodable, RustcDecodable)]
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct PeerId(pub usize);
 
 impl fmt::Debug for PeerId {
@@ -196,7 +204,7 @@ impl fmt::Debug for PeerId {
 #[derive(Debug)]
 pub enum Event {
     /// Invoked when a bootstrap peer connects to us
-    BootstrapAccept(PeerId),
+    BootstrapAccept(PeerId, CrustUser),
     /// Invoked when we get a bootstrap connection to a new peer.
     BootstrapConnect(PeerId, SocketAddr),
     /// Invoked when we failed to connect to all bootstrap contacts.
@@ -236,7 +244,7 @@ impl PrivConnectionInfo {
 }
 
 /// Mock version of `PubConnectionInfo`, used to connect to another peer.
-#[derive(Clone, Debug, Eq, PartialEq, RustcEncodable, RustcDecodable)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PubConnectionInfo(pub PeerId, pub Endpoint);
 
 impl PubConnectionInfo {
@@ -258,3 +266,16 @@ pub struct ConnectionInfoResult {
 /// Mock version of `crust::CrustError`.
 #[derive(Debug)]
 pub struct CrustError;
+
+/// Specify crust user. Behaviour (for example in bootstrap phase) will be different for different
+/// variants. Node will request the Bootstrapee to connect back to this crust failing which it
+/// would mean it's not reachable from outside and hence should be rejected bootstrap attempts.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum CrustUser {
+    /// Crust user is a Node and should not be allowed to bootstrap if it's not reachable from
+    /// outside.
+    Node,
+    /// Crust user is a Client and should be allowed to bootstrap even if it's not reachable from
+    /// outside.
+    Client,
+}

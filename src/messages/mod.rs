@@ -18,7 +18,6 @@
 mod request;
 mod response;
 
-
 pub use self::request::Request;
 pub use self::response::{AccountInfo, Response};
 use ack_manager::Ack;
@@ -30,17 +29,18 @@ use event::Event;
 use id::{FullId, PublicId};
 use itertools::Itertools;
 use lru_time_cache::LruCache;
-use maidsafe_utilities;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 #[cfg(feature = "use-mock-crust")]
 use mock_crust::crust::PeerId;
 use routing_table::Prefix;
 use rust_sodium::crypto::{box_, sign};
 use rust_sodium::crypto::hash::sha256;
+use sha3;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
 use std::iter;
 use std::time::Duration;
+use tiny_keccak::sha3_256;
 use types::MessageId;
 use utils;
 use xor_name::XorName;
@@ -64,7 +64,7 @@ pub const CLIENT_GET_PRIORITY: u8 = 3;
 /// Wrapper of all messages.
 ///
 /// This is the only type allowed to be sent / received on the network.
-#[derive(Debug, RustcEncodable, RustcDecodable)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum Message {
     /// A message sent between two nodes directly
     Direct(DirectMessage),
@@ -104,7 +104,7 @@ impl Message {
 /// Messages sent via a direct connection.
 ///
 /// Allows routing to directly send specific messages between nodes.
-#[derive(RustcEncodable, RustcDecodable)]
+#[derive(Serialize, Deserialize)]
 pub enum DirectMessage {
     /// Sent from members of a group message's source authority to the first hop. The message will
     /// only be relayed once enough signatures have been accumulated.
@@ -155,7 +155,7 @@ impl DirectMessage {
 /// To relay a `SignedMessage` via another node, the `SignedMessage` is wrapped in a `HopMessage`.
 /// The `signature` is from the node that sends this directly to a node in its routing table. To
 /// prevent Man-in-the-middle attacks, the `content` is signed by the original sender.
-#[derive(RustcEncodable, RustcDecodable)]
+#[derive(Serialize, Deserialize)]
 pub struct HopMessage {
     /// Wrapped signed message.
     pub content: SignedMessage,
@@ -195,14 +195,14 @@ impl HopMessage {
 }
 
 /// A list of a group's public IDs, together with a list of signatures of a neighbouring group.
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct GroupList {
     // TODO(MAID-1677): pub signatures: BTreeSet<(PublicId, sign::Signature)>,
     pub pub_ids: BTreeSet<PublicId>,
 }
 
 /// Wrapper around a routing message, signed by the originator of the message.
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct SignedMessage {
     /// A request or response type message.
     content: RoutingMessage,
@@ -346,7 +346,7 @@ impl SignedMessage {
 }
 
 /// A routing message with source and destination authorities.
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, Serialize, Deserialize)]
 pub struct RoutingMessage {
     /// Source authority
     pub src: Authority,
@@ -383,7 +383,7 @@ impl RoutingMessage {
 }
 
 /// `MessageContent::ConnectionInfo` details, as a stand-alone type.
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct ConnectionInfo {
     /// Encrypted Crust connection info.
     pub encrypted_connection_info: Vec<u8>,
@@ -448,7 +448,7 @@ impl ConnectionInfo {
 /// Once the connection between A and Z is established and a Crust `OnConnect` event is raised,
 /// they exchange `NodeIdentify` messages and add each other to their routing tables. When A
 /// receives its first `NodeIdentify`, it finally moves to the `Node` state.
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub enum MessageContent {
     // ---------- Internal ------------
     /// Ask the network to alter your `PublicId` name.
@@ -519,7 +519,7 @@ pub enum MessageContent {
     /// Part of a user-facing message
     UserMessagePart {
         /// The hash of this user message.
-        hash: u64,
+        hash: sha3::Digest256,
         /// The number of parts.
         part_count: u32,
         /// The index of this part.
@@ -662,7 +662,7 @@ impl Debug for MessageContent {
                 ref prefix,
                 ref group,
             } => write!(formatter, "OtherGroupMerge {{ {:?}, {:?} }}", prefix, group),
-            MessageContent::Ack(ack, priority) => write!(formatter, "Ack({}, {})", ack, priority),
+            MessageContent::Ack(ack, priority) => write!(formatter, "Ack({:?}, {})", ack, priority),
             MessageContent::UserMessagePart {
                 hash,
                 part_count,
@@ -672,18 +672,21 @@ impl Debug for MessageContent {
                 ..
             } => {
                 write!(formatter,
-                       "UserMessagePart {{ {}/{}, priority: {}, cacheable: {}, {:x} }}",
+                       "UserMessagePart {{ {}/{}, priority: {}, \
+                       cacheable: {}, {:02x}{:02x}{:02x}.. }}",
                        part_index + 1,
                        part_count,
                        priority,
                        cacheable,
-                       hash)
+                       hash[0],
+                       hash[1],
+                       hash[2])
             }
         }
     }
 }
 
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Debug, Hash, RustcEncodable, RustcDecodable)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Debug, Hash, Serialize, Deserialize)]
 /// A user-visible message: a `Request` or `Response`.
 pub enum UserMessage {
     /// A user-visible request message.
@@ -697,8 +700,8 @@ impl UserMessage {
     /// and routed, and then be put back together by the receiver.
     pub fn to_parts(&self, priority: u8) -> Result<Vec<MessageContent>, RoutingError> {
         // TODO: This internally serialises the message - remove that duplicated work!
-        let hash = maidsafe_utilities::big_endian_sip_hash(self);
         let payload = serialise(self)?;
+        let hash = sha3_256(&payload);
         let len = payload.len();
         let part_count = (len + MAX_PART_LEN - 1) / MAX_PART_LEN;
 
@@ -718,7 +721,7 @@ impl UserMessage {
 
     /// Puts the given parts of a serialised message together and verifies that it matches the
     /// given hash code. If it does, returns the `UserMessage`.
-    pub fn from_parts<'a, I: Iterator<Item = &'a Vec<u8>>>(hash: u64,
+    pub fn from_parts<'a, I: Iterator<Item = &'a Vec<u8>>>(hash: sha3::Digest256,
                                                            parts: I)
                                                            -> Result<UserMessage, RoutingError> {
         let mut payload = Vec::new();
@@ -726,7 +729,7 @@ impl UserMessage {
             payload.extend_from_slice(part);
         }
         let user_msg = deserialise(&payload[..])?;
-        if hash != maidsafe_utilities::big_endian_sip_hash(&user_msg) {
+        if hash != sha3_256(&payload) {
             Err(RoutingError::HashMismatch)
         } else {
             Ok(user_msg)
@@ -765,7 +768,7 @@ impl UserMessage {
 /// This assembles `UserMessage`s from `UserMessagePart`s.
 /// It maps `(hash, part_count)` of an incoming `UserMessage` to the map containing
 /// all `UserMessagePart`s that have already arrived, by `part_index`.
-pub struct UserMessageCache(LruCache<(u64, u32), BTreeMap<u32, Vec<u8>>>);
+pub struct UserMessageCache(LruCache<(sha3::Digest256, u32), BTreeMap<u32, Vec<u8>>>);
 
 impl UserMessageCache {
     pub fn with_expiry_duration(duration: Duration) -> Self {
@@ -775,7 +778,7 @@ impl UserMessageCache {
     /// Adds the given one to the cache of received message parts, returning a `UserMessage` if the
     /// given part was the last missing piece of it.
     pub fn add(&mut self,
-               hash: u64,
+               hash: sha3::Digest256,
                part_count: u32,
                part_index: u32,
                payload: Vec<u8>)
@@ -802,12 +805,12 @@ mod tests {
     use authority::Authority;
     use data::ImmutableData;
     use id::FullId;
-    use maidsafe_utilities;
     use maidsafe_utilities::serialisation::serialise;
     use rand;
     use rust_sodium::crypto::hash::sha256;
     use rust_sodium::crypto::sign;
     use std::iter;
+    use tiny_keccak::sha3_256;
     use types::MessageId;
     use xor_name::XorName;
 
@@ -960,7 +963,7 @@ mod tests {
                                                 data: data,
                                                 msg_id: MessageId::new(),
                                             });
-        let msg_hash = maidsafe_utilities::big_endian_sip_hash(&user_msg);
+        let msg_hash = sha3_256(&unwrap!(serialise(&user_msg)));
         let parts = unwrap!(user_msg.to_parts(42));
         assert_eq!(parts.len(), 3);
         let payloads: Vec<Vec<u8>> = parts

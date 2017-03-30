@@ -262,7 +262,9 @@ impl Node {
 
     pub fn handle_crust_event(&mut self, crust_event: CrustEvent) -> Transition {
         match crust_event {
-            CrustEvent::BootstrapAccept(peer_id) => self.handle_bootstrap_accept(peer_id),
+            CrustEvent::BootstrapAccept(peer_id, _peer_kind) => {
+                self.handle_bootstrap_accept(peer_id)
+            }
             CrustEvent::BootstrapConnect(peer_id, _) => self.handle_bootstrap_connect(peer_id),
             CrustEvent::ConnectSuccess(peer_id) => self.handle_connect_success(peer_id),
             CrustEvent::ConnectFailure(peer_id) => self.handle_connect_failure(peer_id),
@@ -955,8 +957,8 @@ impl Node {
                 Err(error) => {
                     // This usually means we have already connected.
                     debug!("{:?} Prepared connection info, but no entry found in token map: {:?}",
-                       self,
-                       error);
+                           self,
+                           error);
                     return;
                 }
                 Ok(ConnectionInfoPreparedResult {
@@ -968,14 +970,14 @@ impl Node {
                     match infos {
                         None => {
                             debug!("{:?} Prepared connection info for {:?}.",
-                               self,
-                               pub_id.name());
+                                   self,
+                                   pub_id.name());
                         }
                         Some((our_info, their_info)) => {
                             debug!("{:?} Trying to connect to {:?} as {:?}.",
-                               self,
-                               their_info.id(),
-                               pub_id.name());
+                                   self,
+                                   their_info.id(),
+                                   pub_id.name());
                             let _ = self.crust_service.connect(our_info, their_info);
                         }
                     }

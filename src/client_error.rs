@@ -19,7 +19,7 @@ use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 
 /// Errors in operations involving Core and Vaults
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, RustcEncodable, RustcDecodable)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum ClientError {
     /// Access is denied for a given requester
     AccessDenied,

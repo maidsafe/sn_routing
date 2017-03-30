@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -15,15 +15,15 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-
-use super::crust::{ConnectionInfoResult, CrustEventSender, Event, PeerId, PrivConnectionInfo,
-                   PubConnectionInfo};
+use super::crust::{ConnectionInfoResult, CrustEventSender, CrustUser, Event, PeerId,
+                   PrivConnectionInfo, PubConnectionInfo};
 use maidsafe_utilities::SeededRng;
-use rand::{Rng, XorShiftRng};
+use rand::Rng;
 use rust_sodium;
 use std::cell::RefCell;
 use std::cmp;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::hash_map::Entry;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::rc::{Rc, Weak};
 
@@ -33,6 +33,7 @@ pub struct Network(Rc<RefCell<NetworkImpl>>);
 
 pub struct NetworkImpl {
     services: HashMap<Endpoint, Weak<RefCell<ServiceImpl>>>,
+    min_section_size: usize,
     next_endpoint: usize,
     queue: HashMap<(Endpoint, Endpoint), VecDeque<Packet>>,
     blocked_connections: HashSet<(Endpoint, Endpoint)>,
@@ -41,7 +42,7 @@ pub struct NetworkImpl {
 
 impl Network {
     /// Create new mock Network.
-    pub fn new(optional_seed: Option<[u32; 4]>) -> Self {
+    pub fn new(min_section_size: usize, optional_seed: Option<[u32; 4]>) -> Self {
         let mut rng = if let Some(seed) = optional_seed {
             SeededRng::from_seed(seed)
         } else {
@@ -50,6 +51,7 @@ impl Network {
         unwrap!(rust_sodium::init_with_rng(&mut rng));
         Network(Rc::new(RefCell::new(NetworkImpl {
                                          services: HashMap::new(),
+                                         min_section_size: min_section_size,
                                          next_endpoint: 0,
                                          queue: HashMap::new(),
                                          blocked_connections: HashSet::new(),
@@ -66,12 +68,20 @@ impl Network {
         let endpoint = self.gen_endpoint(opt_endpoint);
 
         let handle = ServiceHandle::new(self.clone(), config, endpoint);
-        let _ = self.0
-            .borrow_mut()
-            .services
-            .insert(endpoint, Rc::downgrade(&handle.0));
+        if self.0
+               .borrow_mut()
+               .services
+               .insert(endpoint, Rc::downgrade(&handle.0))
+               .is_some() {
+            debug!("Tried to insert duplicate service handle ");
+        }
 
         handle
+    }
+
+    /// Get min_section_size
+    pub fn min_section_size(&self) -> usize {
+        self.0.borrow().min_section_size
     }
 
     /// Generate unique Endpoint
@@ -99,9 +109,49 @@ impl Network {
         imp.blocked_connections.insert((sender, receiver));
     }
 
-    /// Construct a new [`XorShiftRng`](https://doc.rust-lang.org/rand/rand/struct.XorShiftRng.html)
-    /// using a seed generated from random data provided by `self`.
-    pub fn new_rng(&self) -> XorShiftRng {
+    /// Make all packets from `sender` to `receiver` succeed.
+    pub fn unblock_connection(&self, sender: Endpoint, receiver: Endpoint) {
+        let mut imp = self.0.borrow_mut();
+        let _ = imp.blocked_connections.remove(&(sender, receiver));
+    }
+
+    /// Simulates the loss of a connection.
+    pub fn lost_connection(&self, node_1: Endpoint, node_2: Endpoint) {
+        let service_1 = unwrap!(self.find_service(node_1),
+                                "Cannot fetch service of {:?}.",
+                                node_1);
+        if service_1
+               .borrow_mut()
+               .remove_connection_by_endpoint(node_2)
+               .is_none() {
+            return;
+        }
+        let service_2 = unwrap!(self.find_service(node_2),
+                                "Cannot fetch service of {:?}.",
+                                node_2);
+        let _ = service_2
+            .borrow_mut()
+            .remove_connection_by_endpoint(node_1);
+
+        service_1
+            .borrow_mut()
+            .send_event(Event::LostPeer(PeerId(node_2.0)));
+        service_2
+            .borrow_mut()
+            .send_event(Event::LostPeer(PeerId(node_1.0)));
+    }
+
+    /// Simulates a crust event being sent to the node.
+    pub fn send_crust_event(&self, node: Endpoint, crust_event: Event) {
+        let service = unwrap!(self.find_service(node),
+                              "Cannot fetch service of {:?}.",
+                              node);
+        service.borrow_mut().send_event(crust_event);
+    }
+
+    /// Construct a new [`SeededRng`][1] using a seed generated from random data provided by `self`.
+    /// [1]: https://docs.rs/maidsafe_utilities/0.10.2/maidsafe_utilities/struct.SeededRng.html
+    pub fn new_rng(&self) -> SeededRng {
         self.0.borrow_mut().rng.new_rng()
     }
 
@@ -121,12 +171,17 @@ impl Network {
             .push_back(packet);
     }
 
-    // Drop any pending messages on a specific route (does not automatically
+    // Drops any pending messages on a specific route (does not automatically
     // drop packets going the other way).
     fn drop_pending(&self, sender: Endpoint, receiver: Endpoint) {
         if let Some(deque) = self.0.borrow_mut().queue.get_mut(&(sender, receiver)) {
             deque.clear();
         }
+    }
+
+    // Drops all pending messages across the entire network.
+    fn drop_all_pending(&self) {
+        self.0.borrow_mut().queue.clear();
     }
 
     fn pop_packet(&self) -> Option<(Endpoint, Endpoint, Packet)> {
@@ -145,12 +200,12 @@ impl Network {
                               .pop_front()
                               .map(|packet| (sender, receiver, packet))
                       });
-        if result.is_some() &&
-           network_impl
-               .queue
-               .get(&(sender, receiver))
-               .map_or(false, VecDeque::is_empty) {
-            let _ = network_impl.queue.remove(&(sender, receiver));
+        if result.is_some() {
+            if let Entry::Occupied(entry) = network_impl.queue.entry((sender, receiver)) {
+                if entry.get().is_empty() {
+                    let (_key, _value) = entry.remove_entry();
+                }
+            }
         }
         result
     }
@@ -177,12 +232,6 @@ impl Network {
             .services
             .get(&endpoint)
             .and_then(|s| s.upgrade())
-    }
-}
-
-impl Default for Network {
-    fn default() -> Network {
-        Network::new(None)
     }
 }
 
@@ -251,12 +300,12 @@ impl ServiceImpl {
         self.start(event_sender)
     }
 
-    pub fn start_bootstrap(&mut self, blacklist: HashSet<SocketAddr>) {
+    pub fn start_bootstrap(&mut self, blacklist: HashSet<SocketAddr>, kind: CrustUser) {
         let mut pending_bootstraps = 0;
 
         for endpoint in &self.config.hard_coded_contacts {
             if *endpoint != self.endpoint && !blacklist.contains(&to_socket_addr(endpoint)) {
-                self.send_packet(*endpoint, Packet::BootstrapRequest(self.peer_id));
+                self.send_packet(*endpoint, Packet::BootstrapRequest(self.peer_id, kind));
                 pending_bootstraps += 1;
             }
         }
@@ -287,7 +336,10 @@ impl ServiceImpl {
     }
 
     pub fn whitelist_peer(&mut self, peer_id: PeerId) {
-        let _ = self.whitelist.insert(peer_id);
+        if !self.whitelist.insert(peer_id) {
+            debug!("Duplicate insert attempt whitelist for peer : {:?}",
+                   peer_id);
+        }
     }
 
     pub fn is_peer_whitelisted(&self, peer_id: &PeerId) -> bool {
@@ -323,7 +375,9 @@ impl ServiceImpl {
 
     fn receive_packet(&mut self, sender: Endpoint, packet: Packet) {
         match packet {
-            Packet::BootstrapRequest(peer_id) => self.handle_bootstrap_request(sender, peer_id),
+            Packet::BootstrapRequest(peer_id, kind) => {
+                self.handle_bootstrap_request(sender, peer_id, kind)
+            }
             Packet::BootstrapSuccess(peer_id) => self.handle_bootstrap_success(sender, peer_id),
             Packet::BootstrapFailure => self.handle_bootstrap_failure(sender),
             Packet::ConnectRequest(their_id, _) => self.handle_connect_request(sender, their_id),
@@ -334,18 +388,24 @@ impl ServiceImpl {
         }
     }
 
-    fn handle_bootstrap_request(&mut self, peer_endpoint: Endpoint, peer_id: PeerId) {
+    fn handle_bootstrap_request(&mut self,
+                                peer_endpoint: Endpoint,
+                                peer_id: PeerId,
+                                kind: CrustUser) {
         if self.is_listening() {
-            self.handle_bootstrap_accept(peer_endpoint, peer_id);
+            self.handle_bootstrap_accept(peer_endpoint, peer_id, kind);
             self.send_packet(peer_endpoint, Packet::BootstrapSuccess(self.peer_id));
         } else {
             self.send_packet(peer_endpoint, Packet::BootstrapFailure);
         }
     }
 
-    fn handle_bootstrap_accept(&mut self, peer_endpoint: Endpoint, peer_id: PeerId) {
+    fn handle_bootstrap_accept(&mut self,
+                               peer_endpoint: Endpoint,
+                               peer_id: PeerId,
+                               kind: CrustUser) {
         self.add_connection(peer_id, peer_endpoint);
-        self.send_event(Event::BootstrapAccept(peer_id));
+        self.send_event(Event::BootstrapAccept(peer_id, kind));
     }
 
     fn handle_bootstrap_success(&mut self, peer_endpoint: Endpoint, peer_id: PeerId) {
@@ -488,6 +548,7 @@ impl ServiceImpl {
     }
 
     pub fn disconnect_all(&mut self) {
+        self.network.drop_all_pending();
         let endpoints = self.connections
             .drain(..)
             .map(|(_, ep)| ep)
@@ -539,12 +600,12 @@ impl Default for Config {
 
 /// Simulated network endpoint (think socket address). This is used to identify
 /// and address `Service`s in the mock network.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, RustcEncodable, RustcDecodable)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct Endpoint(pub usize);
 
 #[derive(Clone, Debug)]
 enum Packet {
-    BootstrapRequest(PeerId),
+    BootstrapRequest(PeerId, CrustUser),
     BootstrapSuccess(PeerId),
     BootstrapFailure,
 

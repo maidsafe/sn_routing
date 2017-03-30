@@ -23,7 +23,7 @@ use std::fmt::{self, Debug, Formatter};
 use types::MessageId as MsgId;
 
 /// Response message types
-#[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd, Deserialize, Serialize)]
 pub enum Response {
     /// Returns a success or failure status of account information retrieval.
     GetAccountInfo {
@@ -381,7 +381,7 @@ impl Debug for Response {
 }
 
 /// Account information
-#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, RustcDecodable, RustcEncodable, Debug)]
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, Deserialize, Serialize, Debug)]
 pub struct AccountInfo {
     /// Number of mutate operations performed by the account.
     pub mutations_done: u64,

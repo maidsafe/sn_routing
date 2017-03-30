@@ -33,7 +33,7 @@ pub const MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES: u64 = 102400;
 ///
 /// Data can be appended by any key that is not excluded by the filter.
 // TODO: Deduplicate the logic shared with `PrivAppendableData` and `StructuredData`.
-#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable)]
+#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, Deserialize, Serialize)]
 pub struct PubAppendableData {
     /// The name of this data chunk.
     pub name: XorName,
@@ -226,7 +226,7 @@ impl Debug for PubAppendableData {
     }
 }
 
-#[derive(RustcEncodable)]
+#[derive(Serialize)]
 struct SerialisablePubAppendableData<'a> {
     name: XorName,
     owners: &'a BTreeSet<PublicKey>,

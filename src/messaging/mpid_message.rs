@@ -27,14 +27,14 @@ use std::fmt::{self, Debug, Formatter};
 use utils;
 use xor_name::XorName;
 
-#[derive(PartialEq, Eq, Hash, Clone, RustcDecodable, RustcEncodable)]
+#[derive(PartialEq, Eq, Hash, Clone, Deserialize, Serialize)]
 struct Detail {
     recipient: XorName,
     body: Vec<u8>,
 }
 
 /// A full message including header and body which can be sent to or retrieved from the network.
-#[derive(PartialEq, Eq, Hash, Clone, RustcDecodable, RustcEncodable)]
+#[derive(PartialEq, Eq, Hash, Clone, Deserialize, Serialize)]
 pub struct MpidMessage {
     header: MpidHeader,
     detail: Detail,
