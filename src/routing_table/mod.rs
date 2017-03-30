@@ -129,6 +129,7 @@ use std::fmt::Result as FmtResult;
 use std::hash::Hash;
 
 pub type Sections<T> = BTreeMap<Prefix<T>, (u64, BTreeSet<T>)>;
+type SectionItem<'a, T> = (Prefix<T>, (u64, &'a BTreeSet<T>));
 
 // Amount added to `min_section_size` when deciding whether a bucket split can happen.  This helps
 // protect against rapid splitting and merging in the face of moderate churn.
@@ -311,9 +312,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     }
 
     /// Create an iterator over all sections including our own.
-    pub fn all_sections_iter<'a>
-        (&'a self)
-         -> Box<Iterator<Item = (Prefix<T>, (u64, &'a BTreeSet<T>))> + 'a> {
+    pub fn all_sections_iter<'a>(&'a self) -> Box<Iterator<Item = SectionItem<T>> + 'a> {
         let iter = self.sections
             .iter()
             .map(|(&p, &(v, ref sec))| (p, (v, sec)))
@@ -1225,7 +1224,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Binary for Rou
         writeln!(formatter, "\tour_version: {}", self.our_version)?;
 
         let sections = self.all_sections_iter().collect::<BTreeSet<_>>();
-        for (section_index, &(prefix, (_, ref section))) in sections.iter().enumerate() {
+        for (section_index, &(prefix, (_, section))) in sections.iter().enumerate() {
             write!(formatter,
                    "\tsection {} with {:?}: {{\n",
                    section_index,
