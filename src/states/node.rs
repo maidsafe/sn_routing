@@ -727,6 +727,13 @@ impl Node {
                             self.peer_mgr.get_pub_ids(&self.get_section(prefix)?)))
     }
 
+    /// Sends a signature for the list of members of all sections that we haven't signed yet.
+    fn send_section_list_signatures(&mut self) {
+        for prefix in self.peer_mgr.routing_table().prefixes() {
+            self.send_section_list_signature(prefix, None);
+        }
+    }
+
     /// Sends a signature for the list of members of a section with prefix `prefix` to our whole
     /// section if `dst` is `None`, or to the given node if it is `Some(name)`
     fn send_section_list_signature(&mut self, prefix: Prefix<XorName>, dst: Option<XorName>) {
@@ -740,24 +747,32 @@ impl Node {
                 return;
             }
         };
-        let serialised = match serialisation::serialise(&section) {
-            Ok(serialised) => serialised,
-            Err(err) => {
-                warn!("{:?} Error serialising section list for {:?}: {:?}",
-                      self,
-                      prefix,
-                      err);
-                return;
-            }
-        };
-        let sig = sign::sign_detached(&serialised, self.full_id.signing_private_key());
+        let sig = if let Some(&sig) =
+            self.section_list_sigs
+                .get_signature_for(&prefix, self.full_id.public_id(), &section) {
+            sig
+        } else {
+            let serialised = match serialisation::serialise(&section) {
+                Ok(serialised) => serialised,
+                Err(err) => {
+                    warn!("{:?} Error serialising section list for {:?}: {:?}",
+                          self,
+                          prefix,
+                          err);
+                    return;
+                }
+            };
+            let sig = sign::sign_detached(&serialised, self.full_id.signing_private_key());
 
-        self.section_list_sigs
-            .add_signature(prefix,
-                           *self.full_id.public_id(),
-                           section.clone(),
-                           sig,
-                           self.peer_mgr.routing_table().our_section().len());
+            self.section_list_sigs
+                .add_signature(prefix,
+                               *self.full_id.public_id(),
+                               section.clone(),
+                               sig,
+                               self.peer_mgr.routing_table().our_section().len());
+            sig
+        };
+
 
         // this defines whom we are sending signature to: our section if dst is None, or given
         // name if it's Some
@@ -2319,12 +2334,10 @@ impl Node {
         self.merge_if_necessary();
 
         self.send_section_update(None);
-
         let prefix0 = prefix.pushed(false);
         let prefix1 = prefix.pushed(true);
         self.send_section_list_signature(prefix0, None);
         self.send_section_list_signature(prefix1, None);
-
         self.reset_su_timer();
 
         Ok(())
@@ -2424,9 +2437,7 @@ impl Node {
                       self.peer_mgr.routing_table().prefixes());
 
                 // After the merge, half of our section won't have our signatures -- send them
-                for prefix in self.peer_mgr.routing_table().prefixes() {
-                    self.send_section_list_signature(prefix, None);
-                }
+                self.send_section_list_signatures();
 
                 // Send an `OtherSectionMerge` containing just the prefix to ensure accumulation,
                 // followed by a second one with the full details of the our section.
@@ -2484,12 +2495,12 @@ impl Node {
               self,
               self.peer_mgr.routing_table().prefixes());
         self.merge_if_necessary();
+        self.send_section_list_signatures();
 
         if self.peer_mgr
                .routing_table()
                .section_with_prefix(&merge_prefix)
                .is_some() {
-            self.send_section_list_signature(merge_prefix, None);
             self.reset_su_timer();
             self.send_section_update(Some(merge_prefix));
         }
@@ -3093,7 +3104,6 @@ impl Node {
         outbox.send_event(Event::NodeLost(details.name, self.peer_mgr.routing_table().clone()));
 
         self.merge_if_necessary();
-
         self.peer_mgr
             .routing_table()
             .find_section_prefix(&details.name)
