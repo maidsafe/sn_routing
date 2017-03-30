@@ -305,11 +305,17 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     /// Returns the whole routing table, including our section and our name
     pub fn all_sections(&self) -> Sections<T> {
-        self.sections
-            .iter()
-            .map(|(pfx, version_and_section)| (*pfx, version_and_section.clone()))
-            .chain(iter::once((self.our_prefix, (self.our_version, self.our_section.clone()))))
-            .collect()
+        self.all_sections_iter().map(|(p, (v, section))| (p, (v, section.clone()))).collect()
+    }
+
+    /// Create an iterator over all sections including our own.
+    pub fn all_sections_iter<'a>(&'a self)
+        -> Box<Iterator<Item=(Prefix<T>, (u64, &'a BTreeSet<T>))> + 'a>
+    {
+        let iter = self.sections.iter()
+            .map(|(&p, &(v, ref sec))| (p, (v, sec)))
+            .chain(iter::once((self.our_prefix, (self.our_version, &self.our_section))));
+        Box::new(iter)
     }
 
     /// Returns the section with the given prefix, if any (includes own name if is own section)
@@ -326,10 +332,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// Returns the total number of entries in the routing table, excluding our own name.
     // TODO: refactor to include our name?
     pub fn len(&self) -> usize {
-        self.sections
-            .values()
-            .fold(0, |acc, &(_, ref section)| acc + section.len()) +
-        self.our_section.len() - 1
+        self.all_sections_iter().map(|(_, (_, section))| section.len()).sum::<usize>() - 1
     }
 
     /// Is the table empty? (Returns `true` if no nodes besides our own are known;
@@ -361,10 +364,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// Iterates over all nodes known by the routing table, excluding our own name.
     // TODO: do we need to exclude our name?
     pub fn iter(&self) -> Iter<T> {
-        let iter = self.sections
-            .values()
-            .flat_map(|&(_, ref section)| section.iter())
-            .chain(self.our_section.iter());
+        let iter = self.all_sections_iter().flat_map(|(_, (_, section))| section.iter());
         Iter {
             inner: Box::new(iter),
             our_name: self.our_name,
@@ -400,11 +400,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     /// Collects prefixes of all sections known by the routing table into a `BTreeSet`.
     pub fn prefixes(&self) -> BTreeSet<Prefix<T>> {
-        self.sections
-            .keys()
-            .cloned()
-            .chain(iter::once(self.our_prefix))
-            .collect()
+        self.all_sections_iter().map(|(prefix, _)| prefix).collect()
     }
 
     /// If our section is the closest one to `name`, returns all names in our section *including
@@ -436,13 +432,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     // Finds the `count` names closest to `name` in the whole routing table
     fn closest_known_names(&self, name: &T, count: usize) -> Vec<&T> {
-        self.sections
-            .iter()
-            .map(|(pfx, &(_, ref section))| (pfx, section))
-            .chain(iter::once((&self.our_prefix, &self.our_section)))
-            .sorted_by(|&(pfx0, _), &(pfx1, _)| pfx0.cmp_distance(pfx1, name))
+        self.all_sections_iter()
+            .sorted_by(|&(pfx0, _), &(pfx1, _)| pfx0.cmp_distance(&pfx1, name))
             .into_iter()
-            .flat_map(|(_, section)| {
+            .flat_map(|(_, (_, section))| {
                           section
                               .iter()
                               .sorted_by(|name0, name1| name.cmp_distance(name0, name1))
@@ -616,16 +609,15 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// entries that have been dropped. If the version is lower than the one in the routing table,
     /// the change is not applied.
     pub fn add_prefix(&mut self, prefix: Prefix<T>, version: u64) -> Vec<T> {
-        if prefix.is_compatible(&self.our_prefix) {
-            if version <= self.our_version {
-                return vec![]; // Version too small.
-            }
-        } else if !prefix.is_neighbour(&self.our_prefix) {
-            return vec![]; // Prefix not relevant to us.
+        // If the prefix isn't relevant to our RT, reject the change.
+        if !prefix.is_compatible(&self.our_prefix) && !prefix.is_neighbour(&self.our_prefix) {
+            return vec![];
         }
-        for (pfx, &(v, _)) in &self.sections {
-            if prefix.is_compatible(pfx) && version <= v {
-                return vec![]; // Version too small.
+
+        // If the prefix would wrongly supersede a prefix, reject.
+        for (pfx, (v, _)) in self.all_sections_iter() {
+            if prefix.is_compatible(&pfx) && version <= v {
+                return vec![];
             }
         }
         let original_sections = mem::replace(&mut self.sections, Sections::new());
@@ -708,11 +700,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// Returns the details that need to be sent to the sibling section in case of a merge.
     pub fn merge_details(&self) -> OwnMergeDetails<T> {
         let merge_prefix = self.our_prefix.popped();
-        let version = self.sections
-            .iter()
+        let version = self.all_sections_iter()
             .filter(|&(pfx, _)| pfx.extends(&merge_prefix))
-            .map(|(_, &(v, _))| v + 1)
-            .chain(iter::once(self.our_version + 1))
+            .map(|(_, (v, _))| v + 1)
             .max()
             .unwrap_or(0);
         OwnMergeDetails {
@@ -1187,12 +1177,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Binary for Rou
                  self.our_name,
                  self.our_name.debug_binary())?;
         writeln!(formatter, "\tour_prefix: {:?}", self.our_prefix)?;
-        let version_section = (self.our_version, self.our_section.clone());
-        let sections = self.sections
-            .iter()
-            .chain(iter::once((&self.our_prefix, &version_section)))
-            .collect::<BTreeSet<_>>();
-        for (section_index, &(prefix, &(_, ref section))) in sections.iter().enumerate() {
+
+        let sections = self.all_sections_iter().collect::<BTreeSet<_>>();
+        for (section_index, &(prefix, (_, ref section))) in sections.iter().enumerate() {
             write!(formatter,
                    "\tsection {} with {:?}: {{\n",
                    section_index,
