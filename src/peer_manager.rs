@@ -1239,42 +1239,45 @@ impl PeerManager {
 
     /// Returns the `PeerId`s and names of all the peers held in the RT, and whether they are
     /// connected via a tunnel or not.
-    pub fn get_routing_peer_details(&self) -> Vec<(PeerId, XorName, bool)> {
-        self.routing_table
-            .iter()
-            .filter_map(|name| -> Option<(PeerId, XorName, bool)> {
-                let peer = match self.peer_map.get_by_name(name) {
-                    Some(peer) => peer,
-                    None => {
-                        error!("{:?} Have {} in RT, but have no entry in peer_map for it.",
+    pub fn get_routing_peer_details(&self) -> (Vec<(PeerId, XorName, bool)>, BTreeSet<XorName>) {
+        let mut unknown_rt_names = BTreeSet::new();
+        (self.routing_table
+             .iter()
+             .filter_map(|name| -> Option<(PeerId, XorName, bool)> {
+            let peer = match self.peer_map.get_by_name(name) {
+                Some(peer) => peer,
+                None => {
+                    error!("{:?} Have {} in RT, but have no entry in peer_map for it.",
                                self,
                                name);
-                        return None;
-                    }
-                };
-                let peer_id = match peer.peer_id {
-                    Some(peer_id) => peer_id,
-                    None => {
-                        error!("{:?} Have {} in RT, but have no peer ID for it.",
+                    let _ = unknown_rt_names.insert(*name);
+                    return None;
+                }
+            };
+            let peer_id = match peer.peer_id {
+                Some(peer_id) => peer_id,
+                None => {
+                    error!("{:?} Have {} in RT, but have no peer ID for it.",
                                self,
                                name);
-                        return None;
-                    }
-                };
-                let is_tunnel = match peer.state {
-                    PeerState::Routing(RoutingConnection::Tunnel) => true,
-                    PeerState::Routing(_) => false,
-                    _ => {
-                        error!("{:?} Have {} in RT, but have state {:?} for it.",
+                    return None;
+                }
+            };
+            let is_tunnel = match peer.state {
+                PeerState::Routing(RoutingConnection::Tunnel) => true,
+                PeerState::Routing(_) => false,
+                _ => {
+                    error!("{:?} Have {} in RT, but have state {:?} for it.",
                                self,
                                name,
                                peer.state);
-                        return None;
-                    }
-                };
-                Some((peer_id, *name, is_tunnel))
-            })
-            .collect()
+                    return None;
+                }
+            };
+            Some((peer_id, *name, is_tunnel))
+        })
+             .collect(),
+         unknown_rt_names)
     }
 
     pub fn correct_routing_state_to_direct(&mut self, peer_id: &PeerId) {
@@ -1526,6 +1529,13 @@ impl PeerManager {
         } else {
             None
         }
+    }
+
+    /// Removes the given entry from the routing_table, returns the removal details
+    pub fn purge_unknown_rt_name(&mut self,
+                                 name: &XorName)
+                                 -> Result<RemovalDetails<XorName>, RoutingTableError> {
+        self.routing_table.remove(name)
     }
 
     /// Returns the state of the peer with the given name, if present.

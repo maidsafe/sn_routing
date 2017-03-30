@@ -2747,11 +2747,43 @@ impl Node {
         }
     }
 
+    // Drop routing_table entry which is unknown to the peer_manager.
+    fn purge_unknown_rt_name(&mut self, name: &XorName, outbox: &mut EventBox) {
+        info!("{:?} Purging {:?} from the routing table.", self, name);
+        let removal_details = self.peer_mgr.purge_unknown_rt_name(name);
+
+        outbox.send_event(Event::NodeLost(*name, self.peer_mgr.routing_table().clone()));
+
+        self.merge_if_necessary();
+
+        self.peer_mgr
+            .routing_table()
+            .find_section_prefix(name)
+            .map_or((),
+                    |prefix| { self.send_section_list_signature(prefix, None); });
+        if let Ok(details) = removal_details {
+            if details.was_in_our_section {
+                self.reset_rt_timer();
+            }
+        }
+
+        if self.peer_mgr.routing_table().is_empty() {
+            debug!("{:?} Lost all routing connections.", self);
+            if !self.is_first_node {
+                outbox.send_event(Event::RestartRequired);
+            }
+        }
+    }
+
     // Drop peers to which we think we have a direct or tunnel connection, but where Crust reports
     // that we're not connected to the peer or tunnel node respectively.
     fn purge_invalid_rt_entries(&mut self, outbox: &mut EventBox) -> Transition {
         let mut peer_ids_to_drop = vec![];
-        for (peer_id, name, is_tunnel) in self.peer_mgr.get_routing_peer_details() {
+        let (known_peers, unknown_rt_names) = self.peer_mgr.get_routing_peer_details();
+        for name in &unknown_rt_names {
+            self.purge_unknown_rt_name(name, outbox);
+        }
+        for (peer_id, name, is_tunnel) in known_peers {
             if is_tunnel {
                 match self.tunnels.tunnel_for(&peer_id) {
                     Some(tunnel_node_id) => {
