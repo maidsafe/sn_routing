@@ -17,9 +17,49 @@
 
 use routing_table::Xorable;
 use rust_sodium::crypto::hash::sha256;
-use std::fmt::Write;
+use std::fmt::{self, Display, Write};
 use std::iter;
+use std::time::Duration;
 use xor_name::XorName;
+
+
+/// Display a "number" to the given number of decimal places
+pub trait DisplayNumber {
+    /// Construct a formattable object, with the given precision (number of decimal places).
+    fn display_prec(&self, prec: usize) -> DisplayNumberObj;
+}
+
+impl DisplayNumber for Duration {
+    fn display_prec(&self, prec: usize) -> DisplayNumberObj {
+        DisplayNumberObj {
+            number: DisplayNumberType::Duration(*self),
+            prec: prec,
+        }
+    }
+}
+
+// Enumeration of internal types representable by `DisplayNumberObj`
+enum DisplayNumberType {
+    Duration(Duration),
+}
+
+/// Display a number to the given number of decimal places
+pub struct DisplayNumberObj {
+    number: DisplayNumberType,
+    prec: usize,
+}
+
+impl Display for DisplayNumberObj {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.number {
+            DisplayNumberType::Duration(dur) => {
+                let secs = dur.as_secs() as f64 + dur.subsec_nanos() as f64 * 1e-9;
+                // This _does_ round up if the next digit is >= 5
+                write!(f, "{:.*}", self.prec, secs)
+            }
+        }
+    }
+}
 
 /// Format a vector of bytes as a hexadecimal number, ellipsising all but the first and last three.
 ///

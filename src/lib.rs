@@ -162,6 +162,7 @@ mod messages;
 mod node;
 mod outbox;
 mod peer_manager;
+mod resource_prover;
 mod routing_message_filter;
 mod routing_table;
 mod signature_accumulator;
