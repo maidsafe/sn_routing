@@ -127,7 +127,12 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
         where T: 'a,
               U: IntoIterator<Item = &'a Prefix<T>> + Clone
     {
-        let max_prefix_len = prefixes.clone().into_iter().map(|x| x.bit_count()).max().unwrap_or(0);
+        let max_prefix_len = prefixes
+            .clone()
+            .into_iter()
+            .map(|x| x.bit_count())
+            .max()
+            .unwrap_or(0);
         self.is_covered_by_impl(prefixes, max_prefix_len)
     }
 
@@ -135,12 +140,15 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
         where T: 'a,
               U: IntoIterator<Item = &'a Prefix<T>> + Clone
     {
-        prefixes.clone()
+        prefixes
+            .clone()
             .into_iter()
             .any(|x| x.is_compatible(self) && x.bit_count() <= self.bit_count()) ||
         (self.bit_count() <= max_prefix_len &&
-         self.pushed(false).is_covered_by_impl(prefixes.clone(), max_prefix_len) &&
-         self.pushed(true).is_covered_by_impl(prefixes, max_prefix_len))
+         self.pushed(false)
+             .is_covered_by_impl(prefixes.clone(), max_prefix_len) &&
+         self.pushed(true)
+             .is_covered_by_impl(prefixes, max_prefix_len))
     }
 
     /// Returns the neighbouring prefix differing in the `i`-th bit

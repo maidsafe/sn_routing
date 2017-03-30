@@ -84,7 +84,8 @@ fn start_two_services_bootstrap_communicate_exit() {
     unwrap!(service_0.send(id_1, data_sent.clone(), 0));
 
     // 1 should rx data
-    let (data_recvd, peer_id) = expect_event!(event_rx_1,
+    let (data_recvd, peer_id) =
+        expect_event!(event_rx_1,
                       Event::NewMessage(their_id, msg) => (msg, their_id));
 
     assert_eq!(data_recvd, data_sent);
@@ -95,7 +96,8 @@ fn start_two_services_bootstrap_communicate_exit() {
     unwrap!(service_1.send(id_0, data_sent.clone(), 0));
 
     // 0 should rx data
-    let (data_recvd, peer_id) = expect_event!(event_rx_0,
+    let (data_recvd, peer_id) =
+        expect_event!(event_rx_0,
                       Event::NewMessage(their_id, msg) => (msg, their_id));
 
     assert_eq!(data_recvd, data_sent);
@@ -146,7 +148,8 @@ fn start_two_services_rendezvous_connect() {
     unwrap!(service_0.send(id_1, data_sent.clone(), 0));
 
     // 1 should rx data
-    let (data_recvd, peer_id) = expect_event!(event_rx_1,
+    let (data_recvd, peer_id) =
+        expect_event!(event_rx_1,
                       Event::NewMessage(their_id, msg) => (msg, their_id));
 
     assert_eq!(data_recvd, data_sent);
@@ -157,7 +160,8 @@ fn start_two_services_rendezvous_connect() {
     unwrap!(service_1.send(id_0, data_sent.clone(), 0));
 
     // 0 should rx data
-    let (data_recvd, peer_id) = expect_event!(event_rx_0,
+    let (data_recvd, peer_id) =
+        expect_event!(event_rx_0,
                       Event::NewMessage(their_id, msg) => (msg, their_id));
 
     assert_eq!(data_recvd, data_sent);

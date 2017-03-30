@@ -33,7 +33,7 @@ use rust_sodium;
 use rust_sodium::crypto::sign;
 use state_machine::{State, StateMachine};
 use states;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::mpsc::{Receiver, RecvError, Sender, TryRecvError, channel};
 use types::MessageId;
 use xor_name::XorName;
@@ -77,11 +77,11 @@ impl Client {
         let (tx, rx) = channel();
 
         Ok(Client {
-            interface_result_tx: tx,
-            interface_result_rx: rx,
-            machine: machine,
-            event_buffer: event_buffer,
-        })
+               interface_result_tx: tx,
+               interface_result_rx: rx,
+               machine: machine,
+               event_buffer: event_buffer,
+           })
     }
 
     fn make_state_machine(keys: Option<FullId>,
@@ -186,37 +186,53 @@ impl Client {
     }
 
     /// Fetches a list of keys of the provided MutableData
-    #[allow(unused)] // <-- TODO: remove this
-    pub fn list_mdata_keys(&self,
+    pub fn list_mdata_keys(&mut self,
                            dst: Authority<XorName>,
                            name: XorName,
                            tag: u64,
                            msg_id: MessageId)
                            -> Result<(), InterfaceError> {
-        unimplemented!();
+        let request = Request::ListMDataKeys {
+            name: name,
+            tag: tag,
+            msg_id: msg_id,
+        };
+
+        self.send_request(dst, request, CLIENT_GET_PRIORITY)
     }
 
     /// Fetches a list of values of the provided MutableData
-    #[allow(unused)] // <-- TODO: remove this
-    pub fn list_mdata_values(&self,
+    pub fn list_mdata_values(&mut self,
                              dst: Authority<XorName>,
                              name: XorName,
                              tag: u64,
                              msg_id: MessageId)
                              -> Result<(), InterfaceError> {
-        unimplemented!()
+        let request = Request::ListMDataValues {
+            name: name,
+            tag: tag,
+            msg_id: msg_id,
+        };
+
+        self.send_request(dst, request, CLIENT_GET_PRIORITY)
     }
 
     /// Fetches a single value from the provided MutableData by the given key
-    #[allow(unused)] // <-- TODO: remove this
-    pub fn get_mdata_value(&self,
+    pub fn get_mdata_value(&mut self,
                            dst: Authority<XorName>,
                            name: XorName,
                            tag: u64,
                            key: Vec<u8>,
                            msg_id: MessageId)
                            -> Result<(), InterfaceError> {
-        unimplemented!()
+        let request = Request::GetMDataValue {
+            name: name,
+            tag: tag,
+            key: key,
+            msg_id: msg_id,
+        };
+
+        self.send_request(dst, request, CLIENT_GET_PRIORITY)
     }
 
     /// Creates a new `MutableData` in the network
@@ -256,31 +272,41 @@ impl Client {
     }
 
     /// Lists all permissions for a given `MutableData`
-    #[allow(unused)] // <-- TODO: remove this
-    pub fn list_mdata_permissions(&self,
+    pub fn list_mdata_permissions(&mut self,
                                   dst: Authority<XorName>,
                                   name: XorName,
                                   tag: u64,
                                   msg_id: MessageId)
                                   -> Result<(), InterfaceError> {
-        unimplemented!()
+        let request = Request::ListMDataPermissions {
+            name: name,
+            tag: tag,
+            msg_id: msg_id,
+        };
+
+        self.send_request(dst, request, CLIENT_GET_PRIORITY)
     }
 
     /// Lists a permission set for a given user
-    #[allow(unused)] // <-- TODO: remove this
-    pub fn list_mdata_user_permissions(&self,
+    pub fn list_mdata_user_permissions(&mut self,
                                        dst: Authority<XorName>,
                                        name: XorName,
                                        tag: u64,
                                        user: User,
                                        msg_id: MessageId)
                                        -> Result<(), InterfaceError> {
-        unimplemented!()
+        let request = Request::ListMDataUserPermissions {
+            name: name,
+            tag: tag,
+            user: user,
+            msg_id: msg_id,
+        };
+
+        self.send_request(dst, request, CLIENT_GET_PRIORITY)
     }
 
     /// Updates or inserts a permission set for a given user
-    #[allow(unused)] // <-- TODO: remove this
-    pub fn set_mdata_user_permissions(&self,
+    pub fn set_mdata_user_permissions(&mut self,
                                       dst: Authority<XorName>,
                                       name: XorName,
                                       tag: u64,
@@ -290,12 +316,21 @@ impl Client {
                                       msg_id: MessageId,
                                       requester: sign::PublicKey)
                                       -> Result<(), InterfaceError> {
-        unimplemented!()
+        let request = Request::SetMDataUserPermissions {
+            name: name,
+            tag: tag,
+            user: user,
+            permissions: permissions,
+            version: version,
+            msg_id: msg_id,
+            requester: requester,
+        };
+
+        self.send_request(dst, request, DEFAULT_PRIORITY)
     }
 
     /// Deletes a permission set for a given user
-    #[allow(unused)] // <-- TODO: remove this
-    pub fn del_mdata_user_permissions(&self,
+    pub fn del_mdata_user_permissions(&mut self,
                                       dst: Authority<XorName>,
                                       name: XorName,
                                       tag: u64,
@@ -304,21 +339,36 @@ impl Client {
                                       msg_id: MessageId,
                                       requester: sign::PublicKey)
                                       -> Result<(), InterfaceError> {
-        unimplemented!()
+        let request = Request::DelMDataUserPermissions {
+            name: name,
+            tag: tag,
+            user: user,
+            version: version,
+            msg_id: msg_id,
+            requester: requester,
+        };
+
+        self.send_request(dst, request, DEFAULT_PRIORITY)
     }
 
     /// Sends an ownership transfer request
-    #[allow(unused)] // <-- TODO: remove this
-    pub fn change_mdata_owner(&self,
+    pub fn change_mdata_owner(&mut self,
                               dst: Authority<XorName>,
                               name: XorName,
                               tag: u64,
-                              new_owner: sign::PublicKey,
+                              new_owners: BTreeSet<sign::PublicKey>,
                               version: u64,
-                              message_id: MessageId,
-                              requester: sign::PublicKey)
+                              msg_id: MessageId)
                               -> Result<(), InterfaceError> {
-        unimplemented!()
+        let request = Request::ChangeMDataOwner {
+            name: name,
+            tag: tag,
+            new_owners: new_owners,
+            version: version,
+            msg_id: msg_id,
+        };
+
+        self.send_request(dst, request, DEFAULT_PRIORITY)
     }
 
     /// Fetches a list of authorised keys and version in MaidManager
@@ -347,13 +397,19 @@ impl Client {
     }
 
     /// Removes an authorised key from MaidManager
-    pub fn del_auth_key(&self,
-                        _dst: Authority<XorName>,
-                        _key: sign::PublicKey,
-                        _version: u64,
-                        _message_id: MessageId)
+    pub fn del_auth_key(&mut self,
+                        dst: Authority<XorName>,
+                        key: sign::PublicKey,
+                        version: u64,
+                        message_id: MessageId)
                         -> Result<(), InterfaceError> {
-        unimplemented!()
+        let request = Request::DelAuthKey {
+            key: key,
+            version: version,
+            msg_id: message_id,
+        };
+
+        self.send_request(dst, request, DEFAULT_PRIORITY)
     }
 
     /// Returns the name of this node.
@@ -376,8 +432,11 @@ impl Client {
             result_tx: self.interface_result_tx.clone(),
         };
 
-        let transition = self.machine.current_mut().handle_action(action, &mut self.event_buffer);
-        self.machine.apply_transition(transition, &mut self.event_buffer);
+        let transition = self.machine
+            .current_mut()
+            .handle_action(action, &mut self.event_buffer);
+        self.machine
+            .apply_transition(transition, &mut self.event_buffer);
         self.interface_result_rx.recv()?
     }
 }
@@ -396,7 +455,9 @@ impl Client {
 
     /// Returns the `crust::Config` associated with the `crust::Service` (if any).
     pub fn bootstrap_config(&self) -> BootstrapConfig {
-        self.machine.bootstrap_config().unwrap_or_else(BootstrapConfig::default)
+        self.machine
+            .bootstrap_config()
+            .unwrap_or_else(BootstrapConfig::default)
     }
 }
 
@@ -419,7 +480,9 @@ impl EventStepper for Client {
 impl Drop for Client {
     fn drop(&mut self) {
         self.poll();
-        let _ = self.machine.current_mut().handle_action(Action::Terminate, &mut self.event_buffer);
+        let _ = self.machine
+            .current_mut()
+            .handle_action(Action::Terminate, &mut self.event_buffer);
         let _ = self.event_buffer.take_all();
     }
 }

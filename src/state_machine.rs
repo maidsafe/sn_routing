@@ -97,7 +97,8 @@ impl State {
     }
 
     fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
-        self.base_state().and_then(|state| state.close_group(name, count))
+        self.base_state()
+            .and_then(|state| state.close_group(name, count))
     }
 
     fn base_state(&self) -> Option<&Base> {
@@ -273,7 +274,10 @@ impl StateMachine {
     pub fn apply_transition(&mut self, transition: Transition, outbox: &mut EventBox) {
         match transition {
             Transition::Stay => (),
-            Transition::IntoBootstrapped { proxy_peer_id, proxy_public_id } => {
+            Transition::IntoBootstrapped {
+                proxy_peer_id,
+                proxy_public_id,
+            } => {
                 // Temporarily switch to `Terminated` to allow moving out of the current
                 // state without moving `self`.
                 let prev_state = mem::replace(&mut self.state, State::Terminated);

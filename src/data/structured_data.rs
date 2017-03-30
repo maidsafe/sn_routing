@@ -54,13 +54,13 @@ impl StructuredData {
         }
 
         Ok(StructuredData {
-            type_tag: type_tag,
-            name: name,
-            data: data,
-            version: version,
-            owners: owners,
-            signatures: BTreeMap::new(),
-        })
+               type_tag: type_tag,
+               name: name,
+               data: data,
+               version: version,
+               owners: owners,
+               signatures: BTreeMap::new(),
+           })
     }
 
     /// Replaces this data item with the given updated version if the update is valid, otherwise
@@ -235,12 +235,12 @@ mod tests {
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
                                                 structured_data.get_signatures())
-                    .is_err());
+                                .is_err());
                 assert!(structured_data.add_signature(&keys).is_ok());
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
                                                 structured_data.get_signatures())
-                    .is_ok());
+                                .is_ok());
             }
             Err(error) => panic!("Error: {:?}", error),
         }
@@ -263,7 +263,7 @@ mod tests {
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
                                                 structured_data.get_signatures())
-                    .is_err());
+                                .is_err());
             }
             Err(error) => panic!("Error: {:?}", error),
         }

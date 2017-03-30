@@ -96,17 +96,26 @@ pub struct NodeBuilder {
 impl NodeBuilder {
     /// Configures the node to use the given request cache.
     pub fn cache(self, cache: Box<Cache>) -> NodeBuilder {
-        NodeBuilder { cache: cache, ..self }
+        NodeBuilder {
+            cache: cache,
+            ..self
+        }
     }
 
     /// Configures the node to start a new network instead of joining an existing one.
     pub fn first(self, first: bool) -> NodeBuilder {
-        NodeBuilder { first: first, ..self }
+        NodeBuilder {
+            first: first,
+            ..self
+        }
     }
 
     /// Causes node creation to fail if another node on the local network is detected.
     pub fn deny_other_local_nodes(self) -> NodeBuilder {
-        NodeBuilder { deny_other_local_nodes: true, ..self }
+        NodeBuilder {
+            deny_other_local_nodes: true,
+            ..self
+        }
     }
 
     /// Creates new `Node`.
@@ -128,11 +137,11 @@ impl NodeBuilder {
         let (tx, rx) = channel();
 
         Ok(Node {
-            interface_result_tx: tx,
-            interface_result_rx: rx,
-            machine: machine,
-            event_buffer: ev_buffer,
-        })
+               interface_result_tx: tx,
+               interface_result_rx: rx,
+               machine: machine,
+               event_buffer: ev_buffer,
+           })
     }
 
     // TODO - remove this `rustfmt_skip` once rustfmt stops adding trailing space at `else if`.
@@ -313,9 +322,9 @@ impl Node {
                                    msg_id: MessageId)
                                    -> Result<(), InterfaceError> {
         let msg = UserMessage::Response(Response::GetIData {
-            res: res,
-            msg_id: msg_id,
-        });
+                                            res: res,
+                                            msg_id: msg_id,
+                                        });
 
         let priority = if dst.is_client() {
             CLIENT_GET_PRIORITY
@@ -451,8 +460,11 @@ impl Node {
             result_tx: self.interface_result_tx.clone(),
         };
 
-        let transition = self.machine.current_mut().handle_action(action, &mut self.event_buffer);
-        self.machine.apply_transition(transition, &mut self.event_buffer);
+        let transition = self.machine
+            .current_mut()
+            .handle_action(action, &mut self.event_buffer);
+        self.machine
+            .apply_transition(transition, &mut self.event_buffer);
         self.interface_result_rx.recv()?
     }
 }
@@ -492,7 +504,9 @@ impl Node {
 
     /// Check whether this node acts as a tunnel node between `client_1` and `client_2`.
     pub fn has_tunnel_clients(&self, client_1: PeerId, client_2: PeerId) -> bool {
-        self.machine.current().has_tunnel_clients(client_1, client_2)
+        self.machine
+            .current()
+            .has_tunnel_clients(client_1, client_2)
     }
 
     /// Resend all unacknowledged messages.
@@ -519,7 +533,9 @@ impl Node {
 
     /// Sets a name to be used when the next node relocation request is received by this node.
     pub fn set_next_node_name(&mut self, relocation_name: XorName) {
-        self.machine.current_mut().set_next_node_name(Some(relocation_name))
+        self.machine
+            .current_mut()
+            .set_next_node_name(Some(relocation_name))
     }
 
     /// Clears the name to be used when the next node relocation request is received by this node so
@@ -539,7 +555,9 @@ impl Debug for Node {
 impl Drop for Node {
     fn drop(&mut self) {
         self.poll();
-        let _ = self.machine.current_mut().handle_action(Action::Terminate, &mut self.event_buffer);
+        let _ = self.machine
+            .current_mut()
+            .handle_action(Action::Terminate, &mut self.event_buffer);
         let _ = self.event_buffer.take_all();
     }
 }

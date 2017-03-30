@@ -66,7 +66,8 @@ pub trait Bootstrapped: Base {
             return false;
         }
 
-        let token = self.timer().schedule(Duration::from_secs(ACK_TIMEOUT_SECS));
+        let token = self.timer()
+            .schedule(Duration::from_secs(ACK_TIMEOUT_SECS));
         let unacked_msg = UnacknowledgedMessage {
             routing_msg: routing_msg.clone(),
             route: route,
@@ -90,7 +91,8 @@ pub trait Bootstrapped: Base {
                                    peer_id: &PeerId,
                                    route: u8)
                                    -> bool {
-        if self.routing_msg_filter().filter_outgoing(msg, peer_id, route) {
+        if self.routing_msg_filter()
+               .filter_outgoing(msg, peer_id, route) {
             return true;
         }
 

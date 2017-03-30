@@ -46,9 +46,12 @@ impl SectionListCache {
     pub fn remove_signatures_by(&mut self, author: PublicId, our_section_size: usize) {
         if let Some(lists) = self.signed_by.remove(&author) {
             for (prefix, list) in lists {
-                let _ = self.signatures.get_mut(&prefix).map_or(None, |map| {
-                    map.get_mut(&list).map_or(None, |sigmap| sigmap.remove(&author))
-                });
+                let _ = self.signatures
+                    .get_mut(&prefix)
+                    .map_or(None, |map| {
+                        map.get_mut(&list)
+                            .map_or(None, |sigmap| sigmap.remove(&author))
+                    });
             }
             self.prune();
             self.update_lists_cache(our_section_size);
@@ -65,8 +68,10 @@ impl SectionListCache {
         // remove all conflicting signatures
         self.remove_signatures_for_prefix_by(prefix, pub_id);
         // remember that this public id signed this section list
-        let _ =
-            self.signed_by.entry(pub_id).or_insert_with(HashMap::new).insert(prefix, list.clone());
+        let _ = self.signed_by
+            .entry(pub_id)
+            .or_insert_with(HashMap::new)
+            .insert(prefix, list.clone());
         // remember that this section list has a new signature
         let _ = self.signatures
             .entry(prefix)
@@ -129,7 +134,8 @@ impl SectionListCache {
                 if 100 * sig_count >= QUORUM * our_section_size {
                     // we have a list with a quorum of signatures
                     let signatures = unwrap!(map.get(list));
-                    let _ = self.lists_cache.insert(*prefix, (list.clone(), signatures.clone()));
+                    let _ = self.lists_cache
+                        .insert(*prefix, (list.clone(), signatures.clone()));
                 }
             }
         }
@@ -146,11 +152,16 @@ impl SectionListCache {
             .collect_vec();
         for (prefix, list) in to_remove {
             // remove the signatures from self.signatures
-            let _ = self.signatures.get_mut(&prefix).map_or(None, |map| {
-                map.get_mut(&list).map_or(None, |sigmap| sigmap.remove(&author))
-            });
+            let _ = self.signatures
+                .get_mut(&prefix)
+                .map_or(None, |map| {
+                    map.get_mut(&list)
+                        .map_or(None, |sigmap| sigmap.remove(&author))
+                });
             // remove those entries from self.signed_by
-            let _ = self.signed_by.get_mut(&author).map_or(None, |map| map.remove(&prefix));
+            let _ = self.signed_by
+                .get_mut(&author)
+                .map_or(None, |map| map.remove(&prefix));
         }
 
         self.prune();

@@ -217,11 +217,11 @@ impl HopMessage {
                -> Result<HopMessage, RoutingError> {
         let bytes_to_sign = serialise(&content)?;
         Ok(HopMessage {
-            content: content,
-            route: route,
-            sent_to: sent_to,
-            signature: sign::sign_detached(&bytes_to_sign, signing_key),
-        })
+               content: content,
+               route: route,
+               sent_to: sent_to,
+               signature: sign::sign_detached(&bytes_to_sign, signing_key),
+           })
     }
 
     /// Validate that the message is signed by `verification_key` contained in message.
@@ -285,10 +285,10 @@ impl SignedMessage {
         src_sections.sort_by_key(|list| list.prefix);
         let sig = sign::sign_detached(&serialise(&content)?, full_id.signing_private_key());
         Ok(SignedMessage {
-            content: content,
-            src_sections: src_sections,
-            signatures: iter::once((*full_id.public_id(), sig)).collect(),
-        })
+               content: content,
+               src_sections: src_sections,
+               signatures: iter::once((*full_id.public_id(), sig)).collect(),
+           })
     }
 
     /// Confirms the signatures.
@@ -311,7 +311,10 @@ impl SignedMessage {
 
     /// Returns the number of nodes in the source authority.
     pub fn src_size(&self) -> usize {
-        self.src_sections.iter().map(|sl| sl.pub_ids.len()).sum()
+        self.src_sections
+            .iter()
+            .map(|sl| sl.pub_ids.len())
+            .sum()
     }
 
     /// Adds the given signature if it is new, without validating it. If the collection of section
@@ -375,7 +378,9 @@ impl SignedMessage {
 
     // Returns true iff `pub_id` is in self.section_lists
     fn is_sender(&self, pub_id: &PublicId) -> bool {
-        self.src_sections.iter().any(|list| list.pub_ids.contains(pub_id))
+        self.src_sections
+            .iter()
+            .any(|list| list.pub_ids.contains(pub_id))
     }
 
     // Returns a list of all invalid signatures (not from an expected key or not cryptographically
@@ -427,20 +432,23 @@ impl SignedMessage {
             }
             Section(_) => {
                 // Note: there should be exactly one source section, but we use safe code:
-                let num_sending =
-                    self.src_sections.iter().fold(0, |count, list| count + list.pub_ids.len());
+                let num_sending = self.src_sections
+                    .iter()
+                    .fold(0, |count, list| count + list.pub_ids.len());
                 let valid_sigs = self.signatures.len();
                 QUORUM * num_sending <= 100 * valid_sigs
             }
             PrefixSection(_) => {
                 // Each section must have enough signatures:
-                self.src_sections.iter().all(|list| {
-                    let valid_sigs = self.signatures
-                        .keys()
-                        .filter(|pub_id| list.pub_ids.contains(pub_id))
-                        .count();
-                    QUORUM * list.pub_ids.len() <= 100 * valid_sigs
-                })
+                self.src_sections
+                    .iter()
+                    .all(|list| {
+                             let valid_sigs = self.signatures
+                                 .keys()
+                                 .filter(|pub_id| list.pub_ids.contains(pub_id))
+                                 .count();
+                             QUORUM * list.pub_ids.len() <= 100 * valid_sigs
+                         })
             }
             ManagedNode(_) | Client { .. } => self.signatures.len() == 1,
         }
@@ -462,10 +470,10 @@ impl RoutingMessage {
     /// Create ack for the given message
     pub fn ack_from(msg: &RoutingMessage, src: Authority<XorName>) -> Result<Self, RoutingError> {
         Ok(RoutingMessage {
-            src: src,
-            dst: msg.src,
-            content: MessageContent::Ack(Ack::compute(msg)?, msg.priority()),
-        })
+               src: src,
+               dst: msg.src,
+               content: MessageContent::Ack(Ack::compute(msg)?, msg.priority()),
+           })
     }
 
     /// Returns the priority Crust should send this message with.
@@ -718,14 +726,23 @@ impl Debug for DirectMessage {
             TunnelSuccess(peer_id) => write!(formatter, "TunnelSuccess({:?})", peer_id),
             TunnelClosed(peer_id) => write!(formatter, "TunnelClosed({:?})", peer_id),
             TunnelDisconnect(peer_id) => write!(formatter, "TunnelDisconnect({:?})", peer_id),
-            ResourceProof { ref seed, ref target_size, ref difficulty } => {
+            ResourceProof {
+                ref seed,
+                ref target_size,
+                ref difficulty,
+            } => {
                 write!(formatter,
                        "ResourceProof {{ seed: {:?}, target_size: {:?}, difficulty: {:?} }}",
                        seed,
                        target_size,
                        difficulty)
             }
-            ResourceProofResponse { part_index, part_count, ref proof, leading_zero_bytes } => {
+            ResourceProofResponse {
+                part_index,
+                part_count,
+                ref proof,
+                leading_zero_bytes,
+            } => {
                 write!(formatter,
                        "ResourceProofResponse {{ part {}/{}, proof_len: {:?}, leading_zero_bytes: \
                         {:?} }}",
@@ -762,48 +779,72 @@ impl Debug for MessageContent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         use self::MessageContent::*;
         match *self {
-            GetNodeName { ref current_id, ref message_id } => {
+            GetNodeName {
+                ref current_id,
+                ref message_id,
+            } => {
                 write!(formatter,
                        "GetNodeName {{ {:?}, {:?} }}",
                        current_id,
                        message_id)
             }
-            ExpectCandidate { ref expect_id, ref client_auth, ref message_id } => {
+            ExpectCandidate {
+                ref expect_id,
+                ref client_auth,
+                ref message_id,
+            } => {
                 write!(formatter,
                        "ExpectCandidate {{ {:?}, {:?}, {:?} }}",
                        expect_id,
                        client_auth,
                        message_id)
             }
-            ConnectionInfoRequest { ref pub_id, ref msg_id, .. } => {
+            ConnectionInfoRequest {
+                ref pub_id,
+                ref msg_id,
+                ..
+            } => {
                 write!(formatter,
                        "ConnectionInfoRequest {{ {:?}, {:?}, .. }}",
                        pub_id,
                        msg_id)
             }
-            ConnectionInfoResponse { ref pub_id, ref msg_id, .. } => {
+            ConnectionInfoResponse {
+                ref pub_id,
+                ref msg_id,
+                ..
+            } => {
                 write!(formatter,
                        "ConnectionInfoResponse {{ {:?}, {:?}, .. }}",
                        pub_id,
                        msg_id)
             }
-            GetNodeNameResponse { ref relocated_id, ref section, ref message_id } => {
+            GetNodeNameResponse {
+                ref relocated_id,
+                ref section,
+                ref message_id,
+            } => {
                 write!(formatter,
                        "GetNodeNameResponse {{ {:?}, {:?}, {:?} }}",
                        relocated_id,
                        section,
                        message_id)
             }
-            SectionUpdate { ref prefix, ref members } => {
-                write!(formatter, "SectionUpdate {{ {:?}, {:?} }}", prefix, members)
-            }
+            SectionUpdate {
+                ref prefix,
+                ref members,
+            } => write!(formatter, "SectionUpdate {{ {:?}, {:?} }}", prefix, members),
             RoutingTableRequest(ref msg_id, ref digest) => {
                 write!(formatter,
                        "RoutingTableRequest({:?}, {})",
                        msg_id,
                        utils::format_binary_array(&digest.0))
             }
-            RoutingTableResponse { ref prefix, ref members, ref message_id } => {
+            RoutingTableResponse {
+                ref prefix,
+                ref members,
+                ref message_id,
+            } => {
                 write!(formatter,
                        "RoutingTableResponse {{ {:?}, {:?}, {:?} }}",
                        prefix,
@@ -816,7 +857,14 @@ impl Debug for MessageContent {
             OwnSectionMerge(ref sections) => write!(formatter, "OwnSectionMerge({:?})", sections),
             OtherSectionMerge(ref section) => write!(formatter, "OtherSectionMerge({:?})", section),
             Ack(ack, priority) => write!(formatter, "Ack({:?}, {})", ack, priority),
-            UserMessagePart { hash, part_count, part_index, priority, cacheable, .. } => {
+            UserMessagePart {
+                hash,
+                part_count,
+                part_index,
+                priority,
+                cacheable,
+                ..
+            } => {
                 write!(formatter,
                        "UserMessagePart {{ {}/{}, priority: {}, cacheable: {}, \
                         {:02x}{:02x}{:02x}.. }}",
@@ -828,14 +876,22 @@ impl Debug for MessageContent {
                        hash[1],
                        hash[2])
             }
-            AcceptAsCandidate { ref expect_id, ref client_auth, ref message_id } => {
+            AcceptAsCandidate {
+                ref expect_id,
+                ref client_auth,
+                ref message_id,
+            } => {
                 write!(formatter,
                        "AcceptAsCandidate {{ {:?}, {:?}, {:?} }}",
                        expect_id,
                        client_auth,
                        message_id)
             }
-            CandidateApproval { ref candidate_id, ref client_auth, ref sections } => {
+            CandidateApproval {
+                ref candidate_id,
+                ref client_auth,
+                ref sections,
+            } => {
                 write!(formatter,
                        "CandidateApproval {{ candidate_id: {:?}, client_auth: {:?}, sections: \
                         {:?} }}",
@@ -867,17 +923,17 @@ impl UserMessage {
         let part_count = (len + MAX_PART_LEN - 1) / MAX_PART_LEN;
 
         Ok((0..part_count)
-            .map(|i| {
-                MessageContent::UserMessagePart {
-                    hash: hash,
-                    part_count: part_count as u32,
-                    part_index: i as u32,
-                    cacheable: self.is_cacheable(),
-                    payload: payload[(i * len / part_count)..((i + 1) * len / part_count)].to_vec(),
-                    priority: priority,
-                }
-            })
-            .collect())
+               .map(|i| {
+            MessageContent::UserMessagePart {
+                hash: hash,
+                part_count: part_count as u32,
+                part_index: i as u32,
+                cacheable: self.is_cacheable(),
+                payload: payload[(i * len / part_count)..((i + 1) * len / part_count)].to_vec(),
+                priority: priority,
+            }
+        })
+               .collect())
     }
 
     /// Puts the given parts of a serialised message together and verifies that it matches the
@@ -945,7 +1001,9 @@ impl UserMessageCache {
                payload: Vec<u8>)
                -> Option<UserMessage> {
         {
-            let entry = self.0.entry((hash, part_count)).or_insert_with(BTreeMap::new);
+            let entry = self.0
+                .entry((hash, part_count))
+                .or_insert_with(BTreeMap::new);
             if entry.insert(part_index, payload).is_some() {
                 debug!("Duplicate UserMessagePart {}/{} with hash {:02x}{:02x}{:02x}.. \
                         added to cache.",
@@ -1046,9 +1104,9 @@ mod tests {
         let data_bytes: Vec<u8> = (0..10).map(|i| i as u8).collect();
         let data = ImmutableData::new(data_bytes);
         let user_msg = UserMessage::Request(Request::PutIData {
-            data: data,
-            msg_id: MessageId::new(),
-        });
+                                                data: data,
+                                                msg_id: MessageId::new(),
+                                            });
         let parts = unwrap!(user_msg.to_parts(1));
         assert_eq!(1, parts.len());
         let part = parts[0].clone();
@@ -1067,8 +1125,10 @@ mod tests {
         assert_eq!(signed_msg.signatures.len(), 1);
 
         // Try to add a signature which will not correspond to an ID from the sending nodes.
-        let irrelevant_sig = match unwrap!(signed_msg.routing_message()
-            .to_signature(irrelevant_full_id.signing_private_key())) {
+        let irrelevant_sig = match unwrap!(signed_msg
+                                               .routing_message()
+                                               .to_signature(irrelevant_full_id
+                                                                 .signing_private_key())) {
             DirectMessage::MessageSignature(_, sig) => {
                 signed_msg.add_signature(*irrelevant_full_id.public_id(), sig);
                 sig
@@ -1076,11 +1136,15 @@ mod tests {
             msg => panic!("Unexpected message: {:?}", msg),
         };
         assert_eq!(signed_msg.signatures.len(), 1);
-        assert!(!signed_msg.signatures.contains_key(irrelevant_full_id.public_id()));
+        assert!(!signed_msg
+                     .signatures
+                     .contains_key(irrelevant_full_id.public_id()));
         assert!(!signed_msg.check_fully_signed(min_section_size));
 
         // Add a valid signature for ID 1 and an invalid one for ID 2
-        match unwrap!(signed_msg.routing_message().to_signature(full_id_1.signing_private_key())) {
+        match unwrap!(signed_msg
+                          .routing_message()
+                          .to_signature(full_id_1.signing_private_key())) {
             DirectMessage::MessageSignature(hash, sig) => {
                 let serialised_msg = unwrap!(serialise(signed_msg.routing_message()));
                 assert_eq!(hash, sha256::hash(&serialised_msg));
@@ -1100,7 +1164,9 @@ mod tests {
         // Check an irrelevant signature can't be added.
         signed_msg.add_signature(*irrelevant_full_id.public_id(), irrelevant_sig);
         assert_eq!(signed_msg.signatures.len(), 2);
-        assert!(!signed_msg.signatures.contains_key(irrelevant_full_id.public_id()));
+        assert!(!signed_msg
+                     .signatures
+                     .contains_key(irrelevant_full_id.public_id()));
     }
 
     #[test]
@@ -1137,30 +1203,33 @@ mod tests {
         let data_bytes: Vec<u8> = (0..(MAX_PART_LEN * 2)).map(|i| i as u8).collect();
         let data = ImmutableData::new(data_bytes);
         let user_msg = UserMessage::Request(Request::PutIData {
-            data: data,
-            msg_id: MessageId::new(),
-        });
+                                                data: data,
+                                                msg_id: MessageId::new(),
+                                            });
         let msg_hash = sha3_256(&unwrap!(serialise(&user_msg)));
         let parts = unwrap!(user_msg.to_parts(42));
         assert_eq!(parts.len(), 3);
-        let payloads: Vec<Vec<u8>> = parts.into_iter()
+        let payloads: Vec<Vec<u8>> = parts
+            .into_iter()
             .enumerate()
             .map(|(i, msg)| match msg {
-                MessageContent::UserMessagePart { hash,
-                                                  part_count,
-                                                  part_index,
-                                                  payload,
-                                                  priority,
-                                                  cacheable } => {
-                    assert_eq!(msg_hash, hash);
-                    assert_eq!(3, part_count);
-                    assert_eq!(i, part_index as usize);
-                    assert_eq!(42, priority);
-                    assert!(!cacheable);
-                    payload
-                }
-                msg => panic!("Unexpected message {:?}", msg),
-            })
+                     MessageContent::UserMessagePart {
+                         hash,
+                         part_count,
+                         part_index,
+                         payload,
+                         priority,
+                         cacheable,
+                     } => {
+                assert_eq!(msg_hash, hash);
+                assert_eq!(3, part_count);
+                assert_eq!(i, part_index as usize);
+                assert_eq!(42, priority);
+                assert!(!cacheable);
+                payload
+            }
+                     msg => panic!("Unexpected message {:?}", msg),
+                 })
             .collect();
         let deserialised_user_msg = unwrap!(UserMessage::from_parts(msg_hash, payloads.iter()));
         assert_eq!(user_msg, deserialised_user_msg);

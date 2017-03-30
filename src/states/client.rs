@@ -88,7 +88,12 @@ impl Client {
 
     pub fn handle_action(&mut self, action: Action) -> Transition {
         match action {
-            Action::ClientSendRequest { content, dst, priority, result_tx } => {
+            Action::ClientSendRequest {
+                content,
+                dst,
+                priority,
+                result_tx,
+            } => {
                 let src = Authority::Client {
                     client_key: *self.full_id.public_id().signing_public_key(),
                     proxy_node_name: *self.proxy_public_id.name(),
@@ -196,7 +201,8 @@ impl Client {
         }
 
         // Prevents us repeatedly handling identical messages sent by a malicious peer.
-        match self.routing_msg_filter.filter_incoming(routing_msg, hop_msg.route) {
+        match self.routing_msg_filter
+                  .filter_incoming(routing_msg, hop_msg.route) {
             FilteringResult::KnownMessage |
             FilteringResult::KnownMessageAndRoute => return Err(RoutingError::FilterCheckFailed),
             FilteringResult::NewMessage => (),
@@ -215,7 +221,13 @@ impl Client {
                                 -> Transition {
         match routing_msg.content {
             MessageContent::Ack(ack, _) => self.handle_ack_response(ack),
-            MessageContent::UserMessagePart { hash, part_count, part_index, payload, .. } => {
+            MessageContent::UserMessagePart {
+                hash,
+                part_count,
+                part_index,
+                payload,
+                ..
+            } => {
                 trace!("{:?} Got UserMessagePart {:02x}{:02x}{:02x}.., {}/{} from {:?} to {:?}.",
                        self,
                        hash[0],
@@ -225,7 +237,8 @@ impl Client {
                        part_index,
                        routing_msg.src,
                        routing_msg.dst);
-                if let Some(msg) = self.user_msg_cache.add(hash, part_count, part_index, payload) {
+                if let Some(msg) = self.user_msg_cache
+                       .add(hash, part_count, part_index, payload) {
                     self.stats().count_user_message(&msg);
                     outbox.send_event(msg.into_event(routing_msg.src, routing_msg.dst));
                 }

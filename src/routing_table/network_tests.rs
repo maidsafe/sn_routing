@@ -62,7 +62,8 @@ impl Network {
         let name = self.random_free_name(); // The new node's name.
         if self.nodes.is_empty() {
             // If this is the first node, just add it and return.
-            let result = self.nodes.insert(name, RoutingTable::new(name, self.min_section_size));
+            let result = self.nodes
+                .insert(name, RoutingTable::new(name, self.min_section_size));
             assert!(result.is_none());
             return;
         }
@@ -150,16 +151,19 @@ impl Network {
                 let nodes = self.nodes_covered_by_prefixes(&[merge_own_details.merge_prefix]);
                 for node in &nodes {
                     let target_node = unwrap!(self.nodes.get_mut(&node));
-                    let node_expected = expected_peers.entry(*node)
-                        .or_insert_with(BTreeSet::new);
+                    let node_expected = expected_peers.entry(*node).or_insert_with(BTreeSet::new);
                     for section in &merge_own_details.sections {
-                        node_expected.extend(
-                            section.1.iter().filter(|name| !target_node.has(name)));
+                        node_expected.extend(section.1.iter().filter(|name| {
+                                                                         !target_node.has(name)
+                                                                     }));
                     }
                     match target_node.merge_own_section(merge_own_details.clone()) {
                         OwnMergeState::Ongoing |
                         OwnMergeState::AlreadyMerged => (),
-                        OwnMergeState::Completed { targets, merge_details } => {
+                        OwnMergeState::Completed {
+                            targets,
+                            merge_details,
+                        } => {
                             Network::store_merge_info(&mut merge_other_info,
                                                       *target_node.our_prefix(),
                                                       (targets, merge_details));

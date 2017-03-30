@@ -58,7 +58,11 @@ impl Debug for Action {
                        "Action::NodeSendMessage {{ {:?}, result_tx }}",
                        content)
             }
-            Action::ClientSendRequest { ref content, ref dst, .. } => {
+            Action::ClientSendRequest {
+                ref content,
+                ref dst,
+                ..
+            } => {
                 write!(formatter,
                        "Action::ClientSendRequest {{ {:?}, dst: {:?}, result_tx }}",
                        content,

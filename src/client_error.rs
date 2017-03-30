@@ -48,8 +48,6 @@ pub enum ClientError {
     InvalidSuccessor,
     /// Invalid Operation such as a POST on ImmutableData
     InvalidOperation,
-    /// Too many mutable data entries mutated at the same time
-    TooManyMutations,
     /// Insufficient balance for performing a given mutating operation
     LowBalance,
     /// The loss of sacrificial copies indicates the network as a whole is no longer having
@@ -84,7 +82,6 @@ impl Display for ClientError {
             ClientError::InvalidSuccessor => {
                 write!(f, "Data given is not a valid successor of stored data")
             }
-            ClientError::TooManyMutations => write!(f, "Too many mutations"),
             ClientError::LowBalance => write!(f, "Insufficient account balance for this operation"),
             ClientError::NetworkFull => write!(f, "Network cannot store any further data"),
             ClientError::NetworkOther(ref error) => write!(f, "Error on Vault network: {}", error),
@@ -108,7 +105,6 @@ impl Error for ClientError {
             ClientError::InvalidOwners => "Invalid owners",
             ClientError::InvalidSuccessor => "Invalid data successor",
             ClientError::InvalidOperation => "Invalid operation",
-            ClientError::TooManyMutations => "Too many mutations",
             ClientError::LowBalance => "Low account balance",
             ClientError::NetworkFull => "Network full",
             ClientError::NetworkOther(ref error) => error,
