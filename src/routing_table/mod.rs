@@ -330,17 +330,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         self.lookup_section(prefix).map(|(v, _)| v)
     }
 
-    /// Look up a single section (which can be our own).
-    fn lookup_section(&self, prefix: &Prefix<T>) -> Option<(u64, &BTreeSet<T>)> {
-        if *prefix == self.our_prefix {
-            Some((self.our_version, &self.our_section))
-        } else {
-            self.sections
-                .get(prefix)
-                .map(|&(ver, ref section)| (ver, section))
-        }
-    }
-
     /// Returns the total number of entries in the routing table, excluding our own name.
     // TODO: refactor to include our name?
     pub fn len(&self) -> usize {
@@ -447,20 +436,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         self.closest_names(name, count).is_some()
     }
 
-    // Finds the `count` names closest to `name` in the whole routing table
-    fn closest_known_names(&self, name: &T, count: usize) -> Vec<&T> {
-        self.all_sections_iter()
-            .sorted_by(|&(pfx0, _), &(pfx1, _)| pfx0.cmp_distance(&pfx1, name))
-            .into_iter()
-            .flat_map(|(_, (_, section))| {
-                          section
-                              .iter()
-                              .sorted_by(|name0, name1| name.cmp_distance(name0, name1))
-                      })
-            .take(count)
-            .collect_vec()
-    }
-
     /// Returns the `count` closest entries to `name` in the routing table, including our own name,
     /// sorted by ascending distance to `name`. If we are not close, returns `None`.
     pub fn closest_names(&self, name: &T, count: usize) -> Option<Vec<&T>> {
@@ -547,6 +522,31 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             return Err(Error::PeerNameUnsuitable);
         }
         Ok(())
+    }
+
+    /// Look up a single section (which can be our own).
+    fn lookup_section(&self, prefix: &Prefix<T>) -> Option<(u64, &BTreeSet<T>)> {
+        if *prefix == self.our_prefix {
+            Some((self.our_version, &self.our_section))
+        } else {
+            self.sections
+                .get(prefix)
+                .map(|&(ver, ref section)| (ver, section))
+        }
+    }
+
+    // Finds the `count` names closest to `name` in the whole routing table
+    fn closest_known_names(&self, name: &T, count: usize) -> Vec<&T> {
+        self.all_sections_iter()
+            .sorted_by(|&(pfx0, _), &(pfx1, _)| pfx0.cmp_distance(&pfx1, name))
+            .into_iter()
+            .flat_map(|(_, (_, section))| {
+                          section
+                              .iter()
+                              .sorted_by(|name0, name1| name.cmp_distance(name0, name1))
+                      })
+            .take(count)
+            .collect_vec()
     }
 
     /// Return true if any neighbouring section needs to merge with our section.
