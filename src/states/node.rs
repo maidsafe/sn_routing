@@ -2747,42 +2747,19 @@ impl Node {
         }
     }
 
-    // Drop out_of_sync nodes from routing_table and from peer_map as well if known.
-    fn purge_out_of_sync_peer(&mut self, name: &XorName, outbox: &mut EventBox) {
-        info!("{:?} Purging {:?} from the routing table.", self, name);
-        let removal_details = self.peer_mgr.purge_out_of_sync_peer(name);
-
-        outbox.send_event(Event::NodeLost(*name, self.peer_mgr.routing_table().clone()));
-
-        self.merge_if_necessary();
-
-        if let Some(prefix) = self.peer_mgr.routing_table().find_section_prefix(name) {
-            self.send_section_list_signature(prefix, None);
-        }
-        if let Ok(details) = removal_details {
-            if details.was_in_our_section {
-                self.reset_rt_timer();
-            }
-        }
-
-        if self.peer_mgr.routing_table().is_empty() {
-            debug!("{:?} Lost all routing connections.", self);
-            if !self.is_first_node {
-                outbox.send_event(Event::RestartRequired);
-            }
-        }
-    }
-
     // Drop peers to which we think we have a direct or tunnel connection, but where Crust reports
     // that we're not connected to the peer or tunnel node respectively.
     fn purge_invalid_rt_entries(&mut self, outbox: &mut EventBox) -> Transition {
         let mut peer_ids_to_drop = vec![];
         let (known_peers, unknown_rt_names) = self.peer_mgr.get_routing_peer_details();
         for &(name, opt_peer_id) in &unknown_rt_names {
+            info!("{:?} Purging {:?} from the routing table.", self, name);
             if let Some(peer_id) = opt_peer_id {
                 self.dropped_peer(&peer_id, outbox, true);
             } else {
-                self.purge_out_of_sync_peer(&name, outbox);
+                if let Ok(removal_details) = self.peer_mgr.purge_out_of_sync_peer(&name) {
+                    self.dropped_routing_node(&name, removal_details, outbox);
+                }
             }
         }
         for (peer_id, name, is_tunnel) in known_peers {
@@ -3230,7 +3207,7 @@ impl Node {
         };
 
         if let Ok(removal_details) = removal_result {
-            if !self.dropped_routing_node(peer.pub_id(), removal_details, outbox) {
+            if !self.dropped_routing_node(peer.name(), removal_details, outbox) {
                 return false;
             }
         }
@@ -3283,7 +3260,7 @@ impl Node {
     // Handle dropped routing peer with the given name and removal details. Returns true if we
     // should keep running, false if we should terminate.
     fn dropped_routing_node(&mut self,
-                            pub_id: &PublicId,
+                            name: &XorName,
                             details: RemovalDetails<XorName>,
                             outbox: &mut EventBox)
                             -> bool {
@@ -3303,7 +3280,7 @@ impl Node {
         if details.was_in_our_section {
             self.reset_rt_timer();
             self.section_list_sigs
-                .remove_signatures_by(*pub_id, self.peer_mgr.routing_table().our_section().len());
+                .remove_signatures_by_name(name, self.peer_mgr.routing_table().our_section().len());
         }
 
         if self.peer_mgr.routing_table().is_empty() {

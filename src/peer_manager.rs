@@ -1544,10 +1544,11 @@ impl PeerManager {
         }
     }
 
-    /// Removes the given entry from the routing_table, returns the removal details
+    /// Removes the given entry from the routing_table or peer_map, returns the removal details
     pub fn purge_out_of_sync_peer(&mut self,
                                   name: &XorName)
                                   -> Result<RemovalDetails<XorName>, RoutingTableError> {
+        let _ = self.peer_map.remove_by_name(name);
         self.routing_table.remove(name)
     }
 
