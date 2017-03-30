@@ -1246,10 +1246,12 @@ impl PeerManager {
             .collect()
     }
 
-    /// Returns the `PeerId`s and names of all the peers held in the RT, and whether they are
-    /// connected via a tunnel or not.
-    pub fn get_routing_peer_details(&self) -> (Vec<(PeerId, XorName, bool)>, BTreeSet<XorName>) {
-        let mut unknown_rt_names = BTreeSet::new();
+    /// Returns all syncing peer's `PeerId`s, names and whether connected via a tunnel or not;
+    /// together with all out-of-sync peer's names and peer_ids if have.
+    pub fn get_routing_peer_details
+        (&self)
+         -> (Vec<(PeerId, XorName, bool)>, BTreeSet<(XorName, Option<PeerId>)>) {
+        let mut out_of_sync_peers = BTreeSet::new();
         (self.routing_table
              .iter()
              .filter_map(|name| -> Option<(PeerId, XorName, bool)> {
@@ -1259,7 +1261,7 @@ impl PeerManager {
                     error!("{:?} Have {} in RT, but have no entry in peer_map for it.",
                                self,
                                name);
-                    let _ = unknown_rt_names.insert(*name);
+                    let _ = out_of_sync_peers.insert((*name, None));
                     return None;
                 }
             };
@@ -1269,6 +1271,7 @@ impl PeerManager {
                     error!("{:?} Have {} in RT, but have no peer ID for it.",
                                self,
                                name);
+                    let _ = out_of_sync_peers.insert((*name, None));
                     return None;
                 }
             };
@@ -1280,13 +1283,14 @@ impl PeerManager {
                                self,
                                name,
                                peer.state);
+                    let _ = out_of_sync_peers.insert((*name, Some(peer_id)));
                     return None;
                 }
             };
             Some((peer_id, *name, is_tunnel))
         })
              .collect(),
-         unknown_rt_names)
+         out_of_sync_peers)
     }
 
     pub fn correct_routing_state_to_direct(&mut self, peer_id: &PeerId) {
@@ -1541,9 +1545,9 @@ impl PeerManager {
     }
 
     /// Removes the given entry from the routing_table, returns the removal details
-    pub fn purge_unknown_rt_name(&mut self,
-                                 name: &XorName)
-                                 -> Result<RemovalDetails<XorName>, RoutingTableError> {
+    pub fn purge_out_of_sync_peer(&mut self,
+                                  name: &XorName)
+                                  -> Result<RemovalDetails<XorName>, RoutingTableError> {
         self.routing_table.remove(name)
     }
 

@@ -2747,20 +2747,18 @@ impl Node {
         }
     }
 
-    // Drop routing_table entry which is unknown to the peer_manager.
-    fn purge_unknown_rt_name(&mut self, name: &XorName, outbox: &mut EventBox) {
+    // Drop out_of_sync nodes from routing_table and from peer_map as well if known.
+    fn purge_out_of_sync_peer(&mut self, name: &XorName, outbox: &mut EventBox) {
         info!("{:?} Purging {:?} from the routing table.", self, name);
-        let removal_details = self.peer_mgr.purge_unknown_rt_name(name);
+        let removal_details = self.peer_mgr.purge_out_of_sync_peer(name);
 
         outbox.send_event(Event::NodeLost(*name, self.peer_mgr.routing_table().clone()));
 
         self.merge_if_necessary();
 
-        self.peer_mgr
-            .routing_table()
-            .find_section_prefix(name)
-            .map_or((),
-                    |prefix| { self.send_section_list_signature(prefix, None); });
+        if let Some(prefix) = self.peer_mgr.routing_table().find_section_prefix(name) {
+            self.send_section_list_signature(prefix, None);
+        }
         if let Ok(details) = removal_details {
             if details.was_in_our_section {
                 self.reset_rt_timer();
@@ -2780,8 +2778,12 @@ impl Node {
     fn purge_invalid_rt_entries(&mut self, outbox: &mut EventBox) -> Transition {
         let mut peer_ids_to_drop = vec![];
         let (known_peers, unknown_rt_names) = self.peer_mgr.get_routing_peer_details();
-        for name in &unknown_rt_names {
-            self.purge_unknown_rt_name(name, outbox);
+        for &(name, opt_peer_id) in &unknown_rt_names {
+            if let Some(peer_id) = opt_peer_id {
+                self.dropped_peer(&peer_id, outbox, true);
+            } else {
+                self.purge_out_of_sync_peer(&name, outbox);
+            }
         }
         for (peer_id, name, is_tunnel) in known_peers {
             if is_tunnel {
