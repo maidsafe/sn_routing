@@ -44,7 +44,7 @@ pub struct AckManager {
 }
 
 /// An identifier for a waiting-to-be-acknowledged message (a hash of the message).
-#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, Deserialize, Serialize)]
 pub struct Ack {
     m_hash: sha3::Digest256,
 }

@@ -23,7 +23,7 @@ use std::collections::BTreeSet;
 use xor_name::XorName;
 
 /// The type of access filter for appendable data.
-#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable)]
+#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, Deserialize, Serialize)]
 pub enum Filter {
     /// Everyone except the listed keys are allowed to append data.
     BlackList(BTreeSet<PublicKey>),
@@ -44,7 +44,7 @@ impl Filter {
 }
 
 /// An appended data item, pointing to another data chunk in the network.
-#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable, Debug)]
+#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, Deserialize, Serialize, Debug)]
 pub struct AppendedData {
     /// A pointer to the chunk with the actual data.
     pub pointer: DataIdentifier,
@@ -80,7 +80,7 @@ impl AppendedData {
 }
 
 /// An `AppendedData` item, together with the identifier of the data to append it to.
-#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable, Debug)]
+#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, Deserialize, Serialize, Debug)]
 pub enum AppendWrapper {
     /// A wrapper for public appendable data.
     Pub {

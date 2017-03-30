@@ -78,7 +78,7 @@ impl Default for FullId {
     }
 }
 
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Serialize, Deserialize)]
 /// Network identity component containing name and public keys.
 pub struct PublicId {
     public_encrypt_key: box_::PublicKey,

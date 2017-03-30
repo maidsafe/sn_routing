@@ -176,7 +176,7 @@ impl Drop for Service {
 }
 
 /// Mock version of `crust::PeerId`.
-#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, RustcEncodable, RustcDecodable)]
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct PeerId(pub usize);
 
 impl fmt::Debug for PeerId {
@@ -229,7 +229,7 @@ impl PrivConnectionInfo {
 }
 
 /// Mock version of `PubConnectionInfo`, used to connect to another peer.
-#[derive(Clone, Debug, Eq, PartialEq, RustcEncodable, RustcDecodable)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PubConnectionInfo(pub PeerId, pub Endpoint);
 
 impl PubConnectionInfo {
