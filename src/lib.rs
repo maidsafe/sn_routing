@@ -117,19 +117,15 @@
 #![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
          missing_debug_implementations, variant_size_differences)]
 
-#![cfg_attr(feature="clippy", feature(plugin))]
-#![cfg_attr(feature="clippy", plugin(clippy))]
-#![cfg_attr(feature="clippy", deny(clippy, unicode_not_nfc, wrong_pub_self_convention,
-                                   option_unwrap_used))]
-#![cfg_attr(feature="clippy", allow(use_debug))]
-#![cfg_attr(feature="clippy", allow(too_many_arguments))]
+#![cfg_attr(feature="cargo-clippy", deny(clippy, unicode_not_nfc,
+                                         wrong_pub_self_convention,
+                                         option_unwrap_used))]
+#![cfg_attr(feature="cargo-clippy", allow(use_debug, large_enum_variant,
+                                          too_many_arguments))]
 
 #[macro_use]
 extern crate log;
-#[macro_use]
 extern crate maidsafe_utilities;
-#[cfg_attr(feature="clippy", allow(useless_attribute))]
-#[allow(unused_extern_crates)]
 #[macro_use]
 extern crate quick_error;
 #[macro_use]

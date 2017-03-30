@@ -254,15 +254,13 @@ mod tests {
     fn xor_name_ord() {
         let type1: XorName = XorName([1u8; XOR_NAME_LEN]);
         let type2: XorName = XorName([2u8; XOR_NAME_LEN]);
-        assert!(Ord::cmp(&type1, &type1) == Ordering::Equal);
-        assert!(Ord::cmp(&type1, &type2) == Ordering::Less);
-        assert!(Ord::cmp(&type2, &type1) == Ordering::Greater);
+        assert_eq!(Ord::cmp(&type1, &type1), Ordering::Equal);
+        assert_eq!(Ord::cmp(&type1, &type2), Ordering::Less);
+        assert_eq!(Ord::cmp(&type2, &type1), Ordering::Greater);
         assert!(type1 < type2);
         assert!(type1 <= type2);
-        assert!(type1 <= type1);
         assert!(type2 > type1);
         assert!(type2 >= type1);
-        assert!(type1 >= type1);
         assert!(!(type2 < type1));
         assert!(!(type2 <= type1));
         assert!(!(type1 > type2));
@@ -275,9 +273,8 @@ mod tests {
         let type1_clone = type1;
         let type2: XorName = rand::random();
         assert_eq!(type1, type1_clone);
-        assert!(type1 == type1_clone);
         assert!(!(type1 != type1_clone));
-        assert!(type1 != type2);
+        assert_ne!(type1, type2);
     }
 
     #[test]
