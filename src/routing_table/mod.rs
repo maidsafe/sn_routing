@@ -320,12 +320,22 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     /// Returns the section with the given prefix, if any (includes own name if is own section)
     pub fn section_with_prefix(&self, prefix: &Prefix<T>) -> Option<&BTreeSet<T>> {
+        self.lookup_section(prefix).map(|(_, section)| section)
+    }
+
+    /// Returns the version of the section with the given prefix, if any.
+    pub fn section_version(&self, prefix: &Prefix<T>) -> Option<u64> {
+        self.lookup_section(prefix).map(|(v, _)| v)
+    }
+
+    /// Look up a single section (which can be our own).
+    fn lookup_section(&self, prefix: &Prefix<T>) -> Option<(u64, &BTreeSet<T>)> {
         if *prefix == self.our_prefix {
-            Some(&self.our_section)
+            Some((self.our_version, &self.our_section))
         } else {
             self.sections
                 .get(prefix)
-                .map(|&(_, ref section)| section)
+                .map(|&(ver, ref section)| (ver, section))
         }
     }
 
@@ -617,9 +627,12 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         // If the prefix would wrongly supersede a prefix, reject.
         for (pfx, (v, _)) in self.all_sections_iter() {
             if prefix.is_compatible(&pfx) && version <= v {
+                trace!("Not adding {:?} ver. {} to the RT as conflicting {:?} \
+                        ver. {} is more up to date.", prefix, version, pfx, v);
                 return vec![];
             }
         }
+
         let original_sections = mem::replace(&mut self.sections, Sections::new());
         let (sections_to_replace, sections) =
             original_sections
@@ -1177,6 +1190,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Binary for Rou
                  self.our_name,
                  self.our_name.debug_binary())?;
         writeln!(formatter, "\tour_prefix: {:?}", self.our_prefix)?;
+        writeln!(formatter, "\tour_version: {}", self.our_version)?;
 
         let sections = self.all_sections_iter().collect::<BTreeSet<_>>();
         for (section_index, &(prefix, (_, ref section))) in sections.iter().enumerate() {
@@ -1230,6 +1244,7 @@ mod tests {
         assert_eq!(table.len(), 0);
         assert!(table.is_empty());
         assert_eq!(table.iter().count(), 0);
+        assert_eq!(table.all_sections_iter().count(), 1);
     }
 
     // Adds `min_split_size() - 1` entries to `table`, starting at `name` and incrementing it by 1
@@ -1488,6 +1503,59 @@ mod tests {
         assert_eq!(Vec::<u8>::new(),
                    table.add_prefix(unwrap!(Prefix::from_str("")), 15));
         assert_eq!(prefixes_from_strs(vec![""]), table.prefixes());
+    }
+
+    #[test]
+    fn test_add_prefix_outdated_version() {
+        let our_name = 0u8;
+        let mut table = RoutingTable::<u8>::new(our_name, 1);
+        // Add 10, 20, 30, 40, 50, 60, 70, 80, 90, A0, B0, C0, D0, E0 and F0.
+        for i in 1..0x10 {
+            unwrap!(table.add(i * 0x10));
+        }
+        let empty = Vec::<u8>::new();
+
+        // Split into {0, 1}
+        assert_eq!(empty, table.add_prefix(prefix_str("0"), 1));
+        assert_eq!(Some(1), table.section_version(&prefix_str("0")));
+        assert_eq!(Some(0), table.section_version(&prefix_str("1")));
+
+        // Split 0 into {00, 01}.
+        assert_eq!(empty, table.add_prefix(prefix_str("00"), 2));
+        assert_eq!(Some(2), table.section_version(&prefix_str("00")));
+        assert_eq!(Some(0), table.section_version(&prefix_str("01")));
+        assert_eq!(Some(0), table.section_version(&prefix_str("1")));
+
+        // Split into 1 into {10,11}, dropping the nodes in 11.
+        assert_eq!(vec![0xc0, 0xd0, 0xe0, 0xf0u8],
+                   table
+                        .add_prefix(prefix_str("10"), 2)
+                        .into_iter()
+                        .sorted());
+        assert_eq!(prefixes_from_strs(vec!["10", "01", "00"]), table.prefixes());
+
+        // Simulate a missed update for the split from 10 to 100 and 101 and subsequent merge.
+        assert_eq!(empty, table.add_prefix(prefix_str("10"), 4));
+        assert_eq!(Some(4), table.section_version(&prefix_str("10")));
+
+        // RT shouldn't change if it now gets an update for prefix 100 v3.
+        assert_eq!(empty, table.add_prefix(prefix_str("100"), 3));
+        assert_eq!(Some(4), table.section_version(&prefix_str("10")));
+        assert_eq!(prefixes_from_strs(vec!["10", "01", "00"]), table.prefixes());
+
+        // Similarly, none of these bogus updates should be accepted.
+        assert_eq!(empty, table.add_prefix(prefix_str(""), 0));
+        assert_eq!(empty, table.add_prefix(prefix_str("0"), 1));
+        assert_eq!(empty, table.add_prefix(prefix_str("101"), 3));
+        assert_eq!(prefixes_from_strs(vec!["10", "01", "00"]), table.prefixes());
+
+        // Finally, adding an existing prefix (01) should update its version.
+        assert_eq!(empty, table.add_prefix(prefix_str("01"), 2));
+        assert_eq!(Some(2), table.section_version(&prefix_str("01")));
+    }
+
+    fn prefix_str(s: &str) -> Prefix<u8> {
+        unwrap!(Prefix::from_str(s))
     }
 
     fn prefixes_from_strs(strs: Vec<&str>) -> BTreeSet<Prefix<u8>> {
