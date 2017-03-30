@@ -42,12 +42,12 @@ impl SectionListCache {
         Default::default()
     }
 
-    /// Removes all signatures authored by `author`
+    /// Removes all signatures authored by `name`
     pub fn remove_signatures_by_name(&mut self, name: &XorName, our_section_size: usize) {
         let pub_id_opt = self.signed_by
             .keys()
             .find(|pub_id| name == pub_id.name())
-            .map(|&pub_id| pub_id);
+            .cloned();
         if let Some(pub_id) = pub_id_opt {
             self.remove_signatures_by_id(&pub_id, our_section_size);
         }

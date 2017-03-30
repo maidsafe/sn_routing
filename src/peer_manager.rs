@@ -51,6 +51,8 @@ const NODE_CONNECT_TIMEOUT_SECS: u64 = 60;
 
 pub type SectionMap = BTreeMap<Prefix<XorName>, BTreeSet<PublicId>>;
 
+type PeerDetails = (Vec<(PeerId, XorName, bool)>, BTreeSet<(XorName, Option<PeerId>)>);
+
 #[derive(Debug)]
 /// Errors that occur in peer status management.
 pub enum Error {
@@ -1152,10 +1154,8 @@ impl PeerManager {
         if let Some(peer @ &mut Peer {
                              state: PeerState::Routing(RoutingConnection::Tunnel), ..
                          }) = self.peer_map.get_mut(peer_id) {
-            if self.routing_table.has(peer.name()) {
-                peer.state = PeerState::Routing(RoutingConnection::Direct);
-                return;
-            }
+            peer.state = PeerState::Routing(RoutingConnection::Direct);
+            return;
         }
         if !self.set_state(peer_id, PeerState::AwaitingNodeIdentify(false)) {
             let _ = self.unknown_peers
@@ -1248,9 +1248,7 @@ impl PeerManager {
 
     /// Returns all syncing peer's `PeerId`s, names and whether connected via a tunnel or not;
     /// together with all out-of-sync peer's names and peer_ids if have.
-    pub fn get_routing_peer_details
-        (&self)
-         -> (Vec<(PeerId, XorName, bool)>, BTreeSet<(XorName, Option<PeerId>)>) {
+    pub fn get_routing_peer_details(&self) -> PeerDetails {
         let mut out_of_sync_peers = BTreeSet::new();
         (self.routing_table
              .iter()

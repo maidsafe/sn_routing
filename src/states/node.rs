@@ -2756,10 +2756,8 @@ impl Node {
             info!("{:?} Purging {:?} from the routing table.", self, name);
             if let Some(peer_id) = opt_peer_id {
                 self.dropped_peer(&peer_id, outbox, true);
-            } else {
-                if let Ok(removal_details) = self.peer_mgr.purge_out_of_sync_peer(&name) {
-                    self.dropped_routing_node(&name, removal_details, outbox);
-                }
+            } else if let Ok(removal_details) = self.peer_mgr.purge_out_of_sync_peer(&name) {
+                self.dropped_routing_node(&name, removal_details, outbox);
             }
         }
         for (peer_id, name, is_tunnel) in known_peers {
