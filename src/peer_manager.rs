@@ -1148,6 +1148,15 @@ impl PeerManager {
 
     /// Marks the given peer as "connected and waiting for `NodeIdentify`".
     pub fn connected_to(&mut self, peer_id: &PeerId) {
+        // ConnectSuccess may received after established tunnel to peer (and inserted into RT)
+        if let Some(peer @ &mut Peer {
+                             state: PeerState::Routing(RoutingConnection::Tunnel), ..
+                         }) = self.peer_map.get_mut(peer_id) {
+            if self.routing_table.has(peer.name()) {
+                peer.state = PeerState::Routing(RoutingConnection::Direct);
+                return;
+            }
+        }
         if !self.set_state(peer_id, PeerState::AwaitingNodeIdentify(false)) {
             let _ = self.unknown_peers
                 .insert(*peer_id, (false, Instant::now()));
