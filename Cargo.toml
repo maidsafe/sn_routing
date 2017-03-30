@@ -10,7 +10,6 @@ repository = "https://github.com/maidsafe/routing"
 version = "0.28.5"
 
 [dependencies]
-accumulator = "~0.5.0"
 crust = "~0.24.0"
 hex = "~0.2.0"
 itertools = "~0.5.9"
