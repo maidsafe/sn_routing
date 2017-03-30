@@ -215,6 +215,7 @@ mod implementation {
     use types::RoutingActionSender;
 
     // The mock timer currently never raises timeout events.
+    #[derive(Clone)]
     pub struct Timer {
         next_token: Cell<u64>,
     }
