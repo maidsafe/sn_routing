@@ -136,7 +136,7 @@ const SPLIT_BUFFER: usize = 3;
 
 // Immutable iterator over the entries of a `RoutingTable`.
 pub struct Iter<'a, T: 'a + Binary + Clone + Copy + Default + Hash + Xorable> {
-    inner: Box<Iterator<Item=&'a T> + 'a>,
+    inner: Box<Iterator<Item = &'a T> + 'a>,
     our_name: T,
 }
 
@@ -305,14 +305,17 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     /// Returns the whole routing table, including our section and our name
     pub fn all_sections(&self) -> Sections<T> {
-        self.all_sections_iter().map(|(p, (v, section))| (p, (v, section.clone()))).collect()
+        self.all_sections_iter()
+            .map(|(p, (v, section))| (p, (v, section.clone())))
+            .collect()
     }
 
     /// Create an iterator over all sections including our own.
-    pub fn all_sections_iter<'a>(&'a self)
-        -> Box<Iterator<Item=(Prefix<T>, (u64, &'a BTreeSet<T>))> + 'a>
-    {
-        let iter = self.sections.iter()
+    pub fn all_sections_iter<'a>
+        (&'a self)
+         -> Box<Iterator<Item = (Prefix<T>, (u64, &'a BTreeSet<T>))> + 'a> {
+        let iter = self.sections
+            .iter()
             .map(|(&p, &(v, ref sec))| (p, (v, sec)))
             .chain(iter::once((self.our_prefix, (self.our_version, &self.our_section))));
         Box::new(iter)
@@ -342,7 +345,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// Returns the total number of entries in the routing table, excluding our own name.
     // TODO: refactor to include our name?
     pub fn len(&self) -> usize {
-        self.all_sections_iter().map(|(_, (_, section))| section.len()).sum::<usize>() - 1
+        self.all_sections_iter()
+            .map(|(_, (_, section))| section.len())
+            .sum::<usize>() - 1
     }
 
     /// Is the table empty? (Returns `true` if no nodes besides our own are known;
@@ -374,7 +379,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// Iterates over all nodes known by the routing table, excluding our own name.
     // TODO: do we need to exclude our name?
     pub fn iter(&self) -> Iter<T> {
-        let iter = self.all_sections_iter().flat_map(|(_, (_, section))| section.iter());
+        let iter = self.all_sections_iter()
+            .flat_map(|(_, (_, section))| section.iter());
         Iter {
             inner: Box::new(iter),
             our_name: self.our_name,
@@ -410,7 +416,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     /// Collects prefixes of all sections known by the routing table into a `BTreeSet`.
     pub fn prefixes(&self) -> BTreeSet<Prefix<T>> {
-        self.all_sections_iter().map(|(prefix, _)| prefix).collect()
+        self.all_sections_iter()
+            .map(|(prefix, _)| prefix)
+            .collect()
     }
 
     /// If our section is the closest one to `name`, returns all names in our section *including
@@ -554,11 +562,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     /// Return true if any neighbouring section is below the given size threshold.
     fn neighbour_size_is_below(&self, threshold: usize) -> bool {
-        self.sections.iter()
+        self.sections
+            .iter()
             .any(|(prefix, &(_, ref section))| {
-                prefix.popped().is_compatible(&self.our_prefix) &&
-                section.len() < threshold
-            })
+                     prefix.popped().is_compatible(&self.our_prefix) && section.len() < threshold
+                 })
     }
 
     /// Returns whether we should split into two sections.
@@ -594,6 +602,12 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
         if let Some((v, to_split)) = self.sections.remove(&prefix) {
             if v != version {
+                debug!("{:?} Not splitting section with {:?} ver. {}, \
+                       update is for a different version: {}",
+                       self.our_name,
+                       prefix,
+                       v,
+                       version);
                 self.insert_new_section(prefix, v, to_split);
                 return (result, None);
             }
@@ -627,8 +641,13 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         // If the prefix would wrongly supersede a prefix, reject.
         for (pfx, (v, _)) in self.all_sections_iter() {
             if prefix.is_compatible(&pfx) && version <= v {
-                trace!("Not adding {:?} ver. {} to the RT as conflicting {:?} \
-                        ver. {} is more up to date.", prefix, version, pfx, v);
+                trace!("{:?} Not adding {:?} v{} to the RT as conflicting {:?} v{} \
+                       is more up to date.",
+                       self.our_name,
+                       prefix,
+                       version,
+                       pfx,
+                       v);
                 return vec![];
             }
         }
@@ -779,6 +798,13 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// held in the routing table) are returned so the caller can establish connections to these
     /// peers and subsequently add them.
     pub fn merge_other_section(&mut self, merge_details: OtherMergeDetails<T>) -> BTreeSet<T> {
+        if self.our_prefix.is_compatible(&merge_details.prefix) {
+            error!("{:?} Attempt to merge other section {:?} when our prefix is {:?}",
+                   self.our_name,
+                   merge_details.prefix,
+                   self.our_prefix);
+            return BTreeSet::new();
+        }
         self.merge(&merge_details.prefix, merge_details.version);
         // Establish list of provided contacts which are currently missing from our table.
         self.sections
@@ -954,6 +980,12 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     fn split_our_section(&mut self, version: u64) -> Vec<T> {
         if self.our_version != version {
+            debug!("{:?} Not splitting our section with {:?} ver. {}, \
+                   update is for a different version: {}",
+                   self.our_name,
+                   self.our_prefix,
+                   self.our_version,
+                   version);
             return Vec::new(); // Wrong version.
         }
         let next_bit = self.our_name.bit(self.our_prefix.bit_count());
@@ -1529,9 +1561,9 @@ mod tests {
         // Split into 1 into {10,11}, dropping the nodes in 11.
         assert_eq!(vec![0xc0, 0xd0, 0xe0, 0xf0u8],
                    table
-                        .add_prefix(prefix_str("10"), 2)
-                        .into_iter()
-                        .sorted());
+                       .add_prefix(prefix_str("10"), 2)
+                       .into_iter()
+                       .sorted());
         assert_eq!(prefixes_from_strs(vec!["10", "01", "00"]), table.prefixes());
 
         // Simulate a missed update for the split from 10 to 100 and 101 and subsequent merge.
