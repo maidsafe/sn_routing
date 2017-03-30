@@ -63,7 +63,11 @@ mod implementation {
             self.next_token = token.wrapping_add(1);
             let &(ref mutex, ref cond_var) = &*self.detail_and_cond_var;
             let mut detail = mutex.lock().expect("Failed to lock.");
-            detail.deadlines.entry(Instant::now() + duration).or_insert_with(Vec::new).push(token);
+            detail
+                .deadlines
+                .entry(Instant::now() + duration)
+                .or_insert_with(Vec::new)
+                .push(token);
             cond_var.notify_one();
             token
         }
@@ -74,7 +78,8 @@ mod implementation {
             while !detail.cancelled {
                 // Handle expired deadlines.
                 let now = Instant::now();
-                let expired_list = detail.deadlines
+                let expired_list = detail
+                    .deadlines
                     .keys()
                     .take_while(|&&deadline| deadline < now)
                     .cloned()
@@ -82,7 +87,10 @@ mod implementation {
                 for expired in expired_list {
                     // Safe to call `expect()` as we just got the key we're removing from
                     // `deadlines`.
-                    let tokens = detail.deadlines.remove(&expired).expect("Bug in `BTreeMap`.");
+                    let tokens = detail
+                        .deadlines
+                        .remove(&expired)
+                        .expect("Bug in `BTreeMap`.");
                     for token in tokens {
                         let _ = sender.send(Action::Timeout(token));
                     }
@@ -94,10 +102,17 @@ mod implementation {
                     detail = cond_var.wait(detail).expect("Failed to lock.");
                 } else {
                     // Safe to call `expect()` as `deadlines` has at least one entry.
-                    let nearest =
-                        detail.deadlines.keys().next().cloned().expect("Bug in `BTreeMap`.");
+                    let nearest = detail
+                        .deadlines
+                        .keys()
+                        .next()
+                        .cloned()
+                        .expect("Bug in `BTreeMap`.");
                     let duration = nearest - now;
-                    detail = cond_var.wait_timeout(detail, duration).expect("Failed to lock.").0;
+                    detail = cond_var
+                        .wait_timeout(detail, duration)
+                        .expect("Failed to lock.")
+                        .0;
                 }
             }
         }

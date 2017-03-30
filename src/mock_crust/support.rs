@@ -49,12 +49,12 @@ impl Network {
         };
         unwrap!(rust_sodium::init_with_rng(&mut rng));
         Network(Rc::new(RefCell::new(NetworkImpl {
-            services: HashMap::new(),
-            next_endpoint: 0,
-            queue: HashMap::new(),
-            blocked_connections: HashSet::new(),
-            rng: SeededRng::new(),
-        })))
+                                         services: HashMap::new(),
+                                         next_endpoint: 0,
+                                         queue: HashMap::new(),
+                                         blocked_connections: HashSet::new(),
+                                         rng: SeededRng::new(),
+                                     })))
     }
 
     /// Create new ServiceHandle.
@@ -106,7 +106,10 @@ impl Network {
     }
 
     fn connection_blocked(&self, sender: Endpoint, receiver: Endpoint) -> bool {
-        self.0.borrow().blocked_connections.contains(&(sender, receiver))
+        self.0
+            .borrow()
+            .blocked_connections
+            .contains(&(sender, receiver))
     }
 
     fn send(&self, sender: Endpoint, receiver: Endpoint, packet: Packet) {
@@ -121,10 +124,7 @@ impl Network {
     // Drop any pending messages on a specific route (does not automatically
     // drop packets going the other way).
     fn drop_pending(&self, sender: Endpoint, receiver: Endpoint) {
-        if let Some(deque) = self.0
-            .borrow_mut()
-            .queue
-            .get_mut(&(sender, receiver)) {
+        if let Some(deque) = self.0.borrow_mut().queue.get_mut(&(sender, receiver)) {
             deque.clear();
         }
     }
@@ -137,11 +137,19 @@ impl Network {
         } else {
             return None;
         };
-        let result = network_impl.queue
+        let result = network_impl
+            .queue
             .get_mut(&(sender, receiver))
-            .and_then(|packets| packets.pop_front().map(|packet| (sender, receiver, packet)));
+            .and_then(|packets| {
+                          packets
+                              .pop_front()
+                              .map(|packet| (sender, receiver, packet))
+                      });
         if result.is_some() &&
-           network_impl.queue.get(&(sender, receiver)).map_or(false, VecDeque::is_empty) {
+           network_impl
+               .queue
+               .get(&(sender, receiver))
+               .map_or(false, VecDeque::is_empty) {
             let _ = network_impl.queue.remove(&(sender, receiver));
         }
         result
@@ -164,7 +172,11 @@ impl Network {
     }
 
     fn find_service(&self, endpoint: Endpoint) -> Option<Rc<RefCell<ServiceImpl>>> {
-        self.0.borrow().services.get(&endpoint).and_then(|s| s.upgrade())
+        self.0
+            .borrow()
+            .services
+            .get(&endpoint)
+            .and_then(|s| s.upgrade())
     }
 }
 
@@ -191,7 +203,9 @@ impl ServiceHandle {
 
     /// Returns `true` if this service is connected to the given one.
     pub fn is_connected(&self, handle: &ServiceHandle) -> bool {
-        self.0.borrow().is_peer_connected(&handle.0.borrow().peer_id)
+        self.0
+            .borrow()
+            .is_peer_connected(&handle.0.borrow().peer_id)
     }
 }
 
@@ -251,9 +265,9 @@ impl ServiceImpl {
         // immediately.
         if pending_bootstraps == 0 {
             unwrap!(self.event_sender
-                .as_ref()
-                .unwrap()
-                .send(Event::BootstrapFailed));
+                        .as_ref()
+                        .unwrap()
+                        .send(Event::BootstrapFailed));
         }
 
         self.pending_bootstraps = pending_bootstraps;
@@ -398,7 +412,9 @@ impl ServiceImpl {
     }
 
     fn add_connection(&mut self, peer_id: PeerId, peer_endpoint: Endpoint) -> bool {
-        if self.connections.iter().any(|&(id, ep)| id == peer_id && ep == peer_endpoint) {
+        if self.connections
+               .iter()
+               .any(|&(id, ep)| id == peer_id && ep == peer_endpoint) {
             // Connection already exists
             return false;
         }
@@ -416,8 +432,8 @@ impl ServiceImpl {
     // or None if no such peer exists.
     fn remove_connection_by_peer_id(&mut self, peer_id: &PeerId) -> Option<Endpoint> {
         if let Some(i) = self.connections
-            .iter()
-            .position(|&(id, _)| id == *peer_id) {
+               .iter()
+               .position(|&(id, _)| id == *peer_id) {
             Some(self.connections.swap_remove(i).1)
         } else {
             None
@@ -426,8 +442,8 @@ impl ServiceImpl {
 
     fn remove_connection_by_endpoint(&mut self, endpoint: Endpoint) -> Option<PeerId> {
         if let Some(i) = self.connections
-            .iter()
-            .position(|&(_, ep)| ep == endpoint) {
+               .iter()
+               .position(|&(_, ep)| ep == endpoint) {
             Some(self.connections.swap_remove(i).0)
         } else {
             None
@@ -449,7 +465,9 @@ impl ServiceImpl {
     }
 
     fn is_connected(&self, endpoint: &Endpoint, peer_id: &PeerId) -> bool {
-        self.connections.iter().any(|&conn| conn == (*peer_id, *endpoint))
+        self.connections
+            .iter()
+            .any(|&conn| conn == (*peer_id, *endpoint))
     }
 
     pub fn disconnect(&mut self, peer_id: &PeerId) -> bool {
@@ -563,11 +581,11 @@ pub fn make_current<F, R>(handle: &ServiceHandle, f: F) -> R
     where F: FnOnce() -> R
 {
     CURRENT.with(|current| {
-        *current.borrow_mut() = Some(handle.clone());
-        let result = f();
-        *current.borrow_mut() = None;
-        result
-    })
+                     *current.borrow_mut() = Some(handle.clone());
+                     let result = f();
+                     *current.borrow_mut() = None;
+                     result
+                 })
 }
 
 pub fn get_current() -> ServiceHandle {

@@ -75,10 +75,10 @@ impl MpidMessage {
 
         let recipient_and_body = serialise(&detail)?;
         Ok(MpidMessage {
-            header: header,
-            detail: detail,
-            signature: sign::sign_detached(&recipient_and_body, secret_key),
-        })
+               header: header,
+               detail: detail,
+               signature: sign::sign_detached(&recipient_and_body, secret_key),
+           })
     }
 
     /// Getter for `MpidHeader` member, created when calling `new()`.
@@ -163,7 +163,7 @@ mod tests {
                                  recipient.clone(),
                                  body.clone(),
                                  &secret_key)
-            .is_err());
+                        .is_err());
         let _ = body.pop();
 
         // Check verify function with a valid and invalid key

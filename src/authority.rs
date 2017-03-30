@@ -101,7 +101,11 @@ impl Debug for Authority {
             Authority::NaeManager(ref name) => write!(formatter, "NaeManager(name: {})", name),
             Authority::NodeManager(ref name) => write!(formatter, "NodeManager(name: {})", name),
             Authority::ManagedNode(ref name) => write!(formatter, "ManagedNode(name: {})", name),
-            Authority::Client { ref client_key, ref proxy_node_name, ref peer_id } => {
+            Authority::Client {
+                ref client_key,
+                ref proxy_node_name,
+                ref peer_id,
+            } => {
                 write!(formatter,
                        "Client {{ client_name: {}, proxy_node_name: {}, peer_id: {:?} }}",
                        XorName(hash::sha256::hash(&client_key[..]).0),

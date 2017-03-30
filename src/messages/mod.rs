@@ -174,10 +174,10 @@ impl HopMessage {
                -> Result<HopMessage, RoutingError> {
         let bytes_to_sign = serialise(&content)?;
         Ok(HopMessage {
-            content: content,
-            route: route,
-            signature: sign::sign_detached(&bytes_to_sign, signing_key),
-        })
+               content: content,
+               route: route,
+               signature: sign::sign_detached(&bytes_to_sign, signing_key),
+           })
     }
 
     /// Validate that the message is signed by `verification_key` contained in message.
@@ -217,10 +217,10 @@ impl SignedMessage {
     pub fn new(content: RoutingMessage, full_id: &FullId) -> Result<SignedMessage, RoutingError> {
         let sig = sign::sign_detached(&serialise(&content)?, full_id.signing_private_key());
         Ok(SignedMessage {
-            content: content,
-            grp_lists: Vec::new(),
-            signatures: iter::once((*full_id.public_id(), sig)).collect(),
-        })
+               content: content,
+               grp_lists: Vec::new(),
+               signatures: iter::once((*full_id.public_id(), sig)).collect(),
+           })
     }
 
     /// Confirms the signatures.
@@ -274,7 +274,9 @@ impl SignedMessage {
     /// list.
     pub fn add_signature(&mut self, pub_id: PublicId, sig: sign::Signature) {
         if self.content.src.is_group() &&
-           self.grp_lists.first().map_or(true, |grp_list| grp_list.pub_ids.contains(&pub_id)) {
+           self.grp_lists
+               .first()
+               .map_or(true, |grp_list| grp_list.pub_ids.contains(&pub_id)) {
             let _ = self.signatures.insert(pub_id, sig);
         }
     }
@@ -307,11 +309,13 @@ impl SignedMessage {
         if self.content.src.is_client() {
             return self.signatures.len() == 1;
         }
-        self.grp_lists.first().map_or(false, |grp_list| if self.content.src.is_group() {
-            QUORUM * grp_list.pub_ids.len() < 100 * self.signatures.len()
-        } else {
-            self.signatures.len() == 1
-        })
+        self.grp_lists
+            .first()
+            .map_or(false, |grp_list| if self.content.src.is_group() {
+                QUORUM * grp_list.pub_ids.len() < 100 * self.signatures.len()
+            } else {
+                self.signatures.len() == 1
+            })
     }
 
     /// Removes all signatures which fail validation.
@@ -330,10 +334,10 @@ impl SignedMessage {
             .filter_map(|(pub_id, sig)| if sign::verify_detached(sig,
                                                                  &signed_bytes,
                                                                  pub_id.signing_public_key()) {
-                None
-            } else {
-                Some(*pub_id)
-            })
+                            None
+                        } else {
+                            Some(*pub_id)
+                        })
             .collect_vec();
         for invalid_signature in &invalid_signatures {
             let _ = self.signatures.remove(invalid_signature);
@@ -356,10 +360,10 @@ impl RoutingMessage {
     /// Create ack for the given message
     pub fn ack_from(msg: &RoutingMessage, src: Authority) -> Result<Self, RoutingError> {
         Ok(RoutingMessage {
-            src: src,
-            dst: msg.src,
-            content: MessageContent::Ack(Ack::compute(msg)?, msg.priority()),
-        })
+               src: src,
+               dst: msg.src,
+               content: MessageContent::Ack(Ack::compute(msg)?, msg.priority()),
+           })
     }
 
     /// Returns the priority Crust should send this message with.
@@ -589,7 +593,10 @@ impl Debug for SignedMessage {
         write!(formatter,
                "SignedMessage {{ content: {:?}, grp_lists sizes: {:?}, signatures: {:?} }}",
                self.content,
-               self.grp_lists.iter().map(|grp_list| grp_list.pub_ids.len()).collect_vec(),
+               self.grp_lists
+                   .iter()
+                   .map(|grp_list| grp_list.pub_ids.len())
+                   .collect_vec(),
                self.signatures.keys().collect_vec())
     }
 }
@@ -597,13 +604,20 @@ impl Debug for SignedMessage {
 impl Debug for MessageContent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            MessageContent::GetNodeName { ref current_id, ref message_id } => {
+            MessageContent::GetNodeName {
+                ref current_id,
+                ref message_id,
+            } => {
                 write!(formatter,
                        "GetNodeName {{ {:?}, {:?} }}",
                        current_id,
                        message_id)
             }
-            MessageContent::ExpectCloseNode { ref expect_id, ref client_auth, ref message_id } => {
+            MessageContent::ExpectCloseNode {
+                ref expect_id,
+                ref client_auth,
+                ref message_id,
+            } => {
                 write!(formatter,
                        "ExpectCloseNode {{ {:?}, {:?}, {:?} }}",
                        expect_id,
@@ -612,39 +626,51 @@ impl Debug for MessageContent {
             }
             MessageContent::GetCloseGroup(id) => write!(formatter, "GetCloseGroup({:?})", id),
             MessageContent::ConnectionInfo(_) => write!(formatter, "ConnectionInfo {{ .. }}"),
-            MessageContent::GetNodeNameResponse { ref relocated_id,
-                                                  ref groups,
-                                                  ref message_id } => {
+            MessageContent::GetNodeNameResponse {
+                ref relocated_id,
+                ref groups,
+                ref message_id,
+            } => {
                 write!(formatter,
                        "GetNodeNameResponse {{ {:?}, {:?}, {:?} }}",
                        relocated_id,
                        groups,
                        message_id)
             }
-            MessageContent::GetCloseGroupResponse { ref close_group_ids, message_id } => {
+            MessageContent::GetCloseGroupResponse {
+                ref close_group_ids,
+                message_id,
+            } => {
                 write!(formatter,
                        "GetCloseGroupResponse {{ {:?}, {:?} }}",
                        close_group_ids,
                        message_id)
             }
             MessageContent::GroupSplit(ref prefix) => write!(formatter, "GroupSplit({:?})", prefix),
-            MessageContent::OwnGroupMerge { ref sender_prefix, ref merge_prefix, ref groups } => {
+            MessageContent::OwnGroupMerge {
+                ref sender_prefix,
+                ref merge_prefix,
+                ref groups,
+            } => {
                 write!(formatter,
                        "OwnGroupMerge {{ {:?}, {:?}, {:?} }}",
                        sender_prefix,
                        merge_prefix,
                        groups)
             }
-            MessageContent::OtherGroupMerge { ref prefix, ref group } => {
-                write!(formatter, "OtherGroupMerge {{ {:?}, {:?} }}", prefix, group)
-            }
+            MessageContent::OtherGroupMerge {
+                ref prefix,
+                ref group,
+            } => write!(formatter, "OtherGroupMerge {{ {:?}, {:?} }}", prefix, group),
             MessageContent::Ack(ack, priority) => write!(formatter, "Ack({}, {})", ack, priority),
-            MessageContent::UserMessagePart { hash,
-                                              part_count,
-                                              part_index,
-                                              priority,
-                                              cacheable,
-                                              .. } => {
+            MessageContent::UserMessagePart {
+                hash,
+                part_count,
+                part_index,
+                priority,
+                cacheable,
+                ..
+            } => {
                 write!(formatter,
                        "UserMessagePart {{ {}/{}, priority: {}, cacheable: {}, {:x} }}",
                        part_index + 1,
@@ -677,17 +703,17 @@ impl UserMessage {
         let part_count = (len + MAX_PART_LEN - 1) / MAX_PART_LEN;
 
         Ok((0..part_count)
-            .map(|i| {
-                MessageContent::UserMessagePart {
-                    hash: hash,
-                    part_count: part_count as u32,
-                    part_index: i as u32,
-                    cacheable: self.is_cacheable(),
-                    payload: payload[(i * len / part_count)..((i + 1) * len / part_count)].to_vec(),
-                    priority: priority,
-                }
-            })
-            .collect())
+               .map(|i| {
+            MessageContent::UserMessagePart {
+                hash: hash,
+                part_count: part_count as u32,
+                part_index: i as u32,
+                cacheable: self.is_cacheable(),
+                payload: payload[(i * len / part_count)..((i + 1) * len / part_count)].to_vec(),
+                priority: priority,
+            }
+        })
+               .collect())
     }
 
     /// Puts the given parts of a serialised message together and verifies that it matches the
@@ -755,7 +781,9 @@ impl UserMessageCache {
                payload: Vec<u8>)
                -> Option<UserMessage> {
         {
-            let entry = self.0.entry((hash, part_count)).or_insert_with(BTreeMap::new);
+            let entry = self.0
+                .entry((hash, part_count))
+                .or_insert_with(BTreeMap::new);
             let _ = entry.insert(part_index, payload);
             if entry.len() != part_count as usize {
                 return None;
@@ -825,9 +853,9 @@ mod tests {
         let data_bytes: Vec<u8> = (0..10).map(|i| i as u8).collect();
         let data = ImmutableData::new(data_bytes);
         let user_msg = UserMessage::Request(Request::PutIData {
-            data: data,
-            msg_id: MessageId::new(),
-        });
+                                                data: data,
+                                                msg_id: MessageId::new(),
+                                            });
         let parts = unwrap!(user_msg.to_parts(1));
         assert_eq!(1, parts.len());
         let part = parts[0].clone();
@@ -842,8 +870,10 @@ mod tests {
         assert_eq!(signed_msg.signatures.len(), 1);
 
         // Add a signature which will not correspond to an ID in the first group list.
-        let irrelevant_sig = match unwrap!(signed_msg.routing_message()
-            .to_signature(irrelevant_full_id.signing_private_key())) {
+        let irrelevant_sig = match unwrap!(signed_msg
+                                               .routing_message()
+                                               .to_signature(irrelevant_full_id
+                                                                 .signing_private_key())) {
             DirectMessage::MessageSignature(_, sig) => {
                 signed_msg.add_signature(*irrelevant_full_id.public_id(), sig);
                 sig
@@ -854,16 +884,22 @@ mod tests {
 
         // Check the irrelevant signature gets removed by `add_group_list()`.
         signed_msg.add_group_list(GroupList {
-            pub_ids: vec![*full_id_0.public_id(), *full_id_1.public_id(), *full_id_2.public_id()]
-                .into_iter()
-                .collect(),
-        });
+                                      pub_ids: vec![*full_id_0.public_id(),
+                                                    *full_id_1.public_id(),
+                                                    *full_id_2.public_id()]
+                                              .into_iter()
+                                              .collect(),
+                                  });
         assert_eq!(signed_msg.signatures.len(), 1);
-        assert!(!signed_msg.signatures.contains_key(irrelevant_full_id.public_id()));
+        assert!(!signed_msg
+                     .signatures
+                     .contains_key(irrelevant_full_id.public_id()));
         assert!(!signed_msg.is_fully_signed());
 
         // Add a valid signature for ID 1 and an invalid one for ID 2
-        match unwrap!(signed_msg.routing_message().to_signature(full_id_1.signing_private_key())) {
+        match unwrap!(signed_msg
+                          .routing_message()
+                          .to_signature(full_id_1.signing_private_key())) {
             DirectMessage::MessageSignature(hash, sig) => {
                 let serialised_msg = unwrap!(serialise(signed_msg.routing_message()));
                 assert_eq!(hash, sha256::hash(&serialised_msg));
@@ -884,7 +920,9 @@ mod tests {
         // Check an irrelevant signature can't be added.
         signed_msg.add_signature(*irrelevant_full_id.public_id(), irrelevant_sig);
         assert_eq!(signed_msg.signatures.len(), 2);
-        assert!(!signed_msg.signatures.contains_key(irrelevant_full_id.public_id()));
+        assert!(!signed_msg
+                     .signatures
+                     .contains_key(irrelevant_full_id.public_id()));
     }
 
     #[test]
@@ -919,30 +957,33 @@ mod tests {
         let data_bytes: Vec<u8> = (0..(MAX_PART_LEN * 2)).map(|i| i as u8).collect();
         let data = ImmutableData::new(data_bytes);
         let user_msg = UserMessage::Request(Request::PutIData {
-            data: data,
-            msg_id: MessageId::new(),
-        });
+                                                data: data,
+                                                msg_id: MessageId::new(),
+                                            });
         let msg_hash = maidsafe_utilities::big_endian_sip_hash(&user_msg);
         let parts = unwrap!(user_msg.to_parts(42));
         assert_eq!(parts.len(), 3);
-        let payloads: Vec<Vec<u8>> = parts.into_iter()
+        let payloads: Vec<Vec<u8>> = parts
+            .into_iter()
             .enumerate()
             .map(|(i, msg)| match msg {
-                MessageContent::UserMessagePart { hash,
-                                                  part_count,
-                                                  part_index,
-                                                  payload,
-                                                  priority,
-                                                  cacheable } => {
-                    assert_eq!(msg_hash, hash);
-                    assert_eq!(3, part_count);
-                    assert_eq!(i, part_index as usize);
-                    assert_eq!(42, priority);
-                    assert!(!cacheable);
-                    payload
-                }
-                msg => panic!("Unexpected message {:?}", msg),
-            })
+                     MessageContent::UserMessagePart {
+                         hash,
+                         part_count,
+                         part_index,
+                         payload,
+                         priority,
+                         cacheable,
+                     } => {
+                assert_eq!(msg_hash, hash);
+                assert_eq!(3, part_count);
+                assert_eq!(i, part_index as usize);
+                assert_eq!(42, priority);
+                assert!(!cacheable);
+                payload
+            }
+                     msg => panic!("Unexpected message {:?}", msg),
+                 })
             .collect();
         let deserialised_user_msg = unwrap!(UserMessage::from_parts(msg_hash, payloads.iter()));
         assert_eq!(user_msg, deserialised_user_msg);

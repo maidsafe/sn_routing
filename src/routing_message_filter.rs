@@ -54,7 +54,9 @@ impl RoutingMessageFilter {
     // (and thus should not be sent, due to deduplication).
     pub fn filter_outgoing(&mut self, msg: &RoutingMessage, peer_id: &PeerId, route: u8) -> bool {
         let hash = maidsafe_utilities::big_endian_sip_hash(msg);
-        self.outgoing.insert((hash, *peer_id, route), ()).is_some()
+        self.outgoing
+            .insert((hash, *peer_id, route), ())
+            .is_some()
     }
 
     #[cfg(feature = "use-mock-crust")]

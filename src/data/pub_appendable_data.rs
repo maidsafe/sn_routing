@@ -65,14 +65,14 @@ impl PubAppendableData {
         }
 
         Ok(PubAppendableData {
-            name: name,
-            version: version,
-            filter: filter,
-            deleted_data: deleted_data,
-            owners: owners,
-            signatures: BTreeMap::new(),
-            data: BTreeSet::new(),
-        })
+               name: name,
+               version: version,
+               filter: filter,
+               deleted_data: deleted_data,
+               owners: owners,
+               signatures: BTreeMap::new(),
+               data: BTreeSet::new(),
+           })
     }
 
     /// Updates this data item with the given updated version if the update is valid, otherwise
@@ -104,9 +104,9 @@ impl PubAppendableData {
     /// recently been deleted.
     pub fn append(&mut self, appended_data: AppendedData) -> bool {
         if match self.filter {
-            Filter::WhiteList(ref white_list) => !white_list.contains(&appended_data.sign_key),
-            Filter::BlackList(ref black_list) => black_list.contains(&appended_data.sign_key),
-        } || self.deleted_data.contains(&appended_data) {
+               Filter::WhiteList(ref white_list) => !white_list.contains(&appended_data.sign_key),
+               Filter::BlackList(ref black_list) => black_list.contains(&appended_data.sign_key),
+           } || self.deleted_data.contains(&appended_data) {
             return false;
         }
         let _ = self.data.insert(appended_data);
@@ -263,12 +263,12 @@ mod test {
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
                                                 pub_appendable_data.get_signatures())
-                    .is_err());
+                                .is_err());
                 assert_eq!(pub_appendable_data.add_signature(&keys).unwrap(), 0);
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
                                                 pub_appendable_data.get_signatures())
-                    .is_ok());
+                                .is_ok());
             }
             Err(error) => panic!("Error: {:?}", error),
         }
@@ -295,7 +295,7 @@ mod test {
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
                                                 pub_appendable_data.get_signatures())
-                    .is_err());
+                                .is_err());
             }
             Err(error) => panic!("Error: {:?}", error),
         }
@@ -306,11 +306,12 @@ mod test {
         let black_key = sign::gen_keypair();
         let white_key = sign::gen_keypair();
 
-        let mut pub_appendable_data = unwrap!(PubAppendableData::new(rand::random(),
-                                              0,
-                                              BTreeSet::new(),
-                                              BTreeSet::new(),
-                                              Filter::white_list(vec![white_key.0]),));
+        let mut pub_appendable_data =
+            unwrap!(PubAppendableData::new(rand::random(),
+                                           0,
+                                           BTreeSet::new(),
+                                           BTreeSet::new(),
+                                           Filter::white_list(vec![white_key.0])));
 
         let pointer = DataIdentifier::Structured(rand::random(), 10000);
         let black_appended_data = unwrap!(AppendedData::new(pointer, black_key.0, &black_key.1));
@@ -325,11 +326,12 @@ mod test {
         let black_key = sign::gen_keypair();
         let white_key = sign::gen_keypair();
 
-        let mut pub_appendable_data = unwrap!(PubAppendableData::new(rand::random(),
-                                              0,
-                                              BTreeSet::new(),
-                                              BTreeSet::new(),
-                                              Filter::black_list(vec![black_key.0])));
+        let mut pub_appendable_data =
+            unwrap!(PubAppendableData::new(rand::random(),
+                                           0,
+                                           BTreeSet::new(),
+                                           BTreeSet::new(),
+                                           Filter::black_list(vec![black_key.0])));
 
         let pointer = DataIdentifier::Structured(rand::random(), 10000);
         let black_appended_data = unwrap!(AppendedData::new(pointer, black_key.0, &black_key.1));

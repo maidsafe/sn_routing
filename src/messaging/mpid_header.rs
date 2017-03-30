@@ -76,9 +76,9 @@ impl MpidHeader {
 
         let encoded = serialise(&detail)?;
         Ok(MpidHeader {
-            detail: detail,
-            signature: sign::sign_detached(&encoded, secret_key),
-        })
+               detail: detail,
+               signature: sign::sign_detached(&encoded, secret_key),
+           })
     }
 
     /// The name of the original creator of the message.

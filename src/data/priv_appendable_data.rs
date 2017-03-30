@@ -108,15 +108,15 @@ impl PrivAppendableData {
         }
 
         Ok(PrivAppendableData {
-            name: name,
-            version: version,
-            filter: filter,
-            encrypt_key: encrypt_key,
-            deleted_data: deleted_data,
-            owners: owners,
-            signatures: BTreeMap::new(),
-            data: BTreeSet::new(),
-        })
+               name: name,
+               version: version,
+               filter: filter,
+               encrypt_key: encrypt_key,
+               deleted_data: deleted_data,
+               owners: owners,
+               signatures: BTreeMap::new(),
+               data: BTreeSet::new(),
+           })
     }
 
     /// Updates this data item with the given updated version if the update is valid, otherwise
@@ -170,9 +170,9 @@ impl PrivAppendableData {
     /// recently been deleted.
     pub fn append(&mut self, priv_appended_data: PrivAppendedData, sign_key: &PublicKey) -> bool {
         if match self.filter {
-            Filter::WhiteList(ref white_list) => !white_list.contains(sign_key),
-            Filter::BlackList(ref black_list) => black_list.contains(sign_key),
-        } || self.deleted_data.contains(&priv_appended_data) {
+               Filter::WhiteList(ref white_list) => !white_list.contains(sign_key),
+               Filter::BlackList(ref black_list) => black_list.contains(sign_key),
+           } || self.deleted_data.contains(&priv_appended_data) {
             return false;
         }
         let _ = self.data.insert(priv_appended_data);
@@ -324,12 +324,12 @@ mod test {
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
                                                 priv_appendable_data.get_signatures())
-                    .is_err());
+                                .is_err());
                 assert_eq!(priv_appendable_data.add_signature(&keys).unwrap(), 0);
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
                                                 priv_appendable_data.get_signatures())
-                    .is_ok());
+                                .is_ok());
             }
             Err(error) => panic!("Error: {:?}", error),
         }
@@ -358,7 +358,7 @@ mod test {
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
                                                 priv_appendable_data.get_signatures())
-                    .is_err());
+                                .is_err());
             }
             Err(error) => panic!("Error: {:?}", error),
         }

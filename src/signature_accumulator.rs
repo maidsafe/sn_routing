@@ -47,7 +47,9 @@ impl SignatureAccumulator {
         if let Some(&mut (ref mut msg, _, _)) = self.msgs.get_mut(&hash) {
             msg.add_signature(pub_id, sig);
         } else {
-            let mut sigs_vec = self.sigs.entry(hash).or_insert_with(|| (vec![], Instant::now()));
+            let mut sigs_vec = self.sigs
+                .entry(hash)
+                .or_insert_with(|| (vec![], Instant::now()));
             sigs_vec.0.push((pub_id, sig));
             return None;
         }
@@ -78,7 +80,10 @@ impl SignatureAccumulator {
                 entry.get_mut().0.add_signatures(msg);
             }
             Entry::Vacant(entry) => {
-                for (pub_id, sig) in self.sigs.remove(&hash).into_iter().flat_map(|(vec, _)| vec) {
+                for (pub_id, sig) in self.sigs
+                        .remove(&hash)
+                        .into_iter()
+                        .flat_map(|(vec, _)| vec) {
                     msg.add_signature(pub_id, sig);
                 }
                 let _ = entry.insert((msg, route, Instant::now()));
@@ -119,7 +124,9 @@ impl SignatureAccumulator {
                 }
             }
         }
-        self.msgs.remove(hash).map(|(msg, route, _)| (msg, route))
+        self.msgs
+            .remove(hash)
+            .map(|(msg, route, _)| (msg, route))
     }
 }
 
@@ -173,7 +180,9 @@ mod tests {
     impl Env {
         fn new() -> Env {
             let msg_sender_id = FullId::new();
-            let mut pub_ids = vec![*msg_sender_id.public_id()].into_iter().collect::<BTreeSet<_>>();
+            let mut pub_ids = vec![*msg_sender_id.public_id()]
+                .into_iter()
+                .collect::<BTreeSet<_>>();
             let mut other_ids = vec![];
             for _ in 0..8 {
                 let full_id = FullId::new();
@@ -198,47 +207,57 @@ mod tests {
         let env = Env::new();
 
         // Add all signatures for all messages - none should accumulate.
-        env.msgs_and_sigs.iter().foreach(|msg_and_sigs| {
-            msg_and_sigs.signature_msgs
-                .iter()
-                .zip(env.other_ids.iter())
-                .foreach(|(signature_msg, full_id)| match *signature_msg {
-                    DirectMessage::MessageSignature(ref hash, ref sig) => {
+        env.msgs_and_sigs
+            .iter()
+            .foreach(|msg_and_sigs| {
+                msg_and_sigs
+                    .signature_msgs
+                    .iter()
+                    .zip(env.other_ids.iter())
+                    .foreach(|(signature_msg, full_id)| match *signature_msg {
+                                 DirectMessage::MessageSignature(ref hash, ref sig) => {
                         assert!(sig_accumulator.add_signature(*hash, *sig, *full_id.public_id())
                             .is_none());
                     }
-                    ref unexpected_msg => panic!("Unexpected message: {:?}", unexpected_msg),
-                });
-        });
+                                 ref unexpected_msg => {
+                                     panic!("Unexpected message: {:?}", unexpected_msg)
+                                 }
+                             });
+            });
 
         assert!(sig_accumulator.msgs.is_empty());
         assert_eq!(sig_accumulator.sigs.len(), env.msgs_and_sigs.len());
-        sig_accumulator.sigs.values().foreach(|&(ref pub_ids_and_sigs, _)| {
-            assert_eq!(pub_ids_and_sigs.len(), env.other_ids.len())
-        });
+        sig_accumulator
+            .sigs
+            .values()
+            .foreach(|&(ref pub_ids_and_sigs, _)| {
+                         assert_eq!(pub_ids_and_sigs.len(), env.other_ids.len())
+                     });
 
         // Add each message with the group list added - each should accumulate.
         let mut expected_sigs_count = env.msgs_and_sigs.len();
         assert_eq!(sig_accumulator.sigs.len(), expected_sigs_count);
         assert!(sig_accumulator.msgs.is_empty());
-        env.msgs_and_sigs.iter().foreach(|msg_and_sigs| {
-            expected_sigs_count -= 1;
-            let mut signed_msg = msg_and_sigs.signed_msg.clone();
-            signed_msg.add_group_list(env.group_list.clone());
-            let route = rand::random();
-            let (returned_msg, returned_route) =
-                unwrap!(sig_accumulator.add_message(signed_msg.clone(), route));
-            assert_eq!(sig_accumulator.sigs.len(), expected_sigs_count);
-            assert!(sig_accumulator.msgs.is_empty());
-            assert_eq!(route, returned_route);
-            assert_eq!(signed_msg.routing_message(), returned_msg.routing_message());
-            unwrap!(returned_msg.check_integrity());
-            assert!(returned_msg.is_fully_signed());
-            env.group_list
-                .pub_ids
-                .iter()
-                .foreach(|pub_id| assert!(returned_msg.signed_by(pub_id)));
-        });
+        env.msgs_and_sigs
+            .iter()
+            .foreach(|msg_and_sigs| {
+                expected_sigs_count -= 1;
+                let mut signed_msg = msg_and_sigs.signed_msg.clone();
+                signed_msg.add_group_list(env.group_list.clone());
+                let route = rand::random();
+                let (returned_msg, returned_route) =
+                    unwrap!(sig_accumulator.add_message(signed_msg.clone(), route));
+                assert_eq!(sig_accumulator.sigs.len(), expected_sigs_count);
+                assert!(sig_accumulator.msgs.is_empty());
+                assert_eq!(route, returned_route);
+                assert_eq!(signed_msg.routing_message(), returned_msg.routing_message());
+                unwrap!(returned_msg.check_integrity());
+                assert!(returned_msg.is_fully_signed());
+                env.group_list
+                    .pub_ids
+                    .iter()
+                    .foreach(|pub_id| assert!(returned_msg.signed_by(pub_id)));
+            });
     }
 
     #[test]
@@ -257,28 +276,34 @@ mod tests {
         assert!(sig_accumulator.sigs.is_empty());
 
         // Add each message's signatures - each should accumulate once quorum has been reached.
-        env.msgs_and_sigs.iter().enumerate().foreach(|(route, msg_and_sigs)| {
-            msg_and_sigs.signature_msgs
-                .iter()
-                .zip(env.other_ids.iter())
-                .foreach(|(signature_msg, full_id)| {
-                    let result = match *signature_msg {
-                        DirectMessage::MessageSignature(hash, sig) => {
-                            sig_accumulator.add_signature(hash, sig, *full_id.public_id())
-                        }
-                        ref unexpected_msg => panic!("Unexpected message: {:?}", unexpected_msg),
-                    };
+        env.msgs_and_sigs
+            .iter()
+            .enumerate()
+            .foreach(|(route, msg_and_sigs)| {
+                msg_and_sigs
+                    .signature_msgs
+                    .iter()
+                    .zip(env.other_ids.iter())
+                    .foreach(|(signature_msg, full_id)| {
+                        let result = match *signature_msg {
+                            DirectMessage::MessageSignature(hash, sig) => {
+                                sig_accumulator.add_signature(hash, sig, *full_id.public_id())
+                            }
+                            ref unexpected_msg => {
+                                panic!("Unexpected message: {:?}", unexpected_msg)
+                            }
+                        };
 
-                    if let Some((returned_msg, returned_route)) = result {
-                        expected_msgs_count -= 1;
-                        assert_eq!(sig_accumulator.msgs.len(), expected_msgs_count);
-                        assert_eq!(route as u8, returned_route);
-                        assert_eq!(msg_and_sigs.signed_msg.routing_message(),
+                        if let Some((returned_msg, returned_route)) = result {
+                            expected_msgs_count -= 1;
+                            assert_eq!(sig_accumulator.msgs.len(), expected_msgs_count);
+                            assert_eq!(route as u8, returned_route);
+                            assert_eq!(msg_and_sigs.signed_msg.routing_message(),
                                    returned_msg.routing_message());
-                        unwrap!(returned_msg.check_integrity());
-                        assert!(returned_msg.is_fully_signed());
-                    }
-                });
-        });
+                            unwrap!(returned_msg.check_integrity());
+                            assert!(returned_msg.is_fully_signed());
+                        }
+                    });
+            });
     }
 }

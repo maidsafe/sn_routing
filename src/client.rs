@@ -82,11 +82,11 @@ impl Client {
         let raii_joiner = thread::named("Client thread", move || machine.run());
 
         Ok(Client {
-            interface_result_tx: tx,
-            interface_result_rx: rx,
-            action_sender: action_sender,
-            _raii_joiner: raii_joiner,
-        })
+               interface_result_tx: tx,
+               interface_result_rx: rx,
+               action_sender: action_sender,
+               _raii_joiner: raii_joiner,
+           })
     }
 
     fn make_state_machine(event_sender: Sender<Event>,
@@ -97,13 +97,13 @@ impl Client {
         let full_id = keys.unwrap_or_else(FullId::new);
 
         StateMachine::new(move |crust_service, timer| {
-            State::Bootstrapping(states::Bootstrapping::new(cache,
-                                                            true,
-                                                            crust_service,
-                                                            event_sender,
-                                                            full_id,
-                                                            timer))
-        },
+                              State::Bootstrapping(states::Bootstrapping::new(cache,
+                                                                              true,
+                                                                              crust_service,
+                                                                              event_sender,
+                                                                              full_id,
+                                                                              timer))
+                          },
                           config)
     }
 
@@ -354,7 +354,8 @@ impl Client {
     /// Returns the name of this node.
     pub fn name(&self) -> Result<XorName, InterfaceError> {
         let (result_tx, result_rx) = channel();
-        self.action_sender.send(Action::Name { result_tx: result_tx })?;
+        self.action_sender
+            .send(Action::Name { result_tx: result_tx })?;
 
         self.receive_action_result(&result_rx)
     }
@@ -362,14 +363,19 @@ impl Client {
     /// Returns the `crust::Config` associated with the `crust::Service` (if any).
     #[cfg(feature = "use-mock-crust")]
     pub fn bootstrap_config(&self) -> BootstrapConfig {
-        self.machine.borrow().bootstrap_config().unwrap_or_else(BootstrapConfig::default)
+        self.machine
+            .borrow()
+            .bootstrap_config()
+            .unwrap_or_else(BootstrapConfig::default)
     }
 
     /// Returns the `crust::Config` associated with the `crust::Service` (if any).
     #[cfg(not(feature = "use-mock-crust"))]
     pub fn bootstrap_config(&self) -> BootstrapConfig {
         let (tx, rx) = channel();
-        if self.action_sender.send(Action::Config { result_tx: tx }).is_err() {
+        if self.action_sender
+               .send(Action::Config { result_tx: tx })
+               .is_err() {
             return BootstrapConfig::default();
         }
         rx.recv().unwrap_or_else(|_| BootstrapConfig::default())
@@ -410,11 +416,11 @@ impl Client {
         let (tx, rx) = channel();
 
         Ok(Client {
-            interface_result_tx: tx,
-            interface_result_rx: rx,
-            action_sender: action_sender,
-            machine: RefCell::new(machine),
-        })
+               interface_result_tx: tx,
+               interface_result_rx: rx,
+               action_sender: action_sender,
+               machine: RefCell::new(machine),
+           })
     }
 
     /// Poll and process all events in this client's `Core` instance.
@@ -424,7 +430,10 @@ impl Client {
 
     /// Resend all unacknowledged messages.
     pub fn resend_unacknowledged(&self) -> bool {
-        self.machine.borrow_mut().current_mut().resend_unacknowledged()
+        self.machine
+            .borrow_mut()
+            .current_mut()
+            .resend_unacknowledged()
     }
 
     /// Are there any unacknowledged messages?

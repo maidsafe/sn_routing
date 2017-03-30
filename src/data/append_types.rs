@@ -63,10 +63,10 @@ impl AppendedData {
         let data_to_sign = serialise(&(&pointer, &pub_key))?;
         let signature = sign::sign_detached(&data_to_sign, secret_key);
         Ok(AppendedData {
-            pointer: pointer,
-            sign_key: pub_key,
-            signature: signature,
-        })
+               pointer: pointer,
+               sign_key: pub_key,
+               signature: signature,
+           })
     }
 
     /// Returns `true` if the signature matches the data.
@@ -125,12 +125,12 @@ impl AppendWrapper {
         let data_to_sign = serialise(&(&append_to, &data, &sign_pair.0, &version))?;
         let signature = sign::sign_detached(&data_to_sign, sign_pair.1);
         Ok(AppendWrapper::Priv {
-            append_to: append_to,
-            data: data,
-            sign_key: *sign_pair.0,
-            version: version,
-            signature: signature,
-        })
+               append_to: append_to,
+               data: data,
+               sign_key: *sign_pair.0,
+               version: version,
+               signature: signature,
+           })
     }
 
     /// Returns the identifier of the data to append to.
@@ -145,11 +145,13 @@ impl AppendWrapper {
     pub fn verify_signature(&self) -> bool {
         match *self {
             AppendWrapper::Pub { ref data, .. } => data.verify_signature(),
-            AppendWrapper::Priv { ref append_to,
-                                  ref data,
-                                  ref sign_key,
-                                  ref version,
-                                  ref signature } => {
+            AppendWrapper::Priv {
+                ref append_to,
+                ref data,
+                ref sign_key,
+                ref version,
+                ref signature,
+            } => {
                 let data_to_sign = match serialise(&(append_to, data, sign_key, version)) {
                     Err(_) => return false,
                     Ok(data) => data,

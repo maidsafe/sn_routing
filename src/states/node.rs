@@ -207,7 +207,9 @@ impl Node {
                                          self,
                                          self.crust_service.id(),
                                          self.stats.cur_routing_table_size);
-                let sep_str = iter::repeat('-').take(status_str.len()).collect::<String>();
+                let sep_str = iter::repeat('-')
+                    .take(status_str.len())
+                    .collect::<String>();
                 log!(target: "stats", TABLE_LVL, " -{}- ", sep_str);
                 log!(target: "stats", TABLE_LVL, "| {} |", status_str);
                 log!(target: "stats", TABLE_LVL, " -{}- ", sep_str);
@@ -220,7 +222,13 @@ impl Node {
             Action::ClientSendRequest { result_tx, .. } => {
                 let _ = result_tx.send(Err(InterfaceError::InvalidState));
             }
-            Action::NodeSendMessage { src, dst, content, priority, result_tx } => {
+            Action::NodeSendMessage {
+                src,
+                dst,
+                content,
+                priority,
+                result_tx,
+            } => {
                 let result = match self.send_user_message(src, dst, content, priority) {
                     Err(RoutingError::Interface(err)) => Err(err),
                     Err(_) | Ok(_) => Ok(()),
@@ -270,7 +278,10 @@ impl Node {
                     Err(err) => debug!("{:?} - {:?}", self, err),
                 }
             }
-            CrustEvent::ConnectionInfoPrepared(ConnectionInfoResult { result_token, result }) => {
+            CrustEvent::ConnectionInfoPrepared(ConnectionInfoResult {
+                                                   result_token,
+                                                   result,
+                                               }) => {
                 self.handle_connection_info_prepared(result_token, result)
             }
             CrustEvent::ListenerStarted(port) => {
@@ -447,9 +458,11 @@ impl Node {
             DirectMessage::MessageSignature(digest, sig) => {
                 self.handle_message_signature(digest, sig, peer_id)
             }
-            DirectMessage::ClientIdentify { ref serialised_public_id,
-                                            ref signature,
-                                            client_restriction } => {
+            DirectMessage::ClientIdentify {
+                ref serialised_public_id,
+                ref signature,
+                client_restriction,
+            } => {
                 if let Ok(public_id) = verify_signed_public_id(serialised_public_id, signature) {
                     self.handle_client_identify(public_id, peer_id, client_restriction)
                 } else {
@@ -461,7 +474,10 @@ impl Node {
                     Ok(())
                 }
             }
-            DirectMessage::NodeIdentify { ref serialised_public_id, ref signature } => {
+            DirectMessage::NodeIdentify {
+                ref serialised_public_id,
+                ref signature,
+            } => {
                 if let Ok(public_id) = verify_signed_public_id(serialised_public_id, signature) {
                     self.handle_node_identify(public_id, peer_id);
                 } else {
@@ -493,8 +509,7 @@ impl Node {
                                 -> Result<(), RoutingError> {
         if let Some(&pub_id) = self.peer_mgr.get_routing_peer(&peer_id) {
             if let Some((signed_msg, route)) =
-                self.sig_accumulator
-                    .add_signature(digest, sig, pub_id) {
+                self.sig_accumulator.add_signature(digest, sig, pub_id) {
                 let hop = *pub_id.name();
                 return self.handle_signed_message(signed_msg, route, hop);
             }
@@ -527,7 +542,10 @@ impl Node {
 
         let HopMessage { mut content, route, .. } = hop_msg;
         let hop_pub_ids = if let Some(group) = self.peer_mgr.routing_table().get_group(&hop_name) {
-            self.peer_mgr.get_pub_ids(group).into_iter().collect::<BTreeSet<_>>()
+            self.peer_mgr
+                .get_pub_ids(group)
+                .into_iter()
+                .collect::<BTreeSet<_>>()
         } else {
             return Err(RoutingError::UnknownConnection(peer_id));
         };
@@ -556,7 +574,8 @@ impl Node {
             self.send_ack(signed_msg.routing_message(), route);
         }
 
-        if self.routing_msg_filter.filter_incoming(signed_msg.routing_message(), route) > 1 {
+        if self.routing_msg_filter
+               .filter_incoming(signed_msg.routing_message(), route) > 1 {
             return Err(RoutingError::FilterCheckFailed);
         }
 
@@ -570,7 +589,8 @@ impl Node {
         }
 
         if in_authority {
-            self.msg_queue.push_back(signed_msg.into_routing_message());
+            self.msg_queue
+                .push_back(signed_msg.into_routing_message());
         }
         Ok(())
     }
@@ -584,8 +604,15 @@ impl Node {
         }
 
         match (routing_msg.content, routing_msg.src, routing_msg.dst) {
-            (MessageContent::GetNodeName { current_id, message_id },
-             Authority::Client { client_key, proxy_node_name, peer_id },
+            (MessageContent::GetNodeName {
+                 current_id,
+                 message_id,
+             },
+             Authority::Client {
+                 client_key,
+                 proxy_node_name,
+                 peer_id,
+             },
              Authority::NaeManager(dst_name)) => {
                 self.handle_get_node_name_request(current_id,
                                                   client_key,
@@ -594,13 +621,21 @@ impl Node {
                                                   peer_id,
                                                   message_id)
             }
-            (MessageContent::GetNodeNameResponse { relocated_id, groups, .. },
+            (MessageContent::GetNodeNameResponse {
+                 relocated_id,
+                 groups,
+                 ..
+             },
              Authority::NodeManager(_),
              dst) => {
                 self.handle_get_node_name_response(relocated_id, groups, dst);
                 Ok(())
             }
-            (MessageContent::ExpectCloseNode { expect_id, client_auth, message_id },
+            (MessageContent::ExpectCloseNode {
+                 expect_id,
+                 client_auth,
+                 message_id,
+             },
              Authority::NaeManager(_),
              Authority::NaeManager(_)) => {
                 self.handle_expect_close_node_request(expect_id, client_auth, message_id)
@@ -625,17 +660,28 @@ impl Node {
              Authority::ManagedNode(_),
              dst) => self.handle_get_close_group_response(close_group_ids, dst),
             (MessageContent::GroupSplit(prefix), _, _) => self.handle_group_split(prefix),
-            (MessageContent::OwnGroupMerge { sender_prefix, merge_prefix, groups }, _, _) => {
-                self.handle_own_group_merge(sender_prefix, merge_prefix, groups)
-            }
+            (MessageContent::OwnGroupMerge {
+                 sender_prefix,
+                 merge_prefix,
+                 groups,
+             },
+             _,
+             _) => self.handle_own_group_merge(sender_prefix, merge_prefix, groups),
             (MessageContent::OtherGroupMerge { prefix, group }, _, _) => {
                 self.handle_other_group_merge(prefix, group)
             }
             (MessageContent::Ack(ack, _), _, _) => self.handle_ack_response(ack),
-            (MessageContent::UserMessagePart { hash, part_count, part_index, payload, .. },
+            (MessageContent::UserMessagePart {
+                 hash,
+                 part_count,
+                 part_index,
+                 payload,
+                 ..
+             },
              src,
              dst) => {
-                if let Some(msg) = self.user_msg_cache.add(hash, part_count, part_index, payload) {
+                if let Some(msg) = self.user_msg_cache
+                       .add(hash, part_count, part_index, payload) {
                     self.stats().count_user_message(&msg);
                     self.send_event(msg.into_event(src, dst));
                 }
@@ -672,17 +718,20 @@ impl Node {
                           routing_msg: &RoutingMessage,
                           route: u8)
                           -> Result<bool, RoutingError> {
-        if let MessageContent::UserMessagePart { hash,
-                                                 part_count,
-                                                 part_index,
-                                                 cacheable,
-                                                 ref payload,
-                                                 .. } = routing_msg.content {
+        if let MessageContent::UserMessagePart {
+                   hash,
+                   part_count,
+                   part_index,
+                   cacheable,
+                   ref payload,
+                   ..
+               } = routing_msg.content {
             if !cacheable {
                 return Ok(false);
             }
 
-            match self.cacheable_user_msg_cache.add(hash, part_count, part_index, payload.clone()) {
+            match self.cacheable_user_msg_cache
+                      .add(hash, part_count, part_index, payload.clone()) {
                 Some(UserMessage::Request(request)) => {
                     if let Some(response) = self.response_cache.get(&request) {
                         debug!("{:?} Found cached response to {:?}", self, request);
@@ -860,7 +909,9 @@ impl Node {
                     }
                 }
 
-                if self.peer_mgr.routing_table().is_in_our_group(public_id.name()) {
+                if self.peer_mgr
+                       .routing_table()
+                       .is_in_our_group(public_id.name()) {
                     let event = Event::NodeAdded(*public_id.name());
                     if let Err(err) = self.event_sender.send(event) {
                         error!("{:?} Error sending event to routing user - {:?}", self, err);
@@ -898,33 +949,39 @@ impl Node {
                 Ok(encoded_connection_info) => encoded_connection_info,
             };
 
-        let (pub_id, src, dst) = match self.peer_mgr
-            .connection_info_prepared(result_token, our_connection_info) {
-            Err(error) => {
-                // This usually means we have already connected.
-                debug!("{:?} Prepared connection info, but no entry found in token map: {:?}",
+        let (pub_id, src, dst) =
+            match self.peer_mgr
+                      .connection_info_prepared(result_token, our_connection_info) {
+                Err(error) => {
+                    // This usually means we have already connected.
+                    debug!("{:?} Prepared connection info, but no entry found in token map: {:?}",
                        self,
                        error);
-                return;
-            }
-            Ok(ConnectionInfoPreparedResult { pub_id, src, dst, infos }) => {
-                match infos {
-                    None => {
-                        debug!("{:?} Prepared connection info for {:?}.",
+                    return;
+                }
+                Ok(ConnectionInfoPreparedResult {
+                       pub_id,
+                       src,
+                       dst,
+                       infos,
+                   }) => {
+                    match infos {
+                        None => {
+                            debug!("{:?} Prepared connection info for {:?}.",
                                self,
                                pub_id.name());
-                    }
-                    Some((our_info, their_info)) => {
-                        debug!("{:?} Trying to connect to {:?} as {:?}.",
+                        }
+                        Some((our_info, their_info)) => {
+                            debug!("{:?} Trying to connect to {:?} as {:?}.",
                                self,
                                their_info.id(),
                                pub_id.name());
-                        let _ = self.crust_service.connect(our_info, their_info);
+                            let _ = self.crust_service.connect(our_info, their_info);
+                        }
                     }
+                    (pub_id, src, dst)
                 }
-                (pub_id, src, dst)
-            }
-        };
+            };
 
         let nonce = box_::gen_nonce();
         let encrypted_connection_info = box_::seal(&encoded_connection_info,
@@ -1129,10 +1186,15 @@ impl Node {
         }
         self.get_node_name_timer_token = None;
 
-        self.full_id.public_id_mut().set_name(*relocated_id.name());
-        self.peer_mgr.reset_routing_table(*self.full_id.public_id(), &groups);
+        self.full_id
+            .public_id_mut()
+            .set_name(*relocated_id.name());
+        self.peer_mgr
+            .reset_routing_table(*self.full_id.public_id(), &groups);
 
-        for pub_id in groups.into_iter().flat_map(|(_, group)| group.into_iter()) {
+        for pub_id in groups
+                .into_iter()
+                .flat_map(|(_, group)| group.into_iter()) {
             debug!("{:?} Sending connection info to {:?} on GetNodeName response.",
                    self,
                    pub_id);
@@ -1234,7 +1296,10 @@ impl Node {
                                        dst: Authority)
                                        -> Result<(), RoutingError> {
         for close_node_id in close_group_ids {
-            if self.peer_mgr.routing_table().need_to_add(close_node_id.name()).is_ok() {
+            if self.peer_mgr
+                   .routing_table()
+                   .need_to_add(close_node_id.name())
+                   .is_ok() {
                 debug!("{:?} Sending connection info to {:?} on GetCloseGroup response.",
                        self,
                        close_node_id);
@@ -1268,17 +1333,21 @@ impl Node {
                               -> Result<(), RoutingError> {
         let (merge_state, needed_peers) = self.peer_mgr
             .merge_own_group(sender_prefix, merge_prefix, groups);
-        let src =
-            Authority::NaeManager(self.peer_mgr.routing_table().our_group_prefix().lower_bound());
+        let src = Authority::NaeManager(self.peer_mgr
+                                            .routing_table()
+                                            .our_group_prefix()
+                                            .lower_bound());
         match merge_state {
-            OwnMergeState::Initialised { targets, merge_details } => {
-                self.send_own_group_merge(targets, merge_details, src)
-            }
+            OwnMergeState::Initialised {
+                targets,
+                merge_details,
+            } => self.send_own_group_merge(targets, merge_details, src),
             OwnMergeState::Ongoing |
             OwnMergeState::AlreadyMerged => (),
-            OwnMergeState::Completed { targets, merge_details } => {
-                self.send_other_group_merge(targets, merge_details, src)
-            }
+            OwnMergeState::Completed {
+                targets,
+                merge_details,
+            } => self.send_other_group_merge(targets, merge_details, src),
         }
 
         let own_name = *self.name();
@@ -1286,9 +1355,10 @@ impl Node {
             debug!("{:?} Sending connection info to {:?} due to merging own group.",
                    self,
                    needed);
-            if let Err(error) = self.send_connection_info(*needed,
-                                                          Authority::ManagedNode(own_name),
-                                                          Authority::ManagedNode(*needed.name())) {
+            if let Err(error) =
+                self.send_connection_info(*needed,
+                                          Authority::ManagedNode(own_name),
+                                          Authority::ManagedNode(*needed.name())) {
                 debug!("{:?} - Failed to send connection info to {:?}: {:?}",
                        self,
                        needed,
@@ -1309,9 +1379,10 @@ impl Node {
                    self,
                    needed);
             let needed_name = *needed.name();
-            if let Err(error) = self.send_connection_info(needed,
-                                                          Authority::ManagedNode(own_name),
-                                                          Authority::ManagedNode(needed_name)) {
+            if let Err(error) =
+                self.send_connection_info(needed,
+                                          Authority::ManagedNode(own_name),
+                                          Authority::ManagedNode(needed_name)) {
                 debug!("{:?} - Failed to send connection info: {:?}", self, error);
             }
         }
@@ -1364,7 +1435,10 @@ impl Node {
             serialisation::deserialise(&serialised_connection_info)?;
         let peer_id = their_connection_info.id();
         match self.peer_mgr
-            .connection_info_received(src, dst, conn_info.public_id, their_connection_info) {
+                  .connection_info_received(src,
+                                            dst,
+                                            conn_info.public_id,
+                                            their_connection_info) {
             Ok(ConnectionInfoReceivedResult::Ready(our_info, their_info)) => {
                 debug!("{:?} Received connection info. Trying to connect to {:?} ({:?}).",
                        self,
@@ -1406,10 +1480,10 @@ impl Node {
 
         for part in user_msg.to_parts(priority)? {
             self.send_routing_message(RoutingMessage {
-                    src: src,
-                    dst: dst,
-                    content: part,
-                })?;
+                                          src: src,
+                                          dst: dst,
+                                          content: part,
+                                      })?;
         }
         Ok(())
     }
@@ -1452,9 +1526,10 @@ impl Node {
         }
 
         let src = &routing_msg.src;
-        let send_sig =
-            sent_by_us && src.is_group() &&
-            !self.peer_mgr.routing_table().should_route_full_message(src.name(), route as usize);
+        let send_sig = sent_by_us && src.is_group() &&
+                       !self.peer_mgr
+                            .routing_table()
+                            .should_route_full_message(src.name(), route as usize);
         let raw_bytes = if send_sig {
             // Not our turn to send the full `RoutingMessage`. Only send a signature.
             let sign_key = self.full_id().signing_private_key();
@@ -1466,8 +1541,8 @@ impl Node {
         for target_peer_id in target_peer_ids {
             let (peer_id, bytes) = if self.crust_service.is_connected(&target_peer_id) {
                 (target_peer_id, raw_bytes.clone())
-            } else if let Some(&tunnel_id) = self.tunnels
-                .tunnel_for(&target_peer_id) {
+            } else if let Some(&tunnel_id) =
+                self.tunnels.tunnel_for(&target_peer_id) {
                 let bytes = if send_sig {
                     // Not our turn to send the full `RoutingMessage`. Only send a signature.
                     let sign_key = self.full_id().signing_private_key();
@@ -1530,7 +1605,10 @@ impl Node {
         if let Authority::Client { ref client_key, .. } = *auth {
             client_key == self.full_id.public_id().signing_public_key()
         } else {
-            self.is_proper() && self.peer_mgr.routing_table().is_recipient(&auth.to_destination())
+            self.is_proper() &&
+            self.peer_mgr
+                .routing_table()
+                .is_recipient(&auth.to_destination())
         }
     }
 
@@ -1605,14 +1683,15 @@ impl Node {
                             -> Result<(), RoutingError> {
         let their_name = *their_public_id.name();
         if let Some(peer_id) = self.peer_mgr
-            .get_proxy_or_client_or_joining_node_peer_id(&their_public_id) {
+               .get_proxy_or_client_or_joining_node_peer_id(&their_public_id) {
             self.send_node_identify(peer_id)?;
             self.handle_node_identify(their_public_id, peer_id);
             return Ok(());
         }
 
         self.peer_mgr.allow_connect(&their_name)?;
-        if let Some(token) = self.peer_mgr.get_connection_token(src, dst, their_public_id) {
+        if let Some(token) = self.peer_mgr
+               .get_connection_token(src, dst, their_public_id) {
             self.crust_service.prepare_connection_info(token);
         } else {
             trace!("{:?} Already sent connection info to {:?}!",
@@ -1677,10 +1756,14 @@ impl Node {
             }
         }
 
-        if let RemovalDetails { targets_and_merge_details: Some((targets, merge_details)), .. } =
-            details {
+        if let RemovalDetails {
+                   targets_and_merge_details: Some((targets, merge_details)), ..
+               } = details {
             let our_new_prefix = merge_details.merge_prefix;
-            let src_name = self.peer_mgr.routing_table().our_group_prefix().lower_bound();
+            let src_name = self.peer_mgr
+                .routing_table()
+                .our_group_prefix()
+                .lower_bound();
             self.send_own_group_merge(targets, merge_details, Authority::NaeManager(src_name));
             // TODO - the event should maybe only fire once all new connections have been made?
             if let Err(err) = self.event_sender.send(Event::GroupMerge(our_new_prefix)) {
@@ -1705,13 +1788,17 @@ impl Node {
                             targets: BTreeSet<Prefix<XorName>>,
                             merge_details: OwnMergeDetails<XorName>,
                             src: Authority) {
-        let mut groups = merge_details.groups
+        let mut groups = merge_details
+            .groups
             .into_iter()
             .map(|(prefix, members)| {
-                let mut group = self.peer_mgr.get_pub_ids(&members).into_iter().collect_vec();
-                group.sort();
-                (prefix, group)
-            })
+                     let mut group = self.peer_mgr
+                         .get_pub_ids(&members)
+                         .into_iter()
+                         .collect_vec();
+                     group.sort();
+                     (prefix, group)
+                 })
             .collect_vec();
         groups.sort();
         let request_content = MessageContent::OwnGroupMerge {
@@ -1735,7 +1822,10 @@ impl Node {
                               targets: BTreeSet<Prefix<XorName>>,
                               merge_details: OtherMergeDetails<XorName>,
                               src: Authority) {
-        let group = self.peer_mgr.get_pub_ids(&merge_details.group).into_iter().collect_vec();
+        let group = self.peer_mgr
+            .get_pub_ids(&merge_details.group)
+            .into_iter()
+            .collect_vec();
         for target in &targets {
             let request_content = MessageContent::OtherGroupMerge {
                 prefix: merge_details.prefix,
@@ -1765,8 +1855,10 @@ impl Node {
             .remove_tunnel(peer_id)
             .into_iter()
             .filter_map(|dst_id| {
-                self.peer_mgr.get_routing_peer(&dst_id).map(|dst_pub_id| (dst_id, *dst_pub_id))
-            })
+                            self.peer_mgr
+                                .get_routing_peer(&dst_id)
+                                .map(|dst_pub_id| (dst_id, *dst_pub_id))
+                        })
             .collect_vec();
         for (dst_id, pub_id) in peers {
             self.dropped_peer(&dst_id);
@@ -1901,9 +1993,11 @@ impl Bootstrapped for Node {
 
         // If we need to handle this message, put it in the queue.
         if self.in_authority(&signed_msg.routing_message().dst) &&
-           self.routing_msg_filter.filter_incoming(signed_msg.routing_message(), route) == 1 {
+           self.routing_msg_filter
+               .filter_incoming(signed_msg.routing_message(), route) == 1 {
             self.send_ack(signed_msg.routing_message(), route);
-            self.msg_queue.push_back(signed_msg.into_routing_message());
+            self.msg_queue
+                .push_back(signed_msg.into_routing_message());
         }
         Ok(())
     }

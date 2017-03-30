@@ -49,17 +49,26 @@ pub struct NodeBuilder {
 impl NodeBuilder {
     /// Configures the node to use the given request cache.
     pub fn cache(self, cache: Box<Cache>) -> NodeBuilder {
-        NodeBuilder { cache: cache, ..self }
+        NodeBuilder {
+            cache: cache,
+            ..self
+        }
     }
 
     /// Configures the node to start a new network instead of joining an existing one.
     pub fn first(self, first: bool) -> NodeBuilder {
-        NodeBuilder { first: first, ..self }
+        NodeBuilder {
+            first: first,
+            ..self
+        }
     }
 
     /// Causes node creation to fail if another node on the local network is detected.
     pub fn deny_other_local_nodes(self) -> NodeBuilder {
-        NodeBuilder { deny_other_local_nodes: true, ..self }
+        NodeBuilder {
+            deny_other_local_nodes: true,
+            ..self
+        }
     }
 
     /// Creates new `Node`.
@@ -80,11 +89,11 @@ impl NodeBuilder {
         let raii_joiner = thread::named("Node thread", move || machine.run());
 
         Ok(Node {
-            interface_result_tx: tx,
-            interface_result_rx: rx,
-            action_sender: action_sender,
-            _raii_joiner: raii_joiner,
-        })
+               interface_result_tx: tx,
+               interface_result_rx: rx,
+               action_sender: action_sender,
+               _raii_joiner: raii_joiner,
+           })
     }
 
     /// Creates a new `Node` for unit testing.
@@ -95,11 +104,11 @@ impl NodeBuilder {
         let (tx, rx) = channel();
 
         Ok(Node {
-            interface_result_tx: tx,
-            interface_result_rx: rx,
-            action_sender: action_sender,
-            machine: RefCell::new(machine),
-        })
+               interface_result_tx: tx,
+               interface_result_rx: rx,
+               action_sender: action_sender,
+               machine: RefCell::new(machine),
+           })
     }
 
     fn make_state_machine(self,
@@ -118,7 +127,7 @@ impl NodeBuilder {
                 State::Terminated
             }
         } else if self.deny_other_local_nodes &&
-                                                                 crust_service.has_peers_on_lan() {
+                  crust_service.has_peers_on_lan() {
             error!("Bootstrapping({:?}) More than 1 routing node found on LAN. Currently this is \
                     not supported",
                    full_id.public_id().name());
@@ -405,9 +414,9 @@ impl Node {
         let (result_tx, result_rx) = channel();
         self.action_sender
             .send(Action::CloseGroup {
-                name: name,
-                result_tx: result_tx,
-            })?;
+                      name: name,
+                      result_tx: result_tx,
+                  })?;
 
         self.receive_action_result(&result_rx)
     }
@@ -415,7 +424,8 @@ impl Node {
     /// Returns the name of this node.
     pub fn name(&self) -> Result<XorName, InterfaceError> {
         let (result_tx, result_rx) = channel();
-        self.action_sender.send(Action::Name { result_tx: result_tx })?;
+        self.action_sender
+            .send(Action::Name { result_tx: result_tx })?;
         self.receive_action_result(&result_rx)
     }
 
@@ -427,12 +437,12 @@ impl Node {
                    -> Result<(), InterfaceError> {
         self.action_sender
             .send(Action::NodeSendMessage {
-                src: src,
-                dst: dst,
-                content: user_msg,
-                priority: priority,
-                result_tx: self.interface_result_tx.clone(),
-            })?;
+                      src: src,
+                      dst: dst,
+                      content: user_msg,
+                      priority: priority,
+                      result_tx: self.interface_result_tx.clone(),
+                  })?;
 
         self.receive_action_result(&self.interface_result_rx)?
     }
@@ -452,7 +462,10 @@ impl Node {
 
     /// Resend all unacknowledged messages.
     pub fn resend_unacknowledged(&self) -> bool {
-        self.machine.borrow_mut().current_mut().resend_unacknowledged()
+        self.machine
+            .borrow_mut()
+            .current_mut()
+            .resend_unacknowledged()
     }
 
     /// Are there any unacknowledged messages?
@@ -462,7 +475,11 @@ impl Node {
 
     /// Routing table of this node.
     pub fn routing_table(&self) -> RoutingTable<XorName> {
-        self.machine.borrow().current().routing_table().clone()
+        self.machine
+            .borrow()
+            .current()
+            .routing_table()
+            .clone()
     }
 
     /// Resend all unacknowledged messages.
