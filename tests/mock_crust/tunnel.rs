@@ -51,11 +51,11 @@ fn failing_connections_bidirectional() {
 
 #[test]
 fn failing_connections_unidirectional() {
-    let min_section_size = 8;
+    let min_section_size = 10;
     let network = Network::new(min_section_size, None);
-    network.block_connection(Endpoint(1), Endpoint(6));
-    network.block_connection(Endpoint(1), Endpoint(7));
-    network.block_connection(Endpoint(6), Endpoint(7));
+    for i in 3..min_section_size {
+        network.block_connect_request(Endpoint(2), Endpoint(i));
+    }
 
     let nodes = create_connected_nodes(&network, min_section_size);
     verify_invariant_for_all_nodes(&nodes);

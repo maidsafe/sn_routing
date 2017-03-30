@@ -37,6 +37,7 @@ pub struct NetworkImpl {
     next_endpoint: usize,
     queue: HashMap<(Endpoint, Endpoint), VecDeque<Packet>>,
     blocked_connections: HashSet<(Endpoint, Endpoint)>,
+    blocked_connect_req_connections: HashSet<(Endpoint, Endpoint)>,
     rng: SeededRng,
 }
 
@@ -55,6 +56,7 @@ impl Network {
                                          next_endpoint: 0,
                                          queue: HashMap::new(),
                                          blocked_connections: HashSet::new(),
+                                         blocked_connect_req_connections: HashSet::new(),
                                          rng: SeededRng::new(),
                                      })))
     }
@@ -109,6 +111,13 @@ impl Network {
         imp.blocked_connections.insert((sender, receiver));
     }
 
+    /// Causes ConnectRequest packet from `sender` to `receiver` to fail.
+    pub fn block_connect_request(&self, sender: Endpoint, receiver: Endpoint) {
+        let mut imp = self.0.borrow_mut();
+        imp.blocked_connect_req_connections
+            .insert((sender, receiver));
+    }
+
     /// Make all packets from `sender` to `receiver` succeed.
     pub fn unblock_connection(&self, sender: Endpoint, receiver: Endpoint) {
         let mut imp = self.0.borrow_mut();
@@ -159,6 +168,13 @@ impl Network {
         self.0
             .borrow()
             .blocked_connections
+            .contains(&(sender, receiver))
+    }
+
+    fn connect_request_blocked(&self, sender: Endpoint, receiver: Endpoint) -> bool {
+        self.0
+            .borrow()
+            .blocked_connect_req_connections
             .contains(&(sender, receiver))
     }
 
@@ -215,6 +231,14 @@ impl Network {
             if let Some(failure) = packet.to_failure() {
                 self.send(receiver, sender, failure);
                 return;
+            }
+        }
+        if self.connect_request_blocked(sender, receiver) {
+            if let Packet::ConnectRequest(..) = packet {
+                if let Some(failure) = packet.to_failure() {
+                    self.send(receiver, sender, failure);
+                    return;
+                }
             }
         }
 
@@ -603,7 +627,7 @@ impl Default for Config {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, RustcEncodable, RustcDecodable)]
 pub struct Endpoint(pub usize);
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 enum Packet {
     BootstrapRequest(PeerId, CrustUser),
     BootstrapSuccess(PeerId),
