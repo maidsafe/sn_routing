@@ -125,6 +125,7 @@
 extern crate hex;
 #[macro_use]
 extern crate log;
+extern crate fake_clock;
 extern crate maidsafe_utilities;
 #[macro_use]
 extern crate quick_error;

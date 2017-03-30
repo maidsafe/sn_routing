@@ -25,6 +25,8 @@ use crust::{ConnectionInfoResult, CrustError, CrustUser, PeerId, PrivConnectionI
 use crust::Event as CrustEvent;
 use error::{InterfaceError, RoutingError};
 use event::Event;
+#[cfg(feature="use-mock-crust")]
+use fake_clock::FakeClock as Instant;
 use id::{FullId, PublicId};
 use itertools::Itertools;
 use log::LogLevel;
@@ -54,8 +56,9 @@ use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 #[cfg(feature = "use-mock-crust")]
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
-use std::iter::Iterator;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(not(feature="use-mock-crust"))]
+use std::time::Instant;
 use timer::Timer;
 use tunnels::Tunnels;
 use types::MessageId;
@@ -2533,7 +2536,7 @@ impl Node {
                          .schedule(Duration::from_secs(APPROVAL_PROGRESS_INTERVAL_SECS)));
             let now = Instant::now();
             let remaining_duration = if now < self.approval_expiry_time {
-                let duration = self.approval_expiry_time - now;
+                let duration = self.approval_expiry_time.clone() - now;
                 if duration.subsec_nanos() >= 500_000_000 {
                     duration.as_secs() + 1
                 } else {
