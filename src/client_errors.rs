@@ -19,7 +19,7 @@ use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 
 /// Errors in Get (non-mutating) operations involving Core and Vaults
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, RustcEncodable, RustcDecodable)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum GetError {
     /// SAFE Account does not exist for client
     NoSuchAccount,
@@ -61,7 +61,7 @@ impl Error for GetError {
 
 
 /// Errors in Put/Post/Delete (mutating) operations involving Core and Vaults
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, RustcEncodable, RustcDecodable)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum MutationError {
     /// SAFE Account does not exist for client
     NoSuchAccount,

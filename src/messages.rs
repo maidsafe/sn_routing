@@ -58,7 +58,7 @@ pub const CLIENT_GET_PRIORITY: u8 = 3;
 /// Wrapper of all messages.
 ///
 /// This is the only type allowed to be sent / received on the network.
-#[derive(Debug, RustcEncodable, RustcDecodable)]
+#[derive(Debug, Serialize, Deserialize)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
 pub enum Message {
@@ -100,7 +100,7 @@ impl Message {
 /// Messages sent via a direct connection.
 ///
 /// Allows routing to directly send specific messages between nodes.
-#[derive(RustcEncodable, RustcDecodable)]
+#[derive(Serialize, Deserialize)]
 pub enum DirectMessage {
     /// Sent from members of a section or group message's source authority to the first hop. The
     /// message will only be relayed once enough signatures have been accumulated.
@@ -192,7 +192,7 @@ impl DirectMessage {
 /// To relay a `SignedMessage` via another node, the `SignedMessage` is wrapped in a `HopMessage`.
 /// The `signature` is from the node that sends this directly to a node in its routing table. To
 /// prevent Man-in-the-middle attacks, the `content` is signed by the original sender.
-#[derive(RustcEncodable, RustcDecodable)]
+#[derive(Serialize, Deserialize)]
 pub struct HopMessage {
     /// Wrapped signed message.
     pub content: SignedMessage,
@@ -236,7 +236,7 @@ impl HopMessage {
 }
 
 /// A list of a section's public IDs, together with a list of signatures of a neighbouring section.
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable, Debug)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize, Debug)]
 pub struct SectionList {
     pub prefix: Prefix<XorName>,
     // TODO(MAID-1677): pub signatures: BTreeSet<(PublicId, sign::Signature)>,
@@ -259,7 +259,7 @@ impl SectionList {
 }
 
 /// Wrapper around a routing message, signed by the originator of the message.
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct SignedMessage {
     /// A request or response type message.
     content: RoutingMessage,
@@ -453,7 +453,7 @@ impl SignedMessage {
 }
 
 /// A routing message with source and destination authorities.
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, Serialize, Deserialize)]
 pub struct RoutingMessage {
     /// Source authority
     pub src: Authority<XorName>,
@@ -546,7 +546,7 @@ impl RoutingMessage {
 /// add it into their routing table. When A receives the `NodeApproval` message, it adds the members
 /// of Y to its routing table.
 ///
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
 pub enum MessageContent {
@@ -923,7 +923,7 @@ impl Debug for MessageContent {
     }
 }
 
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Debug, Hash, RustcEncodable, RustcDecodable)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Debug, Hash, Serialize, Deserialize)]
 /// A user-visible message: a `Request` or `Response`.
 pub enum UserMessage {
     /// A user-visible request message.
@@ -1002,7 +1002,7 @@ impl UserMessage {
 }
 
 /// Request message types
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
 pub enum Request {
@@ -1023,7 +1023,7 @@ pub enum Request {
 }
 
 /// Response message types
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub enum Response {
     /// Reply with the requested data (may not be ignored)
     ///

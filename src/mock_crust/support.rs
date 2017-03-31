@@ -18,7 +18,7 @@
 use super::crust::{ConnectionInfoResult, CrustEventSender, CrustUser, Event, PeerId,
                    PrivConnectionInfo, PubConnectionInfo};
 use maidsafe_utilities::SeededRng;
-use rand::{Rng, XorShiftRng};
+use rand::Rng;
 use rust_sodium;
 use std::cell::RefCell;
 use std::cmp;
@@ -149,9 +149,9 @@ impl Network {
         service.borrow_mut().send_event(crust_event);
     }
 
-    /// Construct a new [`XorShiftRng`](https://doc.rust-lang.org/rand/rand/struct.XorShiftRng.html)
-    /// using a seed generated from random data provided by `self`.
-    pub fn new_rng(&self) -> XorShiftRng {
+    /// Construct a new [`SeededRng`][1] using a seed generated from random data provided by `self`.
+    /// [1]: https://docs.rs/maidsafe_utilities/0.10.2/maidsafe_utilities/struct.SeededRng.html
+    pub fn new_rng(&self) -> SeededRng {
         self.0.borrow_mut().rng.new_rng()
     }
 
@@ -600,7 +600,7 @@ impl Default for Config {
 
 /// Simulated network endpoint (think socket address). This is used to identify
 /// and address `Service`s in the mock network.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, RustcEncodable, RustcDecodable)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct Endpoint(pub usize);
 
 #[derive(Clone, Debug)]
