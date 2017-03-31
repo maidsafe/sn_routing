@@ -86,9 +86,6 @@ const SECTION_UPDATE_REQUESTS_QUORUM: usize = 3;
 
 pub struct Node {
     ack_mgr: AckManager,
-    /// Copy of the action sender, used to allow worker threads to contact us
-    #[allow(unused)]    // TODO
-    action_sender: RoutingActionSender,
     cacheable_user_msg_cache: UserMessageCache,
     crust_service: Service,
     full_id: FullId,
@@ -211,7 +208,6 @@ impl Node {
         let user_msg_cache_duration = Duration::from_secs(USER_MSG_CACHE_EXPIRY_DURATION_SECS);
         Node {
             ack_mgr: AckManager::new(),
-            action_sender: action_sender,
             cacheable_user_msg_cache:
                 UserMessageCache::with_expiry_duration(user_msg_cache_duration),
             crust_service: crust_service,
@@ -243,7 +239,7 @@ impl Node {
                                            Duration::from_secs(MERGE_TIMEOUT_SECS)),
             bootstrappers:
                 LruCache::with_expiry_duration(Duration::from_secs(BOOTSTRAPPER_HOLD_DUR_SECS)),
-            resource_prover: ResourceProver::new(timer),
+            resource_prover: ResourceProver::new(action_sender, timer),
         }
     }
 
@@ -328,6 +324,11 @@ impl Node {
                 if let Transition::Terminate = self.handle_timeout(token, outbox) {
                     return Transition::Terminate;
                 }
+            }
+            Action::ResourceProofResult(peer_id, messages) => {
+                let msg = self.resource_prover
+                    .handle_action_res_proof(peer_id, messages);
+                self.send_direct_message(peer_id, msg);
             }
             Action::Terminate => {
                 return Transition::Terminate;
@@ -670,9 +671,8 @@ impl Node {
                 difficulty,
             } => {
                 let log_ident = self.log_identifier();
-                let msg = self.resource_prover
-                    .handle_request(peer_id, seed, target_size, difficulty, log_ident)?;
-                self.send_direct_message(peer_id, msg);
+                self.resource_prover
+                    .handle_request(peer_id, seed, target_size, difficulty, log_ident);
             }
             ResourceProofResponseReceipt => {
                 if let Some(msg) = self.resource_prover.handle_receipt(peer_id) {

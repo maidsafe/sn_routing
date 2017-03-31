@@ -16,18 +16,22 @@
 // relating to use of the SAFE Network Software.
 
 use ack_manager::ACK_TIMEOUT_SECS;
+use action::Action;
 use crust::PeerId;
-use error::RoutingError;
 use event::Event;
 use itertools::Itertools;
+use maidsafe_utilities::thread;
 use messages::{DirectMessage, MAX_PART_LEN};
 use outbox::EventBox;
 use resource_proof::ResourceProof;
 use signature_accumulator::ACCUMULATION_TIMEOUT_SECS;
 use state_machine::Transition;
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use timer::Timer;
+use types::RoutingActionSender;
 use utils::DisplayNumber;
 
 /// Time (in seconds) between accepting a new candidate (i.e. receiving an `AcceptAsCandidate` from
@@ -46,6 +50,8 @@ const APPROVAL_PROGRESS_INTERVAL_SECS: u64 = 30;
 
 /// Handles resource proofs
 pub struct ResourceProver {
+    /// Copy of the action sender, used to allow worker threads to contact us
+    action_sender: RoutingActionSender,
     get_approval_timer_token: Option<u64>,
     approval_progress_timer_token: Option<u64>,
     approval_expiry_time: Instant,
@@ -56,19 +62,23 @@ pub struct ResourceProver {
     proxy_is_resource_proof_challenger: bool,
     /// Map of ResourceProofResponse parts.
     response_parts: HashMap<PeerId, Vec<DirectMessage>>,
+    /// Map of workers
+    workers: HashMap<PeerId, (Arc<AtomicBool>, thread::Joiner)>,
     timer: Timer,
 }
 
 impl ResourceProver {
     /// Create an instance.
-    pub fn new(timer: Timer) -> Self {
+    pub fn new(action_sender: RoutingActionSender, timer: Timer) -> Self {
         ResourceProver {
+            action_sender: action_sender,
             get_approval_timer_token: None,
             approval_progress_timer_token: None,
             approval_expiry_time: Instant::now(),
             challenger_count: 0,
             proxy_is_resource_proof_challenger: false,
             response_parts: Default::default(),
+            workers: Default::default(),
             timer: timer,
         }
     }
@@ -97,65 +107,113 @@ impl ResourceProver {
         self.proxy_is_resource_proof_challenger = includes_proxy;
     }
 
-    /// Start generating a resource proof and return the first reply.
+    /// Start generating a resource proof in a background thread
     pub fn handle_request(&mut self,
                           peer_id: PeerId,
                           seed: Vec<u8>,
                           target_size: usize,
                           difficulty: u8,
-                          log_ident: String)
-                          -> Result<DirectMessage, RoutingError> {
+                          log_ident: String) {
         if self.response_parts.is_empty() {
             info!("{} Starting approval process to test this node's resources. This will take \
                    at least {} seconds.",
                   log_ident,
                   RESOURCE_PROOF_DURATION_SECS);
         }
-        let start = Instant::now();
-        let rp_object = ResourceProof::new(target_size, difficulty);
-        let mut proof_data = rp_object.create_proof_data(&seed);
-        let leading_zero_bytes = rp_object.create_proof(&mut proof_data);
-        let elapsed = start.elapsed();
-        let parts = proof_data
-            .into_iter()
-            .chunks(MAX_PART_LEN)
-            .into_iter()
-            .map(|chunk| chunk.collect_vec())
-            .collect_vec();
-        let part_count = parts.len();
-        let mut messages = parts
-            .into_iter()
-            .enumerate()
-            .rev()
-            .map(|(part_index, part)| {
-                     DirectMessage::ResourceProofResponse {
-                         part_index: part_index,
-                         part_count: part_count,
-                         proof: part,
-                         leading_zero_bytes: leading_zero_bytes,
-                     }
-                 })
-            .collect_vec();
-        let first_message = match messages.pop() {
-            Some(message) => message,
-            None => {
-                DirectMessage::ResourceProofResponse {
-                    part_index: 0,
-                    part_count: 1,
-                    proof: vec![],
-                    leading_zero_bytes: leading_zero_bytes,
+
+        let atomic_cancel = Arc::new(AtomicBool::new(false));
+        let atomic_cancel_clone = atomic_cancel.clone();
+        let action_sender = self.action_sender.clone();
+        let joiner = thread::named("resource_prover", move || {
+            let start = Instant::now();
+            let rp_object = ResourceProof::new(target_size, difficulty);
+            let proof_data = rp_object.create_proof_data(&seed);
+            let mut prover = rp_object.create_prover(proof_data.clone());
+            let leading_zero_bytes;
+            loop {
+                if let Some(result) = prover.try_step() {
+                    // TODO: break with value when Rust #37339 becomes stable
+                    leading_zero_bytes = result;
+                    break;
+                }
+                if atomic_cancel_clone.load(Ordering::Relaxed) {
+                    info!("{} Approval process cancelled", log_ident);
+                    return;
                 }
             }
-        };
+            let elapsed = start.elapsed();
+
+            let parts = proof_data
+                .into_iter()
+                .chunks(MAX_PART_LEN)
+                .into_iter()
+                .map(|chunk| chunk.collect_vec())
+                .collect_vec();
+
+            let part_count = parts.len();
+            let mut messages = parts
+                .into_iter()
+                .enumerate()
+                .rev()
+                .map(|(part_index, part)| {
+                         DirectMessage::ResourceProofResponse {
+                             part_index: part_index,
+                             part_count: part_count,
+                             proof: part,
+                             leading_zero_bytes: leading_zero_bytes,
+                         }
+                     })
+                .collect_vec();
+            if messages.len() == 0 {
+                messages.push(DirectMessage::ResourceProofResponse {
+                                  part_index: 0,
+                                  part_count: 1,
+                                  proof: vec![],
+                                  leading_zero_bytes: leading_zero_bytes,
+                              });
+            }
+
+            trace!("{} created proof data in {}. Target size: {}, \
+                    Difficulty: {}, Seed: {:?}",
+                log_ident,
+                elapsed.display_prec(0),
+                target_size,
+                difficulty,
+                seed);
+
+            let action = Action::ResourceProofResult(peer_id, messages);
+            if let Err(_) = action_sender.send(action) {
+                // In theory this means the receiver disconnected, so the main thread stopped/reset
+                error!("{}: resource proof worker thread failed to send result", log_ident);
+            }
+        });
+        // If using mock_crust we want the joiner to drop and join immediately
+        #[cfg(feature="use-mock-crust")]
+        let _ = joiner;
+        #[cfg(not(feature="use-mock-crust"))]
+        {
+            let old = self.workers.insert(peer_id, (atomic_cancel, joiner));
+            if let Some((atomic_cancel, _old_worker)) = old {
+                // This is probably a bug if it happens, but in any case the Drop impl on
+                // _old_worker will implicitly join the thread.
+                atomic_cancel.store(true, Ordering::Relaxed);
+            }
+        }
+    }
+
+    /// When the resource proof is complete, the result is returned to the main thread.
+    ///
+    /// This function returns the first message to send.
+    pub fn handle_action_res_proof(&mut self,
+                                   peer_id: PeerId,
+                                   mut messages: Vec<DirectMessage>)
+                                   -> DirectMessage {
+        // Thread signalled it was complete; implicit join on Joiner thus shouldn't hang.
+        let _old = self.workers.remove(&peer_id);
+
+        let first_message = unwrap!(messages.pop()); // Sender guarantees at least one message
         let _ = self.response_parts.insert(peer_id, messages);
-        trace!("{} created proof data in {}. Target size: {}, \
-                Difficulty: {}, Seed: {:?}",
-               log_ident,
-               elapsed.display_prec(0),
-               target_size,
-               difficulty,
-               seed);
-        Ok(first_message)
+        first_message
     }
 
     /// Get the next part of the proof to be sent, if any.
@@ -279,6 +337,14 @@ impl ResourceProver {
                     completed,
                     self.challenger_count,
                     progress)
+        }
+    }
+}
+
+impl Drop for ResourceProver {
+    fn drop(&mut self) {
+        for &(ref atomic_cancel, _) in self.workers.values() {
+            atomic_cancel.store(true, Ordering::Relaxed);
         }
     }
 }

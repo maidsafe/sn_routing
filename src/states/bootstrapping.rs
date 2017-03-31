@@ -100,6 +100,9 @@ impl Bootstrapping {
                 let _ = result_tx.send(*self.name());
             }
             Action::Timeout(token) => self.handle_timeout(token),
+            Action::ResourceProofResult(..) => {
+                error!("Action::ResourceProofResult received by Bootstrapping state");
+            }
             Action::Terminate => {
                 return Transition::Terminate;
             }
