@@ -21,7 +21,7 @@ use itertools::Itertools;
 use message_filter::MessageFilter;
 #[cfg(feature = "use-mock-crust")]
 use mock_crust::crust::PeerId;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 use std::collections::hash_map::Entry;
 use std::time::Duration;
 
@@ -41,7 +41,7 @@ pub struct Tunnels {
     /// a message to the latter via us, the pair is moved to `clients`.
     new_clients: MessageFilter<(PeerId, PeerId)>,
     /// Contains all pairs of names we act as a tunnel node for, with the lower ID first.
-    clients: HashSet<(PeerId, PeerId)>,
+    clients: BTreeSet<(PeerId, PeerId)>,
 }
 
 impl Tunnels {
@@ -186,7 +186,7 @@ impl Default for Tunnels {
         Tunnels {
             tunnels: HashMap::new(),
             new_clients: MessageFilter::with_expiry_duration(Duration::from_secs(60)),
-            clients: HashSet::new(),
+            clients: BTreeSet::new(),
         }
     }
 }
