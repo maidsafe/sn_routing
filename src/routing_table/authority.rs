@@ -28,7 +28,7 @@ use std::fmt::{self, Binary, Debug, Display, Formatter};
 /// require quorum agreement from the group of nodes closest to the source, while `Section` and
 /// `PrefixSection` use _section_ verification: the set from which a quorum is required is all
 /// members of the section (`Section`) or of all sections matching the prefix (`PrefixSection`).
-#[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Hash)]
+#[derive(Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Hash)]
 pub enum Authority<N: Xorable + Clone + Copy + Binary + Default> {
     /// Manager of a Client.  XorName is the hash of the Client's `client_key`.
     ClientManager(N),
