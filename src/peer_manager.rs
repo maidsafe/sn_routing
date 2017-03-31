@@ -795,7 +795,7 @@ impl PeerManager {
 
         self.cleanup_proxy_peer_id();
 
-        for name in removal_keys.iter() {
+        for name in &removal_keys {
             let _ = self.candidates.remove(name);
             trace!("{:?} Removed unapproved candidate {:?} after split.",
                    self,
