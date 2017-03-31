@@ -16,8 +16,10 @@
 // relating to use of the SAFE Network Software.
 
 
+use crust::PeerId;
 use error::InterfaceError;
 use messages::{Request, UserMessage};
+use messages::DirectMessage;
 use routing_table::Authority;
 use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::Sender;
@@ -48,6 +50,7 @@ pub enum Action {
     },
     Name { result_tx: Sender<XorName> },
     Timeout(u64),
+    ResourceProofResult(PeerId, Vec<DirectMessage>),
     Terminate,
 }
 
@@ -71,6 +74,9 @@ impl Debug for Action {
             }
             Action::Name { .. } => write!(formatter, "Action::Name"),
             Action::Timeout(token) => write!(formatter, "Action::Timeout({})", token),
+            Action::ResourceProofResult(peer_id, _) => {
+                write!(formatter, "Action::ResourceProofResult({:?}, ...)", peer_id)
+            }
             Action::Terminate => write!(formatter, "Action::Terminate"),
         }
     }

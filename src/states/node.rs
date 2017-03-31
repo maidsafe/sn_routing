@@ -18,7 +18,7 @@
 use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 use QUORUM;
 use accumulator::Accumulator;
-use ack_manager::{ACK_TIMEOUT_SECS, Ack, AckManager};
+use ack_manager::{Ack, AckManager};
 use action::Action;
 use cache::Cache;
 use crust::{ConnectionInfoResult, CrustError, CrustUser, PeerId, PrivConnectionInfo,
@@ -31,13 +31,13 @@ use itertools::Itertools;
 use log::LogLevel;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation;
-use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, MAX_PART_LEN, Message, MessageContent,
+use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, Message, MessageContent,
                RoutingMessage, SectionList, SignedMessage, UserMessage, UserMessageCache};
 use outbox::EventBox;
-use peer_manager::{ConnectionInfoPreparedResult, Peer, PeerManager, PeerState,
-                   RESOURCE_PROOF_DURATION_SECS, RoutingConnection, SectionMap};
+use peer_manager::{ConnectionInfoPreparedResult, Peer, PeerManager, PeerState, RoutingConnection,
+                   SectionMap};
 use rand::{self, Rng};
-use resource_proof::ResourceProof;
+use resource_prover::{RESOURCE_PROOF_DURATION_SECS, ResourceProver};
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use routing_table::{Authority, OtherMergeDetails, OwnMergeState, Prefix, RemovalDetails, Xorable};
 use routing_table::Error as RoutingTableError;
@@ -46,25 +46,23 @@ use routing_table::RoutingTable;
 use rust_sodium::crypto::{box_, sign};
 use rust_sodium::crypto::hash::sha256;
 use section_list_cache::SectionListCache;
-use signature_accumulator::{ACCUMULATION_TIMEOUT_SECS, SignatureAccumulator};
+use signature_accumulator::SignatureAccumulator;
 use state_machine::Transition;
 use stats::Stats;
 use std::{cmp, fmt, iter, mem};
-use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashSet, VecDeque};
 #[cfg(feature = "use-mock-crust")]
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use timer::Timer;
 use tunnels::Tunnels;
-use types::MessageId;
-use utils;
+use types::{MessageId, RoutingActionSender};
+use utils::{self, DisplayNumber};
 use xor_name::XorName;
 
 /// Time (in seconds) after which a `Tick` event is sent.
 const TICK_TIMEOUT_SECS: u64 = 60;
-/// Time (in seconds) after which a `GetNodeName` request is resent.
-const GET_NODE_NAME_TIMEOUT_SECS: u64 = 60 + RESOURCE_PROOF_DURATION_SECS;
 /// The number of required leading zero bits for the resource proof
 const RESOURCE_PROOF_DIFFICULTY: u8 = 0;
 /// The total size of the resource proof data.
@@ -73,13 +71,6 @@ const RESOURCE_PROOF_TARGET_SIZE: usize = 250 * 1024 * 1024;
 const RT_MIN_TIMEOUT_SECS: u64 = 30;
 /// Maximal delay between two subsequent `RoutingTableRequest`s, in seconds.
 const RT_MAX_TIMEOUT_SECS: u64 = 300;
-/// Maximum time a new node will wait to receive `NodeApproval` after receiving a
-/// `GetNodeNameResponse`.  This covers the built-in delay of the process and also allows time for
-/// the message to accumulate and be sent via four different routes.
-const APPROVAL_TIMEOUT_SECS: u64 = RESOURCE_PROOF_DURATION_SECS + ACCUMULATION_TIMEOUT_SECS +
-                                   (4 * ACK_TIMEOUT_SECS);
-/// Interval between displaying info about ongoing approval progress, in seconds.
-const APPROVAL_PROGRESS_INTERVAL_SECS: u64 = 30;
 /// Interval between displaying info about current candidate, in seconds.
 const CANDIDATE_STATUS_INTERVAL_SECS: u64 = 60;
 /// Duration for which `OwnSectionMerge` messages are kept in the cache, in seconds.
@@ -95,9 +86,6 @@ pub struct Node {
     cacheable_user_msg_cache: UserMessageCache,
     crust_service: Service,
     full_id: FullId,
-    get_approval_timer_token: Option<u64>,
-    approval_progress_timer_token: Option<u64>,
-    approval_expiry_time: Instant,
     is_first_node: bool,
     is_approved: bool,
     /// The queue of routing messages addressed to us. These do not themselves need
@@ -130,13 +118,6 @@ pub struct Node {
     candidate_timer_token: Option<u64>,
     /// The timer token for displaying the current candidate status.
     candidate_status_token: Option<u64>,
-    /// Map of ResourceProofResponse parts.
-    resource_proof_response_parts: HashMap<PeerId, Vec<DirectMessage>>,
-    /// Number of expected resource proof challengers.
-    challenger_count: usize,
-    /// Whether our proxy is expected to be sending us a resource proof challenge (in which case it
-    /// will be trivial) or not.
-    proxy_is_resource_proof_challenger: bool,
     /// Cache of prefixes of sections other than our own which sent us a message indicating their
     /// section's prefix had changed. The cache is only populated while we're undergoing a merge and
     /// is drained when that merge completes, at which point we send each listed section a
@@ -146,10 +127,12 @@ pub struct Node {
     section_update_requests_accumulator: Accumulator<Prefix<XorName>, XorName>,
     /// Hold the kind of bootstrappers.
     bootstrappers: LruCache<PeerId, CrustUser>,
+    resource_prover: ResourceProver,
 }
 
 impl Node {
-    pub fn first(cache: Box<Cache>,
+    pub fn first(action_sender: RoutingActionSender,
+                 cache: Box<Cache>,
                  crust_service: Service,
                  mut full_id: FullId,
                  min_section_size: usize,
@@ -158,7 +141,8 @@ impl Node {
         let name = XorName(sha256::hash(&full_id.public_id().name().0).0);
         full_id.public_id_mut().set_name(name);
 
-        let mut node = Self::new(cache,
+        let mut node = Self::new(action_sender,
+                                 cache,
                                  crust_service,
                                  true,
                                  full_id,
@@ -176,7 +160,8 @@ impl Node {
     }
 
     #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
-    pub fn from_bootstrapping(cache: Box<Cache>,
+    pub fn from_bootstrapping(action_sender: RoutingActionSender,
+                              cache: Box<Cache>,
                               crust_service: Service,
                               full_id: FullId,
                               min_section_size: usize,
@@ -185,7 +170,8 @@ impl Node {
                               stats: Stats,
                               timer: Timer)
                               -> Option<Self> {
-        let mut node = Self::new(cache,
+        let mut node = Self::new(action_sender,
+                                 cache,
                                  crust_service,
                                  false,
                                  full_id,
@@ -204,7 +190,8 @@ impl Node {
     }
 
     #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
-    fn new(cache: Box<Cache>,
+    fn new(action_sender: RoutingActionSender,
+           cache: Box<Cache>,
            crust_service: Service,
            first_node: bool,
            full_id: FullId,
@@ -222,9 +209,6 @@ impl Node {
                 UserMessageCache::with_expiry_duration(user_msg_cache_duration),
             crust_service: crust_service,
             full_id: full_id,
-            get_approval_timer_token: None,
-            approval_progress_timer_token: None,
-            approval_expiry_time: Instant::now(),
             is_first_node: first_node,
             is_approved: first_node,
             msg_queue: VecDeque::new(),
@@ -235,7 +219,7 @@ impl Node {
             section_list_sigs: SectionListCache::new(),
             stats: stats,
             tick_timer_token: tick_timer_token,
-            timer: timer,
+            timer: timer.clone(),
             tunnels: Default::default(),
             user_msg_cache: UserMessageCache::with_expiry_duration(user_msg_cache_duration),
             next_node_name: None,
@@ -246,15 +230,13 @@ impl Node {
             merge_cache: LruCache::with_expiry_duration(Duration::from_secs(MERGE_TIMEOUT_SECS)),
             candidate_timer_token: None,
             candidate_status_token: None,
-            resource_proof_response_parts: HashMap::new(),
-            challenger_count: 0,
-            proxy_is_resource_proof_challenger: false,
             neighbouring_prefix_change_cache: BTreeSet::new(),
             section_update_requests_accumulator:
                 Accumulator::with_duration(SECTION_UPDATE_REQUESTS_QUORUM,
                                            Duration::from_secs(MERGE_TIMEOUT_SECS)),
             bootstrappers:
                 LruCache::with_expiry_duration(Duration::from_secs(BOOTSTRAPPER_HOLD_DUR_SECS)),
+            resource_prover: ResourceProver::new(action_sender, timer),
         }
     }
 
@@ -339,6 +321,11 @@ impl Node {
                 if let Transition::Terminate = self.handle_timeout(token, outbox) {
                     return Transition::Terminate;
                 }
+            }
+            Action::ResourceProofResult(peer_id, messages) => {
+                let msg = self.resource_prover
+                    .handle_action_res_proof(peer_id, messages);
+                self.send_direct_message(peer_id, msg);
             }
             Action::Terminate => {
                 return Transition::Terminate;
@@ -677,9 +664,15 @@ impl Node {
                 seed,
                 target_size,
                 difficulty,
-            } => self.handle_resource_proof_request(peer_id, seed, target_size, difficulty)?,
+            } => {
+                let log_ident = self.log_identifier();
+                self.resource_prover
+                    .handle_request(peer_id, seed, target_size, difficulty, log_ident);
+            }
             ResourceProofResponseReceipt => {
-                self.handle_resource_proof_response_receipt(peer_id);
+                if let Some(msg) = self.resource_prover.handle_receipt(peer_id) {
+                    self.send_direct_message(peer_id, msg);
+                }
             }
             ResourceProofResponse {
                 part_index,
@@ -1212,8 +1205,8 @@ impl Node {
             return Err(From::from(error));
         }
 
-        self.get_approval_timer_token = None;
-        self.approval_progress_timer_token = None;
+        self.resource_prover.handle_approval();
+
         if let Err(error) = self.peer_mgr
                .add_prefixes(sections.keys().cloned().collect()) {
             info!("{:?} Received invalid prefixes in NodeApproval: {:?}. Restarting.",
@@ -1269,83 +1262,11 @@ impl Node {
             .into_iter()
             .rev()
             .foreach(|msg| self.msg_queue.push_front(msg));
-        self.resource_proof_response_parts.clear();
         self.reset_rt_timer();
         self.candidate_status_token =
             Some(self.timer
                      .schedule(Duration::from_secs(CANDIDATE_STATUS_INTERVAL_SECS)));
         Ok(())
-    }
-
-    fn handle_resource_proof_request(&mut self,
-                                     peer_id: PeerId,
-                                     seed: Vec<u8>,
-                                     target_size: usize,
-                                     difficulty: u8)
-                                     -> Result<(), RoutingError> {
-        if self.resource_proof_response_parts.is_empty() {
-            info!("{:?} Starting approval process to test this node's resources. This will take \
-                   at least {} seconds.",
-                  self,
-                  RESOURCE_PROOF_DURATION_SECS);
-        }
-        let start = Instant::now();
-        let rp_object = ResourceProof::new(target_size, difficulty);
-        let mut proof = rp_object.create_proof_data(&seed);
-        let leading_zero_bytes = rp_object.create_proof(&mut proof);
-        let elapsed = start.elapsed();
-        let parts = proof
-            .into_iter()
-            .chunks(MAX_PART_LEN)
-            .into_iter()
-            .map(|chunk| chunk.collect_vec())
-            .collect_vec();
-        let part_count = parts.len();
-        let mut messages = parts
-            .into_iter()
-            .enumerate()
-            .rev()
-            .map(|(part_index, part)| {
-                     DirectMessage::ResourceProofResponse {
-                         part_index: part_index,
-                         part_count: part_count,
-                         proof: part,
-                         leading_zero_bytes: leading_zero_bytes,
-                     }
-                 })
-            .collect_vec();
-        let first_message = match messages.pop() {
-            Some(message) => message,
-            None => {
-                DirectMessage::ResourceProofResponse {
-                    part_index: 0,
-                    part_count: 1,
-                    proof: vec![],
-                    leading_zero_bytes: leading_zero_bytes,
-                }
-            }
-        };
-        let _ = self.resource_proof_response_parts
-            .insert(peer_id, messages);
-        self.send_direct_message(peer_id, first_message);
-        trace!("{:?} created proof data in {}. Min section size: {}, Target size: {}, \
-                Difficulty: {}, Seed: {:?}",
-               self,
-               Self::format(elapsed),
-               self.min_section_size(),
-               target_size,
-               difficulty,
-               seed);
-        Ok(())
-    }
-
-    fn handle_resource_proof_response_receipt(&mut self, peer_id: PeerId) {
-        let popped_message = self.resource_proof_response_parts
-            .get_mut(&peer_id)
-            .and_then(Vec::pop);
-        if let Some(message) = popped_message {
-            self.send_direct_message(peer_id, message);
-        }
     }
 
     fn handle_resource_proof_response(&mut self,
@@ -1389,7 +1310,7 @@ impl Node {
                        section with {:?}.",
                       self,
                       name,
-                      Self::format(elapsed),
+                      elapsed.display_prec(0),
                       self.our_prefix());
                 self.candidate_timer_token = None;
                 self.send_candidate_approval();
@@ -1399,7 +1320,7 @@ impl Node {
                        our section with {:?}.",
                       self,
                       name,
-                      Self::format(elapsed),
+                      elapsed.display_prec(0),
                       self.our_prefix());
             }
         }
@@ -1468,8 +1389,7 @@ impl Node {
     }
 
     fn relocate(&mut self) -> Result<(), RoutingError> {
-        let duration = Duration::from_secs(GET_NODE_NAME_TIMEOUT_SECS);
-        self.get_approval_timer_token = Some(self.timer.schedule(duration));
+        self.resource_prover.start_relocation();
 
         let request_content = MessageContent::GetNodeName {
             current_id: *self.full_id.public_id(),
@@ -2125,26 +2045,19 @@ impl Node {
             return;
         }
 
-        let duration = Duration::from_secs(APPROVAL_TIMEOUT_SECS);
-        self.approval_expiry_time = Instant::now() + duration;
-        self.get_approval_timer_token = Some(self.timer.schedule(duration));
-        self.approval_progress_timer_token =
-            Some(self.timer
-                     .schedule(Duration::from_secs(APPROVAL_PROGRESS_INTERVAL_SECS)));
-
         self.full_id
             .public_id_mut()
             .set_name(*relocated_id.name());
         self.peer_mgr
             .reset_routing_table(*self.full_id.public_id());
-        self.challenger_count = section.len();
-        if let Some((_, proxy_public_id)) = self.peer_mgr.proxy() {
-            if section.contains(proxy_public_id) {
-                self.proxy_is_resource_proof_challenger = true;
-                // exclude the proxy as it sends a trivial challenge
-                self.challenger_count -= 1;
-            }
-        }
+
+        let includes_proxy = self.peer_mgr
+            .proxy()
+            .map_or(false,
+                    |(_, proxy_public_id)| section.contains(proxy_public_id));
+        self.resource_prover
+            .handle_new_name(section.len(), includes_proxy);
+
         trace!("{:?} GetNodeName completed. Prefixes: {:?}",
                self,
                self.peer_mgr.routing_table().prefixes());
@@ -2654,9 +2567,10 @@ impl Node {
     }
 
     fn handle_timeout(&mut self, token: u64, outbox: &mut EventBox) -> Transition {
-        if self.get_approval_timer_token == Some(token) {
-            self.handle_approval_timeout(outbox);
-            return Transition::Terminate;
+        let log_ident = self.log_identifier();
+        if let Some(transition) = self.resource_prover
+               .handle_timeout(token, log_ident, outbox) {
+            return transition;
         }
 
         if self.tick_timer_token == token {
@@ -2689,26 +2603,6 @@ impl Node {
                 Some(self.timer
                          .schedule(Duration::from_secs(CANDIDATE_STATUS_INTERVAL_SECS)));
             self.peer_mgr.show_candidate_status();
-        } else if self.approval_progress_timer_token == Some(token) {
-            self.approval_progress_timer_token =
-                Some(self.timer
-                         .schedule(Duration::from_secs(APPROVAL_PROGRESS_INTERVAL_SECS)));
-            let now = Instant::now();
-            let remaining_duration = if now < self.approval_expiry_time {
-                let duration = self.approval_expiry_time - now;
-                if duration.subsec_nanos() >= 500_000_000 {
-                    duration.as_secs() + 1
-                } else {
-                    duration.as_secs()
-                }
-            } else {
-                0
-            };
-            info!("{:?} {} {}/{} seconds remaining.",
-                  self,
-                  self.resource_proof_response_progress(),
-                  remaining_duration,
-                  APPROVAL_TIMEOUT_SECS);
         } else {
             // Each token has only one purpose, so we only need to call this if none of the above
             // matched:
@@ -2716,35 +2610,6 @@ impl Node {
         }
 
         Transition::Stay
-    }
-
-    // This will be called if `GetNodeNameResponse` times out, or if the subsequent `NodeApproval`
-    // times out.
-    fn handle_approval_timeout(&mut self, outbox: &mut EventBox) {
-        if self.resource_proof_response_parts.is_empty() {
-            // `GetNodeNameResponse` has timed out.
-            info!("{:?} Failed to get relocated name from the network, so restarting.",
-                  self);
-            outbox.send_event(Event::RestartRequired);
-        } else {
-            // `NodeApproval` has timed out.
-            let completed = self.resource_proof_response_parts
-                .values()
-                .filter(|parts| parts.is_empty())
-                .count();
-            if completed == self.challenger_count {
-                info!("{:?} All {} resource proof responses fully sent, but timed out waiting \
-                       for approval from the network. This could be due to the target section \
-                       experiencing churn. Terminating node.",
-                      self,
-                      completed);
-            } else {
-                info!("{:?} Failed to get approval from the network. {} Terminating node.",
-                      self,
-                      self.resource_proof_response_progress());
-            }
-            outbox.send_event(Event::Terminate);
-        }
     }
 
     // Drop peers to which we think we have a direct or tunnel connection, but where Crust reports
@@ -3390,57 +3255,6 @@ impl Node {
         self.peer_mgr.routing_table().our_prefix()
     }
 
-    // For the ongoing collection of `ResourceProofResponse` messages, returns a tuple comprising:
-    // the `part_count` they all use; the number of fully-completed ones; a vector for the
-    // incomplete ones specifying how many parts have been sent to each peer; and a `String`
-    // containing this info.
-    fn resource_proof_response_progress(&self) -> String {
-        let mut parts_per_proof = 0;
-        let mut completed: usize = 0;
-        let mut incomplete = vec![];
-        for messages in self.resource_proof_response_parts.values() {
-            if let Some(next_message) = messages.last() {
-                match *next_message {
-                    DirectMessage::ResourceProofResponse {
-                        part_index,
-                        part_count,
-                        ..
-                    } => {
-                        parts_per_proof = part_count;
-                        incomplete.push(part_index);
-                    }
-                    _ => return String::new(),  // invalid situation
-                }
-            } else {
-                completed += 1;
-            }
-        }
-
-        if self.proxy_is_resource_proof_challenger {
-            completed = completed.saturating_sub(1);
-        }
-
-        if self.resource_proof_response_parts.is_empty() {
-            "No resource proof challenges received yet; still establishing connections to peers."
-                .to_string()
-        } else if self.challenger_count == completed {
-            format!("All {} resource proof responses fully sent.", completed)
-        } else {
-            let progress = if parts_per_proof == 0 {
-                // We've completed all challenges for those peers we've connected to, but are still
-                // waiting to connect to some more peers and receive their challenges.
-                completed * 100 / self.challenger_count
-            } else {
-                (((parts_per_proof * completed) + incomplete.iter().sum::<usize>()) * 100) /
-                (parts_per_proof * self.challenger_count)
-            };
-            format!("{}/{} resource proof response(s) complete, {}% of data sent.",
-                    completed,
-                    self.challenger_count,
-                    progress)
-        }
-    }
-
     fn cache_section_update_request(&mut self, other_section_prefix: Prefix<XorName>) {
         if (self.peer_mgr
                 .routing_table()
@@ -3453,13 +3267,8 @@ impl Node {
         }
     }
 
-    fn format(duration: Duration) -> String {
-        format!("{} seconds",
-                if duration.subsec_nanos() >= 500_000_000 {
-                    duration.as_secs() + 1
-                } else {
-                    duration.as_secs()
-                })
+    fn log_identifier(&self) -> String {
+        format!("Node({}({:b}))", self.name(), self.our_prefix())
     }
 }
 
