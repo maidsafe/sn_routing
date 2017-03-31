@@ -54,6 +54,7 @@ use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 #[cfg(feature = "use-mock-crust")]
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
+use std::iter::Iterator;
 use std::time::{Duration, Instant};
 use timer::Timer;
 use tunnels::Tunnels;
@@ -2751,14 +2752,16 @@ impl Node {
     // that we're not connected to the peer or tunnel node respectively.
     fn purge_invalid_rt_entries(&mut self, outbox: &mut EventBox) -> Transition {
         let mut peer_ids_to_drop = vec![];
-        let (known_peers, unknown_rt_names) = self.peer_mgr.get_routing_peer_details();
-        for &(name, opt_peer_id) in &unknown_rt_names {
-            info!("{:?} Purging {:?} from the routing table.", self, name);
-            if let Some(peer_id) = opt_peer_id {
-                self.dropped_peer(&peer_id, outbox, true);
-            } else if let Ok(removal_details) = self.peer_mgr.purge_out_of_sync_peer(&name) {
-                self.dropped_routing_node(&name, removal_details, outbox);
-            }
+        let (known_peers, out_of_syc_peers, removal_details) = self.peer_mgr
+            .get_routing_peer_details();
+        for peer_id in &out_of_syc_peers {
+            info!("{:?} Purging out_of_syc_peer {:?}.", self, peer_id);
+            self.dropped_peer(peer_id, outbox, true);
+        }
+        for removal_detail in removal_details {
+            let name = removal_detail.name;
+            info!("{:?} Purged dropped routing node {:?}.", self, name);
+            self.dropped_routing_node(&name, removal_detail, outbox);
         }
         for (peer_id, name, is_tunnel) in known_peers {
             if is_tunnel {
