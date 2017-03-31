@@ -18,7 +18,7 @@
 use super::DataIdentifier;
 use maidsafe_utilities::serialisation::serialised_size;
 use rust_sodium::crypto::hash::sha256;
-use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use serde::{Deserialize, Deserializer};
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
 
@@ -26,8 +26,9 @@ use xor_name::XorName;
 pub const MAX_IMMUTABLE_DATA_SIZE_IN_BYTES: u64 = 1024 * 1024 + 10 * 1024;
 
 /// An immutable chunk of data.
-#[derive(Hash, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Hash, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize)]
 pub struct ImmutableData {
+    #[serde(skip_serializing)]
     name: XorName,
     value: Vec<u8>,
 }
@@ -69,19 +70,13 @@ impl ImmutableData {
 }
 
 
-impl Encodable for ImmutableData {
-    fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), E::Error> {
-        self.value.encode(encoder)
-    }
-}
-
-impl Decodable for ImmutableData {
-    fn decode<D: Decoder>(decoder: &mut D) -> Result<ImmutableData, D::Error> {
-        let value: Vec<u8> = Decodable::decode(decoder)?;
+impl Deserialize for ImmutableData {
+    fn deserialize<D: Deserializer>(deserializer: D) -> Result<ImmutableData, D::Error> {
+        let value: Vec<u8> = Deserialize::deserialize(deserializer)?;
         Ok(ImmutableData {
-            name: XorName(sha256::hash(&value).0),
-            value: value,
-        })
+               name: XorName(sha256::hash(&value).0),
+               value: value,
+           })
     }
 }
 
@@ -94,7 +89,7 @@ impl Debug for ImmutableData {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustc_serialize::hex::ToHex;
+    use hex::ToHex;
 
     #[test]
     fn deterministic_test() {

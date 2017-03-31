@@ -23,7 +23,7 @@ use std::fmt::{self, Debug, Formatter};
 use types::MessageId as MsgId;
 
 /// Response message types
-#[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd, Deserialize, Serialize)]
 pub enum Response {
     /// Returns a success or failure status of account information retrieval.
     GetAccountInfo {
@@ -214,109 +214,163 @@ impl Response {
 impl Debug for Response {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            Response::GetAccountInfo { ref res, ref msg_id } => {
+            Response::GetAccountInfo {
+                ref res,
+                ref msg_id,
+            } => {
                 write!(formatter,
                        "GetAccountInfo {{ res: {:?}, msg_id: {:?} }}",
                        res,
                        msg_id)
             }
-            Response::PutIData { ref res, ref msg_id } => {
+            Response::PutIData {
+                ref res,
+                ref msg_id,
+            } => {
                 write!(formatter,
                        "PutIData {{ res: {:?}, msg_id: {:?} }}",
                        res,
                        msg_id)
             }
-            Response::GetIData { ref res, ref msg_id } => {
+            Response::GetIData {
+                ref res,
+                ref msg_id,
+            } => {
                 write!(formatter,
                        "GetIData {{ res: {:?}, msg_id: {:?} }}",
                        res,
                        msg_id)
             }
-            Response::PutMData { ref res, ref msg_id } => {
+            Response::PutMData {
+                ref res,
+                ref msg_id,
+            } => {
                 write!(formatter,
                        "PutMData {{ res: {:?}, msg_id: {:?} }}",
                        res,
                        msg_id)
             }
-            Response::GetMDataVersion { ref res, ref msg_id } => {
+            Response::GetMDataVersion {
+                ref res,
+                ref msg_id,
+            } => {
                 write!(formatter,
                        "GetMDataVersion {{ res: {:?}, msg_id: {:?} }}",
                        res,
                        msg_id)
             }
-            Response::ListMDataEntries { ref res, ref msg_id } => {
+            Response::ListMDataEntries {
+                ref res,
+                ref msg_id,
+            } => {
                 write!(formatter,
                        "ListMDataEntries {{ res: {:?}, msg_id: {:?} }}",
                        res,
                        msg_id)
             }
-            Response::ListMDataKeys { ref res, ref msg_id } => {
+            Response::ListMDataKeys {
+                ref res,
+                ref msg_id,
+            } => {
                 write!(formatter,
                        "ListMDataKeys {{ res: {:?}, msg_id: {:?} }}",
                        res,
                        msg_id)
             }
-            Response::ListMDataValues { ref res, ref msg_id } => {
+            Response::ListMDataValues {
+                ref res,
+                ref msg_id,
+            } => {
                 write!(formatter,
                        "ListMDataValues {{ res: {:?}, msg_id: {:?} }}",
                        res,
                        msg_id)
             }
-            Response::GetMDataValue { ref res, ref msg_id } => {
+            Response::GetMDataValue {
+                ref res,
+                ref msg_id,
+            } => {
                 write!(formatter,
                        "GetMDataValue {{ res: {:?}, msg_id: {:?} }}",
                        res,
                        msg_id)
             }
-            Response::MutateMDataEntries { ref res, ref msg_id } => {
+            Response::MutateMDataEntries {
+                ref res,
+                ref msg_id,
+            } => {
                 write!(formatter,
                        "MutateMDataEntries {{ res: {:?}, msg_id: {:?} }}",
                        res,
                        msg_id)
             }
-            Response::ListMDataPermissions { ref res, ref msg_id } => {
+            Response::ListMDataPermissions {
+                ref res,
+                ref msg_id,
+            } => {
                 write!(formatter,
                        "ListMDataPermissions {{ res: {:?}, msg_id: {:?} }}",
                        res,
                        msg_id)
             }
-            Response::ListMDataUserPermissions { ref res, ref msg_id } => {
+            Response::ListMDataUserPermissions {
+                ref res,
+                ref msg_id,
+            } => {
                 write!(formatter,
                        "ListMDataUserPermissions {{ res: {:?}, msg_id: {:?} }}",
                        res,
                        msg_id)
             }
-            Response::SetMDataUserPermissions { ref res, ref msg_id } => {
+            Response::SetMDataUserPermissions {
+                ref res,
+                ref msg_id,
+            } => {
                 write!(formatter,
                        "SetMDataUserPermissions {{ res: {:?}, msg_id: {:?} }}",
                        res,
                        msg_id)
             }
-            Response::DelMDataUserPermissions { ref res, ref msg_id } => {
+            Response::DelMDataUserPermissions {
+                ref res,
+                ref msg_id,
+            } => {
                 write!(formatter,
                        "DelMDataUserPermissions {{ res: {:?}, msg_id: {:?} }}",
                        res,
                        msg_id)
             }
-            Response::ChangeMDataOwner { ref res, ref msg_id } => {
+            Response::ChangeMDataOwner {
+                ref res,
+                ref msg_id,
+            } => {
                 write!(formatter,
                        "ChangeMDataOwner {{ res: {:?}, msg_id: {:?} }}",
                        res,
                        msg_id)
             }
-            Response::ListAuthKeysAndVersion { ref res, ref msg_id } => {
+            Response::ListAuthKeysAndVersion {
+                ref res,
+                ref msg_id,
+            } => {
                 write!(formatter,
                        "ListAuthKeysAndVersion {{ res: {:?}, msg_id: {:?} }}",
                        res,
                        msg_id)
             }
-            Response::InsAuthKey { ref res, ref msg_id } => {
+            Response::InsAuthKey {
+                ref res,
+                ref msg_id,
+            } => {
                 write!(formatter,
                        "InsAuthKey {{ res: {:?}, msg_id: {:?} }}",
                        res,
                        msg_id)
             }
-            Response::DelAuthKey { ref res, ref msg_id } => {
+            Response::DelAuthKey {
+                ref res,
+                ref msg_id,
+            } => {
                 write!(formatter,
                        "DelAuthKey {{ res: {:?}, msg_id: {:?} }}",
                        res,
@@ -327,7 +381,7 @@ impl Debug for Response {
 }
 
 /// Account information
-#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, RustcDecodable, RustcEncodable, Debug)]
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, Deserialize, Serialize, Debug)]
 pub struct AccountInfo {
     /// Number of mutate operations performed by the account.
     pub mutations_done: u64,

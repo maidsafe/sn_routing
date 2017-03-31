@@ -1,7 +1,5 @@
 env:
   global:
-    - secure: 6GJFbN62dQxgdMDUCy92Wc3xHaepp3D5/AwOfKM2tfik454AeZgoymGfXD/Om9WZXcwe1ji3szzCRNqwNKTeMgxBvjof4CdoybspEzjgHo5+XpkS7nHtlD3af9HL7NDKrep194B90YIkpoy/tML9wrlVSBMhrOX8dzNNnSSijmA=
-    - Features=use-mock-crust
     - RUST_BACKTRACE=1
     - PATH=$PATH:$HOME/.cargo/bin
 branches:
@@ -12,17 +10,24 @@ os:
   - osx
 language: rust
 rust:
-  - stable
-  - nightly-2016-11-17
+  - 1.16.0
+  - nightly-2017-03-16
 sudo: false
 cache:
   cargo: true
 before_script:
   - (which cargo-install-update && cargo install-update cargo-update) || cargo install cargo-update
-  - (which rustfmt && cargo install-update rustfmt) || cargo install rustfmt
   - (which cargo-prune && cargo install-update cargo-prune) || cargo install cargo-prune
+  - if [ "${TRAVIS_RUST_VERSION}" = 1.16.0 ]; then
+      (which rustfmt && cargo install-update rustfmt) || cargo install rustfmt;
+    elif [ "${TRAVIS_OS_NAME}" = linux ]; then
+      clippy_vers=0.0.120;
+      if ! cargo clippy --version | grep -q $clippy_vers; then
+        cargo install clippy --vers=$clippy_vers --force;
+      fi
+    fi
 script:
-  - if [ "${TRAVIS_RUST_VERSION}" = stable ]; then
+  - if [ "${TRAVIS_RUST_VERSION}" = 1.16.0 ]; then
       (
         set -x;
         cargo fmt -- --write-mode=diff &&
@@ -30,9 +35,16 @@ script:
         cargo rustc --verbose --example ci_test -- -Zno-trans &&
         cargo rustc --verbose --example key_value_store -- -Zno-trans &&
         cargo rustc --verbose -- -Zno-trans &&
-        cargo test  --verbose --features use-mock-crust
+        env RUSTFLAGS="-C opt-level=2 -C codegen-units=8" cargo test --release --verbose --features use-mock-crust
+      );
+    elif [ "${TRAVIS_OS_NAME}" = linux ]; then
+      (
+        set -x;
+        cargo clippy &&
+        cargo clippy --features=use-mock-crust &&
+        cargo clippy --profile=test &&
+        cargo clippy --profile=test --features=use-mock-crust
       );
     fi
-  - curl -sSL https://github.com/maidsafe/QA/raw/master/bash_scripts/travis/run_clippy.sh | bash
 before_cache:
   - cargo prune

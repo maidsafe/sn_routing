@@ -53,8 +53,12 @@ pub fn verify_signatures(owners: &BTreeSet<PublicKey>,
     }
 
     // Refuse if there is any invalid signature
-    if !signatures.iter()
-        .all(|(pub_key, sig)| owners.contains(pub_key) && verify_detached(sig, data, pub_key)) {
+    let signatures_valid =
+        signatures
+            .iter()
+            .all(|(pub_key, sig)| owners.contains(pub_key) && verify_detached(sig, data, pub_key));
+
+    if !signatures_valid {
         return Err(RoutingError::FailedSignature);
     }
     Ok(())
@@ -67,7 +71,7 @@ fn verify_detached(sig: &Signature, data: &[u8], pub_key: &PublicKey) -> bool {
 }
 
 /// This is the data types routing handles in the public interface
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize)]
 pub enum Data {
     /// `StructuredData` data type.
     Structured(StructuredData),
@@ -116,7 +120,7 @@ impl Data {
     }
 }
 
-#[derive(Hash, Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, RustcEncodable, RustcDecodable)]
+#[derive(Hash, Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Serialize, Deserialize)]
 /// An identifier to address a data chunk.
 pub enum DataIdentifier {
     /// Data request, (Identifier, TypeTag) pair for name resolution, for StructuredData.

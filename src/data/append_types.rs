@@ -23,7 +23,7 @@ use std::collections::BTreeSet;
 use xor_name::XorName;
 
 /// The type of access filter for appendable data.
-#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable)]
+#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, Deserialize, Serialize)]
 pub enum Filter {
     /// Everyone except the listed keys are allowed to append data.
     BlackList(BTreeSet<PublicKey>),
@@ -44,7 +44,7 @@ impl Filter {
 }
 
 /// An appended data item, pointing to another data chunk in the network.
-#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable, Debug)]
+#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, Deserialize, Serialize, Debug)]
 pub struct AppendedData {
     /// A pointer to the chunk with the actual data.
     pub pointer: DataIdentifier,
@@ -63,10 +63,10 @@ impl AppendedData {
         let data_to_sign = serialise(&(&pointer, &pub_key))?;
         let signature = sign::sign_detached(&data_to_sign, secret_key);
         Ok(AppendedData {
-            pointer: pointer,
-            sign_key: pub_key,
-            signature: signature,
-        })
+               pointer: pointer,
+               sign_key: pub_key,
+               signature: signature,
+           })
     }
 
     /// Returns `true` if the signature matches the data.
@@ -80,7 +80,7 @@ impl AppendedData {
 }
 
 /// An `AppendedData` item, together with the identifier of the data to append it to.
-#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable, Debug)]
+#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, Deserialize, Serialize, Debug)]
 pub enum AppendWrapper {
     /// A wrapper for public appendable data.
     Pub {
@@ -125,12 +125,12 @@ impl AppendWrapper {
         let data_to_sign = serialise(&(&append_to, &data, &sign_pair.0, &version))?;
         let signature = sign::sign_detached(&data_to_sign, sign_pair.1);
         Ok(AppendWrapper::Priv {
-            append_to: append_to,
-            data: data,
-            sign_key: *sign_pair.0,
-            version: version,
-            signature: signature,
-        })
+               append_to: append_to,
+               data: data,
+               sign_key: *sign_pair.0,
+               version: version,
+               signature: signature,
+           })
     }
 
     /// Returns the identifier of the data to append to.
@@ -145,11 +145,13 @@ impl AppendWrapper {
     pub fn verify_signature(&self) -> bool {
         match *self {
             AppendWrapper::Pub { ref data, .. } => data.verify_signature(),
-            AppendWrapper::Priv { ref append_to,
-                                  ref data,
-                                  ref sign_key,
-                                  ref version,
-                                  ref signature } => {
+            AppendWrapper::Priv {
+                ref append_to,
+                ref data,
+                ref sign_key,
+                ref version,
+                ref signature,
+            } => {
                 let data_to_sign = match serialise(&(append_to, data, sign_key, version)) {
                     Err(_) => return false,
                     Ok(data) => data,

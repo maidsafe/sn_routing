@@ -67,7 +67,8 @@ pub trait Base: Debug {
                     -> Result<(), RoutingError> {
         self.stats().count_bytes(bytes.len());
 
-        if let Err(err) = self.crust_service().send(*peer_id, bytes.clone(), priority) {
+        if let Err(err) = self.crust_service()
+               .send(*peer_id, bytes.clone(), priority) {
             info!("{:?} Connection to {:?} failed. Calling crust::Service::disconnect.",
                   self,
                   peer_id);

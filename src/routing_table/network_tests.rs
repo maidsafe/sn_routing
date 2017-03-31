@@ -57,7 +57,9 @@ impl Network {
         let name = self.random_free_name(); // The new node's name.
         if self.nodes.is_empty() {
             // If this is the first node, just add it and return.
-            assert!(self.nodes.insert(name, RoutingTable::new(name, MIN_GROUP_SIZE)).is_none());
+            assert!(self.nodes
+                        .insert(name, RoutingTable::new(name, MIN_GROUP_SIZE))
+                        .is_none());
             return;
         }
 
@@ -66,7 +68,8 @@ impl Network {
             let close_peer = &self.nodes[&close_node];
             unwrap!(RoutingTable::new_with_groups(name,
                                                   MIN_GROUP_SIZE,
-                                                  close_peer.prefixes()
+                                                  close_peer
+                                                      .prefixes()
                                                       .into_iter()
                                                       .map(|prefix| (prefix, None))))
         };
@@ -146,14 +149,20 @@ impl Network {
                 for target in targets {
                     let target_node = unwrap!(self.nodes.get_mut(&target));
                     match target_node.merge_own_group(merge_own_details.clone()) {
-                        OwnMergeState::Initialised { targets, merge_details } => {
+                        OwnMergeState::Initialised {
+                            targets,
+                            merge_details,
+                        } => {
                             Network::store_merge_info(&mut merge_own_info,
                                                       *target_node.our_group_prefix(),
                                                       (targets, merge_details));
                         }
                         OwnMergeState::Ongoing |
                         OwnMergeState::AlreadyMerged => (),
-                        OwnMergeState::Completed { targets, merge_details } => {
+                        OwnMergeState::Completed {
+                            targets,
+                            merge_details,
+                        } => {
                             Network::store_merge_info(&mut merge_other_info,
                                                       *target_node.our_group_prefix(),
                                                       (targets, merge_details));
@@ -232,9 +241,9 @@ impl Network {
     fn close_node(&self, address: u64) -> u64 {
         let target = Destination::Group(address);
         unwrap!(self.nodes
-            .iter()
-            .find(|&(_, table)| table.is_recipient(&target))
-            .map(|(&peer, _)| peer))
+                    .iter()
+                    .find(|&(_, table)| table.is_recipient(&target))
+                    .map(|(&peer, _)| peer))
     }
 
     /// Returns all node names.
@@ -292,16 +301,17 @@ pub fn verify_network_invariant<'a, T, U>(nodes: U)
                 group_content.insert(*node.our_name());
             }
             if let Some(&mut (ref mut src, ref mut group)) = groups.get_mut(prefix) {
-                assert!(*group == group_content,
-                        "Group with prefix {:?} doesn't agree between nodes {:?} and {:?}\n\
+                assert_eq!(*group,
+                           group_content,
+                           "Group with prefix {:?} doesn't agree between nodes {:?} and {:?}\n\
                         {:?}: {:?}, {:?}: {:?}",
-                        prefix,
-                        node.our_name,
-                        src,
-                        node.our_name,
-                        group_content,
-                        src,
-                        group);
+                           prefix,
+                           node.our_name,
+                           src,
+                           node.our_name,
+                           group_content,
+                           src,
+                           group);
                 continue;
             }
             let _ = groups.insert(*prefix, (node.our_name, group_content));
@@ -360,24 +370,26 @@ fn merging_groups() {
         network.add_node();
         verify_invariant(&network);
     }
-    assert!(network.nodes
-        .iter()
-        .all(|(_, table)| if table.num_of_groups() < 3 {
-            trace!("{:?}", table);
-            false
-        } else {
-            true
-        }));
+    assert!(network
+                .nodes
+                .iter()
+                .all(|(_, table)| if table.num_of_groups() < 3 {
+                         trace!("{:?}", table);
+                         false
+                     } else {
+                         true
+                     }));
     for _ in 0..95 {
         network.drop_node();
         verify_invariant(&network);
     }
-    assert!(network.nodes
-        .iter()
-        .all(|(_, table)| if table.num_of_groups() > 1 {
-            trace!("{:?}", table);
-            false
-        } else {
-            true
-        }));
+    assert!(network
+                .nodes
+                .iter()
+                .all(|(_, table)| if table.num_of_groups() > 1 {
+                         trace!("{:?}", table);
+                         false
+                     } else {
+                         true
+                     }));
 }

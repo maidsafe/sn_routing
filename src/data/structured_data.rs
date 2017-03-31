@@ -31,7 +31,7 @@ pub const MAX_STRUCTURED_DATA_SIZE_IN_BYTES: u64 = 102400;
 ///
 /// These types may be stored unsigned with previous and current owner keys
 /// set to the same keys. Updates require a signature to validate.
-#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable)]
+#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, Deserialize, Serialize)]
 pub struct StructuredData {
     type_tag: u64,
     name: XorName,
@@ -54,13 +54,13 @@ impl StructuredData {
         }
 
         Ok(StructuredData {
-            type_tag: type_tag,
-            name: name,
-            data: data,
-            version: version,
-            owners: owners,
-            signatures: BTreeMap::new(),
-        })
+               type_tag: type_tag,
+               name: name,
+               data: data,
+               version: version,
+               owners: owners,
+               signatures: BTreeMap::new(),
+           })
     }
 
     /// Replaces this data item with the given updated version if the update is valid, otherwise
@@ -205,7 +205,7 @@ impl Debug for StructuredData {
     }
 }
 
-#[derive(RustcEncodable)]
+#[derive(Serialize)]
 struct SerialisableStructuredData<'a> {
     type_tag: Vec<u8>,
     name: XorName,
@@ -238,12 +238,12 @@ mod tests {
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
                                                 structured_data.get_signatures())
-                    .is_err());
+                                .is_err());
                 assert_eq!(structured_data.add_signature(&keys).unwrap(), 0);
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
                                                 structured_data.get_signatures())
-                    .is_ok());
+                                .is_ok());
             }
             Err(error) => panic!("Error: {:?}", error),
         }
@@ -266,7 +266,7 @@ mod tests {
                 assert!(data::verify_signatures(&owner_keys,
                                                 &data,
                                                 structured_data.get_signatures())
-                    .is_err());
+                                .is_err());
             }
             Err(error) => panic!("Error: {:?}", error),
         }

@@ -31,7 +31,7 @@ pub const MAX_MUTABLE_DATA_SIZE_IN_BYTES: u64 = 1024 * 1024;
 pub const MAX_MUTABLE_DATA_ENTRIES: u64 = 100;
 
 /// Mutable data.
-#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable)]
+#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, Deserialize, Serialize)]
 pub struct MutableData {
     /// Network address
     name: XorName,
@@ -51,7 +51,7 @@ pub struct MutableData {
 }
 
 /// A value in `MutableData`
-#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable, Debug)]
+#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, Deserialize, Serialize, Debug)]
 pub struct Value {
     /// Content of the entry.
     pub content: Vec<u8>,
@@ -60,7 +60,7 @@ pub struct Value {
 }
 
 /// Subject of permissions
-#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable, Debug)]
+#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, Deserialize, Serialize, Debug)]
 pub enum User {
     /// Permissions apply to anyone.
     Anyone,
@@ -69,7 +69,7 @@ pub enum User {
 }
 
 /// Action a permission applies to
-#[derive(Debug, Hash, Eq, PartialEq, PartialOrd, Ord, Copy, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Debug, Hash, Eq, PartialEq, PartialOrd, Ord, Copy, Clone, Serialize, Deserialize)]
 pub enum Action {
     /// Permission to insert new entries.
     Insert,
@@ -82,7 +82,7 @@ pub enum Action {
 }
 
 /// Set of user permissions.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord, RustcEncodable, RustcDecodable,
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord, Serialize, Deserialize,
          Default)]
 pub struct PermissionSet {
     insert: Option<bool>,
@@ -147,7 +147,7 @@ impl PermissionSet {
 }
 
 /// Action performed on a single entry: insert, update or delete.
-#[derive(Hash, Debug, Eq, PartialEq, Clone, PartialOrd, Ord, RustcDecodable, RustcEncodable)]
+#[derive(Hash, Debug, Eq, PartialEq, Clone, PartialOrd, Ord, Deserialize, Serialize)]
 pub enum EntryAction {
     /// Inserts a new entry
     Ins(Value),
@@ -171,21 +171,23 @@ impl EntryActions {
 
     /// Insert a new key-value pair
     pub fn ins(mut self, key: Vec<u8>, content: Vec<u8>, version: u64) -> Self {
-        let _ = self.actions.insert(key,
-                                    EntryAction::Ins(Value {
-                                        entry_version: version,
-                                        content: content,
-                                    }));
+        let _ = self.actions
+            .insert(key,
+                    EntryAction::Ins(Value {
+                                         entry_version: version,
+                                         content: content,
+                                     }));
         self
     }
 
     /// Update existing key-value pair
     pub fn update(mut self, key: Vec<u8>, content: Vec<u8>, version: u64) -> Self {
-        let _ = self.actions.insert(key,
-                                    EntryAction::Update(Value {
-                                        entry_version: version,
-                                        content: content,
-                                    }));
+        let _ = self.actions
+            .insert(key,
+                    EntryAction::Update(Value {
+                                            entry_version: version,
+                                            content: content,
+                                        }));
         self
     }
 
@@ -284,7 +286,8 @@ impl MutableData {
                           requester: PublicKey)
                           -> Result<(), ClientError> {
         // Deconstruct actions into inserts, updates, and deletes
-        let (insert, update, delete) = actions.into_iter()
+        let (insert, update, delete) = actions
+            .into_iter()
             .fold((BTreeMap::new(), BTreeMap::new(), BTreeMap::new()),
                   |(mut insert, mut update, mut delete), (key, item)| {
                 match item {
@@ -352,9 +355,9 @@ impl MutableData {
                     /// In the current implementation if a number of entries exceeds the limit
                     /// there's no way for an owner to delete unneeded entries.
                     let _prev = oe.insert(Value {
-                        content: vec![],
-                        entry_version: version,
-                    });
+                                              content: vec![],
+                                              entry_version: version,
+                                          });
                     true
                 }
             } else {
@@ -471,7 +474,8 @@ impl MutableData {
         }
         match self.permissions.get(&User::Key(requester)) {
             Some(perms) => {
-                perms.is_allowed(action)
+                perms
+                    .is_allowed(action)
                     .unwrap_or_else(|| self.check_anyone_permissions(action))
             }
             None => self.check_anyone_permissions(action),
@@ -522,7 +526,9 @@ mod tests {
         let ps1 = PermissionSet::new().allow(Action::Update);
         let _ = perms.insert(User::Anyone, ps1);
 
-        let ps2 = PermissionSet::new().deny(Action::Update).allow(Action::Insert);
+        let ps2 = PermissionSet::new()
+            .deny(Action::Update)
+            .allow(Action::Insert);
         let _ = perms.insert(User::Key(pk1), ps2);
 
         let k1 = b"123".to_vec();
@@ -534,10 +540,10 @@ mod tests {
 
         // Check insert permissions
         assert!(md.mutate_entries(EntryActions::new()
-                                .ins(k1.clone(), b"abc".to_vec(), 0)
-                                .into(),
-                            pk1)
-            .is_ok());
+                                      .ins(k1.clone(), b"abc".to_vec(), 0)
+                                      .into(),
+                                  pk1)
+                    .is_ok());
 
         assert_err!(md.mutate_entries(EntryActions::new()
                                           .ins(k2.clone(), b"def".to_vec(), 0)
@@ -568,13 +574,17 @@ mod tests {
 
     #[test]
     fn permissions() {
-        let anyone = PermissionSet::new().allow(Action::Insert).deny(Action::Delete);
+        let anyone = PermissionSet::new()
+            .allow(Action::Insert)
+            .deny(Action::Delete);
         assert!(unwrap!(anyone.is_allowed(Action::Insert)));
         assert!(anyone.is_allowed(Action::Update).is_none());
         assert!(!unwrap!(anyone.is_allowed(Action::Delete)));
         assert!(anyone.is_allowed(Action::ManagePermissions).is_none());
 
-        let user1 = anyone.clear(Action::Delete).deny(Action::ManagePermissions);
+        let user1 = anyone
+            .clear(Action::Delete)
+            .deny(Action::ManagePermissions);
         assert!(unwrap!(user1.is_allowed(Action::Insert)));
         assert!(user1.is_allowed(Action::Update).is_none());
         assert!(user1.is_allowed(Action::Delete).is_none());
@@ -712,35 +722,35 @@ mod tests {
         let mut v1 = BTreeMap::new();
         let _ = v1.insert(vec![1],
                           EntryAction::Ins(Value {
-                              content: vec![100],
-                              entry_version: 0,
-                          }));
+                                               content: vec![100],
+                                               entry_version: 0,
+                                           }));
         assert!(md.mutate_entries(v1, owner).is_ok());
 
         // Check update with invalid versions
         let mut v2 = BTreeMap::new();
         let _ = v2.insert(vec![1],
                           EntryAction::Update(Value {
-                              content: vec![105],
-                              entry_version: 0,
-                          }));
+                                                  content: vec![105],
+                                                  entry_version: 0,
+                                              }));
         assert_err!(md.mutate_entries(v2.clone(), owner),
                     ClientError::InvalidSuccessor);
 
         let _ = v2.insert(vec![1],
                           EntryAction::Update(Value {
-                              content: vec![105],
-                              entry_version: 2,
-                          }));
+                                                  content: vec![105],
+                                                  entry_version: 2,
+                                              }));
         assert_err!(md.mutate_entries(v2.clone(), owner),
                     ClientError::InvalidSuccessor);
 
         // Check update with a valid version
         let _ = v2.insert(vec![1],
                           EntryAction::Update(Value {
-                              content: vec![105],
-                              entry_version: 1,
-                          }));
+                                                  content: vec![105],
+                                                  entry_version: 1,
+                                              }));
         assert!(md.mutate_entries(v2, owner).is_ok());
 
         // Check delete version
@@ -768,36 +778,43 @@ mod tests {
         let mut v1 = BTreeMap::new();
         let _ = v1.insert(vec![0],
                           EntryAction::Ins(Value {
-                              content: vec![1],
-                              entry_version: 0,
-                          }));
+                                               content: vec![1],
+                                               entry_version: 0,
+                                           }));
         assert_err!(md.mutate_entries(v1.clone(), pk1),
                     ClientError::AccessDenied);
 
         // Now allow inserts for pk1
-        let ps1 = PermissionSet::new().allow(Action::Insert).allow(Action::ManagePermissions);
-        assert!(md.set_user_permissions(User::Key(pk1), ps1, 1, owner).is_ok());
+        let ps1 = PermissionSet::new()
+            .allow(Action::Insert)
+            .allow(Action::ManagePermissions);
+        assert!(md.set_user_permissions(User::Key(pk1), ps1, 1, owner)
+                    .is_ok());
 
         assert!(md.mutate_entries(v1, pk1).is_ok());
 
         // pk1 now can change permissions
-        let ps2 = PermissionSet::new().allow(Action::Insert).deny(Action::ManagePermissions);
+        let ps2 = PermissionSet::new()
+            .allow(Action::Insert)
+            .deny(Action::ManagePermissions);
         assert_err!(md.set_user_permissions(User::Key(pk1), ps2.clone(), 1, pk1),
                     ClientError::InvalidSuccessor);
-        assert!(md.set_user_permissions(User::Key(pk1), ps2, 2, pk1).is_ok());
+        assert!(md.set_user_permissions(User::Key(pk1), ps2, 2, pk1)
+                    .is_ok());
 
         // Revoke permissions for pk1
         assert_err!(md.del_user_permissions(&User::Key(pk1), 3, pk1),
                     ClientError::AccessDenied);
 
-        assert!(md.del_user_permissions(&User::Key(pk1), 3, owner).is_ok());
+        assert!(md.del_user_permissions(&User::Key(pk1), 3, owner)
+                    .is_ok());
 
         let mut v2 = BTreeMap::new();
         let _ = v2.insert(vec![1],
                           EntryAction::Ins(Value {
-                              content: vec![1],
-                              entry_version: 0,
-                          }));
+                                               content: vec![1],
+                                               entry_version: 0,
+                                           }));
         assert_err!(md.mutate_entries(v2, pk1), ClientError::AccessDenied);
 
         // Revoking permissions for a non-existing user should return an error

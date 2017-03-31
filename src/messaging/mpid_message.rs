@@ -27,14 +27,14 @@ use std::fmt::{self, Debug, Formatter};
 use utils;
 use xor_name::XorName;
 
-#[derive(PartialEq, Eq, Hash, Clone, RustcDecodable, RustcEncodable)]
+#[derive(PartialEq, Eq, Hash, Clone, Deserialize, Serialize)]
 struct Detail {
     recipient: XorName,
     body: Vec<u8>,
 }
 
 /// A full message including header and body which can be sent to or retrieved from the network.
-#[derive(PartialEq, Eq, Hash, Clone, RustcDecodable, RustcEncodable)]
+#[derive(PartialEq, Eq, Hash, Clone, Deserialize, Serialize)]
 pub struct MpidMessage {
     header: MpidHeader,
     detail: Detail,
@@ -75,10 +75,10 @@ impl MpidMessage {
 
         let recipient_and_body = serialise(&detail)?;
         Ok(MpidMessage {
-            header: header,
-            detail: detail,
-            signature: sign::sign_detached(&recipient_and_body, secret_key),
-        })
+               header: header,
+               detail: detail,
+               signature: sign::sign_detached(&recipient_and_body, secret_key),
+           })
     }
 
     /// Getter for `MpidHeader` member, created when calling `new()`.
@@ -156,14 +156,14 @@ mod tests {
                                                recipient.clone(),
                                                body.clone(),
                                                &secret_key));
-        assert!(*message.body() == body);
+        assert_eq!(*message.body(), body);
         body.push(0);
         assert!(MpidMessage::new(sender.clone(),
                                  metadata.clone(),
                                  recipient.clone(),
                                  body.clone(),
                                  &secret_key)
-            .is_err());
+                        .is_err());
         let _ = body.pop();
 
         // Check verify function with a valid and invalid key

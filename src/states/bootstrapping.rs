@@ -19,7 +19,7 @@ use super::{Client, Node};
 use super::common::Base;
 use action::Action;
 use cache::Cache;
-use crust::{PeerId, Service};
+use crust::{CrustUser, PeerId, Service};
 #[cfg(feature = "use-mock-crust")]
 use crust::Config;
 use crust::Event as CrustEvent;
@@ -64,7 +64,7 @@ impl Bootstrapping {
                full_id: FullId,
                timer: Timer)
                -> Self {
-        let _ = crust_service.start_bootstrap(HashSet::new());
+        let _ = crust_service.start_bootstrap(HashSet::new(), CrustUser::Client);
 
         Bootstrapping {
             bootstrap_blacklist: HashSet::new(),
@@ -257,7 +257,8 @@ impl Bootstrapping {
     fn send_client_identify(&mut self, peer_id: PeerId) -> Result<(), RoutingError> {
         debug!("{:?} - Sending ClientIdentify to {:?}.", self, peer_id);
 
-        let token = self.timer.schedule(Duration::from_secs(BOOTSTRAP_TIMEOUT_SECS));
+        let token = self.timer
+            .schedule(Duration::from_secs(BOOTSTRAP_TIMEOUT_SECS));
         self.bootstrap_connection = Some((peer_id, token));
 
         let serialised_public_id = serialisation::serialise(self.full_id.public_id())?;
@@ -287,7 +288,13 @@ impl Bootstrapping {
                    self,
                    bootstrap_id);
             self.crust_service.disconnect(bootstrap_id);
-            let _ = self.crust_service.start_bootstrap(self.bootstrap_blacklist.clone());
+            let crust_user = if self.client_restriction {
+                CrustUser::Client
+            } else {
+                CrustUser::Node
+            };
+            let _ = self.crust_service
+                .start_bootstrap(self.bootstrap_blacklist.clone(), crust_user);
         }
     }
 }

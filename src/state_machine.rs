@@ -220,7 +220,10 @@ impl StateMachine {
 
         match transition {
             Transition::Stay => (),
-            Transition::IntoBootstrapped { proxy_peer_id, proxy_public_id } => {
+            Transition::IntoBootstrapped {
+                proxy_peer_id,
+                proxy_public_id,
+            } => {
                 // Temporarily switch to `Terminated` to allow moving out of the current
                 // state without moving `self`.
                 let prev_state = mem::replace(&mut self.state, State::Terminated);
