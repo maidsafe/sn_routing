@@ -1,9 +1,8 @@
 [package]
 authors = ["MaidSafe Developers <dev@maidsafe.net>"]
-build = "build.rs"
 description = "A secured storage DHT"
-documentation = "http://docs.maidsafe.net/routing/latest"
-homepage = "http://maidsafe.net"
+documentation = "http://docs.rs/routing"
+homepage = "https://maidsafe.net"
 license = "GPL-3.0"
 name = "routing"
 readme = "README.md"

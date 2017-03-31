@@ -37,7 +37,7 @@
                                    option_unwrap_used))]
 #![cfg_attr(feature="clippy", allow(use_debug))]
 
-#![cfg(not(feature = "use-mock-crust"))]
+// #![cfg(not(feature = "use-mock-crust"))]
 
 // TODO: uncomment and fix
 
