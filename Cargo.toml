@@ -1,42 +1,44 @@
 [package]
 authors = ["MaidSafe Developers <dev@maidsafe.net>"]
 description = "A secured storage DHT"
-documentation = "https://docs.rs/routing/"
-homepage = "http://maidsafe.net"
+documentation = "https://docs.rs/routing"
+homepage = "https://maidsafe.net"
 license = "GPL-3.0"
 name = "routing"
 readme = "README.md"
 repository = "https://github.com/maidsafe/routing"
-version = "0.28.2"
+version = "0.28.4"
 
 [dependencies]
-crust = "~0.22.0"
+accumulator = "~0.5.0"
+crust = { git = "https://github.com/maidsafe/crust", branch = "master" }
+hex = "~0.2.0"
 itertools = "~0.5.9"
 log = "~0.3.6"
 lru_time_cache = "~0.5.0"
-maidsafe_utilities = "~0.10.0"
+maidsafe_utilities = { git = "https://github.com/maidsafe/maidsafe_utilities", branch = "master" }
 quick-error = "~1.1.0"
 rand = "~0.3.15"
 resource_proof = "~0.3.1"
-rust_sodium = "~0.1.2"
-rustc-serialize = "~0.3.22"
+rust_sodium = { git = "https://github.com/maidsafe/rust_sodium", branch = "master" }
+serde = "~0.9.12"
+serde_derive = "~0.9.12"
 term = "~0.4.4"
 tiny-keccak = "~1.2.0"
 unwrap = "~1.1.0"
 
 [dev-dependencies]
+rustc-serialize = "~0.3.23"
 docopt = "~0.6.86"
 libc = "~0.2.20"
 
 [[example]]
 bench = false
 name = "key_value_store"
-test = false
 
 [[example]]
 bench = false
 name = "ci_test"
-test = false
 
 [features]
 use-mock-crust = []

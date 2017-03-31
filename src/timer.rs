@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+
 pub use self::implementation::Timer;
 
 #[cfg(not(feature = "use-mock-crust"))]
@@ -22,64 +23,94 @@ mod implementation {
     use action::Action;
     use itertools::Itertools;
     use maidsafe_utilities::thread::{self, Joiner};
+    use std::cell::RefCell;
     use std::collections::BTreeMap;
-    use std::sync::{Arc, Condvar, Mutex};
+    use std::rc::Rc;
+    use std::sync::mpsc::{self, Receiver, RecvError, RecvTimeoutError, SyncSender};
     use std::time::{Duration, Instant};
     use types::RoutingActionSender;
 
     struct Detail {
-        deadlines: BTreeMap<Instant, Vec<u64>>,
-        cancelled: bool,
+        expiry: Instant,
+        token: u64,
     }
 
     /// Simple timer.
+    #[derive(Clone)]
     pub struct Timer {
+        inner: Rc<RefCell<Inner>>,
+    }
+
+    struct Inner {
         next_token: u64,
-        detail_and_cond_var: Arc<(Mutex<Detail>, Condvar)>,
+        tx: SyncSender<Detail>,
         _worker: Joiner,
     }
 
     impl Timer {
         /// Creates a new timer, passing a channel sender used to send `Timeout` events.
         pub fn new(sender: RoutingActionSender) -> Self {
-            let detail = Detail {
-                deadlines: BTreeMap::new(),
-                cancelled: false,
-            };
-            let detail_and_cond_var = Arc::new((Mutex::new(detail), Condvar::new()));
-            let detail_and_cond_var_clone = detail_and_cond_var.clone();
-            let worker = thread::named("Timer", move || Self::run(sender, detail_and_cond_var));
+            let (tx, rx) = mpsc::sync_channel(1);
+
+            let worker = thread::named("Timer", move || Self::run(sender, rx));
+
             Timer {
-                next_token: 0,
-                detail_and_cond_var: detail_and_cond_var_clone,
-                _worker: worker,
+                inner: Rc::new(RefCell::new(Inner {
+                                                next_token: 0,
+                                                tx: tx,
+                                                _worker: worker,
+                                            })),
             }
         }
 
+        // TODO Do proper error handling here by returning a result - currently complying it with
+        // existing code and logging and error
         /// Schedules a timeout event after `duration`. Returns a token that can be used to identify
         /// the timeout event.
-        pub fn schedule(&mut self, duration: Duration) -> u64 {
-            let token = self.next_token;
-            self.next_token = token.wrapping_add(1);
-            let &(ref mutex, ref cond_var) = &*self.detail_and_cond_var;
-            let mut detail = mutex.lock().expect("Failed to lock.");
-            detail
-                .deadlines
-                .entry(Instant::now() + duration)
-                .or_insert_with(Vec::new)
-                .push(token);
-            cond_var.notify_one();
-            token
+        pub fn schedule(&self, duration: Duration) -> u64 {
+            let mut inner = self.inner.borrow_mut();
+
+            let token = inner.next_token;
+            inner.next_token = token.wrapping_add(1);
+
+            let detail = Detail {
+                expiry: Instant::now() + duration,
+                token: token,
+            };
+            inner.tx.send(detail).map(|()| token).unwrap_or_else(|e| {
+                error!("Timer could not be scheduled: {:?}", e);
+                0
+            })
         }
 
-        fn run(sender: RoutingActionSender, detail_and_cond_var: Arc<(Mutex<Detail>, Condvar)>) {
-            let &(ref mutex, ref cond_var) = &*detail_and_cond_var;
-            let mut detail = mutex.lock().expect("Failed to lock.");
-            while !detail.cancelled {
-                // Handle expired deadlines.
+        fn run(sender: RoutingActionSender, rx: Receiver<Detail>) {
+            let mut deadlines: BTreeMap<Instant, Vec<u64>> = Default::default();
+
+            loop {
+                let r = if let Some(t) = deadlines.keys().next() {
+                    let now = Instant::now();
+                    let duration = *t - now;
+                    match rx.recv_timeout(duration) {
+                        Ok(d) => Some(d),
+                        Err(RecvTimeoutError::Timeout) => None,
+                        Err(RecvTimeoutError::Disconnected) => break,
+                    }
+                } else {
+                    match rx.recv() {
+                        Ok(d) => Some(d),
+                        Err(RecvError) => break,
+                    }
+                };
+
+                if let Some(Detail { expiry, token }) = r {
+                    deadlines
+                        .entry(expiry)
+                        .or_insert_with(Vec::new)
+                        .push(token);
+                }
+
                 let now = Instant::now();
-                let expired_list = detail
-                    .deadlines
+                let expired_list = deadlines
                     .keys()
                     .take_while(|&&deadline| deadline < now)
                     .cloned()
@@ -87,43 +118,12 @@ mod implementation {
                 for expired in expired_list {
                     // Safe to call `expect()` as we just got the key we're removing from
                     // `deadlines`.
-                    let tokens = detail
-                        .deadlines
-                        .remove(&expired)
-                        .expect("Bug in `BTreeMap`.");
+                    let tokens = deadlines.remove(&expired).expect("Bug in `BTreeMap`.");
                     for token in tokens {
                         let _ = sender.send(Action::Timeout(token));
                     }
                 }
-
-                // If we have no deadlines pending, wait indefinitely.  Otherwise wait until the
-                // nearest deadline.
-                if detail.deadlines.is_empty() {
-                    detail = cond_var.wait(detail).expect("Failed to lock.");
-                } else {
-                    // Safe to call `expect()` as `deadlines` has at least one entry.
-                    let nearest = detail
-                        .deadlines
-                        .keys()
-                        .next()
-                        .cloned()
-                        .expect("Bug in `BTreeMap`.");
-                    let duration = nearest - now;
-                    detail = cond_var
-                        .wait_timeout(detail, duration)
-                        .expect("Failed to lock.")
-                        .0;
-                }
             }
-        }
-    }
-
-    impl Drop for Timer {
-        fn drop(&mut self) {
-            let &(ref mutex, ref cond_var) = &*self.detail_and_cond_var;
-            let mut detail = mutex.lock().expect("Failed to lock.");
-            detail.cancelled = true;
-            cond_var.notify_one();
         }
     }
 
@@ -158,7 +158,7 @@ mod implementation {
                         action);
             };
             {
-                let mut timer = Timer::new(sender);
+                let timer = Timer::new(sender);
 
                 // Add deadlines, the first to time out after 2.5s, the second after 2.0s, and so on
                 // down to 500ms.
@@ -210,23 +210,23 @@ mod implementation {
 
 #[cfg(feature = "use-mock-crust")]
 mod implementation {
+    use std::cell::Cell;
     use std::time::Duration;
-
     use types::RoutingActionSender;
 
     // The mock timer currently never raises timeout events.
     pub struct Timer {
-        next_token: u64,
+        next_token: Cell<u64>,
     }
 
     impl Timer {
         pub fn new(_: RoutingActionSender) -> Self {
-            Timer { next_token: 0 }
+            Timer { next_token: Cell::new(0) }
         }
 
-        pub fn schedule(&mut self, _: Duration) -> u64 {
-            let token = self.next_token;
-            self.next_token = token.wrapping_add(1);
+        pub fn schedule(&self, _: Duration) -> u64 {
+            let token = self.next_token.get();
+            self.next_token.set(token.wrapping_add(1));
             token
         }
     }

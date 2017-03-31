@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -63,7 +63,9 @@ pub const CLIENT_GET_PRIORITY: u8 = 3;
 /// Wrapper of all messages.
 ///
 /// This is the only type allowed to be sent / received on the network.
-#[derive(Debug, RustcEncodable, RustcDecodable)]
+#[derive(Debug, Serialize, Deserialize)]
+// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
+#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
 pub enum Message {
     /// A message sent between two nodes directly
     Direct(DirectMessage),
@@ -103,7 +105,7 @@ impl Message {
 /// Messages sent via a direct connection.
 ///
 /// Allows routing to directly send specific messages between nodes.
-#[derive(RustcEncodable, RustcDecodable)]
+#[derive(Serialize, Deserialize)]
 pub enum DirectMessage {
     /// Sent from members of a section or group message's source authority to the first hop. The
     /// message will only be relayed once enough signatures have been accumulated.
@@ -195,7 +197,7 @@ impl DirectMessage {
 /// To relay a `SignedMessage` via another node, the `SignedMessage` is wrapped in a `HopMessage`.
 /// The `signature` is from the node that sends this directly to a node in its routing table. To
 /// prevent Man-in-the-middle attacks, the `content` is signed by the original sender.
-#[derive(RustcEncodable, RustcDecodable)]
+#[derive(Serialize, Deserialize)]
 pub struct HopMessage {
     /// Wrapped signed message.
     pub content: SignedMessage,
@@ -239,7 +241,7 @@ impl HopMessage {
 }
 
 /// A list of a section's public IDs, together with a list of signatures of a neighbouring section.
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable, Debug)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize, Debug)]
 pub struct SectionList {
     pub prefix: Prefix<XorName>,
     // TODO(MAID-1677): pub signatures: BTreeSet<(PublicId, sign::Signature)>,
@@ -262,7 +264,7 @@ impl SectionList {
 }
 
 /// Wrapper around a routing message, signed by the originator of the message.
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct SignedMessage {
     /// A request or response type message.
     content: RoutingMessage,
@@ -456,7 +458,7 @@ impl SignedMessage {
 }
 
 /// A routing message with source and destination authorities.
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, Serialize, Deserialize)]
 pub struct RoutingMessage {
     /// Source authority
     pub src: Authority<XorName>,
@@ -549,7 +551,9 @@ impl RoutingMessage {
 /// add it into their routing table. When A receives the `NodeApproval` message, it adds the members
 /// of Y to its routing table.
 ///
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
+// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
+#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
 pub enum MessageContent {
     // ---------- Internal ------------
     /// Ask the network to alter your `PublicId` name.
@@ -606,6 +610,14 @@ pub enum MessageContent {
         /// The message's unique identifier.
         message_id: MessageId,
     },
+    /// Sent to request a `SectionUpdate` from a neighbouring section. Only sent if we receive a
+    /// message from that section indicating its section prefix has altered while we've been in the
+    /// process of handling a merge ourself.
+    SectionUpdateRequest {
+        /// Section prefix of the sender. Included as the message is sent from a `ManagedNode`, but
+        /// the response should be sent to `PrefixSection` indicated by `our_prefix`.
+        our_prefix: Prefix<XorName>,
+    },
     /// Sent to notify neighbours and own members when our section's member list changed (for now,
     /// only when new nodes join).
     SectionUpdate {
@@ -614,6 +626,8 @@ pub enum MessageContent {
         prefix: Prefix<XorName>,
         /// Members of the section
         members: BTreeSet<PublicId>,
+        /// Whether the recipient should process merges implied by this update.
+        merge: bool,
     },
     /// Sent from a node to its own section to request their current routing table.
     RoutingTableRequest(MessageId, sha256::Digest),
@@ -830,10 +844,20 @@ impl Debug for MessageContent {
                        section,
                        message_id)
             }
+            SectionUpdateRequest { ref our_prefix } => {
+                write!(formatter, "SectionUpdateRequest {{ {:?} }}", our_prefix)
+            }
             SectionUpdate {
                 ref prefix,
                 ref members,
-            } => write!(formatter, "SectionUpdate {{ {:?}, {:?} }}", prefix, members),
+                ref merge,
+            } => {
+                write!(formatter,
+                       "SectionUpdate {{ {:?}, {:?}, {:?} }}",
+                       prefix,
+                       members,
+                       merge)
+            }
             RoutingTableRequest(ref msg_id, ref digest) => {
                 write!(formatter,
                        "RoutingTableRequest({:?}, {})",
@@ -904,7 +928,7 @@ impl Debug for MessageContent {
     }
 }
 
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Debug, Hash, RustcEncodable, RustcDecodable)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Debug, Hash, Serialize, Deserialize)]
 /// A user-visible message: a `Request` or `Response`.
 pub enum UserMessage {
     /// A user-visible request message.
@@ -1027,6 +1051,7 @@ impl UserMessageCache {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
     #[cfg(not(feature = "use-mock-crust"))]
     use crust::PeerId;

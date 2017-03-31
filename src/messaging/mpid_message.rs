@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -26,14 +26,14 @@ use std::fmt::{self, Debug, Formatter};
 use utils;
 use xor_name::XorName;
 
-#[derive(PartialEq, Eq, Hash, Clone, RustcDecodable, RustcEncodable)]
+#[derive(PartialEq, Eq, Hash, Clone, Deserialize, Serialize)]
 struct Detail {
     recipient: XorName,
     body: Vec<u8>,
 }
 
 /// A full message including header and body which can be sent to or retrieved from the network.
-#[derive(PartialEq, Eq, Hash, Clone, RustcDecodable, RustcEncodable)]
+#[derive(PartialEq, Eq, Hash, Clone, Deserialize, Serialize)]
 pub struct MpidMessage {
     header: MpidHeader,
     detail: Detail,
@@ -155,7 +155,7 @@ mod tests {
                                                recipient.clone(),
                                                body.clone(),
                                                &secret_key));
-        assert!(*message.body() == body);
+        assert_eq!(*message.body(), body);
         body.push(0);
         assert!(MpidMessage::new(sender.clone(),
                                  metadata.clone(),

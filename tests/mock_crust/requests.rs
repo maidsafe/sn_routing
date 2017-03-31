@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -15,11 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::{create_connected_clients, create_connected_nodes, gen_bytes, gen_immutable_data,
+            poll_all};
 use routing::{Authority, Data, DataIdentifier, Event, EventStream, ImmutableData, MessageId,
               Request, Response};
 use routing::mock_crust::Network;
-use super::{create_connected_clients, create_connected_nodes, gen_bytes, gen_immutable_data,
-            poll_all};
 
 #[test]
 fn successful_put_request() {
@@ -34,9 +34,9 @@ fn successful_put_request() {
     let message_id = MessageId::new();
 
     assert!(clients[0]
-        .inner
-        .send_put_request(dst, data.clone(), message_id)
-        .is_ok());
+                .inner
+                .send_put_request(dst, data.clone(), message_id)
+                .is_ok());
 
     let _ = poll_all(&mut nodes, &mut clients);
 
@@ -74,9 +74,9 @@ fn successful_get_request() {
     let message_id = MessageId::new();
 
     assert!(clients[0]
-        .inner
-        .send_get_request(dst, data_request, message_id)
-        .is_ok());
+                .inner
+                .send_get_request(dst, data_request, message_id)
+                .is_ok());
 
     let _ = poll_all(&mut nodes, &mut clients);
 
@@ -85,11 +85,14 @@ fn successful_get_request() {
     for node in nodes.iter_mut().filter(|n| n.is_recipient(&dst)) {
         loop {
             match node.try_next_ev() {
-                Ok(Event::Request { request: Request::Get(ref request, id), src, dst }) => {
+                Ok(Event::Request {
+                       request: Request::Get(ref request, id),
+                       src,
+                       dst,
+                   }) => {
                     request_received_count += 1;
                     if data_request == *request && message_id == id {
-                        if let Err(err) = node.inner
-                            .send_get_success(dst, src, data.clone(), id) {
+                        if let Err(err) = node.inner.send_get_success(dst, src, data.clone(), id) {
                             trace!("Failed to send GetSuccess response: {:?}", err);
                         }
                         break;
@@ -112,9 +115,8 @@ fn successful_get_request() {
         loop {
             match client.inner.try_next_ev() {
                 Ok(Event::Response {
-                    response: Response::GetSuccess(ref immutable, ref id),
-                    ..
-                }) => {
+                       response: Response::GetSuccess(ref immutable, ref id), ..
+                   }) => {
                     response_received_count += 1;
                     if data == *immutable && message_id == *id {
                         break;
@@ -126,7 +128,7 @@ fn successful_get_request() {
         }
     }
 
-    assert!(response_received_count == 1);
+    assert_eq!(response_received_count, 1);
 }
 
 #[test]
@@ -143,9 +145,9 @@ fn failed_get_request() {
     let message_id = MessageId::new();
 
     assert!(clients[0]
-        .inner
-        .send_get_request(dst, data_request, message_id)
-        .is_ok());
+                .inner
+                .send_get_request(dst, data_request, message_id)
+                .is_ok());
 
     let _ = poll_all(&mut nodes, &mut clients);
 
@@ -154,11 +156,15 @@ fn failed_get_request() {
     for node in nodes.iter_mut().filter(|n| n.is_recipient(&dst)) {
         loop {
             match node.try_next_ev() {
-                Ok(Event::Request { request: Request::Get(ref data_id, ref id), src, dst }) => {
+                Ok(Event::Request {
+                       request: Request::Get(ref data_id, ref id),
+                       src,
+                       dst,
+                   }) => {
                     request_received_count += 1;
                     if data_request == *data_id && message_id == *id {
                         if let Err(err) = node.inner
-                            .send_get_failure(dst, src, *data_id, vec![], *id) {
+                               .send_get_failure(dst, src, *data_id, vec![], *id) {
                             trace!("Failed to send GetFailure response: {:?}", err);
                         }
                         break;
@@ -192,7 +198,7 @@ fn failed_get_request() {
         }
     }
 
-    assert!(response_received_count == 1);
+    assert_eq!(response_received_count, 1);
 }
 
 #[test]
@@ -210,9 +216,9 @@ fn disconnect_on_get_request() {
     let message_id = MessageId::new();
 
     assert!(clients[0]
-        .inner
-        .send_get_request(dst, data_request.clone(), message_id)
-        .is_ok());
+                .inner
+                .send_get_request(dst, data_request.clone(), message_id)
+                .is_ok());
 
     let _ = poll_all(&mut nodes, &mut clients);
 
@@ -221,11 +227,14 @@ fn disconnect_on_get_request() {
     for node in nodes.iter_mut().filter(|n| n.is_recipient(&dst)) {
         loop {
             match node.try_next_ev() {
-                Ok(Event::Request { request: Request::Get(ref request, ref id), src, dst }) => {
+                Ok(Event::Request {
+                       request: Request::Get(ref request, ref id),
+                       src,
+                       dst,
+                   }) => {
                     request_received_count += 1;
                     if data_request == *request && message_id == *id {
-                        if let Err(err) = node.inner
-                            .send_get_success(dst, src, data.clone(), *id) {
+                        if let Err(err) = node.inner.send_get_success(dst, src, data.clone(), *id) {
                             trace!("Failed to send GetSuccess response: {:?}", err);
                         }
                         break;
@@ -240,8 +249,16 @@ fn disconnect_on_get_request() {
     // TODO: Assert a quorum here.
     assert!(2 * request_received_count > min_section_size);
 
-    clients[0].handle.0.borrow_mut().disconnect(&nodes[0].handle.0.borrow().peer_id);
-    nodes[0].handle.0.borrow_mut().disconnect(&clients[0].handle.0.borrow().peer_id);
+    clients[0]
+        .handle
+        .0
+        .borrow_mut()
+        .disconnect(&nodes[0].handle.0.borrow().peer_id);
+    nodes[0]
+        .handle
+        .0
+        .borrow_mut()
+        .disconnect(&clients[0].handle.0.borrow().peer_id);
 
     let _ = poll_all(&mut nodes, &mut clients);
 

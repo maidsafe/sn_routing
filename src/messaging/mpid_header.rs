@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -28,7 +28,7 @@ use std::fmt::{self, Debug, Formatter};
 use utils;
 use xor_name::XorName;
 
-#[derive(PartialEq, Eq, Hash, Clone, RustcDecodable, RustcEncodable)]
+#[derive(PartialEq, Eq, Hash, Clone, Deserialize, Serialize)]
 struct Detail {
     sender: XorName,
     guid: [u8; GUID_SIZE],
@@ -36,7 +36,7 @@ struct Detail {
 }
 
 /// Minimal information about a given message which can be used as a notification to the receiver.
-#[derive(PartialEq, Eq, Hash, Clone, RustcDecodable, RustcEncodable)]
+#[derive(PartialEq, Eq, Hash, Clone, Deserialize, Serialize)]
 pub struct MpidHeader {
     detail: Detail,
     signature: Signature,
@@ -147,7 +147,7 @@ mod tests {
         }
         let mut metadata = messaging::generate_random_bytes(MAX_HEADER_METADATA_SIZE);
         let header = unwrap!(MpidHeader::new(sender.clone(), metadata.clone(), &secret_key));
-        assert!(*header.metadata() == metadata);
+        assert_eq!(*header.metadata(), metadata);
         metadata.push(0);
         assert!(MpidHeader::new(sender.clone(), metadata.clone(), &secret_key).is_err());
         let _ = metadata.pop();
@@ -165,15 +165,15 @@ mod tests {
         // different GUIDs and signatures.
         let header1 = unwrap!(MpidHeader::new(sender.clone(), metadata.clone(), &secret_key));
         let header2 = unwrap!(MpidHeader::new(sender.clone(), metadata.clone(), &secret_key));
-        assert!(header1 != header2);
+        assert_ne!(header1, header2);
         assert_eq!(*header1.sender(), sender);
         assert_eq!(header1.sender(), header2.sender());
         assert_eq!(*header1.metadata(), metadata);
         assert_eq!(header1.metadata(), header2.metadata());
-        assert!(header1.guid() != header2.guid());
-        assert!(header1.signature() != header2.signature());
+        assert_ne!(header1.guid(), header2.guid());
+        assert_ne!(header1.signature(), header2.signature());
         let name1 = unwrap!(header1.name());
         let name2 = unwrap!(header2.name());
-        assert!(name1 != name2);
+        assert_ne!(name1, name2);
     }
 }

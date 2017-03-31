@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -31,7 +31,7 @@ pub const MAX_STRUCTURED_DATA_SIZE_IN_BYTES: u64 = 102400;
 ///
 /// These types may be stored unsigned with previous and current owner keys
 /// set to the same keys. Updates require a signature to validate.
-#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable)]
+#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, Deserialize, Serialize)]
 pub struct StructuredData {
     type_tag: u64,
     name: XorName,
@@ -202,7 +202,7 @@ impl Debug for StructuredData {
     }
 }
 
-#[derive(RustcEncodable)]
+#[derive(Serialize)]
 struct SerialisableStructuredData<'a> {
     type_tag: Vec<u8>,
     name: XorName,

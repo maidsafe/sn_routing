@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -75,8 +75,8 @@ impl Tunnels {
     /// `consider_clients` must be called with the client pair before this.
     pub fn accept_clients(&mut self, src_id: PeerId, dst_id: PeerId) -> bool {
         let pair = (src_id, dst_id);
-        // TODO(afck): Remove the pair from the new clients once message_filter supports that.
         if self.new_clients.contains(&pair) {
+            self.new_clients.remove(&pair);
             self.clients.insert(pair);
             true
         } else {
@@ -173,6 +173,12 @@ impl Tunnels {
     pub fn tunnel_count(&self) -> usize {
         self.tunnels.len()
     }
+
+    /// Clears the new_clients filter, removing all the entries.
+    #[cfg(feature = "use-mock-crust")]
+    pub fn clear_new_clients(&mut self) {
+        self.new_clients.clear();
+    }
 }
 
 impl Default for Tunnels {
@@ -185,9 +191,7 @@ impl Default for Tunnels {
     }
 }
 
-
-#[cfg(feature = "use-mock-crust")]
-#[cfg(test)]
+#[cfg(all(test, feature = "use-mock-crust"))]
 mod tests {
     use super::*;
     use itertools::Itertools;

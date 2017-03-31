@@ -22,7 +22,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use types::MessageId as MsgId;
 
 /// Response message types
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum Response {
     /// Returns a success or failure status of account information retrieval.
     GetAccountInfo {
@@ -209,7 +209,7 @@ impl Response {
 }
 
 /// Account information
-#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, RustcDecodable, RustcEncodable, Debug)]
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize, Debug)]
 pub struct AccountInfo {
     /// Number of mutate operations performed by the account.
     pub mutations_done: u64,

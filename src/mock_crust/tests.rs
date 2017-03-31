@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -75,9 +75,9 @@ fn start_two_services_bootstrap_communicate_exit() {
 
     unwrap!(service_1.start_bootstrap(HashSet::new(), CrustUser::Node));
     let id_0 = expect_event!(event_rx_1, Event::BootstrapConnect(id, _) => id);
-    let id_1 = expect_event!(event_rx_0, Event::BootstrapAccept(id) => id);
+    let id_1 = expect_event!(event_rx_0, Event::BootstrapAccept(id, CrustUser::Node) => id);
 
-    assert!(id_0 != id_1);
+    assert_ne!(id_0, id_1);
 
     // send data from 0 to 1
     let data_sent = vec![0, 1, 255, 254, 222, 1];

@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -237,10 +237,6 @@ pub struct RoutingTable<T: Binary + Clone + Copy + Debug + Default + Hash + Xora
     our_section: BTreeSet<T>,
     // Other sections (excludes our own) (TODO: rename)
     sections: Sections<T>,
-    // Whether we have sent our merge details to the other section.
-    we_want_to_merge: bool,
-    // Whether the other section has sent their merge details to us.
-    they_want_to_merge: bool,
 }
 
 impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T> {
@@ -254,8 +250,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             our_section: our_section,
             our_prefix: Default::default(),
             sections: BTreeMap::new(),
-            we_want_to_merge: false,
-            they_want_to_merge: false,
         }
     }
 
@@ -284,6 +278,18 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             }
         }
         self.check_invariant(true, true)
+    }
+
+    /// Checks that the `NodeApproval` message contains a valid `RoutingTable`.
+    pub fn check_node_approval_msg(&self,
+                                   sections: BTreeMap<Prefix<T>, BTreeSet<T>>)
+                                   -> Result<(), Error> {
+        let mut temp_rt = RoutingTable::new(self.our_name, self.min_section_size);
+        temp_rt.add_prefixes(sections.keys().cloned().collect())?;
+        for peer in sections.values().flat_map(BTreeSet::iter) {
+            let _ = temp_rt.add(*peer, false);
+        }
+        temp_rt.check_invariant(false, true)
     }
 
     /// Returns the `Prefix` of our section
@@ -512,7 +518,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// of our sections, or it's our own name.  Otherwise it returns `Ok(true)` if the addition
     /// succeeded and should cause our section to split or `Ok(false)` if the addition succeeded and
     /// shouldn't cause a split.
-    pub fn add(&mut self, name: T) -> Result<bool, Error> {
+    pub fn add(&mut self, name: T, want_to_merge: bool) -> Result<bool, Error> {
         if name == self.our_name {
             return Err(Error::OwnNameDisallowed);
         }
@@ -530,8 +536,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             prefix.popped().is_compatible(&self.our_prefix) && section.len() < split_size
         };
         // If we're currently merging or are close to merging, we shouldn't split.
-        if self.we_want_to_merge || self.they_want_to_merge ||
-           self.sections.iter().any(close_to_merging_with_us) {
+        if want_to_merge || self.sections.iter().any(close_to_merging_with_us) {
             return Ok(false);
         }
 
@@ -639,11 +644,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         Ok(removal_details)
     }
 
-    /// Returns whether the other section has already initiated a merge.
-    pub fn they_want_to_merge(&self) -> bool {
-        self.they_want_to_merge
-    }
-
     /// If our section is required to merge, returns the details to initiate merging.
     ///
     /// Merging is required if any section has dropped below the minimum size and can only restore
@@ -654,18 +654,21 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// then this will return `true` only in the latter two. Once they are merged and have
     /// established all their new connections, it will return `true` in `01` and `00`. Only after
     /// that, the section `0` will merge with section `1`.
-    pub fn should_merge(&self) -> Option<OwnMergeDetails<T>> {
+    pub fn should_merge(&self,
+                        we_want_to_merge: bool,
+                        they_want_to_merge: bool)
+                        -> Option<OwnMergeDetails<T>> {
         let bit_count = self.our_prefix.bit_count();
         let doesnt_need_to_merge_with_us = |(prefix, section): (&Prefix<T>, &BTreeSet<T>)| {
             !prefix.popped().is_compatible(&self.our_prefix) ||
             section.len() >= self.min_section_size
         };
-        if bit_count == 0 || self.we_want_to_merge ||
+        if bit_count == 0 || we_want_to_merge ||
            !self.sections
                 .contains_key(&self.our_prefix.with_flipped_bit(bit_count - 1)) {
             return None; // We can't merge, or we already sent our merge message.
         }
-        if !self.they_want_to_merge && self.our_section.len() >= self.min_section_size &&
+        if !they_want_to_merge && self.our_section.len() >= self.min_section_size &&
            self.sections.iter().all(doesnt_need_to_merge_with_us) {
             return None; // There is no reason to merge.
         }
@@ -688,7 +691,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         if !self.our_prefix
                 .is_compatible(&merge_details.merge_prefix) ||
            self.our_prefix.bit_count() != merge_details.merge_prefix.bit_count() + 1 {
-            debug!("{:?}: Attempt to call merge_own_section() for an already merged prefix {:?}",
+            debug!("{:?} Attempt to call merge_own_section() for an already merged prefix {:?}",
                    self.our_name,
                    merge_details.merge_prefix);
             return OwnMergeState::AlreadyMerged;
@@ -708,12 +711,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             }
         }
 
-        if merge_details.sender_prefix == self.our_prefix {
-            self.we_want_to_merge = true;
-        } else {
-            self.they_want_to_merge = true;
-        }
-        if self.we_want_to_merge && self.they_want_to_merge {
+        // We currently handle this first for our own section, then for the sibling.
+        // TODO: Pass all merge details in and handle them at once. Remove `Ongoing` state.
+        if merge_details.sender_prefix != self.our_prefix {
             // We've heard from all merging sections - do the merge and return `Completed`.
             self.finish_merging_own_section(merge_details.merge_prefix)
         } else {
@@ -730,13 +730,16 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// peers and subsequently add them.
     pub fn merge_other_section(&mut self, merge_details: OtherMergeDetails<T>) -> BTreeSet<T> {
         if self.our_prefix.is_compatible(&merge_details.prefix) {
-            // We've already handled this particular merge via `merge_own_section()`.
+            error!("{:?} Attempt to merge other section {:?} when our prefix is {:?}",
+                   self,
+                   merge_details.prefix,
+                   self.our_prefix);
             return BTreeSet::new();
         }
 
         let should_merge = |prefix: &Prefix<T>| {
             prefix.is_compatible(&merge_details.prefix) &&
-            prefix.bit_count() > merge_details.prefix.bit_count()
+            prefix.bit_count() >= merge_details.prefix.bit_count()
         };
 
         if self.sections.keys().any(should_merge) {
@@ -827,10 +830,18 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                     // this is to prevent spamming the network by sending messages with
                     // intentionally short prefixes
                     if prefix.is_covered_by(self.prefixes().iter()) {
-                        return Ok(self.iter()
-                                      .filter(|name| {
-                                                  prefix.matches(name) && **name != self.our_name
-                                              })
+                        let is_compatible = |(pfx, section)| if prefix.is_compatible(pfx) {
+                            Some(section)
+                        } else {
+                            None
+                        };
+                        return Ok(self.sections
+                                      .iter()
+                                      .filter_map(is_compatible)
+                                      .flat_map(BTreeSet::iter)
+                                      .chain(self.our_section
+                                                 .iter()
+                                                 .filter(|name| **name != self.our_name))
                                       .cloned()
                                       .collect());
                     } else {
@@ -854,7 +865,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             Authority::NaeManager(ref name) |
             Authority::NodeManager(ref name) => self.is_closest(name, self.min_section_size),
             Authority::Section(ref name) => self.our_prefix.matches(name),
-            Authority::PrefixSection(ref prefix) => prefix.matches(&self.our_name),
+            Authority::PrefixSection(ref prefix) => self.our_prefix.is_compatible(prefix),
         }
     }
 
@@ -902,12 +913,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         target_prefix.substituted_in(*name)
     }
 
-    /// Returns true if we're currently handling a merge of our own section (i.e. we've received an
-    /// `OwnSectionMerge` from either our own section or our immediate neighbour).
-    pub fn is_merge_in_process(&self) -> bool {
-        self.we_want_to_merge || self.they_want_to_merge
-    }
-
     fn split_our_section(&mut self) -> Vec<T> {
         let next_bit = self.our_name.bit(self.our_prefix.bit_count());
         let other_prefix = self.our_prefix.pushed(!next_bit);
@@ -948,8 +953,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     }
 
     fn finish_merging_own_section(&mut self, merge_prefix: Prefix<T>) -> OwnMergeState<T> {
-        self.we_want_to_merge = false;
-        self.they_want_to_merge = false;
         self.merge(&merge_prefix);
         self.add_missing_prefixes();
         // The update needs to be sent to all neighbouring sections. However, while those are
@@ -979,7 +982,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                 .partition::<BTreeMap<_, _>, _>(|&(prefix, _)| new_prefix.is_compatible(&prefix));
         self.sections = sections;
         // Merge selected sections and add the merged section back in.
-        let merged_names = sections_to_merge
+        let merged_names: BTreeSet<_> = sections_to_merge
             .into_iter()
             .flat_map(|(_, names)| names)
             .collect();
@@ -987,7 +990,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             self.our_section.extend(merged_names);
             self.our_prefix = *new_prefix;
         } else {
-            self.insert_new_section(*new_prefix, merged_names);
+            self.sections
+                .entry(*new_prefix)
+                .or_insert_with(BTreeSet::new)
+                .extend(merged_names)
         }
     }
 
@@ -1186,10 +1192,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Binary for Rou
             };
             writeln!(formatter, "\t}}{}", comma)?;
         }
-        writeln!(formatter,
-                 "\tmerging: we {:?}, they {:?}",
-                 self.we_want_to_merge,
-                 self.they_want_to_merge)?;
         write!(formatter, "}}")
     }
 }
@@ -1207,6 +1209,7 @@ mod tests {
     use super::SPLIT_BUFFER;
     use itertools::Itertools;
     use std::collections::BTreeSet;
+    use std::str::FromStr;
 
     #[test]
     fn small() {
@@ -1222,7 +1225,7 @@ mod tests {
     // each time.
     fn add_sequential_entries(table: &mut RoutingTable<u16>, name: &mut u16) {
         for _ in 1..table.min_split_size() {
-            assert_eq!(table.add(*name), Ok(false));
+            assert_eq!(table.add(*name, false), Ok(false));
             table.verify_invariant();
             *name += 1;
         }
@@ -1249,7 +1252,7 @@ mod tests {
         expected_rt_len += 2 * (table.min_split_size() - 1);
 
         // Add one name to the other half to trigger the split to sections 0 and 1.
-        assert_eq!(table.add(section_10_name), Ok(true));
+        assert_eq!(table.add(section_10_name, false), Ok(true));
         expected_rt_len += 1;
         let mut expected_own_prefix = Prefix::new(0, our_name);
         assert_eq!(*table.our_prefix(), expected_own_prefix);
@@ -1272,7 +1275,7 @@ mod tests {
         expected_rt_len += 2 * (table.min_split_size() - 1);
 
         // Trigger split in our own section first to yield sections 00, 01 and 1.
-        assert_eq!(table.add(section_01_name), Ok(true));
+        assert_eq!(table.add(section_01_name, false), Ok(true));
         expected_rt_len += 1;
         assert_eq!(*table.our_prefix(), expected_own_prefix);
         let (nodes_to_drop, our_new_prefix) = table.split(expected_own_prefix);
@@ -1287,7 +1290,7 @@ mod tests {
 
         // Now trigger split in section 1, which should cause section 11 to get ejected, leaving
         // sections 00, 01 and 10.
-        assert_eq!(table.add(section_11_name), Ok(false));
+        assert_eq!(table.add(section_11_name, false), Ok(false));
         expected_rt_len += 1;
         assert_eq!(*table.our_prefix(), expected_own_prefix);
         let (nodes_to_drop, our_new_prefix) = table.split(Prefix::new(1, section_11_name));
@@ -1295,7 +1298,9 @@ mod tests {
         assert!(our_new_prefix.is_none());
         assert_eq!(nodes_to_drop.len(), table.min_split_size());
         let mut drop_prefix = Prefix::new(2, section_11_name);
-        assert!(nodes_to_drop.iter().all(|name| drop_prefix.matches(name)));
+        assert!(nodes_to_drop
+                    .iter()
+                    .all(|name| drop_prefix.matches(name)));
         expected_rt_len -= nodes_to_drop.len();
         table.verify_invariant();
         assert_eq!(table.len(), expected_rt_len);
@@ -1312,7 +1317,7 @@ mod tests {
 
         // Trigger split in other section (i.e. section 01) first this time to yield sections 00,
         // 010, 011 and 10.
-        assert_eq!(table.add(section_011_name), Ok(false));
+        assert_eq!(table.add(section_011_name, false), Ok(false));
         expected_rt_len += 1;
         assert_eq!(*table.our_prefix(), expected_own_prefix);
         let (nodes_to_drop, our_new_prefix) = table.split(Prefix::new(2, section_011_name));
@@ -1326,7 +1331,7 @@ mod tests {
 
         // Now trigger split in own section (i.e. section 00), which should cause section 011 to get
         // ejected, leaving sections 000, 001, 010 and 10.
-        assert_eq!(table.add(section_001_name), Ok(true));
+        assert_eq!(table.add(section_001_name, false), Ok(true));
         expected_rt_len += 1;
         assert_eq!(*table.our_prefix(), expected_own_prefix);
         let (nodes_to_drop, our_new_prefix) = table.split(expected_own_prefix);
@@ -1335,7 +1340,9 @@ mod tests {
         assert_eq!(unwrap!(our_new_prefix), expected_own_prefix);
         assert_eq!(nodes_to_drop.len(), table.min_split_size());
         drop_prefix = Prefix::new(3, section_011_name);
-        assert!(nodes_to_drop.iter().all(|name| drop_prefix.matches(name)));
+        assert!(nodes_to_drop
+                    .iter()
+                    .all(|name| drop_prefix.matches(name)));
         expected_rt_len -= nodes_to_drop.len();
         table.verify_invariant();
         assert_eq!(table.len(), expected_rt_len);
@@ -1343,17 +1350,19 @@ mod tests {
         assert_eq!(table.our_section().len(), table.min_split_size());
 
         // Try to add a name which is already in the RT.
-        assert_eq!(table.add(section_001_name), Err(Error::AlreadyExists));
+        assert_eq!(table.add(section_001_name, false),
+                   Err(Error::AlreadyExists));
         table.verify_invariant();
         assert_eq!(table.len(), expected_rt_len);
 
         // Try to add our own name.
-        assert_eq!(table.add(our_name), Err(Error::OwnNameDisallowed));
+        assert_eq!(table.add(our_name, false), Err(Error::OwnNameDisallowed));
         table.verify_invariant();
         assert_eq!(table.len(), expected_rt_len);
 
         // Try to add a name which doesn't fit any section.
-        assert_eq!(table.add(nodes_to_drop[0]), Err(Error::PeerNameUnsuitable));
+        assert_eq!(table.add(nodes_to_drop[0], false),
+                   Err(Error::PeerNameUnsuitable));
         table.verify_invariant();
         assert_eq!(table.len(), expected_rt_len);
 
@@ -1397,16 +1406,16 @@ mod tests {
         let our_name = 0u16;
         let mut table = RoutingTable::new(our_name, 8);
         // initialize the table
-        unwrap!(table.add(0x8000));
-        unwrap!(table.add(0x4000));
-        unwrap!(table.add(0x2000));
-        unwrap!(table.add(0x1000));
-        unwrap!(table.add(0x0800));
-        unwrap!(table.add(0x0400));
-        unwrap!(table.add(0x0200));
-        unwrap!(table.add(0x0100));
-        unwrap!(table.add(0x0080));
-        unwrap!(table.add(0x0040));
+        unwrap!(table.add(0x8000, false));
+        unwrap!(table.add(0x4000, false));
+        unwrap!(table.add(0x2000, false));
+        unwrap!(table.add(0x1000, false));
+        unwrap!(table.add(0x0800, false));
+        unwrap!(table.add(0x0400, false));
+        unwrap!(table.add(0x0200, false));
+        unwrap!(table.add(0x0100, false));
+        unwrap!(table.add(0x0080, false));
+        unwrap!(table.add(0x0040, false));
 
         let mut name = 0xFFFF;
         assert!(table.closest_names(&name, 10).is_none());
@@ -1437,23 +1446,31 @@ mod tests {
         let mut table = RoutingTable::new(our_name, 1);
         // Add 10, 20, 30, 40, 50, 60, 70, 80, 90, A0, B0, C0, D0, E0 and F0.
         for i in 1..0x10 {
-            unwrap!(table.add(i * 0x10));
+            unwrap!(table.add(i * 0x10, false));
         }
         assert_eq!(prefixes_from_strs(vec![""]), table.prefixes());
-        assert_eq!(Vec::<u8>::new(), table.add_prefix(Prefix::from_str("01")));
+        assert_eq!(Vec::<u8>::new(),
+                   table.add_prefix(unwrap!(Prefix::from_str("01"))));
         assert_eq!(prefixes_from_strs(vec!["1", "00", "01"]), table.prefixes());
         assert_eq!(vec![0xc0, 0xd0, 0xe0, 0xf0u8],
-                   table.add_prefix(Prefix::from_str("111")).into_iter().sorted());
+                   table
+                       .add_prefix(unwrap!(Prefix::from_str("111")))
+                       .into_iter()
+                       .sorted());
         assert_eq!(prefixes_from_strs(vec!["110", "111", "10", "0"]),
                    table.prefixes());
-        assert_eq!(Vec::<u8>::new(), table.add_prefix(Prefix::from_str("0")));
+        assert_eq!(Vec::<u8>::new(),
+                   table.add_prefix(unwrap!(Prefix::from_str("0"))));
         assert_eq!(prefixes_from_strs(vec!["110", "111", "10", "0"]),
                    table.prefixes());
-        assert_eq!(Vec::<u8>::new(), table.add_prefix(Prefix::from_str("")));
+        assert_eq!(Vec::<u8>::new(),
+                   table.add_prefix(unwrap!(Prefix::from_str(""))));
         assert_eq!(prefixes_from_strs(vec![""]), table.prefixes());
     }
 
     fn prefixes_from_strs(strs: Vec<&str>) -> BTreeSet<Prefix<u8>> {
-        strs.into_iter().map(Prefix::from_str).collect()
+        strs.into_iter()
+            .map(|s| unwrap!(Prefix::from_str(s)))
+            .collect()
     }
 }

@@ -22,7 +22,7 @@ use types::MessageId as MsgId;
 use xor_name::XorName;
 
 /// Request message types
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum Request {
     /// Represents a refresh message sent between vaults. Vec<u8> is the message content.
     Refresh(Vec<u8>, MsgId),

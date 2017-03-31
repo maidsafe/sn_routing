@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -15,10 +15,9 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use hex::{FromHex, FromHexError, ToHex};
 use rand;
 use routing_table::Xorable;
-use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
-use rustc_serialize::hex::{FromHex, FromHexError, ToHex};
 use std::{fmt, ops};
 use std::cmp::Ordering;
 
@@ -54,7 +53,7 @@ pub enum XorNameFromHexError {
 /// i. e. the points with IDs `x` and `y` are considered to have distance `x xor y`.
 ///
 /// [1]: https://en.wikipedia.org/wiki/Kademlia#System_details
-#[derive(Eq, Copy, Clone, Default, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Eq, Copy, Clone, Default, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct XorName(pub [u8; XOR_NAME_LEN]);
 
 impl XorName {
@@ -73,10 +72,10 @@ impl XorName {
 
     /// Hex-decode a `XorName` from a `&str`.
     pub fn from_hex(s: &str) -> Result<XorName, XorNameFromHexError> {
-        let data = match s.from_hex() {
+        let data: Vec<u8> = match FromHex::from_hex(&s) {
             Ok(v) => v,
-            Err(FromHexError::InvalidHexCharacter(c, p)) => {
-                return Err(XorNameFromHexError::InvalidCharacter(c, p))
+            Err(FromHexError::InvalidHexCharacter { c, index }) => {
+                return Err(XorNameFromHexError::InvalidCharacter(c, index))
             }
             Err(FromHexError::InvalidHexLength) => return Err(XorNameFromHexError::WrongLength),
         };
@@ -216,37 +215,6 @@ impl ops::Not for XorName {
     }
 }
 
-impl Encodable for XorName {
-    fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), E::Error> {
-        encoder.emit_seq(XOR_NAME_LEN, |encoder| {
-            for (i, e) in self[..].iter().enumerate() {
-                encoder.emit_seq_elt(i, |encoder| e.encode(encoder))?
-            }
-            Ok(())
-        })
-    }
-}
-
-impl Decodable for XorName {
-    fn decode<D: Decoder>(decoder: &mut D) -> Result<XorName, D::Error> {
-        decoder.read_seq(|decoder, len| {
-            if len != XOR_NAME_LEN {
-                return Err(decoder.error(&format!("Expecting array of length: {}, but found {}",
-                                                  XOR_NAME_LEN,
-                                                  len)));
-            }
-            let mut res = XorName([0; XOR_NAME_LEN]);
-            {
-                let XorName(ref mut arr) = res;
-                for (i, val) in arr.iter_mut().enumerate() {
-                    *val = decoder.read_seq_elt(i, |decoder| Decodable::decode(decoder))?;
-                }
-            }
-            Ok(res)
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -259,6 +227,7 @@ mod tests {
     fn serialisation_xor_name() {
         let obj_before: XorName = rand::random();
         let data = unwrap!(serialise(&obj_before));
+        assert_eq!(data.len(), XOR_NAME_LEN);
         let obj_after: XorName = unwrap!(deserialise(&data));
         assert_eq!(obj_before, obj_after);
     }
@@ -268,9 +237,9 @@ mod tests {
     fn xor_name_ord() {
         let type1: XorName = XorName([1u8; XOR_NAME_LEN]);
         let type2: XorName = XorName([2u8; XOR_NAME_LEN]);
-        assert!(Ord::cmp(&type1, &type1) == Ordering::Equal);
-        assert!(Ord::cmp(&type1, &type2) == Ordering::Less);
-        assert!(Ord::cmp(&type2, &type1) == Ordering::Greater);
+        assert_eq!(Ord::cmp(&type1, &type1), Ordering::Equal);
+        assert_eq!(Ord::cmp(&type1, &type2), Ordering::Less);
+        assert_eq!(Ord::cmp(&type2, &type1), Ordering::Greater);
         assert!(type1 < type2);
         assert!(type1 <= type2);
         assert!(type1 <= type1);
@@ -289,9 +258,8 @@ mod tests {
         let type1_clone = type1;
         let type2: XorName = rand::random();
         assert_eq!(type1, type1_clone);
-        assert!(type1 == type1_clone);
         assert!(!(type1 != type1_clone));
-        assert!(type1 != type2);
+        assert_ne!(type1, type2);
     }
 
     #[test]

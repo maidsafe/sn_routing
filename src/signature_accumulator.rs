@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -161,9 +161,12 @@ mod tests {
             let prefix = Prefix::new(0, *unwrap!(all_ids.iter().next()).name());
             let lists = vec![SectionList::new(prefix, all_ids)];
             let signed_msg = unwrap!(SignedMessage::new(routing_msg, msg_sender_id, lists));
-            let signature_msgs = other_ids.map(|id| {
-                    unwrap!(signed_msg.routing_message().to_signature(id.signing_private_key()))
-                })
+            let signature_msgs = other_ids
+                .map(|id| {
+                         unwrap!(signed_msg
+                                     .routing_message()
+                                     .to_signature(id.signing_private_key()))
+                     })
                 .collect();
             MessageAndSignatures {
                 signed_msg: signed_msg,
@@ -259,7 +262,9 @@ mod tests {
                 let signed_msg = msg_and_sigs.signed_msg.clone();
                 let route = rand::random();
                 let (mut returned_msg, returned_route) =
-                unwrap!(sig_accumulator.add_message(signed_msg.clone(), env.num_nodes(), route));
+                    unwrap!(sig_accumulator.add_message(signed_msg.clone(),
+                                                        env.num_nodes(),
+                                                        route));
                 assert_eq!(sig_accumulator.sigs.len(), expected_sigs_count);
                 assert!(sig_accumulator.msgs.is_empty());
                 assert_eq!(route, returned_route);
@@ -318,7 +323,7 @@ mod tests {
                             assert_eq!(sig_accumulator.msgs.len(), expected_msgs_count);
                             assert_eq!(route as u8, returned_route);
                             assert_eq!(msg_and_sigs.signed_msg.routing_message(),
-                                   returned_msg.routing_message());
+                                       returned_msg.routing_message());
                             unwrap!(returned_msg.check_integrity(1000));
                             assert!(returned_msg.check_fully_signed(env.num_nodes()));
                         }
