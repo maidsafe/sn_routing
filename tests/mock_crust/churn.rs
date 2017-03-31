@@ -454,7 +454,7 @@ fn aggressive_churn() {
         }
 
         debug!("Added {}", nodes[added_index].name());
-        verify_invariant_for_all_nodes(&nodes);
+        verify_invariant_for_all_nodes(&mut nodes);
         verify_section_list_signatures(&nodes);
         send_and_receive(&mut rng, &mut nodes, min_section_size, Some(added_index));
     }
@@ -482,7 +482,7 @@ fn aggressive_churn() {
         }
 
         debug!("Simultaneous added {}", nodes[added_index].name());
-        verify_invariant_for_all_nodes(&nodes);
+        verify_invariant_for_all_nodes(&mut nodes);
         verify_section_list_signatures(&nodes);
 
         send_and_receive(&mut rng, &mut nodes, min_section_size, Some(added_index));
@@ -497,7 +497,7 @@ fn aggressive_churn() {
                nodes.len());
         drop_random_nodes(&mut rng, &mut nodes, min_section_size);
         poll_and_resend(&mut nodes, &mut []);
-        verify_invariant_for_all_nodes(&nodes);
+        verify_invariant_for_all_nodes(&mut nodes);
         verify_section_list_signatures(&nodes);
         send_and_receive(&mut rng, &mut nodes, min_section_size, None);
         client_gets(&mut network, &mut nodes, min_section_size);
@@ -568,7 +568,7 @@ fn messages_during_churn() {
 
         expected_gets.verify(&mut nodes, &mut clients);
 
-        verify_invariant_for_all_nodes(&nodes);
+        verify_invariant_for_all_nodes(&mut nodes);
         verify_section_list_signatures(&nodes);
     }
 }

@@ -357,7 +357,7 @@ pub fn create_connected_nodes_with_cache(network: &Network, size: usize, use_cac
                        .cache(use_cache)
                        .create());
         poll_and_resend(&mut nodes, &mut []);
-        verify_invariant_for_all_nodes(&nodes);
+        verify_invariant_for_all_nodes(&mut nodes);
     }
 
     let n = cmp::min(nodes.len(), network.min_section_size()) - 1;
@@ -540,9 +540,12 @@ pub fn sort_nodes_by_distance_to(nodes: &mut [TestNode], name: &XorName) {
     nodes.sort_by(|node0, node1| name.cmp_distance(&node0.name(), &node1.name()));
 }
 
-pub fn verify_invariant_for_all_nodes(nodes: &[TestNode]) {
+pub fn verify_invariant_for_all_nodes(nodes: &mut [TestNode]) {
     let routing_tables = nodes.iter().map(|n| n.routing_table()).collect_vec();
     verify_network_invariant(routing_tables.iter());
+    for node in nodes.iter_mut() {
+        node.inner.purge_invalid_rt_entry();
+    }
 }
 
 // Generate a vector of random bytes of the given length.

@@ -34,6 +34,8 @@ use maidsafe_utilities::serialisation;
 use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, MAX_PART_LEN, Message, MessageContent,
                RoutingMessage, SectionList, SignedMessage, UserMessage, UserMessageCache};
 use outbox::EventBox;
+#[cfg(feature = "use-mock-crust")]
+use outbox::EventBuf;
 use peer_manager::{ConnectionInfoPreparedResult, Peer, PeerManager, PeerState,
                    RESOURCE_PROOF_DURATION_SECS, RoutingConnection, SectionMap};
 use rand::{self, Rng};
@@ -59,7 +61,7 @@ use std::time::{Duration, Instant};
 use timer::Timer;
 use tunnels::Tunnels;
 use types::MessageId;
-use utils;
+use utils::{self, debug_or_panic, error_or_panic};
 use xor_name::XorName;
 
 /// Time (in seconds) after which a `Tick` event is sent.
@@ -2751,55 +2753,54 @@ impl Node {
     // Drop peers to which we think we have a direct or tunnel connection, but where Crust reports
     // that we're not connected to the peer or tunnel node respectively.
     fn purge_invalid_rt_entries(&mut self, outbox: &mut EventBox) -> Transition {
-        let mut peer_ids_to_drop = vec![];
-        let (known_peers, out_of_syc_peers, removal_details) = self.peer_mgr
-            .get_routing_peer_details();
-        for peer_id in &out_of_syc_peers {
-            info!("{:?} Purging out_of_syc_peer {:?}.", self, peer_id);
+        let peer_details = self.peer_mgr.get_routing_peer_details();
+        for peer_id in &peer_details.out_of_sync_peers {
             self.dropped_peer(peer_id, outbox, true);
         }
-        for removal_detail in removal_details {
+        for removal_detail in peer_details.removal_details {
             let name = removal_detail.name;
-            info!("{:?} Purged dropped routing node {:?}.", self, name);
             self.dropped_routing_node(&name, removal_detail, outbox);
         }
-        for (peer_id, name, is_tunnel) in known_peers {
+        let mut peer_ids_to_drop = vec![];
+        for (peer_id, name, is_tunnel) in peer_details.routing_peer_details {
             if is_tunnel {
                 match self.tunnels.tunnel_for(&peer_id) {
                     Some(tunnel_node_id) => {
                         if !self.crust_service.is_connected(tunnel_node_id) {
-                            debug!("{:?} Should have a tunnel connection to {} {:?} via {:?}, \
-                                    but tunnel node not connected.",
-                                   self,
-                                   name,
-                                   peer_id,
-                                   tunnel_node_id);
+                            debug_or_panic(format!("{:?} Should have a tunnel connection to {} \
+                                                    {:?} via {:?}, but tunnel node not connected.",
+                                                   self,
+                                                   name,
+                                                   peer_id,
+                                                   tunnel_node_id));
                             peer_ids_to_drop.push(*tunnel_node_id);
                         }
                     }
                     None => {
                         if self.crust_service.is_connected(&peer_id) {
-                            debug!("{:?} Should have a tunnel connection to {} {:?}, but instead \
-                                    have a direct connection.",
-                                   self,
-                                   name,
-                                   peer_id);
+                            debug_or_panic(format!("{:?} Should have a tunnel connection to {} \
+                                                    {:?}, but instead have a direct connection.",
+                                                   self,
+                                                   name,
+                                                   peer_id));
                             self.peer_mgr.correct_routing_state_to_direct(&peer_id);
                         } else {
-                            debug!("{:?} Should have a tunnel connection to {} {:?}, but no \
-                                    tunnel node or direct connection exists.",
-                                   self,
-                                   name,
-                                   peer_id);
+                            debug_or_panic(format!("{:?} Should have a tunnel connection to {} \
+                                                    {:?}, but no tunnel node or direct connection \
+                                                    exists.",
+                                                   self,
+                                                   name,
+                                                   peer_id));
                             peer_ids_to_drop.push(peer_id);
                         }
                     }
                 }
             } else if !self.crust_service.is_connected(&peer_id) {
-                error!("{:?} Should have a direct connection to {} {:?}, but don't.",
-                       self,
-                       name,
-                       peer_id);
+                error_or_panic(
+                    format!("{:?} Should have a direct connection to {} {:?}, but don't.",
+                            self,
+                            name,
+                            peer_id));
                 peer_ids_to_drop.push(peer_id);
             }
         }
@@ -3281,7 +3282,7 @@ impl Node {
         if details.was_in_our_section {
             self.reset_rt_timer();
             self.section_list_sigs
-                .remove_signatures_by_name(name, self.peer_mgr.routing_table().our_section().len());
+                .remove_signatures(name, self.peer_mgr.routing_table().our_section().len());
         }
 
         if self.peer_mgr.routing_table().is_empty() {
@@ -3546,6 +3547,11 @@ impl Node {
     /// Are there any unacknowledged messages?
     pub fn has_unacknowledged(&self) -> bool {
         self.ack_mgr.has_pending()
+    }
+
+    /// Purge invalid routing entries.
+    pub fn purge_invalid_rt_entry(&mut self) {
+        let _ = self.purge_invalid_rt_entries(&mut EventBuf::new());
     }
 
     pub fn clear_state(&mut self) {

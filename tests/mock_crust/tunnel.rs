@@ -34,8 +34,8 @@ fn failing_connections_ring() {
         network.block_connection(ep0, ep1);
         network.block_connection(ep1, ep0);
     }
-    let nodes = create_connected_nodes(&network, len);
-    verify_invariant_for_all_nodes(&nodes);
+    let mut nodes = create_connected_nodes(&network, len);
+    verify_invariant_for_all_nodes(&mut nodes);
 }
 
 #[test]
@@ -45,8 +45,8 @@ fn failing_connections_bidirectional() {
     network.block_connection(Endpoint(2), Endpoint(3));
     network.block_connection(Endpoint(3), Endpoint(2));
 
-    let nodes = create_connected_nodes(&network, min_section_size);
-    verify_invariant_for_all_nodes(&nodes);
+    let mut nodes = create_connected_nodes(&network, min_section_size);
+    verify_invariant_for_all_nodes(&mut nodes);
 }
 
 #[test]
@@ -57,8 +57,8 @@ fn failing_connections_unidirectional() {
     network.block_connection(Endpoint(1), Endpoint(7));
     network.block_connection(Endpoint(6), Endpoint(7));
 
-    let nodes = create_connected_nodes(&network, min_section_size);
-    verify_invariant_for_all_nodes(&nodes);
+    let mut nodes = create_connected_nodes(&network, min_section_size);
+    verify_invariant_for_all_nodes(&mut nodes);
 }
 
 // Removes nodes from the specified section so that this section will merge with another section.
@@ -161,7 +161,7 @@ fn tunnel_clients() {
                                  XorName([254u8; XOR_NAME_LEN]),
                                  true);
     let tunnel_pair_2_peer_ids = (PeerId(nodes.len() - 1), PeerId(nodes.len() - 2));
-    verify_invariant_for_all_nodes(&nodes);
+    verify_invariant_for_all_nodes(&mut nodes);
     assert!(locate_tunnel_node(&nodes, direct_pair_peer_ids.0, direct_pair_peer_ids.1).is_none());
     assert!(locate_tunnel_node(&nodes, tunnel_pair_1_peer_ids.0, tunnel_pair_1_peer_ids.1)
                 .is_some());
@@ -169,7 +169,7 @@ fn tunnel_clients() {
                 .is_some());
 
     add_connected_nodes_until_split(&network, &mut nodes, vec![2, 2, 2, 2], false);
-    verify_invariant_for_all_nodes(&nodes);
+    verify_invariant_for_all_nodes(&mut nodes);
 
     network.unblock_connection(tunnel_pair.0, tunnel_pair.1);
     network.unblock_connection(tunnel_pair.1, tunnel_pair.0);
@@ -179,7 +179,7 @@ fn tunnel_clients() {
     remove_nodes_from_section_till_merge(&XorName([64u8; XOR_NAME_LEN]),
                                          &mut nodes,
                                          min_section_size);
-    verify_invariant_for_all_nodes(&nodes);
+    verify_invariant_for_all_nodes(&mut nodes);
     assert!(locate_tunnel_node(&nodes, direct_pair_peer_ids.0, direct_pair_peer_ids.1).is_some());
     assert!(locate_tunnel_node(&nodes, tunnel_pair_1_peer_ids.0, tunnel_pair_1_peer_ids.1)
                 .is_some());
@@ -200,7 +200,7 @@ fn tunnel_client_connect_failure() {
 
     network.send_crust_event(Endpoint(2), crust::Event::ConnectFailure(PeerId(3)));
     let _ = poll_all(&mut nodes, &mut []);
-    verify_invariant_for_all_nodes(&nodes);
+    verify_invariant_for_all_nodes(&mut nodes);
     assert_eq!(tunnel_node_index,
                unwrap!(locate_tunnel_node(&nodes, PeerId(2), PeerId(3))));
 }
@@ -258,7 +258,7 @@ fn tunnel_node_disrupted() {
     verify_tunnel_switch(&mut nodes, tunnel_node_index, 2, 3);
     assert_ne!(tunnel_node_index,
                unwrap!(locate_tunnel_node(&nodes, PeerId(2), PeerId(3))));
-    verify_invariant_for_all_nodes(&nodes);
+    verify_invariant_for_all_nodes(&mut nodes);
 }
 
 #[test]
@@ -277,7 +277,7 @@ fn tunnel_node_blocked() {
     verify_tunnel_switch(&mut nodes, tunnel_node_index, 2, 3);
     assert_ne!(tunnel_node_index,
                unwrap!(locate_tunnel_node(&nodes, PeerId(2), PeerId(3))));
-    verify_invariant_for_all_nodes(&nodes);
+    verify_invariant_for_all_nodes(&mut nodes);
 }
 
 #[test]
@@ -288,7 +288,7 @@ fn tunnel_node_dropped() {
     network.block_connection(Endpoint(3), Endpoint(2));
     let mut nodes = create_connected_nodes(&network, min_section_size);
     let _ = poll_all(&mut nodes, &mut []);
-    verify_invariant_for_all_nodes(&nodes);
+    verify_invariant_for_all_nodes(&mut nodes);
 
     let tunnel_node_index = unwrap!(locate_tunnel_node(&nodes, PeerId(2), PeerId(3)));
     assert_eq!(1, tunnel_node_index);
@@ -297,7 +297,7 @@ fn tunnel_node_dropped() {
     poll_and_resend(&mut nodes, &mut []);
     expect_any_event!(nodes[1], Event::NodeAdded(..));
     expect_any_event!(nodes[2], Event::NodeAdded(..));
-    verify_invariant_for_all_nodes(&nodes);
+    verify_invariant_for_all_nodes(&mut nodes);
     assert_ne!(tunnel_node_index,
                unwrap!(locate_tunnel_node(&nodes, PeerId(2), PeerId(3))));
 }
@@ -316,13 +316,13 @@ fn tunnel_node_split_out() {
                        true);
     let (tunnel_client_1, tunnel_client_2) = (nodes.len() - 1, nodes.len() - 2);
     let (peer_id_1, peer_id_2) = (PeerId(tunnel_client_1), PeerId(tunnel_client_2));
-    verify_invariant_for_all_nodes(&nodes);
+    verify_invariant_for_all_nodes(&mut nodes);
     let tunnel_node_index = unwrap!(locate_tunnel_node(&nodes, peer_id_1, peer_id_2));
     assert_eq!(1, tunnel_node_index);
 
     add_connected_nodes_until_split(&network, &mut nodes, vec![2, 2, 2, 2], false);
 
-    verify_invariant_for_all_nodes(&nodes);
+    verify_invariant_for_all_nodes(&mut nodes);
     assert_ne!(tunnel_node_index,
                unwrap!(locate_tunnel_node(&nodes, peer_id_1, peer_id_2)));
 }
@@ -334,7 +334,7 @@ fn avoid_tunnelling_when_proxying() {
     network.block_connection(Endpoint(2), Endpoint(3));
     network.block_connection(Endpoint(3), Endpoint(2));
     let mut nodes = create_connected_nodes(&network, min_section_size);
-    verify_invariant_for_all_nodes(&nodes);
+    verify_invariant_for_all_nodes(&mut nodes);
     // Nodes[0] acts as proxy to others, shall not be chosen as tunnel node.
     assert_ne!(unwrap!(locate_tunnel_node(&nodes, PeerId(2), PeerId(3))), 0);
 
@@ -355,7 +355,7 @@ fn avoid_tunnelling_when_proxying() {
     network.block_connection(Endpoint(nodes.len() - 1), Endpoint(0));
     network.block_connection(Endpoint(0), Endpoint(nodes.len() - 1));
     poll_and_resend(&mut nodes, &mut []);
-    verify_invariant_for_all_nodes(&nodes);
+    verify_invariant_for_all_nodes(&mut nodes);
     assert_eq!(nodes.len() - 2,
                unwrap!(locate_tunnel_node(&nodes, PeerId(0), PeerId(nodes.len() - 1))));
 }

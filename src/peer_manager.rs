@@ -32,6 +32,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::collections::hash_map::Values;
 use std::time::{Duration, Instant};
 use types::MessageId;
+use utils::error_or_panic;
 use xor_name::XorName;
 
 /// Time (in seconds) after which a joining node will get dropped from the map of joining nodes.
@@ -51,7 +52,11 @@ const NODE_CONNECT_TIMEOUT_SECS: u64 = 60;
 
 pub type SectionMap = BTreeMap<Prefix<XorName>, BTreeSet<PublicId>>;
 
-type PeerDetails = (Vec<(PeerId, XorName, bool)>, Vec<PeerId>, Vec<RemovalDetails<XorName>>);
+pub struct PeerDetails {
+    pub routing_peer_details: Vec<(PeerId, XorName, bool)>,
+    pub out_of_sync_peers: Vec<PeerId>,
+    pub removal_details: Vec<RemovalDetails<XorName>>,
+}
 
 #[derive(Debug)]
 /// Errors that occur in peer status management.
@@ -1150,7 +1155,7 @@ impl PeerManager {
 
     /// Marks the given peer as "connected and waiting for `NodeIdentify`".
     pub fn connected_to(&mut self, peer_id: &PeerId) {
-        // ConnectSuccess may received after established tunnel to peer (and inserted into RT)
+        // ConnectSuccess may be received after establishing a tunnel to peer (and adding to RT).
         if let Some(peer @ &mut Peer {
                              state: PeerState::Routing(RoutingConnection::Tunnel), ..
                          }) = self.peer_map.get_mut(peer_id) {
@@ -1258,9 +1263,10 @@ impl PeerManager {
                 let peer = match self.peer_map.get_by_name(name) {
                     Some(peer) => peer,
                     None => {
-                        error!("{:?} Have {} in RT, but have no entry in peer_map for it.",
-                               self,
-                               name);
+                        error_or_panic(
+                            format!("{:?} Have {} in RT, but have no entry in peer_map for it.",
+                                    self,
+                                    name));
                         dropped_routing_nodes.push(*name);
                         return None;
                     }
@@ -1268,9 +1274,9 @@ impl PeerManager {
                 let peer_id = match peer.peer_id {
                     Some(peer_id) => peer_id,
                     None => {
-                        error!("{:?} Have {} in RT, but have no peer ID for it.",
-                               self,
-                               name);
+                        error_or_panic(format!("{:?} Have {} in RT, but have no peer ID for it.",
+                                               self,
+                                               name));
                         dropped_routing_nodes.push(*name);
                         return None;
                     }
@@ -1279,10 +1285,10 @@ impl PeerManager {
                     PeerState::Routing(RoutingConnection::Tunnel) => true,
                     PeerState::Routing(_) => false,
                     _ => {
-                        error!("{:?} Have {} in RT, but have state {:?} for it.",
-                               self,
-                               name,
-                               peer.state);
+                        error_or_panic(format!("{:?} Have {} in RT, but have state {:?} for it.",
+                                               self,
+                                               name,
+                                               peer.state));
                         out_of_sync_peers.push(peer_id);
                         return None;
                     }
@@ -1297,7 +1303,11 @@ impl PeerManager {
                 removal_details.push(removal_detail);
             }
         }
-        (routing_peer_details, out_of_sync_peers, removal_details)
+        PeerDetails {
+            routing_peer_details: routing_peer_details,
+            out_of_sync_peers: out_of_sync_peers,
+            removal_details: removal_details,
+        }
     }
 
     pub fn correct_routing_state_to_direct(&mut self, peer_id: &PeerId) {

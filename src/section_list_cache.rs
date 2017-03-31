@@ -43,29 +43,24 @@ impl SectionListCache {
     }
 
     /// Removes all signatures authored by `name`
-    pub fn remove_signatures_by_name(&mut self, name: &XorName, our_section_size: usize) {
+    pub fn remove_signatures(&mut self, name: &XorName, our_section_size: usize) {
         let pub_id_opt = self.signed_by
             .keys()
             .find(|pub_id| name == pub_id.name())
             .cloned();
         if let Some(pub_id) = pub_id_opt {
-            self.remove_signatures_by_id(&pub_id, our_section_size);
-        }
-    }
-
-    /// Removes all signatures authored by `author`
-    fn remove_signatures_by_id(&mut self, author: &PublicId, our_section_size: usize) {
-        if let Some(lists) = self.signed_by.remove(author) {
-            for (prefix, list) in lists {
-                let _ = self.signatures
-                    .get_mut(&prefix)
-                    .map_or(None, |map| {
-                        map.get_mut(&list)
-                            .map_or(None, |sigmap| sigmap.remove(author))
-                    });
+            if let Some(lists) = self.signed_by.remove(&pub_id) {
+                for (prefix, list) in lists {
+                    let _ = self.signatures
+                        .get_mut(&prefix)
+                        .and_then(|map| {
+                                      map.get_mut(&list)
+                                          .and_then(|sigmap| sigmap.remove(&pub_id))
+                                  });
+                }
+                self.prune();
+                self.update_lists_cache(our_section_size);
             }
-            self.prune();
-            self.update_lists_cache(our_section_size);
         }
     }
 

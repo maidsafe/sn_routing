@@ -27,7 +27,7 @@ fn merge(prefix_lengths: Vec<usize>) {
     let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split(&network, prefix_lengths, false);
-    verify_invariant_for_all_nodes(&nodes);
+    verify_invariant_for_all_nodes(&mut nodes);
 
     // Drop nodes from a section with the shortest prefix until we get a merge event for the empty
     // prefix.
@@ -65,7 +65,7 @@ fn merge(prefix_lengths: Vec<usize>) {
                 }
             }
         }
-        verify_invariant_for_all_nodes(&nodes);
+        verify_invariant_for_all_nodes(&mut nodes);
         if merge_events_missing == 0 {
             return;
         }
@@ -98,7 +98,7 @@ fn concurrent_merge() {
     let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split(&network, vec![2, 2, 2, 2], false);
-    verify_invariant_for_all_nodes(&nodes);
+    verify_invariant_for_all_nodes(&mut nodes);
     rng.shuffle(&mut nodes);
 
     // Choose two sections to drop nodes from, one of `00`/`01` and the other one of `10`/`11`.
@@ -130,7 +130,7 @@ fn concurrent_merge() {
 
     // Poll the nodes, check the invariant and ensure the network has merged to `0` and `1`.
     poll_and_resend(&mut nodes, &mut []);
-    verify_invariant_for_all_nodes(&nodes);
+    verify_invariant_for_all_nodes(&mut nodes);
     let mut prefixes = BTreeSet::new();
     for node in nodes.iter() {
         prefixes.insert(*node.routing_table().our_prefix());

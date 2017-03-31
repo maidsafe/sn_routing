@@ -68,6 +68,24 @@ pub fn calculate_relocated_name(mut close_nodes: Vec<XorName>, original_name: &X
     XorName(sha256::hash(&combined).0)
 }
 
+/// Log debug message for production code or panic for mock crust tests
+#[cfg_attr(feature="cargo-clippy", allow(needless_pass_by_value))]
+pub fn debug_or_panic(log_msg: String) {
+    #[cfg(not(feature = "use-mock-crust"))]
+    debug!("{}", log_msg);
+    #[cfg(feature = "use-mock-crust")]
+    panic!("{}", log_msg);
+}
+
+/// Log error message for production code or panic for mock crust tests
+#[cfg_attr(feature="cargo-clippy", allow(needless_pass_by_value))]
+pub fn error_or_panic(log_msg: String) {
+    #[cfg(not(feature = "use-mock-crust"))]
+    error!("{}", log_msg);
+    #[cfg(feature = "use-mock-crust")]
+    panic!("{}", log_msg);
+}
+
 #[cfg(test)]
 mod tests {
     use rand;
