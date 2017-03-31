@@ -19,7 +19,7 @@ lru_time_cache = "~0.5.0"
 maidsafe_utilities = { git = "https://github.com/maidsafe/maidsafe_utilities", branch = "master" }
 quick-error = "~1.1.0"
 rand = "~0.3.15"
-resource_proof = "~0.3.1"
+resource_proof = "~0.4.0"
 rust_sodium = { git = "https://github.com/maidsafe/rust_sodium", branch = "master" }
 serde = "~0.9.12"
 serde_derive = "~0.9.12"

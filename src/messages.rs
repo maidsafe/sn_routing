@@ -100,7 +100,7 @@ impl Message {
 /// Messages sent via a direct connection.
 ///
 /// Allows routing to directly send specific messages between nodes.
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum DirectMessage {
     /// Sent from members of a section or group message's source authority to the first hop. The
     /// message will only be relayed once enough signatures have been accumulated.
