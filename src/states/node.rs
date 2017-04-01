@@ -61,8 +61,26 @@ use std::time::{Duration, Instant};
 use timer::Timer;
 use tunnels::Tunnels;
 use types::MessageId;
-use utils::{self, debug_or_panic, error_or_panic};
+use utils;
 use xor_name::XorName;
+
+macro_rules! debug_or_panic {
+    ($ex:expr) => {
+        #[cfg(not(feature = "use-mock-crust"))]
+        debug!("{}", $ex);
+        #[cfg(feature = "use-mock-crust")]
+        panic!($ex);
+    }
+}
+
+macro_rules! error_or_panic {
+    ($ex:expr) => {
+        #[cfg(not(feature = "use-mock-crust"))]
+        error!("{}", $ex);
+        #[cfg(feature = "use-mock-crust")]
+        panic!($ex);
+    }
+}
 
 /// Time (in seconds) after which a `Tick` event is sent.
 const TICK_TIMEOUT_SECS: u64 = 60;
@@ -2767,41 +2785,41 @@ impl Node {
                 match self.tunnels.tunnel_for(&peer_id) {
                     Some(tunnel_node_id) => {
                         if !self.crust_service.is_connected(tunnel_node_id) {
-                            debug_or_panic(format!("{:?} Should have a tunnel connection to {} \
+                            peer_ids_to_drop.push(*tunnel_node_id);
+                            debug_or_panic!(format!("{:?} Should have a tunnel connection to {} \
                                                     {:?} via {:?}, but tunnel node not connected.",
                                                    self,
                                                    name,
                                                    peer_id,
                                                    tunnel_node_id));
-                            peer_ids_to_drop.push(*tunnel_node_id);
                         }
                     }
                     None => {
                         if self.crust_service.is_connected(&peer_id) {
-                            debug_or_panic(format!("{:?} Should have a tunnel connection to {} \
+                            self.peer_mgr.correct_routing_state_to_direct(&peer_id);
+                            debug_or_panic!(format!("{:?} Should have a tunnel connection to {} \
                                                     {:?}, but instead have a direct connection.",
                                                    self,
                                                    name,
                                                    peer_id));
-                            self.peer_mgr.correct_routing_state_to_direct(&peer_id);
                         } else {
-                            debug_or_panic(format!("{:?} Should have a tunnel connection to {} \
+                            peer_ids_to_drop.push(peer_id);
+                            debug_or_panic!(format!("{:?} Should have a tunnel connection to {} \
                                                     {:?}, but no tunnel node or direct connection \
                                                     exists.",
                                                    self,
                                                    name,
                                                    peer_id));
-                            peer_ids_to_drop.push(peer_id);
                         }
                     }
                 }
             } else if !self.crust_service.is_connected(&peer_id) {
-                error_or_panic(
+                peer_ids_to_drop.push(peer_id);
+                error_or_panic!(
                     format!("{:?} Should have a direct connection to {} {:?}, but don't.",
                             self,
                             name,
                             peer_id));
-                peer_ids_to_drop.push(peer_id);
             }
         }
         let mut transition = Transition::Stay;

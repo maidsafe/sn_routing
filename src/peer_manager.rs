@@ -32,8 +32,18 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::collections::hash_map::Values;
 use std::time::{Duration, Instant};
 use types::MessageId;
-use utils::error_or_panic;
 use xor_name::XorName;
+
+macro_rules! error_or_panic {
+    ($ex:expr) => {
+        #[cfg(not(feature = "use-mock-crust"))]
+        error!("{}", $ex);
+        #[cfg(not(feature = "use-mock-crust"))]
+        return None;
+        #[cfg(feature = "use-mock-crust")]
+        panic!($ex);
+    }
+}
 
 /// Time (in seconds) after which a joining node will get dropped from the map of joining nodes.
 const JOINING_NODE_TIMEOUT_SECS: u64 = 900;
@@ -1263,34 +1273,31 @@ impl PeerManager {
                 let peer = match self.peer_map.get_by_name(name) {
                     Some(peer) => peer,
                     None => {
-                        error_or_panic(
+                        dropped_routing_nodes.push(*name);
+                        error_or_panic!(
                             format!("{:?} Have {} in RT, but have no entry in peer_map for it.",
                                     self,
                                     name));
-                        dropped_routing_nodes.push(*name);
-                        return None;
                     }
                 };
                 let peer_id = match peer.peer_id {
                     Some(peer_id) => peer_id,
                     None => {
-                        error_or_panic(format!("{:?} Have {} in RT, but have no peer ID for it.",
+                        dropped_routing_nodes.push(*name);
+                        error_or_panic!(format!("{:?} Have {} in RT, but have no peer ID for it.",
                                                self,
                                                name));
-                        dropped_routing_nodes.push(*name);
-                        return None;
                     }
                 };
                 let is_tunnel = match peer.state {
                     PeerState::Routing(RoutingConnection::Tunnel) => true,
                     PeerState::Routing(_) => false,
                     _ => {
-                        error_or_panic(format!("{:?} Have {} in RT, but have state {:?} for it.",
+                        out_of_sync_peers.push(peer_id);
+                        error_or_panic!(format!("{:?} Have {} in RT, but have state {:?} for it.",
                                                self,
                                                name,
                                                peer.state));
-                        out_of_sync_peers.push(peer_id);
-                        return None;
                     }
                 };
                 Some((peer_id, *name, is_tunnel))
