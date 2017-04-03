@@ -437,10 +437,24 @@ fn aggressive_churn() {
             network.lost_connection(nodes[peer_1].handle.endpoint(),
                                     nodes[peer_2].handle.endpoint());
         }
-        let (added_index, _) = add_random_node(&mut rng, &network, &mut nodes, min_section_size);
+        let (added_index, proxy_index) =
+            add_random_node(&mut rng, &network, &mut nodes, min_section_size);
         poll_and_resend(&mut nodes, &mut []);
+
+        // An candidate could be blocked if some nodes of the section it connected to has lost node
+        // due to lost of tunnel. In that case, a restart of candidate shall be carried out.
+        match nodes[added_index].inner.try_next_ev() {
+            Err(_) |
+            Ok(Event::Terminate) => {
+                let config = Config::with_contacts(&[nodes[proxy_index].handle.endpoint()]);
+                nodes[added_index] = TestNode::builder(&network).config(config).create();
+                poll_and_resend(&mut nodes, &mut []);
+            }
+            Ok(_) => {}
+        }
+
         debug!("Added {}", nodes[added_index].name());
-        verify_invariant_for_all_nodes(&nodes);
+        verify_invariant_for_all_nodes(&mut nodes);
         verify_section_list_signatures(&nodes);
         send_and_receive(&mut rng, &mut nodes, min_section_size, Some(added_index));
     }
@@ -453,7 +467,7 @@ fn aggressive_churn() {
         let (added_index, proxy_index) =
             add_random_node(&mut rng, &network, &mut nodes, min_section_size);
         poll_and_resend(&mut nodes, &mut []);
-        debug!("Simultaneous added {}", nodes[added_index].name());
+
         // An candidate could be blocked if it connected to a pre-merge minority section.
         // Or be rejected when the proxy node's RT is not large enough due to a lost tunnel.
         // In that case, a restart of candidate shall be carried out.
@@ -467,7 +481,8 @@ fn aggressive_churn() {
             Ok(_) => {}
         }
 
-        verify_invariant_for_all_nodes(&nodes);
+        debug!("Simultaneous added {}", nodes[added_index].name());
+        verify_invariant_for_all_nodes(&mut nodes);
         verify_section_list_signatures(&nodes);
 
         send_and_receive(&mut rng, &mut nodes, min_section_size, Some(added_index));
@@ -482,7 +497,7 @@ fn aggressive_churn() {
                nodes.len());
         drop_random_nodes(&mut rng, &mut nodes, min_section_size);
         poll_and_resend(&mut nodes, &mut []);
-        verify_invariant_for_all_nodes(&nodes);
+        verify_invariant_for_all_nodes(&mut nodes);
         verify_section_list_signatures(&nodes);
         send_and_receive(&mut rng, &mut nodes, min_section_size, None);
         client_gets(&mut network, &mut nodes, min_section_size);
@@ -553,7 +568,7 @@ fn messages_during_churn() {
 
         expected_gets.verify(&mut nodes, &mut clients);
 
-        verify_invariant_for_all_nodes(&nodes);
+        verify_invariant_for_all_nodes(&mut nodes);
         verify_section_list_signatures(&nodes);
     }
 }

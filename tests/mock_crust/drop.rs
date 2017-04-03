@@ -49,7 +49,7 @@ fn node_drops() {
     let mut nodes = create_connected_nodes(&network, min_section_size + 2);
     drop_node(&mut nodes, 0);
 
-    verify_invariant_for_all_nodes(&nodes);
+    verify_invariant_for_all_nodes(&mut nodes);
 }
 
 #[test]

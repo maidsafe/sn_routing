@@ -143,6 +143,10 @@ extern crate serde;
 extern crate serde_derive;
 extern crate tiny_keccak;
 
+// Needs to be before all other modules to make the macros available to them.
+#[macro_use]
+mod macros;
+
 mod ack_manager;
 mod action;
 mod client;
