@@ -196,8 +196,8 @@ pub use client::Client;
 pub use client_error::ClientError;
 pub use data::{Action, EntryAction, EntryActions, ImmutableData, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
                MAX_MUTABLE_DATA_ENTRIES, MAX_MUTABLE_DATA_ENTRY_ACTIONS,
-               MAX_MUTABLE_DATA_SIZE_IN_BYTES, MAX_STRUCTURED_DATA_SIZE_IN_BYTES, MutableData,
-               NO_OWNER_PUB_KEY, PermissionSet, StructuredData, User, Value};
+               MAX_MUTABLE_DATA_SIZE_IN_BYTES, MutableData, NO_OWNER_PUB_KEY, PermissionSet, User,
+               Value};
 pub use error::{InterfaceError, RoutingError};
 pub use event::Event;
 pub use event_stream::EventStream;

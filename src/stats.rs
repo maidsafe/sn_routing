@@ -50,7 +50,7 @@ pub struct Stats {
     msg_refresh: usize,
     msg_connection_info_req: usize,
     msg_connection_info_rsp: usize,
-    msg_section_update_req: usize,    
+    msg_section_update_req: usize,
     msg_section_update: usize,
     msg_section_split: usize,
     msg_own_section_merge: usize,

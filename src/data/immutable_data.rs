@@ -68,9 +68,9 @@ impl Deserialize for ImmutableData {
     fn deserialize<D: Deserializer>(deserializer: D) -> Result<ImmutableData, D::Error> {
         let value: Vec<u8> = Deserialize::deserialize(deserializer)?;
         Ok(ImmutableData {
-            name: XorName(sha256::hash(&value).0),
-            value: value,
-        })
+               name: XorName(sha256::hash(&value).0),
+               value: value,
+           })
     }
 }
 
