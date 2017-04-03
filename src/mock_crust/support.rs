@@ -37,6 +37,7 @@ pub struct NetworkImpl {
     next_endpoint: usize,
     queue: BTreeMap<(Endpoint, Endpoint), VecDeque<Packet>>,
     blocked_connections: HashSet<(Endpoint, Endpoint)>,
+    delayed_packets: VecDeque<(Endpoint, Endpoint, Packet)>,
     rng: SeededRng,
 }
 
@@ -55,6 +56,7 @@ impl Network {
                                          next_endpoint: 0,
                                          queue: BTreeMap::new(),
                                          blocked_connections: HashSet::new(),
+                                         delayed_packets: VecDeque::new(),
                                          rng: rng,
                                      })))
     }
@@ -98,9 +100,28 @@ impl Network {
 
     /// Poll and process all queued Packets.
     pub fn poll(&self) {
+        let mut handled = false;
         while let Some((sender, receiver, packet)) = self.pop_packet() {
+            handled = true;
+            if self.connection_blocked(receiver, sender) {
+                if let Packet::ConnectRequest(..) = packet {
+                    let mut imp = self.0.borrow_mut();
+                    imp.delayed_packets.push_back((sender, receiver, packet));
+                    continue;
+                }
+            }
             self.process_packet(sender, receiver, packet);
         }
+        if !handled {
+            while let Some((sender, receiver, packet)) = self.pop_delayed_packet() {
+                self.process_packet(sender, receiver, packet);
+            }
+        }
+    }
+
+    fn pop_delayed_packet(&self) -> Option<(Endpoint, Endpoint, Packet)> {
+        let mut imp = self.0.borrow_mut();
+        imp.delayed_packets.pop_front()
     }
 
     /// Causes all packets from `sender` to `receiver` to fail.

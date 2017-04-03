@@ -61,6 +61,19 @@ fn failing_connections_unidirectional() {
     verify_invariant_for_all_nodes(&mut nodes);
 }
 
+#[test]
+fn lost_connection_and_unidirectional_block() {
+    let min_section_size = 5;
+    let network = Network::new(min_section_size, None);
+    let mut nodes = create_connected_nodes(&network, min_section_size);
+    verify_invariant_for_all_nodes(&mut nodes);
+
+    network.lost_connection(Endpoint(2), Endpoint(3));
+    network.block_connection(Endpoint(2), Endpoint(3));
+    poll_and_resend(&mut nodes, &mut []);
+    verify_invariant_for_all_nodes(&mut nodes);
+}
+
 // Removes nodes from the specified section so that this section will merge with another section.
 fn remove_nodes_from_section_till_merge(prefix_name: &XorName,
                                         nodes: &mut Vec<TestNode>,
