@@ -183,17 +183,10 @@ pub enum Response {
 impl Response {
     /// The priority Crust should send this message with.
     pub fn priority(&self) -> u8 {
-        // TODO (adam): are this priorities OK?
         match *self {
             Response::GetIData { res: Ok(_), .. } => 5,
             Response::GetMDataValue { res: Ok(_), .. } |
-            Response::GetMDataVersion { res: Ok(_), .. } |
-            Response::GetMDataShell { res: Ok(_), .. } |
-            Response::ListMDataEntries { res: Ok(_), .. } |
-            Response::ListMDataKeys { res: Ok(_), .. } |
-            Response::ListMDataValues { res: Ok(_), .. } |
-            Response::ListMDataPermissions { res: Ok(_), .. } |
-            Response::ListMDataUserPermissions { res: Ok(_), .. } => 4,
+            Response::GetMDataShell { res: Ok(_), .. } => 4,
             _ => 3,
         }
     }

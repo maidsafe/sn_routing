@@ -224,28 +224,6 @@ pub enum Request {
 }
 
 impl Request {
-    /// The priority Crust should send this message with.
-    pub fn priority(&self) -> u8 {
-        /*
-        match *self {
-            Request::Refresh(..) => 2,
-            Request::Get(..) |
-            Request::GetAccountInfo(..) => 3,
-            Request::Append(..) => 4,
-            Request::Put(ref data, _) |
-            Request::Post(ref data, _) |
-            Request::Delete(ref data, _) => {
-                match *data {
-                    Data::Structured(..) => 4,
-                    _ => 5,
-                }
-            }
-        }
-        */
-
-        unimplemented!()
-    }
-
     /// Is the response corresponding to this request cacheable?
     pub fn is_cacheable(&self) -> bool {
         if let Request::GetIData { .. } = *self {

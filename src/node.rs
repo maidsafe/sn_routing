@@ -246,7 +246,6 @@ impl Node {
                       tag: u64,
                       msg_id: MessageId,
                   },
-                  // TODO (adam): is this the correct priority?
                   RELOCATE_PRIORITY);
 
     /// Send a `GetMDataValue` request.
@@ -257,7 +256,6 @@ impl Node {
                       key: Vec<u8>,
                       msg_id: MessageId,
                   },
-                  // TODO (adam): is this the correct priority?
                   RELOCATE_PRIORITY);
 
     /// Send a `SetMDataUserPermissions` request.
@@ -322,12 +320,7 @@ impl Node {
                                             msg_id: msg_id,
                                         });
 
-        let priority = if dst.is_client() {
-            CLIENT_GET_PRIORITY
-        } else {
-            RELOCATE_PRIORITY
-        };
-
+        let priority = relocate_priority(&dst);
         self.send_action(src, dst, msg, priority)
     }
 
@@ -344,11 +337,21 @@ impl Node {
                    CLIENT_GET_PRIORITY);
 
     /// Respond to a `GetMDataShell` request.
-    impl_response!(send_get_mdata_shell_response,
-                   GetMDataShell,
-                   MutableData,
-                   // TODO (adam): is this the correct priority?
-                   CLIENT_GET_PRIORITY);
+    pub fn send_get_mdata_shell_response(&mut self,
+                                         src: Authority<XorName>,
+                                         dst: Authority<XorName>,
+                                         res: Result<MutableData, ClientError>,
+                                         msg_id: MessageId)
+                                         -> Result<(), InterfaceError> {
+
+        let msg = UserMessage::Response(Response::GetMDataShell {
+                                            res: res,
+                                            msg_id: msg_id,
+                                        });
+
+        let priority = relocate_priority(&dst);
+        self.send_action(src, dst, msg, priority)
+    }
 
     /// Respond to a `ListMDataEntries` request.
     impl_response!(send_list_mdata_entries_response,
@@ -369,10 +372,21 @@ impl Node {
                    CLIENT_GET_PRIORITY);
 
     /// Respond to a `GetMDataValue` request.
-    impl_response!(send_get_mdata_value_response,
-                   GetMDataValue,
-                   Value,
-                   CLIENT_GET_PRIORITY);
+    pub fn send_get_mdata_value_response(&mut self,
+                                         src: Authority<XorName>,
+                                         dst: Authority<XorName>,
+                                         res: Result<Value, ClientError>,
+                                         msg_id: MessageId)
+                                         -> Result<(), InterfaceError> {
+
+        let msg = UserMessage::Response(Response::GetMDataValue {
+                                            res: res,
+                                            msg_id: msg_id,
+                                        });
+
+        let priority = relocate_priority(&dst);
+        self.send_action(src, dst, msg, priority)
+    }
 
     /// Respond to a `MutateMDataEntries` request.
     impl_response!(send_mutate_mdata_entries_response,
@@ -555,5 +569,15 @@ impl Drop for Node {
             .current_mut()
             .handle_action(Action::Terminate, &mut self.event_buffer);
         let _ = self.event_buffer.take_all();
+    }
+}
+
+// Priority of messages that might be used during relocation/churn, depending
+// on the destination.
+fn relocate_priority(dst: &Authority<XorName>) -> u8 {
+    if dst.is_client() {
+        CLIENT_GET_PRIORITY
+    } else {
+        RELOCATE_PRIORITY
     }
 }
