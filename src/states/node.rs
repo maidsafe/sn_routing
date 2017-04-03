@@ -645,7 +645,7 @@ impl Node {
             NodeIdentify {
                 ref serialised_public_id,
                 ref signature,
-                is_tunnel
+                is_tunnel,
             } => {
                 if let Ok(public_id) = verify_signed_public_id(serialised_public_id, signature) {
                     debug!("{:?} Handling NodeIdentify from {:?}.",
@@ -662,7 +662,7 @@ impl Node {
             CandidateIdentify {
                 ref serialised_public_id,
                 ref signature,
-                is_tunnel
+                is_tunnel,
             } => {
                 if let Ok(public_id) = verify_signed_public_id(serialised_public_id, signature) {
                     self.handle_candidate_identify(public_id, peer_id, is_tunnel, outbox);
@@ -2782,7 +2782,7 @@ impl Node {
                     Some(tunnel_node_id) => {
                         if !self.crust_service.is_connected(tunnel_node_id) {
                             peer_ids_to_drop.push(*tunnel_node_id);
-                            log_or_panic!(debug,
+                            log_or_panic!(LogLevel::Debug,
                                           "{:?} Should have a tunnel connection to {} {:?} via \
                                           {:?}, but tunnel node not connected.",
                                           self,
@@ -2794,7 +2794,7 @@ impl Node {
                     None => {
                         if self.crust_service.is_connected(&peer_id) {
                             self.peer_mgr.correct_routing_state_to_direct(&peer_id);
-                            log_or_panic!(debug,
+                            log_or_panic!(LogLevel::Debug,
                                           "{:?} Should have a tunnel connection to {} {:?}, but \
                                           instead have a direct connection.",
                                           self,
@@ -2802,7 +2802,7 @@ impl Node {
                                           peer_id);
                         } else {
                             peer_ids_to_drop.push(peer_id);
-                            log_or_panic!(debug,
+                            log_or_panic!(LogLevel::Debug,
                                           "{:?} Should have a tunnel connection to {} {:?}, but no \
                                           tunnel node or direct connection exists.",
                                           self,
@@ -2813,7 +2813,7 @@ impl Node {
                 }
             } else if !self.crust_service.is_connected(&peer_id) {
                 peer_ids_to_drop.push(peer_id);
-                log_or_panic!(error,
+                log_or_panic!(LogLevel::Error,
                               "{:?} Should have a direct connection to {} {:?}, but don't.",
                               self,
                               name,

@@ -19,13 +19,13 @@
 /// will simply log the message at the requested level.
 ///
 /// Example usage:
-/// log_or_panic!(warn, "{:?} Bad value: {}", self, value);
+/// `log_or_panic!(LogLevel::Warn, "{:?} Bad value: {}", self, value);`
 macro_rules! log_or_panic {
-    ($log_level:ident, $($arg:tt)*) => {
+    ($log_level:expr, $($arg:tt)*) => {
         if cfg!(feature = "use-mock-crust") {
             panic!($($arg)*);
         } else {
-            $log_level!("{}", format!($($arg)*));
+            log!($log_level, $($arg)*);
         }
     };
 }

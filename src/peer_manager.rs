@@ -19,6 +19,7 @@ use crust::{PeerId, PrivConnectionInfo, PubConnectionInfo};
 use error::RoutingError;
 use id::PublicId;
 use itertools::Itertools;
+use log::LogLevel;
 use rand;
 use resource_proof::ResourceProof;
 use routing_table::{Authority, OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix,
@@ -240,11 +241,11 @@ impl Peer {
             PeerState::Candidate(conn) |
             PeerState::Routing(conn) => {
                 if conn == RoutingConnection::Tunnel && !is_tunnel {
-                    RoutingConnection::Direct 
-                } else {       
+                    RoutingConnection::Direct
+                } else {
                     conn
                 }
-            },
+            }
             PeerState::Proxy => RoutingConnection::Proxy(self.timestamp),
             PeerState::JoiningNode => RoutingConnection::JoiningNode(self.timestamp),
             PeerState::ConnectionInfoPreparing { .. } |
@@ -621,7 +622,8 @@ impl PeerManager {
             } else {
                 let conn = self.peer_map
                     .get(peer_id)
-                    .map_or(RoutingConnection::Direct, |peer| peer.to_routing_connection(is_tunnel));
+                    .map_or(RoutingConnection::Direct,
+                            |peer| peer.to_routing_connection(is_tunnel));
                 let state = PeerState::Candidate(conn);
                 let _ = self.peer_map
                     .insert(Peer::new(*pub_id, Some(*peer_id), state));
@@ -739,13 +741,15 @@ impl PeerManager {
         let _ = self.expected_peers.remove(pub_id.name());
 
         let res = match self.routing_table.add(*pub_id.name(), want_to_merge) {
-            x @ Ok(_) | x @ Err(RoutingTableError::AlreadyExists) => x,
+            x @ Ok(_) |
+            x @ Err(RoutingTableError::AlreadyExists) => x,
             Err(e) => return Err(e),
         };
 
         let conn = self.peer_map
             .remove(peer_id)
-            .map_or(unknown_connection, |peer| peer.to_routing_connection(is_tunnel));
+            .map_or(unknown_connection,
+                    |peer| peer.to_routing_connection(is_tunnel));
         let _ = self.peer_map
             .insert(Peer::new(*pub_id, Some(*peer_id), PeerState::Routing(conn)));
         trace!("{:?} Set {:?} to {:?}", self, pub_id.name(), PeerState::Routing(conn));
@@ -1271,7 +1275,7 @@ impl PeerManager {
                 let peer = match self.peer_map.get_by_name(name) {
                     Some(peer) => peer,
                     None => {
-                        log_or_panic!(error,
+                        log_or_panic!(LogLevel::Error,
                                       "{:?} Have {} in RT, but have no entry in peer_map for it.",
                                       self,
                                       name);
@@ -1282,7 +1286,7 @@ impl PeerManager {
                 let peer_id = match peer.peer_id {
                     Some(peer_id) => peer_id,
                     None => {
-                        log_or_panic!(error,
+                        log_or_panic!(LogLevel::Error,
                                       "{:?} Have {} in RT, but have no peer ID for it.",
                                       self,
                                       name);
@@ -1294,7 +1298,7 @@ impl PeerManager {
                     PeerState::Routing(RoutingConnection::Tunnel) => true,
                     PeerState::Routing(_) => false,
                     _ => {
-                        log_or_panic!(error,
+                        log_or_panic!(LogLevel::Error,
                                       "{:?} Have {} in RT, but have state {:?} for it.",
                                       self,
                                       name,
