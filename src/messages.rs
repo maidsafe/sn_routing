@@ -131,6 +131,11 @@ pub enum DirectMessage {
         serialised_public_id: Vec<u8>,
         /// Signature of the originator of this message.
         signature: sign::Signature,
+        /// FIXME: Should be deprecated.
+        /// Tunnel connection indicator from sender which would override
+        /// intermediate peer_mgr states for routing table connection type.
+        /// Should not influence JoiningNode / Proxy states which are expected to be direct only.
+        is_tunnel: bool,
     },
     /// Sent from a node which is still joining the network to another node, to allow the latter to
     /// add the former to its routing table.
@@ -139,6 +144,11 @@ pub enum DirectMessage {
         serialised_public_id: Vec<u8>,
         /// Signature of the originator of this message.
         signature: sign::Signature,
+        /// FIXME: Should be deprecated.
+        /// Tunnel connection indicator from sender which would override
+        /// intermediate peer_mgr states for routing table connection type.
+        /// Should not influence JoiningNode / Proxy states which are expected to be direct only.
+        is_tunnel: bool,
     },
     /// Sent from a node that needs a tunnel to be able to connect to the given peer.
     TunnelRequest(PeerId),

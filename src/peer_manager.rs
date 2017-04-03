@@ -235,19 +235,32 @@ impl Peer {
     }
 
     /// Returns the `RoutingConnection` type for this peer when it is put in the routing table.
-    fn to_routing_connection(&self) -> RoutingConnection {
+    fn to_routing_connection(&self, is_tunnel: bool) -> RoutingConnection {
         match self.state {
-            PeerState::SearchingForTunnel |
-            PeerState::AwaitingNodeIdentify(true) => RoutingConnection::Tunnel,
             PeerState::Candidate(conn) |
-            PeerState::Routing(conn) => conn,
+            PeerState::Routing(conn) => {
+                if conn == RoutingConnection::Tunnel && !is_tunnel {
+                    RoutingConnection::Direct 
+                } else {       
+                    conn
+                }
+            },
             PeerState::Proxy => RoutingConnection::Proxy(self.timestamp),
             PeerState::JoiningNode => RoutingConnection::JoiningNode(self.timestamp),
-            PeerState::AwaitingNodeIdentify(false) |
             PeerState::ConnectionInfoPreparing { .. } |
             PeerState::ConnectionInfoReady(_) |
+            PeerState::CrustConnecting |
+            PeerState::SearchingForTunnel |
             PeerState::Client |
-            PeerState::CrustConnecting => RoutingConnection::Direct,
+            PeerState::AwaitingNodeIdentify(_) => {
+                // Since some of these states arent exclusive to connection types,
+                // use the is_tunnel argument to know the promoted connection type
+                if is_tunnel {
+                    RoutingConnection::Tunnel
+                } else {
+                    RoutingConnection::Direct
+                }
+            }
         }
     }
 }
@@ -599,7 +612,8 @@ impl PeerManager {
                                      peer_id: &PeerId,
                                      target_size: usize,
                                      difficulty: u8,
-                                     seed: Vec<u8>)
+                                     seed: Vec<u8>,
+                                     is_tunnel: bool)
                                      -> Result<bool, RoutingError> {
         if let Some(candidate) = self.candidates.get_mut(pub_id.name()) {
             if candidate.is_approved() {
@@ -607,7 +621,7 @@ impl PeerManager {
             } else {
                 let conn = self.peer_map
                     .get(peer_id)
-                    .map_or(RoutingConnection::Direct, Peer::to_routing_connection);
+                    .map_or(RoutingConnection::Direct, |peer| peer.to_routing_connection(is_tunnel));
                 let state = PeerState::Candidate(conn);
                 let _ = self.peer_map
                     .insert(Peer::new(*pub_id, Some(*peer_id), state));
@@ -679,7 +693,8 @@ impl PeerManager {
     pub fn add_to_routing_table(&mut self,
                                 pub_id: &PublicId,
                                 peer_id: &PeerId,
-                                want_to_merge: bool)
+                                want_to_merge: bool,
+                                is_tunnel: bool)
                                 -> Result<bool, RoutingTableError> {
         if let Some(peer) = self.peer_map.get(peer_id) {
             match peer.state {
@@ -717,31 +732,25 @@ impl PeerManager {
                    peer_id);
         }
 
-        let unknown_connection = if let Some((is_tunnel, _)) = self.unknown_peers.remove(peer_id) {
-            if is_tunnel {
-                RoutingConnection::Tunnel
-            } else {
-                // This would cover the case of a tunnel client establishing a direct connection.
-                if let Some(peer @ &mut Peer {
-                                     state: PeerState::Routing(RoutingConnection::Tunnel), ..
-                                 }) = self.peer_map.get_mut(peer_id) {
-                    peer.state = PeerState::Routing(RoutingConnection::Direct);
-                }
-                RoutingConnection::Direct
-            }
-        } else {
-            RoutingConnection::Direct
+        let unknown_connection = match self.unknown_peers.remove(peer_id) {
+            Some((true, _)) => RoutingConnection::Tunnel,
+            Some((false, _)) | None => RoutingConnection::Direct,
         };
         let _ = self.expected_peers.remove(pub_id.name());
 
-        // If we've updated the state from tunnel to direct above, we now return here.
-        let should_split = self.routing_table.add(*pub_id.name(), want_to_merge)?;
+        let res = match self.routing_table.add(*pub_id.name(), want_to_merge) {
+            x @ Ok(_) | x @ Err(RoutingTableError::AlreadyExists) => x,
+            Err(e) => return Err(e),
+        };
+
         let conn = self.peer_map
             .remove(peer_id)
-            .map_or(unknown_connection, |peer| peer.to_routing_connection());
+            .map_or(unknown_connection, |peer| peer.to_routing_connection(is_tunnel));
         let _ = self.peer_map
             .insert(Peer::new(*pub_id, Some(*peer_id), PeerState::Routing(conn)));
-        Ok(should_split)
+        trace!("{:?} Set {:?} to {:?}", self, pub_id.name(), PeerState::Routing(conn));
+
+        res
     }
 
     /// Splits the indicated section and returns the `PeerId`s of any peers to which we should not

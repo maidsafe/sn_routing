@@ -478,7 +478,7 @@ impl Node {
                self,
                peer_id,
                id_type);
-        self.send_node_identify(peer_id);
+        self.send_node_identify(peer_id, false);
     }
 
     fn handle_connect_failure(&mut self, peer_id: PeerId) {
@@ -645,12 +645,13 @@ impl Node {
             NodeIdentify {
                 ref serialised_public_id,
                 ref signature,
+                is_tunnel
             } => {
                 if let Ok(public_id) = verify_signed_public_id(serialised_public_id, signature) {
                     debug!("{:?} Handling NodeIdentify from {:?}.",
                            self,
                            public_id.name());
-                    self.add_to_routing_table(&public_id, &peer_id, outbox);
+                    self.add_to_routing_table(&public_id, &peer_id, is_tunnel, outbox);
                 } else {
                     warn!("{:?} Signature check failed in NodeIdentify, so dropping peer {:?}.",
                           self,
@@ -661,9 +662,10 @@ impl Node {
             CandidateIdentify {
                 ref serialised_public_id,
                 ref signature,
+                is_tunnel
             } => {
                 if let Ok(public_id) = verify_signed_public_id(serialised_public_id, signature) {
-                    self.handle_candidate_identify(public_id, peer_id, outbox);
+                    self.handle_candidate_identify(public_id, peer_id, is_tunnel, outbox);
                 } else {
                     warn!("{:?} Signature check failed in CandidateIdentify, so dropping peer \
                            {:?}.",
@@ -1183,7 +1185,11 @@ impl Node {
         }
 
         if let Some(peer_id) = opt_peer_id {
-            self.add_to_routing_table(&candidate_id, &peer_id, outbox);
+            // Since this is not a DirectMessage, we're currently using self.tunnels to
+            // check if the given peer_id will be reached via a tunnel when we send
+            // messages and add to RT accordingly. Ideally this should not have to rely on tunnels.
+            let is_tunnel = self.tunnels.tunnel_for(&peer_id).is_some();
+            self.add_to_routing_table(&candidate_id, &peer_id, is_tunnel, outbox);
         }
         Ok(())
     }
@@ -1568,6 +1574,7 @@ impl Node {
     fn handle_candidate_identify(&mut self,
                                  public_id: PublicId,
                                  peer_id: PeerId,
+                                 is_tunnel: bool,
                                  outbox: &mut EventBox) {
         let name = public_id.name();
         debug!("{:?} Handling CandidateIdentify from {:?}.", self, name);
@@ -1588,7 +1595,8 @@ impl Node {
                                              &peer_id,
                                              target_size,
                                              difficulty,
-                                             seed.clone()) {
+                                             seed.clone(),
+                                             is_tunnel) {
             Ok(true) => {
                 let direct_message = DirectMessage::ResourceProof {
                     seed: seed,
@@ -1605,7 +1613,7 @@ impl Node {
                        challenge as section has already approved it.",
                       self,
                       public_id.name());
-                self.add_to_routing_table(&public_id, &peer_id, outbox);
+                self.add_to_routing_table(&public_id, &peer_id, is_tunnel, outbox);
             }
             Err(RoutingError::CandidateIsTunnelling) => {
                 debug!("{:?} handling a tunnelling candidate {:?}", self, name);
@@ -1623,12 +1631,18 @@ impl Node {
     fn add_to_routing_table(&mut self,
                             public_id: &PublicId,
                             peer_id: &PeerId,
+                            is_tunnel: bool,
                             outbox: &mut EventBox) {
         let want_to_merge = self.we_want_to_merge() || self.they_want_to_merge();
         let mut need_split = false;
         match self.peer_mgr
-                  .add_to_routing_table(public_id, peer_id, want_to_merge) {
-            Err(RoutingTableError::AlreadyExists) => return,  // already in RT
+                  .add_to_routing_table(public_id, peer_id, want_to_merge, is_tunnel) {
+            Err(RoutingTableError::AlreadyExists) => {
+                trace!("{:?} {:?} already exists in routing table.",
+                       self,
+                       public_id.name());
+                return;
+            }
             Err(error) => {
                 debug!("{:?} Peer {:?} was not added to the routing table: {}",
                        self,
@@ -1903,8 +1917,8 @@ impl Node {
             Ok(IsProxy) |
             Ok(IsClient) |
             Ok(IsJoiningNode) => {
-                self.send_node_identify(peer_id);
-                self.add_to_routing_table(&public_id, &peer_id, outbox);
+                self.send_node_identify(peer_id, false);
+                self.add_to_routing_table(&public_id, &peer_id, false, outbox);
             }
             Ok(Waiting) | Ok(IsConnected) | Err(_) => (),
         }
@@ -1996,7 +2010,7 @@ impl Node {
                    self,
                    peer_id,
                    dst_id);
-            self.send_node_identify(dst_id);
+            self.send_node_identify(dst_id, true);
         }
     }
 
@@ -3131,7 +3145,7 @@ impl Node {
         Ok(serialisation::serialise(&message)?)
     }
 
-    fn send_node_identify(&mut self, peer_id: PeerId) {
+    fn send_node_identify(&mut self, peer_id: PeerId, is_tunnel: bool) {
         let serialised_public_id = match serialisation::serialise(self.full_id().public_id()) {
             Ok(rslt) => rslt,
             Err(e) => {
@@ -3145,11 +3159,13 @@ impl Node {
             DirectMessage::NodeIdentify {
                 serialised_public_id: serialised_public_id,
                 signature: signature,
+                is_tunnel: is_tunnel,
             }
         } else {
             DirectMessage::CandidateIdentify {
                 serialised_public_id: serialised_public_id,
                 signature: signature,
+                is_tunnel: is_tunnel,
             }
         };
 
@@ -3165,9 +3181,8 @@ impl Node {
         let their_name = *their_public_id.name();
         if let Some(peer_id) = self.peer_mgr
                .get_proxy_or_client_or_joining_node_peer_id(&their_public_id) {
-
-            self.send_node_identify(peer_id);
-            self.add_to_routing_table(&their_public_id, &peer_id, outbox);
+            self.send_node_identify(peer_id, false);
+            self.add_to_routing_table(&their_public_id, &peer_id, false, outbox);
             return Ok(());
         }
 
