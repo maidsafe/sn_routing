@@ -20,7 +20,7 @@ use maidsafe_utilities::serialisation;
 use message_filter::MessageFilter;
 use messages::RoutingMessage;
 use sha3;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fmt;
 use std::time::Duration;
 use tiny_keccak::sha3_256;
@@ -39,7 +39,7 @@ pub struct UnacknowledgedMessage {
 }
 
 pub struct AckManager {
-    pending: HashMap<Ack, UnacknowledgedMessage>,
+    pending: BTreeMap<Ack, UnacknowledgedMessage>,
     received: MessageFilter<Ack>,
 }
 
@@ -55,7 +55,7 @@ impl AckManager {
         let expiry_duration = Duration::from_secs(EXPIRY_DURATION_SECS);
 
         AckManager {
-            pending: HashMap::new(),
+            pending: BTreeMap::new(),
             received: MessageFilter::with_expiry_duration(expiry_duration),
         }
     }
