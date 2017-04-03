@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use super::{TestClient, TestNode, create_connected_clients, create_connected_nodes,
+use super::{TestClient, TestNode, create_connected_clients, create_connected_nodes, gen_range,
             gen_range_except, poll_and_resend, verify_invariant_for_all_nodes};
 use itertools::Itertools;
 use rand::Rng;
@@ -35,7 +35,7 @@ fn drop_random_nodes<R: Rng>(rng: &mut R, nodes: &mut Vec<TestNode>, min_section
 
     if rng.gen_weighted_bool(3) {
         // Pick a section then remove as many nodes as possible from it without breaking quorum.
-        let i = rng.gen_range(0, len);
+        let i = gen_range(rng, 0, len);
         let prefix = *nodes[i].routing_table().our_prefix();
 
         // Any network must allow at least one node to be lost:
@@ -46,7 +46,7 @@ fn drop_random_nodes<R: Rng>(rng: &mut R, nodes: &mut Vec<TestNode>, min_section
         let mut removed = 0;
         // Remove nodes from the chosen section
         while removed < num_excess {
-            let i = rng.gen_range(0, nodes.len());
+            let i = gen_range(rng, 0, nodes.len());
             if *nodes[i].routing_table().our_prefix() != prefix {
                 continue;
             }
@@ -59,7 +59,7 @@ fn drop_random_nodes<R: Rng>(rng: &mut R, nodes: &mut Vec<TestNode>, min_section
         let num_excess = cmp::min(min_section_size - min_quorum, len - min_section_size);
         let mut removed = 0;
         while num_excess - removed > 0 {
-            let _ = nodes.remove(rng.gen_range(0, len - removed));
+            let _ = nodes.remove(gen_range(rng, 0, len - removed));
             removed += 1;
         }
     }
@@ -76,9 +76,9 @@ fn add_random_node<R: Rng>(rng: &mut R,
     let len = nodes.len();
     // A non-first node without min_section_size nodes in routing table cannot be proxy
     let (proxy, index) = if len <= min_section_size {
-        (0, rng.gen_range(1, len + 1))
+        (0, gen_range(rng, 1, len + 1))
     } else {
-        (rng.gen_range(0, len), rng.gen_range(0, len + 1))
+        (gen_range(rng, 0, len), gen_range(rng, 0, len + 1))
     };
     let config = Config::with_contacts(&[nodes[proxy].handle.endpoint()]);
 
@@ -114,17 +114,17 @@ fn random_churn<R: Rng>(rng: &mut R,
     let len = nodes.len();
 
     if count_sections(nodes) > 1 && rng.gen_weighted_bool(3) {
-        let _ = nodes.remove(rng.gen_range(1, len));
-        let _ = nodes.remove(rng.gen_range(1, len - 1));
-        let _ = nodes.remove(rng.gen_range(1, len - 2));
+        let _ = nodes.remove(gen_range(rng, 1, len));
+        let _ = nodes.remove(gen_range(rng, 1, len - 1));
+        let _ = nodes.remove(gen_range(rng, 1, len - 2));
 
         None
     } else {
-        let mut proxy = rng.gen_range(0, len);
-        let index = rng.gen_range(1, len + 1);
+        let mut proxy = gen_range(rng, 0, len);
+        let index = gen_range(rng, 1, len + 1);
 
         if nodes.len() > 2 * network.min_section_size() {
-            let peer_1 = rng.gen_range(1, len);
+            let peer_1 = gen_range(rng, 1, len);
             let peer_2 = gen_range_except(rng, 1, len, &iter::once(peer_1).collect());
             debug!("Lost connection between {} and {}",
                    nodes[peer_1].name(),
@@ -306,15 +306,15 @@ impl ExpectedGets {
     }
 }
 
-fn send_and_receive<R: Rng>(mut rng: &mut R,
-                            mut nodes: &mut [TestNode],
+fn send_and_receive<R: Rng>(rng: &mut R,
+                            nodes: &mut [TestNode],
                             min_section_size: usize,
                             added_index: Option<usize>) {
     // Create random data ID and pick random sending and receiving nodes.
     let data_id = DataIdentifier::Immutable(rng.gen());
     let exclude = added_index.map_or(BTreeSet::new(), |index| iter::once(index).collect());
-    let index0 = gen_range_except(&mut rng, 0, nodes.len(), &exclude);
-    let index1 = gen_range_except(&mut rng, 0, nodes.len(), &exclude);
+    let index0 = gen_range_except(rng, 0, nodes.len(), &exclude);
+    let index1 = gen_range_except(rng, 0, nodes.len(), &exclude);
     let auth_n0 = Authority::ManagedNode(nodes[index0].name());
     let auth_n1 = Authority::ManagedNode(nodes[index1].name());
     let auth_g0 = Authority::NaeManager(rng.gen());
@@ -354,8 +354,8 @@ fn send_and_receive<R: Rng>(mut rng: &mut R,
     }
 }
 
-fn client_gets(network: &mut Network, mut nodes: &mut [TestNode], min_section_size: usize) {
-    let mut clients = create_connected_clients(network, &mut nodes, 1);
+fn client_gets(network: &mut Network, nodes: &mut [TestNode], min_section_size: usize) {
+    let mut clients = create_connected_clients(network, nodes, 1);
     let cl_auth = Authority::Client {
         client_key: *clients[0].full_id.public_id().signing_public_key(),
         proxy_node_name: nodes[0].name(),
@@ -371,10 +371,10 @@ fn client_gets(network: &mut Network, mut nodes: &mut [TestNode], min_section_si
 
     let mut expected_gets = ExpectedGets::default();
     // Test messages from a client to a group and a section...
-    expected_gets.client_send_and_expect(data_id, cl_auth, auth_g0, &clients[0], &mut nodes);
-    expected_gets.client_send_and_expect(data_id, cl_auth, auth_s0, &clients[0], &mut nodes);
+    expected_gets.client_send_and_expect(data_id, cl_auth, auth_g0, &clients[0], nodes);
+    expected_gets.client_send_and_expect(data_id, cl_auth, auth_s0, &clients[0], nodes);
     // ... and from group to the client
-    expected_gets.send_and_expect(data_id, auth_g1, cl_auth, &mut nodes, min_section_size);
+    expected_gets.send_and_expect(data_id, auth_g1, cl_auth, nodes, min_section_size);
 
     poll_and_resend(nodes, &mut clients);
     expected_gets.verify(nodes, &mut clients);
@@ -429,7 +429,7 @@ fn aggressive_churn() {
           count_sections(&nodes));
     while count_sections(&nodes) <= target_section_num || nodes.len() < target_network_size {
         if nodes.len() > (2 * min_section_size) {
-            let peer_1 = rng.gen_range(0, nodes.len());
+            let peer_1 = gen_range(&mut rng, 0, nodes.len());
             let peer_2 = gen_range_except(&mut rng, 0, nodes.len(), &iter::once(peer_1).collect());
             debug!("Lost connection between {} and {}",
                    nodes[peer_1].name(),

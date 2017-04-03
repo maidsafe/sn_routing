@@ -769,10 +769,11 @@ impl PeerManager {
 
         let removal_keys = self.candidates
             .iter()
-            .find(|&(name, candidate)| {
-                      !candidate.is_approved() && !self.routing_table.our_prefix().matches(name)
-                  })
-            .map(|(name, _)| *name);
+            .filter(|&(name, candidate)| {
+                        !candidate.is_approved() && !self.routing_table.our_prefix().matches(name)
+                    })
+            .map(|(name, _)| *name)
+            .collect::<Vec<_>>();
 
         let ids_to_drop = names_to_drop
             .iter()
@@ -813,7 +814,7 @@ impl PeerManager {
 
         self.cleanup_proxy_peer_id();
 
-        for name in removal_keys.iter() {
+        for name in &removal_keys {
             let _ = self.candidates.remove(name);
             trace!("{:?} Removed unapproved candidate {:?} after split.",
                    self,
@@ -922,7 +923,7 @@ impl PeerManager {
     pub fn merge_other_section(&mut self,
                                prefix: Prefix<XorName>,
                                section: BTreeSet<PublicId>)
-                               -> HashSet<PublicId> {
+                               -> BTreeSet<PublicId> {
         self.remove_expired();
 
         let merge_details = OtherMergeDetails {

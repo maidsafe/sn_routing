@@ -27,7 +27,7 @@ mod utils;
 pub use self::utils::{Nodes, TestClient, TestNode, add_connected_nodes_until_split,
                       create_connected_clients, create_connected_nodes,
                       create_connected_nodes_until_split, gen_bytes, gen_immutable_data,
-                      gen_range_except, poll_all, poll_and_resend,
+                      gen_range, gen_range_except, poll_all, poll_and_resend,
                       remove_nodes_which_failed_to_connect, sort_nodes_by_distance_to,
                       verify_invariant_for_all_nodes};
 use routing::{Event, EventStream, Prefix, XOR_NAME_LEN, XorName};
