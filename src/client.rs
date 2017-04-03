@@ -306,6 +306,7 @@ impl Client {
     }
 
     /// Updates or inserts a permission set for a given user
+    #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
     pub fn set_mdata_user_permissions(&mut self,
                                       dst: Authority<XorName>,
                                       name: XorName,
@@ -330,6 +331,7 @@ impl Client {
     }
 
     /// Deletes a permission set for a given user
+    #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
     pub fn del_mdata_user_permissions(&mut self,
                                       dst: Authority<XorName>,
                                       name: XorName,

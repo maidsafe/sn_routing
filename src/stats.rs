@@ -135,7 +135,7 @@ impl Stats {
                         self.msg_set_mdata_user_permissions.inc_request()
                     }
                     Request::DelMDataUserPermissions { .. } => {
-                        self.msg_set_mdata_user_permissions.inc_request()
+                        self.msg_del_mdata_user_permissions.inc_request()
                     }
                     Request::ChangeMDataOwner { .. } => self.msg_change_mdata_owner.inc_request(),
                     Request::ListAuthKeysAndVersion { .. } => {

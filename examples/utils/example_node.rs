@@ -15,6 +15,9 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+// TODO: uncomment and fix
+/*
+
 use super::MIN_SECTION_SIZE;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
@@ -285,3 +288,5 @@ enum RefreshContent {
     /// A message to an `NaeManager` to add a new data chunk.
     NaeManager { data_id: DataIdentifier, data: Data },
 }
+
+*/

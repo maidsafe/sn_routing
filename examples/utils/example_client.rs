@@ -15,6 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+// TODO: uncomment and fix
+/*
 use routing::{Authority, Client, Data, DataIdentifier, Event, FullId, MessageId, Response, XorName};
 use rust_sodium::crypto;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
@@ -204,3 +206,4 @@ fn recv_with_timeout<T>(rx: &Receiver<T>, timeout: Duration) -> Option<T> {
         }
     }
 }
+*/

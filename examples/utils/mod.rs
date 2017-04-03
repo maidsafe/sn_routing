@@ -22,5 +22,6 @@ mod example_client;
 
 pub const MIN_SECTION_SIZE: usize = 8;
 
-pub use self::example_client::ExampleClient;
-pub use self::example_node::ExampleNode;
+// TODO: uncomment and fix
+// pub use self::example_client::ExampleClient;
+// pub use self::example_node::ExampleNode;

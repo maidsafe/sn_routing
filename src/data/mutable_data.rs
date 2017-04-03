@@ -440,7 +440,7 @@ impl MutableData {
         if version != self.version + 1 {
             return Err(ClientError::InvalidSuccessor);
         }
-        let prev = self.permissions.insert(user.clone(), permissions);
+        let prev = self.permissions.insert(user, permissions);
         if !self.validate_mut_size() {
             // Serialised data size limit is exceeded
             let _ = match prev {

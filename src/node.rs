@@ -49,6 +49,7 @@ use xor_name::XorName;
 macro_rules! impl_request {
     ($method:ident, $message:ident { $($pname:ident : $ptype:ty),*, }, $priority:expr) => {
         #[allow(missing_docs)]
+        #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
         pub fn $method(&mut self,
                        src: Authority<XorName>,
                        dst: Authority<XorName>,
@@ -144,42 +145,37 @@ impl NodeBuilder {
            })
     }
 
-    // TODO - remove this `rustfmt_skip` once rustfmt stops adding trailing space at `else if`.
-    #[cfg_attr(rustfmt, rustfmt_skip)]
-    fn make_state_machine(self,
-                          min_section_size: usize,
-                          outbox: &mut EventBox)
-                          -> StateMachine {
+    fn make_state_machine(self, min_section_size: usize, outbox: &mut EventBox) -> StateMachine {
         let full_id = FullId::new();
-
-        StateMachine::new(move |crust_service, timer, outbox2| if self.first {
-                              if let Some(state) = states::Node::first(self.cache,
-                                                                       crust_service,
-                                                                       full_id,
-                                                                       min_section_size,
-                                                                       timer) {
-                                  State::Node(state)
-                              } else {
-                                  State::Terminated
-                              }
-                          } else if
-                              self.deny_other_local_nodes && crust_service.has_peers_on_lan() {
-                              error!("Bootstrapping({:?}) More than 1 routing node found on LAN. \
+        let init = move |crust_service, timer, outbox2: &mut EventBox| if self.first {
+            if let Some(state) = states::Node::first(self.cache,
+                                                     crust_service,
+                                                     full_id,
+                                                     min_section_size,
+                                                     timer) {
+                State::Node(state)
+            } else {
+                State::Terminated
+            }
+        } else if
+            self.deny_other_local_nodes && crust_service.has_peers_on_lan() {
+            error!("Bootstrapping({:?}) More than 1 routing node found on LAN. \
                                       Currently this is not supported",
-                                     full_id.public_id().name());
+                   full_id.public_id().name());
 
-                              outbox2.send_event(Event::Terminate);
-                              State::Terminated
-                          } else {
-                              states::Bootstrapping::new(self.cache,
-                                                         false,
-                                                         crust_service,
-                                                         full_id,
-                                                         min_section_size,
-                                                         timer)
-                                  .map_or(State::Terminated, State::Bootstrapping)
-                          },
-                          outbox, None)
+            outbox2.send_event(Event::Terminate);
+            State::Terminated
+        } else {
+            states::Bootstrapping::new(self.cache,
+                                       false,
+                                       crust_service,
+                                       full_id,
+                                       min_section_size,
+                                       timer)
+                    .map_or(State::Terminated, State::Bootstrapping)
+        };
+
+        StateMachine::new(init, outbox, None)
     }
 }
 
