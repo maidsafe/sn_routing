@@ -233,8 +233,8 @@ impl Client {
                        hash[0],
                        hash[1],
                        hash[2],
+                       part_index + 1,
                        part_count,
-                       part_index,
                        routing_msg.src,
                        routing_msg.dst);
                 if let Some(msg) = self.user_msg_cache
