@@ -39,19 +39,23 @@ const MAX_POLL_CALLS: usize = 1000;
 
 // -----  Random number generation  -----
 
+pub fn gen_range<T: Rng>(rng: &mut T, low: usize, high: usize) -> usize {
+    rng.gen_range(low as u32, high as u32) as usize
+}
+
 /// Generate a random value in the range, excluding the `exclude` value, if not `None`.
 pub fn gen_range_except<T: Rng>(rng: &mut T,
                                 low: usize,
                                 high: usize,
                                 exclude: &BTreeSet<usize>)
                                 -> usize {
-    let mut x = rng.gen_range(low as u32, (high - exclude.len()) as u32);
+    let mut x = gen_range(rng, low, high - exclude.len());
     for e in exclude {
-        if x as usize >= *e {
+        if x >= *e {
             x += 1;
         }
     }
-    x as usize
+    x
 }
 
 
