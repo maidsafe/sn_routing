@@ -55,7 +55,7 @@ impl Network {
                                          next_endpoint: 0,
                                          queue: BTreeMap::new(),
                                          blocked_connections: HashSet::new(),
-                                         rng: SeededRng::new(),
+                                         rng: rng,
                                      })))
     }
 
