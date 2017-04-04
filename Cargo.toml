@@ -7,30 +7,30 @@ license = "GPL-3.0"
 name = "routing"
 readme = "README.md"
 repository = "https://github.com/maidsafe/routing"
-version = "0.28.4"
+version = "0.28.5"
 
 [dependencies]
 accumulator = "~0.5.0"
 crust = "~0.24.0"
 hex = "~0.2.0"
 itertools = "~0.5.9"
-log = "~0.3.6"
+log = "~0.3.7"
 lru_time_cache = "~0.5.0"
-maidsafe_utilities = "~0.11.0"
+maidsafe_utilities = "~0.11.2"
 quick-error = "~1.1.0"
 rand = "~0.3.15"
 resource_proof = "~0.3.1"
 rust_sodium = "~0.2.0"
-serde = "~0.9.12"
-serde_derive = "~0.9.12"
-term = "~0.4.4"
-tiny-keccak = "~1.2.0"
+serde = "~0.9.13"
+serde_derive = "~0.9.13"
+term = "~0.4.5"
+tiny-keccak = "~1.2.1"
 unwrap = "~1.1.0"
 
 [dev-dependencies]
 rustc-serialize = "~0.3.23"
 docopt = "~0.6.86"
-libc = "~0.2.20"
+libc = "~0.2.21"
 
 [[example]]
 bench = false
