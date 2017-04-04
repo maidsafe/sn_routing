@@ -507,6 +507,11 @@ impl Node {
         self.machine.current().has_unacknowledged()
     }
 
+    /// Purge invalid routing entries.
+    pub fn purge_invalid_rt_entry(&mut self) {
+        self.machine.current_mut().purge_invalid_rt_entry()
+    }
+
     /// Routing table of this node.
     pub fn routing_table(&self) -> Option<RoutingTable<XorName>> {
         self.machine.current().routing_table().cloned()

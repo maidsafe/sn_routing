@@ -43,8 +43,8 @@ fn test_nodes(percentage_size: usize) {
     let min_section_size = 8;
     let size = min_section_size * percentage_size / 100;
     let network = Network::new(min_section_size, None);
-    let nodes = create_connected_nodes(&network, size);
-    verify_invariant_for_all_nodes(&nodes);
+    let mut nodes = create_connected_nodes(&network, size);
+    verify_invariant_for_all_nodes(&mut nodes);
 }
 
 #[test]
@@ -99,7 +99,7 @@ fn node_joins_in_front() {
 
     let _ = poll_all(&mut nodes, &mut []);
 
-    verify_invariant_for_all_nodes(&nodes);
+    verify_invariant_for_all_nodes(&mut nodes);
 }
 
 #[test]
@@ -123,7 +123,7 @@ fn multiple_joining_nodes() {
 
         poll_and_resend(&mut nodes, &mut []);
         let _ = remove_nodes_which_failed_to_connect(&mut nodes, count);
-        verify_invariant_for_all_nodes(&nodes);
+        verify_invariant_for_all_nodes(&mut nodes);
     }
 }
 
@@ -175,7 +175,7 @@ fn simultaneous_joining_nodes() {
 
     poll_and_resend(&mut nodes, &mut []);
     assert!(remove_nodes_which_failed_to_connect(&mut nodes, 2) < 2);
-    verify_invariant_for_all_nodes(&nodes);
+    verify_invariant_for_all_nodes(&mut nodes);
 }
 
 #[test]
@@ -207,7 +207,7 @@ fn whitelist() {
                    .config(config.clone())
                    .create());
     let _ = poll_all(&mut nodes, &mut []);
-    verify_invariant_for_all_nodes(&nodes);
+    verify_invariant_for_all_nodes(&mut nodes);
     // The next node has peer ID `min_section_size + 1`: It is not whitelisted.
     nodes.push(TestNode::builder(&network)
                    .config(config.clone())

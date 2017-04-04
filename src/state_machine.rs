@@ -144,6 +144,12 @@ impl State {
         }
     }
 
+    pub fn purge_invalid_rt_entry(&mut self) {
+        if let State::Node(ref mut state) = *self {
+            state.purge_invalid_rt_entry();
+        }
+    }
+
     pub fn routing_table(&self) -> Option<&RoutingTable<XorName>> {
         match *self {
             State::Node(ref state) => Some(state.routing_table()),
