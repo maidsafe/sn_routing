@@ -80,6 +80,10 @@ pub enum MutationError {
     InvalidSuccessor,
     /// Invalid Operation such as a POST on ImmutableData
     InvalidOperation,
+    /// Wrong invitation token specified by the client
+    InvalidInvitation,
+    /// Invitation token already used
+    InvitationAlreadyClaimed,
     /// The loss of sacrificial copies indicates the network as a whole is no longer having
     /// enough space to accept further put request so have to wait for more nodes to join
     NetworkFull,
@@ -112,6 +116,10 @@ impl Display for MutationError {
             MutationError::InvalidOperation => {
                 write!(formatter, "Requested operation is not allowed")
             }
+            MutationError::InvalidInvitation => write!(formatter, "Invitation token not found"),
+            MutationError::InvitationAlreadyClaimed => {
+                write!(formatter, "Invitation token has already been used")
+            }
             MutationError::NetworkFull => {
                 write!(formatter, "Network cannot store any further data")
             }
@@ -133,6 +141,8 @@ impl Error for MutationError {
             MutationError::LowBalance => "Low account balance",
             MutationError::InvalidSuccessor => "Invalid data successor",
             MutationError::InvalidOperation => "Invalid operation",
+            MutationError::InvalidInvitation => "Invalid invitation token",
+            MutationError::InvitationAlreadyClaimed => "Invitation token already claimed",
             MutationError::NetworkFull => "Network full",
             MutationError::NetworkOther(ref error) => error,
         }
