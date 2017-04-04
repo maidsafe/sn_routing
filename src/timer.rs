@@ -89,11 +89,15 @@ mod implementation {
             loop {
                 let r = if let Some(t) = deadlines.keys().next() {
                     let now = Instant::now();
-                    let duration = *t - now;
-                    match rx.recv_timeout(duration) {
-                        Ok(d) => Some(d),
-                        Err(RecvTimeoutError::Timeout) => None,
-                        Err(RecvTimeoutError::Disconnected) => break,
+                    if *t > now {
+                        let duration = *t - now;
+                        match rx.recv_timeout(duration) {
+                            Ok(d) => Some(d),
+                            Err(RecvTimeoutError::Timeout) => None,
+                            Err(RecvTimeoutError::Disconnected) => break,
+                        }
+                    } else {
+                        None
                     }
                 } else {
                     match rx.recv() {

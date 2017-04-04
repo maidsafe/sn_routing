@@ -11,16 +11,16 @@ version = "0.28.4"
 
 [dependencies]
 accumulator = "~0.5.0"
-crust = { git = "https://github.com/maidsafe/crust", branch = "master" }
+crust = "~0.24.0"
 hex = "~0.2.0"
 itertools = "~0.5.9"
 log = "~0.3.6"
 lru_time_cache = "~0.5.0"
-maidsafe_utilities = { git = "https://github.com/maidsafe/maidsafe_utilities", branch = "master" }
+maidsafe_utilities = "~0.11.0"
 quick-error = "~1.1.0"
 rand = "~0.3.15"
 resource_proof = "~0.3.1"
-rust_sodium = { git = "https://github.com/maidsafe/rust_sodium", branch = "master" }
+rust_sodium = "~0.2.0"
 serde = "~0.9.12"
 serde_derive = "~0.9.12"
 term = "~0.4.4"
