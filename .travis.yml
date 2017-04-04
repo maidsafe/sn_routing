@@ -2,9 +2,6 @@ env:
   global:
     - RUST_BACKTRACE=1
     - PATH=$PATH:$HOME/.cargo/bin
-branches:
-  only:
-    - mutable-data
 os:
   - linux
   - osx
@@ -13,6 +10,9 @@ rust:
   - 1.16.0
   - nightly-2017-03-16
 sudo: false
+branches:
+  only:
+    - mutable-data
 cache:
   cargo: true
 before_script:

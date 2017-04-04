@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -23,8 +23,10 @@ use maidsafe_utilities::event_sender::{EventSenderError, MaidSafeEventCategory};
 use maidsafe_utilities::serialisation;
 use std::sync::mpsc::{RecvError, SendError};
 
-#[derive(Debug)]
 /// The type of errors that can occur if routing is unable to handle a send request.
+#[derive(Debug)]
+// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
+#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
 pub enum InterfaceError {
     /// We are not connected to the network.
     NotConnected,
@@ -48,8 +50,10 @@ impl From<RecvError> for InterfaceError {
     }
 }
 
-#[derive(Debug)]
 /// The type of errors that can occur during handling of routing events.
+#[derive(Debug)]
+// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
+#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
 pub enum RoutingError {
     /// The node/client has not bootstrapped yet
     NotBootstrapped,
@@ -59,6 +63,8 @@ pub enum RoutingError {
     BadAuthority,
     /// Failure to connect to an already connected node
     AlreadyConnected,
+    /// Failure to connect to a group in handling a joining request
+    AlreadyHandlingJoinRequest,
     /// Received message having unknown type
     UnknownMessageType,
     /// Failed signature check
@@ -111,6 +117,14 @@ pub enum RoutingError {
     HashMismatch,
     /// Version check has failed
     InvalidSuccessor,
+    /// Candidate is unknown
+    UnknownCandidate,
+    /// Operation timed out
+    TimedOut,
+    /// Failed validation of resource proof
+    FailedResourceProofValidation,
+    /// Candidate is connected via a tunnel
+    CandidateIsTunnelling,
 }
 
 impl From<RoutingTableError> for RoutingError {

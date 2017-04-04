@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -21,10 +21,9 @@ use itertools::Itertools;
 use message_filter::MessageFilter;
 #[cfg(feature = "use-mock-crust")]
 use mock_crust::crust::PeerId;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 use std::collections::hash_map::Entry;
 use std::time::Duration;
-
 
 /// The maximum number of pairs of nodes that this node will act as a tunnel for.
 const MAX_TUNNEL_CLIENT_PAIRS: usize = 40;
@@ -42,7 +41,7 @@ pub struct Tunnels {
     /// a message to the latter via us, the pair is moved to `clients`.
     new_clients: MessageFilter<(PeerId, PeerId)>,
     /// Contains all pairs of names we act as a tunnel node for, with the lower ID first.
-    clients: HashSet<(PeerId, PeerId)>,
+    clients: BTreeSet<(PeerId, PeerId)>,
 }
 
 impl Tunnels {
@@ -76,8 +75,8 @@ impl Tunnels {
     /// `consider_clients` must be called with the client pair before this.
     pub fn accept_clients(&mut self, src_id: PeerId, dst_id: PeerId) -> bool {
         let pair = (src_id, dst_id);
-        // TODO(afck): Remove the pair from the new clients once message_filter supports that.
         if self.new_clients.contains(&pair) {
+            self.new_clients.remove(&pair);
             self.clients.insert(pair);
             true
         } else {
@@ -141,6 +140,11 @@ impl Tunnels {
         self.tunnels.remove(dst_id)
     }
 
+    /// Is the given `tunnel_id` acting as a tunnel node?
+    pub fn is_tunnel_node(&self, tunnel_id: &PeerId) -> bool {
+        self.tunnels.values().any(|id| id == tunnel_id)
+    }
+
     /// Removes the given tunnel node and returns a list of all peers it was acting as a tunnel
     /// for.
     pub fn remove_tunnel(&mut self, tunnel_id: &PeerId) -> Vec<PeerId> {
@@ -169,6 +173,12 @@ impl Tunnels {
     pub fn tunnel_count(&self) -> usize {
         self.tunnels.len()
     }
+
+    /// Clears the new_clients filter, removing all the entries.
+    #[cfg(feature = "use-mock-crust")]
+    pub fn clear_new_clients(&mut self) {
+        self.new_clients.clear();
+    }
 }
 
 impl Default for Tunnels {
@@ -176,14 +186,12 @@ impl Default for Tunnels {
         Tunnels {
             tunnels: HashMap::new(),
             new_clients: MessageFilter::with_expiry_duration(Duration::from_secs(60)),
-            clients: HashSet::new(),
+            clients: BTreeSet::new(),
         }
     }
 }
 
-
-#[cfg(feature = "use-mock-crust")]
-#[cfg(test)]
+#[cfg(all(test, feature = "use-mock-crust"))]
 mod tests {
     use super::*;
     use itertools::Itertools;

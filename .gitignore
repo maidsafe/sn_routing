@@ -1,6 +1,7 @@
 *.exe
 *.lock
 *.swp
+*.rs.bk
 *.rsproj
 tags*
 *bootstrap.cache

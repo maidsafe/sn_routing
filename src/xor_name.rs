@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -140,6 +140,10 @@ impl Xorable for XorName {
     fn set_remaining(self, n: usize, val: bool) -> Self {
         XorName(self.0.set_remaining(n, val))
     }
+
+    fn from_hash<T: AsRef<[u8]>>(hash: T) -> Self {
+        XorName(Xorable::from_hash(hash))
+    }
 }
 
 impl fmt::Debug for XorName {
@@ -198,6 +202,16 @@ impl ops::Index<ops::RangeFull> for XorName {
     fn index(&self, index: ops::RangeFull) -> &[u8] {
         let &XorName(ref b) = self;
         b.index(index)
+    }
+}
+
+impl ops::Not for XorName {
+    type Output = XorName;
+    fn not(mut self) -> XorName {
+        for byte in &mut self.0 {
+            *byte = !*byte;
+        }
+        self
     }
 }
 

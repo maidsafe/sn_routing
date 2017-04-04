@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -15,11 +15,10 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use authority::Authority;
 use crust::Config;
 use error::InterfaceError;
 use messages::{Request, UserMessage};
-use std::collections::HashSet;
+use routing_table::Authority;
 use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::Sender;
 use xor_name::XorName;
@@ -31,23 +30,21 @@ use xor_name::XorName;
 ///       pending events should be handled.
 ///       After completion `Core` will send `Event::Terminated`.
 #[derive(Clone)]
+// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
+#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
 pub enum Action {
     NodeSendMessage {
-        src: Authority,
-        dst: Authority,
+        src: Authority<XorName>,
+        dst: Authority<XorName>,
         content: UserMessage,
         priority: u8,
         result_tx: Sender<Result<(), InterfaceError>>,
     },
     ClientSendRequest {
         content: Request,
-        dst: Authority,
+        dst: Authority<XorName>,
         priority: u8,
         result_tx: Sender<Result<(), InterfaceError>>,
-    },
-    CloseGroup {
-        name: XorName,
-        result_tx: Sender<Option<HashSet<XorName>>>,
     },
     Name { result_tx: Sender<XorName> },
     Config { result_tx: Sender<Config> },
@@ -73,7 +70,6 @@ impl Debug for Action {
                        content,
                        dst)
             }
-            Action::CloseGroup { .. } => write!(formatter, "Action::CloseGroup"),
             Action::Name { .. } => write!(formatter, "Action::Name"),
             Action::Config { .. } => write!(formatter, "Action::Config"),
             Action::Timeout(token) => write!(formatter, "Action::Timeout({})", token),

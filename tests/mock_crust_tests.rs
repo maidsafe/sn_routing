@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -31,19 +31,11 @@
 #![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
          missing_debug_implementations, variant_size_differences)]
 
-#![cfg_attr(feature="clippy", feature(plugin))]
-#![cfg_attr(feature="clippy", plugin(clippy))]
-#![cfg_attr(feature="clippy", deny(clippy, unicode_not_nfc, wrong_pub_self_convention,
-                                   option_unwrap_used))]
-#![cfg_attr(feature="clippy", allow(use_debug))]
-
-// extern crate itertools;
-// #[macro_use]
-// extern crate log;
+#[cfg_attr(feature="cargo-clippy", allow(useless_attribute))]
+#[allow(unused_extern_crates)]
+extern crate maidsafe_utilities;
 // extern crate rand;
 // extern crate routing;
-// #[macro_use]
-// extern crate unwrap;
 
 // This module is a driver and defines macros. See `mock_crust` modules for
 // tests.
@@ -54,7 +46,7 @@
 macro_rules! expect_next_event {
     ($node:expr, $pattern:pat) => {
         loop {
-            match $node.event_rx.try_recv() {
+            match $node.inner.try_next_ev() {
                 Ok($pattern) => break,
                 Ok(Event::Tick) => (),
                 other => panic!("Expected Ok({}) at {}, got {:?}",
@@ -71,11 +63,11 @@ macro_rules! expect_next_event {
 /// Panics if the event channel is exhausted before matching event is found.
 macro_rules! expect_any_event {
     ($node:expr, $pattern:pat) => {
-        expect_any_event!($node, $pattern if true => ())
+        expect_any_event!($node, $pattern if true)
     };
     ($node:expr, $pattern:pat if $guard:expr) => {
         loop {
-            match $node.event_rx.try_recv() {
+            match $node.inner.try_next_ev() {
                 Ok($pattern) if $guard => break,
                 Ok(_) => (),
                 other => panic!("Expected Ok({}) at {}, got {:?}",
@@ -89,15 +81,15 @@ macro_rules! expect_any_event {
 
 /// Expects that the node raised no event, panics otherwise (ignores ticks).
 macro_rules! expect_no_event {
-    ($node:expr) => {
-        match $node.event_rx.try_recv() {
+    ($node:expr) => {{
+        match $node.inner.try_next_ev() {
             Ok(Event::Tick) => (),
             Err(mpsc::TryRecvError::Empty) => (),
             other => panic!("Expected no event at {}, got {:?}",
                 unwrap!($node.inner.name()),
                 other),
         }
-    }
+    }}
 }
 
 mod mock_crust;

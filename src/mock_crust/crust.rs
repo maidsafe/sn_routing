@@ -16,7 +16,6 @@
 // relating to use of the SAFE Network Software.
 
 use super::support::{self, Endpoint, Network, ServiceHandle, ServiceImpl};
-
 pub use super::support::Config;
 use maidsafe_utilities::event_sender;
 use std::{fmt, io, thread};

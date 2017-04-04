@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -15,28 +15,36 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::{Prefix, Xorable};
 use crust::PeerId;
-use routing_table::Destination;
 use rust_sodium::crypto::{hash, sign};
-use std::fmt::{self, Debug, Formatter};
-use xor_name::XorName;
+use std::fmt::{self, Binary, Debug, Display, Formatter};
 
 /// An entity that can act as a source or destination of a message.
 ///
-/// An `Authority` can be an individual `Client` or `ManagedNode`, or a group of nodes, like a
-/// `NodeManager`, `ClientManager` or `NaeManager`.
+/// `Client` and `ManagedNode` are single-node authorities (i.e. no verification of messages from
+/// additional sources needed); other authorities require agreement by a quorum of some set.
+/// `NodeManager`, `ClientManager` and `NaeManager` use _group_ verification of messages: they
+/// require quorum agreement from the group of nodes closest to the source, while `Section` and
+/// `PrefixSection` use _section_ verification: the set from which a quorum is required is all
+/// members of the section (`Section`) or of all sections matching the prefix (`PrefixSection`).
 #[derive(Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Hash)]
-pub enum Authority {
+pub enum Authority<N: Xorable + Clone + Copy + Binary + Default> {
     /// Manager of a Client.  XorName is the hash of the Client's `client_key`.
-    ClientManager(XorName),
+    ClientManager(N),
     /// Manager of a network-addressable element, i.e. the group matching this name.
     /// `XorName` is the name of the element in question.
-    NaeManager(XorName),
+    NaeManager(N),
     /// Manager of a ManagedNode.  XorName is that of the ManagedNode.
-    NodeManager(XorName),
+    NodeManager(N),
+    /// A set of nodes with names sharing a common prefix.
+    Section(N),
+    /// A set of nodes with names sharing a common prefix - may span multiple `Section`s present in
+    /// the routing table or only a part of a `Section`
+    PrefixSection(Prefix<N>),
     /// A non-client node (i.e. a vault) which is managed by NodeManagers.  XorName is provided
     /// by the network relocation process immediately after bootstrapping.
-    ManagedNode(XorName),
+    ManagedNode(N),
     /// A Client.
     Client {
         /// The client's public signing key.  The hash of this specifies the location of the Client
@@ -46,14 +54,16 @@ pub enum Authority {
         peer_id: PeerId,
         /// The name of the single ManagedNode which the Client connects to and proxies all messages
         /// through.
-        proxy_node_name: XorName,
+        proxy_node_name: N,
     },
 }
 
-impl Authority {
-    /// Returns true if group authority, otherwise false.
-    pub fn is_group(&self) -> bool {
+impl<N: Xorable + Clone + Copy + Binary + Default> Authority<N> {
+    /// Returns `true` if the authority consists of multiple nodes, otherwise `false`.
+    pub fn is_multiple(&self) -> bool {
         match *self {
+            Authority::Section(_) |
+            Authority::PrefixSection(_) |
             Authority::ClientManager(_) |
             Authority::NaeManager(_) |
             Authority::NodeManager(_) => true,
@@ -62,7 +72,20 @@ impl Authority {
         }
     }
 
-    /// Returns true if a client, false if a node or group.
+    /// Returns `true` if the authority is a single node, and `false` otherwise.
+    pub fn is_single(&self) -> bool {
+        match *self {
+            Authority::ClientManager(_) |
+            Authority::NaeManager(_) |
+            Authority::Section(_) |
+            Authority::PrefixSection(_) |
+            Authority::NodeManager(_) => false,
+            Authority::ManagedNode(_) |
+            Authority::Client { .. } => true,
+        }
+    }
+
+    /// Returns `true` if a client, `false` if a node or section.
     pub fn is_client(&self) -> bool {
         if let Authority::Client { .. } = *self {
             true
@@ -72,27 +95,20 @@ impl Authority {
     }
 
     /// Returns the name of authority.
-    pub fn name(&self) -> &XorName {
+    pub fn name(&self) -> N {
         match *self {
             Authority::ClientManager(ref name) |
             Authority::NaeManager(ref name) |
             Authority::NodeManager(ref name) |
-            Authority::ManagedNode(ref name) => name,
-            Authority::Client { ref proxy_node_name, .. } => proxy_node_name,
-        }
-    }
-
-    /// Returns the `Destination` for the `RoutingTable`.
-    pub fn to_destination(&self) -> Destination<XorName> {
-        if self.is_group() {
-            Destination::Group(*self.name())
-        } else {
-            Destination::Node(*self.name())
+            Authority::Section(ref name) |
+            Authority::ManagedNode(ref name) => *name,
+            Authority::PrefixSection(ref prefix) => prefix.lower_bound(),
+            Authority::Client { ref proxy_node_name, .. } => *proxy_node_name,
         }
     }
 }
 
-impl Debug for Authority {
+impl<N: Xorable + Clone + Copy + Binary + Default + Display> Debug for Authority<N> {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
             Authority::ClientManager(ref name) => {
@@ -100,6 +116,10 @@ impl Debug for Authority {
             }
             Authority::NaeManager(ref name) => write!(formatter, "NaeManager(name: {})", name),
             Authority::NodeManager(ref name) => write!(formatter, "NodeManager(name: {})", name),
+            Authority::Section(ref name) => write!(formatter, "Section(name: {})", name),
+            Authority::PrefixSection(ref prefix) => {
+                write!(formatter, "PrefixSection(prefix: {:?})", prefix)
+            }
             Authority::ManagedNode(ref name) => write!(formatter, "ManagedNode(name: {})", name),
             Authority::Client {
                 ref client_key,
@@ -108,7 +128,7 @@ impl Debug for Authority {
             } => {
                 write!(formatter,
                        "Client {{ client_name: {}, proxy_node_name: {}, peer_id: {:?} }}",
-                       XorName(hash::sha256::hash(&client_key[..]).0),
+                       N::from_hash(hash::sha256::hash(&client_key[..]).0),
                        proxy_node_name,
                        peer_id)
             }

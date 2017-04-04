@@ -22,8 +22,8 @@ use rand::Rng;
 use rust_sodium;
 use std::cell::RefCell;
 use std::cmp;
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::collections::hash_map::Entry;
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::collections::btree_map::Entry;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::rc::{Rc, Weak};
 
@@ -35,7 +35,7 @@ pub struct NetworkImpl {
     services: HashMap<Endpoint, Weak<RefCell<ServiceImpl>>>,
     min_section_size: usize,
     next_endpoint: usize,
-    queue: HashMap<(Endpoint, Endpoint), VecDeque<Packet>>,
+    queue: BTreeMap<(Endpoint, Endpoint), VecDeque<Packet>>,
     blocked_connections: HashSet<(Endpoint, Endpoint)>,
     rng: SeededRng,
 }
@@ -53,7 +53,7 @@ impl Network {
                                          services: HashMap::new(),
                                          min_section_size: min_section_size,
                                          next_endpoint: 0,
-                                         queue: HashMap::new(),
+                                         queue: BTreeMap::new(),
                                          blocked_connections: HashSet::new(),
                                          rng: SeededRng::new(),
                                      })))
@@ -600,7 +600,7 @@ impl Default for Config {
 
 /// Simulated network endpoint (think socket address). This is used to identify
 /// and address `Service`s in the mock network.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, PartialOrd, Ord)]
 pub struct Endpoint(pub usize);
 
 #[derive(Clone, Debug)]

@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -16,11 +16,11 @@
 // relating to use of the SAFE Network Software.
 
 use crust::{PeerId, Service};
-use error::RoutingError;
-use event::Event;
 use id::FullId;
 use maidsafe_utilities::serialisation;
 use messages::Message;
+use outbox::EventBox;
+use routing_table::Authority;
 use state_machine::Transition;
 use stats::Stats;
 use std::fmt::Debug;
@@ -31,9 +31,9 @@ pub trait Base: Debug {
     fn crust_service(&self) -> &Service;
     fn full_id(&self) -> &FullId;
     fn stats(&mut self) -> &mut Stats;
-    fn send_event(&self, event: Event);
+    fn in_authority(&self, auth: &Authority<XorName>) -> bool;
 
-    fn handle_lost_peer(&mut self, _peer_id: PeerId) -> Transition {
+    fn handle_lost_peer(&mut self, _peer_id: PeerId, _outbox: &mut EventBox) -> Transition {
         Transition::Stay
     }
 
@@ -41,42 +41,40 @@ pub trait Base: Debug {
         self.full_id().public_id().name()
     }
 
-    fn send_message(&mut self, peer_id: &PeerId, message: Message) -> Result<(), RoutingError> {
+    fn close_group(&self, _name: XorName, _count: usize) -> Option<Vec<XorName>> {
+        None
+    }
+
+    fn send_message(&mut self, peer_id: &PeerId, message: Message) {
         let priority = message.priority();
 
-        let raw_bytes = match serialisation::serialise(&message) {
+        match serialisation::serialise(&message) {
+            Ok(bytes) => {
+                self.send_or_drop(peer_id, bytes, priority);
+            }
             Err(error) => {
                 error!("{:?} Failed to serialise message {:?}: {:?}",
                        self,
                        message,
                        error);
-                return Err(error.into());
+                // The caller can't do much to handle this except log more messages, so just stop
+                // trying to send here and let other mechanisms handle the lost message. If the
+                // node drops too many messages, it should fail to join the network anyway.
             }
-            Ok(bytes) => bytes,
         };
-
-        self.send_or_drop(peer_id, raw_bytes, priority)
     }
 
     // Sends the given `bytes` to the peer with the given Crust `PeerId`. If that results in an
     // error, it disconnects from the peer.
-    fn send_or_drop(&mut self,
-                    peer_id: &PeerId,
-                    bytes: Vec<u8>,
-                    priority: u8)
-                    -> Result<(), RoutingError> {
+    fn send_or_drop(&mut self, peer_id: &PeerId, bytes: Vec<u8>, priority: u8) {
         self.stats().count_bytes(bytes.len());
 
-        if let Err(err) = self.crust_service()
-               .send(*peer_id, bytes.clone(), priority) {
-            info!("{:?} Connection to {:?} failed. Calling crust::Service::disconnect.",
-                  self,
-                  peer_id);
-            self.crust_service().disconnect(*peer_id);
-            let _ = self.handle_lost_peer(*peer_id);
-            return Err(err.into());
+        if let Err(err) = self.crust_service().send(*peer_id, bytes, priority) {
+            info!("{:?} Connection to {:?} failed: {:?}", self, peer_id, err);
+            // TODO: Handle lost peer, but avoid a cascade of sending messages and handling more
+            //       lost peers: https://maidsafe.atlassian.net/browse/MAID-1924
+            // self.crust_service().disconnect(*peer_id);
+            // return self.handle_lost_peer(*peer_id).map(|_| Err(err.into()));
         }
-
-        Ok(())
     }
 }

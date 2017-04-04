@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -27,9 +27,21 @@ use tiny_keccak::sha3_256;
 const INCOMING_EXPIRY_DURATION_SECS: u64 = 60 * 20;
 const OUTGOING_EXPIRY_DURATION_SECS: u64 = 60 * 10;
 
+/// An enum representing a result of message filtering
+#[derive(Eq, PartialEq)]
+pub enum FilteringResult {
+    /// We don't have the message in the filter yet
+    NewMessage,
+    /// We have the message in the filter, but it was sent on a different route
+    KnownMessage,
+    /// We have already seen this message on this route
+    KnownMessageAndRoute,
+}
+
 // Structure to filter (throttle) incoming and outgoing `RoutingMessages`.
 pub struct RoutingMessageFilter {
-    incoming: MessageFilter<(RoutingMessage, u8)>,
+    incoming: MessageFilter<RoutingMessage>,
+    incoming_route: MessageFilter<(RoutingMessage, u8)>,
     outgoing: LruCache<(sha3::Digest256, PeerId, u8), ()>,
 }
 
@@ -40,6 +52,7 @@ impl RoutingMessageFilter {
 
         RoutingMessageFilter {
             incoming: MessageFilter::with_expiry_duration(incoming_duration),
+            incoming_route: MessageFilter::with_expiry_duration(incoming_duration),
             outgoing: LruCache::with_expiry_duration(outgoing_duration),
         }
     }
@@ -47,12 +60,20 @@ impl RoutingMessageFilter {
     // Filter incoming `RoutingMessage`. Return the number of times this specific message has been
     // seen, including this time.
     // TODO - refactor to avoid cloning `msg` as `MessageFilter` only holds the hash of the tuple.
-    pub fn filter_incoming(&mut self, msg: &RoutingMessage, route: u8) -> usize {
-        self.incoming.insert(&(msg.clone(), route))
+    pub fn filter_incoming(&mut self, msg: &RoutingMessage, route: u8) -> FilteringResult {
+        let known_msg = self.incoming.insert(msg) > 1;
+        let known_msg_rt = self.incoming_route.insert(&(msg.clone(), route)) > 1;
+        match (known_msg, known_msg_rt) {
+            (false, false) => FilteringResult::NewMessage,
+            (true, false) => FilteringResult::KnownMessage,
+            (_, true) => FilteringResult::KnownMessageAndRoute,
+        }
     }
 
     // Filter outgoing `RoutingMessage`. Return whether this specific message has been seen recently
     // (and thus should not be sent, due to deduplication).
+    //
+    // Return `false` if serialisation of the message fails - that can be handled elsewhere.
     pub fn filter_outgoing(&mut self, msg: &RoutingMessage, peer_id: &PeerId, route: u8) -> bool {
         if let Ok(msg_bytes) = serialise(msg) {
             let hash = sha3_256(&msg_bytes);
@@ -68,6 +89,7 @@ impl RoutingMessageFilter {
     #[cfg(feature = "use-mock-crust")]
     pub fn clear(&mut self) {
         self.incoming.clear();
+        self.incoming_route.clear();
         self.outgoing.clear();
     }
 }

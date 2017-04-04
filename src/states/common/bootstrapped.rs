@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -17,21 +17,23 @@
 
 use super::Base;
 use ack_manager::{ACK_TIMEOUT_SECS, Ack, AckManager, UnacknowledgedMessage};
-use authority::Authority;
 use crust::PeerId;
 use error::RoutingError;
 use maidsafe_utilities::serialisation;
 use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage};
-use peer_manager::MIN_GROUP_SIZE;
 use routing_message_filter::RoutingMessageFilter;
+use routing_table::Authority;
+use std::collections::BTreeSet;
 use std::time::Duration;
 use timer::Timer;
+use xor_name::XorName;
 
 // Common functionality for states that are bootstrapped (have established a crust
 // connection to at least one peer).
 pub trait Bootstrapped: Base {
     fn ack_mgr(&self) -> &AckManager;
     fn ack_mgr_mut(&mut self) -> &mut AckManager;
+    fn min_section_size(&self) -> usize;
 
     fn send_routing_message_via_route(&mut self,
                                       routing_msg: RoutingMessage,
@@ -46,16 +48,16 @@ pub trait Bootstrapped: Base {
     ///
     /// This short-circuits when the message is an ack or is not from us; in
     /// these cases no ack is expected and the function returns true.
-    fn add_to_pending_acks(&mut self, signed_msg: &SignedMessage, route: u8) -> bool {
+    fn add_to_pending_acks(&mut self, routing_msg: &RoutingMessage, route: u8) -> bool {
         // If this is not an ack and we're the source, expect to receive an ack for this.
-        if let MessageContent::Ack(..) = signed_msg.routing_message().content {
+        if let MessageContent::Ack(..) = routing_msg.content {
             return true;
         }
 
-        let ack = match Ack::compute(signed_msg.routing_message()) {
+        let ack = match Ack::compute(routing_msg) {
             Ok(ack) => ack,
             Err(error) => {
-                error!("Failed to create ack: {:?}", error);
+                error!("{:?} Failed to create ack: {:?}", self, error);
                 return true;
             }
         };
@@ -67,7 +69,7 @@ pub trait Bootstrapped: Base {
         let token = self.timer()
             .schedule(Duration::from_secs(ACK_TIMEOUT_SECS));
         let unacked_msg = UnacknowledgedMessage {
-            routing_msg: signed_msg.routing_message().clone(),
+            routing_msg: routing_msg.clone(),
             route: route,
             timer_token: token,
         };
@@ -99,14 +101,9 @@ pub trait Bootstrapped: Base {
     }
 
     fn resend_unacknowledged_timed_out_msgs(&mut self, token: u64) {
-        if let Some((unacked_msg, ack)) = self.ack_mgr_mut().find_timed_out(token) {
-            trace!("{:?} - Timed out waiting for {:?} {:?}",
-                   self,
-                   ack,
-                   unacked_msg);
-
-            if unacked_msg.route as usize == MIN_GROUP_SIZE {
-                debug!("{:?} - Message unable to be acknowledged - giving up. {:?}",
+        if let Some((unacked_msg, _ack)) = self.ack_mgr_mut().find_timed_out(token) {
+            if unacked_msg.route as usize == self.min_section_size() {
+                debug!("{:?} Message unable to be acknowledged - giving up. {:?}",
                        self,
                        unacked_msg);
                 self.stats().count_unacked();
@@ -117,7 +114,16 @@ pub trait Bootstrapped: Base {
         }
     }
 
-    fn send_routing_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError> {
+    fn send_routing_message(&mut self,
+                            src: Authority<XorName>,
+                            dst: Authority<XorName>,
+                            content: MessageContent)
+                            -> Result<(), RoutingError> {
+        let routing_msg = RoutingMessage {
+            src: src,
+            dst: dst,
+            content: content,
+        };
         self.send_routing_message_via_route(routing_msg, 0)
     }
 
@@ -125,7 +131,7 @@ pub trait Bootstrapped: Base {
         self.send_ack_from(routing_msg, route, routing_msg.dst);
     }
 
-    fn send_ack_from(&mut self, routing_msg: &RoutingMessage, route: u8, src: Authority) {
+    fn send_ack_from(&mut self, routing_msg: &RoutingMessage, route: u8, src: Authority<XorName>) {
         if let MessageContent::Ack(..) = routing_msg.content {
             return;
         }
@@ -133,19 +139,26 @@ pub trait Bootstrapped: Base {
         let response = match RoutingMessage::ack_from(routing_msg, src) {
             Ok(response) => response,
             Err(error) => {
-                error!("{:?} - Failed to create ack: {:?}", self, error);
+                error!("{:?} Failed to create ack: {:?}", self, error);
                 return;
             }
         };
 
         if let Err(error) = self.send_routing_message_via_route(response, route) {
-            error!("{:?} - Failed to send ack: {:?}", self, error);
+            error!("{:?} Failed to send ack: {:?}", self, error);
         }
     }
 
     // Serialise HopMessage containing the given signed message.
-    fn to_hop_bytes(&self, signed_msg: SignedMessage, route: u8) -> Result<Vec<u8>, RoutingError> {
-        let hop_msg = HopMessage::new(signed_msg, route, self.full_id().signing_private_key())?;
+    fn to_hop_bytes(&self,
+                    signed_msg: SignedMessage,
+                    route: u8,
+                    sent_to: BTreeSet<XorName>)
+                    -> Result<Vec<u8>, RoutingError> {
+        let hop_msg = HopMessage::new(signed_msg,
+                                      route,
+                                      sent_to,
+                                      self.full_id().signing_private_key())?;
         let message = Message::Hop(hop_msg);
         Ok(serialisation::serialise(&message)?)
     }

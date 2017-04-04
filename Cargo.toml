@@ -1,25 +1,26 @@
 [package]
 authors = ["MaidSafe Developers <dev@maidsafe.net>"]
 description = "A secured storage DHT"
-documentation = "http://docs.rs/routing"
+documentation = "https://docs.rs/routing"
 homepage = "https://maidsafe.net"
 license = "GPL-3.0"
 name = "routing"
 readme = "README.md"
 repository = "https://github.com/maidsafe/routing"
-version = "0.25.1"
+version = "0.28.4"
 
 [dependencies]
-clippy = {version = "=0.0.99", optional = true}
-crust = { git = "https://github.com/maidsafe/crust.git", branch = "master" }
+accumulator = "~0.5.0"
+crust = "~0.24.0"
 hex = "~0.2.0"
-itertools = "~0.5.5"
+itertools = "~0.5.9"
 log = "~0.3.6"
 lru_time_cache = "~0.5.0"
-maidsafe_utilities = { git = "https://github.com/maidsafe/maidsafe_utilities.git", branch = "master" }
+maidsafe_utilities = "~0.11.0"
 quick-error = "~1.1.0"
-rand = "~0.3.14"
-rust_sodium = { git = "https://github.com/maidsafe/rust_sodium.git", branch = "master" }
+rand = "~0.3.15"
+resource_proof = "~0.3.1"
+rust_sodium = "~0.2.0"
 serde = "~0.9.12"
 serde_derive = "~0.9.12"
 term = "~0.4.4"
@@ -27,23 +28,17 @@ tiny-keccak = "~1.2.0"
 unwrap = "~1.1.0"
 
 [dev-dependencies]
+rustc-serialize = "~0.3.23"
 docopt = "~0.6.86"
-rustc-serialize = "~0.3.22"
-libc = "~0.2.17"
-
-[build-dependencies]
-hyper = {version = "~0.9.12", optional = true}
-
-[features]
-generate-diagrams = ["hyper"]
-use-mock-crust = []
+libc = "~0.2.20"
 
 [[example]]
 bench = false
 name = "key_value_store"
-test = false
 
 [[example]]
 bench = false
 name = "ci_test"
-test = false
+
+[features]
+use-mock-crust = []

@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -15,9 +15,10 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::cmp::Ordering;
+use std::cmp::{Ordering, min};
 use std::marker::Sized;
 use std::mem;
+use std::num::Wrapping;
 
 /// A sequence of bits, as a point in XOR space.
 ///
@@ -63,6 +64,9 @@ pub trait Xorable: Ord + Sized {
     fn bit_len() -> usize {
         mem::size_of::<Self>() * 8
     }
+
+    /// Returns a `Self` instance constructed from an array of bytes.
+    fn from_hash<T: AsRef<[u8]>>(hash: T) -> Self;
 }
 
 /// Converts a string into debug format of `????????...????????` when the string is longer than 20.
@@ -167,6 +171,34 @@ macro_rules! impl_xorable_for_array {
                 }
                 self
             }
+
+            fn from_hash<T: AsRef<[u8]>>(hash: T) -> Self {
+                let hash = hash.as_ref();
+                let size = mem::size_of::<$t>();
+                let needed_bytes = min(hash.len(), size * $l);
+
+                let mut result: [$t; $l] = [0; $l];
+                let full_elems = needed_bytes / size;
+                for (i, elem) in result.iter_mut().enumerate().take(full_elems) {
+                    for j in 0..size {
+                        let mut x = Wrapping(*elem);
+                        // x <<= 8 would break for $t = u8
+                        x <<= 4;
+                        x <<= 4;
+                        *elem = x.0;
+                        *elem |= hash[i*size + j];
+                    }
+                }
+                for j in 0..(needed_bytes % size) {
+                    let mut x = Wrapping(result[full_elems]);
+                    // x <<= 8 would break for $t = u8
+                    x <<= 4;
+                    x <<= 4;
+                    result[full_elems] = x.0;
+                    result[full_elems] |= hash[full_elems*size + j];
+                }
+                result
+            }
         }
     }
 }
@@ -239,6 +271,23 @@ macro_rules! impl_xorable {
                         self & !mask
                     }
                 }
+            }
+
+            fn from_hash<T: AsRef<[u8]>>(hash: T) -> Self {
+                let hash = hash.as_ref();
+                let size = mem::size_of::<$t>();
+                let needed_bytes = min(hash.len(), size);
+
+                let mut result: $t = 0;
+                for elem in hash.into_iter().take(needed_bytes) {
+                    let mut x = Wrapping(result);
+                    // x <<= 8 would break for $t = u8
+                    x <<= 4;
+                    x <<= 4;
+                    result = x.0;
+                    result |= From::from(*elem);
+                }
+                result
             }
         }
     }
@@ -365,5 +414,14 @@ mod tests {
         assert_eq!(Array16::bit_len(), 128);
         assert_eq!(Array8::bit_len(), 64);
         assert_eq!(Array4::bit_len(), 32);
+    }
+
+    #[test]
+    fn from_hash() {
+        assert_eq!(u8::from_hash([5u8]), 5);
+        assert_eq!(u8::from_hash([5u8, 6]), 5);
+        assert_eq!(u16::from_hash([8u8, 6]), 2054);
+        assert_eq!(u16::from_hash([8u8, 6, 7]), 2054);
+        assert_eq!(u16::from_hash([8u8]), 8);
     }
 }

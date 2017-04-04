@@ -15,7 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use super::DataIdentifier;
 use client_error::ClientError;
 use maidsafe_utilities::serialisation::serialised_size;
 use rust_sodium::crypto::sign::PublicKey;
@@ -30,8 +29,11 @@ pub const MAX_MUTABLE_DATA_SIZE_IN_BYTES: u64 = 1024 * 1024;
 /// Maximum allowed entries in `MutableData`
 pub const MAX_MUTABLE_DATA_ENTRIES: u64 = 100;
 
+/// Manimum number of entries that can be mutated simulaneously.
+pub const MAX_MUTABLE_DATA_ENTRY_ACTIONS: u64 = 10;
+
 /// Mutable data.
-#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, Deserialize, Serialize)]
+#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, Serialize, Deserialize)]
 pub struct MutableData {
     /// Network address
     name: XorName,
@@ -51,7 +53,7 @@ pub struct MutableData {
 }
 
 /// A value in `MutableData`
-#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, Deserialize, Serialize, Debug)]
+#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, Serialize, Deserialize, Debug)]
 pub struct Value {
     /// Content of the entry.
     pub content: Vec<u8>,
@@ -60,7 +62,7 @@ pub struct Value {
 }
 
 /// Subject of permissions
-#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, Deserialize, Serialize, Debug)]
+#[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum User {
     /// Permissions apply to anyone.
     Anyone,
@@ -147,7 +149,7 @@ impl PermissionSet {
 }
 
 /// Action performed on a single entry: insert, update or delete.
-#[derive(Hash, Debug, Eq, PartialEq, Clone, PartialOrd, Ord, Deserialize, Serialize)]
+#[derive(Hash, Debug, Eq, PartialEq, Clone, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum EntryAction {
     /// Inserts a new entry
     Ins(Value),
@@ -212,13 +214,6 @@ impl MutableData {
                data: BTreeMap<Vec<u8>, Value>,
                owners: BTreeSet<PublicKey>)
                -> Result<MutableData, ClientError> {
-        if owners.len() > 1 {
-            return Err(ClientError::InvalidOwners);
-        }
-        if data.len() >= (MAX_MUTABLE_DATA_ENTRIES + 1) as usize {
-            return Err(ClientError::TooManyEntries);
-        }
-
         let md = MutableData {
             name: name,
             tag: tag,
@@ -228,21 +223,42 @@ impl MutableData {
             owners: owners,
         };
 
-        if serialised_size(&md) > MAX_MUTABLE_DATA_SIZE_IN_BYTES {
+        md.validate()?;
+        Ok(md)
+    }
+
+    /// Validate this data.
+    pub fn validate(&self) -> Result<(), ClientError> {
+        if self.owners.len() > 1 {
+            return Err(ClientError::InvalidOwners);
+        }
+        if self.data.len() >= (MAX_MUTABLE_DATA_ENTRIES + 1) as usize {
+            return Err(ClientError::TooManyEntries);
+        }
+
+        if serialised_size(self) > MAX_MUTABLE_DATA_SIZE_IN_BYTES {
             return Err(ClientError::DataTooLarge);
         }
 
-        Ok(md)
+        Ok(())
+    }
+
+    /// Returns the shell of this data. Shell contains the same fields as the data itself,
+    /// except the entries.
+    pub fn shell(&self) -> MutableData {
+        MutableData {
+            name: self.name,
+            tag: self.tag,
+            data: BTreeMap::new(),
+            permissions: self.permissions.clone(),
+            version: self.version,
+            owners: self.owners.clone(),
+        }
     }
 
     /// Returns the name.
     pub fn name(&self) -> &XorName {
         &self.name
-    }
-
-    /// Returns `DataIdentifier` for this data element.
-    pub fn identifier(&self) -> DataIdentifier {
-        DataIdentifier::Mutable(self.name)
     }
 
     /// Returns the type tag of this MutableData
@@ -285,6 +301,10 @@ impl MutableData {
                           actions: BTreeMap<Vec<u8>, EntryAction>,
                           requester: PublicKey)
                           -> Result<(), ClientError> {
+        if actions.len() > MAX_MUTABLE_DATA_ENTRY_ACTIONS as usize {
+            return Err(ClientError::TooManyEntries);
+        }
+
         // Deconstruct actions into inserts, updates, and deletes
         let (insert, update, delete) = actions
             .into_iter()
@@ -375,6 +395,28 @@ impl MutableData {
         Ok(())
     }
 
+    /// Mutates single entry withou performing any validations, except the version
+    /// check (new version must be higher than the existing one).
+    /// If the entry doesn't exist yet, inserts it, otherwise, updates it.
+    /// Returns true if the version check passed and the entry was mutated,
+    /// false otherwise.
+    pub fn mutate_entry_without_validation(&mut self, key: Vec<u8>, value: Value) -> bool {
+        match self.data.entry(key) {
+            Entry::Occupied(mut entry) => {
+                if value.entry_version > entry.get().entry_version {
+                    let _ = entry.insert(value);
+                    true
+                } else {
+                    false
+                }
+            }
+            Entry::Vacant(entry) => {
+                let _ = entry.insert(value);
+                true
+            }
+        }
+    }
+
     /// Gets a complete list of permissions
     pub fn permissions(&self) -> &BTreeMap<User, PermissionSet> {
         &self.permissions
@@ -398,7 +440,7 @@ impl MutableData {
         if version != self.version + 1 {
             return Err(ClientError::InvalidSuccessor);
         }
-        let prev = self.permissions.insert(user.clone(), permissions);
+        let prev = self.permissions.insert(user, permissions);
         if !self.validate_mut_size() {
             // Serialised data size limit is exceeded
             let _ = match prev {
@@ -432,14 +474,7 @@ impl MutableData {
     }
 
     /// Change owner of the mutable data.
-    pub fn change_owner(&mut self,
-                        new_owner: PublicKey,
-                        version: u64,
-                        requester: PublicKey)
-                        -> Result<(), ClientError> {
-        if !self.owners.contains(&requester) {
-            return Err(ClientError::AccessDenied);
-        }
+    pub fn change_owner(&mut self, new_owner: PublicKey, version: u64) -> Result<(), ClientError> {
         if version != self.version + 1 {
             return Err(ClientError::InvalidSuccessor);
         }
@@ -702,12 +737,9 @@ mod tests {
         let mut md =
             unwrap!(MutableData::new(rand::random(), 0, BTreeMap::new(), BTreeMap::new(), owners));
 
-        // Try to do ownership transfer from a non-owner requester
-        assert_err!(md.change_owner(pk1, 1, pk1), ClientError::AccessDenied);
-
-        // Transfer ownership from an owner
-        assert!(md.change_owner(pk1, 1, owner).is_ok());
-        assert_err!(md.change_owner(owner, 1, owner), ClientError::AccessDenied);
+        assert!(md.change_owner(pk1, 1).is_ok());
+        assert!(md.owners().contains(&pk1));
+        assert!(!md.owners().contains(&owner));
     }
 
     #[test]

@@ -18,12 +18,11 @@
 use data::{EntryAction, ImmutableData, MutableData, PermissionSet, User};
 use rust_sodium::crypto::sign;
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::{self, Debug, Formatter};
 use types::MessageId as MsgId;
 use xor_name::XorName;
 
 /// Request message types
-#[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd, Deserialize, Serialize)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum Request {
     /// Represents a refresh message sent between vaults. Vec<u8> is the message content.
     Refresh(Vec<u8>, MsgId),
@@ -60,6 +59,15 @@ pub enum Request {
     },
     /// Fetches a latest version number.
     GetMDataVersion {
+        /// Network identifier of MutableData
+        name: XorName,
+        /// Type tag
+        tag: u64,
+        /// Unique message identifier
+        msg_id: MsgId,
+    },
+    /// Fetches the shell (everthing except the entries).
+    GetMDataShell {
         /// Network identifier of MutableData
         name: XorName,
         /// Type tag
@@ -216,28 +224,6 @@ pub enum Request {
 }
 
 impl Request {
-    /// The priority Crust should send this message with.
-    pub fn priority(&self) -> u8 {
-        /*
-        match *self {
-            Request::Refresh(..) => 2,
-            Request::Get(..) |
-            Request::GetAccountInfo(..) => 3,
-            Request::Append(..) => 4,
-            Request::Put(ref data, _) |
-            Request::Post(ref data, _) |
-            Request::Delete(ref data, _) => {
-                match *data {
-                    Data::Structured(..) => 4,
-                    _ => 5,
-                }
-            }
-        }
-        */
-
-        unimplemented!()
-    }
-
     /// Is the response corresponding to this request cacheable?
     pub fn is_cacheable(&self) -> bool {
         if let Request::GetIData { .. } = *self {
@@ -245,40 +231,5 @@ impl Request {
         } else {
             false
         }
-    }
-}
-
-impl Debug for Request {
-    fn fmt(&self, _formatter: &mut Formatter) -> fmt::Result {
-        /*
-        match *self {
-            Request::Refresh(ref data, ref message_id) => {
-                write!(formatter,
-                       "Refresh({}, {:?})",
-                       utils::format_binary_array(data),
-                       message_id)
-            }
-            Request::Get(ref data_request, ref message_id) => {
-                write!(formatter, "Get({:?}, {:?})", data_request, message_id)
-            }
-            Request::Put(ref data, ref message_id) => {
-                write!(formatter, "Put({:?}, {:?})", data, message_id)
-            }
-            Request::Post(ref data, ref message_id) => {
-                write!(formatter, "Post({:?}, {:?})", data, message_id)
-            }
-            Request::Delete(ref data, ref message_id) => {
-                write!(formatter, "Delete({:?}, {:?})", data, message_id)
-            }
-            Request::Append(ref wrapper, ref message_id) => {
-                write!(formatter, "Append({:?}, {:?})", wrapper, message_id)
-            }
-            Request::GetAccountInfo(ref message_id) => {
-                write!(formatter, "GetAccountInfo({:?})", message_id)
-            }
-        }
-        */
-
-        unimplemented!()
     }
 }

@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -45,10 +45,10 @@ pub fn format_binary_array<V: AsRef<[u8]>>(input: V) -> String {
 
 /// Compute the relocated name of a client with the given original name.
 ///
-/// This is used by each member of a joining node's group to choose a new name for the node. On the
-/// one hand, sufficiently many of them need to agree on the new name to reach quorum size, on the
-/// other hand, the joining node shall not be able to predict it so that it cannot choose where to
-/// be relocated to.
+/// This is used by each member of a joining node's section to choose a new name for the node. On
+/// the one hand, sufficiently many of them need to agree on the new name to reach quorum size, on
+/// the other hand, the joining node shall not be able to predict it so that it cannot choose where
+/// to be relocated to.
 ///
 /// To meet these requirements, the relocated name is computed from the two closest nodes and the
 /// joining node's original name: It is the SHA256 hash of:
@@ -70,7 +70,6 @@ pub fn calculate_relocated_name(mut close_nodes: Vec<XorName>, original_name: &X
 
 #[cfg(test)]
 mod tests {
-    use peer_manager::MIN_GROUP_SIZE;
     use rand;
     use routing_table::Xorable;
     use rust_sodium::crypto::hash::sha256;
@@ -78,6 +77,7 @@ mod tests {
 
     #[test]
     fn calculate_relocated_name() {
+        let min_section_size = 8;
         let original_name: XorName = rand::random();
 
         // one entry
@@ -103,9 +103,10 @@ mod tests {
         assert_eq!(actual_relocated_name_one_entry,
                    expected_relocated_name_one_node);
 
+        // TODO: we're not using fixed sizes any more: this code should possibly change!
         // populated closed nodes
         let mut close_nodes: Vec<XorName> = Vec::new();
-        for _ in 0..MIN_GROUP_SIZE {
+        for _ in 0..min_section_size {
             close_nodes.push(rand::random());
         }
         let actual_relocated_name = super::calculate_relocated_name(close_nodes.clone(),

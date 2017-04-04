@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -24,17 +24,20 @@
 //! [1]: ../kademlia_routing_table/index.html
 //! [2]: ../xor_name/struct.XorName.html
 //!
-//! Messages are exchanged between _authorities_, where an `Authority` can be an
-//! individual client or node, or a group of nodes. In both cases, messages are cryptographically
-//! signed by the sender, and in the latter case it is verified that a sufficient number of group
-//! members agree on the message: Only if that quorum is reached, the message is delivered. In
-//! addition, each message has a unique ID, and is delivered only once.
+//! Messages are exchanged between _authorities_, where an `Authority` can be an individual client
+//! or node, or a collection of nodes called a "section", or a subset of a section called a "group".
+//! In all cases, messages are cryptographically signed by the sender, and in the case of sections
+//! and groups, it is verified that a sufficient number of members agree on the message: only if
+//! that quorum is reached, the message is delivered. In addition, each message has a unique ID, and
+//! is delivered only once.
 //!
-//! Group authorities are also addressed using a single `XorName`. The members of that group are
-//! the nodes that are closest to that name. Since nodes are assigned their name by the network,
-//! this provides redundancy and resilience: A node has no control over which group authorities it
-//! will be a member of, and without a majority in the group it cannot forge a message from that
-//! group.
+//! Section and group authorities are also addressed using a single `XorName`. The members are the
+//! nodes that are closest to that name. Sections contain a minimum number of nodes with the minimum
+//! value specified as a network-wide constant. Groups are of fixed size, defined as the above
+//! minimum section size. Since nodes are assigned their name by the network, this provides
+//! redundancy and resilience: a node has no control over which section or group authority it will
+//! be a member of, and without a majority in the section or group it cannot forge a message from
+//! there.
 //!
 //! The library also provides different types for the messages' data.
 //!
@@ -45,7 +48,7 @@
 //! network of nodes and receive responses.
 //!
 //! `Node` is used to handle and send requests within that network, and to implement its
-//! functionality, e. g. storing and retrieving data, validating permissions, managing metadata etc.
+//! functionality, e.g. storing and retrieving data, validating permissions, managing metadata, etc.
 //!
 //!
 //! ## Client creation
@@ -55,14 +58,14 @@
 //! bootstrap node for the client, and messages to and from the client will be routed over it.
 //!
 //! ```no_run
+//! # #![allow(unused)]
 //! use std::sync::mpsc;
 //! use routing::{Client, Event, FullId};
 //!
-//! let (sender, _receiver) = mpsc::channel::<Event>();
+//! let (sender, receiver) = mpsc::channel::<Event>();
 //! let full_id = FullId::new(); // Generate new keys.
-//! let _ = Client::new(sender, Some(full_id.clone()), None).unwrap();
-//!
-//! let _ = full_id.public_id().name();
+//! # #[cfg(not(feature = "use-mock-crust"))]
+//! let client = Client::new(sender, Some(full_id)).unwrap();
 //! ```
 //!
 //! Messages can be sent using the methods of `client`, and received as `Event`s from the
@@ -74,11 +77,11 @@
 //! Creating a node looks even simpler:
 //!
 //! ```no_run
-//! use std::sync::mpsc;
-//! use routing::{Node, Event};
+//! # #![allow(unused)]
+//! use routing::Node;
 //!
-//! let (sender, _receiver) = mpsc::channel::<Event>();
-//! let _ = Node::builder().create(sender).unwrap();
+//! let min_section_size = 8;
+//! let node = Node::builder().create(min_section_size).unwrap();
 //! ```
 //!
 //! Upon creation, the node will first connect to the network as a client. Once it has client
@@ -86,22 +89,21 @@
 //! that new name, adding close nodes to its routing table.
 //!
 //! Messages can be sent using the methods of `node`, and received as `Event`s from the `receiver`.
-//! The node can act as an individual node or as part of a group authority. Sending a message as a
-//! group authority only has an effect if sufficiently many other nodes in that authority send the
-//! same message.
+//! The node can act as an individual node or as part of a section or group authority. Sending a
+//! message as a section or group authority only has an effect if sufficiently many other nodes in
+//! that authority send the same message.
 //!
 //!
 //! # Sequence diagrams
 //!
 //! - [Bootstrapping](bootstrap.png)
-//! - [`GetCloseGroup`](get-close-group.png)
 //! - [Churn (`NewNode`)](new-node.png)
 //! - [Tunnel](tunnel.png)
 
 #![doc(html_logo_url =
            "https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png",
-       html_favicon_url = "http://maidsafe.net/img/favicon.ico",
-       html_root_url = "http://maidsafe.github.io/routing")]
+       html_favicon_url = "https://maidsafe.net/img/favicon.ico",
+       html_root_url = "https://docs.rs/routing")]
 
 // For explanation of lint checks, run `rustc -W help` or see
 // https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
@@ -115,15 +117,12 @@
 #![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
         unused_qualifications, unused_results)]
 #![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
-         missing_debug_implementations, variant_size_differences,
-         non_camel_case_types)]
+         missing_debug_implementations, variant_size_differences, non_camel_case_types)]
 
-#![cfg_attr(feature="cargo-clippy", deny(clippy, unicode_not_nfc,
-                                         wrong_pub_self_convention,
-                                         option_unwrap_used))]
-#![cfg_attr(feature="cargo-clippy", allow(use_debug, large_enum_variant,
-                                          too_many_arguments))]
+#![cfg_attr(feature="cargo-clippy", deny(unicode_not_nfc, wrong_pub_self_convention,
+                                    option_unwrap_used))]
 
+extern crate accumulator;
 extern crate hex;
 #[macro_use]
 extern crate log;
@@ -137,25 +136,32 @@ extern crate crust;
 extern crate itertools;
 extern crate lru_time_cache;
 extern crate rand;
+extern crate resource_proof;
 extern crate rust_sodium;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 extern crate tiny_keccak;
 
+// Needs to be before all other modules to make the macros available to them.
+#[macro_use]
+mod macros;
+
 mod ack_manager;
 mod action;
-mod authority;
 mod client;
 mod client_error;
 mod cache;
 mod data;
 mod error;
 mod event;
+mod event_stream;
+mod section_list_cache;
 mod id;
 mod message_filter;
 mod messages;
 mod node;
+mod outbox;
 mod peer_manager;
 mod routing_message_filter;
 mod routing_table;
@@ -186,27 +192,39 @@ pub const TYPE_TAG_SESSION_PACKET: u64 = 0;
 /// Structured Data Tag for DNS Packet Type
 pub const TYPE_TAG_DNS_PACKET: u64 = 5;
 
-pub use authority::Authority;
+/// The quorum, as a percentage of the number of members of the authority.
+pub const QUORUM: usize = 51;
+
 pub use cache::{Cache, NullCache};
 pub use client::Client;
 pub use client_error::ClientError;
-pub use data::{Action, AppendWrapper, AppendedData, Data, DataIdentifier, EntryAction,
-               EntryActions, Filter, ImmutableData, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
-               MAX_MUTABLE_DATA_ENTRIES, MAX_MUTABLE_DATA_SIZE_IN_BYTES,
-               MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES, MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES,
-               MAX_STRUCTURED_DATA_SIZE_IN_BYTES, MutableData, NO_OWNER_PUB_KEY, PermissionSet,
-               PrivAppendableData, PrivAppendedData, PubAppendableData, StructuredData, User,
+pub use data::{Action, EntryAction, EntryActions, ImmutableData, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
+               MAX_MUTABLE_DATA_ENTRIES, MAX_MUTABLE_DATA_ENTRY_ACTIONS,
+               MAX_MUTABLE_DATA_SIZE_IN_BYTES, MutableData, NO_OWNER_PUB_KEY, PermissionSet, User,
                Value};
 pub use error::{InterfaceError, RoutingError};
 pub use event::Event;
+pub use event_stream::EventStream;
 pub use id::{FullId, PublicId};
 pub use messages::{AccountInfo, Request, Response};
 #[cfg(feature = "use-mock-crust")]
 pub use mock_crust::crust;
 pub use node::{Node, NodeBuilder};
-pub use peer_manager::MIN_GROUP_SIZE;
+pub use routing_table::{Authority, Prefix, RoutingTable, Xorable};
+pub use routing_table::Error as RoutingTableError;
 #[cfg(any(test, feature = "use-mock-crust"))]
-pub use routing_table::{Destination, RoutingTable, verify_network_invariant};
-pub use routing_table::{Prefix, Xorable};
+pub use routing_table::verify_network_invariant;
 pub use types::MessageId;
 pub use xor_name::{XOR_NAME_BITS, XOR_NAME_LEN, XorName, XorNameFromHexError};
+
+#[cfg(test)]
+mod tests {
+    use super::QUORUM;
+
+    #[test]
+    #[cfg_attr(feature="cargo-clippy", allow(eq_op))]
+    fn quorum_percentage() {
+        assert!(QUORUM <= 100 && QUORUM > 50,
+                "Quorum percentage isn't between 51 and 100");
+    }
+}
