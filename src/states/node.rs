@@ -52,7 +52,7 @@ use signature_accumulator::{ACCUMULATION_TIMEOUT_SECS, SignatureAccumulator};
 use state_machine::Transition;
 use stats::Stats;
 use std::{cmp, fmt, iter, mem};
-use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, VecDeque};
 #[cfg(feature = "use-mock-crust")]
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
@@ -2879,7 +2879,7 @@ impl Node {
         };
 
         if self.is_proper() && !force_via_proxy {
-            let targets: HashSet<_> = self.routing_table()
+            let targets: BTreeSet<_> = self.routing_table()
                 .targets(&routing_msg.dst, *exclude, route as usize)?
                 .into_iter()
                 .filter(|target| !sent_to.contains(target))
