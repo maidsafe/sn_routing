@@ -1994,14 +1994,30 @@ impl Node {
 
     /// Handle a `TunnelSuccess` response from `peer_id`: It will act as a tunnel to `dst_id`.
     fn handle_tunnel_success(&mut self, peer_id: PeerId, dst_id: PeerId) {
-        if !self.peer_mgr.tunnelling_to(&dst_id) {
+        let should_disconnect = if let Some(tunnel_id) = self.tunnels.tunnel_for(&dst_id) {
+            if *tunnel_id == peer_id {
+                // If tunnel_id matches the dst_id make this a no-op
+                return;
+            } else {
+                // If we have a different tunnel node for this dst_id,
+                // should disconnect from this tunnel node
+                true
+            }
+        } else {
+            // we do not have a tunnel node for this dst_id yet.
+            // check and accept this tunnel node if required.
+            false
+        };
+
+        if should_disconnect || !self.peer_mgr.tunnelling_to(&dst_id) {
             debug!("{:?} Received TunnelSuccess from {:?} for an already connected peer {:?}",
                    self,
                    peer_id,
                    dst_id);
             let message = DirectMessage::TunnelDisconnect(dst_id);
-            self.send_direct_message(peer_id, message);
+            return self.send_direct_message(peer_id, message);
         }
+
         let can_tunnel_for = |peer: &Peer| peer.state().can_tunnel_for();
         if self.peer_mgr
                .get_connected_peer(&peer_id)
