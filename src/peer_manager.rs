@@ -752,7 +752,10 @@ impl PeerManager {
                     |peer| peer.to_routing_connection(is_tunnel));
         let _ = self.peer_map
             .insert(Peer::new(*pub_id, Some(*peer_id), PeerState::Routing(conn)));
-        trace!("{:?} Set {:?} to {:?}", self, pub_id.name(), PeerState::Routing(conn));
+        trace!("{:?} Set {:?} to {:?}",
+               self,
+               pub_id.name(),
+               PeerState::Routing(conn));
 
         res
     }
@@ -1184,10 +1187,15 @@ impl PeerManager {
     /// Marks the given peer as "connected via tunnel and waiting for `NodeIdentify`".
     /// Returns `false` if a tunnel is not needed.
     pub fn tunnelling_to(&mut self, peer_id: &PeerId) -> bool {
+        // Return false if we have a direct connection to peer_id so we do
+        // not switch the state to a tunnel handshake state
         match self.get_state(peer_id) {
-            Some(&PeerState::AwaitingNodeIdentify(false)) |
-            Some(&PeerState::Routing(_)) => {
-                return false;
+            Some(&PeerState::AwaitingNodeIdentify(false)) => return false,
+            Some(&PeerState::Candidate(conn)) |
+            Some(&PeerState::Routing(conn)) => {
+                if conn != RoutingConnection::Tunnel {
+                    return false;
+                }
             }
             _ => (),
         }
