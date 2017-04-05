@@ -164,7 +164,7 @@ impl ResourceProver {
                          }
                      })
                 .collect_vec();
-            if messages.len() == 0 {
+            if messages.is_empty() {
                 messages.push(DirectMessage::ResourceProofResponse {
                                   part_index: 0,
                                   part_count: 1,
@@ -175,29 +175,24 @@ impl ResourceProver {
 
             trace!("{} created proof data in {}. Target size: {}, \
                     Difficulty: {}, Seed: {:?}",
-                log_ident,
-                elapsed.display_prec(0),
-                target_size,
-                difficulty,
-                seed);
+                   log_ident,
+                   elapsed.display_prec(0),
+                   target_size,
+                   difficulty,
+                   seed);
 
             let action = Action::ResourceProofResult(peer_id, messages);
             if let Err(_) = action_sender.send(action) {
                 // In theory this means the receiver disconnected, so the main thread stopped/reset
-                error!("{}: resource proof worker thread failed to send result", log_ident);
+                error!("{}: resource proof worker thread failed to send result",
+                       log_ident);
             }
         });
-        // If using mock_crust we want the joiner to drop and join immediately
-        #[cfg(feature="use-mock-crust")]
-        let _ = joiner;
-        #[cfg(not(feature="use-mock-crust"))]
-        {
-            let old = self.workers.insert(peer_id, (atomic_cancel, joiner));
-            if let Some((atomic_cancel, _old_worker)) = old {
-                // This is probably a bug if it happens, but in any case the Drop impl on
-                // _old_worker will implicitly join the thread.
-                atomic_cancel.store(true, Ordering::Relaxed);
-            }
+        let old = self.workers.insert(peer_id, (atomic_cancel, joiner));
+        if let Some((atomic_cancel, _old_worker)) = old {
+            // This is probably a bug if it happens, but in any case the Drop impl on
+            // _old_worker will implicitly join the thread.
+            atomic_cancel.store(true, Ordering::Relaxed);
         }
     }
 

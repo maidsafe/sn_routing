@@ -519,6 +519,15 @@ impl Node {
     pub fn clear_next_node_name(&mut self) {
         self.machine.current_mut().set_next_node_name(None)
     }
+
+    /// Returns whether the node has been approved by the network or not.
+    pub fn is_approved(&self) -> bool {
+        if let State::Node(ref node) = *self.machine.current() {
+            node.is_approved()
+        } else {
+            false
+        }
+    }
 }
 
 #[cfg(feature = "use-mock-crust")]
