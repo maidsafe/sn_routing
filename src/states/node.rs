@@ -670,7 +670,7 @@ impl Node {
                 target_size,
                 difficulty,
             } => {
-                let log_ident = self.log_identifier();
+                let log_ident = format!("{:?}", self);
                 self.resource_prover
                     .handle_request(peer_id, seed, target_size, difficulty, log_ident);
             }
@@ -2584,7 +2584,7 @@ impl Node {
     }
 
     fn handle_timeout(&mut self, token: u64, outbox: &mut EventBox) -> Transition {
-        let log_ident = self.log_identifier();
+        let log_ident = format!("{:?}", self);
         if let Some(transition) = self.resource_prover
                .handle_timeout(token, log_ident, outbox) {
             return transition;
@@ -3296,10 +3296,6 @@ impl Node {
                 .insert(other_section_prefix);
         }
     }
-
-    fn log_identifier(&self) -> String {
-        format!("Node({}({:b}))", self.name(), self.our_prefix())
-    }
 }
 
 impl Base for Node {
@@ -3404,6 +3400,10 @@ impl Node {
 
     pub fn set_next_node_name(&mut self, relocation_name: Option<XorName>) {
         self.next_node_name = relocation_name;
+    }
+
+    pub fn is_approved(&self) -> bool {
+        self.is_approved
     }
 }
 
