@@ -67,7 +67,7 @@ impl<Message: Hash> MessageFilter<Message> {
         self.remove_expired();
         let hash_code = hash(message);
         let expiry = Instant::now() + self.time_to_live;
-        self.timeout_queue.push_back((hash_code, expiry.clone()));
+        self.timeout_queue.push_back((hash_code, expiry));
         match self.count.entry(hash_code) {
             Entry::Occupied(entry) => {
                 let &mut (ref mut c, ref mut t) = entry.into_mut();

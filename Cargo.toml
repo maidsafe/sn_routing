@@ -41,4 +41,4 @@ bench = false
 name = "ci_test"
 
 [features]
-use-mock-crust = []
+use-mock-crust = ["lru_time_cache/fake_clock"]

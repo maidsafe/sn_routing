@@ -2536,7 +2536,7 @@ impl Node {
                          .schedule(Duration::from_secs(APPROVAL_PROGRESS_INTERVAL_SECS)));
             let now = Instant::now();
             let remaining_duration = if now < self.approval_expiry_time {
-                let duration = self.approval_expiry_time.clone() - now;
+                let duration = self.approval_expiry_time - now;
                 if duration.subsec_nanos() >= 500_000_000 {
                     duration.as_secs() + 1
                 } else {

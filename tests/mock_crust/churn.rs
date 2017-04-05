@@ -17,6 +17,7 @@
 
 use super::{TestClient, TestNode, create_connected_clients, create_connected_nodes, gen_range,
             gen_range_except, poll_and_resend, verify_invariant_for_all_nodes};
+use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
 use routing::{Authority, DataIdentifier, Event, EventStream, MessageId, QUORUM, Request, XorName};
@@ -457,6 +458,7 @@ fn aggressive_churn() {
         verify_invariant_for_all_nodes(&mut nodes);
         verify_section_list_signatures(&nodes);
         send_and_receive(&mut rng, &mut nodes, min_section_size, Some(added_index));
+        FakeClock::advance_time(20000);
     }
 
     info!("Churn [{} nodes, {} sections]: simultaneous adding and dropping nodes",
@@ -487,6 +489,7 @@ fn aggressive_churn() {
 
         send_and_receive(&mut rng, &mut nodes, min_section_size, Some(added_index));
         client_gets(&mut network, &mut nodes, min_section_size);
+        FakeClock::advance_time(20000);
     }
 
     info!("Churn [{} nodes, {} sections]: dropping nodes",
@@ -501,6 +504,7 @@ fn aggressive_churn() {
         verify_section_list_signatures(&nodes);
         send_and_receive(&mut rng, &mut nodes, min_section_size, None);
         client_gets(&mut network, &mut nodes, min_section_size);
+        FakeClock::advance_time(20000);
     }
 
     info!("Churn [{} nodes, {} sections]: done",
