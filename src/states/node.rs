@@ -1994,39 +1994,30 @@ impl Node {
 
     /// Handle a `TunnelSuccess` response from `peer_id`: It will act as a tunnel to `dst_id`.
     fn handle_tunnel_success(&mut self, peer_id: PeerId, dst_id: PeerId) {
-        let should_disconnect = if let Some(tunnel_id) = self.tunnels.tunnel_for(&dst_id) {
+        if let Some(tunnel_id) = self.tunnels.tunnel_for(&dst_id) {
             if *tunnel_id == peer_id {
-                // If tunnel_id matches the dst_id make this a no-op
-                return;
-            } else {
-                // If we have a different tunnel node for this dst_id,
-                // should disconnect from this tunnel node
-                true
+                return; // duplicate `TunnelSuccess`
             }
-        } else {
-            // we do not have a tunnel node for this dst_id yet.
-            // check and accept this tunnel node if required.
-            false
         };
-
-        if should_disconnect || !self.peer_mgr.tunnelling_to(&dst_id) {
-            debug!("{:?} Received TunnelSuccess from {:?} for an already connected peer {:?}",
-                   self,
-                   peer_id,
-                   dst_id);
-            let message = DirectMessage::TunnelDisconnect(dst_id);
-            return self.send_direct_message(peer_id, message);
-        }
 
         let can_tunnel_for = |peer: &Peer| peer.state().can_tunnel_for();
         if self.peer_mgr
                .get_connected_peer(&peer_id)
-               .map_or(false, can_tunnel_for) && self.tunnels.add(dst_id, peer_id) {
+               .map_or(false, can_tunnel_for) && self.tunnels.add(dst_id, peer_id) &&
+           self.peer_mgr.tunnelling_to(&dst_id) {
             debug!("{:?} Adding {:?} as a tunnel node for {:?}.",
                    self,
                    peer_id,
                    dst_id);
             self.send_node_identify(dst_id, true);
+        } else {
+            debug!("{:?} Received TunnelSuccess from {:?} for an already connected peer {:?}",
+                   self,
+                   peer_id,
+                   dst_id);
+            let _ = self.tunnels.remove(dst_id, peer_id);
+            let message = DirectMessage::TunnelDisconnect(dst_id);
+            self.send_direct_message(peer_id, message);
         }
     }
 
@@ -2784,8 +2775,9 @@ impl Node {
     // that we're not connected to the peer or tunnel node respectively.
     fn purge_invalid_rt_entries(&mut self, outbox: &mut EventBox) -> Transition {
         let peer_details = self.peer_mgr.get_routing_peer_details();
-        for peer_id in &peer_details.out_of_sync_peers {
-            self.dropped_peer(peer_id, outbox, true);
+        for peer_id in peer_details.out_of_sync_peers {
+            self.crust_service.disconnect(peer_id);
+            self.dropped_peer(&peer_id, outbox, true);
         }
         for removal_detail in peer_details.removal_details {
             let name = removal_detail.name;
@@ -2797,7 +2789,6 @@ impl Node {
                 match self.tunnels.tunnel_for(&peer_id) {
                     Some(tunnel_node_id) => {
                         if !self.crust_service.is_connected(tunnel_node_id) {
-                            peer_ids_to_drop.push(*tunnel_node_id);
                             log_or_panic!(LogLevel::Debug,
                                           "{:?} Should have a tunnel connection to {} {:?} via \
                                           {:?}, but tunnel node not connected.",
@@ -2805,25 +2796,26 @@ impl Node {
                                           name,
                                           peer_id,
                                           tunnel_node_id);
+                            peer_ids_to_drop.push(*tunnel_node_id);
                         }
                     }
                     None => {
                         if self.crust_service.is_connected(&peer_id) {
-                            self.peer_mgr.correct_routing_state_to_direct(&peer_id);
                             log_or_panic!(LogLevel::Debug,
                                           "{:?} Should have a tunnel connection to {} {:?}, but \
                                           instead have a direct connection.",
                                           self,
                                           name,
                                           peer_id);
+                            self.peer_mgr.correct_state_to_direct(&peer_id);
                         } else {
-                            peer_ids_to_drop.push(peer_id);
                             log_or_panic!(LogLevel::Debug,
                                           "{:?} Should have a tunnel connection to {} {:?}, but no \
                                           tunnel node or direct connection exists.",
                                           self,
                                           name,
                                           peer_id);
+                            peer_ids_to_drop.push(peer_id);
                         }
                     }
                 }
@@ -3397,8 +3389,8 @@ impl Node {
             .into_iter()
             .filter_map(|dst_id| {
                             self.peer_mgr
-                                .get_routing_peer(&dst_id)
-                                .map(|dst_pub_id| (dst_id, *dst_pub_id))
+                                .get_peer(&dst_id)
+                                .map(|peer| (dst_id, *peer.pub_id()))
                         })
             .collect_vec();
         for (dst_id, pub_id) in peers {
