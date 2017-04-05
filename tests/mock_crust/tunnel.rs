@@ -70,6 +70,7 @@ fn lost_connection_and_unidirectional_block() {
 
     network.lost_connection(Endpoint(2), Endpoint(3));
     network.block_connection(Endpoint(2), Endpoint(3));
+    network.delay_connection(Endpoint(3), Endpoint(2));
     poll_and_resend(&mut nodes, &mut []);
     verify_invariant_for_all_nodes(&mut nodes);
 }
