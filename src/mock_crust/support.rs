@@ -37,6 +37,7 @@ pub struct NetworkImpl {
     next_endpoint: usize,
     queue: BTreeMap<(Endpoint, Endpoint), VecDeque<Packet>>,
     blocked_connections: HashSet<(Endpoint, Endpoint)>,
+    delayed_connections: HashSet<(Endpoint, Endpoint)>,
     rng: SeededRng,
 }
 
@@ -55,6 +56,7 @@ impl Network {
                                          next_endpoint: 0,
                                          queue: BTreeMap::new(),
                                          blocked_connections: HashSet::new(),
+                                         delayed_connections: HashSet::new(),
                                          rng: rng,
                                      })))
     }
@@ -113,6 +115,12 @@ impl Network {
     pub fn unblock_connection(&self, sender: Endpoint, receiver: Endpoint) {
         let mut imp = self.0.borrow_mut();
         let _ = imp.blocked_connections.remove(&(sender, receiver));
+    }
+
+    /// Delay the processing of packets from `sender` to `receiver`.
+    pub fn delay_connection(&self, sender: Endpoint, receiver: Endpoint) {
+        let mut imp = self.0.borrow_mut();
+        imp.delayed_connections.insert((sender, receiver));
     }
 
     /// Simulates the loss of a connection.
@@ -186,7 +194,21 @@ impl Network {
 
     fn pop_packet(&self) -> Option<(Endpoint, Endpoint, Packet)> {
         let mut network_impl = self.0.borrow_mut();
-        let keys: Vec<_> = network_impl.queue.keys().cloned().collect();
+        let keys: Vec<_> = if
+            network_impl
+                .queue
+                .keys()
+                .all(|&(ref s, ref r)| network_impl.delayed_connections.contains(&(*s, *r))) {
+            network_impl.queue.keys().cloned().collect()
+        } else {
+            network_impl
+                .queue
+                .keys()
+                .filter(|&&(ref s, ref r)| !network_impl.delayed_connections.contains(&(*s, *r)))
+                .cloned()
+                .collect()
+        };
+
         let (sender, receiver) = if let Some(key) = network_impl.rng.choose(&keys) {
             *key
         } else {

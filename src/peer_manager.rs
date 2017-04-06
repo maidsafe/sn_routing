@@ -52,6 +52,7 @@ const NODE_CONNECT_TIMEOUT_SECS: u64 = 60;
 
 pub type SectionMap = BTreeMap<Prefix<XorName>, BTreeSet<PublicId>>;
 
+#[derive(Default)]
 pub struct PeerDetails {
     pub routing_peer_details: Vec<(PeerId, XorName, bool)>,
     pub out_of_sync_peers: Vec<PeerId>,
@@ -752,7 +753,10 @@ impl PeerManager {
                     |peer| peer.to_routing_connection(is_tunnel));
         let _ = self.peer_map
             .insert(Peer::new(*pub_id, Some(*peer_id), PeerState::Routing(conn)));
-        trace!("{:?} Set {:?} to {:?}", self, pub_id.name(), PeerState::Routing(conn));
+        trace!("{:?} Set {:?} to {:?}",
+               self,
+               pub_id.name(),
+               PeerState::Routing(conn));
 
         res
     }
@@ -1185,12 +1189,12 @@ impl PeerManager {
     /// Returns `false` if a tunnel is not needed.
     pub fn tunnelling_to(&mut self, peer_id: &PeerId) -> bool {
         match self.get_state(peer_id) {
-            Some(&PeerState::AwaitingNodeIdentify(false)) |
-            Some(&PeerState::Routing(_)) => {
-                return false;
-            }
+            Some(&PeerState::AwaitingNodeIdentify(_)) |
+            Some(&PeerState::Candidate(_)) |
+            Some(&PeerState::Routing(_)) => return false,
             _ => (),
         }
+
         if !self.set_state(peer_id, PeerState::AwaitingNodeIdentify(true)) {
             let _ = self.unknown_peers
                 .insert(*peer_id, (true, Instant::now()));
@@ -1212,6 +1216,11 @@ impl PeerManager {
     /// Returns the name of the given peer.
     pub fn get_peer_name(&self, peer_id: &PeerId) -> Option<&XorName> {
         self.peer_map.get(peer_id).map(Peer::name)
+    }
+
+    /// Returns the given peer.
+    pub fn get_peer(&self, peer_id: &PeerId) -> Option<&Peer> {
+        self.peer_map.get(peer_id)
     }
 
     /// Returns the peer with the given peer_id if it is already in one of the
@@ -1268,65 +1277,98 @@ impl PeerManager {
     /// together with all out-of-sync peer's `PeerId`s.
     /// And purges all dropped routing_nodes (nodes in routing_table but not in the peer_map)
     pub fn get_routing_peer_details(&mut self) -> PeerDetails {
-        let mut out_of_sync_peers = Vec::new();
+        let mut result = PeerDetails::default();
         let mut dropped_routing_nodes = Vec::new();
-        let routing_peer_details = self.routing_table
-            .iter()
-            .filter_map(|name| -> Option<(PeerId, XorName, bool)> {
-                let peer = match self.peer_map.get_by_name(name) {
-                    Some(peer) => peer,
-                    None => {
-                        log_or_panic!(LogLevel::Error,
-                                      "{:?} Have {} in RT, but have no entry in peer_map for it.",
-                                      self,
-                                      name);
-                        dropped_routing_nodes.push(*name);
-                        return None;
+        for name in self.routing_table().iter() {
+            match self.peer_map.get_by_name(name) {
+                None => {
+                    log_or_panic!(LogLevel::Error,
+                                  "{:?} Have {} in RT, but have no entry in peer_map for it.",
+                                  self,
+                                  name);
+                    dropped_routing_nodes.push(*name);
+                }
+                Some(&Peer { peer_id: None, .. }) => {
+                    log_or_panic!(LogLevel::Error,
+                                  "{:?} Have {} in RT, but have no peer ID for it.",
+                                  self,
+                                  name);
+                    dropped_routing_nodes.push(*name);
+                }
+                Some(&Peer {
+                          peer_id: Some(peer_id),
+                          ref state,
+                          ..
+                      }) => {
+                    match *state {
+                        PeerState::Routing(_) => (),
+                        _ => {
+                            log_or_panic!(LogLevel::Error,
+                                          "{:?} Have {} in RT, but have state {:?} for it.",
+                                          self,
+                                          name,
+                                          state);
+                            dropped_routing_nodes.push(*name);
+                            result.out_of_sync_peers.push(peer_id);
+                        }
                     }
-                };
-                let peer_id = match peer.peer_id {
-                    Some(peer_id) => peer_id,
-                    None => {
-                        log_or_panic!(LogLevel::Error,
-                                      "{:?} Have {} in RT, but have no peer ID for it.",
-                                      self,
-                                      name);
-                        dropped_routing_nodes.push(*name);
-                        return None;
-                    }
-                };
-                let is_tunnel = match peer.state {
-                    PeerState::Routing(RoutingConnection::Tunnel) => true,
-                    PeerState::Routing(_) => false,
-                    _ => {
-                        log_or_panic!(LogLevel::Error,
-                                      "{:?} Have {} in RT, but have state {:?} for it.",
-                                      self,
-                                      name,
-                                      peer.state);
-                        out_of_sync_peers.push(peer_id);
-                        return None;
-                    }
-                };
-                Some((peer_id, *name, is_tunnel))
-            })
-            .collect();
-        let mut removal_details = Vec::new();
-        for name in &dropped_routing_nodes {
-            let _ = self.peer_map.remove_by_name(name);
-            if let Ok(removal_detail) = self.routing_table.remove(name) {
-                removal_details.push(removal_detail);
+                }
+            };
+        }
+        for name in dropped_routing_nodes {
+            let _ = self.peer_map.remove_by_name(&name);
+            if let Ok(removal_detail) = self.routing_table.remove(&name) {
+                result.removal_details.push(removal_detail);
             }
         }
-        PeerDetails {
-            routing_peer_details: routing_peer_details,
-            out_of_sync_peers: out_of_sync_peers,
-            removal_details: removal_details,
+        let mut nodes_missing_from_rt = Vec::new();
+        for peer in self.peer_map.peers() {
+            let is_tunnel = match peer.state {
+                PeerState::Routing(conn) => {
+                    if !self.routing_table.has(peer.name()) {
+                        nodes_missing_from_rt.push(*peer.name());
+                        continue;
+                    } else {
+                        conn == RoutingConnection::Tunnel
+                    }
+                }
+                PeerState::Candidate(conn) => conn == RoutingConnection::Tunnel,
+                PeerState::AwaitingNodeIdentify(is_tunnel) => is_tunnel,
+                _ => continue,
+            };
+            if let Some(peer_id) = peer.peer_id {
+                result
+                    .routing_peer_details
+                    .push((peer_id, *peer.name(), is_tunnel));
+            }
         }
+        for name in nodes_missing_from_rt {
+            if let Some(peer) = self.peer_map.remove_by_name(&name) {
+                log_or_panic!(LogLevel::Error,
+                              "{:?} Peer {:?} with state {:?} is missing from RT.",
+                              self,
+                              peer.name(),
+                              peer.state);
+                result.out_of_sync_peers.extend(peer.peer_id);
+            }
+        }
+        result
     }
 
-    pub fn correct_routing_state_to_direct(&mut self, peer_id: &PeerId) {
-        let _ = self.set_state(peer_id, PeerState::Routing(RoutingConnection::Direct));
+    pub fn correct_state_to_direct(&mut self, peer_id: &PeerId) {
+        let state = match self.peer_map.get(peer_id).map(|peer| &peer.state) {
+            Some(&PeerState::Routing(_)) => PeerState::Routing(RoutingConnection::Direct),
+            Some(&PeerState::Candidate(_)) => PeerState::Candidate(RoutingConnection::Direct),
+            Some(&PeerState::AwaitingNodeIdentify(_)) => PeerState::AwaitingNodeIdentify(false),
+            state => {
+                log_or_panic!(LogLevel::Error,
+                              "{:?} Cannot set state {:?} to direct.",
+                              self,
+                              state);
+                return;
+            }
+        };
+        let _ = self.set_state(peer_id, state);
     }
 
     /// Returns direct-connected peers suitable as a tunnel node for `client_name`.
