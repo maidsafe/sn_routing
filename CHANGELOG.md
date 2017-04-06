@@ -1,5 +1,14 @@
 # Routing - Change Log
 
+## [0.28.5]
+- Add section update requests to make merges more stable.
+- Don't approve new node if routing table is invalid.
+- Work around cases where `OtherSectionMerge` would not accumulate.
+- Several fixes to tunnel nodes and peer manager.
+- Remove more sources of randomness to make tests deterministic.
+- Add new error types related to invitation-based account creation.
+- Replace rustc-serialize with serde.
+
 ## [0.28.4]
 - Don't try to reconnect to candidates that are not yet approved.
 - Don't include peers in `sent_to` that are not directly connected.
