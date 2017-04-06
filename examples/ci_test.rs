@@ -207,7 +207,8 @@ mod unnamed {
             log_path.set_file_name(&format!("Node{:02}.log", node_count));
             let arg = format!("--output={}", log_path.display());
 
-            nodes.push(NodeProcess(Command::new(current_exe_path.clone()).arg(arg)
+            nodes.push(NodeProcess(Command::new(current_exe_path.clone())
+                                       .arg(arg)
                                        .stdout(Stdio::null())
                                        .stderr(Stdio::null())
                                        .spawn()?,
