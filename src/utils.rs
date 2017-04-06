@@ -17,7 +17,6 @@
 
 use routing_table::Xorable;
 use rust_sodium::crypto::hash::sha256;
-use std::cmp::min;
 use std::fmt::{self, Display, Write};
 use std::iter;
 use std::time::Duration;
@@ -25,60 +24,32 @@ use xor_name::XorName;
 
 
 /// Display a "number" to the given number of decimal places
-pub trait DisplayNumber {
-    /// Construct a formattable object, with the given precision (number of decimal places).
-    fn display_prec(&self, prec: usize) -> DisplayNumberObj;
+pub trait DisplayDuration {
+    /// Construct a formattable object
+    fn display_secs(&self) -> DisplayDurObj;
 }
 
-impl DisplayNumber for Duration {
-    fn display_prec(&self, prec: usize) -> DisplayNumberObj {
-        DisplayNumberObj {
-            number: DisplayNumberType::Duration(*self),
-            prec: prec,
-        }
+impl DisplayDuration for Duration {
+    fn display_secs(&self) -> DisplayDurObj {
+        DisplayDurObj { dur: *self }
     }
-}
-
-// Enumeration of internal types representable by `DisplayNumberObj`
-enum DisplayNumberType {
-    Duration(Duration),
 }
 
 /// Display a number to the given number of decimal places
-pub struct DisplayNumberObj {
-    number: DisplayNumberType,
-    prec: usize,
+pub struct DisplayDurObj {
+    dur: Duration,
 }
 
-impl Display for DisplayNumberObj {
+impl Display for DisplayDurObj {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.number {
-            DisplayNumberType::Duration(dur) => {
-                let mut secs = dur.as_secs();
-                if self.prec == 0 && dur.subsec_nanos() >= 500_000_000 {
-                    secs += 1;
-                }
-                write!(f, "{}", secs)?;
-                if self.prec > 0 {
-                    write!(f, ".")?;
-                    let mut remainder = dur.subsec_nanos();
-                    let mut divisor = 100_000_000;
-                    let n = min(self.prec, 9);
-                    for i in 0..n {
-                        let mut digit = remainder / divisor;
-                        remainder -= digit * divisor;
-                        divisor /= 10;
-                        if i + 1 == n && divisor > 0 && remainder >= divisor * 5 {
-                            digit += 1;
-                        }
-                        write!(f, "{}", digit)?;
-                    }
-                }
-                Ok(())
-            }
+        let mut secs = self.dur.as_secs();
+        if self.dur.subsec_nanos() >= 500_000_000 {
+            secs += 1;
         }
+        write!(f, "{} seconds", secs)
     }
 }
+
 
 /// Format a vector of bytes as a hexadecimal number, ellipsising all but the first and last three.
 ///
@@ -129,7 +100,7 @@ pub fn calculate_relocated_name(mut close_nodes: Vec<XorName>, original_name: &X
 
 #[cfg(test)]
 mod tests {
-    use super::DisplayNumber;
+    use super::DisplayDuration;
     use rand;
     use routing_table::Xorable;
     use rust_sodium::crypto::hash::sha256;
@@ -138,13 +109,11 @@ mod tests {
 
     #[test]
     fn duration_formatting() {
-        assert_eq!(format!("{}", Duration::new(653105, 499_000_000).display_prec(0)), "653105");
-        assert_eq!(format!("{}", Duration::new(653105, 500_000_000).display_prec(0)), "653106");
-        assert_eq!(format!("{}", Duration::new(1561, 0).display_prec(3)), "1561.000");
-        assert_eq!(format!("{}", Duration::new(53, 761_830_065).display_prec(3)), "53.762");
-        assert_eq!(format!("{}", Duration::new(10, 000_000_001).display_prec(9)), "10.000000001");
-        // hard limit to 9 decimal places:
-        assert_eq!(format!("{}", Duration::new(0, 123_456_789).display_prec(10)), "0.123456789");
+        assert_eq!(format!("{}", Duration::new(653105, 499_000_000).display_secs()),
+                "653105 seconds");
+        assert_eq!(format!("{}", Duration::new(653105, 500_000_000).display_secs()),
+                "653106 seconds");
+        assert_eq!(format!("{}", Duration::new(0, 900_000_000).display_secs()), "1 seconds");
     }
 
     #[test]

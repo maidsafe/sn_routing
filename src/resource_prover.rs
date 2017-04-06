@@ -32,7 +32,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use timer::Timer;
 use types::RoutingActionSender;
-use utils::DisplayNumber;
+use utils::DisplayDuration;
 
 /// Time (in seconds) between accepting a new candidate (i.e. receiving an `AcceptAsCandidate` from
 /// our section) and sending a `CandidateApproval` for this candidate.  If the candidate cannot
@@ -176,7 +176,7 @@ impl ResourceProver {
             trace!("{} created proof data in {} seconds. Target size: {}, \
                     Difficulty: {}, Seed: {:?}",
                    log_ident,
-                   elapsed.display_prec(0),
+                   elapsed.display_secs(),
                    target_size,
                    difficulty,
                    seed);
@@ -250,7 +250,7 @@ impl ResourceProver {
             info!("{} {} {}/{} seconds remaining.",
                   log_ident,
                   self.response_progress(),
-                  remaining_duration.display_prec(0),
+                  remaining_duration.display_secs(),
                   APPROVAL_TIMEOUT_SECS);
 
             Some(Transition::Stay)

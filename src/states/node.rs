@@ -61,7 +61,7 @@ use std::time::Duration;
 use timer::Timer;
 use tunnels::Tunnels;
 use types::{MessageId, RoutingActionSender};
-use utils::{self, DisplayNumber};
+use utils::{self, DisplayDuration};
 use xor_name::XorName;
 
 /// Time (in seconds) after which a `Tick` event is sent.
@@ -1319,7 +1319,7 @@ impl Node {
                        section with {:?}.",
                       self,
                       name,
-                      elapsed.display_prec(0),
+                      elapsed.display_secs(),
                       self.our_prefix());
                 self.candidate_timer_token = None;
                 self.send_candidate_approval();
@@ -1329,7 +1329,7 @@ impl Node {
                        our section with {:?}.",
                       self,
                       name,
-                      elapsed.display_prec(0),
+                      elapsed.display_secs(),
                       self.our_prefix());
             }
         }
