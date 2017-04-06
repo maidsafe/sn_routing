@@ -173,7 +173,7 @@ impl ResourceProver {
                               });
             }
 
-            trace!("{} created proof data in {}. Target size: {}, \
+            trace!("{} created proof data in {} seconds. Target size: {}, \
                     Difficulty: {}, Seed: {:?}",
                    log_ident,
                    elapsed.display_prec(0),
@@ -223,7 +223,7 @@ impl ResourceProver {
         self.response_parts.clear();
     }
 
-    /// Try handling a timeout. Return true iff token was handled.
+    /// Try handling a timeout. Return `Some(transition)` iff token was handled.
     pub fn handle_timeout(&mut self,
                           token: u64,
                           log_ident: String,

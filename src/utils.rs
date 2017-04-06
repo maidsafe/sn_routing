@@ -17,6 +17,7 @@
 
 use routing_table::Xorable;
 use rust_sodium::crypto::hash::sha256;
+use std::cmp::min;
 use std::fmt::{self, Display, Write};
 use std::iter;
 use std::time::Duration;
@@ -53,9 +54,27 @@ impl Display for DisplayNumberObj {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.number {
             DisplayNumberType::Duration(dur) => {
-                let secs = dur.as_secs() as f64 + dur.subsec_nanos() as f64 * 1e-9;
-                // This _does_ round up if the next digit is >= 5
-                write!(f, "{:.*}", self.prec, secs)
+                let mut secs = dur.as_secs();
+                if self.prec == 0 && dur.subsec_nanos() >= 500_000_000 {
+                    secs += 1;
+                }
+                write!(f, "{}", secs)?;
+                if self.prec > 0 {
+                    write!(f, ".")?;
+                    let mut remainder = dur.subsec_nanos();
+                    let mut divisor = 100_000_000;
+                    let n = min(self.prec, 9);
+                    for i in 0..n {
+                        let mut digit = remainder / divisor;
+                        remainder -= digit * divisor;
+                        divisor /= 10;
+                        if i + 1 == n && divisor > 0 && remainder >= divisor * 5 {
+                            digit += 1;
+                        }
+                        write!(f, "{}", digit)?;
+                    }
+                }
+                Ok(())
             }
         }
     }
@@ -110,10 +129,23 @@ pub fn calculate_relocated_name(mut close_nodes: Vec<XorName>, original_name: &X
 
 #[cfg(test)]
 mod tests {
+    use super::DisplayNumber;
     use rand;
     use routing_table::Xorable;
     use rust_sodium::crypto::hash::sha256;
+    use std::time::Duration;
     use xor_name::XorName;
+
+    #[test]
+    fn duration_formatting() {
+        assert_eq!(format!("{}", Duration::new(653105, 499_000_000).display_prec(0)), "653105");
+        assert_eq!(format!("{}", Duration::new(653105, 500_000_000).display_prec(0)), "653106");
+        assert_eq!(format!("{}", Duration::new(1561, 0).display_prec(3)), "1561.000");
+        assert_eq!(format!("{}", Duration::new(53, 761_830_065).display_prec(3)), "53.762");
+        assert_eq!(format!("{}", Duration::new(10, 000_000_001).display_prec(9)), "10.000000001");
+        // hard limit to 9 decimal places:
+        assert_eq!(format!("{}", Duration::new(0, 123_456_789).display_prec(10)), "0.123456789");
+    }
 
     #[test]
     fn calculate_relocated_name() {
