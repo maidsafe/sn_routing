@@ -182,7 +182,7 @@ impl ResourceProver {
                    seed);
 
             let action = Action::ResourceProofResult(peer_id, messages);
-            if let Err(_) = action_sender.send(action) {
+            if action_sender.send(action).is_err() {
                 // In theory this means the receiver disconnected, so the main thread stopped/reset
                 error!("{}: resource proof worker thread failed to send result",
                        log_ident);
