@@ -114,7 +114,8 @@ impl NodeBuilder {
         let full_id = FullId::new();
 
         StateMachine::new(move |action_sender, crust_service, timer, outbox2| if self.first {
-                              if let Some(state) = states::Node::first(action_sender, self.cache,
+                              if let Some(state) = states::Node::first(action_sender,
+                                                                       self.cache,
                                                                        crust_service,
                                                                        full_id,
                                                                        min_section_size,

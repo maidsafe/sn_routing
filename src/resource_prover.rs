@@ -35,13 +35,13 @@ use types::RoutingActionSender;
 use utils::DisplayDuration;
 
 /// Time (in seconds) between accepting a new candidate (i.e. receiving an `AcceptAsCandidate` from
-/// our section) and sending a `CandidateApproval` for this candidate.  If the candidate cannot
+/// our section) and sending a `CandidateApproval` for this candidate. If the candidate cannot
 /// satisfy the proof of resource challenge within this time, no `CandidateApproval` is sent.
 pub const RESOURCE_PROOF_DURATION_SECS: u64 = 300;
 /// Time (in seconds) after which a `GetNodeName` request is resent.
 const GET_NODE_NAME_TIMEOUT_SECS: u64 = 60 + RESOURCE_PROOF_DURATION_SECS;
 /// Maximum time a new node will wait to receive `NodeApproval` after receiving a
-/// `GetNodeNameResponse`.  This covers the built-in delay of the process and also allows time for
+/// `GetNodeNameResponse`. This covers the built-in delay of the process and also allows time for
 /// the message to accumulate and be sent via four different routes.
 const APPROVAL_TIMEOUT_SECS: u64 = RESOURCE_PROOF_DURATION_SECS + ACCUMULATION_TIMEOUT_SECS +
                                    (4 * ACK_TIMEOUT_SECS);
