@@ -3417,10 +3417,6 @@ impl Node {
     pub fn set_next_node_name(&mut self, relocation_name: Option<XorName>) {
         self.next_node_name = relocation_name;
     }
-
-    pub fn is_approved(&self) -> bool {
-        self.is_approved
-    }
 }
 
 impl Bootstrapped for Node {

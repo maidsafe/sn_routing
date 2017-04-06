@@ -188,11 +188,16 @@ impl ResourceProver {
                        log_ident);
             }
         });
-        let old = self.workers.insert(peer_id, (atomic_cancel, joiner));
-        if let Some((atomic_cancel, _old_worker)) = old {
-            // This is probably a bug if it happens, but in any case the Drop impl on
-            // _old_worker will implicitly join the thread.
-            atomic_cancel.store(true, Ordering::Relaxed);
+        // If using mock_crust we want the joiner to drop and join immediately
+        if cfg!(feature = "use-mock-crust") {
+            let _ = joiner;
+        } else {
+            let old = self.workers.insert(peer_id, (atomic_cancel, joiner));
+            if let Some((atomic_cancel, _old_worker)) = old {
+                // This is probably a bug if it happens, but in any case the Drop impl on
+                // _old_worker will implicitly join the thread.
+                atomic_cancel.store(true, Ordering::Relaxed);
+            }
         }
     }
 

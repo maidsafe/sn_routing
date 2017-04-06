@@ -295,7 +295,7 @@ pub fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
 /// the nodes' state triggers no new events anymore.
 pub fn poll_and_resend(nodes: &mut [TestNode], clients: &mut [TestClient]) {
     for _ in 0..MAX_POLL_CALLS {
-        if poll_all(nodes, clients) || nodes.iter().any(|node| !node.inner.is_approved()) {
+        if poll_all(nodes, clients) {
             let mut call_count = 1;
             while resend_unacknowledged(nodes, clients) && poll_all(nodes, clients) {
                 call_count += 1;
@@ -304,9 +304,7 @@ pub fn poll_and_resend(nodes: &mut [TestNode], clients: &mut [TestClient]) {
                            "Polling and resending unacknowledged has been called {} times.",
                            MAX_POLL_CALLS);
             }
-            if nodes.iter().all(|node| node.inner.is_approved()) {
-                nodes.iter_mut().foreach(|node| node.inner.clear_state());
-            }
+            nodes.iter_mut().foreach(|node| node.inner.clear_state());
         } else {
             return;
         }
