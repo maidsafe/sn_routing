@@ -3701,7 +3701,8 @@ impl Bootstrapped for Node {
             }
             Some(target_name) => {
                 if let Some(&peer_id) = self.peer_mgr.get_peer_id(&target_name) {
-                    let direct_msg = signed_msg.routing_message()
+                    let direct_msg = signed_msg
+                        .routing_message()
                         .to_signature(self.full_id().signing_private_key())?;
                     self.send_direct_message(peer_id, direct_msg);
                     Ok(())
