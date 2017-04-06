@@ -175,7 +175,7 @@ impl NodeBuilder {
                     .map_or(State::Terminated, State::Bootstrapping)
         };
 
-        StateMachine::new(init, outbox, None)
+        StateMachine::new(init, outbox, None).1
     }
 }
 
