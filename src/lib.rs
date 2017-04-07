@@ -65,7 +65,7 @@
 //! let (sender, receiver) = mpsc::channel::<Event>();
 //! let full_id = FullId::new(); // Generate new keys.
 //! # #[cfg(not(feature = "use-mock-crust"))]
-//! let client = Client::new(sender, Some(full_id)).unwrap();
+//! let client = Client::new(sender, Some(full_id), None).unwrap();
 //! ```
 //!
 //! Messages can be sent using the methods of `client`, and received as `Event`s from the
@@ -80,8 +80,7 @@
 //! # #![allow(unused)]
 //! use routing::Node;
 //!
-//! let min_section_size = 8;
-//! let node = Node::builder().create(min_section_size).unwrap();
+//! let node = Node::builder().create().unwrap();
 //! ```
 //!
 //! Upon creation, the node will first connect to the network as a client. Once it has client
@@ -194,6 +193,9 @@ pub const TYPE_TAG_DNS_PACKET: u64 = 5;
 
 /// The quorum, as a percentage of the number of members of the authority.
 pub const QUORUM: usize = 51;
+
+/// The minimal section size.
+pub const MIN_SECTION_SIZE: usize = 8;
 
 pub use cache::{Cache, NullCache};
 pub use client::Client;

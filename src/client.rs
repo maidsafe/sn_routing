@@ -17,6 +17,7 @@
 
 #[cfg(feature = "use-mock-crust")]
 use BootstrapConfig;
+use MIN_SECTION_SIZE;
 use action::Action;
 use cache::NullCache;
 use crust::Config;
@@ -65,7 +66,6 @@ pub struct Client {
 
 impl Client {
     fn make_state_machine(keys: Option<FullId>,
-                          min_section_size: usize,
                           outbox: &mut EventBox,
                           config: Option<Config>)
                           -> (RoutingActionSender, StateMachine) {
@@ -73,7 +73,7 @@ impl Client {
         let full_id = keys.unwrap_or_else(FullId::new);
 
         StateMachine::new(move |crust_service, timer, _outbox2| {
-            states::Bootstrapping::new(cache, true, crust_service, full_id, min_section_size, timer)
+            states::Bootstrapping::new(cache, true, crust_service, full_id, MIN_SECTION_SIZE, timer)
                 .map_or(State::Terminated, State::Bootstrapping)
         },
                           outbox,
@@ -409,8 +409,7 @@ impl Client {
     /// exists to ensure that the client cannot choose its `ClientAuthority`.
     pub fn new(event_sender: Sender<Event>,
                keys: Option<FullId>,
-               config: Option<Config>,
-               min_section_size: usize)
+               config: Option<Config>)
                -> Result<Client, RoutingError> {
         rust_sodium::init(); // enable shared global (i.e. safe to multithread now)
 
@@ -421,7 +420,7 @@ impl Client {
             // start the handler for routing with a restriction to become a full node
             let mut event_buffer = EventBuf::new();
             let (action_sender, mut machine) =
-                Self::make_state_machine(keys, min_section_size, &mut event_buffer, config);
+                Self::make_state_machine(keys, &mut event_buffer, config);
 
             for ev in event_buffer.take_all() {
                 unwrap!(event_sender.send(ev));
@@ -480,13 +479,9 @@ impl Client {
 #[cfg(feature = "use-mock-crust")]
 impl Client {
     /// Create a new `Client` for testing with mock crust.
-    pub fn new(keys: Option<FullId>,
-               config: Option<Config>,
-               min_section_size: usize)
-               -> Result<Client, RoutingError> {
+    pub fn new(keys: Option<FullId>, config: Option<Config>) -> Result<Client, RoutingError> {
         let mut event_buffer = EventBuf::new();
-        let (_, machine) =
-            Self::make_state_machine(keys, min_section_size, &mut event_buffer, config);
+        let (_, machine) = Self::make_state_machine(keys, &mut event_buffer, config);
 
         let (tx, rx) = channel();
 
