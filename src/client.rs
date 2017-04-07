@@ -15,7 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#[cfg(feature = "use-mock-crust")]
 use BootstrapConfig;
 use MIN_SECTION_SIZE;
 use action::Action;
@@ -456,6 +455,14 @@ impl Client {
         let (result_tx, result_rx) = channel();
         self.action_sender
             .send(Action::Name { result_tx: result_tx })?;
+        Ok(result_rx.recv()?)
+    }
+
+    /// Returns the bootstrap config that this client was created with.
+    pub fn bootstrap_config(&self) -> Result<BootstrapConfig, InterfaceError> {
+        let (result_tx, result_rx) = channel();
+        self.action_sender
+            .send(Action::Config { result_tx: result_tx })?;
         Ok(result_rx.recv()?)
     }
 
