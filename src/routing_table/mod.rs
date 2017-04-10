@@ -160,26 +160,6 @@ impl<'a, T: 'a + Binary + Clone + Copy + Default + Hash + Xorable> Iterator for 
 }
 
 
-// Used when removal of a contact triggers the need to merge two or more sections.  Sent between all
-// members of all merging sections, but not peers outwith the new section. Contains all sections in
-// the routing table of nodes with the sender prefix.
-#[derive(Clone, Debug, PartialEq)]
-pub struct OwnMergeDetails<T: Binary + Clone + Copy + Default + Hash + Xorable> {
-    pub sender_prefix: Prefix<T>,
-    pub merge_version: u64,
-    pub sections: Sections<T>,
-}
-
-
-
-// Used once merging our own section has completed to send to peers outwith the new section
-#[derive(Clone, Debug, PartialEq)]
-pub struct OtherMergeDetails<T: Binary + Clone + Copy + Default + Hash + Xorable> {
-    pub versioned_prefix: VersionedPrefix<T>,
-    pub section: BTreeSet<T>,
-}
-
-
 
 // Details returned by a successful `RoutingTable::remove()`.
 #[derive(Debug)]
@@ -200,7 +180,8 @@ pub enum OwnMergeState<T: Binary + Clone + Copy + Default + Hash + Xorable> {
     // and the merge details they each need to receive (the new prefix and merged section).
     Completed {
         targets: BTreeSet<Prefix<T>>,
-        merge_details: OtherMergeDetails<T>,
+        versioned_prefix: VersionedPrefix<T>,
+        section: BTreeSet<T>,
     },
     // The merge has already completed, implying that no further action by the caller is required.
     AlreadyMerged,
@@ -736,63 +717,46 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         true
     }
 
-    /// Returns the details that need to be sent to the sibling section in case of a merge.
-    pub fn merge_details(&self) -> OwnMergeDetails<T> {
-        let merge_prefix = self.our_prefix.popped();
-        let version = self.all_sections_iter()
-            .filter(|&(pfx, _)| pfx.extends(&merge_prefix))
-            .map(|(_, (v, _))| v + 1)
-            .max()
-            .unwrap_or(0);
-        OwnMergeDetails {
-            sender_prefix: self.our_prefix,
-            merge_version: version,
-            sections: self.all_sections(),
-        }
-    }
-
     /// When a merge of our own section is triggered (either from our own section or a neighbouring
     /// one) this function handles the incoming merge details from the peers within the merging
     /// sections.
     ///
     /// The actual merge of the section is only done once all expected merging sections have
     /// provided details.  See the docs for `OwnMergeState` for full details of the return value.
-    pub fn merge_own_section(&mut self,
-                             merge_details: OwnMergeDetails<T>)
-                             -> (OwnMergeState<T>, Vec<T>) {
-        let merge_prefix = merge_details.sender_prefix.popped();
+    pub fn merge_own_section<I>(&mut self,
+                                merge_ver_pfx: VersionedPrefix<T>,
+                                ver_pfxs: I)
+                                -> (OwnMergeState<T>, Vec<T>)
+        where I: IntoIterator<Item = VersionedPrefix<T>>
+    {
         // TODO: Return an error if they are not compatible instead?
-        if !self.our_prefix.is_compatible(&merge_prefix) ||
-           self.our_prefix.bit_count() != merge_prefix.bit_count() + 1 ||
-           self.our_prefix == merge_details.sender_prefix {
+        if !self.our_prefix.is_compatible(merge_ver_pfx.prefix()) ||
+           self.our_prefix.bit_count() != merge_ver_pfx.prefix().bit_count() + 1 {
             debug!("{:?} Attempt to call merge_own_section() for an already merged prefix {:?}",
                    self.our_name,
-                   merge_prefix);
+                   merge_ver_pfx);
             return (OwnMergeState::AlreadyMerged, vec![]);
         }
-        self.merge(&merge_prefix.with_version(merge_details.merge_version));
-        let dropped_names = merge_details
-            .sections
+        self.merge(&merge_ver_pfx);
+        let dropped_names = ver_pfxs
             .into_iter()
-            .flat_map(|(prefix, (version, _))| self.add_prefix(prefix.with_version(version)))
+            .flat_map(|ver_pfx| self.add_prefix(ver_pfx))
             .collect();
 
         self.add_missing_prefixes();
         // The update needs to be sent to all neighbouring sections. However, while those are
         // merging/splitting, our own section might not agree on their prefixes and the message can
         // fail to accumulate. So also include results of flipping one bit in the `merge_prefix`.
+        let (merge_pfx, _) = merge_ver_pfx.into();
         let targets = self.sections
             .keys()
             .cloned()
-            .chain((0..merge_prefix.bit_count()).map(|i| merge_prefix.with_flipped_bit(i)))
+            .chain((0..merge_pfx.bit_count()).map(|i| merge_pfx.with_flipped_bit(i)))
             .collect();
-        let other_details = OtherMergeDetails {
-            versioned_prefix: self.our_versioned_prefix(),
-            section: self.our_section().clone(),
-        };
         (OwnMergeState::Completed {
              targets: targets,
-             merge_details: other_details,
+             versioned_prefix: self.our_versioned_prefix(),
+             section: self.our_section().clone(),
          },
          dropped_names)
     }
@@ -803,24 +767,24 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// The appropriate targets (all contacts from `merge_details.sections` which are not currently
     /// held in the routing table) are returned so the caller can establish connections to these
     /// peers and subsequently add them.
-    pub fn merge_other_section(&mut self, merge_details: OtherMergeDetails<T>) -> BTreeSet<T> {
-        if self.our_prefix
-               .is_compatible(merge_details.versioned_prefix.prefix()) {
+    pub fn merge_other_section<I>(&mut self, ver_pfx: VersionedPrefix<T>, members: I) -> BTreeSet<T>
+        where I: IntoIterator<Item = T>
+    {
+        if self.our_prefix.is_compatible(ver_pfx.prefix()) {
             error!("{:?} Attempt to merge other section {:?} when our prefix is {:?}",
                    self.our_name,
-                   merge_details.versioned_prefix.prefix(),
+                   ver_pfx.prefix(),
                    self.our_prefix);
             return BTreeSet::new();
         }
-        self.merge(&merge_details.versioned_prefix);
+        self.merge(&ver_pfx);
         // Establish list of provided contacts which are currently missing from our table.
         self.sections
-            .get(merge_details.versioned_prefix.prefix())
+            .get(ver_pfx.prefix())
             .map_or_else(BTreeSet::new, |&(_, ref section)| {
-                merge_details
-                    .section
-                    .difference(section)
-                    .cloned()
+                members
+                    .into_iter()
+                    .filter(|name| !section.contains(name))
                     .collect()
             })
     }

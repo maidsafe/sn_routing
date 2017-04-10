@@ -40,8 +40,8 @@ use peer_manager::{ConnectionInfoPreparedResult, Peer, PeerManager, PeerState,
 use rand::{self, Rng};
 use resource_proof::ResourceProof;
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
-use routing_table::{Authority, OtherMergeDetails, OwnMergeState, Prefix, RemovalDetails,
-                    RoutingTable, VersionedPrefix, Xorable};
+use routing_table::{Authority, OwnMergeState, Prefix, RemovalDetails, RoutingTable,
+                    VersionedPrefix, Xorable};
 use routing_table::Error as RoutingTableError;
 use rust_sodium::crypto::{box_, sign};
 use rust_sodium::crypto::hash::sha256;
@@ -2411,7 +2411,8 @@ impl Node {
             (OwnMergeState::AlreadyMerged, _dropped_peers, _needed_peers) => (),
             (OwnMergeState::Completed {
                  targets,
-                 mut merge_details,
+                 versioned_prefix,
+                 ..
              },
              dropped_peers,
              needed_peers) => {
@@ -2419,7 +2420,7 @@ impl Node {
                     self.disconnect_peer(&peer_id, Some(outbox));
                 }
                 // TODO - the event should maybe only fire once all new connections have been made?
-                outbox.send_event(Event::SectionMerge(*merge_details.versioned_prefix.prefix()));
+                outbox.send_event(Event::SectionMerge(*versioned_prefix.prefix()));
                 info!("{:?} Own section merge completed. Prefixes: {:?}",
                       self,
                       self.routing_table().prefixes());
@@ -2429,10 +2430,9 @@ impl Node {
 
                 // Send an `OtherSectionMerge` containing just the prefix to ensure accumulation,
                 // followed by a second one with the full details of the our section.
-                merge_details.section.clear();
-                self.send_other_section_merge(targets.clone(), merge_details.clone());
-                merge_details.section = our_merged_section.clone();
-                self.send_other_section_merge(targets, merge_details);
+                self.send_other_section_merge(targets.clone(), versioned_prefix, BTreeSet::new());
+                let section = our_merged_section.clone();
+                self.send_other_section_merge(targets, versioned_prefix, section);
 
                 let own_name = *self.name();
                 for needed in &needed_peers {
@@ -3142,11 +3142,12 @@ impl Node {
 
     fn send_other_section_merge(&mut self,
                                 targets: BTreeSet<Prefix<XorName>>,
-                                merge_details: OtherMergeDetails<XorName>) {
-        let section = self.peer_mgr.get_pub_ids(&merge_details.section);
+                                ver_pfx: VersionedPrefix<XorName>,
+                                section: BTreeSet<XorName>) {
+        let section = self.peer_mgr.get_pub_ids(&section);
         let version = self.routing_table().our_version();
         let content = MessageContent::OtherSectionMerge(section, version);
-        let src = Authority::PrefixSection(*merge_details.versioned_prefix.prefix());
+        let src = Authority::PrefixSection(*ver_pfx.prefix());
         for target in &targets {
             let dst = Authority::PrefixSection(*target);
             debug!("{:?} Sending OtherSectionMerge from {:?} to {:?} with content {:?}",

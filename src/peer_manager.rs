@@ -22,8 +22,8 @@ use itertools::Itertools;
 use log::LogLevel;
 use rand;
 use resource_proof::ResourceProof;
-use routing_table::{Authority, OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix,
-                    RemovalDetails, RoutingTable, VersionedPrefix};
+use routing_table::{Authority, OwnMergeState, Prefix, RemovalDetails, RoutingTable,
+                    VersionedPrefix};
 use routing_table::Error as RoutingTableError;
 use rust_sodium::crypto::hash::sha256;
 use rust_sodium::crypto::sign;
@@ -861,15 +861,11 @@ impl PeerManager {
 
     /// Returns the sender prefix and sections to prepare a merge.
     pub fn merge_details(&self) -> (Prefix<XorName>, SectionMap) {
-        let merge_details = self.routing_table.merge_details();
-        let sections = merge_details
-            .sections
-            .into_iter()
-            .map(|(prefix, (v, members))| {
-                     (prefix.with_version(v), self.get_pub_ids(&members).into_iter().collect())
-                 })
+        let sections = self.routing_table
+            .all_sections_iter()
+            .map(|(prefix, (v, members))| (prefix.with_version(v), self.get_pub_ids(members)))
             .collect();
-        (merge_details.sender_prefix, sections)
+        (*self.routing_table.our_prefix(), sections)
     }
 
     /// Returns the `OwnMergeState` from `RoutingTable` which defines what further action needs to
@@ -888,35 +884,21 @@ impl PeerManager {
             .cloned()
             .collect();
 
-        let sections_as_names = sections
-            .into_iter()
-            .map(|(ver_pfx, members)| {
-                     let (pfx, version) = ver_pfx.into();
-                     let names: BTreeSet<_> = members
-                         .into_iter()
-                         .map(|pub_id| *pub_id.name())
-                         .collect();
-                     (pfx, (version, names))
-                 })
-            .collect();
-
-        let own_merge_details = OwnMergeDetails {
-            sender_prefix: sender_prefix,
-            merge_version: merge_version,
-            sections: sections_as_names,
-        };
+        let ver_pfxs = sections.keys().cloned();
         let mut expected_peers = mem::replace(&mut self.expected_peers, HashMap::new());
-        expected_peers.extend(own_merge_details
-                                  .sections
-                                  .values()
-                                  .flat_map(|&(_, ref section)| section.iter())
-                                  .filter_map(|name| if self.routing_table.has(name) {
+        expected_peers.extend(sections
+                                  .iter()
+                                  .flat_map(|(_, members)| members)
+                                  .filter_map(|pub_id| if self.routing_table
+                                                     .has(pub_id.name()) {
                                                   None
                                               } else {
-                                                  Some((*name, Instant::now()))
+                                                  Some((*pub_id.name(), Instant::now()))
                                               }));
         self.expected_peers = expected_peers;
-        let (merge_state, dropped) = self.routing_table.merge_own_section(own_merge_details);
+        let (merge_state, dropped) =
+            self.routing_table
+                .merge_own_section(sender_prefix.popped().with_version(merge_version), ver_pfxs);
         let ids_to_drop = dropped
             .into_iter()
             .filter_map(|name| self.remove_name(name))
@@ -930,14 +912,9 @@ impl PeerManager {
                                -> BTreeSet<PublicId> {
         self.remove_expired();
 
-        let merge_details = OtherMergeDetails {
-            versioned_prefix: ver_pfx,
-            section: section
-                .iter()
-                .map(|public_id| *public_id.name())
-                .collect(),
-        };
-        let needed_names = self.routing_table.merge_other_section(merge_details);
+        let needed_names =
+            self.routing_table
+                .merge_other_section(ver_pfx, section.iter().map(PublicId::name).cloned());
         self.expected_peers
             .extend(needed_names.iter().map(|name| (*name, Instant::now())));
         section
