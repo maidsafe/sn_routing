@@ -282,7 +282,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                                    sections: BTreeMap<Prefix<T>, BTreeSet<T>>)
                                    -> Result<(), Error> {
         let mut temp_rt = RoutingTable::new(self.our_name, self.min_section_size);
-        temp_rt.add_prefixes(sections.keys().map(|pfx| (0, *pfx)).collect())?;
+        temp_rt
+            .add_prefixes(sections.keys().map(|pfx| (0, *pfx)).collect())?;
         for peer in sections.values().flat_map(BTreeSet::iter) {
             let _ = temp_rt.add(*peer);
         }

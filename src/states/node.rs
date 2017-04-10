@@ -2383,16 +2383,17 @@ impl Node {
             let our_merged_section: BTreeSet<_> = our_sections
                 .iter()
                 .chain(their_sections.iter())
-                .filter(|&(prefix, _)| prefix.popped() == self.our_prefix().popped())
+                .filter(|&(prefix, _)| prefix.extends(&merge_prefix))
                 .flat_map(|(_, &(_, ref peers))| peers)
                 .map(|peer| *peer.name())
                 .collect();
-            let version = if let (Some(&(v0, _)), Some(&(v1, _))) =
-                (their_sections.get(&sender_prefix), their_sections.get(&sender_prefix.sibling())) {
-                cmp::max(v0, v1) + 1
-            } else {
-                return Err(RoutingError::InvalidMessage);
-            };
+            let version = our_sections
+                .iter()
+                .chain(their_sections.iter())
+                .filter(|&(prefix, _)| prefix.extends(&merge_prefix))
+                .map(|(_, &(version, _))| version + 1)
+                .max()
+                .unwrap_or(1);
             self.process_own_section_merge(their_prefix,
                                            version,
                                            their_sections,
