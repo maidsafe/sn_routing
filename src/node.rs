@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use MIN_SECTION_SIZE;
 use action::Action;
 use cache::{Cache, NullCache};
 use client_error::ClientError;
@@ -125,7 +126,7 @@ impl NodeBuilder {
     /// request a new name and integrate itself into the network using the new name.
     ///
     /// The initial `Node` object will have newly generated keys.
-    pub fn create(self, min_section_size: usize) -> Result<Node, RoutingError> {
+    pub fn create(self) -> Result<Node, RoutingError> {
         // If we're not in a test environment where we might want to manually seed the crypto RNG
         // then seed randomly.
         #[cfg(not(feature = "use-mock-crust"))]
@@ -134,7 +135,7 @@ impl NodeBuilder {
         let mut ev_buffer = EventBuf::new();
 
         // start the handler for routing without a restriction to become a full node
-        let machine = self.make_state_machine(min_section_size, &mut ev_buffer);
+        let machine = self.make_state_machine(&mut ev_buffer);
         let (tx, rx) = channel();
 
         Ok(Node {
@@ -145,13 +146,13 @@ impl NodeBuilder {
            })
     }
 
-    fn make_state_machine(self, min_section_size: usize, outbox: &mut EventBox) -> StateMachine {
+    fn make_state_machine(self, outbox: &mut EventBox) -> StateMachine {
         let full_id = FullId::new();
         let init = move |crust_service, timer, outbox2: &mut EventBox| if self.first {
             if let Some(state) = states::Node::first(self.cache,
                                                      crust_service,
                                                      full_id,
-                                                     min_section_size,
+                                                     MIN_SECTION_SIZE,
                                                      timer) {
                 State::Node(state)
             } else {
@@ -170,12 +171,12 @@ impl NodeBuilder {
                                        false,
                                        crust_service,
                                        full_id,
-                                       min_section_size,
+                                       MIN_SECTION_SIZE,
                                        timer)
                     .map_or(State::Terminated, State::Bootstrapping)
         };
 
-        StateMachine::new(init, outbox, None)
+        StateMachine::new(init, outbox, None).1
     }
 }
 

@@ -206,7 +206,10 @@ pub enum Transition {
 impl StateMachine {
     // Construct a new StateMachine by passing a function returning the initial
     // state.
-    pub fn new<F>(init_state: F, outbox: &mut EventBox, config: Option<Config>) -> Self
+    pub fn new<F>(init_state: F,
+                  outbox: &mut EventBox,
+                  config: Option<Config>)
+                  -> (RoutingActionSender, Self)
         where F: FnOnce(Service, Timer, &mut EventBox) -> State
     {
         let (category_tx, category_rx) = mpsc::channel();
@@ -230,7 +233,7 @@ impl StateMachine {
         };
         crust_service.start_service_discovery();
 
-        let timer = Timer::new(action_sender);
+        let timer = Timer::new(action_sender.clone());
 
         let state = init_state(crust_service, timer, outbox);
         let is_running = match state {
@@ -238,13 +241,15 @@ impl StateMachine {
             _ => true,
         };
 
-        StateMachine {
+        let machine = StateMachine {
             category_rx: category_rx,
             crust_rx: crust_rx,
             action_rx: action_rx,
             state: state,
             is_running: is_running,
-        }
+        };
+
+        (action_sender, machine)
     }
 
     /// Returns the `crust::Config` associated with the `Service` (if any).

@@ -89,11 +89,15 @@ mod implementation {
             loop {
                 let r = if let Some(t) = deadlines.keys().next() {
                     let now = Instant::now();
-                    let duration = *t - now;
-                    match rx.recv_timeout(duration) {
-                        Ok(d) => Some(d),
-                        Err(RecvTimeoutError::Timeout) => None,
-                        Err(RecvTimeoutError::Disconnected) => break,
+                    if *t > now {
+                        let duration = *t - now;
+                        match rx.recv_timeout(duration) {
+                            Ok(d) => Some(d),
+                            Err(RecvTimeoutError::Timeout) => None,
+                            Err(RecvTimeoutError::Disconnected) => break,
+                        }
+                    } else {
+                        None
                     }
                 } else {
                     match rx.recv() {
@@ -204,6 +208,20 @@ mod implementation {
 
             thread::sleep(interval + Duration::from_millis(100));
             check_no_events_received();
+        }
+
+        #[test]
+        fn heavy_duty_time_out() {
+            let (action_sender, _action_receiver) = mpsc::channel();
+            let (category_sender, _category_receiver) = mpsc::channel();
+            let routing_event_category = MaidSafeEventCategory::Routing;
+            let sender = RoutingActionSender::new(action_sender,
+                                                  routing_event_category,
+                                                  category_sender.clone());
+            let timer = Timer::new(sender);
+            for _ in 0..1000 {
+                let _ = timer.schedule(Duration::new(0, 3000));
+            }
         }
     }
 }
