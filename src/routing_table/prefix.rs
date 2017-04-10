@@ -23,6 +23,31 @@ use std::hash::{Hash, Hasher};
 #[cfg(test)]
 use std::str::FromStr;
 
+/// A prefix with section version.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash, Deserialize, Serialize)]
+pub struct VersionedPrefix<T: Clone + Copy + Default + Binary + Xorable> {
+    prefix: Prefix<T>,
+    version: u64,
+}
+
+impl<T: Clone + Copy + Default + Binary + Xorable> VersionedPrefix<T> {
+    /// Returns the prefix.
+    pub fn prefix(&self) -> &Prefix<T> {
+        &self.prefix
+    }
+
+    /// Returns the version number.
+    pub fn version(&self) -> u64 {
+        self.version
+    }
+}
+
+impl<T: Clone + Copy + Default + Binary + Xorable> Into<(Prefix<T>, u64)> for VersionedPrefix<T> {
+    fn into(self) -> (Prefix<T>, u64) {
+        (self.prefix, self.version)
+    }
+}
+
 /// A section prefix, i.e. a sequence of bits specifying the part of the network's name space
 /// consisting of all names that start with this sequence.
 #[derive(Clone, Copy, Default, Eq, Deserialize, Serialize)]
@@ -39,6 +64,14 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
         Prefix {
             bit_count: cmp::min(bit_count, T::bit_len()) as u16,
             name: name.set_remaining(bit_count, false),
+        }
+    }
+
+    /// Returns a `VersionedPrefix` with this prefix and the given version number.
+    pub fn with_version(self, version: u64) -> VersionedPrefix<T> {
+        VersionedPrefix {
+            prefix: self,
+            version: version,
         }
     }
 

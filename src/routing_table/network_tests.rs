@@ -75,7 +75,9 @@ impl Network {
             unwrap!(new_table.add_prefixes(close_peer
                                                .all_sections()
                                                .into_iter()
-                                               .map(|(pfx, (version, _))| (version, pfx))
+                                               .map(|(pfx, (version, _))| {
+                                                        pfx.with_version(version)
+                                                    })
                                                .collect()));
         }
 
@@ -85,23 +87,22 @@ impl Network {
                 trace!("failed to add node with error {:?}", e);
             }
             if node.should_split() {
-                let _ = split_prefixes.insert((node.our_version(), *node.our_prefix()));
+                let _ = split_prefixes.insert(node.our_versioned_prefix());
             }
             if let Err(e) = new_table.add(*node.our_name()) {
                 trace!("failed to add node into new with error {:?}", e);
             }
             if new_table.should_split() {
-                let prefix = *new_table.our_prefix();
-                let version = new_table.our_version();
-                let _ = split_prefixes.insert((version, prefix));
-                let _ = new_table.split(prefix, version);
+                let ver_pfx = new_table.our_versioned_prefix();
+                let _ = split_prefixes.insert(ver_pfx);
+                let _ = new_table.split(ver_pfx);
             }
         }
 
         assert!(self.nodes.insert(name, new_table).is_none());
-        for &(split_version, split_prefix) in &split_prefixes {
+        for &ver_pfx in &split_prefixes {
             for node in self.nodes.values_mut() {
-                let _ = node.split(split_prefix, split_version);
+                let _ = node.split(ver_pfx);
             }
         }
     }

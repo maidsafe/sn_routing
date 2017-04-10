@@ -117,7 +117,7 @@ pub use self::authority::Authority;
 pub use self::error::Error;
 #[cfg(any(test, feature = "use-mock-crust"))]
 pub use self::network_tests::verify_network_invariant;
-pub use self::prefix::Prefix;
+pub use self::prefix::{Prefix, VersionedPrefix};
 pub use self::xorable::Xorable;
 use itertools::Itertools;
 use std::{iter, mem};
@@ -175,9 +175,8 @@ pub struct OwnMergeDetails<T: Binary + Clone + Copy + Default + Hash + Xorable> 
 // Used once merging our own section has completed to send to peers outwith the new section
 #[derive(Clone, Debug, PartialEq)]
 pub struct OtherMergeDetails<T: Binary + Clone + Copy + Default + Hash + Xorable> {
-    pub prefix: Prefix<T>,
+    pub versioned_prefix: VersionedPrefix<T>,
     pub section: BTreeSet<T>,
-    pub version: u64,
 }
 
 
@@ -251,11 +250,12 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     ///
     /// Called once a node has been approved by its own section and is given its peers' tables.
     /// Expects the current sections to be empty.
-    pub fn add_prefixes(&mut self, prefixes: Vec<(u64, Prefix<T>)>) -> Result<(), Error> {
+    pub fn add_prefixes(&mut self, ver_pfxs: Vec<VersionedPrefix<T>>) -> Result<(), Error> {
         if !self.sections.is_empty() {
             return Err(Error::InvariantViolation);
         }
-        for (version, prefix) in prefixes {
+        for ver_pfx in ver_pfxs {
+            let (prefix, version) = ver_pfx.into();
             if prefix.matches(&self.our_name) {
                 self.our_prefix = prefix;
                 self.our_version = version;
@@ -283,14 +283,14 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                                    -> Result<(), Error> {
         let mut temp_rt = RoutingTable::new(self.our_name, self.min_section_size);
         temp_rt
-            .add_prefixes(sections.keys().map(|pfx| (0, *pfx)).collect())?;
+            .add_prefixes(sections.keys().map(|pfx| pfx.with_version(0)).collect())?;
         for peer in sections.values().flat_map(BTreeSet::iter) {
             let _ = temp_rt.add(*peer);
         }
         temp_rt.check_invariant(false, true)
     }
 
-    /// Returns the `Prefix` of our section
+    /// Returns the `Prefix` of our section.
     pub fn our_prefix(&self) -> &Prefix<T> {
         &self.our_prefix
     }
@@ -298,6 +298,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// Returns the version of our section.
     pub fn our_version(&self) -> u64 {
         self.our_version
+    }
+
+    /// Returns the `VersionedPrefix` of our section.
+    pub fn our_versioned_prefix(&self) -> VersionedPrefix<T> {
+        self.our_prefix.with_version(self.our_version)
     }
 
     /// Returns our own section, including our own name.
@@ -593,8 +598,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// more (i.e. only differ in one bit from our own prefix), they are removed and those contacts
     /// are returned.  If the split is happening to our own section, our new prefix is returned in
     /// the optional field.
-    pub fn split(&mut self, prefix: Prefix<T>, version: u64) -> (Vec<T>, Option<Prefix<T>>) {
+    pub fn split(&mut self, ver_pfx: VersionedPrefix<T>) -> (Vec<T>, Option<Prefix<T>>) {
         let mut result = vec![];
+        let (prefix, version) = ver_pfx.into();
         if prefix == self.our_prefix {
             result = self.split_our_section(version);
             return (result, Some(self.our_prefix));
@@ -632,7 +638,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// Adds the given prefix to the routing table, merging or splitting if necessary. Returns the
     /// entries that have been dropped. If the version is lower than the one in the routing table,
     /// the change is not applied.
-    pub fn add_prefix(&mut self, prefix: Prefix<T>, version: u64) -> Vec<T> {
+    pub fn add_prefix(&mut self, ver_pfx: VersionedPrefix<T>) -> Vec<T> {
+        let (prefix, version) = ver_pfx.into();
         // If the prefix isn't relevant to our RT, reject the change.
         if !prefix.is_compatible(&self.our_prefix) && !prefix.is_neighbour(&self.our_prefix) {
             return vec![];
@@ -763,11 +770,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                    merge_prefix);
             return (OwnMergeState::AlreadyMerged, vec![]);
         }
-        self.merge(&merge_prefix, merge_details.merge_version);
+        self.merge(&merge_prefix.with_version(merge_details.merge_version));
         let dropped_names = merge_details
             .sections
             .into_iter()
-            .flat_map(|(prefix, (version, _))| self.add_prefix(prefix, version))
+            .flat_map(|(prefix, (version, _))| self.add_prefix(prefix.with_version(version)))
             .collect();
 
         self.add_missing_prefixes();
@@ -780,8 +787,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             .chain((0..merge_prefix.bit_count()).map(|i| merge_prefix.with_flipped_bit(i)))
             .collect();
         let other_details = OtherMergeDetails {
-            prefix: merge_prefix,
-            version: self.our_version,
+            versioned_prefix: self.our_versioned_prefix(),
             section: self.our_section().clone(),
         };
         (OwnMergeState::Completed {
@@ -798,17 +804,18 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// held in the routing table) are returned so the caller can establish connections to these
     /// peers and subsequently add them.
     pub fn merge_other_section(&mut self, merge_details: OtherMergeDetails<T>) -> BTreeSet<T> {
-        if self.our_prefix.is_compatible(&merge_details.prefix) {
+        if self.our_prefix
+               .is_compatible(merge_details.versioned_prefix.prefix()) {
             error!("{:?} Attempt to merge other section {:?} when our prefix is {:?}",
                    self.our_name,
-                   merge_details.prefix,
+                   merge_details.versioned_prefix.prefix(),
                    self.our_prefix);
             return BTreeSet::new();
         }
-        self.merge(&merge_details.prefix, merge_details.version);
+        self.merge(&merge_details.versioned_prefix);
         // Establish list of provided contacts which are currently missing from our table.
         self.sections
-            .get(&merge_details.prefix)
+            .get(merge_details.versioned_prefix.prefix())
             .map_or_else(BTreeSet::new, |&(_, ref section)| {
                 merge_details
                     .section
@@ -1036,16 +1043,18 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
     }
 
-    fn merge(&mut self, new_prefix: &Prefix<T>, version: u64) {
-        if new_prefix.extends(&self.our_prefix) ||
-           self.sections.keys().any(|pfx| new_prefix.extends(pfx)) {
+    fn merge(&mut self, new_ver_pfx: &VersionedPrefix<T>) {
+        if new_ver_pfx.prefix().extends(&self.our_prefix) ||
+           self.sections
+               .keys()
+               .any(|pfx| new_ver_pfx.prefix().extends(pfx)) {
             return; // Not a merge!
         }
-        let dropped_names = self.add_prefix(*new_prefix, version);
+        let dropped_names = self.add_prefix(*new_ver_pfx);
         if !dropped_names.is_empty() {
             error!("{:?} Dropped names when merging {:?}: {:?}",
                    self.our_name,
-                   new_prefix,
+                   new_ver_pfx,
                    dropped_names);
         }
     }
@@ -1316,7 +1325,7 @@ mod tests {
         expected_rt_len += 1;
         let mut expected_own_prefix = Prefix::new(0, our_name);
         assert_eq!(*table.our_prefix(), expected_own_prefix);
-        let (nodes_to_drop, our_new_prefix) = table.split(expected_own_prefix, 0);
+        let (nodes_to_drop, our_new_prefix) = table.split(expected_own_prefix.with_version(0));
         expected_own_prefix = Prefix::new(1, our_name);
         assert_eq!(*table.our_prefix(), expected_own_prefix);
         assert_eq!(unwrap!(our_new_prefix), expected_own_prefix);
@@ -1339,7 +1348,7 @@ mod tests {
         assert!(table.should_split());
         expected_rt_len += 1;
         assert_eq!(*table.our_prefix(), expected_own_prefix);
-        let (nodes_to_drop, our_new_prefix) = table.split(expected_own_prefix, 1);
+        let (nodes_to_drop, our_new_prefix) = table.split(expected_own_prefix.with_version(1));
         expected_own_prefix = Prefix::new(2, our_name);
         assert_eq!(*table.our_prefix(), expected_own_prefix);
         assert_eq!(unwrap!(our_new_prefix), expected_own_prefix);
@@ -1355,7 +1364,8 @@ mod tests {
         assert!(!table.should_split());
         expected_rt_len += 1;
         assert_eq!(*table.our_prefix(), expected_own_prefix);
-        let (nodes_to_drop, our_new_prefix) = table.split(Prefix::new(1, section_11_name), 1);
+        let (nodes_to_drop, our_new_prefix) =
+            table.split(Prefix::new(1, section_11_name).with_version(1));
         assert_eq!(*table.our_prefix(), expected_own_prefix);
         assert!(our_new_prefix.is_none());
         assert_eq!(nodes_to_drop.len(), table.min_split_size());
@@ -1383,7 +1393,8 @@ mod tests {
         assert!(!table.should_split());
         expected_rt_len += 1;
         assert_eq!(*table.our_prefix(), expected_own_prefix);
-        let (nodes_to_drop, our_new_prefix) = table.split(Prefix::new(2, section_011_name), 2);
+        let (nodes_to_drop, our_new_prefix) =
+            table.split(Prefix::new(2, section_011_name).with_version(2));
         assert_eq!(*table.our_prefix(), expected_own_prefix);
         assert!(our_new_prefix.is_none());
         assert!(nodes_to_drop.is_empty());
@@ -1399,7 +1410,7 @@ mod tests {
         expected_rt_len += 1;
         assert_eq!(*table.our_prefix(), expected_own_prefix);
         let (nodes_to_drop, our_new_prefix) =
-            table.split(expected_own_prefix, expected_own_prefix.bit_count() as u64);
+            table.split(expected_own_prefix.with_version(expected_own_prefix.bit_count() as u64));
         expected_own_prefix = Prefix::new(3, our_name);
         assert_eq!(*table.our_prefix(), expected_own_prefix);
         assert_eq!(unwrap!(our_new_prefix), expected_own_prefix);
@@ -1513,27 +1524,27 @@ mod tests {
         }
         assert_eq!(prefixes_from_strs(vec![""]), table.prefixes());
         assert_eq!(Vec::<u8>::new(),
-                   table.add_prefix(unwrap!(Prefix::from_str("01")), 2));
+                   table.add_prefix(unwrap!(Prefix::from_str("01")).with_version(2)));
         assert_eq!(prefixes_from_strs(vec!["1", "00", "01"]), table.prefixes());
         assert_eq!(Vec::<u8>::new(),
                    table
-                       .add_prefix(unwrap!(Prefix::from_str("111")), 4)
+                       .add_prefix(unwrap!(Prefix::from_str("111")).with_version(4))
                        .into_iter()
                        .sorted());
         assert_eq!(prefixes_from_strs(vec!["1", "00", "01"]), table.prefixes());
         assert_eq!(vec![0xc0, 0xd0, 0xe0, 0xf0u8],
                    table
-                       .add_prefix(unwrap!(Prefix::from_str("101")), 4)
+                       .add_prefix(unwrap!(Prefix::from_str("101")).with_version(4))
                        .into_iter()
                        .sorted());
         assert_eq!(prefixes_from_strs(vec!["101", "100", "01", "00"]),
                    table.prefixes());
         assert_eq!(Vec::<u8>::new(),
-                   table.add_prefix(unwrap!(Prefix::from_str("0")), 7));
+                   table.add_prefix(unwrap!(Prefix::from_str("0")).with_version(7)));
         assert_eq!(prefixes_from_strs(vec!["101", "11", "100", "0"]),
                    table.prefixes());
         assert_eq!(Vec::<u8>::new(),
-                   table.add_prefix(unwrap!(Prefix::from_str("")), 15));
+                   table.add_prefix(unwrap!(Prefix::from_str("")).with_version(15)));
         assert_eq!(prefixes_from_strs(vec![""]), table.prefixes());
     }
 
@@ -1548,12 +1559,12 @@ mod tests {
         let empty = Vec::<u8>::new();
 
         // Split into {0, 1}
-        assert_eq!(empty, table.add_prefix(prefix_str("0"), 1));
+        assert_eq!(empty, table.add_prefix(prefix_str("0").with_version(1)));
         assert_eq!(Some(1), table.section_version(&prefix_str("0")));
         assert_eq!(Some(0), table.section_version(&prefix_str("1")));
 
         // Split 0 into {00, 01}.
-        assert_eq!(empty, table.add_prefix(prefix_str("00"), 2));
+        assert_eq!(empty, table.add_prefix(prefix_str("00").with_version(2)));
         assert_eq!(Some(2), table.section_version(&prefix_str("00")));
         assert_eq!(Some(0), table.section_version(&prefix_str("01")));
         assert_eq!(Some(0), table.section_version(&prefix_str("1")));
@@ -1561,28 +1572,28 @@ mod tests {
         // Split into 1 into {10,11}, dropping the nodes in 11.
         assert_eq!(vec![0xc0, 0xd0, 0xe0, 0xf0u8],
                    table
-                       .add_prefix(prefix_str("10"), 2)
+                       .add_prefix(prefix_str("10").with_version(2))
                        .into_iter()
                        .sorted());
         assert_eq!(prefixes_from_strs(vec!["10", "01", "00"]), table.prefixes());
 
         // Simulate a missed update for the split from 10 to 100 and 101 and subsequent merge.
-        assert_eq!(empty, table.add_prefix(prefix_str("10"), 4));
+        assert_eq!(empty, table.add_prefix(prefix_str("10").with_version(4)));
         assert_eq!(Some(4), table.section_version(&prefix_str("10")));
 
         // RT shouldn't change if it now gets an update for prefix 100 v3.
-        assert_eq!(empty, table.add_prefix(prefix_str("100"), 3));
+        assert_eq!(empty, table.add_prefix(prefix_str("100").with_version(3)));
         assert_eq!(Some(4), table.section_version(&prefix_str("10")));
         assert_eq!(prefixes_from_strs(vec!["10", "01", "00"]), table.prefixes());
 
         // Similarly, none of these bogus updates should be accepted.
-        assert_eq!(empty, table.add_prefix(prefix_str(""), 0));
-        assert_eq!(empty, table.add_prefix(prefix_str("0"), 1));
-        assert_eq!(empty, table.add_prefix(prefix_str("101"), 3));
+        assert_eq!(empty, table.add_prefix(prefix_str("").with_version(0)));
+        assert_eq!(empty, table.add_prefix(prefix_str("0").with_version(1)));
+        assert_eq!(empty, table.add_prefix(prefix_str("101").with_version(3)));
         assert_eq!(prefixes_from_strs(vec!["10", "01", "00"]), table.prefixes());
 
         // Finally, adding an existing prefix (01) should update its version.
-        assert_eq!(empty, table.add_prefix(prefix_str("01"), 2));
+        assert_eq!(empty, table.add_prefix(prefix_str("01").with_version(2)));
         assert_eq!(Some(2), table.section_version(&prefix_str("01")));
     }
 

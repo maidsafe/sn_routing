@@ -41,7 +41,7 @@ use rand::{self, Rng};
 use resource_proof::ResourceProof;
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use routing_table::{Authority, OtherMergeDetails, OwnMergeState, Prefix, RemovalDetails,
-                    RoutingTable, Xorable};
+                    RoutingTable, VersionedPrefix, Xorable};
 use routing_table::Error as RoutingTableError;
 use rust_sodium::crypto::{box_, sign};
 use rust_sodium::crypto::hash::sha256;
@@ -1064,14 +1064,13 @@ impl Node {
                 self.handle_node_approval(&sections, outbox)
             }
             (SectionUpdate {
-                 prefix,
-                 version,
+                 versioned_prefix,
                  members,
              },
              Section(_),
-             PrefixSection(_)) => self.handle_section_update(prefix, version, members, outbox),
-            (SectionSplit(prefix, version, joining_node), PrefixSection(_), PrefixSection(_)) => {
-                self.handle_section_split(prefix, version, joining_node, outbox)
+             PrefixSection(_)) => self.handle_section_update(versioned_prefix, members, outbox),
+            (SectionSplit(ver_pfx, joining_node), PrefixSection(_), PrefixSection(_)) => {
+                self.handle_section_split(ver_pfx, joining_node, outbox)
             }
             (OwnSectionMerge(sections),
              PrefixSection(sender_prefix),
@@ -1081,7 +1080,7 @@ impl Node {
             (OtherSectionMerge(section, version),
              PrefixSection(merge_prefix),
              PrefixSection(_)) => {
-                self.handle_other_section_merge(merge_prefix, version, section, outbox)
+                self.handle_other_section_merge(merge_prefix.with_version(version), section, outbox)
             }
             (Ack(ack, _), _, _) => self.handle_ack_response(ack),
             (UserMessagePart {
@@ -1187,10 +1186,10 @@ impl Node {
 
         let mapped_sections = sections
             .iter()
-            .map(|(prefix, &(_, ref section))| {
+            .map(|(ver_pfx, section)| {
                      let names: BTreeSet<XorName> =
                          section.iter().map(|pub_id| *pub_id.name()).collect();
-                     (*prefix, names)
+                     (*ver_pfx.prefix(), names)
                  })
             .collect();
         if let Err(error) = self.routing_table()
@@ -1205,10 +1204,7 @@ impl Node {
         self.get_approval_timer_token = None;
         self.approval_progress_timer_token = None;
         if let Err(error) = self.peer_mgr
-               .add_prefixes(sections
-                                 .iter()
-                                 .map(|(pfx, &(v, _))| (v, *pfx))
-                                 .collect()) {
+               .add_prefixes(sections.keys().cloned().collect()) {
             info!("{:?} Received invalid prefixes in NodeApproval: {:?}. Restarting.",
                   self,
                   error);
@@ -1226,7 +1222,7 @@ impl Node {
         let our_prefix = *self.our_prefix();
         self.send_section_list_signature(our_prefix, None);
 
-        for &(_, ref section) in sections.values() {
+        for section in sections.values() {
             for pub_id in section.iter() {
                 if !self.routing_table().has(pub_id.name()) {
                     self.peer_mgr.expect_peer(pub_id);
@@ -1633,13 +1629,12 @@ impl Node {
         if !self.we_want_to_merge() && !self.they_want_to_merge() &&
            self.routing_table().should_split() {
             // i.e. the section should split
-            let our_prefix = *self.our_prefix();
-            let our_version = self.routing_table().our_version();
+            let our_ver_pfx = self.routing_table().our_versioned_prefix();
             // In the future we'll look to remove this restriction so we always call
             // `send_section_split()` here and also check whether another round of splitting is
             // required in `handle_section_split()` so splitting becomes recursive like merging.
-            if our_prefix.matches(public_id.name()) {
-                self.send_section_split(our_prefix, our_version, *public_id.name());
+            if our_ver_pfx.prefix().matches(public_id.name()) {
+                self.send_section_split(our_ver_pfx, *public_id.name());
             }
         } else {
             self.merge_if_necessary();
@@ -1702,8 +1697,7 @@ impl Node {
             .get_pub_ids(self.routing_table().our_section());
 
         let content = MessageContent::SectionUpdate {
-            prefix: *self.our_prefix(),
-            version: self.routing_table().our_version(),
+            versioned_prefix: self.routing_table().our_versioned_prefix(),
             members: members,
         };
 
@@ -2252,15 +2246,14 @@ impl Node {
     }
 
     fn handle_section_update(&mut self,
-                             prefix: Prefix<XorName>,
-                             version: u64,
+                             ver_pfx: VersionedPrefix<XorName>,
                              members: BTreeSet<PublicId>,
                              outbox: &mut EventBox)
                              -> Result<(), RoutingError> {
-        trace!("{:?} Got section update for {:?}", self, prefix);
+        trace!("{:?} Got section update for {:?}", self, ver_pfx);
 
         // Perform splits and merges that we missed, according to the section update.
-        for (name, peer_id) in self.peer_mgr.add_prefix(prefix, version) {
+        for (name, peer_id) in self.peer_mgr.add_prefix(ver_pfx) {
             self.disconnect_peer(&peer_id, Some(outbox));
             info!("{:?} Dropped {:?} from the routing table.", self, name);
         }
@@ -2268,13 +2261,14 @@ impl Node {
               self,
               self.routing_table().prefixes());
         // Filter list of members to just those we don't know about:
-        let members = if let Some(section) = self.routing_table().section_with_prefix(&prefix) {
+        let members = if let Some(section) = self.routing_table()
+               .section_with_prefix(ver_pfx.prefix()) {
             let f = |id: &PublicId| !section.contains(id.name());
             members.into_iter().filter(f).collect_vec()
         } else {
             debug!("{:?} Section update received from unknown neighbour {:?}",
                    self,
-                   prefix);
+                   ver_pfx);
             return Ok(());
         };
         let members = members
@@ -2300,19 +2294,18 @@ impl Node {
     }
 
     fn handle_section_split(&mut self,
-                            prefix: Prefix<XorName>,
-                            version: u64,
+                            ver_pfx: VersionedPrefix<XorName>,
                             joining_node: XorName,
                             outbox: &mut EventBox)
                             -> Result<(), RoutingError> {
-        let split_us = prefix == *self.our_prefix();
+        let split_us = ver_pfx.prefix() == self.our_prefix();
         // Send SectionSplit notifications if we don't know of the new node yet
         if split_us && !self.routing_table().has(&joining_node) {
-            self.send_section_split(prefix, version, joining_node);
+            self.send_section_split(ver_pfx, joining_node);
         }
         // None of the `peers_to_drop` will have been in our section, so no need to notify Routing
         // user about them.
-        let (peers_to_drop, our_new_prefix) = self.peer_mgr.split_section(prefix, version);
+        let (peers_to_drop, our_new_prefix) = self.peer_mgr.split_section(ver_pfx);
         if let Some(new_prefix) = our_new_prefix {
             outbox.send_event(Event::SectionSplit(new_prefix));
         }
@@ -2322,14 +2315,14 @@ impl Node {
         }
         info!("{:?} Section split for {:?} completed. Prefixes: {:?}",
               self,
-              prefix,
+              ver_pfx,
               self.routing_table().prefixes());
 
         self.merge_if_necessary();
 
         self.send_section_update(None);
-        let prefix0 = prefix.pushed(false);
-        let prefix1 = prefix.pushed(true);
+        let prefix0 = ver_pfx.prefix().pushed(false);
+        let prefix1 = ver_pfx.prefix().pushed(true);
         self.send_section_list_signature(prefix0, None);
         self.send_section_list_signature(prefix1, None);
         self.reset_su_timer();
@@ -2377,15 +2370,15 @@ impl Node {
             let our_merged_section: BTreeSet<_> = our_sections
                 .iter()
                 .chain(their_sections.iter())
-                .filter(|&(prefix, _)| prefix.extends(&merge_prefix))
-                .flat_map(|(_, &(_, ref peers))| peers)
+                .filter(|&(ver_pfx, _)| ver_pfx.prefix().extends(&merge_prefix))
+                .flat_map(|(_, peers)| peers)
                 .map(|peer| *peer.name())
                 .collect();
             let version = our_sections
-                .iter()
-                .chain(their_sections.iter())
-                .filter(|&(prefix, _)| prefix.extends(&merge_prefix))
-                .map(|(_, &(version, _))| version + 1)
+                .keys()
+                .chain(their_sections.keys())
+                .filter(|ver_pfx| ver_pfx.prefix().extends(&merge_prefix))
+                .map(|ver_pfx| ver_pfx.version() + 1)
                 .max()
                 .unwrap_or(1);
             self.process_own_section_merge(their_prefix,
@@ -2426,7 +2419,7 @@ impl Node {
                     self.disconnect_peer(&peer_id, Some(outbox));
                 }
                 // TODO - the event should maybe only fire once all new connections have been made?
-                outbox.send_event(Event::SectionMerge(merge_details.prefix));
+                outbox.send_event(Event::SectionMerge(*merge_details.versioned_prefix.prefix()));
                 info!("{:?} Own section merge completed. Prefixes: {:?}",
                       self,
                       self.routing_table().prefixes());
@@ -2464,13 +2457,11 @@ impl Node {
     }
 
     fn handle_other_section_merge(&mut self,
-                                  merge_prefix: Prefix<XorName>,
-                                  version: u64,
+                                  merge_ver_pfx: VersionedPrefix<XorName>,
                                   section: BTreeSet<PublicId>,
                                   outbox: &mut EventBox)
                                   -> Result<(), RoutingError> {
-        let needed_peers = self.peer_mgr
-            .merge_other_section(merge_prefix, version, section);
+        let needed_peers = self.peer_mgr.merge_other_section(merge_ver_pfx, section);
         let own_name = *self.name();
 
         for needed in needed_peers {
@@ -2493,10 +2484,10 @@ impl Node {
         self.send_section_list_signatures();
 
         if self.routing_table()
-               .section_with_prefix(&merge_prefix)
+               .section_with_prefix(merge_ver_pfx.prefix())
                .is_some() {
             self.reset_su_timer();
-            self.send_section_update(Some(merge_prefix));
+            self.send_section_update(Some(*merge_ver_pfx.prefix()));
         }
         Ok(())
     }
@@ -3117,16 +3108,15 @@ impl Node {
     }
 
     fn send_section_split(&mut self,
-                          our_prefix: Prefix<XorName>,
-                          version: u64,
+                          our_ver_pfx: VersionedPrefix<XorName>,
                           joining_node: XorName) {
         for prefix in self.routing_table().prefixes() {
             // this way of calculating the source avoids using the joining node as the route
             // src authority is a PrefixSection and not Section to help resend failed messages
             // even if we handle the split and move on.
-            let src = Authority::PrefixSection(our_prefix);
+            let src = Authority::PrefixSection(*our_ver_pfx.prefix());
             let dst = Authority::PrefixSection(prefix);
-            let content = MessageContent::SectionSplit(our_prefix, version, joining_node);
+            let content = MessageContent::SectionSplit(our_ver_pfx, joining_node);
             if let Err(err) = self.send_routing_message(src, dst, content) {
                 debug!("{:?} Failed to send SectionSplit: {:?}.", self, err);
             }
@@ -3156,7 +3146,7 @@ impl Node {
         let section = self.peer_mgr.get_pub_ids(&merge_details.section);
         let version = self.routing_table().our_version();
         let content = MessageContent::OtherSectionMerge(section, version);
-        let src = Authority::PrefixSection(merge_details.prefix);
+        let src = Authority::PrefixSection(*merge_details.versioned_prefix.prefix());
         for target in &targets {
             let dst = Authority::PrefixSection(*target);
             debug!("{:?} Sending OtherSectionMerge from {:?} to {:?} with content {:?}",
