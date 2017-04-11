@@ -15,6 +15,18 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+#[macro_export]
+macro_rules! log_init {
+    () => {
+        use ::std::env::var;
+        use ::mock_crust::LOGGER;
+        match var("RUST_LOG") {
+            Ok(ref val) if val != "disabled" => LOGGER.with(|_| {}),
+            _ => ()
+        }
+    }
+}
+
 mod accumulate;
 mod cache;
 mod churn;
@@ -33,6 +45,10 @@ pub use self::utils::{Nodes, TestClient, TestNode, add_connected_nodes_until_spl
 use routing::{Event, EventStream, Prefix, XOR_NAME_LEN, XorName};
 use routing::mock_crust::{Config, Endpoint, Network};
 use routing::mock_crust::crust::PeerId;
+
+thread_local! {
+    static LOGGER: () = unwrap!(::maidsafe_utilities::log::init(false));
+}
 
 // -----  Miscellaneous tests below  -----
 
@@ -75,6 +91,7 @@ fn equal_section_size_nodes() {
 
 #[test]
 fn more_than_section_size_nodes() {
+    log_init!();
     test_nodes(600);
 }
 
@@ -149,9 +166,9 @@ fn simultaneous_joining_nodes() {
 
     for node in &mut *nodes {
         if prefix0.matches(&node.name()) {
-            node.inner.set_next_node_name(name0);
+            node.inner.set_next_reloc_section(name0);
         } else {
-            node.inner.set_next_node_name(name1);
+            node.inner.set_next_reloc_section(name1);
         }
     }
 

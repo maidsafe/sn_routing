@@ -15,8 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use Prefix;
+use itertools::Itertools;
 use routing_table::Xorable;
 use rust_sodium::crypto::hash::sha256;
+use std::collections::BTreeSet;
 use std::fmt::Write;
 use std::iter;
 use xor_name::XorName;
@@ -66,6 +69,27 @@ pub fn calculate_relocated_name(mut close_nodes: Vec<XorName>, original_name: &X
         .cloned()
         .collect();
     XorName(sha256::hash(&combined).0)
+}
+
+/// Calculate the interval for a node joining our section to generate a key for.
+pub fn calculate_join_interval(prefix: &Prefix<XorName>,
+                               section: &BTreeSet<XorName>)
+                               -> (XorName, XorName) {
+    let (lower_bound, upper_bound) = (prefix.lower_bound(), prefix.upper_bound());
+
+    let (start, end) = iter::once(&lower_bound)
+        .chain(section)
+        .chain(iter::once(&upper_bound))
+        .tuple_windows()
+        .max_by(|&(x1, y1), &(x2, y2)| {
+                    let diff1 = y1 - x1;
+                    let diff2 = y2 - x2;
+                    diff1.cmp(&diff2)
+                })
+        .unwrap_or((&lower_bound, &upper_bound));
+
+    // TODO: implement the middle-third rule.. probably need to convert to BigNums.
+    (*start, *end)
 }
 
 #[cfg(test)]

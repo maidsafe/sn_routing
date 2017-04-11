@@ -28,6 +28,7 @@ use error::{InterfaceError, RoutingError};
 use event::Event;
 use id::{FullId, PublicId};
 use itertools::Itertools;
+use key_gen;
 use log::LogLevel;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation;
@@ -98,6 +99,7 @@ pub struct Node {
     cacheable_user_msg_cache: UserMessageCache,
     crust_service: Service,
     full_id: FullId,
+    prev_signing_keys: Option<(sign::PublicKey, sign::SecretKey)>,
     get_approval_timer_token: Option<u64>,
     approval_progress_timer_token: Option<u64>,
     approval_expiry_time: Instant,
@@ -118,7 +120,9 @@ pub struct Node {
     user_msg_cache: UserMessageCache,
     /// Value which can be set in mock-crust tests to be used as the calculated name for the next
     /// relocation request received by this node.
-    next_node_name: Option<XorName>,
+    next_reloc_section: Option<XorName>,
+    /// Interval used for relocation in mock crust tests.
+    next_reloc_interval: Option<(XorName, XorName)>,
     /// The message ID of the current `RoutingTableRequest` we sent to our section.
     rt_msg_id: Option<MessageId>,
     /// The current duration between `RoutingTableRequest`s we send. Doubles with every message.
@@ -154,13 +158,10 @@ pub struct Node {
 impl Node {
     pub fn first(cache: Box<Cache>,
                  crust_service: Service,
-                 mut full_id: FullId,
+                 full_id: FullId,
                  min_section_size: usize,
                  timer: Timer)
                  -> Option<Self> {
-        let name = XorName(sha256::hash(&full_id.public_id().name().0).0);
-        full_id.public_id_mut().set_name(name);
-
         let mut node = Self::new(cache,
                                  crust_service,
                                  true,
@@ -225,6 +226,7 @@ impl Node {
                 UserMessageCache::with_expiry_duration(user_msg_cache_duration),
             crust_service: crust_service,
             full_id: full_id,
+            prev_signing_keys: None,
             get_approval_timer_token: None,
             approval_progress_timer_token: None,
             approval_expiry_time: Instant::now(),
@@ -241,7 +243,8 @@ impl Node {
             timer: timer,
             tunnels: Default::default(),
             user_msg_cache: UserMessageCache::with_expiry_duration(user_msg_cache_duration),
-            next_node_name: None,
+            next_reloc_section: None,
+            next_reloc_interval: None,
             rt_msg_id: None,
             rt_timeout: Duration::from_secs(RT_MIN_TIMEOUT_SECS),
             rt_timer_token: None,
@@ -375,7 +378,7 @@ impl Node {
                 match self.handle_new_message(peer_id, bytes, outbox) {
                     Err(RoutingError::FilterCheckFailed) |
                     Ok(_) => (),
-                    Err(err) => debug!("{:?} - {:?}", self, err),
+                    Err(err) => debug!("{:?} - {:?}, peer: {:?}", self, err, peer_id),
                 }
             }
             CrustEvent::ConnectionInfoPrepared(ConnectionInfoResult {
@@ -660,15 +663,44 @@ impl Node {
                 }
             }
             CandidateIdentify {
-                ref serialised_public_id,
-                ref signature,
+                ref current_public_id,
+                ref previous_pub_sign_key,
+                ref signature_current,
+                ref signature_previous,
                 is_tunnel,
             } => {
-                if let Ok(public_id) = verify_signed_public_id(serialised_public_id, signature) {
-                    self.handle_candidate_identify(public_id, peer_id, is_tunnel, outbox);
+                if let Ok(public_id) = verify_candidate_public_id(current_public_id,
+                                                                  previous_pub_sign_key,
+                                                                  signature_current,
+                                                                  signature_previous) {
+                    let prev_name = PublicId::compute_name(previous_pub_sign_key);
+                    self.handle_candidate_identify(public_id,
+                                                   prev_name,
+                                                   peer_id,
+                                                   is_tunnel,
+                                                   outbox);
                 } else {
                     warn!("{:?} Signature check failed in CandidateIdentify, so dropping peer \
                            {:?}.",
+                          self,
+                          peer_id);
+                    self.disconnect_peer(&peer_id, Some(outbox));
+                }
+            }
+            KeyChange {
+                ref new_public_id,
+                ref current_sign_pub_key,
+                ref signature_new,
+                ref signature_current,
+            } => {
+                if let Ok(public_id) = verify_candidate_public_id(new_public_id,
+                                                                  current_sign_pub_key,
+                                                                  signature_new,
+                                                                  signature_current) {
+                    let old_name = PublicId::compute_name(current_sign_pub_key);
+                    self.handle_key_change(&peer_id, &old_name, public_id);
+                } else {
+                    warn!("{:?} Got an invalid KeyChange, so dropping peer {:?}",
                           self,
                           peer_id);
                     self.disconnect_peer(&peer_id, Some(outbox));
@@ -822,6 +854,11 @@ impl Node {
         } else {
             Err(RoutingError::FailedSignature)
         }
+    }
+
+    fn handle_key_change(&mut self, peer_id: &PeerId, old_name: &XorName, new_id: PublicId) {
+        self.peer_mgr
+            .handle_key_change(peer_id, old_name, new_id);
     }
 
     fn handle_hop_message(&mut self,
@@ -988,29 +1025,35 @@ impl Node {
                                                   message_id)
             }
             (GetNodeNameResponse {
-                 relocated_id,
+                 target_interval,
                  section,
                  ..
              },
              Section(_),
-             dst) => Ok(self.handle_get_node_name_response(relocated_id, section, dst, outbox)),
+             dst) => Ok(self.handle_get_node_name_response(target_interval, section, dst, outbox)),
             (ExpectCandidate {
                  expect_id,
                  client_auth,
                  message_id,
              },
              Section(_),
-             Section(_)) => {
-                self.handle_expect_candidate(expect_id, client_auth, message_id, outbox)
+             Section(dst)) => {
+                self.handle_expect_candidate(expect_id, dst, client_auth, message_id, outbox)
             }
             (AcceptAsCandidate {
-                 expect_id,
+                 candidate_id,
+                 target_interval,
                  client_auth,
                  message_id,
              },
-             Section(_),
+             Section(our_section),
              Section(_)) => {
-                self.handle_accept_as_candidate(expect_id, client_auth, message_id, outbox)
+                self.handle_accept_as_candidate(candidate_id,
+                                                our_section,
+                                                target_interval,
+                                                client_auth,
+                                                message_id,
+                                                outbox)
             }
             (ConnectionInfoRequest {
                  encrypted_conn_info,
@@ -1061,11 +1104,14 @@ impl Node {
             }
             (CandidateApproval {
                  candidate_id,
+                 orig_name,
                  client_auth,
                  ..
              },
              Section(_),
-             Section(_)) => self.handle_candidate_approval(candidate_id, client_auth, outbox),
+             Section(_)) => {
+                self.handle_candidate_approval(candidate_id, orig_name, client_auth, outbox)
+            }
             (NodeApproval { sections }, Section(_), Client { .. }) => {
                 self.handle_node_approval(&sections, outbox)
             }
@@ -1131,6 +1177,7 @@ impl Node {
 
     fn handle_candidate_approval(&mut self,
                                  candidate_id: PublicId,
+                                 orig_name: XorName,
                                  client_auth: Authority<XorName>,
                                  outbox: &mut EventBox)
                                  -> Result<(), RoutingError> {
@@ -1142,23 +1189,26 @@ impl Node {
         // Or a node may receive CandidateApproval before connection established.
         // If we are not connected to the candidate, we do not want to add them
         // to our RT.
-        let opt_peer_id = match self.peer_mgr
-                  .handle_candidate_approval(*candidate_id.name(), client_auth) {
-            Ok(peer_id) => peer_id,
-            Err(_) => {
-                let src = Authority::ManagedNode(*self.name());
-                if let Err(error) = self.send_connection_info_request(candidate_id,
-                                                                      src,
-                                                                      client_auth,
-                                                                      outbox) {
-                    debug!("{:?} - Failed to send connection info to {:?}: {:?}",
+        let opt_peer_id =
+            match self.peer_mgr
+                      .handle_candidate_approval(*candidate_id.name(),
+                                                 orig_name,
+                                                 client_auth) {
+                Ok(peer_id) => peer_id,
+                Err(_) => {
+                    let src = Authority::ManagedNode(*self.name());
+                    if let Err(error) = self.send_connection_info_request(candidate_id,
+                                                                          src,
+                                                                          client_auth,
+                                                                          outbox) {
+                        debug!("{:?} - Failed to send connection info to {:?}: {:?}",
                            self,
                            candidate_id,
                            error);
+                    }
+                    None
                 }
-                None
-            }
-        };
+            };
 
         info!("{:?} Our section with {:?} has approved candidate {}.",
               self,
@@ -1573,11 +1623,12 @@ impl Node {
 
     fn handle_candidate_identify(&mut self,
                                  public_id: PublicId,
+                                 prev_name: XorName,
                                  peer_id: PeerId,
                                  is_tunnel: bool,
                                  outbox: &mut EventBox) {
         let name = public_id.name();
-        debug!("{:?} Handling CandidateIdentify from {:?}.", self, name);
+        debug!("{:?} Handling CandidateIdentify from {:?} fka {:?}.", self, name, prev_name);
         let (difficulty, target_size) = if self.crust_service.is_peer_hard_coded(&peer_id) ||
                                            self.peer_mgr.get_joining_node(&peer_id).is_some() {
             (0, 1)
@@ -1592,6 +1643,7 @@ impl Node {
         };
         match self.peer_mgr
                   .handle_candidate_identify(&public_id,
+                                             &prev_name,
                                              &peer_id,
                                              target_size,
                                              difficulty,
@@ -2095,15 +2147,15 @@ impl Node {
 
     // Received by X; From A -> X
     fn handle_get_node_name_request(&mut self,
-                                    mut their_public_id: PublicId,
+                                    their_public_id: PublicId,
                                     client_key: sign::PublicKey,
                                     proxy_name: XorName,
                                     dst_name: XorName,
                                     peer_id: PeerId,
                                     message_id: MessageId)
                                     -> Result<(), RoutingError> {
-        let hashed_key = sha256::hash(&client_key.0);
-        let section_matching_client_name = XorName(hashed_key.0);
+        // FIXME(michael): Why don't we check their_public_id.signing_public_key() == client_key?
+        let section_matching_client_name = PublicId::compute_name(&client_key);
 
         // Validate Client (relocating node) has contacted the correct Section-X
         if section_matching_client_name != dst_name {
@@ -2114,12 +2166,12 @@ impl Node {
             Some(close_section) => close_section.into_iter().collect(),
             None => return Err(RoutingError::InvalidDestination),
         };
-        let relocated_name = self.next_node_name
+        // Section to relocate this joining node to.
+        let relocation_section = self.next_reloc_section
             .unwrap_or_else(|| {
                                 utils::calculate_relocated_name(close_section,
                                                                 their_public_id.name())
                             });
-        their_public_id.set_name(relocated_name);
 
         // From X -> Y; Send to close section of the relocated name
         let request_content = MessageContent::ExpectCandidate {
@@ -2133,18 +2185,19 @@ impl Node {
         };
 
         let src = Authority::Section(dst_name);
-        let dst = Authority::Section(relocated_name);
+        let dst = Authority::Section(relocation_section);
         self.send_routing_message(src, dst, request_content)
     }
 
     // Context: we're a new node joining a section. This message should have been sent by each node
     // in the target section with the new node name and the section for resource proving.
     fn handle_get_node_name_response(&mut self,
-                                     relocated_id: PublicId,
+                                     target_interval: (XorName, XorName),
                                      section: BTreeSet<PublicId>,
                                      dst: Authority<XorName>,
                                      outbox: &mut EventBox) {
-        if !self.full_id.public_id().is_client_id() {
+
+        if self.prev_signing_keys.is_some() {
             warn!("{:?} Received duplicate GetNodeName response.", self);
             return;
         }
@@ -2156,9 +2209,31 @@ impl Node {
             Some(self.timer
                      .schedule(Duration::from_secs(APPROVAL_PROGRESS_INTERVAL_SECS)));
 
-        self.full_id
-            .public_id_mut()
-            .set_name(*relocated_id.name());
+        let mut new_full_id = self.full_id().clone();
+        info!("{:?} Generating a new key in the interval [{:?},{:?})",
+            self, target_interval.0, target_interval.1
+        );
+
+        self.prev_signing_keys = match key_gen::generate_key(target_interval, &mut new_full_id) {
+            Ok(prev) => Some(prev),
+            Err(_) => {
+                error!("{:?} Couldn't generate a key to fit the section, restarting...", self);
+                outbox.send_event(Event::RestartRequired);
+                return;
+            }
+        };
+
+        info!("{:?} Renaming to {:?}", self.name(), new_full_id.public_id().name());
+
+        // Send key change message, which will update our proxy node.
+        debug!("{:?} Sending key change message", self);
+        if let Err(err) = self.send_key_change_message(&new_full_id) {
+            warn!("{:?} Failed to send key change: {:?}", self, err);
+        }
+
+        // Update our local idea of our keys.
+        self.full_id = new_full_id;
+
         self.peer_mgr
             .reset_routing_table(*self.full_id.public_id());
         self.challenger_count = section.len();
@@ -2172,16 +2247,26 @@ impl Node {
         trace!("{:?} GetNodeName completed. Prefixes: {:?}",
                self,
                self.peer_mgr.routing_table().prefixes());
-        info!("{:?} Received relocated name. Establishing connections to {} peers.",
+        info!("{:?} Generated relocated name. Establishing connections to {} peers.",
               self,
               section.len());
+
+        let mut our_auth = dst;
+        let new_client_key = *self.full_id().public_id().signing_public_key();
+        if let Err(()) = our_auth.update_client_key(new_client_key) {
+            error!("{:?} Destination authority is not a Client authority, it's: {:?}", self, dst);
+            return;
+        }
 
         for pub_id in &section {
             debug!("{:?} Sending connection info to {:?} on GetNodeName response.",
                    self,
                    pub_id);
             let node_auth = Authority::ManagedNode(*pub_id.name());
-            if let Err(error) = self.send_connection_info_request(*pub_id, dst, node_auth, outbox) {
+            if let Err(error) = self.send_connection_info_request(*pub_id,
+                                                                  our_auth,
+                                                                  node_auth,
+                                                                  outbox) {
                 debug!("{:?} - Failed to send connection info to {:?}: {:?}",
                        self,
                        pub_id,
@@ -2190,11 +2275,34 @@ impl Node {
         }
     }
 
+    /// Send key change, just to the proxy for now.
+    fn send_key_change_message(&mut self, new_id: &FullId) -> Result<(), RoutingError> {
+        let new_public_id = serialisation::serialise(new_id.public_id())?;
+        let sig_new = sign::sign_detached(&new_public_id, new_id.signing_private_key());
+        let sig_current = sign::sign_detached(&new_public_id, self.full_id().signing_private_key());
+
+        // FIXME(michael): cache this message in case we need to resend it?
+        let message = DirectMessage::KeyChange {
+            new_public_id: new_public_id,
+            current_sign_pub_key: *self.full_id().public_id().signing_public_key(),
+            signature_new: sig_new,
+            signature_current: sig_current,
+        };
+
+        let (&target_peer_id, _) = self.peer_mgr
+            .proxy()
+            .ok_or(RoutingError::ProxyConnectionNotFound)?;
+
+        self.send_direct_message(target_peer_id, message);
+        Ok(())
+    }
+
     // Received by Y; From X -> Y
     // Context: a node is joining our section. Sends `AcceptAsCandidate` to our section. If the
     // network is unbalanced, sends `ExpectCandidate` on to a section with a shorter prefix.
     fn handle_expect_candidate(&mut self,
-                               mut candidate_id: PublicId,
+                               candidate_id: PublicId,
+                               our_section: XorName,
                                client_auth: Authority<XorName>,
                                message_id: MessageId,
                                outbox: &mut EventBox)
@@ -2203,47 +2311,55 @@ impl Node {
             self.disconnect_peer(&peer_id, Some(outbox));
         }
 
-        if candidate_id.signing_public_key() == self.full_id.public_id().signing_public_key() {
-            return Ok(()); // This is a delayed message belonging to our own node name request.
+        if self.prev_signing_key_matches(candidate_id.signing_public_key()) {
+            // This is a delayed message belonging to our own node name request.
+            return Ok(());
         }
 
-        let original_name = *candidate_id.name();
-        let relocated_name = self.next_node_name
-            .take()
-            .unwrap_or_else(|| {
-                                self.peer_mgr
-                                    .routing_table()
-                                    .assign_to_min_len_prefix(&original_name)
-                            });
-        candidate_id.set_name(relocated_name);
+        // Check that our section is one of the ones with a minimum length prefix,
+        // and if it's not, forward it to one that is.
+        let min_len_prefix = self.peer_mgr.routing_table().min_len_prefix();
 
-        if self.peer_mgr
-               .routing_table()
-               .should_join_our_section(candidate_id.name())
-               .is_err() {
+        // If we're running in mock-crust mode, and we have relocation interval, don't
+        // try to do section balancing, as it will BREAK things.
+        let forbid_join_balancing = cfg!(feature = "use-mock-crust") &&
+                                    self.next_reloc_interval.is_some();
+
+        if &min_len_prefix != self.our_prefix() && !forbid_join_balancing {
             let request_content = MessageContent::ExpectCandidate {
                 expect_id: candidate_id,
                 client_auth: client_auth,
                 message_id: message_id,
             };
-            let src = Authority::Section(original_name);
-            let dst = Authority::Section(*candidate_id.name());
+            let src = Authority::Section(our_section);
+            // FIXME(michael): would it be better to use a more noisy name here rather than p000..?
+            let dst = Authority::Section(min_len_prefix.lower_bound());
             return self.send_routing_message(src, dst, request_content);
         }
+
+        let target_interval = self.next_reloc_interval
+            .take()
+            .unwrap_or_else(|| {
+                                utils::calculate_join_interval(self.our_prefix(),
+                                                               self.peer_mgr
+                                                                   .routing_table()
+                                                                   .our_section())
+                            });
 
         self.peer_mgr
             .expect_candidate(*candidate_id.name(), client_auth)?;
         let response_content = MessageContent::AcceptAsCandidate {
-            expect_id: candidate_id,
+            candidate_id: candidate_id,
+            target_interval: target_interval,
             client_auth: client_auth,
             message_id: message_id,
         };
-        info!("{:?} Expecting candidate {} via {:?}.",
+        info!("{:?} Expecting candidate {} (orig name) via {:?}.",
               self,
               candidate_id.name(),
               client_auth);
 
-        let src = Authority::Section(*candidate_id.name());
+        let src = Authority::Section(our_section);
         self.send_routing_message(src, src, response_content)
     }
 
@@ -2251,6 +2367,8 @@ impl Node {
     // Context: a node is joining our section. Sends the node our section.
     fn handle_accept_as_candidate(&mut self,
                                   candidate_id: PublicId,
+                                  our_section: XorName,
+                                  target_interval: (XorName, XorName),
                                   client_auth: Authority<XorName>,
                                   message_id: MessageId,
                                   outbox: &mut EventBox)
@@ -2259,8 +2377,8 @@ impl Node {
             self.disconnect_peer(&peer_id, Some(outbox));
         }
 
-        if candidate_id == *self.full_id.public_id() {
-            // If we're the joining node: stop
+        // If we're the joining node: stop.
+        if self.prev_signing_key_matches(candidate_id.signing_public_key()) {
             return Ok(());
         }
 
@@ -2268,14 +2386,19 @@ impl Node {
             Some(self.timer
                      .schedule(Duration::from_secs(RESOURCE_PROOF_DURATION_SECS)));
 
-        let own_section = self.peer_mgr
-            .accept_as_candidate(*candidate_id.name(), client_auth);
+        let own_section =
+            self.peer_mgr
+                .accept_as_candidate(*candidate_id.name(), target_interval, client_auth);
+
+        #[cfg(feature = "use-mock-crust")]
+        debug_assert!(self.interval_is_sane(&target_interval));
+
         let response_content = MessageContent::GetNodeNameResponse {
-            relocated_id: candidate_id,
+            target_interval: target_interval,
             section: own_section,
             message_id: message_id,
         };
-        info!("{:?} Our section with {:?} accepted {} as a candidate.",
+        info!("{:?} Our section with {:?} accepted {} (orig. name) as a candidate.",
               self,
               self.our_prefix(),
               candidate_id.name());
@@ -2284,8 +2407,13 @@ impl Node {
                response_content,
                client_auth);
 
-        let src = Authority::Section(*candidate_id.name());
+        let src = Authority::Section(our_section);
         self.send_routing_message(src, client_auth, response_content)
+    }
+
+    #[cfg(feature = "use-mock-crust")]
+    fn interval_is_sane(&self, &(ref start, ref end): &(XorName, XorName)) -> bool {
+        &self.our_prefix().lower_bound() <= start && &self.our_prefix().upper_bound() >= end
     }
 
     fn handle_section_update_request(&mut self, prefix: Prefix<XorName>, src: XorName) {
@@ -2866,14 +2994,15 @@ impl Node {
     }
 
     fn send_candidate_approval(&mut self) {
-        let (candidate_id, client_auth, sections) = match self.peer_mgr.verified_candidate_info() {
-            Err(_) => {
-                trace!("{:?} No candidate for which to send CandidateApproval.",
+        let (candidate_id, orig_name, client_auth, sections) =
+            match self.peer_mgr.verified_candidate_info() {
+                Err(_) => {
+                    trace!("{:?} No candidate for which to send CandidateApproval.",
                        self);
-                return;
-            }
-            Ok(info) => info,
-        };
+                    return;
+                }
+                Ok(info) => info,
+            };
 
         if self.we_want_to_merge() || self.they_want_to_merge() {
             debug!("{:?} Resource proof duration has finished, but not voting to approve \
@@ -2886,6 +3015,7 @@ impl Node {
         let src = Authority::Section(*candidate_id.name());
         let response_content = MessageContent::CandidateApproval {
             candidate_id: candidate_id,
+            orig_name: orig_name,
             client_auth: client_auth,
             sections: sections,
         };
@@ -3154,30 +3284,52 @@ impl Node {
     }
 
     fn send_node_identify(&mut self, peer_id: PeerId, is_tunnel: bool) {
-        let serialised_public_id = match serialisation::serialise(self.full_id().public_id()) {
-            Ok(rslt) => rslt,
-            Err(e) => {
-                error!("Failed to serialise public ID: {:?}", e);
-                return;
-            }
+        let message = if self.is_approved {
+            self.construct_node_identify_message(is_tunnel)
+        } else {
+            self.construct_candidate_identify_message(is_tunnel)
         };
+        match message {
+            Ok(msg) => self.send_direct_message(peer_id, msg),
+            Err(e) => {
+                error!("Failed to send identification message: {:?}", e);
+            }
+        }
+    }
+
+    fn construct_node_identify_message(&self,
+                                       is_tunnel: bool)
+                                       -> Result<DirectMessage, RoutingError> {
+        let serialised_public_id = serialisation::serialise(self.full_id().public_id())?;
         let signature = sign::sign_detached(&serialised_public_id,
                                             self.full_id().signing_private_key());
-        let direct_message = if self.is_approved {
-            DirectMessage::NodeIdentify {
-                serialised_public_id: serialised_public_id,
-                signature: signature,
-                is_tunnel: is_tunnel,
-            }
-        } else {
-            DirectMessage::CandidateIdentify {
-                serialised_public_id: serialised_public_id,
-                signature: signature,
-                is_tunnel: is_tunnel,
-            }
-        };
+        Ok(DirectMessage::NodeIdentify {
+               serialised_public_id: serialised_public_id,
+               signature: signature,
+               is_tunnel: is_tunnel,
+           })
+    }
 
-        self.send_direct_message(peer_id, direct_message);
+    fn construct_candidate_identify_message(&self,
+                                            is_tunnel: bool)
+                                            -> Result<DirectMessage, RoutingError> {
+        let current_public_id = serialisation::serialise(self.full_id().public_id())?;
+        let &(prev_pub_sign_key, ref prev_secret_sign_key) =
+            self.prev_signing_keys
+                .as_ref()
+                .ok_or(RoutingError::CandidatePrevKeysMissing)?;
+
+        let sig_current = sign::sign_detached(&current_public_id,
+                                              self.full_id().signing_private_key());
+        let sig_previous = sign::sign_detached(&current_public_id, prev_secret_sign_key);
+
+        Ok(DirectMessage::CandidateIdentify {
+               current_public_id: current_public_id,
+               previous_pub_sign_key: prev_pub_sign_key,
+               signature_current: sig_current,
+               signature_previous: sig_previous,
+               is_tunnel: is_tunnel,
+           })
     }
 
     fn send_connection_info_request(&mut self,
@@ -3264,7 +3416,8 @@ impl Node {
             _ => (),
         }
 
-        if try_reconnect && self.is_approved && !peer.pub_id().is_client_id() {
+        // FIXME(michael): not sure that .is_client() is quite equiv to what was here before.
+        if try_reconnect && self.is_approved && !peer.state().is_client() {
             debug!("{:?} Sending connection info to {:?} due to dropped peer.",
                    self,
                    peer.pub_id());
@@ -3491,6 +3644,15 @@ impl Node {
         }
     }
 
+    /// Return true if we have a previous pair of signing keys and the public key matches the
+    /// one given.
+    pub fn prev_signing_key_matches(&self, key: &sign::PublicKey) -> bool {
+        self.prev_signing_keys
+            .as_ref()
+            .map(|&(ref pk, _)| pk == key)
+            .unwrap_or(false)
+    }
+
     fn format(duration: Duration) -> String {
         format!("{} seconds",
                 if duration.subsec_nanos() >= 500_000_000 {
@@ -3512,7 +3674,8 @@ impl Base for Node {
 
     fn in_authority(&self, auth: &Authority<XorName>) -> bool {
         if let Authority::Client { ref client_key, .. } = *auth {
-            client_key == self.full_id.public_id().signing_public_key()
+            client_key == self.full_id.public_id().signing_public_key() ||
+            self.prev_signing_key_matches(client_key)
         } else {
             self.is_proper() && self.peer_mgr.routing_table().in_authority(auth)
         }
@@ -3601,8 +3764,12 @@ impl Node {
         }
     }
 
-    pub fn set_next_node_name(&mut self, relocation_name: Option<XorName>) {
-        self.next_node_name = relocation_name;
+    pub fn set_next_reloc_section(&mut self, relocation_name: Option<XorName>) {
+        self.next_reloc_section = relocation_name;
+    }
+
+    pub fn set_next_reloc_interval(&mut self, interval: (XorName, XorName)) {
+        self.next_reloc_interval = Some(interval);
     }
 }
 
@@ -3723,8 +3890,37 @@ fn verify_signed_public_id(serialised_public_id: &[u8],
                            signature: &sign::Signature)
                            -> Result<PublicId, RoutingError> {
     let public_id: PublicId = serialisation::deserialise(serialised_public_id)?;
+    if !public_id.is_valid() {
+        return Err(RoutingError::NameMismatch);
+    }
     let public_key = public_id.signing_public_key();
     if sign::verify_detached(signature, serialised_public_id, public_key) {
+        Ok(public_id)
+    } else {
+        Err(RoutingError::FailedSignature)
+    }
+}
+
+fn verify_candidate_public_id(serialised_public_id: &[u8],
+                              prev_pub_sign_key: &sign::PublicKey,
+                              signature_current: &sign::Signature,
+                              signature_previous: &sign::Signature)
+                              -> Result<PublicId, RoutingError> {
+    let public_id: PublicId = serialisation::deserialise(serialised_public_id)?;
+
+    if !public_id.is_valid() {
+        return Err(RoutingError::NameMismatch);
+    }
+
+    let current_sign_pub_key = public_id.signing_public_key();
+    let sig_current_ok = sign::verify_detached(signature_current,
+                                               serialised_public_id,
+                                               current_sign_pub_key);
+
+    let sig_previous_ok =
+        sign::verify_detached(signature_previous, serialised_public_id, prev_pub_sign_key);
+
+    if sig_current_ok && sig_previous_ok {
         Ok(public_id)
     } else {
         Err(RoutingError::FailedSignature)

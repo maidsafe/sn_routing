@@ -123,6 +123,12 @@ pub enum RoutingError {
     FailedResourceProofValidation,
     /// Candidate is connected via a tunnel
     CandidateIsTunnelling,
+    /// We're a candidate but we don't have any previous keys
+    CandidatePrevKeysMissing,
+    /// Serialised name of a transmitted PublicId doesn't match the hash of the signing key
+    NameMismatch,
+    /// The candidate trying to join our section generated an invalid key
+    InvalidCandidateKey,
 }
 
 impl From<RoutingTableError> for RoutingError {

@@ -508,16 +508,24 @@ impl Node {
     }
 
     /// Sets a name to be used when the next node relocation request is received by this node.
-    pub fn set_next_node_name(&mut self, relocation_name: XorName) {
+    pub fn set_next_reloc_section(&mut self, relocation_name: XorName) {
         self.machine
             .current_mut()
-            .set_next_node_name(Some(relocation_name))
+            .set_next_reloc_section(Some(relocation_name))
+    }
+
+    /// Sets an interval to be used when a node is required to generate a new name.
+    pub fn set_next_reloc_interval(&mut self, interval: (XorName, XorName)) {
+        self.machine
+            .current_mut()
+            .set_next_reloc_interval(interval)
     }
 
     /// Clears the name to be used when the next node relocation request is received by this node so
     /// the normal process is followed to calculate the relocated name.
-    pub fn clear_next_node_name(&mut self) {
-        self.machine.current_mut().set_next_node_name(None)
+    // FIXME(michael): do we need a function like this for intervals?
+    pub fn clear_next_reloc_section(&mut self) {
+        self.machine.current_mut().set_next_reloc_section(None)
     }
 }
 

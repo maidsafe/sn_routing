@@ -181,6 +181,7 @@ impl Stats {
             BootstrapIdentify { .. } |
             BootstrapDeny |
             ClientIdentify { .. } |
+            KeyChange { .. } |
             TunnelRequest(_) |
             TunnelSuccess(_) |
             TunnelClosed(_) |

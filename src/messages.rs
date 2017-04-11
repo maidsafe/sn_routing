@@ -141,14 +141,31 @@ pub enum DirectMessage {
     /// add the former to its routing table.
     CandidateIdentify {
         /// Keys and claimed name, serialised outside routing.
-        serialised_public_id: Vec<u8>,
-        /// Signature of the originator of this message.
-        signature: sign::Signature,
+        current_public_id: Vec<u8>,
+        /// The previous public signing key used by this candidate.
+        previous_pub_sign_key: sign::PublicKey,
+        /// Signature of current public ID by current private signing key, to prove ownership.
+        signature_current: sign::Signature,
+        /// Signature of current public ID by previous private signing key, to prove
+        /// the legitimacy of this key change.
+        signature_previous: sign::Signature,
         /// FIXME: Should be deprecated.
         /// Tunnel connection indicator from sender which would override
         /// intermediate peer_mgr states for routing table connection type.
         /// Should not influence JoiningNode / Proxy states which are expected to be direct only.
         is_tunnel: bool,
+    },
+    /// A single node sends this to all its contacts to signal its intention to change keys.
+    KeyChange {
+        /// Keys and claimed name, serialised outside routing.
+        new_public_id: Vec<u8>,
+        /// The previous public signing key used by this candidate.
+        current_sign_pub_key: sign::PublicKey,
+        /// Signature of current public ID by new private signing key, to prove ownership.
+        signature_new: sign::Signature,
+        /// Signature of current public ID by previous private signing key, to prove
+        /// the legitimacy of this key change.
+        signature_current: sign::Signature,
     },
     /// Sent from a node that needs a tunnel to be able to connect to the given peer.
     TunnelRequest(PeerId),
@@ -580,6 +597,17 @@ pub enum MessageContent {
         /// The message's unique identifier.
         message_id: MessageId,
     },
+    /// Reply with the new `PublicId` for the joining node.
+    ///
+    /// Sent from the `NodeManager` to the `Client`.
+    GetNodeNameResponse {
+        /// The joining node must generate a new name between these two names.
+        target_interval: (XorName, XorName),
+        /// The relocated section that the joining node shall connect to.
+        section: BTreeSet<PublicId>,
+        /// The message's unique identifier.
+        message_id: MessageId,
+    },
     /// Send our Crust connection info encrypted to a node we wish to connect to and for which we
     /// have the keys.
     ConnectionInfoRequest {
@@ -603,17 +631,6 @@ pub enum MessageContent {
         pub_id: PublicId,
         /// The message's unique identifier.
         msg_id: MessageId,
-    },
-    /// Reply with the new `PublicId` for the joining node.
-    ///
-    /// Sent from the `NodeManager` to the `Client`.
-    GetNodeNameResponse {
-        /// Supplied `PublicId`, but with the new name
-        relocated_id: PublicId,
-        /// The relocated section that the joining node shall connect to
-        section: BTreeSet<PublicId>,
-        /// The message's unique identifier.
-        message_id: MessageId,
     },
     /// Sent to request a `SectionUpdate` from a neighbouring section. Only sent if we receive a
     /// message from that section indicating its section prefix has altered while we've been in the
@@ -680,8 +697,10 @@ pub enum MessageContent {
     ///
     /// Sent from the `NaeManager` to the `NaeManager`.
     AcceptAsCandidate {
-        /// Supplied `PublicId`, but with the new name
-        expect_id: PublicId,
+        /// Candidate's original ID.
+        candidate_id: PublicId,
+        /// Target interval that the candidate must generate a key for.
+        target_interval: (XorName, XorName),
         /// Client authority of the candidate
         client_auth: Authority<XorName>,
         /// The message's unique identifier.
@@ -691,6 +710,8 @@ pub enum MessageContent {
     CandidateApproval {
         /// The `PublicId` of the candidate
         candidate_id: PublicId,
+        /// The original name of the candidate.
+        orig_name: XorName,
         /// Client authority of the candidate
         client_auth: Authority<XorName>,
         /// The `PublicId`s of all routing table contacts shared by the nodes in our section.
@@ -771,6 +792,16 @@ impl Debug for DirectMessage {
                        leading_zero_bytes)
             }
             ResourceProofResponseReceipt => write!(formatter, "ResourceProofResponseReceipt"),
+            KeyChange {
+                ref new_public_id,
+                ref current_sign_pub_key,
+                ..
+            } => {
+                write!(formatter,
+                       "KeyChange {{ from: {:?}, to: {:?} }}",
+                       new_public_id,
+                       current_sign_pub_key)
+            }
         }
     }
 }
@@ -839,13 +870,13 @@ impl Debug for MessageContent {
                        msg_id)
             }
             GetNodeNameResponse {
-                ref relocated_id,
+                ref target_interval,
                 ref section,
                 ref message_id,
             } => {
                 write!(formatter,
                        "GetNodeNameResponse {{ {:?}, {:?}, {:?} }}",
-                       relocated_id,
+                       target_interval,
                        section,
                        message_id)
             }
@@ -906,25 +937,29 @@ impl Debug for MessageContent {
                        hash[2])
             }
             AcceptAsCandidate {
-                ref expect_id,
+                ref candidate_id,
+                ref target_interval,
                 ref client_auth,
                 ref message_id,
             } => {
                 write!(formatter,
-                       "AcceptAsCandidate {{ {:?}, {:?}, {:?} }}",
-                       expect_id,
+                       "AcceptAsCandidate {{ {:?}, {:?}, {:?}, {:?} }}",
+                       candidate_id,
+                       target_interval,
                        client_auth,
                        message_id)
             }
             CandidateApproval {
                 ref candidate_id,
+                ref orig_name,
                 ref client_auth,
                 ref sections,
             } => {
                 write!(formatter,
-                       "CandidateApproval {{ candidate_id: {:?}, client_auth: {:?}, sections: \
-                        {:?} }}",
+                       "CandidateApproval {{ candidate_id: {:?}, orig_name: {:?}, \
+                        client_auth: {:?}, sections: {:?} }}",
                        candidate_id,
+                       orig_name,
                        client_auth,
                        sections)
             }

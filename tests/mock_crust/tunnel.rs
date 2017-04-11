@@ -18,7 +18,7 @@
 use super::{TestNode, add_connected_nodes_until_split, create_connected_nodes, poll_all,
             poll_and_resend, verify_invariant_for_all_nodes};
 use itertools::Itertools;
-use routing::{Event, EventStream, XOR_NAME_LEN, XorName, Xorable};
+use routing::{Event, EventStream, Prefix, XOR_NAME_LEN, XorName};
 use routing::mock_crust::{Config, Endpoint, Network};
 use routing::mock_crust::crust::{self, PeerId};
 
@@ -92,7 +92,7 @@ fn remove_nodes_from_section_till_merge(prefix_name: &XorName,
     section_indexes
         .iter()
         .take(section_indexes.len() - min_section_size + 1)
-        .foreach(|index| { let _ = nodes.remove(*index); });
+        .foreach(|index| drop(nodes.remove(*index)));
     poll_and_resend(nodes, &mut []);
 }
 
@@ -100,15 +100,20 @@ fn remove_nodes_from_section_till_merge(prefix_name: &XorName,
 // these them if `is_tunnel` is true. Returns the endpoints of the nodes.
 fn add_a_pair(network: &Network,
               nodes: &mut Vec<TestNode>,
-              name0: XorName,
-              name1: XorName,
+              prefix0: Prefix<XorName>,
+              prefix1: Prefix<XorName>,
               is_tunnel: bool)
               -> (Endpoint, Endpoint) {
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
 
     nodes
         .iter_mut()
-        .foreach(|node| node.inner.set_next_node_name(name0));
+        .foreach(|node| {
+                     node.inner.set_next_reloc_section(prefix0.lower_bound());
+                     node.inner
+                         .set_next_reloc_interval((prefix0.lower_bound(),
+                                                   prefix0.upper_bound()));
+                 });
     nodes.push(TestNode::builder(network)
                    .config(config.clone())
                    .create());
@@ -116,7 +121,12 @@ fn add_a_pair(network: &Network,
 
     nodes
         .iter_mut()
-        .foreach(|node| node.inner.set_next_node_name(name1));
+        .foreach(|node| {
+                     node.inner.set_next_reloc_section(prefix1.lower_bound());
+                     node.inner
+                         .set_next_reloc_interval((prefix1.lower_bound(),
+                                                   prefix1.upper_bound()));
+                 });
     nodes.push(TestNode::builder(network)
                    .config(config.clone())
                    .create());
@@ -153,26 +163,27 @@ fn locate_tunnel_node(nodes: &[TestNode], client_1: PeerId, client_2: PeerId) ->
 
 #[test]
 fn tunnel_clients() {
+    log_init!();
     let min_section_size = 3;
     let network = Network::new(min_section_size, None);
     let mut nodes = create_connected_nodes(&network, min_section_size);
 
     let direct_pair = add_a_pair(&network,
                                  &mut nodes,
-                                 XorName([0u8; XOR_NAME_LEN]),
-                                 XorName([253u8; XOR_NAME_LEN]),
+                                 Prefix::new(8, XorName([0u8; XOR_NAME_LEN])),
+                                 Prefix::new(8, XorName([253u8; XOR_NAME_LEN])),
                                  false);
     let direct_pair_peer_ids = (PeerId(nodes.len() - 1), PeerId(nodes.len() - 2));
     let _ = add_a_pair(&network,
                        &mut nodes,
-                       XorName([1u8; XOR_NAME_LEN]),
-                       XorName([255u8; XOR_NAME_LEN]),
+                       Prefix::new(8, XorName([1u8; XOR_NAME_LEN])),
+                       Prefix::new(8, XorName([255u8; XOR_NAME_LEN])),
                        true);
     let tunnel_pair_1_peer_ids = (PeerId(nodes.len() - 1), PeerId(nodes.len() - 2));
     let tunnel_pair = add_a_pair(&network,
                                  &mut nodes,
-                                 XorName([2u8; XOR_NAME_LEN]),
-                                 XorName([254u8; XOR_NAME_LEN]),
+                                 Prefix::new(8, XorName([2u8; XOR_NAME_LEN])),
+                                 Prefix::new(8, XorName([254u8; XOR_NAME_LEN])),
                                  true);
     let tunnel_pair_2_peer_ids = (PeerId(nodes.len() - 1), PeerId(nodes.len() - 2));
     verify_invariant_for_all_nodes(&mut nodes);
@@ -318,15 +329,18 @@ fn tunnel_node_dropped() {
 
 #[test]
 fn tunnel_node_split_out() {
+    log_init!();
     let min_section_size = 3;
     let network = Network::new(min_section_size, None);
     let mut nodes = create_connected_nodes(&network, min_section_size);
 
-    let tunnel_clients_name = nodes[1].name().with_flipped_bit(0).with_flipped_bit(1);
+    // Create nodes that don't match node 1 in their first 2 bits.
+    let node1_prefix = Prefix::new(4, nodes[1].name());
+    let tunnel_clients_prefix = node1_prefix.with_flipped_bit(0).with_flipped_bit(1);
     let _ = add_a_pair(&network,
                        &mut nodes,
-                       tunnel_clients_name,
-                       tunnel_clients_name.with_flipped_bit(4),
+                       tunnel_clients_prefix,
+                       tunnel_clients_prefix.with_flipped_bit(4),
                        true);
     let (tunnel_client_1, tunnel_client_2) = (nodes.len() - 1, nodes.len() - 2);
     let (peer_id_1, peer_id_2) = (PeerId(tunnel_client_1), PeerId(tunnel_client_2));

@@ -182,9 +182,15 @@ impl State {
         }
     }
 
-    pub fn set_next_node_name(&mut self, relocation_name: Option<XorName>) {
+    pub fn set_next_reloc_section(&mut self, relocation_name: Option<XorName>) {
         if let State::Node(ref mut state) = *self {
-            state.set_next_node_name(relocation_name);
+            state.set_next_reloc_section(relocation_name);
+        }
+    }
+
+    pub fn set_next_reloc_interval(&mut self, interval: (XorName, XorName)) {
+        if let State::Node(ref mut state) = *self {
+            state.set_next_reloc_interval(interval);
         }
     }
 }
