@@ -131,7 +131,7 @@ use std::hash::Hash;
 pub type Sections<T> = BTreeMap<Prefix<T>, (u64, BTreeSet<T>)>;
 type SectionItem<'a, T> = (Prefix<T>, (u64, &'a BTreeSet<T>));
 
-// Amount added to `min_section_size` when deciding whether a bucket split can happen.  This helps
+// Amount added to `min_section_size` when deciding whether a bucket split can happen. This helps
 // protect against rapid splitting and merging in the face of moderate churn.
 const SPLIT_BUFFER: usize = 3;
 
@@ -230,9 +230,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// Adds the list of `Prefix`es as empty sections.
     ///
     /// Called once a node has been approved by its own section and is given its peers' tables.
-    /// Expects the current sections to be empty.
+    /// Expects the current sections to be empty and have version 0.
     pub fn add_prefixes(&mut self, ver_pfxs: Vec<VersionedPrefix<T>>) -> Result<(), Error> {
-        if !self.sections.is_empty() {
+        if self.our_version != 0 || !self.sections.is_empty() {
             return Err(Error::InvariantViolation);
         }
         for ver_pfx in ver_pfxs {
@@ -522,7 +522,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
     }
 
-    // Finds the `count` names closest to `name` in the whole routing table
+    /// Finds the `count` names closest to `name` in the whole routing table.
     fn closest_known_names(&self, name: &T, count: usize) -> Vec<&T> {
         self.all_sections_iter()
             .sorted_by(|&(pfx0, _), &(pfx1, _)| pfx0.cmp_distance(&pfx1, name))
@@ -577,7 +577,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// If the section exists in the routing table and has the given version, it is split,
     /// otherwise this function is a no-op. If any of the sections don't satisfy the invariant any
     /// more (i.e. only differ in one bit from our own prefix), they are removed and those contacts
-    /// are returned.  If the split is happening to our own section, our new prefix is returned in
+    /// are returned. If the split is happening to our own section, our new prefix is returned in
     /// the optional field.
     pub fn split(&mut self, ver_pfx: VersionedPrefix<T>) -> (Vec<T>, Option<Prefix<T>>) {
         let mut result = vec![];
@@ -617,8 +617,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     }
 
     /// Adds the given prefix to the routing table, merging or splitting if necessary. Returns the
-    /// entries that have been dropped. If the version is lower than the one in the routing table,
-    /// the change is not applied.
+    /// entries that have been dropped. If the version is lower or equal to the one in the routing
+    /// table, the change is not applied.
     pub fn add_prefix(&mut self, ver_pfx: VersionedPrefix<T>) -> Vec<T> {
         let (prefix, version) = ver_pfx.into();
         // If the prefix isn't relevant to our RT, reject the change.
@@ -626,11 +626,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             return vec![];
         }
 
-        // If the prefix would wrongly supersede a prefix, reject.
+        // If the prefix doesn't supersede an existing one, reject.
         for (pfx, (v, _)) in self.all_sections_iter() {
             if prefix.is_compatible(&pfx) && version <= v {
-                trace!("{:?} Not adding {:?} v{} to the RT as conflicting {:?} v{} \
-                       is more up to date.",
+                trace!("{:?} Not adding {:?} v{} to the RT as the existing {:?} v{} \
+                       does not predate it.",
                        self.our_name,
                        prefix,
                        version,
@@ -668,8 +668,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     /// Removes a contact from the routing table.
     ///
-    /// If no entry with that name is found, `Err(Error::NoSuchPeer)` is returned.  Otherwise, the
-    /// entry is removed from the routing table and `RemovalDetails` is returned.  See that struct's
+    /// If no entry with that name is found, `Err(Error::NoSuchPeer)` is returned. Otherwise, the
+    /// entry is removed from the routing table and `RemovalDetails` is returned. See that struct's
     /// docs for further info.
     pub fn remove(&mut self, name: &T) -> Result<RemovalDetails<T>, Error> {
         let removal_details = RemovalDetails {
@@ -711,10 +711,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         if bit_count == 0 || !self.sections.contains_key(&self.our_prefix.sibling()) {
             return false; // We can't merge, or we already sent our merge message.
         }
-        if self.our_section.len() >= self.min_section_size && !self.neighbour_needs_merge() {
-            return false; // There is no reason to merge.
-        }
-        true
+        self.our_section.len() < self.min_section_size || self.neighbour_needs_merge()
     }
 
     /// When a merge of our own section is triggered (either from our own section or a neighbouring
@@ -722,7 +719,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// sections.
     ///
     /// The actual merge of the section is only done once all expected merging sections have
-    /// provided details.  See the docs for `OwnMergeState` for full details of the return value.
+    /// provided details. See the docs for `OwnMergeState` for full details of the return value.
     pub fn merge_own_section<I>(&mut self,
                                 merge_ver_pfx: VersionedPrefix<T>,
                                 ver_pfxs: I)
@@ -790,7 +787,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     }
 
     /// Returns a collection of nodes to which a message for the given `Authority` should be sent
-    /// onwards.  In all non-error cases below, the returned collection will have the members of
+    /// onwards. In all non-error cases below, the returned collection will have the members of
     /// `exclude` removed, possibly resulting in an empty set being returned.
     ///
     /// * If the destination is an `Authority::Section`:
@@ -1198,11 +1195,12 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Binary for Rou
         writeln!(formatter, "\tour_version: {}", self.our_version)?;
 
         let sections = self.all_sections_iter().collect::<BTreeSet<_>>();
-        for (section_index, &(prefix, (_, section))) in sections.iter().enumerate() {
+        for (section_index, &(prefix, (version, section))) in sections.iter().enumerate() {
             write!(formatter,
-                   "\tsection {} with {:?}: {{\n",
+                   "\tsection {} with {:?} v{}: {{\n",
                    section_index,
-                   prefix)?;
+                   prefix,
+                   version)?;
             for (name_index, name) in section.iter().enumerate() {
                 let comma = if name_index == section.len() - 1 {
                     ""

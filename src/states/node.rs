@@ -70,12 +70,12 @@ const GET_NODE_NAME_TIMEOUT_SECS: u64 = 60 + RESOURCE_PROOF_DURATION_SECS;
 const RESOURCE_PROOF_DIFFICULTY: u8 = 0;
 /// The total size of the resource proof data.
 const RESOURCE_PROOF_TARGET_SIZE: usize = 250 * 1024 * 1024;
-/// Initial delay between a routing table change and sending a `RoutingTableRequest`, in seconds.
-const RT_MIN_TIMEOUT_SECS: u64 = 30;
-/// Maximal delay between two subsequent `RoutingTableRequest`s, in seconds.
-const RT_MAX_TIMEOUT_SECS: u64 = 300;
+/// Initial delay between a routing table change and sending a `SectionUpdate`, in seconds.
+const SU_MIN_TIMEOUT_SECS: u64 = 30;
+/// Maximal delay between two subsequent `SectionUpdate`s, in seconds.
+const SU_MAX_TIMEOUT_SECS: u64 = 300;
 /// Maximum time a new node will wait to receive `NodeApproval` after receiving a
-/// `GetNodeNameResponse`.  This covers the built-in delay of the process and also allows time for
+/// `GetNodeNameResponse`. This covers the built-in delay of the process and also allows time for
 /// the message to accumulate and be sent via four different routes.
 const APPROVAL_TIMEOUT_SECS: u64 = RESOURCE_PROOF_DURATION_SECS + ACCUMULATION_TIMEOUT_SECS +
                                    (4 * ACK_TIMEOUT_SECS);
@@ -228,7 +228,7 @@ impl Node {
             tunnels: Default::default(),
             user_msg_cache: UserMessageCache::with_expiry_duration(user_msg_cache_duration),
             next_node_name: None,
-            su_timeout: Duration::from_secs(RT_MIN_TIMEOUT_SECS),
+            su_timeout: Duration::from_secs(SU_MIN_TIMEOUT_SECS),
             su_timer_token: None,
             routing_msg_backlog: vec![],
             merge_cache: LruCache::with_expiry_duration(Duration::from_secs(MERGE_TIMEOUT_SECS)),
@@ -844,7 +844,7 @@ impl Node {
                    hop_msg);
             // TODO - We could return `UnknownConnection` here and not handle the message, but we
             //        could be handling a tunnelled message here immediately after the tunnel
-            //        closed.  Since we no longer have the peer's name available, we just use our
+            //        closed. Since we no longer have the peer's name available, we just use our
             //        own instead, as this is almost equivalent to passing no name at all.
             *self.name()
         };
@@ -1680,8 +1680,8 @@ impl Node {
         }
     }
 
-    // Tell neighbouring sections that our member list changed. If `dst_prefix` is `Some`, only tell
-    // that section, otherwise tell all neighbouring sections.
+    /// Informs our peers that our section's member list changed. If `dst_prefix` is `Some`, only
+    /// tells that section, otherwise tells all connected sections, including our own.
     fn send_section_update(&mut self, dst_prefix: Option<Prefix<XorName>>) {
         if dst_prefix.is_none() && !self.routing_table().is_valid() {
             warn!("{:?} Not sending section update since RT invariant not held.",
@@ -2367,20 +2367,14 @@ impl Node {
                 }
                 Some(their_sections) => their_sections,
             };
-            let our_merged_section: BTreeSet<_> = our_sections
-                .iter()
-                .chain(their_sections.iter())
-                .filter(|&(ver_pfx, _)| ver_pfx.prefix().is_extension_of(&merge_prefix))
-                .flat_map(|(_, peers)| peers)
-                .map(|peer| *peer.name())
-                .collect();
-            let version = our_sections
-                .keys()
-                .chain(their_sections.keys())
-                .filter(|ver_pfx| ver_pfx.prefix().is_extension_of(&merge_prefix))
-                .map(|ver_pfx| ver_pfx.version() + 1)
-                .max()
-                .unwrap_or(1);
+            let mut version = 1;
+            let mut our_merged_section = BTreeSet::new();
+            for (ver_pfx, peers) in our_sections.iter().chain(&their_sections) {
+                if ver_pfx.prefix().is_extension_of(&merge_prefix) {
+                    version = cmp::max(version, ver_pfx.version() + 1);
+                    our_merged_section.extend(peers.into_iter().map(|peer| *peer.name()));
+                }
+            }
             self.process_own_section_merge(their_prefix,
                                            version,
                                            their_sections,
@@ -2518,7 +2512,7 @@ impl Node {
         }
 
         if self.su_timer_token == Some(token) {
-            self.su_timeout = cmp::min(Duration::from_secs(RT_MAX_TIMEOUT_SECS),
+            self.su_timeout = cmp::min(Duration::from_secs(SU_MAX_TIMEOUT_SECS),
                                        self.su_timeout * 2);
             trace!("{:?} Scheduling next RT request for {} seconds from now.",
                    self,
@@ -2710,8 +2704,8 @@ impl Node {
     fn reset_su_timer(&mut self) {
         trace!("{:?} Scheduling a SectionUpdate for {} seconds from now.",
                self,
-               RT_MIN_TIMEOUT_SECS);
-        self.su_timeout = Duration::from_secs(RT_MIN_TIMEOUT_SECS);
+               SU_MIN_TIMEOUT_SECS);
+        self.su_timeout = Duration::from_secs(SU_MIN_TIMEOUT_SECS);
         self.su_timer_token = Some(self.timer.schedule(self.su_timeout));
     }
 
@@ -3144,9 +3138,9 @@ impl Node {
                                 targets: BTreeSet<Prefix<XorName>>,
                                 ver_pfx: VersionedPrefix<XorName>,
                                 section: BTreeSet<XorName>) {
-        let section = self.peer_mgr.get_pub_ids(&section);
+        let pub_ids = self.peer_mgr.get_pub_ids(&section);
         let version = self.routing_table().our_version();
-        let content = MessageContent::OtherSectionMerge(section, version);
+        let content = MessageContent::OtherSectionMerge(pub_ids, version);
         let src = Authority::PrefixSection(*ver_pfx.prefix());
         for target in &targets {
             let dst = Authority::PrefixSection(*target);

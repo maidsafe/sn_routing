@@ -739,7 +739,11 @@ impl PeerManager {
             Some((false, _)) | None => RoutingConnection::Direct,
         };
         let _ = self.expected_peers.remove(pub_id.name());
-        self.routing_table.add(*pub_id.name())?;
+        let res = match self.routing_table.add(*pub_id.name()) {
+            res @ Ok(_) |
+            res @ Err(RoutingTableError::AlreadyExists) => res,
+            Err(e) => return Err(e),
+        };
 
         let conn = self.peer_map
             .remove(peer_id)
@@ -751,13 +755,12 @@ impl PeerManager {
                self,
                pub_id.name(),
                PeerState::Routing(conn));
-
-        Ok(())
+        res
     }
 
     /// Removes the peer with the given name if present, and returns the name and peer ID that was
     /// stored in the entry. If the peer is also our proxy, or we are theirs, it is reinserted as a
-    /// proxy resp. joining node.
+    /// proxy or joining node.
     fn remove_by_name(&mut self, name: XorName) -> Option<(XorName, PeerId)> {
         let peer = match self.peer_map.remove_by_name(&name) {
             Some(peer) => peer,
