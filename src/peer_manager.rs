@@ -755,7 +755,10 @@ impl PeerManager {
         Ok(())
     }
 
-    fn remove_name(&mut self, name: XorName) -> Option<(XorName, PeerId)> {
+    /// Removes the peer with the given name if present, and returns the name and peer ID that was
+    /// stored in the entry. If the peer is also our proxy, or we are theirs, it is reinserted as a
+    /// proxy resp. joining node.
+    fn remove_by_name(&mut self, name: XorName) -> Option<(XorName, PeerId)> {
         let peer = match self.peer_map.remove_by_name(&name) {
             Some(peer) => peer,
             None => return None,
@@ -813,7 +816,7 @@ impl PeerManager {
         let ids_to_drop = names_to_drop
             .into_iter()
             .chain(removal_keys.iter().cloned())
-            .filter_map(|name| self.remove_name(name))
+            .filter_map(|name| self.remove_by_name(name))
             .collect_vec();
 
         self.cleanup_proxy_peer_id();
@@ -901,7 +904,7 @@ impl PeerManager {
                 .merge_own_section(sender_prefix.popped().with_version(merge_version), ver_pfxs);
         let ids_to_drop = dropped
             .into_iter()
-            .filter_map(|name| self.remove_name(name))
+            .filter_map(|name| self.remove_by_name(name))
             .collect_vec();
         (merge_state, ids_to_drop, needed)
     }

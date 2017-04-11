@@ -587,30 +587,30 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             return (result, Some(self.our_prefix));
         }
 
-        if let Some((v, to_split)) = self.sections.remove(&prefix) {
-            if v != version {
+        let (_version, to_split) = match self.sections.entry(prefix) {
+            Entry::Vacant(_) => return (result, None),
+            Entry::Occupied(ref entry) if entry.get().0 != version => {
                 debug!("{:?} Not splitting section with {:?} ver. {}, \
                        update is for a different version: {}",
                        self.our_name,
                        prefix,
-                       v,
+                       entry.get().0,
                        version);
-                self.insert_new_section(prefix, v, to_split);
                 return (result, None);
             }
-            let prefix0 = prefix.pushed(false);
-            let prefix1 = prefix.pushed(true);
-            let (section0, section1) =
-                to_split
-                    .into_iter()
-                    .partition::<BTreeSet<_>, _>(|name| prefix0.matches(name));
+            Entry::Occupied(entry) => entry.remove(),
+        };
+        let prefix0 = prefix.pushed(false);
+        let prefix1 = prefix.pushed(true);
+        let (section0, section1) = to_split
+            .into_iter()
+            .partition::<BTreeSet<_>, _>(|name| prefix0.matches(name));
 
-            for (pfx, section) in vec![(prefix0, section0), (prefix1, section1)] {
-                if self.our_prefix.is_neighbour(&pfx) {
-                    self.insert_new_section(pfx, version + 1, section);
-                } else {
-                    result.extend(section);
-                }
+        for (pfx, section) in vec![(prefix0, section0), (prefix1, section1)] {
+            if self.our_prefix.is_neighbour(&pfx) {
+                self.insert_new_section(pfx, version + 1, section);
+            } else {
+                result.extend(section);
             }
         }
         (result, None)
@@ -1008,10 +1008,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     }
 
     fn merge(&mut self, new_ver_pfx: &VersionedPrefix<T>) {
-        if new_ver_pfx.prefix().extends(&self.our_prefix) ||
+        if new_ver_pfx.prefix().is_extension_of(&self.our_prefix) ||
            self.sections
                .keys()
-               .any(|pfx| new_ver_pfx.prefix().extends(pfx)) {
+               .any(|pfx| new_ver_pfx.prefix().is_extension_of(pfx)) {
             return; // Not a merge!
         }
         let dropped_names = self.add_prefix(*new_ver_pfx);

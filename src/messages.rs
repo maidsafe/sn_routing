@@ -635,7 +635,8 @@ pub enum MessageContent {
     /// Sent by members of a newly-merged section to peers outwith the merged section to notify them
     /// of the merge.
     ///
-    /// The source authority is a `PrefixSection` conveying the section which just merged.
+    /// The source authority is a `PrefixSection` conveying the section which just merged. The
+    /// first field is the set of members of the section, and the second is the section version.
     OtherSectionMerge(BTreeSet<PublicId>, u64),
     /// Acknowledge receipt of any message except an `Ack`. It contains the hash of the
     /// received message and the priority.

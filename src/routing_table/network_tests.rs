@@ -162,10 +162,10 @@ impl Network {
                     }
                     let merge_pfx = sender_pfx.popped();
                     let version = unwrap!(sections
-                                              .iter()
-                                              .filter(|&(pfx, _)| pfx.extends(&merge_pfx))
-                                              .map(|(_, &(v, _))| v + 1)
-                                              .max());
+                                    .iter()
+                                    .filter(|&(pfx, _)| pfx.is_extension_of(&merge_pfx))
+                                    .map(|(_, &(v, _))| v + 1)
+                                    .max());
                     let merge_ver_pfx = merge_pfx.with_version(version);
                     let ver_pfxs = sections.iter().map(|(pfx, &(v, _))| pfx.with_version(v));
                     match target_node.merge_own_section(merge_ver_pfx, ver_pfxs) {

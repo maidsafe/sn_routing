@@ -2370,14 +2370,14 @@ impl Node {
             let our_merged_section: BTreeSet<_> = our_sections
                 .iter()
                 .chain(their_sections.iter())
-                .filter(|&(ver_pfx, _)| ver_pfx.prefix().extends(&merge_prefix))
+                .filter(|&(ver_pfx, _)| ver_pfx.prefix().is_extension_of(&merge_prefix))
                 .flat_map(|(_, peers)| peers)
                 .map(|peer| *peer.name())
                 .collect();
             let version = our_sections
                 .keys()
                 .chain(their_sections.keys())
-                .filter(|ver_pfx| ver_pfx.prefix().extends(&merge_prefix))
+                .filter(|ver_pfx| ver_pfx.prefix().is_extension_of(&merge_prefix))
                 .map(|ver_pfx| ver_pfx.version() + 1)
                 .max()
                 .unwrap_or(1);

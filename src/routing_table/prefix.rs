@@ -107,7 +107,7 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
     }
 
     /// Returns `true` if `other` is compatible but strictly shorter than `self`.
-    pub fn extends(&self, other: &Prefix<T>) -> bool {
+    pub fn is_extension_of(&self, other: &Prefix<T>) -> bool {
         let i = self.name.common_prefix(&other.name);
         i >= other.bit_count() && self.bit_count() > other.bit_count()
     }
