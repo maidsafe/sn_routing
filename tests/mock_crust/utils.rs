@@ -66,11 +66,11 @@ pub struct Nodes(pub Vec<TestNode>);
 impl Drop for Nodes {
     fn drop(&mut self) {
         if thread::panicking() {
-            error!("---------- Routing tables at time of error ----------");
-            error!("");
+            trace!("---------- Routing tables at time of error ----------");
+            trace!("");
             for node in &self.0 {
-                error!("----- Node {:?} -----", node.name());
-                error!("{:?}", node.routing_table());
+                trace!("----- Node {:?} -----", node.name());
+                trace!("{:?}", node.routing_table());
             }
         }
     }
