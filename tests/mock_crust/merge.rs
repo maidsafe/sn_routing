@@ -79,6 +79,7 @@ fn merge_three_sections_into_one() {
 
 #[test]
 fn merge_four_unbalanced_sections_into_one() {
+    log_init!();
     merge(vec![1, 2, 3, 3])
 }
 
@@ -89,6 +90,7 @@ fn merge_four_balanced_sections_into_one() {
 
 #[test]
 fn merge_five_sections_into_one() {
+    log_init!();
     merge(vec![1, 3, 3, 3, 3])
 }
 

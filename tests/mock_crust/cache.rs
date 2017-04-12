@@ -41,6 +41,7 @@ fn gen_immutable_data_not_in_first_node_section<T: Rng>(rng: &mut T, nodes: &[Te
 
 #[test]
 fn response_caching() {
+    log_init!();
     let min_section_size = 8;
     let network = Network::new(min_section_size, None);
 

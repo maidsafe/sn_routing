@@ -157,6 +157,7 @@ mod event;
 mod event_stream;
 mod section_list_cache;
 mod id;
+mod key_gen;
 mod message_filter;
 mod messages;
 mod node;

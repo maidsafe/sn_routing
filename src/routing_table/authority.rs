@@ -94,6 +94,17 @@ impl<N: Xorable + Clone + Copy + Binary + Default> Authority<N> {
         }
     }
 
+    /// If this authority is a Client, update the stored key, otherwise return an error.
+    pub fn update_client_key(&mut self, new_key: sign::PublicKey) -> Result<(), ()> {
+        match *self {
+            Authority::Client { ref mut client_key, .. } => {
+                *client_key = new_key;
+                Ok(())
+            }
+            _ => Err(()),
+        }
+    }
+
     /// Returns the name of authority.
     pub fn name(&self) -> N {
         match *self {

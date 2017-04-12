@@ -414,6 +414,7 @@ fn verify_section_list_signatures(nodes: &[TestNode]) {
 
 #[test]
 fn aggressive_churn() {
+    log_init!();
     let min_section_size = 5;
     let target_section_num = 5;
     let target_network_size = 50;

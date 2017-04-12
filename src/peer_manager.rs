@@ -130,7 +130,8 @@ pub enum PeerState {
     /// We are approved and routing to that peer.
     Routing(RoutingConnection),
     /// Connected peer is a joining node and waiting for approval of routing.
-    Candidate(RoutingConnection),
+    /// Stored name is the candidate's *original name*.
+    Candidate(RoutingConnection, XorName),
     /// We are connected to the peer who is our proxy node.
     Proxy,
 }
@@ -139,7 +140,14 @@ impl PeerState {
     pub fn can_tunnel_for(&self) -> bool {
         match *self {
             PeerState::Routing(RoutingConnection::Direct) |
-            PeerState::Candidate(RoutingConnection::Direct) => true,
+            PeerState::Candidate(RoutingConnection::Direct, _) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_client(&self) -> bool {
+        match *self {
+            PeerState::Client => true,
             _ => false,
         }
     }
@@ -213,6 +221,14 @@ impl Peer {
         self.pub_id.name()
     }
 
+    /// The original name of this peer, if it is in the Candidate state.
+    pub fn orig_name(&self) -> Option<&XorName> {
+        match self.state {
+            PeerState::Candidate(_, ref name) => Some(name),
+            _ => None,
+        }
+    }
+
     pub fn state(&self) -> &PeerState {
         &self.state
     }
@@ -229,7 +245,7 @@ impl Peer {
             }
             PeerState::JoiningNode |
             PeerState::Proxy |
-            PeerState::Candidate(_) |
+            PeerState::Candidate(..) |
             PeerState::Client |
             PeerState::Routing(_) |
             PeerState::AwaitingNodeIdentify(_) => false,
@@ -239,7 +255,7 @@ impl Peer {
     /// Returns the `RoutingConnection` type for this peer when it is put in the routing table.
     fn to_routing_connection(&self, is_tunnel: bool) -> RoutingConnection {
         match self.state {
-            PeerState::Candidate(conn) |
+            PeerState::Candidate(conn, _) |
             PeerState::Routing(conn) => {
                 if conn == RoutingConnection::Tunnel && !is_tunnel {
                     RoutingConnection::Direct
@@ -247,12 +263,13 @@ impl Peer {
                     conn
                 }
             }
+            PeerState::SearchingForTunnel |
+            PeerState::AwaitingNodeIdentify(true) => RoutingConnection::Tunnel,
             PeerState::Proxy => RoutingConnection::Proxy(self.timestamp),
             PeerState::JoiningNode => RoutingConnection::JoiningNode(self.timestamp),
             PeerState::ConnectionInfoPreparing { .. } |
             PeerState::ConnectionInfoReady(_) |
             PeerState::CrustConnecting |
-            PeerState::SearchingForTunnel |
             PeerState::Client |
             PeerState::AwaitingNodeIdentify(_) => {
                 // Since some of these states arent exclusive to connection types,
@@ -337,7 +354,7 @@ impl PeerMap {
 #[derive(Debug)]
 enum CandidateState {
     VotedFor,
-    AcceptedAsCandidate,
+    AcceptedAsCandidate { target_interval: (XorName, XorName) },
     Approved,
 }
 
@@ -370,10 +387,37 @@ impl Candidate {
         }
     }
 
+    /// Update the stored client auth information for this candidate, to reflect a change in name.
+    fn update_client_auth(&mut self, new_key: sign::PublicKey) {
+        if let Err(()) = self.client_auth.update_client_key(new_key) {
+            error!("Not a client authority: {:?}", self.client_auth);
+        }
+    }
+
+    /// Get the stored client key for this candidate.
+    fn get_client_key(&self) -> Option<&sign::PublicKey> {
+        match self.client_auth {
+            Authority::Client { ref client_key, .. } => Some(client_key),
+            other => {
+                error!("Invalid candidate authority: {:?}", other);
+                None
+            }
+        }
+    }
+
+    /// If this candidate has been accepted, return the target interval.
+    fn target_interval(&self) -> Option<&(XorName, XorName)> {
+        if let CandidateState::AcceptedAsCandidate { ref target_interval } = self.state {
+            Some(target_interval)
+        } else {
+            None
+        }
+    }
+
     fn is_expired(&self) -> bool {
         let timeout_duration = match self.state {
             CandidateState::VotedFor => Duration::from_secs(CANDIDATE_ACCEPT_TIMEOUT_SECS),
-            CandidateState::AcceptedAsCandidate |
+            CandidateState::AcceptedAsCandidate { .. } |
             CandidateState::Approved => {
                 Duration::from_secs(RESOURCE_PROOF_DURATION_SECS + ACCUMULATION_TIMEOUT_SECS)
             }
@@ -384,7 +428,7 @@ impl Candidate {
     fn is_approved(&self) -> bool {
         match self.state {
             CandidateState::VotedFor |
-            CandidateState::AcceptedAsCandidate => false,
+            CandidateState::AcceptedAsCandidate { .. } => false,
             CandidateState::Approved => true,
         }
     }
@@ -424,6 +468,25 @@ impl PeerManager {
         }
     }
 
+    /// Update the peer map for a change in key.
+    ///
+    /// All traces of the old name should be removed.
+    pub fn handle_key_change(&mut self, peer_id: &PeerId, old_name: &XorName, new_id: PublicId) {
+        // If we have an entry for the old name, remove it.
+        if let Some(mut peer) = self.peer_map.remove_by_name(old_name) {
+            peer.pub_id = new_id;
+            debug_assert_eq!(peer.peer_id.as_ref(), Some(peer_id));
+            let replaced = self.peer_map.insert(peer);
+            debug_assert!(replaced.is_none());
+        } else {
+            warn!("{:?} Tried to update key for an unknown peer. Old name: {:?}, new name: {:?}.",
+                self,
+                old_name,
+                new_id.name()
+            );
+        }
+    }
+
     /// Clears the routing table and resets this node's public ID.
     pub fn reset_routing_table(&mut self, our_public_id: PublicId) {
         if !self.routing_table.is_empty() {
@@ -456,8 +519,8 @@ impl PeerManager {
     }
 
     /// Adds a potential candidate to the candidate list setting its state to `VotedFor`.  If
-    /// another ongoing (i.e. unapproved) candidate exists, or if the candidate is unsuitable for
-    /// adding to our section, returns an error.
+    /// another ongoing (i.e. unapproved) candidate exists, returns an error.
+    /// Note that candidate name is the candidate's original name before key re-generation.
     pub fn expect_candidate(&mut self,
                             candidate_name: XorName,
                             client_auth: Authority<XorName>)
@@ -472,8 +535,6 @@ impl PeerManager {
                    ongoing_name);
             return Err(RoutingError::AlreadyHandlingJoinRequest);
         }
-        self.routing_table
-            .should_join_our_section(&candidate_name)?;
         let _ = self.candidates
             .insert(candidate_name, Candidate::new(client_auth));
         Ok(())
@@ -484,15 +545,23 @@ impl PeerManager {
     /// state to `AcceptedAsCandidate`.
     pub fn accept_as_candidate(&mut self,
                                candidate_name: XorName,
+                               target_interval: (XorName, XorName),
                                client_auth: Authority<XorName>)
                                -> BTreeSet<PublicId> {
         self.remove_unapproved_candidates(&candidate_name);
         self.candidates
             .entry(candidate_name)
             .or_insert_with(|| Candidate::new(client_auth))
-            .state = CandidateState::AcceptedAsCandidate;
+            .state = CandidateState::AcceptedAsCandidate { target_interval: target_interval };
         let our_section = self.routing_table.our_section();
         self.get_pub_ids(our_section)
+    }
+
+    /// Look up the original name for a candidate, given its new name.
+    pub fn get_candidate_orig_name(&self, new_name: &XorName) -> Option<&XorName> {
+        self.peer_map
+            .get_by_name(new_name)
+            .and_then(|peer| peer.orig_name())
     }
 
     /// Verifies proof of resource.  If the response is not the current candidate, or if it fails
@@ -505,11 +574,13 @@ impl PeerManager {
                             proof_part: Vec<u8>,
                             leading_zero_bytes: u64)
                             -> Result<Option<(usize, u8, Duration)>, RoutingError> {
-        let candidate = if let Some(candidate) = self.candidates.get_mut(candidate_name) {
-            candidate
-        } else {
-            return Err(RoutingError::UnknownCandidate);
-        };
+        // FIXME(michael): alternative to this hackery with storing the original name
+        // is to re-insert into candidates when the name changes?
+        let candidate = self.get_candidate_orig_name(candidate_name)
+            .cloned()
+            .and_then(|old_name| self.candidates.get_mut(&old_name))
+            .ok_or(RoutingError::UnknownCandidate)?;
+
         let challenge_response = &mut (if let Some(ref mut rp) = candidate.challenge_response {
                                            rp
                                        } else {
@@ -537,17 +608,29 @@ impl PeerManager {
     /// the `PublicId`s of all routing table entries.
     pub fn verified_candidate_info
         (&self)
-         -> Result<(PublicId, Authority<XorName>, SectionMap), RoutingError> {
-        if let Some((name, candidate)) =
-            self.candidates
-                .iter()
-                .find(|&(_, cand)| cand.passed_our_challenge && !cand.is_approved()) {
-            return if let Some(peer) = self.peer_map.get_by_name(name) {
-                       Ok((*peer.pub_id(), candidate.client_auth, self.pub_ids_by_section()))
-                   } else {
-                       Err(RoutingError::UnknownCandidate)
-                   };
+         -> Result<(PublicId, XorName, Authority<XorName>, SectionMap), RoutingError> {
+
+        let candidate = self.candidates
+            .iter()
+            .find(|&(_, cand)| cand.passed_our_challenge && !cand.is_approved());
+
+        if let Some((orig_name, candidate)) = candidate {
+            // FIXME(michael): maybe avoid the hash here by storing the new_name in candidates?
+            let candidate_new_name = candidate
+                .get_client_key()
+                .map(|key| PublicId::compute_name(key))
+                .ok_or(RoutingError::UnknownCandidate)?;
+            return self.peer_map
+                       .get_by_name(&candidate_new_name)
+                       .map(|peer| {
+                                (*peer.pub_id(),
+                                 *orig_name,
+                                 candidate.client_auth,
+                                 self.pub_ids_by_section())
+                            })
+                       .ok_or(RoutingError::UnknownCandidate);
         }
+
         if let Some((name, _)) = self.candidates
                .iter()
                .find(|&(_, cand)| !cand.is_approved()) {
@@ -564,13 +647,15 @@ impl PeerManager {
     /// candidate's `PeerId`; or `Err` if the peer is not the candidate or we are missing its info.
     pub fn handle_candidate_approval(&mut self,
                                      candidate_name: XorName,
+                                     orig_name: XorName,
                                      client_auth: Authority<XorName>)
                                      -> Result<Option<PeerId>, RoutingError> {
-        if let Some(candidate) = self.candidates.get_mut(&candidate_name) {
+
+        if let Some(candidate) = self.candidates.get_mut(&orig_name) {
             candidate.state = CandidateState::Approved;
             if let Some(peer) = self.peer_map.get_by_name(&candidate_name) {
                 if let Some(peer_id) = peer.peer_id() {
-                    if let PeerState::Candidate(_) = *peer.state() {
+                    if let PeerState::Candidate(..) = *peer.state() {
                         return Ok(Some(*peer_id));
                     } else {
                         trace!("Node({}) Candidate {} not yet connected to us.",
@@ -591,10 +676,10 @@ impl PeerManager {
             return Err(RoutingError::InvalidStateForOperation);
         }
 
-        self.remove_unapproved_candidates(&candidate_name);
+        self.remove_unapproved_candidates(&orig_name);
         let mut candidate = Candidate::new(client_auth);
         candidate.state = CandidateState::Approved;
-        let _ = self.candidates.insert(candidate_name, candidate);
+        let _ = self.candidates.insert(orig_name, candidate);
         trace!("{:?} No candidate with name {}", self, candidate_name);
         // TODO: more specific return error
         Err(RoutingError::InvalidStateForOperation)
@@ -609,15 +694,27 @@ impl PeerManager {
     /// * Ok(false)                     if the peer has already been approved
     /// * Err(CandidateIsTunnelling)    if the peer is tunnelling
     /// * Err(UnknownCandidate)         if the peer is not in the candidate list
+    #[cfg_attr(feature="cargo-clippy", allow(too_many_arguments))]
     pub fn handle_candidate_identify(&mut self,
                                      pub_id: &PublicId,
+                                     orig_name: &XorName,
                                      peer_id: &PeerId,
                                      target_size: usize,
                                      difficulty: u8,
                                      seed: Vec<u8>,
                                      is_tunnel: bool)
                                      -> Result<bool, RoutingError> {
-        if let Some(candidate) = self.candidates.get_mut(pub_id.name()) {
+        if let Some(candidate) = self.candidates.get_mut(orig_name) {
+            // Check that the candidate has joined the interval that we assigned it.
+            let (start, end) = *candidate
+                                    .target_interval()
+                                    .ok_or(RoutingError::UnknownCandidate)?;
+
+            if !pub_id.name().between(&start, &end) {
+                return Err(RoutingError::InvalidCandidateKey);
+            }
+
+            candidate.update_client_auth(*pub_id.signing_public_key());
             if candidate.is_approved() {
                 Ok(false)
             } else {
@@ -625,7 +722,7 @@ impl PeerManager {
                     .get(peer_id)
                     .map_or(RoutingConnection::Direct,
                             |peer| peer.to_routing_connection(is_tunnel));
-                let state = PeerState::Candidate(conn);
+                let state = PeerState::Candidate(conn, *orig_name);
                 let _ = self.peer_map
                     .insert(Peer::new(*pub_id, Some(*peer_id), state));
                 if conn == RoutingConnection::Tunnel {
@@ -726,7 +823,7 @@ impl PeerManager {
                 // section update, and we handle it in `self.routing_table.add()` below by returning
                 // an `AlreadyExists` error.
                 PeerState::Routing(RoutingConnection::JoiningNode(_)) |
-                PeerState::Candidate(_) |
+                PeerState::Candidate(..) |
                 PeerState::Proxy => (),
             }
         } else if !self.unknown_peers.contains_key(peer_id) {
@@ -789,7 +886,7 @@ impl PeerManager {
                         ..
                     } |
                     Peer {
-                        state: PeerState::Candidate(RoutingConnection::JoiningNode(timestamp)),
+                        state: PeerState::Candidate(RoutingConnection::JoiningNode(timestamp), _),
                         ..
                     } => {
                         debug!("{:?} Still acts as proxy of {:?}, re-insert peer as JoiningNode",
@@ -1190,7 +1287,7 @@ impl PeerManager {
     pub fn tunnelling_to(&mut self, peer_id: &PeerId) -> bool {
         match self.get_state(peer_id) {
             Some(&PeerState::AwaitingNodeIdentify(_)) |
-            Some(&PeerState::Candidate(_)) |
+            Some(&PeerState::Candidate(..)) |
             Some(&PeerState::Routing(_)) => return false,
             _ => (),
         }
@@ -1232,7 +1329,7 @@ impl PeerManager {
                           PeerState::Client |
                           PeerState::JoiningNode |
                           PeerState::Proxy |
-                          PeerState::Candidate(_) |
+                          PeerState::Candidate(..) |
                           PeerState::Routing(_) => Some(peer),
                           _ => None,
                       })
@@ -1332,7 +1429,7 @@ impl PeerManager {
                         conn == RoutingConnection::Tunnel
                     }
                 }
-                PeerState::Candidate(conn) => conn == RoutingConnection::Tunnel,
+                PeerState::Candidate(conn, _) => conn == RoutingConnection::Tunnel,
                 PeerState::AwaitingNodeIdentify(is_tunnel) => is_tunnel,
                 _ => continue,
             };
@@ -1358,7 +1455,9 @@ impl PeerManager {
     pub fn correct_state_to_direct(&mut self, peer_id: &PeerId) {
         let state = match self.peer_map.get(peer_id).map(|peer| &peer.state) {
             Some(&PeerState::Routing(_)) => PeerState::Routing(RoutingConnection::Direct),
-            Some(&PeerState::Candidate(_)) => PeerState::Candidate(RoutingConnection::Direct),
+            Some(&PeerState::Candidate(_, orig_name)) => {
+                PeerState::Candidate(RoutingConnection::Direct, orig_name)
+            }
             Some(&PeerState::AwaitingNodeIdentify(_)) => PeerState::AwaitingNodeIdentify(false),
             state => {
                 log_or_panic!(LogLevel::Error,
@@ -1522,7 +1621,7 @@ impl PeerManager {
                 Ok(ConnectionInfoReceivedResult::IsProxy)
             }
             Some(peer @ Peer { state: PeerState::Routing(_), .. }) |
-            Some(peer @ Peer { state: PeerState::Candidate(_), .. }) => {
+            Some(peer @ Peer { state: PeerState::Candidate(..), .. }) => {
                 // TODO: We _should_ retry connecting if the peer is connected via tunnel.
                 let _ = self.peer_map.insert(peer);
                 Ok(ConnectionInfoReceivedResult::IsConnected)
@@ -1557,7 +1656,7 @@ impl PeerManager {
             Some(&PeerState::CrustConnecting) |
             Some(&PeerState::JoiningNode) |
             Some(&PeerState::Proxy) |
-            Some(&PeerState::Candidate(_)) |
+            Some(&PeerState::Candidate(..)) |
             Some(&PeerState::Routing(_)) => return None,
             Some(&PeerState::SearchingForTunnel) |
             None => (),

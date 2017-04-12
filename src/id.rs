@@ -17,6 +17,7 @@
 
 use rust_sodium::crypto::{box_, hash, sign};
 use std::fmt::{self, Debug, Formatter};
+use std::mem;
 use xor_name::XorName;
 
 /// Network identity component containing name, and public and private keys.
@@ -49,6 +50,21 @@ impl FullId {
             private_encrypt_key: encrypt_keys.1,
             private_sign_key: sign_keys.1,
         }
+    }
+
+    /// Replace the public and private keys used for signing.
+    pub fn replace_signing_keys(&mut self,
+                                (pk, sk): (sign::PublicKey, sign::SecretKey))
+                                -> (sign::PublicKey, sign::SecretKey) {
+
+        let old_secret_key = mem::replace(&mut self.private_sign_key, sk);
+        let old_public_key = self.public_id.public_sign_key;
+
+        // Regenerate public ID.
+        let public_encrypt_key = self.public_id.public_encrypt_key;
+        self.public_id = PublicId::new(public_encrypt_key, pk);
+
+        (old_public_key, old_secret_key)
     }
 
     /// Returns public ID reference.
@@ -93,15 +109,19 @@ impl Debug for PublicId {
 }
 
 impl PublicId {
-    /// Return initial/relocated name.
+    /// Return the stored name for this public ID.
     pub fn name(&self) -> &XorName {
         &self.name
     }
 
-    /// Name field is initially same as original_name, this should be replaced by relocated name
-    /// calculated by the nodes close to original_name by using this method
-    pub fn set_name(&mut self, name: XorName) {
-        self.name = name;
+    /// Return the name computed from this ID's key.
+    pub fn compute_name(public_sign_key: &sign::PublicKey) -> XorName {
+        XorName(hash::sha256::hash(&public_sign_key[..]).0)
+    }
+
+    /// Return true if the stored name correctly matches the signing key.
+    pub fn is_valid(&self) -> bool {
+        self.name == Self::compute_name(&self.public_sign_key)
     }
 
     /// Return public signing key.
@@ -114,16 +134,12 @@ impl PublicId {
         &self.public_sign_key
     }
 
-    /// Returns whether our name is the hash of our public sign key.
-    pub fn is_client_id(&self) -> bool {
-        self.name.0 == hash::sha256::hash(&self.public_sign_key[..]).0
-    }
-
     fn new(public_encrypt_key: box_::PublicKey, public_sign_key: sign::PublicKey) -> PublicId {
+        let name = Self::compute_name(&public_sign_key);
         PublicId {
             public_encrypt_key: public_encrypt_key,
             public_sign_key: public_sign_key,
-            name: XorName(hash::sha256::hash(&public_sign_key[..]).0),
+            name: name,
         }
     }
 }

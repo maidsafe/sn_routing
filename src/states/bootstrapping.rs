@@ -28,7 +28,6 @@ use maidsafe_utilities::serialisation;
 use messages::{DirectMessage, Message};
 use outbox::EventBox;
 use routing_table::Authority;
-use rust_sodium::crypto::hash::sha256;
 use rust_sodium::crypto::sign;
 use state_machine::Transition;
 use stats::Stats;
@@ -252,12 +251,6 @@ impl Bootstrapping {
     }
 
     fn handle_bootstrap_identify(&mut self, public_id: PublicId, peer_id: PeerId) -> Transition {
-        if *public_id.name() == XorName(sha256::hash(&public_id.signing_public_key().0).0) {
-            warn!("{:?} Incoming connection is client - dropping", self);
-            self.rebootstrap();
-            return Transition::Stay;
-        }
-
         Transition::IntoBootstrapped {
             proxy_peer_id: peer_id,
             proxy_public_id: public_id,

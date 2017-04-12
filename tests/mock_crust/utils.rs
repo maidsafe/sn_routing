@@ -467,7 +467,11 @@ pub fn add_connected_nodes_until_split(network: &Network,
                 // Assert that this can be split down to a desired prefix.
                 let is_valid = |prefix: &Prefix<XorName>| {
                     if prefix.is_compatible(prefix_to_split) {
-                        assert!(prefix.bit_count() > prefix_to_split.bit_count());
+                        assert!(prefix.bit_count() > prefix_to_split.bit_count(),
+                            "prefix_to_split: {:?}, prefix: {:?}",
+                            prefix_to_split,
+                            prefix
+                        );
                         return true;
                     }
                     false
@@ -497,7 +501,7 @@ pub fn add_connected_nodes_until_split(network: &Network,
                    .map(|prefix| prefix.bit_count())
                    .collect_vec());
 
-    // Clear all event queues and clear the `next_node_name` values.
+    // Clear all event queues and clear the `next_reloc_section` values.
     for node in nodes.iter_mut() {
         while let Ok(event) = node.try_next_ev() {
             match event {
@@ -508,7 +512,7 @@ pub fn add_connected_nodes_until_split(network: &Network,
                 event => panic!("Got unexpected event: {:?}", event),
             }
         }
-        node.inner.clear_next_node_name();
+        node.inner.clear_next_reloc_section();
     }
 
     trace!("Created testnet comprising {:?}", prefixes);
@@ -624,7 +628,11 @@ fn add_node_to_section<T: Rng>(network: &Network,
     let relocation_name = prefix.substituted_in(rng.gen());
     nodes
         .iter_mut()
-        .foreach(|node| node.inner.set_next_node_name(relocation_name));
+        .foreach(|node| {
+                     node.inner.set_next_reloc_section(relocation_name);
+                     node.inner
+                         .set_next_reloc_interval((prefix.lower_bound(), prefix.upper_bound()));
+                 });
 
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
     let endpoint = Endpoint(nodes.len());
@@ -635,7 +643,7 @@ fn add_node_to_section<T: Rng>(network: &Network,
                    .create());
     poll_and_resend(nodes, &mut []);
     expect_any_event!(unwrap!(nodes.last_mut()), Event::Connected);
-    assert_eq!(relocation_name, nodes[nodes.len() - 1].name());
+    assert!(prefix.matches(nodes[nodes.len() - 1].routing_table().our_name()));
 }
 
 mod tests {
