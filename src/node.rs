@@ -29,9 +29,9 @@ use id::PublicId;
 use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, RELOCATE_PRIORITY, Request, Response,
                UserMessage};
 use outbox::{EventBox, EventBuf};
+use routing_table::{Authority, RoutingTable};
 #[cfg(feature = "use-mock-crust")]
-use routing_table::{Prefix, RoutingTable};
-use routing_table::Authority;
+use routing_table::Prefix;
 #[cfg(not(feature = "use-mock-crust"))]
 use rust_sodium;
 #[cfg(feature = "use-mock-crust")]
@@ -409,6 +409,13 @@ impl Node {
         self.machine.name().ok_or(RoutingError::Terminated)
     }
 
+    /// Returns the routing table of this node.
+    pub fn routing_table(&self) -> Result<&RoutingTable<XorName>, RoutingError> {
+        self.machine
+            .routing_table()
+            .ok_or(RoutingError::Terminated)
+    }
+
     fn send_action(&mut self,
                    src: Authority<XorName>,
                    dst: Authority<XorName>,
@@ -471,11 +478,6 @@ impl Node {
     /// Purge invalid routing entries.
     pub fn purge_invalid_rt_entry(&mut self) {
         self.machine.current_mut().purge_invalid_rt_entry()
-    }
-
-    /// Routing table of this node.
-    pub fn routing_table(&self) -> Option<RoutingTable<XorName>> {
-        self.machine.current().routing_table().cloned()
     }
 
     /// Check whether this node acts as a tunnel node between `client_1` and `client_2`.

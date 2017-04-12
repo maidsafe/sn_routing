@@ -29,7 +29,7 @@ use maidsafe_utilities::serialisation::{deserialise, serialise};
 #[cfg(feature = "use-mock-crust")]
 use mock_crust::crust::PeerId;
 use peer_manager::SectionMap;
-use routing_table::{Prefix, Xorable};
+use routing_table::{Prefix, VersionedPrefix, Xorable};
 use routing_table::Authority;
 use rust_sodium::crypto::{box_, sign};
 use rust_sodium::crypto::hash::sha256;
@@ -615,38 +615,17 @@ pub enum MessageContent {
         /// The message's unique identifier.
         message_id: MessageId,
     },
-    /// Sent to request a `SectionUpdate` from a neighbouring section. Only sent if we receive a
-    /// message from that section indicating its section prefix has altered while we've been in the
-    /// process of handling a merge ourself.
-    SectionUpdateRequest {
-        /// Section prefix of the sender. Included as the message is sent from a `ManagedNode`, but
-        /// the response should be sent to `PrefixSection` indicated by `our_prefix`.
-        our_prefix: Prefix<XorName>,
-    },
     /// Sent to notify neighbours and own members when our section's member list changed (for now,
     /// only when new nodes join).
     SectionUpdate {
-        /// Section prefix. Included because this message is sent to both the section's own members
-        /// and neighbouring sections.
-        prefix: Prefix<XorName>,
+        /// Section prefix and version. Included because this message is sent to both the section's
+        /// own members and neighbouring sections.
+        versioned_prefix: VersionedPrefix<XorName>,
         /// Members of the section
         members: BTreeSet<PublicId>,
-        /// Whether the recipient should process merges implied by this update.
-        merge: bool,
-    },
-    /// Sent from a node to its own section to request their current routing table.
-    RoutingTableRequest(MessageId, sha256::Digest),
-    /// Sent from a section to a node to update it about its prefix and its member list.
-    RoutingTableResponse {
-        /// The section's current prefix.
-        prefix: Prefix<XorName>,
-        /// Members of the section.
-        members: BTreeSet<PublicId>,
-        /// The message's unique identifier.
-        message_id: MessageId,
     },
     /// Sent to all connected peers when our own section splits
-    SectionSplit(Prefix<XorName>, XorName),
+    SectionSplit(VersionedPrefix<XorName>, XorName),
     /// Sent amongst members of a newly-merged section to allow synchronisation of their routing
     /// tables before notifying other connected peers of the merge.
     ///
@@ -656,8 +635,9 @@ pub enum MessageContent {
     /// Sent by members of a newly-merged section to peers outwith the merged section to notify them
     /// of the merge.
     ///
-    /// The source authority is a `PrefixSection` conveying the section which just merged.
-    OtherSectionMerge(BTreeSet<PublicId>),
+    /// The source authority is a `PrefixSection` conveying the section which just merged. The
+    /// first field is the set of members of the section, and the second is the section version.
+    OtherSectionMerge(BTreeSet<PublicId>, u64),
     /// Acknowledge receipt of any message except an `Ack`. It contains the hash of the
     /// received message and the priority.
     Ack(Ack, u8),
@@ -849,42 +829,22 @@ impl Debug for MessageContent {
                        section,
                        message_id)
             }
-            SectionUpdateRequest { ref our_prefix } => {
-                write!(formatter, "SectionUpdateRequest {{ {:?} }}", our_prefix)
-            }
             SectionUpdate {
-                ref prefix,
+                ref versioned_prefix,
                 ref members,
-                ref merge,
             } => {
                 write!(formatter,
-                       "SectionUpdate {{ {:?}, {:?}, {:?} }}",
-                       prefix,
-                       members,
-                       merge)
+                       "SectionUpdate {{ {:?}, {:?} }}",
+                       versioned_prefix,
+                       members)
             }
-            RoutingTableRequest(ref msg_id, ref digest) => {
-                write!(formatter,
-                       "RoutingTableRequest({:?}, {})",
-                       msg_id,
-                       utils::format_binary_array(&digest.0))
-            }
-            RoutingTableResponse {
-                ref prefix,
-                ref members,
-                ref message_id,
-            } => {
-                write!(formatter,
-                       "RoutingTableResponse {{ {:?}, {:?}, {:?} }}",
-                       prefix,
-                       members,
-                       message_id)
-            }
-            SectionSplit(ref prefix, ref joining_node) => {
-                write!(formatter, "SectionSplit({:?}, {:?})", prefix, joining_node)
+            SectionSplit(ref ver_pfx, ref joining_node) => {
+                write!(formatter, "SectionSplit({:?}, {:?})", ver_pfx, joining_node)
             }
             OwnSectionMerge(ref sections) => write!(formatter, "OwnSectionMerge({:?})", sections),
-            OtherSectionMerge(ref section) => write!(formatter, "OtherSectionMerge({:?})", section),
+            OtherSectionMerge(ref section, ref version) => {
+                write!(formatter, "OtherSectionMerge({:?}, {:?})", section, version)
+            }
             Ack(ack, priority) => write!(formatter, "Ack({:?}, {})", ack, priority),
             UserMessagePart {
                 hash,
@@ -1343,7 +1303,7 @@ mod tests {
                 proxy_node_name: name,
             },
             dst: Authority::ClientManager(name),
-            content: MessageContent::SectionSplit(Prefix::new(0, name), name),
+            content: MessageContent::SectionSplit(Prefix::new(0, name).with_version(0), name),
         };
         let senders = iter::empty().collect();
         let signed_message_result = SignedMessage::new(routing_message.clone(), &full_id, senders);
@@ -1449,7 +1409,7 @@ mod tests {
         let routing_message = RoutingMessage {
             src: Authority::ClientManager(name),
             dst: Authority::ClientManager(name),
-            content: MessageContent::SectionSplit(Prefix::new(0, name), name),
+            content: MessageContent::SectionSplit(Prefix::new(0, name).with_version(1), name),
         };
         let full_id = FullId::new();
         let senders = iter::empty().collect();
