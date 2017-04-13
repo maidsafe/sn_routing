@@ -126,12 +126,24 @@ impl<Message: Hash> MessageFilter<Message> {
 mod tests {
     use super::*;
     use rand::{self, Rng};
-    use std::thread;
     use std::time::Duration;
+
+    #[cfg(feature = "use-mock-crust")]
+    fn sleep(time: u64) {
+        use fake_clock::FakeClock;
+        FakeClock::advance_time(time);
+    }
+
+    #[cfg(not(feature = "use-mock-crust"))]
+    fn sleep(time: u64) {
+        use std::thread;
+        thread::sleep(Duration::from_millis(time));
+    }
 
     #[test]
     fn timeout() {
-        let time_to_live = Duration::from_millis(rand::thread_rng().gen_range(50, 150));
+        let time_to_live_ms = rand::thread_rng().gen_range(50, 150);
+        let time_to_live = Duration::from_millis(time_to_live_ms);
         let mut msg_filter = MessageFilter::<usize>::with_expiry_duration(time_to_live);
         assert_eq!(time_to_live, msg_filter.time_to_live);
 
@@ -144,8 +156,8 @@ mod tests {
         }
 
         // Allow the added messages time to expire.
-        let sleep_duration = time_to_live + Duration::from_millis(10);
-        thread::sleep(sleep_duration);
+        let sleep_duration = time_to_live_ms + 10;
+        sleep(sleep_duration);
 
         // Add a new message which should cause the expired values to be removed.
         assert_eq!(1, msg_filter.insert(&11));
@@ -172,7 +184,8 @@ mod tests {
             }
         }
 
-        let time_to_live = Duration::from_millis(rand::thread_rng().gen_range(50, 150));
+        let time_to_live_ms = rand::thread_rng().gen_range(50, 150);
+        let time_to_live = Duration::from_millis(time_to_live_ms);
         let mut msg_filter = MessageFilter::<Temp>::with_expiry_duration(time_to_live);
 
         let values: Vec<Temp> = (0..10).map(|_| Temp::default()).collect();
@@ -183,8 +196,8 @@ mod tests {
         }
 
         // Allow the added messages time to expire.
-        let sleep_duration = time_to_live + Duration::from_millis(10);
-        thread::sleep(sleep_duration);
+        let sleep_duration = time_to_live_ms + 10;
+        sleep(sleep_duration);
 
         // Add a new message which should cause the expired values to be removed.
         let temp: Temp = Default::default();
@@ -216,22 +229,22 @@ mod tests {
     fn insert_resets_timeout() {
         // Check re-adding a message to a filter alters its expiry time.
         let time_to_live = Duration::from_millis(3000);
-        let sleep_duration = Duration::from_millis(1800); // more than half of `time_to_live`
+        let sleep_duration = 1800; // more than half of `time_to_live`
         let mut msg_filter = MessageFilter::<usize>::with_expiry_duration(time_to_live);
 
         // Add "0".
         assert_eq!(1, msg_filter.insert(&0));
 
         // Wait for a bit more than half the expiry time and re-add "0".
-        thread::sleep(sleep_duration);
+        sleep(sleep_duration);
         assert_eq!(2, msg_filter.insert(&0));
 
         // Wait for another half of the expiry time and check it's not been removed.
-        thread::sleep(sleep_duration);
+        sleep(sleep_duration);
         assert!(msg_filter.contains(&0));
 
         // Wait for another half of the expiry time and check it's been removed.
-        thread::sleep(sleep_duration);
+        sleep(sleep_duration);
         assert!(!msg_filter.contains(&0));
     }
 }
