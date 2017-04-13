@@ -125,6 +125,8 @@ pub enum RoutingError {
     FailedResourceProofValidation,
     /// Candidate is connected via a tunnel
     CandidateIsTunnelling,
+    /// Content of a received message is inconsistent.
+    InvalidMessage,
 }
 
 impl From<RoutingTableError> for RoutingError {

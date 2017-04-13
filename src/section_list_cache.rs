@@ -88,6 +88,18 @@ impl SectionListCache {
         self.update_lists_cache(our_section_size);
     }
 
+    /// Returns the given signature, if present.
+    pub fn get_signature_for(&self,
+                             prefix: &Prefix<XorName>,
+                             pub_id: &PublicId,
+                             list: &SectionList)
+                             -> Option<&Signature> {
+        self.signatures
+            .get(prefix)
+            .and_then(|lists| lists.get(list))
+            .and_then(|sigs| sigs.get(pub_id))
+    }
+
     /// Returns the currently signed section list for `prefix` along with a quorum of signatures.
     // TODO: Remove this when the method is used in production
     #[cfg(feature="use-mock-crust")]
