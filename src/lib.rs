@@ -121,7 +121,6 @@
 #![cfg_attr(feature="cargo-clippy", deny(unicode_not_nfc, wrong_pub_self_convention,
                                     option_unwrap_used))]
 
-extern crate accumulator;
 extern crate hex;
 #[macro_use]
 extern crate log;
