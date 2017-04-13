@@ -23,7 +23,8 @@ use id::PublicId;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 use outbox::EventBox;
 #[cfg(feature = "use-mock-crust")]
-use routing_table::{Prefix, RoutingTable};
+use routing_table::Prefix;
+use routing_table::RoutingTable;
 #[cfg(feature = "use-mock-crust")]
 use rust_sodium::crypto::sign;
 use states::{Bootstrapping, Client, Node};
@@ -98,6 +99,13 @@ impl State {
         self.base_state().map(|state| *state.name())
     }
 
+    fn routing_table(&self) -> Option<&RoutingTable<XorName>> {
+        match *self {
+            State::Node(ref state) => Some(state.routing_table()),
+            _ => None,
+        }
+    }
+
     fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
         self.base_state()
             .and_then(|state| state.close_group(name, count))
@@ -147,13 +155,6 @@ impl State {
     pub fn purge_invalid_rt_entry(&mut self) {
         if let State::Node(ref mut state) = *self {
             state.purge_invalid_rt_entry();
-        }
-    }
-
-    pub fn routing_table(&self) -> Option<&RoutingTable<XorName>> {
-        match *self {
-            State::Node(ref state) => Some(state.routing_table()),
-            _ => None,
         }
     }
 
@@ -323,6 +324,10 @@ impl StateMachine {
 
     pub fn name(&self) -> Option<XorName> {
         self.state.name()
+    }
+
+    pub fn routing_table(&self) -> Option<&RoutingTable<XorName>> {
+        self.state.routing_table()
     }
 
     pub fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {

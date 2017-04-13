@@ -66,11 +66,11 @@ pub struct Nodes(pub Vec<TestNode>);
 impl Drop for Nodes {
     fn drop(&mut self) {
         if thread::panicking() {
-            error!("---------- Routing tables at time of error ----------");
-            error!("");
+            trace!("---------- Routing tables at time of error ----------");
+            trace!("");
             for node in &self.0 {
-                error!("----- Node {:?} -----", node.name());
-                error!("{:?}", node.routing_table());
+                trace!("----- Node {:?} -----", node.name());
+                trace!("{:?}", node.routing_table());
             }
         }
     }
@@ -153,13 +153,14 @@ impl TestNode {
         unwrap!(unwrap!(self.inner.routing_table()).close_names(&self.name()))
     }
 
-    pub fn routing_table(&self) -> RoutingTable<XorName> {
+    pub fn routing_table(&self) -> &RoutingTable<XorName> {
         unwrap!(self.inner.routing_table())
     }
 
     pub fn is_recipient(&self, dst: &Authority<XorName>) -> bool {
         self.inner
             .routing_table()
+            .ok()
             .map_or(false, |rt| rt.in_authority(dst))
     }
 }
@@ -545,8 +546,7 @@ pub fn sort_nodes_by_distance_to(nodes: &mut [TestNode], name: &XorName) {
 }
 
 pub fn verify_invariant_for_all_nodes(nodes: &mut [TestNode]) {
-    let routing_tables = nodes.iter().map(|n| n.routing_table()).collect_vec();
-    verify_network_invariant(routing_tables.iter());
+    verify_network_invariant(nodes.iter().map(|n| n.routing_table()));
     for node in nodes.iter_mut() {
         node.inner.purge_invalid_rt_entry();
     }
