@@ -25,6 +25,8 @@ use crust::{ConnectionInfoResult, CrustError, CrustUser, PeerId, PrivConnectionI
 use crust::Event as CrustEvent;
 use error::{InterfaceError, RoutingError};
 use event::Event;
+#[cfg(feature="use-mock-crust")]
+use fake_clock::FakeClock as Instant;
 use id::{FullId, PublicId};
 use itertools::Itertools;
 use log::LogLevel;
@@ -50,12 +52,13 @@ use signature_accumulator::{ACCUMULATION_TIMEOUT_SECS, SignatureAccumulator};
 use state_machine::Transition;
 use stats::Stats;
 use std::{cmp, fmt, iter, mem};
-use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, VecDeque};
 #[cfg(feature = "use-mock-crust")]
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
-use std::iter::Iterator;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(not(feature="use-mock-crust"))]
+use std::time::Instant;
 use timer::Timer;
 use tunnels::Tunnels;
 use types::MessageId;
@@ -2876,7 +2879,7 @@ impl Node {
         };
 
         if self.is_proper() && !force_via_proxy {
-            let targets: HashSet<_> = self.routing_table()
+            let targets: BTreeSet<_> = self.routing_table()
                 .targets(&routing_msg.dst, *exclude, route as usize)?
                 .into_iter()
                 .filter(|target| !sent_to.contains(target))
