@@ -121,9 +121,15 @@ impl Client {
         let cache = Box::new(NullCache);
         let full_id = keys.unwrap_or_else(FullId::new);
 
-        StateMachine::new(move |crust_service, timer, _outbox2| {
-            states::Bootstrapping::new(cache, true, crust_service, full_id, min_section_size, timer)
-                .map_or(State::Terminated, State::Bootstrapping)
+        StateMachine::new(move |action_sender, crust_service, timer, _outbox2| {
+            states::Bootstrapping::new(action_sender,
+                                       cache,
+                                       true,
+                                       crust_service,
+                                       full_id,
+                                       min_section_size,
+                                       timer)
+                    .map_or(State::Terminated, State::Bootstrapping)
         },
                           outbox)
     }

@@ -17,9 +17,39 @@
 
 use routing_table::Xorable;
 use rust_sodium::crypto::hash::sha256;
-use std::fmt::Write;
+use std::fmt::{self, Display, Write};
 use std::iter;
+use std::time::Duration;
 use xor_name::XorName;
+
+
+/// Display a "number" to the given number of decimal places
+pub trait DisplayDuration {
+    /// Construct a formattable object
+    fn display_secs(&self) -> DisplayDurObj;
+}
+
+impl DisplayDuration for Duration {
+    fn display_secs(&self) -> DisplayDurObj {
+        DisplayDurObj { dur: *self }
+    }
+}
+
+/// Display a number to the given number of decimal places
+pub struct DisplayDurObj {
+    dur: Duration,
+}
+
+impl Display for DisplayDurObj {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut secs = self.dur.as_secs();
+        if self.dur.subsec_nanos() >= 500_000_000 {
+            secs += 1;
+        }
+        write!(f, "{} seconds", secs)
+    }
+}
+
 
 /// Format a vector of bytes as a hexadecimal number, ellipsising all but the first and last three.
 ///
@@ -70,10 +100,21 @@ pub fn calculate_relocated_name(mut close_nodes: Vec<XorName>, original_name: &X
 
 #[cfg(test)]
 mod tests {
+    use super::DisplayDuration;
     use rand;
     use routing_table::Xorable;
     use rust_sodium::crypto::hash::sha256;
+    use std::time::Duration;
     use xor_name::XorName;
+
+    #[test]
+    fn duration_formatting() {
+        assert_eq!(format!("{}", Duration::new(653105, 499_000_000).display_secs()),
+                "653105 seconds");
+        assert_eq!(format!("{}", Duration::new(653105, 500_000_000).display_secs()),
+                "653106 seconds");
+        assert_eq!(format!("{}", Duration::new(0, 900_000_000).display_secs()), "1 seconds");
+    }
 
     #[test]
     fn calculate_relocated_name() {

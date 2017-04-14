@@ -113,8 +113,9 @@ impl NodeBuilder {
                           -> (RoutingActionSender, StateMachine) {
         let full_id = FullId::new();
 
-        StateMachine::new(move |crust_service, timer, outbox2| if self.first {
-                              if let Some(state) = states::Node::first(self.cache,
+        StateMachine::new(move |action_sender, crust_service, timer, outbox2| if self.first {
+                              if let Some(state) = states::Node::first(action_sender,
+                                                                       self.cache,
                                                                        crust_service,
                                                                        full_id,
                                                                        min_section_size,
@@ -132,7 +133,7 @@ impl NodeBuilder {
                               outbox2.send_event(Event::Terminate);
                               State::Terminated
                           } else {
-                              states::Bootstrapping::new(self.cache,
+                              states::Bootstrapping::new(action_sender, self.cache,
                                                          false,
                                                          crust_service,
                                                          full_id,

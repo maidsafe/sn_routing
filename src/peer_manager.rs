@@ -24,6 +24,7 @@ use itertools::Itertools;
 use log::LogLevel;
 use rand;
 use resource_proof::ResourceProof;
+use resource_prover::RESOURCE_PROOF_DURATION_SECS;
 use routing_table::{Authority, OwnMergeState, Prefix, RemovalDetails, RoutingTable,
                     VersionedPrefix};
 use routing_table::Error as RoutingTableError;
@@ -45,10 +46,6 @@ const JOINING_NODE_TIMEOUT_SECS: u64 = 900;
 const CONNECTION_TIMEOUT_SECS: u64 = 90;
 /// Time (in seconds) the node waits for a `NodeIdentify` message.
 const NODE_IDENTIFY_TIMEOUT_SECS: u64 = 60;
-/// Time (in seconds) between accepting a new candidate (i.e. receiving an `AcceptAsCandidate` from
-/// our section) and sending a `CandidateApproval` for this candidate.  If the candidate cannot
-/// satisfy the proof of resource challenge within this time, no `CandidateApproval` is sent.
-pub const RESOURCE_PROOF_DURATION_SECS: u64 = 300;
 /// Time (in seconds) after which a `VotedFor` candidate will be removed.
 const CANDIDATE_ACCEPT_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) the node waits for connection from an expected node.
