@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -17,9 +17,39 @@
 
 use routing_table::Xorable;
 use rust_sodium::crypto::hash::sha256;
-use std::fmt::Write;
+use std::fmt::{self, Display, Write};
 use std::iter;
+use std::time::Duration;
 use xor_name::XorName;
+
+
+/// Display a "number" to the given number of decimal places
+pub trait DisplayDuration {
+    /// Construct a formattable object
+    fn display_secs(&self) -> DisplayDurObj;
+}
+
+impl DisplayDuration for Duration {
+    fn display_secs(&self) -> DisplayDurObj {
+        DisplayDurObj { dur: *self }
+    }
+}
+
+/// Display a number to the given number of decimal places
+pub struct DisplayDurObj {
+    dur: Duration,
+}
+
+impl Display for DisplayDurObj {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut secs = self.dur.as_secs();
+        if self.dur.subsec_nanos() >= 500_000_000 {
+            secs += 1;
+        }
+        write!(f, "{} seconds", secs)
+    }
+}
+
 
 /// Format a vector of bytes as a hexadecimal number, ellipsising all but the first and last three.
 ///
@@ -70,10 +100,21 @@ pub fn calculate_relocated_name(mut close_nodes: Vec<XorName>, original_name: &X
 
 #[cfg(test)]
 mod tests {
+    use super::DisplayDuration;
     use rand;
     use routing_table::Xorable;
     use rust_sodium::crypto::hash::sha256;
+    use std::time::Duration;
     use xor_name::XorName;
+
+    #[test]
+    fn duration_formatting() {
+        assert_eq!(format!("{}", Duration::new(653105, 499_000_000).display_secs()),
+                "653105 seconds");
+        assert_eq!(format!("{}", Duration::new(653105, 500_000_000).display_secs()),
+                "653106 seconds");
+        assert_eq!(format!("{}", Duration::new(0, 900_000_000).display_secs()), "1 seconds");
+    }
 
     #[test]
     fn calculate_relocated_name() {
@@ -85,7 +126,7 @@ mod tests {
         close_nodes_one_entry.push(rand::random());
         let actual_relocated_name_one_entry =
             super::calculate_relocated_name(close_nodes_one_entry.clone(), &original_name);
-        assert!(original_name != actual_relocated_name_one_entry);
+        assert_ne!(original_name, actual_relocated_name_one_entry);
 
         let mut combined_one_node_vec: Vec<XorName> = Vec::new();
         combined_one_node_vec.push(original_name);
@@ -111,7 +152,7 @@ mod tests {
         }
         let actual_relocated_name = super::calculate_relocated_name(close_nodes.clone(),
                                                                     &original_name);
-        assert!(original_name != actual_relocated_name);
+        assert_ne!(original_name, actual_relocated_name);
         close_nodes.sort_by(|a, b| original_name.cmp_distance(a, b));
         let first_closest = close_nodes[0];
         let second_closest = close_nodes[1];
@@ -141,6 +182,6 @@ mod tests {
             invalid_combined.push(*i);
         }
         let invalid_relocated_name = XorName(sha256::hash(&invalid_combined).0);
-        assert!(invalid_relocated_name != actual_relocated_name);
+        assert_ne!(invalid_relocated_name, actual_relocated_name);
     }
 }

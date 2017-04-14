@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -76,18 +76,21 @@ impl Client {
         let min_section_size = 8;
         rust_sodium::init(); // enable shared global (i.e. safe to multithread now)
 
-        // start the handler for routing with a restriction to become a full node
-        let mut event_buffer = EventBuf::new();
-        let (action_sender, mut machine) =
-            Self::make_state_machine(keys, min_section_size, &mut event_buffer);
-
-        for ev in event_buffer.take_all() {
-            event_sender.send(ev)?;
-        }
-
         let (tx, rx) = channel();
+        let (get_action_sender_tx, get_action_sender_rx) = channel();
 
         let raii_joiner = thread::named("Client thread", move || {
+            // start the handler for routing with a restriction to become a full node
+            let mut event_buffer = EventBuf::new();
+            let (action_sender, mut machine) =
+                Self::make_state_machine(keys, min_section_size, &mut event_buffer);
+
+            for ev in event_buffer.take_all() {
+                unwrap!(event_sender.send(ev));
+            }
+
+            unwrap!(get_action_sender_tx.send(action_sender));
+
             // Gather events from the state machine's event loop and proxy them over the
             // event_sender channel.
             while Ok(()) == machine.step(&mut event_buffer) {
@@ -101,12 +104,14 @@ impl Client {
             // When there are no more events to process, terminate this thread.
         });
 
+        let action_sender = unwrap!(get_action_sender_rx.recv());
+
         Ok(Client {
-            interface_result_tx: tx,
-            interface_result_rx: rx,
-            action_sender: action_sender,
-            _raii_joiner: raii_joiner,
-        })
+               interface_result_tx: tx,
+               interface_result_rx: rx,
+               action_sender: action_sender,
+               _raii_joiner: raii_joiner,
+           })
     }
 
     fn make_state_machine(keys: Option<FullId>,
@@ -116,9 +121,15 @@ impl Client {
         let cache = Box::new(NullCache);
         let full_id = keys.unwrap_or_else(FullId::new);
 
-        StateMachine::new(move |crust_service, timer, _outbox2| {
-            states::Bootstrapping::new(cache, true, crust_service, full_id, min_section_size, timer)
-                .map_or(State::Terminated, State::Bootstrapping)
+        StateMachine::new(move |action_sender, crust_service, timer, _outbox2| {
+            states::Bootstrapping::new(action_sender,
+                                       cache,
+                                       true,
+                                       crust_service,
+                                       full_id,
+                                       min_section_size,
+                                       timer)
+                    .map_or(State::Terminated, State::Bootstrapping)
         },
                           outbox)
     }
@@ -182,7 +193,8 @@ impl Client {
     /// Returns the name of this node.
     pub fn name(&self) -> Result<XorName, InterfaceError> {
         let (result_tx, result_rx) = channel();
-        self.action_sender.send(Action::Name { result_tx: result_tx })?;
+        self.action_sender
+            .send(Action::Name { result_tx: result_tx })?;
 
         self.receive_action_result(&result_rx)
     }
@@ -226,12 +238,12 @@ impl Client {
         let (tx, rx) = channel();
 
         Ok(Client {
-            interface_result_tx: tx,
-            interface_result_rx: rx,
-            action_sender: action_sender,
-            machine: RefCell::new(machine),
-            event_buffer: RefCell::new(event_buffer),
-        })
+               interface_result_tx: tx,
+               interface_result_rx: rx,
+               action_sender: action_sender,
+               machine: RefCell::new(machine),
+               event_buffer: RefCell::new(event_buffer),
+           })
     }
 
     /// Get the next event in a non-blocking manner.
@@ -242,7 +254,10 @@ impl Client {
             return Ok(cached_ev);
         }
         self.try_step()?;
-        self.event_buffer.borrow_mut().take_first().ok_or(TryRecvError::Empty)
+        self.event_buffer
+            .borrow_mut()
+            .take_first()
+            .ok_or(TryRecvError::Empty)
     }
 
     /// Process all inbound events and buffer any produced events on the internal buffer.
@@ -256,12 +271,17 @@ impl Client {
 
     /// Step the underlying state machine if there are any events for it to process.
     fn try_step(&self) -> Result<(), TryRecvError> {
-        self.machine.borrow_mut().try_step(&mut *self.event_buffer.borrow_mut())
+        self.machine
+            .borrow_mut()
+            .try_step(&mut *self.event_buffer.borrow_mut())
     }
 
     /// Resend all unacknowledged messages.
     pub fn resend_unacknowledged(&self) -> bool {
-        self.machine.borrow_mut().current_mut().resend_unacknowledged()
+        self.machine
+            .borrow_mut()
+            .current_mut()
+            .resend_unacknowledged()
     }
 
     /// Are there any unacknowledged messages?

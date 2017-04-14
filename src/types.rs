@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -15,8 +15,13 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+#[cfg(any(test, feature = "use-mock-crust"))]
+use maidsafe_utilities::SeededRng;
 use maidsafe_utilities::event_sender::MaidSafeObserver;
-use rand::random;
+#[cfg(all(not(test), not(feature = "use-mock-crust")))]
+use rand;
+#[cfg(any(test, feature = "use-mock-crust"))]
+use rand::Rng;
 use xor_name::XorName;
 
 pub type RoutingActionSender = MaidSafeObserver<::action::Action>;
@@ -26,13 +31,21 @@ pub type RoutingActionSender = MaidSafeObserver<::action::Action>;
 /// This is used for deduplication: Since the network sends messages redundantly along different
 /// routes, the same message will usually arrive more than once at any given node. A message with
 /// an ID that is already in the cache will be ignored.
-#[derive(Ord, PartialOrd, Debug, Clone, Copy, Eq, PartialEq, RustcEncodable, RustcDecodable, Hash)]
+#[derive(Ord, PartialOrd, Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, Hash)]
 pub struct MessageId(XorName);
 
 impl MessageId {
     /// Generate a new `MessageId` with random content.
+    #[cfg(any(test, feature = "use-mock-crust"))]
     pub fn new() -> MessageId {
-        MessageId(random::<XorName>())
+        let mut rng = SeededRng::thread_rng();
+        MessageId(rng.gen())
+    }
+
+    /// Generate a new `MessageId` with random content.
+    #[cfg(all(not(test), not(feature = "use-mock-crust")))]
+    pub fn new() -> MessageId {
+        MessageId(rand::random())
     }
 
     /// Generate a `MessageId` with value 0. This should only be used for messages where there is

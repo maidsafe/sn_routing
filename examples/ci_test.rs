@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -19,9 +19,9 @@
 
 // For explanation of lint checks, run `rustc -W help` or see
 // https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
-#![forbid(bad_style, exceeding_bitshifts, mutable_transmutes, no_mangle_const_items,
+#![forbid(exceeding_bitshifts, mutable_transmutes, no_mangle_const_items,
           unknown_crate_types, warnings)]
-#![deny(deprecated, improper_ctypes, missing_docs,
+#![deny(bad_style, deprecated, improper_ctypes, missing_docs,
         non_shorthand_field_patterns, overflowing_literals, plugin_as_library,
         private_no_mangle_fns, private_no_mangle_statics, stable_features, unconditional_recursion,
         unknown_lints, unsafe_code, unused, unused_allocation, unused_attributes,
@@ -29,9 +29,9 @@
 #![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
         unused_qualifications, unused_results)]
 #![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
-         missing_debug_implementations, variant_size_differences)]
+         missing_debug_implementations, variant_size_differences, non_camel_case_types)]
 
-#![cfg_attr(feature = "use-mock-crust", allow(unused_extern_crates))]
+#![cfg_attr(feature = "use-mock-crust", allow(unused_extern_crates, unused_imports))]
 
 #[macro_use]
 extern crate log;
@@ -45,6 +45,8 @@ extern crate lru_time_cache;
 extern crate term;
 #[macro_use]
 extern crate unwrap;
+#[macro_use]
+extern crate serde_derive;
 
 mod utils;
 
@@ -148,7 +150,8 @@ mod unnamed {
                     let wait_for = wait_range.ind_sample(&mut rng);
 
                     while !*stop_condition && !wait_timed_out {
-                        let wake_up_result = unwrap!(condvar.wait_timeout(stop_condition,
+                        let wake_up_result =
+                            unwrap!(condvar.wait_timeout(stop_condition,
                                                          Duration::from_secs(wait_for)));
                         stop_condition = wake_up_result.0;
                         wait_timed_out = wake_up_result.1.timed_out();
@@ -198,7 +201,8 @@ mod unnamed {
             log_path.set_file_name(&format!("Node{:02}.log", node_count));
             let arg = format!("--output={}", log_path.display());
 
-            nodes.push(NodeProcess(Command::new(current_exe_path.clone()).arg(arg)
+            nodes.push(NodeProcess(Command::new(current_exe_path.clone())
+                                       .arg(arg)
                                        .stdout(Stdio::null())
                                        .stderr(Stdio::null())
                                        .spawn()?,
@@ -215,7 +219,8 @@ mod unnamed {
         let mut term = term::stdout().expect("Could not open stdout.");
         term.fg(color).expect("Failed to set color");
         print!("{}", text);
-        term.reset().expect("Failed to restore stdout attributes.");
+        term.reset()
+            .expect("Failed to restore stdout attributes.");
         io::stdout().flush().expect("Could not flush stdout");
     }
 

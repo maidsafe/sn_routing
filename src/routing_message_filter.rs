@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -17,10 +17,12 @@
 
 use crust::PeerId;
 use lru_time_cache::LruCache;
-use maidsafe_utilities;
+use maidsafe_utilities::serialisation::serialise;
 use message_filter::MessageFilter;
 use messages::RoutingMessage;
+use sha3;
 use std::time::Duration;
+use tiny_keccak::sha3_256;
 
 const INCOMING_EXPIRY_DURATION_SECS: u64 = 60 * 20;
 const OUTGOING_EXPIRY_DURATION_SECS: u64 = 60 * 10;
@@ -40,7 +42,7 @@ pub enum FilteringResult {
 pub struct RoutingMessageFilter {
     incoming: MessageFilter<RoutingMessage>,
     incoming_route: MessageFilter<(RoutingMessage, u8)>,
-    outgoing: LruCache<(u64, PeerId, u8), ()>,
+    outgoing: LruCache<(sha3::Digest256, PeerId, u8), ()>,
 }
 
 impl RoutingMessageFilter {
@@ -70,9 +72,18 @@ impl RoutingMessageFilter {
 
     // Filter outgoing `RoutingMessage`. Return whether this specific message has been seen recently
     // (and thus should not be sent, due to deduplication).
+    //
+    // Return `false` if serialisation of the message fails - that can be handled elsewhere.
     pub fn filter_outgoing(&mut self, msg: &RoutingMessage, peer_id: &PeerId, route: u8) -> bool {
-        let hash = maidsafe_utilities::big_endian_sip_hash(msg);
-        self.outgoing.insert((hash, *peer_id, route), ()).is_some()
+        if let Ok(msg_bytes) = serialise(msg) {
+            let hash = sha3_256(&msg_bytes);
+            self.outgoing
+                .insert((hash, *peer_id, route), ())
+                .is_some()
+        } else {
+            trace!("Tried to filter oversized routing message: {:?}", msg);
+            false
+        }
     }
 
     #[cfg(feature = "use-mock-crust")]

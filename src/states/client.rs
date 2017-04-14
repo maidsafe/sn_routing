@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 use ack_manager::{Ack, AckManager};
 use action::Action;
 use crust::{PeerId, Service};
@@ -33,7 +34,6 @@ use stats::Stats;
 use std::collections::BTreeSet;
 use std::fmt::{self, Debug, Formatter};
 use std::time::Duration;
-use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 use timer::Timer;
 use xor_name::XorName;
 
@@ -86,7 +86,12 @@ impl Client {
 
     pub fn handle_action(&mut self, action: Action) -> Transition {
         match action {
-            Action::ClientSendRequest { content, dst, priority, result_tx } => {
+            Action::ClientSendRequest {
+                content,
+                dst,
+                priority,
+                result_tx,
+            } => {
                 let src = Authority::Client {
                     client_key: *self.full_id.public_id().signing_public_key(),
                     proxy_node_name: *self.proxy_public_id.name(),
@@ -108,6 +113,9 @@ impl Client {
                 let _ = result_tx.send(*self.name());
             }
             Action::Timeout(token) => self.handle_timeout(token),
+            Action::ResourceProofResult(..) => {
+                error!("Action::ResourceProofResult received by Client state");
+            }
             Action::Terminate => {
                 return Transition::Terminate;
             }
@@ -171,7 +179,8 @@ impl Client {
                           outbox: &mut EventBox)
                           -> Result<Transition, RoutingError> {
         if self.proxy_peer_id == peer_id {
-            hop_msg.verify(self.proxy_public_id.signing_public_key())?;
+            hop_msg
+                .verify(self.proxy_public_id.signing_public_key())?;
         } else {
             return Err(RoutingError::UnknownConnection(peer_id));
         }
@@ -196,7 +205,8 @@ impl Client {
         }
 
         // Prevents us repeatedly handling identical messages sent by a malicious peer.
-        match self.routing_msg_filter.filter_incoming(routing_msg, hop_msg.route) {
+        match self.routing_msg_filter
+                  .filter_incoming(routing_msg, hop_msg.route) {
             FilteringResult::KnownMessage |
             FilteringResult::KnownMessageAndRoute => return Err(RoutingError::FilterCheckFailed),
             FilteringResult::NewMessage => (),
@@ -215,15 +225,24 @@ impl Client {
                                 -> Transition {
         match routing_msg.content {
             MessageContent::Ack(ack, _) => self.handle_ack_response(ack),
-            MessageContent::UserMessagePart { hash, part_count, part_index, payload, .. } => {
-                trace!("{:?} Got UserMessagePart {:x}, {}/{} from {:?} to {:?}.",
+            MessageContent::UserMessagePart {
+                hash,
+                part_count,
+                part_index,
+                payload,
+                ..
+            } => {
+                trace!("{:?} Got UserMessagePart {:02x}{:02x}{:02x}.., {}/{} from {:?} to {:?}.",
                        self,
-                       hash,
+                       hash[0],
+                       hash[1],
+                       hash[2],
+                       part_index + 1,
                        part_count,
-                       part_index,
                        routing_msg.src,
                        routing_msg.dst);
-                if let Some(msg) = self.user_msg_cache.add(hash, part_count, part_index, payload) {
+                if let Some(msg) = self.user_msg_cache
+                       .add(hash, part_count, part_index, payload) {
                     self.stats().count_user_message(&msg);
                     outbox.send_event(msg.into_event(routing_msg.src, routing_msg.dst));
                 }

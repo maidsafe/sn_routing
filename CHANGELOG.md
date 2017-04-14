@@ -1,5 +1,33 @@
 # Routing - Change Log
 
+## [0.28.5]
+- Add section update requests to make merges more stable.
+- Don't approve new node if routing table is invalid.
+- Work around cases where `OtherSectionMerge` would not accumulate.
+- Several fixes to tunnel nodes and peer manager.
+- Remove more sources of randomness to make tests deterministic.
+- Add new error types related to invitation-based account creation.
+- Replace rustc-serialize with serde.
+
+## [0.28.4]
+- Don't try to reconnect to candidates that are not yet approved.
+- Don't include peers in `sent_to` that are not directly connected.
+- Use SHA3 everywhere instead of SipHash.
+- `PrefixSection` authorities now always refer to all sections _compatible_
+  with the given prefix.
+- Cache `OwnSectionMerge` messages until both merging sections have sent one.
+  Only then update the routing table.
+- Cache any routing table updates while merging, and relay them afterwards.
+- Other merge and tunnel fixes, and additional tests for merging and tunnels.
+- Try to reconnect after a connection drops.
+
+## [0.28.2]
+- Extend the tests for tunnelling and the churn tests.
+- Fix several peer manager issues related to tunnel nodes and candidates.
+- Send `SectionSplit` messages as `PrefixSection` authority to allow resending.
+- Fix several issues related to merging sections.
+- Some improvements to the log messages.
+
 ## [0.28.1]
 - Retry preparing connection info if Crust returns an error.
 

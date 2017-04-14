@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -15,14 +15,15 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::{TestClient, TestNode, create_connected_clients, create_connected_nodes, gen_range,
+            gen_range_except, poll_and_resend, verify_invariant_for_all_nodes};
 use itertools::Itertools;
 use rand::Rng;
 use routing::{Authority, DataIdentifier, Event, EventStream, MessageId, QUORUM, Request, XorName};
 use routing::mock_crust::{Config, Network};
 use std::cmp;
-use std::collections::{HashMap, HashSet};
-use super::{TestClient, TestNode, create_connected_clients, create_connected_nodes,
-            gen_range_except, poll_and_resend, verify_invariant_for_all_nodes};
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::iter;
 
 // Randomly removes some nodes.
 //
@@ -34,20 +35,18 @@ fn drop_random_nodes<R: Rng>(rng: &mut R, nodes: &mut Vec<TestNode>, min_section
 
     if rng.gen_weighted_bool(3) {
         // Pick a section then remove as many nodes as possible from it without breaking quorum.
-        let i = rng.gen_range(0, len);
+        let i = gen_range(rng, 0, len);
         let prefix = *nodes[i].routing_table().our_prefix();
 
         // Any network must allow at least one node to be lost:
         let num_excess = cmp::max(1,
-                                  cmp::min(nodes[i].routing_table().our_section().len() -
-                                           min_quorum,
-                                           len - min_section_size));
+                                  nodes[i].routing_table().our_section().len() - min_section_size);
         assert!(num_excess > 0);
 
         let mut removed = 0;
         // Remove nodes from the chosen section
         while removed < num_excess {
-            let i = rng.gen_range(0, nodes.len());
+            let i = gen_range(rng, 0, nodes.len());
             if *nodes[i].routing_table().our_prefix() != prefix {
                 continue;
             }
@@ -60,7 +59,7 @@ fn drop_random_nodes<R: Rng>(rng: &mut R, nodes: &mut Vec<TestNode>, min_section
         let num_excess = cmp::min(min_section_size - min_quorum, len - min_section_size);
         let mut removed = 0;
         while num_excess - removed > 0 {
-            let _ = nodes.remove(rng.gen_range(0, len - removed));
+            let _ = nodes.remove(gen_range(rng, 0, len - removed));
             removed += 1;
         }
     }
@@ -77,18 +76,32 @@ fn add_random_node<R: Rng>(rng: &mut R,
     let len = nodes.len();
     // A non-first node without min_section_size nodes in routing table cannot be proxy
     let (proxy, index) = if len <= min_section_size {
-        (0, rng.gen_range(1, len + 1))
+        (0, gen_range(rng, 1, len + 1))
     } else {
-        (rng.gen_range(0, len), rng.gen_range(0, len + 1))
+        (gen_range(rng, 0, len), gen_range(rng, 0, len + 1))
     };
     let config = Config::with_contacts(&[nodes[proxy].handle.endpoint()]);
 
     nodes.insert(index, TestNode::builder(network).config(config).create());
-    if index <= proxy {
+    let (new_node, proxy) = if index <= proxy {
         (index, proxy + 1)
     } else {
         (index, proxy)
+    };
+
+    if len > (2 * min_section_size) {
+        let exclude = vec![new_node, proxy].into_iter().collect();
+        let block_peer = gen_range_except(rng, 1, nodes.len(), &exclude);
+        debug!("Connection between {} and {} blocked.",
+               nodes[new_node].name(),
+               nodes[block_peer].name());
+        network.block_connection(nodes[new_node].handle.endpoint(),
+                                 nodes[block_peer].handle.endpoint());
+        network.block_connection(nodes[block_peer].handle.endpoint(),
+                                 nodes[new_node].handle.endpoint());
     }
+
+    (new_node, proxy)
 }
 
 // Randomly adds or removes some nodes, causing churn.
@@ -100,18 +113,46 @@ fn random_churn<R: Rng>(rng: &mut R,
                         -> Option<usize> {
     let len = nodes.len();
 
-    if len > network.min_section_size() + 2 && rng.gen_weighted_bool(3) {
-        let _ = nodes.remove(rng.gen_range(1, len));
-        let _ = nodes.remove(rng.gen_range(1, len - 1));
-        let _ = nodes.remove(rng.gen_range(1, len - 2));
+    if count_sections(nodes) > 1 && rng.gen_weighted_bool(3) {
+        let _ = nodes.remove(gen_range(rng, 1, len));
+        let _ = nodes.remove(gen_range(rng, 1, len - 1));
+        let _ = nodes.remove(gen_range(rng, 1, len - 2));
 
         None
     } else {
-        let proxy = rng.gen_range(0, len);
-        let index = rng.gen_range(1, len + 1);
+        let mut proxy = gen_range(rng, 0, len);
+        let index = gen_range(rng, 1, len + 1);
+
+        if nodes.len() > 2 * network.min_section_size() {
+            let peer_1 = gen_range(rng, 1, len);
+            let peer_2 = gen_range_except(rng, 1, len, &iter::once(peer_1).collect());
+            debug!("Lost connection between {} and {}",
+                   nodes[peer_1].name(),
+                   nodes[peer_2].name());
+            network.lost_connection(nodes[peer_1].handle.endpoint(),
+                                    nodes[peer_2].handle.endpoint());
+        }
+
         let config = Config::with_contacts(&[nodes[proxy].handle.endpoint()]);
 
         nodes.insert(index, TestNode::builder(network).config(config).create());
+
+        if nodes.len() > 2 * network.min_section_size() {
+            if index <= proxy {
+                // When new node sits before the proxy node, proxy index increases by 1
+                proxy += 1;
+            }
+            let exclude = vec![index, proxy].into_iter().collect();
+            let block_peer = gen_range_except(rng, 1, nodes.len(), &exclude);
+            debug!("Connection between {} and {} blocked.",
+                   nodes[index].name(),
+                   nodes[block_peer].name());
+            network.block_connection(nodes[index].handle.endpoint(),
+                                     nodes[block_peer].handle.endpoint());
+            network.block_connection(nodes[block_peer].handle.endpoint(),
+                                     nodes[index].handle.endpoint());
+        }
+
         Some(index)
     }
 }
@@ -167,7 +208,11 @@ impl ExpectedGets {
     fn expect(&mut self, nodes: &mut [TestNode], dst: Authority<XorName>, key: GetKey) {
         if dst.is_multiple() && !self.sections.contains_key(&dst) {
             let is_recipient = |n: &&TestNode| n.is_recipient(&dst);
-            let section = nodes.iter().filter(is_recipient).map(TestNode::name).collect();
+            let section = nodes
+                .iter()
+                .filter(is_recipient)
+                .map(TestNode::name)
+                .collect();
             let _ = self.sections.insert(dst, section);
         }
         self.messages.insert(key);
@@ -182,31 +227,50 @@ impl ExpectedGets {
             .iter_mut()
             .map(|(dst, section)| {
                 let is_recipient = |n: &&TestNode| n.is_recipient(dst);
-                let new_section =
-                    nodes.iter().filter(is_recipient).map(TestNode::name).collect_vec();
+                let new_section = nodes
+                    .iter()
+                    .filter(is_recipient)
+                    .map(TestNode::name)
+                    .collect_vec();
                 let count = cmp::min(section.len(), new_section.len());
                 section.extend(new_section);
                 (*dst, count)
             })
             .collect();
         let mut section_msgs_received = HashMap::new(); // The count of received section messages.
+        let mut unexpected_receive = BTreeSet::new();
         for node in nodes {
             while let Ok(event) = node.try_next_ev() {
-                if let Event::Request { request: Request::Get(data_id, msg_id), src, dst } = event {
+                if let Event::Request {
+                           request: Request::Get(data_id, msg_id),
+                           src,
+                           dst,
+                       } = event {
                     let key = (data_id, msg_id, src, dst);
                     if dst.is_multiple() {
-                        assert!(self.sections
-                                    .get(&key.3)
-                                    .map_or(false, |entry| entry.contains(&node.name())),
-                                "Unexpected request for node {:?}: {:?} / {:?}",
-                                node.name(),
-                                key,
-                                self.sections);
+                        if !self.sections
+                                .get(&key.3)
+                                .map_or(false, |entry| entry.contains(&node.name())) {
+                            // Unexpected receive shall only happen for group (only used NaeManager
+                            // in this test), and shall have at most one for each message.
+                            if let Authority::NaeManager(_) = dst {
+                                assert!(unexpected_receive.insert(msg_id),
+                                        "Unexpected request for node {}: {:?} / {:?}",
+                                        node.name(),
+                                        key,
+                                        self.sections);
+                            } else {
+                                panic!("Unexpected request for node {}: {:?} / {:?}",
+                                       node.name(),
+                                       key,
+                                       self.sections);
+                            }
+                        }
                         *section_msgs_received.entry(key).or_insert(0usize) += 1;
                     } else {
                         assert_eq!(node.name(), dst.name());
                         assert!(self.messages.remove(&key),
-                                "Unexpected request for node {:?}: {:?}",
+                                "Unexpected request for node {}: {:?}",
                                 node.name(),
                                 key);
                     }
@@ -215,10 +279,14 @@ impl ExpectedGets {
         }
         for client in clients {
             while let Ok(event) = client.inner.try_next_ev() {
-                if let Event::Request { request: Request::Get(data_id, msg_id), src, dst } = event {
+                if let Event::Request {
+                           request: Request::Get(data_id, msg_id),
+                           src,
+                           dst,
+                       } = event {
                     let key = (data_id, msg_id, src, dst);
                     assert!(self.messages.remove(&key),
-                            "Unexpected request for client {:?}: {:?}",
+                            "Unexpected request for client {}: {:?}",
                             client.name(),
                             key);
                 }
@@ -238,14 +306,15 @@ impl ExpectedGets {
     }
 }
 
-fn send_and_receive<R: Rng>(mut rng: &mut R,
-                            mut nodes: &mut [TestNode],
+fn send_and_receive<R: Rng>(rng: &mut R,
+                            nodes: &mut [TestNode],
                             min_section_size: usize,
                             added_index: Option<usize>) {
     // Create random data ID and pick random sending and receiving nodes.
     let data_id = DataIdentifier::Immutable(rng.gen());
-    let index0 = gen_range_except(&mut rng, 0, nodes.len(), added_index);
-    let index1 = gen_range_except(&mut rng, 0, nodes.len(), added_index);
+    let exclude = added_index.map_or(BTreeSet::new(), |index| iter::once(index).collect());
+    let index0 = gen_range_except(rng, 0, nodes.len(), &exclude);
+    let index1 = gen_range_except(rng, 0, nodes.len(), &exclude);
     let auth_n0 = Authority::ManagedNode(nodes[index0].name());
     let auth_n1 = Authority::ManagedNode(nodes[index1].name());
     let auth_g0 = Authority::NaeManager(rng.gen());
@@ -285,8 +354,8 @@ fn send_and_receive<R: Rng>(mut rng: &mut R,
     }
 }
 
-fn client_gets(network: &mut Network, mut nodes: &mut [TestNode], min_section_size: usize) {
-    let mut clients = create_connected_clients(network, &mut nodes, 1);
+fn client_gets(network: &mut Network, nodes: &mut [TestNode], min_section_size: usize) {
+    let mut clients = create_connected_clients(network, nodes, 1);
     let cl_auth = Authority::Client {
         client_key: *clients[0].full_id.public_id().signing_public_key(),
         proxy_node_name: nodes[0].name(),
@@ -302,10 +371,10 @@ fn client_gets(network: &mut Network, mut nodes: &mut [TestNode], min_section_si
 
     let mut expected_gets = ExpectedGets::default();
     // Test messages from a client to a group and a section...
-    expected_gets.client_send_and_expect(data_id, cl_auth, auth_g0, &clients[0], &mut nodes);
-    expected_gets.client_send_and_expect(data_id, cl_auth, auth_s0, &clients[0], &mut nodes);
+    expected_gets.client_send_and_expect(data_id, cl_auth, auth_g0, &clients[0], nodes);
+    expected_gets.client_send_and_expect(data_id, cl_auth, auth_s0, &clients[0], nodes);
     // ... and from group to the client
-    expected_gets.send_and_expect(data_id, auth_g1, cl_auth, &mut nodes, min_section_size);
+    expected_gets.send_and_expect(data_id, auth_g1, cl_auth, nodes, min_section_size);
 
     poll_and_resend(nodes, &mut clients);
     expected_gets.verify(nodes, &mut clients);
@@ -346,6 +415,8 @@ fn verify_section_list_signatures(nodes: &[TestNode]) {
 #[test]
 fn aggressive_churn() {
     let min_section_size = 5;
+    let target_section_num = 5;
+    let target_network_size = 50;
     let mut network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
 
@@ -356,10 +427,34 @@ fn aggressive_churn() {
     info!("Churn [{} nodes, {} sections]: adding nodes",
           nodes.len(),
           count_sections(&nodes));
-    while count_sections(&nodes) <= 5 || nodes.len() < 50 {
-        let (added_index, _) = add_random_node(&mut rng, &network, &mut nodes, min_section_size);
+    while count_sections(&nodes) <= target_section_num || nodes.len() < target_network_size {
+        if nodes.len() > (2 * min_section_size) {
+            let peer_1 = gen_range(&mut rng, 0, nodes.len());
+            let peer_2 = gen_range_except(&mut rng, 0, nodes.len(), &iter::once(peer_1).collect());
+            debug!("Lost connection between {} and {}",
+                   nodes[peer_1].name(),
+                   nodes[peer_2].name());
+            network.lost_connection(nodes[peer_1].handle.endpoint(),
+                                    nodes[peer_2].handle.endpoint());
+        }
+        let (added_index, proxy_index) =
+            add_random_node(&mut rng, &network, &mut nodes, min_section_size);
         poll_and_resend(&mut nodes, &mut []);
-        verify_invariant_for_all_nodes(&nodes);
+
+        // An candidate could be blocked if some nodes of the section it connected to has lost node
+        // due to lost of tunnel. In that case, a restart of candidate shall be carried out.
+        match nodes[added_index].inner.try_next_ev() {
+            Err(_) |
+            Ok(Event::Terminate) => {
+                let config = Config::with_contacts(&[nodes[proxy_index].handle.endpoint()]);
+                nodes[added_index] = TestNode::builder(&network).config(config).create();
+                poll_and_resend(&mut nodes, &mut []);
+            }
+            Ok(_) => {}
+        }
+
+        debug!("Added {}", nodes[added_index].name());
+        verify_invariant_for_all_nodes(&mut nodes);
         verify_section_list_signatures(&nodes);
         send_and_receive(&mut rng, &mut nodes, min_section_size, Some(added_index));
     }
@@ -367,21 +462,27 @@ fn aggressive_churn() {
     info!("Churn [{} nodes, {} sections]: simultaneous adding and dropping nodes",
           nodes.len(),
           count_sections(&nodes));
-    while nodes.len() > 25 {
+    while nodes.len() > target_network_size / 2 {
         drop_random_nodes(&mut rng, &mut nodes, min_section_size);
         let (added_index, proxy_index) =
             add_random_node(&mut rng, &network, &mut nodes, min_section_size);
         poll_and_resend(&mut nodes, &mut []);
 
         // An candidate could be blocked if it connected to a pre-merge minority section.
+        // Or be rejected when the proxy node's RT is not large enough due to a lost tunnel.
         // In that case, a restart of candidate shall be carried out.
-        if nodes[added_index].inner.try_next_ev().is_err() {
-            let config = Config::with_contacts(&[nodes[proxy_index].handle.endpoint()]);
-            nodes[added_index] = TestNode::builder(&network).config(config).create();
-            poll_and_resend(&mut nodes, &mut []);
+        match nodes[added_index].inner.try_next_ev() {
+            Err(_) |
+            Ok(Event::Terminate) => {
+                let config = Config::with_contacts(&[nodes[proxy_index].handle.endpoint()]);
+                nodes[added_index] = TestNode::builder(&network).config(config).create();
+                poll_and_resend(&mut nodes, &mut []);
+            }
+            Ok(_) => {}
         }
 
-        verify_invariant_for_all_nodes(&nodes);
+        debug!("Simultaneous added {}", nodes[added_index].name());
+        verify_invariant_for_all_nodes(&mut nodes);
         verify_section_list_signatures(&nodes);
 
         send_and_receive(&mut rng, &mut nodes, min_section_size, Some(added_index));
@@ -391,10 +492,12 @@ fn aggressive_churn() {
     info!("Churn [{} nodes, {} sections]: dropping nodes",
           nodes.len(),
           count_sections(&nodes));
-    while nodes.len() > min_section_size {
+    while count_sections(&nodes) > 1 && nodes.len() > min_section_size {
+        debug!("Dropping random nodes.  Current node count: {}",
+               nodes.len());
         drop_random_nodes(&mut rng, &mut nodes, min_section_size);
         poll_and_resend(&mut nodes, &mut []);
-        verify_invariant_for_all_nodes(&nodes);
+        verify_invariant_for_all_nodes(&mut nodes);
         verify_section_list_signatures(&nodes);
         send_and_receive(&mut rng, &mut nodes, min_section_size, None);
         client_gets(&mut network, &mut nodes, min_section_size);
@@ -424,8 +527,9 @@ fn messages_during_churn() {
 
         // Create random data ID and pick random sending and receiving nodes.
         let data_id = DataIdentifier::Immutable(rng.gen());
-        let index0 = gen_range_except(&mut rng, 0, nodes.len(), added_index);
-        let index1 = gen_range_except(&mut rng, 0, nodes.len(), added_index);
+        let exclude = added_index.map_or(BTreeSet::new(), |index| iter::once(index).collect());
+        let index0 = gen_range_except(&mut rng, 0, nodes.len(), &exclude);
+        let index1 = gen_range_except(&mut rng, 0, nodes.len(), &exclude);
         let auth_n0 = Authority::ManagedNode(nodes[index0].name());
         let auth_n1 = Authority::ManagedNode(nodes[index1].name());
         let auth_g0 = Authority::NaeManager(rng.gen());
@@ -464,7 +568,7 @@ fn messages_during_churn() {
 
         expected_gets.verify(&mut nodes, &mut clients);
 
-        verify_invariant_for_all_nodes(&nodes);
+        verify_invariant_for_all_nodes(&mut nodes);
         verify_section_list_signatures(&nodes);
     }
 }

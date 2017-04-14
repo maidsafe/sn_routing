@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -15,10 +15,10 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::{Prefix, Xorable};
 use crust::PeerId;
 use rust_sodium::crypto::{hash, sign};
 use std::fmt::{self, Binary, Debug, Display, Formatter};
-use super::{Prefix, Xorable};
 
 /// An entity that can act as a source or destination of a message.
 ///
@@ -28,7 +28,7 @@ use super::{Prefix, Xorable};
 /// require quorum agreement from the group of nodes closest to the source, while `Section` and
 /// `PrefixSection` use _section_ verification: the set from which a quorum is required is all
 /// members of the section (`Section`) or of all sections matching the prefix (`PrefixSection`).
-#[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Hash)]
+#[derive(Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Hash)]
 pub enum Authority<N: Xorable + Clone + Copy + Binary + Default> {
     /// Manager of a Client.  XorName is the hash of the Client's `client_key`.
     ClientManager(N),
@@ -121,7 +121,11 @@ impl<N: Xorable + Clone + Copy + Binary + Default + Display> Debug for Authority
                 write!(formatter, "PrefixSection(prefix: {:?})", prefix)
             }
             Authority::ManagedNode(ref name) => write!(formatter, "ManagedNode(name: {})", name),
-            Authority::Client { ref client_key, ref proxy_node_name, ref peer_id } => {
+            Authority::Client {
+                ref client_key,
+                ref proxy_node_name,
+                ref peer_id,
+            } => {
                 write!(formatter,
                        "Client {{ client_name: {}, proxy_node_name: {}, peer_id: {:?} }}",
                        N::from_hash(hash::sha256::hash(&client_key[..]).0),

@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -29,6 +29,8 @@ use xor_name::XorName;
 /// `Request` and `Response` events from section authorities are only raised once the quorum has
 /// been reached, i.e. enough members of the section have sent the same message.
 #[derive(Clone, Eq, PartialEq)]
+// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
+#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
 pub enum Event {
     /// Received a request message.
     Request {
@@ -71,14 +73,22 @@ pub enum Event {
 impl Debug for Event {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            Event::Request { ref request, ref src, ref dst } => {
+            Event::Request {
+                ref request,
+                ref src,
+                ref dst,
+            } => {
                 write!(formatter,
                        "Event::Request {{ request: {:?}, src: {:?}, dst: {:?} }}",
                        request,
                        src,
                        dst)
             }
-            Event::Response { ref response, ref src, ref dst } => {
+            Event::Response {
+                ref response,
+                ref src,
+                ref dst,
+            } => {
                 write!(formatter,
                        "Event::Response {{ response: {:?}, src: {:?}, dst: {:?} }}",
                        response,

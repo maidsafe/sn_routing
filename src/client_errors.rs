@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -19,7 +19,7 @@ use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 
 /// Errors in Get (non-mutating) operations involving Core and Vaults
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, RustcEncodable, RustcDecodable)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum GetError {
     /// SAFE Account does not exist for client
     NoSuchAccount,
@@ -61,7 +61,7 @@ impl Error for GetError {
 
 
 /// Errors in Put/Post/Delete (mutating) operations involving Core and Vaults
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, RustcEncodable, RustcDecodable)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum MutationError {
     /// SAFE Account does not exist for client
     NoSuchAccount,
@@ -80,6 +80,10 @@ pub enum MutationError {
     InvalidSuccessor,
     /// Invalid Operation such as a POST on ImmutableData
     InvalidOperation,
+    /// Wrong invitation token specified by the client
+    InvalidInvitation,
+    /// Invitation token already used
+    InvitationAlreadyClaimed,
     /// The loss of sacrificial copies indicates the network as a whole is no longer having
     /// enough space to accept further put request so have to wait for more nodes to join
     NetworkFull,
@@ -112,6 +116,10 @@ impl Display for MutationError {
             MutationError::InvalidOperation => {
                 write!(formatter, "Requested operation is not allowed")
             }
+            MutationError::InvalidInvitation => write!(formatter, "Invitation token not found"),
+            MutationError::InvitationAlreadyClaimed => {
+                write!(formatter, "Invitation token has already been used")
+            }
             MutationError::NetworkFull => {
                 write!(formatter, "Network cannot store any further data")
             }
@@ -133,6 +141,8 @@ impl Error for MutationError {
             MutationError::LowBalance => "Low account balance",
             MutationError::InvalidSuccessor => "Invalid data successor",
             MutationError::InvalidOperation => "Invalid operation",
+            MutationError::InvalidInvitation => "Invalid invitation token",
+            MutationError::InvitationAlreadyClaimed => "Invitation token already claimed",
             MutationError::NetworkFull => "Network full",
             MutationError::NetworkOther(ref error) => error,
         }

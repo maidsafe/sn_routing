@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -20,9 +20,10 @@ use maidsafe_utilities::serialisation;
 use message_filter::MessageFilter;
 use messages::RoutingMessage;
 use sha3;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fmt;
 use std::time::Duration;
+use tiny_keccak::sha3_256;
 
 /// Time (in seconds) after which a message is resent due to being unacknowledged by recipient.
 pub const ACK_TIMEOUT_SECS: u64 = 20;
@@ -38,14 +39,14 @@ pub struct UnacknowledgedMessage {
 }
 
 pub struct AckManager {
-    pending: HashMap<Ack, UnacknowledgedMessage>,
+    pending: BTreeMap<Ack, UnacknowledgedMessage>,
     received: MessageFilter<Ack>,
 }
 
 /// An identifier for a waiting-to-be-acknowledged message (a hash of the message).
-#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, Deserialize, Serialize)]
 pub struct Ack {
-    m_hash: [u8; 32],
+    m_hash: sha3::Digest256,
 }
 
 impl AckManager {
@@ -54,7 +55,7 @@ impl AckManager {
         let expiry_duration = Duration::from_secs(EXPIRY_DURATION_SECS);
 
         AckManager {
-            pending: HashMap::new(),
+            pending: BTreeMap::new(),
             received: MessageFilter::with_expiry_duration(expiry_duration),
         }
     }
@@ -126,7 +127,7 @@ impl Ack {
     /// Compute an `Ack` from a message.
     pub fn compute(routing_msg: &RoutingMessage) -> Result<Ack, RoutingError> {
         let hash_msg = serialisation::serialise(routing_msg)?;
-        Ok(Ack { m_hash: sha3::hash(&hash_msg) })
+        Ok(Ack { m_hash: sha3_256(&hash_msg) })
     }
 }
 

@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -15,10 +15,15 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::collections::hash_map::DefaultHasher;
+#[cfg(feature="use-mock-crust")]
+use fake_clock::FakeClock as Instant;
+use std::collections::{HashMap, VecDeque};
+use std::collections::hash_map::{DefaultHasher, Entry};
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
+#[cfg(not(feature="use-mock-crust"))]
+use std::time::Instant;
 
 fn hash<T: Hash>(t: &T) -> u64 {
     let mut hasher = DefaultHasher::new();
@@ -29,7 +34,11 @@ fn hash<T: Hash>(t: &T) -> u64 {
 /// A time based message filter that takes any generic type as a key and will drop keys after a
 /// time period (LRU Cache pattern).
 pub struct MessageFilter<Message> {
-    entries: Vec<TimestampedMessage>,
+    /// The number of times each message has been received so far, and the expiry timestamp.
+    count: HashMap<u64, (usize, Instant)>,
+    /// A record of message hashes and the expiry timestamps of all insertions, ordered
+    /// chronologically. The timestamps are out of date if the same hash has been inserted again.
+    timeout_queue: VecDeque<(u64, Instant)>,
     time_to_live: Duration,
     phantom: PhantomData<Message>,
 }
@@ -38,7 +47,8 @@ impl<Message: Hash> MessageFilter<Message> {
     /// Constructor for time based `MessageFilter`.
     pub fn with_expiry_duration(time_to_live: Duration) -> MessageFilter<Message> {
         MessageFilter {
-            entries: vec![],
+            count: HashMap::new(),
+            timeout_queue: VecDeque::new(),
             time_to_live: time_to_live,
             phantom: PhantomData,
         }
@@ -56,15 +66,16 @@ impl<Message: Hash> MessageFilter<Message> {
     pub fn insert(&mut self, message: &Message) -> usize {
         self.remove_expired();
         let hash_code = hash(message);
-        if let Some(index) = self.entries.iter().position(|t| t.hash_code == hash_code) {
-            let mut timestamped_message = self.entries.remove(index);
-            timestamped_message.update_expiry_point(self.time_to_live);
-            let count = timestamped_message.increment_count();
-            self.entries.push(timestamped_message);
-            count
-        } else {
-            self.entries.push(TimestampedMessage::new(hash_code, self.time_to_live));
-            1
+        let expiry = Instant::now() + self.time_to_live;
+        self.timeout_queue.push_back((hash_code, expiry));
+        match self.count.entry(hash_code) {
+            Entry::Occupied(entry) => {
+                let &mut (ref mut c, ref mut t) = entry.into_mut();
+                *t = expiry;
+                *c += 1;
+                *c
+            }
+            Entry::Vacant(entry) => entry.insert((1, expiry)).0,
         }
     }
 
@@ -72,75 +83,67 @@ impl<Message: Hash> MessageFilter<Message> {
     #[cfg(test)]
     pub fn count(&self, message: &Message) -> usize {
         let hash_code = hash(message);
-        self.entries.iter().find(|t| t.hash_code == hash_code).map_or(0, |t| t.count)
+        self.count
+            .get(&hash_code)
+            .map_or(0, |&(count, _)| count)
     }
 
     /// Removes any expired messages, then returns whether `message` exists in the filter or not.
     pub fn contains(&mut self, message: &Message) -> bool {
         self.remove_expired();
-        let hash_code = hash(message);
-        self.entries.iter().any(|entry| entry.hash_code == hash_code)
+        self.count.contains_key(&hash(message))
+    }
+
+    /// Remove the entry for `message`, regardless of how many times it was previously inserted.
+    pub fn remove(&mut self, message: &Message) {
+        let _old_val = self.count.remove(&hash(message));
     }
 
     /// Clears the filter, removing all the entries.
     #[cfg(feature = "use-mock-crust")]
     pub fn clear(&mut self) {
-        self.entries.clear();
+        self.count.clear();
+        self.timeout_queue.clear();
     }
 
     fn remove_expired(&mut self) {
-        let now = SystemTime::now();
-        // The entries are sorted from oldest to newest, so just split off the vector at the
-        // first unexpired entry and the returned vector is the remaining unexpired values.  If
-        // we don't find any unexpired value, just clear the vector.
-        if let Some(at) = self.entries.iter().position(|entry| entry.expiry_point > now) {
-            self.entries = self.entries.split_off(at)
-        } else {
-            self.entries.clear();
+        let now = Instant::now();
+        while self.timeout_queue
+                  .front()
+                  .map_or(false, |&(_, ref t)| *t <= now) {
+            let (hash_code, _) = unwrap!(self.timeout_queue.pop_front());
+            if let Entry::Occupied(entry) = self.count.entry(hash_code) {
+                if entry.get().1 <= now {
+                    let _removed_pair = entry.remove_entry();
+                }
+            }
         }
     }
 }
-
-struct TimestampedMessage {
-    pub hash_code: u64,
-    pub expiry_point: SystemTime,
-    /// How many copies of this message have been seen before this one.
-    pub count: usize,
-}
-
-impl TimestampedMessage {
-    pub fn new(hash_code: u64, time_to_live: Duration) -> TimestampedMessage {
-        TimestampedMessage {
-            hash_code: hash_code,
-            expiry_point: SystemTime::now() + time_to_live,
-            count: 1,
-        }
-    }
-
-    /// Updates the expiry point to set the given time to live from now.
-    pub fn update_expiry_point(&mut self, time_to_live: Duration) {
-        self.expiry_point = SystemTime::now() + time_to_live;
-    }
-
-    /// Increments the counter and returns its old value.
-    pub fn increment_count(&mut self) -> usize {
-        self.count += 1;
-        self.count
-    }
-}
-
 
 
 #[cfg(test)]
 mod tests {
-    use rand::{self, Rng};
-    use std::thread;
-    use std::time::Duration;
     use super::*;
+    use rand::{self, Rng};
+    use std::time::Duration;
+
+    #[cfg(feature = "use-mock-crust")]
+    fn sleep(time: u64) {
+        use fake_clock::FakeClock;
+        FakeClock::advance_time(time);
+    }
+
+    #[cfg(not(feature = "use-mock-crust"))]
+    fn sleep(time: u64) {
+        use std::thread;
+        thread::sleep(Duration::from_millis(time));
+    }
 
     #[test]
     fn timeout() {
-        let time_to_live = Duration::from_millis(rand::thread_rng().gen_range(50, 150));
+        let time_to_live_ms = rand::thread_rng().gen_range(50, 150);
+        let time_to_live = Duration::from_millis(time_to_live_ms);
         let mut msg_filter = MessageFilter::<usize>::with_expiry_duration(time_to_live);
         assert_eq!(time_to_live, msg_filter.time_to_live);
 
@@ -153,8 +156,8 @@ mod tests {
         }
 
         // Allow the added messages time to expire.
-        let sleep_duration = time_to_live + Duration::from_millis(10);
-        thread::sleep(sleep_duration);
+        let sleep_duration = time_to_live_ms + 10;
+        sleep(sleep_duration);
 
         // Add a new message which should cause the expired values to be removed.
         assert_eq!(1, msg_filter.insert(&11));
@@ -181,7 +184,8 @@ mod tests {
             }
         }
 
-        let time_to_live = Duration::from_millis(rand::thread_rng().gen_range(50, 150));
+        let time_to_live_ms = rand::thread_rng().gen_range(50, 150);
+        let time_to_live = Duration::from_millis(time_to_live_ms);
         let mut msg_filter = MessageFilter::<Temp>::with_expiry_duration(time_to_live);
 
         let values: Vec<Temp> = (0..10).map(|_| Temp::default()).collect();
@@ -192,8 +196,8 @@ mod tests {
         }
 
         // Allow the added messages time to expire.
-        let sleep_duration = time_to_live + Duration::from_millis(10);
-        thread::sleep(sleep_duration);
+        let sleep_duration = time_to_live_ms + 10;
+        sleep(sleep_duration);
 
         // Add a new message which should cause the expired values to be removed.
         let temp: Temp = Default::default();
@@ -225,22 +229,22 @@ mod tests {
     fn insert_resets_timeout() {
         // Check re-adding a message to a filter alters its expiry time.
         let time_to_live = Duration::from_millis(3000);
-        let sleep_duration = Duration::from_millis(1800); // more than half of `time_to_live`
+        let sleep_duration = 1800; // more than half of `time_to_live`
         let mut msg_filter = MessageFilter::<usize>::with_expiry_duration(time_to_live);
 
         // Add "0".
         assert_eq!(1, msg_filter.insert(&0));
 
         // Wait for a bit more than half the expiry time and re-add "0".
-        thread::sleep(sleep_duration);
+        sleep(sleep_duration);
         assert_eq!(2, msg_filter.insert(&0));
 
         // Wait for another half of the expiry time and check it's not been removed.
-        thread::sleep(sleep_duration);
+        sleep(sleep_duration);
         assert!(msg_filter.contains(&0));
 
         // Wait for another half of the expiry time and check it's been removed.
-        thread::sleep(sleep_duration);
+        sleep(sleep_duration);
         assert!(!msg_filter.contains(&0));
     }
 }

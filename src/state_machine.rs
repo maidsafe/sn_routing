@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -23,7 +23,8 @@ use id::PublicId;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 use outbox::EventBox;
 #[cfg(feature = "use-mock-crust")]
-use routing_table::{Prefix, RoutingTable};
+use routing_table::Prefix;
+use routing_table::RoutingTable;
 #[cfg(feature = "use-mock-crust")]
 use rust_sodium::crypto::sign;
 use states::{Bootstrapping, Client, Node};
@@ -46,6 +47,8 @@ pub struct StateMachine {
     is_running: bool,
 }
 
+// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
+#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
 pub enum State {
     Bootstrapping(Bootstrapping),
     Client(Client),
@@ -96,8 +99,16 @@ impl State {
         self.base_state().map(|state| *state.name())
     }
 
+    fn routing_table(&self) -> Option<&RoutingTable<XorName>> {
+        match *self {
+            State::Node(ref state) => Some(state.routing_table()),
+            _ => None,
+        }
+    }
+
     fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
-        self.base_state().and_then(|state| state.close_group(name, count))
+        self.base_state()
+            .and_then(|state| state.close_group(name, count))
     }
 
     fn base_state(&self) -> Option<&Base> {
@@ -141,10 +152,16 @@ impl State {
         }
     }
 
-    pub fn routing_table(&self) -> Option<&RoutingTable<XorName>> {
+    pub fn purge_invalid_rt_entry(&mut self) {
+        if let State::Node(ref mut state) = *self {
+            state.purge_invalid_rt_entry();
+        }
+    }
+
+    pub fn has_tunnel_clients(&self, client_1: PeerId, client_2: PeerId) -> bool {
         match *self {
-            State::Node(ref state) => Some(state.routing_table()),
-            _ => None,
+            State::Node(ref state) => state.has_tunnel_clients(client_1, client_2),
+            _ => false,
         }
     }
 
@@ -191,7 +208,7 @@ impl StateMachine {
     // Construct a new StateMachine by passing a function returning the initial
     // state.
     pub fn new<F>(init_state: F, outbox: &mut EventBox) -> (RoutingActionSender, Self)
-        where F: FnOnce(Service, Timer, &mut EventBox) -> State
+        where F: FnOnce(RoutingActionSender, Service, Timer, &mut EventBox) -> State
     {
         let (category_tx, category_rx) = mpsc::channel();
         let (crust_tx, crust_rx) = mpsc::channel();
@@ -212,7 +229,7 @@ impl StateMachine {
 
         let timer = Timer::new(action_sender.clone());
 
-        let state = init_state(crust_service, timer, outbox);
+        let state = init_state(action_sender.clone(), crust_service, timer, outbox);
         let is_running = match state {
             State::Terminated => false,
             _ => true,
@@ -254,7 +271,10 @@ impl StateMachine {
     pub fn apply_transition(&mut self, transition: Transition, outbox: &mut EventBox) {
         match transition {
             Transition::Stay => (),
-            Transition::IntoBootstrapped { proxy_peer_id, proxy_public_id } => {
+            Transition::IntoBootstrapped {
+                proxy_peer_id,
+                proxy_public_id,
+            } => {
                 // Temporarily switch to `Terminated` to allow moving out of the current
                 // state without moving `self`.
                 let prev_state = mem::replace(&mut self.state, State::Terminated);
@@ -304,6 +324,10 @@ impl StateMachine {
 
     pub fn name(&self) -> Option<XorName> {
         self.state.name()
+    }
+
+    pub fn routing_table(&self) -> Option<&RoutingTable<XorName>> {
+        self.state.routing_table()
     }
 
     pub fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {

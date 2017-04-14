@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -15,15 +15,42 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::xorable::Xorable;
 use std::cmp::{self, Ordering};
 use std::fmt::{Binary, Debug, Formatter};
 use std::fmt::Result as FmtResult;
 use std::hash::{Hash, Hasher};
-use super::xorable::Xorable;
+#[cfg(test)]
+use std::str::FromStr;
+
+/// A prefix with section version.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash, Deserialize, Serialize)]
+pub struct VersionedPrefix<T: Clone + Copy + Default + Binary + Xorable> {
+    prefix: Prefix<T>,
+    version: u64,
+}
+
+impl<T: Clone + Copy + Default + Binary + Xorable> VersionedPrefix<T> {
+    /// Returns the prefix.
+    pub fn prefix(&self) -> &Prefix<T> {
+        &self.prefix
+    }
+
+    /// Returns the version number.
+    pub fn version(&self) -> u64 {
+        self.version
+    }
+}
+
+impl<T: Clone + Copy + Default + Binary + Xorable> Into<(Prefix<T>, u64)> for VersionedPrefix<T> {
+    fn into(self) -> (Prefix<T>, u64) {
+        (self.prefix, self.version)
+    }
+}
 
 /// A section prefix, i.e. a sequence of bits specifying the part of the network's name space
 /// consisting of all names that start with this sequence.
-#[derive(Clone, Copy, Default, Eq, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Copy, Default, Eq, Deserialize, Serialize)]
 pub struct Prefix<T: Clone + Copy + Default + Binary + Xorable> {
     bit_count: u16,
     name: T,
@@ -37,6 +64,14 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
         Prefix {
             bit_count: cmp::min(bit_count, T::bit_len()) as u16,
             name: name.set_remaining(bit_count, false),
+        }
+    }
+
+    /// Returns a `VersionedPrefix` with this prefix and the given version number.
+    pub fn with_version(self, version: u64) -> VersionedPrefix<T> {
+        VersionedPrefix {
+            prefix: self,
+            version: version,
         }
     }
 
@@ -71,6 +106,12 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
         i >= self.bit_count() || i >= other.bit_count()
     }
 
+    /// Returns `true` if `other` is compatible but strictly shorter than `self`.
+    pub fn is_extension_of(&self, other: &Prefix<T>) -> bool {
+        let i = self.name.common_prefix(&other.name);
+        i >= other.bit_count() && self.bit_count() > other.bit_count()
+    }
+
     /// Returns `true` if the `other` prefix differs in exactly one bit from this one.
     pub fn is_neighbour(&self, other: &Prefix<T>) -> bool {
         let i = self.name.common_prefix(&other.name);
@@ -85,11 +126,6 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
     /// Returns the number of common leading bits with the input name, capped with prefix length.
     pub fn common_prefix(&self, name: &T) -> usize {
         cmp::min(self.bit_count(), self.name.common_prefix(name))
-    }
-
-    /// Returns the number of common leading bits with the input name.
-    pub fn max_identical_index(&self, name: &T) -> usize {
-        self.name.common_prefix(name)
     }
 
     /// Returns `true` if this is a prefix of the given `name`.
@@ -127,7 +163,12 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
         where T: 'a,
               U: IntoIterator<Item = &'a Prefix<T>> + Clone
     {
-        let max_prefix_len = prefixes.clone().into_iter().map(|x| x.bit_count()).max().unwrap_or(0);
+        let max_prefix_len = prefixes
+            .clone()
+            .into_iter()
+            .map(|x| x.bit_count())
+            .max()
+            .unwrap_or(0);
         self.is_covered_by_impl(prefixes, max_prefix_len)
     }
 
@@ -135,12 +176,15 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
         where T: 'a,
               U: IntoIterator<Item = &'a Prefix<T>> + Clone
     {
-        prefixes.clone()
+        prefixes
+            .clone()
             .into_iter()
             .any(|x| x.is_compatible(self) && x.bit_count() <= self.bit_count()) ||
         (self.bit_count() <= max_prefix_len &&
-         self.pushed(false).is_covered_by_impl(prefixes.clone(), max_prefix_len) &&
-         self.pushed(true).is_covered_by_impl(prefixes, max_prefix_len))
+         self.pushed(false)
+             .is_covered_by_impl(prefixes.clone(), max_prefix_len) &&
+         self.pushed(true)
+             .is_covered_by_impl(prefixes, max_prefix_len))
     }
 
     /// Returns the neighbouring prefix differing in the `i`-th bit
@@ -160,6 +204,15 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
             name = name.with_bit(i, self.name.bit(i));
         }
         name
+    }
+
+    /// Returns the same prefix, with the last bit flipped, or unchanged, if empty.
+    pub fn sibling(&self) -> Prefix<T> {
+        if self.bit_count > 0 {
+            self.with_flipped_bit((self.bit_count - 1) as usize)
+        } else {
+            *self
+        }
     }
 }
 
@@ -210,18 +263,19 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Debug for Prefix<T> {
 }
 
 #[cfg(test)]
-impl Prefix<u8> {
-    pub fn from_str(bits: &str) -> Prefix<u8> {
+impl FromStr for Prefix<u8> {
+    type Err = String;
+    fn from_str(bits: &str) -> Result<Prefix<u8>, String> {
         let mut name = 0u8;
         for (i, bit) in bits.chars().enumerate() {
             if bit == '1' {
                 name |= 1 << (7 - i);
             } else if bit != '0' {
-                panic!("'{}' not allowed - the string must represent a binary number.",
-                       bit);
+                return Err(format!("'{}' not allowed - the string must represent a binary number.",
+                                   bit));
             }
         }
-        Prefix::new(bits.len(), name)
+        Ok(Prefix::new(bits.len(), name))
     }
 }
 
@@ -232,23 +286,28 @@ mod tests {
 
     #[test]
     fn prefix() {
-        assert_eq!(Prefix::from_str("101").pushed(true),
-                   Prefix::from_str("1011"));
-        assert_eq!(Prefix::from_str("101").pushed(false),
-                   Prefix::from_str("1010"));
-        assert_eq!(Prefix::from_str("1011").popped(), Prefix::from_str("101"));
-        assert!(Prefix::from_str("101").is_compatible(&Prefix::from_str("1010")));
-        assert!(Prefix::from_str("1010").is_compatible(&Prefix::from_str("101")));
-        assert!(!Prefix::from_str("1010").is_compatible(&Prefix::from_str("1011")));
-        assert!(Prefix::from_str("101").is_neighbour(&Prefix::from_str("1111")));
-        assert!(!Prefix::from_str("1010").is_neighbour(&Prefix::from_str("1111")));
-        assert!(Prefix::from_str("1010").is_neighbour(&Prefix::from_str("10111")));
-        assert!(!Prefix::from_str("101").is_neighbour(&Prefix::from_str("10111")));
-        assert!(Prefix::from_str("101").matches(&0b10101100));
-        assert!(!Prefix::from_str("1011").matches(&0b10101100));
+        assert_eq!(unwrap!(Prefix::from_str("101")).pushed(true),
+                   unwrap!(Prefix::from_str("1011")));
+        assert_eq!(unwrap!(Prefix::from_str("101")).pushed(false),
+                   unwrap!(Prefix::from_str("1010")));
+        assert_eq!(unwrap!(Prefix::from_str("1011")).popped(),
+                   unwrap!(Prefix::from_str("101")));
+        assert!(unwrap!(Prefix::from_str("101")).is_compatible(&unwrap!(Prefix::from_str("1010"))));
+        assert!(unwrap!(Prefix::from_str("1010")).is_compatible(&unwrap!(Prefix::from_str("101"))));
+        assert!(!unwrap!(Prefix::from_str("1010")).is_compatible(
+            &unwrap!(Prefix::from_str("1011"))));
+        assert!(unwrap!(Prefix::from_str("101")).is_neighbour(&unwrap!(Prefix::from_str("1111"))));
+        assert!(!unwrap!(Prefix::from_str("1010")).is_neighbour(
+            &unwrap!(Prefix::from_str("1111"))));
+        assert!(unwrap!(Prefix::from_str("1010")).is_neighbour(
+            &unwrap!(Prefix::from_str("10111"))));
+        assert!(!unwrap!(Prefix::from_str("101")).is_neighbour(
+            &unwrap!(Prefix::from_str("10111"))));
+        assert!(unwrap!(Prefix::from_str("101")).matches(&0b10101100));
+        assert!(!unwrap!(Prefix::from_str("1011")).matches(&0b10101100));
 
-        assert_eq!(Prefix::from_str("0101").lower_bound(), 0b01010000);
-        assert_eq!(Prefix::from_str("0101").upper_bound(), 0b01011111);
+        assert_eq!(unwrap!(Prefix::from_str("0101")).lower_bound(), 0b01010000);
+        assert_eq!(unwrap!(Prefix::from_str("0101")).upper_bound(), 0b01011111);
 
         // Check we handle passing an excessive `bit_count` to `new()`.
         assert_eq!(Prefix::<u64>::new(64, 0).bit_count(), 64);

@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -15,6 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::{Client, Node};
+use super::common::Base;
 use action::Action;
 use cache::Cache;
 use crust::{CrustUser, PeerId, Service};
@@ -34,9 +36,8 @@ use std::collections::HashSet;
 use std::fmt::{self, Debug, Formatter};
 use std::net::SocketAddr;
 use std::time::Duration;
-use super::{Client, Node};
-use super::common::Base;
 use timer::Timer;
+use types::RoutingActionSender;
 use xor_name::XorName;
 
 // Time (in seconds) after which bootstrap is cancelled (and possibly retried).
@@ -44,6 +45,7 @@ const BOOTSTRAP_TIMEOUT_SECS: u64 = 20;
 
 // State of Client or Node while bootstrapping.
 pub struct Bootstrapping {
+    action_sender: RoutingActionSender,
     bootstrap_blacklist: HashSet<SocketAddr>,
     bootstrap_connection: Option<(PeerId, u64)>,
     cache: Box<Cache>,
@@ -56,29 +58,33 @@ pub struct Bootstrapping {
 }
 
 impl Bootstrapping {
-    pub fn new(cache: Box<Cache>,
+    pub fn new(action_sender: RoutingActionSender,
+               cache: Box<Cache>,
                client_restriction: bool,
                mut crust_service: Service,
                full_id: FullId,
                min_section_size: usize,
                timer: Timer)
                -> Option<Self> {
-        if let Err(error) = crust_service.start_listening_tcp() {
+        if client_restriction {
+            let _ = crust_service.start_bootstrap(HashSet::new(), CrustUser::Client);
+        } else if let Err(error) = crust_service.start_listening_tcp() {
             error!("Failed to start listening: {:?}", error);
             return None;
         }
 
         Some(Bootstrapping {
-            bootstrap_blacklist: HashSet::new(),
-            bootstrap_connection: None,
-            cache: cache,
-            client_restriction: client_restriction,
-            crust_service: crust_service,
-            full_id: full_id,
-            min_section_size: min_section_size,
-            stats: Stats::new(),
-            timer: timer,
-        })
+                 action_sender: action_sender,
+                 bootstrap_blacklist: HashSet::new(),
+                 bootstrap_connection: None,
+                 cache: cache,
+                 client_restriction: client_restriction,
+                 crust_service: crust_service,
+                 full_id: full_id,
+                 min_section_size: min_section_size,
+                 stats: Stats::new(),
+                 timer: timer,
+             })
     }
 
     pub fn handle_action(&mut self, action: Action) -> Transition {
@@ -94,6 +100,9 @@ impl Bootstrapping {
                 let _ = result_tx.send(*self.name());
             }
             Action::Timeout(token) => self.handle_timeout(token),
+            Action::ResourceProofResult(..) => {
+                error!("Action::ResourceProofResult received by Bootstrapping state");
+            }
             Action::Terminate => {
                 return Transition::Terminate;
             }
@@ -121,18 +130,23 @@ impl Bootstrapping {
                 }
             }
             CrustEvent::ListenerStarted(port) => {
+                if self.client_restriction {
+                    error!("{:?} A client must not run a crust listener.", self);
+                    outbox.send_event(Event::Terminate);
+                    return Transition::Terminate;
+                }
                 trace!("{:?} Listener started on port {}.", self, port);
-                let crust_user = if self.client_restriction {
-                    CrustUser::Client
-                } else {
-                    self.crust_service.set_service_discovery_listen(true);
-                    CrustUser::Node
-                };
-                let _ = self.crust_service.start_bootstrap(HashSet::new(), crust_user);
+                self.crust_service.set_service_discovery_listen(true);
+                let _ = self.crust_service
+                    .start_bootstrap(HashSet::new(), CrustUser::Node);
                 Transition::Stay
             }
             CrustEvent::ListenerFailed => {
-                error!("{:?} Failed to start listening.", self);
+                if self.client_restriction {
+                    error!("{:?} A client must not run a crust listener.", self);
+                } else {
+                    error!("{:?} Failed to start listening.", self);
+                }
                 outbox.send_event(Event::Terminate);
                 Transition::Terminate
             }
@@ -159,7 +173,8 @@ impl Bootstrapping {
     }
 
     pub fn into_node(self, proxy_peer_id: PeerId, proxy_public_id: PublicId) -> Option<Node> {
-        Node::from_bootstrapping(self.cache,
+        Node::from_bootstrapping(self.action_sender,
+                                 self.cache,
                                  self.crust_service,
                                  self.full_id,
                                  self.min_section_size,
@@ -268,7 +283,8 @@ impl Bootstrapping {
     fn send_client_identify(&mut self, peer_id: PeerId) {
         debug!("{:?} - Sending ClientIdentify to {:?}.", self, peer_id);
 
-        let token = self.timer.schedule(Duration::from_secs(BOOTSTRAP_TIMEOUT_SECS));
+        let token = self.timer
+            .schedule(Duration::from_secs(BOOTSTRAP_TIMEOUT_SECS));
         self.bootstrap_connection = Some((peer_id, token));
 
         let serialised_public_id = match serialisation::serialise(self.full_id.public_id()) {

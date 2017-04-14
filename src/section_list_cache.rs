@@ -5,8 +5,8 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -15,14 +15,14 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::QUORUM;
+use super::XorName;
 use id::PublicId;
 use itertools::Itertools;
 use messages::{SectionList, SectionListSignatures, SignedSectionList};
 use routing_table::Prefix;
 use rust_sodium::crypto::sign::Signature;
 use std::collections::{BTreeMap, HashMap};
-use super::QUORUM;
-use super::XorName;
 
 pub type PrefixMap<T> = HashMap<Prefix<XorName>, T>;
 
@@ -41,16 +41,25 @@ impl SectionListCache {
         Default::default()
     }
 
-    /// Removes all signatures authored by `author`
-    pub fn remove_signatures_by(&mut self, author: &PublicId, our_section_size: usize) {
-        if let Some(lists) = self.signed_by.remove(author) {
-            for (prefix, list) in lists {
-                let _ = self.signatures.get_mut(&prefix).map_or(None, |map| {
-                    map.get_mut(&list).map_or(None, |sigmap| sigmap.remove(author))
-                });
+    /// Removes all signatures authored by `name`
+    pub fn remove_signatures(&mut self, name: &XorName, our_section_size: usize) {
+        let pub_id_opt = self.signed_by
+            .keys()
+            .find(|pub_id| name == pub_id.name())
+            .cloned();
+        if let Some(pub_id) = pub_id_opt {
+            if let Some(lists) = self.signed_by.remove(&pub_id) {
+                for (prefix, list) in lists {
+                    let _ = self.signatures
+                        .get_mut(&prefix)
+                        .and_then(|map| {
+                                      map.get_mut(&list)
+                                          .and_then(|sigmap| sigmap.remove(&pub_id))
+                                  });
+                }
+                self.prune();
+                self.update_lists_cache(our_section_size);
             }
-            self.prune();
-            self.update_lists_cache(our_section_size);
         }
     }
 
@@ -64,8 +73,10 @@ impl SectionListCache {
         // remove all conflicting signatures
         self.remove_signatures_for_prefix_by(prefix, &pub_id);
         // remember that this public id signed this section list
-        let _ =
-            self.signed_by.entry(pub_id).or_insert_with(HashMap::new).insert(prefix, list.clone());
+        let _ = self.signed_by
+            .entry(pub_id)
+            .or_insert_with(HashMap::new)
+            .insert(prefix, list.clone());
         // remember that this section list has a new signature
         let _ = self.signatures
             .entry(prefix)
@@ -74,6 +85,18 @@ impl SectionListCache {
             .or_insert_with(BTreeMap::new)
             .insert(pub_id, sig);
         self.update_lists_cache(our_section_size);
+    }
+
+    /// Returns the given signature, if present.
+    pub fn get_signature_for(&self,
+                             prefix: &Prefix<XorName>,
+                             pub_id: &PublicId,
+                             list: &SectionList)
+                             -> Option<&Signature> {
+        self.signatures
+            .get(prefix)
+            .and_then(|lists| lists.get(list))
+            .and_then(|sigs| sigs.get(pub_id))
     }
 
     /// Returns the currently signed section list for `prefix` along with a quorum of signatures.
@@ -126,11 +149,12 @@ impl SectionListCache {
                 if 100 * sig_count >= QUORUM * our_section_size {
                     // we have a list with a quorum of signatures
                     let signatures = unwrap!(map.get(list));
-                    let _ = self.lists_cache.insert(*prefix,
-                                                    SignedSectionList {
-                                                        list: list.clone(),
-                                                        signatures: signatures.clone(),
-                                                    });
+                    let _ = self.lists_cache
+                        .insert(*prefix,
+                                SignedSectionList {
+                                    list: list.clone(),
+                                    signatures: signatures.clone(),
+                                });
                 }
             }
         }
@@ -147,11 +171,16 @@ impl SectionListCache {
             .collect_vec();
         for (prefix, list) in to_remove {
             // remove the signatures from self.signatures
-            let _ = self.signatures.get_mut(&prefix).map_or(None, |map| {
-                map.get_mut(&list).map_or(None, |sigmap| sigmap.remove(author))
-            });
+            let _ = self.signatures
+                .get_mut(&prefix)
+                .map_or(None, |map| {
+                    map.get_mut(&list)
+                        .map_or(None, |sigmap| sigmap.remove(&author))
+                });
             // remove those entries from self.signed_by
-            let _ = self.signed_by.get_mut(author).map_or(None, |map| map.remove(&prefix));
+            let _ = self.signed_by
+                .get_mut(&author)
+                .map_or(None, |map| map.remove(&prefix));
         }
 
         self.prune();
