@@ -50,11 +50,10 @@ use signature_accumulator::SignatureAccumulator;
 use state_machine::Transition;
 use stats::Stats;
 use std::{cmp, fmt, iter, mem};
-use std::collections::{BTreeSet, HashSet, VecDeque};
+use std::collections::{BTreeSet, VecDeque};
 #[cfg(feature = "use-mock-crust")]
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
-use std::iter::Iterator;
 use std::time::Duration;
 use timer::Timer;
 use tunnels::Tunnels;
@@ -2741,7 +2740,7 @@ impl Node {
         };
 
         if self.is_proper() && !force_via_proxy {
-            let targets: HashSet<_> = self.routing_table()
+            let targets: BTreeSet<_> = self.routing_table()
                 .targets(&routing_msg.dst, *exclude, route as usize)?
                 .into_iter()
                 .filter(|target| !sent_to.contains(target))

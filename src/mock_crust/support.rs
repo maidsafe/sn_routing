@@ -57,7 +57,10 @@ impl Network {
                                          queue: BTreeMap::new(),
                                          blocked_connections: HashSet::new(),
                                          delayed_connections: HashSet::new(),
-                                         rng: rng,
+                                         // Use `SeededRng::new()` here rather than passing in `rng`
+                                         // so that a fresh one is used in every test, i.e. it will
+                                         // not have been affected by initialising rust_sodium.
+                                         rng: SeededRng::new(),
                                      })))
     }
 

@@ -17,6 +17,8 @@
 
 use crust::{PeerId, PrivConnectionInfo, PubConnectionInfo};
 use error::RoutingError;
+#[cfg(feature="use-mock-crust")]
+use fake_clock::FakeClock as Instant;
 use id::PublicId;
 use itertools::Itertools;
 use log::LogLevel;
@@ -30,9 +32,11 @@ use rust_sodium::crypto::hash::sha256;
 use rust_sodium::crypto::sign;
 use signature_accumulator::ACCUMULATION_TIMEOUT_SECS;
 use std::{error, fmt, mem};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::collections::hash_map::Values;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(not(feature="use-mock-crust"))]
+use std::time::Instant;
 use types::MessageId;
 use xor_name::XorName;
 
@@ -1229,7 +1233,7 @@ impl PeerManager {
     }
 
     /// Return the PeerIds of nodes bearing the names.
-    pub fn get_peer_ids(&self, names: &HashSet<XorName>) -> Vec<PeerId> {
+    pub fn get_peer_ids(&self, names: &BTreeSet<XorName>) -> Vec<PeerId> {
         names
             .iter()
             .filter_map(|name| self.get_peer_id(name))

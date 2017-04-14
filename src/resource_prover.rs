@@ -19,6 +19,8 @@ use ack_manager::ACK_TIMEOUT_SECS;
 use action::Action;
 use crust::PeerId;
 use event::Event;
+#[cfg(feature="use-mock-crust")]
+use fake_clock::FakeClock as Instant;
 use itertools::Itertools;
 use maidsafe_utilities::thread;
 use messages::{DirectMessage, MAX_PART_LEN};
@@ -29,7 +31,9 @@ use state_machine::Transition;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(not(feature="use-mock-crust"))]
+use std::time::Instant;
 use timer::Timer;
 use types::RoutingActionSender;
 use utils::DisplayDuration;
