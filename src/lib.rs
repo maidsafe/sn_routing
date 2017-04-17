@@ -193,8 +193,12 @@ pub const TYPE_TAG_SESSION_PACKET: u64 = 0;
 /// Structured Data Tag for DNS Packet Type
 pub const TYPE_TAG_DNS_PACKET: u64 = 5;
 
-/// The quorum, as a percentage of the number of members of the authority.
-pub const QUORUM: usize = 51;
+/// Quorum is defined as having strictly greater than `QUORUM_NUM / QUORUM_DENOM` agreement;
+/// using only integer arithmatic a quorum can be checked with
+/// `votes * QUORUM_DENOM > voters * QUORUM_NUM`.
+pub const QUORUM_NUM: usize = 1;
+/// See QUORUM_NUM
+pub const QUORUM_DENOM: usize = 2;
 
 pub use cache::{Cache, NullCache};
 pub use client::Client;
@@ -220,12 +224,13 @@ pub use xor_name::{XOR_NAME_BITS, XOR_NAME_LEN, XorName, XorNameFromHexError};
 
 #[cfg(test)]
 mod tests {
-    use super::QUORUM;
+    use super::{QUORUM_DENOM, QUORUM_NUM};
 
     #[test]
     #[cfg_attr(feature="cargo-clippy", allow(eq_op))]
-    fn quorum_percentage() {
-        assert!(QUORUM <= 100 && QUORUM > 50,
-                "Quorum percentage isn't between 51 and 100");
+    fn quorum_check() {
+        assert!(QUORUM_NUM < QUORUM_DENOM, "Quorum impossible to achieve");
+        assert!(QUORUM_NUM * 2 >= QUORUM_DENOM,
+                "Quorum does not guarantee agreement");
     }
 }

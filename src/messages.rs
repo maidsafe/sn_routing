@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use super::QUORUM;
+use super::{QUORUM_DENOM, QUORUM_NUM};
 use ack_manager::Ack;
 #[cfg(not(feature = "use-mock-crust"))]
 use crust::PeerId;
@@ -435,7 +435,7 @@ impl SignedMessage {
                 // cmp::min(routing_table.len(), min_section_size)
                 // (or just min_section_size, but in that case we will not be able to handle user
                 // messages during boot-up).
-                QUORUM * valid_names.len() <= 100 * valid_sigs
+                valid_sigs * QUORUM_DENOM > valid_names.len() * QUORUM_NUM
             }
             Section(_) => {
                 // Note: there should be exactly one source section, but we use safe code:
@@ -443,7 +443,7 @@ impl SignedMessage {
                     .iter()
                     .fold(0, |count, list| count + list.pub_ids.len());
                 let valid_sigs = self.signatures.len();
-                QUORUM * num_sending <= 100 * valid_sigs
+                valid_sigs * QUORUM_DENOM > num_sending * QUORUM_NUM
             }
             PrefixSection(_) => {
                 // Each section must have enough signatures:
@@ -454,7 +454,7 @@ impl SignedMessage {
                                  .keys()
                                  .filter(|pub_id| list.pub_ids.contains(pub_id))
                                  .count();
-                             QUORUM * list.pub_ids.len() <= 100 * valid_sigs
+                             valid_sigs * QUORUM_DENOM > list.pub_ids.len() * QUORUM_NUM
                          })
             }
             ManagedNode(_) | Client { .. } => self.signatures.len() == 1,
