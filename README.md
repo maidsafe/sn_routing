@@ -1,3 +1,4 @@
+[![Stories in Ready](https://badge.waffle.io/maidsafe/routing.png?label=ready&title=Ready)](https://waffle.io/maidsafe/routing)
 # Routing
 
 **Maintainer:** Andreas Fackler (andreas.fackler@maidsafe.net)
