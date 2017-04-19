@@ -29,7 +29,7 @@ use routing_table::Authority;
 #[cfg(not(feature = "use-mock-crust"))]
 use rust_sodium;
 use state_machine::{State, StateMachine};
-use states;
+use states::{Bootstrapping, BootstrappingTargetState};
 #[cfg(feature = "use-mock-crust")]
 use std::cell::RefCell;
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -119,16 +119,14 @@ impl Client {
                           outbox: &mut EventBox)
                           -> (RoutingActionSender, StateMachine) {
         let cache = Box::new(NullCache);
-        let full_id = keys.unwrap_or_else(FullId::new);
-
         StateMachine::new(move |action_sender, crust_service, timer, _outbox2| {
-            states::Bootstrapping::new(action_sender,
-                                       cache,
-                                       true,
-                                       crust_service,
-                                       full_id,
-                                       min_section_size,
-                                       timer)
+            let target_state = BootstrappingTargetState::Client { opt_full_id: keys };
+            Bootstrapping::new(action_sender,
+                               cache,
+                               target_state,
+                               crust_service,
+                               min_section_size,
+                               timer)
                     .map_or(State::Terminated, State::Bootstrapping)
         },
                           outbox)

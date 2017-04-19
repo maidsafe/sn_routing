@@ -936,14 +936,12 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             .cloned()
     }
 
-    /// Returns `name` modified so that it belongs to one of the known prefixes with minimal bit
-    /// length, favouring our own prefix if it is one of the shortest.
-    pub fn assign_to_min_len_prefix(&self, name: &T) -> T {
-        let target_prefix = iter::once(&self.our_prefix)
-            .chain(self.sections.keys())
-            .min_by_key(|prefix| prefix.bit_count())
-            .unwrap_or(&self.our_prefix);
-        target_prefix.substituted_in(*name)
+    /// Return a minimum length prefix, favouring our prefix if it is one of the shortest.
+    pub fn min_len_prefix(&self) -> Prefix<T> {
+        *iter::once(&self.our_prefix)
+             .chain(self.sections.keys())
+             .min_by_key(|prefix| prefix.bit_count())
+             .unwrap_or(&self.our_prefix)
     }
 
     fn split_our_section(&mut self, version: u64) -> Vec<T> {

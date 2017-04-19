@@ -51,6 +51,25 @@ impl FullId {
         }
     }
 
+    /// Construct a `FullId` whose name is in the interval [start, end] (both endpoint inclusive).
+    /// FIXME(Fraser) - time limit this function?  Document behaviour
+    pub fn within_range(start: &XorName, end: &XorName) -> FullId {
+        let mut sign_keys = sign::gen_keypair();
+        loop {
+            let name = XorName(hash::sha256::hash(&sign_keys.0[..]).0);
+            if name.between(start, end) {
+                let encrypt_keys = box_::gen_keypair();
+                let full_id = FullId::with_keys(encrypt_keys, sign_keys);
+                // Ensure we update this `name` generation above if we change how `PublicId::name()`
+                // is calculated in the future.
+                assert_eq!(name, *full_id.public_id().name());
+                return full_id;
+            }
+            sign_keys = sign::gen_keypair();
+        }
+    }
+
+
     /// Returns public ID reference.
     pub fn public_id(&self) -> &PublicId {
         &self.public_id
@@ -98,12 +117,6 @@ impl PublicId {
         &self.name
     }
 
-    /// Name field is initially same as original_name, this should be replaced by relocated name
-    /// calculated by the nodes close to original_name by using this method
-    pub fn set_name(&mut self, name: XorName) {
-        self.name = name;
-    }
-
     /// Return public signing key.
     pub fn encrypting_public_key(&self) -> &box_::PublicKey {
         &self.public_encrypt_key
@@ -112,11 +125,6 @@ impl PublicId {
     /// Return public signing key.
     pub fn signing_public_key(&self) -> &sign::PublicKey {
         &self.public_sign_key
-    }
-
-    /// Returns whether our name is the hash of our public sign key.
-    pub fn is_client_id(&self) -> bool {
-        self.name.0 == hash::sha256::hash(&self.public_sign_key[..]).0
     }
 
     fn new(public_encrypt_key: box_::PublicKey, public_sign_key: sign::PublicKey) -> PublicId {

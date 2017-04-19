@@ -15,8 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use Prefix;
+use itertools::Itertools;
 use routing_table::Xorable;
 use rust_sodium::crypto::hash::sha256;
+use std::collections::BTreeSet;
 use std::fmt::{self, Display, Write};
 use std::iter;
 use std::time::Duration;
@@ -73,29 +76,50 @@ pub fn format_binary_array<V: AsRef<[u8]>>(input: V) -> String {
             input_ref[input_ref.len() - 1])
 }
 
-/// Compute the relocated name of a client with the given original name.
+/// Compute the target destination for a relocating node with the given name.
 ///
-/// This is used by each member of a joining node's section to choose a new name for the node. On
-/// the one hand, sufficiently many of them need to agree on the new name to reach quorum size, on
-/// the other hand, the joining node shall not be able to predict it so that it cannot choose where
-/// to be relocated to.
+/// This is used by each member of a relocating node's section to choose a location for the node to
+/// move to. On the one hand, sufficiently many of them need to agree on the new name to reach
+/// quorum size, on the other hand, the relocating node shall not be able to predict it so that it
+/// cannot choose where to be relocated to.
 ///
-/// To meet these requirements, the relocated name is computed from the two closest nodes and the
-/// joining node's original name: It is the SHA256 hash of:
+/// To meet these requirements, the target is computed from the two closest nodes and the
+/// relocating node's current name: It is the SHA256 hash of:
 ///
-/// [`original_name`, 1st closest node id, 2nd closest node id]
+/// [`current_name`, 1st closest node id, 2nd closest node id]
 ///
-/// In case of only one close node provided (in initial network setup scenario):
+/// In the case where only one close node is provided (in initial network setup scenario):
 ///
-/// [`original_name`, 1st closest node id]
-pub fn calculate_relocated_name(mut close_nodes: Vec<XorName>, original_name: &XorName) -> XorName {
-    close_nodes.sort_by(|a, b| original_name.cmp_distance(a, b));
-    let combined: Vec<u8> = iter::once(original_name)
+/// [`current_name`, 1st closest node id]
+pub fn calculate_relocation_dst(mut close_nodes: Vec<XorName>, current_name: &XorName) -> XorName {
+    close_nodes.sort_by(|a, b| current_name.cmp_distance(a, b));
+    let combined: Vec<u8> = iter::once(current_name)
         .chain(close_nodes.iter().take(2))
         .flat_map(|close_node| close_node.0.into_iter())
         .cloned()
         .collect();
     XorName(sha256::hash(&combined).0)
+}
+
+/// Calculate the interval for a node joining our section to generate a key for.
+pub fn calculate_relocation_interval(prefix: &Prefix<XorName>,
+                                     section: &BTreeSet<XorName>)
+                                     -> (XorName, XorName) {
+    let (lower_bound, upper_bound) = (prefix.lower_bound(), prefix.upper_bound());
+
+    let (start, end) = iter::once(&lower_bound)
+        .chain(section)
+        .chain(iter::once(&upper_bound))
+        .tuple_windows()
+        .max_by(|&(x1, y1), &(x2, y2)| {
+                    let diff1 = y1 - x1;
+                    let diff2 = y2 - x2;
+                    diff1.cmp(&diff2)
+                })
+        .unwrap_or((&lower_bound, &upper_bound));
+
+    // TODO: implement the middle-third rule.. probably need to convert to BigNums.
+    (*start, *end)
 }
 
 #[cfg(test)]
@@ -110,14 +134,15 @@ mod tests {
     #[test]
     fn duration_formatting() {
         assert_eq!(format!("{}", Duration::new(653105, 499_000_000).display_secs()),
-                "653105 seconds");
+                   "653105 seconds");
         assert_eq!(format!("{}", Duration::new(653105, 500_000_000).display_secs()),
-                "653106 seconds");
-        assert_eq!(format!("{}", Duration::new(0, 900_000_000).display_secs()), "1 seconds");
+                   "653106 seconds");
+        assert_eq!(format!("{}", Duration::new(0, 900_000_000).display_secs()),
+                   "1 seconds");
     }
 
     #[test]
-    fn calculate_relocated_name() {
+    fn calculate_relocation_dst() {
         let min_section_size = 8;
         let original_name: XorName = rand::random();
 
@@ -125,7 +150,7 @@ mod tests {
         let mut close_nodes_one_entry: Vec<XorName> = Vec::new();
         close_nodes_one_entry.push(rand::random());
         let actual_relocated_name_one_entry =
-            super::calculate_relocated_name(close_nodes_one_entry.clone(), &original_name);
+            super::calculate_relocation_dst(close_nodes_one_entry.clone(), &original_name);
         assert_ne!(original_name, actual_relocated_name_one_entry);
 
         let mut combined_one_node_vec: Vec<XorName> = Vec::new();
@@ -150,7 +175,7 @@ mod tests {
         for _ in 0..min_section_size {
             close_nodes.push(rand::random());
         }
-        let actual_relocated_name = super::calculate_relocated_name(close_nodes.clone(),
+        let actual_relocated_name = super::calculate_relocation_dst(close_nodes.clone(),
                                                                     &original_name);
         assert_ne!(original_name, actual_relocated_name);
         close_nodes.sort_by(|a, b| original_name.cmp_distance(a, b));

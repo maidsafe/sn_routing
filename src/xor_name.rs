@@ -102,6 +102,22 @@ impl XorName {
     fn get_debug_id(&self) -> String {
         format!("{:02x}{:02x}{:02x}..", self.0[0], self.0[1], self.0[2])
     }
+
+    /// Calculate the absolute difference between this name and another, |self - other|.
+    ///
+    /// This is 1-dimensional Euclidean distance.
+    pub fn abs_difference<'a>(&'a self, other: &'a XorName) -> XorName {
+        if self >= other {
+            self - other
+        } else {
+            other - self
+        }
+    }
+
+    /// Return true if the name is in the interval [start, end] (both endpoint inclusive).
+    pub fn between(&self, start: &XorName, end: &XorName) -> bool {
+        self >= start && self <= end
+    }
 }
 
 impl Xorable for XorName {
@@ -215,6 +231,57 @@ impl ops::Not for XorName {
     }
 }
 
+impl ops::Sub for XorName {
+    type Output = XorName;
+
+    fn sub(self, rhs: XorName) -> Self::Output {
+        &self - &rhs
+    }
+}
+
+impl<'a> ops::Sub for &'a XorName {
+    type Output = XorName;
+    fn sub(self, rhs: &XorName) -> Self::Output {
+        let XorName(ref x) = *self;
+        let XorName(ref y) = *rhs;
+
+        let mut result = [0; XOR_NAME_LEN];
+        let mut carry = 0;
+
+        for i in (0..XOR_NAME_LEN).rev() {
+            if x[i] == 0 && carry == 1 {
+                result[i] = 255 - y[i];
+                continue;
+            }
+
+            let x_val: u16 = x[i] as u16 - carry;
+            let y_val: u16 = y[i] as u16;
+
+            if x_val >= y_val {
+                result[i] = (x_val - y_val) as u8;
+                carry = 0;
+            } else {
+                result[i] = (256 + x_val - y_val) as u8;
+                carry = 1;
+            }
+        }
+
+        #[cfg(debug_assertions)]
+        panic_on_underflow(x, y, carry);
+
+        XorName(result)
+    }
+}
+
+#[cfg(debug_assertions)]
+fn panic_on_underflow(x: &[u8; XOR_NAME_LEN], y: &[u8; XOR_NAME_LEN], carry: u16) {
+    if carry != 0 {
+        panic!("underflow while subtracting XorNames with content: {:?}, {:?}",
+               x,
+               y);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -317,5 +384,54 @@ mod tests {
         assert_eq!(1, name.count_differing_bits(&one_bit));
         let two_bits = one_bit.with_flipped_bit(100);
         assert_eq!(2, name.count_differing_bits(&two_bits));
+    }
+
+    #[test]
+    fn subtraction() {
+        for _ in 0..100000 {
+            let x = rand::random();
+            let y = rand::random();
+            let (larger, smaller) = if x > y { (x, y) } else { (y, x) };
+            assert_eq!(&xor_from_int(larger - smaller)[..],
+                       &(xor_from_int(larger) - xor_from_int(smaller))[..]);
+        }
+    }
+
+    #[test]
+    #[cfg_attr(debug_assertions, should_panic)]
+    fn subtraction_underflow() {
+        let _ = xor_from_int(1_000_001) - xor_from_int(1_000_002);
+    }
+
+    #[test]
+    fn abs_difference() {
+        for _ in 0..100000 {
+            let x = rand::random();
+            let y = rand::random();
+
+            let abs_diff_int = if x >= y { x - y } else { y - x };
+
+            let x_diff_y = xor_from_int(x).abs_difference(&xor_from_int(y));
+            let y_diff_x = xor_from_int(y).abs_difference(&xor_from_int(x));
+
+            assert_eq!(&xor_from_int(abs_diff_int)[..], &x_diff_y[..]);
+            assert_eq!(&x_diff_y[..], &y_diff_x[..]);
+        }
+    }
+
+    #[test]
+    fn from_int() {
+        assert_eq!(&xor_from_int(0xabcdef)[XOR_NAME_LEN - 3..],
+                   &[0xab, 0xcd, 0xef]);
+        assert_eq!(xor_from_int(0xabcdef)[..XOR_NAME_LEN - 3],
+                   XorName::default()[..XOR_NAME_LEN - 3]);
+    }
+
+    fn xor_from_int(x: u64) -> XorName {
+        let mut name = XorName::default();
+        for i in 0..8 {
+            name.0[XOR_NAME_LEN - 1 - i] = ((x >> (8 * i)) & 0xff) as u8;
+        }
+        name
     }
 }
