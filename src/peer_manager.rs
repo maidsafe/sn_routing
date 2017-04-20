@@ -266,6 +266,7 @@ impl Peer {
 }
 
 /// Holds peers and provides efficient insertion and lookup and removal by peer id and name.
+#[derive(Debug)]
 struct PeerMap {
     peers: HashMap<XorName, Peer>,
     names: HashMap<PeerId, XorName>,
@@ -709,47 +710,22 @@ impl PeerManager {
                                 peer_id: &PeerId,
                                 is_tunnel: bool)
                                 -> Result<(), RoutingTableError> {
-        if let Some(peer) = self.peer_map.get(peer_id) {
-            match peer.state {
-                PeerState::ConnectionInfoPreparing { .. } |
-                PeerState::ConnectionInfoReady(_) |
-                PeerState::SearchingForTunnel |
-                PeerState::Routing(RoutingConnection::Proxy(_)) |
-                PeerState::Routing(RoutingConnection::Direct) |
-                PeerState::Routing(RoutingConnection::Tunnel) => {
-                    trace!("{:?} Unexpected peer state {:?} while adding {:?} into routing table.",
-                           self,
-                           peer.state,
-                           peer_id)
-                }
-                PeerState::CrustConnecting if !self.unknown_peers.contains_key(peer_id) => {
-                    trace!("{:?} Unexpected peer state {:?} while adding {:?} into routing table.",
-                           self,
-                           peer.state,
-                           peer_id)
-                }
-                PeerState::CrustConnecting |
-                PeerState::AwaitingNodeIdentify(_) |
-                PeerState::Client |
-                PeerState::JoiningNode |
-                // This state is not unexpected; the peer may have been previously added via a
-                // section update, and we handle it in `self.routing_table.add()` below by returning
-                // an `AlreadyExists` error.
-                PeerState::Routing(RoutingConnection::JoiningNode(_)) |
-                PeerState::Candidate(_) |
-                PeerState::Proxy => (),
-            }
-
-            if !peer.valid() {
-                log_or_panic!(LogLevel::Error,
-                              "{:?} Invalid peer {} added to the RT.",
-                              self,
-                              pub_id.name());
-            }
-        } else if !self.unknown_peers.contains_key(peer_id) {
-            trace!("{:?} Add to routing table called for {:?} not found in peer_map/unknown_peers",
-                   self,
-                   peer_id);
+        // Check we can find the peer in the map both by name and peer_id, and if so ensure it has
+        // its `valid` flag set to true.
+        let peer_by_name_is_valid = true;
+        // TODO(Fraser) - uncomment this once PR #1435 is merged
+        // let peer_by_name_is_valid = self.peer_map
+        //     .get_by_name(pub_id.name())
+        //     .map_or(false, |peer_by_name| peer_by_name.valid);
+        if self.peer_map
+               .get(peer_id)
+               .map_or(false,
+                       |peer_by_id| peer_by_id.valid && peer_by_name_is_valid) {
+        } else {
+            log_or_panic!(LogLevel::Error,
+                          "{:?} Invalid peer {} added to the RT.",
+                          self,
+                          pub_id.name());
         }
 
         let _ = self.unknown_peers.remove(peer_id);
@@ -1038,10 +1014,16 @@ impl PeerManager {
                       })
     }
 
-    /// Inserts the given peer with `valid` false into the peer_mgr
-    /// This is to be used when we receive a NodeIdentify from a peer we do not
-    /// have in the peer_mgr. we flag the valid attribute to false and accept the node
-    /// as a temporary connection
+    /// Inserts the given peer with `valid` set to false.
+    ///
+    /// This is to be used when we receive a `NodeIdentify` from a peer we do not have in the
+    /// `peer_map`. We flag the `valid` attribute to false and accept the node as a temporary
+    /// connection with the state `AwaitingNodeIdentify`.
+    // TODO - Using `AwaitingNodeIdentify` for this extra purpose should be fixed in a future
+    //        cleanup. What we need is a state indicating we've received a `NodeIdentify` but
+    //        haven't been told by a section that we _should_ be connected to this peer. That
+    //        state could be applicable in tandem with some of the other current states though, so
+    //        it's not a trivial issue.
     pub fn insert_pending_approval_node(&mut self,
                                         peer_id: PeerId,
                                         pub_id: PublicId,
@@ -1276,8 +1258,7 @@ impl PeerManager {
         self.expected_peers.contains_key(name)
     }
 
-    /// Set the PeerId of the given node
-    /// Returns true if the peer is updated
+    /// Set the `PeerId` of the given node. Returns true if the peer is updated.
     pub fn set_peer_id(&mut self, name: &XorName, peer_id: PeerId) -> bool {
         if let Some(peer) = self.peer_map.remove_by_name(name) {
             self.insert_peer(peer.pub_id, Some(peer_id), peer.state, peer.valid);
@@ -1287,8 +1268,7 @@ impl PeerManager {
         }
     }
 
-    /// Set the given peer as valid
-    /// Returns true if the peer is updated
+    /// Set the given peer as valid. Returns true if the peer is updated.
     pub fn set_peer_valid(&mut self, name: &XorName, valid: bool) -> bool {
         if let Some(peer) = self.peer_map.remove_by_name(name) {
             self.insert_peer(peer.pub_id, peer.peer_id, peer.state, valid);
@@ -1433,7 +1413,7 @@ impl PeerManager {
             Some(&PeerState::AwaitingNodeIdentify(_)) => PeerState::AwaitingNodeIdentify(true),
             state => {
                 log_or_panic!(LogLevel::Error,
-                              "{:?} Cannot set state {:?} to direct.",
+                              "{:?} Cannot set state {:?} to tunnel.",
                               self,
                               state);
                 return;
@@ -1492,12 +1472,6 @@ impl PeerManager {
             Some(&PeerState::AwaitingNodeIdentify(_)) => return vec![],
             _ => (),
         }
-
-        let valid = match self.peer_map.get(&peer_id) {
-            Some(peer) => peer.valid,
-            None => valid,
-        };
-
         let _ = self.insert_peer(pub_id, Some(peer_id), PeerState::SearchingForTunnel, valid);
         self.potential_tunnel_nodes(pub_id.name())
     }
@@ -1613,15 +1587,12 @@ impl PeerManager {
                 Ok(ConnectionInfoReceivedResult::IsConnected)
             }
             x => {
-                let valid = if let Some(Peer {
-                                            state: PeerState::SearchingForTunnel,
-                                            valid,
-                                            ..
-                                        }) = x {
-                    valid
-                } else {
-                    false
-                };
+                let valid = x.map_or(false,
+                                     |peer| if let PeerState::SearchingForTunnel = peer.state {
+                                         peer.valid
+                                     } else {
+                                         false
+                                     });
                 let state = PeerState::ConnectionInfoPreparing {
                     us_as_src: dst,
                     them_as_dst: src,
@@ -1797,30 +1768,31 @@ impl PeerManager {
             .collect()
     }
 
-    /// Returns the public IDs of all routing table entries connected or not
-    // that we see as valid peers, sorted by section.
+    /// Returns the public IDs of all routing table entries connected or not that we see as valid
+    /// peers, sorted by section.
     pub fn ideal_rt(&self) -> SectionMap {
-        // TODO: impl is a rough sketch. needs updated
-        let valid_peers = self.peer_map
-            .peers()
-            .filter(|peer| peer.valid)
-            .map(|peer| peer.pub_id())
-            .chain(::std::iter::once(&self.our_public_id))
-            .collect_vec();
-
-        self.routing_table
+        let versioned_prefixes = self.routing_table
             .all_sections()
             .into_iter()
-            .map(|(prefix, (v, _))| {
-                (prefix.with_version(v),
-                 valid_peers
-                     .iter()
-                     .filter(|pub_id| prefix.matches(pub_id.name()))
-                     .cloned()
-                     .cloned()
-                     .collect::<BTreeSet<PublicId>>())
-            })
-            .collect()
+            .map(|(prefix, (v, _))| prefix.with_version(v))
+            .collect_vec();
+        let mut result = SectionMap::new();
+        for pub_id in self.peer_map
+                .peers()
+                .filter(|peer| peer.valid)
+                .map(|peer| peer.pub_id())
+                .chain(::std::iter::once(&self.our_public_id)) {
+            if let Some(versioned_prefix) =
+                versioned_prefixes
+                    .iter()
+                    .find(|versioned_prefix| versioned_prefix.prefix().matches(pub_id.name())) {
+                result
+                    .entry(*versioned_prefix)
+                    .or_insert_with(BTreeSet::new)
+                    .insert(*pub_id);
+            }
+        }
+        result
     }
 }
 
