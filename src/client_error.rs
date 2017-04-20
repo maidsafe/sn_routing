@@ -48,6 +48,10 @@ pub enum ClientError {
     InvalidSuccessor,
     /// Invalid Operation such as a POST on ImmutableData
     InvalidOperation,
+    /// Wrong invitation token specified by the client
+    InvalidInvitation,
+    /// Invitation token already used
+    InvitationAlreadyClaimed,
     /// Insufficient balance for performing a given mutating operation
     LowBalance,
     /// The loss of sacrificial copies indicates the network as a whole is no longer having
@@ -79,6 +83,10 @@ impl Display for ClientError {
             ClientError::NoSuchKey => write!(f, "Key does not exists"),
             ClientError::InvalidOwners => write!(f, "The list of owner keys is invalid"),
             ClientError::InvalidOperation => write!(f, "Requested operation is not allowed"),
+            ClientError::InvalidInvitation => write!(f, "Invitation token not found"),
+            ClientError::InvitationAlreadyClaimed => {
+                write!(f, "Invitation token has already been used")
+            }
             ClientError::InvalidSuccessor => {
                 write!(f, "Data given is not a valid successor of stored data")
             }
@@ -105,6 +113,8 @@ impl Error for ClientError {
             ClientError::InvalidOwners => "Invalid owners",
             ClientError::InvalidSuccessor => "Invalid data successor",
             ClientError::InvalidOperation => "Invalid operation",
+            ClientError::InvalidInvitation => "Invalid invitation token",
+            ClientError::InvitationAlreadyClaimed => "Invitation token already claimed",
             ClientError::LowBalance => "Low account balance",
             ClientError::NetworkFull => "Network full",
             ClientError::NetworkOther(ref error) => error,
