@@ -397,6 +397,16 @@ impl Candidate {
         }
     }
 
+    fn has_valid_new_pub_id(&self) -> bool {
+        // FIXME(Fraser) - Create and use new helper in `PublicId::has_valid_name()` too?
+        self.new_pub_id
+            .map_or(false, |new_pub_id| {
+                new_pub_id
+                    .name()
+                    .between(&self.target_interval.0, &self.target_interval.1)
+            })
+    }
+
     fn fmt_new_name(&self) -> String {
         self.new_pub_id
             .as_ref()
@@ -599,6 +609,7 @@ impl PeerManager {
                                      new_pub_id: &PublicId,
                                      new_client_auth: &Authority<XorName>)
                                      -> Result<Option<PeerId>, RoutingError> {
+        let debug_id = format!("{:?}", self);
         if let Some(candidate) = self.candidates.get_mut(old_pub_id) {
             candidate.new_pub_id = Some(*new_pub_id);
             candidate.new_client_auth = Some(*new_client_auth);
@@ -608,21 +619,17 @@ impl PeerManager {
                     if let PeerState::Candidate(_) = *peer.state() {
                         return Ok(Some(*peer_id));
                     } else {
-                        trace!("Node({}) Candidate {}->{} not yet connected to us.",
-                               self.routing_table.our_name(),
+                        trace!("{} Candidate {}->{} not yet connected to us.",
+                               debug_id,
                                old_pub_id.name(),
                                new_pub_id.name());
                         return Ok(None);
                     };
                 } else {
-                    trace!("Node({}) No peer ID with name {}",
-                           self.routing_table.our_name(),
-                           new_pub_id.name());
+                    trace!("{} No peer ID with name {}", debug_id, new_pub_id.name());
                 }
             } else {
-                trace!("Node({}) No peer with name {}",
-                       self.routing_table.our_name(),
-                       new_pub_id.name());
+                trace!("{} No peer with name {}", debug_id, new_pub_id.name());
             }
             return Err(RoutingError::InvalidStateForOperation);
         }
@@ -663,13 +670,20 @@ impl PeerManager {
                                      seed: Vec<u8>,
                                      is_tunnel: bool)
                                      -> Result<bool, RoutingError> {
+        let debug_id = format!("{:?}", self);
         if let Some(candidate) = self.candidates.get_mut(old_pub_id) {
             candidate.new_pub_id = Some(*new_pub_id);
             candidate.new_client_auth = Some(*new_client_auth);
             if candidate.is_approved() {
                 Ok(false)
+            } else if !candidate.has_valid_new_pub_id() {
+                warn!("{} Candidate {}->{} has used a new ID which is not within the required \
+                       target range.",
+                      debug_id,
+                      old_pub_id.name(),
+                      new_pub_id.name());
+                Err(RoutingError::InvalidRelocation)
             } else {
-                // FIXME(Fraser) - check new name is within target range
                 let conn = self.peer_map
                     .get(peer_id)
                     .map_or(RoutingConnection::Direct,
