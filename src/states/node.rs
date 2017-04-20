@@ -503,7 +503,10 @@ impl Node {
                    peer_id,
                    pub_id);
             if self.tunnels.tunnel_for(&peer_id).is_none() {
-                self.find_tunnel_for_peer(peer_id, &pub_id);
+                let valid = self.peer_mgr
+                    .get_peer(&peer_id)
+                    .map_or(false, |peer| peer.valid());
+                self.find_tunnel_for_peer(peer_id, &pub_id, valid);
             } else {
                 debug!("{:?} already has tunnel to peer {:?} with pub_id {:?}.",
                        self,
@@ -513,8 +516,10 @@ impl Node {
         }
     }
 
-    fn find_tunnel_for_peer(&mut self, peer_id: PeerId, pub_id: &PublicId) {
-        for (name, dst_peer_id) in self.peer_mgr.set_searching_for_tunnel(peer_id, *pub_id) {
+    fn find_tunnel_for_peer(&mut self, peer_id: PeerId, pub_id: &PublicId, valid: bool) {
+        for (name, dst_peer_id) in
+            self.peer_mgr
+                .set_searching_for_tunnel(peer_id, *pub_id, valid) {
             trace!("{:?} Asking {:?} to serve as a tunnel for {:?}.",
                    self,
                    name,
@@ -657,10 +662,11 @@ impl Node {
                 is_tunnel,
             } => {
                 if let Ok(public_id) = verify_signed_public_id(serialised_public_id, signature) {
-                    debug!("{:?} Handling NodeIdentify from {:?}.",
+                    debug!("{:?} Handling NodeIdentify from {:?} with tunnel status: {:?}.",
                            self,
-                           public_id.name());
-                    self.add_to_routing_table(&public_id, &peer_id, is_tunnel, outbox);
+                           public_id.name(),
+                           is_tunnel);
+                    self.handle_node_identify(&public_id, &peer_id, is_tunnel, outbox);
                 } else {
                     warn!("{:?} Signature check failed in NodeIdentify, so dropping peer {:?}.",
                           self,
@@ -1164,6 +1170,8 @@ impl Node {
         // Or a node may receive CandidateApproval before connection established.
         // If we are not connected to the candidate, we do not want to add them
         // to our RT.
+        // This will flag peer as valid if its found in peer_mgr regardless of their
+        // connection status to us.
         let opt_peer_id =
             match self.peer_mgr
                       .handle_candidate_approval(&old_pub_id, &new_pub_id, &new_client_auth) {
@@ -1199,8 +1207,7 @@ impl Node {
             let src = Authority::Section(*new_pub_id.name());
             // Send the _current_ routing table. If this doesn't accumulate, we expect the candidate
             // to disconnect from us.
-            let content =
-                MessageContent::NodeApproval { sections: self.peer_mgr.pub_ids_by_section() };
+            let content = MessageContent::NodeApproval { sections: self.peer_mgr.ideal_rt() };
             if let Err(error) = self.send_routing_message(src, new_client_auth, content) {
                 debug!("{:?} Failed sending NodeApproval to {}: {:?}",
                        self,
@@ -1564,6 +1571,8 @@ impl Node {
                       self,
                       old_pub_id.name(),
                       new_pub_id.name());
+                // TODO: maybe set this when receiving candidate_approval instead
+                let _ = self.peer_mgr.set_peer_valid(new_pub_id.name(), true);
                 self.add_to_routing_table(new_pub_id, peer_id, is_tunnel, outbox);
             }
             Err(RoutingError::CandidateIsTunnelling) => {
@@ -1617,6 +1626,39 @@ impl Node {
             return false;
         }
         true
+    }
+
+    fn handle_node_identify(&mut self,
+                            public_id: &PublicId,
+                            peer_id: &PeerId,
+                            is_tunnel: bool,
+                            outbox: &mut EventBox) {
+        let (peer_found, peer_valid) = if let Some(peer) =
+            self.peer_mgr.get_peer_by_name(public_id.name()) {
+            (true, peer.valid())
+        } else {
+            // This can be our joining node sending its relocated name, before we're expecting it.
+            if let Some(joining_node_key) = self.peer_mgr.get_joining_node(peer_id) {
+                if joining_node_key == public_id.signing_public_key() {
+                    return;
+                }
+            }
+            (false, false)
+        };
+
+        if !peer_found {
+            // These are peers we do not have in our peer manager yet. Could be because of a
+            // disconnect and reconnect via tunnel. We thus add them to the peer manager and
+            // indicate invalid to wait for group approval before moving to RT
+            self.peer_mgr
+                .insert_pending_approval_node(*peer_id, *public_id, is_tunnel);
+            return;
+        }
+
+        self.peer_mgr.set_peer_id(public_id.name(), *peer_id);
+        if peer_valid {
+            self.add_to_routing_table(public_id, peer_id, is_tunnel, outbox);
+        }
     }
 
     fn add_to_routing_table(&mut self,
@@ -1887,8 +1929,23 @@ impl Node {
             Ok(IsProxy) |
             Ok(IsClient) |
             Ok(IsJoiningNode) => {
-                self.send_node_identify(peer_id, false);
-                self.add_to_routing_table(&pub_id, &peer_id, false, outbox);
+                // TODO: we should not be getting conn info req from Proxy/JoiningNode
+
+                log_or_panic!(LogLevel::Error,
+                              "{:?} Received ConnectionInfoRequest from peer {} \
+                              with invalid state.",
+                              self,
+                              pub_id.name());
+                let x = self.peer_mgr
+                    .get_peer_by_name(pub_id.name())
+                    .map(|peer| (peer.peer_id().cloned(), peer.valid()));
+
+                if let Some((Some(peer_id), valid)) = x {
+                    if valid {
+                        self.send_node_identify(peer_id, false);
+                        self.add_to_routing_table(&pub_id, &peer_id, false, outbox);
+                    }
+                }
             }
             Ok(Waiting) | Ok(IsConnected) | Err(_) => (),
         }
@@ -1904,6 +1961,12 @@ impl Node {
                                        dst: Authority<XorName>)
                                        -> Result<(), RoutingError> {
         self.peer_mgr.allow_connect(&src)?;
+        if self.peer_mgr
+               .get_state_by_name(public_id.name())
+               .is_none() {
+            return Err(RoutingError::InvalidDestination);
+        }
+
         let their_connection_info =
             self.decrypt_connection_info(&encrypted_connection_info,
                                          &box_::Nonce(nonce_bytes),
@@ -2546,12 +2609,14 @@ impl Node {
                     }
                 }
             } else if !self.crust_service.is_connected(&peer_id) {
-                peer_ids_to_drop.push(peer_id);
                 log_or_panic!(LogLevel::Error,
                               "{:?} Should have a direct connection to {} {:?}, but don't.",
                               self,
                               name,
                               peer_id);
+                if self.tunnels.tunnel_for(&peer_id).is_some() {
+                    self.peer_mgr.correct_state_to_tunnel(&peer_id);
+                }
             }
         }
         let mut transition = Transition::Stay;
@@ -2899,6 +2964,8 @@ impl Node {
         self.send_direct_message(peer_id, direct_message);
     }
 
+    // Note: This fn assumes `their_public_id` is a valid node in the network
+    // Do not call this to respond to ConnectionInfo requests which are not yet validated.
     fn send_connection_info_request(&mut self,
                                     their_public_id: PublicId,
                                     src: Authority<XorName>,
@@ -2906,15 +2973,46 @@ impl Node {
                                     outbox: &mut EventBox)
                                     -> Result<(), RoutingError> {
         let their_name = *their_public_id.name();
-        if let Some(peer_id) = self.peer_mgr
-               .get_proxy_or_client_or_joining_node_peer_id(&their_public_id) {
+        self.peer_mgr.allow_connect(&their_name)?;
+
+        if let Some((peer_name, peer_id)) =
+            self.peer_mgr
+                .get_proxy_or_client_or_joining_node(&their_public_id) {
+            // we use peer_name here instead of their_name since the peer can be
+            // a joining node with its client name as far as proxy node is concerned
+            self.peer_mgr.set_peer_valid(&peer_name, true);
             self.send_node_identify(peer_id, false);
             self.add_to_routing_table(&their_public_id, &peer_id, false, outbox);
             return Ok(());
         }
 
-        self.peer_mgr.allow_connect(&their_name)?;
+        // If we are about to send a connection info request to a peer we are already
+        // connected to, then set their valid attribute and add them to RT.
+        // NOTE: If we do not have this peer in peer_mgr, `get_connection_token`
+        // will flag them to `valid`
+        self.peer_mgr.set_peer_valid(&their_name, true);
+        let their_id = self.peer_mgr
+            .get_peer_by_name(&their_name)
+            .and_then(|peer| peer.peer_id())
+            .and_then(|peer_id| if let Some(&PeerState::AwaitingNodeIdentify(_)) =
+                self.peer_mgr.get_state_by_name(&their_name) {
+                          Some(*peer_id)
+                      } else if self.peer_mgr.unknown_peers().contains_key(peer_id) {
+                Some(*peer_id)
+            } else {
+                None
+            });
 
+        if let Some(peer_id) = their_id {
+            // Since this is not a DirectMessage, we're currently using self.tunnels to
+            // check if the given peer_id will be reached via a tunnel when we send
+            // messages and add to RT accordingly. Ideally this should not have to rely on tunnels.
+            let is_tunnel = self.tunnels.tunnel_for(&peer_id).is_some();
+            self.add_to_routing_table(&their_public_id, &peer_id, is_tunnel, outbox);
+            return Ok(());
+        }
+
+        // This will insert the peer if peer is not in peer_mgr and flag them to `valid`
         if let Some(token) = self.peer_mgr
                .get_connection_token(src, dst, their_public_id) {
             self.crust_service.prepare_connection_info(token);
@@ -2984,7 +3082,7 @@ impl Node {
         }
 
         // FIXME(Fraser) - `if` used to also contain `&& !peer.pub_id().is_client_id()`
-        if try_reconnect && self.is_approved {
+        if try_reconnect && peer.valid() && self.is_approved {
             debug!("{:?} Sending connection info to {:?} due to dropped peer.",
                    self,
                    peer.pub_id());
@@ -3112,16 +3210,16 @@ impl Node {
             .filter_map(|dst_id| {
                             self.peer_mgr
                                 .get_peer(&dst_id)
-                                .map(|peer| (dst_id, *peer.pub_id()))
+                                .map(|peer| (dst_id, *peer.pub_id(), peer.valid()))
                         })
             .collect_vec();
-        for (dst_id, pub_id) in peers {
+        for (dst_id, pub_id, valid) in peers {
             self.dropped_peer(&dst_id, outbox, false);
             debug!("{:?} Lost tunnel for peer {:?} ({:?}). Requesting new tunnel.",
                    self,
                    dst_id,
                    pub_id.name());
-            self.find_tunnel_for_peer(dst_id, &pub_id);
+            self.find_tunnel_for_peer(dst_id, &pub_id, valid);
         }
     }
 
