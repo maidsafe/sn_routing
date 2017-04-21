@@ -137,7 +137,8 @@ mod tests {
     use super::*;
     use id::{FullId, PublicId};
     use itertools::Itertools;
-    use messages::{DirectMessage, MessageContent, RoutingMessage, SectionList, SignedMessage};
+    use messages::{DirectMessage, MessageContent, RoutingMessage, SectionList, SignedMessage,
+                   SignedSectionList};
     use rand;
     use routing_table::Authority;
     use routing_table::Prefix;
@@ -163,8 +164,11 @@ mod tests {
                                                       rand::random()),
             };
             let prefix = Prefix::new(0, *unwrap!(all_ids.iter().next()).name());
-            let lists = vec![SectionList::new(prefix, all_ids)];
-            let signed_msg = unwrap!(SignedMessage::new(routing_msg, msg_sender_id, lists));
+            let ssl = vec![SignedSectionList {
+                               list: SectionList::new(prefix, all_ids),
+                               signatures: Default::default(),
+                           }];
+            let signed_msg = unwrap!(SignedMessage::new(routing_msg, msg_sender_id, ssl));
             let signature_msgs = other_ids
                 .map(|id| {
                          unwrap!(signed_msg
@@ -273,7 +277,7 @@ mod tests {
                 assert!(sig_accumulator.msgs.is_empty());
                 assert_eq!(route, returned_route);
                 assert_eq!(signed_msg.routing_message(), returned_msg.routing_message());
-                unwrap!(returned_msg.check_integrity(1000));
+                unwrap!(returned_msg.check_integrity(1000, None));
                 assert!(returned_msg.check_fully_signed(env.num_nodes()));
                 env.senders
                     .iter()
@@ -328,7 +332,7 @@ mod tests {
                             assert_eq!(route as u8, returned_route);
                             assert_eq!(msg_and_sigs.signed_msg.routing_message(),
                                        returned_msg.routing_message());
-                            unwrap!(returned_msg.check_integrity(1000));
+                            unwrap!(returned_msg.check_integrity(1000, None));
                             assert!(returned_msg.check_fully_signed(env.num_nodes()));
                         }
                     });

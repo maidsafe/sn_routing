@@ -410,7 +410,7 @@ fn verify_section_list_signatures(nodes: &[TestNode]) {
         let section_size = rt.our_section().len();
         for prefix in rt.prefixes() {
             if prefix != *rt.our_prefix() {
-                let sigs = unwrap!(node.inner.section_list_signatures(prefix),
+                let sigs = unwrap!(node.inner.section_list_signatures(&prefix),
                                    "{:?} Tried to unwrap None returned from \
                                     section_list_signatures({:?})",
                                    node.name(),

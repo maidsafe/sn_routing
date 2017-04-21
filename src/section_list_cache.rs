@@ -19,22 +19,21 @@ use super::QUORUM;
 use super::XorName;
 use id::PublicId;
 use itertools::Itertools;
-use messages::SectionList;
+use messages::{SectionList, SectionListSignatures, SignedSectionList};
 use routing_table::Prefix;
 use rust_sodium::crypto::sign::Signature;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
-pub type Signatures = HashMap<PublicId, Signature>;
 pub type PrefixMap<T> = HashMap<Prefix<XorName>, T>;
 
 #[derive(Default)]
 pub struct SectionListCache {
-    // all signatures for a section list for a given prefix
-    signatures: PrefixMap<HashMap<SectionList, Signatures>>,
-    // section lists signed by a given public id
+    // All signatures for a section list for a given prefix
+    signatures: PrefixMap<HashMap<SectionList, SectionListSignatures>>,
+    // Section lists signed by a given public id
     signed_by: HashMap<PublicId, PrefixMap<SectionList>>,
-    // the latest section list for each prefix with a quorum of signatures
-    lists_cache: PrefixMap<(SectionList, Signatures)>,
+    // The latest section list for each prefix with a quorum of signatures
+    lists_cache: PrefixMap<SignedSectionList>,
 }
 
 impl SectionListCache {
@@ -72,7 +71,7 @@ impl SectionListCache {
                          sig: Signature,
                          our_section_size: usize) {
         // remove all conflicting signatures
-        self.remove_signatures_for_prefix_by(prefix, pub_id);
+        self.remove_signatures_for_prefix_by(prefix, &pub_id);
         // remember that this public id signed this section list
         let _ = self.signed_by
             .entry(pub_id)
@@ -83,7 +82,7 @@ impl SectionListCache {
             .entry(prefix)
             .or_insert_with(HashMap::new)
             .entry(list)
-            .or_insert_with(HashMap::new)
+            .or_insert_with(BTreeMap::new)
             .insert(pub_id, sig);
         self.update_lists_cache(our_section_size);
     }
@@ -101,10 +100,8 @@ impl SectionListCache {
     }
 
     /// Returns the currently signed section list for `prefix` along with a quorum of signatures.
-    // TODO: Remove this when the method is used in production
-    #[cfg(feature="use-mock-crust")]
-    pub fn get_signatures(&self, prefix: Prefix<XorName>) -> Option<&(SectionList, Signatures)> {
-        self.lists_cache.get(&prefix)
+    pub fn get_signed_list(&self, prefix: &Prefix<XorName>) -> Option<SignedSectionList> {
+        self.lists_cache.get(prefix).cloned()
     }
 
     fn prune(&mut self) {
@@ -153,16 +150,20 @@ impl SectionListCache {
                     // we have a list with a quorum of signatures
                     let signatures = unwrap!(map.get(list));
                     let _ = self.lists_cache
-                        .insert(*prefix, (list.clone(), signatures.clone()));
+                        .insert(*prefix,
+                                SignedSectionList {
+                                    list: list.clone(),
+                                    signatures: signatures.clone(),
+                                });
                 }
             }
         }
     }
 
-    fn remove_signatures_for_prefix_by(&mut self, prefix: Prefix<XorName>, author: PublicId) {
+    fn remove_signatures_for_prefix_by(&mut self, prefix: Prefix<XorName>, author: &PublicId) {
         // vector of tuples (prefix, section list) to be removed
         let to_remove = self.signed_by
-            .get(&author)
+            .get(author)
             .into_iter()
             .flat_map(|map| map.iter())
             .filter(|&(p, _)| p.is_compatible(&prefix))
