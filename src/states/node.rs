@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
-use QUORUM;
+use {QUORUM_DENOM, QUORUM_NUM};
 use ack_manager::{Ack, AckManager};
 use action::Action;
 use cache::Cache;
@@ -885,7 +885,7 @@ impl Node {
         // TODO(MAID-1677): Remove this once messages are fully validated.
         // Expect group/section messages to be sent by at least a quorum of `min_section_size`.
         if self.our_prefix().bit_count() > 0 && signed_msg.routing_message().src.is_multiple() &&
-           signed_msg.src_size() * 100 < QUORUM * self.min_section_size() {
+           signed_msg.src_size() * QUORUM_DENOM <= self.min_section_size() * QUORUM_NUM {
             warn!("{:?} Not enough signatures in {:?}.", self, signed_msg);
             return Err(RoutingError::NotEnoughSignatures);
         }
