@@ -196,6 +196,9 @@ pub const QUORUM: usize = 51;
 /// The minimal section size.
 pub const MIN_SECTION_SIZE: usize = 8;
 
+/// Key of an account data in the account packet
+pub const ACC_LOGIN_ENTRY_KEY: &'static [u8] = b"Login";
+
 pub use cache::{Cache, NullCache};
 pub use client::Client;
 pub use client_error::ClientError;
@@ -217,6 +220,18 @@ pub use routing_table::Error as RoutingTableError;
 pub use routing_table::verify_network_invariant;
 pub use types::MessageId;
 pub use xor_name::{XOR_NAME_BITS, XOR_NAME_LEN, XorName, XorNameFromHexError};
+
+/// Account packet that is used to provide an invitation code for registration.
+/// After successful registration it should be replaced by a usual account packet (i.e.
+/// the contents of `account_ciphertext`) as soon as possible to prevent an invitation
+/// code leak.
+#[derive(Serialize, Deserialize)]
+pub struct AccountRegistrationPacket {
+    /// Invitation code that is used for registration.
+    pub invitation: String,
+    /// Encoded `Account` data.
+    pub account_ciphertext: Vec<u8>,
+}
 
 #[cfg(test)]
 mod tests {
