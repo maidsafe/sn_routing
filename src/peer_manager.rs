@@ -39,7 +39,7 @@ use std::time::Duration;
 #[cfg(not(feature="use-mock-crust"))]
 use std::time::Instant;
 use types::MessageId;
-use xor_name::{XOR_NAME_LEN, XorName};
+use xor_name::XorName;
 
 /// Time (in seconds) after which a joining node will get dropped from the map of joining nodes.
 const JOINING_NODE_TIMEOUT_SECS: u64 = 900;
@@ -358,7 +358,7 @@ struct ChallengeResponse {
 struct Candidate {
     insertion_time: Instant,
     challenge_response: Option<ChallengeResponse>,
-    target_interval: (XorName, XorName),
+    target_interval: Option<(XorName, XorName)>,
     new_pub_id: Option<PublicId>,
     new_client_auth: Option<Authority<XorName>>,
     state: CandidateState,
@@ -366,11 +366,11 @@ struct Candidate {
 }
 
 impl Candidate {
-    fn new(target_interval: (XorName, XorName)) -> Candidate {
+    fn new() -> Candidate {
         Candidate {
             insertion_time: Instant::now(),
             challenge_response: None,
-            target_interval: target_interval,
+            target_interval: None,
             new_pub_id: None,
             new_client_auth: None,
             state: CandidateState::VotedFor,
@@ -401,9 +401,12 @@ impl Candidate {
         // FIXME(Fraser) - Create and use new helper in `PublicId::has_valid_name()` too?
         self.new_pub_id
             .map_or(false, |new_pub_id| {
-                new_pub_id
-                    .name()
-                    .between(&self.target_interval.0, &self.target_interval.1)
+                self.target_interval
+                    .map_or(false, |target_interval| {
+                        new_pub_id
+                            .name()
+                            .between(&target_interval.0, &target_interval.1)
+                    })
             })
     }
 
@@ -429,7 +432,8 @@ pub struct PeerManager {
     proxy_peer_id: Option<PeerId>,
     routing_table: RoutingTable<XorName>,
     our_public_id: PublicId,
-    /// Relocating nodes which want to join our section
+    /// Relocating nodes which want to join our section, indexed by "old" public ID (i.e. their
+    /// pre-relocation IDs). Note that they will be indexed by their "new" IDs in the `peer_map`.
     candidates: HashMap<PublicId, Candidate>,
 }
 
@@ -474,10 +478,7 @@ impl PeerManager {
     /// Adds a potential candidate to the candidate list setting its state to `VotedFor`.  If
     /// another ongoing (i.e. unapproved) candidate exists, or if the candidate is unsuitable for
     /// adding to our section, returns an error.
-    pub fn expect_candidate(&mut self,
-                            old_pub_id: PublicId,
-                            target_interval: (XorName, XorName))
-                            -> Result<(), RoutingError> {
+    pub fn expect_candidate(&mut self, old_pub_id: PublicId) -> Result<(), RoutingError> {
         if let Some((ongoing_pub_id, candidate)) =
             self.candidates
                 .iter()
@@ -489,8 +490,7 @@ impl PeerManager {
                    candidate.fmt_new_name());
             return Err(RoutingError::AlreadyHandlingJoinRequest);
         }
-        let _ = self.candidates
-            .insert(old_pub_id, Candidate::new(target_interval));
+        let _ = self.candidates.insert(old_pub_id, Candidate::new());
         Ok(())
     }
 
@@ -502,10 +502,13 @@ impl PeerManager {
                                target_interval: (XorName, XorName))
                                -> BTreeSet<PublicId> {
         self.remove_unapproved_candidates(&old_pub_id);
-        self.candidates
-            .entry(old_pub_id)
-            .or_insert_with(|| Candidate::new(target_interval))
-            .state = CandidateState::AcceptedAsCandidate;
+        {
+            let candidate = self.candidates
+                .entry(old_pub_id)
+                .or_insert_with(Candidate::new);
+            candidate.target_interval = Some(target_interval);
+            candidate.state = CandidateState::AcceptedAsCandidate;
+        }
         let our_section = self.routing_table.our_section();
         self.get_pub_ids(our_section)
     }
@@ -640,12 +643,7 @@ impl PeerManager {
         }
 
         self.remove_unapproved_candidates(old_pub_id);
-        // TODO - decide how to best handle inserting a new candidate where we don't need the "old"
-        //        info, since the candidate has now been approved.  Currently using fake details,
-        //        but this could either be made an optional field in `Candidate` (unwieldy) or
-        //        passed in the `CandidateApproval` message (wasteful).
-        let fake_target_interval = (XorName([0; XOR_NAME_LEN]), XorName([255; XOR_NAME_LEN]));
-        let mut candidate = Candidate::new(fake_target_interval);
+        let mut candidate = Candidate::new();
         candidate.state = CandidateState::Approved;
         candidate.new_pub_id = Some(*new_pub_id);
         candidate.new_client_auth = Some(*new_client_auth);
@@ -772,11 +770,9 @@ impl PeerManager {
                                 -> Result<(), RoutingTableError> {
         // Check we can find the peer in the map both by name and peer_id, and if so ensure it has
         // its `valid` flag set to true.
-        let peer_by_name_is_valid = true;
-        // TODO(Fraser) - uncomment this once PR #1435 is merged
-        // let peer_by_name_is_valid = self.peer_map
-        //     .get_by_name(pub_id.name())
-        //     .map_or(false, |peer_by_name| peer_by_name.valid);
+        let peer_by_name_is_valid = self.peer_map
+            .get_by_name(pub_id.name())
+            .map_or(false, |peer_by_name| peer_by_name.valid);
         if self.peer_map
                .get(peer_id)
                .map_or(false,

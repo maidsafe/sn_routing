@@ -51,8 +51,8 @@ impl FullId {
         }
     }
 
-    /// Construct a `FullId` whose name is in the interval [start, end] (both endpoint inclusive).
-    /// FIXME(Fraser) - time limit this function?  Document behaviour
+    /// Construct a `FullId` whose name is in the interval [start, end] (both endpoints inclusive).
+    /// FIXME(Fraser) - time limit this function? Document behaviour
     pub fn within_range(start: &XorName, end: &XorName) -> FullId {
         let mut sign_keys = sign::gen_keypair();
         loop {

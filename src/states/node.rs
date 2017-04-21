@@ -2211,8 +2211,7 @@ impl Node {
                                                                          .our_section())
                             });
 
-        self.peer_mgr
-            .expect_candidate(old_pub_id, target_interval)?;
+        self.peer_mgr.expect_candidate(old_pub_id)?;
         let response_content = MessageContent::AcceptAsCandidate {
             old_public_id: old_pub_id,
             old_client_auth: old_client_auth,
@@ -3113,7 +3112,9 @@ impl Node {
               self,
               details.name);
 
-        outbox.send_event(Event::NodeLost(details.name, self.routing_table().clone()));
+        if self.is_approved {
+            outbox.send_event(Event::NodeLost(details.name, self.routing_table().clone()));
+        }
 
         self.merge_if_necessary();
         self.routing_table()

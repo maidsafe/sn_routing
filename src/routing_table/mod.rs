@@ -469,18 +469,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
     }
 
-    /// Returns `Err(Error::PeerNameUnsuitable)` if `name` is not within our section, or
-    /// `Err(Error::AlreadyExists)` if `name` is already in our table.
-    pub fn should_join_our_section(&self, name: &T) -> Result<(), Error> {
-        if !self.our_prefix.matches(name) {
-            return Err(Error::PeerNameUnsuitable);
-        }
-        if self.our_section.contains(name) {
-            return Err(Error::AlreadyExists);
-        }
-        Ok(())
-    }
-
     /// Validates a joining node's name.
     pub fn validate_joining_node(&self, name: &T) -> Result<(), Error> {
         if !self.our_prefix.matches(name) {

@@ -541,7 +541,10 @@ impl RoutingMessage {
 /// that section's `NaeManager`s an `ExpectCandidate` containing A's current public ID. Each member
 /// of Y caches A's public ID, and sends `AcceptAsCandidate` to self section. Once Y receives
 /// `AcceptAsCandidate`, sends a `RelocateResponse` back to A, which includes an address space range
-/// into which A should relocate and also the public IDs of the members of Y.
+/// into which A should relocate and also the public IDs of the members of Y. A then disconnects
+/// from the network and reconnects with a new ID which falls within the specified address range.
+/// After connecting to the members of Y, it begins the resource proof process. Upon successful
+/// completion, A is regarded as a full node and connects to all neighbouring sections' peers.
 ///
 ///
 /// ### Connecting to the matching section
