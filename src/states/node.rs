@@ -1532,6 +1532,19 @@ impl Node {
             self.disconnect_peer(peer_id, Some(outbox));
         }
 
+        // If this is a valid node in peer_mgr but the Candidate has sent us a CandidateIdentify,
+        // it might have not yet handled its NodeApproval message. Check and handle accordingly here
+        // NOTE: Want to only check for peer by new_name since we might not yet have their peer_id.
+        if self.peer_mgr
+               .get_peer_by_name(new_pub_id.name())
+               .map_or(false, |peer| peer.valid()) {
+            debug!("{:?} Switching CandidateIdentify received from {} to NodeIdentify.",
+                   self,
+                   new_pub_id.name());
+            self.handle_node_identify(new_pub_id, peer_id, is_tunnel, outbox);
+            return;
+        }
+
         let (difficulty, target_size) = if self.crust_service.is_peer_hard_coded(peer_id) ||
                                            self.peer_mgr.get_joining_node(peer_id).is_some() {
             (0, 1)

@@ -397,15 +397,24 @@ impl Candidate {
         }
     }
 
-    fn has_valid_new_pub_id(&self) -> bool {
+    fn has_valid_new_pub_id(&self, debug_prefix: &str) -> bool {
         // FIXME(Fraser) - Create and use new helper in `PublicId::has_valid_name()` too?
         self.new_pub_id
             .map_or(false, |new_pub_id| {
                 self.target_interval
-                    .map_or(false, |target_interval| {
-                        new_pub_id
+                    .map_or_else(|| {
+                        debug!("{} has sent CandidateIdentify before we have received an \
+                               AcceptAsCandidate, so relocation target interval is still unknown.",
+                               debug_prefix);
+                        false
+                    }, |target_interval| {
+                        if new_pub_id
                             .name()
-                            .between(&target_interval.0, &target_interval.1)
+                            .between(&target_interval.0, &target_interval.1) { true } else {
+                warn!("{} has used a new ID which is not within the required target range.",
+                      debug_prefix);
+                false
+                            }
                     })
             })
     }
@@ -673,18 +682,16 @@ impl PeerManager {
                                      seed: Vec<u8>,
                                      is_tunnel: bool)
                                      -> Result<bool, RoutingError> {
-        let debug_id = format!("{:?}", self);
+        let debug_prefix = format!("{:?} Candidate {}->{}",
+                                   self,
+                                   old_pub_id.name(),
+                                   new_pub_id.name());
         let (res, should_insert) = if let Some(candidate) = self.candidates.get_mut(old_pub_id) {
             candidate.new_pub_id = Some(*new_pub_id);
             candidate.new_client_auth = Some(*new_client_auth);
             if candidate.is_approved() {
                 (Ok(false), None)
-            } else if !candidate.has_valid_new_pub_id() {
-                warn!("{} Candidate {}->{} has used a new ID which is not within the required \
-                       target range.",
-                      debug_id,
-                      old_pub_id.name(),
-                      new_pub_id.name());
+            } else if !candidate.has_valid_new_pub_id(&debug_prefix) {
                 (Err(RoutingError::InvalidRelocation), None)
             } else {
                 let conn = self.peer_map
@@ -1730,8 +1737,10 @@ impl PeerManager {
     pub fn remove_peer(&mut self,
                        peer_id: &PeerId)
                        -> Option<(Peer, Result<RemovalDetails<XorName>, RoutingTableError>)> {
-        // Remove peer if it exists in unknown_peers too
+        // Remove peer if it exists in `unknown_peers` and `candidates` too.
         let _ = self.unknown_peers.remove(peer_id);
+        let _ = self.get_candidate_from_peer_id(peer_id)
+            .map(|(old_pub_id, _)| self.candidates.remove(&old_pub_id));
 
         if let Some(peer) = self.peer_map.remove(peer_id) {
             self.cleanup_proxy_peer_id();
