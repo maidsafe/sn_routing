@@ -2489,6 +2489,7 @@ impl Node {
             }
             let transition = self.purge_invalid_rt_entries(outbox);
             self.merge_if_necessary();
+            #[cfg(not(feature = "use-mock-crust"))]
             outbox.send_event(Event::Tick);
             return transition;
         }
@@ -3248,8 +3249,8 @@ impl Node {
         let _ = self.purge_invalid_rt_entries(&mut EventBuf::new());
     }
 
-    pub fn poll(&mut self) -> Vec<u64> {
-        self.timer.poll()
+    pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
+        self.timer.get_timed_out_tokens()
     }
 
     pub fn section_list_signatures(&self,

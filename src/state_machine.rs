@@ -60,7 +60,7 @@ pub enum State {
 
 #[cfg(feature = "use-mock-crust")]
 enum EventType {
-    Category(MaidSafeEventCategory),
+    CrustEvent(CrustEvent),
     Action(Box<Action>),
 }
 
@@ -170,10 +170,10 @@ impl State {
         }
     }
 
-    pub fn poll(&mut self) -> Vec<u64> {
+    pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
         match *self {
-            State::Node(ref mut state) => state.poll(),
-            State::Client(ref mut state) => state.poll(),
+            State::Node(ref mut state) => state.get_timed_out_tokens(),
+            State::Client(ref mut state) => state.get_timed_out_tokens(),
             _ => vec![],
         }
     }
@@ -273,23 +273,8 @@ impl StateMachine {
         let event = self.events.remove(0);
         let transition = match event {
             EventType::Action(action) => self.state.handle_action(*action, outbox),
-            EventType::Category(category) => {
-                match category {
-                    MaidSafeEventCategory::Routing => {
-                        if let Ok(action) = self.action_rx.try_recv() {
-                            self.state.handle_action(action, outbox)
-                        } else {
-                            Transition::Terminate
-                        }
-                    }
-                    MaidSafeEventCategory::Crust => {
-                        if let Ok(crust_event) = self.crust_rx.try_recv() {
-                            self.state.handle_crust_event(crust_event, outbox)
-                        } else {
-                            Transition::Terminate
-                        }
-                    }
-                }
+            EventType::CrustEvent(crust_event) => {
+                self.state.handle_crust_event(crust_event, outbox)
             }
         };
 
@@ -355,21 +340,46 @@ impl StateMachine {
     #[cfg(feature = "use-mock-crust")]
     pub fn try_step(&mut self, outbox: &mut EventBox) -> Result<(), TryRecvError> {
         use itertools::Itertools;
+        use maidsafe_utilities::SeededRng;
+        use rand::Rng;
 
         if self.is_running {
             let mut events = Vec::new();
             while let Ok(category) = self.category_rx.try_recv() {
-                events.push(EventType::Category(category));
+                match category {
+                    MaidSafeEventCategory::Routing => {
+                        if let Ok(action) = self.action_rx.try_recv() {
+                            events.push(EventType::Action(Box::new(action)));
+                        } else {
+                            return Ok(self.apply_transition(Transition::Terminate, outbox));
+                        }
+                    }
+                    MaidSafeEventCategory::Crust => {
+                        if let Ok(crust_event) = self.crust_rx.try_recv() {
+                            events.push(EventType::CrustEvent(crust_event));
+                        } else {
+                            return Ok(self.apply_transition(Transition::Terminate, outbox));
+                        }
+                    }
+                }
             }
 
             let timed_out_events = self.state
-                .poll()
+                .get_timed_out_tokens()
                 .iter()
                 .map(|token| EventType::Action(Box::new(Action::Timeout(*token))))
                 .collect_vec();
 
+            if !events.is_empty() {
+                for event in timed_out_events {
+                    let pos = SeededRng::thread_rng().gen_range(0, events.len());
+                    events.insert(pos, event);
+                }
+            } else {
+                events.extend(timed_out_events);
+            }
             self.events.extend(events);
-            self.events.extend(timed_out_events);
+
             if self.events.is_empty() {
                 Err(TryRecvError::Empty)
             } else {

@@ -388,8 +388,8 @@ impl Bootstrapped for Client {
 
 #[cfg(feature = "use-mock-crust")]
 impl Client {
-    pub fn poll(&mut self) -> Vec<u64> {
-        self.timer.poll()
+    pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
+        self.timer.get_timed_out_tokens()
     }
 }
 

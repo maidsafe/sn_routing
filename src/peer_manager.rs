@@ -856,7 +856,8 @@ impl PeerManager {
     }
 
     /// Returns whether we should initiate a merge.
-    pub fn should_merge(&self) -> bool {
+    pub fn should_merge(&mut self) -> bool {
+        self.remove_expired_expected();
         self.expected_peers.is_empty() && self.routing_table.should_merge()
     }
 
@@ -1111,6 +1112,12 @@ impl PeerManager {
             let _ = self.unknown_peers.remove(&peer_id);
         }
 
+        self.remove_expired_expected();
+
+        expired_connections
+    }
+
+    fn remove_expired_expected(&mut self) {
         let mut expired_expected = Vec::new();
         for (name, timestamp) in &self.expected_peers {
             if timestamp.elapsed() >= Duration::from_secs(NODE_CONNECT_TIMEOUT_SECS) {
@@ -1120,8 +1127,6 @@ impl PeerManager {
         for name in expired_expected {
             let _ = self.expected_peers.remove(&name);
         }
-
-        expired_connections
     }
 
     /// Returns the peer ID of the given node if it is our proxy or client or

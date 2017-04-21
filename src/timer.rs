@@ -270,7 +270,7 @@ mod implementation {
             token
         }
 
-        pub fn poll(&mut self) -> Vec<u64> {
+        pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
             let mut inner = self.inner.borrow_mut();
             let now = Instant::now();
             let expired_list = inner

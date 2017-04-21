@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use fake_clock::FakeClock as Instant;
+use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
 use routing::{Authority, Cache, Client, Data, DataIdentifier, Event, EventStream, FullId,
@@ -307,7 +307,7 @@ pub fn poll_and_resend(nodes: &mut [TestNode], clients: &mut [TestClient]) {
                            MAX_POLL_CALLS);
             }
             // ACK_TIMEOUT_SECS = 20s
-            Instant::advance_time(20 * 1000);
+            FakeClock::advance_time(20 * 1000 + 1);
         } else {
             return;
         }

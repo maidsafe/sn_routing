@@ -17,7 +17,7 @@
 
 use super::{TestClient, TestNode, create_connected_clients, create_connected_nodes, gen_range,
             gen_range_except, poll_and_resend, verify_invariant_for_all_nodes};
-use fake_clock::FakeClock as Instant;
+use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
 use routing::{Authority, DataIdentifier, Event, EventStream, MessageId, QUORUM_DENOMINATOR,
@@ -124,7 +124,7 @@ fn add_node_and_poll<R: Rng>(rng: &mut R,
     poll_and_resend(&mut nodes, &mut []);
     // max(RESOURCE_PROOF_DURATION_SECS + ACCUMULATION_TIMEOUT_SECS,
     //     CANDIDATE_ACCEPT_TIMEOUT_SECS) = 330s
-    Instant::advance_time(330 * 1000);
+    FakeClock::advance_time(330 * 1000);
     None
 }
 
