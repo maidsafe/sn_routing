@@ -16,6 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use hex::{FromHex, FromHexError, ToHex};
+use num_bigint::BigUint;
 use rand;
 use routing_table::Xorable;
 use std::{fmt, ops};
@@ -98,25 +99,38 @@ impl XorName {
         self.cmp_distance(lhs, rhs) != Ordering::Greater
     }
 
-    // Private function exposed in fmt Debug {:?} and Display {} traits.
+    /// Return true if the name is in the interval [start, end] (both endpoints inclusive).
+    pub fn between(&self, start: &XorName, end: &XorName) -> bool {
+        self >= start && self <= end
+    }
+
+    /// Returns the value of `self` divided by `rhs`.
+    pub fn divided_by(self, rhs: u32) -> XorName {
+        XorName::from_big_uint(BigUint::from_bytes_be(&self.0) / BigUint::new(vec![rhs]))
+    }
+
+    /// Private function exposed in fmt Debug {:?} and Display {} traits.
     fn get_debug_id(&self) -> String {
         format!("{:02x}{:02x}{:02x}..", self.0[0], self.0[1], self.0[2])
     }
 
-    /// Calculate the absolute difference between this name and another, |self - other|.
-    ///
-    /// This is 1-dimensional Euclidean distance.
-    pub fn abs_difference<'a>(&'a self, other: &'a XorName) -> XorName {
-        if self >= other {
-            self - other
-        } else {
-            other - self
+    /// Used to construct an XorName from a `BigUint`. This will panic if `value` represents a
+    /// number greater than or equal to `2^XOR_NAME_BITS`.
+    fn from_big_uint(value: BigUint) -> XorName {
+        let little_endian_value = value.to_bytes_le();
+        assert!(little_endian_value.len() <= XOR_NAME_LEN,
+                "This BigUint value exceeds the maximum capable of being held as an XorName.");
+        // Convert the little-endian vector to a 32-byte big-endian array.
+        let mut xor_name = XorName::default();
+        for (xor_name_elt, little_endian_elt) in
+            xor_name
+                .0
+                .iter_mut()
+                .rev()
+                .zip(little_endian_value.iter()) {
+            *xor_name_elt = *little_endian_elt;
         }
-    }
-
-    /// Return true if the name is in the interval [start, end] (both endpoint inclusive).
-    pub fn between(&self, start: &XorName, end: &XorName) -> bool {
-        self >= start && self <= end
+        xor_name
     }
 }
 
@@ -233,7 +247,6 @@ impl ops::Not for XorName {
 
 impl ops::Sub for XorName {
     type Output = XorName;
-
     fn sub(self, rhs: XorName) -> Self::Output {
         &self - &rhs
     }
@@ -242,43 +255,7 @@ impl ops::Sub for XorName {
 impl<'a> ops::Sub for &'a XorName {
     type Output = XorName;
     fn sub(self, rhs: &XorName) -> Self::Output {
-        let XorName(ref x) = *self;
-        let XorName(ref y) = *rhs;
-
-        let mut result = [0; XOR_NAME_LEN];
-        let mut carry = 0;
-
-        for i in (0..XOR_NAME_LEN).rev() {
-            if x[i] == 0 && carry == 1 {
-                result[i] = 255 - y[i];
-                continue;
-            }
-
-            let x_val: u16 = x[i] as u16 - carry;
-            let y_val: u16 = y[i] as u16;
-
-            if x_val >= y_val {
-                result[i] = (x_val - y_val) as u8;
-                carry = 0;
-            } else {
-                result[i] = (256 + x_val - y_val) as u8;
-                carry = 1;
-            }
-        }
-
-        #[cfg(debug_assertions)]
-        panic_on_underflow(x, y, carry);
-
-        XorName(result)
-    }
-}
-
-#[cfg(debug_assertions)]
-fn panic_on_underflow(x: &[u8; XOR_NAME_LEN], y: &[u8; XOR_NAME_LEN], carry: u16) {
-    if carry != 0 {
-        panic!("underflow while subtracting XorNames with content: {:?}, {:?}",
-               x,
-               y);
+        XorName::from_big_uint(BigUint::from_bytes_be(&self.0) - BigUint::from_bytes_be(&rhs.0))
     }
 }
 
@@ -394,29 +371,30 @@ mod tests {
             let (larger, smaller) = if x > y { (x, y) } else { (y, x) };
             assert_eq!(&xor_from_int(larger - smaller)[..],
                        &(xor_from_int(larger) - xor_from_int(smaller))[..]);
+            assert_eq!(XorName::default(), xor_from_int(x) - xor_from_int(x));
         }
     }
 
     #[test]
-    #[cfg_attr(debug_assertions, should_panic)]
+    #[should_panic]
     fn subtraction_underflow() {
         let _ = xor_from_int(1_000_001) - xor_from_int(1_000_002);
     }
 
     #[test]
-    fn abs_difference() {
+    fn division() {
         for _ in 0..100000 {
             let x = rand::random();
             let y = rand::random();
-
-            let abs_diff_int = if x >= y { x - y } else { y - x };
-
-            let x_diff_y = xor_from_int(x).abs_difference(&xor_from_int(y));
-            let y_diff_x = xor_from_int(y).abs_difference(&xor_from_int(x));
-
-            assert_eq!(&xor_from_int(abs_diff_int)[..], &x_diff_y[..]);
-            assert_eq!(&x_diff_y[..], &y_diff_x[..]);
+            assert_eq!(xor_from_int(x / y as u64), xor_from_int(x).divided_by(y));
+            assert_eq!(xor_from_int(1), xor_from_int(y as u64).divided_by(y));
         }
+    }
+
+    #[test]
+    #[should_panic]
+    fn division_by_zero() {
+        let _ = xor_from_int(1).divided_by(0);
     }
 
     #[test]

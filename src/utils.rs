@@ -118,8 +118,9 @@ pub fn calculate_relocation_interval(prefix: &Prefix<XorName>,
                 })
         .unwrap_or((&lower_bound, &upper_bound));
 
-    // TODO: implement the middle-third rule.. probably need to convert to BigNums.
-    (*start, *end)
+    let third_of_distance = (*end - *start).divided_by(3);
+    let new_end = *end - third_of_distance;
+    (new_end - third_of_distance, new_end)
 }
 
 #[cfg(test)]
