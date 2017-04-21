@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use super::{QUORUM_DENOM, QUORUM_NUM};
+use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
 use super::XorName;
 use id::PublicId;
 use itertools::Itertools;
@@ -149,7 +149,7 @@ impl SectionListCache {
                 .sorted_by(|lhs, rhs| rhs.1.cmp(&lhs.1));
             if let Some(&(list, sig_count)) = entries.first() {
                 // entry.0 = list, entry.1 = num of signatures
-                if sig_count * QUORUM_DENOM > our_section_size * QUORUM_NUM {
+                if sig_count * QUORUM_DENOMINATOR > our_section_size * QUORUM_NUMERATOR {
                     // we have a list with a quorum of signatures
                     let signatures = unwrap!(map.get(list));
                     let _ = self.lists_cache

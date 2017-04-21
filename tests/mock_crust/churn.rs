@@ -19,8 +19,8 @@ use super::{TestClient, TestNode, create_connected_clients, create_connected_nod
             gen_range_except, poll_and_resend, verify_invariant_for_all_nodes};
 use itertools::Itertools;
 use rand::Rng;
-use routing::{Authority, DataIdentifier, Event, EventStream, MessageId, QUORUM_DENOM, QUORUM_NUM,
-              Request, XorName};
+use routing::{Authority, DataIdentifier, Event, EventStream, MessageId, QUORUM_DENOMINATOR,
+              QUORUM_NUMERATOR, Request, XorName};
 use routing::mock_crust::{Config, Network};
 use std::cmp;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -32,7 +32,7 @@ use std::iter;
 fn drop_random_nodes<R: Rng>(rng: &mut R, nodes: &mut Vec<TestNode>, min_section_size: usize) {
     let len = nodes.len();
     // Nodes needed for quorum with minimum section size. Round up.
-    let min_quorum = 1 + (min_section_size * QUORUM_NUM) / QUORUM_DENOM;
+    let min_quorum = 1 + (min_section_size * QUORUM_NUMERATOR) / QUORUM_DENOMINATOR;
     if rng.gen_weighted_bool(3) {
         // Pick a section then remove as many nodes as possible from it without breaking quorum.
         let i = gen_range(rng, 0, len);
@@ -185,7 +185,7 @@ impl ExpectedGets {
             sent_count += 1;
         }
         if src.is_multiple() {
-            assert!(sent_count * QUORUM_DENOM > min_section_size * QUORUM_NUM);
+            assert!(sent_count * QUORUM_DENOMINATOR > min_section_size * QUORUM_NUMERATOR);
         } else {
             assert_eq!(sent_count, 1);
         }
@@ -297,7 +297,7 @@ impl ExpectedGets {
             assert!(key.3.is_multiple(), "Failed to receive request {:?}", key);
             let section_size = section_sizes[&key.3];
             let count = section_msgs_received.remove(&key).unwrap_or(0);
-            assert!(count * QUORUM_DENOM > section_size * QUORUM_NUM,
+            assert!(count * QUORUM_DENOMINATOR > section_size * QUORUM_NUMERATOR,
                     "Only received {} out of {} messages {:?}.",
                     count,
                     section_size,
@@ -399,7 +399,7 @@ fn verify_section_list_signatures(nodes: &[TestNode]) {
                                     section_list_signatures({:?})",
                                    node.name(),
                                    prefix);
-                assert!(sigs.len() * QUORUM_DENOM > section_size * QUORUM_NUM,
+                assert!(sigs.len() * QUORUM_DENOMINATOR > section_size * QUORUM_NUMERATOR,
                         "{:?} Not enough signatures for prefix {:?} - {}/{}\n\tSignatures from: \
                          {:?}",
                         node.name(),
