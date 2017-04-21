@@ -45,6 +45,8 @@ pub struct StateMachine {
     crust_rx: Receiver<CrustEvent>,
     action_rx: Receiver<Action>,
     is_running: bool,
+    #[cfg(feature = "use-mock-crust")]
+    events: Vec<EventType>,
 }
 
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
@@ -54,6 +56,12 @@ pub enum State {
     Client(Client),
     Node(Node),
     Terminated,
+}
+
+#[cfg(feature = "use-mock-crust")]
+enum EventType {
+    Category(MaidSafeEventCategory),
+    Action(Box<Action>),
 }
 
 impl State {
@@ -162,11 +170,11 @@ impl State {
         }
     }
 
-    pub fn poll(&mut self) {
+    pub fn poll(&mut self) -> Vec<u64> {
         match *self {
             State::Node(ref mut state) => state.poll(),
             State::Client(ref mut state) => state.poll(),
-            _ => {}
+            _ => vec![],
         }
     }
 }
@@ -215,7 +223,16 @@ impl StateMachine {
             State::Terminated => false,
             _ => true,
         };
-
+        #[cfg(feature = "use-mock-crust")]
+        let machine = StateMachine {
+            category_rx: category_rx,
+            crust_rx: crust_rx,
+            action_rx: action_rx,
+            state: state,
+            is_running: is_running,
+            events: Vec::new(),
+        };
+        #[cfg(not(feature = "use-mock-crust"))]
         let machine = StateMachine {
             category_rx: category_rx,
             crust_rx: crust_rx,
@@ -242,6 +259,36 @@ impl StateMachine {
                     self.state.handle_crust_event(crust_event, outbox)
                 } else {
                     Transition::Terminate
+                }
+            }
+        };
+
+        self.apply_transition(transition, outbox)
+    }
+
+    // Handle an event from the list and send any events produced for higher layers.
+    #[cfg(feature = "use-mock-crust")]
+    fn handle_event_from_list(&mut self, outbox: &mut EventBox) {
+        assert!(!self.events.is_empty());
+        let event = self.events.remove(0);
+        let transition = match event {
+            EventType::Action(action) => self.state.handle_action(*action, outbox),
+            EventType::Category(category) => {
+                match category {
+                    MaidSafeEventCategory::Routing => {
+                        if let Ok(action) = self.action_rx.try_recv() {
+                            self.state.handle_action(action, outbox)
+                        } else {
+                            Transition::Terminate
+                        }
+                    }
+                    MaidSafeEventCategory::Crust => {
+                        if let Ok(crust_event) = self.crust_rx.try_recv() {
+                            self.state.handle_crust_event(crust_event, outbox)
+                        } else {
+                            Transition::Terminate
+                        }
+                    }
                 }
             }
         };
@@ -293,13 +340,42 @@ impl StateMachine {
     }
 
     /// Query for a result, or yield: Err(NothingAvailable), Err(Disconnected) or Err(Terminated).
+    #[cfg(not(feature = "use-mock-crust"))]
     pub fn try_step(&mut self, outbox: &mut EventBox) -> Result<(), TryRecvError> {
-        #[cfg(feature = "use-mock-crust")]
-        self.state.poll();
         if self.is_running {
             let category = self.category_rx.try_recv()?;
             self.handle_event(category, outbox);
             Ok(())
+        } else {
+            Err(TryRecvError::Disconnected)
+        }
+    }
+
+    /// Query for a result, or yield: Err(NothingAvailable), Err(Disconnected).
+    #[cfg(feature = "use-mock-crust")]
+    pub fn try_step(&mut self, outbox: &mut EventBox) -> Result<(), TryRecvError> {
+        use itertools::Itertools;
+
+        if self.is_running {
+            let mut events = Vec::new();
+            while let Ok(category) = self.category_rx.try_recv() {
+                events.push(EventType::Category(category));
+            }
+
+            let timed_out_events = self.state
+                .poll()
+                .iter()
+                .map(|token| EventType::Action(Box::new(Action::Timeout(*token))))
+                .collect_vec();
+
+            self.events.extend(events);
+            self.events.extend(timed_out_events);
+            if self.events.is_empty() {
+                Err(TryRecvError::Empty)
+            } else {
+                self.handle_event_from_list(outbox);
+                Ok(())
+            }
         } else {
             Err(TryRecvError::Disconnected)
         }

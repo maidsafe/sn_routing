@@ -228,7 +228,6 @@ mod implementation {
 
 #[cfg(feature = "use-mock-crust")]
 mod implementation {
-    use action::Action;
     use fake_clock::FakeClock as Instant;
     use itertools::Itertools;
     use std::cell::RefCell;
@@ -238,7 +237,6 @@ mod implementation {
     use types::RoutingActionSender;
 
     struct Inner {
-        action_sender: RoutingActionSender,
         next_token: u64,
         deadlines: BTreeMap<Instant, Vec<u64>>,
     }
@@ -249,10 +247,9 @@ mod implementation {
     }
 
     impl Timer {
-        pub fn new(action_sender: RoutingActionSender) -> Self {
+        pub fn new(_action_sender: RoutingActionSender) -> Self {
             Timer {
                 inner: Rc::new(RefCell::new(Inner {
-                                                action_sender: action_sender,
                                                 next_token: 0,
                                                 deadlines: Default::default(),
                                             })),
@@ -273,7 +270,7 @@ mod implementation {
             token
         }
 
-        pub fn poll(&mut self) {
+        pub fn poll(&mut self) -> Vec<u64> {
             let mut inner = self.inner.borrow_mut();
             let now = Instant::now();
             let expired_list = inner
@@ -282,6 +279,7 @@ mod implementation {
                 .take_while(|&&deadline| deadline < now)
                 .cloned()
                 .collect_vec();
+            let mut expired_tokens = Vec::new();
             for expired in expired_list {
                 // Safe to call `expect()` as we just got the key we're removing from
                 // `deadlines`.
@@ -289,10 +287,9 @@ mod implementation {
                     .deadlines
                     .remove(&expired)
                     .expect("Bug in `BTreeMap`.");
-                for token in tokens {
-                    let _ = inner.action_sender.send(Action::Timeout(token));
-                }
+                expired_tokens.extend(tokens);
             }
+            expired_tokens
         }
     }
 }

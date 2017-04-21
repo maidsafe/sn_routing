@@ -3149,7 +3149,7 @@ impl Node {
         let _ = self.purge_invalid_rt_entries(&mut EventBuf::new());
     }
 
-    pub fn poll(&mut self) {
+    pub fn poll(&mut self) -> Vec<u64> {
         self.timer.poll()
     }
 

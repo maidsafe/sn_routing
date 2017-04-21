@@ -388,7 +388,7 @@ impl Bootstrapped for Client {
 
 #[cfg(feature = "use-mock-crust")]
 impl Client {
-    pub fn poll(&mut self) {
+    pub fn poll(&mut self) -> Vec<u64> {
         self.timer.poll()
     }
 }
