@@ -228,25 +228,71 @@ mod implementation {
 
 #[cfg(feature = "use-mock-crust")]
 mod implementation {
-    use std::cell::Cell;
+    use action::Action;
+    use fake_clock::FakeClock as Instant;
+    use itertools::Itertools;
+    use std::cell::RefCell;
+    use std::collections::BTreeMap;
+    use std::rc::Rc;
     use std::time::Duration;
     use types::RoutingActionSender;
 
-    // The mock timer currently never raises timeout events.
+    struct Inner {
+        action_sender: RoutingActionSender,
+        next_token: u64,
+        deadlines: BTreeMap<Instant, Vec<u64>>,
+    }
+
     #[derive(Clone)]
     pub struct Timer {
-        next_token: Cell<u64>,
+        inner: Rc<RefCell<Inner>>,
     }
 
     impl Timer {
-        pub fn new(_: RoutingActionSender) -> Self {
-            Timer { next_token: Cell::new(0) }
+        pub fn new(action_sender: RoutingActionSender) -> Self {
+            Timer {
+                inner: Rc::new(RefCell::new(Inner {
+                                                action_sender: action_sender,
+                                                next_token: 0,
+                                                deadlines: Default::default(),
+                                            })),
+            }
         }
 
-        pub fn schedule(&self, _: Duration) -> u64 {
-            let token = self.next_token.get();
-            self.next_token.set(token.wrapping_add(1));
+        pub fn schedule(&self, deadline: Duration) -> u64 {
+            let mut inner = self.inner.borrow_mut();
+
+            let token = inner.next_token;
+            inner.next_token = token.wrapping_add(1);
+
+            inner
+                .deadlines
+                .entry(Instant::now() + deadline)
+                .or_insert_with(Vec::new)
+                .push(token);
             token
+        }
+
+        pub fn poll(&mut self) {
+            let mut inner = self.inner.borrow_mut();
+            let now = Instant::now();
+            let expired_list = inner
+                .deadlines
+                .keys()
+                .take_while(|&&deadline| deadline < now)
+                .cloned()
+                .collect_vec();
+            for expired in expired_list {
+                // Safe to call `expect()` as we just got the key we're removing from
+                // `deadlines`.
+                let tokens = inner
+                    .deadlines
+                    .remove(&expired)
+                    .expect("Bug in `BTreeMap`.");
+                for token in tokens {
+                    let _ = inner.action_sender.send(Action::Timeout(token));
+                }
+            }
         }
     }
 }

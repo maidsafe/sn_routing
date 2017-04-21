@@ -17,6 +17,7 @@
 
 use super::{TestClient, TestNode, create_connected_clients, create_connected_nodes, gen_range,
             gen_range_except, poll_and_resend, verify_invariant_for_all_nodes};
+use fake_clock::FakeClock as Instant;
 use itertools::Itertools;
 use rand::Rng;
 use routing::{Authority, DataIdentifier, Event, EventStream, MessageId, QUORUM, Request, XorName};
@@ -345,13 +346,6 @@ fn send_and_receive<R: Rng>(rng: &mut R,
     poll_and_resend(nodes, &mut []);
 
     expected_gets.verify(nodes, &mut []);
-
-    // Every few iterations, clear the nodes' caches, simulating a longer time between events.
-    if rng.gen_weighted_bool(5) {
-        for node in nodes {
-            node.inner.clear_state();
-        }
-    }
 }
 
 fn client_gets(network: &mut Network, nodes: &mut [TestNode], min_section_size: usize) {
@@ -446,6 +440,9 @@ fn aggressive_churn() {
         match nodes[added_index].inner.try_next_ev() {
             Err(_) |
             Ok(Event::Terminate) => {
+                // max(RESOURCE_PROOF_DURATION_SECS + ACCUMULATION_TIMEOUT_SECS,
+                //     CANDIDATE_ACCEPT_TIMEOUT_SECS) = 330s
+                Instant::advance_time(330 * 1000);
                 let config = Config::with_contacts(&[nodes[proxy_index].handle.endpoint()]);
                 nodes[added_index] = TestNode::builder(&network).config(config).create();
                 poll_and_resend(&mut nodes, &mut []);
@@ -474,6 +471,9 @@ fn aggressive_churn() {
         match nodes[added_index].inner.try_next_ev() {
             Err(_) |
             Ok(Event::Terminate) => {
+                // max(RESOURCE_PROOF_DURATION_SECS + ACCUMULATION_TIMEOUT_SECS,
+                //     CANDIDATE_ACCEPT_TIMEOUT_SECS) = 330s
+                Instant::advance_time(330 * 1000);
                 let config = Config::with_contacts(&[nodes[proxy_index].handle.endpoint()]);
                 nodes[added_index] = TestNode::builder(&network).config(config).create();
                 poll_and_resend(&mut nodes, &mut []);

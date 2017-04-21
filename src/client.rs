@@ -275,19 +275,6 @@ impl Client {
             .borrow_mut()
             .try_step(&mut *self.event_buffer.borrow_mut())
     }
-
-    /// Resend all unacknowledged messages.
-    pub fn resend_unacknowledged(&self) -> bool {
-        self.machine
-            .borrow_mut()
-            .current_mut()
-            .resend_unacknowledged()
-    }
-
-    /// Are there any unacknowledged messages?
-    pub fn has_unacknowledged(&self) -> bool {
-        self.machine.borrow().current().has_unacknowledged()
-    }
 }
 
 impl Drop for Client {

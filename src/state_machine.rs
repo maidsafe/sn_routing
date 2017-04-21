@@ -134,24 +134,6 @@ impl Debug for State {
 
 #[cfg(feature = "use-mock-crust")]
 impl State {
-    pub fn resend_unacknowledged(&mut self) -> bool {
-        match *self {
-            State::Client(ref mut state) => state.resend_unacknowledged(),
-            State::Node(ref mut state) => state.resend_unacknowledged(),
-            State::Bootstrapping(_) |
-            State::Terminated => false,
-        }
-    }
-
-    pub fn has_unacknowledged(&self) -> bool {
-        match *self {
-            State::Client(ref state) => state.has_unacknowledged(),
-            State::Node(ref state) => state.has_unacknowledged(),
-            State::Bootstrapping(_) |
-            State::Terminated => false,
-        }
-    }
-
     pub fn purge_invalid_rt_entry(&mut self) {
         if let State::Node(ref mut state) = *self {
             state.purge_invalid_rt_entry();
@@ -162,15 +144,6 @@ impl State {
         match *self {
             State::Node(ref state) => state.has_tunnel_clients(client_1, client_2),
             _ => false,
-        }
-    }
-
-    pub fn clear_state(&mut self) {
-        match *self {
-            State::Node(ref mut state) => state.clear_state(),
-            State::Bootstrapping(_) |
-            State::Client(_) |
-            State::Terminated => (),
         }
     }
 
@@ -186,6 +159,14 @@ impl State {
     pub fn set_next_node_name(&mut self, relocation_name: Option<XorName>) {
         if let State::Node(ref mut state) = *self {
             state.set_next_node_name(relocation_name);
+        }
+    }
+
+    pub fn poll(&mut self) {
+        match *self {
+            State::Node(ref mut state) => state.poll(),
+            State::Client(ref mut state) => state.poll(),
+            _ => {}
         }
     }
 }
@@ -313,6 +294,8 @@ impl StateMachine {
 
     /// Query for a result, or yield: Err(NothingAvailable), Err(Disconnected) or Err(Terminated).
     pub fn try_step(&mut self, outbox: &mut EventBox) -> Result<(), TryRecvError> {
+        #[cfg(feature = "use-mock-crust")]
+        self.state.poll();
         if self.is_running {
             let category = self.category_rx.try_recv()?;
             self.handle_event(category, outbox);

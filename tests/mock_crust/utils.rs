@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use fake_clock::FakeClock as Instant;
 use itertools::Itertools;
 use rand::Rng;
 use routing::{Authority, Cache, Client, Data, DataIdentifier, Event, EventStream, FullId,
@@ -298,14 +299,15 @@ pub fn poll_and_resend(nodes: &mut [TestNode], clients: &mut [TestClient]) {
     for _ in 0..MAX_POLL_CALLS {
         if poll_all(nodes, clients) {
             let mut call_count = 1;
-            while resend_unacknowledged(nodes, clients) && poll_all(nodes, clients) {
+            while poll_all(nodes, clients) {
                 call_count += 1;
                 assert_ne!(call_count,
                            MAX_POLL_CALLS,
-                           "Polling and resending unacknowledged has been called {} times.",
+                           "Polling and advance time has been called {} times.",
                            MAX_POLL_CALLS);
             }
-            nodes.iter_mut().foreach(|node| node.inner.clear_state());
+            // ACK_TIMEOUT_SECS = 20s
+            Instant::advance_time(20 * 1000);
         } else {
             return;
         }
@@ -560,19 +562,6 @@ pub fn gen_bytes<R: Rng>(rng: &mut R, size: usize) -> Vec<u8> {
 // Generate random immutable data with the given payload length.
 pub fn gen_immutable_data<R: Rng>(rng: &mut R, size: usize) -> Data {
     Data::Immutable(ImmutableData::new(gen_bytes(rng, size)))
-}
-
-/// Resends all unacknowledged messages. Returns `false` if none of the nodes or clients had any
-/// unacknowledged messages left.
-fn resend_unacknowledged(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
-    let node_resend = |node: &mut TestNode| node.inner.resend_unacknowledged();
-    let client_resend = |client: &mut TestClient| client.inner.resend_unacknowledged();
-    let or = |x, y| x || y;
-    nodes
-        .iter_mut()
-        .map(node_resend)
-        .chain(clients.iter_mut().map(client_resend))
-        .fold(false, or)
 }
 
 fn sanity_check(prefix_lengths: &[usize]) {

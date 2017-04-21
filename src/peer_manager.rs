@@ -1692,38 +1692,6 @@ impl fmt::Debug for PeerManager {
     }
 }
 
-#[cfg(feature = "use-mock-crust")]
-impl PeerManager {
-    /// Removes all peers that are not connected, as well as all expected peers and candidates.
-    /// Returns `true` if any entry was removed, and `false` if there were no such peers.
-    pub fn remove_connecting_peers(&mut self) -> bool {
-        // Remove all peers that are not yet connected.
-        let remove_names = self.peer_map
-            .peers()
-            .filter(|peer| match peer.state {
-                        PeerState::ConnectionInfoPreparing { .. } |
-                        PeerState::ConnectionInfoReady(_) |
-                        PeerState::CrustConnecting |
-                        PeerState::SearchingForTunnel => true,
-                        _ => false,
-                    })
-            .map(|peer| *peer.name())
-            .collect_vec();
-
-        if remove_names.is_empty() && self.expected_peers.is_empty() && self.candidates.is_empty() {
-            return false;
-        }
-
-        for name in remove_names {
-            let _ = self.peer_map.remove_by_name(&name);
-        }
-
-        self.expected_peers.clear();
-        self.candidates.clear();
-        true
-    }
-}
-
 #[cfg(all(test, feature = "use-mock-crust"))]
 mod tests {
     use super::*;

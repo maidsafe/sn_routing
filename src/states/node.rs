@@ -2411,8 +2411,13 @@ impl Node {
         }
 
         if self.tick_timer_token == token {
-            let tick_period = Duration::from_secs(TICK_TIMEOUT_SECS);
-            self.tick_timer_token = self.timer.schedule(tick_period);
+            if cfg!(feature = "use-mock-crust") {
+                trace!("{:?} not to carry out ticking during mock_crust test.",
+                       self);
+            } else {
+                let tick_period = Duration::from_secs(TICK_TIMEOUT_SECS);
+                self.tick_timer_token = self.timer.schedule(tick_period);
+            }
 
             for peer_id in self.peer_mgr.remove_expired_connections() {
                 debug!("{:?} Disconnecting from timed out peer {:?}", self, peer_id);
@@ -2425,21 +2430,31 @@ impl Node {
         }
 
         if self.su_timer_token == Some(token) {
-            self.su_timeout = cmp::min(Duration::from_secs(SU_MAX_TIMEOUT_SECS),
-                                       self.su_timeout * 2);
-            trace!("{:?} Scheduling next RT request for {} seconds from now.",
-                   self,
-                   self.su_timeout.as_secs());
-            self.su_timer_token = Some(self.timer.schedule(self.su_timeout));
-            self.send_section_update(None);
+            if cfg!(feature = "use-mock-crust") {
+                trace!("{:?} not to schedule next RT request during mock_crust test.",
+                       self);
+            } else {
+                self.su_timeout = cmp::min(Duration::from_secs(SU_MAX_TIMEOUT_SECS),
+                                           self.su_timeout * 2);
+                trace!("{:?} Scheduling next RT request for {} seconds from now.",
+                       self,
+                       self.su_timeout.as_secs());
+                self.su_timer_token = Some(self.timer.schedule(self.su_timeout));
+                self.send_section_update(None);
+            }
         } else if self.candidate_timer_token == Some(token) {
             self.candidate_timer_token = None;
             self.send_candidate_approval();
         } else if self.candidate_status_token == Some(token) {
-            self.candidate_status_token =
-                Some(self.timer
-                         .schedule(Duration::from_secs(CANDIDATE_STATUS_INTERVAL_SECS)));
-            self.peer_mgr.show_candidate_status();
+            if cfg!(feature = "use-mock-crust") {
+                trace!("{:?} not to show candidate status during mock_crust test.",
+                       self);
+            } else {
+                self.candidate_status_token =
+                    Some(self.timer
+                             .schedule(Duration::from_secs(CANDIDATE_STATUS_INTERVAL_SECS)));
+                self.peer_mgr.show_candidate_status();
+            }
         } else {
             // Each token has only one purpose, so we only need to call this if none of the above
             // matched:
@@ -3129,32 +3144,13 @@ impl Node {
         self.tunnels.has_clients(client_1, client_2)
     }
 
-    /// Resends all unacknowledged messages.
-    pub fn resend_unacknowledged(&mut self) -> bool {
-        let timer_tokens = self.ack_mgr.timer_tokens();
-        for timer_token in &timer_tokens {
-            self.resend_unacknowledged_timed_out_msgs(*timer_token);
-        }
-        !timer_tokens.is_empty()
-    }
-
-    /// Are there any unacknowledged messages?
-    pub fn has_unacknowledged(&self) -> bool {
-        self.ack_mgr.has_pending()
-    }
-
     /// Purge invalid routing entries.
     pub fn purge_invalid_rt_entry(&mut self) {
         let _ = self.purge_invalid_rt_entries(&mut EventBuf::new());
     }
 
-    pub fn clear_state(&mut self) {
-        self.ack_mgr.clear();
-        self.routing_msg_filter.clear();
-        if self.peer_mgr.remove_connecting_peers() {
-            self.merge_if_necessary();
-        }
-        self.tunnels.clear_new_clients();
+    pub fn poll(&mut self) {
+        self.timer.poll()
     }
 
     pub fn section_list_signatures(&self,

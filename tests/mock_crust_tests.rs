@@ -31,6 +31,7 @@
 #![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
          missing_debug_implementations, variant_size_differences)]
 
+extern crate fake_clock;
 extern crate itertools;
 #[macro_use]
 extern crate log;
