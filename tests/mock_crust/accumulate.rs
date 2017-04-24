@@ -17,7 +17,8 @@
 
 use super::{TestNode, create_connected_nodes, gen_immutable_data, poll_all,
             sort_nodes_by_distance_to};
-use routing::{Authority, Event, EventStream, MessageId, QUORUM, Response, XorName};
+use routing::{Authority, Event, EventStream, MessageId, QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
+              Response, XorName};
 use routing::mock_crust::Network;
 use std::sync::mpsc;
 
@@ -39,8 +40,9 @@ fn messages_accumulate_with_quorum() {
     };
 
     let dst = Authority::ManagedNode(nodes[0].name()); // The closest node.
-    // The smallest number such that `quorum * 100 >= len * QUORUM`:
-    let quorum = (min_section_size * QUORUM - 1) / 100 + 1;
+    // The smallest number such that
+    // `quorum * QUORUM_DENOMINATOR > min_section_size * QUORUM_NUMERATOR`:
+    let quorum = 1 + (min_section_size * QUORUM_NUMERATOR) / QUORUM_DENOMINATOR;
 
     // Send a message from the section `src` to the node `dst`.
     // Only the `quorum`-th sender should cause accumulation and a
