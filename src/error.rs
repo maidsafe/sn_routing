@@ -80,7 +80,7 @@ pub enum RoutingError {
     /// Failure to bootstrap off the provided endpoints
     FailedToBootstrap,
     /// Node's new name doesn't fall within the specified target address range.
-    InvalidRelocation,
+    InvalidRelocationTargetRange,
     /// A client with `client_restriction == true` tried to send a message restricted to nodes.
     RejectedClientMessage,
     /// Routing Table error

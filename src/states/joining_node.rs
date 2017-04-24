@@ -149,7 +149,6 @@ impl JoiningNode {
         let service = Self::start_new_crust_service(self.crust_service, crust_rx, crust_sender);
         let target_state = BootstrappingTargetState::Node {
             old_full_id: self.full_id,
-            new_full_id: new_full_id,
             our_section: our_section,
         };
         if let Some(bootstrapping) =
@@ -157,6 +156,7 @@ impl JoiningNode {
                                self.cache,
                                target_state,
                                service,
+                               new_full_id,
                                self.min_section_size,
                                self.timer) {
             State::Bootstrapping(bootstrapping)

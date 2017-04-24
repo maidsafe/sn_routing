@@ -398,32 +398,39 @@ impl Candidate {
     }
 
     fn has_valid_new_pub_id(&self, debug_prefix: &str) -> bool {
-        // FIXME(Fraser) - Create and use new helper in `PublicId::has_valid_name()` too?
-        self.new_pub_id
-            .map_or(false, |new_pub_id| {
-                self.target_interval
-                    .map_or_else(|| {
-                        debug!("{} has sent CandidateIdentify before we have received an \
-                               AcceptAsCandidate, so relocation target interval is still unknown.",
-                               debug_prefix);
-                        false
-                    }, |target_interval| {
-                        if new_pub_id
-                            .name()
-                            .between(&target_interval.0, &target_interval.1) { true } else {
-                warn!("{} has used a new ID which is not within the required target range.",
-                      debug_prefix);
-                false
-                            }
-                    })
-            })
-    }
+        let new_pub_id = if let Some(new_pub_id) = self.new_pub_id.as_ref() {
+            new_pub_id
+        } else {
+            return false;
+        };
 
-    fn fmt_new_name(&self) -> String {
-        self.new_pub_id
-            .as_ref()
-            .map_or("?".to_string(),
-                    |new_pub_id| format!("{}", new_pub_id.name()))
+        match self.target_interval {
+            Some(target_interval) => {
+                if *new_pub_id.name() >= target_interval.0 &&
+                   *new_pub_id.name() <= target_interval.1 {
+                    true
+                } else {
+                    warn!("{} has used a new ID which is not within the required target range.",
+                          debug_prefix);
+                    false
+                }
+            }
+            None => {
+                debug!("{} has sent CandidateIdentify before we have received an \
+                       AcceptAsCandidate, so relocation target interval is still unknown.",
+                       debug_prefix);
+                false
+            }
+        }
+    }
+}
+
+impl fmt::Display for Candidate {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        match self.new_pub_id {
+            Some(pub_id) => pub_id.name().fmt(formatter),
+            None => write!(formatter, "?"),
+        }
     }
 }
 
@@ -441,7 +448,7 @@ pub struct PeerManager {
     proxy_peer_id: Option<PeerId>,
     routing_table: RoutingTable<XorName>,
     our_public_id: PublicId,
-    /// Relocating nodes which want to join our section, indexed by "old" public ID (i.e. their
+    /// Joining nodes which want to join our section, indexed by "old" public ID (i.e. their
     /// pre-relocation IDs). Note that they will be indexed by their "new" IDs in the `peer_map`.
     candidates: HashMap<PublicId, Candidate>,
 }
@@ -496,7 +503,7 @@ impl PeerManager {
                    self,
                    old_pub_id.name(),
                    ongoing_pub_id.name(),
-                   candidate.fmt_new_name());
+                   candidate);
             return Err(RoutingError::AlreadyHandlingJoinRequest);
         }
         let _ = self.candidates.insert(old_pub_id, Candidate::new());
@@ -591,7 +598,14 @@ impl PeerManager {
                 (candidate.new_pub_id.as_ref(), candidate.new_client_auth.as_ref()) {
                        self.peer_map
                            .get_by_name(new_pub_id.name())
-                           .map_or(Err(RoutingError::UnknownCandidate), |_peer| {
+                           .map_or_else(|| {
+                                            log_or_panic!(LogLevel::Error,
+                                                          "{:?} Should have held {} in peer_map.",
+                                                          self,
+                                                          new_pub_id.name());
+                                            Err(RoutingError::UnknownCandidate)
+                                        },
+                                        |_peer| {
                     Ok((MessageContent::CandidateApproval {
                             old_public_id: *old_pub_id,
                             new_public_id: *new_pub_id,
@@ -601,6 +615,10 @@ impl PeerManager {
                         *new_pub_id.name()))
                 })
                    } else {
+                       log_or_panic!(LogLevel::Error,
+                                     "{:?} Should have held a candidate which had passed our \
+                                     challenge.",
+                                     self);
                        Err(RoutingError::UnknownCandidate)
                    };
         }
@@ -612,7 +630,7 @@ impl PeerManager {
                    sending approval vote to our section with {:?}",
                   self,
                   old_pub_id.name(),
-                  candidate.fmt_new_name(),
+                  candidate,
                   self.routing_table.our_prefix());
         }
         Err(RoutingError::UnknownCandidate)
@@ -692,7 +710,7 @@ impl PeerManager {
             if candidate.is_approved() {
                 (Ok(false), None)
             } else if !candidate.has_valid_new_pub_id(&debug_prefix) {
-                (Err(RoutingError::InvalidRelocation), None)
+                (Err(RoutingError::InvalidRelocationTargetRange), None)
             } else {
                 let conn = self.peer_map
                     .get(peer_id)
@@ -730,10 +748,7 @@ impl PeerManager {
                 .iter()
                 .filter(|&(_, cand)| !cand.is_expired()) {
             have_candidate = true;
-            let mut log_msg = format!("{}{}->{} ",
-                                      log_prefix,
-                                      old_pub_id.name(),
-                                      candidate.fmt_new_name());
+            let mut log_msg = format!("{}{}->{} ", log_prefix, old_pub_id.name(), candidate);
             match candidate.challenge_response {
                 Some(ChallengeResponse {
                          ref target_size,
@@ -1829,12 +1844,8 @@ impl PeerManager {
         self.candidates = to_keep;
         to_prune
             .into_iter()
-            .filter_map(|(_, cand)| {
-                            cand.new_pub_id
-                                .and_then(|new_pub_id| {
-                                              self.get_peer_id(new_pub_id.name()).cloned()
-                                          })
-                        })
+            .filter_map(|(_, cand)| cand.new_pub_id)
+            .filter_map(|new_pub_id| self.get_peer_id(new_pub_id.name()).cloned())
             .collect()
     }
 

@@ -46,11 +46,10 @@ const BOOTSTRAP_TIMEOUT_SECS: u64 = 20;
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
 pub enum TargetState {
-    Client { opt_full_id: Option<FullId> },
+    Client,
     JoiningNode,
     Node {
         old_full_id: FullId,
-        new_full_id: FullId,
         our_section: BTreeSet<PublicId>,
     },
 }
@@ -74,26 +73,24 @@ impl Bootstrapping {
                cache: Box<Cache>,
                target_state: TargetState,
                mut crust_service: Service,
+               full_id: FullId,
                min_section_size: usize,
                timer: Timer)
                -> Option<Self> {
-        let full_id = match target_state {
-            TargetState::Client { ref opt_full_id } => {
+        match target_state {
+            TargetState::Client => {
                 let _ = crust_service.start_bootstrap(HashSet::new(), CrustUser::Client);
-                opt_full_id.clone().unwrap_or_else(FullId::new)
             }
             TargetState::JoiningNode => {
                 let _ = crust_service.start_bootstrap(HashSet::new(), CrustUser::Node);
-                FullId::new()
             }
-            TargetState::Node { ref new_full_id, .. } => {
+            TargetState::Node { .. } => {
                 if let Err(error) = crust_service.start_listening_tcp() {
                     error!("Failed to start listening: {:?}", error);
                     return None;
                 }
-                new_full_id.clone()
             }
-        };
+        }
         Some(Bootstrapping {
                  action_sender: action_sender,
                  bootstrap_blacklist: HashSet::new(),

@@ -76,15 +76,15 @@ pub fn format_binary_array<V: AsRef<[u8]>>(input: V) -> String {
             input_ref[input_ref.len() - 1])
 }
 
-/// Compute the target destination for a relocating node with the given name.
+/// Compute the target destination for a joining node with the given name.
 ///
-/// This is used by each member of a relocating node's section to choose a location for the node to
+/// This is used by each member of a joining node's section to choose a location for the node to
 /// move to. On the one hand, sufficiently many of them need to agree on the new name to reach
-/// quorum size, on the other hand, the relocating node shall not be able to predict it so that it
+/// quorum size, on the other hand, the joining node shall not be able to predict it so that it
 /// cannot choose where to be relocated to.
 ///
-/// To meet these requirements, the target is computed from the two closest nodes and the
-/// relocating node's current name: It is the SHA256 hash of:
+/// To meet these requirements, the target is computed from the two closest nodes and the joining
+/// node's current name: It is the SHA256 hash of:
 ///
 /// [`current_name`, 1st closest node id, 2nd closest node id]
 ///
@@ -118,7 +118,7 @@ pub fn calculate_relocation_interval(prefix: &Prefix<XorName>,
                 })
         .unwrap_or((&lower_bound, &upper_bound));
 
-    let third_of_distance = (*end - *start).divided_by(3);
+    let third_of_distance = (*end - *start) / 3;
     let new_end = *end - third_of_distance;
     (new_end - third_of_distance, new_end)
 }

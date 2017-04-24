@@ -130,6 +130,7 @@ impl NodeBuilder {
                                self.cache,
                                BootstrappingTargetState::JoiningNode,
                                crust_service,
+                               FullId::new(),
                                min_section_size,
                                timer)
                     .map_or(State::Terminated, State::Bootstrapping)

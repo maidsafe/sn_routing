@@ -59,9 +59,6 @@ pub struct ResourceProver {
     approval_expiry_time: Instant,
     /// Number of expected resource proof challengers.
     challenger_count: usize,
-    /// Whether our proxy is expected to be sending us a resource proof challenge (in which case it
-    /// will be trivial) or not.
-    proxy_is_resource_proof_challenger: bool,
     /// Map of ResourceProofResponse parts.
     response_parts: HashMap<PeerId, Vec<DirectMessage>>,
     /// Map of workers
@@ -71,14 +68,13 @@ pub struct ResourceProver {
 
 impl ResourceProver {
     /// Create an instance.
-    pub fn new(action_sender: RoutingActionSender, timer: Timer) -> Self {
+    pub fn new(action_sender: RoutingActionSender, timer: Timer, challenger_count: usize) -> Self {
         ResourceProver {
             action_sender: action_sender,
             get_approval_timer_token: None,
             approval_progress_timer_token: None,
             approval_expiry_time: Instant::now(),
-            challenger_count: 0,
-            proxy_is_resource_proof_challenger: false,
+            challenger_count: challenger_count,
             response_parts: Default::default(),
             workers: Default::default(),
             timer: timer,
@@ -86,21 +82,13 @@ impl ResourceProver {
     }
 
     /// Start timers when receiving a new name (after relocation, before resource proof)
-    pub fn start(&mut self, challengers: usize, includes_proxy: bool) {
+    pub fn start(&mut self) {
         let duration = Duration::from_secs(APPROVAL_TIMEOUT_SECS);
         self.approval_expiry_time = Instant::now() + duration;
         self.get_approval_timer_token = Some(self.timer.schedule(duration));
         self.approval_progress_timer_token =
             Some(self.timer
                      .schedule(Duration::from_secs(APPROVAL_PROGRESS_INTERVAL_SECS)));
-
-        // Exclude the proxy as it sends a trivial challenge
-        self.challenger_count = if includes_proxy {
-            challengers - 1
-        } else {
-            challengers
-        };
-        self.proxy_is_resource_proof_challenger = includes_proxy;
     }
 
     /// Start generating a resource proof in a background thread
@@ -299,10 +287,6 @@ impl ResourceProver {
             } else {
                 completed += 1;
             }
-        }
-
-        if self.proxy_is_resource_proof_challenger {
-            completed = completed.saturating_sub(1);
         }
 
         if self.response_parts.is_empty() {

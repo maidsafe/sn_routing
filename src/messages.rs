@@ -139,8 +139,8 @@ pub enum DirectMessage {
         /// Should not influence JoiningNode / Proxy states which are expected to be direct only.
         is_tunnel: bool,
     },
-    /// Sent from a node which is still relocating on the network to another node, to allow the
-    /// latter to add the former to its routing table.
+    /// Sent from a node which is still joining the network to another node, to allow the latter to
+    /// add the former to its routing table.
     CandidateIdentify {
         /// `PublicId` from before relocation.
         old_public_id: PublicId,
@@ -167,9 +167,9 @@ pub enum DirectMessage {
     TunnelClosed(PeerId),
     /// Sent to a tunnel node to indicate the tunnel is not needed any more.
     TunnelDisconnect(PeerId),
-    /// Request a proof to be provided by the relocating node.
+    /// Request a proof to be provided by the joining node.
     ///
-    /// This is sent from member of Group Y to the relocating node.
+    /// This is sent from member of Group Y to the joining node.
     ResourceProof {
         /// seed of proof
         seed: Vec<u8>,
@@ -180,7 +180,7 @@ pub enum DirectMessage {
     },
     /// Provide a proof to the network
     ///
-    /// This is sent from the relocating node to member of Group Y
+    /// This is sent from the joining node to member of Group Y
     ResourceProofResponse {
         /// The index of this part of the resource proof.
         part_index: usize,
@@ -576,19 +576,19 @@ pub enum MessageContent {
     // ---------- Internal ------------
     /// Ask the network to relocate you.
     ///
-    /// This is sent by a relocating node to its `NaeManager`s with the intent to become a full
-    /// routing node with a new ID in an address range chosen by the `NaeManager`s.
+    /// This is sent by a joining node to its `NaeManager`s with the intent to become a full routing
+    /// node with a new ID in an address range chosen by the `NaeManager`s.
     Relocate {
         /// The relocating node's current public ID.
         public_id: PublicId,
         /// The message's unique identifier.
         message_id: MessageId,
     },
-    /// Notify a relocating node's `NaeManager` so that it sends a `RelocateResponse`.
+    /// Notify a joining node's `NaeManager` so that it sends a `RelocateResponse`.
     ExpectCandidate {
-        /// The relocating node's current public ID.
+        /// The joining node's current public ID.
         old_public_id: PublicId,
-        /// The relocating node's current authority.
+        /// The joining node's current authority.
         old_client_auth: Authority<XorName>,
         /// The message's unique identifier.
         message_id: MessageId,
@@ -617,11 +617,11 @@ pub enum MessageContent {
         /// The message's unique identifier.
         msg_id: MessageId,
     },
-    /// Reply with the address range into which the relocating node should move.
+    /// Reply with the address range into which the joining node should move.
     RelocateResponse {
-        /// The interval into which the relocating node should join.
+        /// The interval into which the joining node should join.
         target_interval: (XorName, XorName),
-        /// The section that the relocating node shall connect to.
+        /// The section that the joining node shall connect to.
         section: BTreeSet<PublicId>,
         /// The message's unique identifier.
         message_id: MessageId,
@@ -671,29 +671,29 @@ pub enum MessageContent {
     ///
     /// Sent from the `NaeManager` to the `NaeManager`.
     AcceptAsCandidate {
-        /// The relocating node's current public ID.
+        /// The joining node's current public ID.
         old_public_id: PublicId,
-        /// The relocating node's current authority.
+        /// The joining node's current authority.
         old_client_auth: Authority<XorName>,
-        /// The interval into which the relocating node should join.
+        /// The interval into which the joining node should join.
         target_interval: (XorName, XorName),
         /// The message's unique identifier.
         message_id: MessageId,
     },
-    /// Sent among Group Y to vote to accept a relocating node.
+    /// Sent among Group Y to vote to accept a joining node.
     CandidateApproval {
-        /// The relocating node's current public ID.
+        /// The joining node's current public ID.
         old_public_id: PublicId,
-        /// The relocating node's current public ID.
+        /// The joining node's current public ID.
         new_public_id: PublicId,
         /// Client authority of the candidate.
         new_client_auth: Authority<XorName>,
         /// The `PublicId`s of all routing table contacts shared by the nodes in our section.
         sections: SectionMap,
     },
-    /// Approves the relocating node as a routing node.
+    /// Approves the joining node as a routing node.
     ///
-    /// Sent from Group Y to the relocating node.
+    /// Sent from Group Y to the joining node.
     NodeApproval {
         /// The routing table shared by the nodes in our group, including the `PublicId`s of our
         /// contacts.

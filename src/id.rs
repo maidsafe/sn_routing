@@ -16,6 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use rust_sodium::crypto::{box_, hash, sign};
+use serde::de::{Deserialize, Deserializer};
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
 
@@ -56,19 +57,15 @@ impl FullId {
     pub fn within_range(start: &XorName, end: &XorName) -> FullId {
         let mut sign_keys = sign::gen_keypair();
         loop {
-            let name = XorName(hash::sha256::hash(&sign_keys.0[..]).0);
-            if name.between(start, end) {
+            let name = PublicId::name_from_key(&sign_keys.0);
+            if name >= *start && name <= *end {
                 let encrypt_keys = box_::gen_keypair();
                 let full_id = FullId::with_keys(encrypt_keys, sign_keys);
-                // Ensure we update this `name` generation above if we change how `PublicId::name()`
-                // is calculated in the future.
-                assert_eq!(name, *full_id.public_id().name());
                 return full_id;
             }
             sign_keys = sign::gen_keypair();
         }
     }
-
 
     /// Returns public ID reference.
     pub fn public_id(&self) -> &PublicId {
@@ -97,17 +94,29 @@ impl Default for FullId {
     }
 }
 
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Serialize, Deserialize)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Serialize)]
 /// Network identity component containing name and public keys.
+///
+/// Note that the `name` member is omitted when serialising `PublicId` and is calculated from the
+/// `public_sign_key` when deserialising.
 pub struct PublicId {
     public_encrypt_key: box_::PublicKey,
     public_sign_key: sign::PublicKey,
+    #[serde(skip_serializing)]
     name: XorName,
 }
 
 impl Debug for PublicId {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter, "PublicId(name: {})", self.name)
+    }
+}
+
+impl Deserialize for PublicId {
+    fn deserialize<D: Deserializer>(deserialiser: D) -> Result<Self, D::Error> {
+        let (public_encrypt_key, public_sign_key): (box_::PublicKey, sign::PublicKey) =
+            Deserialize::deserialize(deserialiser)?;
+        Ok(PublicId::new(public_encrypt_key, public_sign_key))
     }
 }
 
@@ -131,7 +140,11 @@ impl PublicId {
         PublicId {
             public_encrypt_key: public_encrypt_key,
             public_sign_key: public_sign_key,
-            name: XorName(hash::sha256::hash(&public_sign_key[..]).0),
+            name: Self::name_from_key(&public_sign_key),
         }
+    }
+
+    fn name_from_key(public_sign_key: &sign::PublicKey) -> XorName {
+        XorName(hash::sha256::hash(&public_sign_key[..]).0)
     }
 }

@@ -136,7 +136,8 @@ impl Node {
                                  full_id,
                                  min_section_size,
                                  Stats::new(),
-                                 timer);
+                                 timer,
+                                 0);
         if let Err(error) = node.crust_service.start_listening_tcp() {
             error!("{:?} Failed to start listening: {:?}", node, error);
             None
@@ -168,7 +169,8 @@ impl Node {
                                  new_full_id,
                                  min_section_size,
                                  stats,
-                                 timer);
+                                 timer,
+                                 our_section.len());
         let _ = node.peer_mgr.set_proxy(proxy_peer_id, proxy_public_id);
         node.join(our_section, &proxy_public_id);
         node
@@ -183,7 +185,8 @@ impl Node {
            new_full_id: FullId,
            min_section_size: usize,
            stats: Stats,
-           timer: Timer)
+           timer: Timer,
+           challenger_count: usize)
            -> Self {
         let public_id = *new_full_id.public_id();
         let tick_period = Duration::from_secs(TICK_TIMEOUT_SECS);
@@ -219,16 +222,14 @@ impl Node {
             candidate_status_token: None,
             bootstrappers:
                 LruCache::with_expiry_duration(Duration::from_secs(BOOTSTRAPPER_HOLD_DUR_SECS)),
-            resource_prover: ResourceProver::new(action_sender, timer),
+            resource_prover: ResourceProver::new(action_sender, timer, challenger_count),
         }
     }
 
     /// Called immediately after bootstrapping. Sends `ConnectionInfoRequest`s to all members of
     /// `our_section` to then start the candidate approval process.
     fn join(&mut self, our_section: BTreeSet<PublicId>, proxy_public_id: &PublicId) {
-        let includes_proxy = our_section.contains(proxy_public_id);
-        self.resource_prover
-            .start(our_section.len(), includes_proxy);
+        self.resource_prover.start();
 
         trace!("{:?} Relocation completed.", self);
         info!("{:?} Received relocation section. Establishing connections to {} peers.",
@@ -247,11 +248,8 @@ impl Node {
             debug!("{:?} Sending connection info to {:?} on Relocation response.",
                    self,
                    pub_id);
-            let node_auth = Authority::ManagedNode(*pub_id.name());
-            if let Err(error) = self.send_connection_info_request(*pub_id,
-                                                                  src,
-                                                                  node_auth,
-                                                                  &mut outbox) {
+            let dst = Authority::ManagedNode(*pub_id.name());
+            if let Err(error) = self.send_connection_info_request(*pub_id, src, dst, &mut outbox) {
                 debug!("{:?} - Failed to send connection info to {:?}: {:?}",
                        self,
                        pub_id,
@@ -1025,7 +1023,7 @@ impl Node {
                  message_id,
              },
              Section(_),
-             relocation_dst) => {
+             relocation_dst @ Section(_)) => {
                 self.handle_expect_candidate(old_public_id,
                                              old_client_auth,
                                              relocation_dst,
@@ -1179,7 +1177,6 @@ impl Node {
                 Ok(peer_id) => peer_id,
                 Err(_) => {
                     let src = Authority::ManagedNode(*self.name());
-                    // FIXME(Fraser) - Can this be sent to `ManagedNode` authority instead?
                     if let Err(error) = self.send_connection_info_request(new_pub_id,
                                                                           src,
                                                                           new_client_auth,
@@ -1458,13 +1455,6 @@ impl Node {
             self.disconnect_peer(&peer_id, Some(outbox));
             return;
         }
-        // FIXME(Fraser) - Create and use new helper in `PublicId::has_valid_name()`?
-        if *public_id.name() != XorName(sha256::hash(&public_id.signing_public_key().0).0) {
-            warn!("{:?} Incoming connection not validated as a proper client, so dropping it.",
-                  self);
-            self.disconnect_peer(&peer_id, Some(outbox));
-            return;
-        }
 
         for peer_id in self.peer_mgr.remove_expired_joining_nodes() {
             debug!("{:?} Removing stale joining node with peer ID {:?}",
@@ -1523,7 +1513,7 @@ impl Node {
                self,
                old_pub_id.name(),
                new_pub_id.name());
-        if !self.candidate_identify_is_valid(old_pub_id,
+        if !self.is_candidate_identify_valid(old_pub_id,
                                              new_pub_id,
                                              signature_using_old,
                                              signature_using_new) {
@@ -1596,7 +1586,7 @@ impl Node {
                        new_pub_id.name());
             }
             Err(error) => {
-                debug!("{:?} failed to handle CandidateIdentify from {}->{}: {:?} - disconnecting",
+                debug!("{:?} failed to handle CandidateIdentify {}->{}: {:?} - disconnecting",
                        self,
                        old_pub_id.name(),
                        new_pub_id.name(),
@@ -1606,7 +1596,7 @@ impl Node {
         }
     }
 
-    fn candidate_identify_is_valid(&mut self,
+    fn is_candidate_identify_valid(&self,
                                    old_pub_id: &PublicId,
                                    new_pub_id: &PublicId,
                                    signature_using_old: &sign::Signature,
@@ -2212,8 +2202,7 @@ impl Node {
                 message_id: message_id,
             };
             let src = relocation_dst;
-            // FIXME(Fraser): would it be better to use a more noisy name here rather than p000..?
-            let dst = Authority::Section(min_len_prefix.lower_bound());
+            let dst = Authority::Section(min_len_prefix.substituted_in(relocation_dst.name()));
             return self.send_routing_message(src, dst, request_content);
         }
 
@@ -3072,12 +3061,14 @@ impl Node {
         match *peer.state() {
             PeerState::Client => {
                 debug!("{:?} Client disconnected: {:?}", self, peer_id);
+                try_reconnect = false;
             }
             PeerState::JoiningNode => {
                 debug!("{:?} Joining node {:?} dropped. {} remaining.",
                        self,
                        peer_id,
                        self.peer_mgr.joining_nodes_num());
+                try_reconnect = false;
             }
             PeerState::Proxy => {
                 debug!("{:?} Lost bootstrap connection to {:?} ({:?}).",
@@ -3094,7 +3085,6 @@ impl Node {
             _ => (),
         }
 
-        // FIXME(Fraser) - `if` used to also contain `&& !peer.pub_id().is_client_id()`
         if try_reconnect && peer.valid() && self.is_approved {
             debug!("{:?} Sending connection info to {:?} due to dropped peer.",
                    self,
