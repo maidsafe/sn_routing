@@ -231,6 +231,7 @@ fn verify_tunnel_switch(nodes: &mut Vec<TestNode>, node: usize, client_1: usize,
                 assert!(name == nodes[node].name() || name == nodes[client_2].name());
                 assert_eq!(event_count, 2);
             }
+            Event::Tick => {}
             _ => {
                 panic!("{:?} received unexpected event {:?}",
                        nodes[client_1].name(),
@@ -249,6 +250,7 @@ fn verify_tunnel_switch(nodes: &mut Vec<TestNode>, node: usize, client_1: usize,
                 assert_eq!(name, nodes[client_1].name());
                 assert_eq!(event_count, 1);
             }
+            Event::Tick => {}
             _ => {
                 panic!("{:?} received unexpected event {:?}",
                        nodes[client_2].name(),

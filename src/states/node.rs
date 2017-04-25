@@ -2475,22 +2475,23 @@ impl Node {
         }
 
         if self.tick_timer_token == token {
-            if cfg!(feature = "use-mock-crust") {
-                trace!("{:?} not to carry out ticking during mock_crust test.",
-                       self);
-            } else {
-                let tick_period = Duration::from_secs(TICK_TIMEOUT_SECS);
-                self.tick_timer_token = self.timer.schedule(tick_period);
-            }
+            let tick_period = Duration::from_secs(TICK_TIMEOUT_SECS);
+            self.tick_timer_token = self.timer.schedule(tick_period);
 
             for peer_id in self.peer_mgr.remove_expired_connections() {
                 debug!("{:?} Disconnecting from timed out peer {:?}", self, peer_id);
                 let _ = self.crust_service.disconnect(peer_id);
             }
-            let transition = self.purge_invalid_rt_entries(outbox);
+
+            let transition = if cfg!(feature = "use-mock-crust") {
+                Transition::Stay
+            } else {
+                self.purge_invalid_rt_entries(outbox)
+            };
             self.merge_if_necessary();
-            #[cfg(not(feature = "use-mock-crust"))]
-            outbox.send_event(Event::Tick);
+            if self.is_approved {
+                outbox.send_event(Event::Tick);
+            }
             return transition;
         }
 
@@ -2511,15 +2512,10 @@ impl Node {
             self.candidate_timer_token = None;
             self.send_candidate_approval();
         } else if self.candidate_status_token == Some(token) {
-            if cfg!(feature = "use-mock-crust") {
-                trace!("{:?} not to show candidate status during mock_crust test.",
-                       self);
-            } else {
-                self.candidate_status_token =
-                    Some(self.timer
-                             .schedule(Duration::from_secs(CANDIDATE_STATUS_INTERVAL_SECS)));
-                self.peer_mgr.show_candidate_status();
-            }
+            self.candidate_status_token =
+                Some(self.timer
+                         .schedule(Duration::from_secs(CANDIDATE_STATUS_INTERVAL_SECS)));
+            self.peer_mgr.show_candidate_status();
         } else {
             // Each token has only one purpose, so we only need to call this if none of the above
             // matched:

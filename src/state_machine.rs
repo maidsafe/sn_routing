@@ -342,6 +342,7 @@ impl StateMachine {
         use itertools::Itertools;
         use maidsafe_utilities::SeededRng;
         use rand::Rng;
+        use std::borrow::Borrow;
 
         if self.is_running {
             let mut events = Vec::new();
@@ -380,12 +381,25 @@ impl StateMachine {
             }
             self.events.extend(events);
 
-            if self.events.is_empty() {
-                Err(TryRecvError::Empty)
-            } else {
+            let is_all_timed_out = self.events
+                .iter()
+                .all(|event| match *event {
+                         EventType::Action(ref action) => {
+                             match *action.borrow() {
+                                 Action::Timeout(_) => true,
+                                 _ => false,
+                             }
+                         }
+                         _ => false,
+                     });
+            if !self.events.is_empty() && !is_all_timed_out {
                 self.handle_event_from_list(outbox);
-                Ok(())
+                return Ok(());
             }
+            for _ in 0..self.events.len() {
+                self.handle_event_from_list(outbox);
+            }
+            Err(TryRecvError::Empty)
         } else {
             Err(TryRecvError::Disconnected)
         }
