@@ -298,7 +298,7 @@ pub fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
 pub fn poll_and_resend(nodes: &mut [TestNode], clients: &mut [TestClient]) {
     // Expect advance at least three times, given NODE_CONNECT_TIMEOUT_SECS is 60s and
     // ACK_TIMEOUT_SECS is 20s
-    let mut num_of_advance = 0;
+    let mut clock_advance_count = 0;
     for _ in 0..MAX_POLL_CALLS {
         if poll_all(nodes, clients) {
             let mut call_count = 1;
@@ -309,12 +309,12 @@ pub fn poll_and_resend(nodes: &mut [TestNode], clients: &mut [TestClient]) {
                            "Polling and advance time has been called {} times.",
                            MAX_POLL_CALLS);
             }
-        } else if num_of_advance > 3 {
+        } else if clock_advance_count > 3 {
             return;
         }
 
         FakeClock::advance_time(20 * 1000 + 1);
-        num_of_advance += 1;
+        clock_advance_count += 1;
         let _ = poll_all(nodes, clients);
     }
     panic!("Polling has been called {} times.", MAX_POLL_CALLS);

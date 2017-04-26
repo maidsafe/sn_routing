@@ -2497,12 +2497,12 @@ impl Node {
 
         if self.su_timer_token == Some(token) {
             if cfg!(feature = "use-mock-crust") {
-                trace!("{:?} not to schedule next RT request during mock_crust test.",
+                trace!("{:?} not to schedule next section update during mock_crust test.",
                        self);
             } else {
                 self.su_timeout = cmp::min(Duration::from_secs(SU_MAX_TIMEOUT_SECS),
                                            self.su_timeout * 2);
-                trace!("{:?} Scheduling next RT request for {} seconds from now.",
+                trace!("{:?} Scheduling next section update for {} seconds from now.",
                        self,
                        self.su_timeout.as_secs());
                 self.su_timer_token = Some(self.timer.schedule(self.su_timeout));

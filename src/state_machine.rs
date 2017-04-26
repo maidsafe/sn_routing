@@ -343,6 +343,7 @@ impl StateMachine {
         use maidsafe_utilities::SeededRng;
         use rand::Rng;
         use std::borrow::Borrow;
+        use std::iter::{self, Iterator};
 
         if self.is_running {
             let mut events = Vec::new();
@@ -365,21 +366,28 @@ impl StateMachine {
                 }
             }
 
-            let timed_out_events = self.state
+            let mut timed_out_events = self.state
                 .get_timed_out_tokens()
                 .iter()
                 .map(|token| EventType::Action(Box::new(Action::Timeout(*token))))
                 .collect_vec();
 
-            if !events.is_empty() {
-                for event in timed_out_events {
-                    let pos = SeededRng::thread_rng().gen_range(0, events.len());
-                    events.insert(pos, event);
-                }
-            } else {
-                events.extend(timed_out_events);
-            }
-            self.events.extend(events);
+            // Interleave timer events with routing or crust events.
+            let mut positions = iter::repeat(true)
+                .take(timed_out_events.len())
+                .chain(iter::repeat(false).take(events.len()))
+                .collect_vec();
+            SeededRng::thread_rng().shuffle(&mut positions);
+            let mut interleaved = positions
+                .iter()
+                .filter_map(|is_timed_out| if *is_timed_out {
+                                timed_out_events.pop()
+                            } else {
+                                events.pop()
+                            })
+                .collect_vec();
+            interleaved.reverse();
+            self.events.extend(interleaved);
 
             let is_all_timed_out = self.events
                 .iter()
