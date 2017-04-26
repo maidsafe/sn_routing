@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use rust_sodium::crypto::{box_, hash, sign};
-use serde::de::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
 
@@ -94,7 +94,7 @@ impl Default for FullId {
     }
 }
 
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Serialize)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 /// Network identity component containing name and public keys.
 ///
 /// Note that the `name` member is omitted when serialising `PublicId` and is calculated from the
@@ -102,13 +102,18 @@ impl Default for FullId {
 pub struct PublicId {
     public_encrypt_key: box_::PublicKey,
     public_sign_key: sign::PublicKey,
-    #[serde(skip_serializing)]
     name: XorName,
 }
 
 impl Debug for PublicId {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter, "PublicId(name: {})", self.name)
+    }
+}
+
+impl Serialize for PublicId {
+    fn serialize<S: Serializer>(&self, serialiser: S) -> Result<S::Ok, S::Error> {
+        (&self.public_encrypt_key, &self.public_sign_key).serialize(serialiser)
     }
 }
 
@@ -146,5 +151,23 @@ impl PublicId {
 
     fn name_from_key(public_sign_key: &sign::PublicKey) -> XorName {
         XorName(hash::sha256::hash(&public_sign_key[..]).0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use maidsafe_utilities::{SeededRng, serialisation};
+    use rust_sodium;
+
+    #[test]
+    fn serialisation() {
+        let mut rng = SeededRng::thread_rng();
+        unwrap!(rust_sodium::init_with_rng(&mut rng));
+
+        let full_id = FullId::new();
+        let serialised = unwrap!(serialisation::serialise(full_id.public_id()));
+        let parsed = unwrap!(serialisation::deserialise(&serialised));
+        assert_eq!(*full_id.public_id(), parsed);
     }
 }
