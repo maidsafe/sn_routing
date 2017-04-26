@@ -1171,24 +1171,23 @@ impl Node {
         // to our RT.
         // This will flag peer as valid if its found in peer_mgr regardless of their
         // connection status to us.
-        let opt_peer_id =
-            match self.peer_mgr
-                      .handle_candidate_approval(&old_pub_id, &new_pub_id, &new_client_auth) {
-                Ok(peer_id) => peer_id,
-                Err(_) => {
-                    let src = Authority::ManagedNode(*self.name());
-                    if let Err(error) = self.send_connection_info_request(new_pub_id,
-                                                                          src,
-                                                                          new_client_auth,
-                                                                          outbox) {
-                        debug!("{:?} - Failed to send connection info to {}: {:?}",
-                               self,
-                               new_pub_id.name(),
-                               error);
-                    }
-                    None
+        let opt_peer_id = match self.peer_mgr
+                  .handle_candidate_approval(&old_pub_id, &new_pub_id) {
+            Ok(peer_id) => peer_id,
+            Err(_) => {
+                let src = Authority::ManagedNode(*self.name());
+                if let Err(error) = self.send_connection_info_request(new_pub_id,
+                                                                      src,
+                                                                      new_client_auth,
+                                                                      outbox) {
+                    debug!("{:?} - Failed to send connection info to {}: {:?}",
+                           self,
+                           new_pub_id.name(),
+                           error);
                 }
-            };
+                None
+            }
+        };
 
         info!("{:?} Our section with {:?} has approved candidate {}->{}.",
               self,
@@ -1575,8 +1574,6 @@ impl Node {
                       self,
                       old_pub_id.name(),
                       new_pub_id.name());
-                // TODO: maybe set this when receiving candidate_approval instead
-                let _ = self.peer_mgr.set_peer_valid(new_pub_id.name(), true);
                 self.add_to_routing_table(new_pub_id, peer_id, is_tunnel, outbox);
             }
             Err(RoutingError::CandidateIsTunnelling) => {
