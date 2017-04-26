@@ -1125,7 +1125,7 @@ impl Node {
         // This will flag peer as valid if its found in peer_mgr regardless of their
         // connection status to us.
         let opt_peer_id = match self.peer_mgr
-                  .handle_candidate_approval(*candidate_id.name(), client_auth) {
+                  .handle_candidate_approval(*candidate_id.name()) {
             Ok(peer_id) => peer_id,
             Err(_) => {
                 let src = Authority::ManagedNode(*self.name());
@@ -1520,8 +1520,6 @@ impl Node {
                        challenge as section has already approved it.",
                       self,
                       public_id.name());
-                // TODO: maybe set this when receiving candidate_approval instead
-                let _ = self.peer_mgr.set_peer_valid(public_id.name(), true);
                 self.add_to_routing_table(&public_id, &peer_id, is_tunnel, outbox);
             }
             Err(RoutingError::CandidateIsTunnelling) => {

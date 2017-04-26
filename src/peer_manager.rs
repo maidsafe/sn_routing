@@ -341,7 +341,6 @@ impl PeerMap {
 enum CandidateState {
     VotedFor,
     AcceptedAsCandidate,
-    Approved,
 }
 
 #[derive(Debug)]
@@ -376,20 +375,11 @@ impl Candidate {
     fn is_expired(&self) -> bool {
         let timeout_duration = match self.state {
             CandidateState::VotedFor => Duration::from_secs(CANDIDATE_ACCEPT_TIMEOUT_SECS),
-            CandidateState::AcceptedAsCandidate |
-            CandidateState::Approved => {
+            CandidateState::AcceptedAsCandidate => {
                 Duration::from_secs(RESOURCE_PROOF_DURATION_SECS + ACCUMULATION_TIMEOUT_SECS)
             }
         };
         self.insertion_time.elapsed() > timeout_duration
-    }
-
-    fn is_approved(&self) -> bool {
-        match self.state {
-            CandidateState::VotedFor |
-            CandidateState::AcceptedAsCandidate => false,
-            CandidateState::Approved => true,
-        }
     }
 }
 
@@ -471,10 +461,7 @@ impl PeerManager {
                             candidate_name: XorName,
                             client_auth: Authority<XorName>)
                             -> Result<(), RoutingError> {
-        if let Some((ongoing_name, _)) =
-            self.candidates
-                .iter()
-                .find(|&(_, candidate)| !candidate.is_approved()) {
+        if let Some((ongoing_name, _)) = self.candidates.iter().next() {
             trace!("{:?} Rejected {} as a new candidate: still handling attempt by {}.",
                    self,
                    candidate_name,
@@ -495,11 +482,18 @@ impl PeerManager {
                                candidate_name: XorName,
                                client_auth: Authority<XorName>)
                                -> BTreeSet<PublicId> {
-        self.remove_unapproved_candidates(&candidate_name);
+        // Remove all candidates except this one
+        let mut old_candidates = mem::replace(&mut self.candidates, HashMap::new());
+        if let Some(candidate) = old_candidates.remove(&candidate_name) {
+            let _ = self.candidates.insert(candidate_name, candidate);
+        }
+
+        // Update or insert candidate state
         self.candidates
             .entry(candidate_name)
             .or_insert_with(|| Candidate::new(client_auth))
             .state = CandidateState::AcceptedAsCandidate;
+
         let our_section = self.routing_table.our_section();
         self.get_pub_ids(our_section)
     }
@@ -550,16 +544,14 @@ impl PeerManager {
         if let Some((name, candidate)) =
             self.candidates
                 .iter()
-                .find(|&(_, cand)| cand.passed_our_challenge && !cand.is_approved()) {
+                .find(|&(_, cand)| cand.passed_our_challenge) {
             return if let Some(peer) = self.peer_map.get_by_name(name) {
                        Ok((*peer.pub_id(), candidate.client_auth, self.ideal_rt()))
                    } else {
                        Err(RoutingError::UnknownCandidate)
                    };
         }
-        if let Some((name, _)) = self.candidates
-               .iter()
-               .find(|&(_, cand)| !cand.is_approved()) {
+        if let Some((name, _)) = self.candidates.iter().next() {
             info!("{:?} Candidate {} has not passed our resource proof challenge in time. Not \
                    sending approval vote to our section with {:?}",
                   self,
@@ -572,41 +564,35 @@ impl PeerManager {
     /// Handles accumulated candidate approval.  Marks the candidate as `Approved` and returns the
     /// candidate's `PeerId`; or `Err` if the peer is not the candidate or we are missing its info.
     pub fn handle_candidate_approval(&mut self,
-                                     candidate_name: XorName,
-                                     client_auth: Authority<XorName>)
+                                     candidate_name: XorName)
                                      -> Result<Option<PeerId>, RoutingError> {
-        if let Some(candidate) = self.candidates.get_mut(&candidate_name) {
-            candidate.state = CandidateState::Approved;
-            if let Some(peer) = self.peer_map.get_by_name_mut(&candidate_name) {
-                peer.valid = true;
-                if let Some(peer_id) = peer.peer_id() {
-                    if let PeerState::Candidate(_) = *peer.state() {
-                        return Ok(Some(*peer_id));
-                    } else {
-                        trace!("Node({}) Candidate {} not yet connected to us.",
-                               self.routing_table.our_name(),
-                               candidate_name);
-                        return Ok(None);
-                    };
+        if self.candidates.remove(&candidate_name).is_none() {
+            self.candidates.clear();
+            return Err(RoutingError::UnknownCandidate);
+        }
+
+        if let Some(peer) = self.peer_map.get_by_name_mut(&candidate_name) {
+            peer.valid = true;
+            if let Some(peer_id) = peer.peer_id() {
+                if let PeerState::Candidate(_) = *peer.state() {
+                    return Ok(Some(*peer_id));
                 } else {
-                    trace!("Node({}) No peer ID with name {}",
+                    trace!("Node({}) Candidate {} not yet connected to us.",
                            self.routing_table.our_name(),
                            candidate_name);
-                }
+                    return Ok(None);
+                };
             } else {
-                trace!("Node({}) No peer with name {}",
+                trace!("Node({}) No peer ID with name {}",
                        self.routing_table.our_name(),
                        candidate_name);
             }
-            return Err(RoutingError::InvalidStateForOperation);
+        } else {
+            trace!("Node({}) No peer with name {}",
+                   self.routing_table.our_name(),
+                   candidate_name);
         }
 
-        self.remove_unapproved_candidates(&candidate_name);
-        let mut candidate = Candidate::new(client_auth);
-        candidate.state = CandidateState::Approved;
-        let _ = self.candidates.insert(candidate_name, candidate);
-        trace!("{:?} No candidate with name {}", self, candidate_name);
-        // TODO: more specific return error
         Err(RoutingError::InvalidStateForOperation)
     }
 
@@ -629,26 +615,26 @@ impl PeerManager {
                                      -> Result<bool, RoutingError> {
         let (res, should_insert) = if let Some(candidate) = self.candidates
                .get_mut(pub_id.name()) {
-            if candidate.is_approved() {
-                (Ok(false), None)
+            let conn = self.peer_map
+                .get(peer_id)
+                .map_or(RoutingConnection::Direct,
+                        |peer| peer.to_routing_connection(is_tunnel));
+            let state = PeerState::Candidate(conn);
+            if conn == RoutingConnection::Tunnel {
+                (Err(RoutingError::CandidateIsTunnelling), Some(state))
             } else {
-                let conn = self.peer_map
-                    .get(peer_id)
-                    .map_or(RoutingConnection::Direct,
-                            |peer| peer.to_routing_connection(is_tunnel));
-                let state = PeerState::Candidate(conn);
-                if conn == RoutingConnection::Tunnel {
-                    (Err(RoutingError::CandidateIsTunnelling), Some(state))
-                } else {
-                    candidate.challenge_response = Some(ChallengeResponse {
-                                                            target_size: target_size,
-                                                            difficulty: difficulty,
-                                                            seed: seed,
-                                                            proof: VecDeque::new(),
-                                                        });
-                    (Ok(true), Some(state))
-                }
+                candidate.challenge_response = Some(ChallengeResponse {
+                                                        target_size: target_size,
+                                                        difficulty: difficulty,
+                                                        seed: seed,
+                                                        proof: VecDeque::new(),
+                                                    });
+                (Ok(true), Some(state))
             }
+        } else if self.peer_map
+                      .get_by_name(pub_id.name())
+                      .map_or(false, Peer::valid) {
+            (Ok(false), None)
         } else {
             (Err(RoutingError::UnknownCandidate), None)
         };
@@ -684,11 +670,7 @@ impl PeerManager {
                                           log_msg,
                                           (proof.len() * 100) / target_size);
                     }
-                    if candidate.is_approved() {
-                        log_msg = format!("{}and is approved by our section.", log_msg);
-                    } else {
-                        log_msg = format!("{}and is not yet approved by our section.", log_msg);
-                    }
+                    log_msg = format!("{}and is not yet approved by our section.", log_msg);
                 }
                 None => {
                     log_msg = format!("{}has not sent CandidateIdentify yet.", log_msg);
@@ -697,11 +679,9 @@ impl PeerManager {
             trace!("{}", log_msg);
         }
 
-        if have_candidate {
-            return;
+        if !have_candidate {
+            trace!("{}No candidate is currently being handled.", log_prefix);
         }
-
-        trace!("{}No candidate is currently being handled.", log_prefix);
     }
 
     /// Tries to add the given peer to the routing table.
@@ -805,9 +785,7 @@ impl PeerManager {
 
         let removal_keys = self.candidates
             .iter()
-            .filter(|&(name, candidate)| {
-                        !candidate.is_approved() && !self.routing_table.our_prefix().matches(name)
-                    })
+            .filter(|&(name, _)| !self.routing_table.our_prefix().matches(name))
             .map(|(name, _)| *name)
             .collect::<Vec<_>>();
 
@@ -1745,14 +1723,6 @@ impl PeerManager {
                 self.proxy_peer_id = None;
             }
         }
-    }
-
-    fn remove_unapproved_candidates(&mut self, candidate_name: &XorName) {
-        let old_candidates = mem::replace(&mut self.candidates, HashMap::new());
-        self.candidates = old_candidates
-            .into_iter()
-            .filter(|&(name, ref candidate)| name == *candidate_name || candidate.is_approved())
-            .collect();
     }
 
     /// Removes expired candidates and returns the list of peers from which we should disconnect.
