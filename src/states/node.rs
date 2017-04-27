@@ -2529,11 +2529,7 @@ impl Node {
                 let _ = self.crust_service.disconnect(peer_id);
             }
 
-            let transition = if cfg!(feature = "use-mock-crust") {
-                Transition::Stay
-            } else {
-                self.purge_invalid_rt_entries(outbox)
-            };
+            let transition = self.purge_invalid_rt_entries(outbox);
             self.merge_if_necessary();
             if self.is_approved {
                 outbox.send_event(Event::Tick);

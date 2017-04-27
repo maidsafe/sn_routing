@@ -256,7 +256,7 @@ mod implementation {
             }
         }
 
-        pub fn schedule(&self, deadline: Duration) -> u64 {
+        pub fn schedule(&self, duration: Duration) -> u64 {
             let mut inner = self.inner.borrow_mut();
 
             let token = inner.next_token;
@@ -264,7 +264,7 @@ mod implementation {
 
             inner
                 .deadlines
-                .entry(Instant::now() + deadline)
+                .entry(Instant::now() + duration)
                 .or_insert_with(Vec::new)
                 .push(token);
             token
@@ -281,12 +281,9 @@ mod implementation {
                 .collect_vec();
             let mut expired_tokens = Vec::new();
             for expired in expired_list {
-                // Safe to call `expect()` as we just got the key we're removing from
+                // Safe to call `unwrap!()` as we just got the key we're removing from
                 // `deadlines`.
-                let tokens = inner
-                    .deadlines
-                    .remove(&expired)
-                    .expect("Bug in `BTreeMap`.");
+                let tokens = unwrap!(inner.deadlines.remove(&expired));
                 expired_tokens.extend(tokens);
             }
             expired_tokens

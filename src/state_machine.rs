@@ -67,6 +67,22 @@ enum EventType {
     Action(Box<Action>),
 }
 
+#[cfg(feature = "use-mock-crust")]
+impl EventType {
+    fn is_not_a_timeout(&self) -> bool {
+        use std::borrow::Borrow;
+        match *self {
+            EventType::Action(ref action) => {
+                match *action.borrow() {
+                    Action::Timeout(_) => false,
+                    _ => true,
+                }
+            }
+            _ => true,
+        }
+    }
+}
+
 impl State {
     pub fn handle_action(&mut self, action: Action, outbox: &mut EventBox) -> Transition {
         match *self {
@@ -365,75 +381,63 @@ impl StateMachine {
         use itertools::Itertools;
         use maidsafe_utilities::SeededRng;
         use rand::Rng;
-        use std::borrow::Borrow;
         use std::iter::{self, Iterator};
 
-        if self.is_running {
-            let mut events = Vec::new();
-            while let Ok(category) = self.category_rx.try_recv() {
-                match category {
-                    MaidSafeEventCategory::Routing => {
-                        if let Ok(action) = self.action_rx.try_recv() {
-                            events.push(EventType::Action(Box::new(action)));
-                        } else {
-                            return Ok(self.apply_transition(Transition::Terminate, outbox));
-                        }
+        if !self.is_running {
+            return Err(TryRecvError::Disconnected);
+        }
+        let mut events = Vec::new();
+        while let Ok(category) = self.category_rx.try_recv() {
+            match category {
+                MaidSafeEventCategory::Routing => {
+                    if let Ok(action) = self.action_rx.try_recv() {
+                        events.push(EventType::Action(Box::new(action)));
+                    } else {
+                        return Ok(self.apply_transition(Transition::Terminate, outbox));
                     }
-                    MaidSafeEventCategory::Crust => {
-                        if let Ok(crust_event) = self.crust_rx.try_recv() {
-                            events.push(EventType::CrustEvent(crust_event));
-                        } else {
+                }
+                MaidSafeEventCategory::Crust => {
+                    match self.crust_rx.try_recv() {
+                        Ok(crust_event) => events.push(EventType::CrustEvent(crust_event)),
+                        Err(TryRecvError::Empty) => {}
+                        Err(TryRecvError::Disconnected) => {
                             return Ok(self.apply_transition(Transition::Terminate, outbox));
                         }
                     }
                 }
             }
-
-            let mut timed_out_events = self.state
-                .get_timed_out_tokens()
-                .iter()
-                .map(|token| EventType::Action(Box::new(Action::Timeout(*token))))
-                .collect_vec();
-
-            // Interleave timer events with routing or crust events.
-            let mut positions = iter::repeat(true)
-                .take(timed_out_events.len())
-                .chain(iter::repeat(false).take(events.len()))
-                .collect_vec();
-            SeededRng::thread_rng().shuffle(&mut positions);
-            let mut interleaved = positions
-                .iter()
-                .filter_map(|is_timed_out| if *is_timed_out {
-                                timed_out_events.pop()
-                            } else {
-                                events.pop()
-                            })
-                .collect_vec();
-            interleaved.reverse();
-            self.events.extend(interleaved);
-
-            let is_all_timed_out = self.events
-                .iter()
-                .all(|event| match *event {
-                         EventType::Action(ref action) => {
-                             match *action.borrow() {
-                                 Action::Timeout(_) => true,
-                                 _ => false,
-                             }
-                         }
-                         _ => false,
-                     });
-            if !self.events.is_empty() && !is_all_timed_out {
-                self.handle_event_from_list(outbox);
-                return Ok(());
-            }
-            for _ in 0..self.events.len() {
-                self.handle_event_from_list(outbox);
-            }
-            Err(TryRecvError::Empty)
-        } else {
-            Err(TryRecvError::Disconnected)
         }
+
+        let mut timed_out_events = self.state
+            .get_timed_out_tokens()
+            .iter()
+            .map(|token| EventType::Action(Box::new(Action::Timeout(*token))))
+            .collect_vec();
+
+        // Interleave timer events with routing or crust events.
+        let mut positions = iter::repeat(true)
+            .take(timed_out_events.len())
+            .chain(iter::repeat(false).take(events.len()))
+            .collect_vec();
+        SeededRng::thread_rng().shuffle(&mut positions);
+        let mut interleaved = positions
+            .iter()
+            .filter_map(|is_timed_out| if *is_timed_out {
+                            timed_out_events.pop()
+                        } else {
+                            events.pop()
+                        })
+            .collect_vec();
+        interleaved.reverse();
+        self.events.extend(interleaved);
+
+        if self.events.iter().any(EventType::is_not_a_timeout) {
+            return Ok(self.handle_event_from_list(outbox));
+        }
+        while !self.events.is_empty() {
+            self.handle_event_from_list(outbox);
+        }
+        Err(TryRecvError::Empty)
     }
 
     pub fn name(&self) -> Option<XorName> {

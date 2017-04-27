@@ -286,7 +286,7 @@ pub fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
             handled_message = nodes.iter_mut().any(TestNode::poll);
         }
         handled_message = clients.iter().any(|c| c.inner.poll()) || handled_message;
-        if !handled_message && !nodes[0].handle.reset_message_handled() {
+        if !handled_message && !nodes[0].handle.reset_message_sent() {
             return result;
         }
         result = true;
