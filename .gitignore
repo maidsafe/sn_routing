@@ -13,3 +13,4 @@ target/
 /bin
 *.sublime-*
 .cargo/
+.DS_Store

@@ -136,6 +136,7 @@ extern crate unwrap;
 extern crate crust;
 extern crate itertools;
 extern crate lru_time_cache;
+extern crate num_bigint;
 extern crate rand;
 extern crate resource_proof;
 extern crate rust_sodium;

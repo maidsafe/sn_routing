@@ -36,8 +36,7 @@ impl Service {
         Self::with_handle(&support::get_current(), event_sender)
     }
 
-    /// Create new mock `Service` by explicitly passing the mock device to associate
-    /// with.
+    /// Create new mock `Service` by explicitly passing the mock device to associate with.
     pub fn with_handle(handle: &ServiceHandle,
                        event_sender: CrustEventSender)
                        -> Result<Self, CrustError> {

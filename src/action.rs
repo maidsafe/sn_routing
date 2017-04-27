@@ -31,7 +31,6 @@ use xor_name::XorName;
 ///    2. `Action::Terminate` indicates to `Core` that no new actions should be taken and all
 ///       pending events should be handled.
 ///       After completion `Core` will send `Event::Terminated`.
-#[derive(Clone)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
 pub enum Action {
