@@ -918,7 +918,8 @@ impl PeerManager {
     }
 
     /// Returns whether we should initiate a merge.
-    pub fn should_merge(&self) -> bool {
+    pub fn should_merge(&mut self) -> bool {
+        self.remove_expired_expected();
         self.expected_peers.is_empty() && self.routing_table.should_merge()
     }
 
@@ -1168,6 +1169,12 @@ impl PeerManager {
             let _ = self.unknown_peers.remove(&peer_id);
         }
 
+        self.remove_expired_expected();
+
+        expired_connections
+    }
+
+    fn remove_expired_expected(&mut self) {
         let mut expired_expected = Vec::new();
         for (name, timestamp) in &self.expected_peers {
             if timestamp.elapsed() >= Duration::from_secs(NODE_CONNECT_TIMEOUT_SECS) {
@@ -1177,8 +1184,6 @@ impl PeerManager {
         for name in expired_expected {
             let _ = self.expected_peers.remove(&name);
         }
-
-        expired_connections
     }
 
     /// Returns the peer ID of the given node if it is our proxy or client or
@@ -1849,38 +1854,6 @@ impl fmt::Debug for PeerManager {
                "Node({}({:b}))",
                self.routing_table.our_name(),
                self.routing_table.our_prefix())
-    }
-}
-
-#[cfg(feature = "use-mock-crust")]
-impl PeerManager {
-    /// Removes all peers that are not connected, as well as all expected peers and candidates.
-    /// Returns `true` if any entry was removed, and `false` if there were no such peers.
-    pub fn remove_connecting_peers(&mut self) -> bool {
-        // Remove all peers that are not yet connected.
-        let remove_names = self.peer_map
-            .peers()
-            .filter(|peer| match peer.state {
-                        PeerState::ConnectionInfoPreparing { .. } |
-                        PeerState::ConnectionInfoReady(_) |
-                        PeerState::CrustConnecting |
-                        PeerState::SearchingForTunnel => true,
-                        _ => false,
-                    })
-            .map(|peer| *peer.name())
-            .collect_vec();
-
-        if remove_names.is_empty() && self.expected_peers.is_empty() && self.candidates.is_empty() {
-            return false;
-        }
-
-        for name in remove_names {
-            let _ = self.peer_map.remove_by_name(&name);
-        }
-
-        self.expected_peers.clear();
-        self.candidates.clear();
-        true
     }
 }
 

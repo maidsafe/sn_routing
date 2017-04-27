@@ -17,6 +17,7 @@
 
 use super::{TestClient, TestNode, create_connected_clients, create_connected_nodes, gen_range,
             gen_range_except, poll_and_resend, verify_invariant_for_all_nodes};
+use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
 use routing::{Authority, DataIdentifier, Event, EventStream, MessageId, QUORUM_DENOMINATOR,
@@ -121,6 +122,9 @@ fn add_node_and_poll<R: Rng>(rng: &mut R,
     let failed_node = nodes.remove(new_node);
     drop(failed_node);
     poll_and_resend(&mut nodes, &mut []);
+    // max(RESOURCE_PROOF_DURATION_SECS + ACCUMULATION_TIMEOUT_SECS,
+    //     CANDIDATE_ACCEPT_TIMEOUT_SECS) = 330s
+    FakeClock::advance_time(330 * 1000);
     None
 }
 
@@ -361,13 +365,6 @@ fn send_and_receive<R: Rng>(rng: &mut R, nodes: &mut [TestNode], min_section_siz
     poll_and_resend(nodes, &mut []);
 
     expected_gets.verify(nodes, &mut []);
-
-    // Every few iterations, clear the nodes' caches, simulating a longer time between events.
-    if rng.gen_weighted_bool(5) {
-        for node in nodes {
-            node.inner.clear_state();
-        }
-    }
 }
 
 fn client_gets(network: &mut Network, nodes: &mut [TestNode], min_section_size: usize) {

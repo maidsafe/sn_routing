@@ -460,16 +460,6 @@ impl EventStepper for Node {
 
 #[cfg(feature = "use-mock-crust")]
 impl Node {
-    /// Resend all unacknowledged messages.
-    pub fn resend_unacknowledged(&mut self) -> bool {
-        self.machine.current_mut().resend_unacknowledged()
-    }
-
-    /// Are there any unacknowledged messages?
-    pub fn has_unacknowledged(&mut self) -> bool {
-        self.machine.current().has_unacknowledged()
-    }
-
     /// Purge invalid routing entries.
     pub fn purge_invalid_rt_entry(&mut self) {
         self.machine.current_mut().purge_invalid_rt_entry()
@@ -480,11 +470,6 @@ impl Node {
         self.machine
             .current()
             .has_tunnel_clients(client_1, client_2)
-    }
-
-    /// Resend all unacknowledged messages.
-    pub fn clear_state(&mut self) {
-        self.machine.current_mut().clear_state();
     }
 
     /// Returns a quorum of signatures for the neighbouring section's list or `None` if we don't

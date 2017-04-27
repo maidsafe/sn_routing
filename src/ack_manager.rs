@@ -103,26 +103,6 @@ impl AckManager {
     }
 }
 
-#[cfg(feature = "use-mock-crust")]
-impl AckManager {
-    /// Are we waiting for any acks?
-    pub fn has_pending(&self) -> bool {
-        !self.pending.is_empty()
-    }
-
-    /// Collects all time-out tokens.
-    pub fn timer_tokens(&self) -> Vec<u64> {
-        self.pending
-            .iter()
-            .map(|(_, unacked_msg)| unacked_msg.timer_token)
-            .collect::<Vec<_>>()
-    }
-
-    pub fn clear(&mut self) {
-        self.received.clear()
-    }
-}
-
 impl Ack {
     /// Compute an `Ack` from a message.
     pub fn compute(routing_msg: &RoutingMessage) -> Result<Ack, RoutingError> {

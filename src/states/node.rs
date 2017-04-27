@@ -2528,20 +2528,28 @@ impl Node {
                 debug!("{:?} Disconnecting from timed out peer {:?}", self, peer_id);
                 let _ = self.crust_service.disconnect(peer_id);
             }
+
             let transition = self.purge_invalid_rt_entries(outbox);
             self.merge_if_necessary();
-            outbox.send_event(Event::Tick);
+            if self.is_approved {
+                outbox.send_event(Event::Tick);
+            }
             return transition;
         }
 
         if self.su_timer_token == Some(token) {
-            self.su_timeout = cmp::min(Duration::from_secs(SU_MAX_TIMEOUT_SECS),
-                                       self.su_timeout * 2);
-            trace!("{:?} Scheduling next RT request for {} seconds from now.",
-                   self,
-                   self.su_timeout.as_secs());
-            self.su_timer_token = Some(self.timer.schedule(self.su_timeout));
-            self.send_section_update(None);
+            if cfg!(feature = "use-mock-crust") {
+                trace!("{:?} not to schedule next section update during mock_crust test.",
+                       self);
+            } else {
+                self.su_timeout = cmp::min(Duration::from_secs(SU_MAX_TIMEOUT_SECS),
+                                           self.su_timeout * 2);
+                trace!("{:?} Scheduling next section update for {} seconds from now.",
+                       self,
+                       self.su_timeout.as_secs());
+                self.su_timer_token = Some(self.timer.schedule(self.su_timeout));
+                self.send_section_update(None);
+            }
         } else if self.candidate_timer_token == Some(token) {
             self.candidate_timer_token = None;
             self.send_candidate_approval();
@@ -3304,32 +3312,13 @@ impl Node {
         self.tunnels.has_clients(client_1, client_2)
     }
 
-    /// Resends all unacknowledged messages.
-    pub fn resend_unacknowledged(&mut self) -> bool {
-        let timer_tokens = self.ack_mgr.timer_tokens();
-        for timer_token in &timer_tokens {
-            self.resend_unacknowledged_timed_out_msgs(*timer_token);
-        }
-        !timer_tokens.is_empty()
-    }
-
-    /// Are there any unacknowledged messages?
-    pub fn has_unacknowledged(&self) -> bool {
-        self.ack_mgr.has_pending()
-    }
-
     /// Purge invalid routing entries.
     pub fn purge_invalid_rt_entry(&mut self) {
         let _ = self.purge_invalid_rt_entries(&mut EventBuf::new());
     }
 
-    pub fn clear_state(&mut self) {
-        self.ack_mgr.clear();
-        self.routing_msg_filter.clear();
-        if self.peer_mgr.remove_connecting_peers() {
-            self.merge_if_necessary();
-        }
-        self.tunnels.clear_new_clients();
+    pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
+        self.timer.get_timed_out_tokens()
     }
 
     pub fn section_list_signatures(&self,
