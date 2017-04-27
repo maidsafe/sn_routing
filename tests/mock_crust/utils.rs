@@ -273,6 +273,7 @@ impl Cache for TestCache {
 
 /// Process all events. Returns whether there were any events.
 pub fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
+    assert!(!nodes.is_empty());
     let mut result = false;
     for _ in 0..MAX_POLL_CALLS {
         let mut handled_message = false;
@@ -285,7 +286,7 @@ pub fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
             handled_message = nodes.iter_mut().any(TestNode::poll);
         }
         handled_message = clients.iter().any(|c| c.inner.poll()) || handled_message;
-        if !handled_message {
+        if !handled_message && !nodes[0].handle.reset_message_handled() {
             return result;
         }
         result = true;
@@ -296,26 +297,17 @@ pub fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
 /// Polls and processes all events, until there are no unacknowledged messages left and clearing
 /// the nodes' state triggers no new events anymore.
 pub fn poll_and_resend(nodes: &mut [TestNode], clients: &mut [TestClient]) {
-    // Expect advance at least three times, given NODE_CONNECT_TIMEOUT_SECS is 60s and
-    // ACK_TIMEOUT_SECS is 20s
     let mut clock_advance_count = 0;
     for _ in 0..MAX_POLL_CALLS {
         if poll_all(nodes, clients) {
-            let mut call_count = 1;
-            while poll_all(nodes, clients) {
-                call_count += 1;
-                assert_ne!(call_count,
-                           MAX_POLL_CALLS,
-                           "Polling and advance time has been called {} times.",
-                           MAX_POLL_CALLS);
-            }
+            clock_advance_count = 0;
         } else if clock_advance_count > 3 {
+            // Expect advance at least three times, given NODE_CONNECT_TIMEOUT_SECS is 60s and
+            // ACK_TIMEOUT_SECS is 20s
             return;
         }
-
         FakeClock::advance_time(20 * 1000 + 1);
         clock_advance_count += 1;
-        let _ = poll_all(nodes, clients);
     }
     panic!("Polling has been called {} times.", MAX_POLL_CALLS);
 }

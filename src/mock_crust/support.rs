@@ -39,6 +39,7 @@ pub struct NetworkImpl {
     blocked_connections: HashSet<(Endpoint, Endpoint)>,
     delayed_connections: HashSet<(Endpoint, Endpoint)>,
     rng: SeededRng,
+    message_handled: bool,
 }
 
 impl Network {
@@ -61,6 +62,7 @@ impl Network {
                                          // so that a fresh one is used in every test, i.e. it will
                                          // not have been affected by initialising rust_sodium.
                                          rng: SeededRng::new(),
+                                         message_handled: false,
                                      })))
     }
 
@@ -166,6 +168,13 @@ impl Network {
         self.0.borrow_mut().rng.new_rng()
     }
 
+    /// Return whether handled any message since laster query.
+    pub fn reset_message_handled(&self) -> bool {
+        let message_handled = self.0.borrow().message_handled;
+        self.0.borrow_mut().message_handled = false;
+        message_handled
+    }
+
     fn connection_blocked(&self, sender: Endpoint, receiver: Endpoint) -> bool {
         self.0
             .borrow()
@@ -174,6 +183,7 @@ impl Network {
     }
 
     fn send(&self, sender: Endpoint, receiver: Endpoint, packet: Packet) {
+        self.0.borrow_mut().message_handled = true;
         self.0
             .borrow_mut()
             .queue
@@ -280,6 +290,11 @@ impl ServiceHandle {
         self.0
             .borrow()
             .is_peer_connected(&handle.0.borrow().peer_id)
+    }
+
+    /// Returns whether handled any message across the network since last query and reset it.
+    pub fn reset_message_handled(&self) -> bool {
+        self.0.borrow().network.reset_message_handled()
     }
 }
 
