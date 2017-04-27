@@ -37,7 +37,7 @@ use rust_sodium;
 #[cfg(feature = "use-mock-crust")]
 use rust_sodium::crypto::sign;
 use state_machine::{State, StateMachine};
-use states;
+use states::{self, Bootstrapping, BootstrappingTargetState};
 #[cfg(feature = "use-mock-crust")]
 use std::collections::BTreeMap;
 #[cfg(feature = "use-mock-crust")]
@@ -105,19 +105,15 @@ impl NodeBuilder {
            })
     }
 
-    // TODO - remove this `rustfmt_skip` once rustfmt stops adding trailing space at `else if`.
-    #[cfg_attr(rustfmt, rustfmt_skip)]
     fn make_state_machine(self,
                           min_section_size: usize,
                           outbox: &mut EventBox)
                           -> (RoutingActionSender, StateMachine) {
-        let full_id = FullId::new();
-
         StateMachine::new(move |action_sender, crust_service, timer, outbox2| if self.first {
                               if let Some(state) = states::Node::first(action_sender,
                                                                        self.cache,
                                                                        crust_service,
-                                                                       full_id,
+                                                                       FullId::new(),
                                                                        min_section_size,
                                                                        timer) {
                                   State::Node(state)
@@ -125,22 +121,20 @@ impl NodeBuilder {
                                   State::Terminated
                               }
                           } else if
-                              self.deny_other_local_nodes && crust_service.has_peers_on_lan() {
-                              error!("Bootstrapping({:?}) More than 1 routing node found on LAN. \
-                                      Currently this is not supported",
-                                     full_id.public_id().name());
-
-                              outbox2.send_event(Event::Terminate);
-                              State::Terminated
-                          } else {
-                              states::Bootstrapping::new(action_sender, self.cache,
-                                                         false,
-                                                         crust_service,
-                                                         full_id,
-                                                         min_section_size,
-                                                         timer)
-                                  .map_or(State::Terminated, State::Bootstrapping)
-                          },
+            self.deny_other_local_nodes && crust_service.has_peers_on_lan() {
+            error!("More than one routing node found on LAN. Currently this is not supported.");
+            outbox2.send_event(Event::Terminate);
+            State::Terminated
+        } else {
+            Bootstrapping::new(action_sender,
+                               self.cache,
+                               BootstrappingTargetState::JoiningNode,
+                               crust_service,
+                               FullId::new(),
+                               min_section_size,
+                               timer)
+                    .map_or(State::Terminated, State::Bootstrapping)
+        },
                           outbox)
     }
 }
@@ -511,16 +505,23 @@ impl Node {
     }
 
     /// Sets a name to be used when the next node relocation request is received by this node.
-    pub fn set_next_node_name(&mut self, relocation_name: XorName) {
+    pub fn set_next_relocation_dst(&mut self, dst: XorName) {
         self.machine
             .current_mut()
-            .set_next_node_name(Some(relocation_name))
+            .set_next_relocation_dst(Some(dst))
+    }
+
+    /// Sets an interval to be used when a node is required to generate a new name.
+    pub fn set_next_relocation_interval(&mut self, interval: (XorName, XorName)) {
+        self.machine
+            .current_mut()
+            .set_next_relocation_interval(interval)
     }
 
     /// Clears the name to be used when the next node relocation request is received by this node so
     /// the normal process is followed to calculate the relocated name.
-    pub fn clear_next_node_name(&mut self) {
-        self.machine.current_mut().set_next_node_name(None)
+    pub fn clear_next_relocation_dst(&mut self) {
+        self.machine.current_mut().set_next_relocation_dst(None)
     }
 }
 

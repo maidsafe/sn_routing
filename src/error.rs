@@ -79,8 +79,8 @@ pub enum RoutingError {
     FilterCheckFailed,
     /// Failure to bootstrap off the provided endpoints
     FailedToBootstrap,
-    /// Public id rejected because of disallowed relocated status
-    RejectedPublicId,
+    /// Node's new name doesn't fall within the specified target address range.
+    InvalidRelocationTargetRange,
     /// A client with `client_restriction == true` tried to send a message restricted to nodes.
     RejectedClientMessage,
     /// Routing Table error

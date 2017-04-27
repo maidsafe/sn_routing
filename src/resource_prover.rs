@@ -42,11 +42,9 @@ use utils::DisplayDuration;
 /// our section) and sending a `CandidateApproval` for this candidate. If the candidate cannot
 /// satisfy the proof of resource challenge within this time, no `CandidateApproval` is sent.
 pub const RESOURCE_PROOF_DURATION_SECS: u64 = 300;
-/// Time (in seconds) after which a `GetNodeName` request is resent.
-const GET_NODE_NAME_TIMEOUT_SECS: u64 = 60 + RESOURCE_PROOF_DURATION_SECS;
 /// Maximum time a new node will wait to receive `NodeApproval` after receiving a
-/// `GetNodeNameResponse`. This covers the built-in delay of the process and also allows time for
-/// the message to accumulate and be sent via four different routes.
+/// `RelocateResponse`. This covers the built-in delay of the process and also allows time for the
+/// message to accumulate and be sent via four different routes.
 const APPROVAL_TIMEOUT_SECS: u64 = RESOURCE_PROOF_DURATION_SECS + ACCUMULATION_TIMEOUT_SECS +
                                    (4 * ACK_TIMEOUT_SECS);
 /// Interval between displaying info about ongoing approval progress, in seconds.
@@ -61,9 +59,6 @@ pub struct ResourceProver {
     approval_expiry_time: Instant,
     /// Number of expected resource proof challengers.
     challenger_count: usize,
-    /// Whether our proxy is expected to be sending us a resource proof challenge (in which case it
-    /// will be trivial) or not.
-    proxy_is_resource_proof_challenger: bool,
     /// Map of ResourceProofResponse parts.
     response_parts: HashMap<PeerId, Vec<DirectMessage>>,
     /// Map of workers
@@ -73,42 +68,27 @@ pub struct ResourceProver {
 
 impl ResourceProver {
     /// Create an instance.
-    pub fn new(action_sender: RoutingActionSender, timer: Timer) -> Self {
+    pub fn new(action_sender: RoutingActionSender, timer: Timer, challenger_count: usize) -> Self {
         ResourceProver {
             action_sender: action_sender,
             get_approval_timer_token: None,
             approval_progress_timer_token: None,
             approval_expiry_time: Instant::now(),
-            challenger_count: 0,
-            proxy_is_resource_proof_challenger: false,
+            challenger_count: challenger_count,
             response_parts: Default::default(),
             workers: Default::default(),
             timer: timer,
         }
     }
 
-    /// Start timers relating to relocation
-    pub fn start_relocation(&mut self) {
-        let duration = Duration::from_secs(GET_NODE_NAME_TIMEOUT_SECS);
-        self.get_approval_timer_token = Some(self.timer.schedule(duration));
-    }
-
-    /// Update timers when receiving a new name (after relocation, before resource proof)
-    pub fn handle_new_name(&mut self, challengers: usize, includes_proxy: bool) {
+    /// Start timers when receiving a new name (after relocation, before resource proof)
+    pub fn start(&mut self) {
         let duration = Duration::from_secs(APPROVAL_TIMEOUT_SECS);
         self.approval_expiry_time = Instant::now() + duration;
         self.get_approval_timer_token = Some(self.timer.schedule(duration));
         self.approval_progress_timer_token =
             Some(self.timer
                      .schedule(Duration::from_secs(APPROVAL_PROGRESS_INTERVAL_SECS)));
-
-        // Exclude the proxy as it sends a trivial challenge
-        self.challenger_count = if includes_proxy {
-            challengers - 1
-        } else {
-            challengers
-        };
-        self.proxy_is_resource_proof_challenger = includes_proxy;
     }
 
     /// Start generating a resource proof in a background thread
@@ -264,33 +244,23 @@ impl ResourceProver {
         }
     }
 
-    // This will be called if `GetNodeNameResponse` times out, or if the subsequent `NodeApproval`
-    // times out.
     fn handle_approval_timeout(&mut self, log_ident: String, outbox: &mut EventBox) {
-        if self.response_parts.is_empty() {
-            // `GetNodeNameResponse` has timed out.
-            info!("{} Failed to get relocated name from the network, so restarting.",
-                  log_ident);
-            outbox.send_event(Event::RestartRequired);
+        let completed = self.response_parts
+            .values()
+            .filter(|parts| parts.is_empty())
+            .count();
+        if completed == self.challenger_count {
+            info!("{} All {} resource proof responses fully sent, but timed out waiting \
+                   for approval from the network. This could be due to the target section \
+                   experiencing churn. Terminating node.",
+                  log_ident,
+                  completed);
         } else {
-            // `NodeApproval` has timed out.
-            let completed = self.response_parts
-                .values()
-                .filter(|parts| parts.is_empty())
-                .count();
-            if completed == self.challenger_count {
-                info!("{} All {} resource proof responses fully sent, but timed out waiting \
-                       for approval from the network. This could be due to the target section \
-                       experiencing churn. Terminating node.",
-                      log_ident,
-                      completed);
-            } else {
-                info!("{} Failed to get approval from the network. {} Terminating node.",
-                      log_ident,
-                      self.response_progress());
-            }
-            outbox.send_event(Event::Terminate);
+            info!("{} Failed to get approval from the network. {} Terminating node.",
+                  log_ident,
+                  self.response_progress());
         }
+        outbox.send_event(Event::Terminate);
     }
 
     // For the ongoing collection of `ResourceProofResponse` messages, returns a tuple comprising:
@@ -317,10 +287,6 @@ impl ResourceProver {
             } else {
                 completed += 1;
             }
-        }
-
-        if self.proxy_is_resource_proof_challenger {
-            completed = completed.saturating_sub(1);
         }
 
         if self.response_parts.is_empty() {

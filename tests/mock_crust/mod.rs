@@ -141,7 +141,7 @@ fn simultaneous_joining_nodes() {
 
     // Add two nodes simultaneously, to two different sections:
     // We now have two sections, with prefixes 0 and 1. Make one joining node contact each section,
-    // and tell each section to allocate a name in its own section when `GetNodeName` is received.
+    // and tell each section to allocate a name in its own section when `Relocate` is received.
     // This is to test that the routing table gets updated correctly (previously one new node would
     // miss the new node added to the neighbouring section).
     let (name0, name1) = (XorName([0u8; XOR_NAME_LEN]), XorName([255u8; XOR_NAME_LEN]));
@@ -149,9 +149,9 @@ fn simultaneous_joining_nodes() {
 
     for node in &mut *nodes {
         if prefix0.matches(&node.name()) {
-            node.inner.set_next_node_name(name0);
+            node.inner.set_next_relocation_dst(name0);
         } else {
-            node.inner.set_next_node_name(name1);
+            node.inner.set_next_relocation_dst(name1);
         }
     }
 
