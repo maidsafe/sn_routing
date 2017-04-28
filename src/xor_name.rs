@@ -109,7 +109,7 @@ impl XorName {
     /// ignored.
     fn from_big_uint(value: BigUint) -> XorName {
         let little_endian_value = value.to_bytes_le();
-        if little_endian_value.len() <= XOR_NAME_LEN {
+        if little_endian_value.len() > XOR_NAME_LEN {
             error!("This BigUint value exceeds the maximum capable of being held as an XorName.");
         }
         // Convert the little-endian vector to a 32-byte big-endian array.

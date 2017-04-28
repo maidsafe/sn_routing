@@ -519,7 +519,6 @@ impl Debug for Node {
 
 impl Drop for Node {
     fn drop(&mut self) {
-        self.poll();
         let _ = self.machine
             .current_mut()
             .handle_action(Action::Terminate, &mut self.event_buffer);
