@@ -1072,27 +1072,6 @@ impl PeerManager {
                       })
     }
 
-    /// Inserts the given peer with `valid` set to false.
-    ///
-    /// This is to be used when we receive a `NodeIdentify` from a peer we do not have in the
-    /// `peer_map`. We flag the `valid` attribute to false and accept the node as a temporary
-    /// connection with the state `AwaitingNodeIdentify`.
-    // TODO - Using `AwaitingNodeIdentify` for this extra purpose should be fixed in a future
-    //        cleanup. What we need is a state indicating we've received a `NodeIdentify` but
-    //        haven't been told by a section that we _should_ be connected to this peer. That
-    //        state could be applicable in tandem with some of the other current states though, so
-    //        it's not a trivial issue.
-    pub fn insert_pending_approval_node(&mut self,
-                                        peer_id: PeerId,
-                                        pub_id: PublicId,
-                                        is_tunnel: bool)
-                                        -> bool {
-        self.insert_peer(pub_id,
-                         Some(peer_id),
-                         PeerState::AwaitingNodeIdentify(is_tunnel),
-                         false)
-    }
-
     /// Inserts the given joining node into the map. Returns true if we already
     /// had a peer with the given peer id.
     pub fn insert_joining_node(&mut self, peer_id: PeerId, pub_id: PublicId) -> bool {
