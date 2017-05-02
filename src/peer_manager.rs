@@ -52,6 +52,16 @@ const CANDIDATE_ACCEPT_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) the node waits for connection from an expected node.
 const NODE_CONNECT_TIMEOUT_SECS: u64 = 60;
 
+#[cfg(feature = "use-mock-crust")]
+#[doc(hidden)]
+pub mod test_consts {
+    pub const ACCUMULATION_TIMEOUT_SECS: u64 = super::ACCUMULATION_TIMEOUT_SECS;
+    pub const ACK_TIMEOUT_SECS: u64 = ::ack_manager::ACK_TIMEOUT_SECS;
+    pub const CANDIDATE_ACCEPT_TIMEOUT_SECS: u64 = super::CANDIDATE_ACCEPT_TIMEOUT_SECS;
+    pub const NODE_CONNECT_TIMEOUT_SECS: u64 = super::NODE_CONNECT_TIMEOUT_SECS;
+    pub const RESOURCE_PROOF_DURATION_SECS: u64 = super::RESOURCE_PROOF_DURATION_SECS;
+}
+
 pub type SectionMap = BTreeMap<VersionedPrefix<XorName>, BTreeSet<PublicId>>;
 
 #[derive(Default)]

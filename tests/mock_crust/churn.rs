@@ -23,6 +23,8 @@ use rand::Rng;
 use routing::{Authority, DataIdentifier, Event, EventStream, MessageId, QUORUM_DENOMINATOR,
               QUORUM_NUMERATOR, Request, XorName};
 use routing::mock_crust::{Config, Network};
+use routing::test_consts::{ACCUMULATION_TIMEOUT_SECS, CANDIDATE_ACCEPT_TIMEOUT_SECS,
+                           RESOURCE_PROOF_DURATION_SECS};
 use std::cmp;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::iter;
@@ -122,9 +124,10 @@ fn add_node_and_poll<R: Rng>(rng: &mut R,
     let failed_node = nodes.remove(new_node);
     drop(failed_node);
     poll_and_resend(&mut nodes, &mut []);
-    // max(RESOURCE_PROOF_DURATION_SECS + ACCUMULATION_TIMEOUT_SECS,
-    //     CANDIDATE_ACCEPT_TIMEOUT_SECS) = 330s
-    FakeClock::advance_time(330 * 1000);
+    let duration_ms = cmp::max(RESOURCE_PROOF_DURATION_SECS + ACCUMULATION_TIMEOUT_SECS,
+                               CANDIDATE_ACCEPT_TIMEOUT_SECS) * 1000;
+
+    FakeClock::advance_time(duration_ms);
     None
 }
 
