@@ -1634,28 +1634,11 @@ impl Node {
                             peer_id: &PeerId,
                             is_tunnel: bool,
                             outbox: &mut EventBox) {
-        let (peer_found, peer_valid) = if let Some(peer) =
-            self.peer_mgr.get_peer_by_name(public_id.name()) {
-            (true, peer.valid())
+        let peer_valid = if let Some(peer) = self.peer_mgr.get_peer_by_name(public_id.name()) {
+            peer.valid()
         } else {
-            // This can be our joining node sending its relocated name, before we're expecting it.
-            if let Some(joining_node_key) = self.peer_mgr.get_joining_node(peer_id) {
-                if joining_node_key == public_id.signing_public_key() {
-                    return;
-                }
-            }
-            (false, false)
-        };
-
-        if !peer_found {
-            // These are peers we do not have in our peer manager yet. Could be because of a
-            // disconnect and reconnect via tunnel. We thus add them to the peer manager and
-            // indicate invalid to wait for group approval before moving to RT
-            self.peer_mgr
-                .insert_pending_approval_node(*peer_id, *public_id, is_tunnel);
             return;
-        }
-
+        };
         self.peer_mgr.set_peer_id(public_id.name(), *peer_id);
         if peer_valid {
             self.add_to_routing_table(public_id, peer_id, is_tunnel, outbox);
