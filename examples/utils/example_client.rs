@@ -81,7 +81,7 @@ impl ExampleClient {
         let message_id = MessageId::new();
         unwrap!(self.routing_client
                     .send_get_request(Authority::NaeManager(*request.name()),
-                                      request.clone(),
+                                      request,
                                       message_id));
 
         // Wait for Get success event from Routing
