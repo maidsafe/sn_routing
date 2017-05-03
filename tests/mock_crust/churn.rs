@@ -17,11 +17,14 @@
 
 use super::{TestClient, TestNode, create_connected_clients, create_connected_nodes, gen_range,
             gen_range_except, poll_and_resend, verify_invariant_for_all_nodes};
+use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
 use routing::{Authority, DataIdentifier, Event, EventStream, MessageId, QUORUM_DENOMINATOR,
               QUORUM_NUMERATOR, Request, XorName};
 use routing::mock_crust::{Config, Network};
+use routing::test_consts::{ACCUMULATION_TIMEOUT_SECS, CANDIDATE_ACCEPT_TIMEOUT_SECS,
+                           RESOURCE_PROOF_DURATION_SECS};
 use std::cmp;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::iter;
@@ -121,6 +124,10 @@ fn add_node_and_poll<R: Rng>(rng: &mut R,
     let failed_node = nodes.remove(new_node);
     drop(failed_node);
     poll_and_resend(&mut nodes, &mut []);
+    let duration_ms = cmp::max(RESOURCE_PROOF_DURATION_SECS + ACCUMULATION_TIMEOUT_SECS,
+                               CANDIDATE_ACCEPT_TIMEOUT_SECS) * 1000;
+
+    FakeClock::advance_time(duration_ms);
     None
 }
 
@@ -361,13 +368,6 @@ fn send_and_receive<R: Rng>(rng: &mut R, nodes: &mut [TestNode], min_section_siz
     poll_and_resend(nodes, &mut []);
 
     expected_gets.verify(nodes, &mut []);
-
-    // Every few iterations, clear the nodes' caches, simulating a longer time between events.
-    if rng.gen_weighted_bool(5) {
-        for node in nodes {
-            node.inner.clear_state();
-        }
-    }
 }
 
 fn client_gets(network: &mut Network, nodes: &mut [TestNode], min_section_size: usize) {

@@ -388,18 +388,8 @@ impl Bootstrapped for Client {
 
 #[cfg(feature = "use-mock-crust")]
 impl Client {
-    /// Resends all unacknowledged messages.
-    pub fn resend_unacknowledged(&mut self) -> bool {
-        let timer_tokens = self.ack_mgr.timer_tokens();
-        for timer_token in &timer_tokens {
-            self.resend_unacknowledged_timed_out_msgs(*timer_token);
-        }
-        !timer_tokens.is_empty()
-    }
-
-    /// Are there any unacknowledged messages?
-    pub fn has_unacknowledged(&self) -> bool {
-        self.ack_mgr.has_pending()
+    pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
+        self.timer.get_timed_out_tokens()
     }
 }
 

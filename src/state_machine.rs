@@ -47,6 +47,8 @@ pub struct StateMachine {
     crust_tx: Sender<CrustEvent>,
     action_rx: Receiver<Action>,
     is_running: bool,
+    #[cfg(feature = "use-mock-crust")]
+    events: Vec<EventType>,
 }
 
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
@@ -57,6 +59,28 @@ pub enum State {
     JoiningNode(JoiningNode),
     Node(Node),
     Terminated,
+}
+
+#[cfg(feature = "use-mock-crust")]
+enum EventType {
+    CrustEvent(CrustEvent),
+    Action(Box<Action>),
+}
+
+#[cfg(feature = "use-mock-crust")]
+impl EventType {
+    fn is_not_a_timeout(&self) -> bool {
+        use std::borrow::Borrow;
+        match *self {
+            EventType::Action(ref action) => {
+                match *action.borrow() {
+                    Action::Timeout(_) => false,
+                    _ => true,
+                }
+            }
+            _ => true,
+        }
+    }
 }
 
 impl State {
@@ -121,26 +145,6 @@ impl Debug for State {
 
 #[cfg(feature = "use-mock-crust")]
 impl State {
-    pub fn resend_unacknowledged(&mut self) -> bool {
-        match *self {
-            State::Client(ref mut state) => state.resend_unacknowledged(),
-            State::JoiningNode(ref mut state) => state.resend_unacknowledged(),
-            State::Node(ref mut state) => state.resend_unacknowledged(),
-            State::Bootstrapping(_) |
-            State::Terminated => false,
-        }
-    }
-
-    pub fn has_unacknowledged(&self) -> bool {
-        match *self {
-            State::Client(ref state) => state.has_unacknowledged(),
-            State::Node(ref state) => state.has_unacknowledged(),
-            State::JoiningNode(ref state) => state.has_unacknowledged(),
-            State::Bootstrapping(_) |
-            State::Terminated => false,
-        }
-    }
-
     pub fn purge_invalid_rt_entry(&mut self) {
         if let State::Node(ref mut state) = *self {
             state.purge_invalid_rt_entry();
@@ -151,16 +155,6 @@ impl State {
         match *self {
             State::Node(ref state) => state.has_tunnel_clients(client_1, client_2),
             _ => false,
-        }
-    }
-
-    pub fn clear_state(&mut self) {
-        match *self {
-            State::Node(ref mut state) => state.clear_state(),
-            State::Bootstrapping(_) |
-            State::Client(_) |
-            State::JoiningNode(_) |
-            State::Terminated => (),
         }
     }
 
@@ -182,6 +176,14 @@ impl State {
     pub fn set_next_relocation_interval(&mut self, interval: (XorName, XorName)) {
         if let State::Node(ref mut node) = *self {
             node.set_next_relocation_interval(interval);
+        }
+    }
+
+    pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
+        match *self {
+            State::Node(ref mut state) => state.get_timed_out_tokens(),
+            State::Client(ref mut state) => state.get_timed_out_tokens(),
+            _ => vec![],
         }
     }
 }
@@ -234,7 +236,18 @@ impl StateMachine {
             State::Terminated => false,
             _ => true,
         };
-
+        #[cfg(feature = "use-mock-crust")]
+        let machine = StateMachine {
+            category_rx: category_rx,
+            category_tx: category_tx,
+            crust_rx: crust_rx,
+            crust_tx: crust_tx,
+            action_rx: action_rx,
+            state: state,
+            is_running: is_running,
+            events: Vec::new(),
+        };
+        #[cfg(not(feature = "use-mock-crust"))]
         let machine = StateMachine {
             category_rx: category_rx,
             category_tx: category_tx,
@@ -271,6 +284,21 @@ impl StateMachine {
                         Transition::Terminate
                     }
                 }
+            }
+        };
+
+        self.apply_transition(transition, outbox)
+    }
+
+    // Handle an event from the list and send any events produced for higher layers.
+    #[cfg(feature = "use-mock-crust")]
+    fn handle_event_from_list(&mut self, outbox: &mut EventBox) {
+        assert!(!self.events.is_empty());
+        let event = self.events.remove(0);
+        let transition = match event {
+            EventType::Action(action) => self.state.handle_action(*action, outbox),
+            EventType::CrustEvent(crust_event) => {
+                self.state.handle_crust_event(crust_event, outbox)
             }
         };
 
@@ -336,6 +364,7 @@ impl StateMachine {
     }
 
     /// Query for a result, or yield: Err(NothingAvailable), Err(Disconnected) or Err(Terminated).
+    #[cfg(not(feature = "use-mock-crust"))]
     pub fn try_step(&mut self, outbox: &mut EventBox) -> Result<(), TryRecvError> {
         if self.is_running {
             let category = self.category_rx.try_recv()?;
@@ -344,6 +373,71 @@ impl StateMachine {
         } else {
             Err(TryRecvError::Disconnected)
         }
+    }
+
+    /// Query for a result, or yield: Err(NothingAvailable), Err(Disconnected).
+    #[cfg(feature = "use-mock-crust")]
+    pub fn try_step(&mut self, outbox: &mut EventBox) -> Result<(), TryRecvError> {
+        use itertools::Itertools;
+        use maidsafe_utilities::SeededRng;
+        use rand::Rng;
+        use std::iter::{self, Iterator};
+
+        if !self.is_running {
+            return Err(TryRecvError::Disconnected);
+        }
+        let mut events = Vec::new();
+        while let Ok(category) = self.category_rx.try_recv() {
+            match category {
+                MaidSafeEventCategory::Routing => {
+                    if let Ok(action) = self.action_rx.try_recv() {
+                        events.push(EventType::Action(Box::new(action)));
+                    } else {
+                        return Ok(self.apply_transition(Transition::Terminate, outbox));
+                    }
+                }
+                MaidSafeEventCategory::Crust => {
+                    match self.crust_rx.try_recv() {
+                        Ok(crust_event) => events.push(EventType::CrustEvent(crust_event)),
+                        Err(TryRecvError::Empty) => {}
+                        Err(TryRecvError::Disconnected) => {
+                            return Ok(self.apply_transition(Transition::Terminate, outbox));
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut timed_out_events = self.state
+            .get_timed_out_tokens()
+            .iter()
+            .map(|token| EventType::Action(Box::new(Action::Timeout(*token))))
+            .collect_vec();
+
+        // Interleave timer events with routing or crust events.
+        let mut positions = iter::repeat(true)
+            .take(timed_out_events.len())
+            .chain(iter::repeat(false).take(events.len()))
+            .collect_vec();
+        SeededRng::thread_rng().shuffle(&mut positions);
+        let mut interleaved = positions
+            .iter()
+            .filter_map(|is_timed_out| if *is_timed_out {
+                            timed_out_events.pop()
+                        } else {
+                            events.pop()
+                        })
+            .collect_vec();
+        interleaved.reverse();
+        self.events.extend(interleaved);
+
+        if self.events.iter().any(EventType::is_not_a_timeout) {
+            return Ok(self.handle_event_from_list(outbox));
+        }
+        while !self.events.is_empty() {
+            self.handle_event_from_list(outbox);
+        }
+        Err(TryRecvError::Empty)
     }
 
     pub fn name(&self) -> Option<XorName> {

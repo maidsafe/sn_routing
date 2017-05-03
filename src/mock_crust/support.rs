@@ -39,6 +39,7 @@ pub struct NetworkImpl {
     blocked_connections: HashSet<(Endpoint, Endpoint)>,
     delayed_connections: HashSet<(Endpoint, Endpoint)>,
     rng: SeededRng,
+    message_sent: bool,
 }
 
 impl Network {
@@ -61,6 +62,7 @@ impl Network {
                                          // so that a fresh one is used in every test, i.e. it will
                                          // not have been affected by initialising rust_sodium.
                                          rng: SeededRng::new(),
+                                         message_sent: false,
                                      })))
     }
 
@@ -166,6 +168,13 @@ impl Network {
         self.0.borrow_mut().rng.new_rng()
     }
 
+    /// Return whether sent any message since previous query and reset the flag.
+    pub fn reset_message_sent(&self) -> bool {
+        let message_sent = self.0.borrow().message_sent;
+        self.0.borrow_mut().message_sent = false;
+        message_sent
+    }
+
     fn connection_blocked(&self, sender: Endpoint, receiver: Endpoint) -> bool {
         self.0
             .borrow()
@@ -174,8 +183,9 @@ impl Network {
     }
 
     fn send(&self, sender: Endpoint, receiver: Endpoint, packet: Packet) {
-        self.0
-            .borrow_mut()
+        let mut network_impl = self.0.borrow_mut();
+        network_impl.message_sent = true;
+        network_impl
             .queue
             .entry((sender, receiver))
             .or_insert_with(VecDeque::new)
@@ -280,6 +290,11 @@ impl ServiceHandle {
         self.0
             .borrow()
             .is_peer_connected(&handle.0.borrow().peer_id)
+    }
+
+    /// Returns whether sent any message across the network since previous query and reset the flag.
+    pub fn reset_message_sent(&self) -> bool {
+        self.0.borrow().network.reset_message_sent()
     }
 }
 

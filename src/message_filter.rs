@@ -99,13 +99,6 @@ impl<Message: Hash> MessageFilter<Message> {
         let _old_val = self.count.remove(&hash(message));
     }
 
-    /// Clears the filter, removing all the entries.
-    #[cfg(feature = "use-mock-crust")]
-    pub fn clear(&mut self) {
-        self.count.clear();
-        self.timeout_queue.clear();
-    }
-
     fn remove_expired(&mut self) {
         let now = Instant::now();
         while self.timeout_queue

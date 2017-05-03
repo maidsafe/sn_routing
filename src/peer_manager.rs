@@ -52,6 +52,16 @@ const CANDIDATE_ACCEPT_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) the node waits for connection from an expected node.
 const NODE_CONNECT_TIMEOUT_SECS: u64 = 60;
 
+#[cfg(feature = "use-mock-crust")]
+#[doc(hidden)]
+pub mod test_consts {
+    pub const ACCUMULATION_TIMEOUT_SECS: u64 = super::ACCUMULATION_TIMEOUT_SECS;
+    pub const ACK_TIMEOUT_SECS: u64 = ::ack_manager::ACK_TIMEOUT_SECS;
+    pub const CANDIDATE_ACCEPT_TIMEOUT_SECS: u64 = super::CANDIDATE_ACCEPT_TIMEOUT_SECS;
+    pub const NODE_CONNECT_TIMEOUT_SECS: u64 = super::NODE_CONNECT_TIMEOUT_SECS;
+    pub const RESOURCE_PROOF_DURATION_SECS: u64 = super::RESOURCE_PROOF_DURATION_SECS;
+}
+
 pub type SectionMap = BTreeMap<VersionedPrefix<XorName>, BTreeSet<PublicId>>;
 
 #[derive(Default)]
@@ -918,7 +928,8 @@ impl PeerManager {
     }
 
     /// Returns whether we should initiate a merge.
-    pub fn should_merge(&self) -> bool {
+    pub fn should_merge(&mut self) -> bool {
+        self.remove_expired_expected();
         self.expected_peers.is_empty() && self.routing_table.should_merge()
     }
 
@@ -1071,27 +1082,6 @@ impl PeerManager {
                       })
     }
 
-    /// Inserts the given peer with `valid` set to false.
-    ///
-    /// This is to be used when we receive a `NodeIdentify` from a peer we do not have in the
-    /// `peer_map`. We flag the `valid` attribute to false and accept the node as a temporary
-    /// connection with the state `AwaitingNodeIdentify`.
-    // TODO - Using `AwaitingNodeIdentify` for this extra purpose should be fixed in a future
-    //        cleanup. What we need is a state indicating we've received a `NodeIdentify` but
-    //        haven't been told by a section that we _should_ be connected to this peer. That
-    //        state could be applicable in tandem with some of the other current states though, so
-    //        it's not a trivial issue.
-    pub fn insert_pending_approval_node(&mut self,
-                                        peer_id: PeerId,
-                                        pub_id: PublicId,
-                                        is_tunnel: bool)
-                                        -> bool {
-        self.insert_peer(pub_id,
-                         Some(peer_id),
-                         PeerState::AwaitingNodeIdentify(is_tunnel),
-                         false)
-    }
-
     /// Inserts the given joining node into the map. Returns true if we already
     /// had a peer with the given peer id.
     pub fn insert_joining_node(&mut self, peer_id: PeerId, pub_id: PublicId) -> bool {
@@ -1168,6 +1158,12 @@ impl PeerManager {
             let _ = self.unknown_peers.remove(&peer_id);
         }
 
+        self.remove_expired_expected();
+
+        expired_connections
+    }
+
+    fn remove_expired_expected(&mut self) {
         let mut expired_expected = Vec::new();
         for (name, timestamp) in &self.expected_peers {
             if timestamp.elapsed() >= Duration::from_secs(NODE_CONNECT_TIMEOUT_SECS) {
@@ -1177,8 +1173,6 @@ impl PeerManager {
         for name in expired_expected {
             let _ = self.expected_peers.remove(&name);
         }
-
-        expired_connections
     }
 
     /// Returns the peer ID of the given node if it is our proxy or client or
@@ -1849,38 +1843,6 @@ impl fmt::Debug for PeerManager {
                "Node({}({:b}))",
                self.routing_table.our_name(),
                self.routing_table.our_prefix())
-    }
-}
-
-#[cfg(feature = "use-mock-crust")]
-impl PeerManager {
-    /// Removes all peers that are not connected, as well as all expected peers and candidates.
-    /// Returns `true` if any entry was removed, and `false` if there were no such peers.
-    pub fn remove_connecting_peers(&mut self) -> bool {
-        // Remove all peers that are not yet connected.
-        let remove_names = self.peer_map
-            .peers()
-            .filter(|peer| match peer.state {
-                        PeerState::ConnectionInfoPreparing { .. } |
-                        PeerState::ConnectionInfoReady(_) |
-                        PeerState::CrustConnecting |
-                        PeerState::SearchingForTunnel => true,
-                        _ => false,
-                    })
-            .map(|peer| *peer.name())
-            .collect_vec();
-
-        if remove_names.is_empty() && self.expected_peers.is_empty() && self.candidates.is_empty() {
-            return false;
-        }
-
-        for name in remove_names {
-            let _ = self.peer_map.remove_by_name(&name);
-        }
-
-        self.expected_peers.clear();
-        self.candidates.clear();
-        true
     }
 }
 

@@ -367,23 +367,6 @@ impl Base for JoiningNode {
     }
 }
 
-#[cfg(feature = "use-mock-crust")]
-impl JoiningNode {
-    /// Resends all unacknowledged messages.
-    pub fn resend_unacknowledged(&mut self) -> bool {
-        let timer_tokens = self.ack_mgr.timer_tokens();
-        for timer_token in &timer_tokens {
-            self.resend_unacknowledged_timed_out_msgs(*timer_token);
-        }
-        !timer_tokens.is_empty()
-    }
-
-    /// Are there any unacknowledged messages?
-    pub fn has_unacknowledged(&self) -> bool {
-        self.ack_mgr.has_pending()
-    }
-}
-
 impl Bootstrapped for JoiningNode {
     fn ack_mgr(&self) -> &AckManager {
         &self.ack_mgr
