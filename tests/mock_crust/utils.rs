@@ -22,7 +22,7 @@ use routing::{Authority, Cache, Client, Data, DataIdentifier, Event, EventStream
               ImmutableData, Node, NullCache, Prefix, PublicId, Request, Response, RoutingTable,
               XorName, Xorable, verify_network_invariant};
 use routing::mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
-use routing::test_consts::{ACK_TIMEOUT_SECS, NODE_CONNECT_TIMEOUT_SECS};
+use routing::test_consts::ACK_TIMEOUT_SECS;
 use std::{cmp, thread};
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap};
@@ -305,16 +305,11 @@ pub fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
 /// Polls and processes all events, until there are no unacknowledged messages left and clearing
 /// the nodes' state triggers no new events anymore.
 pub fn poll_and_resend(nodes: &mut [TestNode], clients: &mut [TestClient]) {
-    let mut clock_advanced_by_ms = 0;
-    let clock_advance_duration_ms = ACK_TIMEOUT_SECS * 1000 + 1;
     for _ in 0..MAX_POLL_CALLS {
-        if poll_all(nodes, clients) {
-            clock_advanced_by_ms = 0;
-        } else if clock_advanced_by_ms > (NODE_CONNECT_TIMEOUT_SECS * 1000) {
+        if !poll_all(nodes, clients) {
             return;
         }
-        FakeClock::advance_time(clock_advance_duration_ms);
-        clock_advanced_by_ms += clock_advance_duration_ms;
+        FakeClock::advance_time(ACK_TIMEOUT_SECS * 1000 + 1);
     }
     panic!("Polling has been called {} times.", MAX_POLL_CALLS);
 }

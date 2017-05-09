@@ -203,6 +203,10 @@ fn tunnel_clients() {
     network.block_connection(direct_pair.0, direct_pair.1);
     network.block_connection(direct_pair.1, direct_pair.0);
 
+    // After a split, nodes might reconnect and thereby have each other in Connected state.
+    ::fake_clock::FakeClock::advance_time(61 * 1000);
+    let _ = poll_all(&mut nodes, &mut []);
+
     remove_nodes_from_section_till_merge(&XorName([64u8; XOR_NAME_LEN]),
                                          &mut nodes,
                                          min_section_size);

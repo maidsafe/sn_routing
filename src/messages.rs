@@ -122,19 +122,6 @@ pub enum DirectMessage {
         /// Indicate whether we intend to remain a client, as opposed to becoming a routing node.
         client_restriction: bool,
     },
-    /// Sent from an established node (i.e. one which has successfully joined the network) to
-    /// another node, to allow the latter to add the former to its routing table.
-    NodeIdentify {
-        /// Keys and claimed name, serialised outside routing.
-        serialised_public_id: Vec<u8>,
-        /// Signature of the originator of this message.
-        signature: sign::Signature,
-        /// FIXME: Should be deprecated.
-        /// Tunnel connection indicator from sender which would override
-        /// intermediate peer_mgr states for routing table connection type.
-        /// Should not influence JoiningNode / Proxy states which are expected to be direct only.
-        is_tunnel: bool,
-    },
     /// Sent from a node which is still joining the network to another node, to allow the latter to
     /// add the former to its routing table.
     CandidateIdentify {
@@ -159,6 +146,8 @@ pub enum DirectMessage {
     TunnelRequest(PublicId),
     /// Sent as a response to `TunnelRequest` if the node can act as a tunnel.
     TunnelSuccess(PublicId),
+    /// Sent as a response to `TunnelSuccess` if the node is selected to act as a tunnel.
+    TunnelSelect(PublicId),
     /// Sent from a tunnel node to indicate that the given peer has disconnected.
     TunnelClosed(PublicId),
     /// Sent to a tunnel node to indicate the tunnel is not needed any more.
@@ -730,10 +719,10 @@ impl Debug for DirectMessage {
             ClientIdentify { client_restriction: false, .. } => {
                 write!(formatter, "ClientIdentify (joining node)")
             }
-            NodeIdentify { .. } => write!(formatter, "NodeIdentify {{ .. }}"),
             CandidateIdentify { .. } => write!(formatter, "CandidateIdentify {{ .. }}"),
             TunnelRequest(peer_id) => write!(formatter, "TunnelRequest({:?})", peer_id),
             TunnelSuccess(peer_id) => write!(formatter, "TunnelSuccess({:?})", peer_id),
+            TunnelSelect(peer_id) => write!(formatter, "TunnelSelect({:?})", peer_id),
             TunnelClosed(peer_id) => write!(formatter, "TunnelClosed({:?})", peer_id),
             TunnelDisconnect(peer_id) => write!(formatter, "TunnelDisconnect({:?})", peer_id),
             ResourceProof {
