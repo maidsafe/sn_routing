@@ -38,12 +38,12 @@ use routing_table::Prefix;
 use rust_sodium;
 use rust_sodium::crypto::sign;
 use state_machine::{State, StateMachine};
-use states;
+use states::{self, Bootstrapping, BootstrappingTargetState};
 use std::collections::{BTreeMap, BTreeSet};
 #[cfg(feature = "use-mock-crust")]
 use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::{Receiver, RecvError, Sender, TryRecvError, channel};
-use types::MessageId;
+use types::{MessageId, RoutingActionSender};
 use xor_name::XorName;
 
 // Helper macro to implement request sending methods.
@@ -135,7 +135,7 @@ impl NodeBuilder {
         let mut ev_buffer = EventBuf::new();
 
         // start the handler for routing without a restriction to become a full node
-        let machine = self.make_state_machine(&mut ev_buffer);
+        let (_, machine) = self.make_state_machine(&mut ev_buffer);
         let (tx, rx) = channel();
 
         Ok(Node {
@@ -146,37 +146,35 @@ impl NodeBuilder {
            })
     }
 
-    fn make_state_machine(self, outbox: &mut EventBox) -> StateMachine {
-        let full_id = FullId::new();
-        let init = move |crust_service, timer, outbox2: &mut EventBox| if self.first {
-            if let Some(state) = states::Node::first(self.cache,
-                                                     crust_service,
-                                                     full_id,
-                                                     MIN_SECTION_SIZE,
-                                                     timer) {
-                State::Node(state)
-            } else {
-                State::Terminated
-            }
-        } else if
+    fn make_state_machine(self, outbox: &mut EventBox) -> (RoutingActionSender, StateMachine) {
+        StateMachine::new(move |action_sender, crust_service, timer, outbox2| if self.first {
+                              if let Some(state) = states::Node::first(action_sender,
+                                                                       self.cache,
+                                                                       crust_service,
+                                                                       FullId::new(),
+                                                                       MIN_SECTION_SIZE,
+                                                                       timer) {
+                                  State::Node(state)
+                              } else {
+                                  State::Terminated
+                              }
+                          } else if
             self.deny_other_local_nodes && crust_service.has_peers_on_lan() {
-            error!("Bootstrapping({:?}) More than 1 routing node found on LAN. \
-                                      Currently this is not supported",
-                   full_id.public_id().name());
-
+            error!("More than one routing node found on LAN. Currently this is not supported.");
             outbox2.send_event(Event::Terminate);
             State::Terminated
         } else {
-            states::Bootstrapping::new(self.cache,
-                                       false,
-                                       crust_service,
-                                       full_id,
-                                       MIN_SECTION_SIZE,
-                                       timer)
+            Bootstrapping::new(action_sender,
+                               self.cache,
+                               BootstrappingTargetState::JoiningNode,
+                               crust_service,
+                               FullId::new(),
+                               MIN_SECTION_SIZE,
+                               timer)
                     .map_or(State::Terminated, State::Bootstrapping)
-        };
-
-        StateMachine::new(init, outbox, None).1
+        },
+                          outbox,
+                          None)
     }
 }
 
@@ -505,16 +503,6 @@ impl EventStepper for Node {
 
 #[cfg(feature = "use-mock-crust")]
 impl Node {
-    /// Resend all unacknowledged messages.
-    pub fn resend_unacknowledged(&mut self) -> bool {
-        self.machine.current_mut().resend_unacknowledged()
-    }
-
-    /// Are there any unacknowledged messages?
-    pub fn has_unacknowledged(&mut self) -> bool {
-        self.machine.current().has_unacknowledged()
-    }
-
     /// Purge invalid routing entries.
     pub fn purge_invalid_rt_entry(&mut self) {
         self.machine.current_mut().purge_invalid_rt_entry()
@@ -525,11 +513,6 @@ impl Node {
         self.machine
             .current()
             .has_tunnel_clients(client_1, client_2)
-    }
-
-    /// Resend all unacknowledged messages.
-    pub fn clear_state(&mut self) {
-        self.machine.current_mut().clear_state();
     }
 
     /// Returns a quorum of signatures for the neighbouring section's list or `None` if we don't
@@ -550,16 +533,23 @@ impl Node {
     }
 
     /// Sets a name to be used when the next node relocation request is received by this node.
-    pub fn set_next_node_name(&mut self, relocation_name: XorName) {
+    pub fn set_next_relocation_dst(&mut self, dst: XorName) {
         self.machine
             .current_mut()
-            .set_next_node_name(Some(relocation_name))
+            .set_next_relocation_dst(Some(dst))
+    }
+
+    /// Sets an interval to be used when a node is required to generate a new name.
+    pub fn set_next_relocation_interval(&mut self, interval: (XorName, XorName)) {
+        self.machine
+            .current_mut()
+            .set_next_relocation_interval(interval)
     }
 
     /// Clears the name to be used when the next node relocation request is received by this node so
     /// the normal process is followed to calculate the relocated name.
-    pub fn clear_next_node_name(&mut self) {
-        self.machine.current_mut().set_next_node_name(None)
+    pub fn clear_next_relocation_dst(&mut self) {
+        self.machine.current_mut().set_next_relocation_dst(None)
     }
 }
 
@@ -572,7 +562,6 @@ impl Debug for Node {
 
 impl Drop for Node {
     fn drop(&mut self) {
-        self.poll();
         let _ = self.machine
             .current_mut()
             .handle_action(Action::Terminate, &mut self.event_buffer);

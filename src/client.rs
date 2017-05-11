@@ -35,7 +35,7 @@ use routing_table::Authority;
 use rust_sodium;
 use rust_sodium::crypto::sign;
 use state_machine::{State, StateMachine};
-use states;
+use states::{Bootstrapping, BootstrappingTargetState};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::mpsc::{Receiver, Sender, channel};
 #[cfg(feature = "use-mock-crust")]
@@ -68,12 +68,15 @@ impl Client {
                           outbox: &mut EventBox,
                           config: Option<Config>)
                           -> (RoutingActionSender, StateMachine) {
-        let cache = Box::new(NullCache);
-        let full_id = keys.unwrap_or_else(FullId::new);
-
-        StateMachine::new(move |crust_service, timer, _outbox2| {
-            states::Bootstrapping::new(cache, true, crust_service, full_id, MIN_SECTION_SIZE, timer)
-                .map_or(State::Terminated, State::Bootstrapping)
+        StateMachine::new(move |action_sender, crust_service, timer, _outbox2| {
+            Bootstrapping::new(action_sender,
+                               Box::new(NullCache),
+                               BootstrappingTargetState::Client,
+                               crust_service,
+                               keys.unwrap_or_else(FullId::new),
+                               MIN_SECTION_SIZE,
+                               timer)
+                    .map_or(State::Terminated, State::Bootstrapping)
         },
                           outbox,
                           config)
@@ -503,16 +506,6 @@ impl Client {
     /// Returns the name of this node.
     pub fn name(&self) -> Result<XorName, RoutingError> {
         self.machine.name().ok_or(RoutingError::Terminated)
-    }
-
-    /// Resend all unacknowledged messages.
-    pub fn resend_unacknowledged(&mut self) -> bool {
-        self.machine.current_mut().resend_unacknowledged()
-    }
-
-    /// Are there any unacknowledged messages?
-    pub fn has_unacknowledged(&self) -> bool {
-        self.machine.current().has_unacknowledged()
     }
 
     /// Returns the `crust::Config` associated with the `crust::Service` (if any).
