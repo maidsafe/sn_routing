@@ -21,9 +21,7 @@ use data::{Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use event::Event;
 use event_stream::{EventStepper, EventStream};
-use id::FullId;
-#[cfg(feature = "use-mock-crust")]
-use id::PublicId;
+use id::{FullId, PublicId};
 use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, RELOCATE_PRIORITY, Request, Response,
                UserMessage};
 use outbox::{EventBox, EventBuf};

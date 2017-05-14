@@ -47,8 +47,6 @@ const CONNECTING_PEER_TIMEOUT_SECS: u64 = 90;
 const CONNECTED_PEER_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) after which a `VotedFor` candidate will be removed.
 const CANDIDATE_ACCEPT_TIMEOUT_SECS: u64 = 60;
-/// Time (in seconds) the node waits for connection from an expected node.
-const EXPECTED_PEER_TIMEOUT_SECS: u64 = 60;
 
 #[cfg(feature = "use-mock-crust")]
 #[doc(hidden)]
@@ -57,6 +55,8 @@ pub mod test_consts {
     pub const ACK_TIMEOUT_SECS: u64 = ::ack_manager::ACK_TIMEOUT_SECS;
     pub const CANDIDATE_ACCEPT_TIMEOUT_SECS: u64 = super::CANDIDATE_ACCEPT_TIMEOUT_SECS;
     pub const RESOURCE_PROOF_DURATION_SECS: u64 = super::RESOURCE_PROOF_DURATION_SECS;
+    pub const CONNECTING_PEER_TIMEOUT_SECS: u64 = super::CONNECTING_PEER_TIMEOUT_SECS;
+    pub const CONNECTED_PEER_TIMEOUT_SECS: u64 = super::CONNECTED_PEER_TIMEOUT_SECS;
 }
 
 pub type SectionMap = BTreeMap<VersionedPrefix<XorName>, BTreeSet<PublicId>>;
@@ -106,6 +106,18 @@ pub enum RoutingConnection {
     Direct,
     /// The peer is connected via a tunnel.
     Tunnel,
+}
+
+impl RoutingConnection {
+    /// Returns `true` if this is a tunnel connection.
+    fn is_tunnel(&self) -> bool {
+        match *self {
+            RoutingConnection::Tunnel => true,
+            RoutingConnection::Direct |
+            RoutingConnection::JoiningNode(_) |
+            RoutingConnection::Proxy(_) => false,
+        }
+    }
 }
 
 /// Our relationship status with a known peer.
@@ -227,6 +239,21 @@ impl Peer {
         self.valid
     }
 
+    /// Returns connected status of `Peer`
+    /// `None` for not connected. `Some(true)` for tunnels and `Some(false)` for direct connections
+    fn is_connected(&self) -> Option<bool> {
+        match self.state {
+            PeerState::ConnectionInfoPreparing { .. } |
+            PeerState::ConnectionInfoReady(_) |
+            PeerState::CrustConnecting |
+            PeerState::SearchingForTunnel => None,
+            PeerState::JoiningNode | PeerState::Proxy | PeerState::Client => Some(false),
+            PeerState::Connected(is_tunnel) => Some(is_tunnel),
+            PeerState::Candidate(conn) |
+            PeerState::Routing(conn) => Some(conn.is_tunnel()),
+        }
+    }
+
     /// Returns `true` if the peer is not connected and has timed out. In this case, it can be
     /// safely removed from the peer map.
     fn is_expired(&self) -> bool {
@@ -243,21 +270,6 @@ impl Peer {
         };
 
         self.timestamp.elapsed() >= Duration::from_secs(timeout)
-    }
-
-    fn is_connected(&self) -> bool {
-        match self.state {
-            PeerState::ConnectionInfoPreparing { .. } |
-            PeerState::ConnectionInfoReady(_) |
-            PeerState::CrustConnecting |
-            PeerState::SearchingForTunnel => false,
-            PeerState::JoiningNode |
-            PeerState::Proxy |
-            PeerState::Candidate(_) |
-            PeerState::Client |
-            PeerState::Routing(_) |
-            PeerState::Connected(_) => true,
-        }
     }
 
     /// Returns the `RoutingConnection` type for this peer when it is put in the routing table.
@@ -384,7 +396,6 @@ impl fmt::Display for Candidate {
 pub struct PeerManager {
     connection_token_map: HashMap<u32, PublicId>,
     peers: HashMap<PublicId, Peer>,
-    expected_peers: HashMap<PublicId, Instant>,
     routing_table: RoutingTable<XorName>,
     our_public_id: PublicId,
     /// Joining nodes which want to join our section, indexed by "old" public ID (i.e. their
@@ -398,7 +409,6 @@ impl PeerManager {
         PeerManager {
             connection_token_map: HashMap::new(),
             peers: HashMap::new(),
-            expected_peers: HashMap::new(),
             routing_table: RoutingTable::new(*our_public_id.name(), min_section_size),
             our_public_id: our_public_id,
             candidates: HashMap::new(),
@@ -415,12 +425,6 @@ impl PeerManager {
     /// Returns the routing table.
     pub fn routing_table(&self) -> &RoutingTable<XorName> {
         &self.routing_table
-    }
-
-    /// Notes that a new peer should be expected. This should only be called for peers not already
-    /// in our routing table.
-    pub fn expect_peer(&mut self, id: &PublicId) {
-        let _ = self.expected_peers.insert(*id, Instant::now());
     }
 
     /// Adds a potential candidate to the candidate list setting its state to `VotedFor`.  If
@@ -566,34 +570,34 @@ impl PeerManager {
         Err(RoutingError::UnknownCandidate)
     }
 
-    /// Handles accumulated candidate approval.  Marks the candidate as `Approved` and returns the
-    /// candidate's `PublicId`; or `Err` if the peer is not the candidate or we're missing its info.
+    /// Handles accumulated candidate approval. Marks the candidate as `Approved` and returns if the
+    /// candidate is connected or `Err` if the peer is not the candidate or we're missing its info.
     pub fn handle_candidate_approval(&mut self,
                                      old_pub_id: &PublicId,
                                      new_pub_id: &PublicId)
-                                     -> Result<bool, RoutingError> {
+                                     -> Result<Option<bool>, RoutingError> {
         if self.candidates.remove(old_pub_id).is_none() {
             self.candidates.clear();
             return Err(RoutingError::UnknownCandidate);
         }
 
         let debug_id = format!("{:?}", self);
-        if let Some(peer) = self.peers.get_mut(new_pub_id) {
+        let res = if let Some(peer) = self.peers.get_mut(new_pub_id) {
             peer.valid = true;
-            if let PeerState::Candidate(_) = *peer.state() {
-                return Ok(true);
-            } else {
+            let is_connected = peer.is_connected();
+            if is_connected.is_none() {
                 trace!("{} Candidate {}->{} not yet connected to us.",
                        debug_id,
                        old_pub_id.name(),
                        new_pub_id.name());
-                return Ok(false);
-            };
+            }
+            Ok(is_connected)
         } else {
             trace!("{} No peer with name {}", debug_id, new_pub_id.name());
-        }
-        // TODO: more specific return error
-        Err(RoutingError::InvalidStateForOperation)
+            Err(RoutingError::InvalidStateForOperation)
+        };
+
+        res
     }
 
     /// Updates peer's state to `Candidate` in the peer map if it is an unapproved candidate and
@@ -705,7 +709,6 @@ impl PeerManager {
                           pub_id.name());
         }
 
-        let _ = self.expected_peers.remove(pub_id);
         let res = match self.routing_table.add(*pub_id.name()) {
             res @ Ok(_) |
             res @ Err(RoutingTableError::AlreadyExists) => res,
@@ -759,16 +762,9 @@ impl PeerManager {
                         })
             .collect_vec();
 
-        let expected_peers_to_drop = self.expected_peers
-            .iter()
-            .filter(|&(ref id, _)| self.routing_table.need_to_add(id.name()).is_err())
-            .map(|(id, _)| *id)
-            .collect_vec();
-
         ids_to_drop = ids_to_drop
             .into_iter()
             .chain(candidates_to_drop.into_iter())
-            .chain(expected_peers_to_drop.into_iter())
             .collect_vec();
 
         let ids_to_drop = self.remove_split_peers(ids_to_drop);
@@ -780,29 +776,29 @@ impl PeerManager {
     /// the list of peers that have been dropped and need to be disconnected.
     pub fn add_prefix(&mut self, ver_pfx: VersionedPrefix<XorName>) -> Vec<PublicId> {
         let names_to_drop = self.routing_table.add_prefix(ver_pfx);
-        let mut ids_to_drop = names_to_drop
+        let ids_to_drop = names_to_drop
             .iter()
             .filter_map(|name| self.get_peer_by_name(name))
             .map(Peer::pub_id)
             .cloned()
             .collect_vec();
-        let expected_peers_to_drop = self.expected_peers
-            .iter()
-            .filter(|&(ref id, _)| self.routing_table.need_to_add(id.name()).is_err())
-            .map(|(id, _)| *id)
-            .collect_vec();
 
-        ids_to_drop = ids_to_drop
-            .into_iter()
-            .chain(expected_peers_to_drop.into_iter())
-            .collect_vec();
         self.remove_split_peers(ids_to_drop)
     }
 
     /// Returns whether we should initiate a merge.
     pub fn should_merge(&mut self) -> bool {
-        let _ = self.remove_expired_peers(false);
-        self.expected_peers.is_empty() && self.routing_table.should_merge()
+        let expected_peers_count = self.peers
+            .values()
+            .filter(|peer| {
+                        peer.valid() &&
+                        match peer.state {
+                            PeerState::Routing(_) => false,
+                            _ => true,
+                        }
+                    })
+            .count();
+        expected_peers_count == 0 && self.routing_table.should_merge()
     }
 
     /// Returns the sender prefix and sections to prepare a merge.
@@ -822,7 +818,6 @@ impl PeerManager {
                              merge_version: u64,
                              sections: SectionMap)
                              -> (OwnMergeState<XorName>, Vec<PublicId>) {
-        let _ = self.remove_expired_peers(false);
         let needed = sections
             .iter()
             .flat_map(|(_, pub_ids)| pub_ids)
@@ -831,17 +826,6 @@ impl PeerManager {
             .collect();
 
         let ver_pfxs = sections.keys().cloned();
-        let mut expected_peers = mem::replace(&mut self.expected_peers, HashMap::new());
-        expected_peers.extend(sections
-                                  .iter()
-                                  .flat_map(|(_, members)| members)
-                                  .filter_map(|pub_id| if self.routing_table
-                                                     .has(pub_id.name()) {
-                                                  None
-                                              } else {
-                                                  Some((*pub_id, Instant::now()))
-                                              }));
-        self.expected_peers = expected_peers;
         let merge_state =
             self.routing_table
                 .merge_own_section(sender_prefix.popped().with_version(merge_version), ver_pfxs);
@@ -852,23 +836,13 @@ impl PeerManager {
                                ver_pfx: VersionedPrefix<XorName>,
                                section: BTreeSet<PublicId>)
                                -> BTreeSet<PublicId> {
-        let _ = self.remove_expired_peers(false);
-
         let needed_names =
             self.routing_table
                 .merge_other_section(ver_pfx, section.iter().map(PublicId::name).cloned());
-        {
-            // FIXME - RT returned values can be better off returning pub ids here
-            let needed_ids = section
-                .iter()
-                .filter(|id| needed_names.contains(id.name()))
-                .collect_vec();
-            self.expected_peers
-                .extend(needed_ids.iter().map(|id| (**id, Instant::now())));
-        }
         section
-            .into_iter()
-            .filter(|pub_id| needed_names.contains(pub_id.name()))
+            .iter()
+            .filter(|id| needed_names.contains(id.name()))
+            .cloned()
             .collect()
     }
 
@@ -949,45 +923,25 @@ impl PeerManager {
             .map(Peer::name)
     }
 
-    pub fn remove_expired_peers(&mut self, include_connected: bool) -> Vec<PublicId> {
+    pub fn remove_expired_peers(&mut self) -> Vec<PublicId> {
         let mut expired_peers = self.peers
             .values()
-            .filter(|peer| if !include_connected {
-                        // Limit entries to only who we are not connected to
-                        !peer.is_connected() && peer.is_expired()
-                    } else {
-                        peer.is_expired()
-                    })
+            .filter(|peer| peer.is_expired())
             .map(Peer::pub_id)
             .cloned()
             .collect_vec();
 
-        let expired_expected = self.expected_peers
+        let expired_candidates = self.candidates
             .iter()
-            .filter_map(|(id, timestamp)| if timestamp.elapsed() >=
-                                             Duration::from_secs(EXPECTED_PEER_TIMEOUT_SECS) {
-                            Some(*id)
+            .filter_map(|(old_cand_id, cand)| if cand.is_expired() {
+                            Some(*old_cand_id)
                         } else {
                             None
                         })
             .collect_vec();
 
-        let expired_candidates = if include_connected {
-            self.candidates
-                .iter()
-                .filter_map(|(old_cand_id, cand)| if cand.is_expired() {
-                                Some(*old_cand_id)
-                            } else {
-                                None
-                            })
-                .collect_vec()
-        } else {
-            vec![]
-        };
-
         expired_peers = expired_peers
             .into_iter()
-            .chain(expired_expected.into_iter())
             .chain(expired_candidates.into_iter())
             .collect_vec();
 
@@ -1066,11 +1020,6 @@ impl PeerManager {
             return None;
         };
         self.get_peer(id)
-    }
-
-    /// Are we expecting a connection from this name?
-    pub fn is_expected(&self, name: &XorName) -> bool {
-        self.expected_peers.keys().any(|id| id.name() == name)
     }
 
     /// Set the given peer as valid. Returns true if the peer is updated.
@@ -1435,7 +1384,6 @@ impl PeerManager {
 
     pub fn insert_peer(&mut self, peer: Peer) {
         let _ = self.peers.insert(peer.pub_id, peer);
-        let _ = self.remove_expired_peers(false);
     }
 
     /// Removes the given entry, returns the removed peer and if it was a routing node,
@@ -1444,10 +1392,6 @@ impl PeerManager {
                        peer_id: &PublicId)
                        -> Option<(Peer, Result<RemovalDetails<XorName>, RoutingTableError>)> {
         let self_str = format!("{:?}", self);
-
-        if self.expected_peers.remove(peer_id).is_some() {
-            trace!("{} Removed expected peer {}.", self_str, peer_id.name());
-        }
 
         // Remove from candidates checking via old_id and new_id
         if let Some((old_name, Some(cand))) =

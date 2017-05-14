@@ -22,7 +22,7 @@ use routing::{Authority, Cache, Client, Data, DataIdentifier, Event, EventStream
               ImmutableData, Node, NullCache, Prefix, PublicId, Request, Response, RoutingTable,
               XorName, Xorable, verify_network_invariant};
 use routing::mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
-use routing::test_consts::ACK_TIMEOUT_SECS;
+use routing::test_consts::{ACK_TIMEOUT_SECS, CONNECTING_PEER_TIMEOUT_SECS};
 use std::{cmp, thread};
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap};
@@ -302,14 +302,20 @@ pub fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
     panic!("Polling has been called {} times.", MAX_POLL_CALLS);
 }
 
-/// Polls and processes all events, until there are no unacknowledged messages left and clearing
-/// the nodes' state triggers no new events anymore.
+/// Polls and processes all events, until there are no unacknowledged messages left
 pub fn poll_and_resend(nodes: &mut [TestNode], clients: &mut [TestClient]) {
+    let mut fired_connecting_peer_timeout = false;
     for _ in 0..MAX_POLL_CALLS {
-        if !poll_all(nodes, clients) {
+        if poll_all(nodes, clients) {
+            // Once each route is polled, advance time to trigger the following route
+            FakeClock::advance_time(ACK_TIMEOUT_SECS * 1000 + 1);
+        } else if !fired_connecting_peer_timeout {
+            // When all routes are polled, advance time to purge any pending re-connecting peers
+            FakeClock::advance_time(CONNECTING_PEER_TIMEOUT_SECS * 1000 + 1);
+            fired_connecting_peer_timeout = true;
+        } else {
             return;
         }
-        FakeClock::advance_time(ACK_TIMEOUT_SECS * 1000 + 1);
     }
     panic!("Polling has been called {} times.", MAX_POLL_CALLS);
 }

@@ -1137,9 +1137,7 @@ impl Node {
                                  new_client_auth: Authority<XorName>,
                                  outbox: &mut EventBox)
                                  -> Result<(), RoutingError> {
-        for peer_id in self.peer_mgr.remove_expired_peers(true) {
-            self.disconnect_peer(&peer_id, Some(outbox));
-        }
+        self.remove_expired_peers(outbox);
 
         // Once the joining node joined, it may receive the vote regarding itself.
         // Or a node may receive CandidateApproval before connection established.
@@ -1147,9 +1145,9 @@ impl Node {
         // to our RT.
         // This will flag peer as valid if its found in peer_mgr regardless of their
         // connection status to us.
-        let connected = match self.peer_mgr
+        let is_connected = match self.peer_mgr
                   .handle_candidate_approval(&old_pub_id, &new_pub_id) {
-            Ok(connected) => connected,
+            Ok(is_connected) => is_connected,
             Err(_) => {
                 let src = Authority::ManagedNode(*self.name());
                 if let Err(error) = self.send_connection_info_request(new_pub_id,
@@ -1161,7 +1159,7 @@ impl Node {
                            new_pub_id.name(),
                            error);
                 }
-                false
+                None
             }
         };
 
@@ -1189,11 +1187,7 @@ impl Node {
             }
         }
 
-        if connected {
-            // Since this is not a DirectMessage, we're currently using self.tunnels to
-            // check if the given peer_id will be reached via a tunnel when we send
-            // messages and add to RT accordingly. Ideally this should not have to rely on tunnels.
-            let is_tunnel = self.tunnels.tunnel_for(&new_pub_id).is_some();
+        if let Some(is_tunnel) = is_connected {
             self.add_to_routing_table(&new_pub_id, is_tunnel, outbox);
         }
         Ok(())
@@ -1249,7 +1243,6 @@ impl Node {
         for section in sections.values() {
             for pub_id in section.iter() {
                 if !self.routing_table().has(pub_id.name()) {
-                    self.peer_mgr.expect_peer(pub_id);
                     debug!("{:?} Sending connection info to {:?} on NodeApproval.",
                            self,
                            pub_id);
@@ -1431,12 +1424,7 @@ impl Node {
             return;
         }
 
-        for peer_id in self.peer_mgr.remove_expired_peers(true) {
-            debug!("{:?} Removing stale joining node with peer ID {:?}",
-                   self,
-                   peer_id);
-            self.disconnect_peer(&peer_id, Some(outbox));
-        }
+        self.remove_expired_peers(outbox);
 
         if !self.is_approved {
             debug!("{:?} Client {:?} rejected: We are not approved as a node yet.",
@@ -1624,7 +1612,7 @@ impl Node {
                 self.send_section_split(our_ver_pfx, *pub_id.name());
             }
         } else {
-            self.merge_if_necessary();
+            self.merge_if_necessary(outbox);
         }
 
         debug!("{:?} Added {:?} to routing table.", self, pub_id.name());
@@ -1943,38 +1931,37 @@ impl Node {
 
     /// Handle a `TunnelSuccess` response from `peer_id`: It will act as a tunnel to `dst_id`.
     fn handle_tunnel_success(&mut self,
-                             peer_id: PublicId,
+                             tunnel_id: PublicId,
                              dst_id: PublicId,
                              outbox: &mut EventBox) {
-        if let Some(tunnel_id) = self.tunnels.tunnel_for(&dst_id) {
-            if *tunnel_id == peer_id {
+        if let Some(current_tunnel_id) = self.tunnels.tunnel_for(&dst_id) {
+            if *current_tunnel_id == tunnel_id {
                 return; // duplicate `TunnelSuccess`
             }
         };
 
-        let can_tunnel_for = |peer: &Peer| peer.state().can_tunnel_for();
         if self.peer_mgr
-               .get_peer(&peer_id)
-               .map_or(false, can_tunnel_for) && self.tunnels.add(dst_id, peer_id) &&
-           self.peer_mgr.tunnelling_to(&dst_id) {
+               .get_peer(&tunnel_id)
+               .map_or(false, |peer| peer.state().can_tunnel_for()) &&
+           self.tunnels.add(dst_id, tunnel_id) && self.peer_mgr.tunnelling_to(&dst_id) {
             debug!("{:?} Adding {:?} as a tunnel node for {:?}.",
                    self,
-                   peer_id,
+                   tunnel_id,
                    dst_id);
             if self.id() < &dst_id {
                 // We need to confirm tunnel selection
                 let message = DirectMessage::TunnelSelect(dst_id);
-                self.send_direct_message(peer_id, message);
+                self.send_direct_message(tunnel_id, message);
             }
             self.process_connection(dst_id, true, outbox);
         } else {
-            debug!("{:?} Received TunnelSuccess from {:?} for an already connected peer {:?}",
+            debug!("{:?} Rejecting TunnelSuccess from {:?} for peer {:?}",
                    self,
-                   peer_id,
+                   tunnel_id,
                    dst_id);
-            let _ = self.tunnels.remove(dst_id, peer_id);
+            let _ = self.tunnels.remove(dst_id, tunnel_id);
             let message = DirectMessage::TunnelDisconnect(dst_id);
-            self.send_direct_message(peer_id, message);
+            self.send_direct_message(tunnel_id, message);
         }
     }
 
@@ -2110,9 +2097,7 @@ impl Node {
                                message_id: MessageId,
                                outbox: &mut EventBox)
                                -> Result<(), RoutingError> {
-        for peer_id in self.peer_mgr.remove_expired_peers(true) {
-            self.disconnect_peer(&peer_id, Some(outbox));
-        }
+        self.remove_expired_peers(outbox);
 
         if old_pub_id == *self.full_id.public_id() {
             return Ok(()); // This is a delayed message belonging to our own relocate request.
@@ -2170,9 +2155,7 @@ impl Node {
                                   message_id: MessageId,
                                   outbox: &mut EventBox)
                                   -> Result<(), RoutingError> {
-        for peer_id in self.peer_mgr.remove_expired_peers(true) {
-            self.disconnect_peer(&peer_id, Some(outbox));
-        }
+        self.remove_expired_peers(outbox);
 
         if old_pub_id == *self.full_id.public_id() {
             // If we're the joining node: stop
@@ -2234,12 +2217,15 @@ impl Node {
         };
         let members = members
             .into_iter()
-            .filter(|id: &PublicId| !self.peer_mgr.is_expected(id.name()))
+            .filter(|id: &PublicId| {
+                        self.peer_mgr
+                            .get_peer(id)
+                            .map_or(true, |peer| !peer.valid())
+                    })
             .collect_vec();
 
         let own_name = *self.name();
         for pub_id in members {
-            self.peer_mgr.expect_peer(&pub_id);
             if let Err(error) =
                 self.send_connection_info_request(pub_id,
                                                   Authority::ManagedNode(own_name),
@@ -2279,7 +2265,7 @@ impl Node {
               ver_pfx,
               self.routing_table().prefixes());
 
-        self.merge_if_necessary();
+        self.merge_if_necessary(outbox);
 
         self.send_section_update(None);
         let prefix0 = ver_pfx.prefix().pushed(false);
@@ -2339,10 +2325,10 @@ impl Node {
             self.process_own_section_merge(their_prefix,
                                            version,
                                            their_sections,
-                                           &our_merged_section,
+                                           our_merged_section,
                                            outbox);
         }
-        self.merge_if_necessary();
+        self.merge_if_necessary(outbox);
         Ok(())
     }
 
@@ -2359,8 +2345,10 @@ impl Node {
                                  sender_prefix: Prefix<XorName>,
                                  merge_version: u64,
                                  sections: SectionMap,
-                                 our_merged_section: &BTreeSet<XorName>,
+                                 our_merged_section: BTreeSet<XorName>,
                                  outbox: &mut EventBox) {
+        self.remove_expired_peers(outbox);
+
         match self.peer_mgr
                   .merge_own_section(sender_prefix, merge_version, sections) {
             (OwnMergeState::AlreadyMerged, _needed_peers) => (),
@@ -2375,15 +2363,6 @@ impl Node {
                 info!("{:?} Own section merge completed. Prefixes: {:?}",
                       self,
                       self.routing_table().prefixes());
-
-                // After the merge, half of our section won't have our signatures -- send them
-                self.send_section_list_signatures();
-
-                // Send an `OtherSectionMerge` containing just the prefix to ensure accumulation,
-                // followed by a second one with the full details of the our section.
-                self.send_other_section_merge(targets.clone(), versioned_prefix, BTreeSet::new());
-                let section = our_merged_section.clone();
-                self.send_other_section_merge(targets, versioned_prefix, section);
 
                 let own_name = *self.name();
                 for needed in &needed_peers {
@@ -2401,6 +2380,14 @@ impl Node {
                                error);
                     }
                 }
+
+                // After the merge, half of our section won't have our signatures -- send them
+                self.send_section_list_signatures();
+
+                // Send an `OtherSectionMerge` containing just the prefix to ensure accumulation,
+                // followed by a second one with the full details of the our section.
+                self.send_other_section_merge(targets.clone(), versioned_prefix, BTreeSet::new());
+                self.send_other_section_merge(targets, versioned_prefix, our_merged_section);
             }
         }
 
@@ -2412,6 +2399,8 @@ impl Node {
                                   section: BTreeSet<PublicId>,
                                   outbox: &mut EventBox)
                                   -> Result<(), RoutingError> {
+        self.remove_expired_peers(outbox);
+
         let needed_peers = self.peer_mgr.merge_other_section(merge_ver_pfx, section);
         let own_name = *self.name();
 
@@ -2431,7 +2420,7 @@ impl Node {
         info!("{:?} Other section merge completed. Prefixes: {:?}",
               self,
               self.routing_table().prefixes());
-        self.merge_if_necessary();
+        self.merge_if_necessary(outbox);
         self.send_section_list_signatures();
 
         if self.routing_table()
@@ -2458,20 +2447,14 @@ impl Node {
         if self.tick_timer_token == token {
             let tick_period = Duration::from_secs(TICK_TIMEOUT_SECS);
             self.tick_timer_token = self.timer.schedule(tick_period);
-
-            for peer_id in self.peer_mgr.remove_expired_peers(true) {
-                debug!("{:?} Disconnecting from timed out peer {:?}", self, peer_id);
-                // We've already removed from peer manager but this helps clean out
-                // tunnel or direct connection to expired peer
-                self.disconnect_peer(&peer_id, Some(outbox));
-            }
+            self.remove_expired_peers(outbox);
 
             let transition = if cfg!(feature = "use-mock-crust") {
                 Transition::Stay
             } else {
                 self.purge_invalid_rt_entries(outbox)
             };
-            self.merge_if_necessary();
+            self.merge_if_necessary(outbox);
             if self.is_approved {
                 outbox.send_event(Event::Tick);
             }
@@ -2945,14 +2928,10 @@ impl Node {
         // NOTE: If we do not have this peer in peer_mgr, `get_connection_token`
         // will flag them to `valid`
         self.peer_mgr.set_peer_valid(&their_public_id, true);
-        if let Some(&PeerState::Connected(_)) =
+        if let Some(&PeerState::Connected(is_tunnel)) =
             self.peer_mgr
                 .get_peer(&their_public_id)
                 .map(Peer::state) {
-            // Since this is not a DirectMessage, we're currently using self.tunnels to
-            // check if the given peer_id will be reached via a tunnel when we send
-            // messages and add to RT accordingly. Ideally this should not have to rely on tunnels.
-            let is_tunnel = self.tunnels.tunnel_for(&their_public_id).is_some();
             self.add_to_routing_table(&their_public_id, is_tunnel, outbox);
             return Ok(());
         }
@@ -3062,7 +3041,7 @@ impl Node {
             outbox.send_event(Event::NodeLost(details.name, self.routing_table().clone()));
         }
 
-        self.merge_if_necessary();
+        self.merge_if_necessary(outbox);
         self.routing_table()
             .find_section_prefix(&details.name)
             .map_or((),
@@ -3101,7 +3080,8 @@ impl Node {
         }
     }
 
-    fn merge_if_necessary(&mut self) {
+    fn merge_if_necessary(&mut self, outbox: &mut EventBox) {
+        self.remove_expired_peers(outbox);
         if !self.we_want_to_merge() && (self.they_want_to_merge() || self.peer_mgr.should_merge()) {
             let (sender_prefix, sections) = self.peer_mgr.merge_details();
             let content = MessageContent::OwnSectionMerge(sections);
@@ -3115,6 +3095,15 @@ impl Node {
             if let Err(err) = self.send_routing_message(src, dst, content) {
                 debug!("{:?} Failed to send OwnSectionMerge: {:?}.", self, err);
             }
+        }
+    }
+
+    fn remove_expired_peers(&mut self, outbox: &mut EventBox) {
+        for peer_id in self.peer_mgr.remove_expired_peers() {
+            debug!("{:?} Disconnecting from timed out peer {:?}", self, peer_id);
+            // We've already removed from peer manager but this helps clean out
+            // tunnel or direct connection to expired peer
+            self.disconnect_peer(&peer_id, Some(outbox));
         }
     }
 

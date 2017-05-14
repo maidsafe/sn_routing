@@ -101,9 +101,9 @@ impl Default for FullId {
 /// Note that the `name` member is omitted when serialising `PublicId` and is calculated from the
 /// `public_sign_key` when deserialising.
 pub struct PublicId {
-    public_encrypt_key: box_::PublicKey,
-    public_sign_key: sign::PublicKey,
     name: XorName,
+    public_sign_key: sign::PublicKey,
+    public_encrypt_key: box_::PublicKey,
 }
 
 impl Uid for PublicId {}
@@ -162,6 +162,26 @@ mod tests {
     use super::*;
     use maidsafe_utilities::{SeededRng, serialisation};
     use rust_sodium;
+
+    /// Confirm `PublicId` Ord trait favours name over sign or encryption keys.
+    #[test]
+    fn public_id_order() {
+        let mut rng = SeededRng::thread_rng();
+        unwrap!(rust_sodium::init_with_rng(&mut rng));
+
+        let pub_id_1 = *FullId::new().public_id();
+        let pub_id_2;
+        loop {
+            let temp_pub_id = *FullId::new().public_id();
+            if temp_pub_id.name > pub_id_1.name &&
+               temp_pub_id.public_sign_key < pub_id_1.public_sign_key &&
+               temp_pub_id.public_encrypt_key < pub_id_1.public_encrypt_key {
+                pub_id_2 = temp_pub_id;
+                break;
+            }
+        }
+        assert!(pub_id_1 < pub_id_2);
+    }
 
     #[test]
     fn serialisation() {

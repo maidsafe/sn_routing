@@ -17,9 +17,11 @@
 
 use super::{TestNode, add_connected_nodes_until_split, create_connected_nodes, poll_all,
             poll_and_resend, verify_invariant_for_all_nodes};
+use fake_clock::FakeClock;
 use itertools::Itertools;
 use routing::{Event, EventStream, Prefix, PublicId, XOR_NAME_LEN, XorName};
 use routing::mock_crust::{Config, Endpoint, Network, crust};
+use routing::test_consts::CONNECTED_PEER_TIMEOUT_SECS;
 
 #[test]
 fn failing_connections_ring() {
@@ -204,7 +206,7 @@ fn tunnel_clients() {
     network.block_connection(direct_pair.1, direct_pair.0);
 
     // After a split, nodes might reconnect and thereby have each other in Connected state.
-    ::fake_clock::FakeClock::advance_time(61 * 1000);
+    FakeClock::advance_time(CONNECTED_PEER_TIMEOUT_SECS * 1000 + 1);
     let _ = poll_all(&mut nodes, &mut []);
 
     remove_nodes_from_section_till_merge(&XorName([64u8; XOR_NAME_LEN]),
