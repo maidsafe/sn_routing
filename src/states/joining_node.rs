@@ -17,11 +17,10 @@
 
 use super::{Bootstrapping, BootstrappingTargetState};
 use super::common::{Base, Bootstrapped};
+use {CrustEvent, CrustEventSender, Service};
 use ack_manager::{Ack, AckManager};
 use action::Action;
 use cache::Cache;
-use crust::{CrustEventSender, PeerId, Service};
-use crust::Event as CrustEvent;
 use error::{InterfaceError, RoutingError};
 use event::Event;
 use id::{FullId, PublicId};
@@ -53,7 +52,7 @@ pub struct JoiningNode {
     /// Only held here to be passed eventually to the `Node` state.
     cache: Box<Cache>,
     min_section_size: usize,
-    proxy_peer_id: PeerId,
+    proxy_peer_id: PublicId,
     proxy_public_id: PublicId,
     /// The queue of routing messages addressed to us. These do not themselves need forwarding,
     /// although they may wrap a message which needs forwarding.
@@ -70,7 +69,7 @@ impl JoiningNode {
                               crust_service: Service,
                               full_id: FullId,
                               min_section_size: usize,
-                              proxy_peer_id: PeerId,
+                              proxy_peer_id: PublicId,
                               proxy_public_id: PublicId,
                               stats: Stats,
                               timer: Timer)
@@ -107,8 +106,8 @@ impl JoiningNode {
                 warn!("{:?} Cannot handle {:?} - not joined.", self, action);
                 let _ = result_tx.send(Err(InterfaceError::InvalidState));
             }
-            Action::Name { result_tx } => {
-                let _ = result_tx.send(*self.name());
+            Action::Id { result_tx } => {
+                let _ = result_tx.send(*self.id());
             }
             Action::Timeout(token) => {
                 if let Transition::Terminate = self.handle_timeout(token, outbox) {
@@ -126,7 +125,7 @@ impl JoiningNode {
     }
 
     pub fn handle_crust_event(&mut self,
-                              crust_event: CrustEvent,
+                              crust_event: CrustEvent<PublicId>,
                               outbox: &mut EventBox)
                               -> Transition {
         match crust_event {
@@ -140,13 +139,16 @@ impl JoiningNode {
     }
 
     pub fn into_bootstrapping(self,
-                              crust_rx: &mut Receiver<CrustEvent>,
+                              crust_rx: &mut Receiver<CrustEvent<PublicId>>,
                               crust_sender: CrustEventSender,
                               new_full_id: FullId,
                               our_section: BTreeSet<PublicId>,
                               outbox: &mut EventBox)
                               -> State {
-        let service = Self::start_new_crust_service(self.crust_service, crust_rx, crust_sender);
+        let service = Self::start_new_crust_service(self.crust_service,
+                                                    *new_full_id.public_id(),
+                                                    crust_rx,
+                                                    crust_sender);
         let target_state = BootstrappingTargetState::Node {
             old_full_id: self.full_id,
             our_section: our_section,
@@ -168,14 +170,15 @@ impl JoiningNode {
 
     #[cfg(not(feature = "use-mock-crust"))]
     fn start_new_crust_service(old_crust_service: Service,
-                               crust_rx: &mut Receiver<CrustEvent>,
+                               pub_id: PublicId,
+                               crust_rx: &mut Receiver<CrustEvent<PublicId>>,
                                crust_sender: CrustEventSender)
                                -> Service {
         // Drop the current Crust service and flush the receiver
         drop(old_crust_service);
         while let Ok(_crust_event) = crust_rx.try_recv() {}
 
-        let mut crust_service = match Service::new(crust_sender) {
+        let mut crust_service = match Service::new(crust_sender, pub_id) {
             Ok(service) => service,
             Err(error) => panic!("Unable to start crust::Service {:?}", error),
         };
@@ -185,14 +188,15 @@ impl JoiningNode {
 
     #[cfg(feature = "use-mock-crust")]
     fn start_new_crust_service(old_crust_service: Service,
-                               _crust_rx: &mut Receiver<CrustEvent>,
+                               pub_id: PublicId,
+                               _crust_rx: &mut Receiver<CrustEvent<PublicId>>,
                                crust_sender: CrustEventSender)
                                -> Service {
-        old_crust_service.restart(crust_sender);
+        old_crust_service.restart(crust_sender, pub_id);
         old_crust_service
     }
 
-    fn handle_new_message(&mut self, peer_id: PeerId, bytes: Vec<u8>) -> Transition {
+    fn handle_new_message(&mut self, peer_id: PublicId, bytes: Vec<u8>) -> Transition {
         let transition = match serialisation::deserialise(&bytes) {
             Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, peer_id),
             Ok(message) => {
@@ -214,7 +218,7 @@ impl JoiningNode {
 
     fn handle_hop_message(&mut self,
                           hop_msg: HopMessage,
-                          peer_id: PeerId)
+                          peer_id: PublicId)
                           -> Result<Transition, RoutingError> {
         if self.proxy_peer_id == peer_id {
             hop_msg
@@ -342,7 +346,7 @@ impl Base for JoiningNode {
         }
     }
 
-    fn handle_lost_peer(&mut self, peer_id: PeerId, outbox: &mut EventBox) -> Transition {
+    fn handle_lost_peer(&mut self, peer_id: PublicId, outbox: &mut EventBox) -> Transition {
         if peer_id == self.crust_service.id() {
             error!("{:?} LostPeer fired with our crust peer ID.", self);
             return Transition::Stay;
@@ -393,7 +397,7 @@ impl Bootstrapped for JoiningNode {
             return Ok(()); // Message is for us.
         }
 
-        // Get PeerId of the proxy node
+        // Get PublicId of the proxy node
         let (proxy_peer_id, sending_nodes) = match routing_msg.src {
             Authority::Client { ref proxy_node_name, .. } => {
                 if *self.proxy_public_id.name() != *proxy_node_name {

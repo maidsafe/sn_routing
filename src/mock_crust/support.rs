@@ -15,8 +15,10 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use super::crust::{ConnectionInfoResult, CrustEventSender, CrustUser, Event, PeerId,
-                   PrivConnectionInfo, PubConnectionInfo};
+use super::crust::{ConnectionInfoResult, CrustEventSender, CrustUser, PrivConnectionInfo,
+                   PubConnectionInfo, Uid};
+use CrustEvent;
+use id::PublicId;
 use maidsafe_utilities::SeededRng;
 use rand::Rng;
 use rust_sodium;
@@ -29,20 +31,20 @@ use std::rc::{Rc, Weak};
 
 /// Mock network. Create one before testing with mocks. Use it to create `ServiceHandle`s.
 #[derive(Clone)]
-pub struct Network(Rc<RefCell<NetworkImpl>>);
+pub struct Network<UID: Uid>(Rc<RefCell<NetworkImpl<UID>>>);
 
-pub struct NetworkImpl {
-    services: HashMap<Endpoint, Weak<RefCell<ServiceImpl>>>,
+pub struct NetworkImpl<UID: Uid> {
+    services: HashMap<Endpoint, Weak<RefCell<ServiceImpl<UID>>>>,
     min_section_size: usize,
     next_endpoint: usize,
-    queue: BTreeMap<(Endpoint, Endpoint), VecDeque<Packet>>,
+    queue: BTreeMap<(Endpoint, Endpoint), VecDeque<Packet<UID>>>,
     blocked_connections: HashSet<(Endpoint, Endpoint)>,
     delayed_connections: HashSet<(Endpoint, Endpoint)>,
     rng: SeededRng,
     message_sent: bool,
 }
 
-impl Network {
+impl<UID: Uid> Network<UID> {
     /// Create new mock Network.
     pub fn new(min_section_size: usize, optional_seed: Option<[u32; 4]>) -> Self {
         let mut rng = if let Some(seed) = optional_seed {
@@ -70,7 +72,7 @@ impl Network {
     pub fn new_service_handle(&self,
                               opt_config: Option<Config>,
                               opt_endpoint: Option<Endpoint>)
-                              -> ServiceHandle {
+                              -> ServiceHandle<UID> {
         let config = opt_config.unwrap_or_else(Config::new);
         let endpoint = self.gen_endpoint(opt_endpoint);
 
@@ -148,14 +150,14 @@ impl Network {
 
         service_1
             .borrow_mut()
-            .send_event(Event::LostPeer(PeerId(node_2.0)));
+            .send_event(CrustEvent::LostPeer(unwrap!(service_2.borrow().peer_id)));
         service_2
             .borrow_mut()
-            .send_event(Event::LostPeer(PeerId(node_1.0)));
+            .send_event(CrustEvent::LostPeer(unwrap!(service_1.borrow().peer_id)));
     }
 
     /// Simulates a crust event being sent to the node.
-    pub fn send_crust_event(&self, node: Endpoint, crust_event: Event) {
+    pub fn send_crust_event(&self, node: Endpoint, crust_event: CrustEvent<UID>) {
         let service = unwrap!(self.find_service(node),
                               "Cannot fetch service of {:?}.",
                               node);
@@ -182,7 +184,7 @@ impl Network {
             .contains(&(sender, receiver))
     }
 
-    fn send(&self, sender: Endpoint, receiver: Endpoint, packet: Packet) {
+    fn send(&self, sender: Endpoint, receiver: Endpoint, packet: Packet<UID>) {
         let mut network_impl = self.0.borrow_mut();
         network_impl.message_sent = true;
         network_impl
@@ -205,7 +207,7 @@ impl Network {
         self.0.borrow_mut().queue.clear();
     }
 
-    fn pop_packet(&self) -> Option<(Endpoint, Endpoint, Packet)> {
+    fn pop_packet(&self) -> Option<(Endpoint, Endpoint, Packet<UID>)> {
         let mut network_impl = self.0.borrow_mut();
         let keys: Vec<_> = if
             network_impl
@@ -245,7 +247,7 @@ impl Network {
         result
     }
 
-    fn process_packet(&self, sender: Endpoint, receiver: Endpoint, packet: Packet) {
+    fn process_packet(&self, sender: Endpoint, receiver: Endpoint, packet: Packet<UID>) {
         if self.connection_blocked(sender, receiver) {
             if let Some(failure) = packet.to_failure() {
                 self.send(receiver, sender, failure);
@@ -261,7 +263,7 @@ impl Network {
         }
     }
 
-    fn find_service(&self, endpoint: Endpoint) -> Option<Rc<RefCell<ServiceImpl>>> {
+    fn find_service(&self, endpoint: Endpoint) -> Option<Rc<RefCell<ServiceImpl<UID>>>> {
         self.0
             .borrow()
             .services
@@ -273,10 +275,10 @@ impl Network {
 /// `ServiceHandle` is associated with the mock `Service` and allows to configure
 /// and instrument it.
 #[derive(Clone)]
-pub struct ServiceHandle(pub Rc<RefCell<ServiceImpl>>);
+pub struct ServiceHandle<UID: Uid>(pub Rc<RefCell<ServiceImpl<UID>>>);
 
-impl ServiceHandle {
-    fn new(network: Network, config: Config, endpoint: Endpoint) -> Self {
+impl<UID: Uid> ServiceHandle<UID> {
+    fn new(network: Network<UID>, config: Config, endpoint: Endpoint) -> Self {
         ServiceHandle(Rc::new(RefCell::new(ServiceImpl::new(network, config, endpoint))))
     }
 
@@ -286,10 +288,10 @@ impl ServiceHandle {
     }
 
     /// Returns `true` if this service is connected to the given one.
-    pub fn is_connected(&self, handle: &ServiceHandle) -> bool {
+    pub fn is_connected(&self, handle: &Self) -> bool {
         self.0
             .borrow()
-            .is_peer_connected(&handle.0.borrow().peer_id)
+            .is_peer_connected(&unwrap!(handle.0.borrow().peer_id))
     }
 
     /// Returns whether sent any message across the network since previous query and reset the flag.
@@ -298,24 +300,24 @@ impl ServiceHandle {
     }
 }
 
-pub struct ServiceImpl {
-    pub network: Network,
+pub struct ServiceImpl<UID: Uid> {
+    pub network: Network<UID>,
     endpoint: Endpoint,
-    pub peer_id: PeerId,
+    pub peer_id: Option<UID>,
     config: Config,
     pub listening_tcp: bool,
-    event_sender: Option<CrustEventSender>,
+    event_sender: Option<CrustEventSender<UID>>,
     pending_bootstraps: u64,
-    connections: Vec<(PeerId, Endpoint)>,
-    whitelist: HashSet<PeerId>,
+    connections: Vec<(UID, Endpoint)>,
+    whitelist: HashSet<Endpoint>,
 }
 
-impl ServiceImpl {
-    fn new(network: Network, config: Config, endpoint: Endpoint) -> Self {
+impl<UID: Uid> ServiceImpl<UID> {
+    fn new(network: Network<UID>, config: Config, endpoint: Endpoint) -> Self {
         ServiceImpl {
             network: network,
             endpoint: endpoint,
-            peer_id: PeerId(endpoint.0),
+            peer_id: None,
             config: config,
             listening_tcp: false,
             event_sender: None,
@@ -325,19 +327,20 @@ impl ServiceImpl {
         }
     }
 
-    pub fn start(&mut self, event_sender: CrustEventSender) {
+    pub fn start(&mut self, event_sender: CrustEventSender<UID>, uid: UID) {
+        self.peer_id = Some(uid);
         self.event_sender = Some(event_sender);
     }
 
-    pub fn restart(&mut self, event_sender: CrustEventSender) {
+    pub fn restart(&mut self, event_sender: CrustEventSender<UID>, uid: UID) {
         trace!("{:?} restart", self.endpoint);
 
         self.disconnect_all();
 
-        self.peer_id = PeerId(self.endpoint.0);
+        self.peer_id = Some(uid);
         self.listening_tcp = false;
 
-        self.start(event_sender)
+        self.start(event_sender, uid)
     }
 
     pub fn start_bootstrap(&mut self, blacklist: HashSet<SocketAddr>, kind: CrustUser) {
@@ -345,7 +348,8 @@ impl ServiceImpl {
 
         for endpoint in &self.config.hard_coded_contacts {
             if *endpoint != self.endpoint && !blacklist.contains(&to_socket_addr(endpoint)) {
-                self.send_packet(*endpoint, Packet::BootstrapRequest(self.peer_id, kind));
+                self.send_packet(*endpoint,
+                                 Packet::BootstrapRequest(unwrap!(self.peer_id), kind));
                 pending_bootstraps += 1;
             }
         }
@@ -356,13 +360,13 @@ impl ServiceImpl {
             unwrap!(self.event_sender
                         .as_ref()
                         .unwrap()
-                        .send(Event::BootstrapFailed));
+                        .send(CrustEvent::BootstrapFailed));
         }
 
         self.pending_bootstraps = pending_bootstraps;
     }
 
-    pub fn send_message(&self, peer_id: &PeerId, data: Vec<u8>) -> bool {
+    pub fn send_message(&self, peer_id: &UID, data: Vec<u8>) -> bool {
         if let Some(endpoint) = self.find_endpoint_by_peer_id(peer_id) {
             self.send_packet(endpoint, Packet::Message(data));
             true
@@ -371,19 +375,21 @@ impl ServiceImpl {
         }
     }
 
-    pub fn is_peer_connected(&self, peer_id: &PeerId) -> bool {
+    pub fn is_peer_connected(&self, peer_id: &UID) -> bool {
         self.find_endpoint_by_peer_id(peer_id).is_some()
     }
 
-    pub fn whitelist_peer(&mut self, peer_id: PeerId) {
-        if !self.whitelist.insert(peer_id) {
+    pub fn whitelist_peer(&mut self, endpoint: Endpoint) {
+        if !self.whitelist.insert(endpoint) {
             debug!("Duplicate insert attempt whitelist for peer : {:?}",
-                   peer_id);
+                   endpoint);
         }
     }
 
-    pub fn is_peer_whitelisted(&self, peer_id: &PeerId) -> bool {
-        self.whitelist.is_empty() || self.whitelist.contains(peer_id)
+    pub fn is_peer_whitelisted(&self, id: &UID) -> bool {
+        self.whitelist.is_empty() ||
+        self.find_endpoint_by_peer_id(id)
+            .map_or(false, |endpoint| self.whitelist.contains(&endpoint))
     }
 
     pub fn prepare_connection_info(&self, result_token: u32) {
@@ -392,28 +398,30 @@ impl ServiceImpl {
 
         let result = ConnectionInfoResult {
             result_token: result_token,
-            result: Ok(PrivConnectionInfo(self.peer_id, self.endpoint)),
+            result: Ok(PrivConnectionInfo {
+                           id: unwrap!(self.peer_id),
+                           endpoint: self.endpoint,
+                       }),
         };
 
-        self.send_event(Event::ConnectionInfoPrepared(result));
+        self.send_event(CrustEvent::ConnectionInfoPrepared(result));
     }
 
-    pub fn connect(&self, _our_info: PrivConnectionInfo, their_info: PubConnectionInfo) {
-        let PubConnectionInfo(their_id, peer_endpoint) = their_info;
-        let packet = Packet::ConnectRequest(self.peer_id, their_id);
-        self.send_packet(peer_endpoint, packet);
+    pub fn connect(&self, _our_info: PrivConnectionInfo<UID>, their_info: PubConnectionInfo<UID>) {
+        let packet = Packet::ConnectRequest(unwrap!(self.peer_id), their_info.id);
+        self.send_packet(their_info.endpoint, packet);
     }
 
     pub fn start_listening_tcp(&mut self, port: u16) {
         self.listening_tcp = true;
-        self.send_event(Event::ListenerStarted(port));
+        self.send_event(CrustEvent::ListenerStarted(port));
     }
 
-    fn send_packet(&self, receiver: Endpoint, packet: Packet) {
+    fn send_packet(&self, receiver: Endpoint, packet: Packet<UID>) {
         self.network.send(self.endpoint, receiver, packet);
     }
 
-    fn receive_packet(&mut self, sender: Endpoint, packet: Packet) {
+    fn receive_packet(&mut self, sender: Endpoint, packet: Packet<UID>) {
         match packet {
             Packet::BootstrapRequest(peer_id, kind) => {
                 self.handle_bootstrap_request(sender, peer_id, kind)
@@ -430,27 +438,25 @@ impl ServiceImpl {
 
     fn handle_bootstrap_request(&mut self,
                                 peer_endpoint: Endpoint,
-                                peer_id: PeerId,
+                                peer_id: UID,
                                 kind: CrustUser) {
         if self.is_listening() {
             self.handle_bootstrap_accept(peer_endpoint, peer_id, kind);
-            self.send_packet(peer_endpoint, Packet::BootstrapSuccess(self.peer_id));
+            self.send_packet(peer_endpoint,
+                             Packet::BootstrapSuccess(unwrap!(self.peer_id)));
         } else {
             self.send_packet(peer_endpoint, Packet::BootstrapFailure);
         }
     }
 
-    fn handle_bootstrap_accept(&mut self,
-                               peer_endpoint: Endpoint,
-                               peer_id: PeerId,
-                               kind: CrustUser) {
+    fn handle_bootstrap_accept(&mut self, peer_endpoint: Endpoint, peer_id: UID, kind: CrustUser) {
         self.add_connection(peer_id, peer_endpoint);
-        self.send_event(Event::BootstrapAccept(peer_id, kind));
+        self.send_event(CrustEvent::BootstrapAccept(peer_id, kind));
     }
 
-    fn handle_bootstrap_success(&mut self, peer_endpoint: Endpoint, peer_id: PeerId) {
+    fn handle_bootstrap_success(&mut self, peer_endpoint: Endpoint, peer_id: UID) {
         self.add_connection(peer_id, peer_endpoint);
-        self.send_event(Event::BootstrapConnect(peer_id, to_socket_addr(&peer_endpoint)));
+        self.send_event(CrustEvent::BootstrapConnect(peer_id, to_socket_addr(&peer_endpoint)));
         self.decrement_pending_bootstraps();
     }
 
@@ -458,27 +464,27 @@ impl ServiceImpl {
         self.decrement_pending_bootstraps();
     }
 
-    fn handle_connect_request(&mut self, peer_endpoint: Endpoint, their_id: PeerId) {
+    fn handle_connect_request(&mut self, peer_endpoint: Endpoint, their_id: UID) {
         if self.is_connected(&peer_endpoint, &their_id) {
             return;
         }
 
         self.add_rendezvous_connection(their_id, peer_endpoint);
         self.send_packet(peer_endpoint,
-                         Packet::ConnectSuccess(self.peer_id, their_id));
+                         Packet::ConnectSuccess(unwrap!(self.peer_id), their_id));
     }
 
-    fn handle_connect_success(&mut self, peer_endpoint: Endpoint, their_id: PeerId) {
+    fn handle_connect_success(&mut self, peer_endpoint: Endpoint, their_id: UID) {
         self.add_rendezvous_connection(their_id, peer_endpoint);
     }
 
-    fn handle_connect_failure(&self, _peer_endpoint: Endpoint, their_id: PeerId) {
-        self.send_event(Event::ConnectFailure(their_id));
+    fn handle_connect_failure(&self, _peer_endpoint: Endpoint, their_id: UID) {
+        self.send_event(CrustEvent::ConnectFailure(their_id));
     }
 
     fn handle_message(&self, peer_endpoint: Endpoint, data: Vec<u8>) {
         if let Some(peer_id) = self.find_peer_id_by_endpoint(&peer_endpoint) {
-            self.send_event(Event::NewMessage(peer_id, data));
+            self.send_event(CrustEvent::NewMessage(peer_id, data));
         } else {
             unreachable!("Received message from non-connected {:?}", peer_endpoint);
         }
@@ -486,11 +492,11 @@ impl ServiceImpl {
 
     fn handle_disconnect(&mut self, peer_endpoint: Endpoint) {
         if let Some(peer_id) = self.remove_connection_by_endpoint(peer_endpoint) {
-            self.send_event(Event::LostPeer(peer_id));
+            self.send_event(CrustEvent::LostPeer(peer_id));
         }
     }
 
-    fn send_event(&self, event: Event) {
+    fn send_event(&self, event: CrustEvent<UID>) {
         let sender = unwrap!(self.event_sender.as_ref(), "Could not get event sender.");
         unwrap!(sender.send(event));
     }
@@ -507,11 +513,11 @@ impl ServiceImpl {
         self.pending_bootstraps -= 1;
 
         if self.pending_bootstraps == 0 && self.connections.is_empty() {
-            self.send_event(Event::BootstrapFailed);
+            self.send_event(CrustEvent::BootstrapFailed);
         }
     }
 
-    fn add_connection(&mut self, peer_id: PeerId, peer_endpoint: Endpoint) -> bool {
+    fn add_connection(&mut self, peer_id: UID, peer_endpoint: Endpoint) -> bool {
         if self.connections
                .iter()
                .any(|&(id, ep)| id == peer_id && ep == peer_endpoint) {
@@ -523,14 +529,14 @@ impl ServiceImpl {
         true
     }
 
-    fn add_rendezvous_connection(&mut self, peer_id: PeerId, peer_endpoint: Endpoint) {
+    fn add_rendezvous_connection(&mut self, peer_id: UID, peer_endpoint: Endpoint) {
         self.add_connection(peer_id, peer_endpoint);
-        self.send_event(Event::ConnectSuccess(peer_id));
+        self.send_event(CrustEvent::ConnectSuccess(peer_id));
     }
 
     // Remove connected peer with the given peer id and return its endpoint,
     // or None if no such peer exists.
-    fn remove_connection_by_peer_id(&mut self, peer_id: &PeerId) -> Option<Endpoint> {
+    fn remove_connection_by_peer_id(&mut self, peer_id: &UID) -> Option<Endpoint> {
         if let Some(i) = self.connections
                .iter()
                .position(|&(id, _)| id == *peer_id) {
@@ -540,7 +546,7 @@ impl ServiceImpl {
         }
     }
 
-    fn remove_connection_by_endpoint(&mut self, endpoint: Endpoint) -> Option<PeerId> {
+    fn remove_connection_by_endpoint(&mut self, endpoint: Endpoint) -> Option<UID> {
         if let Some(i) = self.connections
                .iter()
                .position(|&(_, ep)| ep == endpoint) {
@@ -550,27 +556,27 @@ impl ServiceImpl {
         }
     }
 
-    fn find_endpoint_by_peer_id(&self, peer_id: &PeerId) -> Option<Endpoint> {
+    fn find_endpoint_by_peer_id(&self, peer_id: &UID) -> Option<Endpoint> {
         self.connections
             .iter()
             .find(|&&(id, _)| id == *peer_id)
             .map(|&(_, ep)| ep)
     }
 
-    fn find_peer_id_by_endpoint(&self, endpoint: &Endpoint) -> Option<PeerId> {
+    fn find_peer_id_by_endpoint(&self, endpoint: &Endpoint) -> Option<UID> {
         self.connections
             .iter()
             .find(|&&(_, ep)| ep == *endpoint)
             .map(|&(id, _)| id)
     }
 
-    fn is_connected(&self, endpoint: &Endpoint, peer_id: &PeerId) -> bool {
+    fn is_connected(&self, endpoint: &Endpoint, peer_id: &UID) -> bool {
         self.connections
             .iter()
             .any(|&conn| conn == (*peer_id, *endpoint))
     }
 
-    pub fn disconnect(&mut self, peer_id: &PeerId) -> bool {
+    pub fn disconnect(&mut self, peer_id: &UID) -> bool {
         if let Some(endpoint) = self.remove_connection_by_peer_id(peer_id) {
             // We immediately drop all messages going in both directions. This is
             // possibly not realistic since in the real CRust some of these might
@@ -600,7 +606,7 @@ impl ServiceImpl {
     }
 }
 
-impl Drop for ServiceImpl {
+impl<UID: Uid> Drop for ServiceImpl<UID> {
     fn drop(&mut self) {
         self.disconnect_all();
     }
@@ -644,22 +650,22 @@ impl Default for Config {
 pub struct Endpoint(pub usize);
 
 #[derive(Clone, Debug)]
-enum Packet {
-    BootstrapRequest(PeerId, CrustUser),
-    BootstrapSuccess(PeerId),
+enum Packet<UID: Uid> {
+    BootstrapRequest(UID, CrustUser),
+    BootstrapSuccess(UID),
     BootstrapFailure,
 
-    ConnectRequest(PeerId, PeerId),
-    ConnectSuccess(PeerId, PeerId),
-    ConnectFailure(PeerId, PeerId),
+    ConnectRequest(UID, UID),
+    ConnectSuccess(UID, UID),
+    ConnectFailure(UID, UID),
 
     Message(Vec<u8>),
     Disconnect,
 }
 
-impl Packet {
+impl<UID: Uid> Packet<UID> {
     // Given a request packet, returns the corresponding failure packet.
-    fn to_failure(&self) -> Option<Packet> {
+    fn to_failure(&self) -> Option<Packet<UID>> {
         match *self {
             Packet::BootstrapRequest(..) => Some(Packet::BootstrapFailure),
             Packet::ConnectRequest(our_id, their_id) => {
@@ -673,12 +679,12 @@ impl Packet {
 // The following code facilitates passing ServiceHandles to mock Services, so we
 // don't need separate test and non-test version of `routing::Core::new`.
 thread_local! {
-    static CURRENT: RefCell<Option<ServiceHandle>> = RefCell::new(None)
+    static CURRENT: RefCell<Option<ServiceHandle<PublicId>>> = RefCell::new(None)
 }
 
 /// Make the `ServiceHandle` current so it can be picked up by mock `Service`s created
 /// inside the passed-in lambda.
-pub fn make_current<F, R>(handle: &ServiceHandle, f: F) -> R
+pub fn make_current<F, R>(handle: &ServiceHandle<PublicId>, f: F) -> R
     where F: FnOnce() -> R
 {
     CURRENT.with(|current| {
@@ -689,6 +695,7 @@ pub fn make_current<F, R>(handle: &ServiceHandle, f: F) -> R
                  })
 }
 
-pub fn get_current() -> ServiceHandle {
+/// Get the current `ServiceHandle`
+pub fn get_current() -> ServiceHandle<PublicId> {
     CURRENT.with(|current| unwrap!(current.borrow_mut().take(), "Couldn't borrow service."))
 }

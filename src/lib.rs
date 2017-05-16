@@ -225,6 +225,12 @@ pub use routing_table::verify_network_invariant;
 pub use types::MessageId;
 pub use xor_name::{XOR_NAME_BITS, XOR_NAME_LEN, XorName, XorNameFromHexError};
 
+type Service = crust::Service<PublicId>;
+use crust::Event as CrustEvent;
+type CrustEventSender = crust::CrustEventSender<PublicId>;
+type PrivConnectionInfo = crust::PrivConnectionInfo<PublicId>;
+type PubConnectionInfo = crust::PubConnectionInfo<PublicId>;
+
 #[cfg(test)]
 mod tests {
     use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};

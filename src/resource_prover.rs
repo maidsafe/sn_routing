@@ -17,10 +17,10 @@
 
 use ack_manager::ACK_TIMEOUT_SECS;
 use action::Action;
-use crust::PeerId;
 use event::Event;
 #[cfg(feature="use-mock-crust")]
 use fake_clock::FakeClock as Instant;
+use id::PublicId;
 use itertools::Itertools;
 use maidsafe_utilities::thread;
 use messages::{DirectMessage, MAX_PART_LEN};
@@ -60,9 +60,9 @@ pub struct ResourceProver {
     /// Number of expected resource proof challengers.
     challenger_count: usize,
     /// Map of ResourceProofResponse parts.
-    response_parts: HashMap<PeerId, Vec<DirectMessage>>,
+    response_parts: HashMap<PublicId, Vec<DirectMessage>>,
     /// Map of workers
-    workers: HashMap<PeerId, (Arc<AtomicBool>, thread::Joiner)>,
+    workers: HashMap<PublicId, (Arc<AtomicBool>, thread::Joiner)>,
     timer: Timer,
 }
 
@@ -93,7 +93,7 @@ impl ResourceProver {
 
     /// Start generating a resource proof in a background thread
     pub fn handle_request(&mut self,
-                          peer_id: PeerId,
+                          peer_id: PublicId,
                           seed: Vec<u8>,
                           target_size: usize,
                           difficulty: u8,
@@ -189,7 +189,7 @@ impl ResourceProver {
     ///
     /// This function returns the first message to send.
     pub fn handle_action_res_proof(&mut self,
-                                   peer_id: PeerId,
+                                   peer_id: PublicId,
                                    mut messages: Vec<DirectMessage>)
                                    -> DirectMessage {
         // Thread signalled it was complete; implicit join on Joiner thus shouldn't hang.
@@ -201,7 +201,7 @@ impl ResourceProver {
     }
 
     /// Get the next part of the proof to be sent, if any.
-    pub fn handle_receipt(&mut self, peer_id: PeerId) -> Option<DirectMessage> {
+    pub fn handle_receipt(&mut self, peer_id: PublicId) -> Option<DirectMessage> {
         self.response_parts.get_mut(&peer_id).and_then(Vec::pop)
     }
 

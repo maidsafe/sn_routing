@@ -120,6 +120,7 @@ pub use self::network_tests::verify_network_invariant;
 pub use self::prefix::{Prefix, VersionedPrefix};
 pub use self::xorable::Xorable;
 use itertools::Itertools;
+use log::LogLevel;
 use std::{iter, mem};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
@@ -711,7 +712,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     pub fn merge_own_section<I>(&mut self,
                                 merge_ver_pfx: VersionedPrefix<T>,
                                 ver_pfxs: I)
-                                -> (OwnMergeState<T>, Vec<T>)
+                                -> OwnMergeState<T>
         where I: IntoIterator<Item = VersionedPrefix<T>>
     {
         // TODO: Return an error if they are not compatible instead?
@@ -720,13 +721,19 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             debug!("{:?} Attempt to call merge_own_section() for an already merged prefix {:?}",
                    self.our_name,
                    merge_ver_pfx);
-            return (OwnMergeState::AlreadyMerged, vec![]);
+            return OwnMergeState::AlreadyMerged;
         }
         self.merge(&merge_ver_pfx);
         let dropped_names = ver_pfxs
             .into_iter()
             .flat_map(|ver_pfx| self.add_prefix(ver_pfx))
-            .collect();
+            .collect_vec();
+        if !dropped_names.is_empty() {
+            log_or_panic!(LogLevel::Warn,
+                          "{:?} Removed peers from RT as part of OwnSectionMerge {:?}",
+                          self.our_name,
+                          dropped_names);
+        }
 
         self.add_missing_prefixes();
         // The update needs to be sent to all neighbouring sections. However, while those are
@@ -738,12 +745,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             .cloned()
             .chain((0..merge_pfx.bit_count()).map(|i| merge_pfx.with_flipped_bit(i)))
             .collect();
-        (OwnMergeState::Completed {
-             targets: targets,
-             versioned_prefix: self.our_versioned_prefix(),
-             section: self.our_section().clone(),
-         },
-         dropped_names)
+        OwnMergeState::Completed {
+            targets: targets,
+            versioned_prefix: self.our_versioned_prefix(),
+            section: self.our_section().clone(),
+        }
     }
 
     /// Merges all existing compatible sections into the new one defined by `merge_details.prefix`.

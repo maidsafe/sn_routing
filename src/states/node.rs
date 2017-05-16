@@ -16,13 +16,12 @@
 // relating to use of the SAFE Network Software.
 
 use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
-use {QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
+use {CrustEvent, PrivConnectionInfo, PubConnectionInfo, QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
+     Service};
 use ack_manager::{Ack, AckManager};
 use action::Action;
 use cache::Cache;
-use crust::{ConnectionInfoResult, CrustError, CrustUser, PeerId, PrivConnectionInfo,
-            PubConnectionInfo, Service};
-use crust::Event as CrustEvent;
+use crust::{ConnectionInfoResult, CrustError, CrustUser};
 use error::{InterfaceError, RoutingError};
 use event::Event;
 use id::{FullId, PublicId};
@@ -116,7 +115,7 @@ pub struct Node {
     /// The timer token for displaying the current candidate status.
     candidate_status_token: Option<u64>,
     /// Hold the kind of bootstrappers.
-    bootstrappers: LruCache<PeerId, CrustUser>,
+    bootstrappers: LruCache<PublicId, CrustUser>,
     resource_prover: ResourceProver,
 }
 
@@ -128,11 +127,13 @@ impl Node {
                  min_section_size: usize,
                  timer: Timer)
                  -> Option<Self> {
+        // old_id is useless for first node
+        let old_id = FullId::new();
         let mut node = Self::new(action_sender,
                                  cache,
                                  crust_service,
                                  true,
-                                 FullId::new(),
+                                 old_id,
                                  full_id,
                                  min_section_size,
                                  Stats::new(),
@@ -156,7 +157,7 @@ impl Node {
                               old_full_id: FullId,
                               new_full_id: FullId,
                               min_section_size: usize,
-                              proxy_peer_id: PeerId,
+                              proxy_peer_id: PublicId,
                               proxy_public_id: PublicId,
                               stats: Stats,
                               timer: Timer)
@@ -171,7 +172,8 @@ impl Node {
                                  stats,
                                  timer,
                                  our_section.len());
-        let _ = node.peer_mgr.set_proxy(proxy_peer_id, proxy_public_id);
+        let _ = node.peer_mgr
+            .insert_peer(proxy_peer_id, PeerState::Proxy, false);
         node.join(our_section, &proxy_public_id);
         node
     }
@@ -332,8 +334,8 @@ impl Node {
 
                 let _ = result_tx.send(result);
             }
-            Action::Name { result_tx } => {
-                let _ = result_tx.send(*self.name());
+            Action::Id { result_tx } => {
+                let _ = result_tx.send(*self.id());
             }
             Action::Timeout(token) => {
                 if let Transition::Terminate = self.handle_timeout(token, outbox) {
@@ -356,7 +358,7 @@ impl Node {
     }
 
     pub fn handle_crust_event(&mut self,
-                              crust_event: CrustEvent,
+                              crust_event: CrustEvent<PublicId>,
                               outbox: &mut EventBox)
                               -> Transition {
         match crust_event {
@@ -427,7 +429,7 @@ impl Node {
         }
     }
 
-    fn handle_bootstrap_accept(&mut self, peer_id: PeerId, peer_kind: CrustUser) {
+    fn handle_bootstrap_accept(&mut self, peer_id: PublicId, peer_kind: CrustUser) {
         trace!("{:?} Received BootstrapAccept from {:?} as {:?}.",
                self,
                peer_id,
@@ -441,12 +443,12 @@ impl Node {
         // TODO: Keep track of that peer to make sure we receive a message from them.
     }
 
-    fn handle_bootstrap_connect(&mut self, peer_id: PeerId, outbox: &mut EventBox) {
+    fn handle_bootstrap_connect(&mut self, peer_id: PublicId, outbox: &mut EventBox) {
         // A mature node doesn't need a bootstrap connection
         self.disconnect_peer(&peer_id, Some(outbox))
     }
 
-    fn handle_connect_success(&mut self, peer_id: PeerId) {
+    fn handle_connect_success(&mut self, peer_id: PublicId) {
         if peer_id == self.crust_service.id() {
             debug!("{:?} Received ConnectSuccess event with our Crust peer ID.",
                    self);
@@ -465,12 +467,11 @@ impl Node {
             debug!("{:?} Removing unwanted tunnel for {:?}", self, peer_id);
             let message = DirectMessage::TunnelDisconnect(peer_id);
             self.send_direct_message(tunnel_id, message);
-        } else if let Some(pub_id) = self.peer_mgr.get_routing_peer(&peer_id) {
-            warn!("{:?} Received ConnectSuccess from {:?}, but node {:?} is already in routing \
+        } else if self.peer_mgr.is_routing_peer(&peer_id) {
+            warn!("{:?} Received ConnectSuccess from {:?}, but node is already in routing \
                    state in peer_map.",
                   self,
-                  peer_id,
-                  pub_id.name());
+                  peer_id.name());
             return;
         }
 
@@ -488,47 +489,40 @@ impl Node {
         self.send_node_identify(peer_id, false);
     }
 
-    fn handle_connect_failure(&mut self, peer_id: PeerId) {
+    fn handle_connect_failure(&mut self, peer_id: PublicId) {
         if peer_id == self.crust_service.id() {
             debug!("{:?} Received ConnectFailure event with our Crust peer ID.",
                    self);
             return;
         }
 
-        if let Some(&pub_id) = self.peer_mgr.get_connecting_peer(&peer_id) {
-            debug!("{:?} Failed to connect to peer {:?} with pub_id {:?}.",
-                   self,
-                   peer_id,
-                   pub_id);
+        if let Some(&PeerState::CrustConnecting) =
+            self.peer_mgr.get_peer(&peer_id).map(Peer::state) {
+            debug!("{:?} Failed to connect to peer {:?}.", self, peer_id);
             if self.tunnels.tunnel_for(&peer_id).is_none() {
                 let valid = self.peer_mgr
                     .get_peer(&peer_id)
                     .map_or(false, |peer| peer.valid());
-                self.find_tunnel_for_peer(peer_id, &pub_id, valid);
+                self.find_tunnel_for_peer(&peer_id, valid);
             } else {
-                debug!("{:?} already has tunnel to peer {:?} with pub_id {:?}.",
-                       self,
-                       peer_id,
-                       pub_id);
+                debug!("{:?} already has tunnel to peer {:?}.", self, peer_id);
             }
         }
     }
 
-    fn find_tunnel_for_peer(&mut self, peer_id: PeerId, pub_id: &PublicId, valid: bool) {
-        for (name, dst_peer_id) in
-            self.peer_mgr
-                .set_searching_for_tunnel(peer_id, *pub_id, valid) {
+    fn find_tunnel_for_peer(&mut self, pub_id: &PublicId, valid: bool) {
+        for dst_peer_id in self.peer_mgr.set_searching_for_tunnel(*pub_id, valid) {
             trace!("{:?} Asking {:?} to serve as a tunnel for {:?}.",
                    self,
-                   name,
-                   peer_id);
-            let tunnel_request = DirectMessage::TunnelRequest(peer_id);
+                   dst_peer_id.name(),
+                   pub_id);
+            let tunnel_request = DirectMessage::TunnelRequest(*pub_id);
             self.send_direct_message(dst_peer_id, tunnel_request);
         }
     }
 
     fn handle_new_message(&mut self,
-                          peer_id: PeerId,
+                          peer_id: PublicId,
                           bytes: Vec<u8>,
                           outbox: &mut EventBox)
                           -> Result<(), RoutingError> {
@@ -605,7 +599,7 @@ impl Node {
     // Deconstruct a `DirectMessage` and handle or forward as appropriate.
     fn handle_direct_message(&mut self,
                              direct_message: DirectMessage,
-                             peer_id: PeerId,
+                             peer_id: PublicId,
                              outbox: &mut EventBox)
                              -> Result<(), RoutingError> {
         use messages::DirectMessage::*;
@@ -664,7 +658,7 @@ impl Node {
                            self,
                            public_id.name(),
                            is_tunnel);
-                    self.handle_node_identify(&public_id, &peer_id, is_tunnel, outbox);
+                    self.handle_node_identify(&public_id, is_tunnel, outbox);
                 } else {
                     warn!("{:?} Signature check failed in NodeIdentify, so dropping peer {:?}.",
                           self,
@@ -732,20 +726,21 @@ impl Node {
     fn handle_message_signature(&mut self,
                                 digest: sha256::Digest,
                                 sig: sign::Signature,
-                                peer_id: PeerId)
+                                peer_id: PublicId)
                                 -> Result<(), RoutingError> {
-        if let Some(&pub_id) = self.peer_mgr.get_routing_peer(&peer_id) {
-            let min_section_size = self.min_section_size();
-            if let Some((signed_msg, route)) =
-                self.sig_accumulator
-                    .add_signature(min_section_size, digest, sig, pub_id) {
-                let hop = *self.name(); // we accumulated the message, so now we act as the last hop
-                return self.handle_signed_message(signed_msg, route, hop, &BTreeSet::new());
-            }
-        } else {
+        if !self.peer_mgr.is_routing_peer(&peer_id) {
             debug!("{:?} Received message signature from unknown peer {:?}",
                    self,
                    peer_id);
+            return Err(RoutingError::UnknownConnection(peer_id));
+        }
+
+        let min_section_size = self.min_section_size();
+        if let Some((signed_msg, route)) =
+            self.sig_accumulator
+                .add_signature(min_section_size, digest, sig, peer_id) {
+            let hop = *self.name(); // we accumulated the message, so now we act as the last hop
+            self.handle_signed_message(signed_msg, route, hop, &BTreeSet::new())?;
         }
         Ok(())
     }
@@ -762,7 +757,7 @@ impl Node {
 
     fn get_section_list(&self, prefix: &Prefix<XorName>) -> Result<SectionList, RoutingError> {
         Ok(SectionList::new(*prefix,
-                            self.peer_mgr.get_pub_ids(&self.get_section(prefix)?)))
+                            self.peer_mgr.get_peer_ids(&self.get_section(prefix)?)))
     }
 
     /// Sends a signature for the list of members of all sections that we haven't signed yet.
@@ -835,22 +830,19 @@ impl Node {
     }
 
     fn handle_section_list_signature(&mut self,
-                                     peer_id: PeerId,
+                                     peer_id: PublicId,
                                      section_list: SectionList,
                                      sig: sign::Signature)
                                      -> Result<(), RoutingError> {
-        let src_pub_id = self.peer_mgr
-            .get_routing_peer(&peer_id)
-            .ok_or(RoutingError::InvalidSource)?;
+        if !self.peer_mgr.is_routing_peer(&peer_id) {
+            return Err(RoutingError::InvalidSource);
+        }
+
         let serialised = serialisation::serialise(&section_list)?;
-        if sign::verify_detached(&sig, &serialised, src_pub_id.signing_public_key()) {
+        if sign::verify_detached(&sig, &serialised, peer_id.signing_public_key()) {
             let section_len = self.routing_table().our_section().len();
             self.section_list_sigs
-                .add_signature(section_list.prefix,
-                               *src_pub_id,
-                               section_list,
-                               sig,
-                               section_len);
+                .add_signature(section_list.prefix, peer_id, section_list, sig, section_len);
             Ok(())
         } else {
             Err(RoutingError::FailedSignature)
@@ -859,9 +851,9 @@ impl Node {
 
     fn handle_hop_message(&mut self,
                           hop_msg: HopMessage,
-                          peer_id: PeerId)
+                          peer_id: PublicId)
                           -> Result<(), RoutingError> {
-        let hop_name = if let Some(peer) = self.peer_mgr.get_connected_peer(&peer_id) {
+        let hop_name = if let Some(peer) = self.peer_mgr.get_peer(&peer_id) {
             hop_msg.verify(peer.pub_id().signing_public_key())?;
 
             match *peer.state() {
@@ -870,18 +862,32 @@ impl Node {
                     *self.name()
                 }
                 PeerState::JoiningNode => *self.name(),
-                _ => *peer.name(),
+                PeerState::Candidate(_) |
+                PeerState::Proxy |
+                PeerState::Routing(_) => *peer.name(),
+                PeerState::ConnectionInfoPreparing { .. } |
+                PeerState::ConnectionInfoReady(_) |
+                PeerState::CrustConnecting |
+                PeerState::SearchingForTunnel |
+                PeerState::Connected(_) => {
+                    *self.name()
+                    // FIXME - confirm we can return with an error here by running soak tests
+                    // debug!("{:?} Invalid sender {:?} of {:?}", self, peer_id, hop_msg);
+                    // return Err(RoutingError::InvalidSource);
+                }
             }
         } else {
             debug!("{:?} Can't find sender {:?} of {:?}",
                    self,
                    peer_id,
                    hop_msg);
-            // TODO - We could return `UnknownConnection` here and not handle the message, but we
-            //        could be handling a tunnelled message here immediately after the tunnel
-            //        closed. Since we no longer have the peer's name available, we just use our
-            //        own instead, as this is almost equivalent to passing no name at all.
+            // FIXME - confirm we can return with an error here by running soak tests
+            // // TODO - We could return `UnknownConnection` here and not handle the message, but we
+            // //        could be handling a tunnelled message here immediately after the tunnel
+            // //        closed. Since we no longer have the peer's name available, we just use our
+            // //        own instead, as this is almost equivalent to passing no name at all.
             *self.name()
+            // return Err(RoutingError::UnknownConnection);
         };
 
         let HopMessage {
@@ -1161,7 +1167,7 @@ impl Node {
                                  new_client_auth: Authority<XorName>,
                                  outbox: &mut EventBox)
                                  -> Result<(), RoutingError> {
-        for peer_id in self.peer_mgr.remove_expired_candidates() {
+        for peer_id in self.peer_mgr.remove_expired_peers(true) {
             self.disconnect_peer(&peer_id, Some(outbox));
         }
 
@@ -1171,9 +1177,9 @@ impl Node {
         // to our RT.
         // This will flag peer as valid if its found in peer_mgr regardless of their
         // connection status to us.
-        let opt_peer_id = match self.peer_mgr
+        let connected = match self.peer_mgr
                   .handle_candidate_approval(&old_pub_id, &new_pub_id) {
-            Ok(peer_id) => peer_id,
+            Ok(connected) => connected,
             Err(_) => {
                 let src = Authority::ManagedNode(*self.name());
                 if let Err(error) = self.send_connection_info_request(new_pub_id,
@@ -1185,7 +1191,7 @@ impl Node {
                            new_pub_id.name(),
                            error);
                 }
-                None
+                false
             }
         };
 
@@ -1213,12 +1219,12 @@ impl Node {
             }
         }
 
-        if let Some(peer_id) = opt_peer_id {
+        if connected {
             // Since this is not a DirectMessage, we're currently using self.tunnels to
             // check if the given peer_id will be reached via a tunnel when we send
             // messages and add to RT accordingly. Ideally this should not have to rely on tunnels.
-            let is_tunnel = self.tunnels.tunnel_for(&peer_id).is_some();
-            self.add_to_routing_table(&new_pub_id, &peer_id, is_tunnel, outbox);
+            let is_tunnel = self.tunnels.tunnel_for(&new_pub_id).is_some();
+            self.add_to_routing_table(&new_pub_id, is_tunnel, outbox);
         }
         Ok(())
     }
@@ -1314,7 +1320,7 @@ impl Node {
     }
 
     fn handle_resource_proof_response(&mut self,
-                                      peer_id: PeerId,
+                                      peer_id: PublicId,
                                       part_index: usize,
                                       part_count: usize,
                                       proof: Vec<u8>,
@@ -1326,9 +1332,9 @@ impl Node {
             return;
         }
 
-        let (old_pub_id, debug_output) = if let Some((old_pub_id, new_pub_id)) =
-            self.peer_mgr.get_candidate_from_peer_id(&peer_id) {
-            (old_pub_id, format!("{}->{}", old_pub_id.name(), new_pub_id.name()))
+        let (old_pub_id, debug_output) = if let Some(old_pub_id) =
+            self.peer_mgr.get_candidate_old_id(peer_id) {
+            (old_pub_id, format!("{}->{}", old_pub_id.name(), peer_id.name()))
         } else {
             debug!("{:?} Failed to find candidate while handling resource proof response from {:?}",
                    self,
@@ -1437,7 +1443,7 @@ impl Node {
         Ok(false)
     }
 
-    fn send_bootstrap_identify(&mut self, peer_id: PeerId) {
+    fn send_bootstrap_identify(&mut self, peer_id: PublicId) {
         let direct_message =
             DirectMessage::BootstrapIdentify { public_id: *self.full_id.public_id() };
         self.send_direct_message(peer_id, direct_message);
@@ -1445,7 +1451,7 @@ impl Node {
 
     fn handle_client_identify(&mut self,
                               public_id: PublicId,
-                              peer_id: PeerId,
+                              peer_id: PublicId,
                               client_restriction: bool,
                               outbox: &mut EventBox) {
         if !client_restriction && !self.crust_service.is_peer_whitelisted(&peer_id) {
@@ -1455,7 +1461,7 @@ impl Node {
             return;
         }
 
-        for peer_id in self.peer_mgr.remove_expired_joining_nodes() {
+        for peer_id in self.peer_mgr.remove_expired_peers(true) {
             debug!("{:?} Removing stale joining node with peer ID {:?}",
                    self,
                    peer_id);
@@ -1481,19 +1487,15 @@ impl Node {
             return;
         }
 
-        let non_unique = if client_restriction {
-            self.peer_mgr.insert_client(peer_id, public_id)
+        let peer_state = if client_restriction {
+            debug!("{:?} Accepted Client {:?}.", self, public_id.name());
+            PeerState::Client
         } else {
-            self.peer_mgr.insert_joining_node(peer_id, public_id)
+            debug!("{:?} Accepted JoiningNode {:?}.", self, public_id.name());
+            PeerState::JoiningNode
         };
 
-        if non_unique {
-            debug!("{:?} Received two ClientInfo messages from the same peer ID {:?}.",
-                   self,
-                   peer_id);
-        }
-
-        debug!("{:?} Accepted client {:?}.", self, public_id.name());
+        let _ = self.peer_mgr.insert_peer(peer_id, peer_state, false);
 
         self.send_bootstrap_identify(peer_id)
     }
@@ -1505,7 +1507,7 @@ impl Node {
                                  signature_using_old: &sign::Signature,
                                  signature_using_new: &sign::Signature,
                                  new_client_auth: &Authority<XorName>,
-                                 peer_id: &PeerId,
+                                 peer_id: &PublicId,
                                  is_tunnel: bool,
                                  outbox: &mut EventBox) {
         debug!("{:?} Handling CandidateIdentify from {}->{}.",
@@ -1531,12 +1533,12 @@ impl Node {
             debug!("{:?} Switching CandidateIdentify received from {} to NodeIdentify.",
                    self,
                    new_pub_id.name());
-            self.handle_node_identify(new_pub_id, peer_id, is_tunnel, outbox);
+            self.handle_node_identify(new_pub_id, is_tunnel, outbox);
             return;
         }
 
         let (difficulty, target_size) = if self.crust_service.is_peer_hard_coded(peer_id) ||
-                                           self.peer_mgr.get_joining_node(peer_id).is_some() {
+                                           self.peer_mgr.is_joining_node(peer_id) {
             (0, 1)
         } else {
             (RESOURCE_PROOF_DIFFICULTY,
@@ -1551,7 +1553,6 @@ impl Node {
                   .handle_candidate_identify(old_pub_id,
                                              new_pub_id,
                                              new_client_auth,
-                                             peer_id,
                                              target_size,
                                              difficulty,
                                              seed.clone(),
@@ -1574,7 +1575,7 @@ impl Node {
                       self,
                       old_pub_id.name(),
                       new_pub_id.name());
-                self.add_to_routing_table(new_pub_id, peer_id, is_tunnel, outbox);
+                self.add_to_routing_table(new_pub_id, is_tunnel, outbox);
             }
             Err(RoutingError::CandidateIsTunnelling) => {
                 debug!("{:?} handling a tunnelling candidate {}->{}",
@@ -1631,7 +1632,6 @@ impl Node {
 
     fn handle_node_identify(&mut self,
                             public_id: &PublicId,
-                            peer_id: &PeerId,
                             is_tunnel: bool,
                             outbox: &mut EventBox) {
         let peer_valid = if let Some(peer) = self.peer_mgr.get_peer_by_name(public_id.name()) {
@@ -1639,26 +1639,20 @@ impl Node {
         } else {
             return;
         };
-        self.peer_mgr.set_peer_id(public_id.name(), *peer_id);
         if peer_valid {
-            self.add_to_routing_table(public_id, peer_id, is_tunnel, outbox);
+            self.add_to_routing_table(public_id, is_tunnel, outbox);
         }
     }
 
-    fn add_to_routing_table(&mut self,
-                            public_id: &PublicId,
-                            peer_id: &PeerId,
-                            is_tunnel: bool,
-                            outbox: &mut EventBox) {
-        match self.peer_mgr
-                  .add_to_routing_table(public_id, peer_id, is_tunnel) {
+    fn add_to_routing_table(&mut self, pub_id: &PublicId, is_tunnel: bool, outbox: &mut EventBox) {
+        match self.peer_mgr.add_to_routing_table(pub_id, is_tunnel) {
             Err(RoutingTableError::AlreadyExists) => return,  // already in RT
             Err(error) => {
                 debug!("{:?} Peer {:?} was not added to the routing table: {}",
                        self,
-                       peer_id,
+                       pub_id,
                        error);
-                self.disconnect_peer(peer_id, Some(outbox));
+                self.disconnect_peer(pub_id, Some(outbox));
                 return;
             }
             Ok(()) => (),
@@ -1670,14 +1664,14 @@ impl Node {
             // In the future we'll look to remove this restriction so we always call
             // `send_section_split()` here and also check whether another round of splitting is
             // required in `handle_section_split()` so splitting becomes recursive like merging.
-            if our_ver_pfx.prefix().matches(public_id.name()) {
-                self.send_section_split(our_ver_pfx, *public_id.name());
+            if our_ver_pfx.prefix().matches(pub_id.name()) {
+                self.send_section_split(our_ver_pfx, *pub_id.name());
             }
         } else {
             self.merge_if_necessary();
         }
 
-        debug!("{:?} Added {:?} to routing table.", self, public_id.name());
+        debug!("{:?} Added {:?} to routing table.", self, pub_id.name());
         if self.is_first_node && self.routing_table().len() == 1 {
             trace!("{:?} Node approval completed. Prefixes: {:?}",
                    self,
@@ -1686,17 +1680,16 @@ impl Node {
         }
 
         if self.is_approved {
-            outbox.send_event(Event::NodeAdded(*public_id.name(), self.routing_table().clone()));
+            outbox.send_event(Event::NodeAdded(*pub_id.name(), self.routing_table().clone()));
 
-            if let Some(prefix) = self.routing_table()
-                   .find_section_prefix(public_id.name()) {
+            if let Some(prefix) = self.routing_table().find_section_prefix(pub_id.name()) {
                 self.send_section_list_signature(prefix, None);
                 if prefix == *self.our_prefix() {
                     self.send_section_update(None);
                     self.reset_su_timer();
                     // if the node joined our section, send signatures for all section lists to it
                     for pfx in self.routing_table().prefixes() {
-                        self.send_section_list_signature(pfx, Some(*public_id.name()));
+                        self.send_section_list_signature(pfx, Some(*pub_id.name()));
                     }
                 } else {
                     self.send_section_update(Some(prefix));
@@ -1704,15 +1697,15 @@ impl Node {
             }
         }
 
-        for (dst_id, peer_name) in self.peer_mgr.peers_needing_tunnel() {
+        for dst_id in self.peer_mgr.peers_needing_tunnel() {
             if self.peer_mgr
-                   .is_potential_tunnel_node(public_id.name(), &peer_name) {
+                   .is_potential_tunnel_node(pub_id.name(), dst_id.name()) {
                 trace!("{:?} Asking {:?} to serve as a tunnel for {:?}",
                        self,
-                       peer_id,
+                       pub_id,
                        dst_id);
                 let tunnel_request = DirectMessage::TunnelRequest(dst_id);
-                self.send_direct_message(*peer_id, tunnel_request);
+                self.send_direct_message(*pub_id, tunnel_request);
             }
         }
     }
@@ -1731,7 +1724,7 @@ impl Node {
         }
 
         let members = self.peer_mgr
-            .get_pub_ids(self.routing_table().our_section());
+            .get_peer_ids(self.routing_table().our_section());
 
         let content = MessageContent::SectionUpdate {
             versioned_prefix: self.routing_table().our_versioned_prefix(),
@@ -1887,11 +1880,7 @@ impl Node {
         let peer_id = their_connection_info.id();
         use peer_manager::ConnectionInfoReceivedResult::*;
         match self.peer_mgr
-                  .connection_info_received(src,
-                                            dst,
-                                            pub_id,
-                                            their_connection_info,
-                                            message_id) {
+                  .connection_info_received(src, dst, their_connection_info, message_id) {
             Ok(Ready(our_info, their_info)) => {
                 debug!("{:?} Already sent a connection info request to {:?} ({:?}); resending \
                         our same details as a response.",
@@ -1920,15 +1909,11 @@ impl Node {
                               with invalid state.",
                               self,
                               pub_id.name());
-                let x = self.peer_mgr
-                    .get_peer_by_name(pub_id.name())
-                    .map(|peer| (peer.peer_id().cloned(), peer.valid()));
-
-                if let Some((Some(peer_id), valid)) = x {
-                    if valid {
-                        self.send_node_identify(peer_id, false);
-                        self.add_to_routing_table(&pub_id, &peer_id, false, outbox);
-                    }
+                if self.peer_mgr
+                       .get_peer(&pub_id)
+                       .map_or(false, |peer| peer.valid()) {
+                    self.send_node_identify(pub_id, false);
+                    self.add_to_routing_table(&pub_id, false, outbox);
                 }
             }
             Ok(Waiting) | Ok(IsConnected) | Err(_) => (),
@@ -1945,9 +1930,7 @@ impl Node {
                                        dst: Authority<XorName>)
                                        -> Result<(), RoutingError> {
         self.peer_mgr.allow_connect(&src)?;
-        if self.peer_mgr
-               .get_state_by_name(public_id.name())
-               .is_none() {
+        if self.peer_mgr.get_peer(&public_id).is_none() {
             return Err(RoutingError::InvalidDestination);
         }
 
@@ -1960,7 +1943,6 @@ impl Node {
         match self.peer_mgr
                   .connection_info_received(Authority::ManagedNode(src),
                                             dst,
-                                            public_id,
                                             their_connection_info,
                                             message_id) {
             Ok(Ready(our_info, their_info)) => {
@@ -1992,7 +1974,7 @@ impl Node {
     }
 
     /// Handle a request by `peer_id` to act as a tunnel connecting it with `dst_id`.
-    fn handle_tunnel_request(&mut self, peer_id: PeerId, dst_id: PeerId) {
+    fn handle_tunnel_request(&mut self, peer_id: PublicId, dst_id: PublicId) {
         if self.peer_mgr.can_tunnel_for(&peer_id, &dst_id) {
             if let Some((id0, id1)) = self.tunnels.consider_clients(peer_id, dst_id) {
                 debug!("{:?} Accepted tunnel request from {:?} for {:?}.",
@@ -2010,7 +1992,7 @@ impl Node {
     }
 
     /// Handle a `TunnelSuccess` response from `peer_id`: It will act as a tunnel to `dst_id`.
-    fn handle_tunnel_success(&mut self, peer_id: PeerId, dst_id: PeerId) {
+    fn handle_tunnel_success(&mut self, peer_id: PublicId, dst_id: PublicId) {
         if let Some(tunnel_id) = self.tunnels.tunnel_for(&dst_id) {
             if *tunnel_id == peer_id {
                 return; // duplicate `TunnelSuccess`
@@ -2019,7 +2001,7 @@ impl Node {
 
         let can_tunnel_for = |peer: &Peer| peer.state().can_tunnel_for();
         if self.peer_mgr
-               .get_connected_peer(&peer_id)
+               .get_peer(&peer_id)
                .map_or(false, can_tunnel_for) && self.tunnels.add(dst_id, peer_id) &&
            self.peer_mgr.tunnelling_to(&dst_id) {
             debug!("{:?} Adding {:?} as a tunnel node for {:?}.",
@@ -2039,7 +2021,10 @@ impl Node {
     }
 
     /// Handle a `TunnelClosed` message from `peer_id`: `dst_id` disconnected.
-    fn handle_tunnel_closed(&mut self, peer_id: PeerId, dst_id: PeerId, outbox: &mut EventBox) {
+    fn handle_tunnel_closed(&mut self,
+                            peer_id: PublicId,
+                            dst_id: PublicId,
+                            outbox: &mut EventBox) {
         if self.tunnels.remove(dst_id, peer_id) {
             debug!("{:?} Tunnel to {:?} via {:?} closed.",
                    self,
@@ -2052,7 +2037,7 @@ impl Node {
     }
 
     /// Handle a `TunnelDisconnect` message from `peer_id` who wants to disconnect `dst_id`.
-    fn handle_tunnel_disconnect(&mut self, peer_id: PeerId, dst_id: PeerId) {
+    fn handle_tunnel_disconnect(&mut self, peer_id: PublicId, dst_id: PublicId) {
         debug!("{:?} Closing tunnel connecting {:?} and {:?}.",
                self,
                dst_id,
@@ -2064,20 +2049,18 @@ impl Node {
 
     /// Disconnects from the given peer, via Crust or by dropping the tunnel node, if the peer is
     /// not a proxy, client or routing table entry.
-    fn disconnect_peer(&mut self, peer_id: &PeerId, outbox: Option<&mut EventBox>) {
-        if let Some(&pub_id) = self.peer_mgr.get_routing_peer(peer_id) {
-            debug!("{:?} Not disconnecting routing table entry {:?} ({:?}).",
+    fn disconnect_peer(&mut self, peer_id: &PublicId, outbox: Option<&mut EventBox>) {
+        if self.peer_mgr.is_routing_peer(peer_id) {
+            debug!("{:?} Not disconnecting routing table entry {:?}.",
                    self,
-                   pub_id.name(),
-                   peer_id);
-        } else if let Some(&public_id) = self.peer_mgr.get_proxy_public_id(peer_id) {
-            debug!("{:?} Not disconnecting proxy node {} ({:?}).",
+                   peer_id.name());
+        } else if self.peer_mgr.is_proxy(peer_id) {
+            debug!("{:?} Not disconnecting proxy node {}.",
                    self,
-                   public_id.name(),
-                   peer_id);
-        } else if self.peer_mgr.get_client(peer_id).is_some() {
+                   peer_id.name());
+        } else if self.peer_mgr.is_client(peer_id) {
             debug!("{:?} Not disconnecting client {:?}.", self, peer_id);
-        } else if self.peer_mgr.get_joining_node(peer_id).is_some() {
+        } else if self.peer_mgr.is_joining_node(peer_id) {
             debug!("{:?} Not disconnecting joining node {:?}.", self, peer_id);
         } else if let Some(tunnel_id) = self.tunnels.remove_tunnel_for(peer_id) {
             debug!("{:?} Disconnecting {:?} (indirect).", self, peer_id);
@@ -2116,7 +2099,7 @@ impl Node {
                                client_key: sign::PublicKey,
                                proxy_name: XorName,
                                dst_name: XorName,
-                               peer_id: PeerId,
+                               peer_id: PublicId,
                                message_id: MessageId)
                                -> Result<(), RoutingError> {
         // Validate relocating node has contacted the correct Section-X
@@ -2158,7 +2141,7 @@ impl Node {
                                message_id: MessageId,
                                outbox: &mut EventBox)
                                -> Result<(), RoutingError> {
-        for peer_id in self.peer_mgr.remove_expired_candidates() {
+        for peer_id in self.peer_mgr.remove_expired_peers(true) {
             self.disconnect_peer(&peer_id, Some(outbox));
         }
 
@@ -2218,7 +2201,7 @@ impl Node {
                                   message_id: MessageId,
                                   outbox: &mut EventBox)
                                   -> Result<(), RoutingError> {
-        for peer_id in self.peer_mgr.remove_expired_candidates() {
+        for peer_id in self.peer_mgr.remove_expired_peers(true) {
             self.disconnect_peer(&peer_id, Some(outbox));
         }
 
@@ -2258,9 +2241,11 @@ impl Node {
         trace!("{:?} Got section update for {:?}", self, ver_pfx);
 
         // Perform splits and merges that we missed, according to the section update.
-        for (name, peer_id) in self.peer_mgr.add_prefix(ver_pfx) {
+        for peer_id in self.peer_mgr.add_prefix(ver_pfx) {
             self.disconnect_peer(&peer_id, Some(outbox));
-            info!("{:?} Dropped {:?} from the routing table.", self, name);
+            info!("{:?} Dropped {:?} from the routing table.",
+                  self,
+                  peer_id.name());
         }
         info!("{:?} SectionUpdate handled. Prefixes: {:?}",
               self,
@@ -2315,7 +2300,7 @@ impl Node {
             outbox.send_event(Event::SectionSplit(new_prefix));
         }
 
-        for (_name, peer_id) in peers_to_drop {
+        for peer_id in peers_to_drop {
             self.disconnect_peer(&peer_id, Some(outbox));
         }
         info!("{:?} Section split for {:?} completed. Prefixes: {:?}",
@@ -2407,17 +2392,13 @@ impl Node {
                                  outbox: &mut EventBox) {
         match self.peer_mgr
                   .merge_own_section(sender_prefix, merge_version, sections) {
-            (OwnMergeState::AlreadyMerged, _dropped_peers, _needed_peers) => (),
+            (OwnMergeState::AlreadyMerged, _needed_peers) => (),
             (OwnMergeState::Completed {
                  targets,
                  versioned_prefix,
                  ..
              },
-             dropped_peers,
              needed_peers) => {
-                for (_name, peer_id) in dropped_peers {
-                    self.disconnect_peer(&peer_id, Some(outbox));
-                }
                 // TODO - the event should maybe only fire once all new connections have been made?
                 outbox.send_event(Event::SectionMerge(*versioned_prefix.prefix()));
                 info!("{:?} Own section merge completed. Prefixes: {:?}",
@@ -2507,11 +2488,6 @@ impl Node {
             let tick_period = Duration::from_secs(TICK_TIMEOUT_SECS);
             self.tick_timer_token = self.timer.schedule(tick_period);
 
-            for peer_id in self.peer_mgr.remove_expired_connections() {
-                debug!("{:?} Disconnecting from timed out peer {:?}", self, peer_id);
-                let _ = self.crust_service.disconnect(peer_id);
-            }
-
             let transition = if cfg!(feature = "use-mock-crust") {
                 Transition::Stay
             } else {
@@ -2567,17 +2543,16 @@ impl Node {
             self.dropped_routing_node(&name, removal_detail, outbox);
         }
         let mut peer_ids_to_drop = vec![];
-        for (peer_id, name, is_tunnel) in peer_details.routing_peer_details {
+        for (peer_id, is_tunnel) in peer_details.routing_peer_details {
             if is_tunnel {
                 match self.tunnels.tunnel_for(&peer_id) {
                     Some(tunnel_node_id) => {
                         if !self.crust_service.is_connected(tunnel_node_id) {
                             log_or_panic!(LogLevel::Debug,
-                                          "{:?} Should have a tunnel connection to {} {:?} via \
+                                          "{:?} Should have a tunnel connection to {} via \
                                           {:?}, but tunnel node not connected.",
                                           self,
-                                          name,
-                                          peer_id,
+                                          peer_id.name(),
                                           tunnel_node_id);
                             peer_ids_to_drop.push(*tunnel_node_id);
                         }
@@ -2585,29 +2560,26 @@ impl Node {
                     None => {
                         if self.crust_service.is_connected(&peer_id) {
                             log_or_panic!(LogLevel::Debug,
-                                          "{:?} Should have a tunnel connection to {} {:?}, but \
+                                          "{:?} Should have a tunnel connection to {}, but \
                                           instead have a direct connection.",
                                           self,
-                                          name,
-                                          peer_id);
+                                          peer_id.name());
                             self.peer_mgr.correct_state_to_direct(&peer_id);
                         } else {
                             log_or_panic!(LogLevel::Debug,
-                                          "{:?} Should have a tunnel connection to {} {:?}, but no \
+                                          "{:?} Should have a tunnel connection to {}, but no \
                                           tunnel node or direct connection exists.",
                                           self,
-                                          name,
-                                          peer_id);
+                                          peer_id.name());
                             peer_ids_to_drop.push(peer_id);
                         }
                     }
                 }
             } else if !self.crust_service.is_connected(&peer_id) {
                 log_or_panic!(LogLevel::Error,
-                              "{:?} Should have a direct connection to {} {:?}, but don't.",
+                              "{:?} Should have a direct connection to {}, but don't.",
                               self,
-                              name,
-                              peer_id);
+                              peer_id.name());
                 if self.tunnels.tunnel_for(&peer_id).is_some() {
                     self.peer_mgr.correct_state_to_tunnel(&peer_id);
                 }
@@ -2731,7 +2703,7 @@ impl Node {
     // Send this byte string.
     fn send_signed_msg_to_peer(&mut self,
                                signed_msg: SignedMessage,
-                               target: PeerId,
+                               target: PublicId,
                                route: u8,
                                sent_to: BTreeSet<XorName>)
                                -> Result<(), RoutingError> {
@@ -2762,11 +2734,11 @@ impl Node {
     // In the case that the `peer_id` is unknown, an ack is sent and the message dropped.
     fn relay_to_client(&mut self,
                        signed_msg: &SignedMessage,
-                       peer_id: &PeerId)
+                       peer_id: &PublicId)
                        -> Result<(), RoutingError> {
         let priority = signed_msg.priority();
 
-        if self.peer_mgr.get_connected_peer(peer_id).is_some() {
+        if self.peer_mgr.is_client(peer_id) || self.peer_mgr.is_joining_node(peer_id) {
             if self.filter_outgoing_routing_msg(signed_msg.routing_message(), peer_id, 0) {
                 return Ok(());
             }
@@ -2832,7 +2804,7 @@ impl Node {
                    route: u8,
                    exclude: &XorName,
                    sent_to: &BTreeSet<XorName>)
-                   -> Result<(BTreeSet<XorName>, Vec<PeerId>), RoutingError> {
+                   -> Result<(BTreeSet<XorName>, Vec<PublicId>), RoutingError> {
         let force_via_proxy = match routing_msg.content {
             MessageContent::ConnectionInfoRequest { pub_id, .. } |
             MessageContent::ConnectionInfoResponse { pub_id, .. } => {
@@ -2851,7 +2823,8 @@ impl Node {
                 if self.in_authority(&routing_msg.dst) {
                     sent_to.iter()
                     .chain(targets.iter()
-                        .filter(|target| match self.peer_mgr.get_state_by_name(target) {
+                        .filter(|target| match self.peer_mgr.
+                          get_peer_by_name(target).map(Peer::state) {
                             Some(&PeerState::Routing(RoutingConnection::Tunnel)) => false,
                             _ => true,
                         }))
@@ -2861,12 +2834,23 @@ impl Node {
                 } else {
                     BTreeSet::new()
                 };
-            Ok((new_sent_to, self.peer_mgr.get_peer_ids(&targets)))
+            Ok((new_sent_to,
+                self.peer_mgr
+                    .get_peer_ids(&targets)
+                    .into_iter()
+                    .collect()))
         } else if let Authority::Client { ref proxy_node_name, .. } = routing_msg.src {
             // We don't have any contacts in our routing table yet. Keep using
             // the proxy connection until we do.
-            if let Some(&peer_id) = self.peer_mgr.get_proxy_peer_id(proxy_node_name) {
-                Ok((BTreeSet::new(), vec![peer_id]))
+            if let Some(peer_id) = self.peer_mgr
+                   .get_peer_by_name(proxy_node_name)
+                   .map(Peer::pub_id) {
+                if self.peer_mgr.is_proxy(peer_id) {
+                    Ok((BTreeSet::new(), vec![*peer_id]))
+                } else {
+                    error!("{:?} Peer found in peer manager but not as proxy.", self);
+                    Err(RoutingError::ProxyConnectionNotFound)
+                }
             } else {
                 error!("{:?} Unable to find connection to proxy node in proxy map.",
                        self);
@@ -2885,7 +2869,7 @@ impl Node {
                            signed_msg: SignedMessage,
                            route: u8,
                            sent_to: BTreeSet<XorName>,
-                           dst: PeerId)
+                           dst: PublicId)
                            -> Result<Vec<u8>, RoutingError> {
         let hop_msg = HopMessage::new(signed_msg,
                                       route,
@@ -2900,7 +2884,7 @@ impl Node {
         Ok(serialisation::serialise(&message)?)
     }
 
-    fn send_node_identify(&mut self, peer_id: PeerId, is_tunnel: bool) {
+    fn send_node_identify(&mut self, peer_id: PublicId, is_tunnel: bool) {
         let direct_message = if self.is_approved {
             let serialised_public_id = match serialisation::serialise(self.full_id.public_id()) {
                 Ok(rslt) => rslt,
@@ -2969,14 +2953,15 @@ impl Node {
         let their_name = *their_public_id.name();
         self.peer_mgr.allow_connect(&their_name)?;
 
-        if let Some((peer_name, peer_id)) =
-            self.peer_mgr
-                .get_proxy_or_client_or_joining_node(&their_public_id) {
+
+        if self.peer_mgr.is_client(&their_public_id) ||
+           self.peer_mgr.is_joining_node(&their_public_id) ||
+           self.peer_mgr.is_proxy(&their_public_id) {
             // we use peer_name here instead of their_name since the peer can be
             // a joining node with its client name as far as proxy node is concerned
-            self.peer_mgr.set_peer_valid(&peer_name, true);
-            self.send_node_identify(peer_id, false);
-            self.add_to_routing_table(&their_public_id, &peer_id, false, outbox);
+            self.peer_mgr.set_peer_valid(&their_public_id, true);
+            self.send_node_identify(their_public_id, false);
+            self.add_to_routing_table(&their_public_id, false, outbox);
             return Ok(());
         }
 
@@ -2984,25 +2969,16 @@ impl Node {
         // connected to, then set their valid attribute and add them to RT.
         // NOTE: If we do not have this peer in peer_mgr, `get_connection_token`
         // will flag them to `valid`
-        self.peer_mgr.set_peer_valid(&their_name, true);
-        let their_id = self.peer_mgr
-            .get_peer_by_name(&their_name)
-            .and_then(|peer| peer.peer_id())
-            .and_then(|peer_id| if let Some(&PeerState::AwaitingNodeIdentify(_)) =
-                self.peer_mgr.get_state_by_name(&their_name) {
-                          Some(*peer_id)
-                      } else if self.peer_mgr.unknown_peers().contains_key(peer_id) {
-                Some(*peer_id)
-            } else {
-                None
-            });
-
-        if let Some(peer_id) = their_id {
+        self.peer_mgr.set_peer_valid(&their_public_id, true);
+        if let Some(&PeerState::Connected(_)) =
+            self.peer_mgr
+                .get_peer(&their_public_id)
+                .map(Peer::state) {
             // Since this is not a DirectMessage, we're currently using self.tunnels to
             // check if the given peer_id will be reached via a tunnel when we send
             // messages and add to RT accordingly. Ideally this should not have to rely on tunnels.
-            let is_tunnel = self.tunnels.tunnel_for(&peer_id).is_some();
-            self.add_to_routing_table(&their_public_id, &peer_id, is_tunnel, outbox);
+            let is_tunnel = self.tunnels.tunnel_for(&their_public_id).is_some();
+            self.add_to_routing_table(&their_public_id, is_tunnel, outbox);
             return Ok(());
         }
 
@@ -3013,7 +2989,9 @@ impl Node {
             return Ok(());
         }
 
-        let our_pub_info = match self.peer_mgr.get_state_by_name(&their_name) {
+        let our_pub_info = match self.peer_mgr
+                  .get_peer(&their_public_id)
+                  .map(Peer::state) {
             Some(&PeerState::ConnectionInfoReady(ref our_priv_info)) => {
                 our_priv_info.to_pub_connection_info()
             }
@@ -3035,7 +3013,7 @@ impl Node {
     // Handle dropped peer with the given peer id. Returns true if we should keep running, false if
     // we should terminate.
     fn dropped_peer(&mut self,
-                    peer_id: &PeerId,
+                    peer_id: &PublicId,
                     outbox: &mut EventBox,
                     mut try_reconnect: bool)
                     -> bool {
@@ -3056,10 +3034,7 @@ impl Node {
                 try_reconnect = false;
             }
             PeerState::JoiningNode => {
-                debug!("{:?} Joining node {:?} dropped. {} remaining.",
-                       self,
-                       peer_id,
-                       self.peer_mgr.joining_nodes_num());
+                debug!("{:?} Joining node {:?} dropped.", self, peer_id);
                 try_reconnect = false;
             }
             PeerState::Proxy => {
@@ -3172,7 +3147,7 @@ impl Node {
                                 targets: BTreeSet<Prefix<XorName>>,
                                 ver_pfx: VersionedPrefix<XorName>,
                                 section: BTreeSet<XorName>) {
-        let pub_ids = self.peer_mgr.get_pub_ids(&section);
+        let pub_ids = self.peer_mgr.get_peer_ids(&section);
         let version = self.routing_table().our_version();
         let content = MessageContent::OtherSectionMerge(pub_ids, version);
         let src = Authority::PrefixSection(*ver_pfx.prefix());
@@ -3189,7 +3164,7 @@ impl Node {
         }
     }
 
-    fn dropped_tunnel_client(&mut self, peer_id: &PeerId) {
+    fn dropped_tunnel_client(&mut self, peer_id: &PublicId) {
         for other_id in self.tunnels.drop_client(peer_id) {
             trace!("{:?} Closing tunnel client connection between {:?} and {:?}",
                    self,
@@ -3200,23 +3175,22 @@ impl Node {
         }
     }
 
-    fn dropped_tunnel_node(&mut self, peer_id: &PeerId, outbox: &mut EventBox) {
+    fn dropped_tunnel_node(&mut self, peer_id: &PublicId, outbox: &mut EventBox) {
         let peers = self.tunnels
             .remove_tunnel(peer_id)
             .into_iter()
             .filter_map(|dst_id| {
                             self.peer_mgr
                                 .get_peer(&dst_id)
-                                .map(|peer| (dst_id, *peer.pub_id(), peer.valid()))
+                                .map(|peer| (dst_id, peer.valid()))
                         })
             .collect_vec();
-        for (dst_id, pub_id, valid) in peers {
+        for (dst_id, valid) in peers {
             self.dropped_peer(&dst_id, outbox, false);
-            debug!("{:?} Lost tunnel for peer {:?} ({:?}). Requesting new tunnel.",
+            debug!("{:?} Lost tunnel for peer {:?}. Requesting new tunnel.",
                    self,
-                   dst_id,
-                   pub_id.name());
-            self.find_tunnel_for_peer(dst_id, &pub_id, valid);
+                   dst_id);
+            self.find_tunnel_for_peer(&dst_id, valid);
         }
     }
 
@@ -3226,7 +3200,7 @@ impl Node {
         self.is_first_node || self.routing_table().len() >= 1
     }
 
-    fn send_direct_message(&mut self, dst_id: PeerId, direct_message: DirectMessage) {
+    fn send_direct_message(&mut self, dst_id: PublicId, direct_message: DirectMessage) {
         self.stats().count_direct_message(&direct_message);
 
         if let Some(&tunnel_id) = self.tunnels.tunnel_for(&dst_id) {
@@ -3269,7 +3243,7 @@ impl Base for Node {
             .map(|names| names.into_iter().cloned().collect_vec())
     }
 
-    fn handle_lost_peer(&mut self, peer_id: PeerId, outbox: &mut EventBox) -> Transition {
+    fn handle_lost_peer(&mut self, peer_id: PublicId, outbox: &mut EventBox) -> Transition {
         if peer_id == self.crust_service.id() {
             error!("{:?} LostPeer fired with our crust peer ID.", self);
             return Transition::Stay;
@@ -3295,7 +3269,7 @@ impl Base for Node {
 #[cfg(feature = "use-mock-crust")]
 impl Node {
     /// Check whether this node acts as a tunnel node between `client_1` and `client_2`.
-    pub fn has_tunnel_clients(&self, client_1: PeerId, client_2: PeerId) -> bool {
+    pub fn has_tunnel_clients(&self, client_1: PublicId, client_2: PublicId) -> bool {
         self.tunnels.has_clients(client_1, client_2)
     }
 
@@ -3370,20 +3344,20 @@ impl Bootstrapped for Node {
                     self.routing_table()
                         .get_section(self.name())
                         .ok_or(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer))?;
-                let pub_ids = self.peer_mgr.get_pub_ids(section);
+                let pub_ids = self.peer_mgr.get_peer_ids(section);
                 vec![SectionList::new(*self.our_prefix(), pub_ids)]
             }
             Section(_) => {
                 vec![SectionList::new(*self.our_prefix(),
                                       self.peer_mgr
-                                          .get_pub_ids(self.routing_table().our_section()))]
+                                          .get_peer_ids(self.routing_table().our_section()))]
             }
             PrefixSection(ref prefix) => {
                 self.routing_table()
                     .all_sections()
                     .into_iter()
                     .filter_map(|(p, (_, members))| if prefix.is_compatible(&p) {
-                                    Some(SectionList::new(p, self.peer_mgr.get_pub_ids(&members)))
+                                    Some(SectionList::new(p, self.peer_mgr.get_peer_ids(&members)))
                                 } else {
                                     None
                                 })

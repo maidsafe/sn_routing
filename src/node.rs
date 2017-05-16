@@ -17,8 +17,6 @@
 
 use action::Action;
 use cache::{Cache, NullCache};
-#[cfg(feature = "use-mock-crust")]
-use crust::PeerId;
 use data::{Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use event::Event;
@@ -109,11 +107,13 @@ impl NodeBuilder {
                           min_section_size: usize,
                           outbox: &mut EventBox)
                           -> (RoutingActionSender, StateMachine) {
+        let full_id = FullId::new();
+        let pub_id = *full_id.public_id();
         StateMachine::new(move |action_sender, crust_service, timer, outbox2| if self.first {
                               if let Some(state) = states::Node::first(action_sender,
                                                                        self.cache,
                                                                        crust_service,
-                                                                       FullId::new(),
+                                                                       full_id,
                                                                        min_section_size,
                                                                        timer) {
                                   State::Node(state)
@@ -130,11 +130,12 @@ impl NodeBuilder {
                                self.cache,
                                BootstrappingTargetState::JoiningNode,
                                crust_service,
-                               FullId::new(),
+                               full_id,
                                min_section_size,
                                timer)
                     .map_or(State::Terminated, State::Bootstrapping)
         },
+                          pub_id,
                           outbox)
     }
 }
@@ -399,9 +400,9 @@ impl Node {
         self.machine.close_group(name, count)
     }
 
-    /// Returns the name of this node.
-    pub fn name(&self) -> Result<XorName, RoutingError> {
-        self.machine.name().ok_or(RoutingError::Terminated)
+    /// Returns the `PublicId` of this node.
+    pub fn id(&self) -> Result<PublicId, RoutingError> {
+        self.machine.id().ok_or(RoutingError::Terminated)
     }
 
     /// Returns the routing table of this node.
@@ -466,7 +467,7 @@ impl Node {
     }
 
     /// Check whether this node acts as a tunnel node between `client_1` and `client_2`.
-    pub fn has_tunnel_clients(&self, client_1: PeerId, client_2: PeerId) -> bool {
+    pub fn has_tunnel_clients(&self, client_1: PublicId, client_2: PublicId) -> bool {
         self.machine
             .current()
             .has_tunnel_clients(client_1, client_2)

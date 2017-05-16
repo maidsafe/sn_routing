@@ -17,8 +17,6 @@
 
 use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
 use ack_manager::Ack;
-#[cfg(not(feature = "use-mock-crust"))]
-use crust::PeerId;
 use data::{AppendWrapper, Data, DataIdentifier};
 use error::RoutingError;
 use event::Event;
@@ -26,8 +24,6 @@ use id::{FullId, PublicId};
 use itertools::Itertools;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-#[cfg(feature = "use-mock-crust")]
-use mock_crust::crust::PeerId;
 use peer_manager::SectionMap;
 use routing_table::{Prefix, VersionedPrefix, Xorable};
 use routing_table::Authority;
@@ -71,18 +67,18 @@ pub enum Message {
         /// The wrapped message
         content: DirectMessage,
         /// The sender
-        src: PeerId,
+        src: PublicId,
         /// The receiver
-        dst: PeerId,
+        dst: PublicId,
     },
     /// A hop message sent via a tunnel because the nodes could not connect directly
     TunnelHop {
         /// The wrapped message
         content: HopMessage,
         /// The sender
-        src: PeerId,
+        src: PublicId,
         /// The receiver
-        dst: PeerId,
+        dst: PublicId,
     },
 }
 
@@ -160,13 +156,13 @@ pub enum DirectMessage {
         is_tunnel: bool,
     },
     /// Sent from a node that needs a tunnel to be able to connect to the given peer.
-    TunnelRequest(PeerId),
+    TunnelRequest(PublicId),
     /// Sent as a response to `TunnelRequest` if the node can act as a tunnel.
-    TunnelSuccess(PeerId),
+    TunnelSuccess(PublicId),
     /// Sent from a tunnel node to indicate that the given peer has disconnected.
-    TunnelClosed(PeerId),
+    TunnelClosed(PublicId),
     /// Sent to a tunnel node to indicate the tunnel is not needed any more.
-    TunnelDisconnect(PeerId),
+    TunnelDisconnect(PublicId),
     /// Request a proof to be provided by the joining node.
     ///
     /// This is sent from member of Group Y to the joining node.
@@ -1282,15 +1278,10 @@ impl UserMessageCache {
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
-    #[cfg(not(feature = "use-mock-crust"))]
-    use crust::PeerId;
     use data::{Data, ImmutableData};
     use id::FullId;
     use maidsafe_utilities::serialisation::serialise;
-    #[cfg(feature = "use-mock-crust")]
-    use mock_crust::crust::PeerId;
     use rand;
     use routing_table::{Authority, Prefix};
     use rust_sodium::crypto::hash::sha256;
@@ -1301,15 +1292,6 @@ mod tests {
     use types::MessageId;
     use xor_name::XorName;
 
-    #[cfg(not(feature = "use-mock-crust"))]
-    fn make_peer_id() -> PeerId {
-        PeerId(*FullId::new().public_id().encrypting_public_key())
-    }
-    #[cfg(feature = "use-mock-crust")]
-    fn make_peer_id() -> PeerId {
-        PeerId(0)
-    }
-
     #[test]
     fn signed_message_check_integrity() {
         let min_section_size = 1000;
@@ -1318,7 +1300,7 @@ mod tests {
         let routing_message = RoutingMessage {
             src: Authority::Client {
                 client_key: *full_id.public_id().signing_public_key(),
-                peer_id: make_peer_id(),
+                peer_id: *full_id.public_id(),
                 proxy_node_name: name,
             },
             dst: Authority::ClientManager(name),

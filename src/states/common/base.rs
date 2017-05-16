@@ -15,8 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use crust::{PeerId, Service};
-use id::FullId;
+use Service;
+use id::{FullId, PublicId};
 use maidsafe_utilities::serialisation;
 use messages::Message;
 use outbox::EventBox;
@@ -33,8 +33,12 @@ pub trait Base: Debug {
     fn stats(&mut self) -> &mut Stats;
     fn in_authority(&self, auth: &Authority<XorName>) -> bool;
 
-    fn handle_lost_peer(&mut self, _peer_id: PeerId, _outbox: &mut EventBox) -> Transition {
+    fn handle_lost_peer(&mut self, _peer_id: PublicId, _outbox: &mut EventBox) -> Transition {
         Transition::Stay
+    }
+
+    fn id(&self) -> &PublicId {
+        self.full_id().public_id()
     }
 
     fn name(&self) -> &XorName {
@@ -45,7 +49,7 @@ pub trait Base: Debug {
         None
     }
 
-    fn send_message(&mut self, peer_id: &PeerId, message: Message) {
+    fn send_message(&mut self, peer_id: &PublicId, message: Message) {
         let priority = message.priority();
 
         match serialisation::serialise(&message) {
@@ -64,9 +68,9 @@ pub trait Base: Debug {
         };
     }
 
-    // Sends the given `bytes` to the peer with the given Crust `PeerId`. If that results in an
+    // Sends the given `bytes` to the peer with the given Crust `PublicId`. If that results in an
     // error, it disconnects from the peer.
-    fn send_or_drop(&mut self, peer_id: &PeerId, bytes: Vec<u8>, priority: u8) {
+    fn send_or_drop(&mut self, peer_id: &PublicId, bytes: Vec<u8>, priority: u8) {
         self.stats().count_bytes(bytes.len());
 
         if let Err(err) = self.crust_service().send(*peer_id, bytes, priority) {

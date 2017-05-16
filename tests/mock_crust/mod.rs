@@ -32,7 +32,6 @@ pub use self::utils::{Nodes, TestClient, TestNode, add_connected_nodes_until_spl
                       verify_invariant_for_all_nodes};
 use routing::{Event, EventStream, Prefix, XOR_NAME_LEN, XorName};
 use routing::mock_crust::{Config, Endpoint, Network};
-use routing::mock_crust::crust::PeerId;
 
 // -----  Miscellaneous tests below  -----
 
@@ -197,7 +196,7 @@ fn whitelist() {
         node.handle
             .0
             .borrow_mut()
-            .whitelist_peer(PeerId(min_section_size));
+            .whitelist_peer(Endpoint(min_section_size));
     }
     // The next node has peer ID `min_section_size`: It should be able to join.
     nodes.push(TestNode::builder(&network)

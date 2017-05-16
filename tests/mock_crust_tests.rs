@@ -57,7 +57,7 @@ macro_rules! expect_next_event {
                 Ok(Event::Tick) => (),
                 other => panic!("Expected Ok({}) at {}, got {:?}",
                     stringify!($pattern),
-                    unwrap!($node.inner.name()),
+                    $node.name(),
                     other),
             }
         }
@@ -78,7 +78,7 @@ macro_rules! expect_any_event {
                 Ok(_) => (),
                 other => panic!("Expected Ok({}) at {}, got {:?}",
                     stringify!($pattern),
-                    unwrap!($node.inner.name()),
+                    $node.name(),
                     other),
             }
         }
@@ -92,7 +92,7 @@ macro_rules! expect_no_event {
             Ok(Event::Tick) => (),
             Err(mpsc::TryRecvError::Empty) => (),
             other => panic!("Expected no event at {}, got {:?}",
-                unwrap!($node.inner.name()),
+                $node.name(),
                 other),
         }
     }}

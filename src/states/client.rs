@@ -16,10 +16,9 @@
 // relating to use of the SAFE Network Software.
 
 use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
+use {CrustEvent, Service};
 use ack_manager::{Ack, AckManager};
 use action::Action;
-use crust::{PeerId, Service};
-use crust::Event as CrustEvent;
 use error::{InterfaceError, RoutingError};
 use event::Event;
 use id::{FullId, PublicId};
@@ -45,7 +44,7 @@ pub struct Client {
     crust_service: Service,
     full_id: FullId,
     min_section_size: usize,
-    proxy_peer_id: PeerId,
+    proxy_peer_id: PublicId,
     proxy_public_id: PublicId,
     routing_msg_filter: RoutingMessageFilter,
     stats: Stats,
@@ -58,7 +57,7 @@ impl Client {
     pub fn from_bootstrapping(crust_service: Service,
                               full_id: FullId,
                               min_section_size: usize,
-                              proxy_peer_id: PeerId,
+                              proxy_peer_id: PublicId,
                               proxy_public_id: PublicId,
                               stats: Stats,
                               timer: Timer,
@@ -109,8 +108,8 @@ impl Client {
             Action::NodeSendMessage { result_tx, .. } => {
                 let _ = result_tx.send(Err(InterfaceError::InvalidState));
             }
-            Action::Name { result_tx } => {
-                let _ = result_tx.send(*self.name());
+            Action::Id { result_tx } => {
+                let _ = result_tx.send(*self.id());
             }
             Action::Timeout(token) => self.handle_timeout(token),
             Action::ResourceProofResult(..) => {
@@ -125,7 +124,7 @@ impl Client {
     }
 
     pub fn handle_crust_event(&mut self,
-                              crust_event: CrustEvent,
+                              crust_event: CrustEvent<PublicId>,
                               outbox: &mut EventBox)
                               -> Transition {
         match crust_event {
@@ -150,7 +149,7 @@ impl Client {
     }
 
     fn handle_new_message(&mut self,
-                          peer_id: PeerId,
+                          peer_id: PublicId,
                           bytes: Vec<u8>,
                           outbox: &mut EventBox)
                           -> Transition {
@@ -175,7 +174,7 @@ impl Client {
 
     fn handle_hop_message(&mut self,
                           hop_msg: HopMessage,
-                          peer_id: PeerId,
+                          peer_id: PublicId,
                           outbox: &mut EventBox)
                           -> Result<Transition, RoutingError> {
         if self.proxy_peer_id == peer_id {
@@ -282,7 +281,7 @@ impl Base for Client {
         }
     }
 
-    fn handle_lost_peer(&mut self, peer_id: PeerId, outbox: &mut EventBox) -> Transition {
+    fn handle_lost_peer(&mut self, peer_id: PublicId, outbox: &mut EventBox) -> Transition {
         if peer_id == self.crust_service().id() {
             error!("{:?} LostPeer fired with our crust peer ID", self);
             return Transition::Stay;
@@ -349,7 +348,7 @@ impl Bootstrapped for Client {
             return Ok(()); // Message is for us.
         }
 
-        // Get PeerId of the proxy node
+        // Get PublicId of the proxy node
         let (proxy_peer_id, sending_nodes) = match routing_msg.src {
             Authority::Client { ref proxy_node_name, .. } => {
                 if *self.proxy_public_id.name() != *proxy_node_name {

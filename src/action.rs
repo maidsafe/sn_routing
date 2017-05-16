@@ -15,9 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-
-use crust::PeerId;
 use error::InterfaceError;
+use id::PublicId;
 use messages::{Request, UserMessage};
 use messages::DirectMessage;
 use routing_table::Authority;
@@ -47,9 +46,9 @@ pub enum Action {
         priority: u8,
         result_tx: Sender<Result<(), InterfaceError>>,
     },
-    Name { result_tx: Sender<XorName> },
+    Id { result_tx: Sender<PublicId> },
     Timeout(u64),
-    ResourceProofResult(PeerId, Vec<DirectMessage>),
+    ResourceProofResult(PublicId, Vec<DirectMessage>),
     Terminate,
 }
 
@@ -71,7 +70,7 @@ impl Debug for Action {
                        content,
                        dst)
             }
-            Action::Name { .. } => write!(formatter, "Action::Name"),
+            Action::Id { .. } => write!(formatter, "Action::Id"),
             Action::Timeout(token) => write!(formatter, "Action::Timeout({})", token),
             Action::ResourceProofResult(peer_id, _) => {
                 write!(formatter, "Action::ResourceProofResult({:?}, ...)", peer_id)

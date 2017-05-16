@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use crust::PeerId;
+use id::PublicId;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::serialise;
 use message_filter::MessageFilter;
@@ -42,7 +42,7 @@ pub enum FilteringResult {
 pub struct RoutingMessageFilter {
     incoming: MessageFilter<RoutingMessage>,
     incoming_route: MessageFilter<(RoutingMessage, u8)>,
-    outgoing: LruCache<(sha3::Digest256, PeerId, u8), ()>,
+    outgoing: LruCache<(sha3::Digest256, PublicId, u8), ()>,
 }
 
 impl RoutingMessageFilter {
@@ -74,7 +74,7 @@ impl RoutingMessageFilter {
     // (and thus should not be sent, due to deduplication).
     //
     // Return `false` if serialisation of the message fails - that can be handled elsewhere.
-    pub fn filter_outgoing(&mut self, msg: &RoutingMessage, peer_id: &PeerId, route: u8) -> bool {
+    pub fn filter_outgoing(&mut self, msg: &RoutingMessage, peer_id: &PublicId, route: u8) -> bool {
         if let Ok(msg_bytes) = serialise(msg) {
             let hash = sha3_256(&msg_bytes);
             self.outgoing

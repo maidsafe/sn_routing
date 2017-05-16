@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use super::{Prefix, Xorable};
-use crust::PeerId;
+use id::PublicId;
 use rust_sodium::crypto::{hash, sign};
 use std::fmt::{self, Binary, Debug, Display, Formatter};
 
@@ -51,7 +51,7 @@ pub enum Authority<N: Xorable + Clone + Copy + Binary + Default> {
         /// in the network address space.
         client_key: sign::PublicKey,
         /// The Crust peer ID of the client.
-        peer_id: PeerId,
+        peer_id: PublicId,
         /// The name of the single ManagedNode which the Client connects to and proxies all messages
         /// through.
         proxy_node_name: N,

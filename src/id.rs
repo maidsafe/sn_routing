@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use crust::Uid;
 use rust_sodium::crypto::{box_, hash, sign};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt::{self, Debug, Formatter};
@@ -104,6 +105,8 @@ pub struct PublicId {
     public_sign_key: sign::PublicKey,
     name: XorName,
 }
+
+impl Uid for PublicId {}
 
 impl Debug for PublicId {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {

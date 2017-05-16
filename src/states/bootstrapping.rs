@@ -17,10 +17,10 @@
 
 use super::{Client, JoiningNode, Node};
 use super::common::Base;
+use {CrustEvent, Service};
 use action::Action;
 use cache::Cache;
-use crust::{CrustUser, PeerId, Service};
-use crust::Event as CrustEvent;
+use crust::CrustUser;
 use error::RoutingError;
 use event::Event;
 use id::{FullId, PublicId};
@@ -58,7 +58,7 @@ pub enum TargetState {
 pub struct Bootstrapping {
     action_sender: RoutingActionSender,
     bootstrap_blacklist: HashSet<SocketAddr>,
-    bootstrap_connection: Option<(PeerId, u64)>,
+    bootstrap_connection: Option<(PublicId, u64)>,
     cache: Box<Cache>,
     target_state: TargetState,
     crust_service: Service,
@@ -114,8 +114,8 @@ impl Bootstrapping {
                 // preserve the pre-refactor behaviour.
                 let _ = result_tx.send(Ok(()));
             }
-            Action::Name { result_tx } => {
-                let _ = result_tx.send(*self.name());
+            Action::Id { result_tx } => {
+                let _ = result_tx.send(*self.id());
             }
             Action::Timeout(token) => self.handle_timeout(token),
             Action::ResourceProofResult(..) => {
@@ -129,7 +129,7 @@ impl Bootstrapping {
     }
 
     pub fn handle_crust_event(&mut self,
-                              crust_event: CrustEvent,
+                              crust_event: CrustEvent<PublicId>,
                               outbox: &mut EventBox)
                               -> Transition {
         match crust_event {
@@ -175,7 +175,7 @@ impl Bootstrapping {
     }
 
     pub fn into_target_state(self,
-                             proxy_peer_id: PeerId,
+                             proxy_peer_id: PublicId,
                              proxy_public_id: PublicId,
                              outbox: &mut EventBox)
                              -> State {
@@ -247,7 +247,10 @@ impl Bootstrapping {
         }
     }
 
-    fn handle_bootstrap_connect(&mut self, peer_id: PeerId, socket_addr: SocketAddr) -> Transition {
+    fn handle_bootstrap_connect(&mut self,
+                                peer_id: PublicId,
+                                socket_addr: SocketAddr)
+                                -> Transition {
         match self.bootstrap_connection {
             None => {
                 debug!("{:?} Received BootstrapConnect from {:?}.", self, peer_id);
@@ -275,7 +278,7 @@ impl Bootstrapping {
     }
 
     fn handle_new_message(&mut self,
-                          peer_id: PeerId,
+                          peer_id: PublicId,
                           bytes: Vec<u8>)
                           -> Result<Transition, RoutingError> {
         match serialisation::deserialise(&bytes) {
@@ -290,7 +293,7 @@ impl Bootstrapping {
 
     fn handle_direct_message(&mut self,
                              direct_message: DirectMessage,
-                             peer_id: PeerId)
+                             peer_id: PublicId)
                              -> Transition {
         match direct_message {
             DirectMessage::BootstrapIdentify { public_id } => {
@@ -306,7 +309,7 @@ impl Bootstrapping {
         }
     }
 
-    fn handle_bootstrap_identify(&mut self, public_id: PublicId, peer_id: PeerId) -> Transition {
+    fn handle_bootstrap_identify(&mut self, public_id: PublicId, peer_id: PublicId) -> Transition {
         Transition::IntoBootstrapped {
             proxy_peer_id: peer_id,
             proxy_public_id: public_id,
@@ -320,7 +323,7 @@ impl Bootstrapping {
         Transition::Stay
     }
 
-    fn send_client_identify(&mut self, peer_id: PeerId) {
+    fn send_client_identify(&mut self, peer_id: PublicId) {
         debug!("{:?} - Sending ClientIdentify to {:?}.", self, peer_id);
 
         let token = self.timer
@@ -347,7 +350,7 @@ impl Bootstrapping {
         self.send_message(&peer_id, Message::Direct(direct_message));
     }
 
-    fn disconnect_peer(&mut self, peer_id: &PeerId) {
+    fn disconnect_peer(&mut self, peer_id: &PublicId) {
         debug!("{:?} Disconnecting {:?}. Calling crust::Service::disconnect.",
                self,
                peer_id);

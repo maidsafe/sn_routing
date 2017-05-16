@@ -19,8 +19,8 @@ use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
 use routing::{Authority, Cache, Client, Data, DataIdentifier, Event, EventStream, FullId,
-              ImmutableData, Node, NullCache, Prefix, Request, Response, RoutingTable, XorName,
-              Xorable, verify_network_invariant};
+              ImmutableData, Node, NullCache, Prefix, PublicId, Request, Response, RoutingTable,
+              XorName, Xorable, verify_network_invariant};
 use routing::mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
 use routing::test_consts::{ACK_TIMEOUT_SECS, NODE_CONNECT_TIMEOUT_SECS};
 use std::{cmp, thread};
@@ -112,12 +112,12 @@ impl EventStream for TestNode {
 }
 
 pub struct TestNode {
-    pub handle: ServiceHandle,
+    pub handle: ServiceHandle<PublicId>,
     pub inner: Node,
 }
 
 impl TestNode {
-    pub fn builder(network: &Network) -> TestNodeBuilder {
+    pub fn builder(network: &Network<PublicId>) -> TestNodeBuilder {
         TestNodeBuilder {
             network: network,
             first_node: false,
@@ -127,7 +127,7 @@ impl TestNode {
         }
     }
 
-    pub fn new(network: &Network,
+    pub fn new(network: &Network<PublicId>,
                first_node: bool,
                config: Option<Config>,
                endpoint: Option<Endpoint>,
@@ -147,8 +147,12 @@ impl TestNode {
         }
     }
 
+    pub fn id(&self) -> PublicId {
+        unwrap!(self.inner.id())
+    }
+
     pub fn name(&self) -> XorName {
-        unwrap!(self.inner.name())
+        *self.id().name()
     }
 
     pub fn close_names(&self) -> BTreeSet<XorName> {
@@ -168,7 +172,7 @@ impl TestNode {
 }
 
 pub struct TestNodeBuilder<'a> {
-    network: &'a Network,
+    network: &'a Network<PublicId>,
     first_node: bool,
     config: Option<Config>,
     endpoint: Option<Endpoint>,
@@ -214,13 +218,16 @@ impl<'a> TestNodeBuilder<'a> {
 // -----  TestClient  -----
 
 pub struct TestClient {
-    pub handle: ServiceHandle,
+    pub handle: ServiceHandle<PublicId>,
     pub inner: Client,
     pub full_id: FullId,
 }
 
 impl TestClient {
-    pub fn new(network: &Network, config: Option<Config>, endpoint: Option<Endpoint>) -> Self {
+    pub fn new(network: &Network<PublicId>,
+               config: Option<Config>,
+               endpoint: Option<Endpoint>)
+               -> Self {
         let full_id = FullId::new();
         let handle = network.new_service_handle(config, endpoint);
         let client = mock_crust::make_current(&handle, || {
@@ -235,7 +242,7 @@ impl TestClient {
     }
 
     pub fn name(&self) -> XorName {
-        unwrap!(self.inner.name())
+        *unwrap!(self.inner.id()).name()
     }
 }
 
@@ -336,11 +343,14 @@ pub fn remove_nodes_which_failed_to_connect(nodes: &mut Vec<TestNode>, count: us
     failed_to_join.len()
 }
 
-pub fn create_connected_nodes(network: &Network, size: usize) -> Nodes {
+pub fn create_connected_nodes(network: &Network<PublicId>, size: usize) -> Nodes {
     create_connected_nodes_with_cache(network, size, false)
 }
 
-pub fn create_connected_nodes_with_cache(network: &Network, size: usize, use_cache: bool) -> Nodes {
+pub fn create_connected_nodes_with_cache(network: &Network<PublicId>,
+                                         size: usize,
+                                         use_cache: bool)
+                                         -> Nodes {
     let mut nodes = Vec::new();
 
     // Create the seed node.
@@ -390,7 +400,7 @@ pub fn create_connected_nodes_with_cache(network: &Network, size: usize, use_cac
     Nodes(nodes)
 }
 
-pub fn create_connected_nodes_until_split(network: &Network,
+pub fn create_connected_nodes_until_split(network: &Network<PublicId>,
                                           prefix_lengths: Vec<usize>,
                                           use_cache: bool)
                                           -> Nodes {
@@ -415,7 +425,7 @@ pub fn create_connected_nodes_until_split(network: &Network,
 //
 // The array is sanity checked (e.g. it would be an error to pass [1, 1, 1]), must comprise at
 // least two elements, and every element must be no more than `8`.
-pub fn add_connected_nodes_until_split(network: &Network,
+pub fn add_connected_nodes_until_split(network: &Network<PublicId>,
                                        nodes: &mut Vec<TestNode>,
                                        mut prefix_lengths: Vec<usize>,
                                        use_cache: bool) {
@@ -518,7 +528,7 @@ pub fn add_connected_nodes_until_split(network: &Network,
 }
 
 // Create `size` clients, all of whom are connected to `nodes[0]`.
-pub fn create_connected_clients(network: &Network,
+pub fn create_connected_clients(network: &Network<PublicId>,
                                 nodes: &mut [TestNode],
                                 size: usize)
                                 -> Vec<TestClient> {
@@ -605,7 +615,7 @@ fn prefixes<T: Rng>(prefix_lengths: &[usize], rng: &mut T) -> Vec<Prefix<XorName
     prefixes
 }
 
-fn add_node_to_section<T: Rng>(network: &Network,
+fn add_node_to_section<T: Rng>(network: &Network<PublicId>,
                                nodes: &mut Vec<TestNode>,
                                prefix: &Prefix<XorName>,
                                rng: &mut T,

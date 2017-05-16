@@ -23,5 +23,4 @@ mod support;
 #[cfg(test)]
 mod tests;
 
-pub use self::support::{Config, Endpoint, Network, ServiceHandle};
-pub use self::support::make_current;
+pub use self::support::{Config, Endpoint, Network, ServiceHandle, get_current, make_current};
