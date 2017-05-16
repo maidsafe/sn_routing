@@ -218,6 +218,15 @@ impl Node {
                   },
                   DEFAULT_PRIORITY);
 
+    /// Send a `GetMData` request to `dst` to retrieve data from the network.
+    impl_request!(send_get_mdata_request,
+                  GetMData {
+                      name: XorName,
+                      tag: u64,
+                      msg_id: MessageId,
+                  },
+                  RELOCATE_PRIORITY);
+
     /// Send a `PutMData` request.
     impl_request!(send_put_mdata_request,
                   PutMData {
@@ -325,6 +334,23 @@ impl Node {
 
     /// Respond to a `PutIData` request.
     impl_response!(send_put_idata_response, PutIData, (), DEFAULT_PRIORITY);
+
+    /// Respond to a `GetMData` request.
+    pub fn send_get_mdata_response(&mut self,
+                                   src: Authority<XorName>,
+                                   dst: Authority<XorName>,
+                                   res: Result<MutableData, ClientError>,
+                                   msg_id: MessageId)
+                                   -> Result<(), InterfaceError> {
+
+        let msg = UserMessage::Response(Response::GetMData {
+                                            res: res,
+                                            msg_id: msg_id,
+                                        });
+
+        let priority = relocate_priority(&dst);
+        self.send_action(src, dst, msg, priority)
+    }
 
     /// Respond to a `PutMData` request.
     impl_response!(send_put_mdata_response, PutMData, (), DEFAULT_PRIORITY);

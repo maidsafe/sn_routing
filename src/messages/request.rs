@@ -47,6 +47,15 @@ pub enum Request {
     },
 
     // --- MutableData ---
+    /// Fetches whole MutableData from the network.
+    GetMData {
+        /// Network identifier of MutableData
+        name: XorName,
+        /// Type tag
+        tag: u64,
+        /// Unique message identifier
+        msg_id: MsgId,
+    },
     // ==========================
     /// Creates a new MutableData in the network.
     PutMData {
