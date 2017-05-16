@@ -21,6 +21,7 @@ use rust_sodium::crypto::sign::PublicKey;
 use std::collections::BTreeSet;
 use std::collections::btree_map::{BTreeMap, Entry};
 use std::fmt::{self, Debug, Formatter};
+use std::mem;
 use xor_name::XorName;
 
 /// Maximum allowed size for `MutableData` (1 MiB)
@@ -294,6 +295,11 @@ impl MutableData {
     /// Returns all entries
     pub fn entries(&self) -> &BTreeMap<Vec<u8>, Value> {
         &self.data
+    }
+
+    /// Removes and returns all entries
+    pub fn take_entries(&mut self) -> BTreeMap<Vec<u8>, Value> {
+        mem::replace(&mut self.data, BTreeMap::new())
     }
 
     /// Mutates entries (key + value pairs) in bulk
