@@ -22,6 +22,8 @@ use action::Action;
 use cache::Cache;
 use crust::{ConnectionInfoResult, CrustError, CrustUser, PeerId, PrivConnectionInfo,
             PubConnectionInfo, Service};
+#[cfg(feature = "use-mock-crust")]
+use crust::Config;
 use crust::Event as CrustEvent;
 use error::{InterfaceError, RoutingError};
 use event::Event;
@@ -334,6 +336,9 @@ impl Node {
             }
             Action::Name { result_tx } => {
                 let _ = result_tx.send(*self.name());
+            }
+            Action::Config { result_tx } => {
+                let _ = result_tx.send(self.crust_service.config());
             }
             Action::Timeout(token) => {
                 if let Transition::Terminate = self.handle_timeout(token, outbox) {
@@ -3327,6 +3332,10 @@ impl Node {
 
     pub fn set_next_relocation_interval(&mut self, interval: (XorName, XorName)) {
         self.next_relocation_interval = Some(interval);
+    }
+
+    pub fn config(&self) -> Config {
+        self.crust_service.config()
     }
 }
 

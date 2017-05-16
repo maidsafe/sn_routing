@@ -115,6 +115,8 @@ pub enum RoutingError {
     CannotTunnelThroughTunnel,
     /// Decoded a user message with an unexpected hash.
     HashMismatch,
+    /// Version check has failed
+    InvalidSuccessor,
     /// Candidate is unknown
     UnknownCandidate,
     /// Operation timed out

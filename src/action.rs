@@ -15,8 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-
-use crust::PeerId;
+use crust::{Config, PeerId};
 use error::InterfaceError;
 use messages::{Request, UserMessage};
 use messages::DirectMessage;
@@ -31,6 +30,7 @@ use xor_name::XorName;
 ///    2. `Action::Terminate` indicates to `Core` that no new actions should be taken and all
 ///       pending events should be handled.
 ///       After completion `Core` will send `Event::Terminated`.
+#[derive(Clone)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
 pub enum Action {
@@ -48,6 +48,7 @@ pub enum Action {
         result_tx: Sender<Result<(), InterfaceError>>,
     },
     Name { result_tx: Sender<XorName> },
+    Config { result_tx: Sender<Config> },
     Timeout(u64),
     ResourceProofResult(PeerId, Vec<DirectMessage>),
     Terminate,
@@ -72,6 +73,7 @@ impl Debug for Action {
                        dst)
             }
             Action::Name { .. } => write!(formatter, "Action::Name"),
+            Action::Config { .. } => write!(formatter, "Action::Config"),
             Action::Timeout(token) => write!(formatter, "Action::Timeout({})", token),
             Action::ResourceProofResult(peer_id, _) => {
                 write!(formatter, "Action::ResourceProofResult({:?}, ...)", peer_id)

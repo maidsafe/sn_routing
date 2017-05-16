@@ -65,7 +65,7 @@
 //! let (sender, receiver) = mpsc::channel::<Event>();
 //! let full_id = FullId::new(); // Generate new keys.
 //! # #[cfg(not(feature = "use-mock-crust"))]
-//! let client = Client::new(sender, Some(full_id)).unwrap();
+//! let client = Client::new(sender, Some(full_id), None).unwrap();
 //! ```
 //!
 //! Messages can be sent using the methods of `client`, and received as `Event`s from the
@@ -80,8 +80,7 @@
 //! # #![allow(unused)]
 //! use routing::Node;
 //!
-//! let min_section_size = 8;
-//! let node = Node::builder().create(min_section_size).unwrap();
+//! let node = Node::builder().create().unwrap();
 //! ```
 //!
 //! Upon creation, the node will first connect to the network as a client. Once it has client
@@ -152,6 +151,7 @@ mod macros;
 mod ack_manager;
 mod action;
 mod client;
+mod client_error;
 mod cache;
 mod data;
 mod error;
@@ -177,6 +177,9 @@ mod types;
 mod utils;
 mod xor_name;
 
+/// Reexports `crust::Config`
+pub type BootstrapConfig = crust::Config;
+
 /// Mock crust
 #[cfg(feature = "use-mock-crust")]
 pub mod mock_crust;
@@ -186,9 +189,6 @@ pub mod sha3;
 
 /// Messaging infrastructure
 pub mod messaging;
-/// Error communication between vaults and core
-pub mod client_errors;
-
 /// Structured Data Tag for Session Packet Type
 pub const TYPE_TAG_SESSION_PACKET: u64 = 0;
 /// Structured Data Tag for DNS Packet Type
@@ -201,18 +201,24 @@ pub const QUORUM_NUMERATOR: usize = 1;
 /// See `QUORUM_NUMERATOR`.
 pub const QUORUM_DENOMINATOR: usize = 2;
 
+/// The minimal section size.
+pub const MIN_SECTION_SIZE: usize = 8;
+
+/// Key of an account data in the account packet
+pub const ACC_LOGIN_ENTRY_KEY: &'static [u8] = b"Login";
+
 pub use cache::{Cache, NullCache};
 pub use client::Client;
-pub use data::{AppendWrapper, AppendedData, Data, DataIdentifier, Filter, ImmutableData,
-               MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES,
-               MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES, MAX_STRUCTURED_DATA_SIZE_IN_BYTES,
-               NO_OWNER_PUB_KEY, PrivAppendableData, PrivAppendedData, PubAppendableData,
-               StructuredData};
+pub use client_error::ClientError;
+pub use data::{Action, EntryAction, EntryActions, ImmutableData, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
+               MAX_MUTABLE_DATA_ENTRIES, MAX_MUTABLE_DATA_ENTRY_ACTIONS,
+               MAX_MUTABLE_DATA_SIZE_IN_BYTES, MutableData, NO_OWNER_PUB_KEY, PermissionSet, User,
+               Value};
 pub use error::{InterfaceError, RoutingError};
 pub use event::Event;
 pub use event_stream::EventStream;
 pub use id::{FullId, PublicId};
-pub use messages::{Request, Response};
+pub use messages::{AccountInfo, Request, Response};
 #[cfg(feature = "use-mock-crust")]
 pub use mock_crust::crust;
 pub use node::{Node, NodeBuilder};
@@ -224,6 +230,18 @@ pub use routing_table::Error as RoutingTableError;
 pub use routing_table::verify_network_invariant;
 pub use types::MessageId;
 pub use xor_name::{XOR_NAME_BITS, XOR_NAME_LEN, XorName, XorNameFromHexError};
+
+/// Account packet that is used to provide an invitation code for registration.
+/// After successful registration it should be replaced by a usual account packet (i.e.
+/// the contents of `account_ciphertext`) as soon as possible to prevent an invitation
+/// code leak.
+#[derive(Serialize, Deserialize)]
+pub struct AccountRegistrationPacket {
+    /// Invitation code that is used for registration.
+    pub invitation: String,
+    /// Encoded `Account` data.
+    pub account_ciphertext: Vec<u8>,
+}
 
 #[cfg(test)]
 mod tests {

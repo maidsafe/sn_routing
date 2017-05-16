@@ -20,6 +20,8 @@ use super::common::Base;
 use action::Action;
 use cache::Cache;
 use crust::{CrustUser, PeerId, Service};
+#[cfg(feature = "use-mock-crust")]
+use crust::Config;
 use crust::Event as CrustEvent;
 use error::RoutingError;
 use event::Event;
@@ -116,6 +118,9 @@ impl Bootstrapping {
             }
             Action::Name { result_tx } => {
                 let _ = result_tx.send(*self.name());
+            }
+            Action::Config { result_tx } => {
+                let _ = result_tx.send(self.crust_service.config());
             }
             Action::Timeout(token) => self.handle_timeout(token),
             Action::ResourceProofResult(..) => {
@@ -233,6 +238,11 @@ impl Bootstrapping {
             TargetState::JoiningNode |
             TargetState::Node { .. } => false,
         }
+    }
+
+    #[cfg(feature = "use-mock-crust")]
+    pub fn config(&self) -> Config {
+        self.crust_service.config()
     }
 
     fn handle_timeout(&mut self, token: u64) {

@@ -16,6 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use super::support::{self, Endpoint, Network, ServiceHandle, ServiceImpl};
+pub use super::support::Config;
 use maidsafe_utilities::event_sender;
 use std::{fmt, io, thread};
 use std::cell::{RefCell, RefMut};
@@ -36,7 +37,16 @@ impl Service {
         Self::with_handle(&support::get_current(), event_sender)
     }
 
-    /// Create new mock `Service` by explicitly passing the mock device to associate with.
+    /// Create a new mock `Service` using the make_current/get_current mechanism to
+    /// get the associated `ServiceHandle`. Ignores configuration.
+    pub fn with_config(event_sender: CrustEventSender,
+                       _config: Config)
+                       -> Result<Self, CrustError> {
+        Self::with_handle(&support::get_current(), event_sender)
+    }
+
+    /// Create new mock `Service` by explicitly passing the mock device to associate
+    /// with.
     pub fn with_handle(handle: &ServiceHandle,
                        event_sender: CrustEventSender)
                        -> Result<Self, CrustError> {
@@ -151,6 +161,11 @@ impl Service {
     /// Our `PeerId`.
     pub fn id(&self) -> PeerId {
         self.lock().peer_id
+    }
+
+    /// Returns the `Config` (which is unused anyway).
+    pub fn config(&self) -> Config {
+        Config::new()
     }
 
     fn lock(&self) -> RefMut<ServiceImpl> {

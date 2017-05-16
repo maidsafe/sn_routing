@@ -21,6 +21,8 @@ use ack_manager::{Ack, AckManager};
 use action::Action;
 use cache::Cache;
 use crust::{CrustEventSender, PeerId, Service};
+#[cfg(feature = "use-mock-crust")]
+use crust::Config;
 use crust::Event as CrustEvent;
 use error::{InterfaceError, RoutingError};
 use event::Event;
@@ -110,6 +112,9 @@ impl JoiningNode {
             Action::Name { result_tx } => {
                 let _ = result_tx.send(*self.name());
             }
+            Action::Config { result_tx } => {
+                let _ = result_tx.send(self.crust_service.config());
+            }
             Action::Timeout(token) => {
                 if let Transition::Terminate = self.handle_timeout(token, outbox) {
                     return Transition::Terminate;
@@ -164,6 +169,11 @@ impl JoiningNode {
             outbox.send_event(Event::RestartRequired);
             State::Terminated
         }
+    }
+
+    #[cfg(feature = "use-mock-crust")]
+    pub fn config(&self) -> Config {
+        self.crust_service.config()
     }
 
     #[cfg(not(feature = "use-mock-crust"))]

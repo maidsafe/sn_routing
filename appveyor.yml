@@ -6,8 +6,7 @@ environment:
 
 branches:
   only:
-    - master
-    - stable
+    - mutable-data
 
 cache:
   - '%USERPROFILE%\.cargo'
