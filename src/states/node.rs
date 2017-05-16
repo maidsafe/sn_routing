@@ -1069,18 +1069,12 @@ impl Node {
                                                      dst)
             }
             (CandidateApproval {
-                 old_public_id,
                  new_public_id,
                  new_client_auth,
                  ..
              },
              Section(_),
-             Section(_)) => {
-                self.handle_candidate_approval(old_public_id,
-                                               new_public_id,
-                                               new_client_auth,
-                                               outbox)
-            }
+             Section(_)) => self.handle_candidate_approval(new_public_id, new_client_auth, outbox),
             (NodeApproval { sections }, Section(_), Client { .. }) => {
                 self.handle_node_approval(&sections, outbox)
             }
@@ -1132,7 +1126,6 @@ impl Node {
     }
 
     fn handle_candidate_approval(&mut self,
-                                 old_pub_id: PublicId,
                                  new_pub_id: PublicId,
                                  new_client_auth: Authority<XorName>,
                                  outbox: &mut EventBox)
@@ -1145,8 +1138,7 @@ impl Node {
         // to our RT.
         // This will flag peer as valid if its found in peer_mgr regardless of their
         // connection status to us.
-        let is_connected = match self.peer_mgr
-                  .handle_candidate_approval(&old_pub_id, &new_pub_id) {
+        let is_connected = match self.peer_mgr.handle_candidate_approval(&new_pub_id) {
             Ok(is_connected) => is_connected,
             Err(_) => {
                 let src = Authority::ManagedNode(*self.name());
@@ -1163,10 +1155,9 @@ impl Node {
             }
         };
 
-        info!("{:?} Our section with {:?} has approved candidate {}->{}.",
+        info!("{:?} Our section with {:?} has approved candidate {}.",
               self,
               self.our_prefix(),
-              old_pub_id.name(),
               new_pub_id.name());
         if self.we_want_to_merge() || self.they_want_to_merge() {
             debug!("{:?} Not sending NodeApproval since our section is currently merging.",
@@ -1283,7 +1274,7 @@ impl Node {
     }
 
     fn handle_resource_proof_response(&mut self,
-                                      peer_id: PublicId,
+                                      pub_id: PublicId,
                                       part_index: usize,
                                       part_count: usize,
                                       proof: Vec<u8>,
@@ -1291,22 +1282,12 @@ impl Node {
         if self.candidate_timer_token.is_none() {
             debug!("{:?} Won't handle resource proof response from {:?} - not currently waiting.",
                    self,
-                   peer_id);
+                   pub_id);
             return;
         }
 
-        let (old_pub_id, debug_output) = if let Some(old_pub_id) =
-            self.peer_mgr.get_candidate_old_id(peer_id) {
-            (old_pub_id, format!("{}->{}", old_pub_id.name(), peer_id.name()))
-        } else {
-            debug!("{:?} Failed to find candidate while handling resource proof response from {:?}",
-                   self,
-                   peer_id);
-            return;
-        };
-
         match self.peer_mgr
-                  .verify_candidate(&old_pub_id,
+                  .verify_candidate(&pub_id,
                                     part_index,
                                     part_count,
                                     proof,
@@ -1314,22 +1295,23 @@ impl Node {
             Err(error) => {
                 debug!("{:?} Failed to verify candidate {}: {:?}",
                        self,
-                       debug_output,
+                       pub_id.name(),
                        error);
-                self.candidate_timer_token = None;
             }
             Ok(None) => {
-                self.send_direct_message(peer_id, DirectMessage::ResourceProofResponseReceipt);
+                self.send_direct_message(pub_id, DirectMessage::ResourceProofResponseReceipt);
             }
             Ok(Some((target_size, difficulty, elapsed))) if difficulty == 0 &&
                                                             target_size < 1000 => {
                 // Small tests don't require waiting for synchronisation. Send approval now.
-                info!("{:?} Candidate {} passed our challenge in {}. Sending approval to our \
-                       section with {:?}.",
+                info!("{:?} Candidate {} passed our challenge in {}. Sending approval \
+                       to our section with {:?}.",
                       self,
-                      debug_output,
+                      pub_id.name(),
                       elapsed.display_secs(),
                       self.our_prefix());
+                // We set the timer token to None so we do not send another
+                // CandidateApproval when the token fires
                 self.candidate_timer_token = None;
                 self.send_candidate_approval();
             }
@@ -1337,7 +1319,7 @@ impl Node {
                 info!("{:?} Candidate {} passed our challenge in {}. Waiting to send approval to \
                        our section with {:?}.",
                       self,
-                      debug_output,
+                      pub_id.name(),
                       elapsed.display_secs(),
                       self.our_prefix());
             }
@@ -2132,6 +2114,7 @@ impl Node {
                             });
 
         self.peer_mgr.expect_candidate(old_pub_id)?;
+
         let response_content = MessageContent::AcceptAsCandidate {
             old_public_id: old_pub_id,
             old_client_auth: old_client_auth,

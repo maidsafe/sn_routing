@@ -668,8 +668,6 @@ pub enum MessageContent {
     /// Sent among Group Y to vote to accept a joining node.
     CandidateApproval {
         /// The joining node's current public ID.
-        old_public_id: PublicId,
-        /// The joining node's current public ID.
         new_public_id: PublicId,
         /// Client authority of the candidate.
         new_client_auth: Authority<XorName>,
@@ -879,15 +877,13 @@ impl Debug for MessageContent {
                        message_id)
             }
             CandidateApproval {
-                ref old_public_id,
                 ref new_public_id,
                 ref new_client_auth,
                 ref sections,
             } => {
                 write!(formatter,
-                       "CandidateApproval {{ old: {:?}, new: {:?},  new: {:?}, sections: \
+                       "CandidateApproval {{ new: {:?},  new: {:?}, sections: \
                         {:?} }}",
-                       old_public_id,
                        new_public_id,
                        new_client_auth,
                        sections)
