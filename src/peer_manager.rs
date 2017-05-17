@@ -30,7 +30,7 @@ use routing_table::{Authority, OwnMergeState, Prefix, RemovalDetails, RoutingTab
                     VersionedPrefix};
 use routing_table::Error as RoutingTableError;
 use signature_accumulator::ACCUMULATION_TIMEOUT_SECS;
-use std::{error, fmt, mem};
+use std::{error, fmt, iter, mem};
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::time::Duration;
 #[cfg(not(feature="use-mock-crust"))]
@@ -551,61 +551,60 @@ impl PeerManager {
                                    self,
                                    old_pub_id.name(),
                                    new_pub_id.name());
-        match mem::replace(&mut self.candidate, Candidate::None) {
+        let candidate = mem::replace(&mut self.candidate, Candidate::None);
+        let (res_proof_start, target_interval) = match candidate {
             Candidate::AcceptedForResourceProof {
                 old_pub_id: old_id,
                 res_proof_start,
                 target_interval,
-            } if old_id == *old_pub_id => {
-                if *new_pub_id.name() < target_interval.0 ||
-                   *new_pub_id.name() > target_interval.1 {
-                    warn!("{} has used a new ID which is not within the required target range.",
-                          debug_prefix);
-                    return Err(RoutingError::InvalidRelocationTargetRange);
-                }
-
-                let peer = match self.peers.get_mut(new_pub_id) {
-                    Some(peer) => peer,
-                    None => {
-                        log_or_panic!(LogLevel::Error, "{} is not connected to us.", debug_prefix);
-                        return Err(RoutingError::UnknownConnection(*new_pub_id));
-                    }
-                };
-
-                let conn = peer.to_routing_connection(is_tunnel)?;
-                peer.state = PeerState::Candidate(conn);
-
-                let (res, challenge) = if conn == RoutingConnection::Tunnel {
-                    (Err(RoutingError::CandidateIsTunnelling), None)
-                } else {
-                    (Ok(true),
-                     Some(ResourceProofChallenge {
-                              target_size: target_size,
-                              difficulty: difficulty,
-                              seed: seed,
-                              proof: VecDeque::new(),
-                          }))
-                };
-
-                self.candidate = Candidate::ResourceProof {
-                    res_proof_start: res_proof_start,
-                    new_pub_id: *new_pub_id,
-                    new_client_auth: *new_client_auth,
-                    challenge: challenge,
-                    passed_our_challenge: false,
-                };
-
-                res
+            } if old_id == *old_pub_id => (res_proof_start, target_interval),
+            candidate => {
+                self.candidate = candidate;
+                return if self.peers.get(new_pub_id).map_or(false, Peer::valid) {
+                           Ok(false)
+                       } else {
+                           Err(RoutingError::UnknownCandidate)
+                       };
             }
-            x => {
-                self.candidate = x;
-                if self.peers.get(new_pub_id).map_or(false, Peer::valid) {
-                    Ok(false)
-                } else {
-                    Err(RoutingError::UnknownCandidate)
-                }
-            }
+        };
+        if *new_pub_id.name() < target_interval.0 || *new_pub_id.name() > target_interval.1 {
+            warn!("{} has used a new ID which is not within the required target range.",
+                  debug_prefix);
+            return Err(RoutingError::InvalidRelocationTargetRange);
         }
+
+        let peer = match self.peers.get_mut(new_pub_id) {
+            Some(peer) => peer,
+            None => {
+                log_or_panic!(LogLevel::Error, "{} is not connected to us.", debug_prefix);
+                return Err(RoutingError::UnknownConnection(*new_pub_id));
+            }
+        };
+
+        let conn = peer.to_routing_connection(is_tunnel)?;
+        peer.state = PeerState::Candidate(conn);
+
+        let (res, challenge) = if conn == RoutingConnection::Tunnel {
+            (Err(RoutingError::CandidateIsTunnelling), None)
+        } else {
+            (Ok(true),
+             Some(ResourceProofChallenge {
+                      target_size: target_size,
+                      difficulty: difficulty,
+                      seed: seed,
+                      proof: VecDeque::new(),
+                  }))
+        };
+
+        self.candidate = Candidate::ResourceProof {
+            res_proof_start: res_proof_start,
+            new_pub_id: *new_pub_id,
+            new_client_auth: *new_client_auth,
+            challenge: challenge,
+            passed_our_challenge: false,
+        };
+
+        res
     }
 
     /// Logs info about ongoing candidate state, if any.
@@ -1072,7 +1071,7 @@ impl PeerManager {
                               peer.state);
                 result
                     .out_of_sync_peers
-                    .extend(::std::iter::once(peer.pub_id()));
+                    .extend(iter::once(peer.pub_id()));
             }
         }
         result
@@ -1451,7 +1450,7 @@ impl PeerManager {
                 .values()
                 .filter(|peer| peer.valid)
                 .map(|peer| peer.pub_id())
-                .chain(::std::iter::once(&self.our_public_id)) {
+                .chain(iter::once(&self.our_public_id)) {
             if let Some(versioned_prefix) =
                 versioned_prefixes
                     .iter()

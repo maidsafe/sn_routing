@@ -1231,23 +1231,21 @@ impl Node {
         let our_prefix = *self.our_prefix();
         self.send_section_list_signature(our_prefix, None);
 
-        for section in sections.values() {
-            for pub_id in section.iter() {
-                if !self.routing_table().has(pub_id.name()) {
-                    debug!("{:?} Sending connection info to {:?} on NodeApproval.",
+        for pub_id in sections.values().flat_map(|sec| sec) {
+            if !self.routing_table().has(pub_id.name()) {
+                debug!("{:?} Sending connection info to {:?} on NodeApproval.",
+                       self,
+                       pub_id);
+                let src = Authority::ManagedNode(*self.name());
+                let node_auth = Authority::ManagedNode(*pub_id.name());
+                if let Err(error) = self.send_connection_info_request(*pub_id,
+                                                                      src,
+                                                                      node_auth,
+                                                                      outbox) {
+                    debug!("{:?} - Failed to send connection info to {:?}: {:?}",
                            self,
-                           pub_id);
-                    let src = Authority::ManagedNode(*self.name());
-                    let node_auth = Authority::ManagedNode(*pub_id.name());
-                    if let Err(error) = self.send_connection_info_request(*pub_id,
-                                                                          src,
-                                                                          node_auth,
-                                                                          outbox) {
-                        debug!("{:?} - Failed to send connection info to {:?}: {:?}",
-                               self,
-                               pub_id,
-                               error);
-                    }
+                           pub_id,
+                           error);
                 }
             }
         }
@@ -1346,43 +1344,43 @@ impl Node {
                           routing_msg: &RoutingMessage,
                           route: u8)
                           -> Result<bool, RoutingError> {
-        if let MessageContent::UserMessagePart {
+        let add_result = if let MessageContent::UserMessagePart {
                    hash,
                    part_count,
                    part_index,
-                   cacheable,
+                   cacheable: true,
                    ref payload,
                    ..
                } = routing_msg.content {
-            if !cacheable {
-                return Ok(false);
+            self.cacheable_user_msg_cache
+                .add(hash, part_count, part_index, payload.clone())
+        } else {
+            return Ok(false);
+        };
+
+        match add_result {
+            Some(UserMessage::Request(request)) => {
+                if let Some(response) = self.response_cache.get(&request) {
+                    debug!("{:?} Found cached response to {:?}", self, request);
+
+                    let priority = response.priority();
+                    let src = Authority::ManagedNode(*self.name());
+                    let dst = routing_msg.src;
+                    let msg = UserMessage::Response(response);
+
+                    self.send_ack_from(routing_msg, route, src);
+                    self.send_user_message(src, dst, msg, priority)?;
+
+                    return Ok(true);
+                }
             }
 
-            match self.cacheable_user_msg_cache
-                      .add(hash, part_count, part_index, payload.clone()) {
-                Some(UserMessage::Request(request)) => {
-                    if let Some(response) = self.response_cache.get(&request) {
-                        debug!("{:?} Found cached response to {:?}", self, request);
-
-                        let priority = response.priority();
-                        let src = Authority::ManagedNode(*self.name());
-                        let dst = routing_msg.src;
-                        let msg = UserMessage::Response(response);
-
-                        self.send_ack_from(routing_msg, route, src);
-                        self.send_user_message(src, dst, msg, priority)?;
-
-                        return Ok(true);
-                    }
-                }
-
-                Some(UserMessage::Response(response)) => {
-                    debug!("{:?} Putting {:?} in cache", self, response);
-                    self.response_cache.put(response);
-                }
-
-                None => (),
+            Some(UserMessage::Response(response)) => {
+                debug!("{:?} Putting {:?} in cache", self, response);
+                self.response_cache.put(response);
             }
+
+            None => (),
         }
 
         Ok(false)
