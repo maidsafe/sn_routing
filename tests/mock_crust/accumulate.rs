@@ -35,7 +35,7 @@ fn messages_accumulate_with_quorum() {
 
     let send = |node: &mut TestNode, dst: &Authority<XorName>, message_id: MessageId| {
         assert!(node.inner
-                    .send_get_success(src, *dst, data.clone(), message_id)
+                    .send_get_idata_response(src, *dst, Ok(data.clone()), message_id)
                     .is_ok());
     };
 
@@ -55,7 +55,8 @@ fn messages_accumulate_with_quorum() {
     expect_no_event!(nodes[0]);
     send(&mut nodes[quorum - 1], &dst, message_id);
     let _ = poll_all(&mut nodes, &mut []);
-    expect_next_event!(nodes[0], Event::Response { response: Response::GetSuccess(..), .. });
+    expect_next_event!(nodes[0],
+                       Event::Response { response: Response::GetIData { res: Ok(_), .. }, .. });
     send(&mut nodes[quorum], &dst, message_id);
     let _ = poll_all(&mut nodes, &mut []);
     expect_no_event!(nodes[0]);
@@ -71,7 +72,8 @@ fn messages_accumulate_with_quorum() {
     expect_no_event!(nodes[0]);
     send(&mut nodes[0], &dst, message_id);
     let _ = poll_all(&mut nodes, &mut []);
-    expect_next_event!(nodes[0], Event::Response { response: Response::GetSuccess(..), .. });
+    expect_next_event!(nodes[0],
+                       Event::Response { response: Response::GetIData { res: Ok(_), .. }, .. });
     send(&mut nodes[quorum + 1], &dst, message_id);
     let _ = poll_all(&mut nodes, &mut []);
     expect_no_event!(nodes[0]);
@@ -91,7 +93,8 @@ fn messages_accumulate_with_quorum() {
     send(&mut nodes[quorum - 1], &dst_grp, message_id);
     let _ = poll_all(&mut nodes, &mut []);
     for node in &mut *nodes {
-        expect_next_event!(node, Event::Response { response: Response::GetSuccess(..), .. });
+        expect_next_event!(node,
+                           Event::Response { response: Response::GetIData { res: Ok(_), .. }, .. });
     }
     send(&mut nodes[quorum], &dst_grp, message_id);
     let _ = poll_all(&mut nodes, &mut []);
@@ -113,7 +116,8 @@ fn messages_accumulate_with_quorum() {
     send(&mut nodes[0], &dst_grp, message_id);
     let _ = poll_all(&mut nodes, &mut []);
     for node in &mut *nodes {
-        expect_next_event!(node, Event::Response { response: Response::GetSuccess(..), .. });
+        expect_next_event!(node,
+                           Event::Response { response: Response::GetIData { res: Ok(_), .. }, .. });
     }
     send(&mut nodes[quorum + 1], &dst_grp, message_id);
     let _ = poll_all(&mut nodes, &mut []);
