@@ -198,13 +198,13 @@ fn whitelist() {
             .borrow_mut()
             .whitelist_peer(Endpoint(min_section_size));
     }
-    // The next node has peer ID `min_section_size`: It should be able to join.
+    // The next node has endpoint `min_section_size`: It should be able to join.
     nodes.push(TestNode::builder(&network)
                    .config(config.clone())
                    .create());
     let _ = poll_all(&mut nodes, &mut []);
     verify_invariant_for_all_nodes(&mut nodes);
-    // The next node has peer ID `min_section_size + 1`: It is not whitelisted.
+    // The next node has endpoint `min_section_size + 1`: It is not whitelisted.
     nodes.push(TestNode::builder(&network)
                    .config(config.clone())
                    .create());

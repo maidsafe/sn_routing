@@ -44,8 +44,7 @@ pub struct Client {
     crust_service: Service,
     full_id: FullId,
     min_section_size: usize,
-    proxy_peer_id: PublicId,
-    proxy_public_id: PublicId,
+    proxy_pub_id: PublicId,
     routing_msg_filter: RoutingMessageFilter,
     stats: Stats,
     timer: Timer,
@@ -57,8 +56,7 @@ impl Client {
     pub fn from_bootstrapping(crust_service: Service,
                               full_id: FullId,
                               min_section_size: usize,
-                              proxy_peer_id: PublicId,
-                              proxy_public_id: PublicId,
+                              proxy_pub_id: PublicId,
                               stats: Stats,
                               timer: Timer,
                               outbox: &mut EventBox)
@@ -68,8 +66,7 @@ impl Client {
             crust_service: crust_service,
             full_id: full_id,
             min_section_size: min_section_size,
-            proxy_peer_id: proxy_peer_id,
-            proxy_public_id: proxy_public_id,
+            proxy_pub_id: proxy_pub_id,
             routing_msg_filter: RoutingMessageFilter::new(),
             stats: stats,
             timer: timer,
@@ -92,9 +89,8 @@ impl Client {
                 result_tx,
             } => {
                 let src = Authority::Client {
-                    client_key: *self.full_id.public_id().signing_public_key(),
-                    proxy_node_name: *self.proxy_public_id.name(),
-                    peer_id: self.crust_service.id(),
+                    client_id: *self.full_id.public_id(),
+                    proxy_node_name: *self.proxy_pub_id.name(),
                 };
 
                 let user_msg = UserMessage::Request(content);
@@ -128,10 +124,8 @@ impl Client {
                               outbox: &mut EventBox)
                               -> Transition {
         match crust_event {
-            CrustEvent::LostPeer(peer_id) => self.handle_lost_peer(peer_id, outbox),
-            CrustEvent::NewMessage(peer_id, bytes) => {
-                self.handle_new_message(peer_id, bytes, outbox)
-            }
+            CrustEvent::LostPeer(pub_id) => self.handle_lost_peer(pub_id, outbox),
+            CrustEvent::NewMessage(pub_id, bytes) => self.handle_new_message(pub_id, bytes, outbox),
             _ => {
                 debug!("{:?} Unhandled crust event {:?}", self, crust_event);
                 Transition::Stay
@@ -149,12 +143,12 @@ impl Client {
     }
 
     fn handle_new_message(&mut self,
-                          peer_id: PublicId,
+                          pub_id: PublicId,
                           bytes: Vec<u8>,
                           outbox: &mut EventBox)
                           -> Transition {
         let transition = match serialisation::deserialise(&bytes) {
-            Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, peer_id, outbox),
+            Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, pub_id, outbox),
             Ok(message) => {
                 debug!("{:?} - Unhandled new message: {:?}", self, message);
                 Ok(Transition::Stay)
@@ -174,14 +168,13 @@ impl Client {
 
     fn handle_hop_message(&mut self,
                           hop_msg: HopMessage,
-                          peer_id: PublicId,
+                          pub_id: PublicId,
                           outbox: &mut EventBox)
                           -> Result<Transition, RoutingError> {
-        if self.proxy_peer_id == peer_id {
-            hop_msg
-                .verify(self.proxy_public_id.signing_public_key())?;
+        if self.proxy_pub_id == pub_id {
+            hop_msg.verify(self.proxy_pub_id.signing_public_key())?;
         } else {
-            return Err(RoutingError::UnknownConnection(peer_id));
+            return Err(RoutingError::UnknownConnection(pub_id));
         }
 
         let signed_msg = hop_msg.content;
@@ -274,26 +267,21 @@ impl Base for Client {
 
     /// Does the given authority represent us?
     fn in_authority(&self, auth: &Authority<XorName>) -> bool {
-        if let Authority::Client { ref client_key, .. } = *auth {
-            client_key == self.full_id.public_id().signing_public_key()
+        if let Authority::Client { ref client_id, .. } = *auth {
+            client_id == self.full_id.public_id()
         } else {
             false
         }
     }
 
-    fn handle_lost_peer(&mut self, peer_id: PublicId, outbox: &mut EventBox) -> Transition {
-        if peer_id == self.crust_service().id() {
-            error!("{:?} LostPeer fired with our crust peer ID", self);
-            return Transition::Stay;
-        }
+    fn handle_lost_peer(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
+        debug!("{:?} Received LostPeer - {:?}", self, pub_id);
 
-        debug!("{:?} Received LostPeer - {:?}", self, peer_id);
-
-        if self.proxy_peer_id == peer_id {
+        if self.proxy_pub_id == pub_id {
             debug!("{:?} Lost bootstrap connection to {:?} ({:?}).",
                    self,
-                   self.proxy_public_id.name(),
-                   peer_id);
+                   self.proxy_pub_id.name(),
+                   pub_id);
             outbox.send_event(Event::Terminate);
             Transition::Terminate
         } else {
@@ -349,14 +337,13 @@ impl Bootstrapped for Client {
         }
 
         // Get PublicId of the proxy node
-        let (proxy_peer_id, sending_nodes) = match routing_msg.src {
+        match routing_msg.src {
             Authority::Client { ref proxy_node_name, .. } => {
-                if *self.proxy_public_id.name() != *proxy_node_name {
+                if *self.proxy_pub_id.name() != *proxy_node_name {
                     error!("{:?} Unable to find connection to proxy node in proxy map",
                            self);
                     return Err(RoutingError::ProxyConnectionNotFound);
                 }
-                (self.proxy_peer_id, vec![])
             }
             _ => {
                 error!("{:?} Source should be client if our state is a Client",
@@ -365,12 +352,13 @@ impl Bootstrapped for Client {
             }
         };
 
-        let signed_msg = SignedMessage::new(routing_msg, self.full_id(), sending_nodes)?;
+        let signed_msg = SignedMessage::new(routing_msg, self.full_id(), vec![])?;
 
+        let proxy_pub_id = self.proxy_pub_id;
         if self.add_to_pending_acks(signed_msg.routing_message(), route) &&
-           !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_peer_id, route) {
+           !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_pub_id, route) {
             let bytes = self.to_hop_bytes(signed_msg.clone(), route, BTreeSet::new())?;
-            self.send_or_drop(&proxy_peer_id, bytes, signed_msg.priority());
+            self.send_or_drop(&proxy_pub_id, bytes, signed_msg.priority());
         }
 
         Ok(())

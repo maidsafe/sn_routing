@@ -253,12 +253,12 @@ fn disconnect_on_get_request() {
         .handle
         .0
         .borrow_mut()
-        .disconnect(&unwrap!(nodes[0].handle.0.borrow().peer_id));
+        .disconnect(&unwrap!(nodes[0].handle.0.borrow().uid));
     nodes[0]
         .handle
         .0
         .borrow_mut()
-        .disconnect(&unwrap!(clients[0].handle.0.borrow().peer_id));
+        .disconnect(&unwrap!(clients[0].handle.0.borrow().uid));
 
     let _ = poll_all(&mut nodes, &mut clients);
 

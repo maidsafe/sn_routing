@@ -197,10 +197,7 @@ impl State {
 pub enum Transition {
     Stay,
     // `Bootstrapping` state transitioning to `Client`, `JoiningNode`, or `Node`.
-    IntoBootstrapped {
-        proxy_peer_id: PublicId,
-        proxy_public_id: PublicId,
-    },
+    IntoBootstrapped { proxy_public_id: PublicId },
     // `JoiningNode` state transitioning back to `Bootstrapping`.
     IntoBootstrapping {
         new_id: FullId,
@@ -322,13 +319,10 @@ impl StateMachine {
         use self::Transition::*;
         match transition {
             Stay => (),
-            IntoBootstrapped {
-                proxy_peer_id,
-                proxy_public_id,
-            } => {
+            IntoBootstrapped { proxy_public_id } => {
                 let new_state = match mem::replace(&mut self.state, State::Terminated) {
                     State::Bootstrapping(bootstrapping) => {
-                        bootstrapping.into_target_state(proxy_peer_id, proxy_public_id, outbox)
+                        bootstrapping.into_target_state(proxy_public_id, outbox)
                     }
                     _ => unreachable!(),
                 };

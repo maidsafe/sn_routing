@@ -74,11 +74,11 @@ impl RoutingMessageFilter {
     // (and thus should not be sent, due to deduplication).
     //
     // Return `false` if serialisation of the message fails - that can be handled elsewhere.
-    pub fn filter_outgoing(&mut self, msg: &RoutingMessage, peer_id: &PublicId, route: u8) -> bool {
+    pub fn filter_outgoing(&mut self, msg: &RoutingMessage, pub_id: &PublicId, route: u8) -> bool {
         if let Ok(msg_bytes) = serialise(msg) {
             let hash = sha3_256(&msg_bytes);
             self.outgoing
-                .insert((hash, *peer_id, route), ())
+                .insert((hash, *pub_id, route), ())
                 .is_some()
         } else {
             trace!("Tried to filter oversized routing message: {:?}", msg);

@@ -92,24 +92,24 @@ fn start_two_services_bootstrap_communicate_exit() {
     unwrap!(service_0.send(id_1, data_sent.clone(), 0));
 
     // 1 should rx data
-    let (data_recvd, peer_id) =
+    let (data_recvd, pub_id) =
         expect_event!(event_rx_1,
                       CrustEvent::NewMessage::<PublicId>(their_id, msg) => (msg, their_id));
 
     assert_eq!(data_recvd, data_sent);
-    assert_eq!(peer_id, id_0);
+    assert_eq!(pub_id, id_0);
 
     // send data from 1 to 0
     let data_sent = vec![10, 11, 155, 214, 202];
     unwrap!(service_1.send(id_0, data_sent.clone(), 0));
 
     // 0 should rx data
-    let (data_recvd, peer_id) =
+    let (data_recvd, pub_id) =
         expect_event!(event_rx_0,
                       CrustEvent::NewMessage::<PublicId>(their_id, msg) => (msg, their_id));
 
     assert_eq!(data_recvd, data_sent);
-    assert_eq!(peer_id, id_1);
+    assert_eq!(pub_id, id_1);
 
     assert!(service_0.disconnect(id_1));
     expect_event!(event_rx_1, CrustEvent::LostPeer::<PublicId>(id) => assert_eq!(id, id_0));
@@ -160,24 +160,24 @@ fn start_two_services_rendezvous_connect() {
     unwrap!(service_0.send(id_1, data_sent.clone(), 0));
 
     // 1 should rx data
-    let (data_recvd, peer_id) =
+    let (data_recvd, pub_id) =
         expect_event!(event_rx_1,
                       CrustEvent::NewMessage::<PublicId>(their_id, msg) => (msg, their_id));
 
     assert_eq!(data_recvd, data_sent);
-    assert_eq!(peer_id, id_0);
+    assert_eq!(pub_id, id_0);
 
     // send data from 1 to 0
     let data_sent = vec![10, 11, 155, 214, 202];
     unwrap!(service_1.send(id_0, data_sent.clone(), 0));
 
     // 0 should rx data
-    let (data_recvd, peer_id) =
+    let (data_recvd, pub_id) =
         expect_event!(event_rx_0,
                       CrustEvent::NewMessage::<PublicId>(their_id, msg) => (msg, their_id));
 
     assert_eq!(data_recvd, data_sent);
-    assert_eq!(peer_id, id_1);
+    assert_eq!(pub_id, id_1);
 }
 
 #[test]

@@ -126,6 +126,8 @@ pub enum RoutingError {
     CandidateIsTunnelling,
     /// Content of a received message is inconsistent.
     InvalidMessage,
+    /// Invalid Peer
+    InvalidPeer,
 }
 
 impl From<RoutingTableError> for RoutingError {

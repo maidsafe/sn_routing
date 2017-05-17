@@ -17,7 +17,6 @@
 
 use super::{Prefix, Xorable};
 use id::PublicId;
-use rust_sodium::crypto::{hash, sign};
 use std::fmt::{self, Binary, Debug, Display, Formatter};
 
 /// An entity that can act as a source or destination of a message.
@@ -47,11 +46,8 @@ pub enum Authority<N: Xorable + Clone + Copy + Binary + Default> {
     ManagedNode(N),
     /// A Client.
     Client {
-        /// The client's public signing key.  The hash of this specifies the location of the Client
-        /// in the network address space.
-        client_key: sign::PublicKey,
-        /// The Crust peer ID of the client.
-        peer_id: PublicId,
+        /// The Public ID of the client.
+        client_id: PublicId,
         /// The name of the single ManagedNode which the Client connects to and proxies all messages
         /// through.
         proxy_node_name: N,
@@ -122,15 +118,13 @@ impl<N: Xorable + Clone + Copy + Binary + Default + Display> Debug for Authority
             }
             Authority::ManagedNode(ref name) => write!(formatter, "ManagedNode(name: {})", name),
             Authority::Client {
-                ref client_key,
                 ref proxy_node_name,
-                ref peer_id,
+                ref client_id,
             } => {
                 write!(formatter,
-                       "Client {{ client_name: {}, proxy_node_name: {}, peer_id: {:?} }}",
-                       N::from_hash(hash::sha256::hash(&client_key[..]).0),
-                       proxy_node_name,
-                       peer_id)
+                       "Client {{ client_name: {}, proxy_node_name: {} }}",
+                       client_id.name(),
+                       proxy_node_name)
             }
         }
     }

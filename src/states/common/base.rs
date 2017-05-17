@@ -33,7 +33,7 @@ pub trait Base: Debug {
     fn stats(&mut self) -> &mut Stats;
     fn in_authority(&self, auth: &Authority<XorName>) -> bool;
 
-    fn handle_lost_peer(&mut self, _peer_id: PublicId, _outbox: &mut EventBox) -> Transition {
+    fn handle_lost_peer(&mut self, _pub_id: PublicId, _outbox: &mut EventBox) -> Transition {
         Transition::Stay
     }
 
@@ -49,12 +49,12 @@ pub trait Base: Debug {
         None
     }
 
-    fn send_message(&mut self, peer_id: &PublicId, message: Message) {
+    fn send_message(&mut self, pub_id: &PublicId, message: Message) {
         let priority = message.priority();
 
         match serialisation::serialise(&message) {
             Ok(bytes) => {
-                self.send_or_drop(peer_id, bytes, priority);
+                self.send_or_drop(pub_id, bytes, priority);
             }
             Err(error) => {
                 error!("{:?} Failed to serialise message {:?}: {:?}",
@@ -70,15 +70,15 @@ pub trait Base: Debug {
 
     // Sends the given `bytes` to the peer with the given Crust `PublicId`. If that results in an
     // error, it disconnects from the peer.
-    fn send_or_drop(&mut self, peer_id: &PublicId, bytes: Vec<u8>, priority: u8) {
+    fn send_or_drop(&mut self, pub_id: &PublicId, bytes: Vec<u8>, priority: u8) {
         self.stats().count_bytes(bytes.len());
 
-        if let Err(err) = self.crust_service().send(*peer_id, bytes, priority) {
-            info!("{:?} Connection to {:?} failed: {:?}", self, peer_id, err);
+        if let Err(err) = self.crust_service().send(*pub_id, bytes, priority) {
+            info!("{:?} Connection to {} failed: {:?}", self, pub_id, err);
             // TODO: Handle lost peer, but avoid a cascade of sending messages and handling more
             //       lost peers: https://maidsafe.atlassian.net/browse/MAID-1924
-            // self.crust_service().disconnect(*peer_id);
-            // return self.handle_lost_peer(*peer_id).map(|_| Err(err.into()));
+            // self.crust_service().disconnect(*pub_id);
+            // return self.handle_lost_peer(*pub_id).map(|_| Err(err.into()));
         }
     }
 }

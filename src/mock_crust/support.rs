@@ -150,10 +150,10 @@ impl<UID: Uid> Network<UID> {
 
         service_1
             .borrow_mut()
-            .send_event(CrustEvent::LostPeer(unwrap!(service_2.borrow().peer_id)));
+            .send_event(CrustEvent::LostPeer(unwrap!(service_2.borrow().uid)));
         service_2
             .borrow_mut()
-            .send_event(CrustEvent::LostPeer(unwrap!(service_1.borrow().peer_id)));
+            .send_event(CrustEvent::LostPeer(unwrap!(service_1.borrow().uid)));
     }
 
     /// Simulates a crust event being sent to the node.
@@ -291,7 +291,7 @@ impl<UID: Uid> ServiceHandle<UID> {
     pub fn is_connected(&self, handle: &Self) -> bool {
         self.0
             .borrow()
-            .is_peer_connected(&unwrap!(handle.0.borrow().peer_id))
+            .is_peer_connected(&unwrap!(handle.0.borrow().uid))
     }
 
     /// Returns whether sent any message across the network since previous query and reset the flag.
@@ -303,7 +303,7 @@ impl<UID: Uid> ServiceHandle<UID> {
 pub struct ServiceImpl<UID: Uid> {
     pub network: Network<UID>,
     endpoint: Endpoint,
-    pub peer_id: Option<UID>,
+    pub uid: Option<UID>,
     config: Config,
     pub listening_tcp: bool,
     event_sender: Option<CrustEventSender<UID>>,
@@ -317,7 +317,7 @@ impl<UID: Uid> ServiceImpl<UID> {
         ServiceImpl {
             network: network,
             endpoint: endpoint,
-            peer_id: None,
+            uid: None,
             config: config,
             listening_tcp: false,
             event_sender: None,
@@ -328,7 +328,7 @@ impl<UID: Uid> ServiceImpl<UID> {
     }
 
     pub fn start(&mut self, event_sender: CrustEventSender<UID>, uid: UID) {
-        self.peer_id = Some(uid);
+        self.uid = Some(uid);
         self.event_sender = Some(event_sender);
     }
 
@@ -337,7 +337,7 @@ impl<UID: Uid> ServiceImpl<UID> {
 
         self.disconnect_all();
 
-        self.peer_id = Some(uid);
+        self.uid = Some(uid);
         self.listening_tcp = false;
 
         self.start(event_sender, uid)
@@ -348,8 +348,7 @@ impl<UID: Uid> ServiceImpl<UID> {
 
         for endpoint in &self.config.hard_coded_contacts {
             if *endpoint != self.endpoint && !blacklist.contains(&to_socket_addr(endpoint)) {
-                self.send_packet(*endpoint,
-                                 Packet::BootstrapRequest(unwrap!(self.peer_id), kind));
+                self.send_packet(*endpoint, Packet::BootstrapRequest(unwrap!(self.uid), kind));
                 pending_bootstraps += 1;
             }
         }
@@ -363,8 +362,8 @@ impl<UID: Uid> ServiceImpl<UID> {
         self.pending_bootstraps = pending_bootstraps;
     }
 
-    pub fn send_message(&self, peer_id: &UID, data: Vec<u8>) -> bool {
-        if let Some(endpoint) = self.find_endpoint_by_peer_id(peer_id) {
+    pub fn send_message(&self, uid: &UID, data: Vec<u8>) -> bool {
+        if let Some(endpoint) = self.find_endpoint_by_uid(uid) {
             self.send_packet(endpoint, Packet::Message(data));
             true
         } else {
@@ -372,8 +371,8 @@ impl<UID: Uid> ServiceImpl<UID> {
         }
     }
 
-    pub fn is_peer_connected(&self, peer_id: &UID) -> bool {
-        self.find_endpoint_by_peer_id(peer_id).is_some()
+    pub fn is_peer_connected(&self, uid: &UID) -> bool {
+        self.find_endpoint_by_uid(uid).is_some()
     }
 
     pub fn whitelist_peer(&mut self, endpoint: Endpoint) {
@@ -385,7 +384,7 @@ impl<UID: Uid> ServiceImpl<UID> {
 
     pub fn is_peer_whitelisted(&self, id: &UID) -> bool {
         self.whitelist.is_empty() ||
-        self.find_endpoint_by_peer_id(id)
+        self.find_endpoint_by_uid(id)
             .map_or(false, |endpoint| self.whitelist.contains(&endpoint))
     }
 
@@ -396,7 +395,7 @@ impl<UID: Uid> ServiceImpl<UID> {
         let result = ConnectionInfoResult {
             result_token: result_token,
             result: Ok(PrivConnectionInfo {
-                           id: unwrap!(self.peer_id),
+                           id: unwrap!(self.uid),
                            endpoint: self.endpoint,
                        }),
         };
@@ -405,7 +404,7 @@ impl<UID: Uid> ServiceImpl<UID> {
     }
 
     pub fn connect(&self, _our_info: PrivConnectionInfo<UID>, their_info: PubConnectionInfo<UID>) {
-        let packet = Packet::ConnectRequest(unwrap!(self.peer_id), their_info.id);
+        let packet = Packet::ConnectRequest(unwrap!(self.uid), their_info.id);
         self.send_packet(their_info.endpoint, packet);
     }
 
@@ -420,10 +419,8 @@ impl<UID: Uid> ServiceImpl<UID> {
 
     fn receive_packet(&mut self, sender: Endpoint, packet: Packet<UID>) {
         match packet {
-            Packet::BootstrapRequest(peer_id, kind) => {
-                self.handle_bootstrap_request(sender, peer_id, kind)
-            }
-            Packet::BootstrapSuccess(peer_id) => self.handle_bootstrap_success(sender, peer_id),
+            Packet::BootstrapRequest(uid, kind) => self.handle_bootstrap_request(sender, uid, kind),
+            Packet::BootstrapSuccess(uid) => self.handle_bootstrap_success(sender, uid),
             Packet::BootstrapFailure => self.handle_bootstrap_failure(sender),
             Packet::ConnectRequest(their_id, _) => self.handle_connect_request(sender, their_id),
             Packet::ConnectSuccess(their_id, _) => self.handle_connect_success(sender, their_id),
@@ -433,27 +430,23 @@ impl<UID: Uid> ServiceImpl<UID> {
         }
     }
 
-    fn handle_bootstrap_request(&mut self,
-                                peer_endpoint: Endpoint,
-                                peer_id: UID,
-                                kind: CrustUser) {
+    fn handle_bootstrap_request(&mut self, peer_endpoint: Endpoint, uid: UID, kind: CrustUser) {
         if self.is_listening() {
-            self.handle_bootstrap_accept(peer_endpoint, peer_id, kind);
-            self.send_packet(peer_endpoint,
-                             Packet::BootstrapSuccess(unwrap!(self.peer_id)));
+            self.handle_bootstrap_accept(peer_endpoint, uid, kind);
+            self.send_packet(peer_endpoint, Packet::BootstrapSuccess(unwrap!(self.uid)));
         } else {
             self.send_packet(peer_endpoint, Packet::BootstrapFailure);
         }
     }
 
-    fn handle_bootstrap_accept(&mut self, peer_endpoint: Endpoint, peer_id: UID, kind: CrustUser) {
-        self.add_connection(peer_id, peer_endpoint);
-        self.send_event(CrustEvent::BootstrapAccept(peer_id, kind));
+    fn handle_bootstrap_accept(&mut self, peer_endpoint: Endpoint, uid: UID, kind: CrustUser) {
+        self.add_connection(uid, peer_endpoint);
+        self.send_event(CrustEvent::BootstrapAccept(uid, kind));
     }
 
-    fn handle_bootstrap_success(&mut self, peer_endpoint: Endpoint, peer_id: UID) {
-        self.add_connection(peer_id, peer_endpoint);
-        self.send_event(CrustEvent::BootstrapConnect(peer_id, to_socket_addr(&peer_endpoint)));
+    fn handle_bootstrap_success(&mut self, peer_endpoint: Endpoint, uid: UID) {
+        self.add_connection(uid, peer_endpoint);
+        self.send_event(CrustEvent::BootstrapConnect(uid, to_socket_addr(&peer_endpoint)));
         self.decrement_pending_bootstraps();
     }
 
@@ -468,7 +461,7 @@ impl<UID: Uid> ServiceImpl<UID> {
 
         self.add_rendezvous_connection(their_id, peer_endpoint);
         self.send_packet(peer_endpoint,
-                         Packet::ConnectSuccess(unwrap!(self.peer_id), their_id));
+                         Packet::ConnectSuccess(unwrap!(self.uid), their_id));
     }
 
     fn handle_connect_success(&mut self, peer_endpoint: Endpoint, their_id: UID) {
@@ -480,16 +473,16 @@ impl<UID: Uid> ServiceImpl<UID> {
     }
 
     fn handle_message(&self, peer_endpoint: Endpoint, data: Vec<u8>) {
-        if let Some(peer_id) = self.find_peer_id_by_endpoint(&peer_endpoint) {
-            self.send_event(CrustEvent::NewMessage(peer_id, data));
+        if let Some(uid) = self.find_uid_by_endpoint(&peer_endpoint) {
+            self.send_event(CrustEvent::NewMessage(uid, data));
         } else {
             unreachable!("Received message from non-connected {:?}", peer_endpoint);
         }
     }
 
     fn handle_disconnect(&mut self, peer_endpoint: Endpoint) {
-        if let Some(peer_id) = self.remove_connection_by_endpoint(peer_endpoint) {
-            self.send_event(CrustEvent::LostPeer(peer_id));
+        if let Some(uid) = self.remove_connection_by_endpoint(peer_endpoint) {
+            self.send_event(CrustEvent::LostPeer(uid));
         }
     }
 
@@ -514,29 +507,27 @@ impl<UID: Uid> ServiceImpl<UID> {
         }
     }
 
-    fn add_connection(&mut self, peer_id: UID, peer_endpoint: Endpoint) -> bool {
+    fn add_connection(&mut self, uid: UID, peer_endpoint: Endpoint) -> bool {
         if self.connections
                .iter()
-               .any(|&(id, ep)| id == peer_id && ep == peer_endpoint) {
+               .any(|&(id, ep)| id == uid && ep == peer_endpoint) {
             // Connection already exists
             return false;
         }
 
-        self.connections.push((peer_id, peer_endpoint));
+        self.connections.push((uid, peer_endpoint));
         true
     }
 
-    fn add_rendezvous_connection(&mut self, peer_id: UID, peer_endpoint: Endpoint) {
-        self.add_connection(peer_id, peer_endpoint);
-        self.send_event(CrustEvent::ConnectSuccess(peer_id));
+    fn add_rendezvous_connection(&mut self, uid: UID, peer_endpoint: Endpoint) {
+        self.add_connection(uid, peer_endpoint);
+        self.send_event(CrustEvent::ConnectSuccess(uid));
     }
 
-    // Remove connected peer with the given peer id and return its endpoint,
+    // Remove connected peer with the given uid and return its endpoint,
     // or None if no such peer exists.
-    fn remove_connection_by_peer_id(&mut self, peer_id: &UID) -> Option<Endpoint> {
-        if let Some(i) = self.connections
-               .iter()
-               .position(|&(id, _)| id == *peer_id) {
+    fn remove_connection_by_uid(&mut self, uid: &UID) -> Option<Endpoint> {
+        if let Some(i) = self.connections.iter().position(|&(id, _)| id == *uid) {
             Some(self.connections.swap_remove(i).1)
         } else {
             None
@@ -553,28 +544,28 @@ impl<UID: Uid> ServiceImpl<UID> {
         }
     }
 
-    fn find_endpoint_by_peer_id(&self, peer_id: &UID) -> Option<Endpoint> {
+    fn find_endpoint_by_uid(&self, uid: &UID) -> Option<Endpoint> {
         self.connections
             .iter()
-            .find(|&&(id, _)| id == *peer_id)
+            .find(|&&(id, _)| id == *uid)
             .map(|&(_, ep)| ep)
     }
 
-    fn find_peer_id_by_endpoint(&self, endpoint: &Endpoint) -> Option<UID> {
+    fn find_uid_by_endpoint(&self, endpoint: &Endpoint) -> Option<UID> {
         self.connections
             .iter()
             .find(|&&(_, ep)| ep == *endpoint)
             .map(|&(id, _)| id)
     }
 
-    fn is_connected(&self, endpoint: &Endpoint, peer_id: &UID) -> bool {
+    fn is_connected(&self, endpoint: &Endpoint, uid: &UID) -> bool {
         self.connections
             .iter()
-            .any(|&conn| conn == (*peer_id, *endpoint))
+            .any(|&conn| conn == (*uid, *endpoint))
     }
 
-    pub fn disconnect(&mut self, peer_id: &UID) -> bool {
-        if let Some(endpoint) = self.remove_connection_by_peer_id(peer_id) {
+    pub fn disconnect(&mut self, uid: &UID) -> bool {
+        if let Some(endpoint) = self.remove_connection_by_uid(uid) {
             // We immediately drop all messages going in both directions. This is
             // possibly not realistic since in the real CRust some of these might
             // have already been sent and still be received by the far end, but

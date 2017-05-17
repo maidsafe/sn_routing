@@ -120,8 +120,8 @@ impl<UID: Uid> Service<UID> {
     }
 
     /// Disconnect from the given peer.
-    pub fn disconnect(&self, peer_id: UID) -> bool {
-        self.lock_and_poll(|imp| imp.disconnect(&peer_id))
+    pub fn disconnect(&self, uid: UID) -> bool {
+        self.lock_and_poll(|imp| imp.disconnect(&uid))
     }
 
     /// Send message to the given peer.
@@ -135,9 +135,9 @@ impl<UID: Uid> Service<UID> {
         }
     }
 
-    /// Returns `true` if we are currently connected to the given `peer_id`
-    pub fn is_connected(&self, peer_id: &UID) -> bool {
-        self.lock_and_poll(|imp| imp.is_peer_connected(peer_id))
+    /// Returns `true` if we are currently connected to the given `uid`
+    pub fn is_connected(&self, uid: &UID) -> bool {
+        self.lock_and_poll(|imp| imp.is_peer_connected(uid))
     }
 
     /// Adds the peer to the whitelist, allowing them to connect to us.
@@ -151,13 +151,8 @@ impl<UID: Uid> Service<UID> {
     }
 
     /// Returns `true` if the specified peer's IP is hard-coded. (Always `true` in mock Crust.)
-    pub fn is_peer_hard_coded(&self, _peer_id: &UID) -> bool {
+    pub fn is_peer_hard_coded(&self, _uid: &UID) -> bool {
         true
-    }
-
-    /// Our `UID`.
-    pub fn id(&self) -> UID {
-        unwrap!(self.lock().peer_id)
     }
 
     fn lock(&self) -> RefMut<ServiceImpl<UID>> {

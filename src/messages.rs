@@ -106,10 +106,7 @@ pub enum DirectMessage {
     /// A signature for the current `BTreeSet` of section's node names
     SectionListSignature(SectionList, sign::Signature),
     /// Sent from the bootstrap node to a client in response to `ClientIdentify`.
-    BootstrapIdentify {
-        /// The bootstrap node's keys and name.
-        public_id: PublicId,
-    },
+    BootstrapIdentify,
     /// Sent to the client to indicate that this node is not available as a bootstrap node.
     BootstrapDeny,
     /// Sent from a newly connected client to the bootstrap node to inform it about the client's
@@ -136,11 +133,6 @@ pub enum DirectMessage {
         signature_using_new: sign::Signature,
         /// Client authority from after relocation.
         new_client_auth: Authority<XorName>,
-        /// FIXME: Should be deprecated.
-        /// Tunnel connection indicator from sender which would override
-        /// intermediate peer_mgr states for routing table connection type.
-        /// Should not influence JoiningNode / Proxy states which are expected to be direct only.
-        is_tunnel: bool,
     },
     /// Sent from a node that needs a tunnel to be able to connect to the given peer.
     TunnelRequest(PublicId),
@@ -391,9 +383,9 @@ impl SignedMessage {
             .iter()
             .filter_map(|(pub_id, sig)| {
                 // Remove if not in sending nodes or signature is invalid:
-                let is_valid = if let Authority::Client { ref client_key, .. } = self.content.src {
-                    client_key == pub_id.signing_public_key() &&
-                    sign::verify_detached(sig, &signed_bytes, client_key)
+                let is_valid = if let Authority::Client { ref client_id, .. } = self.content.src {
+                    client_id == pub_id &&
+                    sign::verify_detached(sig, &signed_bytes, client_id.signing_public_key())
                 } else {
                     self.is_sender(pub_id) &&
                     sign::verify_detached(sig, &signed_bytes, pub_id.signing_public_key())
@@ -564,8 +556,6 @@ pub enum MessageContent {
     /// This is sent by a joining node to its `NaeManager`s with the intent to become a full routing
     /// node with a new ID in an address range chosen by the `NaeManager`s.
     Relocate {
-        /// The relocating node's current public ID.
-        public_id: PublicId,
         /// The message's unique identifier.
         message_id: MessageId,
     },
@@ -707,9 +697,7 @@ impl Debug for DirectMessage {
             SectionListSignature(ref sec_list, _) => {
                 write!(formatter, "SectionListSignature({:?}, ..)", sec_list.prefix)
             }
-            BootstrapIdentify { ref public_id } => {
-                write!(formatter, "BootstrapIdentify {{ {:?} }}", public_id)
-            }
+            BootstrapIdentify => write!(formatter, "BootstrapIdentify"),
             BootstrapDeny => write!(formatter, "BootstrapDeny"),
             ClientIdentify { client_restriction: true, .. } => {
                 write!(formatter, "ClientIdentify (client only)")
@@ -718,11 +706,11 @@ impl Debug for DirectMessage {
                 write!(formatter, "ClientIdentify (joining node)")
             }
             CandidateIdentify { .. } => write!(formatter, "CandidateIdentify {{ .. }}"),
-            TunnelRequest(peer_id) => write!(formatter, "TunnelRequest({:?})", peer_id),
-            TunnelSuccess(peer_id) => write!(formatter, "TunnelSuccess({:?})", peer_id),
-            TunnelSelect(peer_id) => write!(formatter, "TunnelSelect({:?})", peer_id),
-            TunnelClosed(peer_id) => write!(formatter, "TunnelClosed({:?})", peer_id),
-            TunnelDisconnect(peer_id) => write!(formatter, "TunnelDisconnect({:?})", peer_id),
+            TunnelRequest(pub_id) => write!(formatter, "TunnelRequest({:?})", pub_id),
+            TunnelSuccess(pub_id) => write!(formatter, "TunnelSuccess({:?})", pub_id),
+            TunnelSelect(pub_id) => write!(formatter, "TunnelSelect({:?})", pub_id),
+            TunnelClosed(pub_id) => write!(formatter, "TunnelClosed({:?})", pub_id),
+            TunnelDisconnect(pub_id) => write!(formatter, "TunnelDisconnect({:?})", pub_id),
             ResourceProof {
                 ref seed,
                 ref target_size,
@@ -776,15 +764,7 @@ impl Debug for MessageContent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         use self::MessageContent::*;
         match *self {
-            Relocate {
-                ref public_id,
-                ref message_id,
-            } => {
-                write!(formatter,
-                       "Relocate {{ {:?}, {:?} }}",
-                       public_id,
-                       message_id)
-            }
+            Relocate { ref message_id } => write!(formatter, "Relocate {{ {:?} }}", message_id),
             ExpectCandidate {
                 ref old_public_id,
                 ref old_client_auth,
@@ -1284,8 +1264,7 @@ mod tests {
         let full_id = FullId::new();
         let routing_message = RoutingMessage {
             src: Authority::Client {
-                client_key: *full_id.public_id().signing_public_key(),
-                peer_id: *full_id.public_id(),
+                client_id: *full_id.public_id(),
                 proxy_node_name: name,
             },
             dst: Authority::ClientManager(name),

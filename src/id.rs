@@ -18,7 +18,7 @@
 use crust::Uid;
 use rust_sodium::crypto::{box_, hash, sign};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::fmt::{self, Debug, Formatter};
+use std::fmt::{self, Debug, Display, Formatter};
 use xor_name::XorName;
 
 /// Network identity component containing name, and public and private keys.
@@ -95,11 +95,11 @@ impl Default for FullId {
     }
 }
 
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 /// Network identity component containing name and public keys.
 ///
 /// Note that the `name` member is omitted when serialising `PublicId` and is calculated from the
 /// `public_sign_key` when deserialising.
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub struct PublicId {
     name: XorName,
     public_sign_key: sign::PublicKey,
@@ -113,6 +113,13 @@ impl Debug for PublicId {
         write!(formatter, "PublicId(name: {})", self.name)
     }
 }
+
+impl Display for PublicId {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{}", self.name())
+    }
+}
+
 
 impl Serialize for PublicId {
     fn serialize<S: Serializer>(&self, serialiser: S) -> Result<S::Ok, S::Error> {

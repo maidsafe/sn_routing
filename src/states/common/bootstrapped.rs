@@ -88,11 +88,11 @@ pub trait Bootstrapped: Base {
     /// if it should be blocked due to deduplication.
     fn filter_outgoing_routing_msg(&mut self,
                                    msg: &RoutingMessage,
-                                   peer_id: &PublicId,
+                                   pub_id: &PublicId,
                                    route: u8)
                                    -> bool {
         if self.routing_msg_filter()
-               .filter_outgoing(msg, peer_id, route) {
+               .filter_outgoing(msg, pub_id, route) {
             return true;
         }
 

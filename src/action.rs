@@ -72,8 +72,8 @@ impl Debug for Action {
             }
             Action::Id { .. } => write!(formatter, "Action::Id"),
             Action::Timeout(token) => write!(formatter, "Action::Timeout({})", token),
-            Action::ResourceProofResult(peer_id, _) => {
-                write!(formatter, "Action::ResourceProofResult({:?}, ...)", peer_id)
+            Action::ResourceProofResult(pub_id, _) => {
+                write!(formatter, "Action::ResourceProofResult({:?}, ...)", pub_id)
             }
             Action::Terminate => write!(formatter, "Action::Terminate"),
         }

@@ -86,17 +86,17 @@ impl Tunnels {
 
     /// Removes all pairs with the given client and returns a list of all clients that used us as a
     /// tunnel for them.
-    pub fn drop_client(&mut self, peer_id: &PublicId) -> Vec<PublicId> {
+    pub fn drop_client(&mut self, pub_id: &PublicId) -> Vec<PublicId> {
         let pairs = self.clients
             .iter()
-            .filter(|pair| pair.0 == *peer_id || pair.1 == *peer_id)
+            .filter(|pair| pair.0 == *pub_id || pair.1 == *pub_id)
             .cloned()
             .collect_vec();
         pairs
             .into_iter()
             .map(|pair| {
                      self.clients.remove(&pair);
-                     if pair.0 == *peer_id { pair.1 } else { pair.0 }
+                     if pair.0 == *pub_id { pair.1 } else { pair.0 }
                  })
             .collect()
     }

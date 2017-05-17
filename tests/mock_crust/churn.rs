@@ -373,9 +373,8 @@ fn send_and_receive<R: Rng>(rng: &mut R, nodes: &mut [TestNode], min_section_siz
 fn client_gets(network: &mut Network<PublicId>, nodes: &mut [TestNode], min_section_size: usize) {
     let mut clients = create_connected_clients(network, nodes, 1);
     let cl_auth = Authority::Client {
-        client_key: *clients[0].full_id.public_id().signing_public_key(),
+        client_id: *clients[0].full_id.public_id(),
         proxy_node_name: nodes[0].name(),
-        peer_id: unwrap!(clients[0].handle.0.borrow().peer_id),
     };
 
     let mut rng = network.new_rng();
@@ -518,9 +517,8 @@ fn messages_during_churn() {
     let mut nodes = create_connected_nodes(&network, 20);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
     let cl_auth = Authority::Client {
-        client_key: *clients[0].full_id.public_id().signing_public_key(),
+        client_id: *clients[0].full_id.public_id(),
         proxy_node_name: nodes[0].name(),
-        peer_id: unwrap!(clients[0].handle.0.borrow().peer_id),
     };
 
     for i in 0..100 {
