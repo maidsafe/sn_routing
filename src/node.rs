@@ -93,6 +93,7 @@ pub struct NodeBuilder {
     cache: Box<Cache>,
     first: bool,
     deny_other_local_nodes: bool,
+    min_section_size: usize,
 }
 
 impl NodeBuilder {
@@ -116,6 +117,14 @@ impl NodeBuilder {
     pub fn deny_other_local_nodes(self) -> NodeBuilder {
         NodeBuilder {
             deny_other_local_nodes: true,
+            ..self
+        }
+    }
+
+    /// Set min section size.
+    pub fn min_section_size(self, size: usize) -> Self {
+        NodeBuilder {
+            min_section_size: size,
             ..self
         }
     }
@@ -152,7 +161,7 @@ impl NodeBuilder {
                                                                        self.cache,
                                                                        crust_service,
                                                                        FullId::new(),
-                                                                       MIN_SECTION_SIZE,
+                                                                       self.min_section_size,
                                                                        timer) {
                                   State::Node(state)
                               } else {
@@ -169,7 +178,7 @@ impl NodeBuilder {
                                BootstrappingTargetState::JoiningNode,
                                crust_service,
                                FullId::new(),
-                               MIN_SECTION_SIZE,
+                               self.min_section_size,
                                timer)
                     .map_or(State::Terminated, State::Bootstrapping)
         },
@@ -199,6 +208,7 @@ impl Node {
             cache: Box::new(NullCache),
             first: false,
             deny_other_local_nodes: false,
+            min_section_size: MIN_SECTION_SIZE,
         }
     }
 
