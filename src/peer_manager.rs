@@ -17,11 +17,15 @@
 
 use crust::{PeerId, PrivConnectionInfo, PubConnectionInfo};
 use error::RoutingError;
+#[cfg(feature="use-mock-crust")]
+use fake_clock::FakeClock as Instant;
 use id::PublicId;
 use itertools::Itertools;
 use log::LogLevel;
+use messages::MessageContent;
 use rand;
 use resource_proof::ResourceProof;
+use resource_prover::RESOURCE_PROOF_DURATION_SECS;
 use routing_table::{Authority, OwnMergeState, Prefix, RemovalDetails, RoutingTable,
                     VersionedPrefix};
 use routing_table::Error as RoutingTableError;
@@ -29,9 +33,11 @@ use rust_sodium::crypto::hash::sha256;
 use rust_sodium::crypto::sign;
 use signature_accumulator::ACCUMULATION_TIMEOUT_SECS;
 use std::{error, fmt, mem};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::collections::hash_map::Values;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(not(feature="use-mock-crust"))]
+use std::time::Instant;
 use types::MessageId;
 use xor_name::XorName;
 
@@ -41,14 +47,20 @@ const JOINING_NODE_TIMEOUT_SECS: u64 = 900;
 const CONNECTION_TIMEOUT_SECS: u64 = 90;
 /// Time (in seconds) the node waits for a `NodeIdentify` message.
 const NODE_IDENTIFY_TIMEOUT_SECS: u64 = 60;
-/// Time (in seconds) between accepting a new candidate (i.e. receiving an `AcceptAsCandidate` from
-/// our section) and sending a `CandidateApproval` for this candidate.  If the candidate cannot
-/// satisfy the proof of resource challenge within this time, no `CandidateApproval` is sent.
-pub const RESOURCE_PROOF_DURATION_SECS: u64 = 300;
 /// Time (in seconds) after which a `VotedFor` candidate will be removed.
 const CANDIDATE_ACCEPT_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) the node waits for connection from an expected node.
 const NODE_CONNECT_TIMEOUT_SECS: u64 = 60;
+
+#[cfg(feature = "use-mock-crust")]
+#[doc(hidden)]
+pub mod test_consts {
+    pub const ACCUMULATION_TIMEOUT_SECS: u64 = super::ACCUMULATION_TIMEOUT_SECS;
+    pub const ACK_TIMEOUT_SECS: u64 = ::ack_manager::ACK_TIMEOUT_SECS;
+    pub const CANDIDATE_ACCEPT_TIMEOUT_SECS: u64 = super::CANDIDATE_ACCEPT_TIMEOUT_SECS;
+    pub const NODE_CONNECT_TIMEOUT_SECS: u64 = super::NODE_CONNECT_TIMEOUT_SECS;
+    pub const RESOURCE_PROOF_DURATION_SECS: u64 = super::RESOURCE_PROOF_DURATION_SECS;
+}
 
 pub type SectionMap = BTreeMap<VersionedPrefix<XorName>, BTreeSet<PublicId>>;
 
@@ -184,23 +196,16 @@ pub struct ConnectionInfoPreparedResult {
 }
 
 /// Represents peer we are connected or attempting connection to.
+#[derive(Debug)]
 pub struct Peer {
     pub_id: PublicId,
     peer_id: Option<PeerId>,
     state: PeerState,
     timestamp: Instant,
+    valid: bool,
 }
 
 impl Peer {
-    fn new(pub_id: PublicId, peer_id: Option<PeerId>, state: PeerState) -> Self {
-        Peer {
-            pub_id: pub_id,
-            peer_id: peer_id,
-            state: state,
-            timestamp: Instant::now(),
-        }
-    }
-
     pub fn peer_id(&self) -> Option<&PeerId> {
         self.peer_id.as_ref()
     }
@@ -215,6 +220,10 @@ impl Peer {
 
     pub fn state(&self) -> &PeerState {
         &self.state
+    }
+
+    pub fn valid(&self) -> bool {
+        self.valid
     }
 
     /// Returns `true` if the peer is not connected and has timed out. In this case, it can be
@@ -268,6 +277,7 @@ impl Peer {
 }
 
 /// Holds peers and provides efficient insertion and lookup and removal by peer id and name.
+#[derive(Debug)]
 struct PeerMap {
     peers: HashMap<XorName, Peer>,
     names: HashMap<PeerId, XorName>,
@@ -299,6 +309,10 @@ impl PeerMap {
 
     fn get_by_name(&self, name: &XorName) -> Option<&Peer> {
         self.peers.get(name)
+    }
+
+    fn get_by_name_mut(&mut self, name: &XorName) -> Option<&mut Peer> {
+        self.peers.get_mut(name)
     }
 
     // Iterator over all peers in the map.
@@ -338,7 +352,6 @@ impl PeerMap {
 enum CandidateState {
     VotedFor,
     AcceptedAsCandidate,
-    Approved,
 }
 
 #[derive(Debug)]
@@ -354,17 +367,21 @@ struct ChallengeResponse {
 struct Candidate {
     insertion_time: Instant,
     challenge_response: Option<ChallengeResponse>,
-    client_auth: Authority<XorName>,
+    target_interval: Option<(XorName, XorName)>,
+    new_pub_id: Option<PublicId>,
+    new_client_auth: Option<Authority<XorName>>,
     state: CandidateState,
     passed_our_challenge: bool,
 }
 
 impl Candidate {
-    fn new(client_auth: Authority<XorName>) -> Candidate {
+    fn new() -> Candidate {
         Candidate {
             insertion_time: Instant::now(),
             challenge_response: None,
-            client_auth: client_auth,
+            target_interval: None,
+            new_pub_id: None,
+            new_client_auth: None,
             state: CandidateState::VotedFor,
             passed_our_challenge: false,
         }
@@ -373,19 +390,46 @@ impl Candidate {
     fn is_expired(&self) -> bool {
         let timeout_duration = match self.state {
             CandidateState::VotedFor => Duration::from_secs(CANDIDATE_ACCEPT_TIMEOUT_SECS),
-            CandidateState::AcceptedAsCandidate |
-            CandidateState::Approved => {
+            CandidateState::AcceptedAsCandidate => {
                 Duration::from_secs(RESOURCE_PROOF_DURATION_SECS + ACCUMULATION_TIMEOUT_SECS)
             }
         };
         self.insertion_time.elapsed() > timeout_duration
     }
 
-    fn is_approved(&self) -> bool {
-        match self.state {
-            CandidateState::VotedFor |
-            CandidateState::AcceptedAsCandidate => false,
-            CandidateState::Approved => true,
+    fn has_valid_new_pub_id(&self, debug_prefix: &str) -> bool {
+        let new_pub_id = if let Some(new_pub_id) = self.new_pub_id.as_ref() {
+            new_pub_id
+        } else {
+            return false;
+        };
+
+        match self.target_interval {
+            Some(target_interval) => {
+                if *new_pub_id.name() >= target_interval.0 &&
+                   *new_pub_id.name() <= target_interval.1 {
+                    true
+                } else {
+                    warn!("{} has used a new ID which is not within the required target range.",
+                          debug_prefix);
+                    false
+                }
+            }
+            None => {
+                debug!("{} has sent CandidateIdentify before we have received an \
+                       AcceptAsCandidate, so relocation target interval is still unknown.",
+                       debug_prefix);
+                false
+            }
+        }
+    }
+}
+
+impl fmt::Display for Candidate {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        match self.new_pub_id {
+            Some(pub_id) => pub_id.name().fmt(formatter),
+            None => write!(formatter, "?"),
         }
     }
 }
@@ -397,16 +441,16 @@ impl Candidate {
 pub struct PeerManager {
     connection_token_map: HashMap<u32, PublicId>,
     peer_map: PeerMap,
-    /// Peers we connected to but don't know about yet. The bool is true if the peer is
-    /// tunnel-connected or false if directly-connected.
-    unknown_peers: HashMap<PeerId, (bool, Instant)>,
+    /// Peers we connected to but don't know about yet.
+    unknown_peers: HashMap<PeerId, Instant>,
     /// Peers we expect to connect to
     expected_peers: HashMap<XorName, Instant>,
     proxy_peer_id: Option<PeerId>,
     routing_table: RoutingTable<XorName>,
     our_public_id: PublicId,
-    /// Joining nodes which want to join our section
-    candidates: HashMap<XorName, Candidate>,
+    /// Joining nodes which want to join our section, indexed by "old" public ID (i.e. their
+    /// pre-relocation IDs). Note that they will be indexed by their "new" IDs in the `peer_map`.
+    candidates: HashMap<PublicId, Candidate>,
 }
 
 impl PeerManager {
@@ -418,25 +462,10 @@ impl PeerManager {
             unknown_peers: HashMap::new(),
             expected_peers: HashMap::new(),
             proxy_peer_id: None,
-            routing_table: RoutingTable::<XorName>::new(*our_public_id.name(), min_section_size),
+            routing_table: RoutingTable::new(*our_public_id.name(), min_section_size),
             our_public_id: our_public_id,
             candidates: HashMap::new(),
         }
-    }
-
-    /// Clears the routing table and resets this node's public ID.
-    pub fn reset_routing_table(&mut self, our_public_id: PublicId) {
-        if !self.routing_table.is_empty() {
-            warn!("{:?} Reset to {:?} from non-empty routing table {:?}.",
-                  self,
-                  our_public_id.name(),
-                  self.routing_table)
-        }
-
-        let min_section_size = self.routing_table.min_section_size();
-        self.our_public_id = our_public_id;
-        let new_rt = RoutingTable::new(*our_public_id.name(), min_section_size);
-        self.routing_table = new_rt;
     }
 
     /// Add prefixes into routing table.
@@ -451,6 +480,11 @@ impl PeerManager {
         &self.routing_table
     }
 
+    /// Returns the unknown peers container.
+    pub fn unknown_peers(&self) -> &HashMap<PeerId, Instant> {
+        &self.unknown_peers
+    }
+
     /// Notes that a new peer should be expected. This should only be called for peers not already
     /// in our routing table.
     pub fn expect_peer(&mut self, id: &PublicId) {
@@ -460,24 +494,16 @@ impl PeerManager {
     /// Adds a potential candidate to the candidate list setting its state to `VotedFor`.  If
     /// another ongoing (i.e. unapproved) candidate exists, or if the candidate is unsuitable for
     /// adding to our section, returns an error.
-    pub fn expect_candidate(&mut self,
-                            candidate_name: XorName,
-                            client_auth: Authority<XorName>)
-                            -> Result<(), RoutingError> {
-        if let Some((ongoing_name, _)) =
-            self.candidates
-                .iter()
-                .find(|&(_, candidate)| !candidate.is_approved()) {
-            trace!("{:?} Rejected {} as a new candidate: still handling attempt by {}.",
+    pub fn expect_candidate(&mut self, old_pub_id: PublicId) -> Result<(), RoutingError> {
+        if let Some((ongoing_pub_id, candidate)) = self.candidates.iter().next() {
+            trace!("{:?} Rejected {} as a new candidate: still handling attempt by {}->{}.",
                    self,
-                   candidate_name,
-                   ongoing_name);
+                   old_pub_id.name(),
+                   ongoing_pub_id.name(),
+                   candidate);
             return Err(RoutingError::AlreadyHandlingJoinRequest);
         }
-        self.routing_table
-            .should_join_our_section(&candidate_name)?;
-        let _ = self.candidates
-            .insert(candidate_name, Candidate::new(client_auth));
+        let _ = self.candidates.insert(old_pub_id, Candidate::new());
         Ok(())
     }
 
@@ -485,29 +511,59 @@ impl PeerManager {
     /// Replaces any other potential candidate we have previously voted for.  Sets the candidate
     /// state to `AcceptedAsCandidate`.
     pub fn accept_as_candidate(&mut self,
-                               candidate_name: XorName,
-                               client_auth: Authority<XorName>)
+                               old_pub_id: PublicId,
+                               target_interval: (XorName, XorName))
                                -> BTreeSet<PublicId> {
-        self.remove_unapproved_candidates(&candidate_name);
-        self.candidates
-            .entry(candidate_name)
-            .or_insert_with(|| Candidate::new(client_auth))
-            .state = CandidateState::AcceptedAsCandidate;
+        // Remove all candidates except this one
+        let mut old_candidates = mem::replace(&mut self.candidates, HashMap::new());
+        if let Some(candidate) = old_candidates.remove(&old_pub_id) {
+            let _ = self.candidates.insert(old_pub_id, candidate);
+        }
+
+        // Update or insert candidate state
+        {
+            let candidate = self.candidates
+                .entry(old_pub_id)
+                .or_insert_with(Candidate::new);
+            candidate.target_interval = Some(target_interval);
+            candidate.state = CandidateState::AcceptedAsCandidate;
+        }
+
         let our_section = self.routing_table.our_section();
         self.get_pub_ids(our_section)
+    }
+
+    /// Returns a tuple of the old `PublicId` and new `PublicId` (in that order) if it exists.
+    pub fn get_candidate_from_peer_id(&self, peer_id: &PeerId) -> Option<(PublicId, PublicId)> {
+        let new_pub_id = if let Some(peer) = self.get_peer(peer_id) {
+            *peer.pub_id()
+        } else {
+            return None;
+        };
+        let old_pub_id = if let Some(elt) = self.candidates
+               .iter()
+               .find(|&(_, cand)| match cand.new_pub_id {
+                         Some(pub_id) => pub_id == new_pub_id,
+                         None => false,
+                     }) {
+            *elt.0
+        } else {
+            return None;
+        };
+        Some((old_pub_id, new_pub_id))
     }
 
     /// Verifies proof of resource.  If the response is not the current candidate, or if it fails
     /// validation, returns `Err`.  Otherwise returns the target size, difficulty and the time
     /// elapsed since the candidate was inserted.
     pub fn verify_candidate(&mut self,
-                            candidate_name: &XorName,
+                            old_pub_id: &PublicId,
                             part_index: usize,
                             part_count: usize,
                             proof_part: Vec<u8>,
                             leading_zero_bytes: u64)
                             -> Result<Option<(usize, u8, Duration)>, RoutingError> {
-        let candidate = if let Some(candidate) = self.candidates.get_mut(candidate_name) {
+        let candidate = if let Some(candidate) = self.candidates.get_mut(old_pub_id) {
             candidate
         } else {
             return Err(RoutingError::UnknownCandidate);
@@ -535,28 +591,47 @@ impl PeerManager {
         }
     }
 
-    /// Returns a tuple containing the verified candidate's `PublicId`, its client `Authority` and
-    /// the `PublicId`s of all routing table entries.
-    pub fn verified_candidate_info
-        (&self)
-         -> Result<(PublicId, Authority<XorName>, SectionMap), RoutingError> {
-        if let Some((name, candidate)) =
+    /// Returns a (`MessageContent::CandidateApproval`, new name) tuple completed using the verified
+    /// candidate's details.
+    pub fn verified_candidate_info(&self) -> Result<(MessageContent, XorName), RoutingError> {
+        if let Some((old_pub_id, candidate)) =
             self.candidates
                 .iter()
-                .find(|&(_, cand)| cand.passed_our_challenge && !cand.is_approved()) {
-            return if let Some(peer) = self.peer_map.get_by_name(name) {
-                       Ok((*peer.pub_id(), candidate.client_auth, self.pub_ids_by_section()))
+                .find(|&(_, cand)| cand.passed_our_challenge) {
+            return if let (Some(new_pub_id), Some(new_client_auth)) =
+                (candidate.new_pub_id.as_ref(), candidate.new_client_auth.as_ref()) {
+                       self.peer_map
+                           .get_by_name(new_pub_id.name())
+                           .map_or_else(|| {
+                                            log_or_panic!(LogLevel::Error,
+                                                          "{:?} Should have held {} in peer_map.",
+                                                          self,
+                                                          new_pub_id.name());
+                                            Err(RoutingError::UnknownCandidate)
+                                        },
+                                        |_peer| {
+                    Ok((MessageContent::CandidateApproval {
+                            old_public_id: *old_pub_id,
+                            new_public_id: *new_pub_id,
+                            new_client_auth: *new_client_auth,
+                            sections: self.ideal_rt(),
+                        },
+                        *new_pub_id.name()))
+                })
                    } else {
+                       log_or_panic!(LogLevel::Error,
+                                     "{:?} Should have held a candidate which had passed our \
+                                     challenge.",
+                                     self);
                        Err(RoutingError::UnknownCandidate)
                    };
         }
-        if let Some((name, _)) = self.candidates
-               .iter()
-               .find(|&(_, cand)| !cand.is_approved()) {
-            info!("{:?} Candidate {} has not passed our resource proof challenge in time. Not \
+        if let Some((old_pub_id, candidate)) = self.candidates.iter().next() {
+            info!("{:?} Candidate {}->{} has not passed our resource proof challenge in time. Not \
                    sending approval vote to our section with {:?}",
                   self,
-                  name,
+                  old_pub_id.name(),
+                  candidate,
                   self.routing_table.our_prefix());
         }
         Err(RoutingError::UnknownCandidate)
@@ -565,39 +640,33 @@ impl PeerManager {
     /// Handles accumulated candidate approval.  Marks the candidate as `Approved` and returns the
     /// candidate's `PeerId`; or `Err` if the peer is not the candidate or we are missing its info.
     pub fn handle_candidate_approval(&mut self,
-                                     candidate_name: XorName,
-                                     client_auth: Authority<XorName>)
+                                     old_pub_id: &PublicId,
+                                     new_pub_id: &PublicId)
                                      -> Result<Option<PeerId>, RoutingError> {
-        if let Some(candidate) = self.candidates.get_mut(&candidate_name) {
-            candidate.state = CandidateState::Approved;
-            if let Some(peer) = self.peer_map.get_by_name(&candidate_name) {
-                if let Some(peer_id) = peer.peer_id() {
-                    if let PeerState::Candidate(_) = *peer.state() {
-                        return Ok(Some(*peer_id));
-                    } else {
-                        trace!("Node({}) Candidate {} not yet connected to us.",
-                               self.routing_table.our_name(),
-                               candidate_name);
-                        return Ok(None);
-                    };
-                } else {
-                    trace!("Node({}) No peer ID with name {}",
-                           self.routing_table.our_name(),
-                           candidate_name);
-                }
-            } else {
-                trace!("Node({}) No peer with name {}",
-                       self.routing_table.our_name(),
-                       candidate_name);
-            }
-            return Err(RoutingError::InvalidStateForOperation);
+        if self.candidates.remove(old_pub_id).is_none() {
+            self.candidates.clear();
+            return Err(RoutingError::UnknownCandidate);
         }
 
-        self.remove_unapproved_candidates(&candidate_name);
-        let mut candidate = Candidate::new(client_auth);
-        candidate.state = CandidateState::Approved;
-        let _ = self.candidates.insert(candidate_name, candidate);
-        trace!("{:?} No candidate with name {}", self, candidate_name);
+        let debug_id = format!("{:?}", self);
+        if let Some(peer) = self.peer_map.get_by_name_mut(new_pub_id.name()) {
+            peer.valid = true;
+            if let Some(peer_id) = peer.peer_id() {
+                if let PeerState::Candidate(_) = *peer.state() {
+                    return Ok(Some(*peer_id));
+                } else {
+                    trace!("{} Candidate {}->{} not yet connected to us.",
+                           debug_id,
+                           old_pub_id.name(),
+                           new_pub_id.name());
+                    return Ok(None);
+                };
+            } else {
+                trace!("{} No peer ID with name {}", debug_id, new_pub_id.name());
+            }
+        } else {
+            trace!("{} No peer with name {}", debug_id, new_pub_id.name());
+        }
         // TODO: more specific return error
         Err(RoutingError::InvalidStateForOperation)
     }
@@ -611,52 +680,66 @@ impl PeerManager {
     /// * Ok(false)                     if the peer has already been approved
     /// * Err(CandidateIsTunnelling)    if the peer is tunnelling
     /// * Err(UnknownCandidate)         if the peer is not in the candidate list
+    #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
     pub fn handle_candidate_identify(&mut self,
-                                     pub_id: &PublicId,
+                                     old_pub_id: &PublicId,
+                                     new_pub_id: &PublicId,
+                                     new_client_auth: &Authority<XorName>,
                                      peer_id: &PeerId,
                                      target_size: usize,
                                      difficulty: u8,
                                      seed: Vec<u8>,
                                      is_tunnel: bool)
                                      -> Result<bool, RoutingError> {
-        if let Some(candidate) = self.candidates.get_mut(pub_id.name()) {
-            if candidate.is_approved() {
-                Ok(false)
+        let debug_prefix = format!("{:?} Candidate {}->{}",
+                                   self,
+                                   old_pub_id.name(),
+                                   new_pub_id.name());
+        let (res, should_insert) = if let Some(candidate) = self.candidates.get_mut(old_pub_id) {
+            candidate.new_pub_id = Some(*new_pub_id);
+            candidate.new_client_auth = Some(*new_client_auth);
+            let conn = self.peer_map
+                .get(peer_id)
+                .map_or(RoutingConnection::Direct,
+                        |peer| peer.to_routing_connection(is_tunnel));
+            let state = PeerState::Candidate(conn);
+            if conn == RoutingConnection::Tunnel {
+                (Err(RoutingError::CandidateIsTunnelling), Some(state))
+            } else if !candidate.has_valid_new_pub_id(&debug_prefix) {
+                (Err(RoutingError::InvalidRelocationTargetRange), None)
             } else {
-                let conn = self.peer_map
-                    .get(peer_id)
-                    .map_or(RoutingConnection::Direct,
-                            |peer| peer.to_routing_connection(is_tunnel));
-                let state = PeerState::Candidate(conn);
-                let _ = self.peer_map
-                    .insert(Peer::new(*pub_id, Some(*peer_id), state));
-                if conn == RoutingConnection::Tunnel {
-                    Err(RoutingError::CandidateIsTunnelling)
-                } else {
-                    candidate.challenge_response = Some(ChallengeResponse {
-                                                            target_size: target_size,
-                                                            difficulty: difficulty,
-                                                            seed: seed,
-                                                            proof: VecDeque::new(),
-                                                        });
-                    Ok(true)
-                }
+                candidate.challenge_response = Some(ChallengeResponse {
+                                                        target_size: target_size,
+                                                        difficulty: difficulty,
+                                                        seed: seed,
+                                                        proof: VecDeque::new(),
+                                                    });
+                (Ok(true), Some(state))
             }
+        } else if self.peer_map
+                      .get_by_name(new_pub_id.name())
+                      .map_or(false, Peer::valid) {
+            (Ok(false), None)
         } else {
-            Err(RoutingError::UnknownCandidate)
+            (Err(RoutingError::UnknownCandidate), None)
+        };
+
+        if let Some(state) = should_insert {
+            let _ = self.insert_peer(*new_pub_id, Some(*peer_id), state, false);
         }
+        res
     }
 
     /// Logs info about ongoing candidate state, if any.
     pub fn show_candidate_status(&self) {
         let mut have_candidate = false;
         let log_prefix = format!("{:?} Candidate Status - ", self);
-        for (name, candidate) in
+        for (old_pub_id, candidate) in
             self.candidates
                 .iter()
                 .filter(|&(_, cand)| !cand.is_expired()) {
             have_candidate = true;
-            let mut log_msg = format!("{}{} ", log_prefix, name);
+            let mut log_msg = format!("{}{}->{} ", log_prefix, old_pub_id.name(), candidate);
             match candidate.challenge_response {
                 Some(ChallengeResponse {
                          ref target_size,
@@ -672,11 +755,7 @@ impl PeerManager {
                                           log_msg,
                                           (proof.len() * 100) / target_size);
                     }
-                    if candidate.is_approved() {
-                        log_msg = format!("{}and is approved by our section.", log_msg);
-                    } else {
-                        log_msg = format!("{}and is not yet approved by our section.", log_msg);
-                    }
+                    log_msg = format!("{}and is not yet approved by our section.", log_msg);
                 }
                 None => {
                     log_msg = format!("{}has not sent CandidateIdentify yet.", log_msg);
@@ -685,11 +764,9 @@ impl PeerManager {
             trace!("{}", log_msg);
         }
 
-        if have_candidate {
-            return;
+        if !have_candidate {
+            trace!("{}No candidate is currently being handled.", log_prefix);
         }
-
-        trace!("{}No candidate is currently being handled.", log_prefix);
     }
 
     /// Tries to add the given peer to the routing table.
@@ -698,46 +775,23 @@ impl PeerManager {
                                 peer_id: &PeerId,
                                 is_tunnel: bool)
                                 -> Result<(), RoutingTableError> {
-        if let Some(peer) = self.peer_map.get(peer_id) {
-            match peer.state {
-                PeerState::ConnectionInfoPreparing { .. } |
-                PeerState::ConnectionInfoReady(_) |
-                PeerState::SearchingForTunnel |
-                PeerState::Routing(RoutingConnection::Proxy(_)) |
-                PeerState::Routing(RoutingConnection::Direct) |
-                PeerState::Routing(RoutingConnection::Tunnel) => {
-                    trace!("{:?} Unexpected peer state {:?} while adding {:?} into routing table.",
-                           self,
-                           peer.state,
-                           peer_id)
-                }
-                PeerState::CrustConnecting if !self.unknown_peers.contains_key(peer_id) => {
-                    trace!("{:?} Unexpected peer state {:?} while adding {:?} into routing table.",
-                           self,
-                           peer.state,
-                           peer_id)
-                }
-                PeerState::CrustConnecting |
-                PeerState::AwaitingNodeIdentify(_) |
-                PeerState::Client |
-                PeerState::JoiningNode |
-                // This state is not unexpected; the peer may have been previously added via a
-                // section update, and we handle it in `self.routing_table.add()` below by returning
-                // an `AlreadyExists` error.
-                PeerState::Routing(RoutingConnection::JoiningNode(_)) |
-                PeerState::Candidate(_) |
-                PeerState::Proxy => (),
-            }
-        } else if !self.unknown_peers.contains_key(peer_id) {
-            trace!("{:?} Add to routing table called for {:?} not found in peer_map/unknown_peers",
-                   self,
-                   peer_id);
+        // Check we can find the peer in the map both by name and peer_id, and if so ensure it has
+        // its `valid` flag set to true.
+        let peer_by_name_is_valid = self.peer_map
+            .get_by_name(pub_id.name())
+            .map_or(false, |peer_by_name| peer_by_name.valid);
+        if self.peer_map
+               .get(peer_id)
+               .map_or(false,
+                       |peer_by_id| peer_by_id.valid && peer_by_name_is_valid) {
+        } else {
+            log_or_panic!(LogLevel::Error,
+                          "{:?} Invalid peer {} added to the RT.",
+                          self,
+                          pub_id.name());
         }
 
-        let unknown_connection = match self.unknown_peers.remove(peer_id) {
-            Some((true, _)) => RoutingConnection::Tunnel,
-            Some((false, _)) | None => RoutingConnection::Direct,
-        };
+        let _ = self.unknown_peers.remove(peer_id);
         let _ = self.expected_peers.remove(pub_id.name());
         let res = match self.routing_table.add(*pub_id.name()) {
             res @ Ok(_) |
@@ -745,12 +799,16 @@ impl PeerManager {
             Err(e) => return Err(e),
         };
 
+        let conn_type = if is_tunnel {
+            RoutingConnection::Tunnel
+        } else {
+            RoutingConnection::Direct
+        };
+
         let conn = self.peer_map
-            .remove(peer_id)
-            .map_or(unknown_connection,
-                    |peer| peer.to_routing_connection(is_tunnel));
-        let _ = self.peer_map
-            .insert(Peer::new(*pub_id, Some(*peer_id), PeerState::Routing(conn)));
+            .get(peer_id)
+            .map_or(conn_type, |peer| peer.to_routing_connection(is_tunnel));
+        let _ = self.insert_peer(*pub_id, Some(*peer_id), PeerState::Routing(conn), true);
         trace!("{:?} Set {:?} to {:?}",
                self,
                pub_id.name(),
@@ -810,25 +868,34 @@ impl PeerManager {
 
         let removal_keys = self.candidates
             .iter()
-            .filter(|&(name, candidate)| {
-                        !candidate.is_approved() && !self.routing_table.our_prefix().matches(name)
-                    })
-            .map(|(name, _)| *name)
-            .collect::<Vec<_>>();
+            .filter_map(|(old_pub_id, candidate)| if let Some(new_name) =
+                candidate.new_pub_id.map(|pub_id| *pub_id.name()) {
+                            if !self.routing_table.our_prefix().matches(&new_name) {
+                                Some((*old_pub_id, new_name))
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        })
+            .collect_vec();
 
         let ids_to_drop = names_to_drop
             .into_iter()
-            .chain(removal_keys.iter().cloned())
+            .chain(removal_keys
+                       .iter()
+                       .map(|&(_old_pub_id, new_name)| new_name))
             .filter_map(|name| self.remove_by_name(name))
             .collect_vec();
 
         self.cleanup_proxy_peer_id();
 
-        for name in &removal_keys {
-            let _ = self.candidates.remove(name);
-            trace!("{:?} Removed unapproved candidate {:?} after split.",
+        for &(old_pub_id, new_name) in &removal_keys {
+            let _ = self.candidates.remove(&old_pub_id);
+            trace!("{:?} Removed unapproved candidate {}->{} after split.",
                    self,
-                   name);
+                   old_pub_id.name(),
+                   new_name);
         }
 
         let old_expected_peers = mem::replace(&mut self.expected_peers, HashMap::new());
@@ -861,7 +928,8 @@ impl PeerManager {
     }
 
     /// Returns whether we should initiate a merge.
-    pub fn should_merge(&self) -> bool {
+    pub fn should_merge(&mut self) -> bool {
+        self.remove_expired_expected();
         self.expected_peers.is_empty() && self.routing_table.should_merge()
     }
 
@@ -959,17 +1027,6 @@ impl PeerManager {
                       })
     }
 
-    /// Returns the proxy node, if connected.
-    pub fn proxy(&self) -> Option<(&PeerId, &PublicId)> {
-        if let Some(peer_id) = self.proxy_peer_id.as_ref() {
-            if let Some(peer) = self.peer_map.get(peer_id) {
-                return Some((peer_id, &peer.pub_id));
-            }
-        }
-
-        None
-    }
-
     /// Returns the proxy node's public ID, if it has the given peer ID.
     pub fn get_proxy_public_id(&self, peer_id: &PeerId) -> Option<&PublicId> {
         if Some(*peer_id) == self.proxy_peer_id {
@@ -990,6 +1047,12 @@ impl PeerManager {
         None
     }
 
+    /// Returns the proxy node's name if we have a proxy.
+    pub fn get_proxy_name(&self) -> Option<&XorName> {
+        self.proxy_peer_id
+            .and_then(|proxy_peer_id| self.peer_map.get(&proxy_peer_id).map(Peer::name))
+    }
+
     /// Inserts the given peer as a proxy node if applicable, returns `false` if it is not accepted
     /// and should be disconnected.
     pub fn set_proxy(&mut self, peer_id: PeerId, pub_id: PublicId) -> bool {
@@ -997,7 +1060,7 @@ impl PeerManager {
             debug!("{:?} Not accepting further bootstrap connections.", self);
             proxy_peer_id == peer_id
         } else {
-            let _ = self.insert_peer(pub_id, Some(peer_id), PeerState::Proxy);
+            let _ = self.insert_peer(pub_id, Some(peer_id), PeerState::Proxy, false);
             self.proxy_peer_id = Some(peer_id);
             true
         }
@@ -1006,7 +1069,7 @@ impl PeerManager {
     /// Inserts the given client into the map. Returns true if we already had
     /// a peer with the given peer id.
     pub fn insert_client(&mut self, peer_id: PeerId, pub_id: PublicId) -> bool {
-        self.insert_peer(pub_id, Some(peer_id), PeerState::Client)
+        self.insert_peer(pub_id, Some(peer_id), PeerState::Client, false)
     }
 
     /// Returns the given client's public key, if present.
@@ -1022,7 +1085,7 @@ impl PeerManager {
     /// Inserts the given joining node into the map. Returns true if we already
     /// had a peer with the given peer id.
     pub fn insert_joining_node(&mut self, peer_id: PeerId, pub_id: PublicId) -> bool {
-        self.insert_peer(pub_id, Some(peer_id), PeerState::JoiningNode)
+        self.insert_peer(pub_id, Some(peer_id), PeerState::JoiningNode, false)
     }
 
     /// Returns the given joining node's public key, if present.
@@ -1084,7 +1147,7 @@ impl PeerManager {
 
         let mut expired_unknown_peers = Vec::new();
 
-        for (peer_id, &(_, timestamp)) in &self.unknown_peers {
+        for (peer_id, &timestamp) in &self.unknown_peers {
             if timestamp.elapsed() >= Duration::from_secs(NODE_IDENTIFY_TIMEOUT_SECS) {
                 expired_unknown_peers.push(*peer_id);
             }
@@ -1095,6 +1158,12 @@ impl PeerManager {
             let _ = self.unknown_peers.remove(&peer_id);
         }
 
+        self.remove_expired_expected();
+
+        expired_connections
+    }
+
+    fn remove_expired_expected(&mut self) {
         let mut expired_expected = Vec::new();
         for (name, timestamp) in &self.expected_peers {
             if timestamp.elapsed() >= Duration::from_secs(NODE_CONNECT_TIMEOUT_SECS) {
@@ -1104,28 +1173,39 @@ impl PeerManager {
         for name in expired_expected {
             let _ = self.expected_peers.remove(&name);
         }
-
-        expired_connections
     }
 
     /// Returns the peer ID of the given node if it is our proxy or client or
     /// joining node.
-    pub fn get_proxy_or_client_or_joining_node_peer_id(&self, pub_id: &PublicId) -> Option<PeerId> {
-        if let Some(peer) = self.peer_map.get_by_name(pub_id.name()) {
-            match peer.state {
-                PeerState::Client | PeerState::JoiningNode | PeerState::Proxy => peer.peer_id,
-                _ => None,
-            }
-        } else if let Some(join_peer) =
-            self.peer_map
-                .get_by_name(&XorName(sha256::hash(&pub_id.signing_public_key().0).0)) {
+    pub fn get_proxy_or_client_or_joining_node(&self,
+                                               pub_id: &PublicId)
+                                               -> Option<(XorName, PeerId)> {
+        match self.peer_map.get_by_name(pub_id.name()) {
+            Some(&Peer {
+                      state: PeerState::Client,
+                      pub_id,
+                      peer_id: Some(peer_id),
+                      ..
+                  }) |
+            Some(&Peer {
+                      state: PeerState::JoiningNode,
+                      pub_id,
+                      peer_id: Some(peer_id),
+                      ..
+                  }) |
+            Some(&Peer {
+                      state: PeerState::Proxy,
+                      pub_id,
+                      peer_id: Some(peer_id),
+                      ..
+                  }) => return Some((*pub_id.name(), peer_id)),
+            _ => (),
+        }
+        match self.peer_map.get_by_name(&XorName(sha256::hash(&pub_id.signing_public_key().0).0)) {
+            Some(&Peer { state: PeerState::JoiningNode, pub_id, peer_id: Some(peer_id), ..}) =>
             // Joining node might have relocated by now but we might have it via its client name
-            match join_peer.state {
-                PeerState::JoiningNode => join_peer.peer_id,
-                _ => None,
-            }
-        } else {
-            None
+            Some((*pub_id.name(), peer_id)),
+            _ => None,
         }
     }
 
@@ -1163,8 +1243,7 @@ impl PeerManager {
             return;
         }
         if !self.set_state(peer_id, PeerState::AwaitingNodeIdentify(false)) {
-            let _ = self.unknown_peers
-                .insert(*peer_id, (false, Instant::now()));
+            let _ = self.unknown_peers.insert(*peer_id, Instant::now());
         }
     }
 
@@ -1179,8 +1258,7 @@ impl PeerManager {
         }
 
         if !self.set_state(peer_id, PeerState::AwaitingNodeIdentify(true)) {
-            let _ = self.unknown_peers
-                .insert(*peer_id, (true, Instant::now()));
+            let _ = self.unknown_peers.insert(*peer_id, Instant::now());
         }
         true
     }
@@ -1196,14 +1274,14 @@ impl PeerManager {
                       })
     }
 
-    /// Returns the name of the given peer.
-    pub fn get_peer_name(&self, peer_id: &PeerId) -> Option<&XorName> {
-        self.peer_map.get(peer_id).map(Peer::name)
-    }
-
     /// Returns the given peer.
     pub fn get_peer(&self, peer_id: &PeerId) -> Option<&Peer> {
         self.peer_map.get(peer_id)
+    }
+
+    /// Returns the given peer.
+    pub fn get_peer_by_name(&self, name: &XorName) -> Option<&Peer> {
+        self.peer_map.get_by_name(name)
     }
 
     /// Returns the peer with the given peer_id if it is already in one of the
@@ -1226,13 +1304,33 @@ impl PeerManager {
         self.expected_peers.contains_key(name)
     }
 
+    /// Set the `PeerId` of the given node. Returns true if the peer is updated.
+    pub fn set_peer_id(&mut self, name: &XorName, peer_id: PeerId) -> bool {
+        if let Some(peer) = self.peer_map.remove_by_name(name) {
+            self.insert_peer(peer.pub_id, Some(peer_id), peer.state, peer.valid);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Set the given peer as valid. Returns true if the peer is updated.
+    pub fn set_peer_valid(&mut self, name: &XorName, valid: bool) -> bool {
+        if let Some(peer) = self.peer_map.remove_by_name(name) {
+            self.insert_peer(peer.pub_id, peer.peer_id, peer.state, valid);
+            true
+        } else {
+            false
+        }
+    }
+
     /// Return the PeerId of the node with a given name
     pub fn get_peer_id(&self, name: &XorName) -> Option<&PeerId> {
         self.peer_map.get_by_name(name).and_then(Peer::peer_id)
     }
 
     /// Return the PeerIds of nodes bearing the names.
-    pub fn get_peer_ids(&self, names: &HashSet<XorName>) -> Vec<PeerId> {
+    pub fn get_peer_ids(&self, names: &BTreeSet<XorName>) -> Vec<PeerId> {
         names
             .iter()
             .filter_map(|name| self.get_peer_id(name))
@@ -1354,6 +1452,22 @@ impl PeerManager {
         let _ = self.set_state(peer_id, state);
     }
 
+    pub fn correct_state_to_tunnel(&mut self, peer_id: &PeerId) {
+        let state = match self.peer_map.get(peer_id).map(|peer| &peer.state) {
+            Some(&PeerState::Routing(_)) => PeerState::Routing(RoutingConnection::Tunnel),
+            Some(&PeerState::Candidate(_)) => PeerState::Candidate(RoutingConnection::Tunnel),
+            Some(&PeerState::AwaitingNodeIdentify(_)) => PeerState::AwaitingNodeIdentify(true),
+            state => {
+                log_or_panic!(LogLevel::Error,
+                              "{:?} Cannot set state {:?} to tunnel.",
+                              self,
+                              state);
+                return;
+            }
+        };
+        let _ = self.set_state(peer_id, state);
+    }
+
     /// Returns direct-connected peers suitable as a tunnel node for `client_name`.
     pub fn potential_tunnel_nodes(&self, client_name: &XorName) -> Vec<(XorName, PeerId)> {
         self.routing_table
@@ -1393,7 +1507,8 @@ impl PeerManager {
     /// Returns empty vector of candidates if it is already in Routing state.
     pub fn set_searching_for_tunnel(&mut self,
                                     peer_id: PeerId,
-                                    pub_id: PublicId)
+                                    pub_id: PublicId,
+                                    valid: bool)
                                     -> Vec<(XorName, PeerId)> {
         match self.get_state_by_name(pub_id.name()) {
             Some(&PeerState::Client) |
@@ -1403,8 +1518,7 @@ impl PeerManager {
             Some(&PeerState::AwaitingNodeIdentify(_)) => return vec![],
             _ => (),
         }
-
-        let _ = self.insert_peer(pub_id, Some(peer_id), PeerState::SearchingForTunnel);
+        let _ = self.insert_peer(pub_id, Some(peer_id), PeerState::SearchingForTunnel, valid);
         self.potential_tunnel_nodes(pub_id.name())
     }
 
@@ -1418,38 +1532,41 @@ impl PeerManager {
         let pub_id = self.connection_token_map
             .remove(&token)
             .ok_or(Error::PeerNotFound)?;
-        let (us_as_src, them_as_dst, opt_their_info) = match self.peer_map
-                  .remove_by_name(pub_id.name()) {
-            Some(Peer {
-                     state: PeerState::ConnectionInfoPreparing {
-                         us_as_src,
-                         them_as_dst,
-                         their_info,
-                     },
-                     ..
-                 }) => (us_as_src, them_as_dst, their_info),
-            Some(peer) => {
-                let _ = self.peer_map.insert(peer);
-                return Err(Error::UnexpectedState);
+        let (us_as_src, them_as_dst, opt_their_info, valid) =
+            match self.peer_map.remove_by_name(pub_id.name()) {
+                Some(Peer {
+                         state: PeerState::ConnectionInfoPreparing {
+                             us_as_src,
+                             them_as_dst,
+                             their_info,
+                         },
+                         valid,
+                         ..
+                     }) => (us_as_src, them_as_dst, their_info, valid),
+                Some(peer) => {
+                    let _ = self.peer_map.insert(peer);
+                    return Err(Error::UnexpectedState);
+                }
+                None => return Err(Error::PeerNotFound),
+            };
+
+        let infos = match opt_their_info {
+            Some((their_info, msg_id)) => {
+                let state = PeerState::CrustConnecting;
+                self.insert_peer(pub_id, Some(their_info.id()), state, valid);
+                Some((our_info, their_info, msg_id))
             }
-            None => return Err(Error::PeerNotFound),
+            None => {
+                let state = PeerState::ConnectionInfoReady(our_info);
+                self.insert_peer(pub_id, None, state, valid);
+                None
+            }
         };
         Ok(ConnectionInfoPreparedResult {
                pub_id: pub_id,
                src: us_as_src,
                dst: them_as_dst,
-               infos: match opt_their_info {
-                   Some((their_info, msg_id)) => {
-            let state = PeerState::CrustConnecting;
-            self.insert_peer(pub_id, Some(their_info.id()), state);
-            Some((our_info, their_info, msg_id))
-        }
-                   None => {
-            let state = PeerState::ConnectionInfoReady(our_info);
-            self.insert_peer(pub_id, None, state);
-            None
-        }
-               },
+               infos: infos,
            })
     }
 
@@ -1465,9 +1582,13 @@ impl PeerManager {
         let peer_id = peer_info.id();
 
         match self.peer_map.remove_by_name(pub_id.name()) {
-            Some(Peer { state: PeerState::ConnectionInfoReady(our_info), .. }) => {
+            Some(Peer {
+                     state: PeerState::ConnectionInfoReady(our_info),
+                     valid,
+                     ..
+                 }) => {
                 let state = PeerState::CrustConnecting;
-                self.insert_peer(pub_id, Some(peer_id), state);
+                self.insert_peer(pub_id, Some(peer_id), state, valid);
                 Ok(ConnectionInfoReceivedResult::Ready(our_info, peer_info))
             }
             Some(Peer {
@@ -1476,6 +1597,7 @@ impl PeerManager {
                          them_as_dst,
                          their_info: None,
                      },
+                     valid,
                      ..
                  }) => {
                 let state = PeerState::ConnectionInfoPreparing {
@@ -1483,7 +1605,7 @@ impl PeerManager {
                     them_as_dst: them_as_dst,
                     their_info: Some((peer_info, msg_id)),
                 };
-                self.insert_peer(pub_id, Some(peer_id), state);
+                self.insert_peer(pub_id, Some(peer_id), state, valid);
                 Ok(ConnectionInfoReceivedResult::Waiting)
             }
             Some(peer @ Peer { state: PeerState::ConnectionInfoPreparing { .. }, .. }) |
@@ -1510,14 +1632,19 @@ impl PeerManager {
                 let _ = self.peer_map.insert(peer);
                 Ok(ConnectionInfoReceivedResult::IsConnected)
             }
-            Some(Peer { state: PeerState::SearchingForTunnel, .. }) |
-            None => {
+            x => {
+                let valid = x.map_or(false,
+                                     |peer| if let PeerState::SearchingForTunnel = peer.state {
+                                         peer.valid
+                                     } else {
+                                         false
+                                     });
                 let state = PeerState::ConnectionInfoPreparing {
                     us_as_src: dst,
                     them_as_dst: src,
                     their_info: Some((peer_info, msg_id)),
                 };
-                self.insert_peer(pub_id, Some(peer_id), state);
+                self.insert_peer(pub_id, Some(peer_id), state, valid);
                 let token = rand::random();
                 let _ = self.connection_token_map.insert(token, pub_id);
                 Ok(ConnectionInfoReceivedResult::Prepare(token))
@@ -1553,7 +1680,8 @@ impl PeerManager {
                              us_as_src: src,
                              them_as_dst: dst,
                              their_info: None,
-                         });
+                         },
+                         true);
         Some(token)
     }
 
@@ -1592,6 +1720,11 @@ impl PeerManager {
     pub fn remove_peer(&mut self,
                        peer_id: &PeerId)
                        -> Option<(Peer, Result<RemovalDetails<XorName>, RoutingTableError>)> {
+        // Remove peer if it exists in `unknown_peers` and `candidates` too.
+        let _ = self.unknown_peers.remove(peer_id);
+        let _ = self.get_candidate_from_peer_id(peer_id)
+            .map(|(old_pub_id, _)| self.candidates.remove(&old_pub_id));
+
         if let Some(peer) = self.peer_map.remove(peer_id) {
             self.cleanup_proxy_peer_id();
             let removal_details = self.routing_table.remove(peer.name());
@@ -1623,9 +1756,20 @@ impl PeerManager {
         false
     }
 
-    fn insert_peer(&mut self, pub_id: PublicId, peer_id: Option<PeerId>, state: PeerState) -> bool {
+    fn insert_peer(&mut self,
+                   pub_id: PublicId,
+                   peer_id: Option<PeerId>,
+                   state: PeerState,
+                   valid: bool)
+                   -> bool {
         let result = self.peer_map
-            .insert(Peer::new(pub_id, peer_id, state))
+            .insert(Peer {
+                        pub_id: pub_id,
+                        peer_id: peer_id,
+                        state: state,
+                        timestamp: Instant::now(),
+                        valid: valid,
+                    })
             .is_some();
         self.remove_expired();
         result
@@ -1651,14 +1795,6 @@ impl PeerManager {
         }
     }
 
-    fn remove_unapproved_candidates(&mut self, candidate_name: &XorName) {
-        let old_candidates = mem::replace(&mut self.candidates, HashMap::new());
-        self.candidates = old_candidates
-            .into_iter()
-            .filter(|&(name, ref candidate)| name == *candidate_name || candidate.is_approved())
-            .collect();
-    }
-
     /// Removes expired candidates and returns the list of peers from which we should disconnect.
     pub fn remove_expired_candidates(&mut self) -> Vec<PeerId> {
         let candidates = mem::replace(&mut self.candidates, HashMap::new());
@@ -1668,17 +1804,36 @@ impl PeerManager {
         self.candidates = to_keep;
         to_prune
             .into_iter()
-            .filter_map(|(name, _)| self.get_peer_id(&name).cloned())
+            .filter_map(|(_, cand)| cand.new_pub_id)
+            .filter_map(|new_pub_id| self.get_peer_id(new_pub_id.name()).cloned())
             .collect()
     }
 
-    /// Returns the public IDs of all routing table entries, sorted by section.
-    pub fn pub_ids_by_section(&self) -> SectionMap {
-        self.routing_table
+    /// Returns the public IDs of all routing table entries connected or not that we see as valid
+    /// peers, sorted by section.
+    pub fn ideal_rt(&self) -> SectionMap {
+        let versioned_prefixes = self.routing_table
             .all_sections()
             .into_iter()
-            .map(|(prefix, (v, names))| (prefix.with_version(v), self.get_pub_ids(&names)))
-            .collect()
+            .map(|(prefix, (v, _))| prefix.with_version(v))
+            .collect_vec();
+        let mut result = SectionMap::new();
+        for pub_id in self.peer_map
+                .peers()
+                .filter(|peer| peer.valid)
+                .map(|peer| peer.pub_id())
+                .chain(::std::iter::once(&self.our_public_id)) {
+            if let Some(versioned_prefix) =
+                versioned_prefixes
+                    .iter()
+                    .find(|versioned_prefix| versioned_prefix.prefix().matches(pub_id.name())) {
+                result
+                    .entry(*versioned_prefix)
+                    .or_insert_with(BTreeSet::new)
+                    .insert(*pub_id);
+            }
+        }
+        result
     }
 }
 
@@ -1688,38 +1843,6 @@ impl fmt::Debug for PeerManager {
                "Node({}({:b}))",
                self.routing_table.our_name(),
                self.routing_table.our_prefix())
-    }
-}
-
-#[cfg(feature = "use-mock-crust")]
-impl PeerManager {
-    /// Removes all peers that are not connected, as well as all expected peers and candidates.
-    /// Returns `true` if any entry was removed, and `false` if there were no such peers.
-    pub fn remove_connecting_peers(&mut self) -> bool {
-        // Remove all peers that are not yet connected.
-        let remove_names = self.peer_map
-            .peers()
-            .filter(|peer| match peer.state {
-                        PeerState::ConnectionInfoPreparing { .. } |
-                        PeerState::ConnectionInfoReady(_) |
-                        PeerState::CrustConnecting |
-                        PeerState::SearchingForTunnel => true,
-                        _ => false,
-                    })
-            .map(|peer| *peer.name())
-            .collect_vec();
-
-        if remove_names.is_empty() && self.expected_peers.is_empty() && self.candidates.is_empty() {
-            return false;
-        }
-
-        for name in remove_names {
-            let _ = self.peer_map.remove_by_name(&name);
-        }
-
-        self.expected_peers.clear();
-        self.candidates.clear();
-        true
     }
 }
 

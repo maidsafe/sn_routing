@@ -35,7 +35,7 @@ use routing_table::Authority;
 use rust_sodium;
 use rust_sodium::crypto::sign;
 use state_machine::{State, StateMachine};
-use states;
+use states::{Bootstrapping, BootstrappingTargetState};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::mpsc::{Receiver, Sender, channel};
 #[cfg(feature = "use-mock-crust")]
@@ -66,14 +66,18 @@ pub struct Client {
 impl Client {
     fn make_state_machine(keys: Option<FullId>,
                           outbox: &mut EventBox,
-                          config: Option<Config>)
+                          config: Option<Config>,
+                          min_section_size: usize)
                           -> (RoutingActionSender, StateMachine) {
-        let cache = Box::new(NullCache);
-        let full_id = keys.unwrap_or_else(FullId::new);
-
-        StateMachine::new(move |crust_service, timer, _outbox2| {
-            states::Bootstrapping::new(cache, true, crust_service, full_id, MIN_SECTION_SIZE, timer)
-                .map_or(State::Terminated, State::Bootstrapping)
+        StateMachine::new(move |action_sender, crust_service, timer, _outbox2| {
+            Bootstrapping::new(action_sender,
+                               Box::new(NullCache),
+                               BootstrappingTargetState::Client,
+                               crust_service,
+                               keys.unwrap_or_else(FullId::new),
+                               min_section_size,
+                               timer)
+                    .map_or(State::Terminated, State::Bootstrapping)
         },
                           outbox,
                           config)
@@ -410,6 +414,15 @@ impl Client {
                keys: Option<FullId>,
                config: Option<Config>)
                -> Result<Client, RoutingError> {
+        Self::with_min_section_size(event_sender, keys, config, MIN_SECTION_SIZE)
+    }
+
+    /// Create a new `Client` with the specified minimal section size.
+    pub fn with_min_section_size(event_sender: Sender<Event>,
+                                 keys: Option<FullId>,
+                                 config: Option<Config>,
+                                 min_section_size: usize)
+                                 -> Result<Client, RoutingError> {
         rust_sodium::init(); // enable shared global (i.e. safe to multithread now)
 
         let (tx, rx) = channel();
@@ -419,7 +432,7 @@ impl Client {
             // start the handler for routing with a restriction to become a full node
             let mut event_buffer = EventBuf::new();
             let (action_sender, mut machine) =
-                Self::make_state_machine(keys, &mut event_buffer, config);
+                Self::make_state_machine(keys, &mut event_buffer, config, min_section_size);
 
             for ev in event_buffer.take_all() {
                 unwrap!(event_sender.send(ev));
@@ -487,8 +500,18 @@ impl Client {
 impl Client {
     /// Create a new `Client` for testing with mock crust.
     pub fn new(keys: Option<FullId>, config: Option<Config>) -> Result<Client, RoutingError> {
+        Self::with_min_section_size(keys, config, MIN_SECTION_SIZE)
+    }
+
+    /// Create a new `Client` for testing with mock crust, with the specified
+    /// minimal section size.
+    pub fn with_min_section_size(keys: Option<FullId>,
+                                 config: Option<Config>,
+                                 min_section_size: usize)
+                                 -> Result<Client, RoutingError> {
         let mut event_buffer = EventBuf::new();
-        let (_, machine) = Self::make_state_machine(keys, &mut event_buffer, config);
+        let (_, machine) =
+            Self::make_state_machine(keys, &mut event_buffer, config, min_section_size);
 
         let (tx, rx) = channel();
 
@@ -503,16 +526,6 @@ impl Client {
     /// Returns the name of this node.
     pub fn name(&self) -> Result<XorName, RoutingError> {
         self.machine.name().ok_or(RoutingError::Terminated)
-    }
-
-    /// Resend all unacknowledged messages.
-    pub fn resend_unacknowledged(&mut self) -> bool {
-        self.machine.current_mut().resend_unacknowledged()
-    }
-
-    /// Are there any unacknowledged messages?
-    pub fn has_unacknowledged(&self) -> bool {
-        self.machine.current().has_unacknowledged()
     }
 
     /// Returns the `crust::Config` associated with the `crust::Service` (if any).

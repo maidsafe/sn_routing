@@ -15,6 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+#[cfg(feature="use-mock-crust")]
+use fake_clock::FakeClock as Instant;
 use id::PublicId;
 use itertools::Itertools;
 use maidsafe_utilities::serialisation;
@@ -23,6 +25,7 @@ use rust_sodium::crypto::hash::sha256;
 use rust_sodium::crypto::sign;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+#[cfg(not(feature="use-mock-crust"))]
 use std::time::Instant;
 
 /// Time (in seconds) within which a message and a quorum of signatures need to arrive to

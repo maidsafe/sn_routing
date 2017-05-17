@@ -85,11 +85,4 @@ impl RoutingMessageFilter {
             false
         }
     }
-
-    #[cfg(feature = "use-mock-crust")]
-    pub fn clear(&mut self) {
-        self.incoming.clear();
-        self.incoming_route.clear();
-        self.outgoing.clear();
-    }
 }

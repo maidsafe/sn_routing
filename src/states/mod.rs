@@ -18,8 +18,11 @@
 mod bootstrapping;
 pub mod common;
 mod client;
+mod joining_node;
 mod node;
 
 pub use self::bootstrapping::Bootstrapping;
+pub use self::bootstrapping::TargetState as BootstrappingTargetState;
 pub use self::client::Client;
+pub use self::joining_node::JoiningNode;
 pub use self::node::Node;

@@ -21,6 +21,7 @@ use rust_sodium::crypto::sign::PublicKey;
 use std::collections::BTreeSet;
 use std::collections::btree_map::{BTreeMap, Entry};
 use std::fmt::{self, Debug, Formatter};
+use std::mem;
 use xor_name::XorName;
 
 /// Maximum allowed size for `MutableData` (1 MiB)
@@ -296,6 +297,11 @@ impl MutableData {
         &self.data
     }
 
+    /// Removes and returns all entries
+    pub fn take_entries(&mut self) -> BTreeMap<Vec<u8>, Value> {
+        mem::replace(&mut self.data, BTreeMap::new())
+    }
+
     /// Mutates entries (key + value pairs) in bulk
     pub fn mutate_entries(&mut self,
                           actions: BTreeMap<Vec<u8>, EntryAction>,
@@ -395,7 +401,43 @@ impl MutableData {
         Ok(())
     }
 
-    /// Mutates single entry withou performing any validations, except the version
+    /// Mutates entries without performing any validation.
+    ///
+    /// For updates and deletes, the mutation is performed only if he entry version
+    /// of the action is higher than the current version of the entry.
+    pub fn mutate_entries_without_validation(&mut self, actions: BTreeMap<Vec<u8>, EntryAction>) {
+        for (key, action) in actions {
+            match action {
+                EntryAction::Ins(new_value) => {
+                    let _ = self.data.insert(key, new_value);
+                }
+                EntryAction::Update(new_value) => {
+                    match self.data.entry(key) {
+                        Entry::Occupied(mut entry) => {
+                            if new_value.entry_version > entry.get().entry_version {
+                                let _ = entry.insert(new_value);
+                            }
+                        }
+                        Entry::Vacant(entry) => {
+                            let _ = entry.insert(new_value);
+                        }
+                    }
+                }
+                EntryAction::Del(new_version) => {
+                    if let Entry::Occupied(mut entry) = self.data.entry(key) {
+                        if new_version > entry.get().entry_version {
+                            let _ = entry.insert(Value {
+                                                     content: Vec::new(),
+                                                     entry_version: new_version,
+                                                 });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Mutates single entry without performing any validations, except the version
     /// check (new version must be higher than the existing one).
     /// If the entry doesn't exist yet, inserts it, otherwise, updates it.
     /// Returns true if the version check passed and the entry was mutated,
@@ -453,6 +495,21 @@ impl MutableData {
         Ok(())
     }
 
+    /// Set user permission without performing any validation.
+    pub fn set_user_permissions_without_validation(&mut self,
+                                                   user: User,
+                                                   permissions: PermissionSet,
+                                                   version: u64)
+                                                   -> bool {
+        if version <= self.version {
+            return false;
+        }
+
+        let _ = self.permissions.insert(user, permissions);
+        self.version = version;
+        true
+    }
+
     /// Delete permissions for the provided user.
     pub fn del_user_permissions(&mut self,
                                 user: &User,
@@ -473,6 +530,17 @@ impl MutableData {
         Ok(())
     }
 
+    /// Delete user permissions without performing any validation.
+    pub fn del_user_permissions_without_validation(&mut self, user: &User, version: u64) -> bool {
+        if version <= self.version {
+            return false;
+        }
+
+        let _ = self.permissions.remove(user);
+        self.version = version;
+        true
+    }
+
     /// Change owner of the mutable data.
     pub fn change_owner(&mut self, new_owner: PublicKey, version: u64) -> Result<(), ClientError> {
         if version != self.version + 1 {
@@ -482,6 +550,18 @@ impl MutableData {
         self.owners.insert(new_owner);
         self.version = version;
         Ok(())
+    }
+
+    /// Change the owner without performing any validation.
+    pub fn change_owner_without_validation(&mut self, new_owner: PublicKey, version: u64) -> bool {
+        if version <= self.version {
+            return false;
+        }
+
+        self.owners.clear();
+        self.owners.insert(new_owner);
+        self.version = version;
+        true
     }
 
     /// Return true if the size is valid
