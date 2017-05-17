@@ -18,9 +18,9 @@
 use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
-use routing::{Authority, Cache, Client, Data, DataIdentifier, Event, EventStream, FullId,
-              ImmutableData, Node, NullCache, Prefix, PublicId, Request, Response, RoutingTable,
-              XorName, Xorable, verify_network_invariant};
+use routing::{Authority, Cache, Client, Event, EventStream, FullId, ImmutableData, Node,
+              NullCache, Prefix, PublicId, Request, Response, RoutingTable, XorName, Xorable,
+              verify_network_invariant};
 use routing::mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
 use routing::test_consts::{ACK_TIMEOUT_SECS, CONNECTING_PEER_TIMEOUT_SECS};
 use std::{cmp, thread};
@@ -135,10 +135,7 @@ impl TestNode {
                -> Self {
         let handle = network.new_service_handle(config, endpoint);
         let node = mock_crust::make_current(&handle, || {
-            unwrap!(Node::builder()
-                        .cache(cache)
-                        .first(first_node)
-                        .create(network.min_section_size()))
+            unwrap!(Node::builder().cache(cache).first(first_node).create())
         });
 
         TestNode {
@@ -229,9 +226,9 @@ impl TestClient {
                endpoint: Option<Endpoint>)
                -> Self {
         let full_id = FullId::new();
-        let handle = network.new_service_handle(config, endpoint);
+        let handle = network.new_service_handle(config.clone(), endpoint);
         let client = mock_crust::make_current(&handle, || {
-            unwrap!(Client::new(Some(full_id.clone()), network.min_section_size()))
+            unwrap!(Client::new(Some(full_id.clone()), config))
         });
 
         TestClient {
@@ -249,7 +246,7 @@ impl TestClient {
 // -----  TestCache  -----
 
 #[derive(Default)]
-pub struct TestCache(RefCell<HashMap<DataIdentifier, Data>>);
+pub struct TestCache(RefCell<HashMap<XorName, ImmutableData>>);
 
 impl TestCache {
     pub fn new() -> Self {
@@ -259,19 +256,24 @@ impl TestCache {
 
 impl Cache for TestCache {
     fn get(&self, request: &Request) -> Option<Response> {
-        if let Request::Get(identifier, message_id) = *request {
+        if let Request::GetIData { ref name, msg_id } = *request {
             self.0
                 .borrow()
-                .get(&identifier)
-                .map(|data| Response::GetSuccess(data.clone(), message_id))
+                .get(name)
+                .map(|data| {
+                         Response::GetIData {
+                             res: Ok(data.clone()),
+                             msg_id: msg_id,
+                         }
+                     })
         } else {
             None
         }
     }
 
     fn put(&self, response: Response) {
-        if let Response::GetSuccess(data, _) = response {
-            let _ = self.0.borrow_mut().insert(data.identifier(), data);
+        if let Response::GetIData { res: Ok(data), .. } = response {
+            let _ = self.0.borrow_mut().insert(*data.name(), data);
         }
     }
 }
@@ -293,7 +295,7 @@ pub fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
         } else {
             handled_message = nodes.iter_mut().any(TestNode::poll);
         }
-        handled_message = clients.iter().any(|c| c.inner.poll()) || handled_message;
+        handled_message = clients.iter_mut().any(|c| c.inner.poll()) || handled_message;
         if !handled_message && !nodes[0].handle.reset_message_sent() {
             return result;
         }
@@ -571,8 +573,8 @@ pub fn gen_bytes<R: Rng>(rng: &mut R, size: usize) -> Vec<u8> {
 }
 
 // Generate random immutable data with the given payload length.
-pub fn gen_immutable_data<R: Rng>(rng: &mut R, size: usize) -> Data {
-    Data::Immutable(ImmutableData::new(gen_bytes(rng, size)))
+pub fn gen_immutable_data<R: Rng>(rng: &mut R, size: usize) -> ImmutableData {
+    ImmutableData::new(gen_bytes(rng, size))
 }
 
 fn sanity_check(prefix_lengths: &[usize]) {

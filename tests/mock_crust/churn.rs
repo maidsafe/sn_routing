@@ -20,8 +20,8 @@ use super::{TestClient, TestNode, create_connected_clients, create_connected_nod
 use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
-use routing::{Authority, DataIdentifier, Event, EventStream, MessageId, PublicId,
-              QUORUM_DENOMINATOR, QUORUM_NUMERATOR, Request, XorName};
+use routing::{Authority, Event, EventStream, MessageId, PublicId, QUORUM_DENOMINATOR,
+              QUORUM_NUMERATOR, Request, XorName};
 use routing::mock_crust::{Config, Network};
 use routing::test_consts::{ACCUMULATION_TIMEOUT_SECS, CANDIDATE_ACCEPT_TIMEOUT_SECS,
                            RESOURCE_PROOF_DURATION_SECS};
@@ -185,7 +185,7 @@ fn random_churn<R: Rng>(rng: &mut R,
 }
 
 /// The entries of a Get request: the data ID, message ID, source and destination authority.
-type GetKey = (DataIdentifier, MessageId, Authority<XorName>, Authority<XorName>);
+type GetKey = (XorName, MessageId, Authority<XorName>, Authority<XorName>);
 
 /// A set of expectations: Which nodes, groups and sections are supposed to receive Get requests.
 #[derive(Default)]
@@ -200,7 +200,7 @@ impl ExpectedGets {
     /// Sends a request using the nodes specified by `src`, and adds the expectation. Panics if not
     /// enough nodes sent a section message, or if an individual sending node could not be found.
     fn send_and_expect(&mut self,
-                       data_id: DataIdentifier,
+                       data_id: XorName,
                        src: Authority<XorName>,
                        dst: Authority<XorName>,
                        nodes: &mut [TestNode],
@@ -208,7 +208,8 @@ impl ExpectedGets {
         let msg_id = MessageId::new();
         let mut sent_count = 0;
         for node in nodes.iter_mut().filter(|node| node.is_recipient(&src)) {
-            unwrap!(node.inner.send_get_request(src, dst, data_id, msg_id));
+            unwrap!(node.inner
+                        .send_get_idata_request(src, dst, data_id, msg_id));
             sent_count += 1;
         }
         if src.is_multiple() {
@@ -221,13 +222,13 @@ impl ExpectedGets {
 
     /// Sends a request from the client, and adds the expectation.
     fn client_send_and_expect(&mut self,
-                              data_id: DataIdentifier,
+                              data_id: XorName,
                               client_auth: Authority<XorName>,
                               dst: Authority<XorName>,
-                              client: &TestClient,
+                              client: &mut TestClient,
                               nodes: &mut [TestNode]) {
         let msg_id = MessageId::new();
-        unwrap!(client.inner.send_get_request(dst, data_id, msg_id));
+        unwrap!(client.inner.get_idata(dst, data_id, msg_id));
         self.expect(nodes, dst, (data_id, msg_id, client_auth, dst));
     }
 
@@ -268,11 +269,11 @@ impl ExpectedGets {
         for node in nodes {
             while let Ok(event) = node.try_next_ev() {
                 if let Event::Request {
-                           request: Request::Get(data_id, msg_id),
+                           request: Request::GetIData { name, msg_id },
                            src,
                            dst,
                        } = event {
-                    let key = (data_id, msg_id, src, dst);
+                    let key = (name, msg_id, src, dst);
                     if dst.is_multiple() {
                         if !self.sections
                                 .get(&key.3)
@@ -307,11 +308,11 @@ impl ExpectedGets {
         for client in clients {
             while let Ok(event) = client.inner.try_next_ev() {
                 if let Event::Request {
-                           request: Request::Get(data_id, msg_id),
+                           request: Request::GetIData { name, msg_id },
                            src,
                            dst,
                        } = event {
-                    let key = (data_id, msg_id, src, dst);
+                    let key = (name, msg_id, src, dst);
                     assert!(self.messages.remove(&key),
                             "Unexpected request for client {}: {:?}",
                             client.name(),
@@ -335,7 +336,7 @@ impl ExpectedGets {
 
 fn send_and_receive<R: Rng>(rng: &mut R, nodes: &mut [TestNode], min_section_size: usize) {
     // Create random data ID and pick random sending and receiving nodes.
-    let data_id = DataIdentifier::Immutable(rng.gen());
+    let data_id = rng.gen();
     let index0 = gen_range(rng, 0, nodes.len());
     let index1 = gen_range(rng, 0, nodes.len());
     let auth_n0 = Authority::ManagedNode(nodes[index0].name());
@@ -378,7 +379,7 @@ fn client_gets(network: &mut Network<PublicId>, nodes: &mut [TestNode], min_sect
     };
 
     let mut rng = network.new_rng();
-    let data_id = DataIdentifier::Immutable(rng.gen());
+    let data_id = rng.gen();
     let auth_g0 = Authority::NaeManager(rng.gen());
     let auth_g1 = Authority::NaeManager(rng.gen());
     let section_name: XorName = rng.gen();
@@ -386,8 +387,8 @@ fn client_gets(network: &mut Network<PublicId>, nodes: &mut [TestNode], min_sect
 
     let mut expected_gets = ExpectedGets::default();
     // Test messages from a client to a group and a section...
-    expected_gets.client_send_and_expect(data_id, cl_auth, auth_g0, &clients[0], nodes);
-    expected_gets.client_send_and_expect(data_id, cl_auth, auth_s0, &clients[0], nodes);
+    expected_gets.client_send_and_expect(data_id, cl_auth, auth_g0, &mut clients[0], nodes);
+    expected_gets.client_send_and_expect(data_id, cl_auth, auth_s0, &mut clients[0], nodes);
     // ... and from group to the client
     expected_gets.send_and_expect(data_id, auth_g1, cl_auth, nodes, min_section_size);
 
@@ -526,7 +527,7 @@ fn messages_during_churn() {
         let added_index = random_churn(&mut rng, &network, &mut nodes);
 
         // Create random data ID and pick random sending and receiving nodes.
-        let data_id = DataIdentifier::Immutable(rng.gen());
+        let data_id = rng.gen();
         let exclude = added_index.map_or(BTreeSet::new(), |index| iter::once(index).collect());
         let index0 = gen_range_except(&mut rng, 0, nodes.len(), &exclude);
         let index1 = gen_range_except(&mut rng, 0, nodes.len(), &exclude);
@@ -559,8 +560,16 @@ fn messages_during_churn() {
         // expected_gets.send_and_expect(data_id, auth_s0, auth_n0, &nodes, min_section_size);
 
         // Test messages from a client to a group and a section...
-        expected_gets.client_send_and_expect(data_id, cl_auth, auth_g0, &clients[0], &mut nodes);
-        expected_gets.client_send_and_expect(data_id, cl_auth, auth_s0, &clients[0], &mut nodes);
+        expected_gets.client_send_and_expect(data_id,
+                                             cl_auth,
+                                             auth_g0,
+                                             &mut clients[0],
+                                             &mut nodes);
+        expected_gets.client_send_and_expect(data_id,
+                                             cl_auth,
+                                             auth_s0,
+                                             &mut clients[0],
+                                             &mut nodes);
         // ... and from group to the client
         expected_gets.send_and_expect(data_id, auth_g1, cl_auth, &mut nodes, min_section_size);
 
