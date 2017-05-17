@@ -204,6 +204,8 @@ pub const QUORUM_NUMERATOR: usize = 1;
 /// See `QUORUM_NUMERATOR`.
 pub const QUORUM_DENOMINATOR: usize = 2;
 
+/// The minimal section size.
+pub const MIN_SECTION_SIZE: usize = 8;
 /// Key of an account data in the account packet
 pub const ACC_LOGIN_ENTRY_KEY: &'static [u8] = b"Login";
 

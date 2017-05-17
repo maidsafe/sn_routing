@@ -48,8 +48,8 @@ use itertools::Itertools;
 use maidsafe_utilities::SeededRng;
 use maidsafe_utilities::thread::{self, Joiner};
 use rand::Rng;
-use routing::{Authority, Client, ClientError, Event, EventStream, FullId, MessageId, MutableData,
-              Node, Request, Response, Value, XorName, Xorable};
+use routing::{Authority, Client, ClientError, Event, EventStream, FullId, MIN_SECTION_SIZE,
+              MessageId, MutableData, Node, Request, Response, Value, XorName, Xorable};
 use rust_sodium::crypto;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 #[cfg(target_os = "macos")]
@@ -57,8 +57,6 @@ use std::io;
 use std::iter;
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::time::Duration;
-
-const MIN_SECTION_SIZE: usize = 8;
 
 #[derive(Debug)]
 enum RecvWithTimeoutError {
@@ -108,11 +106,7 @@ struct TestNode {
 impl TestNode {
     // If `index` is `0`, this will be treated as the first node of the network.
     fn new(index: usize) -> Self {
-        TestNode {
-            node: unwrap!(Node::builder()
-                              .first(index == 0)
-                              .create(MIN_SECTION_SIZE)),
-        }
+        TestNode { node: unwrap!(Node::builder().first(index == 0).create()) }
     }
 
     fn name(&self) -> XorName {

@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use MIN_SECTION_SIZE;
 use action::Action;
 use cache::{Cache, NullCache};
 use client_error::ClientError;
@@ -88,6 +89,7 @@ pub struct NodeBuilder {
     cache: Box<Cache>,
     first: bool,
     deny_other_local_nodes: bool,
+    min_section_size: usize,
 }
 
 impl NodeBuilder {
@@ -115,13 +117,21 @@ impl NodeBuilder {
         }
     }
 
+    /// Set min section size.
+    pub fn min_section_size(self, size: usize) -> Self {
+        NodeBuilder {
+            min_section_size: size,
+            ..self
+        }
+    }
+
     /// Creates new `Node`.
     ///
     /// It will automatically connect to the network in the same way a client does, but then
     /// request a new name and integrate itself into the network using the new name.
     ///
     /// The initial `Node` object will have newly generated keys.
-    pub fn create(self, min_section_size: usize) -> Result<Node, RoutingError> {
+    pub fn create(self) -> Result<Node, RoutingError> {
         // If we're not in a test environment where we might want to manually seed the crypto RNG
         // then seed randomly.
         #[cfg(not(feature = "use-mock-crust"))]
@@ -130,7 +140,7 @@ impl NodeBuilder {
         let mut ev_buffer = EventBuf::new();
 
         // start the handler for routing without a restriction to become a full node
-        let (_, machine) = self.make_state_machine(min_section_size, &mut ev_buffer);
+        let (_, machine) = self.make_state_machine(&mut ev_buffer);
         let (tx, rx) = channel();
 
         Ok(Node {
@@ -141,18 +151,16 @@ impl NodeBuilder {
            })
     }
 
-    fn make_state_machine(self,
-                          min_section_size: usize,
-                          outbox: &mut EventBox)
-                          -> (RoutingActionSender, StateMachine) {
+    fn make_state_machine(self, outbox: &mut EventBox) -> (RoutingActionSender, StateMachine) {
         let full_id = FullId::new();
         let pub_id = *full_id.public_id();
+
         StateMachine::new(move |action_sender, crust_service, timer, outbox2| if self.first {
                               if let Some(state) = states::Node::first(action_sender,
                                                                        self.cache,
                                                                        crust_service,
                                                                        full_id,
-                                                                       min_section_size,
+                                                                       self.min_section_size,
                                                                        timer) {
                                   State::Node(state)
                               } else {
@@ -169,7 +177,7 @@ impl NodeBuilder {
                                BootstrappingTargetState::JoiningNode,
                                crust_service,
                                full_id,
-                               min_section_size,
+                               self.min_section_size,
                                timer)
                     .map_or(State::Terminated, State::Bootstrapping)
         },
@@ -200,6 +208,7 @@ impl Node {
             cache: Box::new(NullCache),
             first: false,
             deny_other_local_nodes: false,
+            min_section_size: MIN_SECTION_SIZE,
         }
     }
 

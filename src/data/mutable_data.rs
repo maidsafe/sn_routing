@@ -437,7 +437,7 @@ impl MutableData {
         }
     }
 
-    /// Mutates single entry withou performing any validations, except the version
+    /// Mutates single entry without performing any validations, except the version
     /// check (new version must be higher than the existing one).
     /// If the entry doesn't exist yet, inserts it, otherwise, updates it.
     /// Returns true if the version check passed and the entry was mutated,
