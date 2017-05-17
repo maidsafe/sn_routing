@@ -114,7 +114,7 @@ impl TestNode {
     }
 
     fn name(&self) -> XorName {
-        unwrap!(self.node.name())
+        *unwrap!(self.node.id()).name()
     }
 }
 
@@ -327,7 +327,7 @@ fn core() {
                         if let Request::Put(_, ref id) = request {
                             let node = &mut nodes[index].node;
 
-                            unwrap!(node.send_put_success(dst, src, data.identifier(), id.clone()));
+                            unwrap!(node.send_put_success(dst, src, data.identifier(), *id));
                         }
                     }
 
@@ -416,7 +416,7 @@ fn core() {
                         let dst = Authority::NaeManager(*data.name());
                         unwrap!(nodes[index]
                                     .node
-                                    .send_put_request(src, dst, data.clone(), id.clone()));
+                                    .send_put_request(src, dst, data.clone(), id));
                     }
                     TestEvent(index, Event::Request { request, src, dst }) => {
                         if let Request::Put(data, id) = request {
@@ -539,7 +539,7 @@ fn core() {
                     let dst = Authority::NaeManager(*data.name());
                     unwrap!(nodes[index]
                                 .node
-                                .send_put_request(src, dst, data.clone(), id.clone()));
+                                .send_put_request(src, dst, data.clone(), id));
                 }
                 TestEvent(index, Event::Request { request, src, dst }) => {
                     if let Request::Put(data, id) = request {

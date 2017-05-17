@@ -166,6 +166,8 @@ impl PeerState {
 }
 
 /// The result of adding a peer's `PubConnectionInfo`.
+// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
+#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
 #[derive(Debug)]
 pub enum ConnectionInfoReceivedResult {
     /// Our own connection info has already been prepared: The peer was switched to
@@ -302,6 +304,8 @@ impl Peer {
     }
 }
 
+// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
+#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
 #[derive(Debug, Eq, PartialEq)]
 enum Candidate {
     None,
@@ -509,7 +513,7 @@ impl PeerManager {
         }
 
         let debug_id = format!("{:?}", self);
-        let res = if let Some(peer) = self.peers.get_mut(new_pub_id) {
+        if let Some(peer) = self.peers.get_mut(new_pub_id) {
             peer.valid = true;
             let is_connected = peer.is_connected();
             if is_connected.is_none() {
@@ -521,9 +525,7 @@ impl PeerManager {
         } else {
             trace!("{} No peer with name {}", debug_id, new_pub_id.name());
             Err(RoutingError::InvalidStateForOperation)
-        };
-
-        res
+        }
     }
 
     /// Updates peer's state to `Candidate` in the peer map if it is an unapproved candidate and
@@ -673,12 +675,12 @@ impl PeerManager {
             .map_or(conn_type, |peer| {
                 peer.to_routing_connection(is_tunnel)
                     .unwrap_or_else(|_| {
-                                   log_or_panic!(LogLevel::Error,
+                                        log_or_panic!(LogLevel::Error,
                                                  "{:?} Not connected peer {} being added to RT.",
                                                  self,
                                                  pub_id.name());
-                                   conn_type
-                               })
+                                        conn_type
+                                    })
             });
         self.insert_peer(Peer::new(*pub_id, PeerState::Routing(conn), true));
         trace!("{:?} Set {:?} to {:?}",
@@ -1397,7 +1399,7 @@ impl PeerManager {
 
         ids.iter()
             .filter_map(|id| {
-                let mut peer = match self.remove_peer(&id) {
+                let mut peer = match self.remove_peer(id) {
                     Some((peer, Ok(_))) => {
                         log_or_panic!(LogLevel::Error,
                                       "{:?} RT split peer has returned removal detail.",

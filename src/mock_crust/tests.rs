@@ -133,13 +133,15 @@ fn start_two_services_rendezvous_connect() {
         unwrap!(Service::with_handle(&handle1, event_sender_1, *FullId::new().public_id()));
 
     service_0.prepare_connection_info(PREPARE_CI_TOKEN);
-    let our_ci_0 = expect_event!(event_rx_0, CrustEvent::ConnectionInfoPrepared::<PublicId>(cir) => {
+    let our_ci_0 = expect_event!(event_rx_0,
+                                 CrustEvent::ConnectionInfoPrepared::<PublicId>(cir) => {
         assert_eq!(cir.result_token, PREPARE_CI_TOKEN);
         unwrap!(cir.result)
     });
 
     service_1.prepare_connection_info(PREPARE_CI_TOKEN);
-    let our_ci_1 = expect_event!(event_rx_1, CrustEvent::ConnectionInfoPrepared::<PublicId>(cir) => {
+    let our_ci_1 = expect_event!(event_rx_1,
+                                 CrustEvent::ConnectionInfoPrepared::<PublicId>(cir) => {
         assert_eq!(cir.result_token, PREPARE_CI_TOKEN);
         unwrap!(cir.result)
     });
@@ -194,12 +196,14 @@ fn unidirectional_rendezvous_connect() {
     let service_1 = unwrap!(Service::with_handle(&handle1, event_tx_1, *FullId::new().public_id()));
 
     service_0.prepare_connection_info(PREPARE_CI_TOKEN);
-    let our_ci_0 = expect_event!(event_rx_0, CrustEvent::ConnectionInfoPrepared::<PublicId>(cir) => {
+    let our_ci_0 = expect_event!(event_rx_0,
+                                 CrustEvent::ConnectionInfoPrepared::<PublicId>(cir) => {
         unwrap!(cir.result)
     });
 
     service_1.prepare_connection_info(PREPARE_CI_TOKEN);
-    let our_ci_1 = expect_event!(event_rx_1, CrustEvent::ConnectionInfoPrepared::<PublicId>(cir) => {
+    let our_ci_1 = expect_event!(event_rx_1,
+                                 CrustEvent::ConnectionInfoPrepared::<PublicId>(cir) => {
         unwrap!(cir.result)
     });
 

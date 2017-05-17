@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use super::crust::{ConnectionInfoResult, CrustEventSender, CrustUser, PrivConnectionInfo,
+use super::crust::{ConnectionInfoResult, CrustEventSender, CrustUser, Event, PrivConnectionInfo,
                    PubConnectionInfo, Uid};
 use CrustEvent;
 use id::PublicId;
@@ -357,10 +357,7 @@ impl<UID: Uid> ServiceImpl<UID> {
         // If we have no contacts in the config, we can fire BootstrapFailed
         // immediately.
         if pending_bootstraps == 0 {
-            unwrap!(self.event_sender
-                        .as_ref()
-                        .unwrap()
-                        .send(CrustEvent::BootstrapFailed));
+            unwrap!(unwrap!(self.event_sender.as_ref()).send(Event::BootstrapFailed));
         }
 
         self.pending_bootstraps = pending_bootstraps;

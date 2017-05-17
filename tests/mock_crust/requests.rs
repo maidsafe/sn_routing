@@ -217,7 +217,7 @@ fn disconnect_on_get_request() {
 
     assert!(clients[0]
                 .inner
-                .send_get_request(dst, data_request.clone(), message_id)
+                .send_get_request(dst, data_request, message_id)
                 .is_ok());
 
     let _ = poll_all(&mut nodes, &mut clients);

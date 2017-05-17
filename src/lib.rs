@@ -121,6 +121,8 @@
 
 #![cfg_attr(feature="cargo-clippy", deny(unicode_not_nfc, wrong_pub_self_convention,
                                     option_unwrap_used))]
+// Allow `panic_params` until https://github.com/Manishearth/rust-clippy/issues/768 is resolved.
+#![cfg_attr(feature="cargo-clippy", allow(panic_params))]
 
 extern crate hex;
 #[macro_use]

@@ -155,7 +155,7 @@ impl Network {
             for (sender_pfx, sections) in own_info {
                 let nodes = self.nodes_covered_by_prefixes(&[sender_pfx.sibling()]);
                 for node in &nodes {
-                    let target_node = unwrap!(self.nodes.get_mut(&node));
+                    let target_node = unwrap!(self.nodes.get_mut(node));
                     let node_expected = expected_peers.entry(*node).or_insert_with(BTreeSet::new);
                     for (_, &(_, ref section)) in &sections {
                         node_expected.extend(section.iter().filter(|name| !target_node.has(name)));

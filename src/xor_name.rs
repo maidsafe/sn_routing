@@ -240,7 +240,7 @@ impl ops::Not for XorName {
 impl ops::Sub for XorName {
     type Output = XorName;
     fn sub(self, rhs: XorName) -> Self::Output {
-        &self - &rhs
+        (&self).sub(&rhs)
     }
 }
 
@@ -254,7 +254,7 @@ impl<'a> ops::Sub for &'a XorName {
 impl ops::Div<u32> for XorName {
     type Output = XorName;
     fn div(self, rhs: u32) -> Self::Output {
-        &self / &rhs
+        (&self).div(&rhs)
     }
 }
 
