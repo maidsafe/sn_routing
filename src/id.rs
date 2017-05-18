@@ -17,7 +17,8 @@
 
 use crust::Uid;
 use rust_sodium::crypto::{box_, hash, sign};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserializer, Serialize, Serializer};
+use serde::de::Deserialize;
 use std::fmt::{self, Debug, Display, Formatter};
 use xor_name::XorName;
 
@@ -127,8 +128,8 @@ impl Serialize for PublicId {
     }
 }
 
-impl Deserialize for PublicId {
-    fn deserialize<D: Deserializer>(deserialiser: D) -> Result<Self, D::Error> {
+impl<'de> Deserialize<'de> for PublicId {
+    fn deserialize<D: Deserializer<'de>>(deserialiser: D) -> Result<Self, D::Error> {
         let (public_encrypt_key, public_sign_key): (box_::PublicKey, sign::PublicKey) =
             Deserialize::deserialize(deserialiser)?;
         Ok(PublicId::new(public_encrypt_key, public_sign_key))

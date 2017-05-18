@@ -77,8 +77,8 @@ impl Serialize for ImmutableData {
     }
 }
 
-impl Deserialize for ImmutableData {
-    fn deserialize<D: Deserializer>(deserializer: D) -> Result<ImmutableData, D::Error> {
+impl<'de> Deserialize<'de> for ImmutableData {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<ImmutableData, D::Error> {
         let value: Vec<u8> = Deserialize::deserialize(deserializer)?;
         Ok(ImmutableData::new(value))
     }
