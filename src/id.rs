@@ -30,7 +30,7 @@ pub struct FullId {
 }
 
 impl FullId {
-    /// Construct a FullId with newly generated keys.
+    /// Construct a `FullId` with newly generated keys.
     pub fn new() -> FullId {
         let encrypt_keys = box_::gen_keypair();
         let sign_keys = sign::gen_keypair();
@@ -41,7 +41,7 @@ impl FullId {
         }
     }
 
-    /// Construct with given keys, (Client requirement).
+    /// Construct with given keys (client requirement).
     pub fn with_keys(encrypt_keys: (box_::PublicKey, box_::SecretKey),
                      sign_keys: (sign::PublicKey, sign::SecretKey))
                      -> FullId {
@@ -170,7 +170,7 @@ mod tests {
     use maidsafe_utilities::{SeededRng, serialisation};
     use rust_sodium;
 
-    /// Confirm `PublicId` Ord trait favours name over sign or encryption keys.
+    /// Confirm `PublicId` `Ord` trait favours name over sign or encryption keys.
     #[test]
     fn public_id_order() {
         let mut rng = SeededRng::thread_rng();

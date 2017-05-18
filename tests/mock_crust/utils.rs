@@ -302,15 +302,15 @@ pub fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
     panic!("Polling has been called {} times.", MAX_POLL_CALLS);
 }
 
-/// Polls and processes all events, until there are no unacknowledged messages left
+/// Polls and processes all events, until there are no unacknowledged messages left.
 pub fn poll_and_resend(nodes: &mut [TestNode], clients: &mut [TestClient]) {
     let mut fired_connecting_peer_timeout = false;
     for _ in 0..MAX_POLL_CALLS {
         if poll_all(nodes, clients) {
-            // Once each route is polled, advance time to trigger the following route
+            // Once each route is polled, advance time to trigger the following route.
             FakeClock::advance_time(ACK_TIMEOUT_SECS * 1000 + 1);
         } else if !fired_connecting_peer_timeout {
-            // When all routes are polled, advance time to purge any pending re-connecting peers
+            // When all routes are polled, advance time to purge any pending re-connecting peers.
             FakeClock::advance_time(CONNECTING_PEER_TIMEOUT_SECS * 1000 + 1);
             fired_connecting_peer_timeout = true;
         } else {

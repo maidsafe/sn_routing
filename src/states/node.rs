@@ -684,8 +684,8 @@ impl Node {
         Ok(())
     }
 
-    // Handle a signature of a `SignedMessage`, and if we have enough to verify the signed
-    // message then handle that.
+    /// Handles a signature of a `SignedMessage`, and if we have enough to verify the signed
+    /// message, handles it.
     fn handle_message_signature(&mut self,
                                 digest: sha256::Digest,
                                 sig: sign::Signature,
@@ -1807,7 +1807,7 @@ impl Node {
                               pub_id);
                 if self.peer_mgr
                        .get_peer(&pub_id)
-                       .map_or(false, |peer| peer.valid()) {
+                       .map_or(false, Peer::valid) {
                     self.process_connection(pub_id, outbox);
                 }
             }
@@ -1873,7 +1873,7 @@ impl Node {
         Ok(())
     }
 
-    /// Handle a request by `src_id` to act as a tunnel connecting it with `dst_id`.
+    /// Handles a request by `src_id` to act as a tunnel connecting it with `dst_id`.
     fn handle_tunnel_request(&mut self, srd_id: PublicId, dst_id: PublicId) {
         if self.peer_mgr.can_tunnel_for(&srd_id, &dst_id) {
             if let Some((id0, id1)) = self.tunnels.consider_clients(srd_id, dst_id) {
@@ -1891,7 +1891,7 @@ impl Node {
         }
     }
 
-    /// Handle a `TunnelSuccess` response from `pub_id`: It will act as a tunnel to `dst_id`.
+    /// Handles a `TunnelSuccess` response from `pub_id`: It will act as a tunnel to `dst_id`.
     fn handle_tunnel_success(&mut self,
                              tunnel_id: PublicId,
                              dst_id: PublicId,
@@ -1927,7 +1927,7 @@ impl Node {
         }
     }
 
-    /// Handle a `TunnelSelect` message from `src`: `dst`.
+    /// Handles a `TunnelSelect` message from `src`: `dst`.
     fn handle_tunnel_select(&mut self, src: PublicId, dst: PublicId) {
         if src < dst && self.tunnels.accept_clients(src, dst) {
             debug!("{:?} Agreed to act as tunnel node for {:?} - {:?}",
@@ -1938,7 +1938,7 @@ impl Node {
         }
     }
 
-    /// Handle a `TunnelClosed` message from `src_id`: `dst_id` disconnected.
+    /// Handles a `TunnelClosed` message from `src_id`: `dst_id` disconnected.
     fn handle_tunnel_closed(&mut self, src_id: PublicId, dst_id: PublicId, outbox: &mut EventBox) {
         if self.tunnels.remove(dst_id, src_id) {
             debug!("{:?} Tunnel to {} via {} closed.", self, dst_id, src_id);
@@ -1948,7 +1948,7 @@ impl Node {
         }
     }
 
-    /// Handle a `TunnelDisconnect` message from `src_id` who wants to disconnect `dst_id`.
+    /// Handles a `TunnelDisconnect` message from `src_id` who wants to disconnect `dst_id`.
     fn handle_tunnel_disconnect(&mut self, src_id: PublicId, dst_id: PublicId) {
         if self.tunnels.drop_client_pair(dst_id, src_id) {
             debug!("{:?} Closing tunnel connecting {} and {}.",
@@ -2912,8 +2912,8 @@ impl Node {
         Ok(())
     }
 
-    // Handle dropped peer with the given id. Returns true if we should keep running, false if
-    // we should terminate.
+    /// Handles dropped peer with the given ID. Returns true if we should keep running, false if
+    /// we should terminate.
     fn dropped_peer(&mut self,
                     pub_id: &PublicId,
                     outbox: &mut EventBox,
@@ -2971,8 +2971,8 @@ impl Node {
         true
     }
 
-    // Handle dropped routing peer with the given name and removal details. Returns true if we
-    // should keep running, false if we should terminate.
+    /// Handles dropped routing peer with the given name and removal details. Returns true if we
+    /// should keep running, false if we should terminate.
     fn dropped_routing_node(&mut self,
                             name: &XorName,
                             details: RemovalDetails<XorName>,
