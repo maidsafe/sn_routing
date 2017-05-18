@@ -862,8 +862,7 @@ impl Debug for MessageContent {
                 ref sections,
             } => {
                 write!(formatter,
-                       "CandidateApproval {{ new: {:?},  new: {:?}, sections: \
-                        {:?} }}",
+                       "CandidateApproval {{ new: {:?}, client: {:?}, sections: {:?} }}",
                        new_public_id,
                        new_client_auth,
                        sections)

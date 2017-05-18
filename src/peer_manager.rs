@@ -289,6 +289,43 @@ impl Peer {
             PeerState::Connected(false) => Ok(RoutingConnection::Direct),
         }
     }
+
+    /// Returns whether the peer is in `Routing` state.
+    fn is_routing(&self) -> bool {
+        match self.state {
+            PeerState::Routing(_) => true,
+            _ => false,
+        }
+    }
+
+    /// Returns whether the peer is our proxy node.
+    fn is_proxy(&self) -> bool {
+        match self.state {
+            PeerState::Proxy |
+            PeerState::Candidate(RoutingConnection::Proxy(_)) |
+            PeerState::Routing(RoutingConnection::Proxy(_)) => true,
+            _ => false,
+        }
+    }
+
+    /// Returns whether the peer is our client.
+    fn is_client(&self) -> bool {
+        if let PeerState::Client = self.state {
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Returns whether the peer is a joining node and we are their proxy.
+    fn is_joining_node(&self) -> bool {
+        match self.state {
+            PeerState::JoiningNode |
+            PeerState::Candidate(RoutingConnection::JoiningNode(_)) |
+            PeerState::Routing(RoutingConnection::JoiningNode(_)) => true,
+            _ => false,
+        }
+    }
 }
 
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
@@ -621,7 +658,8 @@ impl PeerManager {
                 } else if challenge.proof.is_empty() {
                     log_msg = format!("{}hasn't responded to our challenge yet ", log_msg);
                 } else {
-                    log_msg = format!("{}has sent {}% of resource proof ",
+                    log_msg =
+                        format!("{}has sent {}% of resource proof ",
                                       log_msg,
                                       (challenge.proof.len() * 100) / challenge.target_size);
                 }
@@ -730,17 +768,10 @@ impl PeerManager {
 
     /// Returns whether we should initiate a merge.
     pub fn should_merge(&mut self) -> bool {
-        let expected_peers_count = self.peers
+        let expecting_peer = self.peers
             .values()
-            .filter(|peer| {
-                        peer.valid() &&
-                        match peer.state {
-                            PeerState::Routing(_) => false,
-                            _ => true,
-                        }
-                    })
-            .count();
-        expected_peers_count == 0 && self.routing_table.should_merge()
+            .any(|peer| peer.valid() && !peer.is_routing());
+        !expecting_peer && self.routing_table.should_merge()
     }
 
     /// Returns the sender prefix and sections to prepare a merge.
@@ -809,48 +840,24 @@ impl PeerManager {
 
     /// Returns if the given peer is a routing node.
     pub fn is_routing_peer(&self, pub_id: &PublicId) -> bool {
-        self.peers
-            .get(pub_id)
-            .map_or(false, |peer| if let PeerState::Routing(_) = peer.state {
-                true
-            } else {
-                false
-            })
+        self.peers.get(pub_id).map_or(false, Peer::is_routing)
     }
 
     /// Returns if the given peer is our proxy node.
     pub fn is_proxy(&self, pub_id: &PublicId) -> bool {
-        self.peers
-            .get(pub_id)
-            .map_or(false, |peer| match peer.state {
-                PeerState::Proxy |
-                PeerState::Candidate(RoutingConnection::Proxy(_)) |
-                PeerState::Routing(RoutingConnection::Proxy(_)) => true,
-                _ => false,
-            })
+        self.peers.get(pub_id).map_or(false, Peer::is_proxy)
     }
 
     /// Returns if the given peer is our client.
     pub fn is_client(&self, pub_id: &PublicId) -> bool {
-        self.peers
-            .get(pub_id)
-            .map_or(false, |peer| if let PeerState::Client = peer.state {
-                true
-            } else {
-                false
-            })
+        self.peers.get(pub_id).map_or(false, Peer::is_client)
     }
 
     /// Returns if the given peer is our joining node.
     pub fn is_joining_node(&self, pub_id: &PublicId) -> bool {
         self.peers
             .get(pub_id)
-            .map_or(false, |peer| match peer.state {
-                PeerState::JoiningNode |
-                PeerState::Candidate(RoutingConnection::JoiningNode(_)) |
-                PeerState::Routing(RoutingConnection::JoiningNode(_)) => true,
-                _ => false,
-            })
+            .map_or(false, Peer::is_joining_node)
     }
 
     /// Returns the proxy node's name if we have a proxy.
@@ -866,13 +873,6 @@ impl PeerManager {
     }
 
     pub fn remove_expired_peers(&mut self) -> Vec<PublicId> {
-        let mut expired_peers = self.peers
-            .values()
-            .filter(|peer| peer.is_expired())
-            .map(Peer::pub_id)
-            .cloned()
-            .collect_vec();
-
         let remove_candidate = if self.candidate.is_expired() {
             match self.candidate {
                 Candidate::None => None,
@@ -884,9 +884,12 @@ impl PeerManager {
             None
         };
 
-        expired_peers = expired_peers
-            .into_iter()
-            .chain(remove_candidate.iter().cloned())
+        let expired_peers = self.peers
+            .values()
+            .filter(|peer| peer.is_expired())
+            .map(Peer::pub_id)
+            .cloned()
+            .chain(remove_candidate)
             .collect_vec();
 
         for id in &expired_peers {
@@ -901,10 +904,7 @@ impl PeerManager {
     pub fn client_num(&self) -> usize {
         self.peers
             .values()
-            .filter(|&peer| match peer.state {
-                        PeerState::Client => true,
-                        _ => false,
-                    })
+            .filter(|peer| peer.is_client())
             .count()
     }
 
@@ -966,17 +966,19 @@ impl PeerManager {
         self.get_peer(id)
     }
 
-    /// Set the given peer as valid. Returns true if the peer is updated.
+    /// Sets the given peer as valid, if it exists.
     pub fn set_peer_valid(&mut self, id: &PublicId, valid: bool) {
-        let _ = self.peers.get_mut(id).map(|peer| peer.valid = valid);
+        if let Some(peer) = self.peers.get_mut(id) {
+            peer.valid = valid;
+        }
     }
 
-    /// Return the PublicId of the node with a given name
+    /// Returns the `PublicId` of the node with a given name.
     pub fn get_pub_id(&self, name: &XorName) -> Option<&PublicId> {
         self.get_peer_by_name(name).map(Peer::pub_id)
     }
 
-    /// Return the PublicIds of nodes bearing the names.
+    /// Returns the `PublicId`s of nodes bearing the names.
     pub fn get_pub_ids(&self, names: &BTreeSet<XorName>) -> BTreeSet<PublicId> {
         names
             .iter()
@@ -1004,17 +1006,14 @@ impl PeerManager {
                                   name);
                     dropped_routing_nodes.push(*name);
                 }
-                Some(&Peer { pub_id, ref state, .. }) => {
-                    match *state {
-                        PeerState::Routing(_) => (),
-                        _ => {
-                            log_or_panic!(LogLevel::Error,
-                                          "{:?} Have {} in RT, but have state {:?} for it.",
-                                          self,
-                                          name,
-                                          state);
-                            result.out_of_sync_peers.push(pub_id);
-                        }
+                Some(peer) => {
+                    if !peer.is_routing() {
+                        log_or_panic!(LogLevel::Error,
+                                      "{:?} Have {} in RT, but have state {:?} for it.",
+                                      self,
+                                      name,
+                                      peer.state);
+                        result.out_of_sync_peers.push(peer.pub_id);
                     }
                 }
             };
@@ -1052,9 +1051,7 @@ impl PeerManager {
                               self,
                               peer.name(),
                               peer.state);
-                result
-                    .out_of_sync_peers
-                    .extend(iter::once(peer.pub_id()));
+                result.out_of_sync_peers.push(peer.pub_id);
             }
         }
         result
@@ -1358,7 +1355,7 @@ impl PeerManager {
         }
     }
 
-    /// Removes the peer with the given id if present, and returns such PublicIDs.
+    /// Removes the peer with the given ID if present, and returns such `PublicId`s.
     /// If the peer is also our proxy, or we are theirs,
     /// it is reinserted as a proxy or joining node.
     fn remove_split_peers(&mut self, ids: Vec<PublicId>) -> Vec<PublicId> {
@@ -1366,10 +1363,7 @@ impl PeerManager {
             // Filter out existing routing peers so we do not flag them to invalid
             let filtered_peers = self.peers
                 .values_mut()
-                .filter(|peer| match peer.state {
-                            PeerState::Routing(_) => false,
-                            _ => true,
-                        });
+                .filter(|peer| !peer.is_routing());
             for peer in filtered_peers {
                 if self.routing_table
                        .need_to_add(peer.pub_id.name())
