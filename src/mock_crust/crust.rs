@@ -15,11 +15,14 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use super::support::{self, Endpoint, Network, ServiceHandle, ServiceImpl};
+use super::support::{Endpoint, Network, ServiceHandle, ServiceImpl};
 use maidsafe_utilities::event_sender;
+use serde::de::DeserializeOwned;
+use serde::ser::Serialize;
 use std::{fmt, io, thread};
 use std::cell::{RefCell, RefMut};
 use std::collections::HashSet;
+use std::hash::Hash;
 use std::net::SocketAddr;
 use std::rc::Rc;
 
@@ -27,30 +30,34 @@ use std::rc::Rc;
 pub const LISTENER_PORT: u16 = 5485;
 
 /// Mock version of `crust::Service`
-pub struct Service(Rc<RefCell<ServiceImpl>>, Network);
+pub struct Service<UID: Uid>(Rc<RefCell<ServiceImpl<UID>>>, Network<UID>);
 
-impl Service {
+impl<UID: Uid> Service<UID> {
     /// Create new mock `Service` using the make_current/get_current mechanism to
     /// get the associated `ServiceHandle`.
-    pub fn new(event_sender: CrustEventSender) -> Result<Self, CrustError> {
-        Self::with_handle(&support::get_current(), event_sender)
+    pub fn new(handle: ServiceHandle<UID>,
+               event_sender: CrustEventSender<UID>,
+               uid: UID)
+               -> Result<Self, CrustError> {
+        Self::with_handle(&handle, event_sender, uid)
     }
 
     /// Create new mock `Service` by explicitly passing the mock device to associate with.
-    pub fn with_handle(handle: &ServiceHandle,
-                       event_sender: CrustEventSender)
+    pub fn with_handle(handle: &ServiceHandle<UID>,
+                       event_sender: CrustEventSender<UID>,
+                       uid: UID)
                        -> Result<Self, CrustError> {
         let network = handle.0.borrow().network.clone();
         let service = Service(handle.0.clone(), network);
-        service.lock_and_poll(|imp| imp.start(event_sender));
+        service.lock_and_poll(|imp| imp.start(event_sender, uid));
 
         Ok(service)
     }
 
     /// This method is used instead of dropping the service and creating a new
     /// one, which is the current practice with the real crust.
-    pub fn restart(&self, event_sender: CrustEventSender) {
-        self.lock_and_poll(|imp| imp.restart(event_sender))
+    pub fn restart(&self, event_sender: CrustEventSender<UID>, uid: UID) {
+        self.lock_and_poll(|imp| imp.restart(event_sender, uid))
     }
 
     /// Start the bootstrapping procedure.
@@ -105,21 +112,21 @@ impl Service {
     /// Connect to a peer using our and their connection infos. The connection infos must be first
     /// prepared using `prepare_connection_info` on both our and their end.
     pub fn connect(&self,
-                   our_info: PrivConnectionInfo,
-                   their_info: PubConnectionInfo)
+                   our_info: PrivConnectionInfo<UID>,
+                   their_info: PubConnectionInfo<UID>)
                    -> Result<(), CrustError> {
         self.lock_and_poll(|imp| imp.connect(our_info, their_info));
         Ok(())
     }
 
     /// Disconnect from the given peer.
-    pub fn disconnect(&self, peer_id: PeerId) -> bool {
-        self.lock_and_poll(|imp| imp.disconnect(&peer_id))
+    pub fn disconnect(&self, uid: UID) -> bool {
+        self.lock_and_poll(|imp| imp.disconnect(&uid))
     }
 
     /// Send message to the given peer.
     // TODO: Implement tests that drop low-priority messages.
-    pub fn send(&self, id: PeerId, data: Vec<u8>, _priority: u8) -> io::Result<()> {
+    pub fn send(&self, id: UID, data: Vec<u8>, _priority: u8) -> io::Result<()> {
         if self.lock_and_poll(|imp| imp.send_message(&id, data)) {
             Ok(())
         } else {
@@ -128,37 +135,32 @@ impl Service {
         }
     }
 
-    /// Returns `true` if we are currently connected to the given `peer_id`
-    pub fn is_connected(&self, peer_id: &PeerId) -> bool {
-        self.lock_and_poll(|imp| imp.is_peer_connected(peer_id))
+    /// Returns `true` if we are currently connected to the given `uid`
+    pub fn is_connected(&self, uid: &UID) -> bool {
+        self.lock_and_poll(|imp| imp.is_peer_connected(uid))
     }
 
     /// Adds the peer to the whitelist, allowing them to connect to us.
-    pub fn whitelist_peer(&self, peer_id: PeerId) {
-        self.lock().whitelist_peer(peer_id);
+    pub fn whitelist_peer(&self, endpoint: Endpoint) {
+        self.lock().whitelist_peer(endpoint);
     }
 
     /// Returns `true` if the specified peer is allowed to connect to us.
-    pub fn is_peer_whitelisted(&self, peer_id: &PeerId) -> bool {
-        self.lock().is_peer_whitelisted(peer_id)
+    pub fn is_peer_whitelisted(&self, id: &UID) -> bool {
+        self.lock().is_peer_whitelisted(id)
     }
 
     /// Returns `true` if the specified peer's IP is hard-coded. (Always `true` in mock Crust.)
-    pub fn is_peer_hard_coded(&self, _peer_id: &PeerId) -> bool {
+    pub fn is_peer_hard_coded(&self, _uid: &UID) -> bool {
         true
     }
 
-    /// Our `PeerId`.
-    pub fn id(&self) -> PeerId {
-        self.lock().peer_id
-    }
-
-    fn lock(&self) -> RefMut<ServiceImpl> {
+    fn lock(&self) -> RefMut<ServiceImpl<UID>> {
         self.0.borrow_mut()
     }
 
     fn lock_and_poll<F, R>(&self, f: F) -> R
-        where F: FnOnce(&mut ServiceImpl) -> R
+        where F: FnOnce(&mut ServiceImpl<UID>) -> R
     {
         let result = f(&mut *self.lock());
         self.1.poll();
@@ -166,7 +168,7 @@ impl Service {
     }
 }
 
-impl Drop for Service {
+impl<UID: Uid> Drop for Service<UID> {
     fn drop(&mut self) {
         if !thread::panicking() {
             self.lock_and_poll(|imp| imp.disconnect_all());
@@ -174,23 +176,13 @@ impl Drop for Service {
     }
 }
 
-/// Mock version of `crust::PeerId`.
-#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
-pub struct PeerId(pub usize);
-
-impl fmt::Debug for PeerId {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "PeerId({})", self.0)
-    }
-}
-
 /// Mock version of `crust::Event`.
 #[derive(Debug)]
-pub enum Event {
+pub enum Event<UID: Uid> {
     /// Invoked when a bootstrap peer connects to us
-    BootstrapAccept(PeerId, CrustUser),
-    /// Invoked when we get a bootstrap connection to a new peer.
-    BootstrapConnect(PeerId, SocketAddr),
+    BootstrapAccept(UID, CrustUser),
+    /// Invoked when we bootstrap to a new peer.
+    BootstrapConnect(UID, SocketAddr),
     /// Invoked when we failed to connect to all bootstrap contacts.
     BootstrapFailed,
     /// Invoked when we are ready to listen for incomming connection. Contains
@@ -199,52 +191,71 @@ pub enum Event {
     /// Invoked when listener failed to start.
     ListenerFailed,
     /// Invoked as a result to the call of `Service::prepare_contact_info`.
-    ConnectionInfoPrepared(ConnectionInfoResult),
+    ConnectionInfoPrepared(ConnectionInfoResult<UID>),
     /// Invoked when connection to a new peer has been established.
-    ConnectSuccess(PeerId),
+    ConnectSuccess(UID),
     /// Invoked when connection to a new peer has failed.
-    ConnectFailure(PeerId),
-    /// Invoked when a peer is lost or having read/write error.
-    LostPeer(PeerId),
-    /// Invoked when a new message is received.  Passes the message.
-    NewMessage(PeerId, Vec<u8>),
+    ConnectFailure(UID),
+    /// Invoked when a peer disconnects or can no longer be contacted.
+    LostPeer(UID),
+    /// Invoked when a new message is received. Passes the message.
+    NewMessage(UID, Vec<u8>),
     /// Invoked when trying to sending a too large data.
-    WriteMsgSizeProhibitive(PeerId, Vec<u8>),
+    WriteMsgSizeProhibitive(UID, Vec<u8>),
 }
 
 /// Mock version of `CrustEventSender`.
-pub type CrustEventSender = event_sender::MaidSafeObserver<Event>;
+pub type CrustEventSender<UID> = event_sender::MaidSafeObserver<Event<UID>>;
+
+/// Trait for specifying a unique identifier for a Crust peer
+pub trait Uid
+    : 'static + Send + fmt::Debug + Clone + Copy + Eq + PartialEq + Ord + PartialOrd + Hash +
+      Serialize + DeserializeOwned {
+}
 
 /// Mock version of `PrivConnectionInfo`, generated by a call to
 /// `Service::prepare_contact_info`.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PrivConnectionInfo(pub PeerId, pub Endpoint);
+pub struct PrivConnectionInfo<UID> {
+    #[doc(hidden)]
+    pub id: UID,
+    #[doc(hidden)]
+    pub endpoint: Endpoint,
+}
 
-impl PrivConnectionInfo {
+impl<UID: Uid> PrivConnectionInfo<UID> {
     /// Convert our connection info to theirs so that we can give it to them.
-    pub fn to_pub_connection_info(&self) -> PubConnectionInfo {
-        PubConnectionInfo(self.0, self.1)
+    pub fn to_pub_connection_info(&self) -> PubConnectionInfo<UID> {
+        PubConnectionInfo {
+            id: self.id,
+            endpoint: self.endpoint,
+        }
     }
 }
 
 /// Mock version of `PubConnectionInfo`, used to connect to another peer.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct PubConnectionInfo(pub PeerId, pub Endpoint);
+pub struct PubConnectionInfo<UID> {
+    #[doc(hidden)]
+    pub id: UID,
+    #[doc(hidden)]
+    pub endpoint: Endpoint,
+}
 
-impl PubConnectionInfo {
+impl<UID: Uid> PubConnectionInfo<UID> {
     /// The peer's Crust ID.
-    pub fn id(&self) -> PeerId {
-        self.0
+    pub fn id(&self) -> UID {
+        self.id
     }
 }
 
 /// The result of a `Service::prepare_contact_info` call.
 #[derive(Debug)]
-pub struct ConnectionInfoResult {
+pub struct ConnectionInfoResult<UID: Uid> {
     /// The token that was passed to `prepare_connection_info`.
     pub result_token: u32,
     /// The new contact info, if successful.
-    pub result: Result<PrivConnectionInfo, CrustError>,
+    pub result: Result<PrivConnectionInfo<UID>, CrustError>,
 }
 
 /// Mock version of `crust::CrustError`.

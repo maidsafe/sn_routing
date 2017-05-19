@@ -121,6 +121,8 @@
 
 #![cfg_attr(feature="cargo-clippy", deny(unicode_not_nfc, wrong_pub_self_convention,
                                     option_unwrap_used))]
+// Allow `panic_params` until https://github.com/Manishearth/rust-clippy/issues/768 is resolved.
+#![cfg_attr(feature="cargo-clippy", allow(panic_params))]
 
 extern crate hex;
 #[macro_use]
@@ -224,6 +226,12 @@ pub use routing_table::Error as RoutingTableError;
 pub use routing_table::verify_network_invariant;
 pub use types::MessageId;
 pub use xor_name::{XOR_NAME_BITS, XOR_NAME_LEN, XorName, XorNameFromHexError};
+
+type Service = crust::Service<PublicId>;
+use crust::Event as CrustEvent;
+type CrustEventSender = crust::CrustEventSender<PublicId>;
+type PrivConnectionInfo = crust::PrivConnectionInfo<PublicId>;
+type PubConnectionInfo = crust::PubConnectionInfo<PublicId>;
 
 #[cfg(test)]
 mod tests {

@@ -17,10 +17,10 @@
 
 use super::{Client, JoiningNode, Node};
 use super::common::Base;
+use {CrustEvent, Service};
 use action::Action;
 use cache::Cache;
-use crust::{CrustUser, PeerId, Service};
-use crust::Event as CrustEvent;
+use crust::CrustUser;
 use error::RoutingError;
 use event::Event;
 use id::{FullId, PublicId};
@@ -58,7 +58,7 @@ pub enum TargetState {
 pub struct Bootstrapping {
     action_sender: RoutingActionSender,
     bootstrap_blacklist: HashSet<SocketAddr>,
-    bootstrap_connection: Option<(PeerId, u64)>,
+    bootstrap_connection: Option<(PublicId, u64)>,
     cache: Box<Cache>,
     target_state: TargetState,
     crust_service: Service,
@@ -114,8 +114,8 @@ impl Bootstrapping {
                 // preserve the pre-refactor behaviour.
                 let _ = result_tx.send(Ok(()));
             }
-            Action::Name { result_tx } => {
-                let _ = result_tx.send(*self.name());
+            Action::Id { result_tx } => {
+                let _ = result_tx.send(*self.id());
             }
             Action::Timeout(token) => self.handle_timeout(token),
             Action::ResourceProofResult(..) => {
@@ -129,16 +129,16 @@ impl Bootstrapping {
     }
 
     pub fn handle_crust_event(&mut self,
-                              crust_event: CrustEvent,
+                              crust_event: CrustEvent<PublicId>,
                               outbox: &mut EventBox)
                               -> Transition {
         match crust_event {
-            CrustEvent::BootstrapConnect(peer_id, socket_addr) => {
-                self.handle_bootstrap_connect(peer_id, socket_addr)
+            CrustEvent::BootstrapConnect(pub_id, socket_addr) => {
+                self.handle_bootstrap_connect(pub_id, socket_addr)
             }
             CrustEvent::BootstrapFailed => self.handle_bootstrap_failed(outbox),
-            CrustEvent::NewMessage(peer_id, bytes) => {
-                match self.handle_new_message(peer_id, bytes) {
+            CrustEvent::NewMessage(pub_id, bytes) => {
+                match self.handle_new_message(pub_id, bytes) {
                     Ok(transition) => transition,
                     Err(error) => {
                         debug!("{:?} - {:?}", self, error);
@@ -174,17 +174,12 @@ impl Bootstrapping {
         }
     }
 
-    pub fn into_target_state(self,
-                             proxy_peer_id: PeerId,
-                             proxy_public_id: PublicId,
-                             outbox: &mut EventBox)
-                             -> State {
+    pub fn into_target_state(self, proxy_public_id: PublicId, outbox: &mut EventBox) -> State {
         match self.target_state {
             TargetState::Client { .. } => {
                 State::Client(Client::from_bootstrapping(self.crust_service,
                                                          self.full_id,
                                                          self.min_section_size,
-                                                         proxy_peer_id,
                                                          proxy_public_id,
                                                          self.stats,
                                                          self.timer,
@@ -197,7 +192,6 @@ impl Bootstrapping {
                                                     self.crust_service,
                                                     self.full_id,
                                                     self.min_section_size,
-                                                    proxy_peer_id,
                                                     proxy_public_id,
                                                     self.stats,
                                                     self.timer) {
@@ -219,7 +213,6 @@ impl Bootstrapping {
                                                      old_full_id,
                                                      self.full_id,
                                                      self.min_section_size,
-                                                     proxy_peer_id,
                                                      proxy_public_id,
                                                      self.stats,
                                                      self.timer))
@@ -247,21 +240,24 @@ impl Bootstrapping {
         }
     }
 
-    fn handle_bootstrap_connect(&mut self, peer_id: PeerId, socket_addr: SocketAddr) -> Transition {
+    fn handle_bootstrap_connect(&mut self,
+                                pub_id: PublicId,
+                                socket_addr: SocketAddr)
+                                -> Transition {
         match self.bootstrap_connection {
             None => {
-                debug!("{:?} Received BootstrapConnect from {:?}.", self, peer_id);
+                debug!("{:?} Received BootstrapConnect from {}.", self, pub_id);
                 // Established connection. Pending Validity checks
-                self.send_client_identify(peer_id);
+                self.send_client_identify(pub_id);
                 let _ = self.bootstrap_blacklist.insert(socket_addr);
             }
-            Some((bootstrap_id, _)) if bootstrap_id == peer_id => {
-                warn!("{:?} Got more than one BootstrapConnect for peer {:?}.",
+            Some((bootstrap_id, _)) if bootstrap_id == pub_id => {
+                warn!("{:?} Got more than one BootstrapConnect for peer {}.",
                       self,
-                      peer_id);
+                      pub_id);
             }
             _ => {
-                self.disconnect_peer(&peer_id);
+                self.disconnect_peer(&pub_id);
             }
         }
 
@@ -275,11 +271,11 @@ impl Bootstrapping {
     }
 
     fn handle_new_message(&mut self,
-                          peer_id: PeerId,
+                          pub_id: PublicId,
                           bytes: Vec<u8>)
                           -> Result<Transition, RoutingError> {
         match serialisation::deserialise(&bytes) {
-            Ok(Message::Direct(direct_msg)) => Ok(self.handle_direct_message(direct_msg, peer_id)),
+            Ok(Message::Direct(direct_msg)) => Ok(self.handle_direct_message(direct_msg, pub_id)),
             Ok(message) => {
                 debug!("{:?} - Unhandled new message: {:?}", self, message);
                 Ok(Transition::Stay)
@@ -290,12 +286,10 @@ impl Bootstrapping {
 
     fn handle_direct_message(&mut self,
                              direct_message: DirectMessage,
-                             peer_id: PeerId)
+                             pub_id: PublicId)
                              -> Transition {
         match direct_message {
-            DirectMessage::BootstrapIdentify { public_id } => {
-                self.handle_bootstrap_identify(public_id, peer_id)
-            }
+            DirectMessage::BootstrapIdentify => self.handle_bootstrap_identify(pub_id),
             DirectMessage::BootstrapDeny => self.handle_bootstrap_deny(),
             _ => {
                 debug!("{:?} - Unhandled direct message: {:?}",
@@ -306,11 +300,8 @@ impl Bootstrapping {
         }
     }
 
-    fn handle_bootstrap_identify(&mut self, public_id: PublicId, peer_id: PeerId) -> Transition {
-        Transition::IntoBootstrapped {
-            proxy_peer_id: peer_id,
-            proxy_public_id: public_id,
-        }
+    fn handle_bootstrap_identify(&mut self, public_id: PublicId) -> Transition {
+        Transition::IntoBootstrapped { proxy_public_id: public_id }
     }
 
     fn handle_bootstrap_deny(&mut self) -> Transition {
@@ -320,12 +311,12 @@ impl Bootstrapping {
         Transition::Stay
     }
 
-    fn send_client_identify(&mut self, peer_id: PeerId) {
-        debug!("{:?} - Sending ClientIdentify to {:?}.", self, peer_id);
+    fn send_client_identify(&mut self, pub_id: PublicId) {
+        debug!("{:?} - Sending ClientIdentify to {}.", self, pub_id);
 
         let token = self.timer
             .schedule(Duration::from_secs(BOOTSTRAP_TIMEOUT_SECS));
-        self.bootstrap_connection = Some((peer_id, token));
+        self.bootstrap_connection = Some((pub_id, token));
 
         let serialised_public_id = match serialisation::serialise(self.full_id.public_id()) {
             Ok(rslt) => rslt,
@@ -344,14 +335,14 @@ impl Bootstrapping {
         };
 
         self.stats().count_direct_message(&direct_message);
-        self.send_message(&peer_id, Message::Direct(direct_message));
+        self.send_message(&pub_id, Message::Direct(direct_message));
     }
 
-    fn disconnect_peer(&mut self, peer_id: &PeerId) {
-        debug!("{:?} Disconnecting {:?}. Calling crust::Service::disconnect.",
+    fn disconnect_peer(&mut self, pub_id: &PublicId) {
+        debug!("{:?} Disconnecting {}. Calling crust::Service::disconnect.",
                self,
-               peer_id);
-        let _ = self.crust_service.disconnect(*peer_id);
+               pub_id);
+        let _ = self.crust_service.disconnect(*pub_id);
     }
 
     fn rebootstrap(&mut self) {

@@ -20,7 +20,7 @@ use cache::NullCache;
 use data::{AppendWrapper, Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use event::Event;
-use id::FullId;
+use id::{FullId, PublicId};
 #[cfg(not(feature = "use-mock-crust"))]
 use maidsafe_utilities::thread::{self, Joiner};
 use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, Request};
@@ -118,16 +118,20 @@ impl Client {
                           min_section_size: usize,
                           outbox: &mut EventBox)
                           -> (RoutingActionSender, StateMachine) {
+        let full_id = keys.unwrap_or_else(FullId::new);
+        let pub_id = *full_id.public_id();
+
         StateMachine::new(move |action_sender, crust_service, timer, _outbox2| {
             Bootstrapping::new(action_sender,
                                Box::new(NullCache),
                                BootstrappingTargetState::Client,
                                crust_service,
-                               keys.unwrap_or_else(FullId::new),
+                               full_id,
                                min_section_size,
                                timer)
                     .map_or(State::Terminated, State::Bootstrapping)
         },
+                          pub_id,
                           outbox)
     }
 
@@ -187,11 +191,11 @@ impl Client {
                          CLIENT_GET_PRIORITY)
     }
 
-    /// Returns the name of this node.
-    pub fn name(&self) -> Result<XorName, InterfaceError> {
+    /// Returns the `PublicId` of this client.
+    pub fn id(&self) -> Result<PublicId, InterfaceError> {
         let (result_tx, result_rx) = channel();
         self.action_sender
-            .send(Action::Name { result_tx: result_tx })?;
+            .send(Action::Id { result_tx: result_tx })?;
 
         self.receive_action_result(&result_rx)
     }

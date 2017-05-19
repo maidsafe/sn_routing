@@ -155,7 +155,7 @@ impl Network {
             for (sender_pfx, sections) in own_info {
                 let nodes = self.nodes_covered_by_prefixes(&[sender_pfx.sibling()]);
                 for node in &nodes {
-                    let target_node = unwrap!(self.nodes.get_mut(&node));
+                    let target_node = unwrap!(self.nodes.get_mut(node));
                     let node_expected = expected_peers.entry(*node).or_insert_with(BTreeSet::new);
                     for (_, &(_, ref section)) in &sections {
                         node_expected.extend(section.iter().filter(|name| !target_node.has(name)));
@@ -169,14 +169,12 @@ impl Network {
                     let merge_ver_pfx = merge_pfx.with_version(unwrap!(version));
                     let ver_pfxs = sections.iter().map(|(pfx, &(v, _))| pfx.with_version(v));
                     match target_node.merge_own_section(merge_ver_pfx, ver_pfxs) {
-                        (OwnMergeState::AlreadyMerged, dropped) => assert!(dropped.is_empty()),
-                        (OwnMergeState::Completed {
-                             targets,
-                             versioned_prefix,
-                             section,
-                         },
-                         dropped) => {
-                            assert!(dropped.is_empty());
+                        OwnMergeState::AlreadyMerged => (),
+                        OwnMergeState::Completed {
+                            targets,
+                            versioned_prefix,
+                            section,
+                        } => {
                             Network::store_merge_info(&mut merge_other_info,
                                                       *target_node.our_prefix(),
                                                       (targets, versioned_prefix, section));

@@ -17,8 +17,9 @@
 
 use super::routing_table::Error as RoutingTableError;
 use action::Action;
-use crust::{self, PeerId};
+use crust::CrustError;
 use event::Event;
+use id::PublicId;
 use maidsafe_utilities::event_sender::{EventSenderError, MaidSafeEventCategory};
 use maidsafe_utilities::serialisation;
 use std::sync::mpsc::{RecvError, SendError};
@@ -92,7 +93,7 @@ pub enum RoutingError {
     /// i/o error
     Io(::std::io::Error),
     /// Crust error
-    Crust(crust::CrustError),
+    Crust(CrustError),
     /// Channel sending error
     SendEventError(SendError<Event>),
     /// Current state is invalid for the operation
@@ -102,7 +103,7 @@ pub enum RoutingError {
     /// Asymmetric Decryption Failure
     AsymmetricDecryptionFailure,
     /// Unknown Connection
-    UnknownConnection(PeerId),
+    UnknownConnection(PublicId),
     /// Invalid Destination
     InvalidDestination,
     /// Connection to proxy node does not exist in proxy map
@@ -125,6 +126,8 @@ pub enum RoutingError {
     CandidateIsTunnelling,
     /// Content of a received message is inconsistent.
     InvalidMessage,
+    /// Invalid Peer
+    InvalidPeer,
 }
 
 impl From<RoutingTableError> for RoutingError {
@@ -151,8 +154,8 @@ impl From<InterfaceError> for RoutingError {
     }
 }
 
-impl From<crust::CrustError> for RoutingError {
-    fn from(error: crust::CrustError) -> RoutingError {
+impl From<CrustError> for RoutingError {
+    fn from(error: CrustError) -> RoutingError {
         RoutingError::Crust(error)
     }
 }

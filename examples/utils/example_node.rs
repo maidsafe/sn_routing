@@ -85,7 +85,7 @@ impl ExampleNode {
                     trace!("{} Received SectionMerge event {:?}",
                            self.get_debug_name(),
                            prefix);
-                    let pfx = Prefix::new(prefix.bit_count() + 1, unwrap!(self.node.name()));
+                    let pfx = Prefix::new(prefix.bit_count() + 1, *unwrap!(self.node.id()).name());
                     self.send_refresh(MessageId::from_lost_node(pfx.lower_bound()));
                 }
                 event => {
@@ -265,8 +265,8 @@ impl ExampleNode {
     }
 
     fn get_debug_name(&self) -> String {
-        match self.node.name() {
-            Ok(name) => format!("Node({:?})", name),
+        match self.node.id() {
+            Ok(id) => format!("Node({:?})", id.name()),
             Err(err) => {
                 error!("Could not get node name - {:?}", err);
                 "Node(unknown)".to_owned()

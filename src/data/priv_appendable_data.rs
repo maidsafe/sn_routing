@@ -57,10 +57,8 @@ impl PrivAppendedData {
     }
 }
 
-impl Deserialize for PrivAppendedData {
-    fn deserialize<D>(d: D) -> Result<Self, D::Error>
-        where D: Deserializer
-    {
+impl<'de> Deserialize<'de> for PrivAppendedData {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let data: Vec<u8> = Deserialize::deserialize(d)?;
         if data.len() > MAX_PRIV_APPENDED_DATA_BYTES {
             return Err(D::Error::custom("wrong private appended data size"));

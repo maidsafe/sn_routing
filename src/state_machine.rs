@@ -15,11 +15,12 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use {CrustEvent, CrustEventSender, Service};
 use action::Action;
-use crust::{CrustEventSender, PeerId, Service};
-use crust::Event as CrustEvent;
 use id::{FullId, PublicId};
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
+#[cfg(feature = "use-mock-crust")]
+use mock_crust::get_current;
 use outbox::EventBox;
 #[cfg(feature = "use-mock-crust")]
 use routing_table::Prefix;
@@ -37,14 +38,13 @@ use std::sync::mpsc::{self, Receiver, RecvError, Sender, TryRecvError};
 use timer::Timer;
 use types::RoutingActionSender;
 use xor_name::XorName;
-
 /// Holds the current state and handles state transitions.
 pub struct StateMachine {
     state: State,
     category_rx: Receiver<MaidSafeEventCategory>,
     category_tx: Sender<MaidSafeEventCategory>,
-    crust_rx: Receiver<CrustEvent>,
-    crust_tx: Sender<CrustEvent>,
+    crust_rx: Receiver<CrustEvent<PublicId>>,
+    crust_tx: Sender<CrustEvent<PublicId>>,
     action_rx: Receiver<Action>,
     is_running: bool,
     #[cfg(feature = "use-mock-crust")]
@@ -63,7 +63,7 @@ pub enum State {
 
 #[cfg(feature = "use-mock-crust")]
 enum EventType {
-    CrustEvent(CrustEvent),
+    CrustEvent(CrustEvent<PublicId>),
     Action(Box<Action>),
 }
 
@@ -94,7 +94,10 @@ impl State {
         }
     }
 
-    fn handle_crust_event(&mut self, event: CrustEvent, outbox: &mut EventBox) -> Transition {
+    fn handle_crust_event(&mut self,
+                          event: CrustEvent<PublicId>,
+                          outbox: &mut EventBox)
+                          -> Transition {
         match *self {
             State::Bootstrapping(ref mut state) => state.handle_crust_event(event, outbox),
             State::Client(ref mut state) => state.handle_crust_event(event, outbox),
@@ -104,8 +107,8 @@ impl State {
         }
     }
 
-    fn name(&self) -> Option<XorName> {
-        self.base_state().map(|state| *state.name())
+    fn id(&self) -> Option<PublicId> {
+        self.base_state().map(|state| *state.id())
     }
 
     fn routing_table(&self) -> Option<&RoutingTable<XorName>> {
@@ -151,7 +154,7 @@ impl State {
         }
     }
 
-    pub fn has_tunnel_clients(&self, client_1: PeerId, client_2: PeerId) -> bool {
+    pub fn has_tunnel_clients(&self, client_1: PublicId, client_2: PublicId) -> bool {
         match *self {
             State::Node(ref state) => state.has_tunnel_clients(client_1, client_2),
             _ => false,
@@ -194,10 +197,7 @@ impl State {
 pub enum Transition {
     Stay,
     // `Bootstrapping` state transitioning to `Client`, `JoiningNode`, or `Node`.
-    IntoBootstrapped {
-        proxy_peer_id: PeerId,
-        proxy_public_id: PublicId,
-    },
+    IntoBootstrapped { proxy_public_id: PublicId },
     // `JoiningNode` state transitioning back to `Bootstrapping`.
     IntoBootstrapping {
         new_id: FullId,
@@ -208,7 +208,10 @@ pub enum Transition {
 
 impl StateMachine {
     // Construct a new StateMachine by passing a function returning the initial state.
-    pub fn new<F>(init_state: F, outbox: &mut EventBox) -> (RoutingActionSender, Self)
+    pub fn new<F>(init_state: F,
+                  pub_id: PublicId,
+                  outbox: &mut EventBox)
+                  -> (RoutingActionSender, Self)
         where F: FnOnce(RoutingActionSender, Service, Timer, &mut EventBox) -> State
     {
         let (category_tx, category_rx) = mpsc::channel();
@@ -223,10 +226,17 @@ impl StateMachine {
                                                  MaidSafeEventCategory::Crust,
                                                  category_tx.clone());
 
-        let mut crust_service = match Service::new(crust_sender) {
+        #[cfg(feature = "use-mock-crust")]
+        let mut crust_service = match Service::new(get_current(), crust_sender, pub_id) {
             Ok(service) => service,
             Err(error) => panic!("Unable to start crust::Service {:?}", error),
         };
+        #[cfg(not(feature = "use-mock-crust"))]
+        let mut crust_service = match Service::new(crust_sender, pub_id) {
+            Ok(service) => service,
+            Err(error) => panic!("Unable to start crust::Service {:?}", error),
+        };
+
         crust_service.start_service_discovery();
 
         let timer = Timer::new(action_sender.clone());
@@ -309,13 +319,10 @@ impl StateMachine {
         use self::Transition::*;
         match transition {
             Stay => (),
-            IntoBootstrapped {
-                proxy_peer_id,
-                proxy_public_id,
-            } => {
+            IntoBootstrapped { proxy_public_id } => {
                 let new_state = match mem::replace(&mut self.state, State::Terminated) {
                     State::Bootstrapping(bootstrapping) => {
-                        bootstrapping.into_target_state(proxy_peer_id, proxy_public_id, outbox)
+                        bootstrapping.into_target_state(proxy_public_id, outbox)
                     }
                     _ => unreachable!(),
                 };
@@ -440,8 +447,8 @@ impl StateMachine {
         Err(TryRecvError::Empty)
     }
 
-    pub fn name(&self) -> Option<XorName> {
-        self.state.name()
+    pub fn id(&self) -> Option<PublicId> {
+        self.state.id()
     }
 
     pub fn routing_table(&self) -> Option<&RoutingTable<XorName>> {

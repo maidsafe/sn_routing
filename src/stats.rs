@@ -35,7 +35,6 @@ pub struct Stats {
     /// Messages we sent unsuccessfully: unacknowledged on all routes.
     unacked_msgs: usize,
 
-    msg_direct_node_identify: usize,
     msg_direct_candidate_identify: usize,
     msg_direct_sig: usize,
     msg_direct_resource_proof: usize,
@@ -165,7 +164,6 @@ impl Stats {
     pub fn count_direct_message(&mut self, msg: &DirectMessage) {
         use messages::DirectMessage::*;
         match *msg {
-            NodeIdentify { .. } => self.msg_direct_node_identify += 1,
             CandidateIdentify { .. } => self.msg_direct_candidate_identify += 1,
             MessageSignature(..) => self.msg_direct_sig += 1,
             SectionListSignature(..) => self.msg_direct_sls += 1,
@@ -177,6 +175,7 @@ impl Stats {
             ClientIdentify { .. } |
             TunnelRequest(_) |
             TunnelSuccess(_) |
+            TunnelSelect(_) |
             TunnelClosed(_) |
             TunnelDisconnect(_) => self.msg_other += 1,
         }
@@ -205,9 +204,8 @@ impl Stats {
                   self.routes,
                   self.unacked_msgs);
             info!(target: "routing_stats",
-                  "Stats - Direct - NodeIdentify: {}, CandidateIdentify: {}, \
+                  "Stats - Direct - CandidateIdentify: {}, \
                    MessageSignature: {}, ResourceProof: {}/{}/{}, SectionListSignature: {}",
-                  self.msg_direct_node_identify,
                   self.msg_direct_candidate_identify,
                   self.msg_direct_sig,
                   self.msg_direct_resource_proof,

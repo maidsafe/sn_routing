@@ -17,8 +17,6 @@
 
 use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
 use ack_manager::Ack;
-#[cfg(not(feature = "use-mock-crust"))]
-use crust::PeerId;
 use data::{AppendWrapper, Data, DataIdentifier};
 use error::RoutingError;
 use event::Event;
@@ -26,8 +24,6 @@ use id::{FullId, PublicId};
 use itertools::Itertools;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-#[cfg(feature = "use-mock-crust")]
-use mock_crust::crust::PeerId;
 use peer_manager::SectionMap;
 use routing_table::{Prefix, VersionedPrefix, Xorable};
 use routing_table::Authority;
@@ -71,18 +67,18 @@ pub enum Message {
         /// The wrapped message
         content: DirectMessage,
         /// The sender
-        src: PeerId,
+        src: PublicId,
         /// The receiver
-        dst: PeerId,
+        dst: PublicId,
     },
     /// A hop message sent via a tunnel because the nodes could not connect directly
     TunnelHop {
         /// The wrapped message
         content: HopMessage,
         /// The sender
-        src: PeerId,
+        src: PublicId,
         /// The receiver
-        dst: PeerId,
+        dst: PublicId,
     },
 }
 
@@ -110,10 +106,7 @@ pub enum DirectMessage {
     /// A signature for the current `BTreeSet` of section's node names
     SectionListSignature(SectionList, sign::Signature),
     /// Sent from the bootstrap node to a client in response to `ClientIdentify`.
-    BootstrapIdentify {
-        /// The bootstrap node's keys and name.
-        public_id: PublicId,
-    },
+    BootstrapIdentify,
     /// Sent to the client to indicate that this node is not available as a bootstrap node.
     BootstrapDeny,
     /// Sent from a newly connected client to the bootstrap node to inform it about the client's
@@ -125,19 +118,6 @@ pub enum DirectMessage {
         signature: sign::Signature,
         /// Indicate whether we intend to remain a client, as opposed to becoming a routing node.
         client_restriction: bool,
-    },
-    /// Sent from an established node (i.e. one which has successfully joined the network) to
-    /// another node, to allow the latter to add the former to its routing table.
-    NodeIdentify {
-        /// Keys and claimed name, serialised outside routing.
-        serialised_public_id: Vec<u8>,
-        /// Signature of the originator of this message.
-        signature: sign::Signature,
-        /// FIXME: Should be deprecated.
-        /// Tunnel connection indicator from sender which would override
-        /// intermediate peer_mgr states for routing table connection type.
-        /// Should not influence JoiningNode / Proxy states which are expected to be direct only.
-        is_tunnel: bool,
     },
     /// Sent from a node which is still joining the network to another node, to allow the latter to
     /// add the former to its routing table.
@@ -153,20 +133,17 @@ pub enum DirectMessage {
         signature_using_new: sign::Signature,
         /// Client authority from after relocation.
         new_client_auth: Authority<XorName>,
-        /// FIXME: Should be deprecated.
-        /// Tunnel connection indicator from sender which would override
-        /// intermediate peer_mgr states for routing table connection type.
-        /// Should not influence JoiningNode / Proxy states which are expected to be direct only.
-        is_tunnel: bool,
     },
     /// Sent from a node that needs a tunnel to be able to connect to the given peer.
-    TunnelRequest(PeerId),
+    TunnelRequest(PublicId),
     /// Sent as a response to `TunnelRequest` if the node can act as a tunnel.
-    TunnelSuccess(PeerId),
+    TunnelSuccess(PublicId),
+    /// Sent as a response to `TunnelSuccess` if the node is selected to act as a tunnel.
+    TunnelSelect(PublicId),
     /// Sent from a tunnel node to indicate that the given peer has disconnected.
-    TunnelClosed(PeerId),
+    TunnelClosed(PublicId),
     /// Sent to a tunnel node to indicate the tunnel is not needed any more.
-    TunnelDisconnect(PeerId),
+    TunnelDisconnect(PublicId),
     /// Request a proof to be provided by the joining node.
     ///
     /// This is sent from member of Group Y to the joining node.
@@ -406,9 +383,9 @@ impl SignedMessage {
             .iter()
             .filter_map(|(pub_id, sig)| {
                 // Remove if not in sending nodes or signature is invalid:
-                let is_valid = if let Authority::Client { ref client_key, .. } = self.content.src {
-                    client_key == pub_id.signing_public_key() &&
-                    sign::verify_detached(sig, &signed_bytes, client_key)
+                let is_valid = if let Authority::Client { ref client_id, .. } = self.content.src {
+                    client_id == pub_id &&
+                    sign::verify_detached(sig, &signed_bytes, client_id.signing_public_key())
                 } else {
                     self.is_sender(pub_id) &&
                     sign::verify_detached(sig, &signed_bytes, pub_id.signing_public_key())
@@ -579,8 +556,6 @@ pub enum MessageContent {
     /// This is sent by a joining node to its `NaeManager`s with the intent to become a full routing
     /// node with a new ID in an address range chosen by the `NaeManager`s.
     Relocate {
-        /// The relocating node's current public ID.
-        public_id: PublicId,
         /// The message's unique identifier.
         message_id: MessageId,
     },
@@ -683,8 +658,6 @@ pub enum MessageContent {
     /// Sent among Group Y to vote to accept a joining node.
     CandidateApproval {
         /// The joining node's current public ID.
-        old_public_id: PublicId,
-        /// The joining node's current public ID.
         new_public_id: PublicId,
         /// Client authority of the candidate.
         new_client_auth: Authority<XorName>,
@@ -724,9 +697,7 @@ impl Debug for DirectMessage {
             SectionListSignature(ref sec_list, _) => {
                 write!(formatter, "SectionListSignature({:?}, ..)", sec_list.prefix)
             }
-            BootstrapIdentify { ref public_id } => {
-                write!(formatter, "BootstrapIdentify {{ {:?} }}", public_id)
-            }
+            BootstrapIdentify => write!(formatter, "BootstrapIdentify"),
             BootstrapDeny => write!(formatter, "BootstrapDeny"),
             ClientIdentify { client_restriction: true, .. } => {
                 write!(formatter, "ClientIdentify (client only)")
@@ -734,12 +705,12 @@ impl Debug for DirectMessage {
             ClientIdentify { client_restriction: false, .. } => {
                 write!(formatter, "ClientIdentify (joining node)")
             }
-            NodeIdentify { .. } => write!(formatter, "NodeIdentify {{ .. }}"),
             CandidateIdentify { .. } => write!(formatter, "CandidateIdentify {{ .. }}"),
-            TunnelRequest(peer_id) => write!(formatter, "TunnelRequest({:?})", peer_id),
-            TunnelSuccess(peer_id) => write!(formatter, "TunnelSuccess({:?})", peer_id),
-            TunnelClosed(peer_id) => write!(formatter, "TunnelClosed({:?})", peer_id),
-            TunnelDisconnect(peer_id) => write!(formatter, "TunnelDisconnect({:?})", peer_id),
+            TunnelRequest(pub_id) => write!(formatter, "TunnelRequest({:?})", pub_id),
+            TunnelSuccess(pub_id) => write!(formatter, "TunnelSuccess({:?})", pub_id),
+            TunnelSelect(pub_id) => write!(formatter, "TunnelSelect({:?})", pub_id),
+            TunnelClosed(pub_id) => write!(formatter, "TunnelClosed({:?})", pub_id),
+            TunnelDisconnect(pub_id) => write!(formatter, "TunnelDisconnect({:?})", pub_id),
             ResourceProof {
                 ref seed,
                 ref target_size,
@@ -793,15 +764,7 @@ impl Debug for MessageContent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         use self::MessageContent::*;
         match *self {
-            Relocate {
-                ref public_id,
-                ref message_id,
-            } => {
-                write!(formatter,
-                       "Relocate {{ {:?}, {:?} }}",
-                       public_id,
-                       message_id)
-            }
+            Relocate { ref message_id } => write!(formatter, "Relocate {{ {:?} }}", message_id),
             ExpectCandidate {
                 ref old_public_id,
                 ref old_client_auth,
@@ -894,15 +857,12 @@ impl Debug for MessageContent {
                        message_id)
             }
             CandidateApproval {
-                ref old_public_id,
                 ref new_public_id,
                 ref new_client_auth,
                 ref sections,
             } => {
                 write!(formatter,
-                       "CandidateApproval {{ old: {:?}, new: {:?},  new: {:?}, sections: \
-                        {:?} }}",
-                       old_public_id,
+                       "CandidateApproval {{ new: {:?}, client: {:?}, sections: {:?} }}",
                        new_public_id,
                        new_client_auth,
                        sections)
@@ -1282,15 +1242,10 @@ impl UserMessageCache {
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
-    #[cfg(not(feature = "use-mock-crust"))]
-    use crust::PeerId;
     use data::{Data, ImmutableData};
     use id::FullId;
     use maidsafe_utilities::serialisation::serialise;
-    #[cfg(feature = "use-mock-crust")]
-    use mock_crust::crust::PeerId;
     use rand;
     use routing_table::{Authority, Prefix};
     use rust_sodium::crypto::hash::sha256;
@@ -1301,15 +1256,6 @@ mod tests {
     use types::MessageId;
     use xor_name::XorName;
 
-    #[cfg(not(feature = "use-mock-crust"))]
-    fn make_peer_id() -> PeerId {
-        PeerId(*FullId::new().public_id().encrypting_public_key())
-    }
-    #[cfg(feature = "use-mock-crust")]
-    fn make_peer_id() -> PeerId {
-        PeerId(0)
-    }
-
     #[test]
     fn signed_message_check_integrity() {
         let min_section_size = 1000;
@@ -1317,8 +1263,7 @@ mod tests {
         let full_id = FullId::new();
         let routing_message = RoutingMessage {
             src: Authority::Client {
-                client_key: *full_id.public_id().signing_public_key(),
-                peer_id: make_peer_id(),
+                client_id: *full_id.public_id(),
                 proxy_node_name: name,
             },
             dst: Authority::ClientManager(name),
