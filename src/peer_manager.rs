@@ -384,8 +384,6 @@ pub struct PeerManager {
     peers: HashMap<PublicId, Peer>,
     routing_table: RoutingTable<XorName>,
     our_public_id: PublicId,
-    /// Joining nodes which want to join our section, indexed by "old" public ID (i.e. their
-    /// pre-relocation IDs). Note that they will be indexed by their "new" IDs in the `peers`.
     candidate: Candidate,
 }
 
@@ -658,10 +656,8 @@ impl PeerManager {
                 } else if challenge.proof.is_empty() {
                     log_msg = format!("{}hasn't responded to our challenge yet ", log_msg);
                 } else {
-                    log_msg =
-                        format!("{}has sent {}% of resource proof ",
-                                      log_msg,
-                                      (challenge.proof.len() * 100) / challenge.target_size);
+                    let percent_done = challenge.proof.len() * 100 / challenge.target_size;
+                    log_msg = format!("{}has sent {}% of resource proof ", log_msg, percent_done);
                 }
                 trace!("{}and is not yet approved by our section.", log_msg);
             }
@@ -910,22 +906,22 @@ impl PeerManager {
 
     /// Marks the given peer as direct-connected.
     pub fn connected_to(&mut self, pub_id: &PublicId) {
-        let found = if let Some(peer) = self.peers.get_mut(pub_id) {
+        if let Some(peer) = self.peers.get_mut(pub_id) {
             match peer.state {
                 // ConnectSuccess may be received after establishing a tunnel
                 // to peer (and adding to RT).
                 PeerState::Routing(RoutingConnection::Tunnel) => {
                     peer.state = PeerState::Routing(RoutingConnection::Direct)
                 }
-                _ => peer.state = PeerState::Connected(false),
+                _ => {
+                    peer.timestamp = Instant::now();
+                    peer.state = PeerState::Connected(false);
+                }
             }
-            true
-        } else {
-            false
-        };
-        if !found {
-            self.insert_peer(Peer::new(*pub_id, PeerState::Connected(false), false));
+            return;
         }
+
+        self.insert_peer(Peer::new(*pub_id, PeerState::Connected(false), false));
     }
 
     /// Marks the given peer as tunnel-connected. Returns `false` if a tunnel is not needed.
@@ -938,6 +934,7 @@ impl PeerManager {
         }
 
         let found = if let Some(peer) = self.peers.get_mut(pub_id) {
+            peer.timestamp = Instant::now();
             peer.state = PeerState::Connected(true);
             true
         } else {

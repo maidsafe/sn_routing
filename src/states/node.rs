@@ -1929,12 +1929,17 @@ impl Node {
 
     /// Handles a `TunnelSelect` message from `src`: `dst`.
     fn handle_tunnel_select(&mut self, src: PublicId, dst: PublicId) {
-        if src < dst && self.tunnels.accept_clients(src, dst) {
+        if src < dst && self.peer_mgr.can_tunnel_for(&src, &dst) &&
+           self.tunnels.accept_clients(src, dst) {
             debug!("{:?} Agreed to act as tunnel node for {:?} - {:?}",
                    self,
                    src,
                    dst);
             self.send_direct_message(dst, DirectMessage::TunnelSuccess(src));
+        } else {
+            debug!("{:?} Rejecting TunnelSelect from {} - {}.", self, src, dst);
+            let message = DirectMessage::TunnelClosed(dst);
+            self.send_direct_message(src, message);
         }
     }
 
