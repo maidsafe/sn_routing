@@ -16,6 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use hex::{FromHex, FromHexError, ToHex};
+use num_bigint::BigUint;
 use rand;
 use routing_table::Xorable;
 use std::{fmt, ops};
@@ -98,9 +99,30 @@ impl XorName {
         self.cmp_distance(lhs, rhs) != Ordering::Greater
     }
 
-    // Private function exposed in fmt Debug {:?} and Display {} traits.
+    /// Private function exposed in fmt Debug {:?} and Display {} traits.
     fn get_debug_id(&self) -> String {
         format!("{:02x}{:02x}{:02x}..", self.0[0], self.0[1], self.0[2])
+    }
+
+    /// Used to construct an XorName from a `BigUint`. `value` should not represent a number greater
+    /// than or equal to `2^XOR_NAME_BITS`. If it does, the excessive most significant bits are
+    /// ignored.
+    fn from_big_uint(value: BigUint) -> XorName {
+        let little_endian_value = value.to_bytes_le();
+        if little_endian_value.len() > XOR_NAME_LEN {
+            error!("This BigUint value exceeds the maximum capable of being held as an XorName.");
+        }
+        // Convert the little-endian vector to a 32-byte big-endian array.
+        let mut xor_name = XorName::default();
+        for (xor_name_elt, little_endian_elt) in
+            xor_name
+                .0
+                .iter_mut()
+                .rev()
+                .zip(little_endian_value.iter()) {
+            *xor_name_elt = *little_endian_elt;
+        }
+        xor_name
     }
 }
 
@@ -215,6 +237,34 @@ impl ops::Not for XorName {
     }
 }
 
+impl ops::Sub for XorName {
+    type Output = XorName;
+    fn sub(self, rhs: XorName) -> Self::Output {
+        (&self).sub(&rhs)
+    }
+}
+
+impl<'a> ops::Sub for &'a XorName {
+    type Output = XorName;
+    fn sub(self, rhs: &XorName) -> Self::Output {
+        XorName::from_big_uint(BigUint::from_bytes_be(&self.0) - BigUint::from_bytes_be(&rhs.0))
+    }
+}
+
+impl ops::Div<u32> for XorName {
+    type Output = XorName;
+    fn div(self, rhs: u32) -> Self::Output {
+        (&self).div(&rhs)
+    }
+}
+
+impl<'a> ops::Div<&'a u32> for &'a XorName {
+    type Output = XorName;
+    fn div(self, rhs: &u32) -> Self::Output {
+        XorName::from_big_uint(BigUint::from_bytes_be(&self.0) / BigUint::new(vec![*rhs]))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -317,5 +367,55 @@ mod tests {
         assert_eq!(1, name.count_differing_bits(&one_bit));
         let two_bits = one_bit.with_flipped_bit(100);
         assert_eq!(2, name.count_differing_bits(&two_bits));
+    }
+
+    #[test]
+    fn subtraction() {
+        for _ in 0..100000 {
+            let x = rand::random();
+            let y = rand::random();
+            let (larger, smaller) = if x > y { (x, y) } else { (y, x) };
+            assert_eq!(&xor_from_int(larger - smaller)[..],
+                       &(xor_from_int(larger) - xor_from_int(smaller))[..]);
+            assert_eq!(XorName::default(), xor_from_int(x) - xor_from_int(x));
+        }
+    }
+
+    #[test]
+    #[should_panic]
+    fn subtraction_underflow() {
+        let _ = xor_from_int(1_000_001) - xor_from_int(1_000_002);
+    }
+
+    #[test]
+    fn division() {
+        for _ in 0..100000 {
+            let x = rand::random();
+            let y = rand::random();
+            assert_eq!(xor_from_int(x / y as u64), xor_from_int(x) / y);
+            assert_eq!(xor_from_int(1), xor_from_int(y as u64) / y);
+        }
+    }
+
+    #[test]
+    #[should_panic]
+    fn division_by_zero() {
+        let _ = xor_from_int(1) / 0;
+    }
+
+    #[test]
+    fn from_int() {
+        assert_eq!(&xor_from_int(0xabcdef)[XOR_NAME_LEN - 3..],
+                   &[0xab, 0xcd, 0xef]);
+        assert_eq!(xor_from_int(0xabcdef)[..XOR_NAME_LEN - 3],
+                   XorName::default()[..XOR_NAME_LEN - 3]);
+    }
+
+    fn xor_from_int(x: u64) -> XorName {
+        let mut name = XorName::default();
+        for i in 0..8 {
+            name.0[XOR_NAME_LEN - 1 - i] = ((x >> (8 * i)) & 0xff) as u8;
+        }
+        name
     }
 }

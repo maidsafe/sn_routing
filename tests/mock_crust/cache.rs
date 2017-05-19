@@ -18,13 +18,15 @@
 use super::{TestNode, create_connected_clients, create_connected_nodes_until_split,
             gen_immutable_data, poll_all};
 use rand::Rng;
-use routing::{Authority, Data, Event, EventStream, MessageId, Prefix, Request, Response};
+use routing::{Authority, Event, EventStream, ImmutableData, MessageId, Prefix, Request, Response};
 use routing::mock_crust::Network;
 use std::sync::mpsc;
 
 // Generate random immutable data, but make sure the first node in the given
 // node slice (the proxy node) is not in the data's section.
-fn gen_immutable_data_not_in_first_node_section<T: Rng>(rng: &mut T, nodes: &[TestNode]) -> Data {
+fn gen_immutable_data_not_in_first_node_section<T: Rng>(rng: &mut T,
+                                                        nodes: &[TestNode])
+                                                        -> ImmutableData {
     let first_name = nodes[0].name();
     // We want to make sure the data is inserted into a different section. Since the
     // root prefix uses 0 bits, we will have at least one section starting bit 0 and at
@@ -55,15 +57,13 @@ fn response_caching() {
     // would originate from the proxy node and would never be relayed by it, thus
     // it would never be stored in the cache.
     let data = gen_immutable_data_not_in_first_node_section(&mut rng, &nodes);
-    let data_id = data.identifier();
+    let data_id = *data.name();
     let message_id = MessageId::new();
-    let dst = Authority::NaeManager(*data.name());
+    let dst = Authority::NaeManager(data_id);
 
     // No node has the data cached yet, so this request should reach the nodes
     // in the NAE manager section of the data.
-    unwrap!(clients[0]
-                .inner
-                .send_get_request(dst, data_id, message_id));
+    unwrap!(clients[0].inner.get_idata(dst, data_id, message_id));
 
     poll_all(&mut nodes, &mut clients);
 
@@ -71,16 +71,19 @@ fn response_caching() {
         loop {
             match node.try_next_ev() {
                 Ok(Event::Request {
-                       request: Request::Get(req_data_id, req_message_id),
+                       request: Request::GetIData {
+                           name: req_data_id,
+                           msg_id: req_message_id,
+                       },
                        src: req_src,
                        dst: req_dst,
                    }) => {
                     if req_data_id == data_id && req_message_id == message_id {
                         unwrap!(node.inner
-                                    .send_get_success(req_dst,
-                                                      req_src,
-                                                      data.clone(),
-                                                      req_message_id));
+                                    .send_get_idata_response(req_dst,
+                                                             req_src,
+                                                             Ok(data.clone()),
+                                                             req_message_id));
                         break;
                     }
                 }
@@ -95,7 +98,7 @@ fn response_caching() {
     expect_any_event!(
         clients[0],
         Event::Response {
-            response: Response::GetSuccess(ref res_data, res_message_id),
+            response: Response::GetIData { res: Ok(ref res_data), msg_id: res_message_id },
             src: Authority::NaeManager(ref src_name),
             ..
         } if *res_data == data &&
@@ -110,18 +113,15 @@ fn response_caching() {
 
     // The proxy node should have cached the data, so this request should only
     // hit the proxy node and not be relayed to the other nodes.
-    unwrap!(clients[0].inner.send_get_request(dst, data_id, message_id));
+    unwrap!(clients[0].inner.get_idata(dst, data_id, message_id));
 
     poll_all(&mut nodes, &mut clients);
-
-    // The client should receive ack for the request.
-    assert!(!clients[0].inner.has_unacknowledged());
 
     // The client should receive the response...
     expect_any_event!(
         clients[0],
         Event::Response {
-            response: Response::GetSuccess(ref res_data, res_message_id),
+            response: Response::GetIData { res: Ok(ref res_data), msg_id: res_message_id },
             src: Authority::ManagedNode(src_name),
             ..
         } if *res_data == data &&

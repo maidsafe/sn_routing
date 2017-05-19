@@ -17,7 +17,8 @@
 
 use super::{TestNode, create_connected_nodes, gen_immutable_data, poll_all,
             sort_nodes_by_distance_to};
-use routing::{Authority, Event, EventStream, MessageId, QUORUM, Response, XorName};
+use routing::{Authority, Event, EventStream, MessageId, QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
+              Response, XorName};
 use routing::mock_crust::Network;
 use std::sync::mpsc;
 
@@ -34,13 +35,14 @@ fn messages_accumulate_with_quorum() {
 
     let send = |node: &mut TestNode, dst: &Authority<XorName>, message_id: MessageId| {
         assert!(node.inner
-                    .send_get_success(src, *dst, data.clone(), message_id)
+                    .send_get_idata_response(src, *dst, Ok(data.clone()), message_id)
                     .is_ok());
     };
 
     let dst = Authority::ManagedNode(nodes[0].name()); // The closest node.
-    // The smallest number such that `quorum * 100 >= len * QUORUM`:
-    let quorum = (min_section_size * QUORUM - 1) / 100 + 1;
+    // The smallest number such that
+    // `quorum * QUORUM_DENOMINATOR > min_section_size * QUORUM_NUMERATOR`:
+    let quorum = 1 + (min_section_size * QUORUM_NUMERATOR) / QUORUM_DENOMINATOR;
 
     // Send a message from the section `src` to the node `dst`.
     // Only the `quorum`-th sender should cause accumulation and a
@@ -53,7 +55,8 @@ fn messages_accumulate_with_quorum() {
     expect_no_event!(nodes[0]);
     send(&mut nodes[quorum - 1], &dst, message_id);
     let _ = poll_all(&mut nodes, &mut []);
-    expect_next_event!(nodes[0], Event::Response { response: Response::GetSuccess(..), .. });
+    expect_next_event!(nodes[0],
+                       Event::Response { response: Response::GetIData { res: Ok(_), .. }, .. });
     send(&mut nodes[quorum], &dst, message_id);
     let _ = poll_all(&mut nodes, &mut []);
     expect_no_event!(nodes[0]);
@@ -69,7 +72,8 @@ fn messages_accumulate_with_quorum() {
     expect_no_event!(nodes[0]);
     send(&mut nodes[0], &dst, message_id);
     let _ = poll_all(&mut nodes, &mut []);
-    expect_next_event!(nodes[0], Event::Response { response: Response::GetSuccess(..), .. });
+    expect_next_event!(nodes[0],
+                       Event::Response { response: Response::GetIData { res: Ok(_), .. }, .. });
     send(&mut nodes[quorum + 1], &dst, message_id);
     let _ = poll_all(&mut nodes, &mut []);
     expect_no_event!(nodes[0]);
@@ -89,7 +93,8 @@ fn messages_accumulate_with_quorum() {
     send(&mut nodes[quorum - 1], &dst_grp, message_id);
     let _ = poll_all(&mut nodes, &mut []);
     for node in &mut *nodes {
-        expect_next_event!(node, Event::Response { response: Response::GetSuccess(..), .. });
+        expect_next_event!(node,
+                           Event::Response { response: Response::GetIData { res: Ok(_), .. }, .. });
     }
     send(&mut nodes[quorum], &dst_grp, message_id);
     let _ = poll_all(&mut nodes, &mut []);
@@ -111,7 +116,8 @@ fn messages_accumulate_with_quorum() {
     send(&mut nodes[0], &dst_grp, message_id);
     let _ = poll_all(&mut nodes, &mut []);
     for node in &mut *nodes {
-        expect_next_event!(node, Event::Response { response: Response::GetSuccess(..), .. });
+        expect_next_event!(node,
+                           Event::Response { response: Response::GetIData { res: Ok(_), .. }, .. });
     }
     send(&mut nodes[quorum + 1], &dst_grp, message_id);
     let _ = poll_all(&mut nodes, &mut []);

@@ -16,8 +16,8 @@
 // relating to use of the SAFE Network Software.
 
 use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
-use QUORUM;
-use ack_manager::{ACK_TIMEOUT_SECS, Ack, AckManager};
+use {QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
+use ack_manager::{Ack, AckManager};
 use action::Action;
 use cache::Cache;
 use crust::{ConnectionInfoResult, CrustError, CrustUser, PeerId, PrivConnectionInfo,
@@ -32,15 +32,13 @@ use itertools::Itertools;
 use log::LogLevel;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation;
-use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, MAX_PART_LEN, Message, MessageContent,
+use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, Message, MessageContent,
                RoutingMessage, SectionList, SignedMessage, UserMessage, UserMessageCache};
-use outbox::EventBox;
-#[cfg(feature = "use-mock-crust")]
-use outbox::EventBuf;
-use peer_manager::{ConnectionInfoPreparedResult, Peer, PeerManager, PeerState,
-                   RESOURCE_PROOF_DURATION_SECS, RoutingConnection, SectionMap};
+use outbox::{EventBox, EventBuf};
+use peer_manager::{ConnectionInfoPreparedResult, Peer, PeerManager, PeerState, RoutingConnection,
+                   SectionMap};
 use rand::{self, Rng};
-use resource_proof::ResourceProof;
+use resource_prover::{RESOURCE_PROOF_DURATION_SECS, ResourceProver};
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use routing_table::{Authority, OwnMergeState, Prefix, RemovalDetails, RoutingTable,
                     VersionedPrefix, Xorable};
@@ -48,26 +46,23 @@ use routing_table::Error as RoutingTableError;
 use rust_sodium::crypto::{box_, sign};
 use rust_sodium::crypto::hash::sha256;
 use section_list_cache::SectionListCache;
-use signature_accumulator::{ACCUMULATION_TIMEOUT_SECS, SignatureAccumulator};
+use signature_accumulator::SignatureAccumulator;
 use state_machine::Transition;
 use stats::Stats;
 use std::{cmp, fmt, iter, mem};
-use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeSet, VecDeque};
 #[cfg(feature = "use-mock-crust")]
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
-use std::iter::Iterator;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use timer::Timer;
 use tunnels::Tunnels;
-use types::MessageId;
-use utils;
+use types::{MessageId, RoutingActionSender};
+use utils::{self, DisplayDuration};
 use xor_name::XorName;
 
 /// Time (in seconds) after which a `Tick` event is sent.
 const TICK_TIMEOUT_SECS: u64 = 60;
-/// Time (in seconds) after which a `GetNodeName` request is resent.
-const GET_NODE_NAME_TIMEOUT_SECS: u64 = 60 + RESOURCE_PROOF_DURATION_SECS;
 /// The number of required leading zero bits for the resource proof
 const RESOURCE_PROOF_DIFFICULTY: u8 = 0;
 /// The total size of the resource proof data.
@@ -76,13 +71,6 @@ const RESOURCE_PROOF_TARGET_SIZE: usize = 250 * 1024 * 1024;
 const SU_MIN_TIMEOUT_SECS: u64 = 30;
 /// Maximal delay between two subsequent `SectionUpdate`s, in seconds.
 const SU_MAX_TIMEOUT_SECS: u64 = 300;
-/// Maximum time a new node will wait to receive `NodeApproval` after receiving a
-/// `GetNodeNameResponse`. This covers the built-in delay of the process and also allows time for
-/// the message to accumulate and be sent via four different routes.
-const APPROVAL_TIMEOUT_SECS: u64 = RESOURCE_PROOF_DURATION_SECS + ACCUMULATION_TIMEOUT_SECS +
-                                   (4 * ACK_TIMEOUT_SECS);
-/// Interval between displaying info about ongoing approval progress, in seconds.
-const APPROVAL_PROGRESS_INTERVAL_SECS: u64 = 30;
 /// Interval between displaying info about current candidate, in seconds.
 const CANDIDATE_STATUS_INTERVAL_SECS: u64 = 60;
 /// Duration for which `OwnSectionMerge` messages are kept in the cache, in seconds.
@@ -94,14 +82,13 @@ pub struct Node {
     ack_mgr: AckManager,
     cacheable_user_msg_cache: UserMessageCache,
     crust_service: Service,
+    /// ID from before relocating.
+    old_full_id: FullId,
     full_id: FullId,
-    get_approval_timer_token: Option<u64>,
-    approval_progress_timer_token: Option<u64>,
-    approval_expiry_time: Instant,
     is_first_node: bool,
     is_approved: bool,
-    /// The queue of routing messages addressed to us. These do not themselves need
-    /// forwarding, although they may wrap a message which needs forwarding.
+    /// The queue of routing messages addressed to us. These do not themselves need forwarding,
+    /// although they may wrap a message which needs forwarding.
     msg_queue: VecDeque<RoutingMessage>,
     peer_mgr: PeerManager,
     response_cache: Box<Cache>,
@@ -115,7 +102,9 @@ pub struct Node {
     user_msg_cache: UserMessageCache,
     /// Value which can be set in mock-crust tests to be used as the calculated name for the next
     /// relocation request received by this node.
-    next_node_name: Option<XorName>,
+    next_relocation_dst: Option<XorName>,
+    /// Interval used for relocation in mock crust tests.
+    next_relocation_interval: Option<(XorName, XorName)>,
     /// The current duration between `RoutingTableRequest`s we send. Doubles with every message.
     su_timeout: Duration,
     /// The timer token for sending the next `RoutingTableRequest`.
@@ -128,34 +117,29 @@ pub struct Node {
     candidate_timer_token: Option<u64>,
     /// The timer token for displaying the current candidate status.
     candidate_status_token: Option<u64>,
-    /// Map of ResourceProofResponse parts.
-    resource_proof_response_parts: HashMap<PeerId, Vec<DirectMessage>>,
-    /// Number of expected resource proof challengers.
-    challenger_count: usize,
-    /// Whether our proxy is expected to be sending us a resource proof challenge (in which case it
-    /// will be trivial) or not.
-    proxy_is_resource_proof_challenger: bool,
     /// Hold the kind of bootstrappers.
     bootstrappers: LruCache<PeerId, CrustUser>,
+    resource_prover: ResourceProver,
 }
 
 impl Node {
-    pub fn first(cache: Box<Cache>,
+    pub fn first(action_sender: RoutingActionSender,
+                 cache: Box<Cache>,
                  crust_service: Service,
-                 mut full_id: FullId,
+                 full_id: FullId,
                  min_section_size: usize,
                  timer: Timer)
                  -> Option<Self> {
-        let name = XorName(sha256::hash(&full_id.public_id().name().0).0);
-        full_id.public_id_mut().set_name(name);
-
-        let mut node = Self::new(cache,
+        let mut node = Self::new(action_sender,
+                                 cache,
                                  crust_service,
                                  true,
+                                 FullId::new(),
                                  full_id,
                                  min_section_size,
                                  Stats::new(),
-                                 timer);
+                                 timer,
+                                 0);
         if let Err(error) = node.crust_service.start_listening_tcp() {
             error!("{:?} Failed to start listening: {:?}", node, error);
             None
@@ -167,43 +151,46 @@ impl Node {
     }
 
     #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
-    pub fn from_bootstrapping(cache: Box<Cache>,
+    pub fn from_bootstrapping(our_section: BTreeSet<PublicId>,
+                              action_sender: RoutingActionSender,
+                              cache: Box<Cache>,
                               crust_service: Service,
-                              full_id: FullId,
+                              old_full_id: FullId,
+                              new_full_id: FullId,
                               min_section_size: usize,
                               proxy_peer_id: PeerId,
                               proxy_public_id: PublicId,
                               stats: Stats,
                               timer: Timer)
-                              -> Option<Self> {
-        let mut node = Self::new(cache,
+                              -> Self {
+        let mut node = Self::new(action_sender,
+                                 cache,
                                  crust_service,
                                  false,
-                                 full_id,
+                                 old_full_id,
+                                 new_full_id,
                                  min_section_size,
                                  stats,
-                                 timer);
-
+                                 timer,
+                                 our_section.len());
         let _ = node.peer_mgr.set_proxy(proxy_peer_id, proxy_public_id);
-        if let Err(error) = node.relocate() {
-            error!("{:?} Failed to start relocation: {:?}", node, error);
-            None
-        } else {
-            debug!("{:?} State changed to node.", node);
-            Some(node)
-        }
+        node.join(our_section, &proxy_public_id);
+        node
     }
 
     #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
-    fn new(cache: Box<Cache>,
+    fn new(action_sender: RoutingActionSender,
+           cache: Box<Cache>,
            crust_service: Service,
            first_node: bool,
-           full_id: FullId,
+           old_full_id: FullId,
+           new_full_id: FullId,
            min_section_size: usize,
            stats: Stats,
-           timer: Timer)
+           timer: Timer,
+           challenger_count: usize)
            -> Self {
-        let public_id = *full_id.public_id();
+        let public_id = *new_full_id.public_id();
         let tick_period = Duration::from_secs(TICK_TIMEOUT_SECS);
         let tick_timer_token = timer.schedule(tick_period);
         let user_msg_cache_duration = Duration::from_secs(USER_MSG_CACHE_EXPIRY_DURATION_SECS);
@@ -212,10 +199,8 @@ impl Node {
             cacheable_user_msg_cache:
                 UserMessageCache::with_expiry_duration(user_msg_cache_duration),
             crust_service: crust_service,
-            full_id: full_id,
-            get_approval_timer_token: None,
-            approval_progress_timer_token: None,
-            approval_expiry_time: Instant::now(),
+            old_full_id: old_full_id,
+            full_id: new_full_id,
             is_first_node: first_node,
             is_approved: first_node,
             msg_queue: VecDeque::new(),
@@ -226,21 +211,52 @@ impl Node {
             section_list_sigs: SectionListCache::new(),
             stats: stats,
             tick_timer_token: tick_timer_token,
-            timer: timer,
+            timer: timer.clone(),
             tunnels: Default::default(),
             user_msg_cache: UserMessageCache::with_expiry_duration(user_msg_cache_duration),
-            next_node_name: None,
+            next_relocation_dst: None,
+            next_relocation_interval: None,
             su_timeout: Duration::from_secs(SU_MIN_TIMEOUT_SECS),
             su_timer_token: None,
             routing_msg_backlog: vec![],
             merge_cache: LruCache::with_expiry_duration(Duration::from_secs(MERGE_TIMEOUT_SECS)),
             candidate_timer_token: None,
             candidate_status_token: None,
-            resource_proof_response_parts: HashMap::new(),
-            challenger_count: 0,
-            proxy_is_resource_proof_challenger: false,
             bootstrappers:
                 LruCache::with_expiry_duration(Duration::from_secs(BOOTSTRAPPER_HOLD_DUR_SECS)),
+            resource_prover: ResourceProver::new(action_sender, timer, challenger_count),
+        }
+    }
+
+    /// Called immediately after bootstrapping. Sends `ConnectionInfoRequest`s to all members of
+    /// `our_section` to then start the candidate approval process.
+    fn join(&mut self, our_section: BTreeSet<PublicId>, proxy_public_id: &PublicId) {
+        self.resource_prover.start();
+
+        trace!("{:?} Relocation completed.", self);
+        info!("{:?} Received relocation section. Establishing connections to {} peers.",
+              self,
+              our_section.len());
+
+        let src = Authority::Client {
+            client_key: *self.full_id.public_id().signing_public_key(),
+            proxy_node_name: *proxy_public_id.name(),
+            peer_id: self.crust_service.id(),
+        };
+        // There will be no events raised as a result of these calls, so safe to just use a
+        // throwaway `EventBox` here.
+        let mut outbox = EventBuf::new();
+        for pub_id in &our_section {
+            debug!("{:?} Sending connection info to {:?} on Relocation response.",
+                   self,
+                   pub_id);
+            let dst = Authority::ManagedNode(*pub_id.name());
+            if let Err(error) = self.send_connection_info_request(*pub_id, src, dst, &mut outbox) {
+                debug!("{:?} - Failed to send connection info to {:?}: {:?}",
+                       self,
+                       pub_id,
+                       error);
+            }
         }
     }
 
@@ -328,6 +344,11 @@ impl Node {
                 if let Transition::Terminate = self.handle_timeout(token, outbox) {
                     return Transition::Terminate;
                 }
+            }
+            Action::ResourceProofResult(peer_id, messages) => {
+                let msg = self.resource_prover
+                    .handle_action_res_proof(peer_id, messages);
+                self.send_direct_message(peer_id, msg);
             }
             Action::Terminate => {
                 return Transition::Terminate;
@@ -485,7 +506,10 @@ impl Node {
                    peer_id,
                    pub_id);
             if self.tunnels.tunnel_for(&peer_id).is_none() {
-                self.find_tunnel_for_peer(peer_id, &pub_id);
+                let valid = self.peer_mgr
+                    .get_peer(&peer_id)
+                    .map_or(false, |peer| peer.valid());
+                self.find_tunnel_for_peer(peer_id, &pub_id, valid);
             } else {
                 debug!("{:?} already has tunnel to peer {:?} with pub_id {:?}.",
                        self,
@@ -495,8 +519,10 @@ impl Node {
         }
     }
 
-    fn find_tunnel_for_peer(&mut self, peer_id: PeerId, pub_id: &PublicId) {
-        for (name, dst_peer_id) in self.peer_mgr.set_searching_for_tunnel(peer_id, *pub_id) {
+    fn find_tunnel_for_peer(&mut self, peer_id: PeerId, pub_id: &PublicId, valid: bool) {
+        for (name, dst_peer_id) in
+            self.peer_mgr
+                .set_searching_for_tunnel(peer_id, *pub_id, valid) {
             trace!("{:?} Asking {:?} to serve as a tunnel for {:?}.",
                    self,
                    name,
@@ -639,10 +665,11 @@ impl Node {
                 is_tunnel,
             } => {
                 if let Ok(public_id) = verify_signed_public_id(serialised_public_id, signature) {
-                    debug!("{:?} Handling NodeIdentify from {:?}.",
+                    debug!("{:?} Handling NodeIdentify from {:?} with tunnel status: {:?}.",
                            self,
-                           public_id.name());
-                    self.add_to_routing_table(&public_id, &peer_id, is_tunnel, outbox);
+                           public_id.name(),
+                           is_tunnel);
+                    self.handle_node_identify(&public_id, &peer_id, is_tunnel, outbox);
                 } else {
                     warn!("{:?} Signature check failed in NodeIdentify, so dropping peer {:?}.",
                           self,
@@ -651,19 +678,21 @@ impl Node {
                 }
             }
             CandidateIdentify {
-                ref serialised_public_id,
-                ref signature,
+                ref old_public_id,
+                ref new_public_id,
+                ref signature_using_old,
+                ref signature_using_new,
+                ref new_client_auth,
                 is_tunnel,
             } => {
-                if let Ok(public_id) = verify_signed_public_id(serialised_public_id, signature) {
-                    self.handle_candidate_identify(public_id, peer_id, is_tunnel, outbox);
-                } else {
-                    warn!("{:?} Signature check failed in CandidateIdentify, so dropping peer \
-                           {:?}.",
-                          self,
-                          peer_id);
-                    self.disconnect_peer(&peer_id, Some(outbox));
-                }
+                self.handle_candidate_identify(old_public_id,
+                                               new_public_id,
+                                               signature_using_old,
+                                               signature_using_new,
+                                               new_client_auth,
+                                               &peer_id,
+                                               is_tunnel,
+                                               outbox);
             }
             TunnelRequest(dst_id) => self.handle_tunnel_request(peer_id, dst_id),
             TunnelSuccess(dst_id) => self.handle_tunnel_success(peer_id, dst_id),
@@ -673,9 +702,15 @@ impl Node {
                 seed,
                 target_size,
                 difficulty,
-            } => self.handle_resource_proof_request(peer_id, seed, target_size, difficulty)?,
+            } => {
+                let log_ident = format!("{:?}", self);
+                self.resource_prover
+                    .handle_request(peer_id, seed, target_size, difficulty, log_ident);
+            }
             ResourceProofResponseReceipt => {
-                self.handle_resource_proof_response_receipt(peer_id);
+                if let Some(msg) = self.resource_prover.handle_receipt(peer_id) {
+                    self.send_direct_message(peer_id, msg);
+                }
             }
             ResourceProofResponse {
                 part_index,
@@ -892,7 +927,8 @@ impl Node {
         // TODO(MAID-1677): Remove this once messages are fully validated.
         // Expect group/section messages to be sent by at least a quorum of `min_section_size`.
         if self.our_prefix().bit_count() > 0 && signed_msg.routing_message().src.is_multiple() &&
-           signed_msg.src_size() * 100 < QUORUM * self.min_section_size() {
+           signed_msg.src_size() * QUORUM_DENOMINATOR <=
+           self.min_section_size() * QUORUM_NUMERATOR {
             warn!("{:?} Not enough signatures in {:?}.", self, signed_msg);
             return Err(RoutingError::NotEnoughSignatures);
         }
@@ -952,9 +988,9 @@ impl Node {
                     self.routing_msg_backlog.push(routing_msg);
                     return Ok(());
                 }
-                GetNodeName { .. } |
+                Relocate { .. } |
                 ConnectionInfoResponse { .. } |
-                GetNodeNameResponse { .. } |
+                RelocateResponse { .. } |
                 Ack(..) |
                 NodeApproval { .. } => {
                     // Handle like normal
@@ -969,8 +1005,8 @@ impl Node {
         }
 
         match (routing_msg.content, routing_msg.src, routing_msg.dst) {
-            (GetNodeName {
-                 current_id,
+            (Relocate {
+                 public_id,
                  message_id,
              },
              Client {
@@ -979,37 +1015,40 @@ impl Node {
                  peer_id,
              },
              Section(dst_name)) => {
-                self.handle_get_node_name_request(current_id,
-                                                  client_key,
-                                                  proxy_node_name,
-                                                  dst_name,
-                                                  peer_id,
-                                                  message_id)
+                self.handle_relocate_request(public_id,
+                                             client_key,
+                                             proxy_node_name,
+                                             dst_name,
+                                             peer_id,
+                                             message_id)
             }
-            (GetNodeNameResponse {
-                 relocated_id,
-                 section,
-                 ..
-             },
-             Section(_),
-             dst) => Ok(self.handle_get_node_name_response(relocated_id, section, dst, outbox)),
             (ExpectCandidate {
-                 expect_id,
-                 client_auth,
+                 old_public_id,
+                 old_client_auth,
                  message_id,
              },
              Section(_),
-             Section(_)) => {
-                self.handle_expect_candidate(expect_id, client_auth, message_id, outbox)
+             relocation_dst @ Section(_)) => {
+                self.handle_expect_candidate(old_public_id,
+                                             old_client_auth,
+                                             relocation_dst,
+                                             message_id,
+                                             outbox)
             }
             (AcceptAsCandidate {
-                 expect_id,
-                 client_auth,
+                 old_public_id,
+                 old_client_auth,
+                 target_interval,
                  message_id,
              },
              Section(_),
-             Section(_)) => {
-                self.handle_accept_as_candidate(expect_id, client_auth, message_id, outbox)
+             dst @ Section(_)) => {
+                self.handle_accept_as_candidate(old_public_id,
+                                                old_client_auth,
+                                                dst,
+                                                target_interval,
+                                                message_id,
+                                                outbox)
             }
             (ConnectionInfoRequest {
                  encrypted_conn_info,
@@ -1059,12 +1098,18 @@ impl Node {
                                                      dst)
             }
             (CandidateApproval {
-                 candidate_id,
-                 client_auth,
+                 old_public_id,
+                 new_public_id,
+                 new_client_auth,
                  ..
              },
              Section(_),
-             Section(_)) => self.handle_candidate_approval(candidate_id, client_auth, outbox),
+             Section(_)) => {
+                self.handle_candidate_approval(old_public_id,
+                                               new_public_id,
+                                               new_client_auth,
+                                               outbox)
+            }
             (NodeApproval { sections }, Section(_), Client { .. }) => {
                 self.handle_node_approval(&sections, outbox)
             }
@@ -1116,8 +1161,9 @@ impl Node {
     }
 
     fn handle_candidate_approval(&mut self,
-                                 candidate_id: PublicId,
-                                 client_auth: Authority<XorName>,
+                                 old_pub_id: PublicId,
+                                 new_pub_id: PublicId,
+                                 new_client_auth: Authority<XorName>,
                                  outbox: &mut EventBox)
                                  -> Result<(), RoutingError> {
         for peer_id in self.peer_mgr.remove_expired_candidates() {
@@ -1128,28 +1174,31 @@ impl Node {
         // Or a node may receive CandidateApproval before connection established.
         // If we are not connected to the candidate, we do not want to add them
         // to our RT.
+        // This will flag peer as valid if its found in peer_mgr regardless of their
+        // connection status to us.
         let opt_peer_id = match self.peer_mgr
-                  .handle_candidate_approval(*candidate_id.name(), client_auth) {
+                  .handle_candidate_approval(&old_pub_id, &new_pub_id) {
             Ok(peer_id) => peer_id,
             Err(_) => {
                 let src = Authority::ManagedNode(*self.name());
-                if let Err(error) = self.send_connection_info_request(candidate_id,
+                if let Err(error) = self.send_connection_info_request(new_pub_id,
                                                                       src,
-                                                                      client_auth,
+                                                                      new_client_auth,
                                                                       outbox) {
-                    debug!("{:?} - Failed to send connection info to {:?}: {:?}",
+                    debug!("{:?} - Failed to send connection info to {}: {:?}",
                            self,
-                           candidate_id,
+                           new_pub_id.name(),
                            error);
                 }
                 None
             }
         };
 
-        info!("{:?} Our section with {:?} has approved candidate {}.",
+        info!("{:?} Our section with {:?} has approved candidate {}->{}.",
               self,
               self.our_prefix(),
-              candidate_id.name());
+              old_pub_id.name(),
+              new_pub_id.name());
         if self.we_want_to_merge() || self.they_want_to_merge() {
             debug!("{:?} Not sending NodeApproval since our section is currently merging.",
                    self);
@@ -1157,15 +1206,14 @@ impl Node {
             debug!("{:?} Not sending NodeApproval since our routing table isn't valid.",
                    self);
         } else {
-            let src = Authority::Section(*candidate_id.name());
+            let src = Authority::Section(*new_pub_id.name());
             // Send the _current_ routing table. If this doesn't accumulate, we expect the candidate
             // to disconnect from us.
-            let content =
-                MessageContent::NodeApproval { sections: self.peer_mgr.pub_ids_by_section() };
-            if let Err(error) = self.send_routing_message(src, client_auth, content) {
+            let content = MessageContent::NodeApproval { sections: self.peer_mgr.ideal_rt() };
+            if let Err(error) = self.send_routing_message(src, new_client_auth, content) {
                 debug!("{:?} Failed sending NodeApproval to {}: {:?}",
                        self,
-                       candidate_id.name(),
+                       new_pub_id.name(),
                        error);
             }
         }
@@ -1175,7 +1223,7 @@ impl Node {
             // check if the given peer_id will be reached via a tunnel when we send
             // messages and add to RT accordingly. Ideally this should not have to rely on tunnels.
             let is_tunnel = self.tunnels.tunnel_for(&peer_id).is_some();
-            self.add_to_routing_table(&candidate_id, &peer_id, is_tunnel, outbox);
+            self.add_to_routing_table(&new_pub_id, &peer_id, is_tunnel, outbox);
         }
         Ok(())
     }
@@ -1206,8 +1254,8 @@ impl Node {
             return Err(From::from(error));
         }
 
-        self.get_approval_timer_token = None;
-        self.approval_progress_timer_token = None;
+        self.resource_prover.handle_approval();
+
         if let Err(error) = self.peer_mgr
                .add_prefixes(sections.keys().cloned().collect()) {
             info!("{:?} Received invalid prefixes in NodeApproval: {:?}. Restarting.",
@@ -1263,83 +1311,11 @@ impl Node {
             .into_iter()
             .rev()
             .foreach(|msg| self.msg_queue.push_front(msg));
-        self.resource_proof_response_parts.clear();
         self.reset_su_timer();
         self.candidate_status_token =
             Some(self.timer
                      .schedule(Duration::from_secs(CANDIDATE_STATUS_INTERVAL_SECS)));
         Ok(())
-    }
-
-    fn handle_resource_proof_request(&mut self,
-                                     peer_id: PeerId,
-                                     seed: Vec<u8>,
-                                     target_size: usize,
-                                     difficulty: u8)
-                                     -> Result<(), RoutingError> {
-        if self.resource_proof_response_parts.is_empty() {
-            info!("{:?} Starting approval process to test this node's resources. This will take \
-                   at least {} seconds.",
-                  self,
-                  RESOURCE_PROOF_DURATION_SECS);
-        }
-        let start = Instant::now();
-        let rp_object = ResourceProof::new(target_size, difficulty);
-        let mut proof = rp_object.create_proof_data(&seed);
-        let leading_zero_bytes = rp_object.create_proof(&mut proof);
-        let elapsed = start.elapsed();
-        let parts = proof
-            .into_iter()
-            .chunks(MAX_PART_LEN)
-            .into_iter()
-            .map(|chunk| chunk.collect_vec())
-            .collect_vec();
-        let part_count = parts.len();
-        let mut messages = parts
-            .into_iter()
-            .enumerate()
-            .rev()
-            .map(|(part_index, part)| {
-                     DirectMessage::ResourceProofResponse {
-                         part_index: part_index,
-                         part_count: part_count,
-                         proof: part,
-                         leading_zero_bytes: leading_zero_bytes,
-                     }
-                 })
-            .collect_vec();
-        let first_message = match messages.pop() {
-            Some(message) => message,
-            None => {
-                DirectMessage::ResourceProofResponse {
-                    part_index: 0,
-                    part_count: 1,
-                    proof: vec![],
-                    leading_zero_bytes: leading_zero_bytes,
-                }
-            }
-        };
-        let _ = self.resource_proof_response_parts
-            .insert(peer_id, messages);
-        self.send_direct_message(peer_id, first_message);
-        trace!("{:?} created proof data in {}. Min section size: {}, Target size: {}, \
-                Difficulty: {}, Seed: {:?}",
-               self,
-               Self::format(elapsed),
-               self.min_section_size(),
-               target_size,
-               difficulty,
-               seed);
-        Ok(())
-    }
-
-    fn handle_resource_proof_response_receipt(&mut self, peer_id: PeerId) {
-        let popped_message = self.resource_proof_response_parts
-            .get_mut(&peer_id)
-            .and_then(Vec::pop);
-        if let Some(message) = popped_message {
-            self.send_direct_message(peer_id, message);
-        }
     }
 
     fn handle_resource_proof_response(&mut self,
@@ -1355,21 +1331,26 @@ impl Node {
             return;
         }
 
-        let name = if let Some(name) = self.peer_mgr.get_peer_name(&peer_id) {
-            *name
+        let (old_pub_id, debug_output) = if let Some((old_pub_id, new_pub_id)) =
+            self.peer_mgr.get_candidate_from_peer_id(&peer_id) {
+            (old_pub_id, format!("{}->{}", old_pub_id.name(), new_pub_id.name()))
         } else {
-            debug!("{:?} Failed to get peer name while handling resource proof response from {:?}",
+            debug!("{:?} Failed to find candidate while handling resource proof response from {:?}",
                    self,
                    peer_id);
             return;
         };
 
         match self.peer_mgr
-                  .verify_candidate(&name, part_index, part_count, proof, leading_zero_bytes) {
+                  .verify_candidate(&old_pub_id,
+                                    part_index,
+                                    part_count,
+                                    proof,
+                                    leading_zero_bytes) {
             Err(error) => {
                 debug!("{:?} Failed to verify candidate {}: {:?}",
                        self,
-                       name,
+                       debug_output,
                        error);
                 self.candidate_timer_token = None;
             }
@@ -1382,8 +1363,8 @@ impl Node {
                 info!("{:?} Candidate {} passed our challenge in {}. Sending approval to our \
                        section with {:?}.",
                       self,
-                      name,
-                      Self::format(elapsed),
+                      debug_output,
+                      elapsed.display_secs(),
                       self.our_prefix());
                 self.candidate_timer_token = None;
                 self.send_candidate_approval();
@@ -1392,8 +1373,8 @@ impl Node {
                 info!("{:?} Candidate {} passed our challenge in {}. Waiting to send approval to \
                        our section with {:?}.",
                       self,
-                      name,
-                      Self::format(elapsed),
+                      debug_output,
+                      elapsed.display_secs(),
                       self.our_prefix());
             }
         }
@@ -1461,34 +1442,6 @@ impl Node {
         Ok(false)
     }
 
-    fn relocate(&mut self) -> Result<(), RoutingError> {
-        let duration = Duration::from_secs(GET_NODE_NAME_TIMEOUT_SECS);
-        self.get_approval_timer_token = Some(self.timer.schedule(duration));
-
-        let request_content = MessageContent::GetNodeName {
-            current_id: *self.full_id.public_id(),
-            message_id: MessageId::new(),
-        };
-
-        let proxy_name = if let Some((_, proxy_pub_id)) = self.peer_mgr.proxy() {
-            *proxy_pub_id.name()
-        } else {
-            return Err(RoutingError::ProxyConnectionNotFound);
-        };
-
-        let src = Authority::Client {
-            client_key: *self.full_id.public_id().signing_public_key(),
-            proxy_node_name: proxy_name,
-            peer_id: self.crust_service.id(),
-        };
-        let dst = Authority::Section(*self.name());
-
-        info!("{:?} Requesting a relocated name from the network. This can take a while.",
-              self);
-
-        self.send_routing_message(src, dst, request_content)
-    }
-
     fn send_bootstrap_identify(&mut self, peer_id: PeerId) {
         let direct_message =
             DirectMessage::BootstrapIdentify { public_id: *self.full_id.public_id() };
@@ -1502,12 +1455,6 @@ impl Node {
                               outbox: &mut EventBox) {
         if !client_restriction && !self.crust_service.is_peer_whitelisted(&peer_id) {
             warn!("{:?} Client is not whitelisted, so dropping connection.",
-                  self);
-            self.disconnect_peer(&peer_id, Some(outbox));
-            return;
-        }
-        if *public_id.name() != XorName(sha256::hash(&public_id.signing_public_key().0).0) {
-            warn!("{:?} Incoming connection not validated as a proper client, so dropping it.",
                   self);
             self.disconnect_peer(&peer_id, Some(outbox));
             return;
@@ -1556,15 +1503,45 @@ impl Node {
         self.send_bootstrap_identify(peer_id)
     }
 
+    #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
     fn handle_candidate_identify(&mut self,
-                                 public_id: PublicId,
-                                 peer_id: PeerId,
+                                 old_pub_id: &PublicId,
+                                 new_pub_id: &PublicId,
+                                 signature_using_old: &sign::Signature,
+                                 signature_using_new: &sign::Signature,
+                                 new_client_auth: &Authority<XorName>,
+                                 peer_id: &PeerId,
                                  is_tunnel: bool,
                                  outbox: &mut EventBox) {
-        let name = public_id.name();
-        debug!("{:?} Handling CandidateIdentify from {:?}.", self, name);
-        let (difficulty, target_size) = if self.crust_service.is_peer_hard_coded(&peer_id) ||
-                                           self.peer_mgr.get_joining_node(&peer_id).is_some() {
+        debug!("{:?} Handling CandidateIdentify from {}->{}.",
+               self,
+               old_pub_id.name(),
+               new_pub_id.name());
+        if !self.is_candidate_identify_valid(old_pub_id,
+                                             new_pub_id,
+                                             signature_using_old,
+                                             signature_using_new) {
+            warn!("{:?} Signature check failed in CandidateIdentify, so dropping peer {:?}.",
+                  self,
+                  peer_id);
+            self.disconnect_peer(peer_id, Some(outbox));
+        }
+
+        // If this is a valid node in peer_mgr but the Candidate has sent us a CandidateIdentify,
+        // it might have not yet handled its NodeApproval message. Check and handle accordingly here
+        // NOTE: Want to only check for peer by new_name since we might not yet have their peer_id.
+        if self.peer_mgr
+               .get_peer_by_name(new_pub_id.name())
+               .map_or(false, |peer| peer.valid()) {
+            debug!("{:?} Switching CandidateIdentify received from {} to NodeIdentify.",
+                   self,
+                   new_pub_id.name());
+            self.handle_node_identify(new_pub_id, peer_id, is_tunnel, outbox);
+            return;
+        }
+
+        let (difficulty, target_size) = if self.crust_service.is_peer_hard_coded(peer_id) ||
+                                           self.peer_mgr.get_joining_node(peer_id).is_some() {
             (0, 1)
         } else {
             (RESOURCE_PROOF_DIFFICULTY,
@@ -1576,8 +1553,10 @@ impl Node {
             rand::thread_rng().gen_iter().take(10).collect()
         };
         match self.peer_mgr
-                  .handle_candidate_identify(&public_id,
-                                             &peer_id,
+                  .handle_candidate_identify(old_pub_id,
+                                             new_pub_id,
+                                             new_client_auth,
+                                             peer_id,
                                              target_size,
                                              difficulty,
                                              seed.clone(),
@@ -1588,28 +1567,86 @@ impl Node {
                     target_size: target_size,
                     difficulty: difficulty,
                 };
-                info!("{:?} Sending resource proof challenge to candidate {}",
+                info!("{:?} Sending resource proof challenge to candidate {}->{}",
                       self,
-                      public_id.name());
-                self.send_direct_message(peer_id, direct_message);
+                      old_pub_id.name(),
+                      new_pub_id.name());
+                self.send_direct_message(*peer_id, direct_message);
             }
             Ok(false) => {
-                info!("{:?} Adding candidate {} to routing table without sending resource proof \
-                       challenge as section has already approved it.",
+                info!("{:?} Adding candidate {}->{} to routing table without sending resource \
+                       proof challenge as section has already approved it.",
                       self,
-                      public_id.name());
-                self.add_to_routing_table(&public_id, &peer_id, is_tunnel, outbox);
+                      old_pub_id.name(),
+                      new_pub_id.name());
+                self.add_to_routing_table(new_pub_id, peer_id, is_tunnel, outbox);
             }
             Err(RoutingError::CandidateIsTunnelling) => {
-                debug!("{:?} handling a tunnelling candidate {:?}", self, name);
+                debug!("{:?} handling a tunnelling candidate {}->{}",
+                       self,
+                       old_pub_id.name(),
+                       new_pub_id.name());
             }
             Err(error) => {
-                debug!("{:?} failed to handle CandidateIdentify from {:?}: {:?} - disconnecting",
+                debug!("{:?} failed to handle CandidateIdentify {}->{}: {:?} - disconnecting",
                        self,
-                       name,
+                       old_pub_id.name(),
+                       new_pub_id.name(),
                        error);
-                self.disconnect_peer(&peer_id, Some(outbox));
+                self.disconnect_peer(peer_id, Some(outbox));
             }
+        }
+    }
+
+    fn is_candidate_identify_valid(&self,
+                                   old_pub_id: &PublicId,
+                                   new_pub_id: &PublicId,
+                                   signature_using_old: &sign::Signature,
+                                   signature_using_new: &sign::Signature)
+                                   -> bool {
+        let old_and_new_pub_ids = (old_pub_id, new_pub_id);
+        let mut signed_data = match serialisation::serialise(&old_and_new_pub_ids) {
+            Ok(result) => result,
+            Err(error) => {
+                error!("Failed to serialise public IDs: {:?}", error);
+                return false;
+            }
+        };
+        if !sign::verify_detached(signature_using_old,
+                                  &signed_data,
+                                  old_pub_id.signing_public_key()) {
+            debug!("{:?} CandidateIdentify from {}->{} has invalid old signature.",
+                   self,
+                   old_pub_id.name(),
+                   new_pub_id.name());
+            return false;
+        }
+        signed_data.extend_from_slice(&signature_using_old.0);
+        if !sign::verify_detached(signature_using_new,
+                                  &signed_data,
+                                  new_pub_id.signing_public_key()) {
+            debug!("{:?} CandidateIdentify from {}->{} has invalid new signature.",
+                   self,
+                   old_pub_id.name(),
+                   new_pub_id.name());
+            return false;
+        }
+        true
+    }
+
+    fn handle_node_identify(&mut self,
+                            public_id: &PublicId,
+                            peer_id: &PeerId,
+                            is_tunnel: bool,
+                            outbox: &mut EventBox) {
+        let peer_valid = if let Some(peer) = self.peer_mgr.get_peer_by_name(public_id.name()) {
+            peer.valid()
+        } else {
+            return;
+        };
+        self.peer_mgr.set_peer_id(public_id.name(), *peer_id);
+        if peer_valid {
+            self.add_to_routing_table(public_id, peer_id, is_tunnel, outbox);
         }
     }
 
@@ -1747,19 +1784,19 @@ impl Node {
         let encrypted_conn_info = box_::seal(&encoded_connection_info,
                                              &nonce,
                                              their_pub_id.encrypting_public_key(),
-                                             self.full_id().encrypting_private_key());
+                                             self.full_id.encrypting_private_key());
         let msg_content = if let Some(msg_id) = msg_id {
             MessageContent::ConnectionInfoResponse {
                 encrypted_conn_info: encrypted_conn_info,
                 nonce: nonce.0,
-                pub_id: *self.full_id().public_id(),
+                pub_id: *self.full_id.public_id(),
                 msg_id: msg_id,
             }
         } else {
             MessageContent::ConnectionInfoRequest {
                 encrypted_conn_info: encrypted_conn_info,
                 nonce: nonce.0,
-                pub_id: *self.full_id().public_id(),
+                pub_id: *self.full_id.public_id(),
                 msg_id: MessageId::new(),
             }
         };
@@ -1836,14 +1873,14 @@ impl Node {
     fn handle_connection_info_request(&mut self,
                                       encrypted_connection_info: Vec<u8>,
                                       nonce_bytes: [u8; box_::NONCEBYTES],
-                                      public_id: PublicId,
+                                      pub_id: PublicId,
                                       message_id: MessageId,
                                       src: Authority<XorName>,
                                       dst: Authority<XorName>,
                                       outbox: &mut EventBox)
                                       -> Result<(), RoutingError> {
         let name = match src {
-            Authority::Client { .. } => public_id.name(),
+            Authority::Client { .. } => pub_id.name(),
             Authority::ManagedNode(ref name) => name,
             _ => unreachable!(),
         };
@@ -1851,23 +1888,23 @@ impl Node {
         let their_connection_info =
             self.decrypt_connection_info(&encrypted_connection_info,
                                          &box_::Nonce(nonce_bytes),
-                                         &public_id)?;
+                                         &pub_id)?;
         let peer_id = their_connection_info.id();
         use peer_manager::ConnectionInfoReceivedResult::*;
         match self.peer_mgr
                   .connection_info_received(src,
                                             dst,
-                                            public_id,
+                                            pub_id,
                                             their_connection_info,
                                             message_id) {
             Ok(Ready(our_info, their_info)) => {
                 debug!("{:?} Already sent a connection info request to {:?} ({:?}); resending \
                         our same details as a response.",
                        self,
-                       public_id.name(),
+                       pub_id.name(),
                        peer_id);
                 self.send_connection_info(our_info.to_pub_connection_info(),
-                                          public_id,
+                                          pub_id,
                                           dst,
                                           src,
                                           Some(message_id));
@@ -1881,8 +1918,23 @@ impl Node {
             Ok(IsProxy) |
             Ok(IsClient) |
             Ok(IsJoiningNode) => {
-                self.send_node_identify(peer_id, false);
-                self.add_to_routing_table(&public_id, &peer_id, false, outbox);
+                // TODO: we should not be getting conn info req from Proxy/JoiningNode
+
+                log_or_panic!(LogLevel::Error,
+                              "{:?} Received ConnectionInfoRequest from peer {} \
+                              with invalid state.",
+                              self,
+                              pub_id.name());
+                let x = self.peer_mgr
+                    .get_peer_by_name(pub_id.name())
+                    .map(|peer| (peer.peer_id().cloned(), peer.valid()));
+
+                if let Some((Some(peer_id), valid)) = x {
+                    if valid {
+                        self.send_node_identify(peer_id, false);
+                        self.add_to_routing_table(&pub_id, &peer_id, false, outbox);
+                    }
+                }
             }
             Ok(Waiting) | Ok(IsConnected) | Err(_) => (),
         }
@@ -1898,6 +1950,12 @@ impl Node {
                                        dst: Authority<XorName>)
                                        -> Result<(), RoutingError> {
         self.peer_mgr.allow_connect(&src)?;
+        if self.peer_mgr
+               .get_state_by_name(public_id.name())
+               .is_none() {
+            return Err(RoutingError::InvalidDestination);
+        }
+
         let their_connection_info =
             self.decrypt_connection_info(&encrypted_connection_info,
                                          &box_::Nonce(nonce_bytes),
@@ -2018,7 +2076,7 @@ impl Node {
                    pub_id.name(),
                    peer_id);
         } else if let Some(&public_id) = self.peer_mgr.get_proxy_public_id(peer_id) {
-            debug!("{:?} Not disconnecting proxy node {:?} ({:?}).",
+            debug!("{:?} Not disconnecting proxy node {} ({:?}).",
                    self,
                    public_id.name(),
                    peer_id);
@@ -2058,19 +2116,16 @@ impl Node {
     }
 
     // Received by X; From A -> X
-    fn handle_get_node_name_request(&mut self,
-                                    mut their_public_id: PublicId,
-                                    client_key: sign::PublicKey,
-                                    proxy_name: XorName,
-                                    dst_name: XorName,
-                                    peer_id: PeerId,
-                                    message_id: MessageId)
-                                    -> Result<(), RoutingError> {
-        let hashed_key = sha256::hash(&client_key.0);
-        let section_matching_client_name = XorName(hashed_key.0);
-
-        // Validate Client (relocating node) has contacted the correct Section-X
-        if section_matching_client_name != dst_name {
+    fn handle_relocate_request(&mut self,
+                               relocating_node_id: PublicId,
+                               client_key: sign::PublicKey,
+                               proxy_name: XorName,
+                               dst_name: XorName,
+                               peer_id: PeerId,
+                               message_id: MessageId)
+                               -> Result<(), RoutingError> {
+        // Validate relocating node has contacted the correct Section-X
+        if *relocating_node_id.name() != dst_name {
             return Err(RoutingError::InvalidDestination);
         }
 
@@ -2078,17 +2133,14 @@ impl Node {
             Some(close_section) => close_section.into_iter().collect(),
             None => return Err(RoutingError::InvalidDestination),
         };
-        let relocated_name = self.next_node_name
-            .unwrap_or_else(|| {
-                                utils::calculate_relocated_name(close_section,
-                                                                their_public_id.name())
-                            });
-        their_public_id.set_name(relocated_name);
+        let relocation_dst =
+            self.next_relocation_dst
+                .unwrap_or_else(|| utils::calculate_relocation_dst(close_section, &dst_name));
 
         // From X -> Y; Send to close section of the relocated name
         let request_content = MessageContent::ExpectCandidate {
-            expect_id: their_public_id,
-            client_auth: Authority::Client {
+            old_public_id: relocating_node_id,
+            old_client_auth: Authority::Client {
                 client_key: client_key,
                 proxy_node_name: proxy_name,
                 peer_id: peer_id,
@@ -2097,69 +2149,17 @@ impl Node {
         };
 
         let src = Authority::Section(dst_name);
-        let dst = Authority::Section(relocated_name);
+        let dst = Authority::Section(relocation_dst);
         self.send_routing_message(src, dst, request_content)
-    }
-
-    // Context: we're a new node joining a section. This message should have been sent by each node
-    // in the target section with the new node name and the section for resource proving.
-    fn handle_get_node_name_response(&mut self,
-                                     relocated_id: PublicId,
-                                     section: BTreeSet<PublicId>,
-                                     dst: Authority<XorName>,
-                                     outbox: &mut EventBox) {
-        if !self.full_id.public_id().is_client_id() {
-            warn!("{:?} Received duplicate GetNodeName response.", self);
-            return;
-        }
-
-        let duration = Duration::from_secs(APPROVAL_TIMEOUT_SECS);
-        self.approval_expiry_time = Instant::now() + duration;
-        self.get_approval_timer_token = Some(self.timer.schedule(duration));
-        self.approval_progress_timer_token =
-            Some(self.timer
-                     .schedule(Duration::from_secs(APPROVAL_PROGRESS_INTERVAL_SECS)));
-
-        self.full_id
-            .public_id_mut()
-            .set_name(*relocated_id.name());
-        self.peer_mgr
-            .reset_routing_table(*self.full_id.public_id());
-        self.challenger_count = section.len();
-        if let Some((_, proxy_public_id)) = self.peer_mgr.proxy() {
-            if section.contains(proxy_public_id) {
-                self.proxy_is_resource_proof_challenger = true;
-                // exclude the proxy as it sends a trivial challenge
-                self.challenger_count -= 1;
-            }
-        }
-        trace!("{:?} GetNodeName completed. Prefixes: {:?}",
-               self,
-               self.routing_table().prefixes());
-        info!("{:?} Received relocated name. Establishing connections to {} peers.",
-              self,
-              section.len());
-
-        for pub_id in &section {
-            debug!("{:?} Sending connection info to {:?} on GetNodeName response.",
-                   self,
-                   pub_id);
-            let node_auth = Authority::ManagedNode(*pub_id.name());
-            if let Err(error) = self.send_connection_info_request(*pub_id, dst, node_auth, outbox) {
-                debug!("{:?} - Failed to send connection info to {:?}: {:?}",
-                       self,
-                       pub_id,
-                       error);
-            }
-        }
     }
 
     // Received by Y; From X -> Y
     // Context: a node is joining our section. Sends `AcceptAsCandidate` to our section. If the
     // network is unbalanced, sends `ExpectCandidate` on to a section with a shorter prefix.
     fn handle_expect_candidate(&mut self,
-                               mut candidate_id: PublicId,
-                               client_auth: Authority<XorName>,
+                               old_pub_id: PublicId,
+                               old_client_auth: Authority<XorName>,
+                               relocation_dst: Authority<XorName>,
                                message_id: MessageId,
                                outbox: &mut EventBox)
                                -> Result<(), RoutingError> {
@@ -2167,53 +2167,59 @@ impl Node {
             self.disconnect_peer(&peer_id, Some(outbox));
         }
 
-        if candidate_id.signing_public_key() == self.full_id.public_id().signing_public_key() {
-            return Ok(()); // This is a delayed message belonging to our own node name request.
+        if old_pub_id == *self.full_id.public_id() {
+            return Ok(()); // This is a delayed message belonging to our own relocate request.
         }
 
-        let original_name = *candidate_id.name();
-        let relocated_name = self.next_node_name
-            .take()
-            .unwrap_or_else(|| {
-                                self.routing_table()
-                                    .assign_to_min_len_prefix(&original_name)
-                            });
-        candidate_id.set_name(relocated_name);
+        // Check that our section is one of the ones with a minimum length prefix, and if it's not,
+        // forward it to one that is.
+        let min_len_prefix = self.routing_table().min_len_prefix();
 
-        if self.routing_table()
-               .should_join_our_section(candidate_id.name())
-               .is_err() {
+        // If we're running in mock-crust mode, and we have relocation interval, don't try to do
+        // section balancing, as it will break things.
+        let forbid_join_balancing = cfg!(feature = "use-mock-crust") &&
+                                    self.next_relocation_interval.is_some();
+
+        if &min_len_prefix != self.our_prefix() && !forbid_join_balancing {
             let request_content = MessageContent::ExpectCandidate {
-                expect_id: candidate_id,
-                client_auth: client_auth,
+                old_public_id: old_pub_id,
+                old_client_auth: old_client_auth,
                 message_id: message_id,
             };
-            let src = Authority::Section(original_name);
-            let dst = Authority::Section(*candidate_id.name());
+            let src = relocation_dst;
+            let dst = Authority::Section(min_len_prefix.substituted_in(relocation_dst.name()));
             return self.send_routing_message(src, dst, request_content);
         }
 
-        self.peer_mgr
-            .expect_candidate(*candidate_id.name(), client_auth)?;
+        let target_interval = self.next_relocation_interval
+            .take()
+            .unwrap_or_else(|| {
+                                utils::calculate_relocation_interval(self.our_prefix(),
+                                                                     self.routing_table()
+                                                                         .our_section())
+                            });
+
+        self.peer_mgr.expect_candidate(old_pub_id)?;
         let response_content = MessageContent::AcceptAsCandidate {
-            expect_id: candidate_id,
-            client_auth: client_auth,
+            old_public_id: old_pub_id,
+            old_client_auth: old_client_auth,
+            target_interval: target_interval,
             message_id: message_id,
         };
-        info!("{:?} Expecting candidate {} via {:?}.",
+        info!("{:?} Expecting candidate with old name {}.",
               self,
-              candidate_id.name(),
-              client_auth);
+              old_pub_id.name());
 
-        let src = Authority::Section(*candidate_id.name());
-        self.send_routing_message(src, src, response_content)
+        self.send_routing_message(relocation_dst, relocation_dst, response_content)
     }
 
     // Received by Y; From Y -> Y
     // Context: a node is joining our section. Sends the node our section.
     fn handle_accept_as_candidate(&mut self,
-                                  candidate_id: PublicId,
-                                  client_auth: Authority<XorName>,
+                                  old_pub_id: PublicId,
+                                  old_client_auth: Authority<XorName>,
+                                  relocation_dst: Authority<XorName>,
+                                  target_interval: (XorName, XorName),
                                   message_id: MessageId,
                                   outbox: &mut EventBox)
                                   -> Result<(), RoutingError> {
@@ -2221,7 +2227,7 @@ impl Node {
             self.disconnect_peer(&peer_id, Some(outbox));
         }
 
-        if candidate_id == *self.full_id.public_id() {
+        if old_pub_id == *self.full_id.public_id() {
             // If we're the joining node: stop
             return Ok(());
         }
@@ -2231,23 +2237,22 @@ impl Node {
                      .schedule(Duration::from_secs(RESOURCE_PROOF_DURATION_SECS)));
 
         let own_section = self.peer_mgr
-            .accept_as_candidate(*candidate_id.name(), client_auth);
-        let response_content = MessageContent::GetNodeNameResponse {
-            relocated_id: candidate_id,
+            .accept_as_candidate(old_pub_id, target_interval);
+        let response_content = MessageContent::RelocateResponse {
+            target_interval: target_interval,
             section: own_section,
             message_id: message_id,
         };
-        info!("{:?} Our section with {:?} accepted {} as a candidate.",
+        info!("{:?} Our section with {:?} accepted candidate with old name {}.",
               self,
               self.our_prefix(),
-              candidate_id.name());
+              old_pub_id.name());
         trace!("{:?} Sending {:?} to {:?}",
                self,
                response_content,
-               client_auth);
+               old_client_auth);
 
-        let src = Authority::Section(*candidate_id.name());
-        self.send_routing_message(src, client_auth, response_content)
+        self.send_routing_message(relocation_dst, old_client_auth, response_content)
     }
 
     fn handle_section_update(&mut self,
@@ -2497,9 +2502,10 @@ impl Node {
     }
 
     fn handle_timeout(&mut self, token: u64, outbox: &mut EventBox) -> Transition {
-        if self.get_approval_timer_token == Some(token) {
-            self.handle_approval_timeout(outbox);
-            return Transition::Terminate;
+        let log_ident = format!("{:?}", self);
+        if let Some(transition) = self.resource_prover
+               .handle_timeout(token, log_ident, outbox) {
+            return transition;
         }
 
         if self.tick_timer_token == token {
@@ -2510,20 +2516,32 @@ impl Node {
                 debug!("{:?} Disconnecting from timed out peer {:?}", self, peer_id);
                 let _ = self.crust_service.disconnect(peer_id);
             }
-            let transition = self.purge_invalid_rt_entries(outbox);
+
+            let transition = if cfg!(feature = "use-mock-crust") {
+                Transition::Stay
+            } else {
+                self.purge_invalid_rt_entries(outbox)
+            };
             self.merge_if_necessary();
-            outbox.send_event(Event::Tick);
+            if self.is_approved {
+                outbox.send_event(Event::Tick);
+            }
             return transition;
         }
 
         if self.su_timer_token == Some(token) {
-            self.su_timeout = cmp::min(Duration::from_secs(SU_MAX_TIMEOUT_SECS),
-                                       self.su_timeout * 2);
-            trace!("{:?} Scheduling next RT request for {} seconds from now.",
-                   self,
-                   self.su_timeout.as_secs());
-            self.su_timer_token = Some(self.timer.schedule(self.su_timeout));
-            self.send_section_update(None);
+            if cfg!(feature = "use-mock-crust") {
+                trace!("{:?} not to schedule next section update during mock_crust test.",
+                       self);
+            } else {
+                self.su_timeout = cmp::min(Duration::from_secs(SU_MAX_TIMEOUT_SECS),
+                                           self.su_timeout * 2);
+                trace!("{:?} Scheduling next section update for {} seconds from now.",
+                       self,
+                       self.su_timeout.as_secs());
+                self.su_timer_token = Some(self.timer.schedule(self.su_timeout));
+                self.send_section_update(None);
+            }
         } else if self.candidate_timer_token == Some(token) {
             self.candidate_timer_token = None;
             self.send_candidate_approval();
@@ -2532,26 +2550,6 @@ impl Node {
                 Some(self.timer
                          .schedule(Duration::from_secs(CANDIDATE_STATUS_INTERVAL_SECS)));
             self.peer_mgr.show_candidate_status();
-        } else if self.approval_progress_timer_token == Some(token) {
-            self.approval_progress_timer_token =
-                Some(self.timer
-                         .schedule(Duration::from_secs(APPROVAL_PROGRESS_INTERVAL_SECS)));
-            let now = Instant::now();
-            let remaining_duration = if now < self.approval_expiry_time {
-                let duration = self.approval_expiry_time - now;
-                if duration.subsec_nanos() >= 500_000_000 {
-                    duration.as_secs() + 1
-                } else {
-                    duration.as_secs()
-                }
-            } else {
-                0
-            };
-            info!("{:?} {} {}/{} seconds remaining.",
-                  self,
-                  self.resource_proof_response_progress(),
-                  remaining_duration,
-                  APPROVAL_TIMEOUT_SECS);
         } else {
             // Each token has only one purpose, so we only need to call this if none of the above
             // matched:
@@ -2559,35 +2557,6 @@ impl Node {
         }
 
         Transition::Stay
-    }
-
-    // This will be called if `GetNodeNameResponse` times out, or if the subsequent `NodeApproval`
-    // times out.
-    fn handle_approval_timeout(&mut self, outbox: &mut EventBox) {
-        if self.resource_proof_response_parts.is_empty() {
-            // `GetNodeNameResponse` has timed out.
-            info!("{:?} Failed to get relocated name from the network, so restarting.",
-                  self);
-            outbox.send_event(Event::RestartRequired);
-        } else {
-            // `NodeApproval` has timed out.
-            let completed = self.resource_proof_response_parts
-                .values()
-                .filter(|parts| parts.is_empty())
-                .count();
-            if completed == self.challenger_count {
-                info!("{:?} All {} resource proof responses fully sent, but timed out waiting \
-                       for approval from the network. This could be due to the target section \
-                       experiencing churn. Terminating node.",
-                      self,
-                      completed);
-            } else {
-                info!("{:?} Failed to get approval from the network. {} Terminating node.",
-                      self,
-                      self.resource_proof_response_progress());
-            }
-            outbox.send_event(Event::Terminate);
-        }
     }
 
     // Drop peers to which we think we have a direct or tunnel connection, but where Crust reports
@@ -2639,12 +2608,14 @@ impl Node {
                     }
                 }
             } else if !self.crust_service.is_connected(&peer_id) {
-                peer_ids_to_drop.push(peer_id);
                 log_or_panic!(LogLevel::Error,
                               "{:?} Should have a direct connection to {} {:?}, but don't.",
                               self,
                               name,
                               peer_id);
+                if self.tunnels.tunnel_for(&peer_id).is_some() {
+                    self.peer_mgr.correct_state_to_tunnel(&peer_id);
+                }
             }
         }
         let mut transition = Transition::Stay;
@@ -2658,32 +2629,27 @@ impl Node {
     }
 
     fn send_candidate_approval(&mut self) {
-        let (candidate_id, client_auth, sections) = match self.peer_mgr.verified_candidate_info() {
+        let (response_content, new_name) = match self.peer_mgr.verified_candidate_info() {
             Err(_) => {
                 trace!("{:?} No candidate for which to send CandidateApproval.",
                        self);
                 return;
             }
-            Ok(info) => info,
+            Ok(result) => result,
         };
 
         if self.we_want_to_merge() || self.they_want_to_merge() {
             debug!("{:?} Resource proof duration has finished, but not voting to approve \
                    candidate {} since our section is currently merging.",
                    self,
-                   candidate_id.name());
+                   new_name);
             return;
         }
 
-        let src = Authority::Section(*candidate_id.name());
-        let response_content = MessageContent::CandidateApproval {
-            candidate_id: candidate_id,
-            client_auth: client_auth,
-            sections: sections,
-        };
+        let src = Authority::Section(new_name);
         info!("{:?} Resource proof duration has finished. Voting to approve candidate {}.",
               self,
-              candidate_id.name());
+              new_name);
         trace!("{:?} Sending {:?} to {:?}.", self, response_content, src);
 
         if let Err(error) = self.send_routing_message(src, src, response_content) {
@@ -2738,7 +2704,7 @@ impl Node {
                            hop: &XorName,
                            sent_to: &BTreeSet<XorName>)
                            -> Result<(), RoutingError> {
-        let sent_by_us = hop == self.name() && signed_msg.signed_by(self.full_id().public_id());
+        let sent_by_us = hop == self.name() && signed_msg.signed_by(self.full_id.public_id());
         if sent_by_us {
             self.stats.count_route(route);
         }
@@ -2881,7 +2847,7 @@ impl Node {
         };
 
         if self.is_proper() && !force_via_proxy {
-            let targets: HashSet<_> = self.routing_table()
+            let targets: BTreeSet<_> = self.routing_table()
                 .targets(&routing_msg.dst, *exclude, route as usize)?
                 .into_iter()
                 .filter(|target| !sent_to.contains(target))
@@ -2940,25 +2906,56 @@ impl Node {
     }
 
     fn send_node_identify(&mut self, peer_id: PeerId, is_tunnel: bool) {
-        let serialised_public_id = match serialisation::serialise(self.full_id().public_id()) {
-            Ok(rslt) => rslt,
-            Err(e) => {
-                error!("Failed to serialise public ID: {:?}", e);
-                return;
-            }
-        };
-        let signature = sign::sign_detached(&serialised_public_id,
-                                            self.full_id().signing_private_key());
         let direct_message = if self.is_approved {
+            let serialised_public_id = match serialisation::serialise(self.full_id.public_id()) {
+                Ok(rslt) => rslt,
+                Err(e) => {
+                    error!("Failed to serialise public ID: {:?}", e);
+                    return;
+                }
+            };
+            let signature = sign::sign_detached(&serialised_public_id,
+                                                self.full_id.signing_private_key());
             DirectMessage::NodeIdentify {
                 serialised_public_id: serialised_public_id,
                 signature: signature,
                 is_tunnel: is_tunnel,
             }
         } else {
+            // Serialise the old and new `PublicId`s and sign this using the old key.
+            let old_and_new_pub_ids = (self.old_full_id.public_id(), self.full_id.public_id());
+            let mut to_sign = match serialisation::serialise(&old_and_new_pub_ids) {
+                Ok(result) => result,
+                Err(error) => {
+                    error!("Failed to serialise public IDs: {:?}", error);
+                    return;
+                }
+            };
+            let signature_using_old = sign::sign_detached(&to_sign,
+                                                          self.old_full_id.signing_private_key());
+            // Append this signature onto the serialised IDs and sign that using the new key.
+            to_sign.extend_from_slice(&signature_using_old.0);
+            let signature_using_new = sign::sign_detached(&to_sign,
+                                                          self.full_id.signing_private_key());
+            let proxy_node_name = if let Some(proxy_node_name) = self.peer_mgr.get_proxy_name() {
+                *proxy_node_name
+            } else {
+                warn!("{:?} No proxy found, so unable to send CandidateIdentify.",
+                      self);
+                return;
+            };
+            let new_client_auth = Authority::Client {
+                client_key: *self.full_id.public_id().signing_public_key(),
+                proxy_node_name: proxy_node_name,
+                peer_id: self.crust_service.id(),
+            };
+
             DirectMessage::CandidateIdentify {
-                serialised_public_id: serialised_public_id,
-                signature: signature,
+                old_public_id: *self.old_full_id.public_id(),
+                new_public_id: *self.full_id.public_id(),
+                signature_using_old: signature_using_old,
+                signature_using_new: signature_using_new,
+                new_client_auth: new_client_auth,
                 is_tunnel: is_tunnel,
             }
         };
@@ -2966,6 +2963,8 @@ impl Node {
         self.send_direct_message(peer_id, direct_message);
     }
 
+    // Note: This fn assumes `their_public_id` is a valid node in the network
+    // Do not call this to respond to ConnectionInfo requests which are not yet validated.
     fn send_connection_info_request(&mut self,
                                     their_public_id: PublicId,
                                     src: Authority<XorName>,
@@ -2973,15 +2972,46 @@ impl Node {
                                     outbox: &mut EventBox)
                                     -> Result<(), RoutingError> {
         let their_name = *their_public_id.name();
-        if let Some(peer_id) = self.peer_mgr
-               .get_proxy_or_client_or_joining_node_peer_id(&their_public_id) {
+        self.peer_mgr.allow_connect(&their_name)?;
+
+        if let Some((peer_name, peer_id)) =
+            self.peer_mgr
+                .get_proxy_or_client_or_joining_node(&their_public_id) {
+            // we use peer_name here instead of their_name since the peer can be
+            // a joining node with its client name as far as proxy node is concerned
+            self.peer_mgr.set_peer_valid(&peer_name, true);
             self.send_node_identify(peer_id, false);
             self.add_to_routing_table(&their_public_id, &peer_id, false, outbox);
             return Ok(());
         }
 
-        self.peer_mgr.allow_connect(&their_name)?;
+        // If we are about to send a connection info request to a peer we are already
+        // connected to, then set their valid attribute and add them to RT.
+        // NOTE: If we do not have this peer in peer_mgr, `get_connection_token`
+        // will flag them to `valid`
+        self.peer_mgr.set_peer_valid(&their_name, true);
+        let their_id = self.peer_mgr
+            .get_peer_by_name(&their_name)
+            .and_then(|peer| peer.peer_id())
+            .and_then(|peer_id| if let Some(&PeerState::AwaitingNodeIdentify(_)) =
+                self.peer_mgr.get_state_by_name(&their_name) {
+                          Some(*peer_id)
+                      } else if self.peer_mgr.unknown_peers().contains_key(peer_id) {
+                Some(*peer_id)
+            } else {
+                None
+            });
 
+        if let Some(peer_id) = their_id {
+            // Since this is not a DirectMessage, we're currently using self.tunnels to
+            // check if the given peer_id will be reached via a tunnel when we send
+            // messages and add to RT accordingly. Ideally this should not have to rely on tunnels.
+            let is_tunnel = self.tunnels.tunnel_for(&peer_id).is_some();
+            self.add_to_routing_table(&their_public_id, &peer_id, is_tunnel, outbox);
+            return Ok(());
+        }
+
+        // This will insert the peer if peer is not in peer_mgr and flag them to `valid`
         if let Some(token) = self.peer_mgr
                .get_connection_token(src, dst, their_public_id) {
             self.crust_service.prepare_connection_info(token);
@@ -3028,12 +3058,14 @@ impl Node {
         match *peer.state() {
             PeerState::Client => {
                 debug!("{:?} Client disconnected: {:?}", self, peer_id);
+                try_reconnect = false;
             }
             PeerState::JoiningNode => {
                 debug!("{:?} Joining node {:?} dropped. {} remaining.",
                        self,
                        peer_id,
                        self.peer_mgr.joining_nodes_num());
+                try_reconnect = false;
             }
             PeerState::Proxy => {
                 debug!("{:?} Lost bootstrap connection to {:?} ({:?}).",
@@ -3050,7 +3082,7 @@ impl Node {
             _ => (),
         }
 
-        if try_reconnect && self.is_approved && !peer.pub_id().is_client_id() {
+        if try_reconnect && peer.valid() && self.is_approved {
             debug!("{:?} Sending connection info to {:?} due to dropped peer.",
                    self,
                    peer.pub_id());
@@ -3081,7 +3113,9 @@ impl Node {
               self,
               details.name);
 
-        outbox.send_event(Event::NodeLost(details.name, self.routing_table().clone()));
+        if self.is_approved {
+            outbox.send_event(Event::NodeLost(details.name, self.routing_table().clone()));
+        }
 
         self.merge_if_necessary();
         self.routing_table()
@@ -3178,16 +3212,16 @@ impl Node {
             .filter_map(|dst_id| {
                             self.peer_mgr
                                 .get_peer(&dst_id)
-                                .map(|peer| (dst_id, *peer.pub_id()))
+                                .map(|peer| (dst_id, *peer.pub_id(), peer.valid()))
                         })
             .collect_vec();
-        for (dst_id, pub_id) in peers {
+        for (dst_id, pub_id, valid) in peers {
             self.dropped_peer(&dst_id, outbox, false);
             debug!("{:?} Lost tunnel for peer {:?} ({:?}). Requesting new tunnel.",
                    self,
                    dst_id,
                    pub_id.name());
-            self.find_tunnel_for_peer(dst_id, &pub_id);
+            self.find_tunnel_for_peer(dst_id, &pub_id, valid);
         }
     }
 
@@ -3214,66 +3248,6 @@ impl Node {
 
     fn our_prefix(&self) -> &Prefix<XorName> {
         self.routing_table().our_prefix()
-    }
-
-    // For the ongoing collection of `ResourceProofResponse` messages, returns a tuple comprising:
-    // the `part_count` they all use; the number of fully-completed ones; a vector for the
-    // incomplete ones specifying how many parts have been sent to each peer; and a `String`
-    // containing this info.
-    fn resource_proof_response_progress(&self) -> String {
-        let mut parts_per_proof = 0;
-        let mut completed: usize = 0;
-        let mut incomplete = vec![];
-        for messages in self.resource_proof_response_parts.values() {
-            if let Some(next_message) = messages.last() {
-                match *next_message {
-                    DirectMessage::ResourceProofResponse {
-                        part_index,
-                        part_count,
-                        ..
-                    } => {
-                        parts_per_proof = part_count;
-                        incomplete.push(part_index);
-                    }
-                    _ => return String::new(),  // invalid situation
-                }
-            } else {
-                completed += 1;
-            }
-        }
-
-        if self.proxy_is_resource_proof_challenger {
-            completed = completed.saturating_sub(1);
-        }
-
-        if self.resource_proof_response_parts.is_empty() {
-            "No resource proof challenges received yet; still establishing connections to peers."
-                .to_string()
-        } else if self.challenger_count == completed {
-            format!("All {} resource proof responses fully sent.", completed)
-        } else {
-            let progress = if parts_per_proof == 0 {
-                // We've completed all challenges for those peers we've connected to, but are still
-                // waiting to connect to some more peers and receive their challenges.
-                completed * 100 / self.challenger_count
-            } else {
-                (((parts_per_proof * completed) + incomplete.iter().sum::<usize>()) * 100) /
-                (parts_per_proof * self.challenger_count)
-            };
-            format!("{}/{} resource proof response(s) complete, {}% of data sent.",
-                    completed,
-                    self.challenger_count,
-                    progress)
-        }
-    }
-
-    fn format(duration: Duration) -> String {
-        format!("{} seconds",
-                if duration.subsec_nanos() >= 500_000_000 {
-                    duration.as_secs() + 1
-                } else {
-                    duration.as_secs()
-                })
     }
 }
 
@@ -3330,32 +3304,13 @@ impl Node {
         self.tunnels.has_clients(client_1, client_2)
     }
 
-    /// Resends all unacknowledged messages.
-    pub fn resend_unacknowledged(&mut self) -> bool {
-        let timer_tokens = self.ack_mgr.timer_tokens();
-        for timer_token in &timer_tokens {
-            self.resend_unacknowledged_timed_out_msgs(*timer_token);
-        }
-        !timer_tokens.is_empty()
-    }
-
-    /// Are there any unacknowledged messages?
-    pub fn has_unacknowledged(&self) -> bool {
-        self.ack_mgr.has_pending()
-    }
-
     /// Purge invalid routing entries.
     pub fn purge_invalid_rt_entry(&mut self) {
         let _ = self.purge_invalid_rt_entries(&mut EventBuf::new());
     }
 
-    pub fn clear_state(&mut self) {
-        self.ack_mgr.clear();
-        self.routing_msg_filter.clear();
-        if self.peer_mgr.remove_connecting_peers() {
-            self.merge_if_necessary();
-        }
-        self.tunnels.clear_new_clients();
+    pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
+        self.timer.get_timed_out_tokens()
     }
 
     pub fn section_list_signatures(&self,
@@ -3371,8 +3326,12 @@ impl Node {
         }
     }
 
-    pub fn set_next_node_name(&mut self, relocation_name: Option<XorName>) {
-        self.next_node_name = relocation_name;
+    pub fn set_next_relocation_dst(&mut self, dst: Option<XorName>) {
+        self.next_relocation_dst = dst;
+    }
+
+    pub fn set_next_relocation_interval(&mut self, interval: (XorName, XorName)) {
+        self.next_relocation_interval = Some(interval);
     }
 
     pub fn config(&self) -> Config {
@@ -3463,7 +3422,7 @@ impl Bootstrapped for Node {
                 if let Some(&peer_id) = self.peer_mgr.get_peer_id(&target_name) {
                     let direct_msg = signed_msg
                         .routing_message()
-                        .to_signature(self.full_id().signing_private_key())?;
+                        .to_signature(self.full_id.signing_private_key())?;
                     self.send_direct_message(peer_id, direct_msg);
                     Ok(())
                 } else {
