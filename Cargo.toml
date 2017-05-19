@@ -13,7 +13,7 @@ version = "0.28.5"
 crust = "~0.24.0"
 fake_clock = "~0.1.0"
 hex = "~0.2.0"
-itertools = "~0.5.9"
+itertools = "~0.6.0"
 log = "~0.3.7"
 lru_time_cache = "~0.6.0"
 maidsafe_utilities = "~0.11.4"
@@ -29,9 +29,9 @@ tiny-keccak = "~1.2.1"
 unwrap = "~1.1.0"
 
 [dev-dependencies]
-rustc-serialize = "~0.3.23"
 docopt = "~0.6.86"
 libc = "~0.2.21"
+rustc-serialize = "~0.3.23"
 
 [[example]]
 bench = false

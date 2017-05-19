@@ -909,7 +909,7 @@ mod tests {
         let ps2 = PermissionSet::new()
             .allow(Action::Insert)
             .deny(Action::ManagePermissions);
-        assert_err!(md.set_user_permissions(User::Key(pk1), ps2.clone(), 1, pk1),
+        assert_err!(md.set_user_permissions(User::Key(pk1), ps2, 1, pk1),
                     ClientError::InvalidSuccessor);
         assert!(md.set_user_permissions(User::Key(pk1), ps2, 2, pk1)
                     .is_ok());

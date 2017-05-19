@@ -353,10 +353,7 @@ impl ServiceImpl {
         // If we have no contacts in the config, we can fire BootstrapFailed
         // immediately.
         if pending_bootstraps == 0 {
-            unwrap!(self.event_sender
-                        .as_ref()
-                        .unwrap()
-                        .send(Event::BootstrapFailed));
+            unwrap!(unwrap!(self.event_sender.as_ref()).send(Event::BootstrapFailed));
         }
 
         self.pending_bootstraps = pending_bootstraps;
