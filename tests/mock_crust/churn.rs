@@ -20,9 +20,9 @@ use super::{TestClient, TestNode, create_connected_clients, create_connected_nod
 use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
-use routing::{Authority, Event, EventStream, MessageId, PublicId, QUORUM_DENOMINATOR,
-              QUORUM_NUMERATOR, Request, XorName};
-use routing::mock_crust::{Config, Network};
+use routing::{Authority, BootstrapConfig, Event, EventStream, MessageId, PublicId,
+              QUORUM_DENOMINATOR, QUORUM_NUMERATOR, Request, XorName};
+use routing::mock_crust::Network;
 use routing::test_consts::{ACCUMULATION_TIMEOUT_SECS, CANDIDATE_ACCEPT_TIMEOUT_SECS,
                            RESOURCE_PROOF_DURATION_SECS};
 use std::cmp;
@@ -83,7 +83,7 @@ fn add_node_and_poll<R: Rng>(rng: &mut R,
     } else {
         (gen_range(rng, 0, len), gen_range(rng, 0, len + 1))
     };
-    let config = Config::with_contacts(&[nodes[proxy].handle.endpoint()]);
+    let config = BootstrapConfig::with_contacts(&[nodes[proxy].handle.endpoint()]);
 
     nodes.insert(index, TestNode::builder(network).config(config).create());
     let (new_node, proxy) = if index <= proxy {
@@ -160,8 +160,7 @@ fn random_churn<R: Rng>(rng: &mut R,
                                     nodes[peer_2].handle.endpoint());
         }
 
-        let config = Config::with_contacts(&[nodes[proxy].handle.endpoint()]);
-
+        let config = BootstrapConfig::with_contacts(&[nodes[proxy].handle.endpoint()]);
         nodes.insert(index, TestNode::builder(network).config(config).create());
 
         if nodes.len() > 2 * network.min_section_size() {

@@ -16,8 +16,8 @@
 // relating to use of the SAFE Network Software.
 
 use {CrustEvent, CrustEventSender, Service};
+use BootstrapConfig;
 use action::Action;
-use crust::Config;
 use id::{FullId, PublicId};
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 #[cfg(feature = "use-mock-crust")]
@@ -212,7 +212,7 @@ impl StateMachine {
     // Construct a new StateMachine by passing a function returning the initial state.
     pub fn new<F>(init_state: F,
                   pub_id: PublicId,
-                  config: Option<Config>,
+                  config: Option<BootstrapConfig>,
                   outbox: &mut EventBox)
                   -> (RoutingActionSender, Self)
         where F: FnOnce(RoutingActionSender, Service, Timer, &mut EventBox) -> State

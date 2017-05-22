@@ -18,10 +18,10 @@
 use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
-use routing::{Authority, Cache, Client, Event, EventStream, FullId, ImmutableData, Node,
-              NullCache, Prefix, PublicId, Request, Response, RoutingTable, XorName, Xorable,
-              verify_network_invariant};
-use routing::mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
+use routing::{Authority, BootstrapConfig, Cache, Client, Event, EventStream, FullId,
+              ImmutableData, Node, NullCache, Prefix, PublicId, Request, Response, RoutingTable,
+              XorName, Xorable, verify_network_invariant};
+use routing::mock_crust::{self, Endpoint, Network, ServiceHandle};
 use routing::test_consts::{ACK_TIMEOUT_SECS, CONNECTING_PEER_TIMEOUT_SECS};
 use std::{cmp, thread};
 use std::cell::RefCell;
@@ -129,7 +129,7 @@ impl TestNode {
 
     pub fn new(network: &Network<PublicId>,
                first_node: bool,
-               config: Option<Config>,
+               config: Option<BootstrapConfig>,
                endpoint: Option<Endpoint>,
                cache: Box<Cache>)
                -> Self {
@@ -175,7 +175,7 @@ impl TestNode {
 pub struct TestNodeBuilder<'a> {
     network: &'a Network<PublicId>,
     first_node: bool,
-    config: Option<Config>,
+    config: Option<BootstrapConfig>,
     endpoint: Option<Endpoint>,
     cache: Box<Cache>,
 }
@@ -186,7 +186,7 @@ impl<'a> TestNodeBuilder<'a> {
         self
     }
 
-    pub fn config(mut self, config: Config) -> Self {
+    pub fn config(mut self, config: BootstrapConfig) -> Self {
         self.config = Some(config);
         self
     }
@@ -226,7 +226,7 @@ pub struct TestClient {
 
 impl TestClient {
     pub fn new(network: &Network<PublicId>,
-               config: Option<Config>,
+               config: Option<BootstrapConfig>,
                endpoint: Option<Endpoint>)
                -> Self {
         let full_id = FullId::new();
@@ -370,7 +370,7 @@ pub fn create_connected_nodes_with_cache(network: &Network<PublicId>,
                    .create());
     nodes[0].poll();
 
-    let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
+    let config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
 
     // Create other nodes using the seed node endpoint as bootstrap contact.
     for i in 1..size {
@@ -545,7 +545,9 @@ pub fn create_connected_clients(network: &Network<PublicId>,
     let mut clients = Vec::with_capacity(size);
 
     for _ in 0..size {
-        let client = TestClient::new(network, Some(Config::with_contacts(&[contact])), None);
+        let client = TestClient::new(network,
+                                     Some(BootstrapConfig::with_contacts(&[contact])),
+                                     None);
         clients.push(client);
 
         let _ = poll_all(nodes, &mut clients);
@@ -639,7 +641,7 @@ fn add_node_to_section<T: Rng>(network: &Network<PublicId>,
                                                         prefix.upper_bound()));
                  });
 
-    let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
+    let config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
     let endpoint = Endpoint(nodes.len());
     nodes.push(TestNode::builder(network)
                    .config(config.clone())
