@@ -4,10 +4,6 @@ environment:
   matrix:
     - RUST_VERSION: stable
 
-branches:
-  only:
-    - mutable-data
-
 cache:
   - '%USERPROFILE%\.cargo'
   - '%APPVEYOR_BUILD_FOLDER%\target'

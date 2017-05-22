@@ -217,7 +217,7 @@ fn disconnect_on_get_request() {
 
     assert!(clients[0]
                 .inner
-                .send_get_request(dst, data_request.clone(), message_id)
+                .send_get_request(dst, data_request, message_id)
                 .is_ok());
 
     let _ = poll_all(&mut nodes, &mut clients);
@@ -253,12 +253,12 @@ fn disconnect_on_get_request() {
         .handle
         .0
         .borrow_mut()
-        .disconnect(&nodes[0].handle.0.borrow().peer_id);
+        .disconnect(&unwrap!(nodes[0].handle.0.borrow().uid));
     nodes[0]
         .handle
         .0
         .borrow_mut()
-        .disconnect(&clients[0].handle.0.borrow().peer_id);
+        .disconnect(&unwrap!(clients[0].handle.0.borrow().uid));
 
     let _ = poll_all(&mut nodes, &mut clients);
 

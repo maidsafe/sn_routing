@@ -15,12 +15,14 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
 use routing::{Authority, Cache, Client, Data, DataIdentifier, Event, EventStream, FullId,
-              ImmutableData, Node, NullCache, Prefix, Request, Response, RoutingTable, XorName,
-              Xorable, verify_network_invariant};
+              ImmutableData, Node, NullCache, Prefix, PublicId, Request, Response, RoutingTable,
+              XorName, Xorable, verify_network_invariant};
 use routing::mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
+use routing::test_consts::{ACK_TIMEOUT_SECS, CONNECTING_PEER_TIMEOUT_SECS};
 use std::{cmp, thread};
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap};
@@ -110,12 +112,12 @@ impl EventStream for TestNode {
 }
 
 pub struct TestNode {
-    pub handle: ServiceHandle,
+    pub handle: ServiceHandle<PublicId>,
     pub inner: Node,
 }
 
 impl TestNode {
-    pub fn builder(network: &Network) -> TestNodeBuilder {
+    pub fn builder(network: &Network<PublicId>) -> TestNodeBuilder {
         TestNodeBuilder {
             network: network,
             first_node: false,
@@ -125,7 +127,7 @@ impl TestNode {
         }
     }
 
-    pub fn new(network: &Network,
+    pub fn new(network: &Network<PublicId>,
                first_node: bool,
                config: Option<Config>,
                endpoint: Option<Endpoint>,
@@ -145,8 +147,12 @@ impl TestNode {
         }
     }
 
+    pub fn id(&self) -> PublicId {
+        unwrap!(self.inner.id())
+    }
+
     pub fn name(&self) -> XorName {
-        unwrap!(self.inner.name())
+        *self.id().name()
     }
 
     pub fn close_names(&self) -> BTreeSet<XorName> {
@@ -166,7 +172,7 @@ impl TestNode {
 }
 
 pub struct TestNodeBuilder<'a> {
-    network: &'a Network,
+    network: &'a Network<PublicId>,
     first_node: bool,
     config: Option<Config>,
     endpoint: Option<Endpoint>,
@@ -212,13 +218,16 @@ impl<'a> TestNodeBuilder<'a> {
 // -----  TestClient  -----
 
 pub struct TestClient {
-    pub handle: ServiceHandle,
+    pub handle: ServiceHandle<PublicId>,
     pub inner: Client,
     pub full_id: FullId,
 }
 
 impl TestClient {
-    pub fn new(network: &Network, config: Option<Config>, endpoint: Option<Endpoint>) -> Self {
+    pub fn new(network: &Network<PublicId>,
+               config: Option<Config>,
+               endpoint: Option<Endpoint>)
+               -> Self {
         let full_id = FullId::new();
         let handle = network.new_service_handle(config, endpoint);
         let client = mock_crust::make_current(&handle, || {
@@ -233,7 +242,7 @@ impl TestClient {
     }
 
     pub fn name(&self) -> XorName {
-        unwrap!(self.inner.name())
+        *unwrap!(self.inner.id()).name()
     }
 }
 
@@ -272,6 +281,7 @@ impl Cache for TestCache {
 
 /// Process all events. Returns whether there were any events.
 pub fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
+    assert!(!nodes.is_empty());
     let mut result = false;
     for _ in 0..MAX_POLL_CALLS {
         let mut handled_message = false;
@@ -284,7 +294,7 @@ pub fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
             handled_message = nodes.iter_mut().any(TestNode::poll);
         }
         handled_message = clients.iter().any(|c| c.inner.poll()) || handled_message;
-        if !handled_message {
+        if !handled_message && !nodes[0].handle.reset_message_sent() {
             return result;
         }
         result = true;
@@ -292,20 +302,17 @@ pub fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
     panic!("Polling has been called {} times.", MAX_POLL_CALLS);
 }
 
-/// Polls and processes all events, until there are no unacknowledged messages left and clearing
-/// the nodes' state triggers no new events anymore.
+/// Polls and processes all events, until there are no unacknowledged messages left.
 pub fn poll_and_resend(nodes: &mut [TestNode], clients: &mut [TestClient]) {
+    let mut fired_connecting_peer_timeout = false;
     for _ in 0..MAX_POLL_CALLS {
         if poll_all(nodes, clients) {
-            let mut call_count = 1;
-            while resend_unacknowledged(nodes, clients) && poll_all(nodes, clients) {
-                call_count += 1;
-                assert_ne!(call_count,
-                           MAX_POLL_CALLS,
-                           "Polling and resending unacknowledged has been called {} times.",
-                           MAX_POLL_CALLS);
-            }
-            nodes.iter_mut().foreach(|node| node.inner.clear_state());
+            // Once each route is polled, advance time to trigger the following route.
+            FakeClock::advance_time(ACK_TIMEOUT_SECS * 1000 + 1);
+        } else if !fired_connecting_peer_timeout {
+            // When all routes are polled, advance time to purge any pending re-connecting peers.
+            FakeClock::advance_time(CONNECTING_PEER_TIMEOUT_SECS * 1000 + 1);
+            fired_connecting_peer_timeout = true;
         } else {
             return;
         }
@@ -337,11 +344,14 @@ pub fn remove_nodes_which_failed_to_connect(nodes: &mut Vec<TestNode>, count: us
     failed_to_join.len()
 }
 
-pub fn create_connected_nodes(network: &Network, size: usize) -> Nodes {
+pub fn create_connected_nodes(network: &Network<PublicId>, size: usize) -> Nodes {
     create_connected_nodes_with_cache(network, size, false)
 }
 
-pub fn create_connected_nodes_with_cache(network: &Network, size: usize, use_cache: bool) -> Nodes {
+pub fn create_connected_nodes_with_cache(network: &Network<PublicId>,
+                                         size: usize,
+                                         use_cache: bool)
+                                         -> Nodes {
     let mut nodes = Vec::new();
 
     // Create the seed node.
@@ -391,7 +401,7 @@ pub fn create_connected_nodes_with_cache(network: &Network, size: usize, use_cac
     Nodes(nodes)
 }
 
-pub fn create_connected_nodes_until_split(network: &Network,
+pub fn create_connected_nodes_until_split(network: &Network<PublicId>,
                                           prefix_lengths: Vec<usize>,
                                           use_cache: bool)
                                           -> Nodes {
@@ -416,7 +426,7 @@ pub fn create_connected_nodes_until_split(network: &Network,
 //
 // The array is sanity checked (e.g. it would be an error to pass [1, 1, 1]), must comprise at
 // least two elements, and every element must be no more than `8`.
-pub fn add_connected_nodes_until_split(network: &Network,
+pub fn add_connected_nodes_until_split(network: &Network<PublicId>,
                                        nodes: &mut Vec<TestNode>,
                                        mut prefix_lengths: Vec<usize>,
                                        use_cache: bool) {
@@ -468,7 +478,10 @@ pub fn add_connected_nodes_until_split(network: &Network,
                 // Assert that this can be split down to a desired prefix.
                 let is_valid = |prefix: &Prefix<XorName>| {
                     if prefix.is_compatible(prefix_to_split) {
-                        assert!(prefix.bit_count() > prefix_to_split.bit_count());
+                        assert!(prefix.bit_count() > prefix_to_split.bit_count(),
+                                "prefix_to_split: {:?}, prefix: {:?}",
+                                prefix_to_split,
+                                prefix);
                         return true;
                     }
                     false
@@ -498,7 +511,7 @@ pub fn add_connected_nodes_until_split(network: &Network,
                    .map(|prefix| prefix.bit_count())
                    .collect_vec());
 
-    // Clear all event queues and clear the `next_node_name` values.
+    // Clear all event queues and clear the `next_relocation_dst` values.
     for node in nodes.iter_mut() {
         while let Ok(event) = node.try_next_ev() {
             match event {
@@ -509,14 +522,14 @@ pub fn add_connected_nodes_until_split(network: &Network,
                 event => panic!("Got unexpected event: {:?}", event),
             }
         }
-        node.inner.clear_next_node_name();
+        node.inner.clear_next_relocation_dst();
     }
 
     trace!("Created testnet comprising {:?}", prefixes);
 }
 
 // Create `size` clients, all of whom are connected to `nodes[0]`.
-pub fn create_connected_clients(network: &Network,
+pub fn create_connected_clients(network: &Network<PublicId>,
                                 nodes: &mut [TestNode],
                                 size: usize)
                                 -> Vec<TestClient> {
@@ -562,19 +575,6 @@ pub fn gen_immutable_data<R: Rng>(rng: &mut R, size: usize) -> Data {
     Data::Immutable(ImmutableData::new(gen_bytes(rng, size)))
 }
 
-/// Resends all unacknowledged messages. Returns `false` if none of the nodes or clients had any
-/// unacknowledged messages left.
-fn resend_unacknowledged(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
-    let node_resend = |node: &mut TestNode| node.inner.resend_unacknowledged();
-    let client_resend = |client: &mut TestClient| client.inner.resend_unacknowledged();
-    let or = |x, y| x || y;
-    nodes
-        .iter_mut()
-        .map(node_resend)
-        .chain(clients.iter_mut().map(client_resend))
-        .fold(false, or)
-}
-
 fn sanity_check(prefix_lengths: &[usize]) {
     assert!(prefix_lengths.len() > 1,
             "There should be at least two specified prefix lengths");
@@ -616,7 +616,7 @@ fn prefixes<T: Rng>(prefix_lengths: &[usize], rng: &mut T) -> Vec<Prefix<XorName
     prefixes
 }
 
-fn add_node_to_section<T: Rng>(network: &Network,
+fn add_node_to_section<T: Rng>(network: &Network<PublicId>,
                                nodes: &mut Vec<TestNode>,
                                prefix: &Prefix<XorName>,
                                rng: &mut T,
@@ -624,7 +624,12 @@ fn add_node_to_section<T: Rng>(network: &Network,
     let relocation_name = prefix.substituted_in(rng.gen());
     nodes
         .iter_mut()
-        .foreach(|node| node.inner.set_next_node_name(relocation_name));
+        .foreach(|node| {
+                     node.inner.set_next_relocation_dst(relocation_name);
+                     node.inner
+                         .set_next_relocation_interval((prefix.lower_bound(),
+                                                        prefix.upper_bound()));
+                 });
 
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
     let endpoint = Endpoint(nodes.len());
@@ -635,7 +640,7 @@ fn add_node_to_section<T: Rng>(network: &Network,
                    .create());
     poll_and_resend(nodes, &mut []);
     expect_any_event!(unwrap!(nodes.last_mut()), Event::Connected);
-    assert_eq!(relocation_name, nodes[nodes.len() - 1].name());
+    assert!(prefix.matches(nodes[nodes.len() - 1].routing_table().our_name()));
 }
 
 mod tests {

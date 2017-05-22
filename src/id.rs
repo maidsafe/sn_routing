@@ -15,8 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use crust::Uid;
 use rust_sodium::crypto::{box_, hash, sign};
-use std::fmt::{self, Debug, Formatter};
+use serde::{Deserializer, Serialize, Serializer};
+use serde::de::Deserialize;
+use std::fmt::{self, Debug, Display, Formatter};
 use xor_name::XorName;
 
 /// Network identity component containing name, and public and private keys.
@@ -28,7 +31,7 @@ pub struct FullId {
 }
 
 impl FullId {
-    /// Construct a FullId with newly generated keys.
+    /// Construct a `FullId` with newly generated keys.
     pub fn new() -> FullId {
         let encrypt_keys = box_::gen_keypair();
         let sign_keys = sign::gen_keypair();
@@ -39,7 +42,7 @@ impl FullId {
         }
     }
 
-    /// Construct with given keys, (Client requirement).
+    /// Construct with given keys (client requirement).
     pub fn with_keys(encrypt_keys: (box_::PublicKey, box_::SecretKey),
                      sign_keys: (sign::PublicKey, sign::SecretKey))
                      -> FullId {
@@ -48,6 +51,21 @@ impl FullId {
             public_id: PublicId::new(encrypt_keys.0, sign_keys.0),
             private_encrypt_key: encrypt_keys.1,
             private_sign_key: sign_keys.1,
+        }
+    }
+
+    /// Construct a `FullId` whose name is in the interval [start, end] (both endpoints inclusive).
+    /// FIXME(Fraser) - time limit this function? Document behaviour
+    pub fn within_range(start: &XorName, end: &XorName) -> FullId {
+        let mut sign_keys = sign::gen_keypair();
+        loop {
+            let name = PublicId::name_from_key(&sign_keys.0);
+            if name >= *start && name <= *end {
+                let encrypt_keys = box_::gen_keypair();
+                let full_id = FullId::with_keys(encrypt_keys, sign_keys);
+                return full_id;
+            }
+            sign_keys = sign::gen_keypair();
         }
     }
 
@@ -78,13 +96,18 @@ impl Default for FullId {
     }
 }
 
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Serialize, Deserialize)]
 /// Network identity component containing name and public keys.
+///
+/// Note that the `name` member is omitted when serialising `PublicId` and is calculated from the
+/// `public_sign_key` when deserialising.
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub struct PublicId {
-    public_encrypt_key: box_::PublicKey,
-    public_sign_key: sign::PublicKey,
     name: XorName,
+    public_sign_key: sign::PublicKey,
+    public_encrypt_key: box_::PublicKey,
 }
+
+impl Uid for PublicId {}
 
 impl Debug for PublicId {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
@@ -92,16 +115,31 @@ impl Debug for PublicId {
     }
 }
 
+impl Display for PublicId {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{}", self.name())
+    }
+}
+
+
+impl Serialize for PublicId {
+    fn serialize<S: Serializer>(&self, serialiser: S) -> Result<S::Ok, S::Error> {
+        (&self.public_encrypt_key, &self.public_sign_key).serialize(serialiser)
+    }
+}
+
+impl<'de> Deserialize<'de> for PublicId {
+    fn deserialize<D: Deserializer<'de>>(deserialiser: D) -> Result<Self, D::Error> {
+        let (public_encrypt_key, public_sign_key): (box_::PublicKey, sign::PublicKey) =
+            Deserialize::deserialize(deserialiser)?;
+        Ok(PublicId::new(public_encrypt_key, public_sign_key))
+    }
+}
+
 impl PublicId {
     /// Return initial/relocated name.
     pub fn name(&self) -> &XorName {
         &self.name
-    }
-
-    /// Name field is initially same as original_name, this should be replaced by relocated name
-    /// calculated by the nodes close to original_name by using this method
-    pub fn set_name(&mut self, name: XorName) {
-        self.name = name;
     }
 
     /// Return public signing key.
@@ -114,16 +152,53 @@ impl PublicId {
         &self.public_sign_key
     }
 
-    /// Returns whether our name is the hash of our public sign key.
-    pub fn is_client_id(&self) -> bool {
-        self.name.0 == hash::sha256::hash(&self.public_sign_key[..]).0
-    }
-
     fn new(public_encrypt_key: box_::PublicKey, public_sign_key: sign::PublicKey) -> PublicId {
         PublicId {
             public_encrypt_key: public_encrypt_key,
             public_sign_key: public_sign_key,
-            name: XorName(hash::sha256::hash(&public_sign_key[..]).0),
+            name: Self::name_from_key(&public_sign_key),
         }
+    }
+
+    fn name_from_key(public_sign_key: &sign::PublicKey) -> XorName {
+        XorName(hash::sha256::hash(&public_sign_key[..]).0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use maidsafe_utilities::{SeededRng, serialisation};
+    use rust_sodium;
+
+    /// Confirm `PublicId` `Ord` trait favours name over sign or encryption keys.
+    #[test]
+    fn public_id_order() {
+        let mut rng = SeededRng::thread_rng();
+        unwrap!(rust_sodium::init_with_rng(&mut rng));
+
+        let pub_id_1 = *FullId::new().public_id();
+        let pub_id_2;
+        loop {
+            let temp_pub_id = *FullId::new().public_id();
+            if temp_pub_id.name > pub_id_1.name &&
+               temp_pub_id.public_sign_key < pub_id_1.public_sign_key &&
+               temp_pub_id.public_encrypt_key < pub_id_1.public_encrypt_key {
+                pub_id_2 = temp_pub_id;
+                break;
+            }
+        }
+        assert!(pub_id_1 < pub_id_2);
+    }
+
+    #[test]
+    fn serialisation() {
+        let mut rng = SeededRng::thread_rng();
+        unwrap!(rust_sodium::init_with_rng(&mut rng));
+
+        let full_id = FullId::new();
+        let serialised = unwrap!(serialisation::serialise(full_id.public_id()));
+        let parsed = unwrap!(serialisation::deserialise(&serialised));
+        assert_eq!(*full_id.public_id(), parsed);
     }
 }

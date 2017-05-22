@@ -22,7 +22,7 @@ use std::fmt::{self, Display, Formatter};
 const MSG_LOG_COUNT: usize = 5000;
 
 /// A collection of counters to gather Routing statistics.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Stats {
     // TODO: Make these private and move the logic here.
     pub cur_routing_table_size: usize,
@@ -36,7 +36,6 @@ pub struct Stats {
     /// Messages we sent unsuccessfully: unacknowledged on all routes.
     unacked_msgs: usize,
 
-    msg_direct_node_identify: usize,
     msg_direct_candidate_identify: usize,
     msg_direct_sig: usize,
     msg_direct_resource_proof: usize,
@@ -44,7 +43,12 @@ pub struct Stats {
     msg_direct_resource_proof_rsp_receipt: usize,
     msg_direct_sls: usize,
 
-    msg_get_node_name: usize,
+    msg_get: usize,
+    msg_put: usize,
+    msg_post: usize,
+    msg_delete: usize,
+    msg_append: usize,
+    msg_relocate: usize,
     msg_expect_candidate: usize,
     msg_accept_as_candidate: usize,
     msg_refresh: usize,
@@ -54,7 +58,7 @@ pub struct Stats {
     msg_section_split: usize,
     msg_own_section_merge: usize,
     msg_other_section_merge: usize,
-    msg_get_node_name_rsp: usize,
+    msg_relocate_rsp: usize,
     msg_candidate_approval: usize,
     msg_node_approval: usize,
     msg_ack: usize,
@@ -217,7 +221,7 @@ impl Stats {
     /// Increments the counter for the given routing message type.
     pub fn count_routing_message(&mut self, msg: &RoutingMessage) {
         match msg.content {
-            MessageContent::GetNodeName { .. } => self.msg_get_node_name += 1,
+            MessageContent::Relocate { .. } => self.msg_relocate += 1,
             MessageContent::ExpectCandidate { .. } => self.msg_expect_candidate += 1,
             MessageContent::AcceptAsCandidate { .. } => self.msg_accept_as_candidate += 1,
             MessageContent::ConnectionInfoRequest { .. } => self.msg_connection_info_req += 1,
@@ -226,7 +230,7 @@ impl Stats {
             MessageContent::SectionSplit(..) => self.msg_section_split += 1,
             MessageContent::OwnSectionMerge(..) => self.msg_own_section_merge += 1,
             MessageContent::OtherSectionMerge(..) => self.msg_other_section_merge += 1,
-            MessageContent::GetNodeNameResponse { .. } => self.msg_get_node_name_rsp += 1,
+            MessageContent::RelocateResponse { .. } => self.msg_relocate_rsp += 1,
             MessageContent::Ack(..) => self.msg_ack += 1,
             MessageContent::CandidateApproval { .. } => self.msg_candidate_approval += 1,
             MessageContent::NodeApproval { .. } => self.msg_node_approval += 1,
@@ -239,7 +243,6 @@ impl Stats {
     pub fn count_direct_message(&mut self, msg: &DirectMessage) {
         use messages::DirectMessage::*;
         match *msg {
-            NodeIdentify { .. } => self.msg_direct_node_identify += 1,
             CandidateIdentify { .. } => self.msg_direct_candidate_identify += 1,
             MessageSignature(..) => self.msg_direct_sig += 1,
             SectionListSignature(..) => self.msg_direct_sls += 1,
@@ -251,6 +254,7 @@ impl Stats {
             ClientIdentify { .. } |
             TunnelRequest(_) |
             TunnelSuccess(_) |
+            TunnelSelect(_) |
             TunnelClosed(_) |
             TunnelDisconnect(_) => self.msg_other += 1,
         }
@@ -279,9 +283,8 @@ impl Stats {
                   self.routes,
                   self.unacked_msgs);
             info!(target: "routing_stats",
-                  "Stats - Direct - NodeIdentify: {}, CandidateIdentify: {}, \
+                  "Stats - Direct - CandidateIdentify: {}, \
                    MessageSignature: {}, ResourceProof: {}/{}/{}, SectionListSignature: {}",
-                  self.msg_direct_node_identify,
                   self.msg_direct_candidate_identify,
                   self.msg_direct_sig,
                   self.msg_direct_resource_proof,
@@ -289,12 +292,12 @@ impl Stats {
                   self.msg_direct_resource_proof_rsp_receipt,
                   self.msg_direct_sls);
             info!(target: "routing_stats",
-                  "Stats - Hops (Request/Response) - GetNodeName: {}/{}, ExpectCandidate: {}, \
+                  "Stats - Hops (Request/Response) - Relocate: {}/{}, ExpectCandidate: {}, \
                    AcceptAsCandidate: {}, SectionUpdate: {}, SectionSplit: {}, \
                    OwnSectionMerge: {}, OtherSectionMerge: {}, ConnectionInfo: {}/{}, \
                    CandidateApproval: {}, NodeApproval: {}, Ack: {}",
-                  self.msg_get_node_name,
-                  self.msg_get_node_name_rsp,
+                  self.msg_relocate,
+                  self.msg_relocate_rsp,
                   self.msg_expect_candidate,
                   self.msg_accept_as_candidate,
                   self.msg_section_update,
@@ -352,6 +355,7 @@ impl Stats {
     }
 }
 
+#[derive(Copy, Clone)]
 struct UserMessageStats {
     request: usize,
     success: usize,

@@ -120,6 +120,7 @@ pub use self::network_tests::verify_network_invariant;
 pub use self::prefix::{Prefix, VersionedPrefix};
 pub use self::xorable::Xorable;
 use itertools::Itertools;
+use log::LogLevel;
 use std::{iter, mem};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
@@ -469,18 +470,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
     }
 
-    /// Returns `Err(Error::PeerNameUnsuitable)` if `name` is not within our section, or
-    /// `Err(Error::AlreadyExists)` if `name` is already in our table.
-    pub fn should_join_our_section(&self, name: &T) -> Result<(), Error> {
-        if !self.our_prefix.matches(name) {
-            return Err(Error::PeerNameUnsuitable);
-        }
-        if self.our_section.contains(name) {
-            return Err(Error::AlreadyExists);
-        }
-        Ok(())
-    }
-
     /// Validates a joining node's name.
     pub fn validate_joining_node(&self, name: &T) -> Result<(), Error> {
         if !self.our_prefix.matches(name) {
@@ -723,7 +712,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     pub fn merge_own_section<I>(&mut self,
                                 merge_ver_pfx: VersionedPrefix<T>,
                                 ver_pfxs: I)
-                                -> (OwnMergeState<T>, Vec<T>)
+                                -> OwnMergeState<T>
         where I: IntoIterator<Item = VersionedPrefix<T>>
     {
         // TODO: Return an error if they are not compatible instead?
@@ -732,13 +721,19 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             debug!("{:?} Attempt to call merge_own_section() for an already merged prefix {:?}",
                    self.our_name,
                    merge_ver_pfx);
-            return (OwnMergeState::AlreadyMerged, vec![]);
+            return OwnMergeState::AlreadyMerged;
         }
         self.merge(&merge_ver_pfx);
         let dropped_names = ver_pfxs
             .into_iter()
             .flat_map(|ver_pfx| self.add_prefix(ver_pfx))
-            .collect();
+            .collect_vec();
+        if !dropped_names.is_empty() {
+            log_or_panic!(LogLevel::Warn,
+                          "{:?} Removed peers from RT as part of OwnSectionMerge {:?}",
+                          self.our_name,
+                          dropped_names);
+        }
 
         self.add_missing_prefixes();
         // The update needs to be sent to all neighbouring sections. However, while those are
@@ -750,12 +745,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             .cloned()
             .chain((0..merge_pfx.bit_count()).map(|i| merge_pfx.with_flipped_bit(i)))
             .collect();
-        (OwnMergeState::Completed {
-             targets: targets,
-             versioned_prefix: self.our_versioned_prefix(),
-             section: self.our_section().clone(),
-         },
-         dropped_names)
+        OwnMergeState::Completed {
+            targets: targets,
+            versioned_prefix: self.our_versioned_prefix(),
+            section: self.our_section().clone(),
+        }
     }
 
     /// Merges all existing compatible sections into the new one defined by `merge_details.prefix`.
@@ -936,14 +930,12 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             .cloned()
     }
 
-    /// Returns `name` modified so that it belongs to one of the known prefixes with minimal bit
-    /// length, favouring our own prefix if it is one of the shortest.
-    pub fn assign_to_min_len_prefix(&self, name: &T) -> T {
-        let target_prefix = iter::once(&self.our_prefix)
-            .chain(self.sections.keys())
-            .min_by_key(|prefix| prefix.bit_count())
-            .unwrap_or(&self.our_prefix);
-        target_prefix.substituted_in(*name)
+    /// Return a minimum length prefix, favouring our prefix if it is one of the shortest.
+    pub fn min_len_prefix(&self) -> Prefix<T> {
+        *iter::once(&self.our_prefix)
+             .chain(self.sections.keys())
+             .min_by_key(|prefix| prefix.bit_count())
+             .unwrap_or(&self.our_prefix)
     }
 
     fn split_our_section(&mut self, version: u64) -> Vec<T> {

@@ -142,24 +142,21 @@ mod tests {
 
         // Check with body which is empty, then at size limit, then just above limit.
         {
-            let message = unwrap!(MpidMessage::new(sender.clone(),
-                                                   metadata.clone(),
-                                                   recipient.clone(),
-                                                   vec![],
-                                                   &secret_key));
+            let message =
+                unwrap!(MpidMessage::new(sender, metadata.clone(), recipient, vec![], &secret_key));
             assert!(message.body().is_empty());
         }
         let mut body = messaging::generate_random_bytes(MAX_BODY_SIZE);
-        let message = unwrap!(MpidMessage::new(sender.clone(),
+        let message = unwrap!(MpidMessage::new(sender,
                                                metadata.clone(),
-                                               recipient.clone(),
+                                               recipient,
                                                body.clone(),
                                                &secret_key));
         assert_eq!(*message.body(), body);
         body.push(0);
-        assert!(MpidMessage::new(sender.clone(),
+        assert!(MpidMessage::new(sender,
                                  metadata.clone(),
-                                 recipient.clone(),
+                                 recipient,
                                  body.clone(),
                                  &secret_key)
                         .is_err());

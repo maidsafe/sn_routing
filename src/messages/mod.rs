@@ -15,24 +15,22 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+
 mod request;
 mod response;
 
 
 pub use self::request::Request;
 pub use self::response::{AccountInfo, Response};
-use super::QUORUM;
+use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
+
 use ack_manager::Ack;
-#[cfg(not(feature = "use-mock-crust"))]
-use crust::PeerId;
 use error::RoutingError;
 use event::Event;
 use id::{FullId, PublicId};
 use itertools::Itertools;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-#[cfg(feature = "use-mock-crust")]
-use mock_crust::crust::PeerId;
 use peer_manager::SectionMap;
 use routing_table::{Prefix, VersionedPrefix, Xorable};
 use routing_table::Authority;
@@ -76,18 +74,18 @@ pub enum Message {
         /// The wrapped message
         content: DirectMessage,
         /// The sender
-        src: PeerId,
+        src: PublicId,
         /// The receiver
-        dst: PeerId,
+        dst: PublicId,
     },
     /// A hop message sent via a tunnel because the nodes could not connect directly
     TunnelHop {
         /// The wrapped message
         content: HopMessage,
         /// The sender
-        src: PeerId,
+        src: PublicId,
         /// The receiver
-        dst: PeerId,
+        dst: PublicId,
     },
 }
 
@@ -106,6 +104,8 @@ impl Message {
 ///
 /// Allows routing to directly send specific messages between nodes.
 #[derive(Serialize, Deserialize)]
+// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
+#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
 pub enum DirectMessage {
     /// Sent from members of a section or group message's source authority to the first hop. The
     /// message will only be relayed once enough signatures have been accumulated.
@@ -113,10 +113,7 @@ pub enum DirectMessage {
     /// A signature for the current `BTreeSet` of section's node names
     SectionListSignature(SectionList, sign::Signature),
     /// Sent from the bootstrap node to a client in response to `ClientIdentify`.
-    BootstrapIdentify {
-        /// The bootstrap node's keys and name.
-        public_id: PublicId,
-    },
+    BootstrapIdentify,
     /// Sent to the client to indicate that this node is not available as a bootstrap node.
     BootstrapDeny,
     /// Sent from a newly connected client to the bootstrap node to inform it about the client's
@@ -129,43 +126,34 @@ pub enum DirectMessage {
         /// Indicate whether we intend to remain a client, as opposed to becoming a routing node.
         client_restriction: bool,
     },
-    /// Sent from an established node (i.e. one which has successfully joined the network) to
-    /// another node, to allow the latter to add the former to its routing table.
-    NodeIdentify {
-        /// Keys and claimed name, serialised outside routing.
-        serialised_public_id: Vec<u8>,
-        /// Signature of the originator of this message.
-        signature: sign::Signature,
-        /// FIXME: Should be deprecated.
-        /// Tunnel connection indicator from sender which would override
-        /// intermediate peer_mgr states for routing table connection type.
-        /// Should not influence JoiningNode / Proxy states which are expected to be direct only.
-        is_tunnel: bool,
-    },
     /// Sent from a node which is still joining the network to another node, to allow the latter to
     /// add the former to its routing table.
     CandidateIdentify {
-        /// Keys and claimed name, serialised outside routing.
-        serialised_public_id: Vec<u8>,
-        /// Signature of the originator of this message.
-        signature: sign::Signature,
-        /// FIXME: Should be deprecated.
-        /// Tunnel connection indicator from sender which would override
-        /// intermediate peer_mgr states for routing table connection type.
-        /// Should not influence JoiningNode / Proxy states which are expected to be direct only.
-        is_tunnel: bool,
+        /// `PublicId` from before relocation.
+        old_public_id: PublicId,
+        /// `PublicId` from after relocation.
+        new_public_id: PublicId,
+        /// Signature of concatenated `PublicId`s using the pre-relocation key.
+        signature_using_old: sign::Signature,
+        /// Signature of concatenated `PublicId`s and `signature_using_old` using the
+        /// post-relocation key.
+        signature_using_new: sign::Signature,
+        /// Client authority from after relocation.
+        new_client_auth: Authority<XorName>,
     },
     /// Sent from a node that needs a tunnel to be able to connect to the given peer.
-    TunnelRequest(PeerId),
+    TunnelRequest(PublicId),
     /// Sent as a response to `TunnelRequest` if the node can act as a tunnel.
-    TunnelSuccess(PeerId),
+    TunnelSuccess(PublicId),
+    /// Sent as a response to `TunnelSuccess` if the node is selected to act as a tunnel.
+    TunnelSelect(PublicId),
     /// Sent from a tunnel node to indicate that the given peer has disconnected.
-    TunnelClosed(PeerId),
+    TunnelClosed(PublicId),
     /// Sent to a tunnel node to indicate the tunnel is not needed any more.
-    TunnelDisconnect(PeerId),
-    /// Request a proof to be provided by the joining node
+    TunnelDisconnect(PublicId),
+    /// Request a proof to be provided by the joining node.
     ///
-    /// This is sent from member of Group Y to the joining node
+    /// This is sent from member of Group Y to the joining node.
     ResourceProof {
         /// seed of proof
         seed: Vec<u8>,
@@ -402,9 +390,9 @@ impl SignedMessage {
             .iter()
             .filter_map(|(pub_id, sig)| {
                 // Remove if not in sending nodes or signature is invalid:
-                let is_valid = if let Authority::Client { ref client_key, .. } = self.content.src {
-                    client_key == pub_id.signing_public_key() &&
-                    sign::verify_detached(sig, &signed_bytes, client_key)
+                let is_valid = if let Authority::Client { ref client_id, .. } = self.content.src {
+                    client_id == pub_id &&
+                    sign::verify_detached(sig, &signed_bytes, client_id.signing_public_key())
                 } else {
                     self.is_sender(pub_id) &&
                     sign::verify_detached(sig, &signed_bytes, pub_id.signing_public_key())
@@ -440,7 +428,7 @@ impl SignedMessage {
                 // cmp::min(routing_table.len(), min_section_size)
                 // (or just min_section_size, but in that case we will not be able to handle user
                 // messages during boot-up).
-                QUORUM * valid_names.len() <= 100 * valid_sigs
+                valid_sigs * QUORUM_DENOMINATOR > valid_names.len() * QUORUM_NUMERATOR
             }
             Section(_) => {
                 // Note: there should be exactly one source section, but we use safe code:
@@ -448,7 +436,7 @@ impl SignedMessage {
                     .iter()
                     .fold(0, |count, list| count + list.pub_ids.len());
                 let valid_sigs = self.signatures.len();
-                QUORUM * num_sending <= 100 * valid_sigs
+                valid_sigs * QUORUM_DENOMINATOR > num_sending * QUORUM_NUMERATOR
             }
             PrefixSection(_) => {
                 // Each section must have enough signatures:
@@ -459,7 +447,7 @@ impl SignedMessage {
                                  .keys()
                                  .filter(|pub_id| list.pub_ids.contains(pub_id))
                                  .count();
-                             QUORUM * list.pub_ids.len() <= 100 * valid_sigs
+                             valid_sigs * QUORUM_DENOMINATOR > list.pub_ids.len() * QUORUM_NUMERATOR
                          })
             }
             ManagedNode(_) | Client { .. } => self.signatures.len() == 1,
@@ -530,13 +518,17 @@ impl RoutingMessage {
 /// table and get added to their routing tables.
 ///
 ///
-/// ### Getting a new network name from the `NaeManager`
+/// ### Relocating on the network
 ///
-/// Once in `Client` state, A sends a `GetNodeName` request to the `NaeManager` section authority X
-/// of A's current name. X computes a new name and sends it in an `ExpectCandidate` request to the
-/// `NaeManager` Y of A's new name. Each member of Y caches A's public ID, and sends
-/// `AcceptAsCandidate` to self section. Once Y receives `AcceptAsCandidate`, sends a `GetNodeName`
-/// response back to A, which includes the public IDs of the members of Y.
+/// Once in `JoiningNode` state, A sends a `Relocate` request to the `NaeManager` section authority
+/// X of A's current name. X computes a target destination Y to which A should relocate and sends
+/// that section's `NaeManager`s an `ExpectCandidate` containing A's current public ID. Each member
+/// of Y caches A's public ID, and sends `AcceptAsCandidate` to self section. Once Y receives
+/// `AcceptAsCandidate`, sends a `RelocateResponse` back to A, which includes an address space range
+/// into which A should relocate and also the public IDs of the members of Y. A then disconnects
+/// from the network and reconnects with a new ID which falls within the specified address range.
+/// After connecting to the members of Y, it begins the resource proof process. Upon successful
+/// completion, A is regarded as a full node and connects to all neighbouring sections' peers.
 ///
 ///
 /// ### Connecting to the matching section
@@ -566,22 +558,20 @@ impl RoutingMessage {
 #[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
 pub enum MessageContent {
     // ---------- Internal ------------
-    /// Ask the network to alter your `PublicId` name.
+    /// Ask the network to relocate you.
     ///
-    /// This is sent by a `Client` to its `NaeManager` with the intent to become a routing node with
-    /// a new name chosen by the `NaeManager`.
-    GetNodeName {
-        /// The client's `PublicId` (public keys and name)
-        current_id: PublicId,
+    /// This is sent by a joining node to its `NaeManager`s with the intent to become a full routing
+    /// node with a new ID in an address range chosen by the `NaeManager`s.
+    Relocate {
         /// The message's unique identifier.
         message_id: MessageId,
     },
-    /// Notify a joining node's `NaeManager` so that it sends a `GetNodeNameResponse`.
+    /// Notify a joining node's `NaeManager` so that it sends a `RelocateResponse`.
     ExpectCandidate {
-        /// The joining node's `PublicId` (public keys and name)
-        expect_id: PublicId,
-        /// The client's current authority.
-        client_auth: Authority<XorName>,
+        /// The joining node's current public ID.
+        old_public_id: PublicId,
+        /// The joining node's current authority.
+        old_client_auth: Authority<XorName>,
         /// The message's unique identifier.
         message_id: MessageId,
     },
@@ -609,13 +599,11 @@ pub enum MessageContent {
         /// The message's unique identifier.
         msg_id: MessageId,
     },
-    /// Reply with the new `PublicId` for the joining node.
-    ///
-    /// Sent from the `NodeManager` to the `Client`.
-    GetNodeNameResponse {
-        /// Supplied `PublicId`, but with the new name
-        relocated_id: PublicId,
-        /// The relocated section that the joining node shall connect to
+    /// Reply with the address range into which the joining node should move.
+    RelocateResponse {
+        /// The interval into which the joining node should join.
+        target_interval: (XorName, XorName),
+        /// The section that the joining node shall connect to.
         section: BTreeSet<PublicId>,
         /// The message's unique identifier.
         message_id: MessageId,
@@ -665,19 +653,21 @@ pub enum MessageContent {
     ///
     /// Sent from the `NaeManager` to the `NaeManager`.
     AcceptAsCandidate {
-        /// Supplied `PublicId`, but with the new name
-        expect_id: PublicId,
-        /// Client authority of the candidate
-        client_auth: Authority<XorName>,
+        /// The joining node's current public ID.
+        old_public_id: PublicId,
+        /// The joining node's current authority.
+        old_client_auth: Authority<XorName>,
+        /// The interval into which the joining node should join.
+        target_interval: (XorName, XorName),
         /// The message's unique identifier.
         message_id: MessageId,
     },
     /// Sent among Group Y to vote to accept a joining node.
     CandidateApproval {
-        /// The `PublicId` of the candidate
-        candidate_id: PublicId,
-        /// Client authority of the candidate
-        client_auth: Authority<XorName>,
+        /// The joining node's current public ID.
+        new_public_id: PublicId,
+        /// Client authority of the candidate.
+        new_client_auth: Authority<XorName>,
         /// The `PublicId`s of all routing table contacts shared by the nodes in our section.
         sections: SectionMap,
     },
@@ -714,9 +704,7 @@ impl Debug for DirectMessage {
             SectionListSignature(ref sec_list, _) => {
                 write!(formatter, "SectionListSignature({:?}, ..)", sec_list.prefix)
             }
-            BootstrapIdentify { ref public_id } => {
-                write!(formatter, "BootstrapIdentify {{ {:?} }}", public_id)
-            }
+            BootstrapIdentify => write!(formatter, "BootstrapIdentify"),
             BootstrapDeny => write!(formatter, "BootstrapDeny"),
             ClientIdentify { client_restriction: true, .. } => {
                 write!(formatter, "ClientIdentify (client only)")
@@ -724,12 +712,12 @@ impl Debug for DirectMessage {
             ClientIdentify { client_restriction: false, .. } => {
                 write!(formatter, "ClientIdentify (joining node)")
             }
-            NodeIdentify { .. } => write!(formatter, "NodeIdentify {{ .. }}"),
             CandidateIdentify { .. } => write!(formatter, "CandidateIdentify {{ .. }}"),
-            TunnelRequest(peer_id) => write!(formatter, "TunnelRequest({:?})", peer_id),
-            TunnelSuccess(peer_id) => write!(formatter, "TunnelSuccess({:?})", peer_id),
-            TunnelClosed(peer_id) => write!(formatter, "TunnelClosed({:?})", peer_id),
-            TunnelDisconnect(peer_id) => write!(formatter, "TunnelDisconnect({:?})", peer_id),
+            TunnelRequest(pub_id) => write!(formatter, "TunnelRequest({:?})", pub_id),
+            TunnelSuccess(pub_id) => write!(formatter, "TunnelSuccess({:?})", pub_id),
+            TunnelSelect(pub_id) => write!(formatter, "TunnelSelect({:?})", pub_id),
+            TunnelClosed(pub_id) => write!(formatter, "TunnelClosed({:?})", pub_id),
+            TunnelDisconnect(pub_id) => write!(formatter, "TunnelDisconnect({:?})", pub_id),
             ResourceProof {
                 ref seed,
                 ref target_size,
@@ -783,24 +771,16 @@ impl Debug for MessageContent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         use self::MessageContent::*;
         match *self {
-            GetNodeName {
-                ref current_id,
-                ref message_id,
-            } => {
-                write!(formatter,
-                       "GetNodeName {{ {:?}, {:?} }}",
-                       current_id,
-                       message_id)
-            }
+            Relocate { ref message_id } => write!(formatter, "Relocate {{ {:?} }}", message_id),
             ExpectCandidate {
-                ref expect_id,
-                ref client_auth,
+                ref old_public_id,
+                ref old_client_auth,
                 ref message_id,
             } => {
                 write!(formatter,
                        "ExpectCandidate {{ {:?}, {:?}, {:?} }}",
-                       expect_id,
-                       client_auth,
+                       old_public_id,
+                       old_client_auth,
                        message_id)
             }
             ConnectionInfoRequest {
@@ -823,14 +803,14 @@ impl Debug for MessageContent {
                        pub_id,
                        msg_id)
             }
-            GetNodeNameResponse {
-                ref relocated_id,
+            RelocateResponse {
+                ref target_interval,
                 ref section,
                 ref message_id,
             } => {
                 write!(formatter,
-                       "GetNodeNameResponse {{ {:?}, {:?}, {:?} }}",
-                       relocated_id,
+                       "RelocateResponse {{ {:?}, {:?}, {:?} }}",
+                       target_interval,
                        section,
                        message_id)
             }
@@ -871,26 +851,27 @@ impl Debug for MessageContent {
                        hash[2])
             }
             AcceptAsCandidate {
-                ref expect_id,
-                ref client_auth,
+                ref old_public_id,
+                ref old_client_auth,
+                ref target_interval,
                 ref message_id,
             } => {
                 write!(formatter,
-                       "AcceptAsCandidate {{ {:?}, {:?}, {:?} }}",
-                       expect_id,
-                       client_auth,
+                       "AcceptAsCandidate {{ {:?}, {:?}, {:?}, {:?} }}",
+                       old_public_id,
+                       old_client_auth,
+                       target_interval,
                        message_id)
             }
             CandidateApproval {
-                ref candidate_id,
-                ref client_auth,
+                ref new_public_id,
+                ref new_client_auth,
                 ref sections,
             } => {
                 write!(formatter,
-                       "CandidateApproval {{ candidate_id: {:?}, client_auth: {:?}, sections: \
-                        {:?} }}",
-                       candidate_id,
-                       client_auth,
+                       "CandidateApproval {{ new: {:?}, client: {:?}, sections: {:?} }}",
+                       new_public_id,
+                       new_client_auth,
                        sections)
             }
             NodeApproval { ref sections } => write!(formatter, "NodeApproval {{ {:?} }}", sections),
@@ -1021,15 +1002,10 @@ impl UserMessageCache {
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
-    #[cfg(not(feature = "use-mock-crust"))]
-    use crust::PeerId;
     use data::ImmutableData;
     use id::FullId;
     use maidsafe_utilities::serialisation::serialise;
-    #[cfg(feature = "use-mock-crust")]
-    use mock_crust::crust::PeerId;
     use rand;
     use routing_table::{Authority, Prefix};
     use rust_sodium::crypto::hash::sha256;
@@ -1040,15 +1016,6 @@ mod tests {
     use types::MessageId;
     use xor_name::XorName;
 
-    #[cfg(not(feature = "use-mock-crust"))]
-    fn make_peer_id() -> PeerId {
-        PeerId(*FullId::new().public_id().encrypting_public_key())
-    }
-    #[cfg(feature = "use-mock-crust")]
-    fn make_peer_id() -> PeerId {
-        PeerId(0)
-    }
-
     #[test]
     fn signed_message_check_integrity() {
         let min_section_size = 1000;
@@ -1056,8 +1023,7 @@ mod tests {
         let full_id = FullId::new();
         let routing_message = RoutingMessage {
             src: Authority::Client {
-                client_key: *full_id.public_id().signing_public_key(),
-                peer_id: make_peer_id(),
+                client_id: *full_id.public_id(),
                 proxy_node_name: name,
             },
             dst: Authority::ClientManager(name),

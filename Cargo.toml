@@ -7,29 +7,31 @@ license = "GPL-3.0"
 name = "routing"
 readme = "README.md"
 repository = "https://github.com/maidsafe/routing"
-version = "0.28.5"
+version = "0.29.0"
 
 [dependencies]
-crust = "~0.24.0"
+crust = "~0.25.0"
+fake_clock = "~0.1.0"
 hex = "~0.2.0"
-itertools = "~0.5.9"
+itertools = "~0.6.0"
 log = "~0.3.7"
-lru_time_cache = "~0.5.0"
-maidsafe_utilities = "~0.11.3"
+lru_time_cache = "~0.6.0"
+maidsafe_utilities = "~0.12.0"
+num-bigint = "~0.1.37"
 quick-error = "~1.1.0"
 rand = "~0.3.15"
-resource_proof = "~0.3.1"
-rust_sodium = "~0.2.0"
-serde = "~0.9.13"
-serde_derive = "~0.9.13"
+resource_proof = "~0.4.0"
+rust_sodium = "~0.3.0"
+serde = "~1.0.6"
+serde_derive = "~1.0.6"
 term = "~0.4.5"
 tiny-keccak = "~1.2.1"
 unwrap = "~1.1.0"
 
 [dev-dependencies]
-rustc-serialize = "~0.3.23"
 docopt = "~0.6.86"
 libc = "~0.2.21"
+rustc-serialize = "~0.3.23"
 
 [[example]]
 bench = false
@@ -40,4 +42,4 @@ bench = false
 name = "ci_test"
 
 [features]
-use-mock-crust = []
+use-mock-crust = ["lru_time_cache/fake_clock"]

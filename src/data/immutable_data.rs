@@ -17,7 +17,7 @@
 
 use maidsafe_utilities::serialisation::serialised_size;
 use rust_sodium::crypto::hash::sha256;
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
 
@@ -25,9 +25,11 @@ use xor_name::XorName;
 pub const MAX_IMMUTABLE_DATA_SIZE_IN_BYTES: u64 = 1024 * 1024 + 10 * 1024;
 
 /// An immutable chunk of data.
-#[derive(Hash, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize)]
+///
+/// Note that the `name` member is omitted when serialising `ImmutableData` and is calculated from
+/// the `value` when deserialising.
+#[derive(Hash, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ImmutableData {
-    #[serde(skip_serializing)]
     name: XorName,
     value: Vec<u8>,
 }
@@ -63,14 +65,16 @@ impl ImmutableData {
     }
 }
 
+impl Serialize for ImmutableData {
+    fn serialize<S: Serializer>(&self, serialiser: S) -> Result<S::Ok, S::Error> {
+        self.value.serialize(serialiser)
+    }
+}
 
-impl Deserialize for ImmutableData {
-    fn deserialize<D: Deserializer>(deserializer: D) -> Result<ImmutableData, D::Error> {
+impl<'de> Deserialize<'de> for ImmutableData {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<ImmutableData, D::Error> {
         let value: Vec<u8> = Deserialize::deserialize(deserializer)?;
-        Ok(ImmutableData {
-               name: XorName(sha256::hash(&value).0),
-               value: value,
-           })
+        Ok(ImmutableData::new(value))
     }
 }
 
@@ -84,16 +88,27 @@ impl Debug for ImmutableData {
 mod tests {
     use super::*;
     use hex::ToHex;
+    use maidsafe_utilities::{SeededRng, serialisation};
+    use rand::Rng;
 
     #[test]
     fn deterministic_test() {
         let value = "immutable data value".to_owned().into_bytes();
-
-        // Normal
         let immutable_data = ImmutableData::new(value);
         let immutable_data_name = immutable_data.name().0.as_ref().to_hex();
         let expected_name = "ec0775555a7a6afba5f6e0a1deaa06f8928da80cf6ca94742ecc2a00c31033d3";
 
         assert_eq!(&expected_name, &immutable_data_name);
+    }
+
+    #[test]
+    fn serialisation() {
+        let mut rng = SeededRng::thread_rng();
+        let len = rng.gen_range(1, 10000);
+        let value = rng.gen_iter().take(len).collect();
+        let immutable_data = ImmutableData::new(value);
+        let serialised = unwrap!(serialisation::serialise(&immutable_data));
+        let parsed = unwrap!(serialisation::deserialise(&serialised));
+        assert_eq!(immutable_data, parsed);
     }
 }

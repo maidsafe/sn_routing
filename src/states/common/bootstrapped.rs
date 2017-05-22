@@ -17,8 +17,8 @@
 
 use super::Base;
 use ack_manager::{ACK_TIMEOUT_SECS, Ack, AckManager, UnacknowledgedMessage};
-use crust::PeerId;
 use error::RoutingError;
+use id::PublicId;
 use maidsafe_utilities::serialisation;
 use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage};
 use routing_message_filter::RoutingMessageFilter;
@@ -88,11 +88,11 @@ pub trait Bootstrapped: Base {
     /// if it should be blocked due to deduplication.
     fn filter_outgoing_routing_msg(&mut self,
                                    msg: &RoutingMessage,
-                                   peer_id: &PeerId,
+                                   pub_id: &PublicId,
                                    route: u8)
                                    -> bool {
         if self.routing_msg_filter()
-               .filter_outgoing(msg, peer_id, route) {
+               .filter_outgoing(msg, pub_id, route) {
             return true;
         }
 

@@ -80,7 +80,8 @@
 //! # #![allow(unused)]
 //! use routing::Node;
 //!
-//! let node = Node::builder().create().unwrap();
+//! let min_section_size = 8;
+//! let node = Node::builder().create(min_section_size).unwrap();
 //! ```
 //!
 //! Upon creation, the node will first connect to the network as a client. Once it has client
@@ -120,10 +121,14 @@
 
 #![cfg_attr(feature="cargo-clippy", deny(unicode_not_nfc, wrong_pub_self_convention,
                                     option_unwrap_used))]
+// Allow `panic_params` until https://github.com/Manishearth/rust-clippy/issues/768 is resolved.
+#![cfg_attr(feature="cargo-clippy", allow(panic_params))]
 
 extern crate hex;
 #[macro_use]
 extern crate log;
+#[cfg(feature = "use-mock-crust")]
+extern crate fake_clock;
 extern crate maidsafe_utilities;
 #[macro_use]
 extern crate quick_error;
@@ -133,6 +138,7 @@ extern crate unwrap;
 extern crate crust;
 extern crate itertools;
 extern crate lru_time_cache;
+extern crate num_bigint;
 extern crate rand;
 extern crate resource_proof;
 extern crate rust_sodium;
@@ -161,6 +167,7 @@ mod messages;
 mod node;
 mod outbox;
 mod peer_manager;
+mod resource_prover;
 mod routing_message_filter;
 mod routing_table;
 mod signature_accumulator;
@@ -190,11 +197,12 @@ pub const TYPE_TAG_SESSION_PACKET: u64 = 0;
 /// Structured Data Tag for DNS Packet Type
 pub const TYPE_TAG_DNS_PACKET: u64 = 5;
 
-/// The quorum, as a percentage of the number of members of the authority.
-pub const QUORUM: usize = 51;
-
-/// The minimal section size.
-pub const MIN_SECTION_SIZE: usize = 8;
+/// Quorum is defined as having strictly greater than `QUORUM_NUMERATOR / QUORUM_DENOMINATOR`
+/// agreement; using only integer arithmetic a quorum can be checked with
+/// `votes * QUORUM_DENOMINATOR > voters * QUORUM_NUMERATOR`.
+pub const QUORUM_NUMERATOR: usize = 1;
+/// See `QUORUM_NUMERATOR`.
+pub const QUORUM_DENOMINATOR: usize = 2;
 
 /// Key of an account data in the account packet
 pub const ACC_LOGIN_ENTRY_KEY: &'static [u8] = b"Login";
@@ -214,12 +222,20 @@ pub use messages::{AccountInfo, Request, Response};
 #[cfg(feature = "use-mock-crust")]
 pub use mock_crust::crust;
 pub use node::{Node, NodeBuilder};
+#[cfg(feature = "use-mock-crust")]
+pub use peer_manager::test_consts;
 pub use routing_table::{Authority, Prefix, RoutingTable, Xorable};
 pub use routing_table::Error as RoutingTableError;
 #[cfg(any(test, feature = "use-mock-crust"))]
 pub use routing_table::verify_network_invariant;
 pub use types::MessageId;
 pub use xor_name::{XOR_NAME_BITS, XOR_NAME_LEN, XorName, XorNameFromHexError};
+
+type Service = crust::Service<PublicId>;
+use crust::Event as CrustEvent;
+type CrustEventSender = crust::CrustEventSender<PublicId>;
+type PrivConnectionInfo = crust::PrivConnectionInfo<PublicId>;
+type PubConnectionInfo = crust::PubConnectionInfo<PublicId>;
 
 /// Account packet that is used to provide an invitation code for registration.
 /// After successful registration it should be replaced by a usual account packet (i.e.
@@ -235,12 +251,14 @@ pub struct AccountRegistrationPacket {
 
 #[cfg(test)]
 mod tests {
-    use super::QUORUM;
+    use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
 
     #[test]
     #[cfg_attr(feature="cargo-clippy", allow(eq_op))]
-    fn quorum_percentage() {
-        assert!(QUORUM <= 100 && QUORUM > 50,
-                "Quorum percentage isn't between 51 and 100");
+    fn quorum_check() {
+        assert!(QUORUM_NUMERATOR < QUORUM_DENOMINATOR,
+                "Quorum impossible to achieve");
+        assert!(QUORUM_NUMERATOR * 2 >= QUORUM_DENOMINATOR,
+                "Quorum does not guarantee agreement");
     }
 }

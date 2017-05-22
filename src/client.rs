@@ -15,8 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+#[cfg(not(feature = "use-mock-crust"))]
 use BootstrapConfig;
-use MIN_SECTION_SIZE;
 use action::Action;
 use cache::NullCache;
 use crust::Config;
@@ -25,7 +25,7 @@ use error::{InterfaceError, RoutingError};
 use event::Event;
 #[cfg(feature = "use-mock-crust")]
 use event_stream::{EventStepper, EventStream};
-use id::FullId;
+use id::{FullId, PublicId};
 #[cfg(not(feature = "use-mock-crust"))]
 use maidsafe_utilities::thread::{self, Joiner};
 use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, Request};
@@ -35,7 +35,7 @@ use routing_table::Authority;
 use rust_sodium;
 use rust_sodium::crypto::sign;
 use state_machine::{State, StateMachine};
-use states;
+use states::{Bootstrapping, BootstrappingTargetState};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::mpsc::{Receiver, Sender, channel};
 #[cfg(feature = "use-mock-crust")]
@@ -65,18 +65,26 @@ pub struct Client {
 
 impl Client {
     fn make_state_machine(keys: Option<FullId>,
-                          outbox: &mut EventBox,
-                          config: Option<Config>)
+                          min_section_size: usize,
+                          config: Option<Config>,
+                          outbox: &mut EventBox)
                           -> (RoutingActionSender, StateMachine) {
-        let cache = Box::new(NullCache);
         let full_id = keys.unwrap_or_else(FullId::new);
+        let pub_id = *full_id.public_id();
 
-        StateMachine::new(move |crust_service, timer, _outbox2| {
-            states::Bootstrapping::new(cache, true, crust_service, full_id, MIN_SECTION_SIZE, timer)
-                .map_or(State::Terminated, State::Bootstrapping)
+        StateMachine::new(move |action_sender, crust_service, timer, _outbox2| {
+            Bootstrapping::new(action_sender,
+                               Box::new(NullCache),
+                               BootstrappingTargetState::Client,
+                               crust_service,
+                               full_id,
+                               min_section_size,
+                               timer)
+                    .map_or(State::Terminated, State::Bootstrapping)
         },
-                          outbox,
-                          config)
+                          pub_id,
+                          config,
+                          outbox)
     }
 
     /// Gets MAID account information.
@@ -412,6 +420,9 @@ impl Client {
                -> Result<Client, RoutingError> {
         rust_sodium::init(); // enable shared global (i.e. safe to multithread now)
 
+        // TODO - replace this hard-coded value
+        let min_section_size = 8;
+
         let (tx, rx) = channel();
         let (get_action_sender_tx, get_action_sender_rx) = channel();
 
@@ -419,7 +430,7 @@ impl Client {
             // start the handler for routing with a restriction to become a full node
             let mut event_buffer = EventBuf::new();
             let (action_sender, mut machine) =
-                Self::make_state_machine(keys, &mut event_buffer, config);
+                Self::make_state_machine(keys, min_section_size, config, &mut event_buffer);
 
             for ev in event_buffer.take_all() {
                 unwrap!(event_sender.send(ev));
@@ -450,11 +461,11 @@ impl Client {
            })
     }
 
-    /// Returns the name of this node.
-    pub fn name(&self) -> Result<XorName, InterfaceError> {
+    /// Returns the `PublicId` of this client.
+    pub fn id(&self) -> Result<PublicId, InterfaceError> {
         let (result_tx, result_rx) = channel();
         self.action_sender
-            .send(Action::Name { result_tx: result_tx })?;
+            .send(Action::Id { result_tx: result_tx })?;
         Ok(result_rx.recv()?)
     }
 
@@ -486,9 +497,13 @@ impl Client {
 #[cfg(feature = "use-mock-crust")]
 impl Client {
     /// Create a new `Client` for testing with mock crust.
-    pub fn new(keys: Option<FullId>, config: Option<Config>) -> Result<Client, RoutingError> {
+    pub fn new(keys: Option<FullId>,
+               min_section_size: usize,
+               config: Option<Config>)
+               -> Result<Client, RoutingError> {
         let mut event_buffer = EventBuf::new();
-        let (_, machine) = Self::make_state_machine(keys, &mut event_buffer, config);
+        let (_, machine) =
+            Self::make_state_machine(keys, min_section_size, config, &mut event_buffer);
 
         let (tx, rx) = channel();
 
@@ -500,28 +515,12 @@ impl Client {
            })
     }
 
-    /// Returns the name of this node.
-    pub fn name(&self) -> Result<XorName, RoutingError> {
-        self.machine.name().ok_or(RoutingError::Terminated)
+    /// Returns the name of this client.
+    pub fn id(&self) -> Result<PublicId, RoutingError> {
+        self.machine.id().ok_or(RoutingError::Terminated)
     }
 
-    /// Resend all unacknowledged messages.
-    pub fn resend_unacknowledged(&mut self) -> bool {
-        self.machine.current_mut().resend_unacknowledged()
-    }
-
-    /// Are there any unacknowledged messages?
-    pub fn has_unacknowledged(&self) -> bool {
-        self.machine.current().has_unacknowledged()
-    }
-
-    /// Returns the `crust::Config` associated with the `crust::Service` (if any).
-    pub fn bootstrap_config(&self) -> BootstrapConfig {
-        self.machine
-            .bootstrap_config()
-            .unwrap_or_else(BootstrapConfig::default)
-    }
-
+    // FIXME: Review the usage poll here
     fn send_request(&mut self,
                     dst: Authority<XorName>,
                     request: Request,

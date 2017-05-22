@@ -114,9 +114,6 @@ fn response_caching() {
 
     poll_all(&mut nodes, &mut clients);
 
-    // The client should receive ack for the request.
-    assert!(!clients[0].inner.has_unacknowledged());
-
     // The client should receive the response...
     expect_any_event!(
         clients[0],
