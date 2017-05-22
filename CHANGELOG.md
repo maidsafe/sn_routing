@@ -1,5 +1,9 @@
 # Routing - Change Log
 
+## [0.29.0]
+- Integration with templatised Crust where now routing specifies what to use as a UID so that crust and routing use a common UID to identify peer.
+- Peer manager clean up as connect success now tells us everything about the peer. Previously we needed to wait additionally for NodeIdentify for instance as crust-uid (PeerId) and routing-uid (PublicId) were separate and each layer informed about the id specific to that layer only.
+
 ## [0.28.5]
 - Add section update requests to make merges more stable.
 - Don't approve new node if routing table is invalid.
