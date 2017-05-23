@@ -135,11 +135,7 @@ impl TestNode {
                -> Self {
         let handle = network.new_service_handle(config, endpoint);
         let node = mock_crust::make_current(&handle, || {
-            unwrap!(Node::builder()
-                        .cache(cache)
-                        .first(first_node)
-                        .min_section_size(network.min_section_size())
-                        .create())
+            unwrap!(Node::builder().cache(cache).first(first_node).create())
         });
 
         TestNode {
@@ -232,9 +228,7 @@ impl TestClient {
         let full_id = FullId::new();
         let handle = network.new_service_handle(config.clone(), endpoint);
         let client = mock_crust::make_current(&handle, || {
-            unwrap!(Client::with_min_section_size(Some(full_id.clone()),
-                                                  config,
-                                                  network.min_section_size()))
+            unwrap!(Client::new(Some(full_id.clone()), config))
         });
 
         TestClient {

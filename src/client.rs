@@ -16,7 +16,6 @@
 // relating to use of the SAFE Network Software.
 
 use BootstrapConfig;
-use MIN_SECTION_SIZE;
 use action::Action;
 use cache::NullCache;
 use data::{EntryAction, ImmutableData, MutableData, PermissionSet, User};
@@ -40,6 +39,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 #[cfg(feature = "use-mock-crust")]
 use std::sync::mpsc::{RecvError, TryRecvError};
 use types::{MessageId, RoutingActionSender};
+use utils;
 use xor_name::XorName;
 
 /// Interface for sending and receiving messages to and from a network of nodes in the role of a
@@ -65,11 +65,11 @@ pub struct Client {
 impl Client {
     fn make_state_machine(keys: Option<FullId>,
                           outbox: &mut EventBox,
-                          config: Option<BootstrapConfig>,
-                          min_section_size: usize)
+                          config: Option<BootstrapConfig>)
                           -> (RoutingActionSender, StateMachine) {
         let full_id = keys.unwrap_or_else(FullId::new);
         let pub_id = *full_id.public_id();
+        let min_section_size = utils::min_section_size();
 
         StateMachine::new(move |action_sender, crust_service, timer, _outbox2| {
             Bootstrapping::new(action_sender,
@@ -417,15 +417,6 @@ impl Client {
                keys: Option<FullId>,
                config: Option<BootstrapConfig>)
                -> Result<Client, RoutingError> {
-        Self::with_min_section_size(event_sender, keys, config, MIN_SECTION_SIZE)
-    }
-
-    /// Create a new `Client` with the specified minimal section size.
-    pub fn with_min_section_size(event_sender: Sender<Event>,
-                                 keys: Option<FullId>,
-                                 config: Option<BootstrapConfig>,
-                                 min_section_size: usize)
-                                 -> Result<Client, RoutingError> {
         rust_sodium::init(); // enable shared global (i.e. safe to multithread now)
 
         let (tx, rx) = channel();
@@ -435,7 +426,7 @@ impl Client {
             // start the handler for routing with a restriction to become a full node
             let mut event_buffer = EventBuf::new();
             let (action_sender, mut machine) =
-                Self::make_state_machine(keys, &mut event_buffer, config, min_section_size);
+                Self::make_state_machine(keys, &mut event_buffer, config);
 
             for ev in event_buffer.take_all() {
                 unwrap!(event_sender.send(ev));
@@ -505,18 +496,8 @@ impl Client {
     pub fn new(keys: Option<FullId>,
                config: Option<BootstrapConfig>)
                -> Result<Client, RoutingError> {
-        Self::with_min_section_size(keys, config, MIN_SECTION_SIZE)
-    }
-
-    /// Create a new `Client` for testing with mock crust, with the specified
-    /// minimal section size.
-    pub fn with_min_section_size(keys: Option<FullId>,
-                                 config: Option<BootstrapConfig>,
-                                 min_section_size: usize)
-                                 -> Result<Client, RoutingError> {
         let mut event_buffer = EventBuf::new();
-        let (_, machine) =
-            Self::make_state_machine(keys, &mut event_buffer, config, min_section_size);
+        let (_, machine) = Self::make_state_machine(keys, &mut event_buffer, config);
 
         let (tx, rx) = channel();
 

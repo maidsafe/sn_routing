@@ -80,8 +80,7 @@
 //! # #![allow(unused)]
 //! use routing::Node;
 //!
-//! let min_section_size = 8;
-//! let node = Node::builder().create(min_section_size).unwrap();
+//! let node = Node::builder().create().unwrap();
 //! ```
 //!
 //! Upon creation, the node will first connect to the network as a client. Once it has client
@@ -204,7 +203,7 @@ pub const QUORUM_NUMERATOR: usize = 1;
 /// See `QUORUM_NUMERATOR`.
 pub const QUORUM_DENOMINATOR: usize = 2;
 
-/// The minimal section size.
+/// Default minimal section size.
 pub const MIN_SECTION_SIZE: usize = 8;
 /// Key of an account data in the account packet
 pub const ACC_LOGIN_ENTRY_KEY: &'static [u8] = b"Login";

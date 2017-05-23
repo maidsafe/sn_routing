@@ -21,7 +21,7 @@ use action::Action;
 use id::{FullId, PublicId};
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 #[cfg(feature = "use-mock-crust")]
-use mock_crust::get_current;
+use mock_crust;
 use outbox::EventBox;
 #[cfg(feature = "use-mock-crust")]
 use routing_table::Prefix;
@@ -231,11 +231,11 @@ impl StateMachine {
 
         let res = match config {
             #[cfg(feature = "use-mock-crust")]
-            Some(c) => Service::with_config(get_current(), crust_sender, c, pub_id),
+            Some(c) => Service::with_config(mock_crust::take_current(), crust_sender, c, pub_id),
             #[cfg(not(feature = "use-mock-crust"))]
             Some(c) => Service::with_config(crust_sender, c, pub_id),
             #[cfg(feature = "use-mock-crust")]
-            None => Service::new(get_current(), crust_sender, pub_id),
+            None => Service::new(mock_crust::take_current(), crust_sender, pub_id),
             #[cfg(not(feature = "use-mock-crust"))]
             None => Service::new(crust_sender, pub_id),
         };

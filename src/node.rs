@@ -15,7 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use MIN_SECTION_SIZE;
 use action::Action;
 use cache::{Cache, NullCache};
 use client_error::ClientError;
@@ -40,6 +39,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::{Receiver, RecvError, Sender, TryRecvError, channel};
 use types::{MessageId, RoutingActionSender};
+use utils;
 use xor_name::XorName;
 
 // Helper macro to implement request sending methods.
@@ -89,7 +89,6 @@ pub struct NodeBuilder {
     cache: Box<Cache>,
     first: bool,
     deny_other_local_nodes: bool,
-    min_section_size: usize,
 }
 
 impl NodeBuilder {
@@ -113,14 +112,6 @@ impl NodeBuilder {
     pub fn deny_other_local_nodes(self) -> NodeBuilder {
         NodeBuilder {
             deny_other_local_nodes: true,
-            ..self
-        }
-    }
-
-    /// Set min section size.
-    pub fn min_section_size(self, size: usize) -> Self {
-        NodeBuilder {
-            min_section_size: size,
             ..self
         }
     }
@@ -154,13 +145,14 @@ impl NodeBuilder {
     fn make_state_machine(self, outbox: &mut EventBox) -> (RoutingActionSender, StateMachine) {
         let full_id = FullId::new();
         let pub_id = *full_id.public_id();
+        let min_section_size = utils::min_section_size();
 
         StateMachine::new(move |action_sender, crust_service, timer, outbox2| if self.first {
                               if let Some(state) = states::Node::first(action_sender,
                                                                        self.cache,
                                                                        crust_service,
                                                                        full_id,
-                                                                       self.min_section_size,
+                                                                       min_section_size,
                                                                        timer) {
                                   State::Node(state)
                               } else {
@@ -177,7 +169,7 @@ impl NodeBuilder {
                                BootstrappingTargetState::JoiningNode,
                                crust_service,
                                full_id,
-                               self.min_section_size,
+                               min_section_size,
                                timer)
                     .map_or(State::Terminated, State::Bootstrapping)
         },
@@ -208,7 +200,6 @@ impl Node {
             cache: Box::new(NullCache),
             first: false,
             deny_other_local_nodes: false,
-            min_section_size: MIN_SECTION_SIZE,
         }
     }
 
