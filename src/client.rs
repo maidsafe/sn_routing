@@ -156,6 +156,7 @@ impl Client {
     }
 
     /// Fetches a list of entries (keys + values) of the provided MutableData
+    /// Note: response to this request is unlikely to accumulate during churn.
     pub fn list_mdata_entries(&mut self,
                               dst: Authority<XorName>,
                               name: XorName,
@@ -172,6 +173,7 @@ impl Client {
     }
 
     /// Fetches a list of keys of the provided MutableData
+    /// Note: response to this request is unlikely to accumulate during churn.
     pub fn list_mdata_keys(&mut self,
                            dst: Authority<XorName>,
                            name: XorName,
@@ -188,6 +190,7 @@ impl Client {
     }
 
     /// Fetches a list of values of the provided MutableData
+    /// Note: response to this request is unlikely to accumulate during churn.
     pub fn list_mdata_values(&mut self,
                              dst: Authority<XorName>,
                              name: XorName,

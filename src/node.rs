@@ -220,6 +220,7 @@ impl Node {
                   DEFAULT_PRIORITY);
 
     /// Send a `GetMData` request to `dst` to retrieve data from the network.
+    /// Note: responses to this request are unlikely to accumulate during churn.
     impl_request!(send_get_mdata_request,
                   GetMData {
                       name: XorName,
@@ -337,6 +338,7 @@ impl Node {
     impl_response!(send_put_idata_response, PutIData, (), DEFAULT_PRIORITY);
 
     /// Respond to a `GetMData` request.
+    /// Note: this response is unlikely to accumulate during churn.
     pub fn send_get_mdata_response(&mut self,
                                    src: Authority<XorName>,
                                    dst: Authority<XorName>,
@@ -380,18 +382,21 @@ impl Node {
     }
 
     /// Respond to a `ListMDataEntries` request.
+    /// Note: this response is unlikely to accumulate during churn.
     impl_response!(send_list_mdata_entries_response,
                    ListMDataEntries,
                    BTreeMap<Vec<u8>, Value>,
                    CLIENT_GET_PRIORITY);
 
     /// Respond to a `ListMDataKeys` request.
+    /// Note: this response is unlikely to accumulate during churn.
     impl_response!(send_list_mdata_keys_response,
                    ListMDataKeys,
                    BTreeSet<Vec<u8>>,
                    CLIENT_GET_PRIORITY);
 
     /// Respond to a `ListMDataValues` request.
+    /// Note: this response is unlikely to accumulate during churn.
     impl_response!(send_list_mdata_values_response,
                    ListMDataValues,
                    Vec<Value>,
