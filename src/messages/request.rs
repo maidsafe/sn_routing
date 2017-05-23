@@ -47,6 +47,16 @@ pub enum Request {
     },
 
     // --- MutableData ---
+    /// Fetches whole MutableData from the network.
+    /// Note: responses to this request are unlikely to accumulate during churn.
+    GetMData {
+        /// Network identifier of MutableData
+        name: XorName,
+        /// Type tag
+        tag: u64,
+        /// Unique message identifier
+        msg_id: MsgId,
+    },
     // ==========================
     /// Creates a new MutableData in the network.
     PutMData {
@@ -78,6 +88,7 @@ pub enum Request {
 
     // Data Actions
     /// Fetches a list of entries (keys + values).
+    /// Note: responses to this request are unlikely to accumulate during churn.
     ListMDataEntries {
         /// Network identifier of MutableData
         name: XorName,
@@ -87,6 +98,7 @@ pub enum Request {
         msg_id: MsgId,
     },
     /// Fetches a list of keys in MutableData.
+    /// Note: responses to this request are unlikely to accumulate during churn.
     ListMDataKeys {
         /// Network identifier of MutableData
         name: XorName,
@@ -96,6 +108,7 @@ pub enum Request {
         msg_id: MsgId,
     },
     /// Fetches a list of values in MutableData.
+    /// Note: responses to this request are unlikely to accumulate during churn.
     ListMDataValues {
         /// Network identifier of MutableData
         name: XorName,

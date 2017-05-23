@@ -58,7 +58,13 @@ pub enum Response {
         /// Unique message identifier
         msg_id: MsgId,
     },
-
+    /// Returns a result of fetching MutableData from the network.
+    GetMData {
+        /// Result of fetching MutableData from the network.
+        res: Result<MutableData, ClientError>,
+        /// Unique message identifier
+        msg_id: MsgId,
+    },
     /// Returns a current version of MutableData stored in the network.
     GetMDataVersion {
         /// Result of getting a version of MutableData
@@ -66,7 +72,6 @@ pub enum Response {
         /// Unique message identifier
         msg_id: MsgId,
     },
-
     /// Returns the shell of MutableData (everything except the entries).
     GetMDataShell {
         /// Result of getting the shell of MutableData.

@@ -298,6 +298,11 @@ impl<UID: Uid> ServiceHandle<UID> {
     pub fn reset_message_sent(&self) -> bool {
         self.0.borrow().network.reset_message_sent()
     }
+
+    /// Returns the minimal section size of the Network.
+    pub fn min_section_size(&self) -> usize {
+        self.0.borrow().network.min_section_size()
+    }
 }
 
 pub struct ServiceImpl<UID: Uid> {
@@ -683,7 +688,20 @@ pub fn make_current<F, R>(handle: &ServiceHandle<PublicId>, f: F) -> R
                  })
 }
 
-/// Get the current `ServiceHandle`
-pub fn get_current() -> ServiceHandle<PublicId> {
-    CURRENT.with(|current| unwrap!(current.borrow_mut().take(), "Couldn't borrow service."))
+/// Unsets and returns the `ServiceHandle` set with `make_current`.
+pub fn take_current() -> ServiceHandle<PublicId> {
+    CURRENT.with(|current| {
+                     unwrap!(current.borrow_mut().take(),
+                             "Current ServiceHandle is not set.")
+                 })
+}
+
+/// Invokes the given lambda with a reference to the `ServiceHandle` set with `make_current`.
+pub fn with_current<F, R>(f: F) -> R
+    where F: FnOnce(&ServiceHandle<PublicId>) -> R
+{
+    CURRENT.with(|current| {
+                     f(unwrap!(current.borrow_mut().as_ref(),
+                               "Current ServiceHandle is not set."))
+                 })
 }

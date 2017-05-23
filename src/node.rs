@@ -39,6 +39,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::{Receiver, RecvError, Sender, TryRecvError, channel};
 use types::{MessageId, RoutingActionSender};
+use utils;
 use xor_name::XorName;
 
 // Helper macro to implement request sending methods.
@@ -121,7 +122,7 @@ impl NodeBuilder {
     /// request a new name and integrate itself into the network using the new name.
     ///
     /// The initial `Node` object will have newly generated keys.
-    pub fn create(self, min_section_size: usize) -> Result<Node, RoutingError> {
+    pub fn create(self) -> Result<Node, RoutingError> {
         // If we're not in a test environment where we might want to manually seed the crypto RNG
         // then seed randomly.
         #[cfg(not(feature = "use-mock-crust"))]
@@ -130,7 +131,7 @@ impl NodeBuilder {
         let mut ev_buffer = EventBuf::new();
 
         // start the handler for routing without a restriction to become a full node
-        let (_, machine) = self.make_state_machine(min_section_size, &mut ev_buffer);
+        let (_, machine) = self.make_state_machine(&mut ev_buffer);
         let (tx, rx) = channel();
 
         Ok(Node {
@@ -141,12 +142,11 @@ impl NodeBuilder {
            })
     }
 
-    fn make_state_machine(self,
-                          min_section_size: usize,
-                          outbox: &mut EventBox)
-                          -> (RoutingActionSender, StateMachine) {
+    fn make_state_machine(self, outbox: &mut EventBox) -> (RoutingActionSender, StateMachine) {
         let full_id = FullId::new();
         let pub_id = *full_id.public_id();
+        let min_section_size = utils::min_section_size();
+
         StateMachine::new(move |action_sender, crust_service, timer, outbox2| if self.first {
                               if let Some(state) = states::Node::first(action_sender,
                                                                        self.cache,
@@ -218,6 +218,16 @@ impl Node {
                       msg_id: MessageId,
                   },
                   DEFAULT_PRIORITY);
+
+    /// Send a `GetMData` request to `dst` to retrieve data from the network.
+    /// Note: responses to this request are unlikely to accumulate during churn.
+    impl_request!(send_get_mdata_request,
+                  GetMData {
+                      name: XorName,
+                      tag: u64,
+                      msg_id: MessageId,
+                  },
+                  RELOCATE_PRIORITY);
 
     /// Send a `PutMData` request.
     impl_request!(send_put_mdata_request,
@@ -327,6 +337,24 @@ impl Node {
     /// Respond to a `PutIData` request.
     impl_response!(send_put_idata_response, PutIData, (), DEFAULT_PRIORITY);
 
+    /// Respond to a `GetMData` request.
+    /// Note: this response is unlikely to accumulate during churn.
+    pub fn send_get_mdata_response(&mut self,
+                                   src: Authority<XorName>,
+                                   dst: Authority<XorName>,
+                                   res: Result<MutableData, ClientError>,
+                                   msg_id: MessageId)
+                                   -> Result<(), InterfaceError> {
+
+        let msg = UserMessage::Response(Response::GetMData {
+                                            res: res,
+                                            msg_id: msg_id,
+                                        });
+
+        let priority = relocate_priority(&dst);
+        self.send_action(src, dst, msg, priority)
+    }
+
     /// Respond to a `PutMData` request.
     impl_response!(send_put_mdata_response, PutMData, (), DEFAULT_PRIORITY);
 
@@ -354,18 +382,21 @@ impl Node {
     }
 
     /// Respond to a `ListMDataEntries` request.
+    /// Note: this response is unlikely to accumulate during churn.
     impl_response!(send_list_mdata_entries_response,
                    ListMDataEntries,
                    BTreeMap<Vec<u8>, Value>,
                    CLIENT_GET_PRIORITY);
 
     /// Respond to a `ListMDataKeys` request.
+    /// Note: this response is unlikely to accumulate during churn.
     impl_response!(send_list_mdata_keys_response,
                    ListMDataKeys,
                    BTreeSet<Vec<u8>>,
                    CLIENT_GET_PRIORITY);
 
     /// Respond to a `ListMDataValues` request.
+    /// Note: this response is unlikely to accumulate during churn.
     impl_response!(send_list_mdata_values_response,
                    ListMDataValues,
                    Vec<Value>,

@@ -65,6 +65,7 @@ pub struct Stats {
 
     msg_put_idata: UserMessageStats,
     msg_get_idata: UserMessageStats,
+    msg_get_mdata: UserMessageStats,
     msg_put_mdata: UserMessageStats,
     msg_get_mdata_version: UserMessageStats,
     msg_get_mdata_shell: UserMessageStats,
@@ -116,6 +117,7 @@ impl Stats {
                 match *request {
                     Request::PutIData { .. } => self.msg_put_idata.inc_request(),
                     Request::GetIData { .. } => self.msg_get_idata.inc_request(),
+                    Request::GetMData { .. } => self.msg_get_mdata.inc_request(),
                     Request::PutMData { .. } => self.msg_put_mdata.inc_request(),
                     Request::GetMDataVersion { .. } => self.msg_get_mdata_version.inc_request(),
                     Request::GetMDataShell { .. } => self.msg_get_mdata_shell.inc_request(),
@@ -158,6 +160,9 @@ impl Stats {
                     }
                     Response::PutMData { ref res, .. } => {
                         self.msg_put_mdata.inc_response(res.is_ok())
+                    }
+                    Response::GetMData { ref res, .. } => {
+                        self.msg_get_mdata.inc_response(res.is_ok())
                     }
                     Response::GetMDataVersion { ref res, .. } => {
                         self.msg_get_mdata_version.inc_response(res.is_ok())

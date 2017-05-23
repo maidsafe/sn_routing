@@ -15,11 +15,9 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#[cfg(not(feature = "use-mock-crust"))]
 use BootstrapConfig;
 use action::Action;
 use cache::NullCache;
-use crust::Config;
 use data::{EntryAction, ImmutableData, MutableData, PermissionSet, User};
 use error::{InterfaceError, RoutingError};
 use event::Event;
@@ -41,6 +39,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 #[cfg(feature = "use-mock-crust")]
 use std::sync::mpsc::{RecvError, TryRecvError};
 use types::{MessageId, RoutingActionSender};
+use utils;
 use xor_name::XorName;
 
 /// Interface for sending and receiving messages to and from a network of nodes in the role of a
@@ -65,12 +64,12 @@ pub struct Client {
 
 impl Client {
     fn make_state_machine(keys: Option<FullId>,
-                          min_section_size: usize,
-                          config: Option<Config>,
-                          outbox: &mut EventBox)
+                          outbox: &mut EventBox,
+                          config: Option<BootstrapConfig>)
                           -> (RoutingActionSender, StateMachine) {
         let full_id = keys.unwrap_or_else(FullId::new);
         let pub_id = *full_id.public_id();
+        let min_section_size = utils::min_section_size();
 
         StateMachine::new(move |action_sender, crust_service, timer, _outbox2| {
             Bootstrapping::new(action_sender,
@@ -157,6 +156,7 @@ impl Client {
     }
 
     /// Fetches a list of entries (keys + values) of the provided MutableData
+    /// Note: response to this request is unlikely to accumulate during churn.
     pub fn list_mdata_entries(&mut self,
                               dst: Authority<XorName>,
                               name: XorName,
@@ -173,6 +173,7 @@ impl Client {
     }
 
     /// Fetches a list of keys of the provided MutableData
+    /// Note: response to this request is unlikely to accumulate during churn.
     pub fn list_mdata_keys(&mut self,
                            dst: Authority<XorName>,
                            name: XorName,
@@ -189,6 +190,7 @@ impl Client {
     }
 
     /// Fetches a list of values of the provided MutableData
+    /// Note: response to this request is unlikely to accumulate during churn.
     pub fn list_mdata_values(&mut self,
                              dst: Authority<XorName>,
                              name: XorName,
@@ -416,12 +418,9 @@ impl Client {
     /// exists to ensure that the client cannot choose its `ClientAuthority`.
     pub fn new(event_sender: Sender<Event>,
                keys: Option<FullId>,
-               config: Option<Config>)
+               config: Option<BootstrapConfig>)
                -> Result<Client, RoutingError> {
         rust_sodium::init(); // enable shared global (i.e. safe to multithread now)
-
-        // TODO - replace this hard-coded value
-        let min_section_size = 8;
 
         let (tx, rx) = channel();
         let (get_action_sender_tx, get_action_sender_rx) = channel();
@@ -430,7 +429,7 @@ impl Client {
             // start the handler for routing with a restriction to become a full node
             let mut event_buffer = EventBuf::new();
             let (action_sender, mut machine) =
-                Self::make_state_machine(keys, min_section_size, config, &mut event_buffer);
+                Self::make_state_machine(keys, &mut event_buffer, config);
 
             for ev in event_buffer.take_all() {
                 unwrap!(event_sender.send(ev));
@@ -498,12 +497,10 @@ impl Client {
 impl Client {
     /// Create a new `Client` for testing with mock crust.
     pub fn new(keys: Option<FullId>,
-               min_section_size: usize,
-               config: Option<Config>)
+               config: Option<BootstrapConfig>)
                -> Result<Client, RoutingError> {
         let mut event_buffer = EventBuf::new();
-        let (_, machine) =
-            Self::make_state_machine(keys, min_section_size, config, &mut event_buffer);
+        let (_, machine) = Self::make_state_machine(keys, &mut event_buffer, config);
 
         let (tx, rx) = channel();
 

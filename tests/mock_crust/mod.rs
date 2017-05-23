@@ -15,9 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-// TODO: uncomment and fix
-
-/*
 mod accumulate;
 mod cache;
 mod churn;
@@ -33,8 +30,8 @@ pub use self::utils::{Nodes, TestClient, TestNode, add_connected_nodes_until_spl
                       gen_range, gen_range_except, poll_all, poll_and_resend,
                       remove_nodes_which_failed_to_connect, sort_nodes_by_distance_to,
                       verify_invariant_for_all_nodes};
-use routing::{Event, EventStream, Prefix, XOR_NAME_LEN, XorName};
-use routing::mock_crust::{Config, Endpoint, Network};
+use routing::{BootstrapConfig, Event, EventStream, Prefix, XOR_NAME_LEN, XorName};
+use routing::mock_crust::{Endpoint, Network};
 
 // -----  Miscellaneous tests below  -----
 
@@ -52,7 +49,7 @@ fn disconnect_on_rebootstrap() {
     let network = Network::new(min_section_size, None);
     let mut nodes = create_connected_nodes(&network, 2);
     // Try to bootstrap to another than the first node. With network size 2, this should fail.
-    let config = Config::with_contacts(&[nodes[1].handle.endpoint()]);
+    let config = BootstrapConfig::with_contacts(&[nodes[1].handle.endpoint()]);
     nodes.push(TestNode::builder(&network)
                    .config(config)
                    .endpoint(Endpoint(2))
@@ -93,7 +90,7 @@ fn node_joins_in_front() {
     let min_section_size = 8;
     let network = Network::new(min_section_size, None);
     let mut nodes = create_connected_nodes(&network, 2 * min_section_size);
-    let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
+    let config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
     nodes.insert(0, TestNode::builder(&network).config(config).create());
 
     let _ = poll_all(&mut nodes, &mut []);
@@ -106,7 +103,7 @@ fn multiple_joining_nodes() {
     let min_section_size = 8;
     let network = Network::new(min_section_size, None);
     let mut nodes = create_connected_nodes(&network, min_section_size);
-    let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
+    let config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
 
     while nodes.len() < 40 {
         info!("Size {}", nodes.len());
@@ -139,7 +136,7 @@ fn simultaneous_joining_nodes() {
     let min_section_size = 8;
     let network = Network::new(min_section_size, None);
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1], false);
-    let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
+    let config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
 
     // Add two nodes simultaneously, to two different sections:
     // We now have two sections, with prefixes 0 and 1. Make one joining node contact each section,
@@ -193,7 +190,7 @@ fn whitelist() {
     let min_section_size = 8;
     let network = Network::new(min_section_size, None);
     let mut nodes = create_connected_nodes(&network, min_section_size);
-    let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
+    let config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
 
     for node in &mut *nodes {
         node.handle
@@ -218,5 +215,3 @@ fn whitelist() {
     let _ = poll_all(&mut nodes, &mut clients);
     expect_next_event!(clients[0], Event::Connected);
 }
-
-*/
