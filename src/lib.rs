@@ -153,8 +153,9 @@ mod macros;
 
 mod ack_manager;
 mod action;
-mod client;
 mod cache;
+mod client;
+mod common_types;
 mod data;
 mod error;
 mod event;
@@ -205,6 +206,7 @@ pub const QUORUM_DENOMINATOR: usize = 2;
 
 pub use cache::{Cache, NullCache};
 pub use client::Client;
+pub use common_types::AccountPacket;
 pub use data::{AppendWrapper, AppendedData, Data, DataIdentifier, Filter, ImmutableData,
                MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES,
                MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES, MAX_STRUCTURED_DATA_SIZE_IN_BYTES,
@@ -232,23 +234,6 @@ use crust::Event as CrustEvent;
 type CrustEventSender = crust::CrustEventSender<PublicId>;
 type PrivConnectionInfo = crust::PrivConnectionInfo<PublicId>;
 type PubConnectionInfo = crust::PubConnectionInfo<PublicId>;
-
-/// Account packet that is used to provide an invitation code for registration.
-/// After successful registration it should be replaced with `AccountPacket::AccPkt`
-/// with the contents of `account_ciphertext` as soon as possible to prevent an
-/// invitation code leak.
-#[derive(Serialize, Deserialize)]
-pub enum AccountPacket {
-    /// Account data with an invitation code that is used for registration.
-    WithInvitation {
-        /// Invitation code.
-        invitation_string: String,
-        /// Encrypted account data.
-        acc_pkt: Vec<u8>,
-    },
-    /// Encrypted account data.
-    AccPkt(Vec<u8>),
-}
 
 #[cfg(test)]
 mod tests {
