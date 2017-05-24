@@ -233,6 +233,23 @@ type CrustEventSender = crust::CrustEventSender<PublicId>;
 type PrivConnectionInfo = crust::PrivConnectionInfo<PublicId>;
 type PubConnectionInfo = crust::PubConnectionInfo<PublicId>;
 
+/// Account packet that is used to provide an invitation code for registration.
+/// After successful registration it should be replaced with `AccountPacket::AccPkt`
+/// with the contents of `account_ciphertext` as soon as possible to prevent an
+/// invitation code leak.
+#[derive(Serialize, Deserialize)]
+pub enum AccountPacket {
+    /// Account data with an invitation code that is used for registration.
+    WithInvitation {
+        /// Invitation code.
+        invitation_string: String,
+        /// Encrypted account data.
+        acc_pkt: Vec<u8>,
+    },
+    /// Encrypted account data.
+    AccPkt(Vec<u8>),
+}
+
 #[cfg(test)]
 mod tests {
     use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
