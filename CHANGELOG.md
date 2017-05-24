@@ -1,5 +1,9 @@
 # Routing - Change Log
 
+## [0.30.0]
+- Replace all sha256 from rust_sodium with sha3_256 from tiny_keccak.
+- Move `AccountPacket` type required by vaults and clients into a `common_types` module.
+
 ## [0.29.0]
 - Integration with templatised Crust where now routing specifies what to use as a UID so that crust and routing use a common UID to identify peer.
 - Peer manager clean up as connect success now tells us everything about the peer. Previously we needed to wait additionally for NodeIdentify for instance as crust-uid (PeerId) and routing-uid (PublicId) were separate and each layer informed about the id specific to that layer only.
