@@ -146,8 +146,8 @@ impl DataIdentifier {
 mod tests {
     use super::*;
     use rand;
-    use rust_sodium::crypto::hash::sha256;
     use std::collections::BTreeSet;
+    use tiny_keccak::sha3_256;
     use xor_name::XorName;
 
     #[test]
@@ -176,7 +176,7 @@ mod tests {
 
     #[test]
     fn data_request_name() {
-        let name = XorName(sha256::hash(&[]).0);
+        let name = XorName(sha3_256(&[]));
 
         // name() resolves correctly for StructuredData
         let tag = 0;

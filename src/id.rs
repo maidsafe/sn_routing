@@ -16,10 +16,11 @@
 // relating to use of the SAFE Network Software.
 
 use crust::Uid;
-use rust_sodium::crypto::{box_, hash, sign};
+use rust_sodium::crypto::{box_, sign};
 use serde::{Deserializer, Serialize, Serializer};
 use serde::de::Deserialize;
 use std::fmt::{self, Debug, Display, Formatter};
+use tiny_keccak::sha3_256;
 use xor_name::XorName;
 
 /// Network identity component containing name, and public and private keys.
@@ -161,7 +162,7 @@ impl PublicId {
     }
 
     fn name_from_key(public_sign_key: &sign::PublicKey) -> XorName {
-        XorName(hash::sha256::hash(&public_sign_key[..]).0)
+        XorName(sha3_256(&public_sign_key[..]))
     }
 }
 

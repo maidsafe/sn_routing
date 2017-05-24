@@ -22,9 +22,9 @@ pub const MAX_HEADER_METADATA_SIZE: usize = 128; // bytes
 use super::{Error, GUID_SIZE};
 use maidsafe_utilities::serialisation::serialise;
 use rand::{self, Rng};
-use rust_sodium::crypto::hash::sha256;
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
 use std::fmt::{self, Debug, Formatter};
+use tiny_keccak::sha3_256;
 use utils;
 use xor_name::XorName;
 
@@ -104,7 +104,7 @@ impl MpidHeader {
     /// of the serialised header, so its use should be minimised.
     pub fn name(&self) -> Result<XorName, Error> {
         let encoded = serialise(self)?;
-        Ok(XorName(sha256::hash(&encoded[..]).0))
+        Ok(XorName(sha3_256(&encoded[..])))
     }
 
     /// Validates the header's signature against the provided `PublicKey`.

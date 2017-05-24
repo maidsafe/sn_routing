@@ -153,8 +153,9 @@ mod macros;
 
 mod ack_manager;
 mod action;
-mod client;
 mod cache;
+mod client;
+mod common_types;
 mod data;
 mod error;
 mod event;
@@ -205,6 +206,7 @@ pub const QUORUM_DENOMINATOR: usize = 2;
 
 pub use cache::{Cache, NullCache};
 pub use client::Client;
+pub use common_types::AccountPacket;
 pub use data::{AppendWrapper, AppendedData, Data, DataIdentifier, Filter, ImmutableData,
                MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES,
                MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES, MAX_STRUCTURED_DATA_SIZE_IN_BYTES,
