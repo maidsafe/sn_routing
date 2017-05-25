@@ -16,9 +16,9 @@
 // relating to use of the SAFE Network Software.
 
 use maidsafe_utilities::serialisation::serialised_size;
-use rust_sodium::crypto::hash::sha256;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt::{self, Debug, Formatter};
+use tiny_keccak::sha3_256;
 use xor_name::XorName;
 
 /// Maximum allowed size for a serialised Immutable Data (ID) to grow to
@@ -38,7 +38,7 @@ impl ImmutableData {
     /// Creates a new instance of `ImmutableData`
     pub fn new(value: Vec<u8>) -> ImmutableData {
         ImmutableData {
-            name: XorName(sha256::hash(&value).0),
+            name: XorName(sha3_256(&value)),
             value: value,
         }
     }
@@ -96,7 +96,7 @@ mod tests {
         let value = "immutable data value".to_owned().into_bytes();
         let immutable_data = ImmutableData::new(value);
         let immutable_data_name = immutable_data.name().0.as_ref().to_hex();
-        let expected_name = "ec0775555a7a6afba5f6e0a1deaa06f8928da80cf6ca94742ecc2a00c31033d3";
+        let expected_name = "fac2869677ee06277633c37ac7e8e5c655f3d652f707c7a79fab930d584a3016";
 
         assert_eq!(&expected_name, &immutable_data_name);
     }
