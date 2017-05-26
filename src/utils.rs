@@ -18,11 +18,11 @@
 use Prefix;
 use itertools::Itertools;
 use routing_table::Xorable;
-use rust_sodium::crypto::hash::sha256;
 use std::collections::BTreeSet;
 use std::fmt::{self, Display, Write};
 use std::iter;
 use std::time::Duration;
+use tiny_keccak::sha3_256;
 use xor_name::XorName;
 
 
@@ -84,7 +84,7 @@ pub fn format_binary_array<V: AsRef<[u8]>>(input: V) -> String {
 /// cannot choose where to be relocated to.
 ///
 /// To meet these requirements, the target is computed from the two closest nodes and the joining
-/// node's current name: It is the SHA256 hash of:
+/// node's current name: It is the SHA3 hash of:
 ///
 /// [`current_name`, 1st closest node id, 2nd closest node id]
 ///
@@ -98,7 +98,7 @@ pub fn calculate_relocation_dst(mut close_nodes: Vec<XorName>, current_name: &Xo
         .flat_map(|close_node| close_node.0.into_iter())
         .cloned()
         .collect();
-    XorName(sha256::hash(&combined).0)
+    XorName(sha3_256(&combined))
 }
 
 /// Calculate the interval for a node joining our section to generate a key for.
@@ -140,8 +140,8 @@ mod tests {
     use super::DisplayDuration;
     use rand;
     use routing_table::Xorable;
-    use rust_sodium::crypto::hash::sha256;
     use std::time::Duration;
+    use tiny_keccak::sha3_256;
     use xor_name::XorName;
 
     #[test]
@@ -177,7 +177,7 @@ mod tests {
             }
         }
 
-        let expected_relocated_name_one_node = XorName(sha256::hash(&combined_one_node).0);
+        let expected_relocated_name_one_node = XorName(sha3_256(&combined_one_node));
 
         assert_eq!(actual_relocated_name_one_entry,
                    expected_relocated_name_one_node);
@@ -206,7 +206,7 @@ mod tests {
             combined.push(*i);
         }
 
-        let expected_relocated_name = XorName(sha256::hash(&combined).0);
+        let expected_relocated_name = XorName(sha3_256(&combined));
         assert_eq!(expected_relocated_name, actual_relocated_name);
 
         let mut invalid_combined: Vec<u8> = Vec::new();
@@ -219,7 +219,7 @@ mod tests {
         for i in &original_name.0 {
             invalid_combined.push(*i);
         }
-        let invalid_relocated_name = XorName(sha256::hash(&invalid_combined).0);
+        let invalid_relocated_name = XorName(sha3_256(&invalid_combined));
         assert_ne!(invalid_relocated_name, actual_relocated_name);
     }
 }
