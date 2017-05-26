@@ -27,7 +27,7 @@ use id::{FullId, PublicId};
 use maidsafe_utilities::serialisation;
 use messages::{DirectMessage, Message};
 use outbox::EventBox;
-use routing_table::Authority;
+use routing_table::{Authority, Prefix};
 use rust_sodium::crypto::sign;
 use state_machine::{State, Transition};
 use stats::Stats;
@@ -50,7 +50,7 @@ pub enum TargetState {
     JoiningNode,
     Node {
         old_full_id: FullId,
-        our_section: BTreeSet<PublicId>,
+        our_section: (Prefix<XorName>, BTreeSet<PublicId>),
     },
 }
 

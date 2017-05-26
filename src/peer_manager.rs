@@ -431,7 +431,7 @@ impl PeerManager {
     pub fn accept_as_candidate(&mut self,
                                old_pub_id: PublicId,
                                target_interval: (XorName, XorName))
-                               -> BTreeSet<PublicId> {
+                               -> (Prefix<XorName>, BTreeSet<PublicId>) {
         self.candidate = Candidate::AcceptedForResourceProof {
             res_proof_start: Instant::now(),
             old_pub_id: old_pub_id,
@@ -443,7 +443,7 @@ impl PeerManager {
             .iter()
             .cloned()
             .collect();
-        self.get_pub_ids(&our_section)
+        (*self.routing_table.our_prefix(), self.get_pub_ids(&our_section))
     }
 
     /// Verifies proof of resource.  If the response is not the current candidate, or if it fails

@@ -117,6 +117,7 @@ pub struct Node {
     /// Hold the kind of bootstrappers.
     bootstrappers: LruCache<PublicId, CrustUser>,
     resource_prover: ResourceProver,
+    joining_prefix: Prefix<XorName>,
 }
 
 impl Node {
@@ -150,7 +151,7 @@ impl Node {
     }
 
     #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
-    pub fn from_bootstrapping(our_section: BTreeSet<PublicId>,
+    pub fn from_bootstrapping(our_section: (Prefix<XorName>, BTreeSet<PublicId>),
                               action_sender: RoutingActionSender,
                               cache: Box<Cache>,
                               crust_service: Service,
@@ -170,10 +171,11 @@ impl Node {
                                  min_section_size,
                                  stats,
                                  timer,
-                                 our_section.len());
+                                 our_section.1.len());
+        node.joining_prefix = our_section.0;
         node.peer_mgr
             .insert_peer(Peer::new(proxy_pub_id, PeerState::Proxy, false));
-        node.join(our_section, &proxy_pub_id);
+        node.join(our_section.1, &proxy_pub_id);
         node
     }
 
@@ -224,6 +226,7 @@ impl Node {
             bootstrappers:
                 LruCache::with_expiry_duration(Duration::from_secs(BOOTSTRAPPER_HOLD_DUR_SECS)),
             resource_prover: ResourceProver::new(action_sender, timer, challenger_count),
+            joining_prefix: Default::default(),
         }
     }
 
@@ -948,8 +951,17 @@ impl Node {
                     self.routing_msg_backlog.push(routing_msg);
                     return Ok(());
                 }
+                ConnectionInfoRequest { .. } => {
+                    if !self.joining_prefix.matches(&routing_msg.src.name()) {
+                        // Doesn't allow other node connect to us before node approval
+                        trace!("{:?} Not approved yet. Delaying message handling: {:?}",
+                               self,
+                               routing_msg);
+                        self.routing_msg_backlog.push(routing_msg);
+                        return Ok(());
+                    }
+                }
                 Relocate { .. } |
-                ConnectionInfoRequest { .. } |
                 ConnectionInfoResponse { .. } |
                 RelocateResponse { .. } |
                 Ack(..) |
