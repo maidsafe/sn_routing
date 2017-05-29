@@ -2368,7 +2368,8 @@ impl Node {
                                   -> Result<(), RoutingError> {
         self.remove_expired_peers(outbox);
 
-        let needed_peers = self.peer_mgr.merge_other_section(merge_ver_pfx, section);
+        let needed_peers = self.peer_mgr
+            .merge_other_section(merge_ver_pfx, section.clone());
         let own_name = *self.name();
 
         for needed in needed_peers {
@@ -2387,7 +2388,14 @@ impl Node {
         info!("{:?} Other section merge completed. Prefixes: {:?}",
               self,
               self.routing_table().prefixes());
-        self.merge_if_necessary(outbox);
+
+        // This is an optimisation to avoid un-necessary merge in the scenario:
+        //      we only know one of the subsections that got merged, and that subsection contains
+        //      less than min_section_size nodes.
+        if !section.is_empty() {
+            self.merge_if_necessary(outbox);
+        }
+
         self.send_section_list_signatures();
 
         if self.routing_table()
