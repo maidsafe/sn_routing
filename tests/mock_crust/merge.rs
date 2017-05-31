@@ -150,7 +150,7 @@ fn merge_exclude_reconnecting_peers() {
     verify_invariant_for_all_nodes(&mut nodes);
     rng.shuffle(&mut nodes);
 
-    // Choose one sections to drop nodes from.
+    // Choose one section to drop nodes from.
     let prefix_to_drop_from = Prefix::new(1, XorName([0; XOR_NAME_LEN]));
 
     let mut nodes_count = nodes
@@ -158,8 +158,7 @@ fn merge_exclude_reconnecting_peers() {
         .filter(|node| node.routing_table().our_prefix() == &prefix_to_drop_from)
         .count();
 
-    // Drop enough nodes (without polling) from the two section to take them just below
-    // `min_section_size`.
+    // Drop enough nodes (without polling) from that section to just below `min_section_size`.
     while nodes_count >= min_section_size {
         let index = unwrap!(nodes
                                 .iter()
