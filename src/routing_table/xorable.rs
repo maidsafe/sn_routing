@@ -285,7 +285,7 @@ macro_rules! impl_xorable {
                     x <<= 4;
                     x <<= 4;
                     result = x.0;
-                    result |= From::from(*elem);
+                    result |= Into::<$t>::into(*elem);
                 }
                 result
             }

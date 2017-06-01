@@ -23,9 +23,7 @@ use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 #[cfg(feature = "use-mock-crust")]
 use mock_crust;
 use outbox::EventBox;
-#[cfg(feature = "use-mock-crust")]
-use routing_table::Prefix;
-use routing_table::RoutingTable;
+use routing_table::{Prefix, RoutingTable};
 #[cfg(feature = "use-mock-crust")]
 use rust_sodium::crypto::sign;
 use states::{Bootstrapping, Client, JoiningNode, Node};
@@ -203,7 +201,7 @@ pub enum Transition {
     // `JoiningNode` state transitioning back to `Bootstrapping`.
     IntoBootstrapping {
         new_id: FullId,
-        our_section: BTreeSet<PublicId>,
+        our_section: (Prefix<XorName>, BTreeSet<PublicId>),
     },
     Terminate,
 }

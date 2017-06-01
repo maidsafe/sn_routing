@@ -604,7 +604,7 @@ pub enum MessageContent {
         /// The interval into which the joining node should join.
         target_interval: (XorName, XorName),
         /// The section that the joining node shall connect to.
-        section: BTreeSet<PublicId>,
+        section: (Prefix<XorName>, BTreeSet<PublicId>),
         /// The message's unique identifier.
         message_id: MessageId,
     },

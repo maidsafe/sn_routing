@@ -29,7 +29,7 @@ use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessag
 use outbox::EventBox;
 use resource_prover::RESOURCE_PROOF_DURATION_SECS;
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
-use routing_table::Authority;
+use routing_table::{Authority, Prefix};
 use state_machine::{State, Transition};
 use stats::Stats;
 use std::collections::BTreeSet;
@@ -142,7 +142,7 @@ impl JoiningNode {
                               crust_rx: &mut Receiver<CrustEvent<PublicId>>,
                               crust_sender: CrustEventSender,
                               new_full_id: FullId,
-                              our_section: BTreeSet<PublicId>,
+                              our_section: (Prefix<XorName>, BTreeSet<PublicId>),
                               outbox: &mut EventBox)
                               -> State {
         let service = Self::start_new_crust_service(self.crust_service,
@@ -299,7 +299,7 @@ impl JoiningNode {
 
     fn handle_relocate_response(&mut self,
                                 target_interval: (XorName, XorName),
-                                section: BTreeSet<PublicId>)
+                                section: (Prefix<XorName>, BTreeSet<PublicId>))
                                 -> Transition {
         let new_id = FullId::within_range(&target_interval.0, &target_interval.1);
         Transition::IntoBootstrapping {
