@@ -32,8 +32,8 @@ use maidsafe_utilities::serialisation;
 use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, Message, MessageContent,
                RoutingMessage, SectionList, SignedMessage, UserMessage, UserMessageCache};
 use outbox::{EventBox, EventBuf};
-use peer_manager::{ConnectionInfoPreparedResult, Peer, PeerManager, PeerState, RoutingConnection,
-                   SectionMap};
+use peer_manager::{ConnectionInfoPreparedResult, Peer, PeerManager, PeerState, ReconnectingPeer,
+                   RoutingConnection, SectionMap};
 use rand::{self, Rng};
 use resource_prover::{RESOURCE_PROOF_DURATION_SECS, ResourceProver};
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
@@ -117,6 +117,7 @@ pub struct Node {
     /// Hold the kind of bootstrappers.
     bootstrappers: LruCache<PublicId, CrustUser>,
     resource_prover: ResourceProver,
+    joining_prefix: Prefix<XorName>,
 }
 
 impl Node {
@@ -150,7 +151,7 @@ impl Node {
     }
 
     #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
-    pub fn from_bootstrapping(our_section: BTreeSet<PublicId>,
+    pub fn from_bootstrapping(our_section: (Prefix<XorName>, BTreeSet<PublicId>),
                               action_sender: RoutingActionSender,
                               cache: Box<Cache>,
                               crust_service: Service,
@@ -170,10 +171,14 @@ impl Node {
                                  min_section_size,
                                  stats,
                                  timer,
-                                 our_section.len());
+                                 our_section.1.len());
+        node.joining_prefix = our_section.0;
         node.peer_mgr
-            .insert_peer(Peer::new(proxy_pub_id, PeerState::Proxy, false));
-        node.join(our_section, &proxy_pub_id);
+            .insert_peer(Peer::new(proxy_pub_id,
+                                   PeerState::Proxy,
+                                   false,
+                                   ReconnectingPeer::False));
+        node.join(our_section.1, &proxy_pub_id);
         node
     }
 
@@ -224,6 +229,7 @@ impl Node {
             bootstrappers:
                 LruCache::with_expiry_duration(Duration::from_secs(BOOTSTRAPPER_HOLD_DUR_SECS)),
             resource_prover: ResourceProver::new(action_sender, timer, challenger_count),
+            joining_prefix: Default::default(),
         }
     }
 
@@ -249,7 +255,12 @@ impl Node {
                    self,
                    pub_id);
             let dst = Authority::ManagedNode(*pub_id.name());
-            if let Err(error) = self.send_connection_info_request(*pub_id, src, dst, &mut outbox) {
+            if let Err(error) =
+                self.send_connection_info_request(*pub_id,
+                                                  src,
+                                                  dst,
+                                                  &mut outbox,
+                                                  ReconnectingPeer::False) {
                 debug!("{:?} - Failed to send connection info to {:?}: {:?}",
                        self,
                        pub_id,
@@ -439,7 +450,10 @@ impl Node {
                    peer);
         }
         self.peer_mgr
-            .insert_peer(Peer::new(pub_id, PeerState::Connected(false), false));
+            .insert_peer(Peer::new(pub_id,
+                                   PeerState::Connected(false),
+                                   false,
+                                   ReconnectingPeer::False));
     }
 
     fn handle_bootstrap_connect(&mut self, pub_id: PublicId, outbox: &mut EventBox) {
@@ -948,8 +962,17 @@ impl Node {
                     self.routing_msg_backlog.push(routing_msg);
                     return Ok(());
                 }
+                ConnectionInfoRequest { .. } => {
+                    if !self.joining_prefix.matches(&routing_msg.src.name()) {
+                        // Doesn't allow other node connect to us before node approval
+                        trace!("{:?} Not approved yet. Delaying message handling: {:?}",
+                               self,
+                               routing_msg);
+                        self.routing_msg_backlog.push(routing_msg);
+                        return Ok(());
+                    }
+                }
                 Relocate { .. } |
-                ConnectionInfoRequest { .. } |
                 ConnectionInfoResponse { .. } |
                 RelocateResponse { .. } |
                 Ack(..) |
@@ -1123,10 +1146,12 @@ impl Node {
             Ok(is_connected) => is_connected.is_some(),
             Err(_) => {
                 let src = Authority::ManagedNode(*self.name());
-                if let Err(error) = self.send_connection_info_request(new_pub_id,
-                                                                      src,
-                                                                      new_client_auth,
-                                                                      outbox) {
+                if let Err(error) =
+                    self.send_connection_info_request(new_pub_id,
+                                                      src,
+                                                      new_client_auth,
+                                                      outbox,
+                                                      ReconnectingPeer::False) {
                     debug!("{:?} - Failed to send connection info to {}: {:?}",
                            self,
                            new_pub_id,
@@ -1220,10 +1245,12 @@ impl Node {
                            pub_id);
                     let src = Authority::ManagedNode(*self.name());
                     let node_auth = Authority::ManagedNode(*pub_id.name());
-                    if let Err(error) = self.send_connection_info_request(*pub_id,
-                                                                          src,
-                                                                          node_auth,
-                                                                          outbox) {
+                    if let Err(error) =
+                        self.send_connection_info_request(*pub_id,
+                                                          src,
+                                                          node_auth,
+                                                          outbox,
+                                                          ReconnectingPeer::False) {
                         debug!("{:?} - Failed to send connection info to {:?}: {:?}",
                                self,
                                pub_id,
@@ -1410,7 +1437,7 @@ impl Node {
         };
 
         self.peer_mgr
-            .insert_peer(Peer::new(pub_id, peer_state, false));
+            .insert_peer(Peer::new(pub_id, peer_state, false, ReconnectingPeer::False));
 
         self.send_direct_message(pub_id, DirectMessage::BootstrapIdentify);
     }
@@ -2185,7 +2212,8 @@ impl Node {
                 self.send_connection_info_request(pub_id,
                                                   Authority::ManagedNode(own_name),
                                                   Authority::ManagedNode(*pub_id.name()),
-                                                  outbox) {
+                                                  outbox,
+                                                  ReconnectingPeer::False) {
                 debug!("{:?} - Failed to send connection info to {:?}: {:?}",
                        self,
                        pub_id,
@@ -2328,7 +2356,8 @@ impl Node {
                         self.send_connection_info_request(*needed,
                                                           Authority::ManagedNode(own_name),
                                                           Authority::ManagedNode(*needed.name()),
-                                                          outbox) {
+                                                          outbox,
+                                                          ReconnectingPeer::False) {
                         debug!("{:?} - Failed to send connection info to {:?}: {:?}",
                                self,
                                needed,
@@ -2356,7 +2385,8 @@ impl Node {
                                   -> Result<(), RoutingError> {
         self.remove_expired_peers(outbox);
 
-        let needed_peers = self.peer_mgr.merge_other_section(merge_ver_pfx, section);
+        let needed_peers = self.peer_mgr
+            .merge_other_section(merge_ver_pfx, section.clone());
         let own_name = *self.name();
 
         for needed in needed_peers {
@@ -2368,14 +2398,22 @@ impl Node {
                 self.send_connection_info_request(needed,
                                                   Authority::ManagedNode(own_name),
                                                   Authority::ManagedNode(needed_name),
-                                                  outbox) {
+                                                  outbox,
+                                                  ReconnectingPeer::False) {
                 debug!("{:?} - Failed to send connection info: {:?}", self, error);
             }
         }
         info!("{:?} Other section merge completed. Prefixes: {:?}",
               self,
               self.routing_table().prefixes());
-        self.merge_if_necessary(outbox);
+
+        // This is an optimisation to avoid un-necessary merge in the scenario: the merged section
+        // doesn't really contain too few nodes as we just didn't learn about all its members
+        // because the included member list was empty.
+        if !section.is_empty() {
+            self.merge_if_necessary(outbox);
+        }
+
         self.send_section_list_signatures();
 
         if self.routing_table()
@@ -2860,7 +2898,8 @@ impl Node {
                                     their_public_id: PublicId,
                                     src: Authority<XorName>,
                                     dst: Authority<XorName>,
-                                    outbox: &mut EventBox)
+                                    outbox: &mut EventBox,
+                                    reconnecting: ReconnectingPeer)
                                     -> Result<(), RoutingError> {
         let their_name = *their_public_id.name();
         self.peer_mgr.allow_connect(&their_name)?;
@@ -2891,7 +2930,7 @@ impl Node {
 
         // This will insert the peer if peer is not in peer_mgr and flag them to `valid`
         if let Some(token) = self.peer_mgr
-               .get_connection_token(src, dst, their_public_id) {
+               .get_connection_token(src, dst, their_public_id, reconnecting) {
             self.crust_service.prepare_connection_info(token);
             return Ok(());
         }
@@ -2965,7 +3004,8 @@ impl Node {
                 self.send_connection_info_request(*peer.pub_id(),
                                                   Authority::ManagedNode(own_name),
                                                   Authority::ManagedNode(*peer.name()),
-                                                  outbox) {
+                                                  outbox,
+                                                  ReconnectingPeer::True) {
                 debug!("{:?} - Failed to send connection info to {:?}: {:?}",
                        self,
                        peer.pub_id(),

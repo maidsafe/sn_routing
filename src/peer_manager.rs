@@ -205,6 +205,13 @@ pub struct ConnectionInfoPreparedResult {
     pub infos: Option<(PrivConnectionInfo, PubConnectionInfo, MessageId)>,
 }
 
+/// Toggle switch indicates whether is reconnecting to peer or not.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ReconnectingPeer {
+    True,
+    False,
+}
+
 /// Represents peer we are connected or attempting connection to.
 #[derive(Debug)]
 pub struct Peer {
@@ -212,15 +219,21 @@ pub struct Peer {
     state: PeerState,
     timestamp: Instant,
     valid: bool,
+    reconnecting: ReconnectingPeer,
 }
 
 impl Peer {
-    pub fn new(pub_id: PublicId, state: PeerState, valid: bool) -> Self {
+    pub fn new(pub_id: PublicId,
+               state: PeerState,
+               valid: bool,
+               reconnecting: ReconnectingPeer)
+               -> Self {
         Self {
             pub_id: pub_id,
             state: state,
             timestamp: Instant::now(),
             valid: valid,
+            reconnecting: reconnecting,
         }
     }
 
@@ -238,6 +251,10 @@ impl Peer {
 
     pub fn valid(&self) -> bool {
         self.valid
+    }
+
+    pub fn is_reconnecting(&self) -> bool {
+        self.reconnecting == ReconnectingPeer::True
     }
 
     /// Returns connected status of `Peer`
@@ -431,7 +448,7 @@ impl PeerManager {
     pub fn accept_as_candidate(&mut self,
                                old_pub_id: PublicId,
                                target_interval: (XorName, XorName))
-                               -> BTreeSet<PublicId> {
+                               -> (Prefix<XorName>, BTreeSet<PublicId>) {
         self.candidate = Candidate::AcceptedForResourceProof {
             res_proof_start: Instant::now(),
             old_pub_id: old_pub_id,
@@ -443,7 +460,7 @@ impl PeerManager {
             .iter()
             .cloned()
             .collect();
-        self.get_pub_ids(&our_section)
+        (*self.routing_table.our_prefix(), self.get_pub_ids(&our_section))
     }
 
     /// Verifies proof of resource.  If the response is not the current candidate, or if it fails
@@ -764,9 +781,11 @@ impl PeerManager {
 
     /// Returns whether we should initiate a merge.
     pub fn should_merge(&mut self) -> bool {
-        let expecting_peer = self.peers
-            .values()
-            .any(|peer| peer.valid() && !peer.is_routing());
+        // Node in the process of reconnecting shall not block merge.
+        let expecting_peer =
+            self.peers
+                .values()
+                .any(|peer| peer.valid() && !peer.is_routing() && !peer.is_reconnecting());
         !expecting_peer && self.routing_table.should_merge()
     }
 
@@ -918,10 +937,14 @@ impl PeerManager {
                     peer.state = PeerState::Connected(false);
                 }
             }
+            peer.reconnecting = ReconnectingPeer::False;
             return;
         }
 
-        self.insert_peer(Peer::new(*pub_id, PeerState::Connected(false), false));
+        self.insert_peer(Peer::new(*pub_id,
+                                   PeerState::Connected(false),
+                                   false,
+                                   ReconnectingPeer::False));
     }
 
     /// Marks the given peer as tunnel-connected. Returns `false` if a tunnel is not needed.
@@ -936,13 +959,17 @@ impl PeerManager {
         let found = if let Some(peer) = self.peers.get_mut(pub_id) {
             peer.timestamp = Instant::now();
             peer.state = PeerState::Connected(true);
+            peer.reconnecting = ReconnectingPeer::False;
             true
         } else {
             false
         };
 
         if !found {
-            self.insert_peer(Peer::new(*pub_id, PeerState::Connected(true), false));
+            self.insert_peer(Peer::new(*pub_id,
+                                       PeerState::Connected(true),
+                                       false,
+                                       ReconnectingPeer::False));
         }
 
         true
@@ -1114,15 +1141,20 @@ impl PeerManager {
     /// Sets the given peer to state `SearchingForTunnel` and returns querying candidates.
     /// Returns empty vector of candidates if it is already in Routing state.
     pub fn set_searching_for_tunnel(&mut self, pub_id: PublicId, valid: bool) -> Vec<PublicId> {
-        match self.get_peer(&pub_id).map(Peer::state) {
-            Some(&PeerState::Client) |
-            Some(&PeerState::JoiningNode) |
-            Some(&PeerState::Proxy) |
-            Some(&PeerState::Routing(_)) |
-            Some(&PeerState::Connected(_)) => return vec![],
-            _ => (),
-        }
-        self.insert_peer(Peer::new(pub_id, PeerState::SearchingForTunnel, valid));
+        let reconnecting = match self.get_peer(&pub_id) {
+            Some(peer) => {
+                match *peer.state() {
+                    PeerState::Client |
+                    PeerState::JoiningNode |
+                    PeerState::Proxy |
+                    PeerState::Routing(_) |
+                    PeerState::Connected(_) => return vec![],
+                    _ => peer.reconnecting,
+                }
+            }
+            None => ReconnectingPeer::False,
+        };
+        self.insert_peer(Peer::new(pub_id, PeerState::SearchingForTunnel, valid, reconnecting));
 
         self.routing_table
             .iter()
@@ -1143,32 +1175,34 @@ impl PeerManager {
         let pub_id = self.connection_token_map
             .remove(&token)
             .ok_or(Error::PeerNotFound)?;
-        let (us_as_src, them_as_dst, opt_their_info, valid) = match self.peers.remove(&pub_id) {
-            Some(Peer {
-                     state: PeerState::ConnectionInfoPreparing {
-                         us_as_src,
-                         them_as_dst,
-                         their_info,
-                     },
-                     valid,
-                     ..
-                 }) => (us_as_src, them_as_dst, their_info, valid),
-            Some(peer) => {
-                self.insert_peer(peer);
-                return Err(Error::UnexpectedState);
-            }
-            None => return Err(Error::PeerNotFound),
-        };
+        let (us_as_src, them_as_dst, opt_their_info, valid, reconnecting) =
+            match self.peers.remove(&pub_id) {
+                Some(Peer {
+                         state: PeerState::ConnectionInfoPreparing {
+                             us_as_src,
+                             them_as_dst,
+                             their_info,
+                         },
+                         valid,
+                         reconnecting,
+                         ..
+                     }) => (us_as_src, them_as_dst, their_info, valid, reconnecting),
+                Some(peer) => {
+                    self.insert_peer(peer);
+                    return Err(Error::UnexpectedState);
+                }
+                None => return Err(Error::PeerNotFound),
+            };
 
         let infos = match opt_their_info {
             Some((their_info, msg_id)) => {
                 let state = PeerState::CrustConnecting;
-                self.insert_peer(Peer::new(pub_id, state, valid));
+                self.insert_peer(Peer::new(pub_id, state, valid, reconnecting));
                 Some((our_info, their_info, msg_id))
             }
             None => {
                 let state = PeerState::ConnectionInfoReady(our_info);
-                self.insert_peer(Peer::new(pub_id, state, valid));
+                self.insert_peer(Peer::new(pub_id, state, valid, reconnecting));
                 None
             }
         };
@@ -1194,10 +1228,11 @@ impl PeerManager {
             Some(Peer {
                      state: PeerState::ConnectionInfoReady(our_info),
                      valid,
+                     reconnecting,
                      ..
                  }) => {
                 let state = PeerState::CrustConnecting;
-                self.insert_peer(Peer::new(pub_id, state, valid));
+                self.insert_peer(Peer::new(pub_id, state, valid, reconnecting));
                 Ok(ConnectionInfoReceivedResult::Ready(our_info, peer_info))
             }
             Some(Peer {
@@ -1207,6 +1242,7 @@ impl PeerManager {
                          their_info: None,
                      },
                      valid,
+                     reconnecting,
                      ..
                  }) => {
                 let state = PeerState::ConnectionInfoPreparing {
@@ -1214,7 +1250,7 @@ impl PeerManager {
                     them_as_dst: them_as_dst,
                     their_info: Some((peer_info, msg_id)),
                 };
-                self.insert_peer(Peer::new(pub_id, state, valid));
+                self.insert_peer(Peer::new(pub_id, state, valid, reconnecting));
                 Ok(ConnectionInfoReceivedResult::Waiting)
             }
             Some(peer @ Peer { state: PeerState::ConnectionInfoPreparing { .. }, .. }) |
@@ -1241,19 +1277,17 @@ impl PeerManager {
                 self.insert_peer(peer);
                 Ok(ConnectionInfoReceivedResult::IsConnected)
             }
+            // SearchingForTunnel or None
             x => {
-                let valid = x.map_or(false,
-                                     |peer| if let PeerState::SearchingForTunnel = peer.state {
-                                         peer.valid
-                                     } else {
-                                         false
-                                     });
+                let (valid, reconnecting) =
+                    x.map_or((false, ReconnectingPeer::False),
+                             |peer| (peer.valid, peer.reconnecting));
                 let state = PeerState::ConnectionInfoPreparing {
                     us_as_src: dst,
                     them_as_dst: src,
                     their_info: Some((peer_info, msg_id)),
                 };
-                self.insert_peer(Peer::new(pub_id, state, valid));
+                self.insert_peer(Peer::new(pub_id, state, valid, reconnecting));
                 let token = rand::random();
                 let _ = self.connection_token_map.insert(token, pub_id);
                 Ok(ConnectionInfoReceivedResult::Prepare(token))
@@ -1266,21 +1300,18 @@ impl PeerManager {
     pub fn get_connection_token(&mut self,
                                 src: Authority<XorName>,
                                 dst: Authority<XorName>,
-                                pub_id: PublicId)
+                                pub_id: PublicId,
+                                reconnecting_in: ReconnectingPeer)
                                 -> Option<u32> {
-        match self.get_peer(&pub_id).map(Peer::state) {
-            Some(&PeerState::Connected(_)) |
-            Some(&PeerState::Client) |
-            Some(&PeerState::ConnectionInfoPreparing { .. }) |
-            Some(&PeerState::ConnectionInfoReady(..)) |
-            Some(&PeerState::CrustConnecting) |
-            Some(&PeerState::JoiningNode) |
-            Some(&PeerState::Proxy) |
-            Some(&PeerState::Candidate(_)) |
-            Some(&PeerState::Routing(_)) => return None,
-            Some(&PeerState::SearchingForTunnel) |
-            None => (),
-        }
+        let reconnecting = match self.get_peer(&pub_id) {
+            Some(peer) => {
+                match *peer.state() {
+                    PeerState::SearchingForTunnel => peer.reconnecting,
+                    _ => return None,
+                }
+            }
+            None => reconnecting_in,
+        };
         let token = rand::random();
         let _ = self.connection_token_map.insert(token, pub_id);
         self.insert_peer(Peer::new(pub_id,
@@ -1289,7 +1320,8 @@ impl PeerManager {
                                        them_as_dst: dst,
                                        their_info: None,
                                    },
-                                   true));
+                                   true,
+                                   reconnecting));
         Some(token)
     }
 
@@ -1478,8 +1510,10 @@ mod tests {
             endpoint: Endpoint(1),
         };
         // We decide to connect to the peer with `pub_id`:
-        let token =
-            unwrap!(peer_mgr.get_connection_token(node_auth(0), node_auth(1), their_pub_id));
+        let token = unwrap!(peer_mgr.get_connection_token(node_auth(0),
+                                                          node_auth(1),
+                                                          their_pub_id,
+                                                          ReconnectingPeer::False));
         // Crust has finished preparing the connection info.
         match peer_mgr.connection_info_prepared(token, our_connection_info.clone()) {
             Ok(ConnectionInfoPreparedResult {

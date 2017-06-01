@@ -15,10 +15,13 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use super::{create_connected_nodes_until_split, poll_and_resend, verify_invariant_for_all_nodes};
+use super::{create_connected_nodes_until_split, poll_all, poll_and_resend,
+            verify_invariant_for_all_nodes};
+use fake_clock::FakeClock;
 use rand::Rng;
 use routing::{Event, EventStream, Prefix, XOR_NAME_LEN, XorName};
 use routing::mock_crust::Network;
+use routing::test_consts::ACK_TIMEOUT_SECS;
 use std::collections::{BTreeMap, BTreeSet};
 
 // See docs for `create_connected_nodes_with_cache_until_split` for details on `prefix_lengths`.
@@ -136,4 +139,49 @@ fn concurrent_merge() {
         prefixes.insert(*node.routing_table().our_prefix());
     }
     assert_eq!(prefixes.len(), 2);
+}
+
+#[test]
+fn merge_exclude_reconnecting_peers() {
+    let min_section_size = 3;
+    let network = Network::new(min_section_size, None);
+    let mut rng = network.new_rng();
+    let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1], false);
+    verify_invariant_for_all_nodes(&mut nodes);
+    rng.shuffle(&mut nodes);
+
+    // Choose one section to drop nodes from.
+    let prefix_to_drop_from = Prefix::new(1, XorName([0; XOR_NAME_LEN]));
+
+    let mut nodes_count = nodes
+        .iter()
+        .filter(|node| node.routing_table().our_prefix() == &prefix_to_drop_from)
+        .count();
+
+    // Drop enough nodes (without polling) from that section to just below `min_section_size`.
+    while nodes_count >= min_section_size {
+        let index = unwrap!(nodes
+                                .iter()
+                                .position(|node| {
+                                              node.routing_table().our_prefix() ==
+                                              &prefix_to_drop_from
+                                          }));
+        let removed = nodes.remove(index);
+        drop(removed);
+        nodes_count -= 1;
+    }
+
+    // Poll the nodes, check the invariant and ensure the network has merged to `()`.
+    for _ in 0..min_section_size {
+        poll_all(&mut nodes, &mut []);
+        FakeClock::advance_time(ACK_TIMEOUT_SECS * 1000 + 1);
+    }
+    poll_all(&mut nodes, &mut []);
+
+    verify_invariant_for_all_nodes(&mut nodes);
+    let mut prefixes = BTreeSet::new();
+    for node in nodes.iter() {
+        prefixes.insert(*node.routing_table().our_prefix());
+    }
+    assert_eq!(prefixes.len(), 1, "prefixes: {:?}", prefixes);
 }
