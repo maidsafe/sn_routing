@@ -347,7 +347,7 @@ fn tunnel_node_dropped() {
 fn tunnel_node_split_out() {
     let min_section_size = 3;
     let network = Network::new(min_section_size, None);
-    let mut nodes = create_connected_nodes(&network, min_section_size);
+    let mut nodes = create_connected_nodes(&network, 2);
     let bit_count = 4;
 
     // Create nodes that don't match node 1 in their first 2 bits.

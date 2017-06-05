@@ -106,7 +106,7 @@ impl<UID: Uid> Network<UID> {
     }
 
     /// Poll and process all queued Packets.
-    pub fn poll(&self) {
+    pub fn deliver_messages(&self) {
         while let Some((sender, receiver, packet)) = self.pop_packet() {
             self.process_packet(sender, receiver, packet);
         }
@@ -197,14 +197,7 @@ impl<UID: Uid> Network<UID> {
     // Drops any pending messages on a specific route (does not automatically
     // drop packets going the other way).
     fn drop_pending(&self, sender: Endpoint, receiver: Endpoint) {
-        if let Some(deque) = self.0.borrow_mut().queue.get_mut(&(sender, receiver)) {
-            deque.clear();
-        }
-    }
-
-    // Drops all pending messages across the entire network.
-    fn drop_all_pending(&self) {
-        self.0.borrow_mut().queue.clear();
+        let _ = self.0.borrow_mut().queue.remove(&(sender, receiver));
     }
 
     fn pop_packet(&self) -> Option<(Endpoint, Endpoint, Packet<UID>)> {
@@ -292,6 +285,12 @@ impl<UID: Uid> ServiceHandle<UID> {
         self.0
             .borrow()
             .is_peer_connected(&unwrap!(handle.0.borrow().uid))
+    }
+
+    /// Delivers all messages that are queued in the network.
+    pub fn deliver_messages(&self) {
+        let network = self.0.borrow().network.clone();
+        network.deliver_messages();
     }
 
     /// Returns whether sent any message across the network since previous query and reset the flag.
@@ -476,7 +475,7 @@ impl<UID: Uid> ServiceImpl<UID> {
         if let Some(uid) = self.find_uid_by_endpoint(&peer_endpoint) {
             self.send_event(CrustEvent::NewMessage(uid, data));
         } else {
-            unreachable!("Received message from non-connected {:?}", peer_endpoint);
+            debug!("Received message from non-connected {:?}", peer_endpoint);
         }
     }
 
@@ -520,8 +519,9 @@ impl<UID: Uid> ServiceImpl<UID> {
     }
 
     fn add_rendezvous_connection(&mut self, uid: UID, peer_endpoint: Endpoint) {
-        self.add_connection(uid, peer_endpoint);
-        self.send_event(CrustEvent::ConnectSuccess(uid));
+        if self.add_connection(uid, peer_endpoint) {
+            self.send_event(CrustEvent::ConnectSuccess(uid));
+        }
     }
 
     // Remove connected peer with the given uid and return its endpoint,
@@ -582,7 +582,6 @@ impl<UID: Uid> ServiceImpl<UID> {
     }
 
     pub fn disconnect_all(&mut self) {
-        self.network.drop_all_pending();
         let endpoints = self.connections
             .drain(..)
             .map(|(_, ep)| ep)
