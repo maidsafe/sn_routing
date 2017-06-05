@@ -322,6 +322,11 @@ impl JoiningNode {
         self.resend_unacknowledged_timed_out_msgs(token);
         Transition::Stay
     }
+
+    #[cfg(feature = "use-mock-crust")]
+    pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
+        self.timer.get_timed_out_tokens()
+    }
 }
 
 impl Base for JoiningNode {
