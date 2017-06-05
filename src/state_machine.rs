@@ -184,6 +184,7 @@ impl State {
         match *self {
             State::Node(ref mut state) => state.get_timed_out_tokens(),
             State::Client(ref mut state) => state.get_timed_out_tokens(),
+            State::JoiningNode(ref mut state) => state.get_timed_out_tokens(),
             _ => vec![],
         }
     }
