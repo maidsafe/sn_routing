@@ -156,6 +156,7 @@ mod action;
 mod cache;
 mod client;
 mod common_types;
+mod cumulative_own_section_merge;
 mod data;
 mod error;
 mod event;

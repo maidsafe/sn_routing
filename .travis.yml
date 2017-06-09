@@ -34,7 +34,7 @@ script:
         cargo rustc --verbose --example ci_test -- -Zno-trans &&
         cargo rustc --verbose --example key_value_store -- -Zno-trans &&
         cargo rustc --verbose -- -Zno-trans &&
-        travis_wait 40 cargo test --release --verbose --features use-mock-crust
+        travis_wait 60 cargo test --release --verbose --features use-mock-crust
       );
     elif [ "${TRAVIS_OS_NAME}" = linux ]; then
       (
