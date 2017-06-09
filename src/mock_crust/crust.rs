@@ -60,7 +60,7 @@ impl<UID: Uid> Service<UID> {
                        -> Result<Self, CrustError> {
         let network = handle.0.borrow().network.clone();
         let service = Service(handle.0.clone(), network);
-        service.lock_and_poll(|imp| imp.start(event_sender, uid));
+        service.lock().start(event_sender, uid);
 
         Ok(service)
     }
@@ -68,7 +68,7 @@ impl<UID: Uid> Service<UID> {
     /// This method is used instead of dropping the service and creating a new
     /// one, which is the current practice with the real crust.
     pub fn restart(&self, event_sender: CrustEventSender<UID>, uid: UID) {
-        self.lock_and_poll(|imp| imp.restart(event_sender, uid))
+        self.lock().restart(event_sender, uid)
     }
 
     /// Start the bootstrapping procedure.
@@ -76,7 +76,7 @@ impl<UID: Uid> Service<UID> {
                            blacklist: HashSet<SocketAddr>,
                            user: CrustUser)
                            -> Result<(), CrustError> {
-        self.lock_and_poll(|imp| imp.start_bootstrap(blacklist, user));
+        self.lock().start_bootstrap(blacklist, user);
         Ok(())
     }
 
@@ -117,7 +117,7 @@ impl<UID: Uid> Service<UID> {
     /// Request connection info structure used for establishing peer-to-peer
     /// connections.
     pub fn prepare_connection_info(&self, result_token: u32) {
-        self.lock_and_poll(|imp| imp.prepare_connection_info(result_token))
+        self.lock().prepare_connection_info(result_token)
     }
 
     /// Connect to a peer using our and their connection infos. The connection infos must be first
@@ -126,19 +126,19 @@ impl<UID: Uid> Service<UID> {
                    our_info: PrivConnectionInfo<UID>,
                    their_info: PubConnectionInfo<UID>)
                    -> Result<(), CrustError> {
-        self.lock_and_poll(|imp| imp.connect(our_info, their_info));
+        self.lock().connect(our_info, their_info);
         Ok(())
     }
 
     /// Disconnect from the given peer.
     pub fn disconnect(&self, uid: UID) -> bool {
-        self.lock_and_poll(|imp| imp.disconnect(&uid))
+        self.lock().disconnect(&uid)
     }
 
     /// Send message to the given peer.
     // TODO: Implement tests that drop low-priority messages.
     pub fn send(&self, id: UID, data: Vec<u8>, _priority: u8) -> io::Result<()> {
-        if self.lock_and_poll(|imp| imp.send_message(&id, data)) {
+        if self.lock().send_message(&id, data) {
             Ok(())
         } else {
             let msg = format!("No connection to peer {:?}", id);
@@ -148,7 +148,7 @@ impl<UID: Uid> Service<UID> {
 
     /// Returns `true` if we are currently connected to the given `uid`
     pub fn is_connected(&self, uid: &UID) -> bool {
-        self.lock_and_poll(|imp| imp.is_peer_connected(uid))
+        self.lock().is_peer_connected(uid)
     }
 
     /// Adds the peer to the whitelist, allowing them to connect to us.
@@ -179,20 +179,12 @@ impl<UID: Uid> Service<UID> {
     fn lock(&self) -> RefMut<ServiceImpl<UID>> {
         self.0.borrow_mut()
     }
-
-    fn lock_and_poll<F, R>(&self, f: F) -> R
-        where F: FnOnce(&mut ServiceImpl<UID>) -> R
-    {
-        let result = f(&mut *self.lock());
-        self.1.poll();
-        result
-    }
 }
 
 impl<UID: Uid> Drop for Service<UID> {
     fn drop(&mut self) {
         if !thread::panicking() {
-            self.lock_and_poll(|imp| imp.disconnect_all());
+            self.lock().disconnect_all();
         }
     }
 }

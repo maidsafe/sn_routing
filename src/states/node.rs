@@ -22,6 +22,7 @@ use ack_manager::{Ack, AckManager};
 use action::Action;
 use cache::Cache;
 use crust::{ConnectionInfoResult, CrustError, CrustUser};
+use cumulative_own_section_merge::CumulativeOwnSectionMerge;
 use error::{InterfaceError, RoutingError};
 use event::Event;
 use id::{FullId, PublicId};
@@ -110,6 +111,8 @@ pub struct Node {
     routing_msg_backlog: Vec<RoutingMessage>,
     /// Cache of `OwnSectionMerge` messages we have received, by sender section prefix.
     merge_cache: LruCache<Prefix<XorName>, SectionMap>,
+    /// Union of our merged section, deduced from multiple `OwnSectionMerge`.
+    our_merged_section: CumulativeOwnSectionMerge,
     /// The timer token for sending a `CandidateApproval` message.
     candidate_timer_token: Option<u64>,
     /// The timer token for displaying the current candidate status.
@@ -224,6 +227,7 @@ impl Node {
             su_timer_token: None,
             routing_msg_backlog: vec![],
             merge_cache: LruCache::with_expiry_duration(Duration::from_secs(MERGE_TIMEOUT_SECS)),
+            our_merged_section: Default::default(),
             candidate_timer_token: None,
             candidate_status_token: None,
             bootstrappers:
@@ -2269,6 +2273,17 @@ impl Node {
                                 sections: SectionMap,
                                 outbox: &mut EventBox)
                                 -> Result<(), RoutingError> {
+        if let Some(our_merged_section) =
+            self.our_merged_section
+                .extend_our_merged_section(merge_prefix, &sections) {
+            if merge_prefix == *self.our_prefix() {
+                trace!("{:?} resend OtherSectionMerge on duplicated OwnSectionMerge",
+                       self);
+                let other_prefixes = self.routing_table().other_prefixes();
+                let our_ver_pfx = self.routing_table().our_versioned_prefix();
+                self.send_other_section_merge(other_prefixes, our_ver_pfx, our_merged_section);
+            }
+        }
         if !merge_prefix.is_compatible(&sender_prefix) ||
            merge_prefix.bit_count() + 1 != sender_prefix.bit_count() ||
            !merge_prefix.is_compatible(self.our_prefix()) ||
@@ -2308,11 +2323,20 @@ impl Node {
                     our_merged_section.extend(peers.into_iter().map(|peer| *peer.name()));
                 }
             }
+
+            if let Some(merged_section) =
+                self.our_merged_section
+                    .get_our_merged_section(merge_prefix, version) {
+                our_merged_section = merged_section;
+            }
+
             self.process_own_section_merge(their_prefix,
                                            version,
                                            their_sections,
                                            our_merged_section,
                                            outbox);
+            self.our_merged_section
+                .set_send_other_section_merge(merge_prefix, version);
         }
         self.merge_if_necessary(outbox);
         Ok(())

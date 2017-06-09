@@ -21,6 +21,7 @@ before_script:
       bash cargo_install.sh clippy 0.0.128;
     fi
 script:
+  - export RUSTFLAGS="-C opt-level=2 -C codegen-units=8"
   - if [ "${TRAVIS_RUST_VERSION}" = 1.17.0 ]; then
       (
         set -x;
@@ -29,7 +30,7 @@ script:
         cargo rustc --verbose --example ci_test -- -Zno-trans &&
         cargo rustc --verbose --example key_value_store -- -Zno-trans &&
         cargo rustc --verbose -- -Zno-trans &&
-        env RUSTFLAGS="-C opt-level=2 -C codegen-units=8" cargo test --release --verbose --features use-mock-crust
+        travis_wait 40 cargo test --release --verbose --features use-mock-crust
       );
     elif [ "${TRAVIS_OS_NAME}" = linux ]; then
       (
