@@ -285,6 +285,7 @@ pub fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
     let mut result = false;
     for _ in 0..MAX_POLL_CALLS {
         let mut handled_message = false;
+        nodes[0].handle.deliver_messages();
         if BALANCED_POLLING {
             // handle all current messages for each node in turn, then repeat (via outer loop):
             nodes
