@@ -136,14 +136,19 @@ extern crate unwrap;
 #[cfg(not(feature = "use-mock-crust"))]
 extern crate crust;
 extern crate itertools;
+#[cfg(feature = "use-mock-crypto")]
+#[macro_use]
+extern crate lazy_static;
 extern crate lru_time_cache;
 extern crate num_bigint;
 extern crate rand;
 extern crate resource_proof;
+#[cfg(not(feature = "use-mock-crypto"))]
 extern crate rust_sodium;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
+#[cfg(not(feature = "use-mock-crypto"))]
 extern crate tiny_keccak;
 
 // Needs to be before all other modules to make the macros available to them.
@@ -180,6 +185,14 @@ mod tunnels;
 mod types;
 mod utils;
 mod xor_name;
+
+#[cfg(feature = "use-mock-crypto")]
+mod mock_crypto;
+
+#[cfg(feature = "use-mock-crypto")]
+use mock_crypto::rust_sodium;
+#[cfg(feature = "use-mock-crypto")]
+use mock_crypto::tiny_keccak;
 
 /// Reexports `crust::Config`
 pub type BootstrapConfig = crust::Config;
