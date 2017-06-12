@@ -1,9 +1,9 @@
 pub mod rust_sodium {
     use rand::{Rng, SeedableRng, XorShiftRng};
-    use std::sync::Mutex;
+    use std::cell::RefCell;
 
-    lazy_static! {
-        static ref RNG: Mutex<XorShiftRng> = Mutex::new(XorShiftRng::new_unseeded());
+    thread_local! {
+        static RNG: RefCell<XorShiftRng> = RefCell::new(XorShiftRng::new_unseeded());
     }
 
     #[allow(unused)]
@@ -12,20 +12,20 @@ pub mod rust_sodium {
     }
 
     #[allow(unused)]
-    pub fn init_with_rng<T: Rng>(rng: &mut T) -> Result<(), i32> {
-        RNG.lock().unwrap().reseed(rng.gen());
+    pub fn init_with_rng<T: Rng>(other: &mut T) -> Result<(), i32> {
+        RNG.with(|rng| rng.borrow_mut().reseed(other.gen()));
         Ok(())
     }
 
     pub mod crypto {
         pub mod sign {
-            use super::super::RNG;
+            use super::super::with_rng;
             use rand::Rng;
-            pub use real_rust_sodium::crypto::sign::{SIGNATUREBYTES, Signature};
             use std::ops::{Index, RangeFull};
 
             pub const PUBLICKEYBYTES: usize = 32;
             pub const SECRETKEYBYTES: usize = 32;
+            pub const SIGNATUREBYTES: usize = 32;
 
             #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq,
                      PartialOrd, Serialize)]
@@ -41,31 +41,43 @@ pub mod rust_sodium {
             #[derive(Clone, Debug, Eq, PartialEq)]
             pub struct SecretKey(pub [u8; SECRETKEYBYTES]);
 
+            #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, Serialize,
+                     PartialEq, PartialOrd)]
+            pub struct Signature(pub [u8; SIGNATUREBYTES]);
+
+            impl AsRef<[u8]> for Signature {
+                fn as_ref(&self) -> &[u8] {
+                    &self.0
+                }
+            }
+
             pub fn gen_keypair() -> (PublicKey, SecretKey) {
-                let value = RNG.lock().unwrap().gen();
-                (PublicKey(value), SecretKey(value))
+                with_rng(|rng| {
+                             let value = rng.gen();
+                             (PublicKey(value), SecretKey(value))
+                         })
             }
 
             pub fn sign_detached(m: &[u8], sk: &SecretKey) -> Signature {
                 let mut temp = m.to_vec();
                 temp.extend(&sk.0);
-                Signature(hash512(&temp))
+                Signature(hash256(&temp))
             }
 
             pub fn verify_detached(signature: &Signature, m: &[u8], pk: &PublicKey) -> bool {
                 let mut temp = m.to_vec();
                 temp.extend(&pk.0);
-                *signature == Signature(hash512(&temp))
+                *signature == Signature(hash256(&temp))
             }
 
-            fn hash512(data: &[u8]) -> [u8; 64] {
-                use tiny_keccak::sha3_512;
-                sha3_512(data)
+            fn hash256(data: &[u8]) -> [u8; 32] {
+                use tiny_keccak::sha3_256;
+                sha3_256(data)
             }
         }
 
         pub mod box_ {
-            use super::super::RNG;
+            use super::super::with_rng;
             use rand::Rng;
 
             pub const PUBLICKEYBYTES: usize = 32;
@@ -82,12 +94,14 @@ pub mod rust_sodium {
             pub struct Nonce(pub [u8; NONCEBYTES]);
 
             pub fn gen_keypair() -> (PublicKey, SecretKey) {
-                let value = RNG.lock().unwrap().gen();
-                (PublicKey(value), SecretKey(value))
+                with_rng(|rng| {
+                             let value = rng.gen();
+                             (PublicKey(value), SecretKey(value))
+                         })
             }
 
             pub fn gen_nonce() -> Nonce {
-                Nonce(RNG.lock().unwrap().gen())
+                with_rng(|rng| Nonce(rng.gen()))
             }
 
             pub fn seal(m: &[u8], nonce: &Nonce, pk: &PublicKey, sk: &SecretKey) -> Vec<u8> {
@@ -124,6 +138,12 @@ pub mod rust_sodium {
                 return Ok(c[n + p + s..].to_vec());
             }
         }
+    }
+
+    fn with_rng<F, R>(f: F) -> R
+        where F: FnOnce(&mut XorShiftRng) -> R
+    {
+        RNG.with(|rng| f(&mut *rng.borrow_mut()))
     }
 }
 

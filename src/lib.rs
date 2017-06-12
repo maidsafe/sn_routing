@@ -136,17 +136,12 @@ extern crate unwrap;
 #[cfg(not(feature = "use-mock-crust"))]
 extern crate crust;
 extern crate itertools;
-#[cfg(feature = "use-mock-crypto")]
-#[macro_use]
-extern crate lazy_static;
 extern crate lru_time_cache;
 extern crate num_bigint;
 extern crate rand;
 extern crate resource_proof;
 #[cfg(not(feature = "use-mock-crypto"))]
 extern crate rust_sodium;
-#[cfg(feature = "use-mock-crypto")]
-extern crate rust_sodium as real_rust_sodium;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;

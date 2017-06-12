@@ -27,7 +27,6 @@ serde_derive = "~1.0.6"
 term = "~0.4.5"
 tiny-keccak = "~1.2.1"
 unwrap = "~1.1.0"
-lazy_static = { version = "~0.2.8", optional = true }
 
 [dev-dependencies]
 docopt = "~0.6.86"
@@ -44,4 +43,4 @@ name = "ci_test"
 
 [features]
 use-mock-crust = ["lru_time_cache/fake_clock"]
-use-mock-crypto = ["lazy_static"]
+use-mock-crypto = []
