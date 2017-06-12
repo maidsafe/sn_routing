@@ -145,10 +145,11 @@ extern crate rand;
 extern crate resource_proof;
 #[cfg(not(feature = "use-mock-crypto"))]
 extern crate rust_sodium;
+#[cfg(feature = "use-mock-crypto")]
+extern crate rust_sodium as real_rust_sodium;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
-#[cfg(not(feature = "use-mock-crypto"))]
 extern crate tiny_keccak;
 
 // Needs to be before all other modules to make the macros available to them.
@@ -191,8 +192,6 @@ mod mock_crypto;
 
 #[cfg(feature = "use-mock-crypto")]
 use mock_crypto::rust_sodium;
-#[cfg(feature = "use-mock-crypto")]
-use mock_crypto::tiny_keccak;
 
 /// Reexports `crust::Config`
 pub type BootstrapConfig = crust::Config;

@@ -1,6 +1,3 @@
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
-
 pub mod rust_sodium {
     use rand::{Rng, SeedableRng, XorShiftRng};
     use std::sync::Mutex;
@@ -23,13 +20,12 @@ pub mod rust_sodium {
     pub mod crypto {
         pub mod sign {
             use super::super::RNG;
-            use super::super::super::cheap_hash;
             use rand::Rng;
+            pub use real_rust_sodium::crypto::sign::{SIGNATUREBYTES, Signature};
             use std::ops::{Index, RangeFull};
 
             pub const PUBLICKEYBYTES: usize = 32;
             pub const SECRETKEYBYTES: usize = 32;
-            pub const SIGNATUREBYTES: usize = 32;
 
             #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq,
                      PartialOrd, Serialize)]
@@ -45,16 +41,6 @@ pub mod rust_sodium {
             #[derive(Clone, Debug, Eq, PartialEq)]
             pub struct SecretKey(pub [u8; SECRETKEYBYTES]);
 
-            #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq,
-                     PartialOrd, Serialize)]
-            pub struct Signature(pub [u8; SIGNATUREBYTES]);
-
-            impl AsRef<[u8]> for Signature {
-                fn as_ref(&self) -> &[u8] {
-                    &self.0
-                }
-            }
-
             pub fn gen_keypair() -> (PublicKey, SecretKey) {
                 let value = RNG.lock().unwrap().gen();
                 (PublicKey(value), SecretKey(value))
@@ -63,13 +49,18 @@ pub mod rust_sodium {
             pub fn sign_detached(m: &[u8], sk: &SecretKey) -> Signature {
                 let mut temp = m.to_vec();
                 temp.extend(&sk.0);
-                Signature(cheap_hash(temp))
+                Signature(hash512(&temp))
             }
 
             pub fn verify_detached(signature: &Signature, m: &[u8], pk: &PublicKey) -> bool {
                 let mut temp = m.to_vec();
                 temp.extend(&pk.0);
-                *signature == Signature(cheap_hash(temp))
+                *signature == Signature(hash512(&temp))
+            }
+
+            fn hash512(data: &[u8]) -> [u8; 64] {
+                use tiny_keccak::sha3_512;
+                sha3_512(data)
             }
         }
 
@@ -133,55 +124,12 @@ pub mod rust_sodium {
                 return Ok(c[n + p + s..].to_vec());
             }
         }
-
-        pub mod hash {
-            pub mod sha256 {
-                use super::super::super::super::cheap_hash;
-
-                pub const DIGESTBYTES: usize = 32;
-
-                #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq,
-                         Serialize)]
-                pub struct Digest(pub [u8; DIGESTBYTES]);
-
-                pub fn hash(m: &[u8]) -> Digest {
-                    Digest(cheap_hash(m))
-                }
-            }
-        }
     }
-}
-
-pub mod tiny_keccak {
-    use super::cheap_hash;
-
-    pub fn sha3_256(data: &[u8]) -> [u8; 32] {
-        cheap_hash(data)
-    }
-}
-
-#[allow(unsafe_code)]
-fn cheap_hash<T: Hash>(value: T) -> [u8; 32] {
-    use std::mem;
-
-    let mut hasher = DefaultHasher::new();
-    value.hash(&mut hasher);
-    let hash = hasher.finish();
-
-    let mut result = [0u8; 32];
-    unsafe {
-        let temp: &mut [u64; 4] = mem::transmute(&mut result);
-        temp[0] = hash;
-    }
-
-    result
 }
 
 #[cfg(test)]
 mod tests {
     use super::rust_sodium::crypto::{box_, sign};
-    use super::rust_sodium::crypto::hash::sha256;
-    use super::tiny_keccak::sha3_256;
     use rand::{self, Rng};
 
     #[test]
@@ -223,14 +171,5 @@ mod tests {
         assert!(box_::open(&encrypted, &nonce0, &pk0, &sk0).is_err());
         assert!(box_::open(&encrypted, &nonce0, &pk0, &sk1).is_err());
         assert!(box_::open(&encrypted, &nonce0, &pk1, &sk1).is_err());
-    }
-
-    #[test]
-    fn hash() {
-        assert_eq!(sha256::hash(b"alice"), sha256::hash(b"alice"));
-        assert_ne!(sha256::hash(b"alice"), sha256::hash(b"bob"));
-
-        assert_eq!(sha3_256(b"alice"), sha3_256(b"alice"));
-        assert_ne!(sha3_256(b"alice"), sha3_256(b"bob"));
     }
 }

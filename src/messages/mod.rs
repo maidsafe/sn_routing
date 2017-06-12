@@ -23,7 +23,6 @@ mod response;
 pub use self::request::Request;
 pub use self::response::{AccountInfo, Response};
 use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
-
 use ack_manager::Ack;
 use error::RoutingError;
 use event::Event;
@@ -35,8 +34,7 @@ use peer_manager::SectionMap;
 use routing_table::{Prefix, VersionedPrefix, Xorable};
 use routing_table::Authority;
 use rust_sodium::crypto::{box_, sign};
-use rust_sodium::crypto::hash::sha256;
-use sha3;
+use sha3::Digest256;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::{self, Debug, Formatter};
 use std::iter;
@@ -109,7 +107,7 @@ impl Message {
 pub enum DirectMessage {
     /// Sent from members of a section or group message's source authority to the first hop. The
     /// message will only be relayed once enough signatures have been accumulated.
-    MessageSignature(sha256::Digest, sign::Signature),
+    MessageSignature(Digest256, sign::Signature),
     /// A signature for the current `BTreeSet` of section's node names
     SectionListSignature(SectionList, sign::Signature),
     /// Sent from the bootstrap node to a client in response to `ClientIdentify`.
@@ -486,7 +484,7 @@ impl RoutingMessage {
                         signing_key: &sign::SecretKey)
                         -> Result<DirectMessage, RoutingError> {
         let serialised_msg = serialise(self)?;
-        let hash = sha256::hash(&serialised_msg);
+        let hash = sha3_256(&serialised_msg);
         let sig = sign::sign_detached(&serialised_msg, signing_key);
         Ok(DirectMessage::MessageSignature(hash, sig))
     }
@@ -637,7 +635,7 @@ pub enum MessageContent {
     /// Part of a user-facing message
     UserMessagePart {
         /// The hash of this user message.
-        hash: sha3::Digest256,
+        hash: Digest256,
         /// The number of parts.
         part_count: u32,
         /// The index of this part.
@@ -699,7 +697,7 @@ impl Debug for DirectMessage {
             MessageSignature(ref digest, _) => {
                 write!(formatter,
                        "MessageSignature ({}, ..)",
-                       utils::format_binary_array(&digest.0))
+                       utils::format_binary_array(&digest))
             }
             SectionListSignature(ref sec_list, _) => {
                 write!(formatter, "SectionListSignature({:?}, ..)", sec_list.prefix)
@@ -913,7 +911,7 @@ impl UserMessage {
 
     /// Puts the given parts of a serialised message together and verifies that it matches the
     /// given hash code. If it does, returns the `UserMessage`.
-    pub fn from_parts<'a, I: Iterator<Item = &'a Vec<u8>>>(hash: sha3::Digest256,
+    pub fn from_parts<'a, I: Iterator<Item = &'a Vec<u8>>>(hash: Digest256,
                                                            parts: I)
                                                            -> Result<UserMessage, RoutingError> {
         let mut payload = Vec::new();
@@ -960,7 +958,7 @@ impl UserMessage {
 /// This assembles `UserMessage`s from `UserMessagePart`s.
 /// It maps `(hash, part_count)` of an incoming `UserMessage` to the map containing
 /// all `UserMessagePart`s that have already arrived, by `part_index`.
-pub struct UserMessageCache(LruCache<(sha3::Digest256, u32), BTreeMap<u32, Vec<u8>>>);
+pub struct UserMessageCache(LruCache<(Digest256, u32), BTreeMap<u32, Vec<u8>>>);
 
 impl UserMessageCache {
     pub fn with_expiry_duration(duration: Duration) -> Self {
@@ -970,7 +968,7 @@ impl UserMessageCache {
     /// Adds the given one to the cache of received message parts, returning a `UserMessage` if the
     /// given part was the last missing piece of it.
     pub fn add(&mut self,
-               hash: sha3::Digest256,
+               hash: Digest256,
                part_count: u32,
                part_index: u32,
                payload: Vec<u8>)
@@ -1008,7 +1006,6 @@ mod tests {
     use maidsafe_utilities::serialisation::serialise;
     use rand;
     use routing_table::{Authority, Prefix};
-    use rust_sodium::crypto::hash::sha256;
     use rust_sodium::crypto::sign;
     use std::collections::BTreeSet;
     use std::iter;
@@ -1108,7 +1105,7 @@ mod tests {
                           .to_signature(full_id_1.signing_private_key())) {
             DirectMessage::MessageSignature(hash, sig) => {
                 let serialised_msg = unwrap!(serialise(signed_msg.routing_message()));
-                assert_eq!(hash, sha256::hash(&serialised_msg));
+                assert_eq!(hash, sha3_256(&serialised_msg));
                 signed_msg.add_signature(*full_id_1.public_id(), sig);
             }
             msg => panic!("Unexpected message: {:?}", msg),
