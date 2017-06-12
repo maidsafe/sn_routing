@@ -541,12 +541,9 @@ impl RoutingMessage {
 /// to A and also attempts to connect to A via Crust. A does the same, once it receives the
 /// `ConnectionInfo`.
 ///
-/// Once the connection between A and Z is established and a Crust `OnConnect` event is raised,
-/// they exchange `NodeIdentify` messages.
-///
 ///
 /// ### Resource Proof Evaluation to approve
-/// When nodes Z of section Y receive `NodeIdentify` from A, they respond with a `ResourceProof`
+/// When nodes Z of section Y receive `CandidateIdentify` from A, they reply with a `ResourceProof`
 /// request. Node A needs to answer these requests (resolving a hashing challenge) with
 /// `ResourceProofResponse`. Members of Y will send out `CandidateApproval` messages to vote for the
 /// approval in their section. Once the vote succeeds, the members of Y send `NodeApproval` to A and

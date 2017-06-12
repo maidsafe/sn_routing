@@ -81,9 +81,7 @@ impl Bootstrapping {
             TargetState::Client => {
                 let _ = crust_service.start_bootstrap(HashSet::new(), CrustUser::Client);
             }
-            TargetState::JoiningNode => {
-                let _ = crust_service.start_bootstrap(HashSet::new(), CrustUser::Node);
-            }
+            TargetState::JoiningNode |
             TargetState::Node { .. } => {
                 if let Err(error) = crust_service.start_listening_tcp() {
                     error!("Failed to start listening: {:?}", error);
@@ -156,7 +154,6 @@ impl Bootstrapping {
                     return Transition::Terminate;
                 }
                 trace!("{:?} Listener started on port {}.", self, port);
-                self.crust_service.set_service_discovery_listen(true);
                 let _ = self.crust_service
                     .start_bootstrap(HashSet::new(), CrustUser::Node);
                 Transition::Stay

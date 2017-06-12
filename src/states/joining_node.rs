@@ -41,7 +41,7 @@ use timer::Timer;
 use types::{MessageId, RoutingActionSender};
 use xor_name::XorName;
 
-/// Time (in seconds) after which a `Relocate` request is resent.
+/// Total time (in seconds) to wait for `RelocateResponse`.
 const RELOCATE_TIMEOUT_SECS: u64 = 60 + RESOURCE_PROOF_DURATION_SECS;
 
 pub struct JoiningNode {

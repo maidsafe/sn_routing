@@ -100,6 +100,12 @@ impl<UID: Uid> Service<UID> {
         trace!(target: "crust", "[MOCK] set_service_discovery_listen not implemented in mock");
     }
 
+    /// Allow (or disallow) peers from bootstrapping off us.
+    pub fn set_accept_bootstrap(&mut self, accept: bool) -> Result<(), CrustError> {
+        self.lock().set_accept_bootstrap(accept);
+        Ok(())
+    }
+
     /// Check if we have peers on LAN
     pub fn has_peers_on_lan(&self) -> bool {
         // This will allow mock crust test to have multiple nodes on the same machine
