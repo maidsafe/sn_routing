@@ -1,4 +1,4 @@
-// Copyright 2015 MaidSafe.net limited.
+// Copyright 2016 MaidSafe.net limited.
 //
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
@@ -15,9 +15,15 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+
+mod request;
+mod response;
+
+
+pub use self::request::Request;
+pub use self::response::{AccountInfo, Response};
 use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
 use ack_manager::Ack;
-use data::{AppendWrapper, Data, DataIdentifier};
 use error::RoutingError;
 use event::Event;
 use id::{FullId, PublicId};
@@ -28,8 +34,7 @@ use peer_manager::SectionMap;
 use routing_table::{Prefix, VersionedPrefix, Xorable};
 use routing_table::Authority;
 use rust_sodium::crypto::{box_, sign};
-use rust_sodium::crypto::hash::sha256;
-use sha3;
+use sha3::Digest256;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::{self, Debug, Formatter};
 use std::iter;
@@ -102,7 +107,7 @@ impl Message {
 pub enum DirectMessage {
     /// Sent from members of a section or group message's source authority to the first hop. The
     /// message will only be relayed once enough signatures have been accumulated.
-    MessageSignature(sha256::Digest, sign::Signature),
+    MessageSignature(Digest256, sign::Signature),
     /// A signature for the current `BTreeSet` of section's node names
     SectionListSignature(SectionList, sign::Signature),
     /// Sent from the bootstrap node to a client in response to `ClientIdentify`.
@@ -479,7 +484,7 @@ impl RoutingMessage {
                         signing_key: &sign::SecretKey)
                         -> Result<DirectMessage, RoutingError> {
         let serialised_msg = serialise(self)?;
-        let hash = sha256::hash(&serialised_msg);
+        let hash = sha3_256(&serialised_msg);
         let sig = sign::sign_detached(&serialised_msg, signing_key);
         Ok(DirectMessage::MessageSignature(hash, sig))
     }
@@ -534,12 +539,9 @@ impl RoutingMessage {
 /// to A and also attempts to connect to A via Crust. A does the same, once it receives the
 /// `ConnectionInfo`.
 ///
-/// Once the connection between A and Z is established and a Crust `OnConnect` event is raised,
-/// they exchange `NodeIdentify` messages.
-///
 ///
 /// ### Resource Proof Evaluation to approve
-/// When nodes Z of section Y receive `NodeIdentify` from A, they respond with a `ResourceProof`
+/// When nodes Z of section Y receive `CandidateIdentify` from A, they reply with a `ResourceProof`
 /// request. Node A needs to answer these requests (resolving a hashing challenge) with
 /// `ResourceProofResponse`. Members of Y will send out `CandidateApproval` messages to vote for the
 /// approval in their section. Once the vote succeeds, the members of Y send `NodeApproval` to A and
@@ -630,7 +632,7 @@ pub enum MessageContent {
     /// Part of a user-facing message
     UserMessagePart {
         /// The hash of this user message.
-        hash: sha3::Digest256,
+        hash: Digest256,
         /// The number of parts.
         part_count: u32,
         /// The index of this part.
@@ -692,7 +694,7 @@ impl Debug for DirectMessage {
             MessageSignature(ref digest, _) => {
                 write!(formatter,
                        "MessageSignature ({}, ..)",
-                       utils::format_binary_array(&digest.0))
+                       utils::format_binary_array(&digest))
             }
             SectionListSignature(ref sec_list, _) => {
                 write!(formatter, "SectionListSignature({:?}, ..)", sec_list.prefix)
@@ -906,7 +908,7 @@ impl UserMessage {
 
     /// Puts the given parts of a serialised message together and verifies that it matches the
     /// given hash code. If it does, returns the `UserMessage`.
-    pub fn from_parts<'a, I: Iterator<Item = &'a Vec<u8>>>(hash: sha3::Digest256,
+    pub fn from_parts<'a, I: Iterator<Item = &'a Vec<u8>>>(hash: Digest256,
                                                            parts: I)
                                                            -> Result<UserMessage, RoutingError> {
         let mut payload = Vec::new();
@@ -950,257 +952,10 @@ impl UserMessage {
     }
 }
 
-/// Request message types
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
-// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
-pub enum Request {
-    /// Message from upper layers sending network state on any network churn event.
-    Refresh(Vec<u8>, MessageId),
-    /// Ask for data from network, passed from API with data name as parameter
-    Get(DataIdentifier, MessageId),
-    /// Put data to network. Provide actual data as parameter
-    Put(Data, MessageId),
-    /// Post data to network. Provide actual data as parameter
-    Post(Data, MessageId),
-    /// Delete data from network. Provide actual data as parameter
-    Delete(Data, MessageId),
-    /// Append an item to an appendable data chunk.
-    Append(AppendWrapper, MessageId),
-    /// Get account information for Client with given ID
-    GetAccountInfo(MessageId),
-}
-
-/// Response message types
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
-pub enum Response {
-    /// Reply with the requested data (may not be ignored)
-    ///
-    /// Sent from a `ManagedNode` to an `NaeManager`, and from there to a `Client`, although this
-    /// may be shortcut if the data is in a node's cache.
-    GetSuccess(Data, MessageId),
-    /// Success token for Put (may be ignored)
-    PutSuccess(DataIdentifier, MessageId),
-    /// Success token for Post (may be ignored)
-    PostSuccess(DataIdentifier, MessageId),
-    /// Success token for delete (may be ignored)
-    DeleteSuccess(DataIdentifier, MessageId),
-    /// Success token for append (may be ignored)
-    AppendSuccess(DataIdentifier, MessageId),
-    /// Response containing account information for requested Client account
-    GetAccountInfoSuccess {
-        /// Unique message identifier
-        id: MessageId,
-        /// Amount of data stored on the network by this Client
-        data_stored: u64,
-        /// Amount of network space available to this Client
-        space_available: u64,
-    },
-    /// Error for `Get`, includes signed request to prevent injection attacks
-    GetFailure {
-        /// Unique message identifier
-        id: MessageId,
-        /// ID of the affected data chunk
-        data_id: DataIdentifier,
-        /// Error type sent back, may be injected from upper layers
-        external_error_indicator: Vec<u8>,
-    },
-    /// Error for Put, includes signed request to prevent injection attacks
-    PutFailure {
-        /// Unique message identifier
-        id: MessageId,
-        /// ID of the affected data chunk
-        data_id: DataIdentifier,
-        /// Error type sent back, may be injected from upper layers
-        external_error_indicator: Vec<u8>,
-    },
-    /// Error for Post, includes signed request to prevent injection attacks
-    PostFailure {
-        /// Unique message identifier
-        id: MessageId,
-        /// ID of the affected data chunk
-        data_id: DataIdentifier,
-        /// Error type sent back, may be injected from upper layers
-        external_error_indicator: Vec<u8>,
-    },
-    /// Error for delete, includes signed request to prevent injection attacks
-    DeleteFailure {
-        /// Unique message identifier
-        id: MessageId,
-        /// ID of the affected data chunk
-        data_id: DataIdentifier,
-        /// Error type sent back, may be injected from upper layers
-        external_error_indicator: Vec<u8>,
-    },
-    /// Error for append, includes signed request to prevent injection attacks
-    AppendFailure {
-        /// Unique message identifier
-        id: MessageId,
-        /// ID of the affected data chunk
-        data_id: DataIdentifier,
-        /// Error type sent back, may be injected from upper layers
-        external_error_indicator: Vec<u8>,
-    },
-    /// Error for `GetAccountInfo`
-    GetAccountInfoFailure {
-        /// Unique message identifier
-        id: MessageId,
-        /// Error type sent back, may be injected from upper layers
-        external_error_indicator: Vec<u8>,
-    },
-}
-
-impl Request {
-    /// The priority Crust should send this message with.
-    pub fn priority(&self) -> u8 {
-        match *self {
-            Request::Refresh(..) => 2,
-            Request::Get(..) |
-            Request::GetAccountInfo(..) => 3,
-            Request::Append(..) => 4,
-            Request::Put(ref data, _) |
-            Request::Post(ref data, _) |
-            Request::Delete(ref data, _) => {
-                match *data {
-                    Data::Structured(..) => 4,
-                    _ => 5,
-                }
-            }
-        }
-    }
-
-    /// Is the response corresponding to this request cacheable?
-    pub fn is_cacheable(&self) -> bool {
-        if let Request::Get(DataIdentifier::Immutable(..), _) = *self {
-            true
-        } else {
-            false
-        }
-    }
-}
-
-impl Response {
-    /// The priority Crust should send this message with.
-    pub fn priority(&self) -> u8 {
-        match *self {
-            Response::GetSuccess(ref data, _) => {
-                match *data {
-                    Data::Structured(..) => 4,
-                    _ => 5,
-                }
-            }
-            Response::PutSuccess(..) |
-            Response::PostSuccess(..) |
-            Response::DeleteSuccess(..) |
-            Response::AppendSuccess(..) |
-            Response::GetAccountInfoSuccess { .. } |
-            Response::GetFailure { .. } |
-            Response::PutFailure { .. } |
-            Response::PostFailure { .. } |
-            Response::DeleteFailure { .. } |
-            Response::AppendFailure { .. } |
-            Response::GetAccountInfoFailure { .. } => 3,
-        }
-    }
-
-    /// Is this response cacheable?
-    pub fn is_cacheable(&self) -> bool {
-        if let Response::GetSuccess(Data::Immutable(..), _) = *self {
-            true
-        } else {
-            false
-        }
-    }
-}
-
-impl Debug for Request {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        match *self {
-            Request::Refresh(ref data, ref message_id) => {
-                write!(formatter,
-                       "Refresh({}, {:?})",
-                       utils::format_binary_array(data),
-                       message_id)
-            }
-            Request::Get(ref data_request, ref message_id) => {
-                write!(formatter, "Get({:?}, {:?})", data_request, message_id)
-            }
-            Request::Put(ref data, ref message_id) => {
-                write!(formatter, "Put({:?}, {:?})", data, message_id)
-            }
-            Request::Post(ref data, ref message_id) => {
-                write!(formatter, "Post({:?}, {:?})", data, message_id)
-            }
-            Request::Delete(ref data, ref message_id) => {
-                write!(formatter, "Delete({:?}, {:?})", data, message_id)
-            }
-            Request::Append(ref wrapper, ref message_id) => {
-                write!(formatter, "Append({:?}, {:?})", wrapper, message_id)
-            }
-            Request::GetAccountInfo(ref message_id) => {
-                write!(formatter, "GetAccountInfo({:?})", message_id)
-            }
-        }
-    }
-}
-
-impl Debug for Response {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        match *self {
-            Response::GetSuccess(ref data, ref message_id) => {
-                write!(formatter, "GetSuccess({:?}, {:?})", data, message_id)
-            }
-            Response::PutSuccess(ref name, ref message_id) => {
-                write!(formatter, "PutSuccess({:?}, {:?})", name, message_id)
-            }
-            Response::PostSuccess(ref name, ref message_id) => {
-                write!(formatter, "PostSuccess({:?}, {:?})", name, message_id)
-            }
-            Response::DeleteSuccess(ref name, ref message_id) => {
-                write!(formatter, "DeleteSuccess({:?}, {:?})", name, message_id)
-            }
-            Response::AppendSuccess(ref name, ref message_id) => {
-                write!(formatter, "AppendSuccess({:?}, {:?})", name, message_id)
-            }
-            Response::GetAccountInfoSuccess { ref id, .. } => {
-                write!(formatter, "GetAccountInfoSuccess {{ {:?}, .. }}", id)
-            }
-            Response::GetFailure {
-                ref id,
-                ref data_id,
-                ..
-            } => write!(formatter, "GetFailure {{ {:?}, {:?}, .. }}", id, data_id),
-            Response::PutFailure {
-                ref id,
-                ref data_id,
-                ..
-            } => write!(formatter, "PutFailure {{ {:?}, {:?}, .. }}", id, data_id),
-            Response::PostFailure {
-                ref id,
-                ref data_id,
-                ..
-            } => write!(formatter, "PostFailure {{ {:?}, {:?}, .. }}", id, data_id),
-            Response::DeleteFailure {
-                ref id,
-                ref data_id,
-                ..
-            } => write!(formatter, "DeleteFailure {{ {:?}, {:?}, .. }}", id, data_id),
-            Response::AppendFailure {
-                ref id,
-                ref data_id,
-                ..
-            } => write!(formatter, "AppendFailure {{ {:?}, {:?}, .. }}", id, data_id),
-            Response::GetAccountInfoFailure { ref id, .. } => {
-                write!(formatter, "GetAccountInfoFailure {{ {:?}, .. }}", id)
-            }
-        }
-    }
-}
-
 /// This assembles `UserMessage`s from `UserMessagePart`s.
 /// It maps `(hash, part_count)` of an incoming `UserMessage` to the map containing
 /// all `UserMessagePart`s that have already arrived, by `part_index`.
-pub struct UserMessageCache(LruCache<(sha3::Digest256, u32), BTreeMap<u32, Vec<u8>>>);
+pub struct UserMessageCache(LruCache<(Digest256, u32), BTreeMap<u32, Vec<u8>>>);
 
 impl UserMessageCache {
     pub fn with_expiry_duration(duration: Duration) -> Self {
@@ -1210,7 +965,7 @@ impl UserMessageCache {
     /// Adds the given one to the cache of received message parts, returning a `UserMessage` if the
     /// given part was the last missing piece of it.
     pub fn add(&mut self,
-               hash: sha3::Digest256,
+               hash: Digest256,
                part_count: u32,
                part_index: u32,
                payload: Vec<u8>)
@@ -1243,12 +998,11 @@ impl UserMessageCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use data::{Data, ImmutableData};
+    use data::ImmutableData;
     use id::FullId;
     use maidsafe_utilities::serialisation::serialise;
     use rand;
     use routing_table::{Authority, Prefix};
-    use rust_sodium::crypto::hash::sha256;
     use rust_sodium::crypto::sign;
     use std::collections::BTreeSet;
     use std::iter;
@@ -1303,8 +1057,11 @@ mod tests {
         let full_id_2 = FullId::new();
         let irrelevant_full_id = FullId::new();
         let data_bytes: Vec<u8> = (0..10).map(|i| i as u8).collect();
-        let data = Data::Immutable(ImmutableData::new(data_bytes));
-        let user_msg = UserMessage::Request(Request::Put(data, MessageId::new()));
+        let data = ImmutableData::new(data_bytes);
+        let user_msg = UserMessage::Request(Request::PutIData {
+                                                data: data,
+                                                msg_id: MessageId::new(),
+                                            });
         let parts = unwrap!(user_msg.to_parts(1));
         assert_eq!(1, parts.len());
         let part = parts[0].clone();
@@ -1345,7 +1102,7 @@ mod tests {
                           .to_signature(full_id_1.signing_private_key())) {
             DirectMessage::MessageSignature(hash, sig) => {
                 let serialised_msg = unwrap!(serialise(signed_msg.routing_message()));
-                assert_eq!(hash, sha256::hash(&serialised_msg));
+                assert_eq!(hash, sha3_256(&serialised_msg));
                 signed_msg.add_signature(*full_id_1.public_id(), sig);
             }
             msg => panic!("Unexpected message: {:?}", msg),
@@ -1399,8 +1156,11 @@ mod tests {
     #[test]
     fn user_message_parts() {
         let data_bytes: Vec<u8> = (0..(MAX_PART_LEN * 2)).map(|i| i as u8).collect();
-        let data = Data::Immutable(ImmutableData::new(data_bytes));
-        let user_msg = UserMessage::Request(Request::Put(data, MessageId::new()));
+        let data = ImmutableData::new(data_bytes);
+        let user_msg = UserMessage::Request(Request::PutIData {
+                                                data: data,
+                                                msg_id: MessageId::new(),
+                                            });
         let msg_hash = sha3_256(&unwrap!(serialise(&user_msg)));
         let parts = unwrap!(user_msg.to_parts(42));
         assert_eq!(parts.len(), 3);

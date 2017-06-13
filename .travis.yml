@@ -2,6 +2,7 @@ env:
   global:
     - RUST_BACKTRACE=1
     - PATH=$PATH:$HOME/.cargo/bin
+    - TEST_FEATURES="use-mock-crust use-mock-crypto"
 os:
   - linux
   - osx
@@ -10,10 +11,6 @@ rust:
   - 1.17.0
   - nightly-2017-04-28
 sudo: false
-branches:
-  only:
-    - master
-    - stable
 cache:
   cargo: true
 before_script:
@@ -34,7 +31,7 @@ script:
         cargo rustc --verbose --example ci_test -- -Zno-trans &&
         cargo rustc --verbose --example key_value_store -- -Zno-trans &&
         cargo rustc --verbose -- -Zno-trans &&
-        travis_wait 60 cargo test --release --verbose --features use-mock-crust
+        cargo test --release --verbose --features "$TEST_FEATURES"
       );
     elif [ "${TRAVIS_OS_NAME}" = linux ]; then
       (

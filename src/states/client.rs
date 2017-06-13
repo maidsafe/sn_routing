@@ -107,6 +107,9 @@ impl Client {
             Action::Id { result_tx } => {
                 let _ = result_tx.send(*self.id());
             }
+            Action::Config { result_tx } => {
+                let _ = result_tx.send(self.crust_service.config());
+            }
             Action::Timeout(token) => self.handle_timeout(token),
             Action::ResourceProofResult(..) => {
                 error!("Action::ResourceProofResult received by Client state");

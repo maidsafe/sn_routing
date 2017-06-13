@@ -10,7 +10,7 @@ repository = "https://github.com/maidsafe/routing"
 version = "0.30.0"
 
 [dependencies]
-crust = "~0.25.0"
+crust = "~0.26.0"
 fake_clock = "~0.1.0"
 hex = "~0.2.0"
 itertools = "~0.6.0"
@@ -43,3 +43,5 @@ name = "ci_test"
 
 [features]
 use-mock-crust = ["lru_time_cache/fake_clock"]
+use-mock-crypto = ["use-mock-crust"]
+

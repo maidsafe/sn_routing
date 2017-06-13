@@ -16,6 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use messages::{DirectMessage, MessageContent, Request, Response, RoutingMessage, UserMessage};
+use std::fmt::{self, Display, Formatter};
 
 /// The number of messages after which the message statistics should be printed.
 const MSG_LOG_COUNT: usize = 5000;
@@ -47,25 +48,12 @@ pub struct Stats {
     msg_post: usize,
     msg_delete: usize,
     msg_append: usize,
-    msg_get_account_info: usize,
     msg_relocate: usize,
     msg_expect_candidate: usize,
     msg_accept_as_candidate: usize,
     msg_refresh: usize,
     msg_connection_info_req: usize,
     msg_connection_info_rsp: usize,
-    msg_get_success: usize,
-    msg_get_failure: usize,
-    msg_put_success: usize,
-    msg_put_failure: usize,
-    msg_post_success: usize,
-    msg_post_failure: usize,
-    msg_delete_success: usize,
-    msg_delete_failure: usize,
-    msg_append_success: usize,
-    msg_append_failure: usize,
-    msg_get_account_info_success: usize,
-    msg_get_account_info_failure: usize,
     msg_section_update: usize,
     msg_section_split: usize,
     msg_own_section_merge: usize,
@@ -74,6 +62,27 @@ pub struct Stats {
     msg_candidate_approval: usize,
     msg_node_approval: usize,
     msg_ack: usize,
+
+    msg_put_idata: UserMessageStats,
+    msg_get_idata: UserMessageStats,
+    msg_get_mdata: UserMessageStats,
+    msg_put_mdata: UserMessageStats,
+    msg_get_mdata_version: UserMessageStats,
+    msg_get_mdata_shell: UserMessageStats,
+    msg_list_mdata_entries: UserMessageStats,
+    msg_list_mdata_keys: UserMessageStats,
+    msg_list_mdata_values: UserMessageStats,
+    msg_get_mdata_value: UserMessageStats,
+    msg_mutate_mdata_entries: UserMessageStats,
+    msg_list_mdata_permissions: UserMessageStats,
+    msg_list_mdata_user_permissions: UserMessageStats,
+    msg_set_mdata_user_permissions: UserMessageStats,
+    msg_del_mdata_user_permissions: UserMessageStats,
+    msg_change_mdata_owner: UserMessageStats,
+    msg_list_auth_keys_and_version: UserMessageStats,
+    msg_ins_auth_key: UserMessageStats,
+    msg_del_auth_key: UserMessageStats,
+    msg_get_account_info: UserMessageStats,
 
     msg_other: usize,
 
@@ -101,41 +110,116 @@ impl Stats {
         self.routes[route] += 1;
     }
 
-    /// Increments the counter for the given request.
+    /// Increments the counter for the given user message.
     pub fn count_user_message(&mut self, msg: &UserMessage) {
         match *msg {
             UserMessage::Request(ref request) => {
                 match *request {
+                    Request::PutIData { .. } => self.msg_put_idata.inc_request(),
+                    Request::GetIData { .. } => self.msg_get_idata.inc_request(),
+                    Request::GetMData { .. } => self.msg_get_mdata.inc_request(),
+                    Request::PutMData { .. } => self.msg_put_mdata.inc_request(),
+                    Request::GetMDataVersion { .. } => self.msg_get_mdata_version.inc_request(),
+                    Request::GetMDataShell { .. } => self.msg_get_mdata_shell.inc_request(),
+                    Request::ListMDataKeys { .. } => self.msg_list_mdata_keys.inc_request(),
+                    Request::ListMDataValues { .. } => self.msg_list_mdata_values.inc_request(),
+                    Request::ListMDataEntries { .. } => self.msg_list_mdata_entries.inc_request(),
+                    Request::GetMDataValue { .. } => self.msg_get_mdata_value.inc_request(),
+                    Request::MutateMDataEntries { .. } => {
+                        self.msg_mutate_mdata_entries.inc_request()
+                    }
+                    Request::ListMDataPermissions { .. } => {
+                        self.msg_list_mdata_permissions.inc_request()
+                    }
+                    Request::ListMDataUserPermissions { .. } => {
+                        self.msg_list_mdata_user_permissions.inc_request()
+                    }
+                    Request::SetMDataUserPermissions { .. } => {
+                        self.msg_set_mdata_user_permissions.inc_request()
+                    }
+                    Request::DelMDataUserPermissions { .. } => {
+                        self.msg_del_mdata_user_permissions.inc_request()
+                    }
+                    Request::ChangeMDataOwner { .. } => self.msg_change_mdata_owner.inc_request(),
+                    Request::ListAuthKeysAndVersion { .. } => {
+                        self.msg_list_auth_keys_and_version.inc_request()
+                    }
+                    Request::InsAuthKey { .. } => self.msg_ins_auth_key.inc_request(),
+                    Request::DelAuthKey { .. } => self.msg_del_auth_key.inc_request(),
+                    Request::GetAccountInfo { .. } => self.msg_get_account_info.inc_request(),
                     Request::Refresh(..) => self.msg_refresh += 1,
-                    Request::Get(..) => self.msg_get += 1,
-                    Request::Put(..) => self.msg_put += 1,
-                    Request::Post(..) => self.msg_post += 1,
-                    Request::Delete(..) => self.msg_delete += 1,
-                    Request::Append(..) => self.msg_append += 1,
-                    Request::GetAccountInfo(..) => self.msg_get_account_info += 1,
                 }
             }
             UserMessage::Response(ref response) => {
                 match *response {
-                    Response::GetSuccess(..) => self.msg_get_success += 1,
-                    Response::GetFailure { .. } => self.msg_get_failure += 1,
-                    Response::PutSuccess(..) => self.msg_put_success += 1,
-                    Response::PutFailure { .. } => self.msg_put_failure += 1,
-                    Response::PostSuccess(..) => self.msg_post_success += 1,
-                    Response::PostFailure { .. } => self.msg_post_failure += 1,
-                    Response::DeleteSuccess(..) => self.msg_delete_success += 1,
-                    Response::DeleteFailure { .. } => self.msg_delete_failure += 1,
-                    Response::AppendSuccess(..) => self.msg_append_success += 1,
-                    Response::AppendFailure { .. } => self.msg_append_failure += 1,
-                    Response::GetAccountInfoSuccess { .. } => {
-                        self.msg_get_account_info_success += 1
+                    Response::PutIData { ref res, .. } => {
+                        self.msg_put_idata.inc_response(res.is_ok())
                     }
-                    Response::GetAccountInfoFailure { .. } => {
-                        self.msg_get_account_info_failure += 1
+                    Response::GetIData { ref res, .. } => {
+                        self.msg_get_idata.inc_response(res.is_ok())
+                    }
+                    Response::PutMData { ref res, .. } => {
+                        self.msg_put_mdata.inc_response(res.is_ok())
+                    }
+                    Response::GetMData { ref res, .. } => {
+                        self.msg_get_mdata.inc_response(res.is_ok())
+                    }
+                    Response::GetMDataVersion { ref res, .. } => {
+                        self.msg_get_mdata_version.inc_response(res.is_ok())
+                    }
+                    Response::GetMDataShell { ref res, .. } => {
+                        self.msg_get_mdata_shell.inc_response(res.is_ok())
+                    }
+                    Response::ListMDataKeys { ref res, .. } => {
+                        self.msg_list_mdata_keys.inc_response(res.is_ok())
+                    }
+                    Response::ListMDataValues { ref res, .. } => {
+                        self.msg_list_mdata_values.inc_response(res.is_ok())
+                    }
+                    Response::ListMDataEntries { ref res, .. } => {
+                        self.msg_list_mdata_entries.inc_response(res.is_ok())
+                    }
+                    Response::GetMDataValue { ref res, .. } => {
+                        self.msg_get_mdata_value.inc_response(res.is_ok())
+                    }
+                    Response::MutateMDataEntries { ref res, .. } => {
+                        self.msg_mutate_mdata_entries.inc_response(res.is_ok())
+                    }
+                    Response::ListMDataPermissions { ref res, .. } => {
+                        self.msg_list_mdata_permissions.inc_response(res.is_ok())
+                    }
+                    Response::ListMDataUserPermissions { ref res, .. } => {
+                        self.msg_list_mdata_user_permissions
+                            .inc_response(res.is_ok())
+                    }
+                    Response::SetMDataUserPermissions { ref res, .. } => {
+                        self.msg_set_mdata_user_permissions
+                            .inc_response(res.is_ok())
+                    }
+                    Response::DelMDataUserPermissions { ref res, .. } => {
+                        self.msg_del_mdata_user_permissions
+                            .inc_response(res.is_ok())
+                    }
+                    Response::ChangeMDataOwner { ref res, .. } => {
+                        self.msg_change_mdata_owner.inc_response(res.is_ok())
+                    }
+                    Response::ListAuthKeysAndVersion { ref res, .. } => {
+                        self.msg_list_auth_keys_and_version
+                            .inc_response(res.is_ok())
+                    }
+                    Response::InsAuthKey { ref res, .. } => {
+                        self.msg_ins_auth_key.inc_response(res.is_ok())
+                    }
+                    Response::DelAuthKey { ref res, .. } => {
+                        self.msg_del_auth_key.inc_response(res.is_ok())
+                    }
+                    Response::GetAccountInfo { ref res, .. } => {
+                        self.msg_get_account_info.inc_response(res.is_ok())
                     }
                 }
             }
         }
+
         self.increment_msg_total();
     }
 
@@ -231,28 +315,84 @@ impl Stats {
                   self.msg_node_approval,
                   self.msg_ack);
             info!(target: "routing_stats",
-                  "Stats - User (Request/Success/Failure) - Get: {}/{}/{}, Put: {}/{}/{}, \
-                   Post: {}/{}/{}, Delete: {}/{}/{}, Append: {}/{}/{}, GetAccountInfo: {}/{}/{}, \
+                  "Stats - User (Request/Success/Failure) - \
+                   PutIData: {}, \
+                   GetIData: {}, \
+                   PutMData: {}, \
+                   GetMDataVersion: {}, \
+                   GetMDataShell: {}, \
+                   ListMDataKeys: {}, \
+                   ListMDataValues: {}, \
+                   ListMDataEntries: {}, \
+                   GetMDataValue: {}, \
+                   MutateMDataEntries: {}, \
+                   ListMDataPermissions: {}, \
+                   ListMDataUserPermissions: {}, \
+                   SetMDataUserPermissions: {}, \
+                   DelMDataUserPermissions: {}, \
+                   ChangeMDataOwner: {}, \
+                   ListAuthKeysAndVersion: {}, \
+                   InsAuthKey: {}, \
+                   DelAuthKey: {}, \
+                   GetAccountInfo: {}, \
                    Refresh: {}",
-                  self.msg_get,
-                  self.msg_get_success,
-                  self.msg_get_failure,
-                  self.msg_put,
-                  self.msg_put_success,
-                  self.msg_put_failure,
-                  self.msg_post,
-                  self.msg_post_success,
-                  self.msg_post_failure,
-                  self.msg_delete,
-                  self.msg_delete_success,
-                  self.msg_delete_failure,
-                  self.msg_append,
-                  self.msg_append_success,
-                  self.msg_append_failure,
+                  self.msg_put_idata,
+                  self.msg_get_idata,
+                  self.msg_put_mdata,
+                  self.msg_get_mdata_version,
+                  self.msg_get_mdata_shell,
+                  self.msg_list_mdata_keys,
+                  self.msg_list_mdata_values,
+                  self.msg_list_mdata_entries,
+                  self.msg_get_mdata_value,
+                  self.msg_mutate_mdata_entries,
+                  self.msg_list_mdata_permissions,
+                  self.msg_list_mdata_user_permissions,
+                  self.msg_set_mdata_user_permissions,
+                  self.msg_del_mdata_user_permissions,
+                  self.msg_change_mdata_owner,
+                  self.msg_list_auth_keys_and_version,
+                  self.msg_ins_auth_key,
+                  self.msg_del_auth_key,
                   self.msg_get_account_info,
-                  self.msg_get_account_info_success,
-                  self.msg_get_account_info_failure,
                   self.msg_refresh);
         }
+    }
+}
+
+#[derive(Copy, Clone)]
+struct UserMessageStats {
+    request: usize,
+    success: usize,
+    failure: usize,
+}
+
+impl UserMessageStats {
+    fn inc_request(&mut self) {
+        self.request += 1;
+    }
+
+    fn inc_response(&mut self, success: bool) {
+        if success {
+            self.success += 1;
+        } else {
+            self.failure += 1;
+        }
+    }
+}
+
+impl Default for UserMessageStats {
+    fn default() -> Self {
+        UserMessageStats {
+            request: 0,
+            success: 0,
+            failure: 0,
+        }
+    }
+}
+
+impl Display for UserMessageStats {
+    fn fmt(&self, f: &mut Formatter) -> Result<(), fmt::Error> {
+        write!(f, "{}/{}/{}", self.request, self.success, self.failure)
     }
 }

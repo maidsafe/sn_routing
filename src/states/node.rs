@@ -42,8 +42,8 @@ use routing_table::{Authority, OwnMergeState, Prefix, RemovalDetails, RoutingTab
                     VersionedPrefix, Xorable};
 use routing_table::Error as RoutingTableError;
 use rust_sodium::crypto::{box_, sign};
-use rust_sodium::crypto::hash::sha256;
 use section_list_cache::SectionListCache;
+use sha3::Digest256;
 use signature_accumulator::SignatureAccumulator;
 use state_machine::Transition;
 use stats::Stats;
@@ -311,9 +311,8 @@ impl Node {
     fn print_rt_size(&self) {
         const TABLE_LVL: LogLevel = LogLevel::Info;
         if log_enabled!(TABLE_LVL) {
-            let status_str = format!("{:?} {} - Routing Table size: {:3}",
+            let status_str = format!("{:?} - Routing Table size: {:3}",
                                      self,
-                                     self.full_id.public_id(),
                                      self.stats.cur_routing_table_size);
             let network_estimate = match self.routing_table().network_size_estimate() {
                 (n, true) => format!("Exact network size: {}", n),
@@ -349,6 +348,9 @@ impl Node {
             }
             Action::Id { result_tx } => {
                 let _ = result_tx.send(*self.id());
+            }
+            Action::Config { result_tx } => {
+                let _ = result_tx.send(self.crust_service.config());
             }
             Action::Timeout(token) => {
                 if let Transition::Terminate = self.handle_timeout(token, outbox) {
@@ -403,7 +405,16 @@ impl Node {
             }
             CrustEvent::ListenerStarted(port) => {
                 trace!("{:?} Listener started on port {}.", self, port);
-                self.crust_service.set_service_discovery_listen(true);
+                // If first node, allow other peers to bootstrap via us
+                // else wait until NodeApproval.
+                if self.is_first_node {
+                    if let Err(err) = self.crust_service.set_accept_bootstrap(true) {
+                        warn!("{:?} Unable to accept bootstrap connections. {:?}",
+                              self,
+                              err);
+                    }
+                    self.crust_service.set_service_discovery_listen(true);
+                }
                 return Transition::Stay;
             }
             CrustEvent::ListenerFailed => {
@@ -488,16 +499,7 @@ impl Node {
         }
 
         self.peer_mgr.connected_to(&pub_id);
-
-        let id_type = if self.is_approved {
-            "NodeIdentify"
-        } else {
-            "CandidateIdentify"
-        };
-        debug!("{:?} Received ConnectSuccess from {}. Sending {}.",
-               self,
-               pub_id,
-               id_type);
+        debug!("{:?} Received ConnectSuccess from {}.", self, pub_id);
         self.process_connection(pub_id, outbox);
     }
 
@@ -705,7 +707,7 @@ impl Node {
     /// Handles a signature of a `SignedMessage`, and if we have enough to verify the signed
     /// message, handles it.
     fn handle_message_signature(&mut self,
-                                digest: sha256::Digest,
+                                digest: Digest256,
                                 sig: sign::Signature,
                                 pub_id: PublicId)
                                 -> Result<(), RoutingError> {
@@ -1270,6 +1272,15 @@ impl Node {
         trace!("{:?} Node approval completed. Prefixes: {:?}",
                self,
                self.routing_table().prefixes());
+
+        // Allow other peers to bootstrap via us.
+        if let Err(err) = self.crust_service.set_accept_bootstrap(true) {
+            warn!("{:?} Unable to accept bootstrap connections. {:?}",
+                  self,
+                  err);
+        }
+        self.crust_service.set_service_discovery_listen(true);
+
         self.print_rt_size();
         self.stats.enable_logging();
 
@@ -1473,9 +1484,6 @@ impl Node {
         if self.peer_mgr
                .get_peer(new_pub_id)
                .map_or(false, |peer| peer.valid()) {
-            debug!("{:?} Switching CandidateIdentify received from {} to NodeIdentify.",
-                   self,
-                   new_pub_id);
             self.process_connection(*new_pub_id, outbox);
             return;
         }
@@ -1598,7 +1606,7 @@ impl Node {
             self.merge_if_necessary(outbox);
         }
 
-        debug!("{:?} Added {:?} to routing table.", self, pub_id);
+        info!("{:?} Added {} to routing table.", self, pub_id);
         if self.is_first_node && self.routing_table().len() == 1 {
             trace!("{:?} Node approval completed. Prefixes: {:?}",
                    self,
@@ -2180,14 +2188,18 @@ impl Node {
                              -> Result<(), RoutingError> {
         trace!("{:?} Got section update for {:?}", self, ver_pfx);
 
+        let old_prefixes = self.routing_table().prefixes();
         // Perform splits and merges that we missed, according to the section update.
         for pub_id in self.peer_mgr.add_prefix(ver_pfx) {
             self.disconnect_peer(&pub_id, Some(outbox));
-            info!("{:?} Dropped {} from the routing table.", self, pub_id);
         }
-        info!("{:?} SectionUpdate handled. Prefixes: {:?}",
-              self,
-              self.routing_table().prefixes());
+
+        let new_prefixes = self.routing_table().prefixes();
+        if old_prefixes != new_prefixes {
+            info!("{:?} SectionUpdate handled. Prefixes: {:?}",
+                  self,
+                  new_prefixes);
+        }
         // Filter list of members to just those we don't know about:
         let members = if let Some(section) = self.routing_table()
                .section_with_prefix(ver_pfx.prefix()) {
@@ -3047,7 +3059,7 @@ impl Node {
                             details: RemovalDetails<XorName>,
                             outbox: &mut EventBox)
                             -> bool {
-        info!("{:?} Dropped {:?} from the routing table.",
+        info!("{:?} Dropped {} from the routing table.",
               self,
               details.name);
 

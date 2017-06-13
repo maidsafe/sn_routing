@@ -123,6 +123,18 @@ pub fn calculate_relocation_interval(prefix: &Prefix<XorName>,
     (new_end - third_of_distance, new_end)
 }
 
+#[cfg(feature = "use-mock-crust")]
+pub fn min_section_size() -> usize {
+    use mock_crust;
+    mock_crust::with_current(|handle| handle.min_section_size())
+}
+
+#[cfg(not(feature = "use-mock-crust"))]
+pub fn min_section_size() -> usize {
+    use MIN_SECTION_SIZE;
+    MIN_SECTION_SIZE
+}
+
 #[cfg(test)]
 mod tests {
     use super::DisplayDuration;

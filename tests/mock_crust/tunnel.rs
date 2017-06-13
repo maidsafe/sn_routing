@@ -19,8 +19,8 @@ use super::{TestNode, add_connected_nodes_until_split, create_connected_nodes, p
             poll_and_resend, verify_invariant_for_all_nodes};
 use fake_clock::FakeClock;
 use itertools::Itertools;
-use routing::{Event, EventStream, Prefix, PublicId, XOR_NAME_LEN, XorName};
-use routing::mock_crust::{Config, Endpoint, Network, crust};
+use routing::{BootstrapConfig, Event, EventStream, Prefix, PublicId, XOR_NAME_LEN, XorName};
+use routing::mock_crust::{Endpoint, Network, crust};
 use routing::test_consts::CONNECTED_PEER_TIMEOUT_SECS;
 
 #[test]
@@ -105,7 +105,7 @@ fn add_a_pair(network: &Network<PublicId>,
               prefix1: Prefix<XorName>,
               is_tunnel: bool)
               -> (Endpoint, Endpoint) {
-    let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
+    let config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
 
     nodes
         .iter_mut()
@@ -383,7 +383,7 @@ fn avoid_tunnelling_when_proxying() {
     assert_ne!(unwrap!(locate_tunnel_node(&nodes, nodes[2].id(), nodes[3].id())),
                0);
 
-    let config = Config::with_contacts(&[nodes[1].handle.endpoint()]);
+    let config = BootstrapConfig::with_contacts(&[nodes[1].handle.endpoint()]);
     let endpoint = Endpoint(nodes.len());
     nodes.push(TestNode::builder(&network)
                    .config(config.clone())

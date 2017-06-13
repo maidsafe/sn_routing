@@ -37,6 +37,10 @@
 
 #![cfg_attr(feature = "use-mock-crust", allow(unused_extern_crates, unused_imports))]
 
+// TODO: uncomment and fix
+
+/*
+
 #[macro_use]
 extern crate log;
 extern crate maidsafe_utilities;
@@ -257,3 +261,7 @@ Options:
 fn main() {
     unnamed::run_main()
 }
+
+*/
+
+fn main() {}

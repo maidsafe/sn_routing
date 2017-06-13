@@ -65,7 +65,7 @@
 //! let (sender, receiver) = mpsc::channel::<Event>();
 //! let full_id = FullId::new(); // Generate new keys.
 //! # #[cfg(not(feature = "use-mock-crust"))]
-//! let client = Client::new(sender, Some(full_id)).unwrap();
+//! let client = Client::new(sender, Some(full_id), None).unwrap();
 //! ```
 //!
 //! Messages can be sent using the methods of `client`, and received as `Event`s from the
@@ -80,8 +80,7 @@
 //! # #![allow(unused)]
 //! use routing::Node;
 //!
-//! let min_section_size = 8;
-//! let node = Node::builder().create(min_section_size).unwrap();
+//! let node = Node::builder().create().unwrap();
 //! ```
 //!
 //! Upon creation, the node will first connect to the network as a client. Once it has client
@@ -141,6 +140,7 @@ extern crate lru_time_cache;
 extern crate num_bigint;
 extern crate rand;
 extern crate resource_proof;
+#[cfg(not(feature = "use-mock-crypto"))]
 extern crate rust_sodium;
 extern crate serde;
 #[macro_use]
@@ -155,6 +155,7 @@ mod ack_manager;
 mod action;
 mod cache;
 mod client;
+mod client_error;
 mod common_types;
 mod cumulative_own_section_merge;
 mod data;
@@ -181,6 +182,15 @@ mod types;
 mod utils;
 mod xor_name;
 
+#[cfg(feature = "use-mock-crypto")]
+pub mod mock_crypto;
+
+#[cfg(feature = "use-mock-crypto")]
+use mock_crypto::rust_sodium;
+
+/// Reexports `crust::Config`
+pub type BootstrapConfig = crust::Config;
+
 /// Mock crust
 #[cfg(feature = "use-mock-crust")]
 pub mod mock_crust;
@@ -190,9 +200,6 @@ pub mod sha3;
 
 /// Messaging infrastructure
 pub mod messaging;
-/// Error communication between vaults and core
-pub mod client_errors;
-
 /// Structured Data Tag for Session Packet Type
 pub const TYPE_TAG_SESSION_PACKET: u64 = 0;
 /// Structured Data Tag for DNS Packet Type
@@ -205,19 +212,24 @@ pub const QUORUM_NUMERATOR: usize = 1;
 /// See `QUORUM_NUMERATOR`.
 pub const QUORUM_DENOMINATOR: usize = 2;
 
+/// Default minimal section size.
+pub const MIN_SECTION_SIZE: usize = 8;
+/// Key of an account data in the account packet
+pub const ACC_LOGIN_ENTRY_KEY: &'static [u8] = b"Login";
+
 pub use cache::{Cache, NullCache};
 pub use client::Client;
+pub use client_error::ClientError;
 pub use common_types::AccountPacket;
-pub use data::{AppendWrapper, AppendedData, Data, DataIdentifier, Filter, ImmutableData,
-               MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES,
-               MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES, MAX_STRUCTURED_DATA_SIZE_IN_BYTES,
-               NO_OWNER_PUB_KEY, PrivAppendableData, PrivAppendedData, PubAppendableData,
-               StructuredData};
+pub use data::{Action, EntryAction, EntryActions, ImmutableData, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
+               MAX_MUTABLE_DATA_ENTRIES, MAX_MUTABLE_DATA_ENTRY_ACTIONS,
+               MAX_MUTABLE_DATA_SIZE_IN_BYTES, MutableData, NO_OWNER_PUB_KEY, PermissionSet, User,
+               Value};
 pub use error::{InterfaceError, RoutingError};
 pub use event::Event;
 pub use event_stream::EventStream;
 pub use id::{FullId, PublicId};
-pub use messages::{Request, Response};
+pub use messages::{AccountInfo, Request, Response};
 #[cfg(feature = "use-mock-crust")]
 pub use mock_crust::crust;
 pub use node::{Node, NodeBuilder};

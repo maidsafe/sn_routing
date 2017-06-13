@@ -730,7 +730,7 @@ impl PeerManager {
                          -> (Vec<PublicId>, Option<Prefix<XorName>>) {
         let (names_to_drop, our_new_prefix) = self.routing_table.split(ver_pfx);
         for name in &names_to_drop {
-            info!("{:?} Dropped {:?} from the routing table.", self, name);
+            info!("{:?} Dropped {} from the routing table.", self, name);
         }
 
         let mut ids_to_drop = names_to_drop
@@ -769,6 +769,10 @@ impl PeerManager {
     /// the list of peers that have been dropped and need to be disconnected.
     pub fn add_prefix(&mut self, ver_pfx: VersionedPrefix<XorName>) -> Vec<PublicId> {
         let names_to_drop = self.routing_table.add_prefix(ver_pfx);
+        for name in &names_to_drop {
+            info!("{:?} Dropped {} from the routing table.", self, name);
+        }
+
         let ids_to_drop = names_to_drop
             .iter()
             .filter_map(|name| self.get_peer_by_name(name))

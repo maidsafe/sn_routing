@@ -18,10 +18,10 @@
 use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
-use routing::{Authority, Cache, Client, Data, DataIdentifier, Event, EventStream, FullId,
+use routing::{Authority, BootstrapConfig, Cache, Client, Event, EventStream, FullId,
               ImmutableData, Node, NullCache, Prefix, PublicId, Request, Response, RoutingTable,
               XorName, Xorable, verify_network_invariant};
-use routing::mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
+use routing::mock_crust::{self, Endpoint, Network, ServiceHandle};
 use routing::test_consts::{ACK_TIMEOUT_SECS, CONNECTING_PEER_TIMEOUT_SECS};
 use std::{cmp, thread};
 use std::cell::RefCell;
@@ -129,16 +129,13 @@ impl TestNode {
 
     pub fn new(network: &Network<PublicId>,
                first_node: bool,
-               config: Option<Config>,
+               config: Option<BootstrapConfig>,
                endpoint: Option<Endpoint>,
                cache: Box<Cache>)
                -> Self {
         let handle = network.new_service_handle(config, endpoint);
         let node = mock_crust::make_current(&handle, || {
-            unwrap!(Node::builder()
-                        .cache(cache)
-                        .first(first_node)
-                        .create(network.min_section_size()))
+            unwrap!(Node::builder().cache(cache).first(first_node).create())
         });
 
         TestNode {
@@ -174,7 +171,7 @@ impl TestNode {
 pub struct TestNodeBuilder<'a> {
     network: &'a Network<PublicId>,
     first_node: bool,
-    config: Option<Config>,
+    config: Option<BootstrapConfig>,
     endpoint: Option<Endpoint>,
     cache: Box<Cache>,
 }
@@ -185,7 +182,7 @@ impl<'a> TestNodeBuilder<'a> {
         self
     }
 
-    pub fn config(mut self, config: Config) -> Self {
+    pub fn config(mut self, config: BootstrapConfig) -> Self {
         self.config = Some(config);
         self
     }
@@ -225,13 +222,13 @@ pub struct TestClient {
 
 impl TestClient {
     pub fn new(network: &Network<PublicId>,
-               config: Option<Config>,
+               config: Option<BootstrapConfig>,
                endpoint: Option<Endpoint>)
                -> Self {
         let full_id = FullId::new();
-        let handle = network.new_service_handle(config, endpoint);
+        let handle = network.new_service_handle(config.clone(), endpoint);
         let client = mock_crust::make_current(&handle, || {
-            unwrap!(Client::new(Some(full_id.clone()), network.min_section_size()))
+            unwrap!(Client::new(Some(full_id.clone()), config))
         });
 
         TestClient {
@@ -249,7 +246,7 @@ impl TestClient {
 // -----  TestCache  -----
 
 #[derive(Default)]
-pub struct TestCache(RefCell<HashMap<DataIdentifier, Data>>);
+pub struct TestCache(RefCell<HashMap<XorName, ImmutableData>>);
 
 impl TestCache {
     pub fn new() -> Self {
@@ -259,19 +256,24 @@ impl TestCache {
 
 impl Cache for TestCache {
     fn get(&self, request: &Request) -> Option<Response> {
-        if let Request::Get(identifier, message_id) = *request {
+        if let Request::GetIData { ref name, msg_id } = *request {
             self.0
                 .borrow()
-                .get(&identifier)
-                .map(|data| Response::GetSuccess(data.clone(), message_id))
+                .get(name)
+                .map(|data| {
+                         Response::GetIData {
+                             res: Ok(data.clone()),
+                             msg_id: msg_id,
+                         }
+                     })
         } else {
             None
         }
     }
 
     fn put(&self, response: Response) {
-        if let Response::GetSuccess(data, _) = response {
-            let _ = self.0.borrow_mut().insert(data.identifier(), data);
+        if let Response::GetIData { res: Ok(data), .. } = response {
+            let _ = self.0.borrow_mut().insert(*data.name(), data);
         }
     }
 }
@@ -294,7 +296,7 @@ pub fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
         } else {
             handled_message = nodes.iter_mut().any(TestNode::poll);
         }
-        handled_message = clients.iter().any(|c| c.inner.poll()) || handled_message;
+        handled_message = clients.iter_mut().any(|c| c.inner.poll()) || handled_message;
         if !handled_message && !nodes[0].handle.reset_message_sent() {
             return result;
         }
@@ -363,7 +365,7 @@ pub fn create_connected_nodes_with_cache(network: &Network<PublicId>,
                    .create());
     nodes[0].poll();
 
-    let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
+    let config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
 
     // Create other nodes using the seed node endpoint as bootstrap contact.
     for i in 1..size {
@@ -538,7 +540,9 @@ pub fn create_connected_clients(network: &Network<PublicId>,
     let mut clients = Vec::with_capacity(size);
 
     for _ in 0..size {
-        let client = TestClient::new(network, Some(Config::with_contacts(&[contact])), None);
+        let client = TestClient::new(network,
+                                     Some(BootstrapConfig::with_contacts(&[contact])),
+                                     None);
         clients.push(client);
 
         let _ = poll_all(nodes, &mut clients);
@@ -572,8 +576,8 @@ pub fn gen_bytes<R: Rng>(rng: &mut R, size: usize) -> Vec<u8> {
 }
 
 // Generate random immutable data with the given payload length.
-pub fn gen_immutable_data<R: Rng>(rng: &mut R, size: usize) -> Data {
-    Data::Immutable(ImmutableData::new(gen_bytes(rng, size)))
+pub fn gen_immutable_data<R: Rng>(rng: &mut R, size: usize) -> ImmutableData {
+    ImmutableData::new(gen_bytes(rng, size))
 }
 
 fn sanity_check(prefix_lengths: &[usize]) {
@@ -632,7 +636,7 @@ fn add_node_to_section<T: Rng>(network: &Network<PublicId>,
                                                         prefix.upper_bound()));
                  });
 
-    let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
+    let config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
     let endpoint = Endpoint(nodes.len());
     nodes.push(TestNode::builder(network)
                    .config(config.clone())

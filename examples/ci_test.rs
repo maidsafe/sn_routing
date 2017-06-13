@@ -33,6 +33,12 @@
 
 #![cfg_attr(feature = "use-mock-crust", allow(unused_extern_crates, unused_imports))]
 
+// TODO: remove this dummy main once the code below is fixed.
+fn main() {}
+
+// TODO: uncomment and fix
+/*
+
 #[macro_use]
 extern crate log;
 extern crate maidsafe_utilities;
@@ -372,3 +378,4 @@ Options:
 fn main() {
     unnamed::run_main()
 }
+*/

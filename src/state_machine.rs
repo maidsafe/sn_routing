@@ -16,11 +16,12 @@
 // relating to use of the SAFE Network Software.
 
 use {CrustEvent, CrustEventSender, Service};
+use BootstrapConfig;
 use action::Action;
 use id::{FullId, PublicId};
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 #[cfg(feature = "use-mock-crust")]
-use mock_crust::get_current;
+use mock_crust;
 use outbox::EventBox;
 use routing_table::{Prefix, RoutingTable};
 #[cfg(feature = "use-mock-crust")]
@@ -36,6 +37,7 @@ use std::sync::mpsc::{self, Receiver, RecvError, Sender, TryRecvError};
 use timer::Timer;
 use types::RoutingActionSender;
 use xor_name::XorName;
+
 /// Holds the current state and handles state transitions.
 pub struct StateMachine {
     state: State,
@@ -209,6 +211,7 @@ impl StateMachine {
     // Construct a new StateMachine by passing a function returning the initial state.
     pub fn new<F>(init_state: F,
                   pub_id: PublicId,
+                  config: Option<BootstrapConfig>,
                   outbox: &mut EventBox)
                   -> (RoutingActionSender, Self)
         where F: FnOnce(RoutingActionSender, Service, Timer, &mut EventBox) -> State
@@ -225,16 +228,18 @@ impl StateMachine {
                                                  MaidSafeEventCategory::Crust,
                                                  category_tx.clone());
 
-        #[cfg(feature = "use-mock-crust")]
-        let mut crust_service = match Service::new(get_current(), crust_sender, pub_id) {
-            Ok(service) => service,
-            Err(error) => panic!("Unable to start crust::Service {:?}", error),
+        let res = match config {
+            #[cfg(feature = "use-mock-crust")]
+            Some(c) => Service::with_config(mock_crust::take_current(), crust_sender, c, pub_id),
+            #[cfg(not(feature = "use-mock-crust"))]
+            Some(c) => Service::with_config(crust_sender, c, pub_id),
+            #[cfg(feature = "use-mock-crust")]
+            None => Service::new(mock_crust::take_current(), crust_sender, pub_id),
+            #[cfg(not(feature = "use-mock-crust"))]
+            None => Service::new(crust_sender, pub_id),
         };
-        #[cfg(not(feature = "use-mock-crust"))]
-        let mut crust_service = match Service::new(crust_sender, pub_id) {
-            Ok(service) => service,
-            Err(error) => panic!("Unable to start crust::Service {:?}", error),
-        };
+
+        let mut crust_service = unwrap!(res, "Unable to start crust::Service");
 
         crust_service.start_service_discovery();
 
@@ -270,7 +275,17 @@ impl StateMachine {
         (action_sender, machine)
     }
 
-    // Handle an event from the given category and send any events produced for higher layers.
+    // /// Returns the `crust::Config` associated with the `Service` (if any).
+    // #[cfg(feature = "use-mock-crust")]
+    // pub fn bootstrap_config(&self) -> Option<Config> {
+    //     match self.state {
+    //         State::Bootstrapping(ref s) => Some(s.config()),
+    //         State::Client(ref s) => Some(s.config()),
+    //         State::Node(ref s) => Some(s.config()),
+    //         State::Terminated => None,
+    //     }
+    // }
+
     fn handle_event(&mut self, category: MaidSafeEventCategory, outbox: &mut EventBox) {
         let transition = match category {
             MaidSafeEventCategory::Routing => {

@@ -297,6 +297,11 @@ impl<UID: Uid> ServiceHandle<UID> {
     pub fn reset_message_sent(&self) -> bool {
         self.0.borrow().network.reset_message_sent()
     }
+
+    /// Returns the minimal section size of the Network.
+    pub fn min_section_size(&self) -> usize {
+        self.0.borrow().network.min_section_size()
+    }
 }
 
 pub struct ServiceImpl<UID: Uid> {
@@ -304,6 +309,7 @@ pub struct ServiceImpl<UID: Uid> {
     endpoint: Endpoint,
     pub uid: Option<UID>,
     config: Config,
+    pub accept_bootstrap: bool,
     pub listening_tcp: bool,
     event_sender: Option<CrustEventSender<UID>>,
     pending_bootstraps: u64,
@@ -318,6 +324,7 @@ impl<UID: Uid> ServiceImpl<UID> {
             endpoint: endpoint,
             uid: None,
             config: config,
+            accept_bootstrap: false,
             listening_tcp: false,
             event_sender: None,
             pending_bootstraps: 0,
@@ -407,6 +414,10 @@ impl<UID: Uid> ServiceImpl<UID> {
         self.send_packet(their_info.endpoint, packet);
     }
 
+    pub fn set_accept_bootstrap(&mut self, accept: bool) {
+        self.accept_bootstrap = accept;
+    }
+
     pub fn start_listening_tcp(&mut self, port: u16) {
         self.listening_tcp = true;
         self.send_event(CrustEvent::ListenerStarted(port));
@@ -430,7 +441,7 @@ impl<UID: Uid> ServiceImpl<UID> {
     }
 
     fn handle_bootstrap_request(&mut self, peer_endpoint: Endpoint, uid: UID, kind: CrustUser) {
-        if self.is_listening() {
+        if self.is_listening() && self.accept_bootstrap {
             self.handle_bootstrap_accept(peer_endpoint, uid, kind);
             self.send_packet(peer_endpoint, Packet::BootstrapSuccess(unwrap!(self.uid)));
         } else {
@@ -682,7 +693,20 @@ pub fn make_current<F, R>(handle: &ServiceHandle<PublicId>, f: F) -> R
                  })
 }
 
-/// Get the current `ServiceHandle`
-pub fn get_current() -> ServiceHandle<PublicId> {
-    CURRENT.with(|current| unwrap!(current.borrow_mut().take(), "Couldn't borrow service."))
+/// Unsets and returns the `ServiceHandle` set with `make_current`.
+pub fn take_current() -> ServiceHandle<PublicId> {
+    CURRENT.with(|current| {
+                     unwrap!(current.borrow_mut().take(),
+                             "Current ServiceHandle is not set.")
+                 })
+}
+
+/// Invokes the given lambda with a reference to the `ServiceHandle` set with `make_current`.
+pub fn with_current<F, R>(f: F) -> R
+    where F: FnOnce(&ServiceHandle<PublicId>) -> R
+{
+    CURRENT.with(|current| {
+                     f(unwrap!(current.borrow_mut().as_ref(),
+                               "Current ServiceHandle is not set."))
+                 })
 }

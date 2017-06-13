@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use BootstrapConfig;
 use error::InterfaceError;
 use id::PublicId;
 use messages::{Request, UserMessage};
@@ -46,6 +47,7 @@ pub enum Action {
         priority: u8,
         result_tx: Sender<Result<(), InterfaceError>>,
     },
+    Config { result_tx: Sender<BootstrapConfig> },
     Id { result_tx: Sender<PublicId> },
     Timeout(u64),
     ResourceProofResult(PublicId, Vec<DirectMessage>),
@@ -70,6 +72,7 @@ impl Debug for Action {
                        content,
                        dst)
             }
+            Action::Config { .. } => write!(formatter, "Action::Config"),
             Action::Id { .. } => write!(formatter, "Action::Id"),
             Action::Timeout(token) => write!(formatter, "Action::Timeout({})", token),
             Action::ResourceProofResult(pub_id, _) => {

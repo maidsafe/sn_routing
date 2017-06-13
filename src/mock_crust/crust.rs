@@ -16,6 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use super::support::{Endpoint, Network, ServiceHandle, ServiceImpl};
+pub use super::support::Config;
 use maidsafe_utilities::event_sender;
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
@@ -39,6 +40,16 @@ impl<UID: Uid> Service<UID> {
                event_sender: CrustEventSender<UID>,
                uid: UID)
                -> Result<Self, CrustError> {
+        Self::with_handle(&handle, event_sender, uid)
+    }
+
+    /// Create a new mock `Service` using the make_current/get_current mechanism to
+    /// get the associated `ServiceHandle`. Ignores configuration.
+    pub fn with_config(handle: ServiceHandle<UID>,
+                       event_sender: CrustEventSender<UID>,
+                       _config: Config,
+                       uid: UID)
+                       -> Result<Self, CrustError> {
         Self::with_handle(&handle, event_sender, uid)
     }
 
@@ -87,6 +98,12 @@ impl<UID: Uid> Service<UID> {
     /// by interrogating the network.
     pub fn set_service_discovery_listen(&self, _listen: bool) {
         trace!(target: "crust", "[MOCK] set_service_discovery_listen not implemented in mock");
+    }
+
+    /// Allow (or disallow) peers from bootstrapping off us.
+    pub fn set_accept_bootstrap(&mut self, accept: bool) -> Result<(), CrustError> {
+        self.lock().set_accept_bootstrap(accept);
+        Ok(())
     }
 
     /// Check if we have peers on LAN
@@ -153,6 +170,16 @@ impl<UID: Uid> Service<UID> {
     /// Returns `true` if the specified peer's IP is hard-coded. (Always `true` in mock Crust.)
     pub fn is_peer_hard_coded(&self, _uid: &UID) -> bool {
         true
+    }
+
+    /// Our `UID`.
+    pub fn id(&self) -> UID {
+        unwrap!(self.lock().uid)
+    }
+
+    /// Returns the `Config` (which is unused anyway).
+    pub fn config(&self) -> Config {
+        Config::new()
     }
 
     fn lock(&self) -> RefMut<ServiceImpl<UID>> {
