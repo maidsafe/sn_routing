@@ -1,3 +1,23 @@
+// Copyright 2017 MaidSafe.net limited.
+//
+// This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
+// version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
+// licence you accepted on initial access to the Software (the "Licences").
+//
+// By contributing code to the SAFE Network Software, or to this project generally, you agree to be
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+//
+// Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
+// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.
+//
+// Please review the Licences for the specific language governing permissions and limitations
+// relating to use of the SAFE Network Software.
+
+//! Mock cryptographic primitives.
+
+/// Mock version of a subset of the rust_sodium crate.
 pub mod rust_sodium {
     use rand::{Rng, SeedableRng, XorShiftRng};
     use std::cell::RefCell;
@@ -6,27 +26,34 @@ pub mod rust_sodium {
         static RNG: RefCell<XorShiftRng> = RefCell::new(XorShiftRng::new_unseeded());
     }
 
-    #[allow(unused)]
+    /// Initialize mock rust_sodium.
     pub fn init() -> bool {
         true
     }
 
-    #[allow(unused)]
+    /// Initialize mock rust_sodium with the given random number generator.
+    /// This can be used to guarantee reproducible test results.
     pub fn init_with_rng<T: Rng>(other: &mut T) -> Result<(), i32> {
         RNG.with(|rng| rng.borrow_mut().reseed(other.gen()));
         Ok(())
     }
 
+    /// Mock cryptographic functions.
     pub mod crypto {
+        /// Mock signing.
         pub mod sign {
             use super::super::with_rng;
             use rand::Rng;
             use std::ops::{Index, RangeFull};
 
+            /// Number of bytes in a `PublicKey`.
             pub const PUBLICKEYBYTES: usize = 32;
+            /// Number of bytes in a `SecretKey`.
             pub const SECRETKEYBYTES: usize = 32;
+            /// Number of bytes in a `Signature`.
             pub const SIGNATUREBYTES: usize = 32;
 
+            /// Mock signing public key.
             #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq,
                      PartialOrd, Serialize)]
             pub struct PublicKey(pub [u8; PUBLICKEYBYTES]);
@@ -38,9 +65,11 @@ pub mod rust_sodium {
                 }
             }
 
+            /// Mock signing secret key.
             #[derive(Clone, Debug, Eq, PartialEq)]
             pub struct SecretKey(pub [u8; SECRETKEYBYTES]);
 
+            /// Mock signature.
             #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, Serialize,
                      PartialEq, PartialOrd)]
             pub struct Signature(pub [u8; SIGNATUREBYTES]);
@@ -51,6 +80,7 @@ pub mod rust_sodium {
                 }
             }
 
+            /// Generate mock public and corresponding secret key.
             pub fn gen_keypair() -> (PublicKey, SecretKey) {
                 with_rng(|rng| {
                              let value = rng.gen();
@@ -58,12 +88,15 @@ pub mod rust_sodium {
                          })
             }
 
+            /// Sign a message using the mock secret key.
             pub fn sign_detached(m: &[u8], sk: &SecretKey) -> Signature {
                 let mut temp = m.to_vec();
                 temp.extend(&sk.0);
                 Signature(hash256(&temp))
             }
 
+            /// Verify the mock signature against the message and the signer's mock
+            /// public key.
             pub fn verify_detached(signature: &Signature, m: &[u8], pk: &PublicKey) -> bool {
                 let mut temp = m.to_vec();
                 temp.extend(&pk.0);
@@ -76,23 +109,31 @@ pub mod rust_sodium {
             }
         }
 
+        /// Mock encryption.
         pub mod box_ {
             use super::super::with_rng;
             use rand::Rng;
 
+            /// Number of bytes in a 'PublicKey`.
             pub const PUBLICKEYBYTES: usize = 32;
+            /// Number of bytes in a `SecretKey`.
             pub const SECRETKEYBYTES: usize = 32;
+            /// Number of bytes in a `Nonce`.
             pub const NONCEBYTES: usize = 4;
 
+            /// Mock public key for asymetric encryption/decryption.
             #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq,
                      PartialOrd, Serialize)]
             pub struct PublicKey(pub [u8; PUBLICKEYBYTES]);
 
+            /// Mock secret key for asymetric encryption/decryption.
             #[derive(Clone, Debug, Eq, PartialEq)]
             pub struct SecretKey(pub [u8; SECRETKEYBYTES]);
 
+            /// Mock nonce for asymetric encryption/decryption.
             pub struct Nonce(pub [u8; NONCEBYTES]);
 
+            /// Generate mock public and corresponding secret key.
             pub fn gen_keypair() -> (PublicKey, SecretKey) {
                 with_rng(|rng| {
                              let value = rng.gen();
@@ -100,10 +141,13 @@ pub mod rust_sodium {
                          })
             }
 
+            /// Generate mock nonce.
             pub fn gen_nonce() -> Nonce {
                 with_rng(|rng| Nonce(rng.gen()))
             }
 
+            /// Perform mock encryption of the given message using their public key,
+            /// our secret key and nonce.
             pub fn seal(m: &[u8], nonce: &Nonce, pk: &PublicKey, sk: &SecretKey) -> Vec<u8> {
                 let mut result = Vec::with_capacity(m.len() + nonce.0.len() + pk.0.len() +
                                                     sk.0.len());
@@ -114,6 +158,8 @@ pub mod rust_sodium {
                 result
             }
 
+            /// Perform mock decryption of the given ciphertext using their secret key,
+            /// our public key and nonce.
             pub fn open(c: &[u8],
                         nonce: &Nonce,
                         pk: &PublicKey,

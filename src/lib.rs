@@ -183,7 +183,7 @@ mod utils;
 mod xor_name;
 
 #[cfg(feature = "use-mock-crypto")]
-mod mock_crypto;
+pub mod mock_crypto;
 
 #[cfg(feature = "use-mock-crypto")]
 use mock_crypto::rust_sodium;
