@@ -16,6 +16,10 @@
 // relating to use of the SAFE Network Software.
 
 //! Mock cryptographic primitives.
+//!
+//! These primitives are designed to be very fast (several times faster than the
+//! real ones), but they are NOT secure. They are supposed to be used for testing
+//! only.
 
 /// Mock version of a subset of the rust_sodium crate.
 pub mod rust_sodium {
@@ -121,16 +125,16 @@ pub mod rust_sodium {
             /// Number of bytes in a `Nonce`.
             pub const NONCEBYTES: usize = 4;
 
-            /// Mock public key for asymetric encryption/decryption.
+            /// Mock public key for asymmetric encryption/decryption.
             #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq,
                      PartialOrd, Serialize)]
             pub struct PublicKey(pub [u8; PUBLICKEYBYTES]);
 
-            /// Mock secret key for asymetric encryption/decryption.
+            /// Mock secret key for asymmetric encryption/decryption.
             #[derive(Clone, Debug, Eq, PartialEq)]
             pub struct SecretKey(pub [u8; SECRETKEYBYTES]);
 
-            /// Mock nonce for asymetric encryption/decryption.
+            /// Mock nonce for asymmetric encryption/decryption.
             pub struct Nonce(pub [u8; NONCEBYTES]);
 
             /// Generate mock public and corresponding secret key.

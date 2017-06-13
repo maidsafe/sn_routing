@@ -87,14 +87,12 @@ impl Debug for ImmutableData {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hex::ToHex;
     use maidsafe_utilities::{SeededRng, serialisation};
     use rand::Rng;
 
     #[test]
-    #[cfg(not(feature = "use-mock-crypto"))]
     fn deterministic_test() {
-        use hex::ToHex;
-
         let value = "immutable data value".to_owned().into_bytes();
         let immutable_data = ImmutableData::new(value);
         let immutable_data_name = immutable_data.name().0.as_ref().to_hex();
