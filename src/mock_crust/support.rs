@@ -309,6 +309,7 @@ pub struct ServiceImpl<UID: Uid> {
     endpoint: Endpoint,
     pub uid: Option<UID>,
     config: Config,
+    pub accept_bootstrap: bool,
     pub listening_tcp: bool,
     event_sender: Option<CrustEventSender<UID>>,
     pending_bootstraps: u64,
@@ -323,6 +324,7 @@ impl<UID: Uid> ServiceImpl<UID> {
             endpoint: endpoint,
             uid: None,
             config: config,
+            accept_bootstrap: false,
             listening_tcp: false,
             event_sender: None,
             pending_bootstraps: 0,
@@ -412,6 +414,10 @@ impl<UID: Uid> ServiceImpl<UID> {
         self.send_packet(their_info.endpoint, packet);
     }
 
+    pub fn set_accept_bootstrap(&mut self, accept: bool) {
+        self.accept_bootstrap = accept;
+    }
+
     pub fn start_listening_tcp(&mut self, port: u16) {
         self.listening_tcp = true;
         self.send_event(CrustEvent::ListenerStarted(port));
@@ -435,7 +441,7 @@ impl<UID: Uid> ServiceImpl<UID> {
     }
 
     fn handle_bootstrap_request(&mut self, peer_endpoint: Endpoint, uid: UID, kind: CrustUser) {
-        if self.is_listening() {
+        if self.is_listening() && self.accept_bootstrap {
             self.handle_bootstrap_accept(peer_endpoint, uid, kind);
             self.send_packet(peer_endpoint, Packet::BootstrapSuccess(unwrap!(self.uid)));
         } else {
