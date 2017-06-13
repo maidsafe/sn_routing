@@ -27,4 +27,4 @@ build_script:
   - cargo rustc --verbose --release --profile test --lib -- -Zno-trans
 
 test_script:
-  - cargo test --verbose --release --features use-mock-crust
+  - cargo test --verbose --release --features "use-mock-crust use-mock-crypto"

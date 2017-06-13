@@ -33,6 +33,7 @@
          missing_debug_implementations)]
 
 #![cfg(not(feature = "use-mock-crust"))]
+#![cfg(not(feature = "use-mock-crypto"))]
 
 extern crate itertools;
 #[cfg(target_os = "macos")]
@@ -43,6 +44,7 @@ extern crate routing;
 extern crate rust_sodium;
 #[macro_use]
 extern crate unwrap;
+
 
 use itertools::Itertools;
 use maidsafe_utilities::SeededRng;

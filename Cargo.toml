@@ -43,3 +43,5 @@ name = "ci_test"
 
 [features]
 use-mock-crust = ["lru_time_cache/fake_clock"]
+use-mock-crypto = ["use-mock-crust"]
+

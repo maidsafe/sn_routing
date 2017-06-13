@@ -42,8 +42,8 @@ use routing_table::{Authority, OwnMergeState, Prefix, RemovalDetails, RoutingTab
                     VersionedPrefix, Xorable};
 use routing_table::Error as RoutingTableError;
 use rust_sodium::crypto::{box_, sign};
-use rust_sodium::crypto::hash::sha256;
 use section_list_cache::SectionListCache;
+use sha3::Digest256;
 use signature_accumulator::SignatureAccumulator;
 use state_machine::Transition;
 use stats::Stats;
@@ -708,7 +708,7 @@ impl Node {
     /// Handles a signature of a `SignedMessage`, and if we have enough to verify the signed
     /// message, handles it.
     fn handle_message_signature(&mut self,
-                                digest: sha256::Digest,
+                                digest: Digest256,
                                 sig: sign::Signature,
                                 pub_id: PublicId)
                                 -> Result<(), RoutingError> {

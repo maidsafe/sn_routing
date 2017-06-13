@@ -21,12 +21,13 @@ use id::PublicId;
 use itertools::Itertools;
 use maidsafe_utilities::serialisation;
 use messages::SignedMessage;
-use rust_sodium::crypto::hash::sha256;
 use rust_sodium::crypto::sign;
+use sha3::Digest256;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 #[cfg(not(feature="use-mock-crust"))]
 use std::time::Instant;
+use tiny_keccak::sha3_256;
 
 /// Time (in seconds) within which a message and a quorum of signatures need to arrive to
 /// accumulate.
@@ -34,8 +35,8 @@ pub const ACCUMULATION_TIMEOUT_SECS: u64 = 30;
 
 #[derive(Default)]
 pub struct SignatureAccumulator {
-    sigs: HashMap<sha256::Digest, (Vec<(PublicId, sign::Signature)>, Instant)>,
-    msgs: HashMap<sha256::Digest, (SignedMessage, u8, Instant)>,
+    sigs: HashMap<Digest256, (Vec<(PublicId, sign::Signature)>, Instant)>,
+    msgs: HashMap<Digest256, (SignedMessage, u8, Instant)>,
 }
 
 impl SignatureAccumulator {
@@ -43,7 +44,7 @@ impl SignatureAccumulator {
     /// `SignedMessage`. Returns the message, if it has enough signatures now.
     pub fn add_signature(&mut self,
                          min_section_size: usize,
-                         hash: sha256::Digest,
+                         hash: Digest256,
                          sig: sign::Signature,
                          pub_id: PublicId)
                          -> Option<(SignedMessage, u8)> {
@@ -69,7 +70,7 @@ impl SignatureAccumulator {
                        -> Option<(SignedMessage, u8)> {
         self.remove_expired();
         let hash = match serialisation::serialise(msg.routing_message()) {
-            Ok(serialised_msg) => sha256::hash(&serialised_msg),
+            Ok(serialised_msg) => sha3_256(&serialised_msg),
             Err(err) => {
                 error!("Failed to serialise {:?}: {:?}.", msg, err);
                 return None;
@@ -115,7 +116,7 @@ impl SignatureAccumulator {
 
     fn remove_if_complete(&mut self,
                           min_section_size: usize,
-                          hash: &sha256::Digest)
+                          hash: &Digest256)
                           -> Option<(SignedMessage, u8)> {
         match self.msgs.get_mut(hash) {
             None => return None,
