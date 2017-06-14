@@ -117,7 +117,10 @@ pub struct Node {
     candidate_timer_token: Option<u64>,
     /// The timer token for displaying the current candidate status.
     candidate_status_token: Option<u64>,
-    /// Hold the kind of bootstrappers.
+    /// Holds the kind of bootstrappers. Also used to restrict the types of messages we'll handle;
+    /// if a sender is in `bootstrappers` we'll only handle a `DirectMessage::ClientIdentify` or
+    /// `DirectMessage::CandidateIdentify` - all other hop message or direct message types will be
+    /// dropped.
     bootstrappers: LruCache<PublicId, CrustUser>,
     resource_prover: ResourceProver,
     joining_prefix: Prefix<XorName>,
@@ -598,6 +601,7 @@ impl Node {
                              outbox: &mut EventBox)
                              -> Result<(), RoutingError> {
         use messages::DirectMessage::*;
+        self.check_direct_message_sender(&direct_message, &pub_id)?;
         match direct_message {
             MessageSignature(digest, sig) => self.handle_message_signature(digest, sig, pub_id)?,
             SectionListSignature(section_list, sig) => {
@@ -702,6 +706,42 @@ impl Node {
             }
         }
         Ok(())
+    }
+
+    /// Returns `Ok` if the peer's state indicates it's allowed to send the given message type.
+    fn check_direct_message_sender(&self,
+                                   direct_message: &DirectMessage,
+                                   pub_id: &PublicId)
+                                   -> Result<(), RoutingError> {
+        use messages::DirectMessage::*;
+        if self.bootstrappers.contains_key(pub_id) {
+            match *direct_message {
+                ClientIdentify { .. } |
+                CandidateIdentify { .. } => return Ok(()),
+                MessageSignature(..) |
+                SectionListSignature(..) |
+                BootstrapIdentify |
+                BootstrapDeny |
+                TunnelRequest(_) |
+                TunnelSuccess(_) |
+                TunnelSelect(_) |
+                TunnelClosed(_) |
+                TunnelDisconnect(_) |
+                ResourceProof { .. } |
+                ResourceProofResponse { .. } |
+                ResourceProofResponseReceipt => (),
+            }
+        } else if let Some(peer) = self.peer_mgr.get_peer(pub_id) {
+            match *peer.state() {
+                PeerState::Client => (),
+                _ => return Ok(()),
+            }
+        }
+        debug!("{:?} Illegitimate direct message {:?} from {:?}.",
+               self,
+               direct_message,
+               pub_id);
+        Err(RoutingError::InvalidMessage)
     }
 
     /// Handles a signature of a `SignedMessage`, and if we have enough to verify the signed
@@ -836,6 +876,13 @@ impl Node {
                           hop_msg: HopMessage,
                           pub_id: PublicId)
                           -> Result<(), RoutingError> {
+        if self.bootstrappers.contains_key(&pub_id) {
+            debug!("{:?} Dropping {:?} from {:?} as the peer is still bootstrapping.",
+                   self,
+                   hop_msg,
+                   pub_id);
+            return Err(RoutingError::RejectedClientMessage);
+        }
         let hop_name = if let Some(peer) = self.peer_mgr.get_peer(&pub_id) {
             hop_msg.verify(peer.pub_id().signing_public_key())?;
 
@@ -1351,11 +1398,10 @@ impl Node {
 
     /// Returns `Ok` if a client is allowed to send the given message.
     fn check_valid_client_message(&self, msg: &RoutingMessage) -> Result<(), RoutingError> {
-        match msg.content {
-            MessageContent::Ack(..) => Ok(()),
-            MessageContent::UserMessagePart { priority, .. } if priority >= DEFAULT_PRIORITY => {
-                Ok(())
-            }
+        match (&msg.src, &msg.content) {
+            (&Authority::Client { .. }, &MessageContent::Ack(..)) => Ok(()),
+            (&Authority::Client { .. }, &MessageContent::UserMessagePart { priority, .. })
+                if priority >= DEFAULT_PRIORITY => Ok(()),
             _ => {
                 debug!("{:?} Illegitimate client message {:?}. Refusing to relay.",
                        self,
