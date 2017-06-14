@@ -335,26 +335,21 @@ impl MutableData {
            (!delete.is_empty() && !self.is_action_allowed(requester, Action::Delete)) {
             return Err(ClientError::AccessDenied);
         }
-        if (!insert.is_empty() || !update.is_empty()) &&
-           self.data.len() > MAX_MUTABLE_DATA_ENTRIES as usize {
-            return Err(ClientError::TooManyEntries);
-        }
-        if (!insert.is_empty() || !update.is_empty()) && !self.validate_size() {
-            return Err(ClientError::DataTooLarge);
-        }
+
+        let mut new_data = self.data.clone();
 
         for (key, val) in insert {
-            if self.data.contains_key(&key) {
+            if new_data.contains_key(&key) {
                 return Err(ClientError::EntryExists);
             }
-            let _ = self.data.insert(key.clone(), val);
+            let _ = new_data.insert(key.clone(), val);
         }
 
         for (key, val) in update {
-            if !self.data.contains_key(&key) {
+            if !new_data.contains_key(&key) {
                 return Err(ClientError::NoSuchEntry);
             }
-            let version_valid = if let Entry::Occupied(mut oe) = self.data.entry(key.clone()) {
+            let version_valid = if let Entry::Occupied(mut oe) = new_data.entry(key.clone()) {
                 if val.entry_version != oe.get().entry_version + 1 {
                     false
                 } else {
@@ -370,10 +365,10 @@ impl MutableData {
         }
 
         for (key, version) in delete {
-            if !self.data.contains_key(&key) {
+            if !new_data.contains_key(&key) {
                 return Err(ClientError::NoSuchEntry);
             }
-            let version_valid = if let Entry::Occupied(mut oe) = self.data.entry(key.clone()) {
+            let version_valid = if let Entry::Occupied(mut oe) = new_data.entry(key.clone()) {
                 if version != oe.get().entry_version + 1 {
                     false
                 } else {
@@ -394,7 +389,14 @@ impl MutableData {
             }
         }
 
-        if !self.validate_mut_size() {
+        if new_data.len() > MAX_MUTABLE_DATA_ENTRIES as usize {
+            return Err(ClientError::TooManyEntries);
+        }
+
+        let old_data = mem::replace(&mut self.data, new_data);
+
+        if !self.validate_size() {
+            self.data = old_data;
             return Err(ClientError::DataTooLarge);
         }
 
@@ -483,7 +485,7 @@ impl MutableData {
             return Err(ClientError::InvalidSuccessor);
         }
         let prev = self.permissions.insert(user, permissions);
-        if !self.validate_mut_size() {
+        if !self.validate_size() {
             // Serialised data size limit is exceeded
             let _ = match prev {
                 None => self.permissions.remove(&user),
@@ -572,13 +574,6 @@ impl MutableData {
     /// Return true if the size is valid
     pub fn validate_size(&self) -> bool {
         self.serialised_size() <= MAX_MUTABLE_DATA_SIZE_IN_BYTES
-    }
-
-    /// Return true if the size is valid after a mutation. We need to have this
-    /// because of eventual consistency requirements - in certain cases entries
-    /// can go over the default cap of 1 MiB.
-    fn validate_mut_size(&self) -> bool {
-        self.serialised_size() <= MAX_MUTABLE_DATA_SIZE_IN_BYTES * 2
     }
 
     fn check_anyone_permissions(&self, action: Action) -> bool {
@@ -726,54 +721,43 @@ mod tests {
 
         // It must not be possible to create MutableData with more than 101 entries
         let mut data = BTreeMap::new();
-        for i in 0..105 {
-            let _ = data.insert(vec![i], val.clone());
+        for i in 0..MAX_MUTABLE_DATA_ENTRIES + 5 {
+            let _ = data.insert(vec![i as u8], val.clone());
         }
         assert_err!(MutableData::new(rand::random(), 0, BTreeMap::new(), data, BTreeSet::new()),
                     ClientError::TooManyEntries);
 
         let mut data = BTreeMap::new();
-        for i in 0..100 {
-            let _ = data.insert(vec![i], val.clone());
+        for i in 0..MAX_MUTABLE_DATA_ENTRIES {
+            let _ = data.insert(vec![i as u8], val.clone());
         }
 
         let (owner, _) = sign::gen_keypair();
-
-        let mut owners = BTreeSet::new();
-        assert!(owners.insert(owner), true);
-
+        let owners = iter::once(owner).collect();
         let mut md = unwrap!(MutableData::new(rand::random(), 0, BTreeMap::new(), data, owners));
 
-        assert_eq!(md.keys().len(), 100);
-        assert_eq!(md.values().len(), 100);
-        assert_eq!(md.entries().len(), 100);
+        assert_eq!(md.keys().len(), MAX_MUTABLE_DATA_ENTRIES as usize);
+        assert_eq!(md.values().len(), MAX_MUTABLE_DATA_ENTRIES as usize);
+        assert_eq!(md.entries().len(), MAX_MUTABLE_DATA_ENTRIES as usize);
 
         // Try to get over the limit
-        let mut v1 = BTreeMap::new();
-        let _ = v1.insert(vec![101u8], EntryAction::Ins(val.clone()));
-        assert!(md.mutate_entries(v1, owner).is_ok());
-
-        let mut v2 = BTreeMap::new();
-        let _ = v2.insert(vec![102u8], EntryAction::Ins(val.clone()));
-        assert_err!(md.mutate_entries(v2.clone(), owner),
+        let actions = iter::once((vec![100u8], EntryAction::Ins(val.clone()))).collect();
+        assert_err!(md.mutate_entries(actions, owner),
                     ClientError::TooManyEntries);
 
-        let mut del = BTreeMap::new();
-        let _ = del.insert(vec![101u8], EntryAction::Del(1));
-        assert!(md.mutate_entries(del, owner).is_ok());
+        let actions = iter::once((vec![0u8], EntryAction::Del(1))).collect();
+        unwrap!(md.mutate_entries(actions, owner));
     }
 
     #[test]
     fn size_limit() {
         let big_val = Value {
-            content: iter::repeat(0)
-                .take((MAX_MUTABLE_DATA_SIZE_IN_BYTES - 1024) as usize)
-                .collect(),
+            content: vec![0; (MAX_MUTABLE_DATA_SIZE_IN_BYTES - 1024) as usize],
             entry_version: 0,
         };
 
         let small_val = Value {
-            content: iter::repeat(0).take(2048).collect(),
+            content: vec![0; 2048],
             entry_version: 0,
         };
 
@@ -789,26 +773,18 @@ mod tests {
         let _ = data.insert(vec![0], big_val.clone());
 
         let (owner, _) = sign::gen_keypair();
-        let mut owners = BTreeSet::new();
-        assert!(owners.insert(owner), true);
-
+        let owners = iter::once(owner).collect();
         let mut md = unwrap!(MutableData::new(rand::random(), 0, BTreeMap::new(), data, owners));
 
-        // Try to get over the mutation limit of 2 MiB
-        let mut v1 = BTreeMap::new();
-        let _ = v1.insert(vec![1], EntryAction::Ins(big_val.clone()));
-        assert!(md.mutate_entries(v1, owner).is_ok());
-
-        let mut v2 = BTreeMap::new();
-        let _ = v2.insert(vec![2], EntryAction::Ins(small_val.clone()));
-        assert_err!(md.mutate_entries(v2.clone(), owner),
+        // Try to get over the size limit
+        let actions0: BTreeMap<_, _> = iter::once((vec![1], EntryAction::Ins(small_val.clone())))
+            .collect();
+        assert_err!(md.mutate_entries(actions0.clone(), owner),
                     ClientError::DataTooLarge);
 
-        let mut del = BTreeMap::new();
-        let _ = del.insert(vec![0], EntryAction::Del(1));
-        assert!(md.mutate_entries(del, owner).is_ok());
-
-        assert!(md.mutate_entries(v2, owner).is_ok());
+        let actions1 = iter::once((vec![0], EntryAction::Del(1))).collect();
+        unwrap!(md.mutate_entries(actions1, owner));
+        unwrap!(md.mutate_entries(actions0, owner));
     }
 
     #[test]
