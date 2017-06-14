@@ -33,12 +33,6 @@
 
 #![cfg_attr(feature = "use-mock-crust", allow(unused_extern_crates, unused_imports))]
 
-// TODO: remove this dummy main once the code below is fixed.
-fn main() {}
-
-// TODO: uncomment and fix
-/*
-
 #[macro_use]
 extern crate log;
 extern crate maidsafe_utilities;
@@ -72,10 +66,12 @@ mod unnamed {
     use maidsafe_utilities::thread::named as thread_named;
     use rand::{Rng, ThreadRng, random, thread_rng};
     use rand::distributions::{IndependentSample, Range};
-    use routing::{Data, StructuredData};
+    use routing::{MutableData, Value};
+    use rust_sodium::crypto::sign;
     use std::{env, io, thread};
-    use std::collections::BTreeSet;
+    use std::collections::BTreeMap;
     use std::io::Write;
+    use std::iter;
     use std::panic;
     use std::process::{Child, Command, Stdio};
     use std::sync::{Arc, Condvar, Mutex};
@@ -239,18 +235,24 @@ mod unnamed {
         let mut stored_data = Vec::with_capacity(requests);
         let mut rng = SeededRng::new();
         for i in 0..requests {
-            let raw_data = rng.gen_iter().take(10).collect();
-            let sd = StructuredData::new(10000, rng.gen(), 0, raw_data, BTreeSet::new());
-            let data = Data::Structured(unwrap!(sd));
+            let data = gen_mutable_data(&mut rng, *example_client.signing_public_key());
+
             print!("Putting Data: count #{} - Data {:?} - ", i, data.name());
             io::stdout().flush().expect("Could not flush stdout");
-            if example_client.put(data.clone()).is_ok() {
+
+            if example_client.put_mdata(data.clone()).is_ok() {
                 print_color("OK", color::GREEN);
                 print!(" - getting - ");
                 io::stdout().flush().expect("Could not flush stdout");
+
                 stored_data.push(data.clone());
-                if let Some(got_data) = example_client.get(data.identifier()) {
-                    assert_eq!(got_data, data);
+
+                let shell_res = example_client.get_mdata_shell(*data.name(), data.tag());
+                let entries_res = example_client.list_mdata_entries(*data.name(), data.tag());
+
+                if let (Ok(shell), Ok(entries)) = (shell_res, entries_res) {
+                    assert_eq!(shell, data.shell());
+                    assert_eq!(entries, *data.entries());
                     print_color("OK\n", color::GREEN);
                 } else {
                     test_success = false;
@@ -269,11 +271,16 @@ mod unnamed {
             thread::sleep(Duration::from_secs(CHURN_TIME_SEC));
 
             println!("--------- Getting Data - batch {} -----------", batch);
-            for (i, data_item) in stored_data.iter().enumerate().take(requests) {
-                print!("Get attempt #{} - {} - ", i, data_item.name());
+            for (i, data) in stored_data.iter().enumerate().take(requests) {
+                print!("Get attempt #{} - {} - ", i, data.name());
                 io::stdout().flush().expect("Could not flush stdout");
-                if let Some(data) = example_client.get(data_item.identifier()) {
-                    assert_eq!(data, stored_data[i]);
+
+                let res_shell = example_client.get_mdata_shell(*data.name(), data.tag());
+                let res_entries = example_client.list_mdata_entries(*data.name(), data.tag());
+
+                if let (Ok(shell), Ok(entries)) = (res_shell, res_entries) {
+                    assert_eq!(shell, data.shell());
+                    assert_eq!(entries, *data.entries());
                     print_color("OK\n", color::GREEN);
                 } else {
                     test_success = false;
@@ -284,6 +291,28 @@ mod unnamed {
         }
 
         assert!(test_success, "Failed to store and verify data.");
+    }
+
+    fn gen_mutable_data<R: Rng>(rng: &mut R, owner: sign::PublicKey) -> MutableData {
+        let name = rng.gen();
+        let tag = rng.gen_range(10_000, 20_000);
+
+        let num_entries = rng.gen_range(0, 10);
+        let mut entries = BTreeMap::new();
+
+        for _ in 0..num_entries {
+            let key = rng.gen_iter().take(5).collect();
+            let content = rng.gen_iter().take(10).collect();
+            let _ = entries.insert(key,
+                                   Value {
+                                       content: content,
+                                       entry_version: 0,
+                                   });
+        }
+
+        let owners = iter::once(owner).collect();
+
+        unwrap!(MutableData::new(name, tag, Default::default(), entries, owners))
     }
 
     // ==========================   Program Options   =================================
@@ -378,4 +407,3 @@ Options:
 fn main() {
     unnamed::run_main()
 }
-*/

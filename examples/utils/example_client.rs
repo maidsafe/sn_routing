@@ -15,20 +15,52 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-// TODO: uncomment and fix
-/*
-use routing::{Authority, Client, Data, DataIdentifier, Event, FullId, MessageId, Response, XorName};
+use routing::{Authority, Client, ClientError, Event, FullId, ImmutableData, MessageId,
+              MutableData, Response, Value, XorName};
 use rust_sodium::crypto;
-use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::collections::BTreeMap;
+use std::sync::mpsc::{self, Receiver};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 const RESPONSE_TIMEOUT_SECS: u64 = 10;
+
+macro_rules! recv_response {
+    ($client:expr, $resp:ident, $data_id:expr, $req_msg_id:expr) => {
+        loop {
+            match $client.receiver.recv_timeout(Duration::from_secs(RESPONSE_TIMEOUT_SECS)) {
+                Ok(Event::Response { response: Response::$resp { res, msg_id }, .. }) => {
+                    if $req_msg_id != msg_id {
+                        error!("{} response for {:?}, but with wrong message_id {:?} \
+                                instead of {:?}.",
+                               stringify!($resp),
+                               $data_id,
+                               msg_id,
+                               $req_msg_id);
+                        return Err(ClientError::from("Wrong message_id"));
+                    }
+
+                    if let Err(ref error) = res {
+                        error!("{} for {:?} failed: {:?}", stringify!($resp), $data_id, error);
+                    } else {
+                        trace!("{} for {:?} successful", stringify!($resp), $data_id)
+                    }
+
+                    return res;
+                }
+                Ok(Event::Terminate) |
+                Ok(Event::RestartRequired) => $client.disconnected(),
+                Ok(_) => (),
+                Err(_) => return Err(ClientError::from("No response")),
+            }
+        }
+    }
+}
 
 /// A simple example client implementation for a network based on the Routing library.
 pub struct ExampleClient {
     /// The client interface to the Routing library.
-    routing_client: Client,
+    client: Client,
     /// The receiver through which the Routing library will send events.
     receiver: Receiver<Event>,
     /// This client's ID.
@@ -46,12 +78,12 @@ impl ExampleClient {
         let sign_keys = crypto::sign::gen_keypair();
         let encrypt_keys = crypto::box_::gen_keypair();
         let full_id = FullId::with_keys(encrypt_keys.clone(), sign_keys.clone());
-        let mut routing_client;
+        let mut client;
 
         // Try to connect the client to the network. If it fails, it probably means
         // the network isn't fully formed yet, so we restart and try again.
         'outer: loop {
-            routing_client = unwrap!(Client::new(sender.clone(), Some(full_id.clone())));
+            client = unwrap!(Client::new(sender.clone(), Some(full_id.clone()), None));
 
             for event in receiver.iter() {
                 match event {
@@ -70,116 +102,87 @@ impl ExampleClient {
         }
 
         ExampleClient {
-            routing_client: routing_client,
+            client: client,
             receiver: receiver,
             full_id: full_id,
         }
     }
 
-    /// Send a `Get` request to the network and return the data received in the response.
+    /// Send a `GetIData` request to the network and return the data received in
+    /// the response.
     ///
     /// This is a blocking call and will wait indefinitely for the response.
-    pub fn get(&mut self, request: DataIdentifier) -> Option<Data> {
-        let message_id = MessageId::new();
-        unwrap!(self.routing_client
-                    .send_get_request(Authority::NaeManager(*request.name()),
-                                      request,
-                                      message_id));
-
-        // Wait for Get success event from Routing
-        loop {
-            match recv_with_timeout(&self.receiver, Duration::from_secs(RESPONSE_TIMEOUT_SECS)) {
-                Some(Event::Response { response: Response::GetSuccess(data, id), .. }) => {
-                    if message_id != id {
-                        error!("GetSuccess for {:?}, but with wrong message_id {:?} instead of \
-                                {:?}.",
-                               data.name(),
-                               id,
-                               message_id);
-                    }
-                    return Some(data);
-                }
-                Some(Event::Response {
-                         response: Response::GetFailure { external_error_indicator, .. }, ..
-                     }) => {
-                    error!("Failed to Get {:?}: {:?}",
-                           request.name(),
-                           unwrap!(String::from_utf8(external_error_indicator)));
-                    return None;
-                }
-                Some(Event::Terminate) |
-                Some(Event::RestartRequired) => self.disconnected(),
-                Some(_) => (),
-                None => return None,
-            }
-        }
+    #[allow(unused)]
+    pub fn get_idata(&mut self, name: XorName) -> Result<ImmutableData, ClientError> {
+        let msg_id = MessageId::new();
+        unwrap!(self.client
+                    .get_idata(Authority::NaeManager(name), name, msg_id));
+        recv_response!(self, GetIData, name, msg_id)
     }
 
-    /// Send a `Put` request to the network.
+    /// Send a `PutIData` request to the network.
     ///
-    /// This is a blocking call and will wait indefinitely for a `PutSuccess` or `PutFailure`
-    /// response.
-    pub fn put(&self, data: Data) -> Result<(), ()> {
-        let data_id = data.identifier();
-        let message_id = MessageId::new();
-        unwrap!(self.routing_client
-                    .send_put_request(Authority::ClientManager(*self.name()),
-                                      data,
-                                      message_id));
+    /// This is a blocking call and will wait indefinitely for a response.
+    #[allow(unused)]
+    pub fn put_idata(&mut self, data: ImmutableData) -> Result<(), ClientError> {
+        let dst = Authority::ClientManager(*self.name());
+        let name = *data.name();
+        let msg_id = MessageId::new();
+        unwrap!(self.client.put_idata(dst, data, msg_id));
+        recv_response!(self, PutMData, name, msg_id)
+    }
 
-        // Wait for Put success event from Routing
-        loop {
-            match recv_with_timeout(&self.receiver, Duration::from_secs(RESPONSE_TIMEOUT_SECS)) {
-                Some(Event::Response {
-                         response: Response::PutSuccess(rec_data_id, id), ..
-                     }) => {
-                    if message_id != id {
-                        error!("Stored {:?}, but with wrong message_id {:?} instead of {:?}.",
-                               data_id.name(),
-                               id,
-                               message_id);
-                        return Err(());
-                    } else if data_id == rec_data_id {
-                        trace!("Successfully stored {:?}", data_id.name());
-                        return Ok(());
-                    } else {
-                        error!("Stored {:?}, but with wrong name {:?}.",
-                               data_id.name(),
-                               rec_data_id.name());
-                        return Err(());
-                    }
-                }
-                Some(Event::Response { response: Response::PutFailure { .. }, .. }) => {
-                    error!("Received PutFailure for {:?}.", data_id.name());
-                    return Err(());
-                }
-                Some(Event::Terminate) |
-                Some(Event::RestartRequired) => self.disconnected(),
-                Some(_) => (),
-                None => return Err(()),
-            }
-        }
+    /// Send a `GetMDataShell` request to the network and return the data received in
+    /// the response.
+    ///
+    /// This is a blocking call and will wait indefinitely for the response.
+    pub fn get_mdata_shell(&mut self, name: XorName, tag: u64) -> Result<MutableData, ClientError> {
+        let msg_id = MessageId::new();
+        unwrap!(self.client
+                    .get_mdata_shell(Authority::NaeManager(name), name, tag, msg_id));
+        recv_response!(self, GetMDataShell, name, msg_id)
+    }
+
+    /// Send a `ListMDataEntries` request to the network and return the data received in
+    /// the response.
+    ///
+    /// This is a blocking call and will wait indefinitely for the response.
+    pub fn list_mdata_entries(&mut self,
+                              name: XorName,
+                              tag: u64)
+                              -> Result<BTreeMap<Vec<u8>, Value>, ClientError> {
+        let msg_id = MessageId::new();
+        unwrap!(self.client
+                    .list_mdata_entries(Authority::NaeManager(name), name, tag, msg_id));
+        recv_response!(self, ListMDataEntries, name, msg_id)
+    }
+
+    /// Send a `PutMData` request to the network.
+    ///
+    /// This is a blocking call and will wait indefinitely for a response.
+    pub fn put_mdata(&mut self, data: MutableData) -> Result<(), ClientError> {
+        let dst = Authority::ClientManager(*self.name());
+        let name = *data.name();
+        let tag = data.tag();
+        let msg_id = MessageId::new();
+        let requester = *self.signing_public_key();
+
+        unwrap!(self.client.put_mdata(dst, data, msg_id, requester));
+        recv_response!(self, PutMData, (name, tag), msg_id)
     }
 
     fn disconnected(&self) {
         panic!("Disconnected from the network.");
     }
 
-    /// Post data onto the network.
-    #[allow(unused)]
-    pub fn post(&self) {
-        unimplemented!()
-    }
-
-    /// Delete data from the network.
-    #[allow(unused)]
-    pub fn delete(&self) {
-        unimplemented!()
-    }
-
-    /// Return network name.
+    /// Returns network name.
     pub fn name(&self) -> &XorName {
         self.full_id.public_id().name()
+    }
+
+    /// Returns the signing public key of this client.
+    pub fn signing_public_key(&self) -> &crypto::sign::PublicKey {
+        self.full_id.public_id().signing_public_key()
     }
 }
 
@@ -188,22 +191,3 @@ impl Default for ExampleClient {
         ExampleClient::new()
     }
 }
-
-fn recv_with_timeout<T>(rx: &Receiver<T>, timeout: Duration) -> Option<T> {
-    let start = Instant::now();
-    let wait = Duration::from_millis(100);
-
-    loop {
-        match rx.try_recv() {
-            Ok(value) => return Some(value),
-            Err(TryRecvError::Empty) => thread::sleep(wait),
-            Err(TryRecvError::Disconnected) => return None,
-        }
-
-        if Instant::now() - start > timeout {
-            warn!("Timed out.");
-            return None;
-        }
-    }
-}
-*/

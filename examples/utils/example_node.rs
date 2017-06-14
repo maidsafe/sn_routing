@@ -15,14 +15,10 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-// TODO: uncomment and fix
-/*
-
-use super::MIN_SECTION_SIZE;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-use routing::{Authority, Data, DataIdentifier, Event, EventStream, MessageId, Node, Prefix,
-              Request, Response, XorName};
+use routing::{Authority, ClientError, Event, EventStream, ImmutableData, MessageId, MutableData,
+              Node, Prefix, Request, Response, XorName};
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -30,23 +26,23 @@ use std::time::Duration;
 pub struct ExampleNode {
     /// The node interface to the Routing library.
     node: Node,
-    /// A map of the data chunks this node is storing.
-    db: HashMap<DataIdentifier, Data>,
+    idata_store: HashMap<XorName, ImmutableData>,
+    mdata_store: HashMap<(XorName, u64), MutableData>,
     client_accounts: HashMap<XorName, u64>,
-    /// A cache that contains the data necessary to respond with a `PutSuccess` to a `Client`.
-    put_request_cache: LruCache<MessageId, (Authority<XorName>, Authority<XorName>)>,
+    request_cache: LruCache<MessageId, (Authority<XorName>, Authority<XorName>)>,
 }
 
 impl ExampleNode {
     /// Creates a new node and attempts to establish a connection to the network.
     pub fn new(first: bool) -> ExampleNode {
-        let node = unwrap!(Node::builder().first(first).create(MIN_SECTION_SIZE));
+        let node = unwrap!(Node::builder().first(first).create());
 
         ExampleNode {
             node: node,
-            db: HashMap::new(),
+            idata_store: HashMap::new(),
+            mdata_store: HashMap::new(),
             client_accounts: HashMap::new(),
-            put_request_cache: LruCache::with_expiry_duration(Duration::from_secs(60 * 10)),
+            request_cache: LruCache::with_expiry_duration(Duration::from_secs(60 * 10)),
         }
     }
 
@@ -76,7 +72,7 @@ impl ExampleNode {
                 }
                 Event::RestartRequired => {
                     info!("{} Received RestartRequired event", self.get_debug_name());
-                    self.node = unwrap!(Node::builder().create(MIN_SECTION_SIZE));
+                    self.node = unwrap!(Node::builder().create());
                 }
                 Event::SectionSplit(prefix) => {
                     trace!("{} Received SectionSplit event {:?}",
@@ -103,30 +99,23 @@ impl ExampleNode {
                       src: Authority<XorName>,
                       dst: Authority<XorName>) {
         match request {
-            Request::Get(data_id, id) => {
-                self.handle_get_request(data_id, id, src, dst);
+            Request::Refresh(payload, msg_id) => self.handle_refresh(payload, msg_id),
+            Request::GetIData { name, msg_id } => {
+                self.handle_get_idata_request(src, dst, name, msg_id)
             }
-            Request::Put(data, id) => {
-                self.handle_put_request(data, id, src, dst);
+            Request::PutIData { data, msg_id } => {
+                self.handle_put_idata_request(src, dst, data, msg_id)
             }
-            Request::Post(..) => {
-                warn!("{:?} ExampleNode: Post unimplemented.",
-                      self.get_debug_name());
+            Request::GetMDataShell { name, tag, msg_id } => {
+                self.handle_get_mdata_shell_request(src, dst, name, tag, msg_id)
             }
-            Request::Delete(..) => {
-                warn!("{:?} ExampleNode: Delete unimplemented.",
-                      self.get_debug_name());
+            Request::ListMDataEntries { name, tag, msg_id } => {
+                self.handle_list_mdata_entries_request(src, dst, name, tag, msg_id)
             }
-            Request::GetAccountInfo(..) => {
-                warn!("{:?} ExampleNode: GetAccountInfo unimplemented.",
-                      self.get_debug_name());
-            }
-            Request::Refresh(content, id) => {
-                self.handle_refresh(content, id);
-            }
-            Request::Append(_, _) => {
-                warn!("{:?} ExampleNode: Append unimplemented.",
-                      self.get_debug_name());
+            _ => {
+                warn!("{:?} ExampleNode: handle for {:?} unimplemented.",
+                      self.get_debug_name(),
+                      request);
             }
         }
     }
@@ -136,67 +125,125 @@ impl ExampleNode {
                        _src: Authority<XorName>,
                        dst: Authority<XorName>) {
         match (response, dst) {
-            (Response::PutSuccess(data_id, id), Authority::ClientManager(_name)) => {
-                if let Some((src, dst)) = self.put_request_cache.remove(&id) {
-                    unwrap!(self.node.send_put_success(src, dst, data_id, id));
+            (Response::PutIData { res, msg_id }, Authority::ClientManager(_)) => {
+                if let Some((src, dst)) = self.request_cache.remove(&msg_id) {
+                    unwrap!(self.node.send_put_idata_response(src, dst, res, msg_id));
+                }
+            }
+            (Response::PutMData { res, msg_id }, Authority::ClientManager(_)) => {
+                if let Some((src, dst)) = self.request_cache.remove(&msg_id) {
+                    unwrap!(self.node.send_put_mdata_response(src, dst, res, msg_id));
                 }
             }
             _ => unreachable!(),
         }
     }
 
-    fn handle_get_request(&mut self,
-                          data_id: DataIdentifier,
-                          id: MessageId,
-                          src: Authority<XorName>,
-                          dst: Authority<XorName>) {
+    fn handle_get_idata_request(&mut self,
+                                src: Authority<XorName>,
+                                dst: Authority<XorName>,
+                                name: XorName,
+                                msg_id: MessageId) {
         match (src, dst) {
             (src @ Authority::Client { .. }, dst @ Authority::NaeManager(_)) => {
-                if let Some(data) = self.db.get(&data_id) {
-                    unwrap!(self.node.send_get_success(dst, src, data.clone(), id))
+                let res = if let Some(data) = self.idata_store.get(&name) {
+                    Ok(data.clone())
                 } else {
-                    trace!("{:?} GetDataRequest failed for {:?}.",
+                    trace!("{:?} GetIData request failed for {:?}.",
                            self.get_debug_name(),
-                           data_id.name());
-                    let text = "Data not found".to_owned().into_bytes();
-                    unwrap!(self.node.send_get_failure(dst, src, data_id, text, id));
-                    return;
-                }
+                           name);
+                    Err(ClientError::NoSuchData)
+                };
+
+                unwrap!(self.node.send_get_idata_response(dst, src, res, msg_id))
             }
             (src, dst) => unreachable!("Wrong Src and Dest Authority {:?} - {:?}", src, dst),
         }
     }
 
-    fn handle_put_request(&mut self,
-                          data: Data,
-                          id: MessageId,
-                          src: Authority<XorName>,
-                          dst: Authority<XorName>) {
+    fn handle_put_idata_request(&mut self,
+                                src: Authority<XorName>,
+                                dst: Authority<XorName>,
+                                data: ImmutableData,
+                                msg_id: MessageId) {
         match dst {
             Authority::NaeManager(_) => {
                 trace!("{:?} Storing : key {:?}, value {:?}",
                        self.get_debug_name(),
                        data.name(),
                        data);
+                let _ = self.idata_store.insert(*data.name(), data);
                 let _ = self.node
-                    .send_put_success(dst, src, data.identifier(), id);
-                let _ = self.db.insert(data.identifier(), data);
+                    .send_put_idata_response(dst, src, Ok(()), msg_id);
             }
             Authority::ClientManager(_) => {
                 trace!("{:?} Put Request: Updating ClientManager: key {:?}, value {:?}",
                        self.get_debug_name(),
                        data.name(),
                        data);
-                {
+                if self.request_cache.insert(msg_id, (dst, src)).is_none() {
                     let src = dst;
                     let dst = Authority::NaeManager(*data.name());
-                    unwrap!(self.node.send_put_request(src, dst, data, id));
+                    unwrap!(self.node.send_put_idata_request(src, dst, data, msg_id));
+                } else {
+                    warn!("Attempt to reuse message ID {:?}.", msg_id);
+                    unwrap!(self.node
+                                .send_put_idata_response(dst,
+                                                         src,
+                                                         Err(ClientError::InvalidOperation),
+                                                         msg_id));
                 }
-                if self.put_request_cache.insert(id, (dst, src)).is_some() {
-                    warn!("Overwrote message {:?} in put_request_cache.", id);
-                }
+
             }
             _ => unreachable!("ExampleNode: Unexpected dst ({:?})", dst),
+        }
+    }
+
+    fn handle_get_mdata_shell_request(&mut self,
+                                      src: Authority<XorName>,
+                                      dst: Authority<XorName>,
+                                      name: XorName,
+                                      tag: u64,
+                                      msg_id: MessageId) {
+        match (src, dst) {
+            (src @ Authority::Client { .. }, dst @ Authority::NaeManager(_)) => {
+                let res = if let Some(data) = self.mdata_store.get(&(name, tag)) {
+                    Ok(data.shell())
+                } else {
+                    trace!("{:?} GetMDataShell request failed for {:?}.",
+                           self.get_debug_name(),
+                           (name, tag));
+                    Err(ClientError::NoSuchData)
+                };
+
+                unwrap!(self.node
+                            .send_get_mdata_shell_response(dst, src, res, msg_id))
+            }
+            (src, dst) => unreachable!("Wrong Src and Dest Authority {:?} - {:?}", src, dst),
+        }
+    }
+
+    fn handle_list_mdata_entries_request(&mut self,
+                                         src: Authority<XorName>,
+                                         dst: Authority<XorName>,
+                                         name: XorName,
+                                         tag: u64,
+                                         msg_id: MessageId) {
+        match (src, dst) {
+            (src @ Authority::Client { .. }, dst @ Authority::NaeManager(_)) => {
+                let res = if let Some(data) = self.mdata_store.get(&(name, tag)) {
+                    Ok(data.entries().clone())
+                } else {
+                    trace!("{:?} ListMDataEntries request failed for {:?}.",
+                           self.get_debug_name(),
+                           (name, tag));
+                    Err(ClientError::NoSuchData)
+                };
+
+                unwrap!(self.node
+                            .send_list_mdata_entries_response(dst, src, res, msg_id))
+            }
+            (src, dst) => unreachable!("Wrong Src and Dest Authority {:?} - {:?}", src, dst),
         }
     }
 
@@ -214,37 +261,51 @@ impl ExampleNode {
             let _ = self.client_accounts.remove(client);
         }
 
-        let deleted_data: Vec<_> = self.db
+        let deleted_data: Vec<_> = self.idata_store
             .iter()
-            .filter(|&(data_id, _)| !prefix.matches(data_id.name()))
-            .map(|(data_id, _)| *data_id)
+            .filter(|&(name, _)| !prefix.matches(name))
+            .map(|(name, _)| *name)
             .collect();
-        for data_id in &deleted_data {
-            let _ = self.db.remove(data_id);
+        for id in &deleted_data {
+            let _ = self.idata_store.remove(id);
+        }
+
+        let deleted_data: Vec<_> = self.mdata_store
+            .iter()
+            .filter(|&(&(ref name, _), _)| !prefix.matches(name))
+            .map(|(id, _)| *id)
+            .collect();
+        for id in &deleted_data {
+            let _ = self.mdata_store.remove(id);
         }
     }
 
-    fn send_refresh(&mut self, id: MessageId) {
+    fn send_refresh(&mut self, msg_id: MessageId) {
         for (client_name, stored) in &self.client_accounts {
-            let refresh_content = RefreshContent::Client {
+            let content = RefreshContent::Account {
                 client_name: *client_name,
                 data: *stored,
             };
-
-            let content = unwrap!(serialise(&refresh_content));
-
+            let content = unwrap!(serialise(&content));
             let auth = Authority::ClientManager(*client_name);
-            unwrap!(self.node.send_refresh_request(auth, auth, content, id));
+            unwrap!(self.node
+                        .send_refresh_request(auth, auth, content, msg_id));
         }
 
-        for (data_id, data) in &self.db {
-            let refresh_content = RefreshContent::NaeManager {
-                data_id: *data_id,
-                data: data.clone(),
-            };
+        for (_, data) in &self.idata_store {
+            let refresh_content = RefreshContent::ImmutableData(data.clone());
             let content = unwrap!(serialise(&refresh_content));
             let auth = Authority::NaeManager(*data.name());
-            unwrap!(self.node.send_refresh_request(auth, auth, content, id));
+            unwrap!(self.node
+                        .send_refresh_request(auth, auth, content, msg_id));
+        }
+
+        for (_, data) in &self.mdata_store {
+            let content = RefreshContent::MutableData(data.clone());
+            let content = unwrap!(serialise(&content));
+            let auth = Authority::NaeManager(*data.name());
+            unwrap!(self.node
+                        .send_refresh_request(auth, auth, content, msg_id));
         }
     }
 
@@ -252,17 +313,24 @@ impl ExampleNode {
     /// the section agree, so we need to update our data accordingly.
     fn handle_refresh(&mut self, content: Vec<u8>, _id: MessageId) {
         match unwrap!(deserialise(&content)) {
-            RefreshContent::Client { client_name, data } => {
-                trace!("{:?} handle_refresh for ClientManager. client - {:?}",
+            RefreshContent::Account { client_name, data } => {
+                trace!("{:?} handle_refresh for account. client name: {:?}",
                        self.get_debug_name(),
                        client_name);
                 let _ = self.client_accounts.insert(client_name, data);
             }
-            RefreshContent::NaeManager { data_id, data } => {
-                trace!("{:?} handle_refresh for NaeManager. data - {:?}",
+            RefreshContent::ImmutableData(data) => {
+                trace!("{:?} handle_refresh for immutable data. name: {:?}",
                        self.get_debug_name(),
-                       data_id);
-                let _ = self.db.insert(data_id, data);
+                       data.name());
+                let _ = self.idata_store.insert(*data.name(), data);
+            }
+            RefreshContent::MutableData(data) => {
+                trace!("{:?} handle_refresh for mutable data. name: {:?}, tag: {}",
+                       self.get_debug_name(),
+                       data.name(),
+                       data.tag());
+                let _ = self.mdata_store.insert((*data.name(), data.tag()), data);
             }
         }
     }
@@ -280,13 +348,8 @@ impl ExampleNode {
 
 /// Refresh messages.
 #[derive(Serialize, Deserialize)]
-// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
 enum RefreshContent {
-    /// A message to a `ClientManager` to insert a new client.
-    Client { client_name: XorName, data: u64 },
-    /// A message to an `NaeManager` to add a new data chunk.
-    NaeManager { data_id: DataIdentifier, data: Data },
+    Account { client_name: XorName, data: u64 },
+    ImmutableData(ImmutableData),
+    MutableData(MutableData),
 }
-
-*/
