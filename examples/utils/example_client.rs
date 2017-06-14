@@ -136,6 +136,7 @@ impl ExampleClient {
     /// the response.
     ///
     /// This is a blocking call and will wait indefinitely for the response.
+    #[allow(unused)]
     pub fn get_mdata_shell(&mut self, name: XorName, tag: u64) -> Result<MutableData, ClientError> {
         let msg_id = MessageId::new();
         unwrap!(self.client
@@ -147,6 +148,7 @@ impl ExampleClient {
     /// the response.
     ///
     /// This is a blocking call and will wait indefinitely for the response.
+    #[allow(unused)]
     pub fn list_mdata_entries(&mut self,
                               name: XorName,
                               tag: u64)
@@ -155,6 +157,22 @@ impl ExampleClient {
         unwrap!(self.client
                     .list_mdata_entries(Authority::NaeManager(name), name, tag, msg_id));
         recv_response!(self, ListMDataEntries, name, msg_id)
+    }
+
+    /// Send a `GetMDataValue` request to the network and return the data received in
+    /// the response.
+    ///
+    /// This is a blocking call and will wait indefinitely for the response.
+    #[allow(unused)]
+    pub fn get_mdata_value(&mut self,
+                           name: XorName,
+                           tag: u64,
+                           key: Vec<u8>)
+                           -> Result<Value, ClientError> {
+        let msg_id = MessageId::new();
+        unwrap!(self.client
+                    .get_mdata_value(Authority::NaeManager(name), name, tag, key, msg_id));
+        recv_response!(self, GetMDataValue, name, msg_id)
     }
 
     /// Send a `PutMData` request to the network.

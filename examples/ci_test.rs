@@ -66,7 +66,7 @@ mod unnamed {
     use maidsafe_utilities::thread::named as thread_named;
     use rand::{Rng, ThreadRng, random, thread_rng};
     use rand::distributions::{IndependentSample, Range};
-    use routing::{MutableData, Value};
+    use routing::{MIN_SECTION_SIZE, MutableData, Value};
     use rust_sodium::crypto::sign;
     use std::{env, io, thread};
     use std::collections::BTreeMap;
@@ -77,7 +77,7 @@ mod unnamed {
     use std::sync::{Arc, Condvar, Mutex};
     use std::time::Duration;
     use term::{self, color};
-    use utils::{ExampleClient, ExampleNode, MIN_SECTION_SIZE};
+    use utils::{ExampleClient, ExampleNode};
 
     const CHURN_MIN_WAIT_SEC: u64 = 20;
     const CHURN_MAX_WAIT_SEC: u64 = 30;

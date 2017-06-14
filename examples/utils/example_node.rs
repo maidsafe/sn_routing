@@ -112,6 +112,12 @@ impl ExampleNode {
             Request::ListMDataEntries { name, tag, msg_id } => {
                 self.handle_list_mdata_entries_request(src, dst, name, tag, msg_id)
             }
+            Request::GetMDataValue {
+                name,
+                tag,
+                key,
+                msg_id,
+            } => self.handle_get_mdata_value_request(src, dst, name, tag, key, msg_id),
             _ => {
                 warn!("{:?} ExampleNode: handle for {:?} unimplemented.",
                       self.get_debug_name(),
@@ -247,6 +253,33 @@ impl ExampleNode {
         }
     }
 
+    fn handle_get_mdata_value_request(&mut self,
+                                      src: Authority<XorName>,
+                                      dst: Authority<XorName>,
+                                      name: XorName,
+                                      tag: u64,
+                                      key: Vec<u8>,
+                                      msg_id: MessageId) {
+        match (src, dst) {
+            (src @ Authority::Client { .. }, dst @ Authority::NaeManager(_)) => {
+                let res = self.mdata_store
+                    .get(&(name, tag))
+                    .ok_or(ClientError::NoSuchData)
+                    .and_then(|data| data.get(&key).cloned().ok_or(ClientError::NoSuchEntry))
+                    .map_err(|error| {
+                                 trace!("{:?} GetMDataValue request failed for {:?}.",
+                                        self.get_debug_name(),
+                                        (name, tag));
+                                 error
+                             });
+
+                unwrap!(self.node
+                            .send_get_mdata_value_response(dst, src, res, msg_id))
+            }
+            (src, dst) => unreachable!("Wrong Src and Dest Authority {:?} - {:?}", src, dst),
+        }
+    }
+
     fn handle_node_added(&mut self, name: XorName) {
         self.send_refresh(MessageId::from_added_node(name));
     }
@@ -292,7 +325,7 @@ impl ExampleNode {
                         .send_refresh_request(auth, auth, content, msg_id));
         }
 
-        for (_, data) in &self.idata_store {
+        for data in self.idata_store.values() {
             let refresh_content = RefreshContent::ImmutableData(data.clone());
             let content = unwrap!(serialise(&refresh_content));
             let auth = Authority::NaeManager(*data.name());
@@ -300,7 +333,7 @@ impl ExampleNode {
                         .send_refresh_request(auth, auth, content, msg_id));
         }
 
-        for (_, data) in &self.mdata_store {
+        for data in self.mdata_store.values() {
             let content = RefreshContent::MutableData(data.clone());
             let content = unwrap!(serialise(&content));
             let auth = Authority::NaeManager(*data.name());
