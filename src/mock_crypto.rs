@@ -17,11 +17,10 @@
 
 //! Mock cryptographic primitives.
 //!
-//! These primitives are designed to be very fast (several times faster than the
-//! real ones), but they are NOT secure. They are supposed to be used for testing
-//! only.
+//! These primitives are designed to be very fast (several times faster than the real ones), but
+//! they are NOT secure. They are supposed to be used for testing only.
 
-/// Mock version of a subset of the rust_sodium crate.
+/// Mock version of a subset of the `rust_sodium` crate.
 pub mod rust_sodium {
     use rand::{Rng, SeedableRng, XorShiftRng};
     use std::cell::RefCell;
@@ -30,13 +29,13 @@ pub mod rust_sodium {
         static RNG: RefCell<XorShiftRng> = RefCell::new(XorShiftRng::new_unseeded());
     }
 
-    /// Initialize mock rust_sodium.
+    /// Initialise mock `rust_sodium`.
     pub fn init() -> bool {
         true
     }
 
-    /// Initialize mock rust_sodium with the given random number generator.
-    /// This can be used to guarantee reproducible test results.
+    /// Initialise mock `rust_sodium` with the given random number generator. This can be used to
+    /// guarantee reproducible test results.
     pub fn init_with_rng<T: Rng>(other: &mut T) -> Result<(), i32> {
         RNG.with(|rng| rng.borrow_mut().reseed(other.gen()));
         Ok(())
@@ -58,8 +57,8 @@ pub mod rust_sodium {
             pub const SIGNATUREBYTES: usize = 32;
 
             /// Mock signing public key.
-            #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq,
-                     PartialOrd, Serialize)]
+            #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd,
+                     Serialize)]
             pub struct PublicKey(pub [u8; PUBLICKEYBYTES]);
 
             impl Index<RangeFull> for PublicKey {
@@ -74,8 +73,8 @@ pub mod rust_sodium {
             pub struct SecretKey(pub [u8; SECRETKEYBYTES]);
 
             /// Mock signature.
-            #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, Serialize,
-                     PartialEq, PartialOrd)]
+            #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, Serialize, PartialEq,
+                     PartialOrd)]
             pub struct Signature(pub [u8; SIGNATUREBYTES]);
 
             impl AsRef<[u8]> for Signature {
@@ -99,8 +98,7 @@ pub mod rust_sodium {
                 Signature(hash256(&temp))
             }
 
-            /// Verify the mock signature against the message and the signer's mock
-            /// public key.
+            /// Verify the mock signature against the message and the signer's mock public key.
             pub fn verify_detached(signature: &Signature, m: &[u8], pk: &PublicKey) -> bool {
                 let mut temp = m.to_vec();
                 temp.extend(&pk.0);
@@ -118,7 +116,7 @@ pub mod rust_sodium {
             use super::super::with_rng;
             use rand::Rng;
 
-            /// Number of bytes in a 'PublicKey`.
+            /// Number of bytes in a `PublicKey`.
             pub const PUBLICKEYBYTES: usize = 32;
             /// Number of bytes in a `SecretKey`.
             pub const SECRETKEYBYTES: usize = 32;
@@ -126,8 +124,8 @@ pub mod rust_sodium {
             pub const NONCEBYTES: usize = 4;
 
             /// Mock public key for asymmetric encryption/decryption.
-            #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq,
-                     PartialOrd, Serialize)]
+            #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd,
+                     Serialize)]
             pub struct PublicKey(pub [u8; PUBLICKEYBYTES]);
 
             /// Mock secret key for asymmetric encryption/decryption.
@@ -150,8 +148,8 @@ pub mod rust_sodium {
                 with_rng(|rng| Nonce(rng.gen()))
             }
 
-            /// Perform mock encryption of the given message using their public key,
-            /// our secret key and nonce.
+            /// Perform mock encryption of the given message using their public key, our secret key
+            /// and nonce.
             pub fn seal(m: &[u8], nonce: &Nonce, pk: &PublicKey, sk: &SecretKey) -> Vec<u8> {
                 let mut result = Vec::with_capacity(m.len() + nonce.0.len() + pk.0.len() +
                                                     sk.0.len());
@@ -162,8 +160,8 @@ pub mod rust_sodium {
                 result
             }
 
-            /// Perform mock decryption of the given ciphertext using their secret key,
-            /// our public key and nonce.
+            /// Perform mock decryption of the given ciphertext using their secret key, our public
+            /// key and nonce.
             pub fn open(c: &[u8],
                         nonce: &Nonce,
                         pk: &PublicKey,
@@ -185,7 +183,7 @@ pub mod rust_sodium {
                     return Err(());
                 }
 
-                return Ok(c[n + p + s..].to_vec());
+                Ok(c[n + p + s..].to_vec())
             }
         }
     }

@@ -37,9 +37,9 @@ script:
       (
         set -x;
         cargo clippy &&
-        cargo clippy --features=use-mock-crust &&
+        cargo clippy --features="$TEST_FEATURES" &&
         cargo clippy --profile=test &&
-        cargo clippy --profile=test --features=use-mock-crust
+        cargo clippy --profile=test --features="$TEST_FEATURES"
       );
     fi
 before_cache:
