@@ -1443,6 +1443,14 @@ impl Node {
             return;
         }
 
+        if !self.peer_mgr.can_accept_client() {
+            debug!("{:?} Client {:?} rejected: We cannot accept more clients.",
+                   self,
+                   pub_id);
+            self.send_direct_message(pub_id, DirectMessage::BootstrapDeny);
+            return;
+        }
+
         let peer_state = if client_restriction {
             debug!("{:?} Accepted Client {}.", self, pub_id);
             PeerState::Client
