@@ -2970,12 +2970,15 @@ impl Node {
         // NOTE: If we do not have this peer in peer_mgr, `get_connection_token`
         // will flag them to `valid`
         self.peer_mgr.set_peer_valid(&their_public_id, true);
-        if let Some(&PeerState::Connected(_)) =
-            self.peer_mgr
-                .get_peer(&their_public_id)
-                .map(Peer::state) {
-            self.add_to_routing_table(&their_public_id, outbox);
-            return Ok(());
+        match self.peer_mgr
+                  .get_peer(&their_public_id)
+                  .map(Peer::state) {
+            Some(&PeerState::Connected(_)) |
+            Some(&PeerState::Candidate(_)) => {
+                self.add_to_routing_table(&their_public_id, outbox);
+                return Ok(());
+            }
+            _ => (),
         }
 
         // This will insert the peer if peer is not in peer_mgr and flag them to `valid`
