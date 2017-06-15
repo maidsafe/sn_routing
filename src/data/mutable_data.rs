@@ -30,9 +30,6 @@ pub const MAX_MUTABLE_DATA_SIZE_IN_BYTES: u64 = 1024 * 1024;
 /// Maximum allowed entries in `MutableData`
 pub const MAX_MUTABLE_DATA_ENTRIES: u64 = 100;
 
-/// Manimum number of entries that can be mutated simulaneously.
-pub const MAX_MUTABLE_DATA_ENTRY_ACTIONS: u64 = 10;
-
 /// Mutable data.
 #[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, Serialize, Deserialize)]
 pub struct MutableData {
@@ -307,10 +304,6 @@ impl MutableData {
                           actions: BTreeMap<Vec<u8>, EntryAction>,
                           requester: PublicKey)
                           -> Result<(), ClientError> {
-        if actions.len() > MAX_MUTABLE_DATA_ENTRY_ACTIONS as usize {
-            return Err(ClientError::TooManyEntries);
-        }
-
         // Deconstruct actions into inserts, updates, and deletes
         let (insert, update, delete) = actions
             .into_iter()
