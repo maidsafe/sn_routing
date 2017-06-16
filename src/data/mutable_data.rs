@@ -712,16 +712,16 @@ mod tests {
             entry_version: 0,
         };
 
-        // It must not be possible to create MutableData with more than 101 entries
+        // It must not be possible to create MutableData whose number of entries exceeds the limit.
         let mut data = BTreeMap::new();
-        for i in 0..MAX_MUTABLE_DATA_ENTRIES + 5 {
+        for i in 0..MAX_MUTABLE_DATA_ENTRIES + 1 {
             let _ = data.insert(vec![i as u8], val.clone());
         }
         assert_err!(MutableData::new(rand::random(), 0, BTreeMap::new(), data, BTreeSet::new()),
                     ClientError::TooManyEntries);
 
         let mut data = BTreeMap::new();
-        for i in 0..MAX_MUTABLE_DATA_ENTRIES {
+        for i in 0..MAX_MUTABLE_DATA_ENTRIES - 1 {
             let _ = data.insert(vec![i as u8], val.clone());
         }
 
@@ -729,14 +729,19 @@ mod tests {
         let owners = iter::once(owner).collect();
         let mut md = unwrap!(MutableData::new(rand::random(), 0, BTreeMap::new(), data, owners));
 
+        // Reach the limit.
+        let actions = iter::once((vec![99u8], EntryAction::Ins(val.clone()))).collect();
+        unwrap!(md.mutate_entries(actions, owner));
+
         assert_eq!(md.keys().len(), MAX_MUTABLE_DATA_ENTRIES as usize);
         assert_eq!(md.values().len(), MAX_MUTABLE_DATA_ENTRIES as usize);
         assert_eq!(md.entries().len(), MAX_MUTABLE_DATA_ENTRIES as usize);
 
-        // Try to get over the limit
+        // Try to get over the limit.
         let actions = iter::once((vec![100u8], EntryAction::Ins(val.clone()))).collect();
         assert_err!(md.mutate_entries(actions, owner),
                     ClientError::TooManyEntries);
+
 
         let actions = iter::once((vec![0u8], EntryAction::Del(1))).collect();
         unwrap!(md.mutate_entries(actions, owner));
@@ -754,7 +759,7 @@ mod tests {
             entry_version: 0,
         };
 
-        // It must not be possible to create MutableData with size of more than 1 MiB
+        // It must not be possible to create MutableData that exceeds the size limit.
         let mut data = BTreeMap::new();
         let _ = data.insert(vec![0], big_val.clone());
         let _ = data.insert(vec![1], small_val.clone());
