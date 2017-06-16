@@ -30,8 +30,9 @@ use itertools::Itertools;
 use log::LogLevel;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation;
-use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, Message, MessageContent,
-               RoutingMessage, SectionList, SignedMessage, UserMessage, UserMessageCache};
+use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, MAX_PARTS, MAX_PART_LEN, Message,
+               MessageContent, RoutingMessage, SectionList, SignedMessage, UserMessage,
+               UserMessageCache};
 use outbox::{EventBox, EventBuf};
 use peer_manager::{ConnectionInfoPreparedResult, Peer, PeerManager, PeerState, ReconnectingPeer,
                    RoutingConnection, SectionMap};
@@ -1367,9 +1368,18 @@ impl Node {
     /// Returns `Ok` if a client is allowed to send the given message.
     fn check_valid_client_message(&self, msg: &RoutingMessage) -> Result<(), RoutingError> {
         match (&msg.src, &msg.content) {
-            (&Authority::Client { .. }, &MessageContent::Ack(..)) => Ok(()),
-            (&Authority::Client { .. }, &MessageContent::UserMessagePart { priority, .. })
+            (&Authority::Client { .. }, &MessageContent::Ack(_ack, priority))
                 if priority >= DEFAULT_PRIORITY => Ok(()),
+            (&Authority::Client { .. },
+             &MessageContent::UserMessagePart {
+                  ref part_count,
+                  ref part_index,
+                  ref priority,
+                  ref payload,
+                  ..
+              }) if *part_count <= MAX_PARTS && part_index < part_count &&
+                  *priority >= DEFAULT_PRIORITY &&
+                  payload.len() <= MAX_PART_LEN => Ok(()),
             _ => {
                 debug!("{:?} Illegitimate client message {:?}. Refusing to relay.",
                        self,
