@@ -30,8 +30,9 @@ use itertools::Itertools;
 use log::LogLevel;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation;
-use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, Message, MessageContent,
-               RoutingMessage, SectionList, SignedMessage, UserMessage, UserMessageCache};
+use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, MAX_PARTS, MAX_PART_LEN, Message,
+               MessageContent, RoutingMessage, SectionList, SignedMessage, UserMessage,
+               UserMessageCache};
 use outbox::{EventBox, EventBuf};
 use peer_manager::{ConnectionInfoPreparedResult, Peer, PeerManager, PeerState, ReconnectingPeer,
                    RoutingConnection, SectionMap};
@@ -73,8 +74,6 @@ const SU_MAX_TIMEOUT_SECS: u64 = 300;
 const CANDIDATE_STATUS_INTERVAL_SECS: u64 = 60;
 /// Duration for which `OwnSectionMerge` messages are kept in the cache, in seconds.
 const MERGE_TIMEOUT_SECS: u64 = 300;
-/// Duration for which to hold the bootstrappers, in seconds.
-const BOOTSTRAPPER_HOLD_DUR_SECS: u64 = 300;
 
 pub struct Node {
     ack_mgr: AckManager,
@@ -117,8 +116,6 @@ pub struct Node {
     candidate_timer_token: Option<u64>,
     /// The timer token for displaying the current candidate status.
     candidate_status_token: Option<u64>,
-    /// Hold the kind of bootstrappers.
-    bootstrappers: LruCache<PublicId, CrustUser>,
     resource_prover: ResourceProver,
     joining_prefix: Prefix<XorName>,
 }
@@ -230,8 +227,6 @@ impl Node {
             our_merged_section: Default::default(),
             candidate_timer_token: None,
             candidate_status_token: None,
-            bootstrappers:
-                LruCache::with_expiry_duration(Duration::from_secs(BOOTSTRAPPER_HOLD_DUR_SECS)),
             resource_prover: ResourceProver::new(action_sender, timer, challenger_count),
             joining_prefix: Default::default(),
         }
@@ -458,15 +453,16 @@ impl Node {
                self,
                pub_id,
                peer_kind);
-        if let Some(peer) = self.bootstrappers.insert(pub_id, peer_kind) {
-            trace!("{:?} Replacing Bootstrapper {:?} who was previously registered as {:?}",
-                   self,
-                   pub_id,
-                   peer);
+        if peer_kind == CrustUser::Node && !self.crust_service.is_peer_whitelisted(&pub_id) {
+            warn!("{:?} {:?} is bootstrapping as a node, but is not in whitelist.",
+                  self,
+                  pub_id);
+            self.disconnect_peer(&pub_id, None);
+            return;
         }
         self.peer_mgr
             .insert_peer(Peer::new(pub_id,
-                                   PeerState::Connected(false),
+                                   PeerState::Bootstrapper(peer_kind),
                                    false,
                                    ReconnectingPeer::False));
     }
@@ -598,52 +594,26 @@ impl Node {
                              outbox: &mut EventBox)
                              -> Result<(), RoutingError> {
         use messages::DirectMessage::*;
+        if let Err(error) = self.check_direct_message_sender(&direct_message, &pub_id) {
+            self.disconnect_peer(&pub_id, Some(outbox));
+            return Err(error);
+        }
+
         match direct_message {
             MessageSignature(digest, sig) => self.handle_message_signature(digest, sig, pub_id)?,
             SectionListSignature(section_list, sig) => {
                 self.handle_section_list_signature(pub_id, section_list, sig)?
             }
-            ClientIdentify {
-                ref serialised_public_id,
-                ref signature,
-                client_restriction,
-            } => {
-                let drop = match self.bootstrappers.remove(&pub_id) {
-                    Some(kind) => {
-                        if kind == CrustUser::Client && client_restriction ||
-                           kind == CrustUser::Node && !client_restriction {
-                            false
-                        } else {
-                            debug!("{:?} Peer bootstrapped to us as {:?} but is sending messages \
-                                    as a with client_restriction: {}",
-                                   self,
-                                   kind,
-                                   client_restriction);
-                            true
-                        }
-                    }
-                    None => {
-                        debug!("{:?} No mention of peer {} as a bootstrapper", self, pub_id);
-                        true
-                    }
-                };
-                if drop {
-                    return Ok(self.disconnect_peer(&pub_id, Some(outbox)));
-                }
-
-                match verify_signed_public_id(serialised_public_id, signature) {
-                    Ok(signed_pub_id) if signed_pub_id == pub_id => {
-                        self.handle_client_identify(pub_id, client_restriction, outbox)
-                    }
-                    _ => {
-                        warn!("{:?} Invalid ClientIdentify received, dropping {}.",
-                              self,
-                              pub_id);
-                        self.disconnect_peer(&pub_id, Some(outbox));
-                    }
+            BootstrapRequest(signature) => {
+                if let Err(error) = self.handle_bootstrap_request(pub_id, signature, outbox) {
+                    warn!("{:?} Invalid BootstrapRequest received ({:?}), dropping {}.",
+                          self,
+                          error,
+                          pub_id);
+                    self.disconnect_peer(&pub_id, Some(outbox));
                 }
             }
-            CandidateIdentify {
+            CandidateInfo {
                 ref old_public_id,
                 ref new_public_id,
                 ref signature_using_old,
@@ -651,19 +621,19 @@ impl Node {
                 ref new_client_auth,
             } => {
                 if *new_public_id != pub_id {
-                    error!("{:?} CandidateIdentify(new_public_id: {}) does not match crust id {}.",
+                    error!("{:?} CandidateInfo(new_public_id: {}) does not match crust id {}.",
                            self,
                            new_public_id,
                            pub_id);
                     self.disconnect_peer(&pub_id, Some(outbox));
                     return Err(RoutingError::InvalidSource);
                 }
-                self.handle_candidate_identify(old_public_id,
-                                               &pub_id,
-                                               signature_using_old,
-                                               signature_using_new,
-                                               new_client_auth,
-                                               outbox);
+                self.handle_candidate_info(old_public_id,
+                                           &pub_id,
+                                           signature_using_old,
+                                           signature_using_new,
+                                           new_client_auth,
+                                           outbox);
             }
             TunnelRequest(dst_id) => self.handle_tunnel_request(pub_id, dst_id),
             TunnelSuccess(dst_id) => self.handle_tunnel_success(pub_id, dst_id, outbox),
@@ -696,12 +666,47 @@ impl Node {
                                                     proof,
                                                     leading_zero_bytes);
             }
-            msg @ BootstrapIdentify { .. } |
-            msg @ BootstrapDeny => {
+            msg @ BootstrapResponse(_) => {
                 debug!("{:?} Unhandled direct message: {:?}", self, msg);
             }
         }
         Ok(())
+    }
+
+    /// Returns `Ok` if the peer's state indicates it's allowed to send the given message type.
+    fn check_direct_message_sender(&self,
+                                   direct_message: &DirectMessage,
+                                   pub_id: &PublicId)
+                                   -> Result<(), RoutingError> {
+        use messages::DirectMessage::*;
+        if let Some(peer) = self.peer_mgr.get_peer(pub_id) {
+            match *peer.state() {
+                PeerState::Bootstrapper(_) => {
+                    match *direct_message {
+                        BootstrapRequest(_) => return Ok(()),
+                        CandidateInfo { .. } |
+                        MessageSignature(..) |
+                        SectionListSignature(..) |
+                        BootstrapResponse(_) |
+                        TunnelRequest(_) |
+                        TunnelSuccess(_) |
+                        TunnelSelect(_) |
+                        TunnelClosed(_) |
+                        TunnelDisconnect(_) |
+                        ResourceProof { .. } |
+                        ResourceProofResponse { .. } |
+                        ResourceProofResponseReceipt => (),
+                    }
+                }
+                PeerState::Client => (),
+                _ => return Ok(()),
+            }
+        }
+        debug!("{:?} Illegitimate direct message {:?} from {:?}.",
+               self,
+               direct_message,
+               pub_id);
+        Err(RoutingError::InvalidStateForOperation)
     }
 
     /// Handles a signature of a `SignedMessage`, and if we have enough to verify the signed
@@ -836,24 +841,30 @@ impl Node {
                           hop_msg: HopMessage,
                           pub_id: PublicId)
                           -> Result<(), RoutingError> {
-        let hop_name = if let Some(peer) = self.peer_mgr.get_peer(&pub_id) {
+        let hop_name_result = if let Some(peer) = self.peer_mgr.get_peer(&pub_id) {
             hop_msg.verify(peer.pub_id().signing_public_key())?;
 
             match *peer.state() {
-                PeerState::Client => {
-                    self.check_valid_client_message(hop_msg.content.routing_message())?;
-                    *self.name()
+                PeerState::Bootstrapper(_) => {
+                    warn!("{:?} Hop message received from bootstrapper {:?}, disconnecting.",
+                          self,
+                          pub_id);
+                    Err(RoutingError::InvalidStateForOperation)
                 }
-                PeerState::JoiningNode => *self.name(),
+                PeerState::Client => {
+                    self.check_valid_client_message(hop_msg.content.routing_message())
+                        .map(|_| *self.name())
+                }
+                PeerState::JoiningNode => Ok(*self.name()),
                 PeerState::Candidate(_) |
                 PeerState::Proxy |
-                PeerState::Routing(_) => *peer.name(),
+                PeerState::Routing(_) => Ok(*peer.name()),
                 PeerState::ConnectionInfoPreparing { .. } |
                 PeerState::ConnectionInfoReady(_) |
                 PeerState::CrustConnecting |
                 PeerState::SearchingForTunnel |
                 PeerState::Connected(_) => {
-                    *self.name()
+                    Ok(*self.name())
                     // FIXME - confirm we can return with an error here by running soak tests
                     // debug!("{:?} Invalid sender {} of {:?}", self, pub_id, hop_msg);
                     // return Err(RoutingError::InvalidSource);
@@ -866,17 +877,22 @@ impl Node {
             // //        could be handling a tunnelled message here immediately after the tunnel
             // //        closed. Since we no longer have the peer's name available, we just use our
             // //        own instead, as this is almost equivalent to passing no name at all.
-            *self.name()
+            Ok(*self.name())
             // return Err(RoutingError::UnknownConnection);
         };
 
-        let HopMessage {
-            content,
-            route,
-            sent_to,
-            ..
-        } = hop_msg;
-        self.handle_signed_message(content, route, hop_name, &sent_to)
+        if let Ok(hop_name) = hop_name_result {
+            let HopMessage {
+                content,
+                route,
+                sent_to,
+                ..
+            } = hop_msg;
+            self.handle_signed_message(content, route, hop_name, &sent_to)
+        } else {
+            self.disconnect_peer(&pub_id, None);
+            Err(RoutingError::InvalidStateForOperation)
+        }
     }
 
     // Acknowledge reception of the message and broadcast to our section if necessary
@@ -1351,11 +1367,19 @@ impl Node {
 
     /// Returns `Ok` if a client is allowed to send the given message.
     fn check_valid_client_message(&self, msg: &RoutingMessage) -> Result<(), RoutingError> {
-        match msg.content {
-            MessageContent::Ack(..) => Ok(()),
-            MessageContent::UserMessagePart { priority, .. } if priority >= DEFAULT_PRIORITY => {
-                Ok(())
-            }
+        match (&msg.src, &msg.content) {
+            (&Authority::Client { .. }, &MessageContent::Ack(_ack, priority))
+                if priority >= DEFAULT_PRIORITY => Ok(()),
+            (&Authority::Client { .. },
+             &MessageContent::UserMessagePart {
+                  ref part_count,
+                  ref part_index,
+                  ref priority,
+                  ref payload,
+                  ..
+              }) if *part_count <= MAX_PARTS && part_index < part_count &&
+                  *priority >= DEFAULT_PRIORITY &&
+                  payload.len() <= MAX_PART_LEN => Ok(()),
             _ => {
                 debug!("{:?} Illegitimate client message {:?}. Refusing to relay.",
                        self,
@@ -1411,15 +1435,26 @@ impl Node {
         Ok(false)
     }
 
-    fn handle_client_identify(&mut self,
-                              pub_id: PublicId,
-                              client_restriction: bool,
-                              outbox: &mut EventBox) {
-        if !client_restriction && !self.crust_service.is_peer_whitelisted(&pub_id) {
-            warn!("{:?} Client is not whitelisted, so dropping connection.",
-                  self);
-            self.disconnect_peer(&pub_id, Some(outbox));
-            return;
+    // If this returns an error, the peer will be dropped.
+    fn handle_bootstrap_request(&mut self,
+                                pub_id: PublicId,
+                                signature: sign::Signature,
+                                outbox: &mut EventBox)
+                                -> Result<(), RoutingError> {
+        let peer_kind = if let Some(peer) = self.peer_mgr.get_peer(&pub_id) {
+            match *peer.state() {
+                PeerState::Bootstrapper(peer_kind) => peer_kind,
+                _ => {
+                    return Err(RoutingError::InvalidStateForOperation);
+                }
+            }
+        } else {
+            return Err(RoutingError::UnknownConnection(pub_id));
+        };
+
+        let ser_pub_id = serialisation::serialise(&pub_id)?;
+        if !sign::verify_detached(&signature, &ser_pub_id, pub_id.signing_public_key()) {
+            return Err(RoutingError::FailedSignature);
         }
 
         self.remove_expired_peers(outbox);
@@ -1428,59 +1463,50 @@ impl Node {
             debug!("{:?} Client {:?} rejected: We are not approved as a node yet.",
                    self,
                    pub_id);
-            self.send_direct_message(pub_id, DirectMessage::BootstrapDeny);
-            return;
+            self.send_direct_message(pub_id, DirectMessage::BootstrapResponse(false));
+            return Ok(());
         }
 
-        if (client_restriction || !self.is_first_node) &&
+        if (peer_kind == CrustUser::Client || !self.is_first_node) &&
            self.routing_table().len() < self.min_section_size() - 1 {
             debug!("{:?} Client {:?} rejected: Routing table has {} entries. {} required.",
                    self,
                    pub_id,
                    self.routing_table().len(),
                    self.min_section_size() - 1);
-            self.send_direct_message(pub_id, DirectMessage::BootstrapDeny);
-            return;
+            self.send_direct_message(pub_id, DirectMessage::BootstrapResponse(false));
+            return Ok(());
         }
 
-        let peer_state = if client_restriction {
-            debug!("{:?} Accepted Client {}.", self, pub_id);
-            PeerState::Client
-        } else {
-            debug!("{:?} Accepted JoiningNode {}.", self, pub_id);
-            PeerState::JoiningNode
-        };
-
-        self.peer_mgr
-            .insert_peer(Peer::new(pub_id, peer_state, false, ReconnectingPeer::False));
-
-        self.send_direct_message(pub_id, DirectMessage::BootstrapIdentify);
+        self.peer_mgr.handle_bootstrap_request(&pub_id);
+        self.send_direct_message(pub_id, DirectMessage::BootstrapResponse(true));
+        Ok(())
     }
 
     #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
-    fn handle_candidate_identify(&mut self,
-                                 old_pub_id: &PublicId,
-                                 new_pub_id: &PublicId,
-                                 signature_using_old: &sign::Signature,
-                                 signature_using_new: &sign::Signature,
-                                 new_client_auth: &Authority<XorName>,
-                                 outbox: &mut EventBox) {
-        debug!("{:?} Handling CandidateIdentify from {}->{}.",
+    fn handle_candidate_info(&mut self,
+                             old_pub_id: &PublicId,
+                             new_pub_id: &PublicId,
+                             signature_using_old: &sign::Signature,
+                             signature_using_new: &sign::Signature,
+                             new_client_auth: &Authority<XorName>,
+                             outbox: &mut EventBox) {
+        debug!("{:?} Handling CandidateInfo from {}->{}.",
                self,
                old_pub_id,
                new_pub_id);
-        if !self.is_candidate_identify_valid(old_pub_id,
-                                             new_pub_id,
-                                             signature_using_old,
-                                             signature_using_new) {
-            warn!("{:?} Signature check failed in CandidateIdentify, so dropping peer {:?}.",
+        if !self.is_candidate_info_valid(old_pub_id,
+                                         new_pub_id,
+                                         signature_using_old,
+                                         signature_using_new) {
+            warn!("{:?} Signature check failed in CandidateInfo, so dropping peer {:?}.",
                   self,
                   new_pub_id);
             self.disconnect_peer(new_pub_id, Some(outbox));
         }
 
-        // If this is a valid node in peer_mgr but the Candidate has sent us a CandidateIdentify,
-        // it might have not yet handled its NodeApproval message. Check and handle accordingly here
+        // If this is a valid node in peer_mgr but the Candidate has sent us a CandidateInfo, it
+        // might have not yet handled its NodeApproval message. Check and handle accordingly here
         if self.peer_mgr
                .get_peer(new_pub_id)
                .map_or(false, |peer| peer.valid()) {
@@ -1501,12 +1527,12 @@ impl Node {
             rand::thread_rng().gen_iter().take(10).collect()
         };
         match self.peer_mgr
-                  .handle_candidate_identify(old_pub_id,
-                                             new_pub_id,
-                                             new_client_auth,
-                                             target_size,
-                                             difficulty,
-                                             seed.clone()) {
+                  .handle_candidate_info(old_pub_id,
+                                         new_pub_id,
+                                         new_client_auth,
+                                         target_size,
+                                         difficulty,
+                                         seed.clone()) {
             Ok(true) => {
                 let direct_message = DirectMessage::ResourceProof {
                     seed: seed,
@@ -1534,7 +1560,7 @@ impl Node {
                        new_pub_id);
             }
             Err(error) => {
-                debug!("{:?} Ignore CandidateIdentify {}->{}: {:?}.",
+                debug!("{:?} Ignore CandidateInfo {}->{}: {:?}.",
                        self,
                        old_pub_id,
                        new_pub_id,
@@ -1543,12 +1569,12 @@ impl Node {
         }
     }
 
-    fn is_candidate_identify_valid(&self,
-                                   old_pub_id: &PublicId,
-                                   new_pub_id: &PublicId,
-                                   signature_using_old: &sign::Signature,
-                                   signature_using_new: &sign::Signature)
-                                   -> bool {
+    fn is_candidate_info_valid(&self,
+                               old_pub_id: &PublicId,
+                               new_pub_id: &PublicId,
+                               signature_using_old: &sign::Signature,
+                               signature_using_new: &sign::Signature)
+                               -> bool {
         let old_and_new_pub_ids = (old_pub_id, new_pub_id);
         let mut signed_data = match serialisation::serialise(&old_and_new_pub_ids) {
             Ok(result) => result,
@@ -1560,7 +1586,7 @@ impl Node {
         if !sign::verify_detached(signature_using_old,
                                   &signed_data,
                                   old_pub_id.signing_public_key()) {
-            debug!("{:?} CandidateIdentify from {}->{} has invalid old signature.",
+            debug!("{:?} CandidateInfo from {}->{} has invalid old signature.",
                    self,
                    old_pub_id,
                    new_pub_id);
@@ -1570,7 +1596,7 @@ impl Node {
         if !sign::verify_detached(signature_using_new,
                                   &signed_data,
                                   new_pub_id.signing_public_key()) {
-            debug!("{:?} CandidateIdentify from {}->{} has invalid new signature.",
+            debug!("{:?} CandidateInfo from {}->{} has invalid new signature.",
                    self,
                    old_pub_id,
                    new_pub_id);
@@ -2886,9 +2912,8 @@ impl Node {
             return;
         }
 
-        // If we're not approved yet, we need to identify ourselves
-        // with our old and new ids via CandidateIdentify
-        // Serialise the old and new `PublicId`s and sign this using the old key.
+        // If we're not approved yet, we need to identify ourselves with our old and new IDs via
+        // `CandidateInfo`. Serialise the old and new `PublicId`s and sign this using the old key.
         let msg = {
             let old_and_new_pub_ids = (self.old_full_id.public_id(), self.full_id.public_id());
             let mut to_sign = match serialisation::serialise(&old_and_new_pub_ids) {
@@ -2907,7 +2932,7 @@ impl Node {
             let proxy_node_name = if let Some(proxy_node_name) = self.peer_mgr.get_proxy_name() {
                 *proxy_node_name
             } else {
-                warn!("{:?} No proxy found, so unable to send CandidateIdentify.",
+                warn!("{:?} No proxy found, so unable to send CandidateInfo.",
                       self);
                 return;
             };
@@ -2916,7 +2941,7 @@ impl Node {
                 proxy_node_name: proxy_node_name,
             };
 
-            DirectMessage::CandidateIdentify {
+            DirectMessage::CandidateInfo {
                 old_public_id: *self.old_full_id.public_id(),
                 new_public_id: *self.full_id.public_id(),
                 signature_using_old: signature_using_old,
@@ -2939,7 +2964,6 @@ impl Node {
                                     -> Result<(), RoutingError> {
         let their_name = *their_public_id.name();
         self.peer_mgr.allow_connect(&their_name)?;
-
 
         if self.peer_mgr.is_client(&their_public_id) ||
            self.peer_mgr.is_joining_node(&their_public_id) ||
@@ -3397,18 +3421,5 @@ impl Bootstrapped for Node {
 impl Debug for Node {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter, "Node({}({:b}))", self.name(), self.our_prefix())
-    }
-}
-
-// Verify the serialised public id against the signature.
-fn verify_signed_public_id(serialised_public_id: &[u8],
-                           signature: &sign::Signature)
-                           -> Result<PublicId, RoutingError> {
-    let public_id: PublicId = serialisation::deserialise(serialised_public_id)?;
-    let public_key = public_id.signing_public_key();
-    if sign::verify_detached(signature, serialised_public_id, public_key) {
-        Ok(public_id)
-    } else {
-        Err(RoutingError::FailedSignature)
     }
 }

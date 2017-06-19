@@ -248,7 +248,7 @@ impl Bootstrapping {
             None => {
                 debug!("{:?} Received BootstrapConnect from {}.", self, pub_id);
                 // Established connection. Pending Validity checks
-                self.send_client_identify(pub_id);
+                self.send_bootstrap_request(pub_id);
                 let _ = self.bootstrap_blacklist.insert(socket_addr);
             }
             Some((bootstrap_id, _)) if bootstrap_id == pub_id => {
@@ -288,9 +288,16 @@ impl Bootstrapping {
                              direct_message: DirectMessage,
                              pub_id: PublicId)
                              -> Transition {
+        use self::DirectMessage::*;
         match direct_message {
-            DirectMessage::BootstrapIdentify => self.handle_bootstrap_identify(pub_id),
-            DirectMessage::BootstrapDeny => self.handle_bootstrap_deny(),
+            BootstrapResponse(true) => Transition::IntoBootstrapped { proxy_public_id: pub_id },
+            BootstrapResponse(false) => {
+                info!("{:?} Connection failed: Proxy node needs a larger routing table to accept \
+                      clients.",
+                      self);
+                self.rebootstrap();
+                Transition::Stay
+            }
             _ => {
                 debug!("{:?} - Unhandled direct message: {:?}",
                        self,
@@ -300,19 +307,8 @@ impl Bootstrapping {
         }
     }
 
-    fn handle_bootstrap_identify(&mut self, public_id: PublicId) -> Transition {
-        Transition::IntoBootstrapped { proxy_public_id: public_id }
-    }
-
-    fn handle_bootstrap_deny(&mut self) -> Transition {
-        info!("{:?} Connection failed: Proxy node needs a larger routing table to accept clients.",
-              self);
-        self.rebootstrap();
-        Transition::Stay
-    }
-
-    fn send_client_identify(&mut self, pub_id: PublicId) {
-        debug!("{:?} - Sending ClientIdentify to {}.", self, pub_id);
+    fn send_bootstrap_request(&mut self, pub_id: PublicId) {
+        debug!("{:?} - Sending BootstrapRequest to {}.", self, pub_id);
 
         let token = self.timer
             .schedule(Duration::from_secs(BOOTSTRAP_TIMEOUT_SECS));
@@ -327,12 +323,7 @@ impl Bootstrapping {
         };
         let signature = sign::sign_detached(&serialised_public_id,
                                             self.full_id.signing_private_key());
-
-        let direct_message = DirectMessage::ClientIdentify {
-            serialised_public_id: serialised_public_id,
-            signature: signature,
-            client_restriction: self.client_restriction(),
-        };
+        let direct_message = DirectMessage::BootstrapRequest(signature);
 
         self.stats().count_direct_message(&direct_message);
         self.send_message(&pub_id, Message::Direct(direct_message));

@@ -21,4 +21,4 @@ mod bootstrapped;
 pub use self::base::Base;
 pub use self::bootstrapped::Bootstrapped;
 
-pub const USER_MSG_CACHE_EXPIRY_DURATION_SECS: u64 = 60 * 20;
+pub const USER_MSG_CACHE_EXPIRY_DURATION_SECS: u64 = 120;

@@ -15,15 +15,14 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-
 mod request;
 mod response;
-
 
 pub use self::request::Request;
 pub use self::response::{AccountInfo, Response};
 use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
 use ack_manager::Ack;
+use data::MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
 use error::RoutingError;
 use event::Event;
 use id::{FullId, PublicId};
@@ -46,6 +45,7 @@ use xor_name::XorName;
 
 /// The maximal length of a user message part, in bytes.
 pub const MAX_PART_LEN: usize = 20 * 1024;
+pub const MAX_PARTS: u32 = ((MAX_IMMUTABLE_DATA_SIZE_IN_BYTES / MAX_PART_LEN as u64) + 1) as u32;
 
 /// Get and refresh messages from nodes have a high priority: They relocate data under churn and are
 /// critical to prevent data loss.
@@ -110,23 +110,15 @@ pub enum DirectMessage {
     MessageSignature(Digest256, sign::Signature),
     /// A signature for the current `BTreeSet` of section's node names
     SectionListSignature(SectionList, sign::Signature),
-    /// Sent from the bootstrap node to a client in response to `ClientIdentify`.
-    BootstrapIdentify,
-    /// Sent to the client to indicate that this node is not available as a bootstrap node.
-    BootstrapDeny,
-    /// Sent from a newly connected client to the bootstrap node to inform it about the client's
-    /// public ID.
-    ClientIdentify {
-        /// Serialised keys and claimed name.
-        serialised_public_id: Vec<u8>,
-        /// Signature of the client.
-        signature: sign::Signature,
-        /// Indicate whether we intend to remain a client, as opposed to becoming a routing node.
-        client_restriction: bool,
-    },
+    /// Sent from a newly connected client to the bootstrap node to prove that it is the owner of
+    /// the client's claimed public ID.
+    BootstrapRequest(sign::Signature),
+    /// Sent from the bootstrap node to a client in response to `BootstrapRequest`. If `true`,
+    /// bootstrapping is successful; if `false` the sender is not available as a bootstrap node.
+    BootstrapResponse(bool),
     /// Sent from a node which is still joining the network to another node, to allow the latter to
     /// add the former to its routing table.
-    CandidateIdentify {
+    CandidateInfo {
         /// `PublicId` from before relocation.
         old_public_id: PublicId,
         /// `PublicId` from after relocation.
@@ -498,12 +490,12 @@ impl RoutingMessage {
 /// ## Bootstrapping a client
 ///
 /// A newly created `Core`, A, starts in `Disconnected` state and tries to establish a connection to
-/// any node B of the network via Crust. When successful, i. e. when receiving an `OnConnect` event,
+/// any node B of the network via Crust. When successful, i.e. when receiving an `OnConnect` event,
 /// it moves to the `Bootstrapping` state.
 ///
-/// A now sends a `ClientIdentify` message to B, containing A's signed public ID. B verifies the
-/// signature and responds with a `BootstrapIdentify`, containing B's public ID. Once it receives
-/// that, A goes into the `Client` state and uses B as its proxy to the network.
+/// A now sends a `BootstrapRequest` message to B, containing the signature of A's public ID. B
+/// responds with a `BootstrapResponse`, indicating success or failure. Once it receives that, A
+/// goes into the `Client` state and uses B as its proxy to the network.
 ///
 /// A can now exchange messages with any `Authority`. This completes the bootstrap process for
 /// clients.
@@ -541,7 +533,7 @@ impl RoutingMessage {
 ///
 ///
 /// ### Resource Proof Evaluation to approve
-/// When nodes Z of section Y receive `CandidateIdentify` from A, they reply with a `ResourceProof`
+/// When nodes Z of section Y receive `CandidateInfo` from A, they reply with a `ResourceProof`
 /// request. Node A needs to answer these requests (resolving a hashing challenge) with
 /// `ResourceProofResponse`. Members of Y will send out `CandidateApproval` messages to vote for the
 /// approval in their section. Once the vote succeeds, the members of Y send `NodeApproval` to A and
@@ -699,15 +691,9 @@ impl Debug for DirectMessage {
             SectionListSignature(ref sec_list, _) => {
                 write!(formatter, "SectionListSignature({:?}, ..)", sec_list.prefix)
             }
-            BootstrapIdentify => write!(formatter, "BootstrapIdentify"),
-            BootstrapDeny => write!(formatter, "BootstrapDeny"),
-            ClientIdentify { client_restriction: true, .. } => {
-                write!(formatter, "ClientIdentify (client only)")
-            }
-            ClientIdentify { client_restriction: false, .. } => {
-                write!(formatter, "ClientIdentify (joining node)")
-            }
-            CandidateIdentify { .. } => write!(formatter, "CandidateIdentify {{ .. }}"),
+            BootstrapRequest(_) => write!(formatter, "BootstrapRequest"),
+            BootstrapResponse(ref result) => write!(formatter, "BootstrapResponse({})", result),
+            CandidateInfo { .. } => write!(formatter, "CandidateInfo {{ .. }}"),
             TunnelRequest(pub_id) => write!(formatter, "TunnelRequest({:?})", pub_id),
             TunnelSuccess(pub_id) => write!(formatter, "TunnelSuccess({:?})", pub_id),
             TunnelSelect(pub_id) => write!(formatter, "TunnelSelect({:?})", pub_id),
