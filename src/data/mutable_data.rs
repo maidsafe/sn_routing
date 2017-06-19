@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use client_error::ClientError;
-use maidsafe_utilities::serialisation::serialised_size;
+use maidsafe_utilities::serialisation;
 use rust_sodium::crypto::sign::PublicKey;
 use std::collections::BTreeSet;
 use std::collections::btree_map::{BTreeMap, Entry};
@@ -237,7 +237,7 @@ impl MutableData {
             return Err(ClientError::TooManyEntries);
         }
 
-        if serialised_size(self) > MAX_MUTABLE_DATA_SIZE_IN_BYTES {
+        if self.serialised_size() > MAX_MUTABLE_DATA_SIZE_IN_BYTES {
             return Err(ClientError::DataTooLarge);
         }
 
@@ -564,16 +564,21 @@ impl MutableData {
         true
     }
 
+    /// Return the size of this data after serialisation.
+    pub fn serialised_size(&self) -> u64 {
+        serialisation::serialised_size(self)
+    }
+
     /// Return true if the size is valid
     pub fn validate_size(&self) -> bool {
-        serialised_size(self) <= MAX_MUTABLE_DATA_SIZE_IN_BYTES
+        self.serialised_size() <= MAX_MUTABLE_DATA_SIZE_IN_BYTES
     }
 
     /// Return true if the size is valid after a mutation. We need to have this
     /// because of eventual consistency requirements - in certain cases entries
     /// can go over the default cap of 1 MiB.
     fn validate_mut_size(&self) -> bool {
-        serialised_size(self) <= MAX_MUTABLE_DATA_SIZE_IN_BYTES * 2
+        self.serialised_size() <= MAX_MUTABLE_DATA_SIZE_IN_BYTES * 2
     }
 
     fn check_anyone_permissions(&self, action: Action) -> bool {

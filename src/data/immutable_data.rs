@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use maidsafe_utilities::serialisation::serialised_size;
+use maidsafe_utilities::serialisation;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt::{self, Debug, Formatter};
 use tiny_keccak::sha3_256;
@@ -59,9 +59,14 @@ impl ImmutableData {
         self.value.len()
     }
 
+    /// Returns size of this data after serialisation.
+    pub fn serialised_size(&self) -> u64 {
+        serialisation::serialised_size(self)
+    }
+
     /// Return true if the size is valid
     pub fn validate_size(&self) -> bool {
-        serialised_size(self) <= MAX_IMMUTABLE_DATA_SIZE_IN_BYTES
+        self.serialised_size() <= MAX_IMMUTABLE_DATA_SIZE_IN_BYTES
     }
 }
 
