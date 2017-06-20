@@ -138,11 +138,16 @@ impl Bootstrapping {
                 self.handle_bootstrap_connect(pub_id, socket_addr)
             }
             CrustEvent::BootstrapFailed => self.handle_bootstrap_failed(outbox),
+            CrustEvent::LostPeer(pub_id) => {
+                info!("{:?} Lost connection to proxy {:?}.", self, pub_id);
+                self.rebootstrap();
+                Transition::Stay
+            }
             CrustEvent::NewMessage(pub_id, bytes) => {
                 match self.handle_new_message(pub_id, bytes) {
                     Ok(transition) => transition,
                     Err(error) => {
-                        debug!("{:?} - {:?}", self, error);
+                        debug!("{:?} {:?}", self, error);
                         Transition::Stay
                     }
                 }
@@ -277,7 +282,7 @@ impl Bootstrapping {
         match serialisation::deserialise(&bytes) {
             Ok(Message::Direct(direct_msg)) => Ok(self.handle_direct_message(direct_msg, pub_id)),
             Ok(message) => {
-                debug!("{:?} - Unhandled new message: {:?}", self, message);
+                debug!("{:?} Unhandled new message: {:?}", self, message);
                 Ok(Transition::Stay)
             }
             Err(error) => Err(From::from(error)),
@@ -308,7 +313,7 @@ impl Bootstrapping {
     }
 
     fn send_bootstrap_request(&mut self, pub_id: PublicId) {
-        debug!("{:?} - Sending BootstrapRequest to {}.", self, pub_id);
+        debug!("{:?} Sending BootstrapRequest to {}.", self, pub_id);
 
         let token = self.timer
             .schedule(Duration::from_secs(BOOTSTRAP_TIMEOUT_SECS));
@@ -374,5 +379,116 @@ impl Base for Bootstrapping {
 impl Debug for Bootstrapping {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter, "Bootstrapping({})", self.name())
+    }
+}
+
+#[cfg(all(test, feature = "use-mock-crust"))]
+mod tests {
+    use super::*;
+    use CrustEvent;
+    use cache::NullCache;
+    use id::FullId;
+    use maidsafe_utilities::event_sender::{MaidSafeEventCategory, MaidSafeObserver};
+    use mock_crust::{self, Network};
+    use mock_crust::crust::{Config, Service};
+    use outbox::EventBuf;
+    use state_machine::StateMachine;
+    use std::sync::mpsc;
+
+    #[test]
+    // Check that losing our proxy connection while in the `Bootstrapping` state doesn't stall and
+    // instead triggers a re-bootstrap attempt..
+    fn lose_proxy_connection() {
+        let min_section_size = 8;
+        let network = Network::new(min_section_size, None);
+
+        // Start a bare-bones Crust service, set it to listen on TCP and to accept bootstrap
+        // connections.
+        let (category_tx, _category_rx) = mpsc::channel();
+        let (event_tx, event_rx) = mpsc::channel();
+        let event_sender =
+            MaidSafeObserver::new(event_tx, MaidSafeEventCategory::Crust, category_tx);
+        let handle0 = network.new_service_handle(None, None);
+        let config = Config::with_contacts(&[handle0.endpoint()]);
+        let mut crust_service =
+            unwrap!(Service::with_handle(&handle0, event_sender, *FullId::new().public_id()));
+
+        unwrap!(crust_service.start_listening_tcp());
+        if let CrustEvent::ListenerStarted::<_>(_) = unwrap!(event_rx.try_recv()) {
+        } else {
+            panic!("Should have received `ListenerStarted` event.");
+        }
+        let _ = crust_service.set_accept_bootstrap(true);
+
+        // Construct a `StateMachine` which will start in the `Bootstrapping` state and bootstrap
+        // off the Crust service above.
+        let handle1 = network.new_service_handle(Some(config.clone()), None);
+        let mut outbox = EventBuf::new();
+        let mut state_machine = mock_crust::make_current(&handle1, || {
+            let full_id = FullId::new();
+            let pub_id = *full_id.public_id();
+            StateMachine::new(move |action_sender, crust_service, timer, _outbox2| {
+                Bootstrapping::new(action_sender,
+                                   Box::new(NullCache),
+                                   TargetState::Client,
+                                   crust_service,
+                                   full_id,
+                                   min_section_size,
+                                   timer)
+                        .map_or(State::Terminated, State::Bootstrapping)
+            },
+                              pub_id,
+                              Some(config),
+                              &mut outbox)
+                    .1
+        });
+
+        // Check the Crust service received the `BootstrapAccept`.
+        network.deliver_messages();
+        if let CrustEvent::BootstrapAccept::<_>(_, CrustUser::Client) =
+            unwrap!(event_rx.try_recv()) {
+        } else {
+            panic!("Should have received `BootstrapAccept` event.");
+        }
+
+        // The state machine should have received the `BootstrapConnect` event and this will have
+        // caused it to send a `BootstrapRequest` and add the Crust service to its
+        // `bootstrap_blacklist`.
+        match *state_machine.current() {
+            State::Bootstrapping(ref state) => assert!(state.bootstrap_blacklist.is_empty()),
+            _ => panic!("Should be in `Bootstrapping` state."),
+        }
+        network.deliver_messages();
+        unwrap!(state_machine.step(&mut outbox));
+        assert!(outbox.take_all().is_empty());
+        match *state_machine.current() {
+            State::Bootstrapping(ref state) => assert_eq!(state.bootstrap_blacklist.len(), 1),
+            _ => panic!("Should be in `Bootstrapping` state."),
+        }
+
+        // Check the Crust service received the `BootstrapRequest`, then drop the service to trigger
+        // `LostPeer` event in the state machine.
+        network.deliver_messages();
+        if let CrustEvent::NewMessage::<_>(_, serialised_msg) = unwrap!(event_rx.try_recv()) {
+            match unwrap!(serialisation::deserialise(&serialised_msg)) {
+                Message::Direct(DirectMessage::BootstrapRequest(_)) => (),
+                _ => panic!("Should have received a `BootstrapRequest`."),
+            }
+        } else {
+            panic!("Should have received `NewMessage` event.");
+        }
+        drop(crust_service);
+        network.deliver_messages();
+
+        // Check the state machine received the `LostPeer` and sent `Terminate` via the `outbox`
+        // since it can't re-bootstrap (there are no more bootstrap contacts).
+        unwrap!(state_machine.step(&mut outbox));
+        assert!(outbox.take_all().is_empty());
+        network.deliver_messages();
+
+        unwrap!(state_machine.step(&mut outbox));
+        let events = outbox.take_all();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0], Event::Terminate);
     }
 }

@@ -204,8 +204,7 @@ pub enum Event<UID: Uid> {
     BootstrapConnect(UID, SocketAddr),
     /// Invoked when we failed to connect to all bootstrap contacts.
     BootstrapFailed,
-    /// Invoked when we are ready to listen for incomming connection. Contains
-    /// the listening port.
+    /// Invoked when we are ready to listen for incoming connection. Contains the listening port.
     ListenerStarted(u16),
     /// Invoked when listener failed to start.
     ListenerFailed,
