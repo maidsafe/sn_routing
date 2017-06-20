@@ -24,6 +24,7 @@ use std::{fmt, io, thread};
 use std::cell::{RefCell, RefMut};
 use std::collections::HashSet;
 use std::hash::Hash;
+use std::net::{IpAddr, Ipv4Addr};
 use std::net::SocketAddr;
 use std::rc::Rc;
 
@@ -98,6 +99,11 @@ impl<UID: Uid> Service<UID> {
     /// by interrogating the network.
     pub fn set_service_discovery_listen(&self, _listen: bool) {
         trace!(target: "crust", "[MOCK] set_service_discovery_listen not implemented in mock");
+    }
+
+    /// Return ip address of the peer.
+    pub fn get_peer_ip_addr(&self, _peer: &UID) -> Result<IpAddr, CrustError> {
+        Ok(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)))
     }
 
     /// Allow (or disallow) peers from bootstrapping off us.
