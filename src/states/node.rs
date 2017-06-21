@@ -2225,6 +2225,11 @@ impl Node {
             info!("{:?} SectionUpdate handled. Prefixes: {:?}",
                   self,
                   new_prefixes);
+            if cfg!(feature = "use-mock-crust") {
+                for prefix in new_prefixes.difference(&old_prefixes) {
+                    self.send_section_list_signature(*prefix, None);
+                }
+            }
         }
         // Filter list of members to just those we don't know about:
         let members = if let Some(section) = self.routing_table()
