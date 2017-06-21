@@ -169,6 +169,7 @@ mod messages;
 mod node;
 mod outbox;
 mod peer_manager;
+mod rate_limiter;
 mod resource_prover;
 mod routing_message_filter;
 mod routing_table;
