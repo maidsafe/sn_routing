@@ -20,11 +20,11 @@ pub use super::support::Config;
 use maidsafe_utilities::event_sender;
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
-use std::{fmt, io, thread};
+use std::{fmt, thread};
 use std::cell::{RefCell, RefMut};
 use std::collections::HashSet;
 use std::hash::Hash;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::rc::Rc;
 
 /// TCP listener port
@@ -34,8 +34,8 @@ pub const LISTENER_PORT: u16 = 5485;
 pub struct Service<UID: Uid>(Rc<RefCell<ServiceImpl<UID>>>, Network<UID>);
 
 impl<UID: Uid> Service<UID> {
-    /// Create new mock `Service` using the make_current/get_current mechanism to
-    /// get the associated `ServiceHandle`.
+    /// Create new mock `Service` using the make_current/get_current mechanism to get the associated
+    /// `ServiceHandle`.
     pub fn new(handle: ServiceHandle<UID>,
                event_sender: CrustEventSender<UID>,
                uid: UID)
@@ -43,8 +43,8 @@ impl<UID: Uid> Service<UID> {
         Self::with_handle(&handle, event_sender, uid)
     }
 
-    /// Create a new mock `Service` using the make_current/get_current mechanism to
-    /// get the associated `ServiceHandle`. Ignores configuration.
+    /// Create a new mock `Service` using the make_current/get_current mechanism to get the
+    /// associated `ServiceHandle`. Ignores configuration.
     pub fn with_config(handle: ServiceHandle<UID>,
                        event_sender: CrustEventSender<UID>,
                        _config: Config,
@@ -65,8 +65,8 @@ impl<UID: Uid> Service<UID> {
         Ok(service)
     }
 
-    /// This method is used instead of dropping the service and creating a new
-    /// one, which is the current practice with the real crust.
+    /// This method is used instead of dropping the service and creating a new one, which is the
+    /// current practice with the real crust.
     pub fn restart(&self, event_sender: CrustEventSender<UID>, uid: UID) {
         self.lock().restart(event_sender, uid)
     }
@@ -80,24 +80,23 @@ impl<UID: Uid> Service<UID> {
         Ok(())
     }
 
-    /// Stops the ongoing bootstrap.
-    /// Note: This currently doesn't do anything, because mock bootstrap is
-    /// not interruptible. This might change in the future, if needed.
+    /// Stops the ongoing bootstrap. Note: This currently doesn't do anything, because mock
+    /// bootstrap is not interruptible. This might change in the future, if needed.
     pub fn stop_bootstrap(&mut self) -> Result<(), CrustError> {
         // Nothing to do here, as mock bootstrapping is not interruptible.
         Ok(())
     }
 
-    /// Start service discovery (beacon).
-    /// Note: beacon is not yet implemented in mock.
+    /// Start service discovery (beacon). Note: beacon is not yet implemented in mock.
     pub fn start_service_discovery(&mut self) {
-        trace!(target: "crust", "[MOCK] start_service_discovery not implemented in mock");
+        trace!(target: "crust", "[MOCK] start_service_discovery not implemented in mock.");
     }
 
     /// Enable listening and responding to peers searching for us. This will allow others finding us
-    /// by interrogating the network.
+    /// by interrogating the network. Note: `set_service_discovery_listen` is not yet implemented in
+    /// mock.
     pub fn set_service_discovery_listen(&self, _listen: bool) {
-        trace!(target: "crust", "[MOCK] set_service_discovery_listen not implemented in mock");
+        trace!(target: "crust", "[MOCK] set_service_discovery_listen not implemented in mock.");
     }
 
     /// Allow (or disallow) peers from bootstrapping off us.
@@ -106,22 +105,27 @@ impl<UID: Uid> Service<UID> {
         Ok(())
     }
 
-    /// Check if we have peers on LAN
+    /// Check if we have peers on LAN.
     pub fn has_peers_on_lan(&self) -> bool {
         // This will allow mock crust test to have multiple nodes on the same machine
         false
     }
 
-    /// Start TCP acceptor.
-    /// Note: mock doesn't currently differentiate between TCP and UDP. As long
+    /// Start TCP acceptor. Note: mock doesn't currently differentiate between TCP and UDP. As long
     /// as at least one is enabled, the service will accept any incoming connection.
     pub fn start_listening_tcp(&mut self) -> Result<(), CrustError> {
         self.lock().start_listening_tcp(LISTENER_PORT);
         Ok(())
     }
 
-    /// Request connection info structure used for establishing peer-to-peer
-    /// connections.
+    /// Stops Listener explicitly and stops accepting TCP connections. Note: `stop_tcp_listener` is
+    /// not yet implemented in mock.
+    pub fn stop_tcp_listener(&mut self) -> Result<(), CrustError> {
+        trace!(target: "crust", "[MOCK] stop_tcp_listener not implemented in mock.");
+        Err(CrustError)
+    }
+
+    /// Request connection info structure used for establishing peer-to-peer connections.
     pub fn prepare_connection_info(&self, result_token: u32) {
         self.lock().prepare_connection_info(result_token)
     }
@@ -137,22 +141,26 @@ impl<UID: Uid> Service<UID> {
     }
 
     /// Disconnect from the given peer.
-    pub fn disconnect(&self, uid: UID) -> bool {
-        self.lock().disconnect(&uid)
+    pub fn disconnect(&self, uid: &UID) -> bool {
+        self.lock().disconnect(uid)
     }
 
     /// Send message to the given peer.
     // TODO: Implement tests that drop low-priority messages.
-    pub fn send(&self, id: UID, data: Vec<u8>, _priority: u8) -> io::Result<()> {
-        if self.lock().send_message(&id, data) {
+    pub fn send(&self, uid: &UID, data: Vec<u8>, _priority: u8) -> Result<(), CrustError> {
+        if self.lock().send_message(uid, data) {
             Ok(())
         } else {
-            let msg = format!("No connection to peer {:?}", id);
-            Err(io::Error::new(io::ErrorKind::Other, msg))
+            Err(CrustError)
         }
     }
 
-    /// Returns `true` if we are currently connected to the given `uid`
+    /// Return the IP address of the peer.
+    pub fn get_peer_ip_addr(&self, uid: &UID) -> Result<IpAddr, CrustError> {
+        self.lock().get_peer_ip_addr(uid).ok_or(CrustError)
+    }
+
+    /// Returns `true` if we are currently connected to the given `uid`.
     pub fn is_connected(&self, uid: &UID) -> bool {
         self.lock().is_peer_connected(uid)
     }
@@ -163,8 +171,8 @@ impl<UID: Uid> Service<UID> {
     }
 
     /// Returns `true` if the specified peer is allowed to connect to us.
-    pub fn is_peer_whitelisted(&self, id: &UID) -> bool {
-        self.lock().is_peer_whitelisted(id)
+    pub fn is_peer_whitelisted(&self, uid: &UID) -> bool {
+        self.lock().is_peer_whitelisted(uid)
     }
 
     /// Returns `true` if the specified peer's IP is hard-coded. (Always `true` in mock Crust.)

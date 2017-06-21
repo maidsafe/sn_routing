@@ -26,7 +26,7 @@ use std::cell::RefCell;
 use std::cmp;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::collections::btree_map::Entry;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, SocketAddr};
 use std::rc::{Rc, Weak};
 
 /// Mock network. Create one before testing with mocks. Use it to create `ServiceHandle`s.
@@ -368,6 +368,14 @@ impl<UID: Uid> ServiceImpl<UID> {
         self.pending_bootstraps = pending_bootstraps;
     }
 
+    pub fn get_peer_ip_addr(&self, uid: &UID) -> Option<IpAddr> {
+        if let Some(endpoint) = self.find_endpoint_by_uid(uid) {
+            Some(to_socket_addr(&endpoint).ip())
+        } else {
+            None
+        }
+    }
+
     pub fn send_message(&self, uid: &UID, data: Vec<u8>) -> bool {
         if let Some(endpoint) = self.find_endpoint_by_uid(uid) {
             self.send_packet(endpoint, Packet::Message(data));
@@ -613,7 +621,10 @@ impl<UID: Uid> Drop for ServiceImpl<UID> {
 /// Creates a `SocketAddr` with the endpoint as its port, so that endpoints and addresses can be
 /// easily mapped to each other during testing.
 fn to_socket_addr(endpoint: &Endpoint) -> SocketAddr {
-    SocketAddr::new(IpAddr::V4(Ipv4Addr::new(123, 123, 255, 255)),
+    SocketAddr::new(IpAddr::from([(endpoint.0 >> 24) as u8,
+                                  (endpoint.0 >> 16) as u8,
+                                  (endpoint.0 >> 8) as u8,
+                                  endpoint.0 as u8]),
                     endpoint.0 as u16)
 }
 
