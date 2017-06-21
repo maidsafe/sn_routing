@@ -119,7 +119,8 @@ pub struct Node {
     candidate_status_token: Option<u64>,
     resource_prover: ResourceProver,
     joining_prefix: Prefix<XorName>,
-    /// Records each client's usage
+    /// Limits the rate at which clients can pass messages through this node when it acts as their
+    /// proxy.
     clients_rate_limiter: RateLimiter,
 }
 
@@ -845,10 +846,11 @@ impl Node {
                           hop_msg: HopMessage,
                           pub_id: PublicId)
                           -> Result<(), RoutingError> {
-        let mut client_check = false;
-        let hop_name_result = if let Some(peer) = self.peer_mgr.get_peer(&pub_id) {
-            hop_msg.verify(peer.pub_id().signing_public_key())?;
-
+        hop_msg.verify(pub_id.signing_public_key())?;
+        let hop_name_result = if self.peer_mgr.is_client(&pub_id) {
+            self.check_valid_client_message(&pub_id, hop_msg.content.routing_message())
+                .map(|_| *self.name())
+        } else if let Some(peer) = self.peer_mgr.get_peer(&pub_id) {
             match *peer.state() {
                 PeerState::Bootstrapper(_) => {
                     warn!("{:?} Hop message received from bootstrapper {:?}, disconnecting.",
@@ -856,10 +858,7 @@ impl Node {
                           pub_id);
                     Err(RoutingError::InvalidStateForOperation)
                 }
-                PeerState::Client => {
-                    client_check = true;
-                    Ok(*self.name())
-                }
+                PeerState::Client => unreachable!("Client case handled above"),
                 PeerState::JoiningNode => Ok(*self.name()),
                 PeerState::Candidate(_) |
                 PeerState::Proxy |
@@ -886,23 +885,26 @@ impl Node {
             // return Err(RoutingError::UnknownConnection);
         };
 
-        if client_check &&
-           self.check_valid_client_message(&pub_id, hop_msg.content.routing_message())
-               .is_err() {
-            return Err(RoutingError::InvalidStateForOperation);
-        }
-
-        if let Ok(hop_name) = hop_name_result {
-            let HopMessage {
-                content,
-                route,
-                sent_to,
-                ..
-            } = hop_msg;
-            self.handle_signed_message(content, route, hop_name, &sent_to)
-        } else {
-            self.disconnect_peer(&pub_id, None);
-            Err(RoutingError::InvalidStateForOperation)
+        match hop_name_result {
+            Ok(hop_name) => {
+                let HopMessage {
+                    content,
+                    route,
+                    sent_to,
+                    ..
+                } = hop_msg;
+                self.handle_signed_message(content, route, hop_name, &sent_to)
+            }
+            Err(RoutingError::ExceedsRateLimit) => {
+                trace!("{:?} Temporarily can't proxy messages from client {:?} (rate-limit hit).",
+                       self,
+                       pub_id);
+                Err(RoutingError::ExceedsRateLimit)
+            }
+            Err(error) => {
+                self.disconnect_peer(&pub_id, None);
+                Err(error)
+            }
         }
     }
 
@@ -1386,7 +1388,6 @@ impl Node {
                 if priority >= DEFAULT_PRIORITY => Ok(()),
             (&Authority::Client { .. },
              &MessageContent::UserMessagePart {
-                  ref hash,
                   ref part_count,
                   ref part_index,
                   ref priority,
@@ -1395,26 +1396,16 @@ impl Node {
               }) if *part_count <= MAX_PARTS && part_index < part_count &&
                   *priority >= DEFAULT_PRIORITY &&
                   payload.len() <= MAX_PART_LEN => {
-                let ip_addr = if let Ok(addr) = self.crust_service.get_peer_ip_addr(pub_id) {
-                    addr
+                if let Ok(ip_addr) = self.crust_service.get_peer_ip_addr(pub_id) {
+                    self.clients_rate_limiter
+                        .add_message(self.peer_mgr.client_num() as u64,
+                                     ip_addr,
+                                     *part_count,
+                                     *part_index,
+                                     payload)
                 } else {
-                    trace!("{:?} cannot get ip address of client {:?}", self, pub_id);
+                    warn!("{:?} Can't get IP address of client {:?}.", self, pub_id);
                     return Err(RoutingError::RejectedClientMessage);
-                };
-                if self.clients_rate_limiter
-                       .add_message(self.peer_mgr.client_num() as u64,
-                                    ip_addr,
-                                    hash,
-                                    part_count,
-                                    part_index,
-                                    payload)
-                       .is_err() {
-                    trace!("{:?} cannot accept more request from client {:?}",
-                           self,
-                           pub_id);
-                    Err(RoutingError::RejectedClientMessage)
-                } else {
-                    Ok(())
                 }
             }
             _ => {
@@ -2270,10 +2261,9 @@ impl Node {
             info!("{:?} SectionUpdate handled. Prefixes: {:?}",
                   self,
                   new_prefixes);
-            if cfg!(feature = "use-mock-crust") {
-                for prefix in new_prefixes.difference(&old_prefixes) {
-                    self.send_section_list_signature(*prefix, None);
-                }
+            #[cfg(feature = "use-mock-crust")]
+            for prefix in new_prefixes.difference(&old_prefixes) {
+                self.send_section_list_signature(*prefix, None);
             }
         }
         // Filter list of members to just those we don't know about:

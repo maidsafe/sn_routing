@@ -218,9 +218,8 @@ fn whitelist() {
 }
 
 #[test]
-// Having multiple clients connect to the same proxy node.
-// Expect fail to connect after reach MAX_CLIENTS_PER_PROXY,
-// and success again when there is connected client drop out.
+/// Connects multiple clients to the same proxy node, expecting clients fail to connect after
+/// reaching `MAX_CLIENTS_PER_PROXY`, and succeed again when a connected client drops out.
 fn multiple_clients_per_proxy() {
     let min_section_size = 8;
     let network = Network::new(min_section_size, None);

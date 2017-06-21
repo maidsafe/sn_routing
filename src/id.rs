@@ -122,7 +122,6 @@ impl Display for PublicId {
     }
 }
 
-
 impl Serialize for PublicId {
     fn serialize<S: Serializer>(&self, serialiser: S) -> Result<S::Ok, S::Error> {
         (&self.public_encrypt_key, &self.public_sign_key).serialize(serialiser)
