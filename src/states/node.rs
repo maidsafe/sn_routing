@@ -2051,7 +2051,7 @@ impl Node {
             debug!("{:?} Disconnecting {}. Calling crust::Service::disconnect.",
                    self,
                    pub_id);
-            let _ = self.crust_service.disconnect(*pub_id);
+            let _ = self.crust_service.disconnect(pub_id);
             let _ = self.peer_mgr.remove_peer(pub_id);
             self.dropped_tunnel_client(pub_id);
             // FIXME: `outbox` is optional here primarily to avoid passing an `EventBox` through
@@ -2225,6 +2225,11 @@ impl Node {
             info!("{:?} SectionUpdate handled. Prefixes: {:?}",
                   self,
                   new_prefixes);
+            if cfg!(feature = "use-mock-crust") {
+                for prefix in new_prefixes.difference(&old_prefixes) {
+                    self.send_section_list_signature(*prefix, None);
+                }
+            }
         }
         // Filter list of members to just those we don't know about:
         let members = if let Some(section) = self.routing_table()
@@ -2551,7 +2556,7 @@ impl Node {
     fn purge_invalid_rt_entries(&mut self, outbox: &mut EventBox) -> Transition {
         let peer_details = self.peer_mgr.get_routing_peer_details();
         for pub_id in peer_details.out_of_sync_peers {
-            self.crust_service.disconnect(pub_id);
+            self.crust_service.disconnect(&pub_id);
             self.dropped_peer(&pub_id, outbox, true);
         }
         for removal_detail in peer_details.removal_details {
