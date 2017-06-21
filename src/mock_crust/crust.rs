@@ -24,6 +24,7 @@ use std::{fmt, io, thread};
 use std::cell::{RefCell, RefMut};
 use std::collections::HashSet;
 use std::hash::Hash;
+use std::net::{IpAddr, Ipv4Addr};
 use std::net::SocketAddr;
 use std::rc::Rc;
 
@@ -100,6 +101,11 @@ impl<UID: Uid> Service<UID> {
         trace!(target: "crust", "[MOCK] set_service_discovery_listen not implemented in mock");
     }
 
+    /// Return ip address of the peer.
+    pub fn get_peer_ip_addr(&self, _peer: &UID) -> Result<IpAddr, CrustError> {
+        Ok(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)))
+    }
+
     /// Allow (or disallow) peers from bootstrapping off us.
     pub fn set_accept_bootstrap(&mut self, accept: bool) -> Result<(), CrustError> {
         self.lock().set_accept_bootstrap(accept);
@@ -137,14 +143,14 @@ impl<UID: Uid> Service<UID> {
     }
 
     /// Disconnect from the given peer.
-    pub fn disconnect(&self, uid: UID) -> bool {
-        self.lock().disconnect(&uid)
+    pub fn disconnect(&self, uid: &UID) -> bool {
+        self.lock().disconnect(uid)
     }
 
     /// Send message to the given peer.
     // TODO: Implement tests that drop low-priority messages.
-    pub fn send(&self, id: UID, data: Vec<u8>, _priority: u8) -> io::Result<()> {
-        if self.lock().send_message(&id, data) {
+    pub fn send(&self, id: &UID, data: Vec<u8>, _priority: u8) -> io::Result<()> {
+        if self.lock().send_message(id, data) {
             Ok(())
         } else {
             let msg = format!("No connection to peer {:?}", id);

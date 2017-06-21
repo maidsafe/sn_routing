@@ -338,7 +338,7 @@ impl Bootstrapping {
         debug!("{:?} Disconnecting {}. Calling crust::Service::disconnect.",
                self,
                pub_id);
-        let _ = self.crust_service.disconnect(*pub_id);
+        let _ = self.crust_service.disconnect(pub_id);
     }
 
     fn rebootstrap(&mut self) {
@@ -346,7 +346,7 @@ impl Bootstrapping {
             debug!("{:?} Dropping bootstrap node {:?} and retrying.",
                    self,
                    bootstrap_id);
-            self.crust_service.disconnect(bootstrap_id);
+            self.crust_service.disconnect(&bootstrap_id);
             let crust_user = if self.client_restriction() {
                 CrustUser::Client
             } else {

@@ -37,6 +37,7 @@ use outbox::{EventBox, EventBuf};
 use peer_manager::{ConnectionInfoPreparedResult, Peer, PeerManager, PeerState, ReconnectingPeer,
                    RoutingConnection, SectionMap};
 use rand::{self, Rng};
+use rate_limiter::RateLimiter;
 use resource_prover::{RESOURCE_PROOF_DURATION_SECS, ResourceProver};
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use routing_table::{Authority, OwnMergeState, Prefix, RemovalDetails, RoutingTable,
@@ -118,6 +119,8 @@ pub struct Node {
     candidate_status_token: Option<u64>,
     resource_prover: ResourceProver,
     joining_prefix: Prefix<XorName>,
+    /// Records each client's usage
+    clients_rate_limiter: RateLimiter,
 }
 
 impl Node {
@@ -229,6 +232,7 @@ impl Node {
             candidate_status_token: None,
             resource_prover: ResourceProver::new(action_sender, timer, challenger_count),
             joining_prefix: Default::default(),
+            clients_rate_limiter: Default::default(),
         }
     }
 
@@ -841,6 +845,7 @@ impl Node {
                           hop_msg: HopMessage,
                           pub_id: PublicId)
                           -> Result<(), RoutingError> {
+        let mut client_check = false;
         let hop_name_result = if let Some(peer) = self.peer_mgr.get_peer(&pub_id) {
             hop_msg.verify(peer.pub_id().signing_public_key())?;
 
@@ -852,8 +857,8 @@ impl Node {
                     Err(RoutingError::InvalidStateForOperation)
                 }
                 PeerState::Client => {
-                    self.check_valid_client_message(hop_msg.content.routing_message())
-                        .map(|_| *self.name())
+                    client_check = true;
+                    Ok(*self.name())
                 }
                 PeerState::JoiningNode => Ok(*self.name()),
                 PeerState::Candidate(_) |
@@ -880,6 +885,12 @@ impl Node {
             Ok(*self.name())
             // return Err(RoutingError::UnknownConnection);
         };
+
+        if client_check &&
+           self.check_valid_client_message(&pub_id, hop_msg.content.routing_message())
+               .is_err() {
+            return Err(RoutingError::InvalidStateForOperation);
+        }
 
         if let Ok(hop_name) = hop_name_result {
             let HopMessage {
@@ -1366,12 +1377,16 @@ impl Node {
     }
 
     /// Returns `Ok` if a client is allowed to send the given message.
-    fn check_valid_client_message(&self, msg: &RoutingMessage) -> Result<(), RoutingError> {
+    fn check_valid_client_message(&mut self,
+                                  pub_id: &PublicId,
+                                  msg: &RoutingMessage)
+                                  -> Result<(), RoutingError> {
         match (&msg.src, &msg.content) {
             (&Authority::Client { .. }, &MessageContent::Ack(_ack, priority))
                 if priority >= DEFAULT_PRIORITY => Ok(()),
             (&Authority::Client { .. },
              &MessageContent::UserMessagePart {
+                  ref hash,
                   ref part_count,
                   ref part_index,
                   ref priority,
@@ -1379,7 +1394,29 @@ impl Node {
                   ..
               }) if *part_count <= MAX_PARTS && part_index < part_count &&
                   *priority >= DEFAULT_PRIORITY &&
-                  payload.len() <= MAX_PART_LEN => Ok(()),
+                  payload.len() <= MAX_PART_LEN => {
+                let ip_addr = if let Ok(addr) = self.crust_service.get_peer_ip_addr(pub_id) {
+                    addr
+                } else {
+                    trace!("{:?} cannot get ip address of client {:?}", self, pub_id);
+                    return Err(RoutingError::RejectedClientMessage);
+                };
+                if self.clients_rate_limiter
+                       .add_message(self.peer_mgr.client_num() as u64,
+                                    ip_addr,
+                                    hash,
+                                    part_count,
+                                    part_index,
+                                    payload)
+                       .is_err() {
+                    trace!("{:?} cannot accept more request from client {:?}",
+                           self,
+                           pub_id);
+                    Err(RoutingError::RejectedClientMessage)
+                } else {
+                    Ok(())
+                }
+            }
             _ => {
                 debug!("{:?} Illegitimate client message {:?}. Refusing to relay.",
                        self,
@@ -1474,6 +1511,14 @@ impl Node {
                    pub_id,
                    self.routing_table().len(),
                    self.min_section_size() - 1);
+            self.send_direct_message(pub_id, DirectMessage::BootstrapResponse(false));
+            return Ok(());
+        }
+
+        if peer_kind == CrustUser::Client && !self.peer_mgr.can_accept_client() {
+            debug!("{:?} Client {:?} rejected: We cannot accept more clients.",
+                   self,
+                   pub_id);
             self.send_direct_message(pub_id, DirectMessage::BootstrapResponse(false));
             return Ok(());
         }
@@ -2051,7 +2096,7 @@ impl Node {
             debug!("{:?} Disconnecting {}. Calling crust::Service::disconnect.",
                    self,
                    pub_id);
-            let _ = self.crust_service.disconnect(*pub_id);
+            let _ = self.crust_service.disconnect(pub_id);
             let _ = self.peer_mgr.remove_peer(pub_id);
             self.dropped_tunnel_client(pub_id);
             // FIXME: `outbox` is optional here primarily to avoid passing an `EventBox` through
@@ -2551,7 +2596,7 @@ impl Node {
     fn purge_invalid_rt_entries(&mut self, outbox: &mut EventBox) -> Transition {
         let peer_details = self.peer_mgr.get_routing_peer_details();
         for pub_id in peer_details.out_of_sync_peers {
-            self.crust_service.disconnect(pub_id);
+            self.crust_service.disconnect(&pub_id);
             self.dropped_peer(&pub_id, outbox, true);
         }
         for removal_detail in peer_details.removal_details {

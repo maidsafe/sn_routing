@@ -48,6 +48,8 @@ const CONNECTING_PEER_TIMEOUT_SECS: u64 = 90;
 const CONNECTED_PEER_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) after which a `VotedFor` candidate will be removed.
 const CANDIDATE_ACCEPT_TIMEOUT_SECS: u64 = 60;
+/// Maximum allowed number of clients per proxy node.
+const MAX_CLIENTS_PER_PROXY: usize = 10;
 
 #[cfg(feature = "use-mock-crust")]
 #[doc(hidden)]
@@ -58,6 +60,7 @@ pub mod test_consts {
     pub const RESOURCE_PROOF_DURATION_SECS: u64 = super::RESOURCE_PROOF_DURATION_SECS;
     pub const CONNECTING_PEER_TIMEOUT_SECS: u64 = super::CONNECTING_PEER_TIMEOUT_SECS;
     pub const CONNECTED_PEER_TIMEOUT_SECS: u64 = super::CONNECTED_PEER_TIMEOUT_SECS;
+    pub const MAX_CLIENTS_PER_PROXY: usize = super::MAX_CLIENTS_PER_PROXY;
 }
 
 pub type SectionMap = BTreeMap<VersionedPrefix<XorName>, BTreeSet<PublicId>>;
@@ -957,6 +960,11 @@ impl PeerManager {
             .values()
             .filter(|peer| peer.is_client())
             .count()
+    }
+
+    /// Checks whether we can accept more clients.
+    pub fn can_accept_client(&self) -> bool {
+        self.client_num() < MAX_CLIENTS_PER_PROXY
     }
 
     /// Marks the given peer as direct-connected.
