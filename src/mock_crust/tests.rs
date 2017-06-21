@@ -90,7 +90,7 @@ fn start_two_services_bootstrap_communicate_exit() {
 
     // send data from 0 to 1
     let data_sent = vec![0, 1, 255, 254, 222, 1];
-    unwrap!(service_0.send(id_1, data_sent.clone(), 0));
+    unwrap!(service_0.send(&id_1, data_sent.clone(), 0));
     network.deliver_messages();
 
     // 1 should rx data
@@ -103,7 +103,7 @@ fn start_two_services_bootstrap_communicate_exit() {
 
     // send data from 1 to 0
     let data_sent = vec![10, 11, 155, 214, 202];
-    unwrap!(service_1.send(id_0, data_sent.clone(), 0));
+    unwrap!(service_1.send(&id_0, data_sent.clone(), 0));
 
     network.deliver_messages();
     // 0 should rx data
@@ -114,7 +114,7 @@ fn start_two_services_bootstrap_communicate_exit() {
     assert_eq!(data_recvd, data_sent);
     assert_eq!(pub_id, id_1);
 
-    assert!(service_0.disconnect(id_1));
+    assert!(service_0.disconnect(&id_1));
     network.deliver_messages();
     expect_event!(event_rx_1, CrustEvent::LostPeer::<PublicId>(id) => assert_eq!(id, id_0));
 }
@@ -164,7 +164,7 @@ fn start_two_services_rendezvous_connect() {
 
     // send data from 0 to 1
     let data_sent = vec![0, 1, 255, 254, 222, 1];
-    unwrap!(service_0.send(id_1, data_sent.clone(), 0));
+    unwrap!(service_0.send(&id_1, data_sent.clone(), 0));
     network.deliver_messages();
 
     // 1 should rx data
@@ -177,7 +177,7 @@ fn start_two_services_rendezvous_connect() {
 
     // send data from 1 to 0
     let data_sent = vec![10, 11, 155, 214, 202];
-    unwrap!(service_1.send(id_0, data_sent.clone(), 0));
+    unwrap!(service_1.send(&id_0, data_sent.clone(), 0));
     network.deliver_messages();
 
     // 0 should rx data

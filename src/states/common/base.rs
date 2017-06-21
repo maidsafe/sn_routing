@@ -73,7 +73,7 @@ pub trait Base: Debug {
     fn send_or_drop(&mut self, pub_id: &PublicId, bytes: Vec<u8>, priority: u8) {
         self.stats().count_bytes(bytes.len());
 
-        if let Err(err) = self.crust_service().send(*pub_id, bytes, priority) {
+        if let Err(err) = self.crust_service().send(pub_id, bytes, priority) {
             info!("{:?} Connection to {} failed: {:?}", self, pub_id, err);
             // TODO: Handle lost peer, but avoid a cascade of sending messages and handling more
             //       lost peers: https://maidsafe.atlassian.net/browse/MAID-1924

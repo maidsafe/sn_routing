@@ -2051,7 +2051,7 @@ impl Node {
             debug!("{:?} Disconnecting {}. Calling crust::Service::disconnect.",
                    self,
                    pub_id);
-            let _ = self.crust_service.disconnect(*pub_id);
+            let _ = self.crust_service.disconnect(pub_id);
             let _ = self.peer_mgr.remove_peer(pub_id);
             self.dropped_tunnel_client(pub_id);
             // FIXME: `outbox` is optional here primarily to avoid passing an `EventBox` through
@@ -2551,7 +2551,7 @@ impl Node {
     fn purge_invalid_rt_entries(&mut self, outbox: &mut EventBox) -> Transition {
         let peer_details = self.peer_mgr.get_routing_peer_details();
         for pub_id in peer_details.out_of_sync_peers {
-            self.crust_service.disconnect(pub_id);
+            self.crust_service.disconnect(&pub_id);
             self.dropped_peer(&pub_id, outbox, true);
         }
         for removal_detail in peer_details.removal_details {

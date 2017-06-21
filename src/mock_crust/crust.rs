@@ -137,14 +137,14 @@ impl<UID: Uid> Service<UID> {
     }
 
     /// Disconnect from the given peer.
-    pub fn disconnect(&self, uid: UID) -> bool {
-        self.lock().disconnect(&uid)
+    pub fn disconnect(&self, uid: &UID) -> bool {
+        self.lock().disconnect(uid)
     }
 
     /// Send message to the given peer.
     // TODO: Implement tests that drop low-priority messages.
-    pub fn send(&self, id: UID, data: Vec<u8>, _priority: u8) -> io::Result<()> {
-        if self.lock().send_message(&id, data) {
+    pub fn send(&self, id: &UID, data: Vec<u8>, _priority: u8) -> io::Result<()> {
+        if self.lock().send_message(id, data) {
             Ok(())
         } else {
             let msg = format!("No connection to peer {:?}", id);
