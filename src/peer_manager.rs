@@ -43,7 +43,8 @@ use xor_name::XorName;
 const JOINING_NODE_TIMEOUT_SECS: u64 = 900;
 /// Time (in seconds) after which the connection to a peer is considered failed.
 const CONNECTING_PEER_TIMEOUT_SECS: u64 = 90;
-/// Time (in seconds) the node waits for a peer to become valid once connected.
+/// Time (in seconds) the node waits for a peer to either become valid once connected to it or to
+/// transition once bootstrapped to it.
 const CONNECTED_PEER_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) after which a `VotedFor` candidate will be removed.
 const CANDIDATE_ACCEPT_TIMEOUT_SECS: u64 = 60;

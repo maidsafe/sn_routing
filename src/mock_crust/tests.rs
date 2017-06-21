@@ -37,8 +37,7 @@ fn get_event_sender
      event_rx)
 }
 
-// Receive an event from the given receiver and asserts that it matches the
-// given pattern.
+// Receive an event from the given receiver and asserts that it matches the given pattern.
 macro_rules! expect_event {
     ($rx:expr, $pattern:pat) => {
         match unwrap!($rx.try_recv()) {
