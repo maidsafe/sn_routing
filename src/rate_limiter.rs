@@ -20,7 +20,9 @@ use error::RoutingError;
 use fake_clock::FakeClock as Instant;
 use itertools::Itertools;
 use maidsafe_utilities::serialisation::{self, SerialisationError};
-use messages::UserMessage;
+use messages::{DEFAULT_PRIORITY, MAX_PARTS, MAX_PART_LEN, MessageContent, RoutingMessage,
+               UserMessage};
+use routing_table::Authority;
 use std::cmp;
 use std::collections::BTreeMap;
 use std::mem;
@@ -59,13 +61,40 @@ impl RateLimiter {
     /// amount will cause the client to exceed its share of the `CAPACITY` or cause the total
     /// `CAPACITY` to be exceeded, `Err(ExceedsRateLimit)` is returned. If the message is invalid,
     /// `Err(InvalidMessage)` is returned (this probably indicates malicious behaviour).
-    pub fn add_message(&mut self,
-                       online_clients: u64,
-                       client_ip: &IpAddr,
-                       part_count: u32,
-                       part_index: u32,
-                       payload: &[u8])
-                       -> Result<(), RoutingError> {
+    pub fn check_valid_client_message(&mut self,
+                                      online_clients: u64,
+                                      client_ip: &IpAddr,
+                                      msg: &RoutingMessage)
+                                      -> Result<(), RoutingError> {
+        match (&msg.src, &msg.content) {
+            (&Authority::Client { .. }, &MessageContent::Ack(_ack, priority))
+                if priority >= DEFAULT_PRIORITY => Ok(()),
+            (&Authority::Client { .. },
+             &MessageContent::UserMessagePart {
+                  ref part_count,
+                  ref part_index,
+                  ref priority,
+                  ref payload,
+                  ..
+              }) if *part_count <= MAX_PARTS && part_index < part_count &&
+                  *priority >= DEFAULT_PRIORITY &&
+                  payload.len() <= MAX_PART_LEN => {
+                self.add_message(online_clients, client_ip, *part_count, *part_index, payload)
+            }
+            _ => {
+                debug!("Illegitimate client message {:?}. Refusing to relay.", msg);
+                Err(RoutingError::RejectedClientMessage)
+            }
+        }
+    }
+
+    fn add_message(&mut self,
+                   online_clients: u64,
+                   client_ip: &IpAddr,
+                   part_count: u32,
+                   part_index: u32,
+                   payload: &[u8])
+                   -> Result<(), RoutingError> {
         self.update();
         let total_used: u64 = self.used.values().sum();
         let used = self.used.get(client_ip).map_or(0, |used| *used);
@@ -182,12 +211,35 @@ impl Default for RateLimiter {
 mod tests {
     use super::*;
     use fake_clock::FakeClock;
+    use id::FullId;
     use messages::Request;
     use rand;
+    use tiny_keccak::sha3_256;
     use types::MessageId;
+    use xor_name::XorName;
+
+    fn gen_routing_message(part_count: u32, part_index: u32, payload: Vec<u8>) -> RoutingMessage {
+        let data_name: XorName = rand::random();
+        let proxy_name: XorName = rand::random();
+        RoutingMessage {
+            src: Authority::Client {
+                client_id: *FullId::new().public_id(),
+                proxy_node_name: proxy_name,
+            },
+            dst: Authority::NaeManager(data_name),
+            content: MessageContent::UserMessagePart {
+                hash: sha3_256(&payload),
+                part_count: part_count,
+                part_index: part_index,
+                payload: payload,
+                priority: DEFAULT_PRIORITY,
+                cacheable: false,
+            },
+        }
+    }
 
     #[test]
-    fn add_message() {
+    fn check_valid_client_message() {
         // First client fills the `RateLimiter` with get requests.
         let mut rate_limiter = RateLimiter::new();
         let client_1 = IpAddr::from([0, 0, 0, 0]);
@@ -196,14 +248,16 @@ mod tests {
                 name: rand::random(),
                 msg_id: MessageId::new(),
         })));
+        let get_req = gen_routing_message(1, 0, get_req_payload);
+
         let fill_full_iterations = CAPACITY / CLIENT_GET_CHARGE;
         for _ in 0..fill_full_iterations {
-            unwrap!(rate_limiter.add_message(1, &client_1, 1, 0, &get_req_payload));
+            unwrap!(rate_limiter.check_valid_client_message(1, &client_1, &get_req));
         }
 
         // Check a second client can't add a message just now.
         let client_2 = IpAddr::from([1, 1, 1, 1]);
-        match rate_limiter.add_message(1, &client_2, 1, 0, &get_req_payload) {
+        match rate_limiter.check_valid_client_message(1, &client_2, &get_req) {
             Err(RoutingError::ExceedsRateLimit) => {}
             _ => panic!("unexpected result"),
         }
@@ -211,16 +265,30 @@ mod tests {
         // Wait until enough has drained to allow the second client's request to succeed.
         let wait_millis = CLIENT_GET_CHARGE * 1000 / RATE as u64;
         FakeClock::advance_time(wait_millis);
-        unwrap!(rate_limiter.add_message(10, &client_2, 1, 0, &get_req_payload));
+        unwrap!(rate_limiter.check_valid_client_message(10, &client_2, &get_req));
 
         // Wait for the same period, but now try adding invalid messages.
         FakeClock::advance_time(wait_millis);
-        let all_zero_payload = vec![0u8; CLIENT_GET_CHARGE as usize];
-        match rate_limiter.add_message(10, &client_2, 2, 0, &all_zero_payload) {
+        let all_zero_req = gen_routing_message(2, 0, vec![0u8; MAX_PART_LEN]);
+        match rate_limiter.check_valid_client_message(10, &client_2, &all_zero_req) {
             Err(RoutingError::InvalidMessage) => {}
             _ => panic!("unexpected result"),
         }
 
-        unwrap!(rate_limiter.add_message(2, &client_2, 1, 0, &get_req_payload));
+        match rate_limiter.check_valid_client_message(10, &client_2, &get_req) {
+            Err(RoutingError::ExceedsRateLimit) => {}
+            _ => panic!("unexpected result"),
+        }
+        unwrap!(rate_limiter.check_valid_client_message(2, &client_2, &get_req));
+
+        // Wait for the same period, and push up the second client's usage.
+        FakeClock::advance_time(wait_millis);
+        unwrap!(rate_limiter.check_valid_client_message(2, &client_2, &get_req));
+        // Wait for the same period to drain the second client's usage to half of per-client cap.
+        FakeClock::advance_time(wait_millis);
+        match rate_limiter.check_valid_client_message(10, &client_2, &get_req) {
+            Err(RoutingError::ExceedsRateLimit) => {}
+            _ => panic!("unexpected result"),
+        }
     }
 }
