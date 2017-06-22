@@ -10,7 +10,7 @@ repository = "https://github.com/maidsafe/routing"
 version = "0.30.0"
 
 [dependencies]
-crust = "~0.26.0"
+crust = { git = "https://github.com/maidsafe/crust", branch = "master" }
 fake_clock = "~0.1.0"
 hex = "~0.2.0"
 itertools = "~0.6.0"

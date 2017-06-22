@@ -130,6 +130,8 @@ pub enum RoutingError {
     InvalidMessage,
     /// Invalid Peer
     InvalidPeer,
+    /// The client's message has been rejected by the rate-limiter.
+    ExceedsRateLimit,
 }
 
 impl From<RoutingTableError> for RoutingError {

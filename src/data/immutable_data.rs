@@ -48,7 +48,6 @@ impl ImmutableData {
         &self.value
     }
 
-
     /// Returns name ensuring invariant.
     pub fn name(&self) -> &XorName {
         &self.name
