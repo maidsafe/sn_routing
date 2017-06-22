@@ -683,29 +683,15 @@ impl Node {
                                    direct_message: &DirectMessage,
                                    pub_id: &PublicId)
                                    -> Result<(), RoutingError> {
-        use messages::DirectMessage::*;
-        if let Some(peer) = self.peer_mgr.get_peer(pub_id) {
-            match *peer.state() {
-                PeerState::Bootstrapper(_) => {
-                    match *direct_message {
-                        BootstrapRequest(_) => return Ok(()),
-                        CandidateInfo { .. } |
-                        MessageSignature(..) |
-                        SectionListSignature(..) |
-                        BootstrapResponse(_) |
-                        TunnelRequest(_) |
-                        TunnelSuccess(_) |
-                        TunnelSelect(_) |
-                        TunnelClosed(_) |
-                        TunnelDisconnect(_) |
-                        ResourceProof { .. } |
-                        ResourceProofResponse { .. } |
-                        ResourceProofResponseReceipt => (),
-                    }
+        match self.peer_mgr.get_peer(pub_id).map(Peer::state) {
+            Some(&PeerState::Bootstrapper(_)) => {
+                if let DirectMessage::BootstrapRequest(_) = *direct_message {
+                    return Ok(());
                 }
-                PeerState::Client => (),
-                _ => return Ok(()),
             }
+            Some(&PeerState::Client) |
+            None => (),
+            _ => return Ok(()),
         }
         debug!("{:?} Illegitimate direct message {:?} from {:?}.",
                self,
@@ -763,6 +749,9 @@ impl Node {
     /// Sends a signature for the list of members of a section with prefix `prefix` to our whole
     /// section if `dst` is `None`, or to the given node if it is `Some(name)`
     fn send_section_list_signature(&mut self, prefix: Prefix<XorName>, dst: Option<XorName>) {
+        if cfg!(not(feature = "use-mock-crust")) {
+            return;
+        }
         let section = match self.get_section_list(&prefix) {
             Ok(section) => section,
             Err(err) => {
@@ -2261,7 +2250,6 @@ impl Node {
             info!("{:?} SectionUpdate handled. Prefixes: {:?}",
                   self,
                   new_prefixes);
-            #[cfg(feature = "use-mock-crust")]
             for prefix in new_prefixes.difference(&old_prefixes) {
                 self.send_section_list_signature(*prefix, None);
             }
