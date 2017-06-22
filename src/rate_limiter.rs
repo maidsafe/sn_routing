@@ -21,7 +21,7 @@ use fake_clock::FakeClock as Instant;
 use maidsafe_utilities::serialisation;
 use messages::UserMessage;
 use std::cmp;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::net::IpAddr;
 #[cfg(not(feature="fake_clock"))]
 use std::time::Instant;
@@ -38,7 +38,7 @@ const CLIENT_GET_CHARGE: u64 = 2 * 1024 * 1024;
 /// maximum capacity for the bucket, and connected clients each get an equal share of this capacity.
 pub struct RateLimiter {
     /// Map of client IP address to their total bytes remaining in the `RateLimiter`.
-    used: HashMap<IpAddr, u64>,
+    used: BTreeMap<IpAddr, u64>,
     /// Timestamp of when the `RateLimiter` was last updated.
     last_updated: Instant,
 }
@@ -46,7 +46,7 @@ pub struct RateLimiter {
 impl RateLimiter {
     pub fn new() -> Self {
         RateLimiter {
-            used: HashMap::new(),
+            used: BTreeMap::new(),
             last_updated: Instant::now(),
         }
     }
@@ -147,8 +147,8 @@ impl RateLimiter {
         let leaking_client_count = self.used.len();
         let mut quota = leaked_units / leaking_client_count as u64;
         let mut entries: Vec<(u64, IpAddr)> = self.used
-            .drain()
-            .map(|(ip_addr, used)| (used, ip_addr))
+            .iter()
+            .map(|(ip_addr, used)| (*used, *ip_addr))
             .collect();
         entries.sort();
         for (index, (used, client)) in entries.into_iter().enumerate() {
