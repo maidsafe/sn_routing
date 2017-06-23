@@ -155,6 +155,22 @@ impl Client {
         self.send_request(dst, request, CLIENT_GET_PRIORITY)
     }
 
+    /// Fetches the entire MutableData
+    pub fn get_mdata(&mut self,
+                     dst: Authority<XorName>,
+                     name: XorName,
+                     tag: u64,
+                     msg_id: MessageId)
+                     -> Result<(), InterfaceError> {
+        let request = Request::GetMData {
+            name: name,
+            tag: tag,
+            msg_id: msg_id,
+        };
+
+        self.send_request(dst, request, CLIENT_GET_PRIORITY)
+    }
+
     /// Fetches a list of entries (keys + values) of the provided MutableData
     /// Note: response to this request is unlikely to accumulate during churn.
     pub fn list_mdata_entries(&mut self,
