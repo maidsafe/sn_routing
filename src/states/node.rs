@@ -54,6 +54,7 @@ use std::collections::{BTreeSet, VecDeque};
 #[cfg(feature = "use-mock-crust")]
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
+use std::net::IpAddr;
 use std::time::Duration;
 use timer::Timer;
 use tunnels::Tunnels;
@@ -75,6 +76,8 @@ const SU_MAX_TIMEOUT_SECS: u64 = 300;
 const CANDIDATE_STATUS_INTERVAL_SECS: u64 = 60;
 /// Duration for which `OwnSectionMerge` messages are kept in the cache, in seconds.
 const MERGE_TIMEOUT_SECS: u64 = 300;
+/// Duration for which all clients on a given IP will be blocked from joining this node.
+const CLIENT_BAN_SECS: u64 = 300;
 
 pub struct Node {
     ack_mgr: AckManager,
@@ -122,6 +125,8 @@ pub struct Node {
     /// Limits the rate at which clients can pass messages through this node when it acts as their
     /// proxy.
     clients_rate_limiter: RateLimiter,
+    /// IPs of clients which have been temporarily blocked from bootstrapping off this node.
+    banned_client_ips: LruCache<IpAddr, ()>,
 }
 
 impl Node {
@@ -234,6 +239,7 @@ impl Node {
             resource_prover: ResourceProver::new(action_sender, timer, challenger_count),
             joining_prefix: Default::default(),
             clients_rate_limiter: Default::default(),
+            banned_client_ips: LruCache::with_expiry_duration(Duration::from_secs(CLIENT_BAN_SECS)),
         }
     }
 
@@ -458,8 +464,25 @@ impl Node {
                self,
                pub_id,
                peer_kind);
-        if peer_kind == CrustUser::Node && !self.crust_service.is_peer_whitelisted(&pub_id) {
-            warn!("{:?} {:?} is bootstrapping as a node, but is not in whitelist.",
+        if peer_kind == CrustUser::Node {
+            if !self.crust_service.is_peer_whitelisted(&pub_id) {
+                warn!("{:?} {:?} is bootstrapping as a node, but is not in whitelist.",
+                      self,
+                      pub_id);
+                self.disconnect_peer(&pub_id, None);
+                return;
+            }
+        } else if let Ok(ip_addr) = self.crust_service.get_peer_ip_addr(&pub_id) {
+            if self.banned_client_ips.contains_key(&ip_addr) {
+                warn!("{:?} Client {:?} is trying to bootstrap on banned IP {}.",
+                      self,
+                      pub_id,
+                      ip_addr);
+                self.disconnect_peer(&pub_id, None);
+                return;
+            }
+        } else {
+            warn!("{:?} Can't get IP address of bootstrapper {:?}.",
                   self,
                   pub_id);
             self.disconnect_peer(&pub_id, None);
@@ -600,6 +623,7 @@ impl Node {
                              -> Result<(), RoutingError> {
         use messages::DirectMessage::*;
         if let Err(error) = self.check_direct_message_sender(&direct_message, &pub_id) {
+            self.ban_client(&pub_id);
             self.disconnect_peer(&pub_id, Some(outbox));
             return Err(error);
         }
@@ -615,6 +639,7 @@ impl Node {
                           self,
                           error,
                           pub_id);
+                    self.ban_client(&pub_id);
                     self.disconnect_peer(&pub_id, Some(outbox));
                 }
             }
@@ -786,7 +811,6 @@ impl Node {
             sig
         };
 
-
         // this defines whom we are sending signature to: our section if dst is None, or given
         // name if it's Some
         let peers = if let Some(dst) = dst {
@@ -891,6 +915,7 @@ impl Node {
                 Err(RoutingError::ExceedsRateLimit)
             }
             Err(error) => {
+                self.ban_client(&pub_id);
                 self.disconnect_peer(&pub_id, None);
                 Err(error)
             }
@@ -3262,6 +3287,15 @@ impl Node {
 
     fn our_prefix(&self) -> &Prefix<XorName> {
         self.routing_table().our_prefix()
+    }
+
+    fn ban_client(&mut self, pub_id: &PublicId) {
+        if let Ok(ip_addr) = self.crust_service.get_peer_ip_addr(pub_id) {
+            let _ = self.banned_client_ips.insert(ip_addr, ());
+            debug!("{:?} Banned client {:?} on IP {}", self, pub_id, ip_addr);
+        } else {
+            warn!("{:?} Can't get IP address of client {:?}.", self, pub_id);
+        }
     }
 }
 
