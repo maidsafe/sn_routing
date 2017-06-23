@@ -111,7 +111,14 @@ pub enum Response {
     },
     /// Returns a success or failure status of mutating MutableData in the network.
     MutateMDataEntries {
-        /// Result of mutating an entry in MutableData
+        /// Result of mutating entries in MutableData
+        res: Result<(), ClientError>,
+        /// Unique message identifier
+        msg_id: MsgId,
+    },
+    /// Returns a success or failure status of deleting entries of MutableData in the network.
+    DeleteMDataEntries {
+        /// Result of deleting entries in MutableData
         res: Result<(), ClientError>,
         /// Unique message identifier
         msg_id: MsgId,
