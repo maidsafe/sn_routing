@@ -18,7 +18,7 @@
 use error::RoutingError;
 #[cfg(feature = "use-mock-crust")]
 use fake_clock::FakeClock as Instant;
-use maidsafe_utilities::serialisation;
+use maidsafe_utilities::serialisation::{self, SerialisationError};
 use messages::UserMessage;
 use std::cmp;
 use std::collections::BTreeMap;
@@ -105,6 +105,9 @@ impl RateLimiter {
                 }
                 Ok(Request(Refresh(..))) |
                 Ok(Response(_)) => return Err(RoutingError::InvalidMessage),
+                Err(SerialisationError::DeserialiseExtraBytes) => {
+                    return Err(RoutingError::InvalidMessage);
+                }
                 Err(_) => {
                     if part_count == 1 {
                         return Err(RoutingError::InvalidMessage);
@@ -141,6 +144,7 @@ impl RateLimiter {
             self.used.clear();
             return;
         }
+
         // Sort entries by least-used to most-used and leak each client's quota. For any client
         // which doesn't need its full quota, the unused portion is equally distributed amongst the
         // others.
@@ -155,8 +159,9 @@ impl RateLimiter {
         for (index, (used, client)) in entries.into_iter().enumerate() {
             if used < quota {
                 leaked_units -= used;
-                // Shall never hit `0` as such case (all usage leaked) shall incur early return in
-                // the above sum check already.
+                // The divisor will never be `0` as such a case would need all entries to be below
+                // their quota (i.e. all usage has fully leaked) and would have results in an early
+                // return in the above sum check already.
                 quota = leaked_units / (leaking_client_count - index - 1) as u64;
             } else {
                 let _ = self.used.insert(client, used - quota);
@@ -171,8 +176,7 @@ impl Default for RateLimiter {
     }
 }
 
-#[cfg(feature = "use-mock-crust")]
-#[cfg(test)]
+#[cfg(all(test, feature = "use-mock-crust"))]
 mod tests {
     use super::*;
     use fake_clock::FakeClock;
@@ -181,7 +185,8 @@ mod tests {
     use types::MessageId;
 
     #[test]
-    fn rate_limiter_check() {
+    fn add_message() {
+        // First client fills the `RateLimiter` with get requests.
         let mut rate_limiter = RateLimiter::new();
         let client_1 = IpAddr::from([0, 0, 0, 0]);
         let get_req_payload = unwrap!(serialisation::serialise(
@@ -194,21 +199,26 @@ mod tests {
             unwrap!(rate_limiter.add_message(1, &client_1, 1, 0, &get_req_payload));
         }
 
+        // Check a second client can't add a message just now.
         let client_2 = IpAddr::from([1, 1, 1, 1]);
         match rate_limiter.add_message(1, &client_2, 1, 0, &get_req_payload) {
             Err(RoutingError::ExceedsRateLimit) => {}
             _ => panic!("unexpected result"),
         }
-        FakeClock::advance_time(100);
+
+        // Wait until enough has drained to allow the second client's request to succeed.
+        let wait_millis = CLIENT_GET_CHARGE * 1000 / RATE as u64;
+        FakeClock::advance_time(wait_millis);
         unwrap!(rate_limiter.add_message(10, &client_2, 1, 0, &get_req_payload));
 
-        FakeClock::advance_time(400);
-        // The failure is because all zero payload will be parsed as a `Refresh` message.
-        let all_zero_paylod = [0u8; CLIENT_GET_CHARGE as usize];
+        // Wait for the same period, but now try adding invalid messages.
+        FakeClock::advance_time(wait_millis);
+        let all_zero_paylod = vec![0u8; CLIENT_GET_CHARGE as usize];
         match rate_limiter.add_message(10, &client_2, 2, 0, &all_zero_paylod) {
             Err(RoutingError::InvalidMessage) => {}
             _ => panic!("unexpected result"),
         }
-        unwrap!(rate_limiter.add_message(10, &client_2, 1, 0, &get_req_payload));
+
+        unwrap!(rate_limiter.add_message(2, &client_2, 1, 0, &get_req_payload));
     }
 }
