@@ -16,14 +16,14 @@
 // relating to use of the SAFE Network Software.
 
 use error::RoutingError;
-#[cfg(feature="fake_clock")]
+#[cfg(feature = "use-mock-crust")]
 use fake_clock::FakeClock as Instant;
 use maidsafe_utilities::serialisation;
 use messages::UserMessage;
 use std::cmp;
 use std::collections::BTreeMap;
 use std::net::IpAddr;
-#[cfg(not(feature="fake_clock"))]
+#[cfg(not(feature = "use-mock-crust"))]
 use std::time::Instant;
 
 /// Maximum total bytes the `RateLimiter` allows at any given moment.
@@ -36,6 +36,7 @@ const CLIENT_GET_CHARGE: u64 = 2 * 1024 * 1024;
 /// Used to throttle the rate at which clients can send messages via this node. It works on a "leaky
 /// bucket" principle: there is a set rate at which bytes will leak out of the bucket, there is a
 /// maximum capacity for the bucket, and connected clients each get an equal share of this capacity.
+#[derive(Debug)]
 pub struct RateLimiter {
     /// Map of client IP address to their total bytes remaining in the `RateLimiter`.
     used: BTreeMap<IpAddr, u64>,
@@ -58,15 +59,15 @@ impl RateLimiter {
     /// `Err(InvalidMessage)` is returned (this probably indicates malicious behaviour).
     pub fn add_message(&mut self,
                        online_clients: u64,
-                       client_ip: IpAddr,
+                       client_ip: &IpAddr,
                        part_count: u32,
                        part_index: u32,
                        payload: &[u8])
                        -> Result<(), RoutingError> {
         self.update();
         let total_used: u64 = self.used.values().sum();
-        let used = self.used.entry(client_ip).or_insert(0);
-        let allowance = cmp::min(CAPACITY - total_used, CAPACITY / online_clients - *used);
+        let used = self.used.get(client_ip).map_or(0, |used| *used);
+        let allowance = cmp::min(CAPACITY - total_used, CAPACITY / online_clients - used);
 
         let bytes_to_add = if part_index == 0 {
             use self::UserMessage::*;
@@ -119,7 +120,7 @@ impl RateLimiter {
             return Err(RoutingError::ExceedsRateLimit);
         }
 
-        *used += bytes_to_add;
+        let _ = self.used.insert(*client_ip, used + bytes_to_add);
         Ok(())
     }
 
@@ -140,7 +141,6 @@ impl RateLimiter {
             self.used.clear();
             return;
         }
-
         // Sort entries by least-used to most-used and leak each client's quota. For any client
         // which doesn't need its full quota, the unused portion is equally distributed amongst the
         // others.
@@ -151,10 +151,13 @@ impl RateLimiter {
             .map(|(ip_addr, used)| (*used, *ip_addr))
             .collect();
         entries.sort();
+        self.used.clear();
         for (index, (used, client)) in entries.into_iter().enumerate() {
             if used < quota {
                 leaked_units -= used;
-                quota = leaked_units / (leaking_client_count - index + 1) as u64;
+                // Shall never hit `0` as such case (all usage leaked) shall incur early return in
+                // the above sum check already.
+                quota = leaked_units / (leaking_client_count - index - 1) as u64;
             } else {
                 let _ = self.used.insert(client, used - quota);
             }
@@ -165,5 +168,47 @@ impl RateLimiter {
 impl Default for RateLimiter {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(feature = "use-mock-crust")]
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fake_clock::FakeClock;
+    use messages::Request;
+    use rand;
+    use types::MessageId;
+
+    #[test]
+    fn rate_limiter_check() {
+        let mut rate_limiter = RateLimiter::new();
+        let client_1 = IpAddr::from([0, 0, 0, 0]);
+        let get_req_payload = unwrap!(serialisation::serialise(
+            &UserMessage::Request(Request::GetIData {
+                name: rand::random(),
+                msg_id: MessageId::new(),
+        })));
+        let fill_full_iterations = CAPACITY / CLIENT_GET_CHARGE;
+        for _ in 0..fill_full_iterations {
+            unwrap!(rate_limiter.add_message(1, &client_1, 1, 0, &get_req_payload));
+        }
+
+        let client_2 = IpAddr::from([1, 1, 1, 1]);
+        match rate_limiter.add_message(1, &client_2, 1, 0, &get_req_payload) {
+            Err(RoutingError::ExceedsRateLimit) => {}
+            _ => panic!("unexpected result"),
+        }
+        FakeClock::advance_time(100);
+        unwrap!(rate_limiter.add_message(10, &client_2, 1, 0, &get_req_payload));
+
+        FakeClock::advance_time(400);
+        // The failure is because all zero payload will be parsed as a `Refresh` message.
+        let all_zero_paylod = [0u8; CLIENT_GET_CHARGE as usize];
+        match rate_limiter.add_message(10, &client_2, 2, 0, &all_zero_paylod) {
+            Err(RoutingError::InvalidMessage) => {}
+            _ => panic!("unexpected result"),
+        }
+        unwrap!(rate_limiter.add_message(10, &client_2, 1, 0, &get_req_payload));
     }
 }

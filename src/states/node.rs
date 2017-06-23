@@ -1388,7 +1388,7 @@ impl Node {
                 if let Ok(ip_addr) = self.crust_service.get_peer_ip_addr(pub_id) {
                     self.clients_rate_limiter
                         .add_message(self.peer_mgr.client_num() as u64,
-                                     ip_addr,
+                                     &ip_addr,
                                      *part_count,
                                      *part_index,
                                      payload)
