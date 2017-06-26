@@ -396,7 +396,7 @@ impl Node {
                     return Transition::Terminate;
                 }
             }
-            CrustEvent::NewMessage(pub_id, bytes) => {
+            CrustEvent::NewMessage(pub_id, _, bytes) => {
                 match self.handle_new_message(pub_id, bytes, outbox) {
                     Err(RoutingError::FilterCheckFailed) |
                     Ok(_) => (),

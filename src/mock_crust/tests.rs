@@ -96,7 +96,7 @@ fn start_two_services_bootstrap_communicate_exit() {
     // 1 should rx data
     let (data_recvd, pub_id) =
         expect_event!(event_rx_1,
-                      CrustEvent::NewMessage::<PublicId>(their_id, msg) => (msg, their_id));
+                      CrustEvent::NewMessage::<PublicId>(their_id, _, msg) => (msg, their_id));
 
     assert_eq!(data_recvd, data_sent);
     assert_eq!(pub_id, id_0);
@@ -109,7 +109,7 @@ fn start_two_services_bootstrap_communicate_exit() {
     // 0 should rx data
     let (data_recvd, pub_id) =
         expect_event!(event_rx_0,
-                      CrustEvent::NewMessage::<PublicId>(their_id, msg) => (msg, their_id));
+                      CrustEvent::NewMessage::<PublicId>(their_id, _, msg) => (msg, their_id));
 
     assert_eq!(data_recvd, data_sent);
     assert_eq!(pub_id, id_1);
@@ -170,7 +170,7 @@ fn start_two_services_rendezvous_connect() {
     // 1 should rx data
     let (data_recvd, pub_id) =
         expect_event!(event_rx_1,
-                      CrustEvent::NewMessage::<PublicId>(their_id, msg) => (msg, their_id));
+                      CrustEvent::NewMessage::<PublicId>(their_id, _, msg) => (msg, their_id));
 
     assert_eq!(data_recvd, data_sent);
     assert_eq!(pub_id, id_0);
@@ -183,7 +183,7 @@ fn start_two_services_rendezvous_connect() {
     // 0 should rx data
     let (data_recvd, pub_id) =
         expect_event!(event_rx_0,
-                      CrustEvent::NewMessage::<PublicId>(their_id, msg) => (msg, their_id));
+                      CrustEvent::NewMessage::<PublicId>(their_id, _, msg) => (msg, their_id));
 
     assert_eq!(data_recvd, data_sent);
     assert_eq!(pub_id, id_1);

@@ -130,7 +130,7 @@ impl JoiningNode {
                               -> Transition {
         match crust_event {
             CrustEvent::LostPeer(pub_id) => self.handle_lost_peer(pub_id, outbox),
-            CrustEvent::NewMessage(pub_id, bytes) => self.handle_new_message(pub_id, bytes),
+            CrustEvent::NewMessage(pub_id, _, bytes) => self.handle_new_message(pub_id, bytes),
             _ => {
                 debug!("{:?} - Unhandled crust event: {:?}", self, crust_event);
                 Transition::Stay

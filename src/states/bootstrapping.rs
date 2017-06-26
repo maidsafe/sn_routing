@@ -143,7 +143,7 @@ impl Bootstrapping {
                 self.rebootstrap();
                 Transition::Stay
             }
-            CrustEvent::NewMessage(pub_id, bytes) => {
+            CrustEvent::NewMessage(pub_id, _, bytes) => {
                 match self.handle_new_message(pub_id, bytes) {
                     Ok(transition) => transition,
                     Err(error) => {
@@ -469,7 +469,7 @@ mod tests {
         // Check the Crust service received the `BootstrapRequest`, then drop the service to trigger
         // `LostPeer` event in the state machine.
         network.deliver_messages();
-        if let CrustEvent::NewMessage::<_>(_, serialised_msg) = unwrap!(event_rx.try_recv()) {
+        if let CrustEvent::NewMessage::<_>(_, _, serialised_msg) = unwrap!(event_rx.try_recv()) {
             match unwrap!(serialisation::deserialise(&serialised_msg)) {
                 Message::Direct(DirectMessage::BootstrapRequest(_)) => (),
                 _ => panic!("Should have received a `BootstrapRequest`."),
