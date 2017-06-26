@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use data::{MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_MUTABLE_DATA_SIZE_IN_BYTES};
 use error::RoutingError;
 #[cfg(feature = "use-mock-crust")]
 use fake_clock::FakeClock as Instant;
@@ -32,8 +33,11 @@ use std::time::Instant;
 const CAPACITY: u64 = 20 * 1024 * 1024;
 /// The number of bytes per second the `RateLimiter` will "leak".
 const RATE: f64 = 20.0 * 1024.0 * 1024.0;
-/// Charge (in bytes) for a client get request.
-const CLIENT_GET_CHARGE: u64 = 2 * 1024 * 1024;
+
+const GET_MUTABLE_DATA_SHELL_CHARGE: u64 = LIST_MUTABLE_DATA_PERMISSIONS_CHARGE + 88;
+const LIST_MUTABLE_DATA_PERMISSIONS_CHARGE: u64 = (500 * 44) + 40;
+const LIST_AUTH_KEYS_AND_VERSION_CHARGE: u64 = (500 * 32) + 44;
+const GET_ACCOUNT_INFO_CHARGE: u64 = 48;
 
 /// Used to throttle the rate at which clients can send messages via this node. It works on a "leaky
 /// bucket" principle: there is a set rate at which bytes will leak out of the bucket, there is a
@@ -76,37 +80,34 @@ impl RateLimiter {
             use self::UserMessage::*;
             use Request::*;
             match serialisation::deserialise::<UserMessage>(payload) {
-                Ok(Request(GetIData { .. })) |
-                Ok(Request(GetMData { .. })) |
-                Ok(Request(GetMDataVersion { .. })) |
-                Ok(Request(GetMDataShell { .. })) |
-                Ok(Request(ListMDataKeys { .. })) |
-                Ok(Request(ListMDataValues { .. })) |
-                Ok(Request(ListMDataEntries { .. })) |
-                Ok(Request(GetMDataValue { .. })) |
-                Ok(Request(ListMDataPermissions { .. })) |
-                Ok(Request(ListMDataUserPermissions { .. })) |
-                Ok(Request(ListAuthKeysAndVersion { .. })) |
-                Ok(Request(GetAccountInfo { .. })) => {
+                Ok(Request(request)) => {
                     if part_count > 1 {
                         return Err(RoutingError::InvalidMessage);
                     }
-                    CLIENT_GET_CHARGE
-                }
-                Ok(Request(PutIData { .. })) |
-                Ok(Request(PutMData { .. })) |
-                Ok(Request(MutateMDataEntries { .. })) |
-                Ok(Request(SetMDataUserPermissions { .. })) |
-                Ok(Request(DelMDataUserPermissions { .. })) |
-                Ok(Request(ChangeMDataOwner { .. })) |
-                Ok(Request(InsAuthKey { .. })) |
-                Ok(Request(DelAuthKey { .. })) => {
-                    if part_count > 1 {
-                        return Err(RoutingError::InvalidMessage);
+                    match request {
+                        GetIData { .. } => MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
+                        GetMData { .. } |
+                        ListMDataKeys { .. } |
+                        ListMDataValues { .. } |
+                        ListMDataEntries { .. } |
+                        GetMDataValue { .. } => MAX_MUTABLE_DATA_SIZE_IN_BYTES,
+                        GetMDataShell { .. } => GET_MUTABLE_DATA_SHELL_CHARGE,
+                        ListMDataPermissions { .. } => LIST_MUTABLE_DATA_PERMISSIONS_CHARGE,
+                        ListAuthKeysAndVersion { .. } => LIST_AUTH_KEYS_AND_VERSION_CHARGE,
+                        GetAccountInfo { .. } => GET_ACCOUNT_INFO_CHARGE,
+                        GetMDataVersion { .. } |
+                        ListMDataUserPermissions { .. } |
+                        PutIData { .. } |
+                        PutMData { .. } |
+                        MutateMDataEntries { .. } |
+                        SetMDataUserPermissions { .. } |
+                        DelMDataUserPermissions { .. } |
+                        ChangeMDataOwner { .. } |
+                        InsAuthKey { .. } |
+                        DelAuthKey { .. } => payload.len() as u64,
+                        Refresh(..) => return Err(RoutingError::InvalidMessage),
                     }
-                    payload.len() as u64
                 }
-                Ok(Request(Refresh(..))) |
                 Ok(Response(_)) => return Err(RoutingError::InvalidMessage),
                 Err(SerialisationError::DeserialiseExtraBytes) => {
                     return Err(RoutingError::InvalidMessage);
@@ -196,7 +197,7 @@ mod tests {
                 name: rand::random(),
                 msg_id: MessageId::new(),
         })));
-        let fill_full_iterations = CAPACITY / CLIENT_GET_CHARGE;
+        let fill_full_iterations = CAPACITY / MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
         for _ in 0..fill_full_iterations {
             unwrap!(rate_limiter.add_message(1, &client_1, 1, 0, &get_req_payload));
         }
@@ -209,13 +210,13 @@ mod tests {
         }
 
         // Wait until enough has drained to allow the second client's request to succeed.
-        let wait_millis = CLIENT_GET_CHARGE * 1000 / RATE as u64;
+        let wait_millis = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES * 1000 / RATE as u64;
         FakeClock::advance_time(wait_millis);
         unwrap!(rate_limiter.add_message(10, &client_2, 1, 0, &get_req_payload));
 
         // Wait for the same period, but now try adding invalid messages.
         FakeClock::advance_time(wait_millis);
-        let all_zero_payload = vec![0u8; CLIENT_GET_CHARGE as usize];
+        let all_zero_payload = vec![0u8; MAX_IMMUTABLE_DATA_SIZE_IN_BYTES as usize];
         match rate_limiter.add_message(10, &client_2, 2, 0, &all_zero_payload) {
             Err(RoutingError::InvalidMessage) => {}
             _ => panic!("unexpected result"),
