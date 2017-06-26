@@ -217,11 +217,14 @@ mod tests {
 
         // Wait until enough has drained to allow the second client's request to succeed.
         let wait_millis = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES * 1000 / RATE as u64;
-        FakeClock::advance_time(wait_millis);
-        unwrap!(rate_limiter.add_message(10, &client_2, &hash, 1, 0, &get_req_payload));
+        // Repeat till the second client reaches its own usage cap when live client number is 10.
+        for _ in 0..(CAPACITY / 10 / MAX_IMMUTABLE_DATA_SIZE_IN_BYTES + 1) {
+            FakeClock::advance_time(wait_millis);
+            unwrap!(rate_limiter.add_message(10, &client_2, &hash, 1, 0, &get_req_payload));
+        }
 
-        // Wait for the same period, but now try adding invalid messages.
         FakeClock::advance_time(wait_millis);
+        // Try adding invalid messages.
         let all_zero_payload = vec![0u8; MAX_IMMUTABLE_DATA_SIZE_IN_BYTES as usize];
         match rate_limiter.add_message(10,
                                        &client_2,
@@ -232,7 +235,26 @@ mod tests {
             Err(RoutingError::InvalidMessage) => {}
             _ => panic!("unexpected result"),
         }
-
+        // Try making the second client exceed its own usage cap.
+        match rate_limiter.add_message(10, &client_2, &hash, 1, 0, &get_req_payload) {
+            Err(RoutingError::ExceedsRateLimit(returned_hash)) => {
+                assert_eq!(hash, returned_hash);
+            }
+            _ => panic!("unexpected result"),
+        }
+        // More request from the second client with expanded per-client usage cap.
         unwrap!(rate_limiter.add_message(2, &client_2, &hash, 1, 0, &get_req_payload));
+
+        // Wait for the same period, and push up the second client's usage.
+        FakeClock::advance_time(wait_millis);
+        unwrap!(rate_limiter.add_message(2, &client_2, &hash, 1, 0, &get_req_payload));
+        // Wait for the same period to drain the second client's usage to less than per-client cap.
+        FakeClock::advance_time(wait_millis);
+        match rate_limiter.add_message(10, &client_2, &hash, 1, 0, &get_req_payload) {
+            Err(RoutingError::ExceedsRateLimit(returned_hash)) => {
+                assert_eq!(hash, returned_hash);
+            }
+            _ => panic!("unexpected result"),
+        }
     }
 }
