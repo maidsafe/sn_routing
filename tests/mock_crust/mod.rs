@@ -30,9 +30,15 @@ pub use self::utils::{Nodes, TestClient, TestNode, add_connected_nodes_until_spl
                       gen_range, gen_range_except, poll_all, poll_and_resend,
                       remove_nodes_which_failed_to_connect, sort_nodes_by_distance_to,
                       verify_invariant_for_all_nodes};
-use routing::{BootstrapConfig, Event, EventStream, Prefix, XOR_NAME_LEN, XorName};
+use fake_clock::FakeClock;
+use rand::Rng;
+use routing::{Authority, BootstrapConfig, Event, EventStream, MessageId, Prefix, Request,
+              XOR_NAME_LEN, XorName};
 use routing::mock_crust::{Endpoint, Network};
+use routing::rate_limiter_consts::{CAPACITY, CLIENT_GET_CHARGE, RATE};
 use routing::test_consts::MAX_CLIENTS_PER_PROXY;
+use std::collections::HashMap;
+use std::net::IpAddr;
 
 // -----  Miscellaneous tests below  -----
 
@@ -224,15 +230,9 @@ fn multiple_clients_per_proxy() {
     let min_section_size = 8;
     let network = Network::new(min_section_size, None);
     let mut nodes = create_connected_nodes(&network, min_section_size);
+    let mut clients = create_connected_clients(&network, &mut nodes, MAX_CLIENTS_PER_PROXY);
+
     let config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
-
-    let mut clients = Vec::new();
-    for _ in 0..MAX_CLIENTS_PER_PROXY {
-        clients.push(TestClient::new(&network, Some(config.clone()), None));
-        let _ = poll_all(&mut nodes, &mut clients);
-        expect_next_event!(unwrap!(clients.last_mut()), Event::Connected);
-    }
-
     clients.push(TestClient::new(&network, Some(config.clone()), None));
     let _ = poll_all(&mut nodes, &mut clients);
     expect_next_event!(clients[MAX_CLIENTS_PER_PROXY], Event::Terminate);
@@ -244,4 +244,73 @@ fn multiple_clients_per_proxy() {
     clients.push(TestClient::new(&network, Some(config.clone()), None));
     let _ = poll_all(&mut nodes, &mut clients);
     expect_next_event!(clients[MAX_CLIENTS_PER_PROXY - 1], Event::Connected);
+}
+
+#[test]
+/// Connects multiple clients to the same proxy node and randomly sending get requests.
+/// Expect some reguests will be blocked due to the rate limit.
+/// Expect the total capacity of the proxy will never be exceeded.
+fn rate_limit_proxy() {
+    let min_section_size = 8;
+    let network = Network::new(min_section_size, None);
+    let mut nodes = create_connected_nodes(&network, min_section_size);
+    let mut clients = create_connected_clients(&network, &mut nodes, MAX_CLIENTS_PER_PROXY);
+
+    let mut rng = network.new_rng();
+    let data_id: XorName = rng.gen();
+    let dst = Authority::NaeManager(data_id);
+    let mut total_usage: u64 = 0;
+    let wait_millis = 2 * CLIENT_GET_CHARGE * 1000 / RATE as u64;
+    let leaky_rate = 2 * CLIENT_GET_CHARGE;
+    let per_client_cap = CAPACITY / MAX_CLIENTS_PER_PROXY as u64;
+    for i in 0..10 {
+        trace!("iteration {:?}", i);
+        let mut clients_sent = HashMap::new();
+        for (j, client) in clients.iter_mut().enumerate() {
+            if rng.gen_weighted_bool(2) {
+                let msg_id = MessageId::new();
+                unwrap!(client.inner.get_idata(dst, data_id, msg_id));
+                let _ =
+                    clients_sent.insert(msg_id,
+                                        IpAddr::from([0, 0, 0, (j + min_section_size) as u8]));
+            }
+        }
+        trace!("clients_sent: {:?}", clients_sent);
+        let _ = poll_all(&mut nodes, &mut clients);
+
+        let mut request_received: HashMap<MessageId, usize> = HashMap::new();
+        for node in nodes.iter_mut().filter(|n| n.is_recipient(&dst)) {
+            while let Ok(event) = node.try_next_ev() {
+                if let Event::Request {
+                           request: Request::GetIData { msg_id: req_message_id, .. }, ..
+                       } = event {
+                    let entry = request_received
+                        .entry(req_message_id)
+                        .or_insert_with(|| 0);
+                    *entry += 1;
+                }
+            }
+        }
+        trace!("request_received: {:?}", request_received);
+
+        for (msg_id, count) in &request_received {
+            assert_eq!(*count, min_section_size);
+            let _ = unwrap!(clients_sent.remove(msg_id));
+            total_usage += CLIENT_GET_CHARGE;
+        }
+        assert!(total_usage <= CAPACITY);
+
+
+        let clients_usage = nodes[0].inner.get_clients_usage();
+        assert_eq!(clients_usage.iter()
+                             .filter(|&(_, usage)| *usage > per_client_cap)
+                             .count(),
+                   0);
+        for ip in clients_sent.values() {
+            assert!(unwrap!(clients_usage.get(ip)) + CLIENT_GET_CHARGE > per_client_cap);
+        }
+
+        FakeClock::advance_time(wait_millis);
+        total_usage -= leaky_rate;
+    }
 }

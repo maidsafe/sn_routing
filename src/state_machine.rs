@@ -170,6 +170,13 @@ impl State {
         }
     }
 
+    pub fn get_clients_usage(&self) -> BTreeMap<::std::net::IpAddr, u64> {
+        match *self {
+            State::Node(ref state) => state.get_clients_usage(),
+            _ => BTreeMap::new(),
+        }
+    }
+
     pub fn set_next_relocation_dst(&mut self, dst: Option<XorName>) {
         if let State::Node(ref mut node) = *self {
             node.set_next_relocation_dst(dst);
