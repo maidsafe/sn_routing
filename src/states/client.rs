@@ -128,7 +128,9 @@ impl Client {
                               -> Transition {
         match crust_event {
             CrustEvent::LostPeer(pub_id) => self.handle_lost_peer(pub_id, outbox),
-            CrustEvent::NewMessage(pub_id, bytes) => self.handle_new_message(pub_id, bytes, outbox),
+            CrustEvent::NewMessage(pub_id, _, bytes) => {
+                self.handle_new_message(pub_id, bytes, outbox)
+            }
             _ => {
                 debug!("{:?} Unhandled crust event {:?}", self, crust_event);
                 Transition::Stay

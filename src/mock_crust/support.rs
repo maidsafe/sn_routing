@@ -26,7 +26,7 @@ use std::cell::RefCell;
 use std::cmp;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::collections::btree_map::Entry;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, SocketAddr};
 use std::rc::{Rc, Weak};
 
 /// Mock network. Create one before testing with mocks. Use it to create `ServiceHandle`s.
@@ -313,7 +313,7 @@ pub struct ServiceImpl<UID: Uid> {
     pub listening_tcp: bool,
     event_sender: Option<CrustEventSender<UID>>,
     pending_bootstraps: u64,
-    connections: Vec<(UID, Endpoint)>,
+    connections: Vec<(UID, Endpoint, CrustUser)>,
     whitelist: HashSet<Endpoint>,
 }
 
@@ -366,6 +366,14 @@ impl<UID: Uid> ServiceImpl<UID> {
         }
 
         self.pending_bootstraps = pending_bootstraps;
+    }
+
+    pub fn get_peer_ip_addr(&self, uid: &UID) -> Option<IpAddr> {
+        if let Some(endpoint) = self.find_endpoint_by_uid(uid) {
+            Some(to_socket_addr(&endpoint).ip())
+        } else {
+            None
+        }
     }
 
     pub fn send_message(&self, uid: &UID, data: Vec<u8>) -> bool {
@@ -450,12 +458,12 @@ impl<UID: Uid> ServiceImpl<UID> {
     }
 
     fn handle_bootstrap_accept(&mut self, peer_endpoint: Endpoint, uid: UID, kind: CrustUser) {
-        self.add_connection(uid, peer_endpoint);
+        self.add_connection(uid, peer_endpoint, kind);
         self.send_event(CrustEvent::BootstrapAccept(uid, kind));
     }
 
     fn handle_bootstrap_success(&mut self, peer_endpoint: Endpoint, uid: UID) {
-        self.add_connection(uid, peer_endpoint);
+        self.add_connection(uid, peer_endpoint, CrustUser::Node);
         self.send_event(CrustEvent::BootstrapConnect(uid, to_socket_addr(&peer_endpoint)));
         self.decrement_pending_bootstraps();
     }
@@ -483,8 +491,8 @@ impl<UID: Uid> ServiceImpl<UID> {
     }
 
     fn handle_message(&self, peer_endpoint: Endpoint, data: Vec<u8>) {
-        if let Some(uid) = self.find_uid_by_endpoint(&peer_endpoint) {
-            self.send_event(CrustEvent::NewMessage(uid, data));
+        if let Some((uid, kind)) = self.find_uid_and_kind_by_endpoint(&peer_endpoint) {
+            self.send_event(CrustEvent::NewMessage(uid, kind, data));
         } else {
             debug!("Received message from non-connected {:?}", peer_endpoint);
         }
@@ -517,20 +525,20 @@ impl<UID: Uid> ServiceImpl<UID> {
         }
     }
 
-    fn add_connection(&mut self, uid: UID, peer_endpoint: Endpoint) -> bool {
+    fn add_connection(&mut self, uid: UID, peer_endpoint: Endpoint, kind: CrustUser) -> bool {
         if self.connections
                .iter()
-               .any(|&(id, ep)| id == uid && ep == peer_endpoint) {
+               .any(|&(id, ep, _)| id == uid && ep == peer_endpoint) {
             // Connection already exists
             return false;
         }
 
-        self.connections.push((uid, peer_endpoint));
+        self.connections.push((uid, peer_endpoint, kind));
         true
     }
 
     fn add_rendezvous_connection(&mut self, uid: UID, peer_endpoint: Endpoint) {
-        if self.add_connection(uid, peer_endpoint) {
+        if self.add_connection(uid, peer_endpoint, CrustUser::Node) {
             self.send_event(CrustEvent::ConnectSuccess(uid));
         }
     }
@@ -538,7 +546,9 @@ impl<UID: Uid> ServiceImpl<UID> {
     // Remove connected peer with the given uid and return its endpoint,
     // or None if no such peer exists.
     fn remove_connection_by_uid(&mut self, uid: &UID) -> Option<Endpoint> {
-        if let Some(i) = self.connections.iter().position(|&(id, _)| id == *uid) {
+        if let Some(i) = self.connections
+               .iter()
+               .position(|&(id, _, _)| id == *uid) {
             Some(self.connections.swap_remove(i).1)
         } else {
             None
@@ -548,7 +558,7 @@ impl<UID: Uid> ServiceImpl<UID> {
     fn remove_connection_by_endpoint(&mut self, endpoint: Endpoint) -> Option<UID> {
         if let Some(i) = self.connections
                .iter()
-               .position(|&(_, ep)| ep == endpoint) {
+               .position(|&(_, ep, _)| ep == endpoint) {
             Some(self.connections.swap_remove(i).0)
         } else {
             None
@@ -558,21 +568,21 @@ impl<UID: Uid> ServiceImpl<UID> {
     fn find_endpoint_by_uid(&self, uid: &UID) -> Option<Endpoint> {
         self.connections
             .iter()
-            .find(|&&(id, _)| id == *uid)
-            .map(|&(_, ep)| ep)
+            .find(|&&(id, _, _)| id == *uid)
+            .map(|&(_, ep, _)| ep)
     }
 
-    fn find_uid_by_endpoint(&self, endpoint: &Endpoint) -> Option<UID> {
+    fn find_uid_and_kind_by_endpoint(&self, endpoint: &Endpoint) -> Option<(UID, CrustUser)> {
         self.connections
             .iter()
-            .find(|&&(_, ep)| ep == *endpoint)
-            .map(|&(id, _)| id)
+            .find(|&&(_, ep, _)| ep == *endpoint)
+            .map(|&(id, _, user)| (id, user))
     }
 
     fn is_connected(&self, endpoint: &Endpoint, uid: &UID) -> bool {
         self.connections
             .iter()
-            .any(|&conn| conn == (*uid, *endpoint))
+            .any(|&conn| conn.0 == *uid && conn.1 == *endpoint)
     }
 
     pub fn disconnect(&mut self, uid: &UID) -> bool {
@@ -595,7 +605,7 @@ impl<UID: Uid> ServiceImpl<UID> {
     pub fn disconnect_all(&mut self) {
         let endpoints = self.connections
             .drain(..)
-            .map(|(_, ep)| ep)
+            .map(|(_, ep, _)| ep)
             .collect::<Vec<_>>();
 
         for endpoint in endpoints {
@@ -613,7 +623,10 @@ impl<UID: Uid> Drop for ServiceImpl<UID> {
 /// Creates a `SocketAddr` with the endpoint as its port, so that endpoints and addresses can be
 /// easily mapped to each other during testing.
 fn to_socket_addr(endpoint: &Endpoint) -> SocketAddr {
-    SocketAddr::new(IpAddr::V4(Ipv4Addr::new(123, 123, 255, 255)),
+    SocketAddr::new(IpAddr::from([(endpoint.0 >> 24) as u8,
+                                  (endpoint.0 >> 16) as u8,
+                                  (endpoint.0 >> 8) as u8,
+                                  endpoint.0 as u8]),
                     endpoint.0 as u16)
 }
 

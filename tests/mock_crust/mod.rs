@@ -32,6 +32,7 @@ pub use self::utils::{Nodes, TestClient, TestNode, add_connected_nodes_until_spl
                       verify_invariant_for_all_nodes};
 use routing::{BootstrapConfig, Event, EventStream, Prefix, XOR_NAME_LEN, XorName};
 use routing::mock_crust::{Endpoint, Network};
+use routing::test_consts::MAX_CLIENTS_PER_PROXY;
 
 // -----  Miscellaneous tests below  -----
 
@@ -214,4 +215,33 @@ fn whitelist() {
     let mut clients = vec![TestClient::new(&network, Some(config), None)];
     let _ = poll_all(&mut nodes, &mut clients);
     expect_next_event!(clients[0], Event::Connected);
+}
+
+#[test]
+/// Connects multiple clients to the same proxy node, expecting clients fail to connect after
+/// reaching `MAX_CLIENTS_PER_PROXY`, and succeed again when a connected client drops out.
+fn multiple_clients_per_proxy() {
+    let min_section_size = 8;
+    let network = Network::new(min_section_size, None);
+    let mut nodes = create_connected_nodes(&network, min_section_size);
+    let config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
+
+    let mut clients = Vec::new();
+    for _ in 0..MAX_CLIENTS_PER_PROXY {
+        clients.push(TestClient::new(&network, Some(config.clone()), None));
+        let _ = poll_all(&mut nodes, &mut clients);
+        expect_next_event!(unwrap!(clients.last_mut()), Event::Connected);
+    }
+
+    clients.push(TestClient::new(&network, Some(config.clone()), None));
+    let _ = poll_all(&mut nodes, &mut clients);
+    expect_next_event!(clients[MAX_CLIENTS_PER_PROXY], Event::Terminate);
+
+    let _ = clients.remove(MAX_CLIENTS_PER_PROXY);
+    let _ = clients.remove(0);
+    let _ = poll_all(&mut nodes, &mut clients);
+
+    clients.push(TestClient::new(&network, Some(config.clone()), None));
+    let _ = poll_all(&mut nodes, &mut clients);
+    expect_next_event!(clients[MAX_CLIENTS_PER_PROXY - 1], Event::Connected);
 }

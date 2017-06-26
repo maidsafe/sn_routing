@@ -37,6 +37,7 @@ use outbox::{EventBox, EventBuf};
 use peer_manager::{ConnectionInfoPreparedResult, Peer, PeerManager, PeerState, ReconnectingPeer,
                    RoutingConnection, SectionMap};
 use rand::{self, Rng};
+use rate_limiter::RateLimiter;
 use resource_prover::{RESOURCE_PROOF_DURATION_SECS, ResourceProver};
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use routing_table::{Authority, OwnMergeState, Prefix, RemovalDetails, RoutingTable,
@@ -53,6 +54,7 @@ use std::collections::{BTreeSet, VecDeque};
 #[cfg(feature = "use-mock-crust")]
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
+use std::net::IpAddr;
 use std::time::Duration;
 use timer::Timer;
 use tunnels::Tunnels;
@@ -74,6 +76,8 @@ const SU_MAX_TIMEOUT_SECS: u64 = 300;
 const CANDIDATE_STATUS_INTERVAL_SECS: u64 = 60;
 /// Duration for which `OwnSectionMerge` messages are kept in the cache, in seconds.
 const MERGE_TIMEOUT_SECS: u64 = 300;
+/// Duration for which all clients on a given IP will be blocked from joining this node.
+const CLIENT_BAN_SECS: u64 = 2 * 60 * 60;
 
 pub struct Node {
     ack_mgr: AckManager,
@@ -118,6 +122,11 @@ pub struct Node {
     candidate_status_token: Option<u64>,
     resource_prover: ResourceProver,
     joining_prefix: Prefix<XorName>,
+    /// Limits the rate at which clients can pass messages through this node when it acts as their
+    /// proxy.
+    clients_rate_limiter: RateLimiter,
+    /// IPs of clients which have been temporarily blocked from bootstrapping off this node.
+    banned_client_ips: LruCache<IpAddr, ()>,
 }
 
 impl Node {
@@ -229,6 +238,8 @@ impl Node {
             candidate_status_token: None,
             resource_prover: ResourceProver::new(action_sender, timer, challenger_count),
             joining_prefix: Default::default(),
+            clients_rate_limiter: Default::default(),
+            banned_client_ips: LruCache::with_expiry_duration(Duration::from_secs(CLIENT_BAN_SECS)),
         }
     }
 
@@ -385,7 +396,7 @@ impl Node {
                     return Transition::Terminate;
                 }
             }
-            CrustEvent::NewMessage(pub_id, bytes) => {
+            CrustEvent::NewMessage(pub_id, _, bytes) => {
                 match self.handle_new_message(pub_id, bytes, outbox) {
                     Err(RoutingError::FilterCheckFailed) |
                     Ok(_) => (),
@@ -453,8 +464,25 @@ impl Node {
                self,
                pub_id,
                peer_kind);
-        if peer_kind == CrustUser::Node && !self.crust_service.is_peer_whitelisted(&pub_id) {
-            warn!("{:?} {:?} is bootstrapping as a node, but is not in whitelist.",
+        if peer_kind == CrustUser::Node {
+            if !self.crust_service.is_peer_whitelisted(&pub_id) {
+                warn!("{:?} {:?} is bootstrapping as a node, but is not in whitelist.",
+                      self,
+                      pub_id);
+                self.disconnect_peer(&pub_id, None);
+                return;
+            }
+        } else if let Ok(ip_addr) = self.crust_service.get_peer_ip_addr(&pub_id) {
+            if self.banned_client_ips.contains_key(&ip_addr) {
+                warn!("{:?} Client {:?} is trying to bootstrap on banned IP {}.",
+                      self,
+                      pub_id,
+                      ip_addr);
+                self.disconnect_peer(&pub_id, None);
+                return;
+            }
+        } else {
+            warn!("{:?} Can't get IP address of bootstrapper {:?}.",
                   self,
                   pub_id);
             self.disconnect_peer(&pub_id, None);
@@ -595,6 +623,7 @@ impl Node {
                              -> Result<(), RoutingError> {
         use messages::DirectMessage::*;
         if let Err(error) = self.check_direct_message_sender(&direct_message, &pub_id) {
+            self.ban_peer(&pub_id);
             self.disconnect_peer(&pub_id, Some(outbox));
             return Err(error);
         }
@@ -610,6 +639,7 @@ impl Node {
                           self,
                           error,
                           pub_id);
+                    self.ban_peer(&pub_id);
                     self.disconnect_peer(&pub_id, Some(outbox));
                 }
             }
@@ -678,29 +708,15 @@ impl Node {
                                    direct_message: &DirectMessage,
                                    pub_id: &PublicId)
                                    -> Result<(), RoutingError> {
-        use messages::DirectMessage::*;
-        if let Some(peer) = self.peer_mgr.get_peer(pub_id) {
-            match *peer.state() {
-                PeerState::Bootstrapper(_) => {
-                    match *direct_message {
-                        BootstrapRequest(_) => return Ok(()),
-                        CandidateInfo { .. } |
-                        MessageSignature(..) |
-                        SectionListSignature(..) |
-                        BootstrapResponse(_) |
-                        TunnelRequest(_) |
-                        TunnelSuccess(_) |
-                        TunnelSelect(_) |
-                        TunnelClosed(_) |
-                        TunnelDisconnect(_) |
-                        ResourceProof { .. } |
-                        ResourceProofResponse { .. } |
-                        ResourceProofResponseReceipt => (),
-                    }
+        match self.peer_mgr.get_peer(pub_id).map(Peer::state) {
+            Some(&PeerState::Bootstrapper(_)) => {
+                if let DirectMessage::BootstrapRequest(_) = *direct_message {
+                    return Ok(());
                 }
-                PeerState::Client => (),
-                _ => return Ok(()),
             }
+            Some(&PeerState::Client) |
+            None => (),
+            _ => return Ok(()),
         }
         debug!("{:?} Illegitimate direct message {:?} from {:?}.",
                self,
@@ -758,6 +774,9 @@ impl Node {
     /// Sends a signature for the list of members of a section with prefix `prefix` to our whole
     /// section if `dst` is `None`, or to the given node if it is `Some(name)`
     fn send_section_list_signature(&mut self, prefix: Prefix<XorName>, dst: Option<XorName>) {
+        if cfg!(not(feature = "use-mock-crust")) {
+            return;
+        }
         let section = match self.get_section_list(&prefix) {
             Ok(section) => section,
             Err(err) => {
@@ -791,7 +810,6 @@ impl Node {
                 .add_signature(prefix, our_id, section.clone(), sig, section_len);
             sig
         };
-
 
         // this defines whom we are sending signature to: our section if dst is None, or given
         // name if it's Some
@@ -841,57 +859,63 @@ impl Node {
                           hop_msg: HopMessage,
                           pub_id: PublicId)
                           -> Result<(), RoutingError> {
-        let hop_name_result = if let Some(peer) = self.peer_mgr.get_peer(&pub_id) {
-            hop_msg.verify(peer.pub_id().signing_public_key())?;
-
-            match *peer.state() {
-                PeerState::Bootstrapper(_) => {
-                    warn!("{:?} Hop message received from bootstrapper {:?}, disconnecting.",
-                          self,
-                          pub_id);
-                    Err(RoutingError::InvalidStateForOperation)
-                }
-                PeerState::Client => {
-                    self.check_valid_client_message(hop_msg.content.routing_message())
-                        .map(|_| *self.name())
-                }
-                PeerState::JoiningNode => Ok(*self.name()),
-                PeerState::Candidate(_) |
-                PeerState::Proxy |
-                PeerState::Routing(_) => Ok(*peer.name()),
-                PeerState::ConnectionInfoPreparing { .. } |
-                PeerState::ConnectionInfoReady(_) |
-                PeerState::CrustConnecting |
-                PeerState::SearchingForTunnel |
-                PeerState::Connected(_) => {
-                    Ok(*self.name())
-                    // FIXME - confirm we can return with an error here by running soak tests
-                    // debug!("{:?} Invalid sender {} of {:?}", self, pub_id, hop_msg);
-                    // return Err(RoutingError::InvalidSource);
-                }
+        hop_msg.verify(pub_id.signing_public_key())?;
+        let mut is_client = false;
+        let mut hop_name_result = match self.peer_mgr.get_peer(&pub_id).map(Peer::state) {
+            Some(&PeerState::Bootstrapper(_)) => {
+                warn!("{:?} Hop message received from bootstrapper {:?}, disconnecting.",
+                      self,
+                      pub_id);
+                Err(RoutingError::InvalidStateForOperation)
             }
-        } else {
-            debug!("{:?} Can't find sender {} of {:?}", self, pub_id, hop_msg);
-            // FIXME - confirm we can return with an error here by running soak tests
-            // // TODO - We could return `UnknownConnection` here and not handle the message, but we
-            // //        could be handling a tunnelled message here immediately after the tunnel
-            // //        closed. Since we no longer have the peer's name available, we just use our
-            // //        own instead, as this is almost equivalent to passing no name at all.
-            Ok(*self.name())
-            // return Err(RoutingError::UnknownConnection);
+            Some(&PeerState::Client) => {
+                is_client = true;
+                Ok(*self.name())
+            }
+            Some(&PeerState::JoiningNode) => Ok(*self.name()),
+            Some(&PeerState::Candidate(_)) |
+            Some(&PeerState::Proxy) |
+            Some(&PeerState::Routing(_)) => Ok(*pub_id.name()),
+            Some(&PeerState::ConnectionInfoPreparing { .. }) |
+            Some(&PeerState::ConnectionInfoReady(_)) |
+            Some(&PeerState::CrustConnecting) |
+            Some(&PeerState::SearchingForTunnel) |
+            Some(&PeerState::Connected(_)) |
+            None => {
+                Ok(*self.name())
+                // FIXME - confirm we can return with an error here by running soak tests
+                // debug!("{:?} Invalid sender {} of {:?}", self, pub_id, hop_msg);
+                // return Err(RoutingError::InvalidSource);
+            }
+
         };
 
-        if let Ok(hop_name) = hop_name_result {
-            let HopMessage {
-                content,
-                route,
-                sent_to,
-                ..
-            } = hop_msg;
-            self.handle_signed_message(content, route, hop_name, &sent_to)
-        } else {
-            self.disconnect_peer(&pub_id, None);
-            Err(RoutingError::InvalidStateForOperation)
+        if is_client {
+            self.check_valid_client_message(&pub_id, hop_msg.content.routing_message())
+                .unwrap_or_else(|e| hop_name_result = Err(e));
+        }
+
+        match hop_name_result {
+            Ok(hop_name) => {
+                let HopMessage {
+                    content,
+                    route,
+                    sent_to,
+                    ..
+                } = hop_msg;
+                self.handle_signed_message(content, route, hop_name, &sent_to)
+            }
+            Err(RoutingError::ExceedsRateLimit) => {
+                trace!("{:?} Temporarily can't proxy messages from client {:?} (rate-limit hit).",
+                       self,
+                       pub_id);
+                Err(RoutingError::ExceedsRateLimit)
+            }
+            Err(error) => {
+                self.ban_peer(&pub_id);
+                self.disconnect_peer(&pub_id, None);
+                Err(error)
+            }
         }
     }
 
@@ -1366,7 +1390,10 @@ impl Node {
     }
 
     /// Returns `Ok` if a client is allowed to send the given message.
-    fn check_valid_client_message(&self, msg: &RoutingMessage) -> Result<(), RoutingError> {
+    fn check_valid_client_message(&mut self,
+                                  pub_id: &PublicId,
+                                  msg: &RoutingMessage)
+                                  -> Result<(), RoutingError> {
         match (&msg.src, &msg.content) {
             (&Authority::Client { .. }, &MessageContent::Ack(_ack, priority))
                 if priority >= DEFAULT_PRIORITY => Ok(()),
@@ -1379,7 +1406,19 @@ impl Node {
                   ..
               }) if *part_count <= MAX_PARTS && part_index < part_count &&
                   *priority >= DEFAULT_PRIORITY &&
-                  payload.len() <= MAX_PART_LEN => Ok(()),
+                  payload.len() <= MAX_PART_LEN => {
+                if let Ok(ip_addr) = self.crust_service.get_peer_ip_addr(pub_id) {
+                    self.clients_rate_limiter
+                        .add_message(self.peer_mgr.client_num() as u64,
+                                     &ip_addr,
+                                     *part_count,
+                                     *part_index,
+                                     payload)
+                } else {
+                    warn!("{:?} Can't get IP address of client {:?}.", self, pub_id);
+                    return Err(RoutingError::RejectedClientMessage);
+                }
+            }
             _ => {
                 debug!("{:?} Illegitimate client message {:?}. Refusing to relay.",
                        self,
@@ -1474,6 +1513,14 @@ impl Node {
                    pub_id,
                    self.routing_table().len(),
                    self.min_section_size() - 1);
+            self.send_direct_message(pub_id, DirectMessage::BootstrapResponse(false));
+            return Ok(());
+        }
+
+        if peer_kind == CrustUser::Client && !self.peer_mgr.can_accept_client() {
+            debug!("{:?} Client {:?} rejected: We cannot accept more clients.",
+                   self,
+                   pub_id);
             self.send_direct_message(pub_id, DirectMessage::BootstrapResponse(false));
             return Ok(());
         }
@@ -2051,7 +2098,7 @@ impl Node {
             debug!("{:?} Disconnecting {}. Calling crust::Service::disconnect.",
                    self,
                    pub_id);
-            let _ = self.crust_service.disconnect(*pub_id);
+            let _ = self.crust_service.disconnect(pub_id);
             let _ = self.peer_mgr.remove_peer(pub_id);
             self.dropped_tunnel_client(pub_id);
             // FIXME: `outbox` is optional here primarily to avoid passing an `EventBox` through
@@ -2225,6 +2272,9 @@ impl Node {
             info!("{:?} SectionUpdate handled. Prefixes: {:?}",
                   self,
                   new_prefixes);
+            for prefix in new_prefixes.difference(&old_prefixes) {
+                self.send_section_list_signature(*prefix, None);
+            }
         }
         // Filter list of members to just those we don't know about:
         let members = if let Some(section) = self.routing_table()
@@ -2551,7 +2601,7 @@ impl Node {
     fn purge_invalid_rt_entries(&mut self, outbox: &mut EventBox) -> Transition {
         let peer_details = self.peer_mgr.get_routing_peer_details();
         for pub_id in peer_details.out_of_sync_peers {
-            self.crust_service.disconnect(pub_id);
+            self.crust_service.disconnect(&pub_id);
             self.dropped_peer(&pub_id, outbox, true);
         }
         for removal_detail in peer_details.removal_details {
@@ -3234,6 +3284,19 @@ impl Node {
 
     fn our_prefix(&self) -> &Prefix<XorName> {
         self.routing_table().our_prefix()
+    }
+
+    // While this can theoretically be called as a result of a misbehaving client or node, we're
+    // actually only blocking clients from bootstrapping from that IP (see
+    // `handle_bootstrap_accept()`). This behaviour will change when we refactor the codebase to
+    // handle malicious nodes more fully.
+    fn ban_peer(&mut self, pub_id: &PublicId) {
+        if let Ok(ip_addr) = self.crust_service.get_peer_ip_addr(pub_id) {
+            let _ = self.banned_client_ips.insert(ip_addr, ());
+            debug!("{:?} Banned client {:?} on IP {}", self, pub_id, ip_addr);
+        } else {
+            warn!("{:?} Can't get IP address of client {:?}.", self, pub_id);
+        }
     }
 }
 
