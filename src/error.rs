@@ -175,3 +175,22 @@ impl From<serialisation::SerialisationError> for RoutingError {
         RoutingError::SerialisationError(error)
     }
 }
+
+quick_error! {
+    #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+    pub enum BootstrapResponseError {
+        NotApproved {
+            description("Proxy not approved yet")
+            display("The chosen proxy node has not yet been approved by the network.")
+        }
+        TooFewPeers {
+            description("Proxy has too few peers")
+            display("The chosen proxy node has too few connections to peers.")
+        }
+        ClientLimit {
+            description("Proxy has max. clients")
+            display("The chosen proxy node already has connections to the maximum number of \
+                     clients allowed per proxy.")
+        }
+    }
+}

@@ -295,11 +295,9 @@ impl Bootstrapping {
                              -> Transition {
         use self::DirectMessage::*;
         match direct_message {
-            BootstrapResponse(true) => Transition::IntoBootstrapped { proxy_public_id: pub_id },
-            BootstrapResponse(false) => {
-                info!("{:?} Connection failed: Proxy node needs a larger routing table to accept \
-                      clients.",
-                      self);
+            BootstrapResponse(Ok(())) => Transition::IntoBootstrapped { proxy_public_id: pub_id },
+            BootstrapResponse(Err(error)) => {
+                info!("{:?} Connection failed: {}", self, error);
                 self.rebootstrap();
                 Transition::Stay
             }

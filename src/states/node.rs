@@ -23,7 +23,7 @@ use action::Action;
 use cache::Cache;
 use crust::{ConnectionInfoResult, CrustError, CrustUser};
 use cumulative_own_section_merge::CumulativeOwnSectionMerge;
-use error::{InterfaceError, RoutingError};
+use error::{BootstrapResponseError, InterfaceError, RoutingError};
 use event::Event;
 use id::{FullId, PublicId};
 use itertools::Itertools;
@@ -1502,7 +1502,9 @@ impl Node {
             debug!("{:?} Client {:?} rejected: We are not approved as a node yet.",
                    self,
                    pub_id);
-            self.send_direct_message(pub_id, DirectMessage::BootstrapResponse(false));
+            self.send_direct_message(pub_id,
+                DirectMessage::BootstrapResponse(Err(BootstrapResponseError::NotApproved)));
+            self.disconnect_peer(&pub_id, Some(outbox));
             return Ok(());
         }
 
@@ -1513,7 +1515,9 @@ impl Node {
                    pub_id,
                    self.routing_table().len(),
                    self.min_section_size() - 1);
-            self.send_direct_message(pub_id, DirectMessage::BootstrapResponse(false));
+            self.send_direct_message(pub_id,
+                DirectMessage::BootstrapResponse(Err(BootstrapResponseError::TooFewPeers)));
+            self.disconnect_peer(&pub_id, Some(outbox));
             return Ok(());
         }
 
@@ -1521,12 +1525,14 @@ impl Node {
             debug!("{:?} Client {:?} rejected: We cannot accept more clients.",
                    self,
                    pub_id);
-            self.send_direct_message(pub_id, DirectMessage::BootstrapResponse(false));
+            self.send_direct_message(pub_id,
+                DirectMessage::BootstrapResponse(Err(BootstrapResponseError::ClientLimit)));
+            self.disconnect_peer(&pub_id, Some(outbox));
             return Ok(());
         }
 
         self.peer_mgr.handle_bootstrap_request(&pub_id);
-        self.send_direct_message(pub_id, DirectMessage::BootstrapResponse(true));
+        self.send_direct_message(pub_id, DirectMessage::BootstrapResponse(Ok(())));
         Ok(())
     }
 

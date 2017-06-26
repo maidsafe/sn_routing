@@ -23,7 +23,7 @@ pub use self::response::{AccountInfo, Response};
 use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
 use ack_manager::Ack;
 use data::MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
-use error::RoutingError;
+use error::{BootstrapResponseError, RoutingError};
 use event::Event;
 use id::{FullId, PublicId};
 use itertools::Itertools;
@@ -115,7 +115,7 @@ pub enum DirectMessage {
     BootstrapRequest(sign::Signature),
     /// Sent from the bootstrap node to a client in response to `BootstrapRequest`. If `true`,
     /// bootstrapping is successful; if `false` the sender is not available as a bootstrap node.
-    BootstrapResponse(bool),
+    BootstrapResponse(Result<(), BootstrapResponseError>),
     /// Sent from a node which is still joining the network to another node, to allow the latter to
     /// add the former to its routing table.
     CandidateInfo {
@@ -692,7 +692,7 @@ impl Debug for DirectMessage {
                 write!(formatter, "SectionListSignature({:?}, ..)", sec_list.prefix)
             }
             BootstrapRequest(_) => write!(formatter, "BootstrapRequest"),
-            BootstrapResponse(ref result) => write!(formatter, "BootstrapResponse({})", result),
+            BootstrapResponse(ref result) => write!(formatter, "BootstrapResponse({:?})", result),
             CandidateInfo { .. } => write!(formatter, "CandidateInfo {{ .. }}"),
             TunnelRequest(pub_id) => write!(formatter, "TunnelRequest({:?})", pub_id),
             TunnelSuccess(pub_id) => write!(formatter, "TunnelSuccess({:?})", pub_id),
