@@ -18,10 +18,12 @@
 use error::RoutingError;
 #[cfg(feature = "use-mock-crust")]
 use fake_clock::FakeClock as Instant;
+use itertools::Itertools;
 use maidsafe_utilities::serialisation::{self, SerialisationError};
 use messages::UserMessage;
 use std::cmp;
 use std::collections::BTreeMap;
+use std::mem;
 use std::net::IpAddr;
 #[cfg(not(feature = "use-mock-crust"))]
 use std::time::Instant;
@@ -67,7 +69,8 @@ impl RateLimiter {
         self.update();
         let total_used: u64 = self.used.values().sum();
         let used = self.used.get(client_ip).map_or(0, |used| *used);
-        let allowance = cmp::min(CAPACITY - total_used, CAPACITY / online_clients - used);
+        let allowance = cmp::min(CAPACITY - total_used,
+                                 (CAPACITY / online_clients).saturating_sub(used));
 
         let bytes_to_add = if part_index == 0 {
             use self::UserMessage::*;
@@ -150,12 +153,11 @@ impl RateLimiter {
         // others.
         let leaking_client_count = self.used.len();
         let mut quota = leaked_units / leaking_client_count as u64;
-        let mut entries: Vec<(u64, IpAddr)> = self.used
-            .iter()
-            .map(|(ip_addr, used)| (*used, *ip_addr))
-            .collect();
+        let mut entries = mem::replace(&mut self.used, Default::default())
+            .into_iter()
+            .map(|(ip_addr, used)| (used, ip_addr))
+            .collect_vec();
         entries.sort();
-        self.used.clear();
         for (index, (used, client)) in entries.into_iter().enumerate() {
             if used < quota {
                 leaked_units -= used;
@@ -213,8 +215,8 @@ mod tests {
 
         // Wait for the same period, but now try adding invalid messages.
         FakeClock::advance_time(wait_millis);
-        let all_zero_paylod = vec![0u8; CLIENT_GET_CHARGE as usize];
-        match rate_limiter.add_message(10, &client_2, 2, 0, &all_zero_paylod) {
+        let all_zero_payload = vec![0u8; CLIENT_GET_CHARGE as usize];
+        match rate_limiter.add_message(10, &client_2, 2, 0, &all_zero_payload) {
             Err(RoutingError::InvalidMessage) => {}
             _ => panic!("unexpected result"),
         }

@@ -77,7 +77,7 @@ const CANDIDATE_STATUS_INTERVAL_SECS: u64 = 60;
 /// Duration for which `OwnSectionMerge` messages are kept in the cache, in seconds.
 const MERGE_TIMEOUT_SECS: u64 = 300;
 /// Duration for which all clients on a given IP will be blocked from joining this node.
-const CLIENT_BAN_SECS: u64 = 300;
+const CLIENT_BAN_SECS: u64 = 2 * 60 * 60;
 
 pub struct Node {
     ack_mgr: AckManager,
@@ -623,7 +623,7 @@ impl Node {
                              -> Result<(), RoutingError> {
         use messages::DirectMessage::*;
         if let Err(error) = self.check_direct_message_sender(&direct_message, &pub_id) {
-            self.ban_client(&pub_id);
+            self.ban_peer(&pub_id);
             self.disconnect_peer(&pub_id, Some(outbox));
             return Err(error);
         }
@@ -639,7 +639,7 @@ impl Node {
                           self,
                           error,
                           pub_id);
-                    self.ban_client(&pub_id);
+                    self.ban_peer(&pub_id);
                     self.disconnect_peer(&pub_id, Some(outbox));
                 }
             }
@@ -860,43 +860,40 @@ impl Node {
                           pub_id: PublicId)
                           -> Result<(), RoutingError> {
         hop_msg.verify(pub_id.signing_public_key())?;
-        let hop_name_result = if self.peer_mgr.is_client(&pub_id) {
-            self.check_valid_client_message(&pub_id, hop_msg.content.routing_message())
-                .map(|_| *self.name())
-        } else if let Some(peer) = self.peer_mgr.get_peer(&pub_id) {
-            match *peer.state() {
-                PeerState::Bootstrapper(_) => {
-                    warn!("{:?} Hop message received from bootstrapper {:?}, disconnecting.",
-                          self,
-                          pub_id);
-                    Err(RoutingError::InvalidStateForOperation)
-                }
-                PeerState::Client => unreachable!("Client case handled above"),
-                PeerState::JoiningNode => Ok(*self.name()),
-                PeerState::Candidate(_) |
-                PeerState::Proxy |
-                PeerState::Routing(_) => Ok(*peer.name()),
-                PeerState::ConnectionInfoPreparing { .. } |
-                PeerState::ConnectionInfoReady(_) |
-                PeerState::CrustConnecting |
-                PeerState::SearchingForTunnel |
-                PeerState::Connected(_) => {
-                    Ok(*self.name())
-                    // FIXME - confirm we can return with an error here by running soak tests
-                    // debug!("{:?} Invalid sender {} of {:?}", self, pub_id, hop_msg);
-                    // return Err(RoutingError::InvalidSource);
-                }
+        let mut is_client = false;
+        let mut hop_name_result = match self.peer_mgr.get_peer(&pub_id).map(Peer::state) {
+            Some(&PeerState::Bootstrapper(_)) => {
+                warn!("{:?} Hop message received from bootstrapper {:?}, disconnecting.",
+                      self,
+                      pub_id);
+                Err(RoutingError::InvalidStateForOperation)
             }
-        } else {
-            debug!("{:?} Can't find sender {} of {:?}", self, pub_id, hop_msg);
-            // FIXME - confirm we can return with an error here by running soak tests
-            // // TODO - We could return `UnknownConnection` here and not handle the message, but we
-            // //        could be handling a tunnelled message here immediately after the tunnel
-            // //        closed. Since we no longer have the peer's name available, we just use our
-            // //        own instead, as this is almost equivalent to passing no name at all.
-            Ok(*self.name())
-            // return Err(RoutingError::UnknownConnection);
+            Some(&PeerState::Client) => {
+                is_client = true;
+                Ok(*self.name())
+            }
+            Some(&PeerState::JoiningNode) => Ok(*self.name()),
+            Some(&PeerState::Candidate(_)) |
+            Some(&PeerState::Proxy) |
+            Some(&PeerState::Routing(_)) => Ok(*pub_id.name()),
+            Some(&PeerState::ConnectionInfoPreparing { .. }) |
+            Some(&PeerState::ConnectionInfoReady(_)) |
+            Some(&PeerState::CrustConnecting) |
+            Some(&PeerState::SearchingForTunnel) |
+            Some(&PeerState::Connected(_)) |
+            None => {
+                Ok(*self.name())
+                // FIXME - confirm we can return with an error here by running soak tests
+                // debug!("{:?} Invalid sender {} of {:?}", self, pub_id, hop_msg);
+                // return Err(RoutingError::InvalidSource);
+            }
+
         };
+
+        if is_client {
+            self.check_valid_client_message(&pub_id, hop_msg.content.routing_message())
+                .unwrap_or_else(|e| hop_name_result = Err(e));
+        }
 
         match hop_name_result {
             Ok(hop_name) => {
@@ -915,7 +912,7 @@ impl Node {
                 Err(RoutingError::ExceedsRateLimit)
             }
             Err(error) => {
-                self.ban_client(&pub_id);
+                self.ban_peer(&pub_id);
                 self.disconnect_peer(&pub_id, None);
                 Err(error)
             }
@@ -3289,7 +3286,11 @@ impl Node {
         self.routing_table().our_prefix()
     }
 
-    fn ban_client(&mut self, pub_id: &PublicId) {
+    // While this can theoretically be called as a result of a misbehaving client or node, we're
+    // actually only blocking clients from bootstrapping from that IP (see
+    // `handle_bootstrap_accept()`). This behaviour will change when we refactor the codebase to
+    // handle malicious nodes more fully.
+    fn ban_peer(&mut self, pub_id: &PublicId) {
         if let Ok(ip_addr) = self.crust_service.get_peer_ip_addr(pub_id) {
             let _ = self.banned_client_ips.insert(ip_addr, ());
             debug!("{:?} Banned client {:?} on IP {}", self, pub_id, ip_addr);
