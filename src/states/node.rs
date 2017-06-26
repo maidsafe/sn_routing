@@ -396,8 +396,8 @@ impl Node {
                     return Transition::Terminate;
                 }
             }
-            CrustEvent::NewMessage(pub_id, _, bytes) => {
-                match self.handle_new_message(pub_id, bytes, outbox) {
+            CrustEvent::NewMessage(pub_id, peer_kind, bytes) => {
+                match self.handle_new_message(pub_id, peer_kind, bytes, outbox) {
                     Err(RoutingError::FilterCheckFailed) |
                     Ok(_) => (),
                     Err(err) => debug!("{:?} - {:?}", self, err),
@@ -555,11 +555,12 @@ impl Node {
 
     fn handle_new_message(&mut self,
                           pub_id: PublicId,
+                          peer_kind: CrustUser,
                           bytes: Vec<u8>,
                           outbox: &mut EventBox)
                           -> Result<(), RoutingError> {
         match serialisation::deserialise(&bytes) {
-            Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, pub_id),
+            Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, pub_id, peer_kind),
             Ok(Message::Direct(direct_msg)) => {
                 self.handle_direct_message(direct_msg, pub_id, outbox)
             }
@@ -597,7 +598,7 @@ impl Node {
             }
             Ok(Message::TunnelHop { content, src, dst }) => {
                 if dst == *self.full_id.public_id() {
-                    self.handle_hop_message(content, src)
+                    self.handle_hop_message(content, src, peer_kind)
                 } else if self.tunnels.has_clients(src, dst) {
                     self.send_or_drop(&dst, bytes, content.content.priority());
                     Ok(())
@@ -857,7 +858,8 @@ impl Node {
 
     fn handle_hop_message(&mut self,
                           hop_msg: HopMessage,
-                          pub_id: PublicId)
+                          pub_id: PublicId,
+                          peer_kind: CrustUser)
                           -> Result<(), RoutingError> {
         hop_msg.verify(pub_id.signing_public_key())?;
         let mut is_client = false;
@@ -882,10 +884,21 @@ impl Node {
             Some(&PeerState::SearchingForTunnel) |
             Some(&PeerState::Connected(_)) |
             None => {
-                Ok(*self.name())
-                // FIXME - confirm we can return with an error here by running soak tests
-                // debug!("{:?} Invalid sender {} of {:?}", self, pub_id, hop_msg);
-                // return Err(RoutingError::InvalidSource);
+                match peer_kind {
+                    CrustUser::Node => {
+                        Ok(*self.name())
+                        // FIXME - confirm we can return with an error here by running soak tests
+                        // debug!("{:?} Invalid sender {} of {:?}", self, pub_id, hop_msg);
+                        // return Err(RoutingError::InvalidSource);
+                    }
+                    CrustUser::Client => {
+                        debug!("{:?} Ignoring {:?} from recently-disconnected client {:?}.",
+                               self,
+                               hop_msg,
+                               pub_id);
+                        return Ok(());
+                    }
+                }
             }
 
         };
