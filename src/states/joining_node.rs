@@ -106,9 +106,6 @@ impl JoiningNode {
             Action::Id { result_tx } => {
                 let _ = result_tx.send(*self.id());
             }
-            Action::Config { result_tx } => {
-                let _ = result_tx.send(self.crust_service.config());
-            }
             Action::Timeout(token) => {
                 if let Transition::Terminate = self.handle_timeout(token, outbox) {
                     return Transition::Terminate;
