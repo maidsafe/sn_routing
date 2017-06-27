@@ -275,17 +275,6 @@ impl StateMachine {
         (action_sender, machine)
     }
 
-    // /// Returns the `crust::Config` associated with the `Service` (if any).
-    // #[cfg(feature = "use-mock-crust")]
-    // pub fn bootstrap_config(&self) -> Option<Config> {
-    //     match self.state {
-    //         State::Bootstrapping(ref s) => Some(s.config()),
-    //         State::Client(ref s) => Some(s.config()),
-    //         State::Node(ref s) => Some(s.config()),
-    //         State::Terminated => None,
-    //     }
-    // }
-
     fn handle_event(&mut self, category: MaidSafeEventCategory, outbox: &mut EventBox) {
         let transition = match category {
             MaidSafeEventCategory::Routing => {
