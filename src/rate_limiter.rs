@@ -22,6 +22,7 @@ use fake_clock::FakeClock as Instant;
 use itertools::Itertools;
 use maidsafe_utilities::serialisation::{self, SerialisationError};
 use messages::UserMessage;
+use sha3::Digest256;
 use std::cmp;
 use std::collections::BTreeMap;
 use std::mem;
@@ -66,6 +67,7 @@ impl RateLimiter {
     pub fn add_message(&mut self,
                        online_clients: u64,
                        client_ip: &IpAddr,
+                       hash: &Digest256,
                        part_count: u32,
                        part_index: u32,
                        payload: &[u8])
@@ -124,7 +126,7 @@ impl RateLimiter {
         };
 
         if bytes_to_add > allowance {
-            return Err(RoutingError::ExceedsRateLimit);
+            return Err(RoutingError::ExceedsRateLimit(*hash));
         }
 
         let _ = self.used.insert(*client_ip, used + bytes_to_add);
@@ -185,6 +187,7 @@ mod tests {
     use fake_clock::FakeClock;
     use messages::Request;
     use rand;
+    use tiny_keccak::sha3_256;
     use types::MessageId;
 
     #[test]
@@ -197,31 +200,39 @@ mod tests {
                 name: rand::random(),
                 msg_id: MessageId::new(),
         })));
+        let hash = sha3_256(&get_req_payload);
         let fill_full_iterations = CAPACITY / MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
         for _ in 0..fill_full_iterations {
-            unwrap!(rate_limiter.add_message(1, &client_1, 1, 0, &get_req_payload));
+            unwrap!(rate_limiter.add_message(1, &client_1, &hash, 1, 0, &get_req_payload));
         }
 
         // Check a second client can't add a message just now.
         let client_2 = IpAddr::from([1, 1, 1, 1]);
-        match rate_limiter.add_message(1, &client_2, 1, 0, &get_req_payload) {
-            Err(RoutingError::ExceedsRateLimit) => {}
+        match rate_limiter.add_message(1, &client_2, &hash, 1, 0, &get_req_payload) {
+            Err(RoutingError::ExceedsRateLimit(returned_hash)) => {
+                assert_eq!(hash, returned_hash);
+            }
             _ => panic!("unexpected result"),
         }
 
         // Wait until enough has drained to allow the second client's request to succeed.
         let wait_millis = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES * 1000 / RATE as u64;
         FakeClock::advance_time(wait_millis);
-        unwrap!(rate_limiter.add_message(10, &client_2, 1, 0, &get_req_payload));
+        unwrap!(rate_limiter.add_message(10, &client_2, &hash, 1, 0, &get_req_payload));
 
         // Wait for the same period, but now try adding invalid messages.
         FakeClock::advance_time(wait_millis);
         let all_zero_payload = vec![0u8; MAX_IMMUTABLE_DATA_SIZE_IN_BYTES as usize];
-        match rate_limiter.add_message(10, &client_2, 2, 0, &all_zero_payload) {
+        match rate_limiter.add_message(10,
+                                       &client_2,
+                                       &sha3_256(&all_zero_payload),
+                                       2,
+                                       0,
+                                       &all_zero_payload) {
             Err(RoutingError::InvalidMessage) => {}
             _ => panic!("unexpected result"),
         }
 
-        unwrap!(rate_limiter.add_message(2, &client_2, 1, 0, &get_req_payload));
+        unwrap!(rate_limiter.add_message(2, &client_2, &hash, 1, 0, &get_req_payload));
     }
 }

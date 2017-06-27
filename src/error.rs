@@ -22,6 +22,7 @@ use event::Event;
 use id::PublicId;
 use maidsafe_utilities::event_sender::{EventSenderError, MaidSafeEventCategory};
 use maidsafe_utilities::serialisation;
+use sha3::Digest256;
 use std::sync::mpsc::{RecvError, SendError};
 
 /// The type of errors that can occur if routing is unable to handle a send request.
@@ -130,8 +131,9 @@ pub enum RoutingError {
     InvalidMessage,
     /// Invalid Peer
     InvalidPeer,
-    /// The client's message has been rejected by the rate-limiter.
-    ExceedsRateLimit,
+    /// The client's message indicated by the included hash digest has been rejected by the
+    /// rate-limiter.
+    ExceedsRateLimit(Digest256),
 }
 
 impl From<RoutingTableError> for RoutingError {

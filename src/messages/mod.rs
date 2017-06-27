@@ -168,6 +168,9 @@ pub enum DirectMessage {
     },
     /// Receipt of a part of a ResourceProofResponse
     ResourceProofResponseReceipt,
+    /// Sent from a proxy node to its client to indicate that the client will exceed its rate limit
+    /// for the message indicated by the included hash digest.
+    ProxyRateLimitExceeded(Digest256),
 }
 
 impl DirectMessage {
@@ -725,6 +728,13 @@ impl Debug for DirectMessage {
                        leading_zero_bytes)
             }
             ResourceProofResponseReceipt => write!(formatter, "ResourceProofResponseReceipt"),
+            ProxyRateLimitExceeded(ref hash) => {
+                write!(formatter,
+                       "ProxyRateLimitExceeded({:02x}{:02x}{:02x}..)",
+                       hash[0],
+                       hash[1],
+                       hash[2])
+            }
         }
     }
 }
@@ -872,14 +882,15 @@ pub enum UserMessage {
 impl UserMessage {
     /// Splits up the message into smaller `MessageContent` parts, which can individually be sent
     /// and routed, and then be put back together by the receiver.
-    pub fn to_parts(&self, priority: u8) -> Result<Vec<MessageContent>, RoutingError> {
+    pub fn to_parts(&self, priority: u8) -> Result<(Digest256, Vec<MessageContent>), RoutingError> {
         let payload = serialise(self)?;
         let hash = sha3_256(&payload);
         let len = payload.len();
         let part_count = (len + MAX_PART_LEN - 1) / MAX_PART_LEN;
 
-        Ok((0..part_count)
-               .map(|i| {
+        Ok((hash,
+            (0..part_count)
+                .map(|i| {
             MessageContent::UserMessagePart {
                 hash: hash,
                 part_count: part_count as u32,
@@ -889,7 +900,7 @@ impl UserMessage {
                 priority: priority,
             }
         })
-               .collect())
+                .collect()))
     }
 
     /// Puts the given parts of a serialised message together and verifies that it matches the
@@ -927,6 +938,13 @@ impl UserMessage {
                     dst: dst,
                 }
             }
+        }
+    }
+
+    pub fn message_id(&self) -> &MessageId {
+        match *self {
+            UserMessage::Request(ref request) => request.message_id(),
+            UserMessage::Response(ref response) => response.message_id(),
         }
     }
 
@@ -1048,7 +1066,7 @@ mod tests {
                                                 data: data,
                                                 msg_id: MessageId::new(),
                                             });
-        let parts = unwrap!(user_msg.to_parts(1));
+        let parts = unwrap!(user_msg.to_parts(1)).1;
         assert_eq!(1, parts.len());
         let part = parts[0].clone();
         let name: XorName = rand::random();
@@ -1148,7 +1166,7 @@ mod tests {
                                                 msg_id: MessageId::new(),
                                             });
         let msg_hash = sha3_256(&unwrap!(serialise(&user_msg)));
-        let parts = unwrap!(user_msg.to_parts(42));
+        let parts = unwrap!(user_msg.to_parts(42)).1;
         assert_eq!(parts.len(), 3);
         let payloads: Vec<Vec<u8>> = parts
             .into_iter()

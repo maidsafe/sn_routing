@@ -237,6 +237,34 @@ pub enum Request {
 }
 
 impl Request {
+    /// Message ID getter.
+    pub fn message_id(&self) -> &MsgId {
+        use Request::*;
+        match *self {
+            Refresh(_, ref msg_id) |
+            GetAccountInfo(ref msg_id) |
+            PutIData { ref msg_id, .. } |
+            GetIData { ref msg_id, .. } |
+            GetMData { ref msg_id, .. } |
+            PutMData { ref msg_id, .. } |
+            GetMDataVersion { ref msg_id, .. } |
+            GetMDataShell { ref msg_id, .. } |
+            ListMDataEntries { ref msg_id, .. } |
+            ListMDataKeys { ref msg_id, .. } |
+            ListMDataValues { ref msg_id, .. } |
+            GetMDataValue { ref msg_id, .. } |
+            MutateMDataEntries { ref msg_id, .. } |
+            ListMDataPermissions { ref msg_id, .. } |
+            ListMDataUserPermissions { ref msg_id, .. } |
+            SetMDataUserPermissions { ref msg_id, .. } |
+            DelMDataUserPermissions { ref msg_id, .. } |
+            ChangeMDataOwner { ref msg_id, .. } |
+            ListAuthKeysAndVersion(ref msg_id) |
+            InsAuthKey { ref msg_id, .. } |
+            DelAuthKey { ref msg_id, .. } => msg_id,
+        }
+    }
+
     /// Is the response corresponding to this request cacheable?
     pub fn is_cacheable(&self) -> bool {
         if let Request::GetIData { .. } = *self {

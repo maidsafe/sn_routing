@@ -19,6 +19,7 @@ use messages::{Request, Response};
 use routing_table::{Prefix, RoutingTable};
 use routing_table::Authority;
 use std::fmt::{self, Debug, Formatter};
+use types::MessageId;
 use xor_name::XorName;
 
 /// An Event raised by a `Node` or `Client` via its event sender.
@@ -50,6 +51,9 @@ pub enum Event {
         /// The destination authority that receives the response.
         dst: Authority<XorName>,
     },
+    /// Our proxy node has rejected the indicated message as it would cause our throughput rate to
+    /// be exceeded.
+    ProxyRateLimitExceeded(MessageId),
     /// A node has connected to us.
     NodeAdded(XorName, RoutingTable<XorName>),
     /// A node has disconnected from us.
@@ -94,6 +98,9 @@ impl Debug for Event {
                        response,
                        src,
                        dst)
+            }
+            Event::ProxyRateLimitExceeded(ref msg_id) => {
+                write!(formatter, "Event::ProxyRateLimitExceeded({:?})", msg_id)
             }
             Event::NodeAdded(ref node_name, _) => {
                 write!(formatter,
