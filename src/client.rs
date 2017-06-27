@@ -18,6 +18,8 @@
 use BootstrapConfig;
 use action::Action;
 use cache::NullCache;
+#[cfg(not(feature = "use-mock-crust"))]
+use crust::read_config_file;
 use data::{EntryAction, ImmutableData, MutableData, PermissionSet, User};
 use error::{InterfaceError, RoutingError};
 use event::Event;
@@ -485,11 +487,8 @@ impl Client {
     }
 
     /// Returns the bootstrap config that this client was created with.
-    pub fn bootstrap_config(&self) -> Result<BootstrapConfig, InterfaceError> {
-        let (result_tx, result_rx) = channel();
-        self.action_sender
-            .send(Action::Config { result_tx: result_tx })?;
-        Ok(result_rx.recv()?)
+    pub fn bootstrap_config() -> Result<BootstrapConfig, RoutingError> {
+        Ok(read_config_file()?)
     }
 
     fn send_request(&self,

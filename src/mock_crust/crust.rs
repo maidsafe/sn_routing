@@ -30,6 +30,11 @@ use std::rc::Rc;
 /// TCP listener port
 pub const LISTENER_PORT: u16 = 5485;
 
+/// Mock version of config reader
+pub fn read_config_file() -> Result<Config, CrustError> {
+    Ok(Config::new())
+}
+
 /// Mock version of `crust::Service`
 pub struct Service<UID: Uid>(Rc<RefCell<ServiceImpl<UID>>>, Network<UID>);
 
@@ -183,11 +188,6 @@ impl<UID: Uid> Service<UID> {
     /// Our `UID`.
     pub fn id(&self) -> UID {
         unwrap!(self.lock().uid)
-    }
-
-    /// Returns the `Config` (which is unused anyway).
-    pub fn config(&self) -> Config {
-        Config::new()
     }
 
     fn lock(&self) -> RefMut<ServiceImpl<UID>> {
