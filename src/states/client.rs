@@ -217,31 +217,15 @@ impl Client {
                              direct_msg: DirectMessage,
                              outbox: &mut EventBox)
                              -> Result<Transition, RoutingError> {
-        use messages::DirectMessage::*;
-        match direct_msg {
-            MessageSignature(..) |
-            SectionListSignature(..) |
-            BootstrapRequest(_) |
-            BootstrapResponse(_) |
-            CandidateInfo { .. } |
-            TunnelRequest(_) |
-            TunnelSuccess(_) |
-            TunnelSelect(_) |
-            TunnelClosed(_) |
-            TunnelDisconnect(_) |
-            ResourceProof { .. } |
-            ResourceProofResponse { .. } |
-            ResourceProofResponseReceipt => {
-                debug!("{:?} Unhandled direct message: {:?}", self, direct_msg);
+        if let DirectMessage::ProxyRateLimitExceeded(hash) = direct_msg {
+            if let Some(msg_id) = self.outgoing_user_msg_hashes.remove(&hash) {
+                outbox.send_event(Event::ProxyRateLimitExceeded(msg_id));
+            } else {
+                debug!("{:?} Got ProxyRateLimitExceeded, but no corresponding request found",
+                       self);
             }
-            ProxyRateLimitExceeded(hash) => {
-                if let Some(msg_id) = self.outgoing_user_msg_hashes.remove(&hash) {
-                    outbox.send_event(Event::ProxyRateLimitExceeded(msg_id));
-                } else {
-                    debug!("{:?} Got ProxyRateLimitExceeded, but no corresponding request found",
-                           self);
-                }
-            }
+        } else {
+            debug!("{:?} Unhandled direct message: {:?}", self, direct_msg);
         }
         Ok(Transition::Stay)
     }
