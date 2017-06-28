@@ -314,3 +314,42 @@ fn rate_limit_proxy() {
         total_usage -= leaky_rate;
     }
 }
+
+#[test]
+/// Connect a client to the network then send an invalid message.
+/// Expect the client will be banned (disconnected);
+fn ban_malicious_client() {
+    let min_section_size = 8;
+    let network = Network::new(min_section_size, None);
+    let mut nodes = create_connected_nodes(&network, min_section_size);
+    let mut clients = create_connected_clients(&network, &mut nodes, 1);
+
+
+
+
+    let mut rng = network.new_rng();
+    let data_name: XorName = rng.gen();
+    let group_auth = Authority::NaeManager(data_name);
+    let client_auth = Authority::Client {
+        client_id: *clients[0].full_id.public_id(),
+        proxy_node_name: nodes[0].name(),
+    };
+    let msg_id = MessageId::new();
+
+    // Send a get request from NM to client, which makes client sends an ACK to proxy.
+    // This ACK will be in the priority of `RELOCATE_PRIORITY`, which makes proxy ban the client.
+    for node in nodes.iter_mut() {
+        unwrap!(node.inner.send_get_idata_request(group_auth, client_auth, data_name, msg_id));
+    }
+    let _ = poll_all(&mut nodes, &mut clients);
+
+    let mut terminated = false;
+    while let Ok(event) = clients[0].inner.try_next_ev() {
+        match event {
+            Event::Request { request: Request::GetIData { .. }, .. } => {}
+            Event::Terminate => terminated = true,
+            _ => panic!("unexpected event {:?}", event),
+        }
+    }
+    assert!(terminated);
+}
