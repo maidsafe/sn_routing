@@ -402,8 +402,8 @@ impl Node {
                     return Transition::Terminate;
                 }
             }
-            CrustEvent::NewMessage(pub_id, peer_kind, bytes) => {
-                match self.handle_new_message(pub_id, peer_kind, bytes, outbox) {
+            CrustEvent::NewMessage(pub_id, _peer_kind, bytes) => {
+                match self.handle_new_message(pub_id, bytes, outbox) {
                     Err(RoutingError::FilterCheckFailed) |
                     Ok(_) => (),
                     Err(err) => debug!("{:?} - {:?}", self, err),
@@ -475,24 +475,37 @@ impl Node {
                 warn!("{:?} {:?} is bootstrapping as a node, but is not in whitelist.",
                       self,
                       pub_id);
-                self.disconnect_peer(&pub_id, None);
-                return;
-            }
-        } else if let Ok(ip_addr) = self.crust_service.get_peer_ip_addr(&pub_id) {
-            if self.banned_client_ips.contains_key(&ip_addr) {
-                warn!("{:?} Client {:?} is trying to bootstrap on banned IP {}.",
-                      self,
-                      pub_id,
-                      ip_addr);
-                self.disconnect_peer(&pub_id, None);
+                self.ban_and_disconnect_peer(&pub_id);
                 return;
             }
         } else {
-            warn!("{:?} Can't get IP address of bootstrapper {:?}.",
-                  self,
-                  pub_id);
-            self.disconnect_peer(&pub_id, None);
-            return;
+            if let Ok(ip_addr) = self.crust_service.get_peer_ip_addr(&pub_id) {
+                if self.banned_client_ips.contains_key(&ip_addr) {
+                    warn!("{:?} Client {:?} is trying to bootstrap on banned IP {}.",
+                          self,
+                          pub_id,
+                          ip_addr);
+                    self.ban_and_disconnect_peer(&pub_id);
+                    return;
+                }
+            } else {
+                warn!("{:?} Can't get IP address of bootstrapper {:?}.",
+                      self,
+                      pub_id);
+                self.disconnect_peer(&pub_id, None);
+                let _ = self.dropped_clients.insert(pub_id, ());
+                return;
+            }
+            if !self.peer_mgr.can_accept_client() {
+                debug!("{:?} Client {:?} rejected: We cannot accept more clients.",
+                       self,
+                       pub_id);
+                self.send_direct_message(pub_id,
+                    DirectMessage::BootstrapResponse(Err(BootstrapResponseError::ClientLimit)));
+                self.disconnect_peer(&pub_id, None);
+                let _ = self.dropped_clients.insert(pub_id, ());
+                return;
+            }
         }
         self.peer_mgr
             .insert_peer(Peer::new(pub_id,
@@ -511,7 +524,7 @@ impl Node {
             debug!("{:?} Received ConnectSuccess, but {:?} is not whitelisted.",
                    self,
                    pub_id);
-            self.disconnect_peer(&pub_id, None);
+            self.ban_and_disconnect_peer(&pub_id);
             return;
         }
 
@@ -561,12 +574,11 @@ impl Node {
 
     fn handle_new_message(&mut self,
                           pub_id: PublicId,
-                          peer_kind: CrustUser,
                           bytes: Vec<u8>,
                           outbox: &mut EventBox)
                           -> Result<(), RoutingError> {
         match serialisation::deserialise(&bytes) {
-            Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, pub_id, peer_kind),
+            Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, pub_id),
             Ok(Message::Direct(direct_msg)) => {
                 self.handle_direct_message(direct_msg, pub_id, outbox)
             }
@@ -604,7 +616,7 @@ impl Node {
             }
             Ok(Message::TunnelHop { content, src, dst }) => {
                 if dst == *self.full_id.public_id() {
-                    self.handle_hop_message(content, src, peer_kind)
+                    self.handle_hop_message(content, src)
                 } else if self.tunnels.has_clients(src, dst) {
                     self.send_or_drop(&dst, bytes, content.content.priority());
                     Ok(())
@@ -630,8 +642,7 @@ impl Node {
                              -> Result<(), RoutingError> {
         use messages::DirectMessage::*;
         if let Err(error) = self.check_direct_message_sender(&direct_message, &pub_id) {
-            self.ban_peer(&pub_id);
-            self.disconnect_peer(&pub_id, Some(outbox));
+            self.ban_and_disconnect_peer(&pub_id);
             return Err(error);
         }
 
@@ -646,8 +657,7 @@ impl Node {
                           self,
                           error,
                           pub_id);
-                    self.ban_peer(&pub_id);
-                    self.disconnect_peer(&pub_id, Some(outbox));
+                    self.ban_and_disconnect_peer(&pub_id);
                 }
             }
             CandidateInfo {
@@ -865,8 +875,7 @@ impl Node {
 
     fn handle_hop_message(&mut self,
                           hop_msg: HopMessage,
-                          pub_id: PublicId,
-                          peer_kind: CrustUser)
+                          pub_id: PublicId)
                           -> Result<(), RoutingError> {
         hop_msg.verify(pub_id.signing_public_key())?;
         let mut is_client = false;
@@ -891,7 +900,7 @@ impl Node {
             Some(&PeerState::SearchingForTunnel) |
             Some(&PeerState::Connected(_)) |
             None => {
-                if self.dropped_clients.contains_key(&pub_id) || peer_kind == CrustUser::Client {
+                if self.dropped_clients.contains_key(&pub_id) {
                     debug!("{:?} Ignoring {:?} from recently-disconnected client {:?}.",
                            self,
                            hop_msg,
@@ -929,8 +938,7 @@ impl Node {
                 Err(RoutingError::ExceedsRateLimit(hash))
             }
             Err(error) => {
-                self.ban_peer(&pub_id);
-                self.disconnect_peer(&pub_id, None);
+                self.ban_and_disconnect_peer(&pub_id);
                 Err(error)
             }
         }
@@ -1540,16 +1548,6 @@ impl Node {
             return Ok(());
         }
 
-        if peer_kind == CrustUser::Client && !self.peer_mgr.can_accept_client() {
-            debug!("{:?} Client {:?} rejected: We cannot accept more clients.",
-                   self,
-                   pub_id);
-            self.send_direct_message(pub_id,
-                DirectMessage::BootstrapResponse(Err(BootstrapResponseError::ClientLimit)));
-            self.disconnect_peer(&pub_id, Some(outbox));
-            return Ok(());
-        }
-
         self.peer_mgr.handle_bootstrap_request(&pub_id);
         let _ = self.dropped_clients.remove(&pub_id);
         self.send_direct_message(pub_id, DirectMessage::BootstrapResponse(Ok(())));
@@ -2139,8 +2137,6 @@ impl Node {
                     PeerState::Candidate(_) |
                     PeerState::Proxy => (),
                 }
-            } else {
-                let _ = self.dropped_clients.insert(*pub_id, ());
             }
             self.dropped_tunnel_client(pub_id);
             // FIXME: `outbox` is optional here primarily to avoid passing an `EventBox` through
@@ -3332,13 +3328,15 @@ impl Node {
     // actually only blocking clients from bootstrapping from that IP (see
     // `handle_bootstrap_accept()`). This behaviour will change when we refactor the codebase to
     // handle malicious nodes more fully.
-    fn ban_peer(&mut self, pub_id: &PublicId) {
+    fn ban_and_disconnect_peer(&mut self, pub_id: &PublicId) {
         if let Ok(ip_addr) = self.crust_service.get_peer_ip_addr(pub_id) {
             let _ = self.banned_client_ips.insert(ip_addr, ());
             debug!("{:?} Banned client {:?} on IP {}", self, pub_id, ip_addr);
         } else {
             warn!("{:?} Can't get IP address of client {:?}.", self, pub_id);
         }
+        let _ = self.dropped_clients.insert(*pub_id, ());
+        self.disconnect_peer(pub_id, None);
     }
 }
 
