@@ -35,7 +35,7 @@ use rand::Rng;
 use routing::{Authority, BootstrapConfig, Event, EventStream, MessageId, Prefix, Request,
               XOR_NAME_LEN, XorName};
 use routing::mock_crust::{Endpoint, Network};
-use routing::rate_limiter_consts::{CAPACITY, CLIENT_GET_CHARGE, RATE};
+use routing::rate_limiter_consts::{CAPACITY, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, RATE};
 use routing::test_consts::MAX_CLIENTS_PER_PROXY;
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -248,7 +248,7 @@ fn multiple_clients_per_proxy() {
 
 #[test]
 /// Connects multiple clients to the same proxy node and randomly sending get requests.
-/// Expect some reguests will be blocked due to the rate limit.
+/// Expect some requests will be blocked due to the rate limit.
 /// Expect the total capacity of the proxy will never be exceeded.
 fn rate_limit_proxy() {
     let min_section_size = 8;
@@ -260,8 +260,8 @@ fn rate_limit_proxy() {
     let data_id: XorName = rng.gen();
     let dst = Authority::NaeManager(data_id);
     let mut total_usage: u64 = 0;
-    let wait_millis = 2 * CLIENT_GET_CHARGE * 1000 / RATE as u64;
-    let leaky_rate = 2 * CLIENT_GET_CHARGE;
+    let wait_millis = 2 * MAX_IMMUTABLE_DATA_SIZE_IN_BYTES * 1000 / RATE as u64;
+    let leaky_rate = 2 * MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
     let per_client_cap = CAPACITY / MAX_CLIENTS_PER_PROXY as u64;
     for i in 0..10 {
         trace!("iteration {:?}", i);
@@ -296,7 +296,7 @@ fn rate_limit_proxy() {
         for (msg_id, count) in &request_received {
             assert_eq!(*count, min_section_size);
             let _ = unwrap!(clients_sent.remove(msg_id));
-            total_usage += CLIENT_GET_CHARGE;
+            total_usage += MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
         }
         assert!(total_usage <= CAPACITY);
 
@@ -307,7 +307,8 @@ fn rate_limit_proxy() {
                              .count(),
                    0);
         for ip in clients_sent.values() {
-            assert!(unwrap!(clients_usage.get(ip)) + CLIENT_GET_CHARGE > per_client_cap);
+            assert!(unwrap!(clients_usage.get(ip)) + MAX_IMMUTABLE_DATA_SIZE_IN_BYTES
+                    > per_client_cap);
         }
 
         FakeClock::advance_time(wait_millis);
@@ -323,10 +324,6 @@ fn ban_malicious_client() {
     let network = Network::new(min_section_size, None);
     let mut nodes = create_connected_nodes(&network, min_section_size);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
-
-
-
-
     let mut rng = network.new_rng();
     let data_name: XorName = rng.gen();
     let group_auth = Authority::NaeManager(data_name);
@@ -352,4 +349,19 @@ fn ban_malicious_client() {
         }
     }
     assert!(terminated);
+
+    // Connect a new client.
+    let contact = nodes[0].handle.endpoint();
+    clients.push(TestClient::new(&network,
+                                 Some(BootstrapConfig::with_contacts(&[contact])),
+                                 None));
+    let _ = poll_all(&mut nodes, &mut clients);
+    expect_next_event!(unwrap!(clients.last_mut()), Event::Connected);
+
+    // Sending a `Refresh` request from client to group shall cause it to be banned.
+    let _ = clients[1]
+        .inner
+        .send_request(group_auth, Request::Refresh(vec![], MessageId::new()), 2);
+    let _ = poll_all(&mut nodes, &mut clients);
+    expect_next_event!(unwrap!(clients.last_mut()), Event::Terminate);
 }

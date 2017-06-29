@@ -173,7 +173,7 @@ impl State {
     pub fn get_clients_usage(&self) -> BTreeMap<::std::net::IpAddr, u64> {
         match *self {
             State::Node(ref state) => state.get_clients_usage(),
-            _ => BTreeMap::new(),
+            _ => panic!("shall be in State::Node state"),
         }
     }
 

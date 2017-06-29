@@ -45,7 +45,7 @@ const GET_ACCOUNT_INFO_CHARGE: u64 = 48;
 pub mod rate_limiter_consts {
     pub const CAPACITY: u64 = super::CAPACITY;
     pub const RATE: f64 = super::RATE;
-    pub const CLIENT_GET_CHARGE: u64 = super::MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
+    pub const MAX_IMMUTABLE_DATA_SIZE_IN_BYTES: u64 = super::MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
 }
 
 /// Used to throttle the rate at which clients can send messages via this node. It works on a "leaky
@@ -181,18 +181,16 @@ impl RateLimiter {
             }
         }
     }
+
+    #[cfg(feature = "use-mock-crust")]
+    pub fn get_clients_usage(&self) -> BTreeMap<IpAddr, u64> {
+        self.used.clone()
+    }
 }
 
 impl Default for RateLimiter {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[cfg(feature = "use-mock-crust")]
-impl RateLimiter {
-    pub fn get_clients_usage(&self) -> BTreeMap<IpAddr, u64> {
-        self.used.clone()
     }
 }
 
