@@ -1420,8 +1420,6 @@ impl Node {
                                   msg: &RoutingMessage)
                                   -> Result<(), RoutingError> {
         match (&msg.src, &msg.content) {
-            (&Authority::Client { .. }, &MessageContent::Ack(_ack, priority))
-                if priority >= DEFAULT_PRIORITY => Ok(()),
             (&Authority::Client { .. },
              &MessageContent::UserMessagePart {
                   ref hash,
