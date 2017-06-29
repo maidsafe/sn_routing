@@ -35,11 +35,6 @@ const CAPACITY: u64 = 20 * 1024 * 1024;
 /// The number of bytes per second the `RateLimiter` will "leak".
 const RATE: f64 = 20.0 * 1024.0 * 1024.0;
 
-const GET_MUTABLE_DATA_SHELL_CHARGE: u64 = LIST_MUTABLE_DATA_PERMISSIONS_CHARGE + 88;
-const LIST_MUTABLE_DATA_PERMISSIONS_CHARGE: u64 = (500 * 44) + 40;
-const LIST_AUTH_KEYS_AND_VERSION_CHARGE: u64 = (500 * 32) + 44;
-const GET_ACCOUNT_INFO_CHARGE: u64 = 48;
-
 /// Used to throttle the rate at which clients can send messages via this node. It works on a "leaky
 /// bucket" principle: there is a set rate at which bytes will leak out of the bucket, there is a
 /// maximum capacity for the bucket, and connected clients each get an equal share of this capacity.
@@ -88,17 +83,17 @@ impl RateLimiter {
                     }
                     match request {
                         GetIData { .. } => MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
+                        GetAccountInfo { .. } |
                         GetMData { .. } |
+                        GetMDataVersion { .. } |
+                        GetMDataShell { .. } |
+                        ListMDataEntries { .. } |
                         ListMDataKeys { .. } |
                         ListMDataValues { .. } |
-                        ListMDataEntries { .. } |
-                        GetMDataValue { .. } => MAX_MUTABLE_DATA_SIZE_IN_BYTES,
-                        GetMDataShell { .. } => GET_MUTABLE_DATA_SHELL_CHARGE,
-                        ListMDataPermissions { .. } => LIST_MUTABLE_DATA_PERMISSIONS_CHARGE,
-                        ListAuthKeysAndVersion { .. } => LIST_AUTH_KEYS_AND_VERSION_CHARGE,
-                        GetAccountInfo { .. } => GET_ACCOUNT_INFO_CHARGE,
-                        GetMDataVersion { .. } |
+                        GetMDataValue { .. } |
+                        ListMDataPermissions { .. } |
                         ListMDataUserPermissions { .. } |
+                        ListAuthKeysAndVersion { .. } => MAX_MUTABLE_DATA_SIZE_IN_BYTES,
                         PutIData { .. } |
                         PutMData { .. } |
                         MutateMDataEntries { .. } |
