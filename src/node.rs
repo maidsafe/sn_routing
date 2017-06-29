@@ -37,6 +37,8 @@ use states::{self, Bootstrapping, BootstrappingTargetState};
 use std::collections::{BTreeMap, BTreeSet};
 #[cfg(feature = "use-mock-crust")]
 use std::fmt::{self, Debug, Formatter};
+#[cfg(feature = "use-mock-crust")]
+use std::net::IpAddr;
 use std::sync::mpsc::{Receiver, RecvError, Sender, TryRecvError, channel};
 use types::{MessageId, RoutingActionSender};
 use utils;
@@ -556,8 +558,13 @@ impl Node {
     }
 
     /// Get clients' usage from rate limiter.
-    pub fn get_clients_usage(&self) -> BTreeMap<::std::net::IpAddr, u64> {
+    pub fn get_clients_usage(&self) -> BTreeMap<IpAddr, u64> {
         self.machine.current().get_clients_usage()
+    }
+
+    /// Returns the list of banned clients' IPs held by this node.
+    pub fn get_banned_client_ips(&self) -> BTreeSet<IpAddr> {
+        self.machine.current().get_banned_client_ips()
     }
 
     /// Returns whether the current state is `Node`.

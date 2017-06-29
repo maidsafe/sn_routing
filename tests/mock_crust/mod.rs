@@ -32,10 +32,10 @@ pub use self::utils::{Nodes, TestClient, TestNode, add_connected_nodes_until_spl
                       verify_invariant_for_all_nodes};
 use fake_clock::FakeClock;
 use rand::Rng;
-use routing::{Authority, BootstrapConfig, Event, EventStream, MessageId, Prefix, Request,
-              XOR_NAME_LEN, XorName};
-use routing::mock_crust::{Endpoint, Network};
-use routing::rate_limiter_consts::{CAPACITY, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, RATE};
+use routing::{Authority, BootstrapConfig, Event, EventStream, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
+              MessageId, Prefix, Request, XOR_NAME_LEN, XorName};
+use routing::mock_crust::{Endpoint, Network, to_socket_addr};
+use routing::rate_limiter_consts::{CAPACITY, RATE};
 use routing::test_consts::MAX_CLIENTS_PER_PROXY;
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -325,43 +325,17 @@ fn ban_malicious_client() {
     let mut nodes = create_connected_nodes(&network, min_section_size);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
     let mut rng = network.new_rng();
-    let data_name: XorName = rng.gen();
-    let group_auth = Authority::NaeManager(data_name);
-    let client_auth = Authority::Client {
-        client_id: *clients[0].full_id.public_id(),
-        proxy_node_name: nodes[0].name(),
-    };
-    let msg_id = MessageId::new();
 
-    // Send a get request from NM to client, which makes client sends an ACK to proxy.
-    // This ACK will be in the priority of `RELOCATE_PRIORITY`, which makes proxy ban the client.
-    for node in nodes.iter_mut() {
-        unwrap!(node.inner.send_get_idata_request(group_auth, client_auth, data_name, msg_id));
-    }
-    let _ = poll_all(&mut nodes, &mut clients);
-
-    let mut terminated = false;
-    while let Ok(event) = clients[0].inner.try_next_ev() {
-        match event {
-            Event::Request { request: Request::GetIData { .. }, .. } => {}
-            Event::Terminate => terminated = true,
-            _ => panic!("unexpected event {:?}", event),
-        }
-    }
-    assert!(terminated);
-
-    // Connect a new client.
-    let contact = nodes[0].handle.endpoint();
-    clients.push(TestClient::new(&network,
-                                 Some(BootstrapConfig::with_contacts(&[contact])),
-                                 None));
-    let _ = poll_all(&mut nodes, &mut clients);
-    expect_next_event!(unwrap!(clients.last_mut()), Event::Connected);
-
-    // Sending a `Refresh` request from client to group shall cause it to be banned.
-    let _ = clients[1]
+    // Send a `Refresh` request from the client; should cause it to get banned.
+    let _ = clients[0]
         .inner
-        .send_request(group_auth, Request::Refresh(vec![], MessageId::new()), 2);
+        .send_request(Authority::NaeManager(rng.gen()),
+                      Request::Refresh(vec![], MessageId::new()),
+                      2);
     let _ = poll_all(&mut nodes, &mut clients);
     expect_next_event!(unwrap!(clients.last_mut()), Event::Terminate);
+    let banned_ip = to_socket_addr(&clients[0].handle.endpoint()).ip();
+    let banned_client_ips = nodes[0].inner.get_banned_client_ips();
+    assert_eq!(banned_client_ips.len(), 1);
+    assert_eq!(unwrap!(banned_client_ips.into_iter().next()), banned_ip);
 }

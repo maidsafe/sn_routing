@@ -40,7 +40,6 @@ const RATE: f64 = 20.0 * 1024.0 * 1024.0;
 pub mod rate_limiter_consts {
     pub const CAPACITY: u64 = super::CAPACITY;
     pub const RATE: f64 = super::RATE;
-    pub const MAX_IMMUTABLE_DATA_SIZE_IN_BYTES: u64 = super::MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
 }
 
 /// Used to throttle the rate at which clients can send messages via this node. It works on a "leaky

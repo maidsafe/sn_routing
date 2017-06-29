@@ -33,6 +33,8 @@ use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::fmt::{self, Debug, Formatter};
 use std::mem;
+#[cfg(feature = "use-mock-crust")]
+use std::net::IpAddr;
 use std::sync::mpsc::{self, Receiver, RecvError, Sender, TryRecvError};
 use timer::Timer;
 use types::RoutingActionSender;
@@ -170,10 +172,17 @@ impl State {
         }
     }
 
-    pub fn get_clients_usage(&self) -> BTreeMap<::std::net::IpAddr, u64> {
+    pub fn get_clients_usage(&self) -> BTreeMap<IpAddr, u64> {
         match *self {
             State::Node(ref state) => state.get_clients_usage(),
-            _ => panic!("shall be in State::Node state"),
+            _ => panic!("Should be State::Node"),
+        }
+    }
+
+    pub fn get_banned_client_ips(&self) -> BTreeSet<IpAddr> {
+        match *self {
+            State::Node(ref state) => state.get_banned_client_ips(),
+            _ => panic!("Should be State::Node"),
         }
     }
 

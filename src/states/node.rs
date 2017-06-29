@@ -3418,6 +3418,13 @@ impl Node {
         self.clients_rate_limiter.get_clients_usage()
     }
 
+    pub fn get_banned_client_ips(&self) -> BTreeSet<IpAddr> {
+        self.banned_client_ips
+            .peek_iter()
+            .map(|(ip, _)| *ip)
+            .collect()
+    }
+
     pub fn set_next_relocation_dst(&mut self, dst: Option<XorName>) {
         self.next_relocation_dst = dst;
     }
