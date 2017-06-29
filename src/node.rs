@@ -555,6 +555,11 @@ impl Node {
         self.machine.current().section_list_signatures(prefix)
     }
 
+    /// Get clients' usage from rate limiter.
+    pub fn get_clients_usage(&self) -> BTreeMap<::std::net::IpAddr, u64> {
+        self.machine.current().get_clients_usage()
+    }
+
     /// Returns whether the current state is `Node`.
     pub fn is_node(&self) -> bool {
         if let State::Node(..) = *self.machine.current() {
