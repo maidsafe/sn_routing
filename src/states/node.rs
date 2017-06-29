@@ -2841,8 +2841,9 @@ impl Node {
                        pub_id: &PublicId)
                        -> Result<(), RoutingError> {
         let priority = signed_msg.priority();
+        let is_client = self.peer_mgr.is_client(pub_id);
 
-        if self.peer_mgr.is_client(pub_id) || self.peer_mgr.is_joining_node(pub_id) {
+        let result = if is_client || self.peer_mgr.is_joining_node(pub_id) {
             if self.filter_outgoing_routing_msg(signed_msg.routing_message(), pub_id, 0) {
                 return Ok(());
             }
@@ -2855,14 +2856,19 @@ impl Node {
             self.send_or_drop(pub_id, raw_bytes, priority);
             Ok(())
         } else {
-            // Acknowledge the message so that the sender doesn't retry.
-            let hop = *self.name();
-            self.send_ack_from(signed_msg.routing_message(), 0, Authority::ManagedNode(hop));
             debug!("{:?} Client connection not found for message {:?}.",
                    self,
                    signed_msg);
             Err(RoutingError::ClientConnectionNotFound)
+        };
+
+        // Acknowledge the message so that the sender doesn't retry.
+        if is_client || result.is_err() {
+            let hop = *self.name();
+            self.send_ack_from(signed_msg.routing_message(), 0, Authority::ManagedNode(hop));
         }
+
+        result
     }
 
     /// Returns the peer that is responsible for collecting signatures to verify a message; this

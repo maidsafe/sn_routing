@@ -194,9 +194,6 @@ impl Client {
 
         let routing_msg = signed_msg.into_routing_message();
         let in_authority = self.in_authority(&routing_msg.dst);
-        if in_authority {
-            self.send_ack(&routing_msg, 0);
-        }
 
         // Prevents us repeatedly handling identical messages sent by a malicious peer.
         match self.routing_msg_filter
