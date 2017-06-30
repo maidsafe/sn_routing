@@ -34,10 +34,9 @@ use fake_clock::FakeClock;
 use rand::Rng;
 use routing::{Authority, BootstrapConfig, Event, EventStream, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
               MessageId, Prefix, Request, XOR_NAME_LEN, XorName};
-use routing::mock_crust::{Endpoint, Network, to_socket_addr};
+use routing::mock_crust::{Endpoint, Network};
 use routing::rate_limiter_consts::{CAPACITY, MAX_CLIENTS_PER_PROXY, RATE};
 use std::collections::HashMap;
-use std::net::IpAddr;
 
 // -----  Miscellaneous tests below  -----
 
@@ -234,13 +233,11 @@ fn rate_limit_proxy() {
     for i in 0..10 {
         trace!("iteration {:?}", i);
         let mut clients_sent = HashMap::new();
-        for (j, client) in clients.iter_mut().enumerate() {
+        for client in &mut clients {
             if rng.gen_weighted_bool(2) {
                 let msg_id = MessageId::new();
                 unwrap!(client.inner.get_idata(dst, data_id, msg_id));
-                let _ =
-                    clients_sent.insert(msg_id,
-                                        IpAddr::from([0, 0, 0, (j + min_section_size) as u8]));
+                let _ = clients_sent.insert(msg_id, client.ip());
             }
         }
         trace!("clients_sent: {:?}", clients_sent);
@@ -268,13 +265,8 @@ fn rate_limit_proxy() {
         }
         assert!(total_usage <= CAPACITY);
 
-
         let clients_usage = nodes[0].inner.get_clients_usage();
-        assert_eq!(clients_usage
-                       .iter()
-                       .filter(|&(_, usage)| *usage > per_client_cap)
-                       .count(),
-                   0);
+        assert!(clients_usage.iter().all(|(_, usage)| *usage <= per_client_cap));
         for ip in clients_sent.values() {
             assert!(unwrap!(clients_usage.get(ip)) + MAX_IMMUTABLE_DATA_SIZE_IN_BYTES >
                     per_client_cap);
@@ -287,7 +279,7 @@ fn rate_limit_proxy() {
 
 #[test]
 /// Connect a client to the network then send an invalid message.
-/// Expect the client will be banned (disconnected);
+/// Expect the client will be disconnected and banned;
 fn ban_malicious_client() {
     let min_section_size = 8;
     let network = Network::new(min_section_size, None);
@@ -303,8 +295,7 @@ fn ban_malicious_client() {
                       2);
     let _ = poll_all(&mut nodes, &mut clients);
     expect_next_event!(unwrap!(clients.last_mut()), Event::Terminate);
-    let banned_ip = to_socket_addr(&clients[0].handle.endpoint()).ip();
     let banned_client_ips = nodes[0].inner.get_banned_client_ips();
     assert_eq!(banned_client_ips.len(), 1);
-    assert_eq!(unwrap!(banned_client_ips.into_iter().next()), banned_ip);
+    assert_eq!(unwrap!(banned_client_ips.into_iter().next()), clients[0].ip());
 }

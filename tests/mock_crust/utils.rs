@@ -26,6 +26,7 @@ use routing::test_consts::{ACK_TIMEOUT_SECS, CONNECTING_PEER_TIMEOUT_SECS};
 use std::{cmp, thread};
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap};
+use std::net::IpAddr;
 use std::ops::{Deref, DerefMut};
 use std::sync::mpsc::{RecvError, TryRecvError};
 
@@ -240,6 +241,10 @@ impl TestClient {
 
     pub fn name(&self) -> XorName {
         *unwrap!(self.inner.id()).name()
+    }
+
+    pub fn ip(&self) -> IpAddr {
+        mock_crust::to_socket_addr(&self.handle.endpoint()).ip()
     }
 }
 

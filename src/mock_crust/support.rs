@@ -23,7 +23,6 @@ use maidsafe_utilities::SeededRng;
 use rand::Rng;
 use rust_sodium;
 use std::cell::RefCell;
-use std::cmp;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::collections::btree_map::Entry;
 use std::net::{IpAddr, SocketAddr};
@@ -36,7 +35,6 @@ pub struct Network<UID: Uid>(Rc<RefCell<NetworkImpl<UID>>>);
 pub struct NetworkImpl<UID: Uid> {
     services: HashMap<Endpoint, Weak<RefCell<ServiceImpl<UID>>>>,
     min_section_size: usize,
-    next_endpoint: usize,
     queue: BTreeMap<(Endpoint, Endpoint), VecDeque<Packet<UID>>>,
     blocked_connections: HashSet<(Endpoint, Endpoint)>,
     delayed_connections: HashSet<(Endpoint, Endpoint)>,
@@ -56,7 +54,6 @@ impl<UID: Uid> Network<UID> {
         Network(Rc::new(RefCell::new(NetworkImpl {
                                          services: HashMap::new(),
                                          min_section_size: min_section_size,
-                                         next_endpoint: 0,
                                          queue: BTreeMap::new(),
                                          blocked_connections: HashSet::new(),
                                          delayed_connections: HashSet::new(),
@@ -93,16 +90,39 @@ impl<UID: Uid> Network<UID> {
         self.0.borrow().min_section_size
     }
 
-    /// Generate unique Endpoint
+    /// Generate unique `Endpoint`
     pub fn gen_endpoint(&self, opt_endpoint: Option<Endpoint>) -> Endpoint {
-        let mut imp = self.0.borrow_mut();
-        let endpoint = if let Some(endpoint) = opt_endpoint {
-            endpoint
-        } else {
-            Endpoint(imp.next_endpoint)
-        };
-        imp.next_endpoint = cmp::max(imp.next_endpoint, endpoint.0 + 1);
-        endpoint
+        opt_endpoint.unwrap_or_else(|| {
+            let imp = self.0.borrow();
+            for i in 0.. {
+                if !imp.services.contains_key(&Endpoint(i)) {
+                    return Endpoint(i);
+                }
+            }
+            panic!("Unable to produce new Endpoint.");
+        })
+    }
+
+    /// Generate a unique `Endpoint` which has an IP address of `ip`.  `ip` should be an IPv4
+    /// address of the form 127.0.x.x which is the form returned by the `to_socket_addr()` function
+    /// in this module.
+    pub fn gen_endpoint_with_ip(&self, ip: &IpAddr) -> Endpoint {
+        match *ip {
+            IpAddr::V4(ipv4) => {
+                let imp = self.0.borrow();
+                assert_eq!(ipv4.octets()[0], 127);
+                assert_eq!(ipv4.octets()[1], 0);
+                let initial_value = ((ipv4.octets()[2] as usize) << 8) + ipv4.octets()[3] as usize;
+                for i in 0..0xFF {
+                    let endpoint = Endpoint(initial_value + (i << 16));
+                    if !imp.services.contains_key(&endpoint) {
+                        return endpoint;
+                    }
+                }
+                panic!("No available endpoints left which will match {:?}", ip);
+            }
+            IpAddr::V6(_) => panic!("Expected IPv4 address."),
+        }
     }
 
     /// Poll and process all queued Packets.
@@ -608,10 +628,7 @@ impl<UID: Uid> Drop for ServiceImpl<UID> {
 /// Creates a `SocketAddr` with the endpoint as its port, so that endpoints and addresses can be
 /// easily mapped to each other during testing.
 pub fn to_socket_addr(endpoint: &Endpoint) -> SocketAddr {
-    SocketAddr::new(IpAddr::from([(endpoint.0 >> 24) as u8,
-                                  (endpoint.0 >> 16) as u8,
-                                  (endpoint.0 >> 8) as u8,
-                                  endpoint.0 as u8]),
+    SocketAddr::new(IpAddr::from([127, 0, (endpoint.0 >> 8) as u8, endpoint.0 as u8]),
                     endpoint.0 as u16)
 }
 
