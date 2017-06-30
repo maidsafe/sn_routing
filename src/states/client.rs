@@ -22,19 +22,25 @@ use action::Action;
 use error::{InterfaceError, RoutingError};
 use event::Event;
 use id::{FullId, PublicId};
+use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation;
-use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage, UserMessage,
-               UserMessageCache};
+use messages::{DirectMessage, HopMessage, Message, MessageContent, RoutingMessage, SignedMessage,
+               UserMessage, UserMessageCache};
 use outbox::EventBox;
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use routing_table::Authority;
+use sha3::Digest256;
 use state_machine::Transition;
 use stats::Stats;
 use std::collections::BTreeSet;
 use std::fmt::{self, Debug, Formatter};
 use std::time::Duration;
 use timer::Timer;
+use types::MessageId;
 use xor_name::XorName;
+
+/// Duration for which user message IDs are kept in the cache, in seconds.
+const MESSAGE_ID_CACHE_SECS: u64 = 300;
 
 /// A node connecting a user to the network, as opposed to a routing / data storage node.
 ///
@@ -49,6 +55,7 @@ pub struct Client {
     stats: Stats,
     timer: Timer,
     user_msg_cache: UserMessageCache,
+    outgoing_user_msg_hashes: LruCache<Digest256, MessageId>,
 }
 
 impl Client {
@@ -72,9 +79,11 @@ impl Client {
             timer: timer,
             user_msg_cache: UserMessageCache::with_expiry_duration(
                 Duration::from_secs(USER_MSG_CACHE_EXPIRY_DURATION_SECS)),
+            outgoing_user_msg_hashes: LruCache::with_expiry_duration(
+                Duration::from_secs(MESSAGE_ID_CACHE_SECS)),
         };
 
-        debug!("{:?} - State changed to client.", client);
+        debug!("{:?} State changed to client.", client);
 
         outbox.send_event(Event::Connected);
         client
@@ -151,8 +160,9 @@ impl Client {
                           -> Transition {
         let transition = match serialisation::deserialise(&bytes) {
             Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, pub_id, outbox),
+            Ok(Message::Direct(direct_msg)) => self.handle_direct_message(direct_msg, outbox),
             Ok(message) => {
-                debug!("{:?} - Unhandled new message: {:?}", self, message);
+                debug!("{:?} Unhandled new message: {:?}", self, message);
                 Ok(Transition::Stay)
             }
             Err(error) => Err(RoutingError::SerialisationError(error)),
@@ -162,7 +172,7 @@ impl Client {
             Ok(transition) => transition,
             Err(RoutingError::FilterCheckFailed) => Transition::Stay,
             Err(error) => {
-                debug!("{:?} - {:?}", self, error);
+                debug!("{:?} {:?}", self, error);
                 Transition::Stay
             }
         }
@@ -182,15 +192,15 @@ impl Client {
         let signed_msg = hop_msg.content;
         signed_msg.check_integrity(self.min_section_size())?;
 
-        let routing_msg = signed_msg.routing_message();
+        let routing_msg = signed_msg.into_routing_message();
         let in_authority = self.in_authority(&routing_msg.dst);
         if in_authority {
-            self.send_ack(routing_msg, 0);
+            self.send_ack(&routing_msg, 0);
         }
 
         // Prevents us repeatedly handling identical messages sent by a malicious peer.
         match self.routing_msg_filter
-                  .filter_incoming(routing_msg, hop_msg.route) {
+                  .filter_incoming(&routing_msg, hop_msg.route) {
             FilteringResult::KnownMessage |
             FilteringResult::KnownMessageAndRoute => return Err(RoutingError::FilterCheckFailed),
             FilteringResult::NewMessage => (),
@@ -200,7 +210,24 @@ impl Client {
             return Ok(Transition::Stay);
         }
 
-        Ok(self.dispatch_routing_message(routing_msg.clone(), outbox))
+        Ok(self.dispatch_routing_message(routing_msg, outbox))
+    }
+
+    fn handle_direct_message(&mut self,
+                             direct_msg: DirectMessage,
+                             outbox: &mut EventBox)
+                             -> Result<Transition, RoutingError> {
+        if let DirectMessage::ProxyRateLimitExceeded(hash) = direct_msg {
+            if let Some(msg_id) = self.outgoing_user_msg_hashes.remove(&hash) {
+                outbox.send_event(Event::ProxyRateLimitExceeded(msg_id));
+            } else {
+                debug!("{:?} Got ProxyRateLimitExceeded, but no corresponding request found",
+                       self);
+            }
+        } else {
+            debug!("{:?} Unhandled direct message: {:?}", self, direct_msg);
+        }
+        Ok(Transition::Stay)
     }
 
     fn dispatch_routing_message(&mut self,
@@ -233,7 +260,7 @@ impl Client {
                 Transition::Stay
             }
             content => {
-                debug!("{:?} - Unhandled routing message: {:?} from {:?} to {:?}",
+                debug!("{:?} Unhandled routing message: {:?} from {:?} to {:?}",
                        self,
                        content,
                        routing_msg.src,
@@ -251,9 +278,12 @@ impl Client {
                          priority: u8)
                          -> Result<(), RoutingError> {
         self.stats.count_user_message(&user_msg);
-        for part in user_msg.to_parts(priority)? {
+        let (hash, parts) = user_msg.to_parts(priority)?;
+        for part in parts {
             self.send_routing_message(src, dst, part)?;
         }
+        let _ = self.outgoing_user_msg_hashes
+            .insert(hash, *user_msg.message_id());
         Ok(())
     }
 }

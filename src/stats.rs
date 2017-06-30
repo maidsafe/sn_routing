@@ -41,6 +41,7 @@ pub struct Stats {
     msg_direct_resource_proof: usize,
     msg_direct_resource_proof_rsp: usize,
     msg_direct_resource_proof_rsp_receipt: usize,
+    msg_direct_proxy_rate_limit_exceed: usize,
     msg_direct_sls: usize,
 
     msg_get: usize,
@@ -254,6 +255,7 @@ impl Stats {
             ResourceProof { .. } => self.msg_direct_resource_proof += 1,
             ResourceProofResponse { .. } => self.msg_direct_resource_proof_rsp += 1,
             ResourceProofResponseReceipt => self.msg_direct_resource_proof_rsp_receipt += 1,
+            ProxyRateLimitExceeded(..) => self.msg_direct_proxy_rate_limit_exceed += 1,
             BootstrapRequest(_) |
             BootstrapResponse(_) |
             TunnelRequest(_) |
@@ -287,14 +289,15 @@ impl Stats {
                   self.routes,
                   self.unacked_msgs);
             info!(target: "routing_stats",
-                  "Stats - Direct - CandidateInfo: {}, \
-                   MessageSignature: {}, ResourceProof: {}/{}/{}, SectionListSignature: {}",
+                  "Stats - Direct - CandidateInfo: {}, MessageSignature: {}, \
+                   ResourceProof: {}/{}/{}, SectionListSignature: {}, ProxyRateLimitExceeded: {}",
                   self.msg_direct_candidate_info,
                   self.msg_direct_sig,
                   self.msg_direct_resource_proof,
                   self.msg_direct_resource_proof_rsp,
                   self.msg_direct_resource_proof_rsp_receipt,
-                  self.msg_direct_sls);
+                  self.msg_direct_sls,
+                  self.msg_direct_proxy_rate_limit_exceed);
             info!(target: "routing_stats",
                   "Stats - Hops (Request/Response) - Relocate: {}/{}, ExpectCandidate: {}, \
                    AcceptAsCandidate: {}, SectionUpdate: {}, SectionSplit: {}, \

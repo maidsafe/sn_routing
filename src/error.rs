@@ -22,6 +22,7 @@ use event::Event;
 use id::PublicId;
 use maidsafe_utilities::event_sender::{EventSenderError, MaidSafeEventCategory};
 use maidsafe_utilities::serialisation;
+use sha3::Digest256;
 use std::sync::mpsc::{RecvError, SendError};
 
 /// The type of errors that can occur if routing is unable to handle a send request.
@@ -130,8 +131,9 @@ pub enum RoutingError {
     InvalidMessage,
     /// Invalid Peer
     InvalidPeer,
-    /// The client's message has been rejected by the rate-limiter.
-    ExceedsRateLimit,
+    /// The client's message indicated by the included hash digest has been rejected by the
+    /// rate-limiter.
+    ExceedsRateLimit(Digest256),
 }
 
 impl From<RoutingTableError> for RoutingError {
@@ -173,5 +175,24 @@ impl From<SendError<Event>> for RoutingError {
 impl From<serialisation::SerialisationError> for RoutingError {
     fn from(error: serialisation::SerialisationError) -> RoutingError {
         RoutingError::SerialisationError(error)
+    }
+}
+
+quick_error! {
+    #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+    pub enum BootstrapResponseError {
+        NotApproved {
+            description("Proxy not approved yet")
+            display("The chosen proxy node has not yet been approved by the network.")
+        }
+        TooFewPeers {
+            description("Proxy has too few peers")
+            display("The chosen proxy node has too few connections to peers.")
+        }
+        ClientLimit {
+            description("Proxy has max. clients")
+            display("The chosen proxy node already has connections to the maximum number of \
+                     clients allowed per proxy.")
+        }
     }
 }

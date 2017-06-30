@@ -23,7 +23,7 @@ use action::Action;
 use cache::Cache;
 use crust::{ConnectionInfoResult, CrustError, CrustUser};
 use cumulative_own_section_merge::CumulativeOwnSectionMerge;
-use error::{InterfaceError, RoutingError};
+use error::{BootstrapResponseError, InterfaceError, RoutingError};
 use event::Event;
 use id::{FullId, PublicId};
 use itertools::Itertools;
@@ -76,8 +76,10 @@ const SU_MAX_TIMEOUT_SECS: u64 = 300;
 const CANDIDATE_STATUS_INTERVAL_SECS: u64 = 60;
 /// Duration for which `OwnSectionMerge` messages are kept in the cache, in seconds.
 const MERGE_TIMEOUT_SECS: u64 = 300;
-/// Duration for which all clients on a given IP will be blocked from joining this node.
+/// Duration for which all clients on a given IP will be blocked from joining this node, in seconds.
 const CLIENT_BAN_SECS: u64 = 2 * 60 * 60;
+/// Duration for which clients' IDs we disconnected from are retained, in seconds.
+const DROPPED_CLIENT_TIMEOUT_SECS: u64 = 2 * 60 * 60;
 
 pub struct Node {
     ack_mgr: AckManager,
@@ -127,6 +129,11 @@ pub struct Node {
     clients_rate_limiter: RateLimiter,
     /// IPs of clients which have been temporarily blocked from bootstrapping off this node.
     banned_client_ips: LruCache<IpAddr, ()>,
+    /// Recently-disconnected clients.  Clients are added to this when we disconnect from them so we
+    /// have a way to know to not handle subsequent hop messages from them (i.e. those which were
+    /// already enqueued in the channel or added before Crust handled the disconnect request).  If a
+    /// client then re-connects, its ID is removed from here when we add it to the `PeerManager`.
+    dropped_clients: LruCache<PublicId, ()>,
 }
 
 impl Node {
@@ -240,6 +247,8 @@ impl Node {
             joining_prefix: Default::default(),
             clients_rate_limiter: Default::default(),
             banned_client_ips: LruCache::with_expiry_duration(Duration::from_secs(CLIENT_BAN_SECS)),
+            dropped_clients:
+                LruCache::with_expiry_duration(Duration::from_secs(DROPPED_CLIENT_TIMEOUT_SECS)),
         }
     }
 
@@ -393,7 +402,7 @@ impl Node {
                     return Transition::Terminate;
                 }
             }
-            CrustEvent::NewMessage(pub_id, _, bytes) => {
+            CrustEvent::NewMessage(pub_id, _peer_kind, bytes) => {
                 match self.handle_new_message(pub_id, bytes, outbox) {
                     Err(RoutingError::FilterCheckFailed) |
                     Ok(_) => (),
@@ -466,24 +475,37 @@ impl Node {
                 warn!("{:?} {:?} is bootstrapping as a node, but is not in whitelist.",
                       self,
                       pub_id);
-                self.disconnect_peer(&pub_id, None);
-                return;
-            }
-        } else if let Ok(ip_addr) = self.crust_service.get_peer_ip_addr(&pub_id) {
-            if self.banned_client_ips.contains_key(&ip_addr) {
-                warn!("{:?} Client {:?} is trying to bootstrap on banned IP {}.",
-                      self,
-                      pub_id,
-                      ip_addr);
-                self.disconnect_peer(&pub_id, None);
+                self.ban_and_disconnect_peer(&pub_id);
                 return;
             }
         } else {
-            warn!("{:?} Can't get IP address of bootstrapper {:?}.",
-                  self,
-                  pub_id);
-            self.disconnect_peer(&pub_id, None);
-            return;
+            if let Ok(ip_addr) = self.crust_service.get_peer_ip_addr(&pub_id) {
+                if self.banned_client_ips.contains_key(&ip_addr) {
+                    warn!("{:?} Client {:?} is trying to bootstrap on banned IP {}.",
+                          self,
+                          pub_id,
+                          ip_addr);
+                    self.ban_and_disconnect_peer(&pub_id);
+                    return;
+                }
+            } else {
+                warn!("{:?} Can't get IP address of bootstrapper {:?}.",
+                      self,
+                      pub_id);
+                self.disconnect_peer(&pub_id, None);
+                let _ = self.dropped_clients.insert(pub_id, ());
+                return;
+            }
+            if !self.peer_mgr.can_accept_client() {
+                debug!("{:?} Client {:?} rejected: We cannot accept more clients.",
+                       self,
+                       pub_id);
+                self.send_direct_message(pub_id,
+                    DirectMessage::BootstrapResponse(Err(BootstrapResponseError::ClientLimit)));
+                self.disconnect_peer(&pub_id, None);
+                let _ = self.dropped_clients.insert(pub_id, ());
+                return;
+            }
         }
         self.peer_mgr
             .insert_peer(Peer::new(pub_id,
@@ -502,7 +524,7 @@ impl Node {
             debug!("{:?} Received ConnectSuccess, but {:?} is not whitelisted.",
                    self,
                    pub_id);
-            self.disconnect_peer(&pub_id, None);
+            self.ban_and_disconnect_peer(&pub_id);
             return;
         }
 
@@ -620,8 +642,7 @@ impl Node {
                              -> Result<(), RoutingError> {
         use messages::DirectMessage::*;
         if let Err(error) = self.check_direct_message_sender(&direct_message, &pub_id) {
-            self.ban_peer(&pub_id);
-            self.disconnect_peer(&pub_id, Some(outbox));
+            self.ban_and_disconnect_peer(&pub_id);
             return Err(error);
         }
 
@@ -636,8 +657,7 @@ impl Node {
                           self,
                           error,
                           pub_id);
-                    self.ban_peer(&pub_id);
-                    self.disconnect_peer(&pub_id, Some(outbox));
+                    self.ban_and_disconnect_peer(&pub_id);
                 }
             }
             CandidateInfo {
@@ -693,7 +713,8 @@ impl Node {
                                                     proof,
                                                     leading_zero_bytes);
             }
-            msg @ BootstrapResponse(_) => {
+            msg @ BootstrapResponse(_) |
+            msg @ ProxyRateLimitExceeded(_) => {
                 debug!("{:?} Unhandled direct message: {:?}", self, msg);
             }
         }
@@ -879,12 +900,19 @@ impl Node {
             Some(&PeerState::SearchingForTunnel) |
             Some(&PeerState::Connected(_)) |
             None => {
-                Ok(*self.name())
-                // FIXME - confirm we can return with an error here by running soak tests
-                // debug!("{:?} Invalid sender {} of {:?}", self, pub_id, hop_msg);
-                // return Err(RoutingError::InvalidSource);
+                if self.dropped_clients.contains_key(&pub_id) {
+                    debug!("{:?} Ignoring {:?} from recently-disconnected client {:?}.",
+                           self,
+                           hop_msg,
+                           pub_id);
+                    return Ok(());
+                } else {
+                    Ok(*self.name())
+                    // FIXME - confirm we can return with an error here by running soak tests
+                    // debug!("{:?} Invalid sender {} of {:?}", self, pub_id, hop_msg);
+                    // return Err(RoutingError::InvalidSource);
+                }
             }
-
         };
 
         if is_client {
@@ -902,15 +930,15 @@ impl Node {
                 } = hop_msg;
                 self.handle_signed_message(content, route, hop_name, &sent_to)
             }
-            Err(RoutingError::ExceedsRateLimit) => {
+            Err(RoutingError::ExceedsRateLimit(hash)) => {
                 trace!("{:?} Temporarily can't proxy messages from client {:?} (rate-limit hit).",
                        self,
                        pub_id);
-                Err(RoutingError::ExceedsRateLimit)
+                self.send_direct_message(pub_id, DirectMessage::ProxyRateLimitExceeded(hash));
+                Err(RoutingError::ExceedsRateLimit(hash))
             }
             Err(error) => {
-                self.ban_peer(&pub_id);
-                self.disconnect_peer(&pub_id, None);
+                self.ban_and_disconnect_peer(&pub_id);
                 Err(error)
             }
         }
@@ -1396,6 +1424,7 @@ impl Node {
                 if priority >= DEFAULT_PRIORITY => Ok(()),
             (&Authority::Client { .. },
              &MessageContent::UserMessagePart {
+                  ref hash,
                   ref part_count,
                   ref part_index,
                   ref priority,
@@ -1408,6 +1437,7 @@ impl Node {
                     self.clients_rate_limiter
                         .add_message(self.peer_mgr.client_num() as u64,
                                      &ip_addr,
+                                     hash,
                                      *part_count,
                                      *part_index,
                                      payload)
@@ -1499,7 +1529,9 @@ impl Node {
             debug!("{:?} Client {:?} rejected: We are not approved as a node yet.",
                    self,
                    pub_id);
-            self.send_direct_message(pub_id, DirectMessage::BootstrapResponse(false));
+            self.send_direct_message(pub_id,
+                DirectMessage::BootstrapResponse(Err(BootstrapResponseError::NotApproved)));
+            self.disconnect_peer(&pub_id, Some(outbox));
             return Ok(());
         }
 
@@ -1510,20 +1542,15 @@ impl Node {
                    pub_id,
                    self.routing_table().len(),
                    self.min_section_size() - 1);
-            self.send_direct_message(pub_id, DirectMessage::BootstrapResponse(false));
-            return Ok(());
-        }
-
-        if peer_kind == CrustUser::Client && !self.peer_mgr.can_accept_client() {
-            debug!("{:?} Client {:?} rejected: We cannot accept more clients.",
-                   self,
-                   pub_id);
-            self.send_direct_message(pub_id, DirectMessage::BootstrapResponse(false));
+            self.send_direct_message(pub_id,
+                DirectMessage::BootstrapResponse(Err(BootstrapResponseError::TooFewPeers)));
+            self.disconnect_peer(&pub_id, Some(outbox));
             return Ok(());
         }
 
         self.peer_mgr.handle_bootstrap_request(&pub_id);
-        self.send_direct_message(pub_id, DirectMessage::BootstrapResponse(true));
+        let _ = self.dropped_clients.remove(&pub_id);
+        self.send_direct_message(pub_id, DirectMessage::BootstrapResponse(Ok(())));
         Ok(())
     }
 
@@ -2082,8 +2109,6 @@ impl Node {
                    pub_id);
         } else if self.peer_mgr.is_proxy(pub_id) {
             debug!("{:?} Not disconnecting proxy node {}.", self, pub_id);
-        } else if self.peer_mgr.is_client(pub_id) {
-            debug!("{:?} Not disconnecting client {:?}.", self, pub_id);
         } else if self.peer_mgr.is_joining_node(pub_id) {
             debug!("{:?} Not disconnecting joining node {:?}.", self, pub_id);
         } else if let Some(tunnel_id) = self.tunnels.remove_tunnel_for(pub_id) {
@@ -2096,7 +2121,23 @@ impl Node {
                    self,
                    pub_id);
             let _ = self.crust_service.disconnect(pub_id);
-            let _ = self.peer_mgr.remove_peer(pub_id);
+            if let Some((peer, _)) = self.peer_mgr.remove_peer(pub_id) {
+                match *peer.state() {
+                    PeerState::Bootstrapper(_) |
+                    PeerState::Client => {
+                        let _ = self.dropped_clients.insert(*pub_id, ());
+                    }
+                    PeerState::ConnectionInfoPreparing { .. } |
+                    PeerState::ConnectionInfoReady(_) |
+                    PeerState::CrustConnecting |
+                    PeerState::Connected(_) |
+                    PeerState::SearchingForTunnel |
+                    PeerState::JoiningNode |
+                    PeerState::Routing(_) |
+                    PeerState::Candidate(_) |
+                    PeerState::Proxy => (),
+                }
+            }
             self.dropped_tunnel_client(pub_id);
             // FIXME: `outbox` is optional here primarily to avoid passing an `EventBox` through
             //        many of the `send_xxx` functions. We're relying on `purge_invalid_rt_entries`
@@ -2718,7 +2759,7 @@ impl Node {
                          priority: u8)
                          -> Result<(), RoutingError> {
         self.stats.count_user_message(&user_msg);
-        for part in user_msg.to_parts(priority)? {
+        for part in user_msg.to_parts(priority)?.1 {
             self.send_routing_message(src, dst, part)?;
         }
         Ok(())
@@ -3287,13 +3328,15 @@ impl Node {
     // actually only blocking clients from bootstrapping from that IP (see
     // `handle_bootstrap_accept()`). This behaviour will change when we refactor the codebase to
     // handle malicious nodes more fully.
-    fn ban_peer(&mut self, pub_id: &PublicId) {
+    fn ban_and_disconnect_peer(&mut self, pub_id: &PublicId) {
         if let Ok(ip_addr) = self.crust_service.get_peer_ip_addr(pub_id) {
             let _ = self.banned_client_ips.insert(ip_addr, ());
             debug!("{:?} Banned client {:?} on IP {}", self, pub_id, ip_addr);
         } else {
             warn!("{:?} Can't get IP address of client {:?}.", self, pub_id);
         }
+        let _ = self.dropped_clients.insert(*pub_id, ());
+        self.disconnect_peer(pub_id, None);
     }
 }
 
