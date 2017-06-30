@@ -498,7 +498,7 @@ impl Node {
                 self.ban_and_disconnect_peer(&pub_id);
                 return;
             }
-            if !self.peer_mgr.can_accept_client(&ip) {
+            if !self.peer_mgr.can_accept_client(ip) {
                 debug!("{:?} Client {:?} rejected: We cannot accept more clients.",
                        self,
                        pub_id);

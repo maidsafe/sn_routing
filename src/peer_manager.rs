@@ -448,6 +448,7 @@ impl PeerManager {
 
     /// Upgrades a `Bootstrapper` to a `Client` or `JoiningNode`.
     pub fn handle_bootstrap_request(&mut self, pub_id: &PublicId) {
+        let self_debug = format!("{:?}", self);
         let _ = self.peers
             .get_mut(pub_id)
             .map(|peer| if let PeerState::Bootstrapper { peer_kind, ip } = peer.state {
@@ -456,6 +457,11 @@ impl PeerManager {
                      } else {
                          peer.state = PeerState::Client(ip);
                      }
+                 } else {
+                     log_or_panic!(LogLevel::Error,
+                                   "{} {:?} is not a bootstrapper.",
+                                   self_debug,
+                                   pub_id);
                  });
     }
 
@@ -959,16 +965,18 @@ impl PeerManager {
     }
 
     /// Checks whether we can accept more clients.
-    pub fn can_accept_client(&self, ip: &IpAddr) -> bool {
-        let client_ips = self.peers
-            .values()
-            .filter_map(|peer| match *peer.state() {
-                            PeerState::Bootstrapper { ip, .. } |
-                            PeerState::Client(ip) => Some(ip),
-                            _ => None,
-                        })
-            .collect_vec();
-        !client_ips.contains(ip) && client_ips.len() < MAX_CLIENTS_PER_PROXY
+    pub fn can_accept_client(&self, client_ip: IpAddr) -> bool {
+        let mut existing_client_count = 0;
+        !self.peers
+             .values()
+             .any(|peer| match *peer.state() {
+                      PeerState::Bootstrapper { ip, .. } |
+                      PeerState::Client(ip) => {
+            existing_client_count += 1;
+            client_ip == ip
+        }
+                      _ => false,
+                  }) && existing_client_count < MAX_CLIENTS_PER_PROXY
     }
 
     /// Marks the given peer as direct-connected.
