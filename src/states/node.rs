@@ -470,6 +470,17 @@ impl Node {
                self,
                pub_id,
                peer_kind);
+        let ip = if let Ok(ip) = self.crust_service.get_peer_ip_addr(&pub_id) {
+            ip
+        } else {
+            warn!("{:?} Can't get IP address of bootstrapper {:?}.",
+                  self,
+                  pub_id);
+            self.disconnect_peer(&pub_id, None);
+            let _ = self.dropped_clients.insert(pub_id, ());
+            return;
+        };
+
         if peer_kind == CrustUser::Node {
             if !self.crust_service.is_peer_whitelisted(&pub_id) {
                 warn!("{:?} {:?} is bootstrapping as a node, but is not in whitelist.",
@@ -479,24 +490,15 @@ impl Node {
                 return;
             }
         } else {
-            if let Ok(ip_addr) = self.crust_service.get_peer_ip_addr(&pub_id) {
-                if self.banned_client_ips.contains_key(&ip_addr) {
-                    warn!("{:?} Client {:?} is trying to bootstrap on banned IP {}.",
-                          self,
-                          pub_id,
-                          ip_addr);
-                    self.ban_and_disconnect_peer(&pub_id);
-                    return;
-                }
-            } else {
-                warn!("{:?} Can't get IP address of bootstrapper {:?}.",
+            if self.banned_client_ips.contains_key(&ip) {
+                warn!("{:?} Client {:?} is trying to bootstrap on banned IP {}.",
                       self,
-                      pub_id);
-                self.disconnect_peer(&pub_id, None);
-                let _ = self.dropped_clients.insert(pub_id, ());
+                      pub_id,
+                      ip);
+                self.ban_and_disconnect_peer(&pub_id);
                 return;
             }
-            if !self.peer_mgr.can_accept_client() {
+            if !self.peer_mgr.can_accept_client(ip) {
                 debug!("{:?} Client {:?} rejected: We cannot accept more clients.",
                        self,
                        pub_id);
@@ -509,7 +511,7 @@ impl Node {
         }
         self.peer_mgr
             .insert_peer(Peer::new(pub_id,
-                                   PeerState::Bootstrapper(peer_kind),
+                                   PeerState::Bootstrapper { peer_kind, ip },
                                    false,
                                    ReconnectingPeer::False));
     }
@@ -727,12 +729,12 @@ impl Node {
                                    pub_id: &PublicId)
                                    -> Result<(), RoutingError> {
         match self.peer_mgr.get_peer(pub_id).map(Peer::state) {
-            Some(&PeerState::Bootstrapper(_)) => {
+            Some(&PeerState::Bootstrapper { .. }) => {
                 if let DirectMessage::BootstrapRequest(_) = *direct_message {
                     return Ok(());
                 }
             }
-            Some(&PeerState::Client) |
+            Some(&PeerState::Client(_)) |
             None => (),
             _ => return Ok(()),
         }
@@ -878,16 +880,16 @@ impl Node {
                           pub_id: PublicId)
                           -> Result<(), RoutingError> {
         hop_msg.verify(pub_id.signing_public_key())?;
-        let mut is_client = false;
+        let mut client_ip = None;
         let mut hop_name_result = match self.peer_mgr.get_peer(&pub_id).map(Peer::state) {
-            Some(&PeerState::Bootstrapper(_)) => {
+            Some(&PeerState::Bootstrapper { .. }) => {
                 warn!("{:?} Hop message received from bootstrapper {:?}, disconnecting.",
                       self,
                       pub_id);
                 Err(RoutingError::InvalidStateForOperation)
             }
-            Some(&PeerState::Client) => {
-                is_client = true;
+            Some(&PeerState::Client(ip)) => {
+                client_ip = Some(ip);
                 Ok(*self.name())
             }
             Some(&PeerState::JoiningNode) => Ok(*self.name()),
@@ -915,8 +917,8 @@ impl Node {
             }
         };
 
-        if is_client {
-            self.check_valid_client_message(&pub_id, hop_msg.content.routing_message())
+        if let Some(ip) = client_ip {
+            self.check_valid_client_message(&ip, hop_msg.content.routing_message())
                 .unwrap_or_else(|e| hop_name_result = Err(e));
         }
 
@@ -1416,12 +1418,10 @@ impl Node {
 
     /// Returns `Ok` if a client is allowed to send the given message.
     fn check_valid_client_message(&mut self,
-                                  pub_id: &PublicId,
+                                  ip: &IpAddr,
                                   msg: &RoutingMessage)
                                   -> Result<(), RoutingError> {
         match (&msg.src, &msg.content) {
-            (&Authority::Client { .. }, &MessageContent::Ack(_ack, priority))
-                if priority >= DEFAULT_PRIORITY => Ok(()),
             (&Authority::Client { .. },
              &MessageContent::UserMessagePart {
                   ref hash,
@@ -1433,18 +1433,13 @@ impl Node {
               }) if *part_count <= MAX_PARTS && part_index < part_count &&
                   *priority >= DEFAULT_PRIORITY &&
                   payload.len() <= MAX_PART_LEN => {
-                if let Ok(ip_addr) = self.crust_service.get_peer_ip_addr(pub_id) {
-                    self.clients_rate_limiter
-                        .add_message(self.peer_mgr.client_num() as u64,
-                                     &ip_addr,
-                                     hash,
-                                     *part_count,
-                                     *part_index,
-                                     payload)
-                } else {
-                    warn!("{:?} Can't get IP address of client {:?}.", self, pub_id);
-                    return Err(RoutingError::RejectedClientMessage);
-                }
+                self.clients_rate_limiter
+                    .add_message(self.peer_mgr.client_num() as u64,
+                                 ip,
+                                 hash,
+                                 *part_count,
+                                 *part_index,
+                                 payload)
             }
             _ => {
                 debug!("{:?} Illegitimate client message {:?}. Refusing to relay.",
@@ -1509,7 +1504,7 @@ impl Node {
                                 -> Result<(), RoutingError> {
         let peer_kind = if let Some(peer) = self.peer_mgr.get_peer(&pub_id) {
             match *peer.state() {
-                PeerState::Bootstrapper(peer_kind) => peer_kind,
+                PeerState::Bootstrapper { peer_kind, .. } => peer_kind,
                 _ => {
                     return Err(RoutingError::InvalidStateForOperation);
                 }
@@ -2123,8 +2118,8 @@ impl Node {
             let _ = self.crust_service.disconnect(pub_id);
             if let Some((peer, _)) = self.peer_mgr.remove_peer(pub_id) {
                 match *peer.state() {
-                    PeerState::Bootstrapper(_) |
-                    PeerState::Client => {
+                    PeerState::Bootstrapper { .. } |
+                    PeerState::Client(_) => {
                         let _ = self.dropped_clients.insert(*pub_id, ());
                     }
                     PeerState::ConnectionInfoPreparing { .. } |
@@ -2841,8 +2836,9 @@ impl Node {
                        pub_id: &PublicId)
                        -> Result<(), RoutingError> {
         let priority = signed_msg.priority();
+        let is_client = self.peer_mgr.is_client(pub_id);
 
-        if self.peer_mgr.is_client(pub_id) || self.peer_mgr.is_joining_node(pub_id) {
+        let result = if is_client || self.peer_mgr.is_joining_node(pub_id) {
             if self.filter_outgoing_routing_msg(signed_msg.routing_message(), pub_id, 0) {
                 return Ok(());
             }
@@ -2855,14 +2851,19 @@ impl Node {
             self.send_or_drop(pub_id, raw_bytes, priority);
             Ok(())
         } else {
-            // Acknowledge the message so that the sender doesn't retry.
-            let hop = *self.name();
-            self.send_ack_from(signed_msg.routing_message(), 0, Authority::ManagedNode(hop));
             debug!("{:?} Client connection not found for message {:?}.",
                    self,
                    signed_msg);
             Err(RoutingError::ClientConnectionNotFound)
+        };
+
+        // Acknowledge the message so that the sender doesn't retry.
+        if is_client || result.is_err() {
+            let hop = *self.name();
+            self.send_ack_from(signed_msg.routing_message(), 0, Authority::ManagedNode(hop));
         }
+
+        result
     }
 
     /// Returns the peer that is responsible for collecting signatures to verify a message; this
@@ -3126,7 +3127,7 @@ impl Node {
         }
 
         match *peer.state() {
-            PeerState::Client => {
+            PeerState::Client(_) => {
                 debug!("{:?} Client disconnected: {}", self, pub_id);
                 try_reconnect = false;
             }
@@ -3408,6 +3409,17 @@ impl Node {
         } else {
             Err(RoutingError::NotEnoughSignatures)
         }
+    }
+
+    pub fn get_clients_usage(&self) -> BTreeMap<IpAddr, u64> {
+        self.clients_rate_limiter.get_clients_usage()
+    }
+
+    pub fn get_banned_client_ips(&self) -> BTreeSet<IpAddr> {
+        self.banned_client_ips
+            .peek_iter()
+            .map(|(ip, _)| *ip)
+            .collect()
     }
 
     pub fn set_next_relocation_dst(&mut self, dst: Option<XorName>) {

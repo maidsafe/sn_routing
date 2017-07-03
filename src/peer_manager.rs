@@ -33,6 +33,7 @@ use routing_table::Error as RoutingTableError;
 use signature_accumulator::ACCUMULATION_TIMEOUT_SECS;
 use std::{error, fmt, iter, mem};
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::net::IpAddr;
 use std::time::Duration;
 #[cfg(not(feature="use-mock-crust"))]
 use std::time::Instant;
@@ -130,7 +131,12 @@ impl RoutingConnection {
 #[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
 pub enum PeerState {
     /// The peer has bootstrapped to us with the indicated `CrustUser` type (i.e. client or node).
-    Bootstrapper(CrustUser),
+    Bootstrapper {
+        /// The crust user variant (i.e. client or node).
+        peer_kind: CrustUser,
+        /// IP address of peer.
+        ip: IpAddr,
+    },
     /// Waiting for Crust to prepare our `PrivConnectionInfo`. Contains source and destination for
     /// sending it to the peer, and their connection info with the associated request's message ID,
     /// if we already received it.
@@ -151,7 +157,7 @@ pub enum PeerState {
     /// We are connected - via a tunnel if the field is `true`.
     Connected(bool),
     /// We are the proxy for the client
-    Client,
+    Client(IpAddr),
     /// We are the proxy for the joining node
     JoiningNode,
     /// We are approved and routing to that peer.
@@ -272,10 +278,10 @@ impl Peer {
             PeerState::ConnectionInfoReady(_) |
             PeerState::CrustConnecting |
             PeerState::SearchingForTunnel => None,
-            PeerState::Bootstrapper(_) |
+            PeerState::Bootstrapper { .. } |
             PeerState::JoiningNode |
             PeerState::Proxy |
-            PeerState::Client => Some(false),
+            PeerState::Client(_) => Some(false),
             PeerState::Connected(is_tunnel) => Some(is_tunnel),
             PeerState::Candidate(conn) |
             PeerState::Routing(conn) => Some(conn.is_tunnel()),
@@ -291,10 +297,10 @@ impl Peer {
             PeerState::CrustConnecting |
             PeerState::SearchingForTunnel => CONNECTING_PEER_TIMEOUT_SECS,
             PeerState::JoiningNode | PeerState::Proxy => JOINING_NODE_TIMEOUT_SECS,
-            PeerState::Bootstrapper(_) |
+            PeerState::Bootstrapper { .. } |
             PeerState::Connected(_) => CONNECTED_PEER_TIMEOUT_SECS,
             PeerState::Candidate(_) |
-            PeerState::Client |
+            PeerState::Client(_) |
             PeerState::Routing(_) => return false,
         };
 
@@ -304,12 +310,12 @@ impl Peer {
     /// Returns the `RoutingConnection` type for this peer when it is put in the routing table.
     fn to_routing_connection(&self) -> Result<RoutingConnection, RoutingError> {
         match self.state {
-            PeerState::Bootstrapper(_) |
+            PeerState::Bootstrapper { .. } |
             PeerState::ConnectionInfoPreparing { .. } |
             PeerState::ConnectionInfoReady(_) |
             PeerState::CrustConnecting |
             PeerState::SearchingForTunnel |
-            PeerState::Client => Err(RoutingError::InvalidPeer),
+            PeerState::Client(_) => Err(RoutingError::InvalidPeer),
             PeerState::Candidate(conn) |
             PeerState::Routing(conn) => Ok(conn),
             PeerState::Proxy => Ok(RoutingConnection::Proxy(self.timestamp)),
@@ -339,7 +345,7 @@ impl Peer {
 
     /// Returns whether the peer is our client.
     fn is_client(&self) -> bool {
-        if let PeerState::Client = self.state {
+        if let PeerState::Client(_) = self.state {
             true
         } else {
             false
@@ -442,25 +448,19 @@ impl PeerManager {
 
     /// Upgrades a `Bootstrapper` to a `Client` or `JoiningNode`.
     pub fn handle_bootstrap_request(&mut self, pub_id: &PublicId) {
-        let self_debug = format!("{:?}", self);
-        match self.peers.get_mut(pub_id) {
-            Some(peer @ &mut Peer {
-                          state: PeerState::Bootstrapper(CrustUser::Client), ..
-                      }) => {
-                debug!("{} Accepted Client {}.", self_debug, pub_id);
-                peer.state = PeerState::Client;
-            }
-            Some(peer @ &mut Peer { state: PeerState::Bootstrapper(CrustUser::Node), .. }) => {
-                debug!("{} Accepted JoiningNode {}.", self_debug, pub_id);
-                peer.state = PeerState::JoiningNode;
-            }
-            _ => {
-                log_or_panic!(LogLevel::Error,
-                              "{} {:?} is not a bootstrapper.",
-                              self_debug,
-                              pub_id);
+        if let Some(peer) = self.peers.get_mut(pub_id) {
+            if let PeerState::Bootstrapper { peer_kind, ip } = peer.state {
+                match peer_kind {
+                    CrustUser::Node => peer.state = PeerState::JoiningNode,
+                    CrustUser::Client => peer.state = PeerState::Client(ip),
+                }
+                return;
             }
         }
+        log_or_panic!(LogLevel::Error,
+                      "{:?} does not have {:?} as a bootstrapper.",
+                      self,
+                      pub_id);
     }
 
     /// Adds a potential candidate to the candidate list setting its state to `VotedFor`.  If
@@ -963,8 +963,18 @@ impl PeerManager {
     }
 
     /// Checks whether we can accept more clients.
-    pub fn can_accept_client(&self) -> bool {
-        self.client_num() < MAX_CLIENTS_PER_PROXY
+    pub fn can_accept_client(&self, client_ip: IpAddr) -> bool {
+        let mut existing_client_count = 0;
+        !self.peers
+             .values()
+             .any(|peer| match *peer.state() {
+                      PeerState::Bootstrapper { ip, .. } |
+                      PeerState::Client(ip) => {
+            existing_client_count += 1;
+            client_ip == ip
+        }
+                      _ => false,
+                  }) && existing_client_count < MAX_CLIENTS_PER_PROXY
     }
 
     /// Marks the given peer as direct-connected.
@@ -994,7 +1004,7 @@ impl PeerManager {
     /// Marks the given peer as tunnel-connected. Returns `false` if a tunnel is not needed.
     pub fn tunnelling_to(&mut self, pub_id: &PublicId) -> bool {
         match self.get_peer(pub_id).map(Peer::state) {
-            Some(&PeerState::Bootstrapper(_)) |
+            Some(&PeerState::Bootstrapper { .. }) |
             Some(&PeerState::Connected(_)) |
             Some(&PeerState::Candidate(_)) |
             Some(&PeerState::Routing(_)) => return false,
@@ -1189,8 +1199,8 @@ impl PeerManager {
         let reconnecting = match self.get_peer(&pub_id) {
             Some(peer) => {
                 match *peer.state() {
-                    PeerState::Bootstrapper(_) |
-                    PeerState::Client |
+                    PeerState::Bootstrapper { .. } |
+                    PeerState::Client(_) |
                     PeerState::JoiningNode |
                     PeerState::Proxy |
                     PeerState::Routing(_) |
@@ -1299,14 +1309,14 @@ impl PeerManager {
                 self.insert_peer(Peer::new(pub_id, state, valid, reconnecting));
                 Ok(ConnectionInfoReceivedResult::Waiting)
             }
-            Some(peer @ Peer { state: PeerState::Bootstrapper(_), .. }) |
+            Some(peer @ Peer { state: PeerState::Bootstrapper { .. }, .. }) |
             Some(peer @ Peer { state: PeerState::ConnectionInfoPreparing { .. }, .. }) |
             Some(peer @ Peer { state: PeerState::CrustConnecting, .. }) |
             Some(peer @ Peer { state: PeerState::Connected(_), .. }) => {
                 self.insert_peer(peer);
                 Ok(ConnectionInfoReceivedResult::Waiting)
             }
-            Some(peer @ Peer { state: PeerState::Client, .. }) => {
+            Some(peer @ Peer { state: PeerState::Client(_), .. }) => {
                 self.insert_peer(peer);
                 Ok(ConnectionInfoReceivedResult::IsClient)
             }

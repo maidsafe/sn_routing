@@ -532,12 +532,12 @@ impl Client {
         self.machine.id().ok_or(RoutingError::Terminated)
     }
 
-    // FIXME: Review the usage poll here
-    fn send_request(&mut self,
-                    dst: Authority<XorName>,
-                    request: Request,
-                    priority: u8)
-                    -> Result<(), InterfaceError> {
+    /// FIXME: Review the usage poll here
+    pub fn send_request(&mut self,
+                        dst: Authority<XorName>,
+                        request: Request,
+                        priority: u8)
+                        -> Result<(), InterfaceError> {
         // Make sure the state machine has processed any outstanding crust events.
         self.poll();
 

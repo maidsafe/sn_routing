@@ -622,7 +622,7 @@ impl<UID: Uid> Drop for ServiceImpl<UID> {
 
 /// Creates a `SocketAddr` with the endpoint as its port, so that endpoints and addresses can be
 /// easily mapped to each other during testing.
-fn to_socket_addr(endpoint: &Endpoint) -> SocketAddr {
+pub fn to_socket_addr(endpoint: &Endpoint) -> SocketAddr {
     SocketAddr::new(IpAddr::from([(endpoint.0 >> 24) as u8,
                                   (endpoint.0 >> 16) as u8,
                                   (endpoint.0 >> 8) as u8,
