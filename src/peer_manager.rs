@@ -448,21 +448,19 @@ impl PeerManager {
 
     /// Upgrades a `Bootstrapper` to a `Client` or `JoiningNode`.
     pub fn handle_bootstrap_request(&mut self, pub_id: &PublicId) {
-        let self_debug = format!("{:?}", self);
-        let _ = self.peers
-            .get_mut(pub_id)
-            .map(|peer| if let PeerState::Bootstrapper { peer_kind, ip } = peer.state {
-                     if peer_kind == CrustUser::Node {
-                         peer.state = PeerState::JoiningNode;
-                     } else {
-                         peer.state = PeerState::Client(ip);
-                     }
-                 } else {
-                     log_or_panic!(LogLevel::Error,
-                                   "{} {:?} is not a bootstrapper.",
-                                   self_debug,
-                                   pub_id);
-                 });
+        if let Some(peer) = self.peers.get_mut(pub_id) {
+            if let PeerState::Bootstrapper { peer_kind, ip } = peer.state {
+                match peer_kind {
+                    CrustUser::Node => peer.state = PeerState::JoiningNode,
+                    CrustUser::Client => peer.state = PeerState::Client(ip),
+                }
+                return;
+            }
+        }
+        log_or_panic!(LogLevel::Error,
+                      "{:?} does not have {:?} as a bootstrapper.",
+                      self,
+                      pub_id);
     }
 
     /// Adds a potential candidate to the candidate list setting its state to `VotedFor`.  If
