@@ -73,7 +73,7 @@ impl RateLimiter {
                        part_count: u32,
                        part_index: u32,
                        payload: &[u8])
-                       -> Result<(), RoutingError> {
+                       -> Result<u64, RoutingError> {
         self.update();
         let total_used: u64 = self.used.values().sum();
         let used = self.used.get(client_ip).map_or(0, |used| *used);
@@ -132,7 +132,7 @@ impl RateLimiter {
         }
 
         let _ = self.used.insert(*client_ip, used + bytes_to_add);
-        Ok(())
+        Ok(bytes_to_add)
     }
 
     fn update(&mut self) {
@@ -210,7 +210,7 @@ mod tests {
         let hash = sha3_256(&get_req_payload);
         let fill_full_iterations = CAPACITY / MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
         for _ in 0..fill_full_iterations {
-            unwrap!(rate_limiter.add_message(1, &client_1, &hash, 1, 0, &get_req_payload));
+            let _ = unwrap!(rate_limiter.add_message(1, &client_1, &hash, 1, 0, &get_req_payload));
         }
 
         // Check a second client can't add a message just now.
@@ -227,7 +227,7 @@ mod tests {
         // Repeat till the second client reaches its own usage cap when live client number is 10.
         for _ in 0..(CAPACITY / 10 / MAX_IMMUTABLE_DATA_SIZE_IN_BYTES + 1) {
             FakeClock::advance_time(wait_millis);
-            unwrap!(rate_limiter.add_message(10, &client_2, &hash, 1, 0, &get_req_payload));
+            let _ = unwrap!(rate_limiter.add_message(10, &client_2, &hash, 1, 0, &get_req_payload));
         }
 
         FakeClock::advance_time(wait_millis);
@@ -250,11 +250,11 @@ mod tests {
             _ => panic!("unexpected result"),
         }
         // More request from the second client with expanded per-client usage cap.
-        unwrap!(rate_limiter.add_message(2, &client_2, &hash, 1, 0, &get_req_payload));
+        let _ = unwrap!(rate_limiter.add_message(2, &client_2, &hash, 1, 0, &get_req_payload));
 
         // Wait for the same period, and push up the second client's usage.
         FakeClock::advance_time(wait_millis);
-        unwrap!(rate_limiter.add_message(2, &client_2, &hash, 1, 0, &get_req_payload));
+        let _ = unwrap!(rate_limiter.add_message(2, &client_2, &hash, 1, 0, &get_req_payload));
         // Wait for the same period to drain the second client's usage to less than per-client cap.
         FakeClock::advance_time(wait_millis);
         match rate_limiter.add_message(10, &client_2, &hash, 1, 0, &get_req_payload) {
