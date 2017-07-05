@@ -25,6 +25,7 @@ use itertools::Itertools;
 use log::LogLevel;
 use messages::MessageContent;
 use rand;
+use rate_limiter::MAX_CLIENTS_PER_PROXY;
 use resource_proof::ResourceProof;
 use resource_prover::RESOURCE_PROOF_DURATION_SECS;
 use routing_table::{Authority, OwnMergeState, Prefix, RemovalDetails, RoutingTable,
@@ -49,8 +50,6 @@ const CONNECTING_PEER_TIMEOUT_SECS: u64 = 90;
 const CONNECTED_PEER_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) after which a `VotedFor` candidate will be removed.
 const CANDIDATE_ACCEPT_TIMEOUT_SECS: u64 = 60;
-/// Maximum allowed number of clients per proxy node.
-const MAX_CLIENTS_PER_PROXY: usize = 10;
 
 #[cfg(feature = "use-mock-crust")]
 #[doc(hidden)]
@@ -61,7 +60,6 @@ pub mod test_consts {
     pub const RESOURCE_PROOF_DURATION_SECS: u64 = super::RESOURCE_PROOF_DURATION_SECS;
     pub const CONNECTING_PEER_TIMEOUT_SECS: u64 = super::CONNECTING_PEER_TIMEOUT_SECS;
     pub const CONNECTED_PEER_TIMEOUT_SECS: u64 = super::CONNECTED_PEER_TIMEOUT_SECS;
-    pub const MAX_CLIENTS_PER_PROXY: usize = super::MAX_CLIENTS_PER_PROXY;
 }
 
 pub type SectionMap = BTreeMap<VersionedPrefix<XorName>, BTreeSet<PublicId>>;
@@ -1005,7 +1003,7 @@ impl PeerManager {
             client_ip == ip
         }
                       _ => false,
-                  }) && existing_client_count < MAX_CLIENTS_PER_PROXY
+                  }) && existing_client_count < MAX_CLIENTS_PER_PROXY as usize
     }
 
     /// Marks the given peer as direct-connected.
