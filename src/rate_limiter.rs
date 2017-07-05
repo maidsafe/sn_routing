@@ -31,13 +31,21 @@ use std::net::IpAddr;
 use std::time::Instant;
 
 /// Maximum total bytes the `RateLimiter` allows at any given moment.
-const CAPACITY: u64 = 20 * 1024 * 1024;
+pub const MAX_CLIENTS_PER_PROXY: u64 = CAPACITY / MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
+
+/// Maximum total bytes the `RateLimiter` allows at any given moment.
+///
+/// This cannot be less than `MAX_IMMUTABLE_DATA_SIZE_IN_BYTES` else none of the clients would be
+/// would be able to do a `GET` operation.
+/// This is (1 MiB + 10 KiB) * 10 => 10 times the MAX_IMMUTABLE_DATA_SIZE_IN_BYTES
+const CAPACITY: u64 = 10588160;
 /// The number of bytes per second the `RateLimiter` will "leak".
-const RATE: f64 = 20.0 * 1024.0 * 1024.0;
+const RATE: f64 = CAPACITY as f64 * 1.0;
 
 #[cfg(feature = "use-mock-crust")]
 #[doc(hidden)]
 pub mod rate_limiter_consts {
+    pub const MAX_CLIENTS_PER_PROXY: usize = super::MAX_CLIENTS_PER_PROXY as usize;
     pub const CAPACITY: u64 = super::CAPACITY;
     pub const RATE: f64 = super::RATE;
 }
@@ -76,7 +84,9 @@ impl RateLimiter {
                        -> Result<(), RoutingError> {
         self.update();
         let total_used: u64 = self.used.values().sum();
+
         let used = self.used.get(client_ip).map_or(0, |used| *used);
+
         let allowance = cmp::min(CAPACITY - total_used,
                                  (CAPACITY / online_clients).saturating_sub(used));
 
@@ -225,15 +235,32 @@ mod tests {
         // Wait until enough has drained to allow the second client's request to succeed.
         let wait_millis = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES * 1000 / RATE as u64;
         // Repeat till the second client reaches its own usage cap when live client number is 10.
-        for _ in 0..(CAPACITY / 10 / MAX_IMMUTABLE_DATA_SIZE_IN_BYTES + 1) {
+        for _ in 0..(CAPACITY / MAX_CLIENTS_PER_PROXY / MAX_IMMUTABLE_DATA_SIZE_IN_BYTES) {
             FakeClock::advance_time(wait_millis);
-            unwrap!(rate_limiter.add_message(10, &client_2, &hash, 1, 0, &get_req_payload));
+            unwrap!(rate_limiter.add_message(MAX_CLIENTS_PER_PROXY,
+                                             &client_2,
+                                             &hash,
+                                             1,
+                                             0,
+                                             &get_req_payload));
         }
 
         FakeClock::advance_time(wait_millis);
+        match rate_limiter.add_message(MAX_CLIENTS_PER_PROXY,
+                                       &client_2,
+                                       &hash,
+                                       1,
+                                       0,
+                                       &get_req_payload) {
+            Err(RoutingError::ExceedsRateLimit(returned_hash)) => {
+                assert_eq!(hash, returned_hash);
+            }
+            _ => panic!("unexpected result"),
+        }
+
         // Try adding invalid messages.
         let all_zero_payload = vec![0u8; MAX_IMMUTABLE_DATA_SIZE_IN_BYTES as usize];
-        match rate_limiter.add_message(10,
+        match rate_limiter.add_message(MAX_CLIENTS_PER_PROXY,
                                        &client_2,
                                        &sha3_256(&all_zero_payload),
                                        2,
@@ -243,7 +270,12 @@ mod tests {
             _ => panic!("unexpected result"),
         }
         // Try making the second client exceed its own usage cap.
-        match rate_limiter.add_message(10, &client_2, &hash, 1, 0, &get_req_payload) {
+        match rate_limiter.add_message(MAX_CLIENTS_PER_PROXY,
+                                       &client_2,
+                                       &hash,
+                                       1,
+                                       0,
+                                       &get_req_payload) {
             Err(RoutingError::ExceedsRateLimit(returned_hash)) => {
                 assert_eq!(hash, returned_hash);
             }
@@ -257,7 +289,12 @@ mod tests {
         unwrap!(rate_limiter.add_message(2, &client_2, &hash, 1, 0, &get_req_payload));
         // Wait for the same period to drain the second client's usage to less than per-client cap.
         FakeClock::advance_time(wait_millis);
-        match rate_limiter.add_message(10, &client_2, &hash, 1, 0, &get_req_payload) {
+        match rate_limiter.add_message(MAX_CLIENTS_PER_PROXY,
+                                       &client_2,
+                                       &hash,
+                                       1,
+                                       0,
+                                       &get_req_payload) {
             Err(RoutingError::ExceedsRateLimit(returned_hash)) => {
                 assert_eq!(hash, returned_hash);
             }

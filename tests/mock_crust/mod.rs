@@ -35,8 +35,7 @@ use rand::Rng;
 use routing::{Authority, BootstrapConfig, Event, EventStream, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
               MessageId, Prefix, Request, XOR_NAME_LEN, XorName};
 use routing::mock_crust::{Endpoint, Network, to_socket_addr};
-use routing::rate_limiter_consts::{CAPACITY, RATE};
-use routing::test_consts::MAX_CLIENTS_PER_PROXY;
+use routing::rate_limiter_consts::{CAPACITY, MAX_CLIENTS_PER_PROXY, RATE};
 use std::collections::HashMap;
 use std::net::IpAddr;
 
@@ -302,13 +301,14 @@ fn rate_limit_proxy() {
 
 
         let clients_usage = nodes[0].inner.get_clients_usage();
-        assert_eq!(clients_usage.iter()
-                             .filter(|&(_, usage)| *usage > per_client_cap)
-                             .count(),
+        assert_eq!(clients_usage
+                       .iter()
+                       .filter(|&(_, usage)| *usage > per_client_cap)
+                       .count(),
                    0);
         for ip in clients_sent.values() {
-            assert!(unwrap!(clients_usage.get(ip)) + MAX_IMMUTABLE_DATA_SIZE_IN_BYTES
-                    > per_client_cap);
+            assert!(unwrap!(clients_usage.get(ip)) + MAX_IMMUTABLE_DATA_SIZE_IN_BYTES >
+                    per_client_cap);
         }
 
         FakeClock::advance_time(wait_millis);
