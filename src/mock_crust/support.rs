@@ -314,7 +314,6 @@ pub struct ServiceImpl<UID: Uid> {
     event_sender: Option<CrustEventSender<UID>>,
     pending_bootstraps: u64,
     connections: Vec<(UID, Endpoint, CrustUser)>,
-    whitelist: HashSet<Endpoint>,
 }
 
 impl<UID: Uid> ServiceImpl<UID> {
@@ -329,7 +328,6 @@ impl<UID: Uid> ServiceImpl<UID> {
             event_sender: None,
             pending_bootstraps: 0,
             connections: Vec::new(),
-            whitelist: HashSet::new(),
         }
     }
 
@@ -387,19 +385,6 @@ impl<UID: Uid> ServiceImpl<UID> {
 
     pub fn is_peer_connected(&self, uid: &UID) -> bool {
         self.find_endpoint_by_uid(uid).is_some()
-    }
-
-    pub fn whitelist_peer(&mut self, endpoint: Endpoint) {
-        if !self.whitelist.insert(endpoint) {
-            debug!("Duplicate insert attempt whitelist for peer : {:?}",
-                   endpoint);
-        }
-    }
-
-    pub fn is_peer_whitelisted(&self, id: &UID) -> bool {
-        self.whitelist.is_empty() ||
-        self.find_endpoint_by_uid(id)
-            .map_or(false, |endpoint| self.whitelist.contains(&endpoint))
     }
 
     pub fn prepare_connection_info(&self, result_token: u32) {

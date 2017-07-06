@@ -170,16 +170,6 @@ impl<UID: Uid> Service<UID> {
         self.lock().is_peer_connected(uid)
     }
 
-    /// Adds the peer to the whitelist, allowing them to connect to us.
-    pub fn whitelist_peer(&self, endpoint: Endpoint) {
-        self.lock().whitelist_peer(endpoint);
-    }
-
-    /// Returns `true` if the specified peer is allowed to connect to us.
-    pub fn is_peer_whitelisted(&self, uid: &UID) -> bool {
-        self.lock().is_peer_whitelisted(uid)
-    }
-
     /// Returns `true` if the specified peer's IP is hard-coded. (Always `true` in mock Crust.)
     pub fn is_peer_hard_coded(&self, _uid: &UID) -> bool {
         true

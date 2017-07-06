@@ -37,7 +37,7 @@ pub const MAX_CLIENTS_PER_PROXY: u64 = CAPACITY / MAX_IMMUTABLE_DATA_SIZE_IN_BYT
 ///
 /// This cannot be less than `MAX_IMMUTABLE_DATA_SIZE_IN_BYTES` else none of the clients would be
 /// would be able to do a `GET` operation.
-/// This is (1 MiB + 10 KiB) * 10 => 10 times the MAX_IMMUTABLE_DATA_SIZE_IN_BYTES
+/// This is (1 `MiB` + 10 `KiB`) * 10 => 10 times the `MAX_IMMUTABLE_DATA_SIZE_IN_BYTES`
 const CAPACITY: u64 = 10588160;
 /// The number of bytes per second the `RateLimiter` will "leak".
 const RATE: f64 = CAPACITY as f64 * 1.0;
@@ -232,20 +232,19 @@ mod tests {
             _ => panic!("unexpected result"),
         }
 
-        // Wait until enough has drained to allow the second client's request to succeed.
+        // We're waiting until enough has drained to allow the proxy to allow a GET request
         let wait_millis = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES * 1000 / RATE as u64;
-        // Repeat till the second client reaches its own usage cap when live client number is 10.
-        for _ in 0..(CAPACITY / MAX_CLIENTS_PER_PROXY / MAX_IMMUTABLE_DATA_SIZE_IN_BYTES) {
-            FakeClock::advance_time(wait_millis);
-            let _ = unwrap!(rate_limiter.add_message(MAX_CLIENTS_PER_PROXY,
-                                                     &client_2,
-                                                     &hash,
-                                                     1,
-                                                     0,
-                                                     &get_req_payload));
-        }
-
         FakeClock::advance_time(wait_millis);
+
+        // Now we consume that final GET allowance from the proxy total allowance.
+        let _ = unwrap!(rate_limiter.add_message(2, &client_2, &hash, 1, 0, &get_req_payload));
+
+        // Now however even with the same time elapsed, the proxy has two clients(1 and 2)
+        // each of whom will be given the drained amount equally.
+        FakeClock::advance_time(wait_millis);
+
+        // Now Client 2 will still have a used amount of 500KiB and thus get rejected by the
+        // proxy as the online clients enforces each client to only be allowed 1MiB
         match rate_limiter.add_message(MAX_CLIENTS_PER_PROXY,
                                        &client_2,
                                        &hash,

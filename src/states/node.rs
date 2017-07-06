@@ -484,15 +484,7 @@ impl Node {
             return;
         };
 
-        if peer_kind == CrustUser::Node {
-            if !self.crust_service.is_peer_whitelisted(&pub_id) {
-                warn!("{:?} {:?} is bootstrapping as a node, but is not in whitelist.",
-                      self,
-                      pub_id);
-                self.ban_and_disconnect_peer(&pub_id);
-                return;
-            }
-        } else {
+        if peer_kind == CrustUser::Client {
             if self.banned_client_ips.contains_key(&ip) {
                 warn!("{:?} Client {:?} is trying to bootstrap on banned IP {}.",
                       self,
@@ -525,14 +517,6 @@ impl Node {
     }
 
     fn handle_connect_success(&mut self, pub_id: PublicId, outbox: &mut EventBox) {
-        if !self.crust_service.is_peer_whitelisted(&pub_id) {
-            debug!("{:?} Received ConnectSuccess, but {:?} is not whitelisted.",
-                   self,
-                   pub_id);
-            self.ban_and_disconnect_peer(&pub_id);
-            return;
-        }
-
         // Remove tunnel connection if we have one for this peer already
         if let Some(tunnel_id) = self.tunnels.remove_tunnel_for(&pub_id) {
             debug!("{:?} Removing unwanted tunnel for {:?}", self, pub_id);
@@ -1883,7 +1867,9 @@ impl Node {
                                their_info.id(),
                                pub_id);
                         self.send_connection_info(our_pub_info, pub_id, src, dst, Some(msg_id));
-                        let _ = self.crust_service.connect(our_info, their_info);
+                        if let Err(error) = self.crust_service.connect(our_info, their_info) {
+                            trace!("{:?} Unable to connect to {:?} - {:?}", self, pub_id, error);
+                        }
                     }
                 }
             }
@@ -1992,7 +1978,7 @@ impl Node {
                        self,
                        public_id);
                 if let Err(error) = self.crust_service.connect(our_info, their_info) {
-                    debug!("{:?} Crust failed initiating a connection to  {}: {:?}",
+                    trace!("{:?} Unable to connect to {:?} - {:?}",
                            self,
                            public_id,
                            error);
@@ -3388,6 +3374,10 @@ impl Base for Node {
     }
 
     fn handle_lost_peer(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
+        if self.peer_mgr.get_peer(&pub_id).is_none() {
+            return Transition::Stay;
+        }
+
         debug!("{:?} Received LostPeer - {}", self, pub_id);
 
         self.dropped_tunnel_client(&pub_id);

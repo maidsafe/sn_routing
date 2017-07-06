@@ -158,7 +158,7 @@ pub enum PeerState {
     Client {
         /// Client IP
         ip: IpAddr,
-        /// Traffic relayed for Client
+        /// Traffic charged for Client
         traffic: u64,
     },
     /// We are the proxy for the joining node
@@ -974,11 +974,8 @@ impl PeerManager {
                             ip,
                             traffic: old_traffic,
                         } = *peer.state() {
-                     let new_traffic = old_traffic + added_bytes;
-                     let log_mult = 10 * 1024 * 1024;
-                     let old_rem = old_traffic % log_mult;
-                     let new_rem = new_traffic % log_mult;
-                     if new_rem < old_rem || added_bytes / log_mult > 0 {
+                     let new_traffic = old_traffic.wrapping_add(added_bytes);
+                     if new_traffic % (100 * 1024 * 1024) < added_bytes {
                          info!("{} Stats - Client current session traffic from {:?} - {:?}",
                                self_pfx,
                                ip,
