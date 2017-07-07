@@ -1,5 +1,12 @@
 # Routing - Change Log
 
+## [0.31.0]
+- Remove support for Structured, PrivAppendable and PubAppendable Data
+- Add Support for MutableData instead.
+- Introduce mock-crypto which provides efficient mocking of the crypto primitives for faster test runs for cases where we don't care about tightness of security.
+- Code rate-limiter to restrict proxy from relaying more than the agreed threshold to the Network on behalf of the clients (each client being identified on IP level).
+- Detect malformed messages and ivalid/disallowed rpc's and ban such a sender on IP level.
+
 ## [0.30.0]
 - Replace all sha256 from rust_sodium with sha3_256 from tiny_keccak.
 - Move `AccountPacket` type required by vaults and clients into a `common_types` module.
