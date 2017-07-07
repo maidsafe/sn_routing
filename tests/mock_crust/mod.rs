@@ -217,7 +217,7 @@ fn multiple_clients_per_proxy() {
 /// Expect some requests will be blocked due to the rate limit.
 /// Expect the total capacity of the proxy will never be exceeded.
 #[test]
-fn rate_limit_proxy() {
+fn rate_limit_proxy_max_clients() {
     let min_section_size = 8;
     let network = Network::new(min_section_size, None);
     let mut nodes = create_connected_nodes(&network, min_section_size);
@@ -274,6 +274,92 @@ fn rate_limit_proxy() {
 
         FakeClock::advance_time(wait_millis);
         total_usage -= leaky_rate;
+    }
+}
+
+/// Connects random number of clients to the same proxy node and sending get requests.
+/// Expect some requests will be blocked due to the rate limit.
+/// Expect the total capacity of the proxy will never be exceeded.
+#[test]
+fn rate_limit_proxy_random_clients() {
+    let min_section_size = 8;
+    let network = Network::new(min_section_size, None);
+    let mut nodes = create_connected_nodes(&network, min_section_size);
+    let mut clients = Vec::new();
+
+    let mut rng = network.new_rng();
+    let data_id: XorName = rng.gen();
+    let dst = Authority::NaeManager(data_id);
+    let mut total_usage: u64 = 0;
+    let mut diff_value: u64 = 0;
+    let wait_millis = 2 * MAX_IMMUTABLE_DATA_SIZE_IN_BYTES * 1000 / RATE as u64;
+    let leaky_rate = 2 * MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
+
+    for _ in 0..10 {
+        if clients.len() <= 1 || (clients.len() < MAX_CLIENTS_PER_PROXY && rng.gen()) {
+            for _ in 0..rng.gen_range(1, MAX_CLIENTS_PER_PROXY - clients.len() + 1) {
+                let contact = nodes[0].handle.endpoint();
+                let client = TestClient::new(&network,
+                                             Some(BootstrapConfig::with_contacts(&[contact])),
+                                             None);
+                clients.push(client);
+                let _ = poll_all(&mut nodes, &mut clients);
+                expect_next_event!(unwrap!(clients.last_mut()), Event::Connected);
+            }
+        } else {
+            for _ in 0..rng.gen_range(1, clients.len()) {
+                let len = clients.len();
+                let _ = clients.remove(rng.gen_range(0, len));
+                let _ = poll_all(&mut nodes, &mut clients);
+            }
+        }
+
+        let mut clients_sent = HashMap::new();
+        for client in &mut clients {
+            let msg_id = MessageId::new();
+            unwrap!(client.inner.get_idata(dst, data_id, msg_id));
+            let _ = clients_sent.insert(msg_id, client.ip());
+        }
+
+        let _ = poll_all(&mut nodes, &mut clients);
+
+        let mut request_received: HashMap<MessageId, usize> = HashMap::new();
+        for node in nodes.iter_mut().filter(|n| n.is_recipient(&dst)) {
+            while let Ok(event) = node.try_next_ev() {
+                if let Event::Request {
+                           request: Request::GetIData { msg_id: req_message_id, .. }, ..
+                       } = event {
+                    let entry = request_received
+                        .entry(req_message_id)
+                        .or_insert_with(|| 0);
+                    *entry += 1;
+                }
+            }
+        }
+
+        for (msg_id, count) in &request_received {
+            assert_eq!(*count, min_section_size);
+            let _ = unwrap!(clients_sent.remove(msg_id));
+            total_usage += MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
+        }
+        assert!(total_usage <= CAPACITY);
+        diff_value += (clients.len() - 1) as u64;
+
+        let per_client_cap = CAPACITY / clients.len() as u64;
+        let clients_usage = nodes[0].inner.get_clients_usage();
+
+        // RateLimiter leaks by `quota` per client, which is leak_units divided by live clients.
+        // This will result in maxiumn `num_of_live_clients - 1` units less deducted.
+        // And may accumulated across iterations.
+        if (total_usage + diff_value + MAX_IMMUTABLE_DATA_SIZE_IN_BYTES) <= CAPACITY {
+            for ip in clients_sent.values() {
+                assert!((unwrap!(clients_usage.get(ip)) + MAX_IMMUTABLE_DATA_SIZE_IN_BYTES) >
+                        per_client_cap);
+            }
+        }
+
+        FakeClock::advance_time(wait_millis);
+        total_usage = total_usage.saturating_sub(leaky_rate);
     }
 }
 
