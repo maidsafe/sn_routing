@@ -35,8 +35,7 @@ use rand::Rng;
 use routing::{Authority, BootstrapConfig, Event, EventStream, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
               MessageId, Prefix, Request, XOR_NAME_LEN, XorName};
 use routing::mock_crust::{Endpoint, Network, to_socket_addr};
-use routing::rate_limiter_consts::{CAPACITY, RATE};
-use routing::test_consts::MAX_CLIENTS_PER_PROXY;
+use routing::rate_limiter_consts::{CAPACITY, MAX_CLIENTS_PER_PROXY, RATE};
 use std::collections::HashMap;
 use std::net::IpAddr;
 
@@ -193,37 +192,6 @@ fn check_close_names_for_min_section_size_nodes() {
 }
 
 #[test]
-fn whitelist() {
-    let min_section_size = 8;
-    let network = Network::new(min_section_size, None);
-    let mut nodes = create_connected_nodes(&network, min_section_size);
-    let config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
-
-    for node in &mut *nodes {
-        node.handle
-            .0
-            .borrow_mut()
-            .whitelist_peer(Endpoint(min_section_size));
-    }
-    // The next node has endpoint `min_section_size`: It should be able to join.
-    nodes.push(TestNode::builder(&network)
-                   .config(config.clone())
-                   .create());
-    let _ = poll_all(&mut nodes, &mut []);
-    verify_invariant_for_all_nodes(&mut nodes);
-    // The next node has endpoint `min_section_size + 1`: It is not whitelisted.
-    nodes.push(TestNode::builder(&network)
-                   .config(config.clone())
-                   .create());
-    let _ = poll_all(&mut nodes, &mut []);
-    assert!(!unwrap!(nodes.pop()).inner.is_node());
-    // A client should be able to join anyway, regardless of the whitelist.
-    let mut clients = vec![TestClient::new(&network, Some(config), None)];
-    let _ = poll_all(&mut nodes, &mut clients);
-    expect_next_event!(clients[0], Event::Connected);
-}
-
-#[test]
 /// Connects multiple clients to the same proxy node, expecting clients fail to connect after
 /// reaching `MAX_CLIENTS_PER_PROXY`, and succeed again when a connected client drops out.
 fn multiple_clients_per_proxy() {
@@ -302,13 +270,14 @@ fn rate_limit_proxy() {
 
 
         let clients_usage = nodes[0].inner.get_clients_usage();
-        assert_eq!(clients_usage.iter()
-                             .filter(|&(_, usage)| *usage > per_client_cap)
-                             .count(),
+        assert_eq!(clients_usage
+                       .iter()
+                       .filter(|&(_, usage)| *usage > per_client_cap)
+                       .count(),
                    0);
         for ip in clients_sent.values() {
-            assert!(unwrap!(clients_usage.get(ip)) + MAX_IMMUTABLE_DATA_SIZE_IN_BYTES
-                    > per_client_cap);
+            assert!(unwrap!(clients_usage.get(ip)) + MAX_IMMUTABLE_DATA_SIZE_IN_BYTES >
+                    per_client_cap);
         }
 
         FakeClock::advance_time(wait_millis);

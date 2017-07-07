@@ -134,6 +134,8 @@ pub struct Node {
     /// already enqueued in the channel or added before Crust handled the disconnect request).  If a
     /// client then re-connects, its ID is removed from here when we add it to the `PeerManager`.
     dropped_clients: LruCache<PublicId, ()>,
+    /// Proxy client traffic handled
+    proxy_load_amount: u64,
 }
 
 impl Node {
@@ -249,6 +251,7 @@ impl Node {
             banned_client_ips: LruCache::with_expiry_duration(Duration::from_secs(CLIENT_BAN_SECS)),
             dropped_clients:
                 LruCache::with_expiry_duration(Duration::from_secs(DROPPED_CLIENT_TIMEOUT_SECS)),
+            proxy_load_amount: 0,
         }
     }
 
@@ -481,15 +484,7 @@ impl Node {
             return;
         };
 
-        if peer_kind == CrustUser::Node {
-            if !self.crust_service.is_peer_whitelisted(&pub_id) {
-                warn!("{:?} {:?} is bootstrapping as a node, but is not in whitelist.",
-                      self,
-                      pub_id);
-                self.ban_and_disconnect_peer(&pub_id);
-                return;
-            }
-        } else {
+        if peer_kind == CrustUser::Client {
             if self.banned_client_ips.contains_key(&ip) {
                 warn!("{:?} Client {:?} is trying to bootstrap on banned IP {}.",
                       self,
@@ -522,14 +517,6 @@ impl Node {
     }
 
     fn handle_connect_success(&mut self, pub_id: PublicId, outbox: &mut EventBox) {
-        if !self.crust_service.is_peer_whitelisted(&pub_id) {
-            debug!("{:?} Received ConnectSuccess, but {:?} is not whitelisted.",
-                   self,
-                   pub_id);
-            self.ban_and_disconnect_peer(&pub_id);
-            return;
-        }
-
         // Remove tunnel connection if we have one for this peer already
         if let Some(tunnel_id) = self.tunnels.remove_tunnel_for(&pub_id) {
             debug!("{:?} Removing unwanted tunnel for {:?}", self, pub_id);
@@ -734,7 +721,7 @@ impl Node {
                     return Ok(());
                 }
             }
-            Some(&PeerState::Client(_)) |
+            Some(&PeerState::Client { .. }) |
             None => (),
             _ => return Ok(()),
         }
@@ -888,7 +875,7 @@ impl Node {
                       pub_id);
                 Err(RoutingError::InvalidStateForOperation)
             }
-            Some(&PeerState::Client(ip)) => {
+            Some(&PeerState::Client { ip, .. }) => {
                 client_ip = Some(ip);
                 Ok(*self.name())
             }
@@ -918,8 +905,13 @@ impl Node {
         };
 
         if let Some(ip) = client_ip {
-            self.check_valid_client_message(&ip, hop_msg.content.routing_message())
-                .unwrap_or_else(|e| hop_name_result = Err(e));
+            match self.check_valid_client_message(&ip, hop_msg.content.routing_message()) {
+                Ok(added_bytes) => {
+                    self.proxy_load_amount += added_bytes;
+                    self.peer_mgr.add_client_traffic(&pub_id, added_bytes);
+                }
+                Err(e) => hop_name_result = Err(e),
+            }
         }
 
         match hop_name_result {
@@ -1420,7 +1412,7 @@ impl Node {
     fn check_valid_client_message(&mut self,
                                   ip: &IpAddr,
                                   msg: &RoutingMessage)
-                                  -> Result<(), RoutingError> {
+                                  -> Result<u64, RoutingError> {
         match (&msg.src, &msg.content) {
             (&Authority::Client { .. },
              &MessageContent::UserMessagePart {
@@ -1875,7 +1867,9 @@ impl Node {
                                their_info.id(),
                                pub_id);
                         self.send_connection_info(our_pub_info, pub_id, src, dst, Some(msg_id));
-                        let _ = self.crust_service.connect(our_info, their_info);
+                        if let Err(error) = self.crust_service.connect(our_info, their_info) {
+                            trace!("{:?} Unable to connect to {:?} - {:?}", self, pub_id, error);
+                        }
                     }
                 }
             }
@@ -1984,7 +1978,7 @@ impl Node {
                        self,
                        public_id);
                 if let Err(error) = self.crust_service.connect(our_info, their_info) {
-                    debug!("{:?} Crust failed initiating a connection to  {}: {:?}",
+                    trace!("{:?} Unable to connect to {:?} - {:?}",
                            self,
                            public_id,
                            error);
@@ -2118,8 +2112,14 @@ impl Node {
             let _ = self.crust_service.disconnect(pub_id);
             if let Some((peer, _)) = self.peer_mgr.remove_peer(pub_id) {
                 match *peer.state() {
-                    PeerState::Bootstrapper { .. } |
-                    PeerState::Client(_) => {
+                    PeerState::Bootstrapper { .. } => {
+                        let _ = self.dropped_clients.insert(*pub_id, ());
+                    }
+                    PeerState::Client { ip, traffic } => {
+                        info!("{:?} Stats - Client total session traffic from {:?} - {:?}",
+                              self,
+                              ip,
+                              traffic);
                         let _ = self.dropped_clients.insert(*pub_id, ());
                     }
                     PeerState::ConnectionInfoPreparing { .. } |
@@ -2586,6 +2586,11 @@ impl Node {
             let tick_period = Duration::from_secs(TICK_TIMEOUT_SECS);
             self.tick_timer_token = self.timer.schedule(tick_period);
             self.remove_expired_peers(outbox);
+
+            trace!("{:?} Stats - Proxy Load: {} KiB/s",
+                   self,
+                   self.proxy_load_amount / (TICK_TIMEOUT_SECS * 1024));
+            self.proxy_load_amount = 0;
 
             let transition = if cfg!(feature = "use-mock-crust") {
                 Transition::Stay
@@ -3127,8 +3132,12 @@ impl Node {
         }
 
         match *peer.state() {
-            PeerState::Client(_) => {
+            PeerState::Client { ip, traffic } => {
                 debug!("{:?} Client disconnected: {}", self, pub_id);
+                info!("{:?} Stats - Client total session traffic from {:?} - {:?}",
+                      self,
+                      ip,
+                      traffic);
                 try_reconnect = false;
             }
             PeerState::JoiningNode => {
@@ -3365,6 +3374,10 @@ impl Base for Node {
     }
 
     fn handle_lost_peer(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
+        if self.peer_mgr.get_peer(&pub_id).is_none() {
+            return Transition::Stay;
+        }
+
         debug!("{:?} Received LostPeer - {}", self, pub_id);
 
         self.dropped_tunnel_client(&pub_id);

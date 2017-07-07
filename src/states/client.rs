@@ -307,10 +307,7 @@ impl Base for Client {
         debug!("{:?} Received LostPeer - {:?}", self, pub_id);
 
         if self.proxy_pub_id == pub_id {
-            debug!("{:?} Lost bootstrap connection to {:?} ({:?}).",
-                   self,
-                   self.proxy_pub_id.name(),
-                   pub_id);
+            debug!("{:?} Lost bootstrap connection to {}.", self, pub_id);
             outbox.send_event(Event::Terminate);
             Transition::Terminate
         } else {

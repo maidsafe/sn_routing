@@ -25,6 +25,7 @@ use itertools::Itertools;
 use log::LogLevel;
 use messages::MessageContent;
 use rand;
+use rate_limiter::MAX_CLIENTS_PER_PROXY;
 use resource_proof::ResourceProof;
 use resource_prover::RESOURCE_PROOF_DURATION_SECS;
 use routing_table::{Authority, OwnMergeState, Prefix, RemovalDetails, RoutingTable,
@@ -49,8 +50,6 @@ const CONNECTING_PEER_TIMEOUT_SECS: u64 = 90;
 const CONNECTED_PEER_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) after which a `VotedFor` candidate will be removed.
 const CANDIDATE_ACCEPT_TIMEOUT_SECS: u64 = 60;
-/// Maximum allowed number of clients per proxy node.
-const MAX_CLIENTS_PER_PROXY: usize = 10;
 
 #[cfg(feature = "use-mock-crust")]
 #[doc(hidden)]
@@ -61,7 +60,6 @@ pub mod test_consts {
     pub const RESOURCE_PROOF_DURATION_SECS: u64 = super::RESOURCE_PROOF_DURATION_SECS;
     pub const CONNECTING_PEER_TIMEOUT_SECS: u64 = super::CONNECTING_PEER_TIMEOUT_SECS;
     pub const CONNECTED_PEER_TIMEOUT_SECS: u64 = super::CONNECTED_PEER_TIMEOUT_SECS;
-    pub const MAX_CLIENTS_PER_PROXY: usize = super::MAX_CLIENTS_PER_PROXY;
 }
 
 pub type SectionMap = BTreeMap<VersionedPrefix<XorName>, BTreeSet<PublicId>>;
@@ -157,7 +155,12 @@ pub enum PeerState {
     /// We are connected - via a tunnel if the field is `true`.
     Connected(bool),
     /// We are the proxy for the client
-    Client(IpAddr),
+    Client {
+        /// Client IP
+        ip: IpAddr,
+        /// Traffic charged for Client
+        traffic: u64,
+    },
     /// We are the proxy for the joining node
     JoiningNode,
     /// We are approved and routing to that peer.
@@ -281,7 +284,7 @@ impl Peer {
             PeerState::Bootstrapper { .. } |
             PeerState::JoiningNode |
             PeerState::Proxy |
-            PeerState::Client(_) => Some(false),
+            PeerState::Client { .. } => Some(false),
             PeerState::Connected(is_tunnel) => Some(is_tunnel),
             PeerState::Candidate(conn) |
             PeerState::Routing(conn) => Some(conn.is_tunnel()),
@@ -300,7 +303,7 @@ impl Peer {
             PeerState::Bootstrapper { .. } |
             PeerState::Connected(_) => CONNECTED_PEER_TIMEOUT_SECS,
             PeerState::Candidate(_) |
-            PeerState::Client(_) |
+            PeerState::Client { .. } |
             PeerState::Routing(_) => return false,
         };
 
@@ -315,7 +318,7 @@ impl Peer {
             PeerState::ConnectionInfoReady(_) |
             PeerState::CrustConnecting |
             PeerState::SearchingForTunnel |
-            PeerState::Client(_) => Err(RoutingError::InvalidPeer),
+            PeerState::Client { .. } => Err(RoutingError::InvalidPeer),
             PeerState::Candidate(conn) |
             PeerState::Routing(conn) => Ok(conn),
             PeerState::Proxy => Ok(RoutingConnection::Proxy(self.timestamp)),
@@ -345,7 +348,7 @@ impl Peer {
 
     /// Returns whether the peer is our client.
     fn is_client(&self) -> bool {
-        if let PeerState::Client(_) = self.state {
+        if let PeerState::Client { .. } = self.state {
             true
         } else {
             false
@@ -452,7 +455,7 @@ impl PeerManager {
             if let PeerState::Bootstrapper { peer_kind, ip } = peer.state {
                 match peer_kind {
                     CrustUser::Node => peer.state = PeerState::JoiningNode,
-                    CrustUser::Client => peer.state = PeerState::Client(ip),
+                    CrustUser::Client => peer.state = PeerState::Client { ip, traffic: 0 },
                 }
                 return;
             }
@@ -962,6 +965,29 @@ impl PeerManager {
             .count()
     }
 
+    /// Updates the given clients total traffic amount.
+    pub fn add_client_traffic(&mut self, pub_id: &PublicId, added_bytes: u64) {
+        let self_pfx = format!("{:?}", self);
+        let _ = self.peers
+            .get_mut(pub_id)
+            .map(|peer| if let PeerState::Client {
+                            ip,
+                            traffic: old_traffic,
+                        } = *peer.state() {
+                     let new_traffic = old_traffic.wrapping_add(added_bytes);
+                     if new_traffic % (100 * 1024 * 1024) < added_bytes {
+                         info!("{} Stats - Client current session traffic from {:?} - {:?}",
+                               self_pfx,
+                               ip,
+                               new_traffic);
+                     }
+                     peer.state = PeerState::Client {
+                         ip,
+                         traffic: new_traffic,
+                     };
+                 });
+    }
+
     /// Checks whether we can accept more clients.
     pub fn can_accept_client(&self, client_ip: IpAddr) -> bool {
         let mut existing_client_count = 0;
@@ -969,12 +995,12 @@ impl PeerManager {
              .values()
              .any(|peer| match *peer.state() {
                       PeerState::Bootstrapper { ip, .. } |
-                      PeerState::Client(ip) => {
+                      PeerState::Client { ip, .. } => {
             existing_client_count += 1;
             client_ip == ip
         }
                       _ => false,
-                  }) && existing_client_count < MAX_CLIENTS_PER_PROXY
+                  }) && existing_client_count < MAX_CLIENTS_PER_PROXY as usize
     }
 
     /// Marks the given peer as direct-connected.
@@ -1200,7 +1226,7 @@ impl PeerManager {
             Some(peer) => {
                 match *peer.state() {
                     PeerState::Bootstrapper { .. } |
-                    PeerState::Client(_) |
+                    PeerState::Client { .. } |
                     PeerState::JoiningNode |
                     PeerState::Proxy |
                     PeerState::Routing(_) |
@@ -1316,7 +1342,7 @@ impl PeerManager {
                 self.insert_peer(peer);
                 Ok(ConnectionInfoReceivedResult::Waiting)
             }
-            Some(peer @ Peer { state: PeerState::Client(_), .. }) => {
+            Some(peer @ Peer { state: PeerState::Client { .. }, .. }) => {
                 self.insert_peer(peer);
                 Ok(ConnectionInfoReceivedResult::IsClient)
             }
