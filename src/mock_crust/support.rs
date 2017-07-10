@@ -74,13 +74,12 @@ impl<UID: Uid> Network<UID> {
         let endpoint = self.gen_endpoint(opt_endpoint);
 
         let handle = ServiceHandle::new(self.clone(), config, endpoint);
-        if self.0
-               .borrow_mut()
-               .services
-               .insert(endpoint, Rc::downgrade(&handle.0))
-               .is_some() {
-            debug!("Tried to insert duplicate service handle ");
-        }
+        assert!(self.0
+                    .borrow_mut()
+                    .services
+                    .insert(endpoint, Rc::downgrade(&handle.0))
+                    .is_none(),
+                "Tried to insert duplicate service handle.");
 
         handle
     }
