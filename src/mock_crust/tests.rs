@@ -18,7 +18,7 @@
 // These tests are almost straight up copied from crust::service::tests
 
 use super::crust::{CrustEventSender, CrustUser, Service};
-use super::support::{Config, Network};
+use super::support::{Config, Network, to_socket_addr};
 use CrustEvent;
 use id::{FullId, PublicId};
 use maidsafe_utilities::event_sender::{MaidSafeEventCategory, MaidSafeObserver};
@@ -59,10 +59,10 @@ fn start_two_services_bootstrap_communicate_exit() {
     let min_section_size = 8;
     let network = Network::new(min_section_size, None);
     let endpoint0 = network.gen_endpoint(None);
+    let handle0 = network.new_service_handle(None, Some(endpoint0));
+
     let endpoint1 = network.gen_endpoint(None);
     let config = Config::with_contacts(&[endpoint0, endpoint1]);
-
-    let handle0 = network.new_service_handle(Some(config.clone()), Some(endpoint0));
     let handle1 = network.new_service_handle(Some(config.clone()), Some(endpoint1));
 
     let (event_sender_0, _category_rx_0, event_rx_0) = get_event_sender();
@@ -261,4 +261,20 @@ fn drop() {
     mem::drop(service_0);
     network.deliver_messages();
     expect_event!(event_rx_1, CrustEvent::LostPeer::<PublicId>(id) => assert_eq!(id, id_0));
+}
+
+#[test]
+fn gen_endpoint_with_ip() {
+    let min_section_size = 8;
+    let network = Network::<PublicId>::new(min_section_size, None);
+    for _ in 0..258 {
+        let handle0 = network.new_service_handle(None, None);
+        let endpoint0 = handle0.endpoint();
+        let ip0 = to_socket_addr(&endpoint0).ip();
+        for _ in 0..10 {
+            let endpoint1 = network.gen_endpoint_with_ip(&ip0);
+            let handle1 = network.new_service_handle(None, Some(endpoint1));
+            assert_eq!(to_socket_addr(&handle1.endpoint()).ip(), ip0);
+        }
+    }
 }
