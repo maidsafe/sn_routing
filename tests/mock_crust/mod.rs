@@ -291,7 +291,6 @@ fn rate_limit_proxy_random_clients() {
     let data_id: XorName = rng.gen();
     let dst = Authority::NaeManager(data_id);
     let mut total_usage: u64 = 0;
-    let mut diff_value: u64 = 0;
     let wait_millis = 2 * MAX_IMMUTABLE_DATA_SIZE_IN_BYTES * 1000 / RATE as u64;
     let leaky_rate = 2 * MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
 
@@ -343,15 +342,11 @@ fn rate_limit_proxy_random_clients() {
             total_usage += MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
         }
         assert!(total_usage <= CAPACITY);
-        diff_value += (clients.len() - 1) as u64;
 
         let per_client_cap = CAPACITY / clients.len() as u64;
         let clients_usage = nodes[0].inner.get_clients_usage();
 
-        // RateLimiter leaks by `quota` per client, which is leak_units divided by live clients.
-        // This will result in maxiumn `num_of_live_clients - 1` units less deducted.
-        // And may accumulated across iterations.
-        if (total_usage + diff_value + MAX_IMMUTABLE_DATA_SIZE_IN_BYTES) <= CAPACITY {
+        if (total_usage + MAX_IMMUTABLE_DATA_SIZE_IN_BYTES) <= CAPACITY {
             for ip in clients_sent.values() {
                 assert!((unwrap!(clients_usage.get(ip)) + MAX_IMMUTABLE_DATA_SIZE_IN_BYTES) >
                         per_client_cap);
