@@ -378,5 +378,39 @@ fn ban_malicious_client() {
     expect_next_event!(unwrap!(clients.last_mut()), Event::Terminate);
     let banned_client_ips = nodes[0].inner.get_banned_client_ips();
     assert_eq!(banned_client_ips.len(), 1);
-    assert_eq!(unwrap!(banned_client_ips.into_iter().next()), clients[0].ip());
+    let ip_addr = clients[0].ip();
+    assert_eq!(unwrap!(banned_client_ips.into_iter().next()), ip_addr);
+
+    let _ = clients.remove(0);
+    let _ = poll_all(&mut nodes, &mut clients);
+
+    // Connect a new client with the same ip address shall get rejected.
+    let endpoint = network.gen_endpoint_with_ip(&ip_addr);
+    let contact = nodes[0].handle.endpoint();
+    let client = TestClient::new(&network,
+                                 Some(BootstrapConfig::with_contacts(&[contact])),
+                                 Some(endpoint));
+    clients.push(client);
+    let _ = poll_all(&mut nodes, &mut clients);
+    expect_next_event!(unwrap!(clients.last_mut()), Event::Terminate);
+}
+
+/// Connects two clients to the network using the same ip address and via the same proxy.
+/// Expect only one client got connected.
+#[test]
+fn only_one_client_per_ip() {
+    let min_section_size = 8;
+    let network = Network::new(min_section_size, None);
+    let mut nodes = create_connected_nodes(&network, min_section_size);
+    let mut clients = create_connected_clients(&network, &mut nodes, 1);
+
+    // Connect a new client with the same ip address shall get rejected.
+    let endpoint = network.gen_endpoint_with_ip(&clients[0].ip());
+    let contact = nodes[0].handle.endpoint();
+    let client = TestClient::new(&network,
+                                 Some(BootstrapConfig::with_contacts(&[contact])),
+                                 Some(endpoint));
+    clients.push(client);
+    let _ = poll_all(&mut nodes, &mut clients);
+    expect_next_event!(unwrap!(clients.last_mut()), Event::Terminate);
 }
