@@ -128,7 +128,6 @@ fn multiple_joining_nodes() {
     }
 }
 
-#[test]
 // TODO - The original intent of this test was to ensure two nodes could join two separate sections
 //        simultaneously. That can fail if one section has four members which add the new node from
 //        the other section to their RTs and four members which don't, while still waiting to
@@ -136,6 +135,7 @@ fn multiple_joining_nodes() {
 //        `NodeApproval` and the invariant check fails. This is true regardless of whether we send
 //        a snapshot of the RT taken when sending `CandidateApproval` in the `NodeApproval`, or send
 //        a current version of the RT: only the window for failure shifts in these scenarios.
+#[test]
 fn simultaneous_joining_nodes() {
     // Create a network with two sections:
     let min_section_size = 8;
@@ -190,9 +190,9 @@ fn check_close_names_for_min_section_size_nodes() {
     assert!(close_sections_complete);
 }
 
-#[test]
 /// Connects multiple clients to the same proxy node, expecting clients fail to connect after
 /// reaching `MAX_CLIENTS_PER_PROXY`, and succeed again when a connected client drops out.
+#[test]
 fn multiple_clients_per_proxy() {
     let min_section_size = 8;
     let network = Network::new(min_section_size, None);
@@ -213,10 +213,10 @@ fn multiple_clients_per_proxy() {
     expect_next_event!(clients[MAX_CLIENTS_PER_PROXY - 1], Event::Connected);
 }
 
-#[test]
 /// Connects multiple clients to the same proxy node and randomly sending get requests.
 /// Expect some requests will be blocked due to the rate limit.
 /// Expect the total capacity of the proxy will never be exceeded.
+#[test]
 fn rate_limit_proxy() {
     let min_section_size = 8;
     let network = Network::new(min_section_size, None);
@@ -277,9 +277,9 @@ fn rate_limit_proxy() {
     }
 }
 
-#[test]
 /// Connect a client to the network then send an invalid message.
 /// Expect the client will be disconnected and banned;
+#[test]
 fn ban_malicious_client() {
     let min_section_size = 8;
     let network = Network::new(min_section_size, None);
