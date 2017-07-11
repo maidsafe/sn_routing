@@ -114,6 +114,7 @@ impl RateLimiter {
                         PutIData { .. } |
                         PutMData { .. } |
                         MutateMDataEntries { .. } |
+                        DeleteMDataEntries { .. } |
                         SetMDataUserPermissions { .. } |
                         DelMDataUserPermissions { .. } |
                         ChangeMDataOwner { .. } |
@@ -212,11 +213,13 @@ mod tests {
         // First client fills the `RateLimiter` with get requests.
         let mut rate_limiter = RateLimiter::new();
         let client_1 = IpAddr::from([0, 0, 0, 0]);
-        let get_req_payload = unwrap!(serialisation::serialise(
-            &UserMessage::Request(Request::GetIData {
-                name: rand::random(),
-                msg_id: MessageId::new(),
-        })));
+
+        let get_req_payload = UserMessage::Request(Request::GetIData {
+                                                       name: rand::random(),
+                                                       msg_id: MessageId::new(),
+                                                   });
+        let get_req_payload = unwrap!(serialisation::serialise(&get_req_payload));
+
         let hash = sha3_256(&get_req_payload);
         let fill_full_iterations = CAPACITY / MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
         for _ in 0..fill_full_iterations {

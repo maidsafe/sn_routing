@@ -269,6 +269,7 @@ impl Request {
             ListMDataValues { ref msg_id, .. } |
             GetMDataValue { ref msg_id, .. } |
             MutateMDataEntries { ref msg_id, .. } |
+            DeleteMDataEntries { ref msg_id, .. } |
             ListMDataPermissions { ref msg_id, .. } |
             ListMDataUserPermissions { ref msg_id, .. } |
             SetMDataUserPermissions { ref msg_id, .. } |

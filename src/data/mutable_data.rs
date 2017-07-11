@@ -437,6 +437,10 @@ impl MutableData {
 
         let keys: Vec<_> = keys.into_iter().collect();
 
+        if keys.is_empty() {
+            return Err(ClientError::InvalidOperation);
+        }
+
         if keys.iter().any(|key| !self.data.contains_key(key)) {
             return Err(ClientError::NoSuchEntry);
         }
