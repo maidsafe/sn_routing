@@ -33,25 +33,26 @@ pub use self::utils::{Nodes, TestClient, TestNode, add_connected_nodes_until_spl
 use fake_clock::FakeClock;
 use rand::Rng;
 use routing::{Authority, BootstrapConfig, Event, EventStream, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
-              MessageId, Prefix, Request, XOR_NAME_LEN, XorName};
+              MessageId, Prefix, PublicId, Request, XOR_NAME_LEN, XorName};
 use routing::mock_crust::{Endpoint, Network};
 use routing::rate_limiter_consts::{CAPACITY, MAX_CLIENTS_PER_PROXY, RATE};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use std::net::IpAddr;
+
+const MIN_SECTION_SIZE: usize = 8;
 
 // -----  Miscellaneous tests below  -----
 
 fn test_nodes(percentage_size: usize) {
-    let min_section_size = 8;
-    let size = min_section_size * percentage_size / 100;
-    let network = Network::new(min_section_size, None);
+    let size = MIN_SECTION_SIZE * percentage_size / 100;
+    let network = Network::new(MIN_SECTION_SIZE, None);
     let mut nodes = create_connected_nodes(&network, size);
     verify_invariant_for_all_nodes(&mut nodes);
 }
 
 #[test]
 fn disconnect_on_rebootstrap() {
-    let min_section_size = 8;
-    let network = Network::new(min_section_size, None);
+    let network = Network::new(MIN_SECTION_SIZE, None);
     let mut nodes = create_connected_nodes(&network, 2);
     // Try to bootstrap to another than the first node. With network size 2, this should fail.
     let config = BootstrapConfig::with_contacts(&[nodes[1].handle.endpoint()]);
@@ -84,17 +85,15 @@ fn more_than_section_size_nodes() {
 
 #[test]
 fn client_connects_to_nodes() {
-    let min_section_size = 8;
-    let network = Network::new(min_section_size, None);
-    let mut nodes = create_connected_nodes(&network, min_section_size + 1);
+    let network = Network::new(MIN_SECTION_SIZE, None);
+    let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE + 1);
     let _ = create_connected_clients(&network, &mut nodes, 1);
 }
 
 #[test]
 fn node_joins_in_front() {
-    let min_section_size = 8;
-    let network = Network::new(min_section_size, None);
-    let mut nodes = create_connected_nodes(&network, 2 * min_section_size);
+    let network = Network::new(MIN_SECTION_SIZE, None);
+    let mut nodes = create_connected_nodes(&network, 2 * MIN_SECTION_SIZE);
     let config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
     nodes.insert(0, TestNode::builder(&network).config(config).create());
 
@@ -105,9 +104,8 @@ fn node_joins_in_front() {
 
 #[test]
 fn multiple_joining_nodes() {
-    let min_section_size = 8;
-    let network = Network::new(min_section_size, None);
-    let mut nodes = create_connected_nodes(&network, min_section_size);
+    let network = Network::new(MIN_SECTION_SIZE, None);
+    let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE);
     let config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
 
     while nodes.len() < 40 {
@@ -138,8 +136,7 @@ fn multiple_joining_nodes() {
 #[test]
 fn simultaneous_joining_nodes() {
     // Create a network with two sections:
-    let min_section_size = 8;
-    let network = Network::new(min_section_size, None);
+    let network = Network::new(MIN_SECTION_SIZE, None);
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1], false);
     let config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
 
@@ -181,8 +178,7 @@ fn simultaneous_joining_nodes() {
 
 #[test]
 fn check_close_names_for_min_section_size_nodes() {
-    let min_section_size = 8;
-    let nodes = create_connected_nodes(&Network::new(min_section_size, None), min_section_size);
+    let nodes = create_connected_nodes(&Network::new(MIN_SECTION_SIZE, None), MIN_SECTION_SIZE);
     let close_sections_complete =
         nodes
             .iter()
@@ -194,9 +190,8 @@ fn check_close_names_for_min_section_size_nodes() {
 /// reaching `MAX_CLIENTS_PER_PROXY`, and succeed again when a connected client drops out.
 #[test]
 fn multiple_clients_per_proxy() {
-    let min_section_size = 8;
-    let network = Network::new(min_section_size, None);
-    let mut nodes = create_connected_nodes(&network, min_section_size);
+    let network = Network::new(MIN_SECTION_SIZE, None);
+    let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE);
     let mut clients = create_connected_clients(&network, &mut nodes, MAX_CLIENTS_PER_PROXY);
 
     let config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
@@ -213,67 +208,97 @@ fn multiple_clients_per_proxy() {
     expect_next_event!(clients[MAX_CLIENTS_PER_PROXY - 1], Event::Connected);
 }
 
+// Sends the requests and verifies recipients if `rate_limiter` approves the request.
+// Returns rejected requests' message id and its client's ip address.
+fn rate_limiter_send_reqs(network: &Network<PublicId>,
+                          nodes: &mut [TestNode],
+                          clients: &mut [TestClient],
+                          total_usage: &mut u64,
+                          is_always_send: bool)
+                          -> HashMap<MessageId, IpAddr> {
+    let mut rng = network.new_rng();
+    let data_id: XorName = rng.gen();
+    let dst = Authority::NaeManager(data_id);
+
+    let mut clients_sent = HashMap::new();
+    for client in clients.iter_mut() {
+        if is_always_send || rng.gen_weighted_bool(2) {
+            let msg_id = MessageId::new();
+            unwrap!(client.inner.get_idata(dst, data_id, msg_id));
+            let _ = clients_sent.insert(msg_id, client.ip());
+        }
+    }
+    trace!("clients_sent: {:?}", clients_sent);
+    let _ = poll_all(nodes, clients);
+
+    let mut request_received: HashMap<MessageId, usize> = HashMap::new();
+    for node in nodes.iter_mut().filter(|n| n.is_recipient(&dst)) {
+        while let Ok(event) = node.try_next_ev() {
+            if let Event::Request {
+                       request: Request::GetIData { msg_id: req_message_id, .. }, ..
+                   } = event {
+                let entry = request_received
+                    .entry(req_message_id)
+                    .or_insert_with(|| 0);
+                *entry += 1;
+            }
+        }
+    }
+    trace!("request_received: {:?}", request_received);
+
+    for (msg_id, count) in &request_received {
+        assert_eq!(*count, MIN_SECTION_SIZE);
+        let _ = unwrap!(clients_sent.remove(msg_id));
+        *total_usage += MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
+    }
+    assert!(*total_usage <= CAPACITY);
+
+    clients_sent
+}
+
+// Verifies the usage in rate_limiter. Also advances the fake clock.
+fn rate_limiter_verify(clients_sent: &HashMap<MessageId, IpAddr>,
+                       clients_usage: &BTreeMap<IpAddr, u64>,
+                       total_usage: &mut u64,
+                       per_client_cap: u64) {
+    // `clients_sent` now contains only the clients whose request got rejected.
+    // Needs to confirm such rejection is valid. However, if it is the total usage reaching the
+    // cap, the usage of each client could be much less than the cap.
+    if (*total_usage + MAX_IMMUTABLE_DATA_SIZE_IN_BYTES) <= CAPACITY {
+        for ip in clients_sent.values() {
+            assert!((unwrap!(clients_usage.get(ip)) + MAX_IMMUTABLE_DATA_SIZE_IN_BYTES) >
+                        per_client_cap);
+        }
+    }
+
+    let wait_millis = 2 * MAX_IMMUTABLE_DATA_SIZE_IN_BYTES * 1000 / RATE as u64;
+    let leaky_rate = 2 * MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
+    FakeClock::advance_time(wait_millis);
+    *total_usage = total_usage.saturating_sub(leaky_rate);
+}
+
 /// Connects multiple clients to the same proxy node and randomly sending get requests.
 /// Expect some requests will be blocked due to the rate limit.
 /// Expect the total capacity of the proxy will never be exceeded.
 #[test]
 fn rate_limit_proxy_max_clients() {
-    let min_section_size = 8;
-    let network = Network::new(min_section_size, None);
-    let mut nodes = create_connected_nodes(&network, min_section_size);
+    let network = Network::new(MIN_SECTION_SIZE, None);
+    let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE);
     let mut clients = create_connected_clients(&network, &mut nodes, MAX_CLIENTS_PER_PROXY);
 
-    let mut rng = network.new_rng();
-    let data_id: XorName = rng.gen();
-    let dst = Authority::NaeManager(data_id);
     let mut total_usage: u64 = 0;
-    let wait_millis = 2 * MAX_IMMUTABLE_DATA_SIZE_IN_BYTES * 1000 / RATE as u64;
-    let leaky_rate = 2 * MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
     let per_client_cap = CAPACITY / MAX_CLIENTS_PER_PROXY as u64;
-    for i in 0..10 {
-        trace!("iteration {:?}", i);
-        let mut clients_sent = HashMap::new();
-        for client in &mut clients {
-            if rng.gen_weighted_bool(2) {
-                let msg_id = MessageId::new();
-                unwrap!(client.inner.get_idata(dst, data_id, msg_id));
-                let _ = clients_sent.insert(msg_id, client.ip());
-            }
-        }
-        trace!("clients_sent: {:?}", clients_sent);
-        let _ = poll_all(&mut nodes, &mut clients);
-
-        let mut request_received: HashMap<MessageId, usize> = HashMap::new();
-        for node in nodes.iter_mut().filter(|n| n.is_recipient(&dst)) {
-            while let Ok(event) = node.try_next_ev() {
-                if let Event::Request {
-                           request: Request::GetIData { msg_id: req_message_id, .. }, ..
-                       } = event {
-                    let entry = request_received
-                        .entry(req_message_id)
-                        .or_insert_with(|| 0);
-                    *entry += 1;
-                }
-            }
-        }
-        trace!("request_received: {:?}", request_received);
-
-        for (msg_id, count) in &request_received {
-            assert_eq!(*count, min_section_size);
-            let _ = unwrap!(clients_sent.remove(msg_id));
-            total_usage += MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
-        }
-        assert!(total_usage <= CAPACITY);
+    for _ in 0..10 {
+        let clients_sent =
+            rate_limiter_send_reqs(&network, &mut nodes, &mut clients, &mut total_usage, false);
 
         let clients_usage = nodes[0].inner.get_clients_usage();
         assert!(clients_usage.iter().all(|(_, usage)| *usage <= per_client_cap));
-        for ip in clients_sent.values() {
-            assert!(unwrap!(clients_usage.get(ip)) + MAX_IMMUTABLE_DATA_SIZE_IN_BYTES >
-                    per_client_cap);
-        }
 
-        FakeClock::advance_time(wait_millis);
-        total_usage -= leaky_rate;
+        rate_limiter_verify(&clients_sent,
+                            &clients_usage,
+                            &mut total_usage,
+                            per_client_cap);
     }
 }
 
@@ -282,29 +307,16 @@ fn rate_limit_proxy_max_clients() {
 /// Expect the total capacity of the proxy will never be exceeded.
 #[test]
 fn rate_limit_proxy_random_clients() {
-    let min_section_size = 8;
-    let network = Network::new(min_section_size, None);
-    let mut nodes = create_connected_nodes(&network, min_section_size);
-    let mut clients = Vec::new();
-
+    let network = Network::new(MIN_SECTION_SIZE, None);
+    let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE);
     let mut rng = network.new_rng();
-    let data_id: XorName = rng.gen();
-    let dst = Authority::NaeManager(data_id);
-    let mut total_usage: u64 = 0;
-    let wait_millis = 2 * MAX_IMMUTABLE_DATA_SIZE_IN_BYTES * 1000 / RATE as u64;
-    let leaky_rate = 2 * MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
 
+    let mut clients = Vec::new();
+    let mut total_usage: u64 = 0;
     for _ in 0..10 {
         if clients.len() <= 1 || (clients.len() < MAX_CLIENTS_PER_PROXY && rng.gen()) {
-            for _ in 0..rng.gen_range(1, MAX_CLIENTS_PER_PROXY - clients.len() + 1) {
-                let contact = nodes[0].handle.endpoint();
-                let client = TestClient::new(&network,
-                                             Some(BootstrapConfig::with_contacts(&[contact])),
-                                             None);
-                clients.push(client);
-                let _ = poll_all(&mut nodes, &mut clients);
-                expect_next_event!(unwrap!(clients.last_mut()), Event::Connected);
-            }
+            let new_client_count = rng.gen_range(1, MAX_CLIENTS_PER_PROXY - clients.len() + 1);
+            clients.append(&mut create_connected_clients(&network, &mut nodes, new_client_count));
         } else {
             for _ in 0..rng.gen_range(1, clients.len()) {
                 let len = clients.len();
@@ -313,48 +325,18 @@ fn rate_limit_proxy_random_clients() {
             }
         }
 
-        let mut clients_sent = HashMap::new();
-        for client in &mut clients {
-            let msg_id = MessageId::new();
-            unwrap!(client.inner.get_idata(dst, data_id, msg_id));
-            let _ = clients_sent.insert(msg_id, client.ip());
-        }
+        let clients_sent =
+            rate_limiter_send_reqs(&network, &mut nodes, &mut clients, &mut total_usage, true);
 
-        let _ = poll_all(&mut nodes, &mut clients);
-
-        let mut request_received: HashMap<MessageId, usize> = HashMap::new();
-        for node in nodes.iter_mut().filter(|n| n.is_recipient(&dst)) {
-            while let Ok(event) = node.try_next_ev() {
-                if let Event::Request {
-                           request: Request::GetIData { msg_id: req_message_id, .. }, ..
-                       } = event {
-                    let entry = request_received
-                        .entry(req_message_id)
-                        .or_insert_with(|| 0);
-                    *entry += 1;
-                }
-            }
-        }
-
-        for (msg_id, count) in &request_received {
-            assert_eq!(*count, min_section_size);
-            let _ = unwrap!(clients_sent.remove(msg_id));
-            total_usage += MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
-        }
-        assert!(total_usage <= CAPACITY);
-
-        let per_client_cap = CAPACITY / clients.len() as u64;
+        // Due to the changing of number of live clients, it is not guaranteed that each client's
+        // usage is below `per_client_cap` of the current iteration.
         let clients_usage = nodes[0].inner.get_clients_usage();
 
-        if (total_usage + MAX_IMMUTABLE_DATA_SIZE_IN_BYTES) <= CAPACITY {
-            for ip in clients_sent.values() {
-                assert!((unwrap!(clients_usage.get(ip)) + MAX_IMMUTABLE_DATA_SIZE_IN_BYTES) >
-                        per_client_cap);
-            }
-        }
-
-        FakeClock::advance_time(wait_millis);
-        total_usage = total_usage.saturating_sub(leaky_rate);
+        let per_client_cap = CAPACITY / clients.len() as u64;
+        rate_limiter_verify(&clients_sent,
+                            &clients_usage,
+                            &mut total_usage,
+                            per_client_cap);
     }
 }
 
@@ -362,9 +344,8 @@ fn rate_limit_proxy_random_clients() {
 /// Expect the client will be disconnected and banned;
 #[test]
 fn ban_malicious_client() {
-    let min_section_size = 8;
-    let network = Network::new(min_section_size, None);
-    let mut nodes = create_connected_nodes(&network, min_section_size);
+    let network = Network::new(MIN_SECTION_SIZE, None);
+    let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
     let mut rng = network.new_rng();
 
@@ -399,9 +380,8 @@ fn ban_malicious_client() {
 /// Expect only one client got connected.
 #[test]
 fn only_one_client_per_ip() {
-    let min_section_size = 8;
-    let network = Network::new(min_section_size, None);
-    let mut nodes = create_connected_nodes(&network, min_section_size);
+    let network = Network::new(MIN_SECTION_SIZE, None);
+    let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
 
     // Connect a new client with the same ip address shall get rejected.
