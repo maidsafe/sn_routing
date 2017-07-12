@@ -251,7 +251,10 @@ impl ExpectedGets {
     }
 
     /// Verifies that all sent messages have been received by the appropriate nodes.
-    fn verify(mut self, nodes: &mut [TestNode], clients: &mut [TestClient]) {
+    fn verify(mut self,
+              nodes: &mut [TestNode],
+              clients: &mut [TestClient],
+              new_node_name: Option<XorName>) {
         // The minimum of the section lengths when sending and now. If a churn event happened, both
         // cases are valid: that the message was received before or after that. The number of
         // recipients thus only needs to reach a quorum for the smaller of the section sizes.
@@ -287,6 +290,14 @@ impl ExpectedGets {
                             // test). This shall no longer happen once routing refactored.
                             if let Authority::NaeManager(_) = dst {
                                 trace!("Unexpected request for node {}: {:?} / {:?}",
+                                       node.name(),
+                                       key,
+                                       self.sections);
+                            } else if new_node_name == Some(node.name()) {
+                                // A new joined node may receive the message first, then receives
+                                // the section split it incurs, hence becomes non-recipient in this
+                                // call but received the request event.
+                                trace!("Unexpected request for new joined node {}: {:?} / {:?}",
                                        node.name(),
                                        key,
                                        self.sections);
@@ -373,7 +384,7 @@ fn send_and_receive<R: Rng>(rng: &mut R, nodes: &mut [TestNode], min_section_siz
 
     poll_and_resend(nodes, &mut []);
 
-    expected_gets.verify(nodes, &mut []);
+    expected_gets.verify(nodes, &mut [], None);
 }
 
 fn client_gets(network: &mut Network<PublicId>, nodes: &mut [TestNode], min_section_size: usize) {
@@ -398,7 +409,7 @@ fn client_gets(network: &mut Network<PublicId>, nodes: &mut [TestNode], min_sect
     expected_gets.send_and_expect(data, auth_g1, cl_auth, nodes, min_section_size);
 
     poll_and_resend(nodes, &mut clients);
-    expected_gets.verify(nodes, &mut clients);
+    expected_gets.verify(nodes, &mut clients, None);
 }
 
 fn count_sections(nodes: &[TestNode]) -> usize {
@@ -580,7 +591,8 @@ fn messages_during_churn() {
 
         poll_and_resend(&mut nodes, &mut clients);
 
-        expected_gets.verify(&mut nodes, &mut clients);
+        let new_node_name = added_index.map(|index| nodes[index].name());
+        expected_gets.verify(&mut nodes, &mut clients, new_node_name);
 
         verify_invariant_for_all_nodes(&mut nodes);
         verify_section_list_signatures(&nodes);
