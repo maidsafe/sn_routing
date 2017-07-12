@@ -152,35 +152,25 @@ impl RateLimiter {
             return;
         }
 
-        // If the current used total has had time to fully leak away, just clear `used` and return.
         let now = Instant::now();
         let leak_time = (now - self.last_updated).as_secs() as f64 +
                         ((now - self.last_updated).subsec_nanos() as f64 / 1_000_000_000.0);
         self.last_updated = now;
         let mut leaked_units = (RATE * leak_time) as u64;
-        if self.used.values().sum::<u64>() <= leaked_units {
-            self.used.clear();
-            return;
-        }
 
         // Sort entries by least-used to most-used and leak each client's quota. For any client
         // which doesn't need its full quota, the unused portion is equally distributed amongst the
         // others.
         let leaking_client_count = self.used.len();
-        let mut quota = leaked_units / leaking_client_count as u64;
         let mut entries = mem::replace(&mut self.used, Default::default())
             .into_iter()
             .map(|(ip_addr, used)| (used, ip_addr))
             .collect_vec();
         entries.sort();
         for (index, (used, client)) in entries.into_iter().enumerate() {
-            if used < quota {
-                leaked_units -= used;
-                // The divisor will never be `0` as such a case would need all entries to be below
-                // their quota (i.e. all usage has fully leaked) and would have results in an early
-                // return in the above sum check already.
-                quota = leaked_units / (leaking_client_count - index - 1) as u64;
-            } else {
+            let quota = cmp::min(used, leaked_units / (leaking_client_count - index) as u64);
+            leaked_units -= quota;
+            if used > quota {
                 let _ = self.used.insert(client, used - quota);
             }
         }

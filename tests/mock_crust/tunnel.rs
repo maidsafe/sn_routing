@@ -220,9 +220,9 @@ fn tunnel_clients() {
                 .is_none());
 }
 
-#[test]
 // The purpose of this test is to confirm that as in the logs of MAID-1951, once the tunnel got
 // established, a ConnectFailure of a tunnel_client to peer tunnel_client won't incur any action
+#[test]
 fn tunnel_client_connect_failure() {
     let min_section_size = 5;
     let network = Network::new(min_section_size, None);
