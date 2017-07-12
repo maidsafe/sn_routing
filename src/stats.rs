@@ -75,6 +75,7 @@ pub struct Stats {
     msg_list_mdata_values: UserMessageStats,
     msg_get_mdata_value: UserMessageStats,
     msg_mutate_mdata_entries: UserMessageStats,
+    msg_delete_mdata_entries: UserMessageStats,
     msg_list_mdata_permissions: UserMessageStats,
     msg_list_mdata_user_permissions: UserMessageStats,
     msg_set_mdata_user_permissions: UserMessageStats,
@@ -128,6 +129,9 @@ impl Stats {
                     Request::GetMDataValue { .. } => self.msg_get_mdata_value.inc_request(),
                     Request::MutateMDataEntries { .. } => {
                         self.msg_mutate_mdata_entries.inc_request()
+                    }
+                    Request::DeleteMDataEntries { .. } => {
+                        self.msg_delete_mdata_entries.inc_request()
                     }
                     Request::ListMDataPermissions { .. } => {
                         self.msg_list_mdata_permissions.inc_request()
@@ -185,6 +189,9 @@ impl Stats {
                     }
                     Response::MutateMDataEntries { ref res, .. } => {
                         self.msg_mutate_mdata_entries.inc_response(res.is_ok())
+                    }
+                    Response::DeleteMDataEntries { ref res, .. } => {
+                        self.msg_delete_mdata_entries.inc_response(res.is_ok())
                     }
                     Response::ListMDataPermissions { ref res, .. } => {
                         self.msg_list_mdata_permissions.inc_response(res.is_ok())
@@ -328,6 +335,7 @@ impl Stats {
                    ListMDataEntries: {}, \
                    GetMDataValue: {}, \
                    MutateMDataEntries: {}, \
+                   DeleteMDataEntries: {}, \
                    ListMDataPermissions: {}, \
                    ListMDataUserPermissions: {}, \
                    SetMDataUserPermissions: {}, \
@@ -348,6 +356,7 @@ impl Stats {
                   self.msg_list_mdata_entries,
                   self.msg_get_mdata_value,
                   self.msg_mutate_mdata_entries,
+                  self.msg_delete_mdata_entries,
                   self.msg_list_mdata_permissions,
                   self.msg_list_mdata_user_permissions,
                   self.msg_set_mdata_user_permissions,

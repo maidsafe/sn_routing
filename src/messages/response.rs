@@ -111,7 +111,14 @@ pub enum Response {
     },
     /// Returns a success or failure status of mutating MutableData in the network.
     MutateMDataEntries {
-        /// Result of mutating an entry in MutableData
+        /// Result of mutating entries in MutableData
+        res: Result<(), ClientError>,
+        /// Unique message identifier
+        msg_id: MsgId,
+    },
+    /// Returns a success or failure status of deleting entries of MutableData in the network.
+    DeleteMDataEntries {
+        /// Result of deleting entries in MutableData
         res: Result<(), ClientError>,
         /// Unique message identifier
         msg_id: MsgId,
@@ -212,6 +219,7 @@ impl Response {
             ListMDataValues { ref msg_id, .. } |
             GetMDataValue { ref msg_id, .. } |
             MutateMDataEntries { ref msg_id, .. } |
+            DeleteMDataEntries { ref msg_id, .. } |
             ListMDataPermissions { ref msg_id, .. } |
             ListMDataUserPermissions { ref msg_id, .. } |
             SetMDataUserPermissions { ref msg_id, .. } |

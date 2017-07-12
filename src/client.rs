@@ -259,11 +259,13 @@ impl Client {
     }
 
     /// Updates `MutableData` entries in bulk
+    #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
     pub fn mutate_mdata_entries(&mut self,
                                 dst: Authority<XorName>,
                                 name: XorName,
                                 tag: u64,
                                 actions: BTreeMap<Vec<u8>, EntryAction>,
+                                version: u64,
                                 msg_id: MessageId,
                                 requester: sign::PublicKey)
                                 -> Result<(), InterfaceError> {
@@ -271,6 +273,30 @@ impl Client {
             name: name,
             tag: tag,
             actions: actions,
+            version: version,
+            msg_id: msg_id,
+            requester: requester,
+        };
+
+        self.send_request(dst, request, DEFAULT_PRIORITY)
+    }
+
+    /// Deletes `MutableData` entries in bulk
+    #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
+    pub fn delete_mdata_entries(&mut self,
+                                dst: Authority<XorName>,
+                                name: XorName,
+                                tag: u64,
+                                keys: BTreeSet<Vec<u8>>,
+                                version: u64,
+                                msg_id: MessageId,
+                                requester: sign::PublicKey)
+                                -> Result<(), InterfaceError> {
+        let request = Request::DeleteMDataEntries {
+            name: name,
+            tag: tag,
+            keys: keys,
+            version: version,
             msg_id: msg_id,
             requester: requester,
         };

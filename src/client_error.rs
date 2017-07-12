@@ -41,6 +41,9 @@ pub enum ClientError {
     TooManyEntries,
     /// Key does not exist
     NoSuchKey,
+    /// Invalid version for performing an operation. The version in the operation must
+    /// match the version in the data.
+    VersionMismatch,
     /// The list of owner keys is invalid
     InvalidOwners,
     /// Invalid successor for performing a given mutating operation, e.g. signature mismatch or
@@ -81,6 +84,7 @@ impl Display for ClientError {
             ClientError::EntryExists => write!(f, "Entry already exists"),
             ClientError::TooManyEntries => write!(f, "Exceeded a limit on a number of entries"),
             ClientError::NoSuchKey => write!(f, "Key does not exists"),
+            ClientError::VersionMismatch => write!(f, "Version mismatch"),
             ClientError::InvalidOwners => write!(f, "The list of owner keys is invalid"),
             ClientError::InvalidOperation => write!(f, "Requested operation is not allowed"),
             ClientError::InvalidInvitation => write!(f, "Invitation token not found"),
@@ -110,6 +114,7 @@ impl Error for ClientError {
             ClientError::EntryExists => "Entry exists",
             ClientError::TooManyEntries => "Too many entries",
             ClientError::NoSuchKey => "No such key",
+            ClientError::VersionMismatch => "Version mismatch",
             ClientError::InvalidOwners => "Invalid owners",
             ClientError::InvalidSuccessor => "Invalid data successor",
             ClientError::InvalidOperation => "Invalid operation",

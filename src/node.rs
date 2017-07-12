@@ -246,6 +246,19 @@ impl Node {
                       name: XorName,
                       tag: u64,
                       actions: BTreeMap<Vec<u8>, EntryAction>,
+                      version: u64,
+                      msg_id: MessageId,
+                      requester: sign::PublicKey,
+                  },
+                  DEFAULT_PRIORITY);
+
+    /// Send a `DeleteMDataEntries` request.
+    impl_request!(send_delete_mdata_entries_request,
+                  DeleteMDataEntries {
+                      name: XorName,
+                      tag: u64,
+                      keys: BTreeSet<Vec<u8>>,
+                      version: u64,
                       msg_id: MessageId,
                       requester: sign::PublicKey,
                   },
@@ -424,6 +437,12 @@ impl Node {
     /// Respond to a `MutateMDataEntries` request.
     impl_response!(send_mutate_mdata_entries_response,
                    MutateMDataEntries,
+                   (),
+                   DEFAULT_PRIORITY);
+
+    /// Respond to a `DeleteMDataEntries` request.
+    impl_response!(send_delete_mdata_entries_response,
+                   DeleteMDataEntries,
                    (),
                    DEFAULT_PRIORITY);
 

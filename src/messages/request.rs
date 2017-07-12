@@ -134,15 +134,30 @@ pub enum Request {
         name: XorName,
         /// Type tag
         tag: u64,
-        /// A list of mutations (inserts, updates, or deletes) to be performed
-        /// on MutableData in bulk.
+        /// A list of actions (inserts or updates) to be performed on MutableData in bulk.
         actions: BTreeMap<Vec<u8>, EntryAction>,
+        /// Current shell version of the data.
+        version: u64,
         /// Unique message identifier
         msg_id: MsgId,
         /// Requester public key
         requester: sign::PublicKey,
     },
-
+    /// Deletes MutableData entries in bulk.
+    DeleteMDataEntries {
+        /// Network identifier of MutableData
+        name: XorName,
+        /// Type tag
+        tag: u64,
+        /// A list of entry keys to delete.
+        keys: BTreeSet<Vec<u8>>,
+        /// Incremented version of MutableData
+        version: u64,
+        /// Unique message identifier
+        msg_id: MsgId,
+        /// Requester public key
+        requester: sign::PublicKey,
+    },
     // Permission Actions
     /// Fetches a complete list of permissions.
     ListMDataPermissions {
@@ -254,6 +269,7 @@ impl Request {
             ListMDataValues { ref msg_id, .. } |
             GetMDataValue { ref msg_id, .. } |
             MutateMDataEntries { ref msg_id, .. } |
+            DeleteMDataEntries { ref msg_id, .. } |
             ListMDataPermissions { ref msg_id, .. } |
             ListMDataUserPermissions { ref msg_id, .. } |
             SetMDataUserPermissions { ref msg_id, .. } |
