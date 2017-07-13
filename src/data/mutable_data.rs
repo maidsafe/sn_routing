@@ -332,53 +332,45 @@ impl MutableData {
         let mut new_data = self.data.clone();
 
         for (key, val) in insert {
-            if new_data.contains_key(&key) {
-                return Err(ClientError::EntryExists);
+            match new_data.entry(key) {
+                Entry::Occupied(entry) => {
+                    if val != *entry.get() {
+                        return Err(ClientError::EntryExists);
+                    }
+                }
+                Entry::Vacant(entry) => {
+                    let _ = entry.insert(val);
+                }
             }
-            let _ = new_data.insert(key.clone(), val);
         }
 
         for (key, val) in update {
-            if !new_data.contains_key(&key) {
-                return Err(ClientError::NoSuchEntry);
-            }
-            let version_valid = if let Entry::Occupied(mut oe) = new_data.entry(key.clone()) {
-                if val.entry_version != oe.get().entry_version + 1 {
-                    false
-                } else {
-                    let _prev = oe.insert(val);
-                    true
+            match new_data.entry(key) {
+                Entry::Occupied(mut entry) => {
+                    if val.entry_version == entry.get().entry_version + 1 {
+                        let _ = entry.insert(val);
+                    } else if val != *entry.get() {
+                        return Err(ClientError::InvalidSuccessor);
+                    }
                 }
-            } else {
-                false
-            };
-            if !version_valid {
-                return Err(ClientError::InvalidSuccessor);
+                Entry::Vacant(_) => return Err(ClientError::NoSuchEntry),
             }
         }
 
         for (key, version) in delete {
-            if !new_data.contains_key(&key) {
-                return Err(ClientError::NoSuchEntry);
-            }
-            let version_valid = if let Entry::Occupied(mut oe) = new_data.entry(key.clone()) {
-                if version != oe.get().entry_version + 1 {
-                    false
-                } else {
-                    /// TODO(nbaksalyar): find a way to decrease a number of entries after deletion.
-                    /// In the current implementation if a number of entries exceeds the limit
-                    /// there's no way for an owner to delete unneeded entries.
-                    let _prev = oe.insert(Value {
-                                              content: vec![],
-                                              entry_version: version,
-                                          });
-                    true
+            match new_data.entry(key) {
+                Entry::Occupied(mut entry) => {
+                    if version == entry.get().entry_version + 1 {
+                        let _ = entry.insert(Value {
+                                                 content: Vec::new(),
+                                                 entry_version: version,
+                                             });
+                    } else if !entry.get().content.is_empty() ||
+                              entry.get().entry_version != version {
+                        return Err(ClientError::InvalidSuccessor);
+                    }
                 }
-            } else {
-                false
-            };
-            if !version_valid {
-                return Err(ClientError::InvalidSuccessor);
+                Entry::Vacant(_) => return Err(ClientError::NoSuchEntry),
             }
         }
 
@@ -474,6 +466,14 @@ impl MutableData {
         if !self.is_action_allowed(requester, Action::ManagePermissions) {
             return Err(ClientError::AccessDenied);
         }
+
+        // Mutation has no effect, allow it to support idempotence.
+        if let Some(prev) = self.permissions.get(&user) {
+            if *prev == permissions && version == self.version {
+                return Ok(());
+            }
+        }
+
         if version != self.version + 1 {
             return Err(ClientError::InvalidSuccessor);
         }
@@ -514,6 +514,11 @@ impl MutableData {
         if !self.is_action_allowed(requester, Action::ManagePermissions) {
             return Err(ClientError::AccessDenied);
         }
+
+        if !self.permissions.contains_key(user) && version == self.version {
+            return Ok(());
+        }
+
         if version != self.version + 1 {
             return Err(ClientError::InvalidSuccessor);
         }
@@ -915,5 +920,49 @@ mod tests {
         // Get must always be allowed
         assert!(md.get(&[0]).is_some());
         assert!(md.get(&[1]).is_none());
+    }
+
+    #[test]
+    fn idempotent_operations() {
+        let (owner_key, _) = sign::gen_keypair();
+        let owners = iter::once(owner_key).collect();
+
+        let mut entries = BTreeMap::new();
+        let _ = entries.insert(vec![0],
+                               Value {
+                                   content: vec![],
+                                   entry_version: 0,
+                               });
+        let _ = entries.insert(vec![1],
+                               Value {
+                                   content: vec![],
+                                   entry_version: 0,
+                               });
+
+        let mut md = unwrap!(MutableData::new(rand::random(), 0, BTreeMap::new(), entries, owners));
+
+        // Mutating entries multiple times with the same actions is allowed.
+        let actions: BTreeMap<_, _> = EntryActions::new()
+            .ins(vec![2], vec![], 0)
+            .update(vec![0], vec![255], 1)
+            .del(vec![1], 1)
+            .into();
+
+        unwrap!(md.mutate_entries(actions.clone(), owner_key));
+        unwrap!(md.mutate_entries(actions, owner_key));
+
+        // Inserting the same permissions multiple times is allowed.
+        let (app_key, _) = sign::gen_keypair();
+        let user = User::Key(app_key);
+        let permissions = PermissionSet::new()
+            .allow(Action::Insert)
+            .allow(Action::Update);
+
+        unwrap!(md.set_user_permissions(user, permissions, 1, owner_key));
+        unwrap!(md.set_user_permissions(user, permissions, 1, owner_key));
+
+        // Deleting the same permissions multiple times is allowed.
+        unwrap!(md.del_user_permissions(&user, 2, owner_key));
+        unwrap!(md.del_user_permissions(&user, 2, owner_key));
     }
 }
