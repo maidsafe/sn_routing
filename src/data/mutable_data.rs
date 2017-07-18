@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use client_error::ClientError;
+use client_error::{ClientError, EntryError};
 use maidsafe_utilities::serialisation;
 use rust_sodium::crypto::sign::PublicKey;
 use std::collections::BTreeSet;
@@ -335,56 +335,67 @@ impl MutableData {
         }
 
         let mut new_data = self.data.clone();
+        let mut errors = BTreeMap::new();
 
         for (key, val) in insert {
-            if new_data.contains_key(&key) {
-                return Err(ClientError::EntryExists);
+            match new_data.entry(key) {
+                Entry::Occupied(entry) => {
+                    let _ = errors.insert(
+                        entry.key().clone(),
+                        EntryError::EntryExists(entry.get().entry_version),
+                    );
+                }
+                Entry::Vacant(entry) => {
+                    let _ = entry.insert(val);
+                }
             }
-            let _ = new_data.insert(key.clone(), val);
         }
 
         for (key, val) in update {
-            if !new_data.contains_key(&key) {
-                return Err(ClientError::NoSuchEntry);
-            }
-            let version_valid = if let Entry::Occupied(mut oe) = new_data.entry(key.clone()) {
-                if val.entry_version != oe.get().entry_version + 1 {
-                    false
-                } else {
-                    let _prev = oe.insert(val);
-                    true
+            match new_data.entry(key) {
+                Entry::Occupied(mut entry) => {
+                    let current_version = entry.get().entry_version;
+                    if val.entry_version == current_version + 1 {
+                        let _ = entry.insert(val);
+                    } else {
+                        let _ = errors.insert(
+                            entry.key().clone(),
+                            EntryError::InvalidSuccessor(current_version),
+                        );
+                    }
                 }
-            } else {
-                false
-            };
-            if !version_valid {
-                return Err(ClientError::InvalidSuccessor);
+                Entry::Vacant(entry) => {
+                    let _ = errors.insert(entry.key().clone(), EntryError::NoSuchEntry);
+                }
             }
         }
 
         for (key, version) in delete {
-            if !new_data.contains_key(&key) {
-                return Err(ClientError::NoSuchEntry);
-            }
-            let version_valid = if let Entry::Occupied(mut oe) = new_data.entry(key.clone()) {
-                if version != oe.get().entry_version + 1 {
-                    false
-                } else {
-                    /// TODO(nbaksalyar): find a way to decrease a number of entries after deletion.
-                    /// In the current implementation if a number of entries exceeds the limit
-                    /// there's no way for an owner to delete unneeded entries.
-                    let _prev = oe.insert(Value {
-                        content: vec![],
-                        entry_version: version,
-                    });
-                    true
+            /// TODO(nbaksalyar): find a way to decrease a number of entries after deletion.
+            /// In the current implementation if a number of entries exceeds the limit
+            /// there's no way for an owner to delete unneeded entries.
+            match new_data.entry(key) {
+                Entry::Occupied(mut entry) => {
+                    let current_version = entry.get().entry_version;
+                    if version == current_version + 1 {
+                        let _ = entry.insert(Value {
+                                                 content: Vec::new(),
+                                                 entry_version: version,
+                                             });
+                    } else {
+                        let _ =
+                            errors.insert(entry.key().clone(),
+                                          EntryError::InvalidSuccessor(current_version));
+                    }
                 }
-            } else {
-                false
-            };
-            if !version_valid {
-                return Err(ClientError::InvalidSuccessor);
+                Entry::Vacant(entry) => {
+                    let _ = errors.insert(entry.key().clone(), EntryError::NoSuchEntry);
+                }
             }
+        }
+
+        if !errors.is_empty() {
+            return Err(ClientError::InvalidEntryActions(errors));
         }
 
         if new_data.len() > MAX_MUTABLE_DATA_ENTRIES as usize {
@@ -481,7 +492,7 @@ impl MutableData {
             return Err(ClientError::AccessDenied);
         }
         if version != self.version + 1 {
-            return Err(ClientError::InvalidSuccessor);
+            return Err(ClientError::InvalidSuccessor(self.version));
         }
         let prev = self.permissions.insert(user, permissions);
         if !self.validate_size() {
@@ -523,7 +534,7 @@ impl MutableData {
             return Err(ClientError::AccessDenied);
         }
         if version != self.version + 1 {
-            return Err(ClientError::InvalidSuccessor);
+            return Err(ClientError::InvalidSuccessor(self.version));
         }
         if !self.permissions.contains_key(user) {
             return Err(ClientError::NoSuchKey);
@@ -547,7 +558,7 @@ impl MutableData {
     /// Change owner of the mutable data.
     pub fn change_owner(&mut self, new_owner: PublicKey, version: u64) -> Result<(), ClientError> {
         if version != self.version + 1 {
-            return Err(ClientError::InvalidSuccessor);
+            return Err(ClientError::InvalidSuccessor(self.version));
         }
         self.owners.clear();
         self.owners.insert(new_owner);
@@ -623,13 +634,12 @@ mod tests {
     use std::iter;
 
     macro_rules! assert_err {
-        ($left: expr, $err: path) => {{
+        ($left: expr, $err: pat) => {{
             let result = $left; // required to prevent multiple repeating expansions
-            assert!(if let Err($err) = result {
-                true
-            } else {
-                false
-            }, "Expected Err({:?}), found {:?}", $err, result);
+            match result {
+                Err($err) => (),
+                _ => panic!("Expected Err({:?}), found {:?}", stringify!($err), result),
+            }
         }}
     }
 
@@ -884,10 +894,15 @@ mod tests {
                 entry_version: 0,
             }),
         );
-        assert_err!(
-            md.mutate_entries(v2.clone(), owner),
-            ClientError::InvalidSuccessor
-        );
+        match md.mutate_entries(v2.clone(), owner) {
+            Err(ClientError::InvalidEntryActions(errors)) => {
+                assert_eq!(
+                    errors.get([1].as_ref()),
+                    Some(&EntryError::InvalidSuccessor(0))
+                );
+            }
+            x => panic!("Unexpected {:?}", x),
+        }
 
         let _ = v2.insert(
             vec![1],
@@ -896,10 +911,15 @@ mod tests {
                 entry_version: 2,
             }),
         );
-        assert_err!(
-            md.mutate_entries(v2.clone(), owner),
-            ClientError::InvalidSuccessor
-        );
+        match md.mutate_entries(v2.clone(), owner) {
+            Err(ClientError::InvalidEntryActions(errors)) => {
+                assert_eq!(
+                    errors.get([1].as_ref()),
+                    Some(&EntryError::InvalidSuccessor(0))
+                );
+            }
+            x => panic!("Unexpected {:?}", x),
+        }
 
         // Check update with a valid version
         let _ = v2.insert(
@@ -914,10 +934,15 @@ mod tests {
         // Check delete version
         let mut del = BTreeMap::new();
         let _ = del.insert(vec![1], EntryAction::Del(1));
-        assert_err!(
-            md.mutate_entries(del.clone(), owner),
-            ClientError::InvalidSuccessor
-        );
+        match md.mutate_entries(del.clone(), owner) {
+            Err(ClientError::InvalidEntryActions(errors)) => {
+                assert_eq!(
+                    errors.get([1].as_ref()),
+                    Some(&EntryError::InvalidSuccessor(1))
+                );
+            }
+            x => panic!("Unexpected {:?}", x),
+        }
 
         let _ = del.insert(vec![1], EntryAction::Del(2));
         assert!(md.mutate_entries(del, owner).is_ok());
@@ -970,7 +995,7 @@ mod tests {
         );
         assert_err!(
             md.set_user_permissions(User::Key(pk1), ps2, 1, pk1),
-            ClientError::InvalidSuccessor
+            ClientError::InvalidSuccessor(1)
         );
         assert!(md.set_user_permissions(User::Key(pk1), ps2, 2, pk1).is_ok());
 

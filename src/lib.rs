@@ -222,7 +222,7 @@ pub const ACC_LOGIN_ENTRY_KEY: &'static [u8] = b"Login";
 
 pub use cache::{Cache, NullCache};
 pub use client::Client;
-pub use client_error::ClientError;
+pub use client_error::{ClientError, EntryError};
 pub use common_types::AccountPacket;
 pub use data::{Action, EntryAction, EntryActions, ImmutableData, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
                MAX_MUTABLE_DATA_ENTRIES, MAX_MUTABLE_DATA_SIZE_IN_BYTES, MutableData,

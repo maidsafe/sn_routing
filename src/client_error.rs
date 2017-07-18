@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 
@@ -35,17 +36,17 @@ pub enum ClientError {
     DataTooLarge,
     /// Requested entry not found
     NoSuchEntry,
-    /// Attempt to insert an already existing entry
-    EntryExists,
     /// Exceeded a limit on a number of entries
     TooManyEntries,
+    /// Some entry actions are not valid.
+    InvalidEntryActions(BTreeMap<Vec<u8>, EntryError>),
     /// Key does not exist
     NoSuchKey,
     /// The list of owner keys is invalid
     InvalidOwners,
-    /// Invalid successor for performing a given mutating operation, e.g. signature mismatch or
-    /// invalid data versioning
-    InvalidSuccessor,
+    /// Invalid version for performing a given mutating operation. Contains the
+    /// current data version.
+    InvalidSuccessor(u64),
     /// Invalid Operation such as a POST on ImmutableData
     InvalidOperation,
     /// Wrong invitation token specified by the client
@@ -78,8 +79,10 @@ impl Display for ClientError {
             ClientError::DataExists => write!(f, "Data given already exists"),
             ClientError::DataTooLarge => write!(f, "Data given is too large"),
             ClientError::NoSuchEntry => write!(f, "Requested entry not found"),
-            ClientError::EntryExists => write!(f, "Entry already exists"),
             ClientError::TooManyEntries => write!(f, "Exceeded a limit on a number of entries"),
+            ClientError::InvalidEntryActions(ref errors) => {
+                write!(f, "Entry actions are invalid: {:?}", errors)
+            }
             ClientError::NoSuchKey => write!(f, "Key does not exists"),
             ClientError::InvalidOwners => write!(f, "The list of owner keys is invalid"),
             ClientError::InvalidOperation => write!(f, "Requested operation is not allowed"),
@@ -87,7 +90,7 @@ impl Display for ClientError {
             ClientError::InvitationAlreadyClaimed => {
                 write!(f, "Invitation token has already been used")
             }
-            ClientError::InvalidSuccessor => {
+            ClientError::InvalidSuccessor(_) => {
                 write!(f, "Data given is not a valid successor of stored data")
             }
             ClientError::LowBalance => write!(f, "Insufficient account balance for this operation"),
@@ -107,11 +110,11 @@ impl Error for ClientError {
             ClientError::DataExists => "Data exists",
             ClientError::DataTooLarge => "Data is too large",
             ClientError::NoSuchEntry => "No such entry",
-            ClientError::EntryExists => "Entry exists",
             ClientError::TooManyEntries => "Too many entries",
+            ClientError::InvalidEntryActions(_) => "Invalid entry actions",
             ClientError::NoSuchKey => "No such key",
             ClientError::InvalidOwners => "Invalid owners",
-            ClientError::InvalidSuccessor => "Invalid data successor",
+            ClientError::InvalidSuccessor(_) => "Invalid data successor",
             ClientError::InvalidOperation => "Invalid operation",
             ClientError::InvalidInvitation => "Invalid invitation token",
             ClientError::InvitationAlreadyClaimed => "Invitation token already claimed",
@@ -120,6 +123,17 @@ impl Error for ClientError {
             ClientError::NetworkOther(ref error) => error,
         }
     }
+}
+
+/// Entry error for `ClientError::InvalidEntryActions`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum EntryError {
+    /// Entry does not exists.
+    NoSuchEntry,
+    /// Entry already exists. Contains the current entry version.
+    EntryExists(u64),
+    /// Invalid version when updating an entry. Contains the current entry version.
+    InvalidSuccessor(u64),
 }
 
 #[cfg(test)]
