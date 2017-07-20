@@ -57,6 +57,7 @@ pub struct ResourceProver {
     get_approval_timer_token: Option<u64>,
     approval_progress_timer_token: Option<u64>,
     approval_expiry_time: Instant,
+    approval_timeout_secs: u64,
     /// Number of expected resource proof challengers.
     challenger_count: usize,
     /// Map of ResourceProofResponse parts.
@@ -74,6 +75,7 @@ impl ResourceProver {
             get_approval_timer_token: None,
             approval_progress_timer_token: None,
             approval_expiry_time: Instant::now(),
+            approval_timeout_secs: APPROVAL_TIMEOUT_SECS,
             challenger_count: challenger_count,
             response_parts: Default::default(),
             workers: Default::default(),
@@ -82,8 +84,12 @@ impl ResourceProver {
     }
 
     /// Start timers when receiving a new name (after relocation, before resource proof)
-    pub fn start(&mut self) {
-        let duration = Duration::from_secs(APPROVAL_TIMEOUT_SECS);
+    pub fn start(&mut self, resource_proof_disabled: bool) {
+        // Reduced waiting time when resource proof is disabled.
+        if resource_proof_disabled {
+            self.approval_timeout_secs = 30;
+        }
+        let duration = Duration::from_secs(self.approval_timeout_secs);
         self.approval_expiry_time = Instant::now() + duration;
         self.get_approval_timer_token = Some(self.timer.schedule(duration));
         self.approval_progress_timer_token =
@@ -235,7 +241,7 @@ impl ResourceProver {
                   log_ident,
                   self.response_progress(),
                   remaining_duration.display_secs(),
-                  APPROVAL_TIMEOUT_SECS);
+                  self.approval_timeout_secs);
 
             Some(Transition::Stay)
         } else {

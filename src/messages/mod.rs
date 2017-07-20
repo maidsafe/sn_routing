@@ -399,7 +399,7 @@ impl SignedMessage {
         invalid
     }
 
-    // Returns true iff there are enough signatures (note that this method does not verify the
+    // Returns true if there are enough signatures (note that this method does not verify the
     // signatures, it only counts them; it also does not verify `self.src_sections`).
     fn has_enough_sigs(&self, min_section_size: usize) -> bool {
         use Authority::*;

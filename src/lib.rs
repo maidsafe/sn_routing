@@ -123,6 +123,7 @@
 // Allow `panic_params` until https://github.com/Manishearth/rust-clippy/issues/768 is resolved.
 #![cfg_attr(feature="cargo-clippy", allow(panic_params))]
 
+extern crate config_file_handler;
 extern crate hex;
 #[macro_use]
 extern crate log;
@@ -157,6 +158,7 @@ mod cache;
 mod client;
 mod client_error;
 mod common_types;
+mod config_handler;
 mod cumulative_own_section_merge;
 mod data;
 mod error;
