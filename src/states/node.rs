@@ -1426,12 +1426,7 @@ impl Node {
                   *priority >= DEFAULT_PRIORITY &&
                   payload.len() <= MAX_PART_LEN => {
                 self.clients_rate_limiter
-                    .add_message(self.peer_mgr.client_num() as u64,
-                                 ip,
-                                 hash,
-                                 *part_count,
-                                 *part_index,
-                                 payload)
+                    .add_message(ip, hash, *part_count, *part_index, payload)
             }
             _ => {
                 debug!("{:?} Illegitimate client message {:?}. Refusing to relay.",
@@ -3422,10 +3417,6 @@ impl Node {
         } else {
             Err(RoutingError::NotEnoughSignatures)
         }
-    }
-
-    pub fn get_clients_usage(&self) -> BTreeMap<IpAddr, u64> {
-        self.clients_rate_limiter.get_clients_usage()
     }
 
     pub fn get_banned_client_ips(&self) -> BTreeSet<IpAddr> {
