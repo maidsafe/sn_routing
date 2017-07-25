@@ -319,10 +319,8 @@ impl ExpectedGets {
                 {
                     let key = (name, msg_id, src, dst);
                     if dst.is_multiple() {
-                        if !self.sections.get(&key.3).map_or(false, |entry| {
-                            entry.contains(&node.name())
-                        })
-                        {
+                        let checker = |entry: &HashSet<XorName>| entry.contains(&node.name());
+                        if !self.sections.get(&key.3).map_or(false, checker) {
                             // TODO: depends on the affected tunnels due to the dropped nodes, there
                             // will be unexpected receiver for group (only used NaeManager in this
                             // test). This shall no longer happen once routing refactored.

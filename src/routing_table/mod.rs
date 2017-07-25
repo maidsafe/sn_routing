@@ -252,10 +252,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         // need to assign the original members of our section to the new appropriate sections.
         let our_section = mem::replace(&mut self.our_section, BTreeSet::new());
         for name in our_section {
-            if self.get_section_mut(&name).map_or(true, |section| {
-                !section.insert(name)
-            })
-            {
+            let sec_insert = |section: &mut BTreeSet<T>| !section.insert(name);
+            if self.get_section_mut(&name).map_or(true, sec_insert) {
                 return Err(Error::InvariantViolation);
             }
         }
@@ -1036,10 +1034,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     }
 
     fn merge(&mut self, new_ver_pfx: &VersionedPrefix<T>) {
+        let checker = |pfx: &Prefix<T>| new_ver_pfx.prefix().is_extension_of(pfx);
         if new_ver_pfx.prefix().is_extension_of(&self.our_prefix) ||
-            self.sections.keys().any(|pfx| {
-                new_ver_pfx.prefix().is_extension_of(pfx)
-            })
+            self.sections.keys().any(checker)
         {
             return; // Not a merge!
         }

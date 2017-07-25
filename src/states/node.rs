@@ -2351,9 +2351,11 @@ impl Node {
             }
         };
 
-        if self.peer_mgr.get_peer(&tunnel_id).map_or(false, |peer| {
-            peer.state().can_tunnel_for()
-        }) && self.tunnels.add(dst_id, tunnel_id) &&
+        let can_tunnel_for = |peer: &Peer| peer.state().can_tunnel_for();
+        if self.peer_mgr.get_peer(&tunnel_id).map_or(
+            false,
+            can_tunnel_for,
+        ) && self.tunnels.add(dst_id, tunnel_id) &&
             self.peer_mgr.tunnelling_to(&dst_id)
         {
             debug!(
@@ -2554,8 +2556,11 @@ impl Node {
 
         // If we're running in mock-crust mode, and we have relocation interval, don't try to do
         // section balancing, as it will break things.
-        let forbid_join_balancing = cfg!(feature = "use-mock-crust") &&
-            self.next_relocation_interval.is_some();
+        let forbid_join_balancing = if cfg!(feature = "use-mock-crust") {
+            self.next_relocation_interval.is_some()
+        } else {
+            false
+        };
 
         if &min_len_prefix != self.our_prefix() && !forbid_join_balancing {
             let request_content = MessageContent::ExpectCandidate {

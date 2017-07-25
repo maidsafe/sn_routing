@@ -104,7 +104,7 @@ Options:
     const TAG: u64 = 10_000;
     const KEY: &'static [u8] = &[];
 
-    #[derive(RustcDecodable, Debug)]
+    #[derive(RustcDecodable, Debug, Deserialize)]
     struct Args {
         flag_first: bool,
         flag_node: bool,
@@ -250,7 +250,7 @@ Options:
         unwrap!(log::init(false));
 
         let args: Args = Docopt::new(USAGE)
-            .and_then(|docopt| docopt.decode())
+            .and_then(|docopt| docopt.deserialize())
             .unwrap_or_else(|error| error.exit());
 
         if args.flag_first {

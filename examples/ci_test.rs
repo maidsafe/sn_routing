@@ -351,7 +351,7 @@ Options:
 ";
     // ================================================================================
 
-    #[derive(PartialEq, Eq, Debug, Clone, RustcDecodable)]
+    #[derive(PartialEq, Eq, Debug, Deserialize, Clone, RustcDecodable)]
     struct Args {
         arg_batches: Option<usize>,
         arg_nodes: Option<usize>,
@@ -366,7 +366,7 @@ Options:
     #[cfg_attr(feature = "cargo-clippy", allow(mutex_atomic))]
     pub fn run_main() {
         let args: Args = Docopt::new(USAGE)
-            .and_then(|docopt| docopt.decode())
+            .and_then(|docopt| docopt.deserialize())
             .unwrap_or_else(|error| error.exit());
 
         let run_network_test = !(args.flag_output.is_some() ||

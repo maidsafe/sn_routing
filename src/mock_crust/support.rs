@@ -228,20 +228,20 @@ impl<UID: Uid> Network<UID> {
 
     fn pop_packet(&self) -> Option<(Endpoint, Endpoint, Packet<UID>)> {
         let mut network_impl = self.0.borrow_mut();
-        let keys: Vec<_> = if network_impl.queue.keys().all(|&(ref s, ref r)| {
-            network_impl.delayed_connections.contains(&(*s, *r))
-        })
-        {
-            network_impl.queue.keys().cloned().collect()
-        } else {
-            network_impl
-                .queue
-                .keys()
-                .filter(|&&(ref s, ref r)| {
-                    !network_impl.delayed_connections.contains(&(*s, *r))
-                })
-                .cloned()
-                .collect()
+        let keys: Vec<_> = {
+            let checker = |&(s, r)| network_impl.delayed_connections.contains(&(s, r));
+            if network_impl.queue.keys().all(checker) {
+                network_impl.queue.keys().cloned().collect()
+            } else {
+                network_impl
+                    .queue
+                    .keys()
+                    .filter(|&&(ref s, ref r)| {
+                        !network_impl.delayed_connections.contains(&(*s, *r))
+                    })
+                    .cloned()
+                    .collect()
+            }
         };
 
         let (sender, receiver) = if let Some(key) = network_impl.rng.choose(&keys) {
@@ -542,10 +542,8 @@ impl<UID: Uid> ServiceImpl<UID> {
     }
 
     fn add_connection(&mut self, uid: UID, peer_endpoint: Endpoint, kind: CrustUser) -> bool {
-        if self.connections.iter().any(|&(id, ep, _)| {
-            id == uid && ep == peer_endpoint
-        })
-        {
+        let checker = |&(id, ep, _)| id == uid && ep == peer_endpoint;
+        if self.connections.iter().any(checker) {
             // Connection already exists
             return false;
         }
