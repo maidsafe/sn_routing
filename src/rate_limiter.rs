@@ -180,7 +180,7 @@ mod tests {
     use tiny_keccak::sha3_256;
     use types::MessageId;
 
-    // Creates a random `GetIData` request and returns it serialised along with its hash digest.
+    /// Creates a random `GetIData` request and returns it serialised along with its hash digest.
     fn create_get_idata_request() -> (Vec<u8>, Digest256) {
         let payload = unwrap!(serialisation::serialise(
             &UserMessage::Request(Request::GetIData {
@@ -223,8 +223,8 @@ mod tests {
         }
     }
 
-    // Checks that a single client cannot exceed its individual limit and that its throughput is the
-    // full rate of the rate-limiter.
+    /// Checks that a single client cannot exceed its individual limit and that its throughput is
+    /// the full rate of the rate-limiter.
     #[test]
     fn single_client() {
         let mut rate_limiter = RateLimiter::new();
@@ -250,8 +250,8 @@ mod tests {
         assert_get_idata_req_can_be_added(&mut rate_limiter, &client);
     }
 
-    // Checks that a second client can add messages even when an initial one has hit its limit. Also
-    // checks that the each client's throughput is half the full rate of the rate-limiter.
+    /// Checks that a second client can add messages even when an initial one has hit its limit.
+    /// Also checks that the each client's throughput is half the full rate of the rate-limiter.
     #[test]
     fn two_clients() {
         let mut rate_limiter = RateLimiter::new();
@@ -294,7 +294,54 @@ mod tests {
         assert_get_idata_req_can_be_added(&mut rate_limiter, &client2);
     }
 
-    // Checks that many clients can all add messages at the same rate.
+    /// Checks that if two clients add messages with a delay between them, the rate-limiter's
+    /// throughput remains constant, but the per-client throughput drops when both clients have
+    /// messages and increases when just one has messages.
+    #[test]
+    fn staggered_start() {
+        let mut rate_limiter = RateLimiter::new();
+        let client1 = IpAddr::from([0, 0, 0, 0]);
+        let client2 = IpAddr::from([1, 1, 1, 1]);
+
+        // This is the time during which half of a `GetIData` request will leak away. Assert this
+        // is the case by adding a large request, then waiting for two times `wait_millis` then
+        // trying to add a large request again.
+        let wait_millis = (MAX_IMMUTABLE_DATA_SIZE_IN_BYTES * 500 / RATE as u64) + 1; // round up
+        assert_get_idata_req_can_be_added(&mut rate_limiter, &client1);
+        FakeClock::advance_time(wait_millis);
+        assert_get_idata_req_cannot_be_added(&mut rate_limiter, &client1);
+        FakeClock::advance_time(wait_millis);
+        assert_get_idata_req_can_be_added(&mut rate_limiter, &client1);
+
+        // Allow the rate-limiter to empty.
+        FakeClock::advance_time(2 * wait_millis);
+
+        // Client 1 adds a large message then after `wait_millis`, Client 2 does likewise.
+        assert_get_idata_req_can_be_added(&mut rate_limiter, &client1);
+        FakeClock::advance_time(wait_millis);
+        assert_get_idata_req_can_be_added(&mut rate_limiter, &client2);
+
+        // We wait for a further `wait_millis` then confirm that neither client can add a further
+        // large message at this stage (3/4 of the first message and 1/4 of the second message
+        // should have drained).
+        FakeClock::advance_time(wait_millis);
+        assert_get_idata_req_cannot_be_added(&mut rate_limiter, &client1);
+        assert_get_idata_req_cannot_be_added(&mut rate_limiter, &client2);
+
+        // After a further `wait_millis`, Client 1 should be able to add a new large message, but
+        // not Client 2 (the first message and 1/2 of the second message should have drained).
+        FakeClock::advance_time(wait_millis);
+        assert_get_idata_req_can_be_added(&mut rate_limiter, &client1);
+        assert_get_idata_req_cannot_be_added(&mut rate_limiter, &client2);
+
+        // After a further `3 * wait_millis`, the second and third messages should both have drained
+        // allowing both clients to add new large messages.
+        FakeClock::advance_time(3 * wait_millis);
+        assert_get_idata_req_can_be_added(&mut rate_limiter, &client1);
+        assert_get_idata_req_can_be_added(&mut rate_limiter, &client2);
+    }
+
+    /// Checks that many clients can all add messages at the same rate.
     #[test]
     fn many_clients() {
         let mut rate_limiter = RateLimiter::new();
@@ -328,7 +375,7 @@ mod tests {
         }
     }
 
-    // Check that invalid messages are handled correctly.
+    /// Checks that invalid messages are handled correctly.
     #[test]
     fn invalid_messages() {
         let mut rate_limiter = RateLimiter::new();
