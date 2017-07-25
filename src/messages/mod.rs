@@ -61,7 +61,7 @@ pub const CLIENT_GET_PRIORITY: u8 = 3;
 /// This is the only type allowed to be sent / received on the network.
 #[derive(Debug, Serialize, Deserialize)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
+#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
 pub enum Message {
     /// A message sent between two nodes directly
     Direct(DirectMessage),
@@ -103,7 +103,7 @@ impl Message {
 /// Allows routing to directly send specific messages between nodes.
 #[derive(Serialize, Deserialize)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
+#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
 pub enum DirectMessage {
     /// Sent from members of a section or group message's source authority to the first hop. The
     /// message will only be relayed once enough signatures have been accumulated.
@@ -203,18 +203,19 @@ pub struct HopMessage {
 
 impl HopMessage {
     /// Wrap `content` for transmission to the next hop and sign it.
-    pub fn new(content: SignedMessage,
-               route: u8,
-               sent_to: BTreeSet<XorName>,
-               signing_key: &sign::SecretKey)
-               -> Result<HopMessage, RoutingError> {
+    pub fn new(
+        content: SignedMessage,
+        route: u8,
+        sent_to: BTreeSet<XorName>,
+        signing_key: &sign::SecretKey,
+    ) -> Result<HopMessage, RoutingError> {
         let bytes_to_sign = serialise(&content)?;
         Ok(HopMessage {
-               content: content,
-               route: route,
-               sent_to: sent_to,
-               signature: sign::sign_detached(&bytes_to_sign, signing_key),
-           })
+            content: content,
+            route: route,
+            sent_to: sent_to,
+            signature: sign::sign_detached(&bytes_to_sign, signing_key),
+        })
     }
 
     /// Validate that the message is signed by `verification_key` contained in message.
@@ -271,17 +272,18 @@ impl SignedMessage {
     /// Creates a `SignedMessage` with the given `content` and signed by the given `full_id`.
     ///
     /// Requires the list `src_sections` of nodes who should sign this message.
-    pub fn new(content: RoutingMessage,
-               full_id: &FullId,
-               mut src_sections: Vec<SectionList>)
-               -> Result<SignedMessage, RoutingError> {
+    pub fn new(
+        content: RoutingMessage,
+        full_id: &FullId,
+        mut src_sections: Vec<SectionList>,
+    ) -> Result<SignedMessage, RoutingError> {
         src_sections.sort_by_key(|list| list.prefix);
         let sig = sign::sign_detached(&serialise(&content)?, full_id.signing_private_key());
         Ok(SignedMessage {
-               content: content,
-               src_sections: src_sections,
-               signatures: iter::once((*full_id.public_id(), sig)).collect(),
-           })
+            content: content,
+            src_sections: src_sections,
+            signatures: iter::once((*full_id.public_id(), sig)).collect(),
+        })
     }
 
     /// Confirms the signatures.
@@ -304,10 +306,7 @@ impl SignedMessage {
 
     /// Returns the number of nodes in the source authority.
     pub fn src_size(&self) -> usize {
-        self.src_sections
-            .iter()
-            .map(|sl| sl.pub_ids.len())
-            .sum()
+        self.src_sections.iter().map(|sl| sl.pub_ids.len()).sum()
     }
 
     /// Adds the given signature if it is new, without validating it. If the collection of section
@@ -371,9 +370,9 @@ impl SignedMessage {
 
     // Returns true iff `pub_id` is in self.section_lists
     fn is_sender(&self, pub_id: &PublicId) -> bool {
-        self.src_sections
-            .iter()
-            .any(|list| list.pub_ids.contains(pub_id))
+        self.src_sections.iter().any(
+            |list| list.pub_ids.contains(pub_id),
+        )
     }
 
     // Returns a list of all invalid signatures (not from an expected key or not cryptographically
@@ -385,10 +384,10 @@ impl SignedMessage {
                 // Remove if not in sending nodes or signature is invalid:
                 let is_valid = if let Authority::Client { ref client_id, .. } = self.content.src {
                     client_id == pub_id &&
-                    sign::verify_detached(sig, &signed_bytes, client_id.signing_public_key())
+                        sign::verify_detached(sig, &signed_bytes, client_id.signing_public_key())
                 } else {
                     self.is_sender(pub_id) &&
-                    sign::verify_detached(sig, &signed_bytes, pub_id.signing_public_key())
+                        sign::verify_detached(sig, &signed_bytes, pub_id.signing_public_key())
                 };
                 if is_valid { None } else { Some(*pub_id) }
             })
@@ -425,23 +424,21 @@ impl SignedMessage {
             }
             Section(_) => {
                 // Note: there should be exactly one source section, but we use safe code:
-                let num_sending = self.src_sections
-                    .iter()
-                    .fold(0, |count, list| count + list.pub_ids.len());
+                let num_sending = self.src_sections.iter().fold(0, |count, list| {
+                    count + list.pub_ids.len()
+                });
                 let valid_sigs = self.signatures.len();
                 valid_sigs * QUORUM_DENOMINATOR > num_sending * QUORUM_NUMERATOR
             }
             PrefixSection(_) => {
                 // Each section must have enough signatures:
-                self.src_sections
-                    .iter()
-                    .all(|list| {
-                             let valid_sigs = self.signatures
-                                 .keys()
-                                 .filter(|pub_id| list.pub_ids.contains(pub_id))
-                                 .count();
-                             valid_sigs * QUORUM_DENOMINATOR > list.pub_ids.len() * QUORUM_NUMERATOR
-                         })
+                self.src_sections.iter().all(|list| {
+                    let valid_sigs = self.signatures
+                        .keys()
+                        .filter(|pub_id| list.pub_ids.contains(pub_id))
+                        .count();
+                    valid_sigs * QUORUM_DENOMINATOR > list.pub_ids.len() * QUORUM_NUMERATOR
+                })
             }
             ManagedNode(_) | Client { .. } => self.signatures.len() == 1,
         }
@@ -463,10 +460,10 @@ impl RoutingMessage {
     /// Create ack for the given message
     pub fn ack_from(msg: &RoutingMessage, src: Authority<XorName>) -> Result<Self, RoutingError> {
         Ok(RoutingMessage {
-               src: src,
-               dst: msg.src,
-               content: MessageContent::Ack(Ack::compute(msg)?, msg.priority()),
-           })
+            src: src,
+            dst: msg.src,
+            content: MessageContent::Ack(Ack::compute(msg)?, msg.priority()),
+        })
     }
 
     /// Returns the priority Crust should send this message with.
@@ -475,9 +472,10 @@ impl RoutingMessage {
     }
 
     /// Returns a `DirectMessage::MessageSignature` for this message.
-    pub fn to_signature(&self,
-                        signing_key: &sign::SecretKey)
-                        -> Result<DirectMessage, RoutingError> {
+    pub fn to_signature(
+        &self,
+        signing_key: &sign::SecretKey,
+    ) -> Result<DirectMessage, RoutingError> {
         let serialised_msg = serialise(self)?;
         let hash = sha3_256(&serialised_msg);
         let sig = sign::sign_detached(&serialised_msg, signing_key);
@@ -545,7 +543,7 @@ impl RoutingMessage {
 ///
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
+#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
 pub enum MessageContent {
     // ---------- Internal ------------
     /// Ask the network to relocate you.
@@ -687,9 +685,11 @@ impl Debug for DirectMessage {
         use self::DirectMessage::*;
         match *self {
             MessageSignature(ref digest, _) => {
-                write!(formatter,
-                       "MessageSignature ({}, ..)",
-                       utils::format_binary_array(&digest))
+                write!(
+                    formatter,
+                    "MessageSignature ({}, ..)",
+                    utils::format_binary_array(&digest)
+                )
             }
             SectionListSignature(ref sec_list, _) => {
                 write!(formatter, "SectionListSignature({:?}, ..)", sec_list.prefix)
@@ -707,11 +707,13 @@ impl Debug for DirectMessage {
                 ref target_size,
                 ref difficulty,
             } => {
-                write!(formatter,
-                       "ResourceProof {{ seed: {:?}, target_size: {:?}, difficulty: {:?} }}",
-                       seed,
-                       target_size,
-                       difficulty)
+                write!(
+                    formatter,
+                    "ResourceProof {{ seed: {:?}, target_size: {:?}, difficulty: {:?} }}",
+                    seed,
+                    target_size,
+                    difficulty
+                )
             }
             ResourceProofResponse {
                 part_index,
@@ -719,21 +721,25 @@ impl Debug for DirectMessage {
                 ref proof,
                 leading_zero_bytes,
             } => {
-                write!(formatter,
-                       "ResourceProofResponse {{ part {}/{}, proof_len: {:?}, leading_zero_bytes: \
+                write!(
+                    formatter,
+                    "ResourceProofResponse {{ part {}/{}, proof_len: {:?}, leading_zero_bytes: \
                         {:?} }}",
-                       part_index + 1,
-                       part_count,
-                       proof.len(),
-                       leading_zero_bytes)
+                    part_index + 1,
+                    part_count,
+                    proof.len(),
+                    leading_zero_bytes
+                )
             }
             ResourceProofResponseReceipt => write!(formatter, "ResourceProofResponseReceipt"),
             ProxyRateLimitExceeded(ref hash) => {
-                write!(formatter,
-                       "ProxyRateLimitExceeded({:02x}{:02x}{:02x}..)",
-                       hash[0],
-                       hash[1],
-                       hash[2])
+                write!(
+                    formatter,
+                    "ProxyRateLimitExceeded({:02x}{:02x}{:02x}..)",
+                    hash[0],
+                    hash[1],
+                    hash[2]
+                )
             }
         }
     }
@@ -741,20 +747,24 @@ impl Debug for DirectMessage {
 
 impl Debug for HopMessage {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(formatter,
-               "HopMessage {{ content: {:?}, route: {}, sent_to: .., signature: .. }}",
-               self.content,
-               self.route)
+        write!(
+            formatter,
+            "HopMessage {{ content: {:?}, route: {}, sent_to: .., signature: .. }}",
+            self.content,
+            self.route
+        )
     }
 }
 
 impl Debug for SignedMessage {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(formatter,
-               "SignedMessage {{ content: {:?}, sending nodes: {:?}, signatures: {:?} }}",
-               self.content,
-               self.src_sections,
-               self.signatures.keys().collect_vec())
+        write!(
+            formatter,
+            "SignedMessage {{ content: {:?}, sending nodes: {:?}, signatures: {:?} }}",
+            self.content,
+            self.src_sections,
+            self.signatures.keys().collect_vec()
+        )
     }
 }
 
@@ -768,51 +778,61 @@ impl Debug for MessageContent {
                 ref old_client_auth,
                 ref message_id,
             } => {
-                write!(formatter,
-                       "ExpectCandidate {{ {:?}, {:?}, {:?} }}",
-                       old_public_id,
-                       old_client_auth,
-                       message_id)
+                write!(
+                    formatter,
+                    "ExpectCandidate {{ {:?}, {:?}, {:?} }}",
+                    old_public_id,
+                    old_client_auth,
+                    message_id
+                )
             }
             ConnectionInfoRequest {
                 ref pub_id,
                 ref msg_id,
                 ..
             } => {
-                write!(formatter,
-                       "ConnectionInfoRequest {{ {:?}, {:?}, .. }}",
-                       pub_id,
-                       msg_id)
+                write!(
+                    formatter,
+                    "ConnectionInfoRequest {{ {:?}, {:?}, .. }}",
+                    pub_id,
+                    msg_id
+                )
             }
             ConnectionInfoResponse {
                 ref pub_id,
                 ref msg_id,
                 ..
             } => {
-                write!(formatter,
-                       "ConnectionInfoResponse {{ {:?}, {:?}, .. }}",
-                       pub_id,
-                       msg_id)
+                write!(
+                    formatter,
+                    "ConnectionInfoResponse {{ {:?}, {:?}, .. }}",
+                    pub_id,
+                    msg_id
+                )
             }
             RelocateResponse {
                 ref target_interval,
                 ref section,
                 ref message_id,
             } => {
-                write!(formatter,
-                       "RelocateResponse {{ {:?}, {:?}, {:?} }}",
-                       target_interval,
-                       section,
-                       message_id)
+                write!(
+                    formatter,
+                    "RelocateResponse {{ {:?}, {:?}, {:?} }}",
+                    target_interval,
+                    section,
+                    message_id
+                )
             }
             SectionUpdate {
                 ref versioned_prefix,
                 ref members,
             } => {
-                write!(formatter,
-                       "SectionUpdate {{ {:?}, {:?} }}",
-                       versioned_prefix,
-                       members)
+                write!(
+                    formatter,
+                    "SectionUpdate {{ {:?}, {:?} }}",
+                    versioned_prefix,
+                    members
+                )
             }
             SectionSplit(ref ver_pfx, ref joining_node) => {
                 write!(formatter, "SectionSplit({:?}, {:?})", ver_pfx, joining_node)
@@ -830,16 +850,18 @@ impl Debug for MessageContent {
                 cacheable,
                 ..
             } => {
-                write!(formatter,
-                       "UserMessagePart {{ {}/{}, priority: {}, cacheable: {}, \
+                write!(
+                    formatter,
+                    "UserMessagePart {{ {}/{}, priority: {}, cacheable: {}, \
                         {:02x}{:02x}{:02x}.. }}",
-                       part_index + 1,
-                       part_count,
-                       priority,
-                       cacheable,
-                       hash[0],
-                       hash[1],
-                       hash[2])
+                    part_index + 1,
+                    part_count,
+                    priority,
+                    cacheable,
+                    hash[0],
+                    hash[1],
+                    hash[2]
+                )
             }
             AcceptAsCandidate {
                 ref old_public_id,
@@ -847,23 +869,27 @@ impl Debug for MessageContent {
                 ref target_interval,
                 ref message_id,
             } => {
-                write!(formatter,
-                       "AcceptAsCandidate {{ {:?}, {:?}, {:?}, {:?} }}",
-                       old_public_id,
-                       old_client_auth,
-                       target_interval,
-                       message_id)
+                write!(
+                    formatter,
+                    "AcceptAsCandidate {{ {:?}, {:?}, {:?}, {:?} }}",
+                    old_public_id,
+                    old_client_auth,
+                    target_interval,
+                    message_id
+                )
             }
             CandidateApproval {
                 ref new_public_id,
                 ref new_client_auth,
                 ref sections,
             } => {
-                write!(formatter,
-                       "CandidateApproval {{ new: {:?}, client: {:?}, sections: {:?} }}",
-                       new_public_id,
-                       new_client_auth,
-                       sections)
+                write!(
+                    formatter,
+                    "CandidateApproval {{ new: {:?}, client: {:?}, sections: {:?} }}",
+                    new_public_id,
+                    new_client_auth,
+                    sections
+                )
             }
             NodeApproval { ref sections } => write!(formatter, "NodeApproval {{ {:?} }}", sections),
         }
@@ -888,26 +914,30 @@ impl UserMessage {
         let len = payload.len();
         let part_count = (len + MAX_PART_LEN - 1) / MAX_PART_LEN;
 
-        Ok((hash,
+        Ok((
+            hash,
             (0..part_count)
                 .map(|i| {
-            MessageContent::UserMessagePart {
-                hash: hash,
-                part_count: part_count as u32,
-                part_index: i as u32,
-                cacheable: self.is_cacheable(),
-                payload: payload[(i * len / part_count)..((i + 1) * len / part_count)].to_vec(),
-                priority: priority,
-            }
-        })
-                .collect()))
+                    MessageContent::UserMessagePart {
+                        hash: hash,
+                        part_count: part_count as u32,
+                        part_index: i as u32,
+                        cacheable: self.is_cacheable(),
+                        payload: payload[(i * len / part_count)..((i + 1) * len / part_count)]
+                            .to_vec(),
+                        priority: priority,
+                    }
+                })
+                .collect(),
+        ))
     }
 
     /// Puts the given parts of a serialised message together and verifies that it matches the
     /// given hash code. If it does, returns the `UserMessage`.
-    pub fn from_parts<'a, I: Iterator<Item = &'a Vec<u8>>>(hash: Digest256,
-                                                           parts: I)
-                                                           -> Result<UserMessage, RoutingError> {
+    pub fn from_parts<'a, I: Iterator<Item = &'a Vec<u8>>>(
+        hash: Digest256,
+        parts: I,
+    ) -> Result<UserMessage, RoutingError> {
         let mut payload = Vec::new();
         for part in parts {
             payload.extend_from_slice(part);
@@ -968,24 +998,27 @@ impl UserMessageCache {
 
     /// Adds the given one to the cache of received message parts, returning a `UserMessage` if the
     /// given part was the last missing piece of it.
-    pub fn add(&mut self,
-               hash: Digest256,
-               part_count: u32,
-               part_index: u32,
-               payload: Vec<u8>)
-               -> Option<UserMessage> {
+    pub fn add(
+        &mut self,
+        hash: Digest256,
+        part_count: u32,
+        part_index: u32,
+        payload: Vec<u8>,
+    ) -> Option<UserMessage> {
         {
-            let entry = self.0
-                .entry((hash, part_count))
-                .or_insert_with(BTreeMap::new);
+            let entry = self.0.entry((hash, part_count)).or_insert_with(
+                BTreeMap::new,
+            );
             if entry.insert(part_index, payload).is_some() {
-                debug!("Duplicate UserMessagePart {}/{} with hash {:02x}{:02x}{:02x}.. \
+                debug!(
+                    "Duplicate UserMessagePart {}/{} with hash {:02x}{:02x}{:02x}.. \
                         added to cache.",
-                       part_index + 1,
-                       part_count,
-                       hash[0],
-                       hash[1],
-                       hash[2]);
+                    part_index + 1,
+                    part_count,
+                    hash[0],
+                    hash[1],
+                    hash[2]
+                );
             }
 
             if entry.len() != part_count as usize {
@@ -993,9 +1026,9 @@ impl UserMessageCache {
             }
         }
 
-        self.0
-            .remove(&(hash, part_count))
-            .and_then(|part_map| UserMessage::from_parts(hash, part_map.values()).ok())
+        self.0.remove(&(hash, part_count)).and_then(|part_map| {
+            UserMessage::from_parts(hash, part_map.values()).ok()
+        })
     }
 }
 
@@ -1034,8 +1067,10 @@ mod tests {
 
         assert_eq!(routing_message, *signed_message.routing_message());
         assert_eq!(1, signed_message.signatures.len());
-        assert_eq!(Some(full_id.public_id()),
-                   signed_message.signatures.keys().next());
+        assert_eq!(
+            Some(full_id.public_id()),
+            signed_message.signatures.keys().next()
+        );
 
         unwrap!(signed_message.check_integrity(min_section_size));
 
@@ -1063,9 +1098,9 @@ mod tests {
         let data_bytes: Vec<u8> = (0..10).map(|i| i as u8).collect();
         let data = ImmutableData::new(data_bytes);
         let user_msg = UserMessage::Request(Request::PutIData {
-                                                data: data,
-                                                msg_id: MessageId::new(),
-                                            });
+            data: data,
+            msg_id: MessageId::new(),
+        });
         let parts = unwrap!(user_msg.to_parts(1)).1;
         assert_eq!(1, parts.len());
         let part = parts[0].clone();
@@ -1076,18 +1111,27 @@ mod tests {
             content: part,
         };
 
-        let src_sections = vec![SectionList::from(prefix,
-                                                  vec![*full_id_0.public_id(),
-                                                       *full_id_1.public_id(),
-                                                       *full_id_2.public_id()])];
-        let mut signed_msg = unwrap!(SignedMessage::new(routing_message, &full_id_0, src_sections));
+        let src_sections = vec![
+            SectionList::from(
+                prefix,
+                vec![
+                    *full_id_0.public_id(),
+                    *full_id_1.public_id(),
+                    *full_id_2.public_id(),
+                ]
+            ),
+        ];
+        let mut signed_msg = unwrap!(SignedMessage::new(
+            routing_message,
+            &full_id_0,
+            src_sections,
+        ));
         assert_eq!(signed_msg.signatures.len(), 1);
 
         // Try to add a signature which will not correspond to an ID from the sending nodes.
-        let irrelevant_sig = match unwrap!(signed_msg
-                                               .routing_message()
-                                               .to_signature(irrelevant_full_id
-                                                                 .signing_private_key())) {
+        let irrelevant_sig = match unwrap!(signed_msg.routing_message().to_signature(
+            irrelevant_full_id.signing_private_key(),
+        )) {
             DirectMessage::MessageSignature(_, sig) => {
                 signed_msg.add_signature(*irrelevant_full_id.public_id(), sig);
                 sig
@@ -1095,15 +1139,15 @@ mod tests {
             msg => panic!("Unexpected message: {:?}", msg),
         };
         assert_eq!(signed_msg.signatures.len(), 1);
-        assert!(!signed_msg
-                     .signatures
-                     .contains_key(irrelevant_full_id.public_id()));
+        assert!(!signed_msg.signatures.contains_key(
+            irrelevant_full_id.public_id(),
+        ));
         assert!(!signed_msg.check_fully_signed(min_section_size));
 
         // Add a valid signature for ID 1 and an invalid one for ID 2
-        match unwrap!(signed_msg
-                          .routing_message()
-                          .to_signature(full_id_1.signing_private_key())) {
+        match unwrap!(signed_msg.routing_message().to_signature(
+            full_id_1.signing_private_key(),
+        )) {
             DirectMessage::MessageSignature(hash, sig) => {
                 let serialised_msg = unwrap!(serialise(signed_msg.routing_message()));
                 assert_eq!(hash, sha3_256(&serialised_msg));
@@ -1123,9 +1167,9 @@ mod tests {
         // Check an irrelevant signature can't be added.
         signed_msg.add_signature(*irrelevant_full_id.public_id(), irrelevant_sig);
         assert_eq!(signed_msg.signatures.len(), 2);
-        assert!(!signed_msg
-                     .signatures
-                     .contains_key(irrelevant_full_id.public_id()));
+        assert!(!signed_msg.signatures.contains_key(
+            irrelevant_full_id.public_id(),
+        ));
     }
 
     #[test]
@@ -1142,10 +1186,12 @@ mod tests {
         let signed_message = unwrap!(signed_message_result);
 
         let (public_signing_key, secret_signing_key) = sign::gen_keypair();
-        let hop_message_result = HopMessage::new(signed_message.clone(),
-                                                 0,
-                                                 BTreeSet::new(),
-                                                 &secret_signing_key);
+        let hop_message_result = HopMessage::new(
+            signed_message.clone(),
+            0,
+            BTreeSet::new(),
+            &secret_signing_key,
+        );
 
         let hop_message = unwrap!(hop_message_result);
 
@@ -1162,9 +1208,9 @@ mod tests {
         let data_bytes: Vec<u8> = (0..(MAX_PART_LEN * 2)).map(|i| i as u8).collect();
         let data = ImmutableData::new(data_bytes);
         let user_msg = UserMessage::Request(Request::PutIData {
-                                                data: data,
-                                                msg_id: MessageId::new(),
-                                            });
+            data: data,
+            msg_id: MessageId::new(),
+        });
         let msg_hash = sha3_256(&unwrap!(serialise(&user_msg)));
         let parts = unwrap!(user_msg.to_parts(42)).1;
         assert_eq!(parts.len(), 3);
@@ -1172,23 +1218,23 @@ mod tests {
             .into_iter()
             .enumerate()
             .map(|(i, msg)| match msg {
-                     MessageContent::UserMessagePart {
-                         hash,
-                         part_count,
-                         part_index,
-                         payload,
-                         priority,
-                         cacheable,
-                     } => {
-                assert_eq!(msg_hash, hash);
-                assert_eq!(3, part_count);
-                assert_eq!(i, part_index as usize);
-                assert_eq!(42, priority);
-                assert!(!cacheable);
-                payload
-            }
-                     msg => panic!("Unexpected message {:?}", msg),
-                 })
+                MessageContent::UserMessagePart {
+                    hash,
+                    part_count,
+                    part_index,
+                    payload,
+                    priority,
+                    cacheable,
+                } => {
+                    assert_eq!(msg_hash, hash);
+                    assert_eq!(3, part_count);
+                    assert_eq!(i, part_index as usize);
+                    assert_eq!(42, priority);
+                    assert!(!cacheable);
+                    payload
+                }
+                msg => panic!("Unexpected message {:?}", msg),
+            })
             .collect();
         let deserialised_user_msg = unwrap!(UserMessage::from_parts(msg_hash, payloads.iter()));
         assert_eq!(user_msg, deserialised_user_msg);

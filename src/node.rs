@@ -127,8 +127,7 @@ impl NodeBuilder {
     pub fn create(self) -> Result<Node, RoutingError> {
         // If we're not in a test environment where we might want to manually seed the crypto RNG
         // then seed randomly.
-        #[cfg(not(feature = "use-mock-crust"))]
-        rust_sodium::init();
+        #[cfg(not(feature = "use-mock-crust"))] rust_sodium::init();
 
         let mut ev_buffer = EventBuf::new();
 
@@ -137,11 +136,11 @@ impl NodeBuilder {
         let (tx, rx) = channel();
 
         Ok(Node {
-               interface_result_tx: tx,
-               interface_result_rx: rx,
-               machine: machine,
-               event_buffer: ev_buffer,
-           })
+            interface_result_tx: tx,
+            interface_result_rx: rx,
+            machine: machine,
+            event_buffer: ev_buffer,
+        })
     }
 
     fn make_state_machine(self, outbox: &mut EventBox) -> (RoutingActionSender, StateMachine) {
@@ -149,35 +148,40 @@ impl NodeBuilder {
         let pub_id = *full_id.public_id();
         let min_section_size = utils::min_section_size();
 
-        StateMachine::new(move |action_sender, crust_service, timer, outbox2| if self.first {
-                              if let Some(state) = states::Node::first(action_sender,
-                                                                       self.cache,
-                                                                       crust_service,
-                                                                       full_id,
-                                                                       min_section_size,
-                                                                       timer) {
-                                  State::Node(state)
-                              } else {
-                                  State::Terminated
-                              }
-                          } else if
-            self.deny_other_local_nodes && crust_service.has_peers_on_lan() {
-            error!("More than one routing node found on LAN. Currently this is not supported.");
-            outbox2.send_event(Event::Terminate);
-            State::Terminated
-        } else {
-            Bootstrapping::new(action_sender,
-                               self.cache,
-                               BootstrappingTargetState::JoiningNode,
-                               crust_service,
-                               full_id,
-                               min_section_size,
-                               timer)
-                    .map_or(State::Terminated, State::Bootstrapping)
-        },
-                          pub_id,
-                          None,
-                          outbox)
+        StateMachine::new(
+            move |action_sender, crust_service, timer, outbox2| if self.first {
+                if let Some(state) = states::Node::first(
+                    action_sender,
+                    self.cache,
+                    crust_service,
+                    full_id,
+                    min_section_size,
+                    timer,
+                )
+                {
+                    State::Node(state)
+                } else {
+                    State::Terminated
+                }
+            } else if self.deny_other_local_nodes && crust_service.has_peers_on_lan() {
+                error!("More than one routing node found on LAN. Currently this is not supported.");
+                outbox2.send_event(Event::Terminate);
+                State::Terminated
+            } else {
+                Bootstrapping::new(
+                    action_sender,
+                    self.cache,
+                    BootstrappingTargetState::JoiningNode,
+                    crust_service,
+                    full_id,
+                    min_section_size,
+                    timer,
+                ).map_or(State::Terminated, State::Bootstrapping)
+            },
+            pub_id,
+            None,
+            outbox,
+        )
     }
 }
 
@@ -206,39 +210,47 @@ impl Node {
     }
 
     /// Send a `GetIData` request to `dst` to retrieve data from the network.
-    impl_request!(send_get_idata_request,
-                  GetIData {
-                      name: XorName,
-                      msg_id: MessageId,
-                  },
-                  RELOCATE_PRIORITY);
+    impl_request!(
+        send_get_idata_request,
+        GetIData {
+            name: XorName,
+            msg_id: MessageId,
+        },
+        RELOCATE_PRIORITY
+    );
 
     /// Send a `PutIData` request to `dst` to store data on the network.
-    impl_request!(send_put_idata_request,
-                  PutIData {
-                      data: ImmutableData,
-                      msg_id: MessageId,
-                  },
-                  DEFAULT_PRIORITY);
+    impl_request!(
+        send_put_idata_request,
+        PutIData {
+            data: ImmutableData,
+            msg_id: MessageId,
+        },
+        DEFAULT_PRIORITY
+    );
 
     /// Send a `GetMData` request to `dst` to retrieve data from the network.
     /// Note: responses to this request are unlikely to accumulate during churn.
-    impl_request!(send_get_mdata_request,
-                  GetMData {
-                      name: XorName,
-                      tag: u64,
-                      msg_id: MessageId,
-                  },
-                  RELOCATE_PRIORITY);
+    impl_request!(
+        send_get_mdata_request,
+        GetMData {
+            name: XorName,
+            tag: u64,
+            msg_id: MessageId,
+        },
+        RELOCATE_PRIORITY
+    );
 
     /// Send a `PutMData` request.
-    impl_request!(send_put_mdata_request,
-                  PutMData {
-                      data: MutableData,
-                      msg_id: MessageId,
-                      requester: sign::PublicKey,
-                  },
-                  DEFAULT_PRIORITY);
+    impl_request!(
+        send_put_mdata_request,
+        PutMData {
+            data: MutableData,
+            msg_id: MessageId,
+            requester: sign::PublicKey,
+        },
+        DEFAULT_PRIORITY
+    );
 
     /// Send a `MutateMDataEntries` request.
     impl_request!(send_mutate_mdata_entries_request,
@@ -304,12 +316,13 @@ impl Node {
                   }, DEFAULT_PRIORITY);
 
     /// Send a `Refresh` request from `src` to `dst` to trigger churn.
-    pub fn send_refresh_request(&mut self,
-                                src: Authority<XorName>,
-                                dst: Authority<XorName>,
-                                content: Vec<u8>,
-                                msg_id: MessageId)
-                                -> Result<(), InterfaceError> {
+    pub fn send_refresh_request(
+        &mut self,
+        src: Authority<XorName>,
+        dst: Authority<XorName>,
+        content: Vec<u8>,
+        msg_id: MessageId,
+    ) -> Result<(), InterfaceError> {
         let msg = UserMessage::Request(Request::Refresh(content, msg_id));
         self.send_action(src, dst, msg, RELOCATE_PRIORITY)
     }
@@ -321,16 +334,17 @@ impl Node {
                    CLIENT_GET_PRIORITY);
 
     /// Respond to a `GetIData` request.
-    pub fn send_get_idata_response(&mut self,
-                                   src: Authority<XorName>,
-                                   dst: Authority<XorName>,
-                                   res: Result<ImmutableData, ClientError>,
-                                   msg_id: MessageId)
-                                   -> Result<(), InterfaceError> {
+    pub fn send_get_idata_response(
+        &mut self,
+        src: Authority<XorName>,
+        dst: Authority<XorName>,
+        res: Result<ImmutableData, ClientError>,
+        msg_id: MessageId,
+    ) -> Result<(), InterfaceError> {
         let msg = UserMessage::Response(Response::GetIData {
-                                            res: res,
-                                            msg_id: msg_id,
-                                        });
+            res: res,
+            msg_id: msg_id,
+        });
 
         let priority = relocate_priority(&dst);
         self.send_action(src, dst, msg, priority)
@@ -341,17 +355,18 @@ impl Node {
 
     /// Respond to a `GetMData` request.
     /// Note: this response is unlikely to accumulate during churn.
-    pub fn send_get_mdata_response(&mut self,
-                                   src: Authority<XorName>,
-                                   dst: Authority<XorName>,
-                                   res: Result<MutableData, ClientError>,
-                                   msg_id: MessageId)
-                                   -> Result<(), InterfaceError> {
+    pub fn send_get_mdata_response(
+        &mut self,
+        src: Authority<XorName>,
+        dst: Authority<XorName>,
+        res: Result<MutableData, ClientError>,
+        msg_id: MessageId,
+    ) -> Result<(), InterfaceError> {
 
         let msg = UserMessage::Response(Response::GetMData {
-                                            res: res,
-                                            msg_id: msg_id,
-                                        });
+            res: res,
+            msg_id: msg_id,
+        });
 
         let priority = relocate_priority(&dst);
         self.send_action(src, dst, msg, priority)
@@ -367,17 +382,18 @@ impl Node {
                    CLIENT_GET_PRIORITY);
 
     /// Respond to a `GetMDataShell` request.
-    pub fn send_get_mdata_shell_response(&mut self,
-                                         src: Authority<XorName>,
-                                         dst: Authority<XorName>,
-                                         res: Result<MutableData, ClientError>,
-                                         msg_id: MessageId)
-                                         -> Result<(), InterfaceError> {
+    pub fn send_get_mdata_shell_response(
+        &mut self,
+        src: Authority<XorName>,
+        dst: Authority<XorName>,
+        res: Result<MutableData, ClientError>,
+        msg_id: MessageId,
+    ) -> Result<(), InterfaceError> {
 
         let msg = UserMessage::Response(Response::GetMDataShell {
-                                            res: res,
-                                            msg_id: msg_id,
-                                        });
+            res: res,
+            msg_id: msg_id,
+        });
 
         let priority = relocate_priority(&dst);
         self.send_action(src, dst, msg, priority)
@@ -405,17 +421,18 @@ impl Node {
                    CLIENT_GET_PRIORITY);
 
     /// Respond to a `GetMDataValue` request.
-    pub fn send_get_mdata_value_response(&mut self,
-                                         src: Authority<XorName>,
-                                         dst: Authority<XorName>,
-                                         res: Result<Value, ClientError>,
-                                         msg_id: MessageId)
-                                         -> Result<(), InterfaceError> {
+    pub fn send_get_mdata_value_response(
+        &mut self,
+        src: Authority<XorName>,
+        dst: Authority<XorName>,
+        res: Result<Value, ClientError>,
+        msg_id: MessageId,
+    ) -> Result<(), InterfaceError> {
 
         let msg = UserMessage::Response(Response::GetMDataValue {
-                                            res: res,
-                                            msg_id: msg_id,
-                                        });
+            res: res,
+            msg_id: msg_id,
+        });
 
         let priority = relocate_priority(&dst);
         self.send_action(src, dst, msg, priority)
@@ -488,17 +505,16 @@ impl Node {
 
     /// Returns the routing table of this node.
     pub fn routing_table(&self) -> Result<&RoutingTable<XorName>, RoutingError> {
-        self.machine
-            .routing_table()
-            .ok_or(RoutingError::Terminated)
+        self.machine.routing_table().ok_or(RoutingError::Terminated)
     }
 
-    fn send_action(&mut self,
-                   src: Authority<XorName>,
-                   dst: Authority<XorName>,
-                   user_msg: UserMessage,
-                   priority: u8)
-                   -> Result<(), InterfaceError> {
+    fn send_action(
+        &mut self,
+        src: Authority<XorName>,
+        dst: Authority<XorName>,
+        user_msg: UserMessage,
+        priority: u8,
+    ) -> Result<(), InterfaceError> {
         // Make sure the state machine has processed any outstanding crust events.
         self.poll();
 
@@ -510,11 +526,14 @@ impl Node {
             result_tx: self.interface_result_tx.clone(),
         };
 
-        let transition = self.machine
-            .current_mut()
-            .handle_action(action, &mut self.event_buffer);
-        self.machine
-            .apply_transition(transition, &mut self.event_buffer);
+        let transition = self.machine.current_mut().handle_action(
+            action,
+            &mut self.event_buffer,
+        );
+        self.machine.apply_transition(
+            transition,
+            &mut self.event_buffer,
+        );
         self.interface_result_rx.recv()?
     }
 }
@@ -544,16 +563,18 @@ impl Node {
 
     /// Check whether this node acts as a tunnel node between `client_1` and `client_2`.
     pub fn has_tunnel_clients(&self, client_1: PublicId, client_2: PublicId) -> bool {
-        self.machine
-            .current()
-            .has_tunnel_clients(client_1, client_2)
+        self.machine.current().has_tunnel_clients(
+            client_1,
+            client_2,
+        )
     }
 
     /// Returns a quorum of signatures for the neighbouring section's list or `None` if we don't
     /// have one
-    pub fn section_list_signatures(&self,
-                                   prefix: Prefix<XorName>)
-                                   -> Option<BTreeMap<PublicId, sign::Signature>> {
+    pub fn section_list_signatures(
+        &self,
+        prefix: Prefix<XorName>,
+    ) -> Option<BTreeMap<PublicId, sign::Signature>> {
         self.machine.current().section_list_signatures(prefix)
     }
 
@@ -578,16 +599,16 @@ impl Node {
 
     /// Sets a name to be used when the next node relocation request is received by this node.
     pub fn set_next_relocation_dst(&mut self, dst: XorName) {
-        self.machine
-            .current_mut()
-            .set_next_relocation_dst(Some(dst))
+        self.machine.current_mut().set_next_relocation_dst(
+            Some(dst),
+        )
     }
 
     /// Sets an interval to be used when a node is required to generate a new name.
     pub fn set_next_relocation_interval(&mut self, interval: (XorName, XorName)) {
-        self.machine
-            .current_mut()
-            .set_next_relocation_interval(interval)
+        self.machine.current_mut().set_next_relocation_interval(
+            interval,
+        )
     }
 
     /// Clears the name to be used when the next node relocation request is received by this node so
@@ -606,9 +627,10 @@ impl Debug for Node {
 
 impl Drop for Node {
     fn drop(&mut self) {
-        let _ = self.machine
-            .current_mut()
-            .handle_action(Action::Terminate, &mut self.event_buffer);
+        let _ = self.machine.current_mut().handle_action(
+            Action::Terminate,
+            &mut self.event_buffer,
+        );
         let _ = self.event_buffer.take_all();
     }
 }

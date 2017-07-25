@@ -55,12 +55,13 @@ impl MpidMessage {
     /// An error will be returned if `body` exceeds `MAX_BODY_SIZE`, if
     /// [MpidHeader::new()](struct.MpidHeader.html#method.new) fails or if
     /// serialisation during the signing process fails.
-    pub fn new(sender: XorName,
-               metadata: Vec<u8>,
-               recipient: XorName,
-               body: Vec<u8>,
-               secret_key: &SecretKey)
-               -> Result<MpidMessage, Error> {
+    pub fn new(
+        sender: XorName,
+        metadata: Vec<u8>,
+        recipient: XorName,
+        body: Vec<u8>,
+        secret_key: &SecretKey,
+    ) -> Result<MpidMessage, Error> {
         if body.len() > MAX_BODY_SIZE {
             return Err(Error::BodyTooLarge);
         }
@@ -74,10 +75,10 @@ impl MpidMessage {
 
         let recipient_and_body = serialise(&detail)?;
         Ok(MpidMessage {
-               header: header,
-               detail: detail,
-               signature: sign::sign_detached(&recipient_and_body, secret_key),
-           })
+            header: header,
+            detail: detail,
+            signature: sign::sign_detached(&recipient_and_body, secret_key),
+        })
     }
 
     /// Getter for `MpidHeader` member, created when calling `new()`.
@@ -107,7 +108,7 @@ impl MpidMessage {
         match serialise(&self.detail) {
             Ok(recipient_and_body) => {
                 sign::verify_detached(&self.signature, &recipient_and_body, public_key) &&
-                self.header.verify(public_key)
+                    self.header.verify(public_key)
             }
             Err(_) => false,
         }
@@ -116,12 +117,14 @@ impl MpidMessage {
 
 impl Debug for MpidMessage {
     fn fmt(&self, formatter: &mut Formatter) -> Result<(), fmt::Error> {
-        write!(formatter,
-               "MpidMessage {{ header: {:?}, recipient: {:?}, body: {}, signature: {} }}",
-               self.header,
-               self.detail.recipient,
-               utils::format_binary_array(&self.detail.body),
-               utils::format_binary_array(&self.signature))
+        write!(
+            formatter,
+            "MpidMessage {{ header: {:?}, recipient: {:?}, body: {}, signature: {} }}",
+            self.header,
+            self.detail.recipient,
+            utils::format_binary_array(&self.detail.body),
+            utils::format_binary_array(&self.signature)
+        )
     }
 }
 
@@ -142,24 +145,34 @@ mod tests {
 
         // Check with body which is empty, then at size limit, then just above limit.
         {
-            let message =
-                unwrap!(MpidMessage::new(sender, metadata.clone(), recipient, vec![], &secret_key));
+            let message = unwrap!(MpidMessage::new(
+                sender,
+                metadata.clone(),
+                recipient,
+                vec![],
+                &secret_key,
+            ));
             assert!(message.body().is_empty());
         }
         let mut body = messaging::generate_random_bytes(MAX_BODY_SIZE);
-        let message = unwrap!(MpidMessage::new(sender,
-                                               metadata.clone(),
-                                               recipient,
-                                               body.clone(),
-                                               &secret_key));
+        let message = unwrap!(MpidMessage::new(
+            sender,
+            metadata.clone(),
+            recipient,
+            body.clone(),
+            &secret_key,
+        ));
         assert_eq!(*message.body(), body);
         body.push(0);
-        assert!(MpidMessage::new(sender,
-                                 metadata.clone(),
-                                 recipient,
-                                 body.clone(),
-                                 &secret_key)
-                        .is_err());
+        assert!(
+            MpidMessage::new(
+                sender,
+                metadata.clone(),
+                recipient,
+                body.clone(),
+                &secret_key,
+            ).is_err()
+        );
         let _ = body.pop();
 
         // Check verify function with a valid and invalid key

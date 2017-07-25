@@ -31,7 +31,7 @@ use xor_name::XorName;
 ///       pending events should be handled.
 ///       After completion `Core` will send `Event::Terminated`.
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
+#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
 pub enum Action {
     NodeSendMessage {
         src: Authority<XorName>,
@@ -56,19 +56,23 @@ impl Debug for Action {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
             Action::NodeSendMessage { ref content, .. } => {
-                write!(formatter,
-                       "Action::NodeSendMessage {{ {:?}, result_tx }}",
-                       content)
+                write!(
+                    formatter,
+                    "Action::NodeSendMessage {{ {:?}, result_tx }}",
+                    content
+                )
             }
             Action::ClientSendRequest {
                 ref content,
                 ref dst,
                 ..
             } => {
-                write!(formatter,
-                       "Action::ClientSendRequest {{ {:?}, dst: {:?}, result_tx }}",
-                       content,
-                       dst)
+                write!(
+                    formatter,
+                    "Action::ClientSendRequest {{ {:?}, dst: {:?}, result_tx }}",
+                    content,
+                    dst
+                )
             }
             Action::Id { .. } => write!(formatter, "Action::Id"),
             Action::Timeout(token) => write!(formatter, "Action::Timeout({})", token),

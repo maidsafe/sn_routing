@@ -51,12 +51,9 @@ impl SectionListCache {
         if let Some(pub_id) = pub_id_opt {
             if let Some(lists) = self.signed_by.remove(&pub_id) {
                 for (prefix, list) in lists {
-                    let _ = self.signatures
-                        .get_mut(&prefix)
-                        .and_then(|map| {
-                                      map.get_mut(&list)
-                                          .and_then(|sigmap| sigmap.remove(&pub_id))
-                                  });
+                    let _ = self.signatures.get_mut(&prefix).and_then(|map| {
+                        map.get_mut(&list).and_then(|sigmap| sigmap.remove(&pub_id))
+                    });
                 }
                 self.prune();
                 self.update_lists_cache(our_section_size);
@@ -65,12 +62,14 @@ impl SectionListCache {
     }
 
     /// Adds a new signature for a section list
-    pub fn add_signature(&mut self,
-                         prefix: Prefix<XorName>,
-                         pub_id: PublicId,
-                         list: SectionList,
-                         sig: Signature,
-                         our_section_size: usize) {
+    pub fn add_signature(
+        &mut self,
+        prefix: Prefix<XorName>,
+        pub_id: PublicId,
+        list: SectionList,
+        sig: Signature,
+        our_section_size: usize,
+    ) {
         // remove all conflicting signatures
         self.remove_signatures_for_prefix_by(prefix, pub_id);
         // remember that this public id signed this section list
@@ -89,11 +88,12 @@ impl SectionListCache {
     }
 
     /// Returns the given signature, if present.
-    pub fn get_signature_for(&self,
-                             prefix: &Prefix<XorName>,
-                             pub_id: &PublicId,
-                             list: &SectionList)
-                             -> Option<&Signature> {
+    pub fn get_signature_for(
+        &self,
+        prefix: &Prefix<XorName>,
+        pub_id: &PublicId,
+        list: &SectionList,
+    ) -> Option<&Signature> {
         self.signatures
             .get(prefix)
             .and_then(|lists| lists.get(list))
@@ -102,7 +102,7 @@ impl SectionListCache {
 
     /// Returns the currently signed section list for `prefix` along with a quorum of signatures.
     // TODO: Remove this when the method is used in production
-    #[cfg(feature="use-mock-crust")]
+    #[cfg(feature = "use-mock-crust")]
     pub fn get_signatures(&self, prefix: Prefix<XorName>) -> Option<&(SectionList, Signatures)> {
         self.lists_cache.get(&prefix)
     }
@@ -152,8 +152,10 @@ impl SectionListCache {
                 if sig_count * QUORUM_DENOMINATOR > our_section_size * QUORUM_NUMERATOR {
                     // we have a list with a quorum of signatures
                     let signatures = unwrap!(map.get(list));
-                    let _ = self.lists_cache
-                        .insert(*prefix, (list.clone(), signatures.clone()));
+                    let _ = self.lists_cache.insert(
+                        *prefix,
+                        (list.clone(), signatures.clone()),
+                    );
                 }
             }
         }
@@ -170,16 +172,17 @@ impl SectionListCache {
             .collect_vec();
         for (prefix, list) in to_remove {
             // remove the signatures from self.signatures
-            let _ = self.signatures
-                .get_mut(&prefix)
-                .map_or(None, |map| {
-                    map.get_mut(&list)
-                        .map_or(None, |sigmap| sigmap.remove(&author))
-                });
+            let _ = self.signatures.get_mut(&prefix).map_or(None, |map| {
+                map.get_mut(&list).map_or(
+                    None,
+                    |sigmap| sigmap.remove(&author),
+                )
+            });
             // remove those entries from self.signed_by
-            let _ = self.signed_by
-                .get_mut(&author)
-                .map_or(None, |map| map.remove(&prefix));
+            let _ = self.signed_by.get_mut(&author).map_or(
+                None,
+                |map| map.remove(&prefix),
+            );
         }
 
         self.prune();

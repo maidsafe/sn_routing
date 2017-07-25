@@ -31,7 +31,7 @@ use xor_name::XorName;
 /// been reached, i.e. enough members of the section have sent the same message.
 #[derive(Clone, Eq, PartialEq)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
+#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
 pub enum Event {
     /// Received a request message.
     Request {
@@ -82,30 +82,36 @@ impl Debug for Event {
                 ref src,
                 ref dst,
             } => {
-                write!(formatter,
-                       "Event::Request {{ request: {:?}, src: {:?}, dst: {:?} }}",
-                       request,
-                       src,
-                       dst)
+                write!(
+                    formatter,
+                    "Event::Request {{ request: {:?}, src: {:?}, dst: {:?} }}",
+                    request,
+                    src,
+                    dst
+                )
             }
             Event::Response {
                 ref response,
                 ref src,
                 ref dst,
             } => {
-                write!(formatter,
-                       "Event::Response {{ response: {:?}, src: {:?}, dst: {:?} }}",
-                       response,
-                       src,
-                       dst)
+                write!(
+                    formatter,
+                    "Event::Response {{ response: {:?}, src: {:?}, dst: {:?} }}",
+                    response,
+                    src,
+                    dst
+                )
             }
             Event::ProxyRateLimitExceeded(ref msg_id) => {
                 write!(formatter, "Event::ProxyRateLimitExceeded({:?})", msg_id)
             }
             Event::NodeAdded(ref node_name, _) => {
-                write!(formatter,
-                       "Event::NodeAdded({:?}, routing_table)",
-                       node_name)
+                write!(
+                    formatter,
+                    "Event::NodeAdded({:?}, routing_table)",
+                    node_name
+                )
             }
             Event::NodeLost(ref node_name, _) => {
                 write!(formatter, "Event::NodeLost({:?}, routing_table)", node_name)

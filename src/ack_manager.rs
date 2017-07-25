@@ -75,10 +75,11 @@ impl AckManager {
 
     /// Adds a pending message; if another with the same `Ack` identifier exists,
     /// this is removed and returned.
-    pub fn add_to_pending(&mut self,
-                          ack: Ack,
-                          unacked_msg: UnacknowledgedMessage)
-                          -> Option<UnacknowledgedMessage> {
+    pub fn add_to_pending(
+        &mut self,
+        ack: Ack,
+        unacked_msg: UnacknowledgedMessage,
+    ) -> Option<UnacknowledgedMessage> {
         self.pending.insert(ack, unacked_msg)
     }
 
@@ -87,9 +88,10 @@ impl AckManager {
     // returns None.
     pub fn find_timed_out(&mut self, token: u64) -> Option<(UnacknowledgedMessage, Ack)> {
         let timed_out_ack = if let Some((sip_hash, _)) =
-            self.pending
-                .iter()
-                .find(|&(_, unacked_msg)| unacked_msg.timer_token == token) {
+            self.pending.iter().find(|&(_, unacked_msg)| {
+                unacked_msg.timer_token == token
+            })
+        {
             *sip_hash
         } else {
             return None;
@@ -113,9 +115,11 @@ impl Ack {
 
 impl fmt::Debug for Ack {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(formatter,
-               "Ack({:02x}{:02x}..)",
-               self.m_hash[0],
-               self.m_hash[1])
+        write!(
+            formatter,
+            "Ack({:02x}{:02x}..)",
+            self.m_hash[0],
+            self.m_hash[1]
+        )
     }
 }

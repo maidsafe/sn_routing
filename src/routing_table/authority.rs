@@ -121,10 +121,12 @@ impl<N: Xorable + Clone + Copy + Binary + Default + Display> Debug for Authority
                 ref proxy_node_name,
                 ref client_id,
             } => {
-                write!(formatter,
-                       "Client {{ client_name: {}, proxy_node_name: {} }}",
-                       client_id.name(),
-                       proxy_node_name)
+                write!(
+                    formatter,
+                    "Client {{ client_name: {}, proxy_node_name: {} }}",
+                    client_id.name(),
+                    proxy_node_name
+                )
             }
         }
     }

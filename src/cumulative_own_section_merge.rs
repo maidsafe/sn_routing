@@ -37,10 +37,11 @@ impl CumulativeOwnSectionMerge {
     /// resend `OtherSectionMerge` whenever the new union is different to the last one sent out.
     ///
     /// returns `Some(our_merged_section)` for resend `OtherSectionMerge`, otherwise returns `None`.
-    pub fn extend_our_merged_section(&mut self,
-                                     merge_prefix: Prefix<XorName>,
-                                     sections: &SectionMap)
-                                     -> Option<BTreeSet<XorName>> {
+    pub fn extend_our_merged_section(
+        &mut self,
+        merge_prefix: Prefix<XorName>,
+        sections: &SectionMap,
+    ) -> Option<BTreeSet<XorName>> {
         let mut version = 1;
         let mut our_merged_section = BTreeSet::new();
         // Extract the version and merged_section list from the incoming section map.
@@ -75,10 +76,11 @@ impl CumulativeOwnSectionMerge {
     }
 
     /// Returns `our_merged_section` if the prefix_version is what currently being cumulated.
-    pub fn get_our_merged_section(&mut self,
-                                  merge_prefix: Prefix<XorName>,
-                                  version: u64)
-                                  -> Option<BTreeSet<XorName>> {
+    pub fn get_our_merged_section(
+        &mut self,
+        merge_prefix: Prefix<XorName>,
+        version: u64,
+    ) -> Option<BTreeSet<XorName>> {
         if self.merge_prefix == merge_prefix && self.version == version {
             Some(self.our_merged_section.clone())
         } else {

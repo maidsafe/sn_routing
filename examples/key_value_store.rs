@@ -138,8 +138,10 @@ Options:
             } else if parts.len() == 2 && parts[0] == "get" {
                 let _ = command_sender.send(UserCommand::Get(parts[1].to_string()));
             } else if parts.len() == 3 && parts[0] == "put" {
-                let _ = command_sender.send(UserCommand::Put(parts[1].to_string(),
-                                                             parts[2].to_string()));
+                let _ = command_sender.send(UserCommand::Put(
+                    parts[1].to_string(),
+                    parts[2].to_string(),
+                ));
             } else {
                 println!("Unrecognised command");
             }
@@ -161,8 +163,10 @@ Options:
                 example_client: example_client,
                 command_receiver: command_receiver,
                 exit: false,
-                _joiner: thread::named("Command reader",
-                                       move || read_user_commands(&command_sender)),
+                _joiner: thread::named(
+                    "Command reader",
+                    move || read_user_commands(&command_sender),
+                ),
             }
         }
 
@@ -199,8 +203,7 @@ Options:
         /// Get data from the network.
         pub fn get(&mut self, what: String) {
             let name = Self::calculate_key_name(&what);
-            match self.example_client
-                      .get_mdata_value(name, TAG, KEY.to_vec()) {
+            match self.example_client.get_mdata_value(name, TAG, KEY.to_vec()) {
                 Ok(value) => {
                     let content = unwrap!(deserialise::<String>(&value.content));
                     println!("Got value {:?} on key {:?}", content, what);
@@ -220,7 +223,13 @@ Options:
             let entries = iter::once((KEY.to_vec(), value)).collect();
             let owners = iter::once(*self.example_client.signing_public_key()).collect();
 
-            let data = unwrap!(MutableData::new(name, TAG, Default::default(), entries, owners));
+            let data = unwrap!(MutableData::new(
+                name,
+                TAG,
+                Default::default(),
+                entries,
+                owners,
+            ));
             if let Err(error) = self.example_client.put_mdata(data) {
                 error!("Failed to put data ({:?})", error);
             }

@@ -94,9 +94,11 @@ mod unnamed {
             match self.0.kill() {
                 Ok(()) => println!("Killed Node with Process ID #{}", self.0.id()),
                 Err(err) => {
-                    println!("Error killing Node with Process ID #{} - {:?}",
-                             self.0.id(),
-                             err)
+                    println!(
+                        "Error killing Node with Process ID #{} - {:?}",
+                        self.0.id(),
+                        err
+                    )
                 }
             }
         }
@@ -133,10 +135,11 @@ mod unnamed {
         nodes
     }
 
-    fn simulate_churn(mut nodes: Vec<NodeProcess>,
-                      network_size: usize,
-                      stop_flag: Arc<(Mutex<bool>, Condvar)>)
-                      -> Joiner {
+    fn simulate_churn(
+        mut nodes: Vec<NodeProcess>,
+        network_size: usize,
+        stop_flag: Arc<(Mutex<bool>, Condvar)>,
+    ) -> Joiner {
         thread_named("ChurnSimulationThread", move || {
             let mut rng = thread_rng();
             let wait_range = Range::new(CHURN_MIN_WAIT_SEC, CHURN_MAX_WAIT_SEC);
@@ -152,9 +155,10 @@ mod unnamed {
                     let wait_for = wait_range.ind_sample(&mut rng);
 
                     while !*stop_condition && !wait_timed_out {
-                        let wake_up_result =
-                            unwrap!(condvar.wait_timeout(stop_condition,
-                                                         Duration::from_secs(wait_for)));
+                        let wake_up_result = unwrap!(condvar.wait_timeout(
+                            stop_condition,
+                            Duration::from_secs(wait_for),
+                        ));
                         stop_condition = wake_up_result.0;
                         wait_timed_out = wake_up_result.1.timed_out();
                     }
@@ -164,10 +168,13 @@ mod unnamed {
                     }
                 }
 
-                if let Err(err) = simulate_churn_impl(&mut nodes,
-                                                      &mut rng,
-                                                      network_size,
-                                                      &mut node_count) {
+                if let Err(err) = simulate_churn_impl(
+                    &mut nodes,
+                    &mut rng,
+                    network_size,
+                    &mut node_count,
+                )
+                {
                     println!("{:?}", err);
                     break;
                 }
@@ -175,11 +182,12 @@ mod unnamed {
         })
     }
 
-    fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
-                           rng: &mut ThreadRng,
-                           network_size: usize,
-                           node_count: &mut usize)
-                           -> Result<(), io::Error> {
+    fn simulate_churn_impl(
+        nodes: &mut Vec<NodeProcess>,
+        rng: &mut ThreadRng,
+        network_size: usize,
+        node_count: &mut usize,
+    ) -> Result<(), io::Error> {
         print!("Churning on {} active nodes. ", nodes.len());
         io::stdout().flush().expect("Could not flush stdout");
 
@@ -203,15 +211,19 @@ mod unnamed {
             log_path.set_file_name(&format!("Node{:02}.log", node_count));
             let arg = format!("--output={}", log_path.display());
 
-            nodes.push(NodeProcess(Command::new(current_exe_path.clone())
-                                       .arg(arg)
-                                       .stdout(Stdio::null())
-                                       .stderr(Stdio::null())
-                                       .spawn()?,
-                                   *node_count));
-            println!("Started Node #{} with Process ID #{}",
-                     node_count,
-                     nodes[nodes.len() - 1].0.id());
+            nodes.push(NodeProcess(
+                Command::new(current_exe_path.clone())
+                    .arg(arg)
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .spawn()?,
+                *node_count,
+            ));
+            println!(
+                "Started Node #{} with Process ID #{}",
+                node_count,
+                nodes[nodes.len() - 1].0.id()
+            );
         }
 
         Ok(())
@@ -221,8 +233,7 @@ mod unnamed {
         let mut term = term::stdout().expect("Could not open stdout.");
         term.fg(color).expect("Failed to set color");
         print!("{}", text);
-        term.reset()
-            .expect("Failed to restore stdout attributes.");
+        term.reset().expect("Failed to restore stdout attributes.");
         io::stdout().flush().expect("Could not flush stdout");
     }
 
@@ -303,16 +314,24 @@ mod unnamed {
         for _ in 0..num_entries {
             let key = rng.gen_iter().take(5).collect();
             let content = rng.gen_iter().take(10).collect();
-            let _ = entries.insert(key,
-                                   Value {
-                                       content: content,
-                                       entry_version: 0,
-                                   });
+            let _ = entries.insert(
+                key,
+                Value {
+                    content: content,
+                    entry_version: 0,
+                },
+            );
         }
 
         let owners = iter::once(owner).collect();
 
-        unwrap!(MutableData::new(name, tag, Default::default(), entries, owners))
+        unwrap!(MutableData::new(
+            name,
+            tag,
+            Default::default(),
+            entries,
+            owners,
+        ))
     }
 
     // ==========================   Program Options   =================================
@@ -344,14 +363,14 @@ Options:
         flag_help: Option<bool>,
     }
 
-    #[cfg_attr(feature="cargo-clippy", allow(mutex_atomic))]
+    #[cfg_attr(feature = "cargo-clippy", allow(mutex_atomic))]
     pub fn run_main() {
         let args: Args = Docopt::new(USAGE)
             .and_then(|docopt| docopt.decode())
             .unwrap_or_else(|error| error.exit());
 
         let run_network_test = !(args.flag_output.is_some() ||
-                                 args.flag_delete_bootstrap_cache.is_some());
+                                     args.flag_delete_bootstrap_cache.is_some());
         let requests = args.arg_requests.unwrap_or(DEFAULT_REQUESTS);
         let batches = args.arg_batches.unwrap_or(DEFAULT_BATCHES);
         let first = args.flag_first.unwrap_or(false);

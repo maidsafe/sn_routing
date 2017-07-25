@@ -63,15 +63,16 @@ pub struct JoiningNode {
 
 impl JoiningNode {
     #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
-    pub fn from_bootstrapping(action_sender: RoutingActionSender,
-                              cache: Box<Cache>,
-                              crust_service: Service,
-                              full_id: FullId,
-                              min_section_size: usize,
-                              proxy_pub_id: PublicId,
-                              stats: Stats,
-                              timer: Timer)
-                              -> Option<Self> {
+    pub fn from_bootstrapping(
+        action_sender: RoutingActionSender,
+        cache: Box<Cache>,
+        crust_service: Service,
+        full_id: FullId,
+        min_section_size: usize,
+        proxy_pub_id: PublicId,
+        stats: Stats,
+        timer: Timer,
+    ) -> Option<Self> {
         let duration = Duration::from_secs(RELOCATE_TIMEOUT_SECS);
         let relocation_timer_token = timer.schedule(duration);
         let mut joining_node = JoiningNode {
@@ -121,10 +122,11 @@ impl JoiningNode {
         Transition::Stay
     }
 
-    pub fn handle_crust_event(&mut self,
-                              crust_event: CrustEvent<PublicId>,
-                              outbox: &mut EventBox)
-                              -> Transition {
+    pub fn handle_crust_event(
+        &mut self,
+        crust_event: CrustEvent<PublicId>,
+        outbox: &mut EventBox,
+    ) -> Transition {
         match crust_event {
             CrustEvent::LostPeer(pub_id) => self.handle_lost_peer(pub_id, outbox),
             CrustEvent::NewMessage(pub_id, _, bytes) => self.handle_new_message(pub_id, bytes),
@@ -135,29 +137,35 @@ impl JoiningNode {
         }
     }
 
-    pub fn into_bootstrapping(self,
-                              crust_rx: &mut Receiver<CrustEvent<PublicId>>,
-                              crust_sender: CrustEventSender,
-                              new_full_id: FullId,
-                              our_section: (Prefix<XorName>, BTreeSet<PublicId>),
-                              outbox: &mut EventBox)
-                              -> State {
-        let service = Self::start_new_crust_service(self.crust_service,
-                                                    *new_full_id.public_id(),
-                                                    crust_rx,
-                                                    crust_sender);
+    pub fn into_bootstrapping(
+        self,
+        crust_rx: &mut Receiver<CrustEvent<PublicId>>,
+        crust_sender: CrustEventSender,
+        new_full_id: FullId,
+        our_section: (Prefix<XorName>, BTreeSet<PublicId>),
+        outbox: &mut EventBox,
+    ) -> State {
+        let service = Self::start_new_crust_service(
+            self.crust_service,
+            *new_full_id.public_id(),
+            crust_rx,
+            crust_sender,
+        );
         let target_state = BootstrappingTargetState::Node {
             old_full_id: self.full_id,
             our_section: our_section,
         };
         if let Some(bootstrapping) =
-            Bootstrapping::new(self.action_sender,
-                               self.cache,
-                               target_state,
-                               service,
-                               new_full_id,
-                               self.min_section_size,
-                               self.timer) {
+            Bootstrapping::new(
+                self.action_sender,
+                self.cache,
+                target_state,
+                service,
+                new_full_id,
+                self.min_section_size,
+                self.timer,
+            )
+        {
             State::Bootstrapping(bootstrapping)
         } else {
             outbox.send_event(Event::RestartRequired);
@@ -166,11 +174,12 @@ impl JoiningNode {
     }
 
     #[cfg(not(feature = "use-mock-crust"))]
-    fn start_new_crust_service(old_crust_service: Service,
-                               pub_id: PublicId,
-                               crust_rx: &mut Receiver<CrustEvent<PublicId>>,
-                               crust_sender: CrustEventSender)
-                               -> Service {
+    fn start_new_crust_service(
+        old_crust_service: Service,
+        pub_id: PublicId,
+        crust_rx: &mut Receiver<CrustEvent<PublicId>>,
+        crust_sender: CrustEventSender,
+    ) -> Service {
         // Drop the current Crust service and flush the receiver
         drop(old_crust_service);
         while let Ok(_crust_event) = crust_rx.try_recv() {}
@@ -184,11 +193,12 @@ impl JoiningNode {
     }
 
     #[cfg(feature = "use-mock-crust")]
-    fn start_new_crust_service(old_crust_service: Service,
-                               pub_id: PublicId,
-                               _crust_rx: &mut Receiver<CrustEvent<PublicId>>,
-                               crust_sender: CrustEventSender)
-                               -> Service {
+    fn start_new_crust_service(
+        old_crust_service: Service,
+        pub_id: PublicId,
+        _crust_rx: &mut Receiver<CrustEvent<PublicId>>,
+        crust_sender: CrustEventSender,
+    ) -> Service {
         old_crust_service.restart(crust_sender, pub_id);
         old_crust_service
     }
@@ -213,10 +223,11 @@ impl JoiningNode {
         }
     }
 
-    fn handle_hop_message(&mut self,
-                          hop_msg: HopMessage,
-                          pub_id: PublicId)
-                          -> Result<Transition, RoutingError> {
+    fn handle_hop_message(
+        &mut self,
+        hop_msg: HopMessage,
+        pub_id: PublicId,
+    ) -> Result<Transition, RoutingError> {
         if self.proxy_pub_id == pub_id {
             hop_msg.verify(self.proxy_pub_id.signing_public_key())?;
         } else {
@@ -233,8 +244,10 @@ impl JoiningNode {
         }
 
         // Prevents us repeatedly handling identical messages sent by a malicious peer.
-        match self.routing_msg_filter
-                  .filter_incoming(routing_msg, hop_msg.route) {
+        match self.routing_msg_filter.filter_incoming(
+            routing_msg,
+            hop_msg.route,
+        ) {
             FilteringResult::KnownMessage |
             FilteringResult::KnownMessageAndRoute => return Err(RoutingError::FilterCheckFailed),
             FilteringResult::NewMessage => (),
@@ -262,11 +275,13 @@ impl JoiningNode {
             AcceptAsCandidate { .. } |
             CandidateApproval { .. } |
             NodeApproval { .. } => {
-                warn!("{:?} Not joined yet. Not handling {:?} from {:?} to {:?}",
-                      self,
-                      routing_msg.content,
-                      routing_msg.src,
-                      routing_msg.dst);
+                warn!(
+                    "{:?} Not joined yet. Not handling {:?} from {:?} to {:?}",
+                    self,
+                    routing_msg.content,
+                    routing_msg.src,
+                    routing_msg.dst
+                );
             }
             Ack(ack, _) => self.handle_ack_response(ack),
             RelocateResponse {
@@ -288,16 +303,19 @@ impl JoiningNode {
         };
         let dst = Authority::Section(*self.name());
 
-        info!("{:?} Requesting a relocated name from the network. This can take a while.",
-              self);
+        info!(
+            "{:?} Requesting a relocated name from the network. This can take a while.",
+            self
+        );
 
         self.send_routing_message(src, dst, request_content)
     }
 
-    fn handle_relocate_response(&mut self,
-                                target_interval: (XorName, XorName),
-                                section: (Prefix<XorName>, BTreeSet<PublicId>))
-                                -> Transition {
+    fn handle_relocate_response(
+        &mut self,
+        target_interval: (XorName, XorName),
+        section: (Prefix<XorName>, BTreeSet<PublicId>),
+    ) -> Transition {
         let new_id = FullId::within_range(&target_interval.0, &target_interval.1);
         Transition::IntoBootstrapping {
             new_id: new_id,
@@ -311,8 +329,10 @@ impl JoiningNode {
 
     fn handle_timeout(&mut self, token: u64, outbox: &mut EventBox) -> Transition {
         if self.relocation_timer_token == token {
-            info!("{:?} Failed to get relocated name from the network, so restarting.",
-                  self);
+            info!(
+                "{:?} Failed to get relocated name from the network, so restarting.",
+                self
+            );
             outbox.send_event(Event::RestartRequired);
             return Transition::Terminate;
         }
@@ -376,10 +396,11 @@ impl Bootstrapped for JoiningNode {
     // Constructs a signed message, finds the node responsible for accumulation, and either sends
     // this node a signature or tries to accumulate signatures for this message (on success, the
     // accumulator handles or forwards the message).
-    fn send_routing_message_via_route(&mut self,
-                                      routing_msg: RoutingMessage,
-                                      route: u8)
-                                      -> Result<(), RoutingError> {
+    fn send_routing_message_via_route(
+        &mut self,
+        routing_msg: RoutingMessage,
+        route: u8,
+    ) -> Result<(), RoutingError> {
         self.stats.count_route(route);
 
         if routing_msg.dst.is_client() && self.in_authority(&routing_msg.dst) {
@@ -390,14 +411,18 @@ impl Bootstrapped for JoiningNode {
         match routing_msg.src {
             Authority::Client { ref proxy_node_name, .. } => {
                 if *self.proxy_pub_id.name() != *proxy_node_name {
-                    error!("{:?} Unable to find connection to proxy node in proxy map",
-                           self);
+                    error!(
+                        "{:?} Unable to find connection to proxy node in proxy map",
+                        self
+                    );
                     return Err(RoutingError::ProxyConnectionNotFound);
                 }
             }
             _ => {
-                error!("{:?} Source should be client if our state is a Client",
-                       self);
+                error!(
+                    "{:?} Source should be client if our state is a Client",
+                    self
+                );
                 return Err(RoutingError::InvalidSource);
             }
         };
@@ -406,8 +431,13 @@ impl Bootstrapped for JoiningNode {
 
         let proxy_pub_id = self.proxy_pub_id;
         if self.add_to_pending_acks(signed_msg.routing_message(), route) &&
-           !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_pub_id, route) {
-            let bytes = self.to_hop_bytes(signed_msg.clone(), route, BTreeSet::new())?;
+            !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_pub_id, route)
+        {
+            let bytes = self.to_hop_bytes(
+                signed_msg.clone(),
+                route,
+                BTreeSet::new(),
+            )?;
             self.send_or_drop(&proxy_pub_id, bytes, signed_msg.priority());
         }
 

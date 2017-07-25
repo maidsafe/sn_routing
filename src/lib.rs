@@ -257,11 +257,15 @@ mod tests {
     use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
 
     #[test]
-    #[cfg_attr(feature="cargo-clippy", allow(eq_op))]
+    #[cfg_attr(feature = "cargo-clippy", allow(eq_op))]
     fn quorum_check() {
-        assert!(QUORUM_NUMERATOR < QUORUM_DENOMINATOR,
-                "Quorum impossible to achieve");
-        assert!(QUORUM_NUMERATOR * 2 >= QUORUM_DENOMINATOR,
-                "Quorum does not guarantee agreement");
+        assert!(
+            QUORUM_NUMERATOR < QUORUM_DENOMINATOR,
+            "Quorum impossible to achieve"
+        );
+        assert!(
+            QUORUM_NUMERATOR * 2 >= QUORUM_DENOMINATOR,
+            "Quorum does not guarantee agreement"
+        );
     }
 }

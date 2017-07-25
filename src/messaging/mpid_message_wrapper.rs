@@ -22,7 +22,7 @@ use xor_name::XorName;
 /// type.
 #[derive(PartialEq, Eq, Hash, Clone, Debug, Deserialize, Serialize)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
+#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
 pub enum MpidMessageWrapper {
     /// Sent by a Client to its MpidManagers to notify them that it has just connected to the
     /// network.

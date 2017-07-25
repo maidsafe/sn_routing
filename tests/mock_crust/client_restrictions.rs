@@ -50,12 +50,13 @@ fn multiple_clients_per_proxy() {
 
 // Sends the requests and verifies recipients if `rate_limiter` approves the request.
 // Returns rejected requests' message id and its client's ip address.
-fn rate_limiter_send_reqs(network: &Network<PublicId>,
-                          nodes: &mut [TestNode],
-                          clients: &mut [TestClient],
-                          total_usage: &mut u64,
-                          is_always_send: bool)
-                          -> HashMap<MessageId, IpAddr> {
+fn rate_limiter_send_reqs(
+    network: &Network<PublicId>,
+    nodes: &mut [TestNode],
+    clients: &mut [TestClient],
+    total_usage: &mut u64,
+    is_always_send: bool,
+) -> HashMap<MessageId, IpAddr> {
     let mut rng = network.new_rng();
     let data_id: XorName = rng.gen();
     let dst = Authority::NaeManager(data_id);
@@ -75,8 +76,9 @@ fn rate_limiter_send_reqs(network: &Network<PublicId>,
     for node in nodes.iter_mut().filter(|n| n.is_recipient(&dst)) {
         while let Ok(event) = node.try_next_ev() {
             if let Event::Request {
-                       request: Request::GetIData { msg_id: req_message_id, .. }, ..
-                   } = event {
+                request: Request::GetIData { msg_id: req_message_id, .. }, ..
+            } = event
+            {
                 let entry = request_received.entry(req_message_id).or_insert(0);
                 *entry += 1;
             }
@@ -95,17 +97,20 @@ fn rate_limiter_send_reqs(network: &Network<PublicId>,
 }
 
 // Verifies the usage in rate_limiter. Also advances the fake clock.
-fn rate_limiter_verify(rejected_reqs: &HashMap<MessageId, IpAddr>,
-                       clients_usage: &BTreeMap<IpAddr, u64>,
-                       total_usage: &mut u64,
-                       per_client_cap: u64) {
+fn rate_limiter_verify(
+    rejected_reqs: &HashMap<MessageId, IpAddr>,
+    clients_usage: &BTreeMap<IpAddr, u64>,
+    total_usage: &mut u64,
+    per_client_cap: u64,
+) {
     // `rejected_reqs` contains only the clients whose request got rejected.
     // Needs to confirm such rejection is valid. However, if it is the total usage reaching the
     // cap, the usage of each client could be much less than the cap.
     if (*total_usage + MAX_IMMUTABLE_DATA_SIZE_IN_BYTES) <= CAPACITY {
         for ip in rejected_reqs.values() {
-            assert!((unwrap!(clients_usage.get(ip)) + MAX_IMMUTABLE_DATA_SIZE_IN_BYTES) >
-                    per_client_cap);
+            assert!(
+                (unwrap!(clients_usage.get(ip)) + MAX_IMMUTABLE_DATA_SIZE_IN_BYTES) > per_client_cap
+            );
         }
     }
 
@@ -131,14 +136,16 @@ fn rate_limit_proxy_max_clients() {
             rate_limiter_send_reqs(&network, &mut nodes, &mut clients, &mut total_usage, false);
 
         let clients_usage = nodes[0].inner.get_clients_usage();
-        assert!(clients_usage
-                    .iter()
-                    .all(|(_, usage)| *usage <= per_client_cap));
+        assert!(clients_usage.iter().all(
+            |(_, usage)| *usage <= per_client_cap,
+        ));
 
-        rate_limiter_verify(&rejected_reqs,
-                            &clients_usage,
-                            &mut total_usage,
-                            per_client_cap);
+        rate_limiter_verify(
+            &rejected_reqs,
+            &clients_usage,
+            &mut total_usage,
+            per_client_cap,
+        );
     }
 }
 
@@ -156,7 +163,11 @@ fn rate_limit_proxy_random_clients() {
     for _ in 0..10 {
         if clients.len() <= 1 || (clients.len() < MAX_CLIENTS_PER_PROXY && rng.gen()) {
             let new_client_count = rng.gen_range(1, MAX_CLIENTS_PER_PROXY - clients.len() + 1);
-            clients.append(&mut create_connected_clients(&network, &mut nodes, new_client_count));
+            clients.append(&mut create_connected_clients(
+                &network,
+                &mut nodes,
+                new_client_count,
+            ));
         } else {
             for _ in 0..rng.gen_range(1, clients.len()) {
                 let len = clients.len();
@@ -173,10 +184,12 @@ fn rate_limit_proxy_random_clients() {
         let clients_usage = nodes[0].inner.get_clients_usage();
 
         let per_client_cap = CAPACITY / clients.len() as u64;
-        rate_limiter_verify(&rejected_reqs,
-                            &clients_usage,
-                            &mut total_usage,
-                            per_client_cap);
+        rate_limiter_verify(
+            &rejected_reqs,
+            &clients_usage,
+            &mut total_usage,
+            per_client_cap,
+        );
     }
 }
 
@@ -190,11 +203,11 @@ fn ban_malicious_client() {
     let mut rng = network.new_rng();
 
     // Send a `Refresh` request from the client; should cause it to get banned.
-    let _ = clients[0]
-        .inner
-        .send_request(Authority::NaeManager(rng.gen()),
-                      Request::Refresh(vec![], MessageId::new()),
-                      2);
+    let _ = clients[0].inner.send_request(
+        Authority::NaeManager(rng.gen()),
+        Request::Refresh(vec![], MessageId::new()),
+        2,
+    );
     let _ = poll_all(&mut nodes, &mut clients);
     expect_next_event!(unwrap!(clients.last_mut()), Event::Terminate);
     let banned_client_ips = nodes[0].inner.get_banned_client_ips();
@@ -208,9 +221,11 @@ fn ban_malicious_client() {
     // Connect a new client with the same ip address shall get rejected.
     let endpoint = network.gen_endpoint_with_ip(&ip_addr);
     let contact = nodes[0].handle.endpoint();
-    let client = TestClient::new(&network,
-                                 Some(BootstrapConfig::with_contacts(&[contact])),
-                                 Some(endpoint));
+    let client = TestClient::new(
+        &network,
+        Some(BootstrapConfig::with_contacts(&[contact])),
+        Some(endpoint),
+    );
     clients.push(client);
     let _ = poll_all(&mut nodes, &mut clients);
     expect_next_event!(unwrap!(clients.last_mut()), Event::Terminate);
@@ -227,9 +242,11 @@ fn only_one_client_per_ip() {
     // Connect a new client with the same ip address shall get rejected.
     let endpoint = network.gen_endpoint_with_ip(&clients[0].ip());
     let contact = nodes[0].handle.endpoint();
-    let client = TestClient::new(&network,
-                                 Some(BootstrapConfig::with_contacts(&[contact])),
-                                 Some(endpoint));
+    let client = TestClient::new(
+        &network,
+        Some(BootstrapConfig::with_contacts(&[contact])),
+        Some(endpoint),
+    );
     clients.push(client);
     let _ = poll_all(&mut nodes, &mut clients);
     expect_next_event!(unwrap!(clients.last_mut()), Event::Terminate);

@@ -62,8 +62,10 @@ impl Network {
         let name = self.random_free_name(); // The new node's name.
         if self.nodes.is_empty() {
             // If this is the first node, just add it and return.
-            let result = self.nodes
-                .insert(name, RoutingTable::new(name, self.min_section_size));
+            let result = self.nodes.insert(
+                name,
+                RoutingTable::new(name, self.min_section_size),
+            );
             assert!(result.is_none());
             return;
         }
@@ -72,13 +74,15 @@ impl Network {
         {
             let close_node = self.close_node(name);
             let close_peer = &self.nodes[&close_node];
-            unwrap!(new_table.add_prefixes(close_peer
-                                               .all_sections()
-                                               .into_iter()
-                                               .map(|(pfx, (version, _))| {
-                                                        pfx.with_version(version)
-                                                    })
-                                               .collect()));
+            unwrap!(
+                new_table.add_prefixes(
+                    close_peer
+                        .all_sections()
+                        .into_iter()
+                        .map(|(pfx, (version, _))| pfx.with_version(version))
+                        .collect(),
+                )
+            );
         }
 
         let mut split_prefixes = BTreeSet::new();
@@ -107,9 +111,11 @@ impl Network {
         }
     }
 
-    fn store_merge_info<T: PartialEq + Debug>(merge_info: &mut BTreeMap<Prefix<u64>, T>,
-                                              prefix: Prefix<u64>,
-                                              new_info: T) {
+    fn store_merge_info<T: PartialEq + Debug>(
+        merge_info: &mut BTreeMap<Prefix<u64>, T>,
+        prefix: Prefix<u64>,
+        new_info: T,
+    ) {
         if let Some(content) = merge_info.get(&prefix) {
             assert_eq!(new_info, *content);
             return;
@@ -118,7 +124,7 @@ impl Network {
     }
 
     // TODO: remove this when https://github.com/Manishearth/rust-clippy/issues/1279 is resolved
-    #[cfg_attr(feature="cargo-clippy", allow(for_kv_map))]
+    #[cfg_attr(feature = "cargo-clippy", allow(for_kv_map))]
     /// Drops a node and, if necessary, merges sections to restore the section requirement.
     fn drop_node(&mut self) {
         let keys = self.keys();
@@ -131,8 +137,10 @@ impl Network {
                 let removed_node_is_in_our_section = node.is_in_our_section(&name);
                 let removal_details = unwrap!(node.remove(&name));
                 assert_eq!(name, removal_details.name);
-                assert_eq!(removed_node_is_in_our_section,
-                           removal_details.was_in_our_section);
+                assert_eq!(
+                    removed_node_is_in_our_section,
+                    removal_details.was_in_our_section
+                );
                 if node.should_merge() {
                     let info = node.all_sections();
                     Network::store_merge_info(&mut merge_own_info, *node.our_prefix(), info);
@@ -175,9 +183,11 @@ impl Network {
                             versioned_prefix,
                             section,
                         } => {
-                            Network::store_merge_info(&mut merge_other_info,
-                                                      *target_node.our_prefix(),
-                                                      (targets, versioned_prefix, section));
+                            Network::store_merge_info(
+                                &mut merge_other_info,
+                                *target_node.our_prefix(),
+                                (targets, versioned_prefix, section),
+                            );
                             // Forcibly add new connections.
                             for name in node_expected.clone() {
                                 // Try adding each node we should be connected to.
@@ -188,9 +198,11 @@ impl Network {
                                 node_expected.remove(&name);
                             }
                             if node_expected.is_empty() && target_node.should_merge() {
-                                Network::store_merge_info(&mut merge_own_info,
-                                                          *target_node.our_prefix(),
-                                                          target_node.all_sections());
+                                Network::store_merge_info(
+                                    &mut merge_own_info,
+                                    *target_node.our_prefix(),
+                                    target_node.all_sections(),
+                                );
                             }
                         }
                     }
@@ -208,9 +220,11 @@ impl Network {
                         let _ = target_node.add(contact);
                     }
                     if target_node.should_merge() {
-                        Network::store_merge_info(&mut merge_own_info,
-                                                  *target_node.our_prefix(),
-                                                  target_node.all_sections());
+                        Network::store_merge_info(
+                            &mut merge_own_info,
+                            *target_node.our_prefix(),
+                            target_node.all_sections(),
+                        );
                     }
                 }
             }
@@ -218,11 +232,14 @@ impl Network {
     }
 
     fn nodes_covered_by_prefixes<'a, T>(&self, prefixes: T) -> Vec<u64>
-        where T: IntoIterator<Item = &'a Prefix<u64>> + Copy
+    where
+        T: IntoIterator<Item = &'a Prefix<u64>> + Copy,
     {
         self.nodes
             .keys()
-            .filter(|&name| prefixes.into_iter().any(|prefix| prefix.matches(name)))
+            .filter(|&name| {
+                prefixes.into_iter().any(|prefix| prefix.matches(name))
+            })
             .cloned()
             .collect()
     }
@@ -252,10 +269,12 @@ impl Network {
             }
         }
         if dst.is_single() {
-            assert!(handled.contains(&dst.name()),
-                    "Message to {:?} only handled by {:?}",
-                    dst,
-                    handled);
+            assert!(
+                handled.contains(&dst.name()),
+                "Message to {:?} only handled by {:?}",
+                dst,
+                handled
+            );
         } else {
             let close_node = self.close_node(dst.name());
             for node in unwrap!(self.nodes[&close_node].close_names(&dst.name())) {
@@ -268,10 +287,12 @@ impl Network {
     /// node is found.
     fn close_node(&self, address: u64) -> u64 {
         let target = Authority::Section(address);
-        unwrap!(self.nodes
-                    .iter()
-                    .find(|&(_, table)| table.in_authority(&target))
-                    .map(|(&peer, _)| peer))
+        unwrap!(
+            self.nodes
+                .iter()
+                .find(|&(_, table)| table.in_authority(&target))
+                .map(|(&peer, _)| peer)
+        )
     }
 
     /// Returns all node names.
@@ -317,8 +338,9 @@ fn verify_invariant(network: &Network) {
 }
 
 pub fn verify_network_invariant<'a, T, U>(nodes: U)
-    where T: Binary + Clone + Copy + Debug + Default + Hash + Xorable + 'a,
-          U: IntoIterator<Item = &'a RoutingTable<T>>
+where
+    T: Binary + Clone + Copy + Debug + Default + Hash + Xorable + 'a,
+    U: IntoIterator<Item = &'a RoutingTable<T>>,
 {
     let mut sections: BTreeMap<Prefix<T>, _> = BTreeMap::new();
     // first, collect all sections in the network
@@ -331,17 +353,19 @@ pub fn verify_network_invariant<'a, T, U>(nodes: U)
                 node.sections[&prefix].clone()
             };
             if let Some(&mut (ref mut src, ref mut section)) = sections.get_mut(&prefix) {
-                assert_eq!(*section,
-                           section_content,
-                           "Section with prefix {:?} doesn't agree between nodes {:?} and {:?}\n\
+                assert_eq!(
+                    *section,
+                    section_content,
+                    "Section with prefix {:?} doesn't agree between nodes {:?} and {:?}\n\
                             {:?}: {:?}, {:?}: {:?}",
-                           prefix,
-                           node.our_name,
-                           src,
-                           node.our_name,
-                           section_content,
-                           src,
-                           section);
+                    prefix,
+                    node.our_name,
+                    src,
+                    node.our_name,
+                    section_content,
+                    src,
+                    section
+                );
                 continue;
             }
             let _ = sections.insert(prefix, (node.our_name, section_content));
@@ -354,15 +378,17 @@ pub fn verify_network_invariant<'a, T, U>(nodes: U)
                 continue;
             }
             if prefix1.is_compatible(prefix2) {
-                panic!("Section prefixes should be disjoint, but these are not:\n\
+                panic!(
+                    "Section prefixes should be disjoint, but these are not:\n\
                     Section {:?}, according to node {:?}: {:?}\n\
                     Section {:?}, according to node {:?}: {:?}",
-                       prefix1,
-                       sections[prefix1].0,
-                       sections[prefix1].1,
-                       prefix2,
-                       sections[prefix2].0,
-                       sections[prefix2].1);
+                    prefix1,
+                    sections[prefix1].0,
+                    sections[prefix1].1,
+                    prefix2,
+                    sections[prefix2].0,
+                    sections[prefix2].1
+                );
             }
         }
     }
@@ -371,10 +397,12 @@ pub fn verify_network_invariant<'a, T, U>(nodes: U)
     for (prefix, &(_, (_, ref data))) in &sections {
         for name in data {
             if !prefix.matches(name) {
-                panic!("Section members should match the prefix, but {:?} \
+                panic!(
+                    "Section members should match the prefix, but {:?} \
                     does not match {:?}",
-                       name,
-                       prefix);
+                    name,
+                    prefix
+                );
             }
         }
     }
@@ -399,26 +427,28 @@ fn merging_sections() {
         network.add_node();
         verify_invariant(&network);
     }
-    assert!(network
-                .nodes
-                .iter()
-                .all(|(_, table)| if table.num_of_sections() < 2 {
-                         trace!("{:?}", table);
-                         false
-                     } else {
-                         true
-                     }));
+    assert!(network.nodes.iter().all(
+        |(_, table)| if table.num_of_sections() <
+            2
+        {
+            trace!("{:?}", table);
+            false
+        } else {
+            true
+        },
+    ));
     for _ in 0..95 {
         network.drop_node();
         verify_invariant(&network);
     }
-    assert!(network
-                .nodes
-                .iter()
-                .all(|(_, table)| if table.num_of_sections() > 0 {
-                         trace!("{:?}", table);
-                         false
-                     } else {
-                         true
-                     }));
+    assert!(network.nodes.iter().all(
+        |(_, table)| if table.num_of_sections() >
+            0
+        {
+            trace!("{:?}", table);
+            false
+        } else {
+            true
+        },
+    ));
 }

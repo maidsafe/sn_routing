@@ -54,7 +54,8 @@ pub trait EventStepper {
 
 /// Blanket implementation of `EventStream` for types implementing `EventStepper`.
 impl<S> EventStream for S
-    where S: EventStepper
+where
+    S: EventStepper,
 {
     type Item = <S as EventStepper>::Item;
 

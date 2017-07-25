@@ -67,13 +67,15 @@ pub fn format_binary_array<V: AsRef<[u8]>>(input: V) -> String {
         }
         return ret;
     }
-    format!("{:02x}{:02x}{:02x}..{:02x}{:02x}{:02x}",
-            input_ref[0],
-            input_ref[1],
-            input_ref[2],
-            input_ref[input_ref.len() - 3],
-            input_ref[input_ref.len() - 2],
-            input_ref[input_ref.len() - 1])
+    format!(
+        "{:02x}{:02x}{:02x}..{:02x}{:02x}{:02x}",
+        input_ref[0],
+        input_ref[1],
+        input_ref[2],
+        input_ref[input_ref.len() - 3],
+        input_ref[input_ref.len() - 2],
+        input_ref[input_ref.len() - 1]
+    )
 }
 
 /// Compute the target destination for a joining node with the given name.
@@ -102,9 +104,10 @@ pub fn calculate_relocation_dst(mut close_nodes: Vec<XorName>, current_name: &Xo
 }
 
 /// Calculate the interval for a node joining our section to generate a key for.
-pub fn calculate_relocation_interval(prefix: &Prefix<XorName>,
-                                     section: &BTreeSet<XorName>)
-                                     -> (XorName, XorName) {
+pub fn calculate_relocation_interval(
+    prefix: &Prefix<XorName>,
+    section: &BTreeSet<XorName>,
+) -> (XorName, XorName) {
     let (lower_bound, upper_bound) = (prefix.lower_bound(), prefix.upper_bound());
 
     let (start, end) = iter::once(&lower_bound)
@@ -112,10 +115,10 @@ pub fn calculate_relocation_interval(prefix: &Prefix<XorName>,
         .chain(iter::once(&upper_bound))
         .tuple_windows()
         .max_by(|&(x1, y1), &(x2, y2)| {
-                    let diff1 = y1 - x1;
-                    let diff2 = y2 - x2;
-                    diff1.cmp(&diff2)
-                })
+            let diff1 = y1 - x1;
+            let diff2 = y2 - x2;
+            diff1.cmp(&diff2)
+        })
         .unwrap_or((&lower_bound, &upper_bound));
 
     let third_of_distance = (*end - *start) / 3;
@@ -146,12 +149,18 @@ mod tests {
 
     #[test]
     fn duration_formatting() {
-        assert_eq!(format!("{}", Duration::new(653105, 499_000_000).display_secs()),
-                   "653105 seconds");
-        assert_eq!(format!("{}", Duration::new(653105, 500_000_000).display_secs()),
-                   "653106 seconds");
-        assert_eq!(format!("{}", Duration::new(0, 900_000_000).display_secs()),
-                   "1 seconds");
+        assert_eq!(
+            format!("{}", Duration::new(653105, 499_000_000).display_secs()),
+            "653105 seconds"
+        );
+        assert_eq!(
+            format!("{}", Duration::new(653105, 500_000_000).display_secs()),
+            "653106 seconds"
+        );
+        assert_eq!(
+            format!("{}", Duration::new(0, 900_000_000).display_secs()),
+            "1 seconds"
+        );
     }
 
     #[test]
@@ -179,8 +188,10 @@ mod tests {
 
         let expected_relocated_name_one_node = XorName(sha3_256(&combined_one_node));
 
-        assert_eq!(actual_relocated_name_one_entry,
-                   expected_relocated_name_one_node);
+        assert_eq!(
+            actual_relocated_name_one_entry,
+            expected_relocated_name_one_node
+        );
 
         // TODO: we're not using fixed sizes any more: this code should possibly change!
         // populated closed nodes
@@ -188,8 +199,8 @@ mod tests {
         for _ in 0..min_section_size {
             close_nodes.push(rand::random());
         }
-        let actual_relocated_name = super::calculate_relocation_dst(close_nodes.clone(),
-                                                                    &original_name);
+        let actual_relocated_name =
+            super::calculate_relocation_dst(close_nodes.clone(), &original_name);
         assert_ne!(original_name, actual_relocated_name);
         close_nodes.sort_by(|a, b| original_name.cmp_distance(a, b));
         let first_closest = close_nodes[0];

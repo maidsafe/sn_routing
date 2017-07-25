@@ -115,8 +115,11 @@ impl ExampleClient {
     #[allow(unused)]
     pub fn get_idata(&mut self, name: XorName) -> Result<ImmutableData, ClientError> {
         let msg_id = MessageId::new();
-        unwrap!(self.client
-                    .get_idata(Authority::NaeManager(name), name, msg_id));
+        unwrap!(self.client.get_idata(
+            Authority::NaeManager(name),
+            name,
+            msg_id,
+        ));
         recv_response!(self, GetIData, name, msg_id)
     }
 
@@ -139,8 +142,12 @@ impl ExampleClient {
     #[allow(unused)]
     pub fn get_mdata_shell(&mut self, name: XorName, tag: u64) -> Result<MutableData, ClientError> {
         let msg_id = MessageId::new();
-        unwrap!(self.client
-                    .get_mdata_shell(Authority::NaeManager(name), name, tag, msg_id));
+        unwrap!(self.client.get_mdata_shell(
+            Authority::NaeManager(name),
+            name,
+            tag,
+            msg_id,
+        ));
         recv_response!(self, GetMDataShell, name, msg_id)
     }
 
@@ -149,13 +156,18 @@ impl ExampleClient {
     ///
     /// This is a blocking call and will wait indefinitely for the response.
     #[allow(unused)]
-    pub fn list_mdata_entries(&mut self,
-                              name: XorName,
-                              tag: u64)
-                              -> Result<BTreeMap<Vec<u8>, Value>, ClientError> {
+    pub fn list_mdata_entries(
+        &mut self,
+        name: XorName,
+        tag: u64,
+    ) -> Result<BTreeMap<Vec<u8>, Value>, ClientError> {
         let msg_id = MessageId::new();
-        unwrap!(self.client
-                    .list_mdata_entries(Authority::NaeManager(name), name, tag, msg_id));
+        unwrap!(self.client.list_mdata_entries(
+            Authority::NaeManager(name),
+            name,
+            tag,
+            msg_id,
+        ));
         recv_response!(self, ListMDataEntries, name, msg_id)
     }
 
@@ -164,14 +176,20 @@ impl ExampleClient {
     ///
     /// This is a blocking call and will wait indefinitely for the response.
     #[allow(unused)]
-    pub fn get_mdata_value(&mut self,
-                           name: XorName,
-                           tag: u64,
-                           key: Vec<u8>)
-                           -> Result<Value, ClientError> {
+    pub fn get_mdata_value(
+        &mut self,
+        name: XorName,
+        tag: u64,
+        key: Vec<u8>,
+    ) -> Result<Value, ClientError> {
         let msg_id = MessageId::new();
-        unwrap!(self.client
-                    .get_mdata_value(Authority::NaeManager(name), name, tag, key, msg_id));
+        unwrap!(self.client.get_mdata_value(
+            Authority::NaeManager(name),
+            name,
+            tag,
+            key,
+            msg_id,
+        ));
         recv_response!(self, GetMDataValue, name, msg_id)
     }
 

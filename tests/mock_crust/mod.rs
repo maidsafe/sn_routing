@@ -51,15 +51,15 @@ fn disconnect_on_rebootstrap() {
     let mut nodes = create_connected_nodes(&network, 2);
     // Try to bootstrap to another than the first node. With network size 2, this should fail.
     let config = BootstrapConfig::with_contacts(&[nodes[1].handle.endpoint()]);
-    nodes.push(TestNode::builder(&network)
-                   .config(config)
-                   .endpoint(Endpoint(2))
-                   .create());
+    nodes.push(
+        TestNode::builder(&network)
+            .config(config)
+            .endpoint(Endpoint(2))
+            .create(),
+    );
     let _ = poll_all(&mut nodes, &mut []);
     // When retrying to bootstrap, we should have disconnected from the bootstrap node.
-    assert!(!unwrap!(nodes.last())
-                 .handle
-                 .is_connected(&nodes[1].handle));
+    assert!(!unwrap!(nodes.last()).handle.is_connected(&nodes[1].handle));
     expect_next_event!(unwrap!(nodes.last_mut()), Event::Terminate);
 }
 
@@ -110,9 +110,7 @@ fn multiple_joining_nodes() {
         // can handle this, either by adding the nodes in sequence or by rejecting some.
         let count = 5;
         for _ in 0..count {
-            nodes.push(TestNode::builder(&network)
-                           .config(config.clone())
-                           .create());
+            nodes.push(TestNode::builder(&network).config(config.clone()).create());
         }
 
         poll_and_resend(&mut nodes, &mut []);
@@ -151,15 +149,11 @@ fn simultaneous_joining_nodes() {
         }
     }
 
-    let node = TestNode::builder(&network)
-        .config(config.clone())
-        .create();
+    let node = TestNode::builder(&network).config(config.clone()).create();
     let prefix = Prefix::new(1, node.name());
     nodes.push(node);
     loop {
-        let node = TestNode::builder(&network)
-            .config(config.clone())
-            .create();
+        let node = TestNode::builder(&network).config(config.clone()).create();
         if !prefix.matches(&node.name()) {
             nodes.push(node);
             break;
@@ -174,9 +168,8 @@ fn simultaneous_joining_nodes() {
 #[test]
 fn check_close_names_for_min_section_size_nodes() {
     let nodes = create_connected_nodes(&Network::new(MIN_SECTION_SIZE, None), MIN_SECTION_SIZE);
-    let close_sections_complete =
-        nodes
-            .iter()
-            .all(|n| nodes.iter().all(|m| m.close_names().contains(&n.name())));
+    let close_sections_complete = nodes.iter().all(|n| {
+        nodes.iter().all(|m| m.close_names().contains(&n.name()))
+    });
     assert!(close_sections_complete);
 }

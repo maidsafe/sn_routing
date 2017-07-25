@@ -77,18 +77,23 @@ fn lost_connection_and_unidirectional_block() {
 }
 
 // Removes nodes from the specified section so that this section will merge with another section.
-fn remove_nodes_from_section_till_merge(prefix_name: &XorName,
-                                        nodes: &mut Vec<TestNode>,
-                                        min_section_size: usize) {
+fn remove_nodes_from_section_till_merge(
+    prefix_name: &XorName,
+    nodes: &mut Vec<TestNode>,
+    min_section_size: usize,
+) {
     let section_indexes: Vec<usize> = nodes
         .iter()
         .enumerate()
         .rev()
-        .filter_map(|(index, node)| if node.routing_table().our_prefix().matches(prefix_name) {
-                        Some(index)
-                    } else {
-                        None
-                    })
+        .filter_map(|(index, node)| if node.routing_table()
+            .our_prefix()
+            .matches(prefix_name)
+        {
+            Some(index)
+        } else {
+            None
+        })
         .collect();
     section_indexes
         .iter()
@@ -99,38 +104,31 @@ fn remove_nodes_from_section_till_merge(prefix_name: &XorName,
 
 // Adds a pair of nodes with names matching the specified prefixes into the network. Also blocks
 // direct connection between these them if `is_tunnel` is true. Returns the endpoints of the nodes.
-fn add_a_pair(network: &Network<PublicId>,
-              nodes: &mut Vec<TestNode>,
-              prefix0: Prefix<XorName>,
-              prefix1: Prefix<XorName>,
-              is_tunnel: bool)
-              -> (Endpoint, Endpoint) {
+fn add_a_pair(
+    network: &Network<PublicId>,
+    nodes: &mut Vec<TestNode>,
+    prefix0: Prefix<XorName>,
+    prefix1: Prefix<XorName>,
+    is_tunnel: bool,
+) -> (Endpoint, Endpoint) {
     let config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
 
-    nodes
-        .iter_mut()
-        .foreach(|node| {
-                     node.inner.set_next_relocation_dst(prefix0.lower_bound());
-                     node.inner
-                         .set_next_relocation_interval((prefix0.lower_bound(),
-                                                        prefix0.upper_bound()));
-                 });
-    nodes.push(TestNode::builder(network)
-                   .config(config.clone())
-                   .create());
+    nodes.iter_mut().foreach(|node| {
+        node.inner.set_next_relocation_dst(prefix0.lower_bound());
+        node.inner.set_next_relocation_interval(
+            (prefix0.lower_bound(), prefix0.upper_bound()),
+        );
+    });
+    nodes.push(TestNode::builder(network).config(config.clone()).create());
     poll_and_resend(nodes, &mut []);
 
-    nodes
-        .iter_mut()
-        .foreach(|node| {
-                     node.inner.set_next_relocation_dst(prefix1.lower_bound());
-                     node.inner
-                         .set_next_relocation_interval((prefix1.lower_bound(),
-                                                        prefix1.upper_bound()));
-                 });
-    nodes.push(TestNode::builder(network)
-                   .config(config.clone())
-                   .create());
+    nodes.iter_mut().foreach(|node| {
+        node.inner.set_next_relocation_dst(prefix1.lower_bound());
+        node.inner.set_next_relocation_interval(
+            (prefix1.lower_bound(), prefix1.upper_bound()),
+        );
+    });
+    nodes.push(TestNode::builder(network).config(config.clone()).create());
 
     let endpoints = (Endpoint(nodes.len() - 2), Endpoint(nodes.len() - 1));
     if is_tunnel {
@@ -146,11 +144,15 @@ fn locate_tunnel_node(nodes: &[TestNode], client_1: PublicId, client_2: PublicId
     let tunnel_node_indexes: Vec<usize> = nodes
         .iter()
         .enumerate()
-        .filter_map(|(index, node)| if node.inner.has_tunnel_clients(client_1, client_2) {
-                        Some(index)
-                    } else {
-                        None
-                    })
+        .filter_map(|(index, node)| if node.inner.has_tunnel_clients(
+            client_1,
+            client_2,
+        )
+        {
+            Some(index)
+        } else {
+            None
+        })
         .collect();
     // There shall be only one tunnel_node for a pair of tunnel_clients across the network
     // Or None if they are directly connected or one of them are no longer in the network
@@ -172,30 +174,38 @@ fn tunnel_clients() {
     // will be, but they will take longer to generate them.
     let bit_count = 8;
 
-    let direct_pair = add_a_pair(&network,
-                                 &mut nodes,
-                                 Prefix::new(bit_count, XorName([0u8; XOR_NAME_LEN])),
-                                 Prefix::new(bit_count, XorName([253u8; XOR_NAME_LEN])),
-                                 false);
+    let direct_pair = add_a_pair(
+        &network,
+        &mut nodes,
+        Prefix::new(bit_count, XorName([0u8; XOR_NAME_LEN])),
+        Prefix::new(bit_count, XorName([253u8; XOR_NAME_LEN])),
+        false,
+    );
     let direct_pair_peer_ids = (nodes[nodes.len() - 1].id(), nodes[nodes.len() - 2].id());
-    let _ = add_a_pair(&network,
-                       &mut nodes,
-                       Prefix::new(bit_count, XorName([1u8; XOR_NAME_LEN])),
-                       Prefix::new(bit_count, XorName([255u8; XOR_NAME_LEN])),
-                       true);
+    let _ = add_a_pair(
+        &network,
+        &mut nodes,
+        Prefix::new(bit_count, XorName([1u8; XOR_NAME_LEN])),
+        Prefix::new(bit_count, XorName([255u8; XOR_NAME_LEN])),
+        true,
+    );
     let tunnel_pair_1_peer_ids = (nodes[nodes.len() - 1].id(), nodes[nodes.len() - 2].id());
-    let tunnel_pair = add_a_pair(&network,
-                                 &mut nodes,
-                                 Prefix::new(bit_count, XorName([2u8; XOR_NAME_LEN])),
-                                 Prefix::new(bit_count, XorName([254u8; XOR_NAME_LEN])),
-                                 true);
+    let tunnel_pair = add_a_pair(
+        &network,
+        &mut nodes,
+        Prefix::new(bit_count, XorName([2u8; XOR_NAME_LEN])),
+        Prefix::new(bit_count, XorName([254u8; XOR_NAME_LEN])),
+        true,
+    );
     let tunnel_pair_2_peer_ids = (nodes[nodes.len() - 1].id(), nodes[nodes.len() - 2].id());
     verify_invariant_for_all_nodes(&mut nodes);
     assert!(locate_tunnel_node(&nodes, direct_pair_peer_ids.0, direct_pair_peer_ids.1).is_none());
-    assert!(locate_tunnel_node(&nodes, tunnel_pair_1_peer_ids.0, tunnel_pair_1_peer_ids.1)
-                .is_some());
-    assert!(locate_tunnel_node(&nodes, tunnel_pair_2_peer_ids.0, tunnel_pair_2_peer_ids.1)
-                .is_some());
+    assert!(
+        locate_tunnel_node(&nodes, tunnel_pair_1_peer_ids.0, tunnel_pair_1_peer_ids.1).is_some()
+    );
+    assert!(
+        locate_tunnel_node(&nodes, tunnel_pair_2_peer_ids.0, tunnel_pair_2_peer_ids.1).is_some()
+    );
 
     add_connected_nodes_until_split(&network, &mut nodes, vec![2, 2, 2, 2], false);
     verify_invariant_for_all_nodes(&mut nodes);
@@ -209,15 +219,19 @@ fn tunnel_clients() {
     FakeClock::advance_time(CONNECTED_PEER_TIMEOUT_SECS * 1000 + 1);
     let _ = poll_all(&mut nodes, &mut []);
 
-    remove_nodes_from_section_till_merge(&XorName([64u8; XOR_NAME_LEN]),
-                                         &mut nodes,
-                                         min_section_size);
+    remove_nodes_from_section_till_merge(
+        &XorName([64u8; XOR_NAME_LEN]),
+        &mut nodes,
+        min_section_size,
+    );
     verify_invariant_for_all_nodes(&mut nodes);
     assert!(locate_tunnel_node(&nodes, direct_pair_peer_ids.0, direct_pair_peer_ids.1).is_some());
-    assert!(locate_tunnel_node(&nodes, tunnel_pair_1_peer_ids.0, tunnel_pair_1_peer_ids.1)
-                .is_some());
-    assert!(locate_tunnel_node(&nodes, tunnel_pair_2_peer_ids.0, tunnel_pair_2_peer_ids.1)
-                .is_none());
+    assert!(
+        locate_tunnel_node(&nodes, tunnel_pair_1_peer_ids.0, tunnel_pair_1_peer_ids.1).is_some()
+    );
+    assert!(
+        locate_tunnel_node(&nodes, tunnel_pair_2_peer_ids.0, tunnel_pair_2_peer_ids.1).is_none()
+    );
 }
 
 // The purpose of this test is to confirm that as in the logs of MAID-1951, once the tunnel got
@@ -234,8 +248,10 @@ fn tunnel_client_connect_failure() {
     network.send_crust_event(Endpoint(2), crust::Event::ConnectFailure(nodes[3].id()));
     let _ = poll_all(&mut nodes, &mut []);
     verify_invariant_for_all_nodes(&mut nodes);
-    assert_eq!(tunnel_node_index,
-               unwrap!(locate_tunnel_node(&nodes, nodes[2].id(), nodes[3].id())));
+    assert_eq!(
+        tunnel_node_index,
+        unwrap!(locate_tunnel_node(&nodes, nodes[2].id(), nodes[3].id()))
+    );
 }
 
 fn verify_tunnel_switch(nodes: &mut Vec<TestNode>, node: usize, client_1: usize, client_2: usize) {
@@ -252,9 +268,11 @@ fn verify_tunnel_switch(nodes: &mut Vec<TestNode>, node: usize, client_1: usize,
             }
             Event::Tick => {}
             _ => {
-                panic!("{:?} received unexpected event {:?}",
-                       nodes[client_1].name(),
-                       event)
+                panic!(
+                    "{:?} received unexpected event {:?}",
+                    nodes[client_1].name(),
+                    event
+                )
             }
         }
     }
@@ -271,9 +289,11 @@ fn verify_tunnel_switch(nodes: &mut Vec<TestNode>, node: usize, client_1: usize,
             }
             Event::Tick => {}
             _ => {
-                panic!("{:?} received unexpected event {:?}",
-                       nodes[client_2].name(),
-                       event)
+                panic!(
+                    "{:?} received unexpected event {:?}",
+                    nodes[client_2].name(),
+                    event
+                )
             }
         }
     }
@@ -291,8 +311,10 @@ fn tunnel_node_disrupted() {
     network.lost_connection(Endpoint(2), Endpoint(tunnel_node_index));
     poll_and_resend(&mut nodes, &mut []);
     verify_tunnel_switch(&mut nodes, tunnel_node_index, 2, 3);
-    assert_ne!(tunnel_node_index,
-               unwrap!(locate_tunnel_node(&nodes, nodes[2].id(), nodes[3].id())));
+    assert_ne!(
+        tunnel_node_index,
+        unwrap!(locate_tunnel_node(&nodes, nodes[2].id(), nodes[3].id()))
+    );
     verify_invariant_for_all_nodes(&mut nodes);
 }
 
@@ -310,8 +332,10 @@ fn tunnel_node_blocked() {
     network.lost_connection(Endpoint(2), Endpoint(tunnel_node_index));
     poll_and_resend(&mut nodes, &mut []);
     verify_tunnel_switch(&mut nodes, tunnel_node_index, 2, 3);
-    assert_ne!(tunnel_node_index,
-               unwrap!(locate_tunnel_node(&nodes, nodes[2].id(), nodes[3].id())));
+    assert_ne!(
+        tunnel_node_index,
+        unwrap!(locate_tunnel_node(&nodes, nodes[2].id(), nodes[3].id()))
+    );
     verify_invariant_for_all_nodes(&mut nodes);
 }
 
@@ -339,8 +363,10 @@ fn tunnel_node_dropped() {
     expect_any_event!(nodes[1], Event::NodeAdded(..));
     expect_any_event!(nodes[2], Event::NodeAdded(..));
     verify_invariant_for_all_nodes(&mut nodes);
-    assert_ne!(tunnel_node_index,
-               unwrap!(locate_tunnel_node(&nodes, id_2, id_3)));
+    assert_ne!(
+        tunnel_node_index,
+        unwrap!(locate_tunnel_node(&nodes, id_2, id_3))
+    );
 }
 
 #[test]
@@ -353,11 +379,13 @@ fn tunnel_node_split_out() {
     // Create nodes that don't match node 1 in their first 2 bits.
     let node1_prefix = Prefix::new(bit_count, nodes[1].name());
     let tunnel_clients_prefix = node1_prefix.with_flipped_bit(0).with_flipped_bit(1);
-    let _ = add_a_pair(&network,
-                       &mut nodes,
-                       tunnel_clients_prefix,
-                       tunnel_clients_prefix.with_flipped_bit(bit_count),
-                       true);
+    let _ = add_a_pair(
+        &network,
+        &mut nodes,
+        tunnel_clients_prefix,
+        tunnel_clients_prefix.with_flipped_bit(bit_count),
+        true,
+    );
     let (tunnel_client_1, tunnel_client_2) = (nodes.len() - 1, nodes.len() - 2);
     let (peer_id_1, peer_id_2) = (nodes[tunnel_client_1].id(), nodes[tunnel_client_2].id());
     verify_invariant_for_all_nodes(&mut nodes);
@@ -367,8 +395,10 @@ fn tunnel_node_split_out() {
     add_connected_nodes_until_split(&network, &mut nodes, vec![2, 2, 2, 2], false);
 
     verify_invariant_for_all_nodes(&mut nodes);
-    assert_ne!(tunnel_node_index,
-               unwrap!(locate_tunnel_node(&nodes, peer_id_1, peer_id_2)));
+    assert_ne!(
+        tunnel_node_index,
+        unwrap!(locate_tunnel_node(&nodes, peer_id_1, peer_id_2))
+    );
 }
 
 #[test]
@@ -380,27 +410,39 @@ fn avoid_tunnelling_when_proxying() {
     let mut nodes = create_connected_nodes(&network, min_section_size);
     verify_invariant_for_all_nodes(&mut nodes);
     // Nodes[0] acts as proxy to others, shall not be chosen as tunnel node.
-    assert_ne!(unwrap!(locate_tunnel_node(&nodes, nodes[2].id(), nodes[3].id())),
-               0);
+    assert_ne!(
+        unwrap!(locate_tunnel_node(&nodes, nodes[2].id(), nodes[3].id())),
+        0
+    );
 
     let config = BootstrapConfig::with_contacts(&[nodes[1].handle.endpoint()]);
     let endpoint = Endpoint(nodes.len());
-    nodes.push(TestNode::builder(&network)
-                   .config(config.clone())
-                   .endpoint(endpoint)
-                   .cache(false)
-                   .create());
+    nodes.push(
+        TestNode::builder(&network)
+            .config(config.clone())
+            .endpoint(endpoint)
+            .cache(false)
+            .create(),
+    );
     poll_and_resend(&mut nodes, &mut []);
     let endpoint = Endpoint(nodes.len());
-    nodes.push(TestNode::builder(&network)
-                   .config(config.clone())
-                   .endpoint(endpoint)
-                   .cache(false)
-                   .create());
+    nodes.push(
+        TestNode::builder(&network)
+            .config(config.clone())
+            .endpoint(endpoint)
+            .cache(false)
+            .create(),
+    );
     network.block_connection(Endpoint(nodes.len() - 1), Endpoint(0));
     network.block_connection(Endpoint(0), Endpoint(nodes.len() - 1));
     poll_and_resend(&mut nodes, &mut []);
     verify_invariant_for_all_nodes(&mut nodes);
-    assert_eq!(nodes.len() - 2,
-               unwrap!(locate_tunnel_node(&nodes, nodes[0].id(), nodes[nodes.len() - 1].id())));
+    assert_eq!(
+        nodes.len() - 2,
+        unwrap!(locate_tunnel_node(
+            &nodes,
+            nodes[0].id(),
+            nodes[nodes.len() - 1].id(),
+        ))
+    );
 }

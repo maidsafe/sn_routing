@@ -54,7 +54,7 @@ pub struct StateMachine {
 }
 
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
+#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
 pub enum State {
     Bootstrapping(Bootstrapping),
     Client(Client),
@@ -96,10 +96,11 @@ impl State {
         }
     }
 
-    fn handle_crust_event(&mut self,
-                          event: CrustEvent<PublicId>,
-                          outbox: &mut EventBox)
-                          -> Transition {
+    fn handle_crust_event(
+        &mut self,
+        event: CrustEvent<PublicId>,
+        outbox: &mut EventBox,
+    ) -> Transition {
         match *self {
             State::Bootstrapping(ref mut state) => state.handle_crust_event(event, outbox),
             State::Client(ref mut state) => state.handle_crust_event(event, outbox),
@@ -121,8 +122,9 @@ impl State {
     }
 
     fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
-        self.base_state()
-            .and_then(|state| state.close_group(name, count))
+        self.base_state().and_then(
+            |state| state.close_group(name, count),
+        )
     }
 
     fn base_state(&self) -> Option<&Base> {
@@ -163,9 +165,10 @@ impl State {
         }
     }
 
-    pub fn section_list_signatures(&self,
-                                   prefix: Prefix<XorName>)
-                                   -> Option<BTreeMap<PublicId, sign::Signature>> {
+    pub fn section_list_signatures(
+        &self,
+        prefix: Prefix<XorName>,
+    ) -> Option<BTreeMap<PublicId, sign::Signature>> {
         match *self {
             State::Node(ref state) => state.section_list_signatures(prefix).ok(),
             _ => None,
@@ -210,7 +213,7 @@ impl State {
 
 /// Enum returned from many message handlers
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
+#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
 pub enum Transition {
     Stay,
     // `Bootstrapping` state transitioning to `Client`, `JoiningNode`, or `Node`.
@@ -225,24 +228,30 @@ pub enum Transition {
 
 impl StateMachine {
     // Construct a new StateMachine by passing a function returning the initial state.
-    pub fn new<F>(init_state: F,
-                  pub_id: PublicId,
-                  config: Option<BootstrapConfig>,
-                  outbox: &mut EventBox)
-                  -> (RoutingActionSender, Self)
-        where F: FnOnce(RoutingActionSender, Service, Timer, &mut EventBox) -> State
+    pub fn new<F>(
+        init_state: F,
+        pub_id: PublicId,
+        config: Option<BootstrapConfig>,
+        outbox: &mut EventBox,
+    ) -> (RoutingActionSender, Self)
+    where
+        F: FnOnce(RoutingActionSender, Service, Timer, &mut EventBox) -> State,
     {
         let (category_tx, category_rx) = mpsc::channel();
         let (crust_tx, crust_rx) = mpsc::channel();
         let (action_tx, action_rx) = mpsc::channel();
 
-        let action_sender = RoutingActionSender::new(action_tx,
-                                                     MaidSafeEventCategory::Routing,
-                                                     category_tx.clone());
+        let action_sender = RoutingActionSender::new(
+            action_tx,
+            MaidSafeEventCategory::Routing,
+            category_tx.clone(),
+        );
 
-        let crust_sender = CrustEventSender::new(crust_tx.clone(),
-                                                 MaidSafeEventCategory::Crust,
-                                                 category_tx.clone());
+        let crust_sender = CrustEventSender::new(
+            crust_tx.clone(),
+            MaidSafeEventCategory::Crust,
+            category_tx.clone(),
+        );
 
         let res = match config {
             #[cfg(feature = "use-mock-crust")]
@@ -304,8 +313,10 @@ impl StateMachine {
                 match self.crust_rx.try_recv() {
                     Ok(crust_event) => self.state.handle_crust_event(crust_event, outbox),
                     Err(TryRecvError::Empty) => {
-                        debug!("Crust receiver temporarily empty, probably due to node \
-                               relocation.");
+                        debug!(
+                            "Crust receiver temporarily empty, probably due to node \
+                               relocation."
+                        );
                         Transition::Stay
                     }
                     Err(TryRecvError::Disconnected) => {
@@ -353,14 +364,18 @@ impl StateMachine {
             } => {
                 let new_state = match mem::replace(&mut self.state, State::Terminated) {
                     State::JoiningNode(joining_node) => {
-                        let crust_sender = CrustEventSender::new(self.crust_tx.clone(),
-                                                                 MaidSafeEventCategory::Crust,
-                                                                 self.category_tx.clone());
-                        joining_node.into_bootstrapping(&mut self.crust_rx,
-                                                        crust_sender,
-                                                        new_id,
-                                                        our_section,
-                                                        outbox)
+                        let crust_sender = CrustEventSender::new(
+                            self.crust_tx.clone(),
+                            MaidSafeEventCategory::Crust,
+                            self.category_tx.clone(),
+                        );
+                        joining_node.into_bootstrapping(
+                            &mut self.crust_rx,
+                            crust_sender,
+                            new_id,
+                            our_section,
+                            outbox,
+                        )
                     }
                     _ => unreachable!(),
                 };
@@ -449,10 +464,10 @@ impl StateMachine {
         let mut interleaved = positions
             .iter()
             .filter_map(|is_timed_out| if *is_timed_out {
-                            timed_out_events.pop()
-                        } else {
-                            events.pop()
-                        })
+                timed_out_events.pop()
+            } else {
+                events.pop()
+            })
             .collect_vec();
         interleaved.reverse();
         self.events.extend(interleaved);

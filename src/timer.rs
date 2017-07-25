@@ -56,10 +56,10 @@ mod implementation {
 
             Timer {
                 inner: Rc::new(RefCell::new(Inner {
-                                                next_token: 0,
-                                                tx: tx,
-                                                _worker: worker,
-                                            })),
+                    next_token: 0,
+                    tx: tx,
+                    _worker: worker,
+                })),
             }
         }
 
@@ -107,10 +107,7 @@ mod implementation {
                 };
 
                 if let Some(Detail { expiry, token }) = r {
-                    deadlines
-                        .entry(expiry)
-                        .or_insert_with(Vec::new)
-                        .push(token);
+                    deadlines.entry(expiry).or_insert_with(Vec::new).push(token);
                 }
 
                 let now = Instant::now();
@@ -146,20 +143,26 @@ mod implementation {
             let (action_sender, action_receiver) = mpsc::channel();
             let (category_sender, category_receiver) = mpsc::channel();
             let routing_event_category = MaidSafeEventCategory::Routing;
-            let sender = RoutingActionSender::new(action_sender,
-                                                  routing_event_category,
-                                                  category_sender.clone());
+            let sender = RoutingActionSender::new(
+                action_sender,
+                routing_event_category,
+                category_sender.clone(),
+            );
             let interval = Duration::from_millis(500);
             let instant_when_added;
             let check_no_events_received = || {
                 let category = category_receiver.try_recv();
-                assert!(category.is_err(),
-                        "Expected no event, but received {:?}",
-                        category);
+                assert!(
+                    category.is_err(),
+                    "Expected no event, but received {:?}",
+                    category
+                );
                 let action = action_receiver.try_recv();
-                assert!(action.is_err(),
-                        "Expected no event, but received {:?}",
-                        action);
+                assert!(
+                    action.is_err(),
+                    "Expected no event, but received {:?}",
+                    action
+                );
             };
             {
                 let timer = Timer::new(sender);
@@ -183,16 +186,20 @@ mod implementation {
                     match category.expect("Should have received a category.") {
                         MaidSafeEventCategory::Routing => (),
                         unexpected_category => {
-                            panic!("Expected `MaidSafeEventCategory::Routing`, but received {:?}",
-                                   unexpected_category);
+                            panic!(
+                                "Expected `MaidSafeEventCategory::Routing`, but received {:?}",
+                                unexpected_category
+                            );
                         }
                     }
                     let action = action_receiver.try_recv();
                     match action.expect("Should have received an action.") {
                         Action::Timeout(token) => assert_eq!(token, (count - i - 1) as u64),
                         unexpected_action => {
-                            panic!("Expected `Action::Timeout`, but received {:?}",
-                                   unexpected_action);
+                            panic!(
+                                "Expected `Action::Timeout`, but received {:?}",
+                                unexpected_action
+                            );
                         }
                     }
                 }
@@ -203,8 +210,10 @@ mod implementation {
                 let _ = timer.schedule(interval);
             }
 
-            assert!(Instant::now() - instant_when_added < interval,
-                    "`Timer::drop()` is blocking.");
+            assert!(
+                Instant::now() - instant_when_added < interval,
+                "`Timer::drop()` is blocking."
+            );
 
             thread::sleep(interval + Duration::from_millis(100));
             check_no_events_received();
@@ -215,9 +224,11 @@ mod implementation {
             let (action_sender, _action_receiver) = mpsc::channel();
             let (category_sender, _category_receiver) = mpsc::channel();
             let routing_event_category = MaidSafeEventCategory::Routing;
-            let sender = RoutingActionSender::new(action_sender,
-                                                  routing_event_category,
-                                                  category_sender.clone());
+            let sender = RoutingActionSender::new(
+                action_sender,
+                routing_event_category,
+                category_sender.clone(),
+            );
             let timer = Timer::new(sender);
             for _ in 0..1000 {
                 let _ = timer.schedule(Duration::new(0, 3000));
@@ -250,9 +261,9 @@ mod implementation {
         pub fn new(_action_sender: RoutingActionSender) -> Self {
             Timer {
                 inner: Rc::new(RefCell::new(Inner {
-                                                next_token: 0,
-                                                deadlines: Default::default(),
-                                            })),
+                    next_token: 0,
+                    deadlines: Default::default(),
+                })),
             }
         }
 

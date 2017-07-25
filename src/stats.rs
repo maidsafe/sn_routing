@@ -190,23 +190,27 @@ impl Stats {
                         self.msg_list_mdata_permissions.inc_response(res.is_ok())
                     }
                     Response::ListMDataUserPermissions { ref res, .. } => {
-                        self.msg_list_mdata_user_permissions
-                            .inc_response(res.is_ok())
+                        self.msg_list_mdata_user_permissions.inc_response(
+                            res.is_ok(),
+                        )
                     }
                     Response::SetMDataUserPermissions { ref res, .. } => {
-                        self.msg_set_mdata_user_permissions
-                            .inc_response(res.is_ok())
+                        self.msg_set_mdata_user_permissions.inc_response(
+                            res.is_ok(),
+                        )
                     }
                     Response::DelMDataUserPermissions { ref res, .. } => {
-                        self.msg_del_mdata_user_permissions
-                            .inc_response(res.is_ok())
+                        self.msg_del_mdata_user_permissions.inc_response(
+                            res.is_ok(),
+                        )
                     }
                     Response::ChangeMDataOwner { ref res, .. } => {
                         self.msg_change_mdata_owner.inc_response(res.is_ok())
                     }
                     Response::ListAuthKeysAndVersion { ref res, .. } => {
-                        self.msg_list_auth_keys_and_version
-                            .inc_response(res.is_ok())
+                        self.msg_list_auth_keys_and_version.inc_response(
+                            res.is_ok(),
+                        )
                     }
                     Response::InsAuthKey { ref res, .. } => {
                         self.msg_ins_auth_key.inc_response(res.is_ok())
