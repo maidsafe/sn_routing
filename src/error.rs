@@ -17,6 +17,7 @@
 
 use super::routing_table::Error as RoutingTableError;
 use action::Action;
+use config_file_handler::Error as ConfigFileHandlerError;
 use crust::CrustError;
 use event::Event;
 use id::PublicId;
@@ -134,6 +135,8 @@ pub enum RoutingError {
     /// The client's message indicated by the included hash digest has been rejected by the
     /// rate-limiter.
     ExceedsRateLimit(Digest256),
+    /// Invalid configuration
+    ConfigError(ConfigFileHandlerError),
 }
 
 impl From<RoutingTableError> for RoutingError {
@@ -175,6 +178,12 @@ impl From<SendError<Event>> for RoutingError {
 impl From<serialisation::SerialisationError> for RoutingError {
     fn from(error: serialisation::SerialisationError) -> RoutingError {
         RoutingError::SerialisationError(error)
+    }
+}
+
+impl From<ConfigFileHandlerError> for RoutingError {
+    fn from(error: ConfigFileHandlerError) -> RoutingError {
+        RoutingError::ConfigError(error)
     }
 }
 

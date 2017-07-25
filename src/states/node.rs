@@ -21,6 +21,7 @@ use {CrustEvent, PrivConnectionInfo, PubConnectionInfo, QUORUM_DENOMINATOR, QUOR
 use ack_manager::{Ack, AckManager};
 use action::Action;
 use cache::Cache;
+use config_handler::{self, DevConfig};
 use crust::{ConnectionInfoResult, CrustError, CrustUser};
 use cumulative_own_section_merge::CumulativeOwnSectionMerge;
 use error::{BootstrapResponseError, InterfaceError, RoutingError};
@@ -136,6 +137,8 @@ pub struct Node {
     dropped_clients: LruCache<PublicId, ()>,
     /// Proxy client traffic handled
     proxy_load_amount: u64,
+    /// Whether resource proof is disabled.
+    disable_resource_proof: bool,
 }
 
 impl Node {
@@ -212,10 +215,19 @@ impl Node {
            timer: Timer,
            challenger_count: usize)
            -> Self {
+        let routing_config = match config_handler::read_config_file() {
+            Ok(cfg) => cfg,
+            Err(err) => {
+                warn!("Using default config as failed in parsing routing config file: {:?}",
+                      err);
+                DevConfig::default()
+            }
+        };
         let public_id = *new_full_id.public_id();
         let tick_period = Duration::from_secs(TICK_TIMEOUT_SECS);
         let tick_timer_token = timer.schedule(tick_period);
         let user_msg_cache_duration = Duration::from_secs(USER_MSG_CACHE_EXPIRY_DURATION_SECS);
+
         Node {
             ack_mgr: AckManager::new(),
             cacheable_user_msg_cache:
@@ -247,18 +259,19 @@ impl Node {
             candidate_status_token: None,
             resource_prover: ResourceProver::new(action_sender, timer, challenger_count),
             joining_prefix: Default::default(),
-            clients_rate_limiter: Default::default(),
+            clients_rate_limiter: RateLimiter::new(routing_config.disable_client_rate_limiter),
             banned_client_ips: LruCache::with_expiry_duration(Duration::from_secs(CLIENT_BAN_SECS)),
             dropped_clients:
                 LruCache::with_expiry_duration(Duration::from_secs(DROPPED_CLIENT_TIMEOUT_SECS)),
             proxy_load_amount: 0,
+            disable_resource_proof: routing_config.disable_resource_proof,
         }
     }
 
     /// Called immediately after bootstrapping. Sends `ConnectionInfoRequest`s to all members of
     /// `our_section` to then start the candidate approval process.
     fn join(&mut self, our_section: BTreeSet<PublicId>, proxy_public_id: &PublicId) {
-        self.resource_prover.start();
+        self.resource_prover.start(self.disable_resource_proof);
 
         trace!("{:?} Relocation completed.", self);
         info!("{:?} Received relocation section. Establishing connections to {} peers.",
@@ -1408,7 +1421,7 @@ impl Node {
         }
     }
 
-    /// Returns `Ok` if a client is allowed to send the given message.
+    /// Returns `Ok` with rate_limiter charged size if client is allowed to send the given message.
     fn check_valid_client_message(&mut self,
                                   ip: &IpAddr,
                                   msg: &RoutingMessage)
@@ -1572,7 +1585,8 @@ impl Node {
             return;
         }
 
-        let (difficulty, target_size) = if self.crust_service.is_peer_hard_coded(new_pub_id) ||
+        let (difficulty, target_size) = if self.disable_resource_proof ||
+                                           self.crust_service.is_peer_hard_coded(new_pub_id) ||
                                            self.peer_mgr.is_joining_node(new_pub_id) {
             (0, 1)
         } else {

@@ -59,13 +59,16 @@ pub struct RateLimiter {
     used: BTreeMap<IpAddr, u64>,
     /// Timestamp of when the `RateLimiter` was last updated.
     last_updated: Instant,
+    /// Whether rate restriction is disabled.
+    disabled: bool,
 }
 
 impl RateLimiter {
-    pub fn new() -> Self {
+    pub fn new(disabled: bool) -> Self {
         RateLimiter {
             used: BTreeMap::new(),
             last_updated: Instant::now(),
+            disabled: disabled,
         }
     }
 
@@ -82,14 +85,6 @@ impl RateLimiter {
                        part_index: u32,
                        payload: &[u8])
                        -> Result<u64, RoutingError> {
-        self.update();
-        let total_used: u64 = self.used.values().sum();
-
-        let used = self.used.get(client_ip).map_or(0, |used| *used);
-
-        let allowance = cmp::min(CAPACITY - total_used,
-                                 (CAPACITY / online_clients).saturating_sub(used));
-
         let bytes_to_add = if part_index == 0 {
             use self::UserMessage::*;
             use Request::*;
@@ -137,6 +132,16 @@ impl RateLimiter {
             payload.len() as u64
         };
 
+        if self.disabled {
+            return Ok(bytes_to_add);
+        }
+
+        self.update();
+        let total_used: u64 = self.used.values().sum();
+        let used = self.used.get(client_ip).map_or(0, |used| *used);
+        let allowance = cmp::min(CAPACITY - total_used,
+                                 (CAPACITY / online_clients).saturating_sub(used));
+
         if bytes_to_add > allowance {
             return Err(RoutingError::ExceedsRateLimit(*hash));
         }
@@ -182,12 +187,6 @@ impl RateLimiter {
     }
 }
 
-impl Default for RateLimiter {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[cfg(all(test, feature = "use-mock-crust"))]
 mod tests {
     use super::*;
@@ -200,7 +199,7 @@ mod tests {
     #[test]
     fn add_message() {
         // First client fills the `RateLimiter` with get requests.
-        let mut rate_limiter = RateLimiter::new();
+        let mut rate_limiter = RateLimiter::new(false);
         let client_1 = IpAddr::from([0, 0, 0, 0]);
         let get_req_payload = unwrap!(serialisation::serialise(
             &UserMessage::Request(Request::GetIData {
