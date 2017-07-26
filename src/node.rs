@@ -557,11 +557,6 @@ impl Node {
         self.machine.current().section_list_signatures(prefix)
     }
 
-    /// Get clients' usage from rate limiter.
-    pub fn get_clients_usage(&self) -> BTreeMap<IpAddr, u64> {
-        self.machine.current().get_clients_usage()
-    }
-
     /// Returns the list of banned clients' IPs held by this node.
     pub fn get_banned_client_ips(&self) -> BTreeSet<IpAddr> {
         self.machine.current().get_banned_client_ips()

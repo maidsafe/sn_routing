@@ -30,23 +30,12 @@ use std::net::IpAddr;
 #[cfg(not(feature = "use-mock-crust"))]
 use std::time::Instant;
 
-/// Maximum total bytes the `RateLimiter` allows at any given moment.
-pub const MAX_CLIENTS_PER_PROXY: u64 = CAPACITY / MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
-
-/// Maximum total bytes the `RateLimiter` allows at any given moment.
-///
-/// This cannot be less than `MAX_IMMUTABLE_DATA_SIZE_IN_BYTES` else none of the clients would be
-/// would be able to do a `GET` operation.
-/// This is (1 `MiB` + 10 `KiB`) * 10 => 10 times the `MAX_IMMUTABLE_DATA_SIZE_IN_BYTES`
-const CAPACITY: u64 = 10588160;
 /// The number of bytes per second the `RateLimiter` will "leak".
-const RATE: f64 = CAPACITY as f64 * 1.0;
+const RATE: f64 = 5.0 * 1024.0 * 1024.0;
 
 #[cfg(feature = "use-mock-crust")]
 #[doc(hidden)]
 pub mod rate_limiter_consts {
-    pub const MAX_CLIENTS_PER_PROXY: usize = super::MAX_CLIENTS_PER_PROXY as usize;
-    pub const CAPACITY: u64 = super::CAPACITY;
     pub const RATE: f64 = super::RATE;
 }
 
@@ -69,13 +58,13 @@ impl RateLimiter {
         }
     }
 
-    /// Try to add a message. If the message is a form of get request, `CLIENT_GET_CHARGE` bytes
-    /// will be used, otherwise the actual length of the `payload` will be used. If adding that
-    /// amount will cause the client to exceed its share of the `CAPACITY` or cause the total
-    /// `CAPACITY` to be exceeded, `Err(ExceedsRateLimit)` is returned. If the message is invalid,
-    /// `Err(InvalidMessage)` is returned (this probably indicates malicious behaviour).
+    /// Try to add a message. If the message is a form of get request,
+    /// `MAX_IMMUTABLE_DATA_SIZE_IN_BYTES` or `MAX_MUTABLE_DATA_SIZE_IN_BYTES` bytes will be used,
+    /// otherwise the actual length of the `payload` will be used. If adding that amount will cause
+    /// the client to exceed its capacity (i.e. `MAX_IMMUTABLE_DATA_SIZE_IN_BYTES`), then
+    /// `Err(ExceedsRateLimit)` is returned. If the message is invalid, `Err(InvalidMessage)` is
+    /// returned (this probably indicates malicious behaviour).
     pub fn add_message(&mut self,
-                       online_clients: u64,
                        client_ip: &IpAddr,
                        hash: &Digest256,
                        part_count: u32,
@@ -83,12 +72,9 @@ impl RateLimiter {
                        payload: &[u8])
                        -> Result<u64, RoutingError> {
         self.update();
-        let total_used: u64 = self.used.values().sum();
 
         let used = self.used.get(client_ip).map_or(0, |used| *used);
-
-        let allowance = cmp::min(CAPACITY - total_used,
-                                 (CAPACITY / online_clients).saturating_sub(used));
+        let allowance = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES - used;
 
         let bytes_to_add = if part_index == 0 {
             use self::UserMessage::*;
@@ -175,11 +161,6 @@ impl RateLimiter {
             }
         }
     }
-
-    #[cfg(feature = "use-mock-crust")]
-    pub fn get_clients_usage(&self) -> BTreeMap<IpAddr, u64> {
-        self.used.clone()
-    }
 }
 
 impl Default for RateLimiter {
@@ -192,101 +173,255 @@ impl Default for RateLimiter {
 mod tests {
     use super::*;
     use fake_clock::FakeClock;
-    use messages::Request;
-    use rand;
+    use maidsafe_utilities::SeededRng;
+    use messages::{Request, Response};
+    use rand::{self, Rng};
+    use std::collections::BTreeMap;
     use tiny_keccak::sha3_256;
     use types::MessageId;
 
-    #[test]
-    fn add_message() {
-        // First client fills the `RateLimiter` with get requests.
-        let mut rate_limiter = RateLimiter::new();
-        let client_1 = IpAddr::from([0, 0, 0, 0]);
-        let get_req_payload = unwrap!(serialisation::serialise(
+    /// Creates a random `GetIData` request and returns it serialised along with its hash digest.
+    fn create_get_idata_request() -> (Vec<u8>, Digest256) {
+        let payload = unwrap!(serialisation::serialise(
             &UserMessage::Request(Request::GetIData {
                 name: rand::random(),
                 msg_id: MessageId::new(),
         })));
-        let hash = sha3_256(&get_req_payload);
-        let fill_full_iterations = CAPACITY / MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
-        for _ in 0..fill_full_iterations {
-            let _ = unwrap!(rate_limiter.add_message(1, &client_1, &hash, 1, 0, &get_req_payload));
-        }
+        let hash = sha3_256(&payload);
+        (payload, hash)
+    }
 
-        // Check a second client can't add a message just now.
-        let client_2 = IpAddr::from([1, 1, 1, 1]);
-        match rate_limiter.add_message(1, &client_2, &hash, 1, 0, &get_req_payload) {
+    fn assert_get_idata_req_can_be_added(rate_limiter: &mut RateLimiter, client: &IpAddr) {
+        let (payload, hash) = create_get_idata_request();
+        let _ = unwrap!(rate_limiter.add_message(client, &hash, 1, 0, &payload));
+    }
+
+    fn assert_get_idata_req_cannot_be_added(rate_limiter: &mut RateLimiter, client: &IpAddr) {
+        let (payload, hash) = create_get_idata_request();
+        match rate_limiter.add_message(client, &hash, 1, 0, &payload) {
             Err(RoutingError::ExceedsRateLimit(returned_hash)) => {
                 assert_eq!(hash, returned_hash);
             }
             _ => panic!("unexpected result"),
         }
+    }
 
-        // We're waiting until enough has drained to allow the proxy to allow a GET request
+    fn assert_small_message_can_be_added(rate_limiter: &mut RateLimiter, client: &IpAddr) {
+        let payload = vec![0];
+        let hash = sha3_256(&payload);
+        let _ = unwrap!(rate_limiter.add_message(client, &hash, 2, 1, &payload));
+    }
+
+    fn assert_small_message_cannot_be_added(rate_limiter: &mut RateLimiter, client: &IpAddr) {
+        let payload = vec![0];
+        let hash = sha3_256(&payload);
+        match rate_limiter.add_message(client, &hash, 2, 1, &payload) {
+            Err(RoutingError::ExceedsRateLimit(returned_hash)) => {
+                assert_eq!(hash, returned_hash);
+            }
+            _ => panic!("unexpected result"),
+        }
+    }
+
+    /// Checks that a single client cannot exceed its individual limit and that its throughput is
+    /// the full rate of the rate-limiter.
+    #[test]
+    fn single_client() {
+        let mut rate_limiter = RateLimiter::new();
+        let client = IpAddr::from([0, 0, 0, 0]);
+
+        // Consume full allowance.
+        assert_get_idata_req_can_be_added(&mut rate_limiter, &client);
+
+        // Check client can't add any more requests just now.
+        assert_small_message_cannot_be_added(&mut rate_limiter, &client);
+
+        // Advance the clock 1ms and check the small request can now be added, but the large request
+        // is still disallowed.
+        FakeClock::advance_time(1);
+        assert_small_message_can_be_added(&mut rate_limiter, &client);
+        assert_get_idata_req_cannot_be_added(&mut rate_limiter, &client);
+
+        // Advance the clock enough to allow the client's entry to fully drain away. (No need to
+        // round up the calculation here as we've already advanced by 1ms which is equivalent to
+        // rounding up the millisecond calculation).
         let wait_millis = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES * 1000 / RATE as u64;
         FakeClock::advance_time(wait_millis);
+        assert_get_idata_req_can_be_added(&mut rate_limiter, &client);
+    }
 
-        // Now we consume that final GET allowance from the proxy total allowance.
-        let _ = unwrap!(rate_limiter.add_message(2, &client_2, &hash, 1, 0, &get_req_payload));
+    /// Checks that a second client can add messages even when an initial one has hit its limit.
+    /// Also checks that the each client's throughput is half the full rate of the rate-limiter.
+    #[test]
+    fn two_clients() {
+        let mut rate_limiter = RateLimiter::new();
+        let client1 = IpAddr::from([0, 0, 0, 0]);
+        let client2 = IpAddr::from([1, 1, 1, 1]);
 
-        // Now however even with the same time elapsed, the proxy has two clients(1 and 2)
-        // each of whom will be given the drained amount equally.
+        // Each client consumes their full allowance.
+        assert_get_idata_req_can_be_added(&mut rate_limiter, &client1);
+        assert_get_idata_req_can_be_added(&mut rate_limiter, &client2);
+
+        // Check neither client can add any more requests just now.
+        assert_small_message_cannot_be_added(&mut rate_limiter, &client1);
+        assert_small_message_cannot_be_added(&mut rate_limiter, &client2);
+
+        // Advance the clock 1ms and check the small request can now be added by each client, but
+        // the large request is still disallowed.
+        FakeClock::advance_time(1);
+        assert_small_message_can_be_added(&mut rate_limiter, &client1);
+        assert_small_message_can_be_added(&mut rate_limiter, &client2);
+        assert_get_idata_req_cannot_be_added(&mut rate_limiter, &client1);
+        assert_get_idata_req_cannot_be_added(&mut rate_limiter, &client2);
+
+        // Advance the clock enough to allow a single GetIData request to drain away and check that
+        // neither client still cannot add a large request.
+        let wait_millis = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES * 1000 / RATE as u64;
         FakeClock::advance_time(wait_millis);
+        assert_get_idata_req_cannot_be_added(&mut rate_limiter, &client1);
+        assert_get_idata_req_cannot_be_added(&mut rate_limiter, &client2);
 
-        // Now Client 2 will still have a used amount of 500KiB and thus get rejected by the
-        // proxy as the online clients enforces each client to only be allowed 1MiB
-        match rate_limiter.add_message(MAX_CLIENTS_PER_PROXY,
-                                       &client_2,
-                                       &hash,
-                                       1,
-                                       0,
-                                       &get_req_payload) {
-            Err(RoutingError::ExceedsRateLimit(returned_hash)) => {
-                assert_eq!(hash, returned_hash);
+        // Advance the clock by just less than the same amount again and check that neither client
+        // still cannot add a large request.
+        FakeClock::advance_time(wait_millis - 1);
+        assert_get_idata_req_cannot_be_added(&mut rate_limiter, &client1);
+        assert_get_idata_req_cannot_be_added(&mut rate_limiter, &client2);
+
+        // Advance the clock a final small amount and check that both clients can now add large
+        // requests.
+        FakeClock::advance_time(2);
+        assert_get_idata_req_can_be_added(&mut rate_limiter, &client1);
+        assert_get_idata_req_can_be_added(&mut rate_limiter, &client2);
+    }
+
+    /// Checks that if two clients add messages with a delay between them, the rate-limiter's
+    /// throughput remains constant, but the per-client throughput drops when both clients have
+    /// messages and increases when just one has messages.
+    #[test]
+    fn staggered_start() {
+        let mut rate_limiter = RateLimiter::new();
+        let client1 = IpAddr::from([0, 0, 0, 0]);
+        let client2 = IpAddr::from([1, 1, 1, 1]);
+
+        // This is the time during which half of a `GetIData` request will leak away. Assert this
+        // is the case by adding a large request, then waiting for two times `wait_millis` then
+        // trying to add a large request again.
+        let wait_millis = (MAX_IMMUTABLE_DATA_SIZE_IN_BYTES * 500 / RATE as u64) + 1; // round up
+        assert_get_idata_req_can_be_added(&mut rate_limiter, &client1);
+        FakeClock::advance_time(wait_millis);
+        assert_get_idata_req_cannot_be_added(&mut rate_limiter, &client1);
+        FakeClock::advance_time(wait_millis);
+        assert_get_idata_req_can_be_added(&mut rate_limiter, &client1);
+
+        // Allow the rate-limiter to empty.
+        FakeClock::advance_time(2 * wait_millis);
+
+        // Client 1 adds a large message then after `wait_millis`, Client 2 does likewise.
+        assert_get_idata_req_can_be_added(&mut rate_limiter, &client1);
+        FakeClock::advance_time(wait_millis);
+        assert_get_idata_req_can_be_added(&mut rate_limiter, &client2);
+
+        // We wait for a further `wait_millis` then confirm that neither client can add a further
+        // large message at this stage (3/4 of the first message and 1/4 of the second message
+        // should have drained).
+        FakeClock::advance_time(wait_millis);
+        assert_get_idata_req_cannot_be_added(&mut rate_limiter, &client1);
+        assert_get_idata_req_cannot_be_added(&mut rate_limiter, &client2);
+
+        // After a further `wait_millis`, Client 1 should be able to add a new large message, but
+        // not Client 2 (the first message and 1/2 of the second message should have drained).
+        FakeClock::advance_time(wait_millis);
+        assert_get_idata_req_can_be_added(&mut rate_limiter, &client1);
+        assert_get_idata_req_cannot_be_added(&mut rate_limiter, &client2);
+
+        // After a further `3 * wait_millis`, the second and third messages should both have drained
+        // allowing both clients to add new large messages.
+        FakeClock::advance_time(3 * wait_millis);
+        assert_get_idata_req_can_be_added(&mut rate_limiter, &client1);
+        assert_get_idata_req_can_be_added(&mut rate_limiter, &client2);
+    }
+
+    /// Checks that many clients can all add messages at the same rate.
+    #[test]
+    fn many_clients() {
+        let mut rate_limiter = RateLimiter::new();
+        let num_clients = 100;
+        let mut clients_and_counts = (0..num_clients)
+            .map(|i| (IpAddr::from([i, i, i, i]), 0))
+            .collect::<BTreeMap<_, _>>();
+        let (get_req_payload, hash_of_get_req) = create_get_idata_request();
+        let mut rng = SeededRng::thread_rng();
+
+        let start = FakeClock::now();
+        for _ in 0..500 {
+            // Each client tries to add a large request and increments its count on success.
+            for (client, count) in &mut clients_and_counts {
+                if rate_limiter
+                       .add_message(client, &hash_of_get_req, 1, 0, &get_req_payload)
+                       .is_ok() {
+                    *count += 1;
+                }
             }
-            _ => panic!("unexpected result"),
+            FakeClock::advance_time(rng.gen_range(500, 1500));
         }
 
-        // Try adding invalid messages.
-        let all_zero_payload = vec![0u8; MAX_IMMUTABLE_DATA_SIZE_IN_BYTES as usize];
-        match rate_limiter.add_message(MAX_CLIENTS_PER_PROXY,
-                                       &client_2,
-                                       &sha3_256(&all_zero_payload),
-                                       2,
-                                       0,
-                                       &all_zero_payload) {
+        // Check that all clients have managed to add the same number of messages.
+        let advanced_secs = (FakeClock::now() - start).as_secs() + 1;
+        let success_count = (advanced_secs * RATE as u64) /
+                            (MAX_IMMUTABLE_DATA_SIZE_IN_BYTES * num_clients as u64);
+        for count in clients_and_counts.values() {
+            // Allow difference of 1 to accommodate for rounding errors.
+            assert!((*count as i64 - success_count as i64).abs() <= 1);
+        }
+    }
+
+    /// Checks that invalid messages are handled correctly.
+    #[test]
+    fn invalid_messages() {
+        let mut rate_limiter = RateLimiter::new();
+        let client = IpAddr::from([0, 0, 0, 0]);
+
+        // Parses with `SerialisationError::DeserialiseExtraBytes` error.
+        let mut payload = vec![0; MAX_IMMUTABLE_DATA_SIZE_IN_BYTES as usize];
+        match rate_limiter.add_message(&client, &sha3_256(&payload), 1, 0, &payload) {
             Err(RoutingError::InvalidMessage) => {}
             _ => panic!("unexpected result"),
         }
-        // Try making the second client exceed its own usage cap.
-        match rate_limiter.add_message(MAX_CLIENTS_PER_PROXY,
-                                       &client_2,
-                                       &hash,
-                                       1,
-                                       0,
-                                       &get_req_payload) {
-            Err(RoutingError::ExceedsRateLimit(returned_hash)) => {
-                assert_eq!(hash, returned_hash);
-            }
+
+        // Parses with other serialisation error and part count is 1.
+        payload = vec![0];
+        match rate_limiter.add_message(&client, &sha3_256(&payload), 1, 0, &payload) {
+            Err(RoutingError::InvalidMessage) => {}
             _ => panic!("unexpected result"),
         }
-        // More request from the second client with expanded per-client usage cap.
-        let _ = unwrap!(rate_limiter.add_message(2, &client_2, &hash, 1, 0, &get_req_payload));
 
-        // Wait for the same period, and push up the second client's usage.
-        FakeClock::advance_time(wait_millis);
-        let _ = unwrap!(rate_limiter.add_message(2, &client_2, &hash, 1, 0, &get_req_payload));
-        // Wait for the same period to drain the second client's usage to less than per-client cap.
-        FakeClock::advance_time(wait_millis);
-        match rate_limiter.add_message(MAX_CLIENTS_PER_PROXY,
-                                       &client_2,
-                                       &hash,
-                                       1,
-                                       0,
-                                       &get_req_payload) {
-            Err(RoutingError::ExceedsRateLimit(returned_hash)) => {
-                assert_eq!(hash, returned_hash);
-            }
+        // Parses successfully but claims to be part 1 of 2.
+        let mut msg = UserMessage::Request(Request::GetIData {
+                                               name: rand::random(),
+                                               msg_id: MessageId::new(),
+                                           });
+        payload = unwrap!(serialisation::serialise(&msg));
+        match rate_limiter.add_message(&client, &sha3_256(&payload), 2, 0, &payload) {
+            Err(RoutingError::InvalidMessage) => {}
+            _ => panic!("unexpected result"),
+        }
+
+        // Parses as a refresh request.
+        msg = UserMessage::Request(Request::Refresh(vec![0], MessageId::new()));
+        payload = unwrap!(serialisation::serialise(&msg));
+        match rate_limiter.add_message(&client, &sha3_256(&payload), 1, 0, &payload) {
+            Err(RoutingError::InvalidMessage) => {}
+            _ => panic!("unexpected result"),
+        }
+
+        // Parses as a response.
+        msg = UserMessage::Response(Response::PutIData {
+                                        res: Ok(()),
+                                        msg_id: MessageId::new(),
+                                    });
+        payload = unwrap!(serialisation::serialise(&msg));
+        match rate_limiter.add_message(&client, &sha3_256(&payload), 1, 0, &payload) {
+            Err(RoutingError::InvalidMessage) => {}
             _ => panic!("unexpected result"),
         }
     }
