@@ -175,13 +175,6 @@ impl State {
         }
     }
 
-    pub fn get_clients_usage(&self) -> BTreeMap<IpAddr, u64> {
-        match *self {
-            State::Node(ref state) => state.get_clients_usage(),
-            _ => panic!("Should be State::Node"),
-        }
-    }
-
     pub fn get_banned_client_ips(&self) -> BTreeSet<IpAddr> {
         match *self {
             State::Node(ref state) => state.get_banned_client_ips(),

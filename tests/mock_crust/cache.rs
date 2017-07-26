@@ -17,9 +17,12 @@
 
 use super::{TestNode, create_connected_clients, create_connected_nodes_until_split,
             gen_immutable_data, poll_all};
+use fake_clock::FakeClock;
 use rand::Rng;
-use routing::{Authority, Event, EventStream, ImmutableData, MessageId, Prefix, Request, Response};
+use routing::{Authority, Event, EventStream, ImmutableData, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
+              MessageId, Prefix, Request, Response};
 use routing::mock_crust::Network;
+use routing::rate_limiter_consts::RATE;
 use std::sync::mpsc;
 
 // Generate random immutable data, but make sure the first node in the given
@@ -108,8 +111,11 @@ fn response_caching() {
              src_name == data.name()
     );
 
-    // Drain remaining events if any.
+    // Drain remaining events if any, and advance the fake clock to allow the rate-limiter to drain
+    // enough to permit another Get request.
     while let Ok(_) = clients[0].inner.try_next_ev() {}
+    let wait_millis = (MAX_IMMUTABLE_DATA_SIZE_IN_BYTES * 1000 / RATE as u64) + 1; // round up
+    FakeClock::advance_time(wait_millis);
 
     let message_id = MessageId::new();
 

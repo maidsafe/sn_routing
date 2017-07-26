@@ -25,7 +25,6 @@ use itertools::Itertools;
 use log::LogLevel;
 use messages::MessageContent;
 use rand;
-use rate_limiter::MAX_CLIENTS_PER_PROXY;
 use resource_proof::ResourceProof;
 use resource_prover::RESOURCE_PROOF_DURATION_SECS;
 use routing_table::{Authority, OwnMergeState, Prefix, RemovalDetails, RoutingTable,
@@ -1031,15 +1030,11 @@ impl PeerManager {
 
     /// Checks whether we can accept more clients.
     pub fn can_accept_client(&self, client_ip: IpAddr) -> bool {
-        let mut existing_client_count = 0;
         !self.peers.values().any(|peer| match *peer.state() {
             PeerState::Bootstrapper { ip, .. } |
-            PeerState::Client { ip, .. } => {
-                existing_client_count += 1;
-                client_ip == ip
-            }
+            PeerState::Client { ip, .. } => client_ip == ip,
             _ => false,
-        }) && existing_client_count < MAX_CLIENTS_PER_PROXY as usize
+        })
     }
 
     /// Marks the given peer as direct-connected.
