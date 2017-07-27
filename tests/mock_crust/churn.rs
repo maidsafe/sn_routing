@@ -86,9 +86,14 @@ fn add_node_and_poll<R: Rng>(
     } else {
         (gen_range(rng, 0, len), gen_range(rng, 0, len + 1))
     };
-    let config = BootstrapConfig::with_contacts(&[nodes[proxy].handle.endpoint()]);
+    let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[proxy].handle.endpoint()]);
 
-    nodes.insert(index, TestNode::builder(network).config(config).create());
+    nodes.insert(
+        index,
+        TestNode::builder(network)
+            .bootstrap_config(bootstrap_config)
+            .create(),
+    );
     let (new_node, proxy) = if index <= proxy {
         (index, proxy + 1)
     } else {
@@ -176,8 +181,13 @@ fn random_churn<R: Rng>(
             );
         }
 
-        let config = BootstrapConfig::with_contacts(&[nodes[proxy].handle.endpoint()]);
-        nodes.insert(index, TestNode::builder(network).config(config).create());
+        let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[proxy].handle.endpoint()]);
+        nodes.insert(
+            index,
+            TestNode::builder(network)
+                .bootstrap_config(bootstrap_config)
+                .create(),
+        );
 
         if nodes.len() > 2 * network.min_section_size() {
             if index <= proxy {

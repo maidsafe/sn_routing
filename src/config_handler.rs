@@ -19,27 +19,70 @@ use RoutingError;
 use config_file_handler::{self, FileHandler};
 
 /// Configuration for routing
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
-struct Config {
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
+pub struct Config {
     /// Developer options
     pub dev: Option<DevConfig>,
 }
 
 /// Extra configuration options intended for developers
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
 pub struct DevConfig {
+    /// Allow multiple nodes to run on a single machine or LAN
+    pub allow_multiple_lan_nodes: bool,
     /// Disables rate limiting
     pub disable_client_rate_limiter: bool,
     /// Disables requirement to provide a resource proof to bootstrap
     pub disable_resource_proof: bool,
+    /// Overrides default `MIN_SECTION_SIZE`
+    pub min_section_size: Option<usize>,
 }
 
-/// Reads the default routing config file.
-pub fn read_config_file() -> Result<DevConfig, RoutingError> {
+/// Reads the routing config file and returns it or a default if this fails
+pub fn get_config() -> Config {
+    read_config_file().unwrap_or_else(|error| {
+        warn!("Failed to parse routing config file: {:?}", error);
+        Config::default()
+    })
+}
+
+fn read_config_file() -> Result<Config, RoutingError> {
     let mut name = config_file_handler::exe_file_stem()?;
     name.push(".routing.config");
     // if the config file is not present, a default one will be generated
     let file_handler = FileHandler::new(&name, false)?;
-    let cfg: Config = file_handler.read_file()?;
-    Ok(cfg.dev.unwrap_or_else(DevConfig::default))
+    Ok(file_handler.read_file()?)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use serde_json;
+    use std::fs::File;
+    use std::io::Read;
+    use std::path::Path;
+
+    #[test]
+    fn parse_sample_config_file() {
+        let path = Path::new("sample_config/sample.routing.config").to_path_buf();
+        let mut file = unwrap!(File::open(&path), "Error opening {}:", path.display());
+        let mut encoded_contents = String::new();
+        let _ = unwrap!(
+            file.read_to_string(&mut encoded_contents),
+            "Error reading {}:",
+            path.display()
+        );
+        let config: Config = unwrap!(
+            serde_json::from_str(&encoded_contents),
+            "Error parsing {} as JSON:",
+            path.display()
+        );
+
+        let dev_config = unwrap!(config.dev, "{} is missing `dev` field.", path.display());
+        assert!(
+            dev_config.min_section_size.is_some(),
+            "{} is missing `dev.min_section_size` field.",
+            path.display()
+        );
+    }
 }

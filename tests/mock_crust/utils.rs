@@ -18,9 +18,9 @@
 use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
-use routing::{Authority, BootstrapConfig, Cache, Client, Event, EventStream, FullId,
-              ImmutableData, Node, NullCache, Prefix, PublicId, Request, Response, RoutingTable,
-              XorName, Xorable, verify_network_invariant};
+use routing::{Authority, BootstrapConfig, Cache, Client, Config, DevConfig, Event, EventStream,
+              FullId, ImmutableData, Node, NullCache, Prefix, PublicId, Request, Response,
+              RoutingTable, XorName, Xorable, verify_network_invariant};
 use routing::mock_crust::{self, Endpoint, Network, ServiceHandle};
 use routing::test_consts::{ACK_TIMEOUT_SECS, CONNECTING_PEER_TIMEOUT_SECS};
 use std::{cmp, thread};
@@ -62,6 +62,14 @@ pub fn gen_range_except<T: Rng>(
     x
 }
 
+fn create_config(network: &Network<PublicId>) -> Config {
+    Config {
+        dev: Some(DevConfig {
+            min_section_size: Some(network.min_section_size()),
+            ..DevConfig::default()
+        }),
+    }
+}
 
 /// Wraps a `Vec<TestNode>`s and prints the nodes' routing tables when dropped in a panicking
 /// thread.
@@ -123,7 +131,7 @@ impl TestNode {
         TestNodeBuilder {
             network: network,
             first_node: false,
-            config: None,
+            bootstrap_config: None,
             endpoint: None,
             cache: Box::new(NullCache),
         }
@@ -132,13 +140,20 @@ impl TestNode {
     pub fn new(
         network: &Network<PublicId>,
         first_node: bool,
-        config: Option<BootstrapConfig>,
+        bootstrap_config: Option<BootstrapConfig>,
         endpoint: Option<Endpoint>,
         cache: Box<Cache>,
     ) -> Self {
-        let handle = network.new_service_handle(config, endpoint);
+        let handle = network.new_service_handle(bootstrap_config, endpoint);
+        let config = create_config(network);
         let node = mock_crust::make_current(&handle, || {
-            unwrap!(Node::builder().cache(cache).first(first_node).create())
+            unwrap!(
+                Node::builder()
+                    .cache(cache)
+                    .first(first_node)
+                    .config(config)
+                    .create()
+            )
         });
 
         TestNode {
@@ -175,7 +190,7 @@ impl TestNode {
 pub struct TestNodeBuilder<'a> {
     network: &'a Network<PublicId>,
     first_node: bool,
-    config: Option<BootstrapConfig>,
+    bootstrap_config: Option<BootstrapConfig>,
     endpoint: Option<Endpoint>,
     cache: Box<Cache>,
 }
@@ -186,8 +201,8 @@ impl<'a> TestNodeBuilder<'a> {
         self
     }
 
-    pub fn config(mut self, config: BootstrapConfig) -> Self {
-        self.config = Some(config);
+    pub fn bootstrap_config(mut self, bootstrap_config: BootstrapConfig) -> Self {
+        self.bootstrap_config = Some(bootstrap_config);
         self
     }
 
@@ -210,7 +225,7 @@ impl<'a> TestNodeBuilder<'a> {
         TestNode::new(
             self.network,
             self.first_node,
-            self.config,
+            self.bootstrap_config,
             self.endpoint,
             self.cache,
         )
@@ -229,13 +244,17 @@ pub struct TestClient {
 impl TestClient {
     pub fn new(
         network: &Network<PublicId>,
-        config: Option<BootstrapConfig>,
+        bootstrap_config: Option<BootstrapConfig>,
         endpoint: Option<Endpoint>,
     ) -> Self {
         let full_id = FullId::new();
-        let handle = network.new_service_handle(config.clone(), endpoint);
+        let handle = network.new_service_handle(bootstrap_config.clone(), endpoint);
         let client = mock_crust::make_current(&handle, || {
-            unwrap!(Client::new(Some(full_id.clone()), config))
+            unwrap!(Client::new(
+                Some(full_id.clone()),
+                bootstrap_config,
+                create_config(network),
+            ))
         });
 
         TestClient {
@@ -376,13 +395,13 @@ pub fn create_connected_nodes_with_cache(
     );
     nodes[0].poll();
 
-    let config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
+    let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
 
     // Create other nodes using the seed node endpoint as bootstrap contact.
     for i in 1..size {
         nodes.push(
             TestNode::builder(network)
-                .config(config.clone())
+                .bootstrap_config(bootstrap_config.clone())
                 .endpoint(Endpoint(i))
                 .cache(use_cache)
                 .create(),
@@ -676,11 +695,11 @@ fn add_node_to_section<T: Rng>(
         );
     });
 
-    let config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
+    let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
     let endpoint = Endpoint(nodes.len());
     nodes.push(
         TestNode::builder(network)
-            .config(config.clone())
+            .bootstrap_config(bootstrap_config.clone())
             .endpoint(endpoint)
             .cache(use_cache)
             .create(),

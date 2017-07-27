@@ -224,7 +224,7 @@ impl StateMachine {
     pub fn new<F>(
         init_state: F,
         pub_id: PublicId,
-        config: Option<BootstrapConfig>,
+        bootstrap_config: Option<BootstrapConfig>,
         outbox: &mut EventBox,
     ) -> (RoutingActionSender, Self)
     where
@@ -246,7 +246,7 @@ impl StateMachine {
             category_tx.clone(),
         );
 
-        let res = match config {
+        let res = match bootstrap_config {
             #[cfg(feature = "use-mock-crust")]
             Some(c) => Service::with_config(mock_crust::take_current(), crust_sender, c, pub_id),
             #[cfg(not(feature = "use-mock-crust"))]

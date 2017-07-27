@@ -21,7 +21,7 @@ use {CrustEvent, PrivConnectionInfo, PubConnectionInfo, QUORUM_DENOMINATOR, QUOR
 use ack_manager::{Ack, AckManager};
 use action::Action;
 use cache::Cache;
-use config_handler::{self, DevConfig};
+use config_handler;
 use crust::{ConnectionInfoResult, CrustError, CrustUser};
 use cumulative_own_section_merge::CumulativeOwnSectionMerge;
 use error::{BootstrapResponseError, InterfaceError, RoutingError};
@@ -223,16 +223,7 @@ impl Node {
         timer: Timer,
         challenger_count: usize,
     ) -> Self {
-        let routing_config = match config_handler::read_config_file() {
-            Ok(cfg) => cfg,
-            Err(err) => {
-                warn!(
-                    "Using default config as failed in parsing routing config file: {:?}",
-                    err
-                );
-                DevConfig::default()
-            }
-        };
+        let dev_config = config_handler::get_config().dev.unwrap_or_default();
         let public_id = *new_full_id.public_id();
         let tick_period = Duration::from_secs(TICK_TIMEOUT_SECS);
         let tick_timer_token = timer.schedule(tick_period);
@@ -270,13 +261,13 @@ impl Node {
             candidate_status_token: None,
             resource_prover: ResourceProver::new(action_sender, timer, challenger_count),
             joining_prefix: Default::default(),
-            clients_rate_limiter: RateLimiter::new(routing_config.disable_client_rate_limiter),
+            clients_rate_limiter: RateLimiter::new(dev_config.disable_client_rate_limiter),
             banned_client_ips: LruCache::with_expiry_duration(Duration::from_secs(CLIENT_BAN_SECS)),
             dropped_clients: LruCache::with_expiry_duration(
                 Duration::from_secs(DROPPED_CLIENT_TIMEOUT_SECS),
             ),
             proxy_load_amount: 0,
-            disable_resource_proof: routing_config.disable_resource_proof,
+            disable_resource_proof: dev_config.disable_resource_proof,
         }
     }
 

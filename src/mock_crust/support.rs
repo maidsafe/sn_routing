@@ -321,11 +321,6 @@ impl<UID: Uid> ServiceHandle<UID> {
     pub fn reset_message_sent(&self) -> bool {
         self.0.borrow().network.reset_message_sent()
     }
-
-    /// Returns the minimal section size of the Network.
-    pub fn min_section_size(&self) -> usize {
-        self.0.borrow().network.min_section_size()
-    }
 }
 
 pub struct ServiceImpl<UID: Uid> {
