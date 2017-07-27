@@ -981,13 +981,31 @@ impl PeerManager {
             None
         };
 
+        let mut demote_peers = Vec::new();
         let expired_peers = self.peers
             .values()
-            .filter(|peer| peer.is_expired())
+            .filter(|peer| {
+                match peer.state {
+                    PeerState::Routing(RoutingConnection::JoiningNode(timestamp)) |
+                    PeerState::Routing(RoutingConnection::Proxy(timestamp)) => {
+                        if timestamp.elapsed() >= Duration::from_secs(JOINING_NODE_TIMEOUT_SECS) {
+                            demote_peers.push(*peer.pub_id());
+                        }
+                    }
+                    _ => (),
+                }
+                peer.is_expired()
+            })
             .map(Peer::pub_id)
             .cloned()
             .chain(remove_candidate)
             .collect_vec();
+
+        for id in &demote_peers {
+            if let Some(peer) = self.peers.get_mut(id) {
+                peer.state = PeerState::Routing(RoutingConnection::Direct)
+            }
+        }
 
         for id in &expired_peers {
             let _ = self.remove_peer(id);
