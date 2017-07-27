@@ -611,6 +611,11 @@ impl Node {
     pub fn clear_next_relocation_dst(&mut self) {
         self.machine.current_mut().set_next_relocation_dst(None)
     }
+
+    /// Checks whether there is peer in the state of `Routing(RoutingConnection::JoiningNode/Proxy)`
+    pub fn has_updatable_peer(&self, excludes: &BTreeSet<XorName>) -> bool {
+        self.machine.current().has_updatable_peer(excludes)
+    }
 }
 
 #[cfg(feature = "use-mock-crust")]

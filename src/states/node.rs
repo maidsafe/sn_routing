@@ -3940,6 +3940,10 @@ impl Node {
     pub fn set_next_relocation_interval(&mut self, interval: (XorName, XorName)) {
         self.next_relocation_interval = Some(interval);
     }
+
+    pub fn has_updatable_peer(&self, excludes: &BTreeSet<XorName>) -> bool {
+        self.peer_mgr.has_updatable_peer(excludes)
+    }
 }
 
 impl Bootstrapped for Node {

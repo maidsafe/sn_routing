@@ -24,7 +24,7 @@ use routing::{Authority, BootstrapConfig, Event, EventStream, ImmutableData, Mes
               QUORUM_DENOMINATOR, QUORUM_NUMERATOR, Request, Response, XorName};
 use routing::mock_crust::Network;
 use routing::test_consts::{ACCUMULATION_TIMEOUT_SECS, CANDIDATE_ACCEPT_TIMEOUT_SECS,
-                           RESOURCE_PROOF_DURATION_SECS};
+                           JOINING_NODE_TIMEOUT_SECS, RESOURCE_PROOF_DURATION_SECS};
 use std::cmp;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::iter;
@@ -32,7 +32,12 @@ use std::iter;
 // Randomly removes some nodes.
 //
 // Note: it's necessary to call `poll_all` afterwards, as this function doesn't call it itself.
-fn drop_random_nodes<R: Rng>(rng: &mut R, nodes: &mut Vec<TestNode>, min_section_size: usize) {
+fn drop_random_nodes<R: Rng>(
+    rng: &mut R,
+    nodes: &mut Vec<TestNode>,
+    min_section_size: usize,
+) -> BTreeSet<XorName> {
+    let mut dropped_nodes = BTreeSet::new();
     let len = nodes.len();
     // Nodes needed for quorum with minimum section size. Round up.
     let min_quorum = 1 + (min_section_size * QUORUM_NUMERATOR) / QUORUM_DENOMINATOR;
@@ -55,6 +60,7 @@ fn drop_random_nodes<R: Rng>(rng: &mut R, nodes: &mut Vec<TestNode>, min_section
             if *nodes[i].routing_table().our_prefix() != prefix {
                 continue;
             }
+            let _ = dropped_nodes.insert(nodes[i].name());
             let _ = nodes.remove(i);
             removed += 1;
         }
@@ -64,10 +70,13 @@ fn drop_random_nodes<R: Rng>(rng: &mut R, nodes: &mut Vec<TestNode>, min_section
         let num_excess = cmp::min(min_section_size - min_quorum, len - min_section_size);
         let mut removed = 0;
         while num_excess - removed > 0 {
-            let _ = nodes.remove(gen_range(rng, 0, len - removed));
+            let index = gen_range(rng, 0, len - removed);
+            let _ = dropped_nodes.insert(nodes[index].name());
+            let _ = nodes.remove(index);
             removed += 1;
         }
     }
+    dropped_nodes
 }
 
 // Randomly adds a node. Returns new node index if successfully added.
@@ -78,6 +87,7 @@ fn add_node_and_poll<R: Rng>(
     network: &Network<PublicId>,
     mut nodes: &mut Vec<TestNode>,
     min_section_size: usize,
+    mut dropped_nodes: BTreeSet<XorName>,
 ) -> Option<usize> {
     let len = nodes.len();
     // A non-first node without min_section_size nodes in routing table cannot be proxy
@@ -98,6 +108,12 @@ fn add_node_and_poll<R: Rng>(
     if len > (2 * min_section_size) {
         let exclude = vec![new_node, proxy].into_iter().collect();
         let block_peer = gen_range_except(rng, 1, nodes.len(), &exclude);
+
+        // Status to the proxy of the new node doesn't matter.
+        let _ = dropped_nodes.insert(nodes[proxy].name());
+        if nodes[block_peer].inner.has_updatable_peer(&dropped_nodes) {
+            FakeClock::advance_time(JOINING_NODE_TIMEOUT_SECS * 1000);
+        }
         debug!(
             "Connection between {} and {} blocked.",
             nodes[new_node].name(),
@@ -532,7 +548,13 @@ fn aggressive_churn() {
         // A candidate could be blocked if some nodes of the section it connected to has lost node
         // due to loss of tunnel. In that case, a restart of candidate shall be carried out.
         if let Some(added_index) =
-            add_node_and_poll(&mut rng, &network, &mut nodes, min_section_size)
+            add_node_and_poll(
+                &mut rng,
+                &network,
+                &mut nodes,
+                min_section_size,
+                BTreeSet::new(),
+            )
         {
             debug!("Added {}", nodes[added_index].name());
         } else {
@@ -550,13 +572,19 @@ fn aggressive_churn() {
         count_sections(&nodes)
     );
     while nodes.len() > target_network_size / 2 {
-        drop_random_nodes(&mut rng, &mut nodes, min_section_size);
+        let dropped_nodes = drop_random_nodes(&mut rng, &mut nodes, min_section_size);
 
         // A candidate could be blocked if it connected to a pre-merge minority section.
         // Or be rejected when the proxy node's RT is not large enough due to a lost tunnel.
         // In that case, a restart of candidate shall be carried out.
         if let Some(added_index) =
-            add_node_and_poll(&mut rng, &network, &mut nodes, min_section_size)
+            add_node_and_poll(
+                &mut rng,
+                &network,
+                &mut nodes,
+                min_section_size,
+                dropped_nodes,
+            )
         {
             debug!("Simultaneous added {}", nodes[added_index].name());
         } else {
@@ -580,7 +608,7 @@ fn aggressive_churn() {
             "Dropping random nodes.  Current node count: {}",
             nodes.len()
         );
-        drop_random_nodes(&mut rng, &mut nodes, min_section_size);
+        let _ = drop_random_nodes(&mut rng, &mut nodes, min_section_size);
         poll_and_resend(&mut nodes, &mut []);
         verify_invariant_for_all_nodes(&mut nodes);
         verify_section_list_signatures(&nodes);
