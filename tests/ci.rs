@@ -67,11 +67,12 @@ enum RecvWithTimeoutError {
 }
 
 /// Blocks until something is received on the `Receiver`, or timeout, whichever happens sooner.
-fn recv_with_timeout(nodes: &mut [TestNode],
-                     sender: &Sender<TestEvent>,
-                     receiver: &Receiver<TestEvent>,
-                     timeout: Duration)
-                     -> Result<TestEvent, RecvWithTimeoutError> {
+fn recv_with_timeout(
+    nodes: &mut [TestNode],
+    sender: &Sender<TestEvent>,
+    receiver: &Receiver<TestEvent>,
+    timeout: Duration,
+) -> Result<TestEvent, RecvWithTimeoutError> {
     let interval = Duration::from_millis(100);
     let mut elapsed = Duration::from_millis(0);
 
@@ -191,10 +192,11 @@ fn init() {
 }
 
 // Spawns a thread that received events from a node a routes them to the main channel.
-fn spawn_select_thread(index: usize,
-                       main_sender: Sender<TestEvent>,
-                       thread_name: String)
-                       -> (Sender<Event>, Joiner) {
+fn spawn_select_thread(
+    index: usize,
+    main_sender: Sender<TestEvent>,
+    thread_name: String,
+) -> (Sender<Event>, Joiner) {
     let (sender, receiver) = mpsc::channel();
 
     let thread_handle = thread::named(thread_name, move || for event in receiver.iter() {
@@ -204,23 +206,28 @@ fn spawn_select_thread(index: usize,
     (sender, thread_handle)
 }
 
-fn wait_for_nodes_to_connect(nodes: &mut [TestNode],
-                             connection_counts: &mut [usize],
-                             event_sender: &Sender<TestEvent>,
-                             event_receiver: &Receiver<TestEvent>) {
+fn wait_for_nodes_to_connect(
+    nodes: &mut [TestNode],
+    connection_counts: &mut [usize],
+    event_sender: &Sender<TestEvent>,
+    event_receiver: &Receiver<TestEvent>,
+) {
     // Wait for each node to connect to all the other nodes by counting churns.
     loop {
-        if let Ok(test_event) = recv_with_timeout(nodes,
-                                                  event_sender,
-                                                  event_receiver,
-                                                  Duration::from_secs(30)) {
+        if let Ok(test_event) = recv_with_timeout(
+            nodes,
+            event_sender,
+            event_receiver,
+            Duration::from_secs(30),
+        )
+        {
             if let TestEvent(index, Event::NodeAdded(..)) = test_event {
                 connection_counts[index] += 1;
 
                 let k = nodes.len();
-                let all_events_received = (0..k)
-                    .map(|i| connection_counts[i])
-                    .all(|n| n >= k - 1 || n >= MIN_SECTION_SIZE);
+                let all_events_received = (0..k).map(|i| connection_counts[i]).all(|n| {
+                    n >= k - 1 || n >= MIN_SECTION_SIZE
+                });
                 if all_events_received {
                     break;
                 }
@@ -231,10 +238,11 @@ fn wait_for_nodes_to_connect(nodes: &mut [TestNode],
     }
 }
 
-fn create_connected_nodes(count: usize,
-                          event_sender: &Sender<TestEvent>,
-                          event_receiver: &Receiver<TestEvent>)
-                          -> Vec<TestNode> {
+fn create_connected_nodes(
+    count: usize,
+    event_sender: &Sender<TestEvent>,
+    event_receiver: &Receiver<TestEvent>,
+) -> Vec<TestNode> {
     let mut nodes = Vec::with_capacity(count);
     let mut connection_counts = iter::repeat(0).take(count).collect::<Vec<usize>>();
 
@@ -250,10 +258,12 @@ fn create_connected_nodes(count: usize,
     for _ in 1..count {
         let index = nodes.len();
         nodes.push(TestNode::new(index));
-        wait_for_nodes_to_connect(&mut nodes,
-                                  &mut connection_counts,
-                                  event_sender,
-                                  event_receiver);
+        wait_for_nodes_to_connect(
+            &mut nodes,
+            &mut connection_counts,
+            event_sender,
+            event_receiver,
+        );
     }
     nodes
 }
@@ -267,11 +277,13 @@ fn gen_mutable_data<R: Rng>(full_id: &FullId, rng: &mut R) -> MutableData {
             let key: Vec<u8> = rng.gen_iter().take(10).collect();
             let content: Vec<u8> = rng.gen_iter().take(10).collect();
 
-            (key,
-             Value {
-                 content: content,
-                 entry_version: 0,
-             })
+            (
+                key,
+                Value {
+                    content: content,
+                    entry_version: 0,
+                },
+            )
         })
         .collect();
 
@@ -279,11 +291,7 @@ fn gen_mutable_data<R: Rng>(full_id: &FullId, rng: &mut R) -> MutableData {
     let mut owners = BTreeSet::new();
     owners.insert(owner_pubkey);
 
-    MutableData::new(rng.gen(),
-                     tag,
-                     Default::default(),
-                     entries,
-                     owners)
+    MutableData::new(rng.gen(), tag, Default::default(), entries, owners)
         .expect("Cannot create structured data for test")
 }
 
@@ -298,7 +306,7 @@ fn closest_nodes(node_names: &[XorName], target: &XorName) -> Vec<XorName> {
 }
 
 // TODO: Extract the individual tests into their own functions.
-#[cfg_attr(feature="cargo-clippy", allow(cyclomatic_complexity))]
+#[cfg_attr(feature = "cargo-clippy", allow(cyclomatic_complexity))]
 fn core() {
     let (event_sender, event_receiver) = mpsc::channel();
     let mut nodes = create_connected_nodes(MIN_SECTION_SIZE + 1, &event_sender, &event_receiver);
@@ -312,17 +320,23 @@ fn core() {
         let message_id = MessageId::new();
 
         loop {
-            if let Ok(test_event) = recv_with_timeout(&mut nodes,
-                                                      &event_sender,
-                                                      &event_receiver,
-                                                      Duration::from_secs(20)) {
+            if let Ok(test_event) = recv_with_timeout(
+                &mut nodes,
+                &event_sender,
+                &event_receiver,
+                Duration::from_secs(20),
+            )
+            {
                 match test_event {
                     TestEvent(index, Event::Connected) if index == client.index => {
                         // The client is connected now. Send some request.
                         let src = Authority::ClientManager(*client.name());
-                        let result = client
-                            .client
-                            .put_mdata(src, data.clone(), message_id, client_key);
+                        let result = client.client.put_mdata(
+                            src,
+                            data.clone(),
+                            message_id,
+                            client_key,
+                        );
                         assert!(result.is_ok());
                     }
 
@@ -362,20 +376,22 @@ fn core() {
         let mut close_group = closest_nodes(&node_names, client.name());
 
         loop {
-            if let Ok(test_event) = recv_with_timeout(&mut nodes,
-                                                      &event_sender,
-                                                      &event_receiver,
-                                                      Duration::from_secs(20)) {
+            if let Ok(test_event) = recv_with_timeout(
+                &mut nodes,
+                &event_sender,
+                &event_receiver,
+                Duration::from_secs(20),
+            )
+            {
                 match test_event {
                     TestEvent(index, Event::Connected) if index == client.index => {
                         let dst = Authority::ClientManager(*client.name());
-                        assert!(client
-                                    .client
-                                    .put_mdata(dst,
-                                               data.clone(),
-                                               MessageId::new(),
-                                               client_key)
-                                    .is_ok());
+                        assert!(
+                            client
+                                .client
+                                .put_mdata(dst, data.clone(), MessageId::new(), client_key)
+                                .is_ok()
+                        );
                     }
                     TestEvent(index, Event::Request { request: Request::PutMData { .. }, .. }) => {
                         close_group.retain(|&name| name != nodes[index].name());
@@ -403,20 +419,22 @@ fn core() {
         let mut close_group = closest_nodes(&node_names, client.name());
 
         loop {
-            if let Ok(test_event) = recv_with_timeout(&mut nodes,
-                                                      &event_sender,
-                                                      &event_receiver,
-                                                      Duration::from_secs(20)) {
+            if let Ok(test_event) = recv_with_timeout(
+                &mut nodes,
+                &event_sender,
+                &event_receiver,
+                Duration::from_secs(20),
+            )
+            {
                 match test_event {
                     TestEvent(index, Event::Connected) if index == client.index => {
                         let dst = Authority::ClientManager(*client.name());
-                        assert!(client
-                                    .client
-                                    .put_mdata(dst,
-                                               data.clone(),
-                                               MessageId::new(),
-                                               client_key)
-                                    .is_ok());
+                        assert!(
+                            client
+                                .client
+                                .put_mdata(dst, data.clone(), MessageId::new(), client_key)
+                                .is_ok()
+                        );
                     }
                     TestEvent(index,
                               Event::Request {
@@ -430,22 +448,22 @@ fn core() {
                               }) => {
                         let src = Authority::ClientManager(name);
                         let dst = Authority::NaeManager(*data.name());
-                        unwrap!(nodes[index]
-                                    .node
-                                    .send_put_mdata_request(src,
-                                                            dst,
-                                                            data.clone(),
-                                                            msg_id,
-                                                            requester));
+                        unwrap!(nodes[index].node.send_put_mdata_request(
+                            src,
+                            dst,
+                            data.clone(),
+                            msg_id,
+                            requester,
+                        ));
                     }
                     TestEvent(index, Event::Request { request, src, dst }) => {
                         if let Request::PutMData { msg_id, .. } = request {
-                            unwrap!(nodes[index]
-                                        .node
-                                        .send_put_mdata_response(dst,
-                                                                 src,
-                                                                 Err(ClientError::NoSuchData),
-                                                                 msg_id));
+                            unwrap!(nodes[index].node.send_put_mdata_response(
+                                dst,
+                                src,
+                                Err(ClientError::NoSuchData),
+                                msg_id,
+                            ));
                         }
                     }
                     TestEvent(index,
@@ -479,13 +497,16 @@ fn core() {
         drop(node);
 
         loop {
-            if let Ok(test_event) = recv_with_timeout(&mut nodes,
-                                                      &event_sender,
-                                                      &event_receiver,
-                                                      Duration::from_secs(20)) {
+            if let Ok(test_event) = recv_with_timeout(
+                &mut nodes,
+                &event_sender,
+                &event_receiver,
+                Duration::from_secs(20),
+            )
+            {
                 match test_event {
-                    TestEvent(index, Event::NodeLost(lost_name, _)) if index < nodes.len() &&
-                                                                       lost_name == name => {
+                    TestEvent(index, Event::NodeLost(lost_name, _))
+                        if index < nodes.len() && lost_name == name => {
                         churns[index] = true;
                         if churns.iter().all(|b| *b) {
                             break;
@@ -508,10 +529,13 @@ fn core() {
         nodes.push(TestNode::new(nodes_len));
 
         loop {
-            if let Ok(test_event) = recv_with_timeout(&mut nodes,
-                                                      &event_sender,
-                                                      &event_receiver,
-                                                      Duration::from_secs(20)) {
+            if let Ok(test_event) = recv_with_timeout(
+                &mut nodes,
+                &event_sender,
+                &event_receiver,
+                Duration::from_secs(20),
+            )
+            {
                 match test_event {
                     TestEvent(index, Event::NodeAdded(..)) if index < nodes.len() => {
                         churns[index] = true;
@@ -534,17 +558,22 @@ fn core() {
         let client_key = *client.full_id().public_id().signing_public_key();
         let data = gen_mutable_data(client.full_id(), &mut rng);
 
-        while let Ok(test_event) = recv_with_timeout(&mut nodes,
-                                                     &event_sender,
-                                                     &event_receiver,
-                                                     Duration::from_secs(5)) {
+        while let Ok(test_event) = recv_with_timeout(
+            &mut nodes,
+            &event_sender,
+            &event_receiver,
+            Duration::from_secs(5),
+        )
+        {
             match test_event {
                 TestEvent(index, Event::Connected) if index == client.index => {
                     let dst = Authority::ClientManager(*client.name());
-                    assert!(client
-                                .client
-                                .put_mdata(dst, data.clone(), MessageId::new(), client_key)
-                                .is_ok());
+                    assert!(
+                        client
+                            .client
+                            .put_mdata(dst, data.clone(), MessageId::new(), client_key)
+                            .is_ok()
+                    );
                 }
                 TestEvent(index,
                           Event::Request {
@@ -558,23 +587,23 @@ fn core() {
                           }) => {
                     let src = Authority::ClientManager(name);
                     let dst = Authority::NaeManager(*data.name());
-                    unwrap!(nodes[index]
-                                .node
-                                .send_put_mdata_request(src,
-                                                        dst,
-                                                        data.clone(),
-                                                        msg_id,
-                                                        requester));
+                    unwrap!(nodes[index].node.send_put_mdata_request(
+                        src,
+                        dst,
+                        data.clone(),
+                        msg_id,
+                        requester,
+                    ));
                 }
                 TestEvent(index, Event::Request { request, src, dst }) => {
                     if let Request::PutMData { msg_id, .. } = request {
                         if 2 * (index + 1) < MIN_SECTION_SIZE {
-                            unwrap!(nodes[index]
-                                        .node
-                                        .send_put_mdata_response(dst,
-                                                                 src,
-                                                                 Err(ClientError::NoSuchData),
-                                                                 msg_id));
+                            unwrap!(nodes[index].node.send_put_mdata_response(
+                                dst,
+                                src,
+                                Err(ClientError::NoSuchData),
+                                msg_id,
+                            ));
                         }
                     }
                 }
@@ -599,27 +628,36 @@ fn core() {
         let mut received_ids = HashSet::new();
 
         loop {
-            if let Ok(test_event) = recv_with_timeout(&mut nodes,
-                                                      &event_sender,
-                                                      &event_receiver,
-                                                      Duration::from_secs(5)) {
+            if let Ok(test_event) = recv_with_timeout(
+                &mut nodes,
+                &event_sender,
+                &event_receiver,
+                Duration::from_secs(5),
+            )
+            {
                 match test_event {
                     TestEvent(index, Event::Connected) if index == client.index => {
                         // The client is connected now. Send some request.
                         let src = Authority::ClientManager(*client.name());
                         let message_id = MessageId::new();
-                        let result = client
-                            .client
-                            .put_mdata(src, data.clone(), message_id, client_key);
+                        let result = client.client.put_mdata(
+                            src,
+                            data.clone(),
+                            message_id,
+                            client_key,
+                        );
                         assert!(result.is_ok());
                         sent_ids.insert(message_id);
                     }
                     TestEvent(index, Event::Request { request, src, dst }) => {
                         // A node received request from the client. Reply with a success.
                         if let Request::PutMData { msg_id, .. } = request {
-                            unwrap!(nodes[index]
-                                        .node
-                                        .send_put_mdata_response(dst, src, Ok(()), msg_id));
+                            unwrap!(nodes[index].node.send_put_mdata_response(
+                                dst,
+                                src,
+                                Ok(()),
+                                msg_id,
+                            ));
                         }
                     }
                     TestEvent(index,

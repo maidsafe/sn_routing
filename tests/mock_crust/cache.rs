@@ -27,9 +27,10 @@ use std::sync::mpsc;
 
 // Generate random immutable data, but make sure the first node in the given
 // node slice (the proxy node) is not in the data's section.
-fn gen_immutable_data_not_in_first_node_section<T: Rng>(rng: &mut T,
-                                                        nodes: &[TestNode])
-                                                        -> ImmutableData {
+fn gen_immutable_data_not_in_first_node_section<T: Rng>(
+    rng: &mut T,
+    nodes: &[TestNode],
+) -> ImmutableData {
     let first_name = nodes[0].name();
     // We want to make sure the data is inserted into a different section. Since the
     // root prefix uses 0 bits, we will have at least one section starting bit 0 and at
@@ -82,11 +83,12 @@ fn response_caching() {
                        dst: req_dst,
                    }) => {
                     if req_data_id == data_id && req_message_id == message_id {
-                        unwrap!(node.inner
-                                    .send_get_idata_response(req_dst,
-                                                             req_src,
-                                                             Ok(data.clone()),
-                                                             req_message_id));
+                        unwrap!(node.inner.send_get_idata_response(
+                            req_dst,
+                            req_src,
+                            Ok(data.clone()),
+                            req_message_id,
+                        ));
                         break;
                     }
                 }

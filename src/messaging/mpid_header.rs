@@ -58,10 +58,11 @@ impl MpidHeader {
     ///
     /// An error will be returned if `metadata` exceeds `MAX_HEADER_METADATA_SIZE` or if
     /// serialisation during the signing process fails.
-    pub fn new(sender: XorName,
-               metadata: Vec<u8>,
-               secret_key: &SecretKey)
-               -> Result<MpidHeader, Error> {
+    pub fn new(
+        sender: XorName,
+        metadata: Vec<u8>,
+        secret_key: &SecretKey,
+    ) -> Result<MpidHeader, Error> {
         if metadata.len() > MAX_HEADER_METADATA_SIZE {
             return Err(Error::MetadataTooLarge);
         }
@@ -75,9 +76,9 @@ impl MpidHeader {
 
         let encoded = serialise(&detail)?;
         Ok(MpidHeader {
-               detail: detail,
-               signature: sign::sign_detached(&encoded, secret_key),
-           })
+            detail: detail,
+            signature: sign::sign_detached(&encoded, secret_key),
+        })
     }
 
     /// The name of the original creator of the message.
@@ -118,12 +119,14 @@ impl MpidHeader {
 
 impl Debug for MpidHeader {
     fn fmt(&self, formatter: &mut Formatter) -> Result<(), fmt::Error> {
-        write!(formatter,
-               "MpidHeader {{ sender: {:?}, guid: {}, metadata: {}, signature: {} }}",
-               self.detail.sender,
-               utils::format_binary_array(&self.detail.guid),
-               utils::format_binary_array(&self.detail.metadata),
-               utils::format_binary_array(&self.signature))
+        write!(
+            formatter,
+            "MpidHeader {{ sender: {:?}, guid: {}, metadata: {}, signature: {} }}",
+            self.detail.sender,
+            utils::format_binary_array(&self.detail.guid),
+            utils::format_binary_array(&self.detail.metadata),
+            utils::format_binary_array(&self.signature)
+        )
     }
 }
 

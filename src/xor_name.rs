@@ -65,10 +65,9 @@ impl XorName {
 
     /// Returns the number of bits in which `self` differs from `other`.
     pub fn count_differing_bits(&self, other: &XorName) -> u32 {
-        self.0
-            .iter()
-            .zip(other.0.iter())
-            .fold(0, |acc, (a, b)| acc + (a ^ b).count_ones())
+        self.0.iter().zip(other.0.iter()).fold(0, |acc, (a, b)| {
+            acc + (a ^ b).count_ones()
+        })
     }
 
     /// Hex-decode a `XorName` from a `&str`.
@@ -115,11 +114,8 @@ impl XorName {
         // Convert the little-endian vector to a 32-byte big-endian array.
         let mut xor_name = XorName::default();
         for (xor_name_elt, little_endian_elt) in
-            xor_name
-                .0
-                .iter_mut()
-                .rev()
-                .zip(little_endian_value.iter()) {
+            xor_name.0.iter_mut().rev().zip(little_endian_value.iter())
+        {
             *xor_name_elt = *little_endian_elt;
         }
         xor_name
@@ -247,7 +243,9 @@ impl ops::Sub for XorName {
 impl<'a> ops::Sub for &'a XorName {
     type Output = XorName;
     fn sub(self, rhs: &XorName) -> Self::Output {
-        XorName::from_big_uint(BigUint::from_bytes_be(&self.0) - BigUint::from_bytes_be(&rhs.0))
+        XorName::from_big_uint(
+            BigUint::from_bytes_be(&self.0) - BigUint::from_bytes_be(&rhs.0),
+        )
     }
 }
 
@@ -283,7 +281,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(feature="cargo-clippy", allow(eq_op))]
+    #[cfg_attr(feature = "cargo-clippy", allow(eq_op))]
     fn xor_name_ord() {
         let type1: XorName = XorName([1u8; XOR_NAME_LEN]);
         let type2: XorName = XorName([2u8; XOR_NAME_LEN]);
@@ -375,8 +373,10 @@ mod tests {
             let x = rand::random();
             let y = rand::random();
             let (larger, smaller) = if x > y { (x, y) } else { (y, x) };
-            assert_eq!(&xor_from_int(larger - smaller)[..],
-                       &(xor_from_int(larger) - xor_from_int(smaller))[..]);
+            assert_eq!(
+                &xor_from_int(larger - smaller)[..],
+                &(xor_from_int(larger) - xor_from_int(smaller))[..]
+            );
             assert_eq!(XorName::default(), xor_from_int(x) - xor_from_int(x));
         }
     }
@@ -405,10 +405,14 @@ mod tests {
 
     #[test]
     fn from_int() {
-        assert_eq!(&xor_from_int(0xabcdef)[XOR_NAME_LEN - 3..],
-                   &[0xab, 0xcd, 0xef]);
-        assert_eq!(xor_from_int(0xabcdef)[..XOR_NAME_LEN - 3],
-                   XorName::default()[..XOR_NAME_LEN - 3]);
+        assert_eq!(
+            &xor_from_int(0xabcdef)[XOR_NAME_LEN - 3..],
+            &[0xab, 0xcd, 0xef]
+        );
+        assert_eq!(
+            xor_from_int(0xabcdef)[..XOR_NAME_LEN - 3],
+            XorName::default()[..XOR_NAME_LEN - 3]
+        );
     }
 
     fn xor_from_int(x: u64) -> XorName {

@@ -17,6 +17,7 @@
 
 use super::routing_table::Error as RoutingTableError;
 use action::Action;
+use config_file_handler::Error as ConfigFileHandlerError;
 use crust::CrustError;
 use event::Event;
 use id::PublicId;
@@ -28,7 +29,7 @@ use std::sync::mpsc::{RecvError, SendError};
 /// The type of errors that can occur if routing is unable to handle a send request.
 #[derive(Debug)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
+#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
 pub enum InterfaceError {
     /// We are not connected to the network.
     NotConnected,
@@ -55,7 +56,7 @@ impl From<RecvError> for InterfaceError {
 /// The type of errors that can occur during handling of routing events.
 #[derive(Debug)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature="cargo-clippy", allow(large_enum_variant))]
+#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
 pub enum RoutingError {
     /// The node/client has not bootstrapped yet
     NotBootstrapped,
@@ -134,6 +135,8 @@ pub enum RoutingError {
     /// The client's message indicated by the included hash digest has been rejected by the
     /// rate-limiter.
     ExceedsRateLimit(Digest256),
+    /// Invalid configuration
+    ConfigError(ConfigFileHandlerError),
 }
 
 impl From<RoutingTableError> for RoutingError {
@@ -175,6 +178,12 @@ impl From<SendError<Event>> for RoutingError {
 impl From<serialisation::SerialisationError> for RoutingError {
     fn from(error: serialisation::SerialisationError) -> RoutingError {
         RoutingError::SerialisationError(error)
+    }
+}
+
+impl From<ConfigFileHandlerError> for RoutingError {
+    fn from(error: ConfigFileHandlerError) -> RoutingError {
+        RoutingError::ConfigError(error)
     }
 }
 

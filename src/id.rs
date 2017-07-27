@@ -44,9 +44,10 @@ impl FullId {
     }
 
     /// Construct with given keys (client requirement).
-    pub fn with_keys(encrypt_keys: (box_::PublicKey, box_::SecretKey),
-                     sign_keys: (sign::PublicKey, sign::SecretKey))
-                     -> FullId {
+    pub fn with_keys(
+        encrypt_keys: (box_::PublicKey, box_::SecretKey),
+        sign_keys: (sign::PublicKey, sign::SecretKey),
+    ) -> FullId {
         // TODO Verify that pub/priv key pairs match
         FullId {
             public_id: PublicId::new(encrypt_keys.0, sign_keys.0),
@@ -182,8 +183,9 @@ mod tests {
         loop {
             let temp_pub_id = *FullId::new().public_id();
             if temp_pub_id.name > pub_id_1.name &&
-               temp_pub_id.public_sign_key < pub_id_1.public_sign_key &&
-               temp_pub_id.public_encrypt_key < pub_id_1.public_encrypt_key {
+                temp_pub_id.public_sign_key < pub_id_1.public_sign_key &&
+                temp_pub_id.public_encrypt_key < pub_id_1.public_encrypt_key
+            {
                 pub_id_2 = temp_pub_id;
                 break;
             }

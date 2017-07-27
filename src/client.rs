@@ -65,44 +65,50 @@ pub struct Client {
 }
 
 impl Client {
-    fn make_state_machine(keys: Option<FullId>,
-                          outbox: &mut EventBox,
-                          config: Option<BootstrapConfig>)
-                          -> (RoutingActionSender, StateMachine) {
+    fn make_state_machine(
+        keys: Option<FullId>,
+        outbox: &mut EventBox,
+        config: Option<BootstrapConfig>,
+    ) -> (RoutingActionSender, StateMachine) {
         let full_id = keys.unwrap_or_else(FullId::new);
         let pub_id = *full_id.public_id();
         let min_section_size = utils::min_section_size();
 
-        StateMachine::new(move |action_sender, crust_service, timer, _outbox2| {
-            Bootstrapping::new(action_sender,
-                               Box::new(NullCache),
-                               BootstrappingTargetState::Client,
-                               crust_service,
-                               full_id,
-                               min_section_size,
-                               timer)
-                    .map_or(State::Terminated, State::Bootstrapping)
-        },
-                          pub_id,
-                          config,
-                          outbox)
+        StateMachine::new(
+            move |action_sender, crust_service, timer, _outbox2| {
+                Bootstrapping::new(
+                    action_sender,
+                    Box::new(NullCache),
+                    BootstrappingTargetState::Client,
+                    crust_service,
+                    full_id,
+                    min_section_size,
+                    timer,
+                ).map_or(State::Terminated, State::Bootstrapping)
+            },
+            pub_id,
+            config,
+            outbox,
+        )
     }
 
     /// Gets MAID account information.
-    pub fn get_account_info(&mut self,
-                            dst: Authority<XorName>,
-                            msg_id: MessageId)
-                            -> Result<(), InterfaceError> {
+    pub fn get_account_info(
+        &mut self,
+        dst: Authority<XorName>,
+        msg_id: MessageId,
+    ) -> Result<(), InterfaceError> {
         let request = Request::GetAccountInfo(msg_id);
         self.send_request(dst, request, CLIENT_GET_PRIORITY)
     }
 
     /// Puts ImmutableData to the network
-    pub fn put_idata(&mut self,
-                     dst: Authority<XorName>,
-                     data: ImmutableData,
-                     msg_id: MessageId)
-                     -> Result<(), InterfaceError> {
+    pub fn put_idata(
+        &mut self,
+        dst: Authority<XorName>,
+        data: ImmutableData,
+        msg_id: MessageId,
+    ) -> Result<(), InterfaceError> {
         let request = Request::PutIData {
             data: data,
             msg_id: msg_id,
@@ -112,11 +118,12 @@ impl Client {
     }
 
     /// Fetches ImmutableData from the network by the given name.
-    pub fn get_idata(&mut self,
-                     dst: Authority<XorName>,
-                     name: XorName,
-                     msg_id: MessageId)
-                     -> Result<(), InterfaceError> {
+    pub fn get_idata(
+        &mut self,
+        dst: Authority<XorName>,
+        name: XorName,
+        msg_id: MessageId,
+    ) -> Result<(), InterfaceError> {
         let request = Request::GetIData {
             name: name,
             msg_id: msg_id,
@@ -126,12 +133,13 @@ impl Client {
     }
 
     /// Fetches a latest version number of the provided MutableData
-    pub fn get_mdata_version(&mut self,
-                             dst: Authority<XorName>,
-                             name: XorName,
-                             tag: u64,
-                             msg_id: MessageId)
-                             -> Result<(), InterfaceError> {
+    pub fn get_mdata_version(
+        &mut self,
+        dst: Authority<XorName>,
+        name: XorName,
+        tag: u64,
+        msg_id: MessageId,
+    ) -> Result<(), InterfaceError> {
         let request = Request::GetMDataVersion {
             name: name,
             tag: tag,
@@ -142,12 +150,13 @@ impl Client {
     }
 
     /// Fetches the shell of the provided MutableData
-    pub fn get_mdata_shell(&mut self,
-                           dst: Authority<XorName>,
-                           name: XorName,
-                           tag: u64,
-                           msg_id: MessageId)
-                           -> Result<(), InterfaceError> {
+    pub fn get_mdata_shell(
+        &mut self,
+        dst: Authority<XorName>,
+        name: XorName,
+        tag: u64,
+        msg_id: MessageId,
+    ) -> Result<(), InterfaceError> {
         let request = Request::GetMDataShell {
             name: name,
             tag: tag,
@@ -158,12 +167,13 @@ impl Client {
     }
 
     /// Fetches the entire MutableData
-    pub fn get_mdata(&mut self,
-                     dst: Authority<XorName>,
-                     name: XorName,
-                     tag: u64,
-                     msg_id: MessageId)
-                     -> Result<(), InterfaceError> {
+    pub fn get_mdata(
+        &mut self,
+        dst: Authority<XorName>,
+        name: XorName,
+        tag: u64,
+        msg_id: MessageId,
+    ) -> Result<(), InterfaceError> {
         let request = Request::GetMData {
             name: name,
             tag: tag,
@@ -175,12 +185,13 @@ impl Client {
 
     /// Fetches a list of entries (keys + values) of the provided MutableData
     /// Note: response to this request is unlikely to accumulate during churn.
-    pub fn list_mdata_entries(&mut self,
-                              dst: Authority<XorName>,
-                              name: XorName,
-                              tag: u64,
-                              msg_id: MessageId)
-                              -> Result<(), InterfaceError> {
+    pub fn list_mdata_entries(
+        &mut self,
+        dst: Authority<XorName>,
+        name: XorName,
+        tag: u64,
+        msg_id: MessageId,
+    ) -> Result<(), InterfaceError> {
         let request = Request::ListMDataEntries {
             name: name,
             tag: tag,
@@ -192,12 +203,13 @@ impl Client {
 
     /// Fetches a list of keys of the provided MutableData
     /// Note: response to this request is unlikely to accumulate during churn.
-    pub fn list_mdata_keys(&mut self,
-                           dst: Authority<XorName>,
-                           name: XorName,
-                           tag: u64,
-                           msg_id: MessageId)
-                           -> Result<(), InterfaceError> {
+    pub fn list_mdata_keys(
+        &mut self,
+        dst: Authority<XorName>,
+        name: XorName,
+        tag: u64,
+        msg_id: MessageId,
+    ) -> Result<(), InterfaceError> {
         let request = Request::ListMDataKeys {
             name: name,
             tag: tag,
@@ -209,12 +221,13 @@ impl Client {
 
     /// Fetches a list of values of the provided MutableData
     /// Note: response to this request is unlikely to accumulate during churn.
-    pub fn list_mdata_values(&mut self,
-                             dst: Authority<XorName>,
-                             name: XorName,
-                             tag: u64,
-                             msg_id: MessageId)
-                             -> Result<(), InterfaceError> {
+    pub fn list_mdata_values(
+        &mut self,
+        dst: Authority<XorName>,
+        name: XorName,
+        tag: u64,
+        msg_id: MessageId,
+    ) -> Result<(), InterfaceError> {
         let request = Request::ListMDataValues {
             name: name,
             tag: tag,
@@ -225,13 +238,14 @@ impl Client {
     }
 
     /// Fetches a single value from the provided MutableData by the given key
-    pub fn get_mdata_value(&mut self,
-                           dst: Authority<XorName>,
-                           name: XorName,
-                           tag: u64,
-                           key: Vec<u8>,
-                           msg_id: MessageId)
-                           -> Result<(), InterfaceError> {
+    pub fn get_mdata_value(
+        &mut self,
+        dst: Authority<XorName>,
+        name: XorName,
+        tag: u64,
+        key: Vec<u8>,
+        msg_id: MessageId,
+    ) -> Result<(), InterfaceError> {
         let request = Request::GetMDataValue {
             name: name,
             tag: tag,
@@ -243,12 +257,13 @@ impl Client {
     }
 
     /// Creates a new `MutableData` in the network
-    pub fn put_mdata(&mut self,
-                     dst: Authority<XorName>,
-                     data: MutableData,
-                     msg_id: MessageId,
-                     requester: sign::PublicKey)
-                     -> Result<(), InterfaceError> {
+    pub fn put_mdata(
+        &mut self,
+        dst: Authority<XorName>,
+        data: MutableData,
+        msg_id: MessageId,
+        requester: sign::PublicKey,
+    ) -> Result<(), InterfaceError> {
         let request = Request::PutMData {
             data: data,
             msg_id: msg_id,
@@ -259,14 +274,15 @@ impl Client {
     }
 
     /// Updates `MutableData` entries in bulk
-    pub fn mutate_mdata_entries(&mut self,
-                                dst: Authority<XorName>,
-                                name: XorName,
-                                tag: u64,
-                                actions: BTreeMap<Vec<u8>, EntryAction>,
-                                msg_id: MessageId,
-                                requester: sign::PublicKey)
-                                -> Result<(), InterfaceError> {
+    pub fn mutate_mdata_entries(
+        &mut self,
+        dst: Authority<XorName>,
+        name: XorName,
+        tag: u64,
+        actions: BTreeMap<Vec<u8>, EntryAction>,
+        msg_id: MessageId,
+        requester: sign::PublicKey,
+    ) -> Result<(), InterfaceError> {
         let request = Request::MutateMDataEntries {
             name: name,
             tag: tag,
@@ -279,12 +295,13 @@ impl Client {
     }
 
     /// Lists all permissions for a given `MutableData`
-    pub fn list_mdata_permissions(&mut self,
-                                  dst: Authority<XorName>,
-                                  name: XorName,
-                                  tag: u64,
-                                  msg_id: MessageId)
-                                  -> Result<(), InterfaceError> {
+    pub fn list_mdata_permissions(
+        &mut self,
+        dst: Authority<XorName>,
+        name: XorName,
+        tag: u64,
+        msg_id: MessageId,
+    ) -> Result<(), InterfaceError> {
         let request = Request::ListMDataPermissions {
             name: name,
             tag: tag,
@@ -295,13 +312,14 @@ impl Client {
     }
 
     /// Lists a permission set for a given user
-    pub fn list_mdata_user_permissions(&mut self,
-                                       dst: Authority<XorName>,
-                                       name: XorName,
-                                       tag: u64,
-                                       user: User,
-                                       msg_id: MessageId)
-                                       -> Result<(), InterfaceError> {
+    pub fn list_mdata_user_permissions(
+        &mut self,
+        dst: Authority<XorName>,
+        name: XorName,
+        tag: u64,
+        user: User,
+        msg_id: MessageId,
+    ) -> Result<(), InterfaceError> {
         let request = Request::ListMDataUserPermissions {
             name: name,
             tag: tag,
@@ -314,16 +332,17 @@ impl Client {
 
     /// Updates or inserts a permission set for a given user
     #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
-    pub fn set_mdata_user_permissions(&mut self,
-                                      dst: Authority<XorName>,
-                                      name: XorName,
-                                      tag: u64,
-                                      user: User,
-                                      permissions: PermissionSet,
-                                      version: u64,
-                                      msg_id: MessageId,
-                                      requester: sign::PublicKey)
-                                      -> Result<(), InterfaceError> {
+    pub fn set_mdata_user_permissions(
+        &mut self,
+        dst: Authority<XorName>,
+        name: XorName,
+        tag: u64,
+        user: User,
+        permissions: PermissionSet,
+        version: u64,
+        msg_id: MessageId,
+        requester: sign::PublicKey,
+    ) -> Result<(), InterfaceError> {
         let request = Request::SetMDataUserPermissions {
             name: name,
             tag: tag,
@@ -339,15 +358,16 @@ impl Client {
 
     /// Deletes a permission set for a given user
     #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
-    pub fn del_mdata_user_permissions(&mut self,
-                                      dst: Authority<XorName>,
-                                      name: XorName,
-                                      tag: u64,
-                                      user: User,
-                                      version: u64,
-                                      msg_id: MessageId,
-                                      requester: sign::PublicKey)
-                                      -> Result<(), InterfaceError> {
+    pub fn del_mdata_user_permissions(
+        &mut self,
+        dst: Authority<XorName>,
+        name: XorName,
+        tag: u64,
+        user: User,
+        version: u64,
+        msg_id: MessageId,
+        requester: sign::PublicKey,
+    ) -> Result<(), InterfaceError> {
         let request = Request::DelMDataUserPermissions {
             name: name,
             tag: tag,
@@ -361,14 +381,15 @@ impl Client {
     }
 
     /// Sends an ownership transfer request
-    pub fn change_mdata_owner(&mut self,
-                              dst: Authority<XorName>,
-                              name: XorName,
-                              tag: u64,
-                              new_owners: BTreeSet<sign::PublicKey>,
-                              version: u64,
-                              msg_id: MessageId)
-                              -> Result<(), InterfaceError> {
+    pub fn change_mdata_owner(
+        &mut self,
+        dst: Authority<XorName>,
+        name: XorName,
+        tag: u64,
+        new_owners: BTreeSet<sign::PublicKey>,
+        version: u64,
+        msg_id: MessageId,
+    ) -> Result<(), InterfaceError> {
         let request = Request::ChangeMDataOwner {
             name: name,
             tag: tag,
@@ -381,21 +402,23 @@ impl Client {
     }
 
     /// Fetches a list of authorised keys and version in MaidManager
-    pub fn list_auth_keys_and_version(&mut self,
-                                      dst: Authority<XorName>,
-                                      message_id: MessageId)
-                                      -> Result<(), InterfaceError> {
+    pub fn list_auth_keys_and_version(
+        &mut self,
+        dst: Authority<XorName>,
+        message_id: MessageId,
+    ) -> Result<(), InterfaceError> {
         let request = Request::ListAuthKeysAndVersion(message_id);
         self.send_request(dst, request, CLIENT_GET_PRIORITY)
     }
 
     /// Adds a new authorised key to MaidManager
-    pub fn ins_auth_key(&mut self,
-                        dst: Authority<XorName>,
-                        key: sign::PublicKey,
-                        version: u64,
-                        message_id: MessageId)
-                        -> Result<(), InterfaceError> {
+    pub fn ins_auth_key(
+        &mut self,
+        dst: Authority<XorName>,
+        key: sign::PublicKey,
+        version: u64,
+        message_id: MessageId,
+    ) -> Result<(), InterfaceError> {
         let request = Request::InsAuthKey {
             key: key,
             version: version,
@@ -406,12 +429,13 @@ impl Client {
     }
 
     /// Removes an authorised key from MaidManager
-    pub fn del_auth_key(&mut self,
-                        dst: Authority<XorName>,
-                        key: sign::PublicKey,
-                        version: u64,
-                        message_id: MessageId)
-                        -> Result<(), InterfaceError> {
+    pub fn del_auth_key(
+        &mut self,
+        dst: Authority<XorName>,
+        key: sign::PublicKey,
+        version: u64,
+        message_id: MessageId,
+    ) -> Result<(), InterfaceError> {
         let request = Request::DelAuthKey {
             key: key,
             version: version,
@@ -434,10 +458,11 @@ impl Client {
     /// Keys will be exchanged with the `ClientAuthority` so that communication with the network is
     /// cryptographically secure and uses section consensus. The restriction for the client name
     /// exists to ensure that the client cannot choose its `ClientAuthority`.
-    pub fn new(event_sender: Sender<Event>,
-               keys: Option<FullId>,
-               config: Option<BootstrapConfig>)
-               -> Result<Client, RoutingError> {
+    pub fn new(
+        event_sender: Sender<Event>,
+        keys: Option<FullId>,
+        config: Option<BootstrapConfig>,
+    ) -> Result<Client, RoutingError> {
         rust_sodium::init(); // enable shared global (i.e. safe to multithread now)
 
         let (tx, rx) = channel();
@@ -471,18 +496,17 @@ impl Client {
         let action_sender = unwrap!(get_action_sender_rx.recv());
 
         Ok(Client {
-               interface_result_tx: tx,
-               interface_result_rx: rx,
-               action_sender: action_sender,
-               _joiner: joiner,
-           })
+            interface_result_tx: tx,
+            interface_result_rx: rx,
+            action_sender: action_sender,
+            _joiner: joiner,
+        })
     }
 
     /// Returns the `PublicId` of this client.
     pub fn id(&self) -> Result<PublicId, InterfaceError> {
         let (result_tx, result_rx) = channel();
-        self.action_sender
-            .send(Action::Id { result_tx: result_tx })?;
+        self.action_sender.send(Action::Id { result_tx: result_tx })?;
         Ok(result_rx.recv()?)
     }
 
@@ -491,11 +515,12 @@ impl Client {
         Ok(read_config_file()?)
     }
 
-    fn send_request(&self,
-                    dst: Authority<XorName>,
-                    request: Request,
-                    priority: u8)
-                    -> Result<(), InterfaceError> {
+    fn send_request(
+        &self,
+        dst: Authority<XorName>,
+        request: Request,
+        priority: u8,
+    ) -> Result<(), InterfaceError> {
         let action = Action::ClientSendRequest {
             content: request,
             dst: dst,
@@ -511,20 +536,21 @@ impl Client {
 #[cfg(feature = "use-mock-crust")]
 impl Client {
     /// Create a new `Client` for testing with mock crust.
-    pub fn new(keys: Option<FullId>,
-               config: Option<BootstrapConfig>)
-               -> Result<Client, RoutingError> {
+    pub fn new(
+        keys: Option<FullId>,
+        config: Option<BootstrapConfig>,
+    ) -> Result<Client, RoutingError> {
         let mut event_buffer = EventBuf::new();
         let (_, machine) = Self::make_state_machine(keys, &mut event_buffer, config);
 
         let (tx, rx) = channel();
 
         Ok(Client {
-               interface_result_tx: tx,
-               interface_result_rx: rx,
-               machine: machine,
-               event_buffer: event_buffer,
-           })
+            interface_result_tx: tx,
+            interface_result_rx: rx,
+            machine: machine,
+            event_buffer: event_buffer,
+        })
     }
 
     /// Returns the name of this client.
@@ -533,11 +559,12 @@ impl Client {
     }
 
     /// FIXME: Review the usage poll here
-    pub fn send_request(&mut self,
-                        dst: Authority<XorName>,
-                        request: Request,
-                        priority: u8)
-                        -> Result<(), InterfaceError> {
+    pub fn send_request(
+        &mut self,
+        dst: Authority<XorName>,
+        request: Request,
+        priority: u8,
+    ) -> Result<(), InterfaceError> {
         // Make sure the state machine has processed any outstanding crust events.
         self.poll();
 
@@ -548,11 +575,14 @@ impl Client {
             result_tx: self.interface_result_tx.clone(),
         };
 
-        let transition = self.machine
-            .current_mut()
-            .handle_action(action, &mut self.event_buffer);
-        self.machine
-            .apply_transition(transition, &mut self.event_buffer);
+        let transition = self.machine.current_mut().handle_action(
+            action,
+            &mut self.event_buffer,
+        );
+        self.machine.apply_transition(
+            transition,
+            &mut self.event_buffer,
+        );
         self.interface_result_rx.recv()?
     }
 }
@@ -587,9 +617,10 @@ impl Drop for Client {
 impl Drop for Client {
     fn drop(&mut self) {
         self.poll();
-        let _ = self.machine
-            .current_mut()
-            .handle_action(Action::Terminate, &mut self.event_buffer);
+        let _ = self.machine.current_mut().handle_action(
+            Action::Terminate,
+            &mut self.event_buffer,
+        );
         let _ = self.event_buffer.take_all();
     }
 }

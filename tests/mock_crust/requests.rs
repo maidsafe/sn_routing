@@ -33,10 +33,12 @@ fn successful_put_request() {
     let data = gen_immutable_data(&mut rng, 1024);
     let message_id = MessageId::new();
 
-    assert!(clients[0]
-                .inner
-                .put_idata(dst, data.clone(), message_id)
-                .is_ok());
+    assert!(
+        clients[0]
+            .inner
+            .put_idata(dst, data.clone(), message_id)
+            .is_ok()
+    );
 
     let _ = poll_all(&mut nodes, &mut clients);
 
@@ -78,10 +80,12 @@ fn successful_get_request() {
     let dst = Authority::NaeManager(*data.name());
     let message_id = MessageId::new();
 
-    assert!(clients[0]
-                .inner
-                .get_idata(dst, *data.name(), message_id)
-                .is_ok());
+    assert!(
+        clients[0]
+            .inner
+            .get_idata(dst, *data.name(), message_id)
+            .is_ok()
+    );
 
     let _ = poll_all(&mut nodes, &mut clients);
 
@@ -100,11 +104,13 @@ fn successful_get_request() {
                    }) => {
                     request_received_count += 1;
                     if data.name() == req_name && message_id == req_message_id {
-                        if let Err(err) = node.inner
-                               .send_get_idata_response(dst,
-                                                        src,
-                                                        Ok(data.clone()),
-                                                        req_message_id) {
+                        if let Err(err) = node.inner.send_get_idata_response(
+                            dst,
+                            src,
+                            Ok(data.clone()),
+                            req_message_id,
+                        )
+                        {
                             trace!("Failed to send GetIData success response: {:?}", err);
                         }
                         break;
@@ -159,10 +165,12 @@ fn failed_get_request() {
     let dst = Authority::NaeManager(*data.name());
     let message_id = MessageId::new();
 
-    assert!(clients[0]
-                .inner
-                .get_idata(dst, *data.name(), message_id)
-                .is_ok());
+    assert!(
+        clients[0]
+            .inner
+            .get_idata(dst, *data.name(), message_id)
+            .is_ok()
+    );
 
     let _ = poll_all(&mut nodes, &mut clients);
 
@@ -181,11 +189,13 @@ fn failed_get_request() {
                    }) => {
                     request_received_count += 1;
                     if data.name() == req_name && message_id == *req_message_id {
-                        if let Err(err) = node.inner
-                               .send_get_idata_response(dst,
-                                                        src,
-                                                        Err(ClientError::NoSuchData),
-                                                        *req_message_id) {
+                        if let Err(err) = node.inner.send_get_idata_response(
+                            dst,
+                            src,
+                            Err(ClientError::NoSuchData),
+                            *req_message_id,
+                        )
+                        {
                             trace!("Failed to send GetIData failure response: {:?}", err);
                         }
                         break;
@@ -240,10 +250,12 @@ fn disconnect_on_get_request() {
     let dst = Authority::NaeManager(*data.name());
     let message_id = MessageId::new();
 
-    assert!(clients[0]
-                .inner
-                .get_idata(dst, *data.name(), message_id)
-                .is_ok());
+    assert!(
+        clients[0]
+            .inner
+            .get_idata(dst, *data.name(), message_id)
+            .is_ok()
+    );
 
     let _ = poll_all(&mut nodes, &mut clients);
 
@@ -262,11 +274,13 @@ fn disconnect_on_get_request() {
                    }) => {
                     request_received_count += 1;
                     if data.name() == req_name && message_id == *req_message_id {
-                        if let Err(err) = node.inner
-                               .send_get_idata_response(dst,
-                                                        src,
-                                                        Ok(data.clone()),
-                                                        *req_message_id) {
+                        if let Err(err) = node.inner.send_get_idata_response(
+                            dst,
+                            src,
+                            Ok(data.clone()),
+                            *req_message_id,
+                        )
+                        {
                             trace!("Failed to send GetIData success response: {:?}", err);
                         }
                         break;
@@ -281,16 +295,20 @@ fn disconnect_on_get_request() {
     // TODO: Assert a quorum here.
     assert!(2 * request_received_count > min_section_size);
 
-    clients[0]
-        .handle
-        .0
-        .borrow_mut()
-        .disconnect(&unwrap!(nodes[0].handle.0.borrow().uid));
-    nodes[0]
-        .handle
-        .0
-        .borrow_mut()
-        .disconnect(&unwrap!(clients[0].handle.0.borrow().uid));
+    clients[0].handle.0.borrow_mut().disconnect(&unwrap!(
+        nodes[0]
+            .handle
+            .0
+            .borrow()
+            .uid
+    ));
+    nodes[0].handle.0.borrow_mut().disconnect(&unwrap!(
+        clients[0]
+            .handle
+            .0
+            .borrow()
+            .uid
+    ));
 
     let _ = poll_all(&mut nodes, &mut clients);
 

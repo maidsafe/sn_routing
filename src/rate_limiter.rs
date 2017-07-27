@@ -48,13 +48,16 @@ pub struct RateLimiter {
     used: BTreeMap<IpAddr, u64>,
     /// Timestamp of when the `RateLimiter` was last updated.
     last_updated: Instant,
+    /// Whether rate restriction is disabled.
+    disabled: bool,
 }
 
 impl RateLimiter {
-    pub fn new() -> Self {
+    pub fn new(disabled: bool) -> Self {
         RateLimiter {
             used: BTreeMap::new(),
             last_updated: Instant::now(),
+            disabled: disabled,
         }
     }
 
@@ -64,18 +67,14 @@ impl RateLimiter {
     /// the client to exceed its capacity (i.e. `MAX_IMMUTABLE_DATA_SIZE_IN_BYTES`), then
     /// `Err(ExceedsRateLimit)` is returned. If the message is invalid, `Err(InvalidMessage)` is
     /// returned (this probably indicates malicious behaviour).
-    pub fn add_message(&mut self,
-                       client_ip: &IpAddr,
-                       hash: &Digest256,
-                       part_count: u32,
-                       part_index: u32,
-                       payload: &[u8])
-                       -> Result<u64, RoutingError> {
-        self.update();
-
-        let used = self.used.get(client_ip).map_or(0, |used| *used);
-        let allowance = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES - used;
-
+    pub fn add_message(
+        &mut self,
+        client_ip: &IpAddr,
+        hash: &Digest256,
+        part_count: u32,
+        part_index: u32,
+        payload: &[u8],
+    ) -> Result<u64, RoutingError> {
         let bytes_to_add = if part_index == 0 {
             use self::UserMessage::*;
             use Request::*;
@@ -123,6 +122,15 @@ impl RateLimiter {
             payload.len() as u64
         };
 
+        if self.disabled {
+            return Ok(bytes_to_add);
+        }
+
+        self.update();
+
+        let used = self.used.get(client_ip).map_or(0, |used| *used);
+        let allowance = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES - used;
+
         if bytes_to_add > allowance {
             return Err(RoutingError::ExceedsRateLimit(*hash));
         }
@@ -140,7 +148,7 @@ impl RateLimiter {
 
         let now = Instant::now();
         let leak_time = (now - self.last_updated).as_secs() as f64 +
-                        ((now - self.last_updated).subsec_nanos() as f64 / 1_000_000_000.0);
+            ((now - self.last_updated).subsec_nanos() as f64 / 1_000_000_000.0);
         self.last_updated = now;
         let mut leaked_units = (RATE * leak_time) as u64;
 
@@ -163,12 +171,6 @@ impl RateLimiter {
     }
 }
 
-impl Default for RateLimiter {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[cfg(all(test, feature = "use-mock-crust"))]
 mod tests {
     use super::*;
@@ -186,7 +188,8 @@ mod tests {
             &UserMessage::Request(Request::GetIData {
                 name: rand::random(),
                 msg_id: MessageId::new(),
-        })));
+            }),
+        ));
         let hash = sha3_256(&payload);
         (payload, hash)
     }
@@ -227,7 +230,7 @@ mod tests {
     /// the full rate of the rate-limiter.
     #[test]
     fn single_client() {
-        let mut rate_limiter = RateLimiter::new();
+        let mut rate_limiter = RateLimiter::new(false);
         let client = IpAddr::from([0, 0, 0, 0]);
 
         // Consume full allowance.
@@ -254,7 +257,7 @@ mod tests {
     /// Also checks that the each client's throughput is half the full rate of the rate-limiter.
     #[test]
     fn two_clients() {
-        let mut rate_limiter = RateLimiter::new();
+        let mut rate_limiter = RateLimiter::new(false);
         let client1 = IpAddr::from([0, 0, 0, 0]);
         let client2 = IpAddr::from([1, 1, 1, 1]);
 
@@ -299,7 +302,7 @@ mod tests {
     /// messages and increases when just one has messages.
     #[test]
     fn staggered_start() {
-        let mut rate_limiter = RateLimiter::new();
+        let mut rate_limiter = RateLimiter::new(false);
         let client1 = IpAddr::from([0, 0, 0, 0]);
         let client2 = IpAddr::from([1, 1, 1, 1]);
 
@@ -344,7 +347,7 @@ mod tests {
     /// Checks that many clients can all add messages at the same rate.
     #[test]
     fn many_clients() {
-        let mut rate_limiter = RateLimiter::new();
+        let mut rate_limiter = RateLimiter::new(false);
         let num_clients = 100;
         let mut clients_and_counts = (0..num_clients)
             .map(|i| (IpAddr::from([i, i, i, i]), 0))
@@ -357,8 +360,9 @@ mod tests {
             // Each client tries to add a large request and increments its count on success.
             for (client, count) in &mut clients_and_counts {
                 if rate_limiter
-                       .add_message(client, &hash_of_get_req, 1, 0, &get_req_payload)
-                       .is_ok() {
+                    .add_message(client, &hash_of_get_req, 1, 0, &get_req_payload)
+                    .is_ok()
+                {
                     *count += 1;
                 }
             }
@@ -368,7 +372,7 @@ mod tests {
         // Check that all clients have managed to add the same number of messages.
         let advanced_secs = (FakeClock::now() - start).as_secs() + 1;
         let success_count = (advanced_secs * RATE as u64) /
-                            (MAX_IMMUTABLE_DATA_SIZE_IN_BYTES * num_clients as u64);
+            (MAX_IMMUTABLE_DATA_SIZE_IN_BYTES * num_clients as u64);
         for count in clients_and_counts.values() {
             // Allow difference of 1 to accommodate for rounding errors.
             assert!((*count as i64 - success_count as i64).abs() <= 1);
@@ -378,7 +382,7 @@ mod tests {
     /// Checks that invalid messages are handled correctly.
     #[test]
     fn invalid_messages() {
-        let mut rate_limiter = RateLimiter::new();
+        let mut rate_limiter = RateLimiter::new(false);
         let client = IpAddr::from([0, 0, 0, 0]);
 
         // Parses with `SerialisationError::DeserialiseExtraBytes` error.
@@ -397,9 +401,9 @@ mod tests {
 
         // Parses successfully but claims to be part 1 of 2.
         let mut msg = UserMessage::Request(Request::GetIData {
-                                               name: rand::random(),
-                                               msg_id: MessageId::new(),
-                                           });
+            name: rand::random(),
+            msg_id: MessageId::new(),
+        });
         payload = unwrap!(serialisation::serialise(&msg));
         match rate_limiter.add_message(&client, &sha3_256(&payload), 2, 0, &payload) {
             Err(RoutingError::InvalidMessage) => {}
@@ -416,9 +420,9 @@ mod tests {
 
         // Parses as a response.
         msg = UserMessage::Response(Response::PutIData {
-                                        res: Ok(()),
-                                        msg_id: MessageId::new(),
-                                    });
+            res: Ok(()),
+            msg_id: MessageId::new(),
+        });
         payload = unwrap!(serialisation::serialise(&msg));
         match rate_limiter.add_message(&client, &sha3_256(&payload), 1, 0, &payload) {
             Err(RoutingError::InvalidMessage) => {}

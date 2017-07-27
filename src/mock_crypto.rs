@@ -86,9 +86,9 @@ pub mod rust_sodium {
             /// Generate mock public and corresponding secret key.
             pub fn gen_keypair() -> (PublicKey, SecretKey) {
                 with_rng(|rng| {
-                             let value = rng.gen();
-                             (PublicKey(value), SecretKey(value))
-                         })
+                    let value = rng.gen();
+                    (PublicKey(value), SecretKey(value))
+                })
             }
 
             /// Sign a message using the mock secret key.
@@ -138,9 +138,9 @@ pub mod rust_sodium {
             /// Generate mock public and corresponding secret key.
             pub fn gen_keypair() -> (PublicKey, SecretKey) {
                 with_rng(|rng| {
-                             let value = rng.gen();
-                             (PublicKey(value), SecretKey(value))
-                         })
+                    let value = rng.gen();
+                    (PublicKey(value), SecretKey(value))
+                })
             }
 
             /// Generate mock nonce.
@@ -151,8 +151,8 @@ pub mod rust_sodium {
             /// Perform mock encryption of the given message using their public key, our secret key
             /// and nonce.
             pub fn seal(m: &[u8], nonce: &Nonce, pk: &PublicKey, sk: &SecretKey) -> Vec<u8> {
-                let mut result = Vec::with_capacity(m.len() + nonce.0.len() + pk.0.len() +
-                                                    sk.0.len());
+                let mut result =
+                    Vec::with_capacity(m.len() + nonce.0.len() + pk.0.len() + sk.0.len());
                 result.extend(&nonce.0);
                 result.extend(&pk.0);
                 result.extend(&sk.0);
@@ -162,11 +162,12 @@ pub mod rust_sodium {
 
             /// Perform mock decryption of the given ciphertext using their secret key, our public
             /// key and nonce.
-            pub fn open(c: &[u8],
-                        nonce: &Nonce,
-                        pk: &PublicKey,
-                        sk: &SecretKey)
-                        -> Result<Vec<u8>, ()> {
+            pub fn open(
+                c: &[u8],
+                nonce: &Nonce,
+                pk: &PublicKey,
+                sk: &SecretKey,
+            ) -> Result<Vec<u8>, ()> {
                 let n = nonce.0.len();
                 let p = pk.0.len();
                 let s = sk.0.len();
@@ -189,7 +190,8 @@ pub mod rust_sodium {
     }
 
     fn with_rng<F, R>(f: F) -> R
-        where F: FnOnce(&mut XorShiftRng) -> R
+    where
+        F: FnOnce(&mut XorShiftRng) -> R,
     {
         RNG.with(|rng| f(&mut *rng.borrow_mut()))
     }

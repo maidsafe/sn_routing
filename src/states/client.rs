@@ -60,14 +60,15 @@ pub struct Client {
 
 impl Client {
     #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
-    pub fn from_bootstrapping(crust_service: Service,
-                              full_id: FullId,
-                              min_section_size: usize,
-                              proxy_pub_id: PublicId,
-                              stats: Stats,
-                              timer: Timer,
-                              outbox: &mut EventBox)
-                              -> Self {
+    pub fn from_bootstrapping(
+        crust_service: Service,
+        full_id: FullId,
+        min_section_size: usize,
+        proxy_pub_id: PublicId,
+        stats: Stats,
+        timer: Timer,
+        outbox: &mut EventBox,
+    ) -> Self {
         let client = Client {
             ack_mgr: AckManager::new(),
             crust_service: crust_service,
@@ -78,9 +79,11 @@ impl Client {
             stats: stats,
             timer: timer,
             user_msg_cache: UserMessageCache::with_expiry_duration(
-                Duration::from_secs(USER_MSG_CACHE_EXPIRY_DURATION_SECS)),
+                Duration::from_secs(USER_MSG_CACHE_EXPIRY_DURATION_SECS),
+            ),
             outgoing_user_msg_hashes: LruCache::with_expiry_duration(
-                Duration::from_secs(MESSAGE_ID_CACHE_SECS)),
+                Duration::from_secs(MESSAGE_ID_CACHE_SECS),
+            ),
         };
 
         debug!("{:?} State changed to client.", client);
@@ -128,10 +131,11 @@ impl Client {
         Transition::Stay
     }
 
-    pub fn handle_crust_event(&mut self,
-                              crust_event: CrustEvent<PublicId>,
-                              outbox: &mut EventBox)
-                              -> Transition {
+    pub fn handle_crust_event(
+        &mut self,
+        crust_event: CrustEvent<PublicId>,
+        outbox: &mut EventBox,
+    ) -> Transition {
         match crust_event {
             CrustEvent::LostPeer(pub_id) => self.handle_lost_peer(pub_id, outbox),
             CrustEvent::NewMessage(pub_id, _, bytes) => {
@@ -153,11 +157,12 @@ impl Client {
         self.resend_unacknowledged_timed_out_msgs(token)
     }
 
-    fn handle_new_message(&mut self,
-                          pub_id: PublicId,
-                          bytes: Vec<u8>,
-                          outbox: &mut EventBox)
-                          -> Transition {
+    fn handle_new_message(
+        &mut self,
+        pub_id: PublicId,
+        bytes: Vec<u8>,
+        outbox: &mut EventBox,
+    ) -> Transition {
         let transition = match serialisation::deserialise(&bytes) {
             Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, pub_id, outbox),
             Ok(Message::Direct(direct_msg)) => self.handle_direct_message(direct_msg, outbox),
@@ -178,11 +183,12 @@ impl Client {
         }
     }
 
-    fn handle_hop_message(&mut self,
-                          hop_msg: HopMessage,
-                          pub_id: PublicId,
-                          outbox: &mut EventBox)
-                          -> Result<Transition, RoutingError> {
+    fn handle_hop_message(
+        &mut self,
+        hop_msg: HopMessage,
+        pub_id: PublicId,
+        outbox: &mut EventBox,
+    ) -> Result<Transition, RoutingError> {
         if self.proxy_pub_id == pub_id {
             hop_msg.verify(self.proxy_pub_id.signing_public_key())?;
         } else {
@@ -196,8 +202,10 @@ impl Client {
         let in_authority = self.in_authority(&routing_msg.dst);
 
         // Prevents us repeatedly handling identical messages sent by a malicious peer.
-        match self.routing_msg_filter
-                  .filter_incoming(&routing_msg, hop_msg.route) {
+        match self.routing_msg_filter.filter_incoming(
+            &routing_msg,
+            hop_msg.route,
+        ) {
             FilteringResult::KnownMessage |
             FilteringResult::KnownMessageAndRoute => return Err(RoutingError::FilterCheckFailed),
             FilteringResult::NewMessage => (),
@@ -210,16 +218,19 @@ impl Client {
         Ok(self.dispatch_routing_message(routing_msg, outbox))
     }
 
-    fn handle_direct_message(&mut self,
-                             direct_msg: DirectMessage,
-                             outbox: &mut EventBox)
-                             -> Result<Transition, RoutingError> {
+    fn handle_direct_message(
+        &mut self,
+        direct_msg: DirectMessage,
+        outbox: &mut EventBox,
+    ) -> Result<Transition, RoutingError> {
         if let DirectMessage::ProxyRateLimitExceeded(hash) = direct_msg {
             if let Some(msg_id) = self.outgoing_user_msg_hashes.remove(&hash) {
                 outbox.send_event(Event::ProxyRateLimitExceeded(msg_id));
             } else {
-                debug!("{:?} Got ProxyRateLimitExceeded, but no corresponding request found",
-                       self);
+                debug!(
+                    "{:?} Got ProxyRateLimitExceeded, but no corresponding request found",
+                    self
+                );
             }
         } else {
             debug!("{:?} Unhandled direct message: {:?}", self, direct_msg);
@@ -227,10 +238,11 @@ impl Client {
         Ok(Transition::Stay)
     }
 
-    fn dispatch_routing_message(&mut self,
-                                routing_msg: RoutingMessage,
-                                outbox: &mut EventBox)
-                                -> Transition {
+    fn dispatch_routing_message(
+        &mut self,
+        routing_msg: RoutingMessage,
+        outbox: &mut EventBox,
+    ) -> Transition {
         match routing_msg.content {
             MessageContent::Ack(ack, _) => self.handle_ack_response(ack),
             MessageContent::UserMessagePart {
@@ -240,47 +252,59 @@ impl Client {
                 payload,
                 ..
             } => {
-                trace!("{:?} Got UserMessagePart {:02x}{:02x}{:02x}.., {}/{} from {:?} to {:?}.",
-                       self,
-                       hash[0],
-                       hash[1],
-                       hash[2],
-                       part_index + 1,
-                       part_count,
-                       routing_msg.src,
-                       routing_msg.dst);
-                if let Some(msg) = self.user_msg_cache
-                       .add(hash, part_count, part_index, payload) {
+                trace!(
+                    "{:?} Got UserMessagePart {:02x}{:02x}{:02x}.., {}/{} from {:?} to {:?}.",
+                    self,
+                    hash[0],
+                    hash[1],
+                    hash[2],
+                    part_index + 1,
+                    part_count,
+                    routing_msg.src,
+                    routing_msg.dst
+                );
+                if let Some(msg) = self.user_msg_cache.add(
+                    hash,
+                    part_count,
+                    part_index,
+                    payload,
+                )
+                {
                     self.stats().count_user_message(&msg);
                     outbox.send_event(msg.into_event(routing_msg.src, routing_msg.dst));
                 }
                 Transition::Stay
             }
             content => {
-                debug!("{:?} Unhandled routing message: {:?} from {:?} to {:?}",
-                       self,
-                       content,
-                       routing_msg.src,
-                       routing_msg.dst);
+                debug!(
+                    "{:?} Unhandled routing message: {:?} from {:?} to {:?}",
+                    self,
+                    content,
+                    routing_msg.src,
+                    routing_msg.dst
+                );
                 Transition::Stay
             }
         }
     }
 
     /// Sends the given message, possibly splitting it up into smaller parts.
-    fn send_user_message(&mut self,
-                         src: Authority<XorName>,
-                         dst: Authority<XorName>,
-                         user_msg: UserMessage,
-                         priority: u8)
-                         -> Result<(), RoutingError> {
+    fn send_user_message(
+        &mut self,
+        src: Authority<XorName>,
+        dst: Authority<XorName>,
+        user_msg: UserMessage,
+        priority: u8,
+    ) -> Result<(), RoutingError> {
         self.stats.count_user_message(&user_msg);
         let (hash, parts) = user_msg.to_parts(priority)?;
         for part in parts {
             self.send_routing_message(src, dst, part)?;
         }
-        let _ = self.outgoing_user_msg_hashes
-            .insert(hash, *user_msg.message_id());
+        let _ = self.outgoing_user_msg_hashes.insert(
+            hash,
+            *user_msg.message_id(),
+        );
         Ok(())
     }
 }
@@ -335,27 +359,35 @@ impl Bootstrapped for Client {
 
     fn resend_unacknowledged_timed_out_msgs(&mut self, token: u64) {
         if let Some((unacked_msg, ack)) = self.ack_mgr.find_timed_out(token) {
-            trace!("{:?} Timed out waiting for {:?}: {:?}",
-                   self,
-                   ack,
-                   unacked_msg);
+            trace!(
+                "{:?} Timed out waiting for {:?}: {:?}",
+                self,
+                ack,
+                unacked_msg
+            );
 
             if unacked_msg.route as usize == self.min_section_size {
-                debug!("{:?} Message unable to be acknowledged - giving up. {:?}",
-                       self,
-                       unacked_msg);
+                debug!(
+                    "{:?} Message unable to be acknowledged - giving up. {:?}",
+                    self,
+                    unacked_msg
+                );
                 self.stats.count_unacked();
-            } else if let Err(error) =
-                self.send_routing_message_via_route(unacked_msg.routing_msg, unacked_msg.route) {
+            } else if let Err(error) = self.send_routing_message_via_route(
+                unacked_msg.routing_msg,
+                unacked_msg.route,
+            )
+            {
                 debug!("{:?} Failed to send message: {:?}", self, error);
             }
         }
     }
 
-    fn send_routing_message_via_route(&mut self,
-                                      routing_msg: RoutingMessage,
-                                      route: u8)
-                                      -> Result<(), RoutingError> {
+    fn send_routing_message_via_route(
+        &mut self,
+        routing_msg: RoutingMessage,
+        route: u8,
+    ) -> Result<(), RoutingError> {
         self.stats.count_route(route);
 
         if routing_msg.dst.is_client() && self.in_authority(&routing_msg.dst) {
@@ -366,14 +398,18 @@ impl Bootstrapped for Client {
         match routing_msg.src {
             Authority::Client { ref proxy_node_name, .. } => {
                 if *self.proxy_pub_id.name() != *proxy_node_name {
-                    error!("{:?} Unable to find connection to proxy node in proxy map",
-                           self);
+                    error!(
+                        "{:?} Unable to find connection to proxy node in proxy map",
+                        self
+                    );
                     return Err(RoutingError::ProxyConnectionNotFound);
                 }
             }
             _ => {
-                error!("{:?} Source should be client if our state is a Client",
-                       self);
+                error!(
+                    "{:?} Source should be client if our state is a Client",
+                    self
+                );
                 return Err(RoutingError::InvalidSource);
             }
         };
@@ -382,8 +418,13 @@ impl Bootstrapped for Client {
 
         let proxy_pub_id = self.proxy_pub_id;
         if self.add_to_pending_acks(signed_msg.routing_message(), route) &&
-           !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_pub_id, route) {
-            let bytes = self.to_hop_bytes(signed_msg.clone(), route, BTreeSet::new())?;
+            !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_pub_id, route)
+        {
+            let bytes = self.to_hop_bytes(
+                signed_msg.clone(),
+                route,
+                BTreeSet::new(),
+            )?;
             self.send_or_drop(&proxy_pub_id, bytes, signed_msg.priority());
         }
 

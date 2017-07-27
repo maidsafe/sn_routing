@@ -42,8 +42,10 @@ fn drop_random_nodes<R: Rng>(rng: &mut R, nodes: &mut Vec<TestNode>, min_section
         let prefix = *nodes[i].routing_table().our_prefix();
 
         // Any network must allow at least one node to be lost:
-        let num_excess = cmp::max(1,
-                                  nodes[i].routing_table().our_section().len() - min_section_size);
+        let num_excess = cmp::max(
+            1,
+            nodes[i].routing_table().our_section().len() - min_section_size,
+        );
         assert!(num_excess > 0);
 
         let mut removed = 0;
@@ -71,11 +73,12 @@ fn drop_random_nodes<R: Rng>(rng: &mut R, nodes: &mut Vec<TestNode>, min_section
 // Randomly adds a node. Returns new node index if successfully added.
 //
 // Note: This fn will call `poll_and_resend` itself
-fn add_node_and_poll<R: Rng>(rng: &mut R,
-                             network: &Network<PublicId>,
-                             mut nodes: &mut Vec<TestNode>,
-                             min_section_size: usize)
-                             -> Option<usize> {
+fn add_node_and_poll<R: Rng>(
+    rng: &mut R,
+    network: &Network<PublicId>,
+    mut nodes: &mut Vec<TestNode>,
+    min_section_size: usize,
+) -> Option<usize> {
     let len = nodes.len();
     // A non-first node without min_section_size nodes in routing table cannot be proxy
     let (proxy, index) = if len <= min_section_size {
@@ -95,13 +98,19 @@ fn add_node_and_poll<R: Rng>(rng: &mut R,
     if len > (2 * min_section_size) {
         let exclude = vec![new_node, proxy].into_iter().collect();
         let block_peer = gen_range_except(rng, 1, nodes.len(), &exclude);
-        debug!("Connection between {} and {} blocked.",
-               nodes[new_node].name(),
-               nodes[block_peer].name());
-        network.block_connection(nodes[new_node].handle.endpoint(),
-                                 nodes[block_peer].handle.endpoint());
-        network.block_connection(nodes[block_peer].handle.endpoint(),
-                                 nodes[new_node].handle.endpoint());
+        debug!(
+            "Connection between {} and {} blocked.",
+            nodes[new_node].name(),
+            nodes[block_peer].name()
+        );
+        network.block_connection(
+            nodes[new_node].handle.endpoint(),
+            nodes[block_peer].handle.endpoint(),
+        );
+        network.block_connection(
+            nodes[block_peer].handle.endpoint(),
+            nodes[new_node].handle.endpoint(),
+        );
     }
 
     // new_node might be rejected here due to the current network state with ongoing merge or
@@ -124,8 +133,10 @@ fn add_node_and_poll<R: Rng>(rng: &mut R,
     let failed_node = nodes.remove(new_node);
     drop(failed_node);
     poll_and_resend(&mut nodes, &mut []);
-    let duration_ms = cmp::max(RESOURCE_PROOF_DURATION_SECS + ACCUMULATION_TIMEOUT_SECS,
-                               CANDIDATE_ACCEPT_TIMEOUT_SECS) * 1000;
+    let duration_ms = cmp::max(
+        RESOURCE_PROOF_DURATION_SECS + ACCUMULATION_TIMEOUT_SECS,
+        CANDIDATE_ACCEPT_TIMEOUT_SECS,
+    ) * 1000;
 
     FakeClock::advance_time(duration_ms);
     None
@@ -134,10 +145,11 @@ fn add_node_and_poll<R: Rng>(rng: &mut R,
 // Randomly adds or removes some nodes, causing churn.
 // If a new node was added, returns the index of this node. Otherwise
 // returns `None` (it never adds more than one node).
-fn random_churn<R: Rng>(rng: &mut R,
-                        network: &Network<PublicId>,
-                        nodes: &mut Vec<TestNode>)
-                        -> Option<usize> {
+fn random_churn<R: Rng>(
+    rng: &mut R,
+    network: &Network<PublicId>,
+    nodes: &mut Vec<TestNode>,
+) -> Option<usize> {
     let len = nodes.len();
 
     if count_sections(nodes) > 1 && rng.gen_weighted_bool(3) {
@@ -153,11 +165,15 @@ fn random_churn<R: Rng>(rng: &mut R,
         if nodes.len() > 2 * network.min_section_size() {
             let peer_1 = gen_range(rng, 1, len);
             let peer_2 = gen_range_except(rng, 1, len, &iter::once(peer_1).collect());
-            debug!("Lost connection between {} and {}",
-                   nodes[peer_1].name(),
-                   nodes[peer_2].name());
-            network.lost_connection(nodes[peer_1].handle.endpoint(),
-                                    nodes[peer_2].handle.endpoint());
+            debug!(
+                "Lost connection between {} and {}",
+                nodes[peer_1].name(),
+                nodes[peer_2].name()
+            );
+            network.lost_connection(
+                nodes[peer_1].handle.endpoint(),
+                nodes[peer_2].handle.endpoint(),
+            );
         }
 
         let config = BootstrapConfig::with_contacts(&[nodes[proxy].handle.endpoint()]);
@@ -170,13 +186,19 @@ fn random_churn<R: Rng>(rng: &mut R,
             }
             let exclude = vec![index, proxy].into_iter().collect();
             let block_peer = gen_range_except(rng, 1, nodes.len(), &exclude);
-            debug!("Connection between {} and {} blocked.",
-                   nodes[index].name(),
-                   nodes[block_peer].name());
-            network.block_connection(nodes[index].handle.endpoint(),
-                                     nodes[block_peer].handle.endpoint());
-            network.block_connection(nodes[block_peer].handle.endpoint(),
-                                     nodes[index].handle.endpoint());
+            debug!(
+                "Connection between {} and {} blocked.",
+                nodes[index].name(),
+                nodes[block_peer].name()
+            );
+            network.block_connection(
+                nodes[index].handle.endpoint(),
+                nodes[block_peer].handle.endpoint(),
+            );
+            network.block_connection(
+                nodes[block_peer].handle.endpoint(),
+                nodes[index].handle.endpoint(),
+            );
         }
 
         Some(index)
@@ -198,21 +220,31 @@ struct ExpectedGets {
 impl ExpectedGets {
     /// Sends a request using the nodes specified by `src`, and adds the expectation. Panics if not
     /// enough nodes sent a section message, or if an individual sending node could not be found.
-    fn send_and_expect(&mut self,
-                       data: ImmutableData,
-                       src: Authority<XorName>,
-                       dst: Authority<XorName>,
-                       nodes: &mut [TestNode],
-                       min_section_size: usize) {
+    fn send_and_expect(
+        &mut self,
+        data: ImmutableData,
+        src: Authority<XorName>,
+        dst: Authority<XorName>,
+        nodes: &mut [TestNode],
+        min_section_size: usize,
+    ) {
         let msg_id = MessageId::new();
         let mut sent_count = 0;
         for node in nodes.iter_mut().filter(|node| node.is_recipient(&src)) {
             if dst.is_client() {
-                unwrap!(node.inner
-                            .send_get_idata_response(src, dst, Ok(data.clone()), msg_id));
+                unwrap!(node.inner.send_get_idata_response(
+                    src,
+                    dst,
+                    Ok(data.clone()),
+                    msg_id,
+                ));
             } else {
-                unwrap!(node.inner
-                            .send_get_idata_request(src, dst, *data.name(), msg_id));
+                unwrap!(node.inner.send_get_idata_request(
+                    src,
+                    dst,
+                    *data.name(),
+                    msg_id,
+                ));
             }
             sent_count += 1;
         }
@@ -225,12 +257,14 @@ impl ExpectedGets {
     }
 
     /// Sends a request from the client, and adds the expectation.
-    fn client_send_and_expect(&mut self,
-                              data_id: XorName,
-                              client_auth: Authority<XorName>,
-                              dst: Authority<XorName>,
-                              client: &mut TestClient,
-                              nodes: &mut [TestNode]) {
+    fn client_send_and_expect(
+        &mut self,
+        data_id: XorName,
+        client_auth: Authority<XorName>,
+        dst: Authority<XorName>,
+        client: &mut TestClient,
+        nodes: &mut [TestNode],
+    ) {
         let msg_id = MessageId::new();
         unwrap!(client.inner.get_idata(dst, data_id, msg_id));
         self.expect(nodes, dst, (data_id, msg_id, client_auth, dst));
@@ -251,10 +285,12 @@ impl ExpectedGets {
     }
 
     /// Verifies that all sent messages have been received by the appropriate nodes.
-    fn verify(mut self,
-              nodes: &mut [TestNode],
-              clients: &mut [TestClient],
-              new_node_name: Option<XorName>) {
+    fn verify(
+        mut self,
+        nodes: &mut [TestNode],
+        clients: &mut [TestClient],
+        new_node_name: Option<XorName>,
+    ) {
         // The minimum of the section lengths when sending and now. If a churn event happened, both
         // cases are valid: that the message was received before or after that. The number of
         // recipients thus only needs to reach a quorum for the smaller of the section sizes.
@@ -276,46 +312,54 @@ impl ExpectedGets {
         for node in nodes {
             while let Ok(event) = node.try_next_ev() {
                 if let Event::Request {
-                           request: Request::GetIData { name, msg_id },
-                           src,
-                           dst,
-                       } = event {
+                    request: Request::GetIData { name, msg_id },
+                    src,
+                    dst,
+                } = event
+                {
                     let key = (name, msg_id, src, dst);
                     if dst.is_multiple() {
-                        if !self.sections
-                                .get(&key.3)
-                                .map_or(false, |entry| entry.contains(&node.name())) {
+                        let checker = |entry: &HashSet<XorName>| entry.contains(&node.name());
+                        if !self.sections.get(&key.3).map_or(false, checker) {
                             // TODO: depends on the affected tunnels due to the dropped nodes, there
                             // will be unexpected receiver for group (only used NaeManager in this
                             // test). This shall no longer happen once routing refactored.
                             if let Authority::NaeManager(_) = dst {
-                                trace!("Unexpected request for node {}: {:?} / {:?}",
-                                       node.name(),
-                                       key,
-                                       self.sections);
+                                trace!(
+                                    "Unexpected request for node {}: {:?} / {:?}",
+                                    node.name(),
+                                    key,
+                                    self.sections
+                                );
                             } else if new_node_name == Some(node.name()) {
                                 // A new joined node may receive the message first, then receives
                                 // the section split it incurs, hence becomes non-recipient in this
                                 // call but received the request event.
-                                trace!("Unexpected request for new joined node {}: {:?} / {:?}",
-                                       node.name(),
-                                       key,
-                                       self.sections);
+                                trace!(
+                                    "Unexpected request for new joined node {}: {:?} / {:?}",
+                                    node.name(),
+                                    key,
+                                    self.sections
+                                );
                             } else {
-                                panic!("Unexpected request for node {}: {:?} / {:?}",
-                                       node.name(),
-                                       key,
-                                       self.sections);
+                                panic!(
+                                    "Unexpected request for node {}: {:?} / {:?}",
+                                    node.name(),
+                                    key,
+                                    self.sections
+                                );
                             }
                         } else {
                             *section_msgs_received.entry(key).or_insert(0usize) += 1;
                         }
                     } else {
                         assert_eq!(node.name(), dst.name());
-                        assert!(self.messages.remove(&key),
-                                "Unexpected request for node {}: {:?}",
-                                node.name(),
-                                key);
+                        assert!(
+                            self.messages.remove(&key),
+                            "Unexpected request for node {}: {:?}",
+                            node.name(),
+                            key
+                        );
                     }
                 }
             }
@@ -323,16 +367,19 @@ impl ExpectedGets {
         for client in clients {
             while let Ok(event) = client.inner.try_next_ev() {
                 if let Event::Response {
-                           response: Response::GetIData { res, msg_id },
-                           src,
-                           dst,
-                       } = event {
+                    response: Response::GetIData { res, msg_id },
+                    src,
+                    dst,
+                } = event
+                {
                     let data = unwrap!(res);
                     let key = (*data.name(), msg_id, src, dst);
-                    assert!(self.messages.remove(&key),
-                            "Unexpected request for client {}: {:?}",
-                            client.name(),
-                            key);
+                    assert!(
+                        self.messages.remove(&key),
+                        "Unexpected request for client {}: {:?}",
+                        client.name(),
+                        key
+                    );
                 }
             }
         }
@@ -341,11 +388,13 @@ impl ExpectedGets {
             assert!(key.3.is_multiple(), "Failed to receive request {:?}", key);
             let section_size = section_sizes[&key.3];
             let count = section_msgs_received.remove(&key).unwrap_or(0);
-            assert!(count * QUORUM_DENOMINATOR > section_size * QUORUM_NUMERATOR,
-                    "Only received {} out of {} messages {:?}.",
-                    count,
-                    section_size,
-                    key);
+            assert!(
+                count * QUORUM_DENOMINATOR > section_size * QUORUM_NUMERATOR,
+                "Only received {} out of {} messages {:?}.",
+                count,
+                section_size,
+                key
+            );
         }
     }
 }
@@ -426,19 +475,23 @@ fn verify_section_list_signatures(nodes: &[TestNode]) {
         let section_size = rt.our_section().len();
         for prefix in rt.prefixes() {
             if prefix != *rt.our_prefix() {
-                let sigs = unwrap!(node.inner.section_list_signatures(prefix),
-                                   "{:?} Tried to unwrap None returned from \
+                let sigs = unwrap!(
+                    node.inner.section_list_signatures(prefix),
+                    "{:?} Tried to unwrap None returned from \
                                     section_list_signatures({:?})",
-                                   node.name(),
-                                   prefix);
-                assert!(sigs.len() * QUORUM_DENOMINATOR > section_size * QUORUM_NUMERATOR,
-                        "{:?} Not enough signatures for prefix {:?} - {}/{}\n\tSignatures from: \
+                    node.name(),
+                    prefix
+                );
+                assert!(
+                    sigs.len() * QUORUM_DENOMINATOR > section_size * QUORUM_NUMERATOR,
+                    "{:?} Not enough signatures for prefix {:?} - {}/{}\n\tSignatures from: \
                          {:?}",
-                        node.name(),
-                        prefix,
-                        sigs.len(),
-                        section_size,
-                        sigs.keys().collect_vec());
+                    node.name(),
+                    prefix,
+                    sigs.len(),
+                    section_size,
+                    sigs.keys().collect_vec()
+                );
             }
         }
     }
@@ -456,24 +509,31 @@ fn aggressive_churn() {
     // decrease back to min_section_size, then increase to again.
     let mut nodes = create_connected_nodes(&network, min_section_size);
 
-    info!("Churn [{} nodes, {} sections]: adding nodes",
-          nodes.len(),
-          count_sections(&nodes));
+    info!(
+        "Churn [{} nodes, {} sections]: adding nodes",
+        nodes.len(),
+        count_sections(&nodes)
+    );
     while count_sections(&nodes) <= target_section_num || nodes.len() < target_network_size {
         if nodes.len() > (2 * min_section_size) {
             let peer_1 = gen_range(&mut rng, 0, nodes.len());
             let peer_2 = gen_range_except(&mut rng, 0, nodes.len(), &iter::once(peer_1).collect());
-            debug!("Lost connection between {} and {}",
-                   nodes[peer_1].name(),
-                   nodes[peer_2].name());
-            network.lost_connection(nodes[peer_1].handle.endpoint(),
-                                    nodes[peer_2].handle.endpoint());
+            debug!(
+                "Lost connection between {} and {}",
+                nodes[peer_1].name(),
+                nodes[peer_2].name()
+            );
+            network.lost_connection(
+                nodes[peer_1].handle.endpoint(),
+                nodes[peer_2].handle.endpoint(),
+            );
         }
 
         // A candidate could be blocked if some nodes of the section it connected to has lost node
         // due to loss of tunnel. In that case, a restart of candidate shall be carried out.
         if let Some(added_index) =
-            add_node_and_poll(&mut rng, &network, &mut nodes, min_section_size) {
+            add_node_and_poll(&mut rng, &network, &mut nodes, min_section_size)
+        {
             debug!("Added {}", nodes[added_index].name());
         } else {
             debug!("Unable to add new node.");
@@ -484,9 +544,11 @@ fn aggressive_churn() {
         send_and_receive(&mut rng, &mut nodes, min_section_size);
     }
 
-    info!("Churn [{} nodes, {} sections]: simultaneous adding and dropping nodes",
-          nodes.len(),
-          count_sections(&nodes));
+    info!(
+        "Churn [{} nodes, {} sections]: simultaneous adding and dropping nodes",
+        nodes.len(),
+        count_sections(&nodes)
+    );
     while nodes.len() > target_network_size / 2 {
         drop_random_nodes(&mut rng, &mut nodes, min_section_size);
 
@@ -494,7 +556,8 @@ fn aggressive_churn() {
         // Or be rejected when the proxy node's RT is not large enough due to a lost tunnel.
         // In that case, a restart of candidate shall be carried out.
         if let Some(added_index) =
-            add_node_and_poll(&mut rng, &network, &mut nodes, min_section_size) {
+            add_node_and_poll(&mut rng, &network, &mut nodes, min_section_size)
+        {
             debug!("Simultaneous added {}", nodes[added_index].name());
         } else {
             debug!("Unable to add new node.");
@@ -507,12 +570,16 @@ fn aggressive_churn() {
         client_gets(&mut network, &mut nodes, min_section_size);
     }
 
-    info!("Churn [{} nodes, {} sections]: dropping nodes",
-          nodes.len(),
-          count_sections(&nodes));
+    info!(
+        "Churn [{} nodes, {} sections]: dropping nodes",
+        nodes.len(),
+        count_sections(&nodes)
+    );
     while count_sections(&nodes) > 1 && nodes.len() > min_section_size {
-        debug!("Dropping random nodes.  Current node count: {}",
-               nodes.len());
+        debug!(
+            "Dropping random nodes.  Current node count: {}",
+            nodes.len()
+        );
         drop_random_nodes(&mut rng, &mut nodes, min_section_size);
         poll_and_resend(&mut nodes, &mut []);
         verify_invariant_for_all_nodes(&mut nodes);
@@ -521,9 +588,11 @@ fn aggressive_churn() {
         client_gets(&mut network, &mut nodes, min_section_size);
     }
 
-    info!("Churn [{} nodes, {} sections]: done",
-          nodes.len(),
-          count_sections(&nodes));
+    info!(
+        "Churn [{} nodes, {} sections]: done",
+        nodes.len(),
+        count_sections(&nodes)
+    );
 }
 
 #[test]
@@ -576,16 +645,20 @@ fn messages_during_churn() {
         // expected_gets.send_and_expect(data.clone(), auth_s0, auth_n0, &nodes, min_section_size);
 
         // Test messages from a client to a group and a section...
-        expected_gets.client_send_and_expect(*data.name(),
-                                             cl_auth,
-                                             auth_g0,
-                                             &mut clients[0],
-                                             &mut nodes);
-        expected_gets.client_send_and_expect(*data.name(),
-                                             cl_auth,
-                                             auth_s0,
-                                             &mut clients[0],
-                                             &mut nodes);
+        expected_gets.client_send_and_expect(
+            *data.name(),
+            cl_auth,
+            auth_g0,
+            &mut clients[0],
+            &mut nodes,
+        );
+        expected_gets.client_send_and_expect(
+            *data.name(),
+            cl_auth,
+            auth_s0,
+            &mut clients[0],
+            &mut nodes,
+        );
         // ... and from group to the client
         expected_gets.send_and_expect(data, auth_g1, cl_auth, &mut nodes, min_section_size);
 

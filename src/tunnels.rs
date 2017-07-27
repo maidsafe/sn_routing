@@ -53,12 +53,14 @@ impl Tunnels {
 
     /// Returns the ordered pair if the given client pair is eligible for tunnelling. If that is
     /// the case, adds them to the `new_clients` map.
-    pub fn consider_clients(&mut self,
-                            src_id: PublicId,
-                            dst_id: PublicId)
-                            -> Option<(PublicId, PublicId)> {
+    pub fn consider_clients(
+        &mut self,
+        src_id: PublicId,
+        dst_id: PublicId,
+    ) -> Option<(PublicId, PublicId)> {
         if self.clients.len() >= MAX_TUNNEL_CLIENT_PAIRS || self.tunnels.contains_key(&src_id) ||
-           self.tunnels.contains_key(&dst_id) {
+            self.tunnels.contains_key(&dst_id)
+        {
             return None;
         }
         let (id0, id1) = if src_id < dst_id {
@@ -95,9 +97,9 @@ impl Tunnels {
         pairs
             .into_iter()
             .map(|pair| {
-                     self.clients.remove(&pair);
-                     if pair.0 == *pub_id { pair.1 } else { pair.0 }
-                 })
+                self.clients.remove(&pair);
+                if pair.0 == *pub_id { pair.1 } else { pair.0 }
+            })
             .collect()
     }
 
@@ -218,10 +220,7 @@ mod tests {
         tunnels.add(sorted_ids[1], sorted_ids[0]);
         tunnels.add(sorted_ids[2], sorted_ids[0]);
         tunnels.add(sorted_ids[3], sorted_ids[4]);
-        let removed_peers = tunnels
-            .remove_tunnel(&sorted_ids[0])
-            .into_iter()
-            .sorted();
+        let removed_peers = tunnels.remove_tunnel(&sorted_ids[0]).into_iter().sorted();
         assert_eq!(&[sorted_ids[1], sorted_ids[2]], &*removed_peers);
         assert_eq!(None, tunnels.tunnel_for(&sorted_ids[1]));
         assert_eq!(None, tunnels.tunnel_for(&sorted_ids[2]));
@@ -244,10 +243,14 @@ mod tests {
         assert!(!tunnels.accept_clients(sorted_ids[3], sorted_ids[4]));
         // Reject 0 as client, as we are not directly connected to them.
         assert_eq!(None, tunnels.consider_clients(sorted_ids[5], sorted_ids[0]));
-        assert_eq!(Some((sorted_ids[1], sorted_ids[2])),
-                   tunnels.consider_clients(sorted_ids[1], sorted_ids[2]));
-        assert_eq!(Some((sorted_ids[3], sorted_ids[4])),
-                   tunnels.consider_clients(sorted_ids[4], sorted_ids[3]));
+        assert_eq!(
+            Some((sorted_ids[1], sorted_ids[2])),
+            tunnels.consider_clients(sorted_ids[1], sorted_ids[2])
+        );
+        assert_eq!(
+            Some((sorted_ids[3], sorted_ids[4])),
+            tunnels.consider_clients(sorted_ids[4], sorted_ids[3])
+        );
         assert!(tunnels.accept_clients(sorted_ids[1], sorted_ids[2]));
         assert!(tunnels.accept_clients(sorted_ids[3], sorted_ids[4]));
         assert!(tunnels.has_clients(sorted_ids[2], sorted_ids[1]));

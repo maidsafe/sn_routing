@@ -35,10 +35,11 @@ pub trait Bootstrapped: Base {
     fn ack_mgr_mut(&mut self) -> &mut AckManager;
     fn min_section_size(&self) -> usize;
 
-    fn send_routing_message_via_route(&mut self,
-                                      routing_msg: RoutingMessage,
-                                      route: u8)
-                                      -> Result<(), RoutingError>;
+    fn send_routing_message_via_route(
+        &mut self,
+        routing_msg: RoutingMessage,
+        route: u8,
+    ) -> Result<(), RoutingError>;
 
     fn routing_msg_filter(&mut self) -> &mut RoutingMessageFilter;
     fn timer(&mut self) -> &mut Timer;
@@ -66,8 +67,7 @@ pub trait Bootstrapped: Base {
             return false;
         }
 
-        let token = self.timer()
-            .schedule(Duration::from_secs(ACK_TIMEOUT_SECS));
+        let token = self.timer().schedule(Duration::from_secs(ACK_TIMEOUT_SECS));
         let unacked_msg = UnacknowledgedMessage {
             routing_msg: routing_msg.clone(),
             route: route,
@@ -75,10 +75,12 @@ pub trait Bootstrapped: Base {
         };
 
         if let Some(ejected) = self.ack_mgr_mut().add_to_pending(ack, unacked_msg) {
-            debug!("{:?} - Ejected pending ack: {:?} - {:?}",
-                   self,
-                   ack,
-                   ejected);
+            debug!(
+                "{:?} - Ejected pending ack: {:?} - {:?}",
+                self,
+                ack,
+                ejected
+            );
         }
 
         true
@@ -86,13 +88,18 @@ pub trait Bootstrapped: Base {
 
     /// Adds the outgoing signed message to the statistics and returns `true`
     /// if it should be blocked due to deduplication.
-    fn filter_outgoing_routing_msg(&mut self,
-                                   msg: &RoutingMessage,
-                                   pub_id: &PublicId,
-                                   route: u8)
-                                   -> bool {
-        if self.routing_msg_filter()
-               .filter_outgoing(msg, pub_id, route) {
+    fn filter_outgoing_routing_msg(
+        &mut self,
+        msg: &RoutingMessage,
+        pub_id: &PublicId,
+        route: u8,
+    ) -> bool {
+        if self.routing_msg_filter().filter_outgoing(
+            msg,
+            pub_id,
+            route,
+        )
+        {
             return true;
         }
 
@@ -103,22 +110,28 @@ pub trait Bootstrapped: Base {
     fn resend_unacknowledged_timed_out_msgs(&mut self, token: u64) {
         if let Some((unacked_msg, _ack)) = self.ack_mgr_mut().find_timed_out(token) {
             if unacked_msg.route as usize == self.min_section_size() {
-                debug!("{:?} Message unable to be acknowledged - giving up. {:?}",
-                       self,
-                       unacked_msg);
+                debug!(
+                    "{:?} Message unable to be acknowledged - giving up. {:?}",
+                    self,
+                    unacked_msg
+                );
                 self.stats().count_unacked();
-            } else if let Err(error) =
-                self.send_routing_message_via_route(unacked_msg.routing_msg, unacked_msg.route) {
+            } else if let Err(error) = self.send_routing_message_via_route(
+                unacked_msg.routing_msg,
+                unacked_msg.route,
+            )
+            {
                 debug!("{:?} Failed to send message: {:?}", self, error);
             }
         }
     }
 
-    fn send_routing_message(&mut self,
-                            src: Authority<XorName>,
-                            dst: Authority<XorName>,
-                            content: MessageContent)
-                            -> Result<(), RoutingError> {
+    fn send_routing_message(
+        &mut self,
+        src: Authority<XorName>,
+        dst: Authority<XorName>,
+        content: MessageContent,
+    ) -> Result<(), RoutingError> {
         let routing_msg = RoutingMessage {
             src: src,
             dst: dst,
@@ -150,15 +163,18 @@ pub trait Bootstrapped: Base {
     }
 
     // Serialise HopMessage containing the given signed message.
-    fn to_hop_bytes(&self,
-                    signed_msg: SignedMessage,
-                    route: u8,
-                    sent_to: BTreeSet<XorName>)
-                    -> Result<Vec<u8>, RoutingError> {
-        let hop_msg = HopMessage::new(signed_msg,
-                                      route,
-                                      sent_to,
-                                      self.full_id().signing_private_key())?;
+    fn to_hop_bytes(
+        &self,
+        signed_msg: SignedMessage,
+        route: u8,
+        sent_to: BTreeSet<XorName>,
+    ) -> Result<Vec<u8>, RoutingError> {
+        let hop_msg = HopMessage::new(
+            signed_msg,
+            route,
+            sent_to,
+            self.full_id().signing_private_key(),
+        )?;
         let message = Message::Hop(hop_msg);
         Ok(serialisation::serialise(&message)?)
     }

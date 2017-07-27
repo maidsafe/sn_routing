@@ -57,10 +57,12 @@ pub trait Base: Debug {
                 self.send_or_drop(pub_id, bytes, priority);
             }
             Err(error) => {
-                error!("{:?} Failed to serialise message {:?}: {:?}",
-                       self,
-                       message,
-                       error);
+                error!(
+                    "{:?} Failed to serialise message {:?}: {:?}",
+                    self,
+                    message,
+                    error
+                );
                 // The caller can't do much to handle this except log more messages, so just stop
                 // trying to send here and let other mechanisms handle the lost message. If the
                 // node drops too many messages, it should fail to join the network anyway.

@@ -31,11 +31,11 @@ fn ban_malicious_client() {
     let mut rng = network.new_rng();
 
     // Send a `Refresh` request from the client; should cause it to get banned.
-    let _ = clients[0]
-        .inner
-        .send_request(Authority::NaeManager(rng.gen()),
-                      Request::Refresh(vec![], MessageId::new()),
-                      2);
+    let _ = clients[0].inner.send_request(
+        Authority::NaeManager(rng.gen()),
+        Request::Refresh(vec![], MessageId::new()),
+        2,
+    );
     let _ = poll_all(&mut nodes, &mut clients);
     expect_next_event!(unwrap!(clients.last_mut()), Event::Terminate);
     let banned_client_ips = nodes[0].inner.get_banned_client_ips();
@@ -49,9 +49,11 @@ fn ban_malicious_client() {
     // Connect a new client with the same ip address shall get rejected.
     let endpoint = network.gen_endpoint_with_ip(&ip_addr);
     let contact = nodes[0].handle.endpoint();
-    let client = TestClient::new(&network,
-                                 Some(BootstrapConfig::with_contacts(&[contact])),
-                                 Some(endpoint));
+    let client = TestClient::new(
+        &network,
+        Some(BootstrapConfig::with_contacts(&[contact])),
+        Some(endpoint),
+    );
     clients.push(client);
     let _ = poll_all(&mut nodes, &mut clients);
     expect_next_event!(unwrap!(clients.last_mut()), Event::Terminate);
@@ -68,9 +70,11 @@ fn only_one_client_per_ip() {
     // Connect a new client with the same ip address shall get rejected.
     let endpoint = network.gen_endpoint_with_ip(&clients[0].ip());
     let contact = nodes[0].handle.endpoint();
-    let client = TestClient::new(&network,
-                                 Some(BootstrapConfig::with_contacts(&[contact])),
-                                 Some(endpoint));
+    let client = TestClient::new(
+        &network,
+        Some(BootstrapConfig::with_contacts(&[contact])),
+        Some(endpoint),
+    );
     clients.push(client);
     let _ = poll_all(&mut nodes, &mut clients);
     expect_next_event!(unwrap!(clients.last_mut()), Event::Terminate);

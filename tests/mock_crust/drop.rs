@@ -29,9 +29,7 @@ fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
 
     let _ = poll_all(nodes, &mut []);
 
-    for node in nodes
-            .iter_mut()
-            .filter(|n| close_names.contains(&n.name())) {
+    for node in nodes.iter_mut().filter(|n| close_names.contains(&n.name())) {
         loop {
             match node.try_next_ev() {
                 Ok(Event::NodeLost(lost_name, _)) if lost_name == name => break,

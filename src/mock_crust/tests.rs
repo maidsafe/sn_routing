@@ -25,16 +25,17 @@ use maidsafe_utilities::event_sender::{MaidSafeEventCategory, MaidSafeObserver};
 use std::collections::HashSet;
 use std::sync::mpsc::{self, Receiver};
 
-fn get_event_sender
-    ()
+fn get_event_sender()
     -> (CrustEventSender<PublicId>, Receiver<MaidSafeEventCategory>, Receiver<CrustEvent<PublicId>>)
 {
     let (category_tx, category_rx) = mpsc::channel();
     let (event_tx, event_rx) = mpsc::channel();
 
-    (MaidSafeObserver::new(event_tx, MaidSafeEventCategory::Crust, category_tx),
-     category_rx,
-     event_rx)
+    (
+        MaidSafeObserver::new(event_tx, MaidSafeEventCategory::Crust, category_tx),
+        category_rx,
+        event_rx,
+    )
 }
 
 // Receive an event from the given receiver and asserts that it matches the given pattern.
@@ -68,8 +69,11 @@ fn start_two_services_bootstrap_communicate_exit() {
     let (event_sender_0, _category_rx_0, event_rx_0) = get_event_sender();
     let (event_sender_1, _category_rx_1, event_rx_1) = get_event_sender();
 
-    let mut service_0 =
-        unwrap!(Service::with_handle(&handle0, event_sender_0, *FullId::new().public_id()));
+    let mut service_0 = unwrap!(Service::with_handle(
+        &handle0,
+        event_sender_0,
+        *FullId::new().public_id(),
+    ));
 
     unwrap!(service_0.start_listening_tcp());
     expect_event!(event_rx_0, CrustEvent::ListenerStarted::<PublicId>(..));
@@ -77,8 +81,11 @@ fn start_two_services_bootstrap_communicate_exit() {
     service_0.start_service_discovery();
     let _ = service_0.set_accept_bootstrap(true);
 
-    let mut service_1 =
-        unwrap!(Service::with_handle(&handle1, event_sender_1, *FullId::new().public_id()));
+    let mut service_1 = unwrap!(Service::with_handle(
+        &handle1,
+        event_sender_1,
+        *FullId::new().public_id(),
+    ));
 
     unwrap!(service_1.start_bootstrap(HashSet::new(), CrustUser::Node));
     network.deliver_messages();
@@ -94,8 +101,7 @@ fn start_two_services_bootstrap_communicate_exit() {
     network.deliver_messages();
 
     // 1 should rx data
-    let (data_recvd, pub_id) =
-        expect_event!(event_rx_1,
+    let (data_recvd, pub_id) = expect_event!(event_rx_1,
                       CrustEvent::NewMessage::<PublicId>(their_id, _, msg) => (msg, their_id));
 
     assert_eq!(data_recvd, data_sent);
@@ -107,8 +113,7 @@ fn start_two_services_bootstrap_communicate_exit() {
 
     network.deliver_messages();
     // 0 should rx data
-    let (data_recvd, pub_id) =
-        expect_event!(event_rx_0,
+    let (data_recvd, pub_id) = expect_event!(event_rx_0,
                       CrustEvent::NewMessage::<PublicId>(their_id, _, msg) => (msg, their_id));
 
     assert_eq!(data_recvd, data_sent);
@@ -131,10 +136,12 @@ fn start_two_services_rendezvous_connect() {
     let (event_sender_0, _category_rx_0, event_rx_0) = get_event_sender();
     let (event_sender_1, _category_rx_1, event_rx_1) = get_event_sender();
 
-    let service_0 =
-        unwrap!(Service::with_handle(&handle0, event_sender_0, *FullId::new().public_id()));
-    let service_1 =
-        unwrap!(Service::with_handle(&handle1, event_sender_1, *FullId::new().public_id()));
+    let service_0 = unwrap!(Service::with_handle(&handle0,
+                                                 event_sender_0,
+                                                 *FullId::new().public_id()));
+    let service_1 = unwrap!(Service::with_handle(&handle1,
+                                                 event_sender_1,
+                                                 *FullId::new().public_id()));
 
     service_0.prepare_connection_info(PREPARE_CI_TOKEN);
     network.deliver_messages();
@@ -168,8 +175,7 @@ fn start_two_services_rendezvous_connect() {
     network.deliver_messages();
 
     // 1 should rx data
-    let (data_recvd, pub_id) =
-        expect_event!(event_rx_1,
+    let (data_recvd, pub_id) = expect_event!(event_rx_1,
                       CrustEvent::NewMessage::<PublicId>(their_id, _, msg) => (msg, their_id));
 
     assert_eq!(data_recvd, data_sent);
@@ -181,8 +187,7 @@ fn start_two_services_rendezvous_connect() {
     network.deliver_messages();
 
     // 0 should rx data
-    let (data_recvd, pub_id) =
-        expect_event!(event_rx_0,
+    let (data_recvd, pub_id) = expect_event!(event_rx_0,
                       CrustEvent::NewMessage::<PublicId>(their_id, _, msg) => (msg, their_id));
 
     assert_eq!(data_recvd, data_sent);
@@ -241,15 +246,17 @@ fn drop() {
     let (event_sender_0, _category_rx_0, event_rx_0) = get_event_sender();
     let (event_sender_1, _category_rx_1, event_rx_1) = get_event_sender();
 
-    let mut service_0 =
-        unwrap!(Service::with_handle(&handle0, event_sender_0, *FullId::new().public_id()));
+    let mut service_0 = unwrap!(Service::with_handle(&handle0,
+                                                     event_sender_0,
+                                                     *FullId::new().public_id()));
 
     unwrap!(service_0.start_listening_tcp());
     expect_event!(event_rx_0, CrustEvent::ListenerStarted::<PublicId>(_));
     let _ = service_0.set_accept_bootstrap(true);
 
-    let mut service_1 =
-        unwrap!(Service::with_handle(&handle1, event_sender_1, *FullId::new().public_id()));
+    let mut service_1 = unwrap!(Service::with_handle(&handle1,
+                                                     event_sender_1,
+                                                     *FullId::new().public_id()));
     unwrap!(service_1.start_bootstrap(HashSet::new(), CrustUser::Node));
 
     network.deliver_messages();
