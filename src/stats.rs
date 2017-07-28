@@ -259,7 +259,7 @@ impl Stats {
             ResourceProof { .. } => self.msg_direct_resource_proof += 1,
             ResourceProofResponse { .. } => self.msg_direct_resource_proof_rsp += 1,
             ResourceProofResponseReceipt => self.msg_direct_resource_proof_rsp_receipt += 1,
-            ProxyRateLimitExceeded(..) => self.msg_direct_proxy_rate_limit_exceed += 1,
+            ProxyRateLimitExceeded { .. } => self.msg_direct_proxy_rate_limit_exceed += 1,
             BootstrapRequest(_) |
             BootstrapResponse(_) |
             TunnelRequest(_) |
