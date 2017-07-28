@@ -505,6 +505,11 @@ impl Node {
         self.machine.routing_table().ok_or(RoutingError::Terminated)
     }
 
+    /// Returns the minimum section size this vault is using.
+    pub fn min_section_size(&self) -> usize {
+        self.machine.min_section_size()
+    }
+
     fn send_action(
         &mut self,
         src: Authority<XorName>,

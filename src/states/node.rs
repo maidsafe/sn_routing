@@ -3883,6 +3883,10 @@ impl Base for Node {
     fn stats(&mut self) -> &mut Stats {
         &mut self.stats
     }
+
+    fn min_section_size(&self) -> usize {
+        self.routing_table().min_section_size()
+    }
 }
 
 #[cfg(feature = "use-mock-crust")]
@@ -3941,11 +3945,6 @@ impl Bootstrapped for Node {
     fn ack_mgr_mut(&mut self) -> &mut AckManager {
         &mut self.ack_mgr
     }
-
-    fn min_section_size(&self) -> usize {
-        self.routing_table().min_section_size()
-    }
-
 
     // Constructs a signed message, finds the node responsible for accumulation, and either sends
     // this node a signature or tries to accumulate signatures for this message (on success, the

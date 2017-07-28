@@ -396,6 +396,10 @@ impl Base for Bootstrapping {
     fn in_authority(&self, _: &Authority<XorName>) -> bool {
         false
     }
+
+    fn min_section_size(&self) -> usize {
+        self.min_section_size
+    }
 }
 
 impl Debug for Bootstrapping {

@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use {CrustEvent, CrustEventSender, Service};
+use {CrustEvent, CrustEventSender, MIN_SECTION_SIZE, Service};
 use BootstrapConfig;
 use action::Action;
 use id::{FullId, PublicId};
@@ -124,6 +124,13 @@ impl State {
     fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
         self.base_state().and_then(
             |state| state.close_group(name, count),
+        )
+    }
+
+    fn min_section_size(&self) -> usize {
+        self.base_state().map_or(
+            MIN_SECTION_SIZE,
+            Base::min_section_size,
         )
     }
 
@@ -484,6 +491,10 @@ impl StateMachine {
 
     pub fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
         self.state.close_group(name, count)
+    }
+
+    pub fn min_section_size(&self) -> usize {
+        self.state.min_section_size()
     }
 
     #[cfg(feature = "use-mock-crust")]
