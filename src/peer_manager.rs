@@ -59,6 +59,7 @@ pub mod test_consts {
     pub const RESOURCE_PROOF_DURATION_SECS: u64 = super::RESOURCE_PROOF_DURATION_SECS;
     pub const CONNECTING_PEER_TIMEOUT_SECS: u64 = super::CONNECTING_PEER_TIMEOUT_SECS;
     pub const CONNECTED_PEER_TIMEOUT_SECS: u64 = super::CONNECTED_PEER_TIMEOUT_SECS;
+    pub const JOINING_NODE_TIMEOUT_SECS: u64 = super::JOINING_NODE_TIMEOUT_SECS;
 }
 
 pub type SectionMap = BTreeMap<VersionedPrefix<XorName>, BTreeSet<PublicId>>;
@@ -981,13 +982,29 @@ impl PeerManager {
             None
         };
 
+        let mut normalisable_conns = Vec::new();
         let expired_peers = self.peers
             .values()
-            .filter(|peer| peer.is_expired())
+            .filter(|peer| match peer.state {
+                PeerState::Routing(RoutingConnection::JoiningNode(timestamp)) |
+                PeerState::Routing(RoutingConnection::Proxy(timestamp)) => {
+                    if timestamp.elapsed() >= Duration::from_secs(JOINING_NODE_TIMEOUT_SECS) {
+                        normalisable_conns.push(*peer.pub_id());
+                    }
+                    false
+                }
+                _ => peer.is_expired(),
+            })
             .map(Peer::pub_id)
             .cloned()
             .chain(remove_candidate)
             .collect_vec();
+
+        for id in &normalisable_conns {
+            if let Some(peer) = self.peers.get_mut(id) {
+                peer.state = PeerState::Routing(RoutingConnection::Direct)
+            }
+        }
 
         for id in &expired_peers {
             let _ = self.remove_peer(id);
@@ -1619,6 +1636,27 @@ impl PeerManager {
             }
         }
         result
+    }
+
+    #[cfg(feature = "use-mock-crust")]
+    pub fn has_unnormalised_routing_conn(&self, excludes: &BTreeSet<XorName>) -> bool {
+        let unnormalised_routing_conns: BTreeSet<XorName> = self.routing_table
+            .our_section()
+            .iter()
+            .filter(|name| if let Some(peer) = self.get_peer_by_name(name) {
+                match peer.state {
+                    PeerState::Routing(RoutingConnection::JoiningNode(_)) |
+                    PeerState::Routing(RoutingConnection::Proxy(_)) => {
+                        return true;
+                    }
+                    _ => return false,
+                }
+            } else {
+                false
+            })
+            .cloned()
+            .collect();
+        !(&unnormalised_routing_conns - excludes).is_empty()
     }
 }
 
