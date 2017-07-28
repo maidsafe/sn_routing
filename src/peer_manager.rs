@@ -982,27 +982,25 @@ impl PeerManager {
             None
         };
 
-        let mut updatable_peers = Vec::new();
+        let mut normalisable_conns = Vec::new();
         let expired_peers = self.peers
             .values()
-            .filter(|peer| {
-                match peer.state {
-                    PeerState::Routing(RoutingConnection::JoiningNode(timestamp)) |
-                    PeerState::Routing(RoutingConnection::Proxy(timestamp)) => {
-                        if timestamp.elapsed() >= Duration::from_secs(JOINING_NODE_TIMEOUT_SECS) {
-                            updatable_peers.push(*peer.pub_id());
-                        }
+            .filter(|peer| match peer.state {
+                PeerState::Routing(RoutingConnection::JoiningNode(timestamp)) |
+                PeerState::Routing(RoutingConnection::Proxy(timestamp)) => {
+                    if timestamp.elapsed() >= Duration::from_secs(JOINING_NODE_TIMEOUT_SECS) {
+                        normalisable_conns.push(*peer.pub_id());
                     }
-                    _ => (),
+                    false
                 }
-                peer.is_expired()
+                _ => peer.is_expired(),
             })
             .map(Peer::pub_id)
             .cloned()
             .chain(remove_candidate)
             .collect_vec();
 
-        for id in &updatable_peers {
+        for id in &normalisable_conns {
             if let Some(peer) = self.peers.get_mut(id) {
                 peer.state = PeerState::Routing(RoutingConnection::Direct)
             }
@@ -1641,8 +1639,8 @@ impl PeerManager {
     }
 
     #[cfg(feature = "use-mock-crust")]
-    pub fn has_updatable_peer(&self, excludes: &BTreeSet<XorName>) -> bool {
-        let updatable_peers: BTreeSet<XorName> = self.routing_table
+    pub fn has_unnormalised_routing_conn(&self, excludes: &BTreeSet<XorName>) -> bool {
+        let unnormalised_routing_conns: BTreeSet<XorName> = self.routing_table
             .our_section()
             .iter()
             .filter(|name| if let Some(peer) = self.get_peer_by_name(name) {
@@ -1658,7 +1656,7 @@ impl PeerManager {
             })
             .cloned()
             .collect();
-        !(&updatable_peers - excludes).is_empty()
+        !(&unnormalised_routing_conns - excludes).is_empty()
     }
 }
 

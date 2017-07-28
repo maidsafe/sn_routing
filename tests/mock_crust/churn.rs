@@ -111,7 +111,10 @@ fn add_node_and_poll<R: Rng>(
 
         // Status to the proxy of the new node doesn't matter.
         let _ = dropped_nodes.insert(nodes[proxy].name());
-        if nodes[block_peer].inner.has_updatable_peer(&dropped_nodes) {
+        if nodes[block_peer].inner.has_unnormalised_routing_conn(
+            &dropped_nodes,
+        )
+        {
             FakeClock::advance_time(JOINING_NODE_TIMEOUT_SECS * 1000);
         }
         debug!(

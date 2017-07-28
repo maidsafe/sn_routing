@@ -177,13 +177,18 @@ fn check_close_names_for_min_section_size_nodes() {
     assert!(close_sections_complete);
 }
 
+// The newly connected nodes are expected to have each other as `RoutingConnection::Proxy/Joining`.
+// After the `JOINING_NODE_TIMEOUT_SECS` expires, they shall normalise the connection type to direct
+// which is what that `has_unnormalised_routing_conn` checks.
 #[test]
-fn updatable_peer() {
+fn routing_conn_normalise() {
     let mut nodes = create_connected_nodes(&Network::new(2, None), 2);
-    let has_updatable_peer = |node: &TestNode| node.inner.has_updatable_peer(&BTreeSet::new());
-    assert!(nodes.iter().all(has_updatable_peer));
+    let has_unnormalised_conn =
+        |node: &TestNode| node.inner.has_unnormalised_routing_conn(&BTreeSet::new());
+    assert!(nodes.iter().all(has_unnormalised_conn));
     FakeClock::advance_time(JOINING_NODE_TIMEOUT_SECS * 1000);
     let _ = poll_all(&mut nodes, &mut []);
-    let no_updatable_peer = |node: &TestNode| !node.inner.has_updatable_peer(&BTreeSet::new());
-    assert!(nodes.iter().all(no_updatable_peer));
+    let no_unnormalised_conn =
+        |node: &TestNode| !node.inner.has_unnormalised_routing_conn(&BTreeSet::new());
+    assert!(nodes.iter().all(no_unnormalised_conn));
 }

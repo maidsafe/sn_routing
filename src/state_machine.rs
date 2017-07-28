@@ -203,9 +203,9 @@ impl State {
         }
     }
 
-    pub fn has_updatable_peer(&self, excludes: &BTreeSet<XorName>) -> bool {
+    pub fn has_unnormalised_routing_conn(&self, excludes: &BTreeSet<XorName>) -> bool {
         match *self {
-            State::Node(ref state) => state.has_updatable_peer(excludes),
+            State::Node(ref state) => state.has_unnormalised_routing_conn(excludes),
             _ => false,
         }
     }

@@ -3941,8 +3941,8 @@ impl Node {
         self.next_relocation_interval = Some(interval);
     }
 
-    pub fn has_updatable_peer(&self, excludes: &BTreeSet<XorName>) -> bool {
-        self.peer_mgr.has_updatable_peer(excludes)
+    pub fn has_unnormalised_routing_conn(&self, excludes: &BTreeSet<XorName>) -> bool {
+        self.peer_mgr.has_unnormalised_routing_conn(excludes)
     }
 }
 
