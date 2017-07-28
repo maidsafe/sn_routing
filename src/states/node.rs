@@ -3935,6 +3935,10 @@ impl Node {
     pub fn set_next_relocation_interval(&mut self, interval: (XorName, XorName)) {
         self.next_relocation_interval = Some(interval);
     }
+
+    pub fn has_unnormalised_routing_conn(&self, excludes: &BTreeSet<XorName>) -> bool {
+        self.peer_mgr.has_unnormalised_routing_conn(excludes)
+    }
 }
 
 impl Bootstrapped for Node {

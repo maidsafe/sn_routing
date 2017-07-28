@@ -613,6 +613,17 @@ impl Node {
     pub fn clear_next_relocation_dst(&mut self) {
         self.machine.current_mut().set_next_relocation_dst(None)
     }
+
+    /// Normalisation of routing connection means converting the
+    /// `PeerState::Routing(RoutingConnnection::Proxy)` or
+    /// `PeerState::Routing(RoutingConnnection::JoiningNode)` to
+    /// `PeerState::Routing(RoutingConnection::Direct` after `JOINING_NODE_TIMEOUT_SECS` seconds
+    /// have elapsed for the peer with whom we have the connection.
+    pub fn has_unnormalised_routing_conn(&self, excludes: &BTreeSet<XorName>) -> bool {
+        self.machine.current().has_unnormalised_routing_conn(
+            excludes,
+        )
+    }
 }
 
 #[cfg(feature = "use-mock-crust")]

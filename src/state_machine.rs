@@ -209,6 +209,13 @@ impl State {
             _ => vec![],
         }
     }
+
+    pub fn has_unnormalised_routing_conn(&self, excludes: &BTreeSet<XorName>) -> bool {
+        match *self {
+            State::Node(ref state) => state.has_unnormalised_routing_conn(excludes),
+            _ => false,
+        }
+    }
 }
 
 /// Enum returned from many message handlers
