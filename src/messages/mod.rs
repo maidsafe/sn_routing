@@ -170,7 +170,7 @@ pub enum DirectMessage {
     ResourceProofResponseReceipt,
     /// Sent from a proxy node to its client to indicate that the client will exceed its rate limit
     /// for the message indicated by the included hash digest.
-    ProxyRateLimitExceeded(Digest256),
+    ProxyRateLimitExceeded { user_msg_hash: Digest256, ack: Ack },
 }
 
 impl DirectMessage {
@@ -732,13 +732,17 @@ impl Debug for DirectMessage {
                 )
             }
             ResourceProofResponseReceipt => write!(formatter, "ResourceProofResponseReceipt"),
-            ProxyRateLimitExceeded(ref hash) => {
+            ProxyRateLimitExceeded {
+                ref user_msg_hash,
+                ref ack,
+            } => {
                 write!(
                     formatter,
-                    "ProxyRateLimitExceeded({:02x}{:02x}{:02x}..)",
-                    hash[0],
-                    hash[1],
-                    hash[2]
+                    "ProxyRateLimitExceeded({:02x}{:02x}{:02x}.., {:?})",
+                    user_msg_hash[0],
+                    user_msg_hash[1],
+                    user_msg_hash[2],
+                    ack
                 )
             }
         }

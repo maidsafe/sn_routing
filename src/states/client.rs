@@ -223,8 +223,9 @@ impl Client {
         direct_msg: DirectMessage,
         outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
-        if let DirectMessage::ProxyRateLimitExceeded(hash) = direct_msg {
-            if let Some(msg_id) = self.outgoing_user_msg_hashes.remove(&hash) {
+        if let DirectMessage::ProxyRateLimitExceeded { user_msg_hash, ack } = direct_msg {
+            self.ack_mgr.receive(ack);
+            if let Some(msg_id) = self.outgoing_user_msg_hashes.remove(&user_msg_hash) {
                 outbox.send_event(Event::ProxyRateLimitExceeded(msg_id));
             } else {
                 debug!(

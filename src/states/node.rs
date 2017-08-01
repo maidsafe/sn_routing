@@ -781,7 +781,7 @@ impl Node {
                 );
             }
             msg @ BootstrapResponse(_) |
-            msg @ ProxyRateLimitExceeded(_) => {
+            msg @ ProxyRateLimitExceeded { .. } => {
                 debug!("{:?} Unhandled direct message: {:?}", self, msg);
             }
         }
@@ -1049,7 +1049,13 @@ impl Node {
                     self,
                     pub_id
                 );
-                self.send_direct_message(pub_id, DirectMessage::ProxyRateLimitExceeded(hash));
+                self.send_direct_message(
+                    pub_id,
+                    DirectMessage::ProxyRateLimitExceeded {
+                        user_msg_hash: hash,
+                        ack: Ack::compute(hop_msg.content.routing_message())?,
+                    },
+                );
                 Err(RoutingError::ExceedsRateLimit(hash))
             }
             Err(error) => {
