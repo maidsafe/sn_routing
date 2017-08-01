@@ -268,10 +268,10 @@ impl ExpectedGets {
                     msg_id,
                 ));
             } else {
-                unwrap!(node.inner.send_get_idata_request(
+                unwrap!(node.inner.send_put_idata_request(
                     src,
                     dst,
-                    *data.name(),
+                    data.clone(),
                     msg_id,
                 ));
             }
@@ -288,15 +288,15 @@ impl ExpectedGets {
     /// Sends a request from the client, and adds the expectation.
     fn client_send_and_expect(
         &mut self,
-        data_id: XorName,
+        data: ImmutableData,
         client_auth: Authority<XorName>,
         dst: Authority<XorName>,
         client: &mut TestClient,
         nodes: &mut [TestNode],
     ) {
         let msg_id = MessageId::new();
-        unwrap!(client.inner.get_idata(dst, data_id, msg_id));
-        self.expect(nodes, dst, (data_id, msg_id, client_auth, dst));
+        unwrap!(client.inner.put_idata(dst, data.clone(), msg_id));
+        self.expect(nodes, dst, (*data.name(), msg_id, client_auth, dst));
     }
 
     /// Adds the expectation that the nodes belonging to `dst` receive the message.
@@ -341,11 +341,12 @@ impl ExpectedGets {
         for node in nodes {
             while let Ok(event) = node.try_next_ev() {
                 if let Event::Request {
-                    request: Request::GetIData { name, msg_id },
+                    request: Request::PutIData { data, msg_id },
                     src,
                     dst,
                 } = event
                 {
+                    let name = *data.name();
                     let key = (name, msg_id, src, dst);
                     if dst.is_multiple() {
                         let checker = |entry: &HashSet<XorName>| entry.contains(&node.name());
@@ -481,8 +482,8 @@ fn client_gets(network: &mut Network<PublicId>, nodes: &mut [TestNode], min_sect
 
     let mut expected_gets = ExpectedGets::default();
     // Test messages from a client to a group and a section...
-    expected_gets.client_send_and_expect(*data.name(), cl_auth, auth_g0, &mut clients[0], nodes);
-    expected_gets.client_send_and_expect(*data.name(), cl_auth, auth_s0, &mut clients[0], nodes);
+    expected_gets.client_send_and_expect(data.clone(), cl_auth, auth_g0, &mut clients[0], nodes);
+    expected_gets.client_send_and_expect(data.clone(), cl_auth, auth_s0, &mut clients[0], nodes);
     // ... and from group to the client
     expected_gets.send_and_expect(data, auth_g1, cl_auth, nodes, min_section_size);
 
@@ -685,16 +686,17 @@ fn messages_during_churn() {
         // expected_gets.send_and_expect(data.clone(), auth_s0, auth_g0, &nodes, min_section_size);
         // expected_gets.send_and_expect(data.clone(), auth_s0, auth_n0, &nodes, min_section_size);
 
+        let data = ImmutableData::new(rng.gen_iter().take(100).collect());
         // Test messages from a client to a group and a section...
         expected_gets.client_send_and_expect(
-            *data.name(),
+            data.clone(),
             cl_auth,
             auth_g0,
             &mut clients[0],
             &mut nodes,
         );
         expected_gets.client_send_and_expect(
-            *data.name(),
+            data.clone(),
             cl_auth,
             auth_s0,
             &mut clients[0],
