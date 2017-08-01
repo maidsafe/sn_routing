@@ -41,6 +41,7 @@ const CLIENT_CAPACITY: u64 = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES + 10240;
 #[cfg(feature = "use-mock-crust")]
 #[doc(hidden)]
 pub mod rate_limiter_consts {
+    pub const CLIENT_CAPACITY: u64 = super::CLIENT_CAPACITY;
     pub const RATE: f64 = super::RATE;
 }
 
