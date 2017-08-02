@@ -1,5 +1,13 @@
 # Routing - Change Log
 
+## [0.32.0]
+- Allow mock-crust network to support multiple nodes/clients with the same IPs.
+- Allow only one client ip per proxy.
+- Modify the client Rate Limiter paradigm to not put an upper threshold on number of clients with unique IPs to bootstrap off a proxy.
+- Add dev configuration options for routing such that these options can be supplied in a routing config file that routing would read to tweak parameters such as disable resource proof etc.
+- Update to use Rust Stable 1.19.0 / Nightly 2017-07-20, clippy 0.0.144, and rustfmt 0.9.0.
+- Make MutableData errors more descriptive.
+
 ## [0.31.0]
 - Remove support for Structured, PrivAppendable and PubAppendable Data
 - Add Support for MutableData instead.
