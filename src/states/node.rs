@@ -1394,7 +1394,7 @@ impl Node {
                 "{:?} Not sending NodeApproval since our section is currently merging.",
                 self
             );
-        } else if !self.routing_table().is_valid() {
+        } else if !self.routing_table().check_invariant(false, false).is_ok() {
             debug!(
                 "{:?} Not sending NodeApproval since our routing table isn't valid.",
                 self
@@ -1963,14 +1963,14 @@ impl Node {
             if let Some(prefix) = self.routing_table().find_section_prefix(pub_id.name()) {
                 self.send_section_list_signature(prefix, None);
                 if prefix == *self.our_prefix() {
-                    self.send_section_update(None);
+                    self.send_section_update(None, false);
                     self.reset_su_timer();
                     // if the node joined our section, send signatures for all section lists to it
                     for pfx in self.routing_table().prefixes() {
                         self.send_section_list_signature(pfx, Some(*pub_id.name()));
                     }
                 } else {
-                    self.send_section_update(Some(prefix));
+                    self.send_section_update(Some(prefix), false);
                 }
             }
         }
@@ -1995,8 +1995,16 @@ impl Node {
 
     /// Informs our peers that our section's member list changed. If `dst_prefix` is `Some`, only
     /// tells that section, otherwise tells all connected sections, including our own.
-    fn send_section_update(&mut self, dst_prefix: Option<Prefix<XorName>>) {
-        if dst_prefix.is_none() && !self.routing_table().is_valid() {
+    fn send_section_update(
+        &mut self,
+        dst_prefix: Option<Prefix<XorName>>,
+        allow_small_sections: bool,
+    ) {
+        if dst_prefix.is_none() &&
+            !self.routing_table()
+                .check_invariant(allow_small_sections, false)
+                .is_ok()
+        {
             warn!(
                 "{:?} Not sending section update since RT invariant not held.",
                 self
@@ -2741,7 +2749,7 @@ impl Node {
 
         self.merge_if_necessary(outbox);
 
-        self.send_section_update(None);
+        self.send_section_update(None, true);
         let prefix0 = ver_pfx.prefix().pushed(false);
         let prefix1 = ver_pfx.prefix().pushed(true);
         self.send_section_list_signature(prefix0, None);
@@ -2971,7 +2979,7 @@ impl Node {
             .is_some()
         {
             self.reset_su_timer();
-            self.send_section_update(Some(*merge_ver_pfx.prefix()));
+            self.send_section_update(Some(*merge_ver_pfx.prefix()), false);
         }
         Ok(())
     }
@@ -3033,7 +3041,7 @@ impl Node {
                     self.su_timeout.as_secs()
                 );
                 self.su_timer_token = Some(self.timer.schedule(self.su_timeout));
-                self.send_section_update(None);
+                self.send_section_update(None, false);
             }
         } else if self.candidate_timer_token == Some(token) {
             self.candidate_timer_token = None;
