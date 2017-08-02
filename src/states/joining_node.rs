@@ -378,6 +378,10 @@ impl Base for JoiningNode {
     fn stats(&mut self) -> &mut Stats {
         &mut self.stats
     }
+
+    fn min_section_size(&self) -> usize {
+        self.min_section_size
+    }
 }
 
 impl Bootstrapped for JoiningNode {
@@ -387,10 +391,6 @@ impl Bootstrapped for JoiningNode {
 
     fn ack_mgr_mut(&mut self) -> &mut AckManager {
         &mut self.ack_mgr
-    }
-
-    fn min_section_size(&self) -> usize {
-        self.min_section_size
     }
 
     // Constructs a signed message, finds the node responsible for accumulation, and either sends

@@ -21,7 +21,7 @@ use {CrustEvent, PrivConnectionInfo, PubConnectionInfo, QUORUM_DENOMINATOR, QUOR
 use ack_manager::{Ack, AckManager};
 use action::Action;
 use cache::Cache;
-use config_handler::{self, DevConfig};
+use config_handler;
 use crust::{ConnectionInfoResult, CrustError, CrustUser};
 use cumulative_own_section_merge::CumulativeOwnSectionMerge;
 use error::{BootstrapResponseError, InterfaceError, RoutingError};
@@ -223,16 +223,7 @@ impl Node {
         timer: Timer,
         challenger_count: usize,
     ) -> Self {
-        let routing_config = match config_handler::read_config_file() {
-            Ok(cfg) => cfg,
-            Err(err) => {
-                warn!(
-                    "Using default config as failed in parsing routing config file: {:?}",
-                    err
-                );
-                DevConfig::default()
-            }
-        };
+        let dev_config = config_handler::get_config().dev.unwrap_or_default();
         let public_id = *new_full_id.public_id();
         let tick_period = Duration::from_secs(TICK_TIMEOUT_SECS);
         let tick_timer_token = timer.schedule(tick_period);
@@ -249,7 +240,11 @@ impl Node {
             is_first_node: first_node,
             is_approved: first_node,
             msg_queue: VecDeque::new(),
-            peer_mgr: PeerManager::new(min_section_size, public_id),
+            peer_mgr: PeerManager::new(
+                min_section_size,
+                public_id,
+                dev_config.disable_client_rate_limiter,
+            ),
             response_cache: cache,
             routing_msg_filter: RoutingMessageFilter::new(),
             sig_accumulator: Default::default(),
@@ -270,13 +265,13 @@ impl Node {
             candidate_status_token: None,
             resource_prover: ResourceProver::new(action_sender, timer, challenger_count),
             joining_prefix: Default::default(),
-            clients_rate_limiter: RateLimiter::new(routing_config.disable_client_rate_limiter),
+            clients_rate_limiter: RateLimiter::new(dev_config.disable_client_rate_limiter),
             banned_client_ips: LruCache::with_expiry_duration(Duration::from_secs(CLIENT_BAN_SECS)),
             dropped_clients: LruCache::with_expiry_duration(
                 Duration::from_secs(DROPPED_CLIENT_TIMEOUT_SECS),
             ),
             proxy_load_amount: 0,
-            disable_resource_proof: routing_config.disable_resource_proof,
+            disable_resource_proof: dev_config.disable_resource_proof,
         }
     }
 
@@ -790,7 +785,7 @@ impl Node {
                 );
             }
             msg @ BootstrapResponse(_) |
-            msg @ ProxyRateLimitExceeded(_) => {
+            msg @ ProxyRateLimitExceeded { .. } => {
                 debug!("{:?} Unhandled direct message: {:?}", self, msg);
             }
         }
@@ -803,6 +798,10 @@ impl Node {
         direct_message: &DirectMessage,
         pub_id: &PublicId,
     ) -> Result<(), RoutingError> {
+        if self.dropped_clients.contains_key(pub_id) {
+            return Ok(());
+        }
+
         match self.peer_mgr.get_peer(pub_id).map(Peer::state) {
             Some(&PeerState::Bootstrapper { .. }) => {
                 if let DirectMessage::BootstrapRequest(_) = *direct_message {
@@ -1058,7 +1057,13 @@ impl Node {
                     self,
                     pub_id
                 );
-                self.send_direct_message(pub_id, DirectMessage::ProxyRateLimitExceeded(hash));
+                self.send_direct_message(
+                    pub_id,
+                    DirectMessage::ProxyRateLimitExceeded {
+                        user_msg_hash: hash,
+                        ack: Ack::compute(hop_msg.content.routing_message())?,
+                    },
+                );
                 Err(RoutingError::ExceedsRateLimit(hash))
             }
             Err(error) => {
@@ -1397,7 +1402,7 @@ impl Node {
                 "{:?} Not sending NodeApproval since our section is currently merging.",
                 self
             );
-        } else if !self.routing_table().is_valid() {
+        } else if !self.routing_table().check_invariant(false, false).is_ok() {
             debug!(
                 "{:?} Not sending NodeApproval since our routing table isn't valid.",
                 self
@@ -1966,14 +1971,14 @@ impl Node {
             if let Some(prefix) = self.routing_table().find_section_prefix(pub_id.name()) {
                 self.send_section_list_signature(prefix, None);
                 if prefix == *self.our_prefix() {
-                    self.send_section_update(None);
+                    self.send_section_update(None, false);
                     self.reset_su_timer();
                     // if the node joined our section, send signatures for all section lists to it
                     for pfx in self.routing_table().prefixes() {
                         self.send_section_list_signature(pfx, Some(*pub_id.name()));
                     }
                 } else {
-                    self.send_section_update(Some(prefix));
+                    self.send_section_update(Some(prefix), false);
                 }
             }
         }
@@ -1998,8 +2003,16 @@ impl Node {
 
     /// Informs our peers that our section's member list changed. If `dst_prefix` is `Some`, only
     /// tells that section, otherwise tells all connected sections, including our own.
-    fn send_section_update(&mut self, dst_prefix: Option<Prefix<XorName>>) {
-        if dst_prefix.is_none() && !self.routing_table().is_valid() {
+    fn send_section_update(
+        &mut self,
+        dst_prefix: Option<Prefix<XorName>>,
+        allow_small_sections: bool,
+    ) {
+        if dst_prefix.is_none() &&
+            !self.routing_table()
+                .check_invariant(allow_small_sections, false)
+                .is_ok()
+        {
             warn!(
                 "{:?} Not sending section update since RT invariant not held.",
                 self
@@ -2744,7 +2757,7 @@ impl Node {
 
         self.merge_if_necessary(outbox);
 
-        self.send_section_update(None);
+        self.send_section_update(None, true);
         let prefix0 = ver_pfx.prefix().pushed(false);
         let prefix1 = ver_pfx.prefix().pushed(true);
         self.send_section_list_signature(prefix0, None);
@@ -2974,7 +2987,7 @@ impl Node {
             .is_some()
         {
             self.reset_su_timer();
-            self.send_section_update(Some(*merge_ver_pfx.prefix()));
+            self.send_section_update(Some(*merge_ver_pfx.prefix()), false);
         }
         Ok(())
     }
@@ -3036,7 +3049,7 @@ impl Node {
                     self.su_timeout.as_secs()
                 );
                 self.su_timer_token = Some(self.timer.schedule(self.su_timeout));
-                self.send_section_update(None);
+                self.send_section_update(None, false);
             }
         } else if self.candidate_timer_token == Some(token) {
             self.candidate_timer_token = None;
@@ -3892,6 +3905,10 @@ impl Base for Node {
     fn stats(&mut self) -> &mut Stats {
         &mut self.stats
     }
+
+    fn min_section_size(&self) -> usize {
+        self.routing_table().min_section_size()
+    }
 }
 
 #[cfg(feature = "use-mock-crust")]
@@ -3954,11 +3971,6 @@ impl Bootstrapped for Node {
     fn ack_mgr_mut(&mut self) -> &mut AckManager {
         &mut self.ack_mgr
     }
-
-    fn min_section_size(&self) -> usize {
-        self.routing_table().min_section_size()
-    }
-
 
     // Constructs a signed message, finds the node responsible for accumulation, and either sends
     // this node a signature or tries to accumulate signatures for this message (on success, the

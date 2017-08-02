@@ -223,8 +223,9 @@ impl Client {
         direct_msg: DirectMessage,
         outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
-        if let DirectMessage::ProxyRateLimitExceeded(hash) = direct_msg {
-            if let Some(msg_id) = self.outgoing_user_msg_hashes.remove(&hash) {
+        if let DirectMessage::ProxyRateLimitExceeded { user_msg_hash, ack } = direct_msg {
+            self.ack_mgr.receive(ack);
+            if let Some(msg_id) = self.outgoing_user_msg_hashes.remove(&user_msg_hash) {
                 outbox.send_event(Event::ProxyRateLimitExceeded(msg_id));
             } else {
                 debug!(
@@ -342,6 +343,10 @@ impl Base for Client {
     fn stats(&mut self) -> &mut Stats {
         &mut self.stats
     }
+
+    fn min_section_size(&self) -> usize {
+        self.min_section_size
+    }
 }
 
 impl Bootstrapped for Client {
@@ -351,10 +356,6 @@ impl Bootstrapped for Client {
 
     fn ack_mgr_mut(&mut self) -> &mut AckManager {
         &mut self.ack_mgr
-    }
-
-    fn min_section_size(&self) -> usize {
-        self.min_section_size
     }
 
     fn resend_unacknowledged_timed_out_msgs(&mut self, token: u64) {

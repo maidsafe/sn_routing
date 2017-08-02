@@ -32,10 +32,16 @@ use std::time::Instant;
 
 /// The number of bytes per second the `RateLimiter` will "leak".
 const RATE: f64 = 5.0 * 1024.0 * 1024.0;
+/// The maximum number of bytes a single client is allowed to have in the `RateLimiter`.  This is
+/// slightly larger than `MAX_IMMUTABLE_DATA_SIZE_IN_BYTES` to allow for the extra bytes created by
+/// wrapping the chunk in a `UserMessage`, splitting it into parts and wrapping those in
+/// `RoutingMessage`s.
+const CLIENT_CAPACITY: u64 = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES + 10240;
 
 #[cfg(feature = "use-mock-crust")]
 #[doc(hidden)]
 pub mod rate_limiter_consts {
+    pub const CLIENT_CAPACITY: u64 = super::CLIENT_CAPACITY;
     pub const RATE: f64 = super::RATE;
 }
 
@@ -64,9 +70,9 @@ impl RateLimiter {
     /// Try to add a message. If the message is a form of get request,
     /// `MAX_IMMUTABLE_DATA_SIZE_IN_BYTES` or `MAX_MUTABLE_DATA_SIZE_IN_BYTES` bytes will be used,
     /// otherwise the actual length of the `payload` will be used. If adding that amount will cause
-    /// the client to exceed its capacity (i.e. `MAX_IMMUTABLE_DATA_SIZE_IN_BYTES`), then
-    /// `Err(ExceedsRateLimit)` is returned. If the message is invalid, `Err(InvalidMessage)` is
-    /// returned (this probably indicates malicious behaviour).
+    /// the client to exceed its capacity (`CLIENT_CAPACITY`), then `Err(ExceedsRateLimit)` is
+    /// returned. If the message is invalid, `Err(InvalidMessage)` is returned (this probably
+    /// indicates malicious behaviour).
     pub fn add_message(
         &mut self,
         client_ip: &IpAddr,
@@ -129,7 +135,7 @@ impl RateLimiter {
         self.update();
 
         let used = self.used.get(client_ip).map_or(0, |used| *used);
-        let allowance = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES - used;
+        let allowance = CLIENT_CAPACITY - used;
 
         if bytes_to_add > allowance {
             return Err(RoutingError::ExceedsRateLimit(*hash));
@@ -182,45 +188,51 @@ mod tests {
     use tiny_keccak::sha3_256;
     use types::MessageId;
 
-    /// Creates a random `GetIData` request and returns it serialised along with its hash digest.
-    fn create_get_idata_request() -> (Vec<u8>, Digest256) {
-        let payload = unwrap!(serialisation::serialise(
-            &UserMessage::Request(Request::GetIData {
-                name: rand::random(),
-                msg_id: MessageId::new(),
-            }),
-        ));
-        let hash = sha3_256(&payload);
-        (payload, hash)
+    static LARGE_MESSAGE: [u8; CLIENT_CAPACITY as usize] = [0; CLIENT_CAPACITY as usize];
+    static SMALL_MESSAGE: [u8; 1] = [0];
+
+    fn assert_large_message_can_be_added(rate_limiter: &mut RateLimiter, client: &IpAddr) {
+        check_message_addition(rate_limiter, client, true, true)
     }
 
-    fn assert_get_idata_req_can_be_added(rate_limiter: &mut RateLimiter, client: &IpAddr) {
-        let (payload, hash) = create_get_idata_request();
-        let _ = unwrap!(rate_limiter.add_message(client, &hash, 1, 0, &payload));
-    }
-
-    fn assert_get_idata_req_cannot_be_added(rate_limiter: &mut RateLimiter, client: &IpAddr) {
-        let (payload, hash) = create_get_idata_request();
-        match rate_limiter.add_message(client, &hash, 1, 0, &payload) {
-            Err(RoutingError::ExceedsRateLimit(returned_hash)) => {
-                assert_eq!(hash, returned_hash);
-            }
-            _ => panic!("unexpected result"),
-        }
+    fn assert_large_message_cannot_be_added(rate_limiter: &mut RateLimiter, client: &IpAddr) {
+        check_message_addition(rate_limiter, client, true, false)
     }
 
     fn assert_small_message_can_be_added(rate_limiter: &mut RateLimiter, client: &IpAddr) {
-        let payload = vec![0];
-        let hash = sha3_256(&payload);
-        let _ = unwrap!(rate_limiter.add_message(client, &hash, 2, 1, &payload));
+        check_message_addition(rate_limiter, client, false, true)
     }
 
     fn assert_small_message_cannot_be_added(rate_limiter: &mut RateLimiter, client: &IpAddr) {
-        let payload = vec![0];
-        let hash = sha3_256(&payload);
-        match rate_limiter.add_message(client, &hash, 2, 1, &payload) {
+        check_message_addition(rate_limiter, client, false, false)
+    }
+
+    fn check_message_addition(
+        rate_limiter: &mut RateLimiter,
+        client: &IpAddr,
+        large_msg: bool,
+        should_succeed: bool,
+    ) {
+        let payload: &[u8] = if large_msg {
+            &LARGE_MESSAGE
+        } else {
+            &SMALL_MESSAGE
+        };
+        let hash = sha3_256(payload);
+        match rate_limiter.add_message(client, &hash, 2, 1, payload) {
             Err(RoutingError::ExceedsRateLimit(returned_hash)) => {
-                assert_eq!(hash, returned_hash);
+                if should_succeed {
+                    panic!("unexpected result");
+                } else {
+                    assert_eq!(hash, returned_hash);
+                }
+            }
+            Ok(returned_len) => {
+                if should_succeed {
+                    assert_eq!(payload.len() as u64, returned_len);
+                } else {
+                    panic!("unexpected result");
+                }
             }
             _ => panic!("unexpected result"),
         }
@@ -234,7 +246,7 @@ mod tests {
         let client = IpAddr::from([0, 0, 0, 0]);
 
         // Consume full allowance.
-        assert_get_idata_req_can_be_added(&mut rate_limiter, &client);
+        assert_large_message_can_be_added(&mut rate_limiter, &client);
 
         // Check client can't add any more requests just now.
         assert_small_message_cannot_be_added(&mut rate_limiter, &client);
@@ -243,14 +255,14 @@ mod tests {
         // is still disallowed.
         FakeClock::advance_time(1);
         assert_small_message_can_be_added(&mut rate_limiter, &client);
-        assert_get_idata_req_cannot_be_added(&mut rate_limiter, &client);
+        assert_large_message_cannot_be_added(&mut rate_limiter, &client);
 
         // Advance the clock enough to allow the client's entry to fully drain away. (No need to
         // round up the calculation here as we've already advanced by 1ms which is equivalent to
         // rounding up the millisecond calculation).
-        let wait_millis = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES * 1000 / RATE as u64;
+        let wait_millis = CLIENT_CAPACITY * 1000 / RATE as u64;
         FakeClock::advance_time(wait_millis);
-        assert_get_idata_req_can_be_added(&mut rate_limiter, &client);
+        assert_large_message_can_be_added(&mut rate_limiter, &client);
     }
 
     /// Checks that a second client can add messages even when an initial one has hit its limit.
@@ -262,8 +274,8 @@ mod tests {
         let client2 = IpAddr::from([1, 1, 1, 1]);
 
         // Each client consumes their full allowance.
-        assert_get_idata_req_can_be_added(&mut rate_limiter, &client1);
-        assert_get_idata_req_can_be_added(&mut rate_limiter, &client2);
+        assert_large_message_can_be_added(&mut rate_limiter, &client1);
+        assert_large_message_can_be_added(&mut rate_limiter, &client2);
 
         // Check neither client can add any more requests just now.
         assert_small_message_cannot_be_added(&mut rate_limiter, &client1);
@@ -274,27 +286,27 @@ mod tests {
         FakeClock::advance_time(1);
         assert_small_message_can_be_added(&mut rate_limiter, &client1);
         assert_small_message_can_be_added(&mut rate_limiter, &client2);
-        assert_get_idata_req_cannot_be_added(&mut rate_limiter, &client1);
-        assert_get_idata_req_cannot_be_added(&mut rate_limiter, &client2);
+        assert_large_message_cannot_be_added(&mut rate_limiter, &client1);
+        assert_large_message_cannot_be_added(&mut rate_limiter, &client2);
 
-        // Advance the clock enough to allow a single GetIData request to drain away and check that
-        // neither client still cannot add a large request.
-        let wait_millis = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES * 1000 / RATE as u64;
+        // Advance the clock enough to allow a single large request to drain away and check that
+        // both clients still cannot add a large request.
+        let wait_millis = CLIENT_CAPACITY * 1000 / RATE as u64;
         FakeClock::advance_time(wait_millis);
-        assert_get_idata_req_cannot_be_added(&mut rate_limiter, &client1);
-        assert_get_idata_req_cannot_be_added(&mut rate_limiter, &client2);
+        assert_large_message_cannot_be_added(&mut rate_limiter, &client1);
+        assert_large_message_cannot_be_added(&mut rate_limiter, &client2);
 
         // Advance the clock by just less than the same amount again and check that neither client
         // still cannot add a large request.
         FakeClock::advance_time(wait_millis - 1);
-        assert_get_idata_req_cannot_be_added(&mut rate_limiter, &client1);
-        assert_get_idata_req_cannot_be_added(&mut rate_limiter, &client2);
+        assert_large_message_cannot_be_added(&mut rate_limiter, &client1);
+        assert_large_message_cannot_be_added(&mut rate_limiter, &client2);
 
         // Advance the clock a final small amount and check that both clients can now add large
         // requests.
         FakeClock::advance_time(2);
-        assert_get_idata_req_can_be_added(&mut rate_limiter, &client1);
-        assert_get_idata_req_can_be_added(&mut rate_limiter, &client2);
+        assert_large_message_can_be_added(&mut rate_limiter, &client1);
+        assert_large_message_can_be_added(&mut rate_limiter, &client2);
     }
 
     /// Checks that if two clients add messages with a delay between them, the rate-limiter's
@@ -306,42 +318,42 @@ mod tests {
         let client1 = IpAddr::from([0, 0, 0, 0]);
         let client2 = IpAddr::from([1, 1, 1, 1]);
 
-        // This is the time during which half of a `GetIData` request will leak away. Assert this
+        // This is the time during which half of a large request will leak away. Assert this
         // is the case by adding a large request, then waiting for two times `wait_millis` then
         // trying to add a large request again.
-        let wait_millis = (MAX_IMMUTABLE_DATA_SIZE_IN_BYTES * 500 / RATE as u64) + 1; // round up
-        assert_get_idata_req_can_be_added(&mut rate_limiter, &client1);
+        let wait_millis = (CLIENT_CAPACITY * 500 / RATE as u64) + 1; // round up
+        assert_large_message_can_be_added(&mut rate_limiter, &client1);
         FakeClock::advance_time(wait_millis);
-        assert_get_idata_req_cannot_be_added(&mut rate_limiter, &client1);
+        assert_large_message_cannot_be_added(&mut rate_limiter, &client1);
         FakeClock::advance_time(wait_millis);
-        assert_get_idata_req_can_be_added(&mut rate_limiter, &client1);
+        assert_large_message_can_be_added(&mut rate_limiter, &client1);
 
         // Allow the rate-limiter to empty.
         FakeClock::advance_time(2 * wait_millis);
 
         // Client 1 adds a large message then after `wait_millis`, Client 2 does likewise.
-        assert_get_idata_req_can_be_added(&mut rate_limiter, &client1);
+        assert_large_message_can_be_added(&mut rate_limiter, &client1);
         FakeClock::advance_time(wait_millis);
-        assert_get_idata_req_can_be_added(&mut rate_limiter, &client2);
+        assert_large_message_can_be_added(&mut rate_limiter, &client2);
 
         // We wait for a further `wait_millis` then confirm that neither client can add a further
         // large message at this stage (3/4 of the first message and 1/4 of the second message
         // should have drained).
         FakeClock::advance_time(wait_millis);
-        assert_get_idata_req_cannot_be_added(&mut rate_limiter, &client1);
-        assert_get_idata_req_cannot_be_added(&mut rate_limiter, &client2);
+        assert_large_message_cannot_be_added(&mut rate_limiter, &client1);
+        assert_large_message_cannot_be_added(&mut rate_limiter, &client2);
 
         // After a further `wait_millis`, Client 1 should be able to add a new large message, but
         // not Client 2 (the first message and 1/2 of the second message should have drained).
         FakeClock::advance_time(wait_millis);
-        assert_get_idata_req_can_be_added(&mut rate_limiter, &client1);
-        assert_get_idata_req_cannot_be_added(&mut rate_limiter, &client2);
+        assert_large_message_can_be_added(&mut rate_limiter, &client1);
+        assert_large_message_cannot_be_added(&mut rate_limiter, &client2);
 
         // After a further `3 * wait_millis`, the second and third messages should both have drained
         // allowing both clients to add new large messages.
         FakeClock::advance_time(3 * wait_millis);
-        assert_get_idata_req_can_be_added(&mut rate_limiter, &client1);
-        assert_get_idata_req_can_be_added(&mut rate_limiter, &client2);
+        assert_large_message_can_be_added(&mut rate_limiter, &client1);
+        assert_large_message_can_be_added(&mut rate_limiter, &client2);
     }
 
     /// Checks that many clients can all add messages at the same rate.
@@ -352,7 +364,13 @@ mod tests {
         let mut clients_and_counts = (0..num_clients)
             .map(|i| (IpAddr::from([i, i, i, i]), 0))
             .collect::<BTreeMap<_, _>>();
-        let (get_req_payload, hash_of_get_req) = create_get_idata_request();
+        let payload = unwrap!(serialisation::serialise(
+            &UserMessage::Request(Request::GetIData {
+                name: rand::random(),
+                msg_id: MessageId::new(),
+            }),
+        ));
+        let hash = sha3_256(&payload);
         let mut rng = SeededRng::thread_rng();
 
         let start = FakeClock::now();
@@ -360,7 +378,7 @@ mod tests {
             // Each client tries to add a large request and increments its count on success.
             for (client, count) in &mut clients_and_counts {
                 if rate_limiter
-                    .add_message(client, &hash_of_get_req, 1, 0, &get_req_payload)
+                    .add_message(client, &hash, 1, 0, &payload)
                     .is_ok()
                 {
                     *count += 1;

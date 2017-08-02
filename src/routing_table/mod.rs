@@ -948,11 +948,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         &self.our_name
     }
 
-    /// Returns whether the Routing invariant is currently held for this table or not.
-    pub fn is_valid(&self) -> bool {
-        self.check_invariant(false, false).is_ok()
-    }
-
     /// Returns the prefix of the section in which `name` belongs, or `None` if there is no such
     /// section in the routing table.
     pub fn find_section_prefix(&self, name: &T) -> Option<Prefix<T>> {
@@ -1132,7 +1127,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         Ok(*RoutingTable::get_routeth_name(names, &target, route))
     }
 
-    fn check_invariant(
+    /// Checks if the invariant is held. Allows printing additional log messages for failures and
+    /// excluding small section sizes from triggering invariant failures.
+    pub fn check_invariant(
         &self,
         allow_small_sections: bool,
         show_warnings: bool,

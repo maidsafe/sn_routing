@@ -37,7 +37,6 @@
 extern crate log;
 extern crate maidsafe_utilities;
 extern crate rand;
-extern crate rustc_serialize;
 extern crate docopt;
 extern crate rust_sodium;
 extern crate routing;
@@ -351,7 +350,7 @@ Options:
 ";
     // ================================================================================
 
-    #[derive(PartialEq, Eq, Debug, Deserialize, Clone, RustcDecodable)]
+    #[derive(PartialEq, Eq, Debug, Deserialize, Clone)]
     struct Args {
         arg_batches: Option<usize>,
         arg_nodes: Option<usize>,

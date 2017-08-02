@@ -111,7 +111,7 @@ fn add_a_pair(
     prefix1: Prefix<XorName>,
     is_tunnel: bool,
 ) -> (Endpoint, Endpoint) {
-    let config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
+    let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
 
     nodes.iter_mut().foreach(|node| {
         node.inner.set_next_relocation_dst(prefix0.lower_bound());
@@ -119,7 +119,11 @@ fn add_a_pair(
             (prefix0.lower_bound(), prefix0.upper_bound()),
         );
     });
-    nodes.push(TestNode::builder(network).config(config.clone()).create());
+    nodes.push(
+        TestNode::builder(network)
+            .bootstrap_config(bootstrap_config.clone())
+            .create(),
+    );
     poll_and_resend(nodes, &mut []);
 
     nodes.iter_mut().foreach(|node| {
@@ -128,7 +132,11 @@ fn add_a_pair(
             (prefix1.lower_bound(), prefix1.upper_bound()),
         );
     });
-    nodes.push(TestNode::builder(network).config(config.clone()).create());
+    nodes.push(
+        TestNode::builder(network)
+            .bootstrap_config(bootstrap_config.clone())
+            .create(),
+    );
 
     let endpoints = (Endpoint(nodes.len() - 2), Endpoint(nodes.len() - 1));
     if is_tunnel {
@@ -415,11 +423,11 @@ fn avoid_tunnelling_when_proxying() {
         0
     );
 
-    let config = BootstrapConfig::with_contacts(&[nodes[1].handle.endpoint()]);
+    let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[1].handle.endpoint()]);
     let endpoint = Endpoint(nodes.len());
     nodes.push(
         TestNode::builder(&network)
-            .config(config.clone())
+            .bootstrap_config(bootstrap_config.clone())
             .endpoint(endpoint)
             .cache(false)
             .create(),
@@ -428,7 +436,7 @@ fn avoid_tunnelling_when_proxying() {
     let endpoint = Endpoint(nodes.len());
     nodes.push(
         TestNode::builder(&network)
-            .config(config.clone())
+            .bootstrap_config(bootstrap_config.clone())
             .endpoint(endpoint)
             .cache(false)
             .create(),

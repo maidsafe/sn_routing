@@ -15,11 +15,12 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use BootstrapConfig;
+use {BootstrapConfig, MIN_SECTION_SIZE};
 use action::Action;
 use cache::NullCache;
+use config_handler::{self, Config};
 #[cfg(not(feature = "use-mock-crust"))]
-use crust::read_config_file;
+use crust::read_config_file as read_bootstrap_config_file;
 use data::{EntryAction, ImmutableData, MutableData, PermissionSet, User};
 use error::{InterfaceError, RoutingError};
 use event::Event;
@@ -41,7 +42,6 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 #[cfg(feature = "use-mock-crust")]
 use std::sync::mpsc::{RecvError, TryRecvError};
 use types::{MessageId, RoutingActionSender};
-use utils;
 use xor_name::XorName;
 
 /// Interface for sending and receiving messages to and from a network of nodes in the role of a
@@ -68,11 +68,14 @@ impl Client {
     fn make_state_machine(
         keys: Option<FullId>,
         outbox: &mut EventBox,
-        config: Option<BootstrapConfig>,
+        bootstrap_config: Option<BootstrapConfig>,
+        config: Option<Config>,
     ) -> (RoutingActionSender, StateMachine) {
         let full_id = keys.unwrap_or_else(FullId::new);
         let pub_id = *full_id.public_id();
-        let min_section_size = utils::min_section_size();
+        let config = config.unwrap_or_else(config_handler::get_config);
+        let dev_config = config.dev.unwrap_or_default();
+        let min_section_size = dev_config.min_section_size.unwrap_or(MIN_SECTION_SIZE);
 
         StateMachine::new(
             move |action_sender, crust_service, timer, _outbox2| {
@@ -87,7 +90,7 @@ impl Client {
                 ).map_or(State::Terminated, State::Bootstrapping)
             },
             pub_id,
-            config,
+            bootstrap_config,
             outbox,
         )
     }
@@ -461,7 +464,7 @@ impl Client {
     pub fn new(
         event_sender: Sender<Event>,
         keys: Option<FullId>,
-        config: Option<BootstrapConfig>,
+        bootstrap_config: Option<BootstrapConfig>,
     ) -> Result<Client, RoutingError> {
         rust_sodium::init(); // enable shared global (i.e. safe to multithread now)
 
@@ -472,7 +475,7 @@ impl Client {
             // start the handler for routing with a restriction to become a full node
             let mut event_buffer = EventBuf::new();
             let (action_sender, mut machine) =
-                Self::make_state_machine(keys, &mut event_buffer, config);
+                Self::make_state_machine(keys, &mut event_buffer, bootstrap_config, None);
 
             for ev in event_buffer.take_all() {
                 unwrap!(event_sender.send(ev));
@@ -493,7 +496,9 @@ impl Client {
             // When there are no more events to process, terminate this thread.
         });
 
-        let action_sender = unwrap!(get_action_sender_rx.recv());
+        let action_sender = get_action_sender_rx.recv().map_err(
+            |_| RoutingError::NotBootstrapped,
+        )?;
 
         Ok(Client {
             interface_result_tx: tx,
@@ -512,7 +517,7 @@ impl Client {
 
     /// Returns the bootstrap config that this client was created with.
     pub fn bootstrap_config() -> Result<BootstrapConfig, RoutingError> {
-        Ok(read_config_file()?)
+        Ok(read_bootstrap_config_file()?)
     }
 
     fn send_request(
@@ -538,10 +543,12 @@ impl Client {
     /// Create a new `Client` for testing with mock crust.
     pub fn new(
         keys: Option<FullId>,
-        config: Option<BootstrapConfig>,
+        bootstrap_config: Option<BootstrapConfig>,
+        config: Config,
     ) -> Result<Client, RoutingError> {
         let mut event_buffer = EventBuf::new();
-        let (_, machine) = Self::make_state_machine(keys, &mut event_buffer, config);
+        let (_, machine) =
+            Self::make_state_machine(keys, &mut event_buffer, bootstrap_config, Some(config));
 
         let (tx, rx) = channel();
 

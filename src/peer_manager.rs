@@ -424,17 +424,23 @@ pub struct PeerManager {
     routing_table: RoutingTable<XorName>,
     our_public_id: PublicId,
     candidate: Candidate,
+    disable_client_rate_limiter: bool,
 }
 
 impl PeerManager {
     /// Returns a new peer manager with no entries.
-    pub fn new(min_section_size: usize, our_public_id: PublicId) -> PeerManager {
+    pub fn new(
+        min_section_size: usize,
+        our_public_id: PublicId,
+        disable_client_rate_limiter: bool,
+    ) -> PeerManager {
         PeerManager {
             connection_token_map: HashMap::new(),
             peers: HashMap::new(),
             routing_table: RoutingTable::new(*our_public_id.name(), min_section_size),
             our_public_id: our_public_id,
             candidate: Candidate::None,
+            disable_client_rate_limiter: disable_client_rate_limiter,
         }
     }
 
@@ -1047,11 +1053,12 @@ impl PeerManager {
 
     /// Checks whether we can accept more clients.
     pub fn can_accept_client(&self, client_ip: IpAddr) -> bool {
-        !self.peers.values().any(|peer| match *peer.state() {
-            PeerState::Bootstrapper { ip, .. } |
-            PeerState::Client { ip, .. } => client_ip == ip,
-            _ => false,
-        })
+        self.disable_client_rate_limiter ||
+            !self.peers.values().any(|peer| match *peer.state() {
+                PeerState::Bootstrapper { ip, .. } |
+                PeerState::Client { ip, .. } => client_ip == ip,
+                _ => false,
+            })
     }
 
     /// Marks the given peer as direct-connected.
@@ -1690,7 +1697,7 @@ mod tests {
         let min_section_size = 8;
         let our_pub_id = *FullId::new().public_id();
         let their_pub_id = *FullId::new().public_id();
-        let mut peer_mgr = PeerManager::new(min_section_size, our_pub_id);
+        let mut peer_mgr = PeerManager::new(min_section_size, our_pub_id, false);
 
         let our_connection_info = PrivConnectionInfo {
             id: our_pub_id,
@@ -1746,7 +1753,7 @@ mod tests {
         let min_section_size = 8;
         let our_pub_id = *FullId::new().public_id();
         let their_pub_id = *FullId::new().public_id();
-        let mut peer_mgr = PeerManager::new(min_section_size, our_pub_id);
+        let mut peer_mgr = PeerManager::new(min_section_size, our_pub_id, false);
         let our_connection_info = PrivConnectionInfo {
             id: our_pub_id,
             endpoint: Endpoint(0),

@@ -53,10 +53,10 @@ fn disconnect_on_rebootstrap() {
     let network = Network::new(MIN_SECTION_SIZE, None);
     let mut nodes = create_connected_nodes(&network, 2);
     // Try to bootstrap to another than the first node. With network size 2, this should fail.
-    let config = BootstrapConfig::with_contacts(&[nodes[1].handle.endpoint()]);
+    let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[1].handle.endpoint()]);
     nodes.push(
         TestNode::builder(&network)
-            .config(config)
+            .bootstrap_config(bootstrap_config)
             .endpoint(Endpoint(2))
             .create(),
     );
@@ -92,8 +92,13 @@ fn client_connects_to_nodes() {
 fn node_joins_in_front() {
     let network = Network::new(MIN_SECTION_SIZE, None);
     let mut nodes = create_connected_nodes(&network, 2 * MIN_SECTION_SIZE);
-    let config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
-    nodes.insert(0, TestNode::builder(&network).config(config).create());
+    let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
+    nodes.insert(
+        0,
+        TestNode::builder(&network)
+            .bootstrap_config(bootstrap_config)
+            .create(),
+    );
 
     let _ = poll_all(&mut nodes, &mut []);
 
@@ -104,7 +109,7 @@ fn node_joins_in_front() {
 fn multiple_joining_nodes() {
     let network = Network::new(MIN_SECTION_SIZE, None);
     let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE);
-    let config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
+    let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
 
     while nodes.len() < 40 {
         info!("Size {}", nodes.len());
@@ -113,7 +118,11 @@ fn multiple_joining_nodes() {
         // can handle this, either by adding the nodes in sequence or by rejecting some.
         let count = 5;
         for _ in 0..count {
-            nodes.push(TestNode::builder(&network).config(config.clone()).create());
+            nodes.push(
+                TestNode::builder(&network)
+                    .bootstrap_config(bootstrap_config.clone())
+                    .create(),
+            );
         }
 
         poll_and_resend(&mut nodes, &mut []);
@@ -134,7 +143,7 @@ fn simultaneous_joining_nodes() {
     // Create a network with two sections:
     let network = Network::new(MIN_SECTION_SIZE, None);
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1], false);
-    let config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
+    let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
 
     // Add two nodes simultaneously, to two different sections:
     // We now have two sections, with prefixes 0 and 1. Make one joining node contact each section,
@@ -152,11 +161,15 @@ fn simultaneous_joining_nodes() {
         }
     }
 
-    let node = TestNode::builder(&network).config(config.clone()).create();
+    let node = TestNode::builder(&network)
+        .bootstrap_config(bootstrap_config.clone())
+        .create();
     let prefix = Prefix::new(1, node.name());
     nodes.push(node);
     loop {
-        let node = TestNode::builder(&network).config(config.clone()).create();
+        let node = TestNode::builder(&network)
+            .bootstrap_config(bootstrap_config.clone())
+            .create();
         if !prefix.matches(&node.name()) {
             nodes.push(node);
             break;

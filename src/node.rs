@@ -15,9 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use MIN_SECTION_SIZE;
 use action::Action;
 use cache::{Cache, NullCache};
 use client_error::ClientError;
+use config_handler::{self, Config};
 use data::{EntryAction, ImmutableData, MutableData, PermissionSet, User, Value};
 use error::{InterfaceError, RoutingError};
 use event::Event;
@@ -41,7 +43,6 @@ use std::fmt::{self, Debug, Formatter};
 use std::net::IpAddr;
 use std::sync::mpsc::{Receiver, RecvError, Sender, TryRecvError, channel};
 use types::{MessageId, RoutingActionSender};
-use utils;
 use xor_name::XorName;
 
 // Helper macro to implement request sending methods.
@@ -90,30 +91,24 @@ macro_rules! impl_response {
 pub struct NodeBuilder {
     cache: Box<Cache>,
     first: bool,
-    deny_other_local_nodes: bool,
+    config: Option<Config>,
 }
 
 impl NodeBuilder {
     /// Configures the node to use the given request cache.
     pub fn cache(self, cache: Box<Cache>) -> NodeBuilder {
-        NodeBuilder {
-            cache: cache,
-            ..self
-        }
+        NodeBuilder { cache, ..self }
     }
 
     /// Configures the node to start a new network instead of joining an existing one.
     pub fn first(self, first: bool) -> NodeBuilder {
-        NodeBuilder {
-            first: first,
-            ..self
-        }
+        NodeBuilder { first, ..self }
     }
 
-    /// Causes node creation to fail if another node on the local network is detected.
-    pub fn deny_other_local_nodes(self) -> NodeBuilder {
+    /// The node will use the configuration options from `config` rather than defaults.
+    pub fn config(self, config: Config) -> NodeBuilder {
         NodeBuilder {
-            deny_other_local_nodes: true,
+            config: Some(config),
             ..self
         }
     }
@@ -146,7 +141,9 @@ impl NodeBuilder {
     fn make_state_machine(self, outbox: &mut EventBox) -> (RoutingActionSender, StateMachine) {
         let full_id = FullId::new();
         let pub_id = *full_id.public_id();
-        let min_section_size = utils::min_section_size();
+        let config = self.config.unwrap_or_else(config_handler::get_config);
+        let dev_config = config.dev.unwrap_or_default();
+        let min_section_size = dev_config.min_section_size.unwrap_or(MIN_SECTION_SIZE);
 
         StateMachine::new(
             move |action_sender, crust_service, timer, outbox2| if self.first {
@@ -163,7 +160,7 @@ impl NodeBuilder {
                 } else {
                     State::Terminated
                 }
-            } else if self.deny_other_local_nodes && crust_service.has_peers_on_lan() {
+            } else if !dev_config.allow_multiple_lan_nodes && crust_service.has_peers_on_lan() {
                 error!("More than one routing node found on LAN. Currently this is not supported.");
                 outbox2.send_event(Event::Terminate);
                 State::Terminated
@@ -205,7 +202,7 @@ impl Node {
         NodeBuilder {
             cache: Box::new(NullCache),
             first: false,
-            deny_other_local_nodes: false,
+            config: None,
         }
     }
 
@@ -508,6 +505,11 @@ impl Node {
         self.machine.routing_table().ok_or(RoutingError::Terminated)
     }
 
+    /// Returns the minimum section size this vault is using.
+    pub fn min_section_size(&self) -> usize {
+        self.machine.min_section_size()
+    }
+
     fn send_action(
         &mut self,
         src: Authority<XorName>,
@@ -616,7 +618,7 @@ impl Node {
     /// `PeerState::Routing(RoutingConnnection::Proxy)` or
     /// `PeerState::Routing(RoutingConnnection::JoiningNode)` to
     /// `PeerState::Routing(RoutingConnection::Direct` after `JOINING_NODE_TIMEOUT_SECS` seconds
-    /// have elapsed for the peer with whom having such a connection.
+    /// have elapsed for the peer with whom we have the connection.
     pub fn has_unnormalised_routing_conn(&self, excludes: &BTreeSet<XorName>) -> bool {
         self.machine.current().has_unnormalised_routing_conn(
             excludes,

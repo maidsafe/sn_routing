@@ -146,6 +146,8 @@ extern crate rust_sodium;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
+#[cfg(test)]
+extern crate serde_json;
 extern crate tiny_keccak;
 
 // Needs to be before all other modules to make the macros available to them.
@@ -224,6 +226,7 @@ pub use cache::{Cache, NullCache};
 pub use client::Client;
 pub use client_error::{ClientError, EntryError};
 pub use common_types::AccountPacket;
+pub use config_handler::{Config, DevConfig};
 pub use data::{Action, EntryAction, EntryActions, ImmutableData, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
                MAX_MUTABLE_DATA_ENTRIES, MAX_MUTABLE_DATA_SIZE_IN_BYTES, MutableData,
                NO_OWNER_PUB_KEY, PermissionSet, User, Value};

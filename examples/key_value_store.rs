@@ -43,7 +43,6 @@ extern crate maidsafe_utilities;
 #[macro_use]
 extern crate unwrap;
 extern crate docopt;
-extern crate rustc_serialize;
 extern crate rust_sodium;
 #[macro_use]
 extern crate serde_derive;
@@ -104,7 +103,7 @@ Options:
     const TAG: u64 = 10_000;
     const KEY: &'static [u8] = &[];
 
-    #[derive(RustcDecodable, Debug, Deserialize)]
+    #[derive(Debug, Deserialize)]
     struct Args {
         flag_first: bool,
         flag_node: bool,

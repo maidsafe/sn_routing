@@ -15,10 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use {CrustEvent, CrustEventSender, Service};
+use {CrustEvent, CrustEventSender, MIN_SECTION_SIZE, Service};
 use BootstrapConfig;
 use action::Action;
 use id::{FullId, PublicId};
+use log::LogLevel;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 #[cfg(feature = "use-mock-crust")]
 use mock_crust;
@@ -127,6 +128,19 @@ impl State {
         )
     }
 
+    fn min_section_size(&self) -> usize {
+        self.base_state().map_or_else(
+            || {
+                log_or_panic!(
+                    LogLevel::Error,
+                    "Can't get min_section_size when Terminated."
+                );
+                MIN_SECTION_SIZE
+            },
+            Base::min_section_size,
+        )
+    }
+
     fn base_state(&self) -> Option<&Base> {
         match *self {
             State::Bootstrapping(ref bootstrapping) => Some(bootstrapping),
@@ -231,7 +245,7 @@ impl StateMachine {
     pub fn new<F>(
         init_state: F,
         pub_id: PublicId,
-        config: Option<BootstrapConfig>,
+        bootstrap_config: Option<BootstrapConfig>,
         outbox: &mut EventBox,
     ) -> (RoutingActionSender, Self)
     where
@@ -253,7 +267,7 @@ impl StateMachine {
             category_tx.clone(),
         );
 
-        let res = match config {
+        let res = match bootstrap_config {
             #[cfg(feature = "use-mock-crust")]
             Some(c) => Service::with_config(mock_crust::take_current(), crust_sender, c, pub_id),
             #[cfg(not(feature = "use-mock-crust"))]
@@ -491,6 +505,10 @@ impl StateMachine {
 
     pub fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
         self.state.close_group(name, count)
+    }
+
+    pub fn min_section_size(&self) -> usize {
+        self.state.min_section_size()
     }
 
     #[cfg(feature = "use-mock-crust")]
