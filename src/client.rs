@@ -496,7 +496,9 @@ impl Client {
             // When there are no more events to process, terminate this thread.
         });
 
-        let action_sender = unwrap!(get_action_sender_rx.recv());
+        let action_sender = get_action_sender_rx.recv().map_err(
+            |_| RoutingError::NotBootstrapped,
+        )?;
 
         Ok(Client {
             interface_result_tx: tx,
