@@ -240,7 +240,11 @@ impl Node {
             is_first_node: first_node,
             is_approved: first_node,
             msg_queue: VecDeque::new(),
-            peer_mgr: PeerManager::new(min_section_size, public_id),
+            peer_mgr: PeerManager::new(
+                min_section_size,
+                public_id,
+                dev_config.disable_client_rate_limiter,
+            ),
             response_cache: cache,
             routing_msg_filter: RoutingMessageFilter::new(),
             sig_accumulator: Default::default(),
@@ -794,6 +798,10 @@ impl Node {
         direct_message: &DirectMessage,
         pub_id: &PublicId,
     ) -> Result<(), RoutingError> {
+        if self.dropped_clients.contains_key(pub_id) {
+            return Ok(());
+        }
+
         match self.peer_mgr.get_peer(pub_id).map(Peer::state) {
             Some(&PeerState::Bootstrapper { .. }) => {
                 if let DirectMessage::BootstrapRequest(_) = *direct_message {
