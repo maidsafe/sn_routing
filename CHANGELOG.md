@@ -1,5 +1,8 @@
 # Routing - Change Log
 
+## [0.32.2]
+- Bugfix to avoid adding nodes to disconnected client list.
+
 ## [0.32.1]
 - Bugfix to avoid handling recently-disconnected client direct messages.
 

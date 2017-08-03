@@ -522,7 +522,9 @@ impl Node {
                 pub_id
             );
             self.disconnect_peer(&pub_id, None);
-            let _ = self.dropped_clients.insert(pub_id, ());
+            if peer_kind == CrustUser::Client {
+                let _ = self.dropped_clients.insert(pub_id, ());
+            }
             return;
         };
 
@@ -2467,8 +2469,10 @@ impl Node {
             let _ = self.crust_service.disconnect(pub_id);
             if let Some((peer, _)) = self.peer_mgr.remove_peer(pub_id) {
                 match *peer.state() {
-                    PeerState::Bootstrapper { .. } => {
-                        let _ = self.dropped_clients.insert(*pub_id, ());
+                    PeerState::Bootstrapper { peer_kind, .. } => {
+                        if peer_kind == CrustUser::Client {
+                            let _ = self.dropped_clients.insert(*pub_id, ());
+                        }
                     }
                     PeerState::Client { ip, traffic } => {
                         info!(
