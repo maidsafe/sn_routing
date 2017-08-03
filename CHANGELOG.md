@@ -1,5 +1,8 @@
 # Routing - Change Log
 
+## [0.32.1]
+- Bugfix to avoid handling recently-disconnected client direct messages.
+
 ## [0.32.0]
 - Allow mock-crust network to support multiple nodes/clients with the same IPs.
 - Allow only one client ip per proxy.
