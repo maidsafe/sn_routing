@@ -516,7 +516,7 @@ impl Node {
         let ip = if let Ok(ip) = self.crust_service.get_peer_ip_addr(&pub_id) {
             ip
         } else {
-            warn!(
+            debug!(
                 "{:?} Can't get IP address of bootstrapper {:?}.",
                 self,
                 pub_id
@@ -696,7 +696,10 @@ impl Node {
     ) -> Result<(), RoutingError> {
         use messages::DirectMessage::*;
         if let Err(error) = self.check_direct_message_sender(&direct_message, &pub_id) {
-            self.ban_and_disconnect_peer(&pub_id);
+            match error {
+                RoutingError::ClientConnectionNotFound => (),
+                _ => self.ban_and_disconnect_peer(&pub_id),
+            }
             return Err(error);
         }
 
@@ -799,7 +802,7 @@ impl Node {
         pub_id: &PublicId,
     ) -> Result<(), RoutingError> {
         if self.dropped_clients.contains_key(pub_id) {
-            return Ok(());
+            return Err(RoutingError::ClientConnectionNotFound);
         }
 
         match self.peer_mgr.get_peer(pub_id).map(Peer::state) {
