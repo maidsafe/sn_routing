@@ -803,20 +803,17 @@ impl Node {
         direct_message: &DirectMessage,
         pub_id: &PublicId,
     ) -> Result<(), RoutingError> {
-        if self.dropped_clients.contains_key(pub_id) {
-            return Err(RoutingError::ClientConnectionNotFound);
-        }
-
         match self.peer_mgr.get_peer(pub_id).map(Peer::state) {
             Some(&PeerState::Bootstrapper { .. }) => {
                 if let DirectMessage::BootstrapRequest(_) = *direct_message {
                     return Ok(());
                 }
             }
-            Some(&PeerState::Client { .. }) |
-            None => (),
+            Some(&PeerState::Client { .. }) => (),
+            None => return Err(RoutingError::ClientConnectionNotFound),
             _ => return Ok(()),
         }
+
         debug!(
             "{:?} Illegitimate direct message {:?} from {:?}.",
             self,
