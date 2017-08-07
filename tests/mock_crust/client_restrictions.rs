@@ -15,10 +15,10 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use super::{MIN_SECTION_SIZE, TestClient, create_connected_clients, create_connected_nodes,
-            poll_all};
+use super::{MIN_SECTION_SIZE, TestClient, TestNode, create_connected_clients,
+            create_connected_nodes, poll_all};
 use rand::Rng;
-use routing::{Authority, BootstrapConfig, Event, EventStream, MessageId, Request};
+use routing::{Authority, BootstrapConfig, Event, EventStream, FullId, MessageId, Request};
 use routing::mock_crust::Network;
 
 /// Connect a client to the network then send an invalid message.
@@ -78,4 +78,43 @@ fn only_one_client_per_ip() {
     clients.push(client);
     let _ = poll_all(&mut nodes, &mut clients);
     expect_next_event!(unwrap!(clients.last_mut()), Event::Terminate);
+}
+
+/// Reconnect a client (disconnected as network not having enough nodes) with the same id.
+#[test]
+fn reconnect_disconnected_client() {
+    let network = Network::new(MIN_SECTION_SIZE, None);
+    let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE - 1);
+
+    let config = Some(BootstrapConfig::with_contacts(
+        &[nodes[1].handle.endpoint()],
+    ));
+    let full_id = FullId::new();
+
+    // Client will get rejected as network not having enough nodes.
+    let mut clients =
+        vec![
+            TestClient::new_with_full_id(&network, config.clone(), None, full_id.clone()),
+        ];
+    let _ = poll_all(&mut nodes, &mut clients);
+    expect_next_event!(unwrap!(clients.last_mut()), Event::Terminate);
+
+    let _ = clients.remove(0);
+    let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
+    nodes.push(
+        TestNode::builder(&network)
+            .bootstrap_config(bootstrap_config)
+            .create(),
+    );
+    let _ = poll_all(&mut nodes, &mut clients);
+
+    // Reconnecting the client (with same id) shall succeed.
+    clients.push(TestClient::new_with_full_id(
+        &network,
+        config,
+        None,
+        full_id,
+    ));
+    let _ = poll_all(&mut nodes, &mut clients);
+    expect_next_event!(unwrap!(clients.last_mut()), Event::Connected);
 }

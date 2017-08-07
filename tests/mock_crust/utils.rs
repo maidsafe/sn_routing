@@ -248,6 +248,15 @@ impl TestClient {
         endpoint: Option<Endpoint>,
     ) -> Self {
         let full_id = FullId::new();
+        Self::new_with_full_id(network, bootstrap_config, endpoint, full_id)
+    }
+
+    pub fn new_with_full_id(
+        network: &Network<PublicId>,
+        bootstrap_config: Option<BootstrapConfig>,
+        endpoint: Option<Endpoint>,
+        full_id: FullId,
+    ) -> Self {
         let handle = network.new_service_handle(bootstrap_config.clone(), endpoint);
         let client = mock_crust::make_current(&handle, || {
             unwrap!(Client::new(
