@@ -46,7 +46,7 @@ const BOOTSTRAP_TIMEOUT_SECS: u64 = 20;
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
 pub enum TargetState {
-    Client,
+    Client { msg_expiry_dur: Duration },
     JoiningNode,
     Node {
         old_full_id: FullId,
@@ -79,7 +79,7 @@ impl Bootstrapping {
         timer: Timer,
     ) -> Option<Self> {
         match target_state {
-            TargetState::Client => {
+            TargetState::Client { .. } => {
                 let _ = crust_service.start_bootstrap(HashSet::new(), CrustUser::Client);
             }
             TargetState::JoiningNode |
@@ -182,7 +182,7 @@ impl Bootstrapping {
 
     pub fn into_target_state(self, proxy_public_id: PublicId, outbox: &mut EventBox) -> State {
         match self.target_state {
-            TargetState::Client { .. } => {
+            TargetState::Client { msg_expiry_dur } => {
                 State::Client(Client::from_bootstrapping(
                     self.crust_service,
                     self.full_id,
@@ -190,6 +190,7 @@ impl Bootstrapping {
                     proxy_public_id,
                     self.stats,
                     self.timer,
+                    msg_expiry_dur,
                     outbox,
                 ))
             }
@@ -461,7 +462,7 @@ mod tests {
                     Bootstrapping::new(
                         action_sender,
                         Box::new(NullCache),
-                        TargetState::Client,
+                        TargetState::Client { msg_expiry_dur: Duration::from_secs(60) },
                         crust_service,
                         full_id,
                         min_section_size,

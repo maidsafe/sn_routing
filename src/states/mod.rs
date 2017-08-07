@@ -23,6 +23,6 @@ mod node;
 
 pub use self::bootstrapping::Bootstrapping;
 pub use self::bootstrapping::TargetState as BootstrappingTargetState;
-pub use self::client::Client;
+pub use self::client::{Client, RATE_EXCEED_RETRY_MS};
 pub use self::joining_node::JoiningNode;
 pub use self::node::Node;

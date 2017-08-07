@@ -56,7 +56,7 @@ use std::collections::{BTreeSet, VecDeque};
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
 use std::net::IpAddr;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use timer::Timer;
 use tunnels::Tunnels;
 use types::{MessageId, RoutingActionSender};
@@ -1062,7 +1062,6 @@ impl Node {
                 self.send_direct_message(
                     pub_id,
                     DirectMessage::ProxyRateLimitExceeded {
-                        user_msg_hash: hash,
                         ack: Ack::compute(hop_msg.content.routing_message())?,
                     },
                 );
@@ -3217,7 +3216,7 @@ impl Node {
         priority: u8,
     ) -> Result<(), RoutingError> {
         self.stats.count_user_message(&user_msg);
-        for part in user_msg.to_parts(priority)?.1 {
+        for part in user_msg.to_parts(priority)? {
             self.send_routing_message(src, dst, part)?;
         }
         Ok(())
@@ -3983,6 +3982,7 @@ impl Bootstrapped for Node {
         &mut self,
         routing_msg: RoutingMessage,
         route: u8,
+        expires_at: Option<Instant>,
     ) -> Result<(), RoutingError> {
         if !self.in_authority(&routing_msg.src) {
             trace!(
@@ -3992,7 +3992,7 @@ impl Bootstrapped for Node {
             );
             return Ok(());
         }
-        if !self.add_to_pending_acks(&routing_msg, route) {
+        if !self.add_to_pending_acks(&routing_msg, route, expires_at) {
             debug!(
                 "{:?} already received an ack for {:?} - so not resending it.",
                 self,

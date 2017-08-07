@@ -29,6 +29,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::net::IpAddr;
 use std::ops::{Deref, DerefMut};
 use std::sync::mpsc::{RecvError, TryRecvError};
+use std::time::Duration;
 
 // Various utilities. Since this is all internal stuff we're a bit lax about the doc.
 #[allow(missing_docs)]
@@ -39,6 +40,9 @@ const BALANCED_POLLING: bool = true;
 // Maximum number of times to try and poll in a loop.  This is several orders higher than the
 // anticipated upper limit for any test, and if hit is likely to indicate an infinite loop.
 const MAX_POLL_CALLS: usize = 1000;
+
+// Duration clients expect a response by.
+const CLIENT_MSG_EXPIRY_DUR_SECS: u64 = 90;
 
 // -----  Random number generation  -----
 
@@ -263,6 +267,7 @@ impl TestClient {
                 Some(full_id.clone()),
                 bootstrap_config,
                 create_config(network),
+                Duration::from_secs(CLIENT_MSG_EXPIRY_DUR_SECS),
             ))
         });
 

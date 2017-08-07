@@ -41,6 +41,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::mpsc::{Receiver, Sender, channel};
 #[cfg(feature = "use-mock-crust")]
 use std::sync::mpsc::{RecvError, TryRecvError};
+use std::time::Duration;
 use types::{MessageId, RoutingActionSender};
 use xor_name::XorName;
 
@@ -70,6 +71,7 @@ impl Client {
         outbox: &mut EventBox,
         bootstrap_config: Option<BootstrapConfig>,
         config: Option<Config>,
+        msg_expiry_dur: Duration,
     ) -> (RoutingActionSender, StateMachine) {
         let full_id = keys.unwrap_or_else(FullId::new);
         let pub_id = *full_id.public_id();
@@ -82,7 +84,7 @@ impl Client {
                 Bootstrapping::new(
                     action_sender,
                     Box::new(NullCache),
-                    BootstrappingTargetState::Client,
+                    BootstrappingTargetState::Client { msg_expiry_dur },
                     crust_service,
                     full_id,
                     min_section_size,
@@ -465,6 +467,7 @@ impl Client {
         event_sender: Sender<Event>,
         keys: Option<FullId>,
         bootstrap_config: Option<BootstrapConfig>,
+        msg_expiry_dur: Duration,
     ) -> Result<Client, RoutingError> {
         rust_sodium::init(); // enable shared global (i.e. safe to multithread now)
 
@@ -474,8 +477,13 @@ impl Client {
         let joiner = thread::named("Client thread", move || {
             // start the handler for routing with a restriction to become a full node
             let mut event_buffer = EventBuf::new();
-            let (action_sender, mut machine) =
-                Self::make_state_machine(keys, &mut event_buffer, bootstrap_config, None);
+            let (action_sender, mut machine) = Self::make_state_machine(
+                keys,
+                &mut event_buffer,
+                bootstrap_config,
+                None,
+                msg_expiry_dur,
+            );
 
             for ev in event_buffer.take_all() {
                 unwrap!(event_sender.send(ev));
@@ -545,10 +553,16 @@ impl Client {
         keys: Option<FullId>,
         bootstrap_config: Option<BootstrapConfig>,
         config: Config,
+        msg_expiry_dur: Duration,
     ) -> Result<Client, RoutingError> {
         let mut event_buffer = EventBuf::new();
-        let (_, machine) =
-            Self::make_state_machine(keys, &mut event_buffer, bootstrap_config, Some(config));
+        let (_, machine) = Self::make_state_machine(
+            keys,
+            &mut event_buffer,
+            bootstrap_config,
+            Some(config),
+            msg_expiry_dur,
+        );
 
         let (tx, rx) = channel();
 
