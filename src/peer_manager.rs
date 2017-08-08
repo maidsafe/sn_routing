@@ -1056,7 +1056,6 @@ impl PeerManager {
     pub fn can_accept_client(&self, client_ip: IpAddr) -> bool {
         self.disable_client_rate_limiter ||
             !self.peers.values().any(|peer| match *peer.state() {
-                PeerState::Bootstrapper { ip, .. } |
                 PeerState::Client { ip, .. } => client_ip == ip,
                 _ => false,
             })
