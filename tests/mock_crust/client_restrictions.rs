@@ -16,10 +16,12 @@
 // relating to use of the SAFE Network Software.
 
 use super::{MIN_SECTION_SIZE, TestClient, TestNode, create_connected_clients,
-            create_connected_nodes, poll_all};
+            create_connected_nodes, poll_all, poll_and_resend};
 use rand::Rng;
-use routing::{Authority, BootstrapConfig, Event, EventStream, FullId, MessageId, Request};
+use routing::{Authority, BootstrapConfig, Event, EventStream, FullId, ImmutableData,
+              MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MessageId, Request};
 use routing::mock_crust::Network;
+use routing::rate_limiter_consts::MAX_PARTS;
 
 /// Connect a client to the network then send an invalid message.
 /// Expect the client will be disconnected and banned;
@@ -117,4 +119,50 @@ fn reconnect_disconnected_client() {
     ));
     let _ = poll_all(&mut nodes, &mut clients);
     expect_next_event!(unwrap!(clients.last_mut()), Event::Connected);
+}
+
+
+/// Confirming the number of user message parts being sent in case of exceeding limit.
+#[test]
+fn resending_parts_on_exceeding_limit() {
+    let network = Network::new(MIN_SECTION_SIZE, None);
+    let mut rng = network.new_rng();
+    let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE);
+    let mut clients = create_connected_clients(&network, &mut nodes, 1);
+
+    let mut datas = vec![
+        ImmutableData::new(
+            rng.gen_iter()
+                .take((MAX_IMMUTABLE_DATA_SIZE_IN_BYTES / 2) as usize)
+                .collect()
+        ),
+    ];
+    datas.push(ImmutableData::new(
+        rng.gen_iter()
+            .take(MAX_IMMUTABLE_DATA_SIZE_IN_BYTES as usize)
+            .collect(),
+    ));
+
+    for data in datas {
+        let msg_id = MessageId::new();
+        let dst = Authority::NaeManager(*data.name());
+        unwrap!(clients[0].inner.put_idata(dst, data, msg_id));
+    }
+    let _ = poll_and_resend(&mut nodes, &mut clients);
+
+    // `MAX_PARTS / 2` parts will be resent from client.
+    let client_expected_sent_parts = (2 * MAX_PARTS) as u64;
+    assert_eq!(
+        clients[0].inner.get_user_msg_parts_count(),
+        client_expected_sent_parts
+    );
+
+    // Node shall not receive any duplicated parts.
+    let node_expected_sent_parts = (MAX_PARTS + MAX_PARTS / 2) as u64;
+    for node in nodes.iter() {
+        assert_eq!(
+            node.inner.get_user_msg_parts_count(),
+            node_expected_sent_parts
+        );
+    }
 }

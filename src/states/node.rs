@@ -26,6 +26,8 @@ use crust::{ConnectionInfoResult, CrustError, CrustUser};
 use cumulative_own_section_merge::CumulativeOwnSectionMerge;
 use error::{BootstrapResponseError, InterfaceError, RoutingError};
 use event::Event;
+#[cfg(feature = "use-mock-crust")]
+use fake_clock::FakeClock as Instant;
 use id::{FullId, PublicId};
 use itertools::Itertools;
 use log::LogLevel;
@@ -56,7 +58,9 @@ use std::collections::{BTreeSet, VecDeque};
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
 use std::net::IpAddr;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(not(feature = "use-mock-crust"))]
+use std::time::Instant;
 use timer::Timer;
 use tunnels::Tunnels;
 use types::{MessageId, RoutingActionSender};
@@ -1330,6 +1334,7 @@ impl Node {
              },
              src,
              dst) => {
+                self.stats.increase_user_msg_part();
                 if let Some(msg) = self.user_msg_cache.add(
                     hash,
                     part_count,
@@ -3217,6 +3222,7 @@ impl Node {
     ) -> Result<(), RoutingError> {
         self.stats.count_user_message(&user_msg);
         for part in user_msg.to_parts(priority)? {
+            self.stats.increase_user_msg_part();
             self.send_routing_message(src, dst, part)?;
         }
         Ok(())
@@ -3963,6 +3969,10 @@ impl Node {
 
     pub fn has_unnormalised_routing_conn(&self, excludes: &BTreeSet<XorName>) -> bool {
         self.peer_mgr.has_unnormalised_routing_conn(excludes)
+    }
+
+    pub fn get_user_msg_parts_count(&self) -> u64 {
+        self.stats.msg_user_parts
     }
 }
 

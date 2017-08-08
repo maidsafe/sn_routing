@@ -23,6 +23,8 @@ use action::Action;
 use cache::Cache;
 use error::{InterfaceError, RoutingError};
 use event::Event;
+#[cfg(feature = "use-mock-crust")]
+use fake_clock::FakeClock as Instant;
 use id::{FullId, PublicId};
 use maidsafe_utilities::serialisation;
 use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage};
@@ -36,7 +38,9 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::sync::mpsc::Receiver;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(not(feature = "use-mock-crust"))]
+use std::time::Instant;
 use timer::Timer;
 use types::{MessageId, RoutingActionSender};
 use xor_name::XorName;

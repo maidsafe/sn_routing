@@ -21,6 +21,8 @@ use ack_manager::{Ack, AckManager, UnacknowledgedMessage};
 use action::Action;
 use error::{InterfaceError, RoutingError};
 use event::Event;
+#[cfg(feature = "use-mock-crust")]
+use fake_clock::FakeClock as Instant;
 use id::{FullId, PublicId};
 use maidsafe_utilities::serialisation;
 use messages::{DirectMessage, HopMessage, Message, MessageContent, RoutingMessage, SignedMessage,
@@ -32,7 +34,9 @@ use state_machine::Transition;
 use stats::Stats;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(not(feature = "use-mock-crust"))]
+use std::time::Instant;
 use timer::Timer;
 use xor_name::XorName;
 
@@ -172,7 +176,10 @@ impl Client {
             )
             {
                 debug!("{:?} Failed to send message: {:?}", self, error);
+            } else {
+                self.stats.increase_user_msg_part();
             }
+            return;
         }
 
         // Check if token corresponds to an unacknowledged msg.
@@ -247,7 +254,7 @@ impl Client {
         if let DirectMessage::ProxyRateLimitExceeded { ack } = direct_msg {
             if let Some(unack_msg) = self.ack_mgr.remove(&ack) {
                 let token = self.timer().schedule(
-                    Duration::from_secs(RATE_EXCEED_RETRY_MS),
+                    Duration::from_millis(RATE_EXCEED_RETRY_MS),
                 );
                 let _ = self.resend_buf.insert(token, unack_msg);
             } else {
@@ -255,7 +262,7 @@ impl Client {
                     "{:?} Got ProxyRateLimitExceeded, but no corresponding request found",
                     self
                 );
-            };
+            }
         } else {
             debug!("{:?} Unhandled direct message: {:?}", self, direct_msg);
         }
@@ -287,6 +294,7 @@ impl Client {
                     routing_msg.src,
                     routing_msg.dst
                 );
+                self.stats.increase_user_msg_part();
                 if let Some(msg) = self.user_msg_cache.add(
                     hash,
                     part_count,
@@ -330,6 +338,7 @@ impl Client {
                 part,
                 Some(Instant::now() + msg_expiry_dur),
             )?;
+            self.stats.increase_user_msg_part();
         }
         Ok(())
     }
@@ -408,6 +417,7 @@ impl Bootstrapped for Client {
             {
                 debug!("{:?} Failed to send message: {:?}", self, error);
             }
+            // Resend a msg part on ack time out donesn't count in stats.
         }
     }
 
@@ -473,6 +483,10 @@ impl Bootstrapped for Client {
 impl Client {
     pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
         self.timer.get_timed_out_tokens()
+    }
+
+    pub fn get_user_msg_parts_count(&self) -> u64 {
+        self.stats.msg_user_parts
     }
 }
 

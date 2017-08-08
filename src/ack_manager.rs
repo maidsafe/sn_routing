@@ -16,13 +16,17 @@
 // relating to use of the SAFE Network Software.
 
 use error::RoutingError;
+#[cfg(feature = "use-mock-crust")]
+use fake_clock::FakeClock as Instant;
 use maidsafe_utilities::serialisation;
 use message_filter::MessageFilter;
 use messages::RoutingMessage;
 use sha3;
 use std::collections::BTreeMap;
 use std::fmt;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(not(feature = "use-mock-crust"))]
+use std::time::Instant;
 use tiny_keccak::sha3_256;
 
 /// Time (in seconds) after which a message is resent due to being unacknowledged by recipient.

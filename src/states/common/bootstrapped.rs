@@ -18,13 +18,17 @@
 use super::Base;
 use ack_manager::{ACK_TIMEOUT_SECS, Ack, AckManager, UnacknowledgedMessage};
 use error::RoutingError;
+#[cfg(feature = "use-mock-crust")]
+use fake_clock::FakeClock as Instant;
 use id::PublicId;
 use maidsafe_utilities::serialisation;
 use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage};
 use routing_message_filter::RoutingMessageFilter;
 use routing_table::Authority;
 use std::collections::BTreeSet;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(not(feature = "use-mock-crust"))]
+use std::time::Instant;
 use timer::Timer;
 use xor_name::XorName;
 

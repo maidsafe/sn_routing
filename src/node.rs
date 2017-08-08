@@ -624,6 +624,11 @@ impl Node {
             excludes,
         )
     }
+
+    /// Returns the number of received and sent user message parts.
+    pub fn get_user_msg_parts_count(&self) -> u64 {
+        self.machine.current().get_user_msg_parts_count()
+    }
 }
 
 #[cfg(feature = "use-mock-crust")]
