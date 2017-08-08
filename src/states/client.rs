@@ -417,7 +417,7 @@ impl Bootstrapped for Client {
             {
                 debug!("{:?} Failed to send message: {:?}", self, error);
             }
-            // Resend a msg part on ack time out donesn't count in stats.
+            // Resend a msg part on ack time out doesn't count in stats.
         }
     }
 

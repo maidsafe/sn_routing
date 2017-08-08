@@ -261,13 +261,34 @@ impl TestClient {
         endpoint: Option<Endpoint>,
         full_id: FullId,
     ) -> Self {
+        let duration = Duration::from_secs(CLIENT_MSG_EXPIRY_DUR_SECS);
+        Self::new_impl(network, bootstrap_config, endpoint, full_id, duration)
+    }
+
+    pub fn new_with_expire_duration(
+        network: &Network<PublicId>,
+        bootstrap_config: Option<BootstrapConfig>,
+        endpoint: Option<Endpoint>,
+        duration: Duration,
+    ) -> Self {
+        let full_id = FullId::new();
+        Self::new_impl(network, bootstrap_config, endpoint, full_id, duration)
+    }
+
+    fn new_impl(
+        network: &Network<PublicId>,
+        bootstrap_config: Option<BootstrapConfig>,
+        endpoint: Option<Endpoint>,
+        full_id: FullId,
+        duration: Duration,
+    ) -> Self {
         let handle = network.new_service_handle(bootstrap_config.clone(), endpoint);
         let client = mock_crust::make_current(&handle, || {
             unwrap!(Client::new(
                 Some(full_id.clone()),
                 bootstrap_config,
                 create_config(network),
-                Duration::from_secs(CLIENT_MSG_EXPIRY_DUR_SECS),
+                duration,
             ))
         });
 
