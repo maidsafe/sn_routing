@@ -1612,6 +1612,7 @@ impl Node {
             (&Authority::Client { .. },
              &MessageContent::UserMessagePart {
                  ref hash,
+                 ref msg_id,
                  ref part_count,
                  ref part_index,
                  ref priority,
@@ -1624,6 +1625,7 @@ impl Node {
                 self.clients_rate_limiter.add_message(
                     ip,
                     hash,
+                    msg_id,
                     *part_count,
                     *part_index,
                     payload,
@@ -1637,6 +1639,27 @@ impl Node {
                 );
                 Err(RoutingError::RejectedClientMessage)
             }
+        }
+    }
+
+    fn correct_rate_limits(&mut self, ip: &IpAddr, msg: &RoutingMessage) -> Option<u64> {
+        if let MessageContent::UserMessagePart {
+            ref msg_id,
+            part_count,
+            part_index,
+            ref payload,
+            ..
+        } = msg.content
+        {
+            self.clients_rate_limiter.apply_refund_for_response(
+                ip,
+                msg_id,
+                part_count,
+                part_index,
+                payload,
+            )
+        } else {
+            None
         }
     }
 
@@ -3335,6 +3358,14 @@ impl Node {
         let is_client = self.peer_mgr.is_client(pub_id);
 
         let result = if is_client || self.peer_mgr.is_joining_node(pub_id) {
+            // If the message being relayed is a data response, update the client's
+            // rate limit balance to account for the initial over-counting.
+            if let Some(&PeerState::Client { ip, .. }) =
+                self.peer_mgr.get_peer(pub_id).map(Peer::state)
+            {
+                let _ = self.correct_rate_limits(&ip, signed_msg.routing_message());
+            }
+
             if self.filter_outgoing_routing_msg(signed_msg.routing_message(), pub_id, 0) {
                 return Ok(());
             }
@@ -3990,6 +4021,10 @@ impl Node {
 
     pub fn get_user_msg_parts_count(&self) -> u64 {
         self.stats.msg_user_parts
+    }
+
+    pub fn get_clients_usage(&self) -> BTreeMap<IpAddr, u64> {
+        self.clients_rate_limiter.usage_map().clone()
     }
 }
 

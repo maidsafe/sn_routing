@@ -21,28 +21,35 @@ use error::RoutingError;
 use fake_clock::FakeClock as Instant;
 use itertools::Itertools;
 use maidsafe_utilities::serialisation::{self, SerialisationError};
-use messages::UserMessage;
+use messages::{MAX_PART_LEN, UserMessage};
 use sha3::Digest256;
 use std::cmp;
 use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 use std::mem;
 use std::net::IpAddr;
 #[cfg(not(feature = "use-mock-crust"))]
 use std::time::Instant;
+use types::MessageId;
 
 /// The number of bytes per second the `RateLimiter` will "leak".
 const RATE: f64 = 5.0 * 1024.0 * 1024.0;
-/// The maximum number of bytes a single client is allowed to have in the `RateLimiter`.  This is
-/// slightly larger than `MAX_IMMUTABLE_DATA_SIZE_IN_BYTES` to allow for the extra bytes created by
-/// wrapping the chunk in a `UserMessage`, splitting it into parts and wrapping those in
-/// `RoutingMessage`s.
-const CLIENT_CAPACITY: u64 = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES + 10240;
+/// The number of bytes per second of bandwidth distributed between all clients when demand is low.
+#[cfg(not(feature = "use-mock-crust"))]
+const SOFT_CAPACITY: u64 = 20 * 1024 * 1024;
+// Soft capacity has to be at least 2 * MIN_CLIENT_CAPACITY for the multi-client tests to work.
+#[cfg(feature = "use-mock-crust")]
+const SOFT_CAPACITY: u64 = 2 * MIN_CLIENT_CAPACITY;
+/// The minimum number of bytes per second of bandwidth supplied to any client.
+const MIN_CLIENT_CAPACITY: u64 = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES + 10240;
 
 #[cfg(feature = "use-mock-crust")]
 #[doc(hidden)]
 pub mod rate_limiter_consts {
-    pub const CLIENT_CAPACITY: u64 = super::CLIENT_CAPACITY;
+    pub const SOFT_CAPACITY: u64 = super::SOFT_CAPACITY;
     pub const MAX_PARTS: u32 = ::messages::MAX_PARTS;
+    pub const MAX_PART_LEN: usize = ::messages::MAX_PART_LEN;
+    pub const MIN_CLIENT_CAPACITY: u64 = super::MIN_CLIENT_CAPACITY;
     pub const RATE: f64 = super::RATE;
 }
 
@@ -53,6 +60,9 @@ pub mod rate_limiter_consts {
 pub struct RateLimiter {
     /// Map of client IP address to their total bytes remaining in the `RateLimiter`.
     used: BTreeMap<IpAddr, u64>,
+    /// Initial charge amount by GET request message ID.
+    /// The IP address of the requesting peer is also tracked so that stale entries can be removed.
+    overcharged: BTreeMap<MessageId, (u64, IpAddr)>,
     /// Timestamp of when the `RateLimiter` was last updated.
     last_updated: Instant,
     /// Whether rate restriction is disabled.
@@ -63,6 +73,7 @@ impl RateLimiter {
     pub fn new(disabled: bool) -> Self {
         RateLimiter {
             used: BTreeMap::new(),
+            overcharged: BTreeMap::new(),
             last_updated: Instant::now(),
             disabled: disabled,
         }
@@ -71,18 +82,19 @@ impl RateLimiter {
     /// Try to add a message. If the message is a form of get request,
     /// `MAX_IMMUTABLE_DATA_SIZE_IN_BYTES` or `MAX_MUTABLE_DATA_SIZE_IN_BYTES` bytes will be used,
     /// otherwise the actual length of the `payload` will be used. If adding that amount will cause
-    /// the client to exceed its capacity (`CLIENT_CAPACITY`), then `Err(ExceedsRateLimit)` is
-    /// returned. If the message is invalid, `Err(InvalidMessage)` is returned (this probably
-    /// indicates malicious behaviour).
+    /// the client to exceed its capacity, then `Err(ExceedsRateLimit)` is returned. If the
+    /// message is invalid, `Err(InvalidMessage)` is returned (this probably indicates malicious
+    /// behaviour).
     pub fn add_message(
         &mut self,
         client_ip: &IpAddr,
         hash: &Digest256,
+        msg_id: &MessageId,
         part_count: u32,
         part_index: u32,
         payload: &[u8],
     ) -> Result<u64, RoutingError> {
-        let bytes_to_add = if part_index == 0 {
+        let (bytes_to_add, overcharged) = if part_index == 0 {
             use self::UserMessage::*;
             use Request::*;
             match serialisation::deserialise::<UserMessage>(payload) {
@@ -91,7 +103,7 @@ impl RateLimiter {
                         return Err(RoutingError::InvalidMessage);
                     }
                     match request {
-                        GetIData { .. } => MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
+                        GetIData { .. } => (MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, true),
                         GetAccountInfo { .. } |
                         GetMData { .. } |
                         GetMDataVersion { .. } |
@@ -102,7 +114,7 @@ impl RateLimiter {
                         GetMDataValue { .. } |
                         ListMDataPermissions { .. } |
                         ListMDataUserPermissions { .. } |
-                        ListAuthKeysAndVersion { .. } => MAX_MUTABLE_DATA_SIZE_IN_BYTES,
+                        ListAuthKeysAndVersion { .. } => (MAX_MUTABLE_DATA_SIZE_IN_BYTES, true),
                         PutIData { .. } |
                         PutMData { .. } |
                         MutateMDataEntries { .. } |
@@ -110,7 +122,7 @@ impl RateLimiter {
                         DelMDataUserPermissions { .. } |
                         ChangeMDataOwner { .. } |
                         InsAuthKey { .. } |
-                        DelAuthKey { .. } => payload.len() as u64,
+                        DelAuthKey { .. } => (payload.len() as u64, false),
                         Refresh(..) => return Err(RoutingError::InvalidMessage),
                     }
                 }
@@ -122,11 +134,11 @@ impl RateLimiter {
                     if part_count == 1 {
                         return Err(RoutingError::InvalidMessage);
                     }
-                    payload.len() as u64
+                    (payload.len() as u64, false)
                 }
             }
         } else {
-            payload.len() as u64
+            (payload.len() as u64, false)
         };
 
         if self.disabled {
@@ -136,14 +148,116 @@ impl RateLimiter {
         self.update();
 
         let used = self.used.get(client_ip).map_or(0, |used| *used);
-        let allowance = CLIENT_CAPACITY - used;
+        let new_balance = used + bytes_to_add;
 
-        if bytes_to_add > allowance {
+        if new_balance > self.client_allowance(client_ip) {
             return Err(RoutingError::ExceedsRateLimit(*hash));
         }
 
-        let _ = self.used.insert(*client_ip, used + bytes_to_add);
+        if overcharged {
+            match self.overcharged.entry(*msg_id) {
+                // If there's no overcharge recorded, record it.
+                Entry::Vacant(entry) => {
+                    let _ = entry.insert((bytes_to_add, *client_ip));
+                }
+                // Disallow a 2nd GET with the same message ID.
+                Entry::Occupied(_) => {
+                    return Err(RoutingError::InvalidMessage);
+                }
+            }
+        }
+
+        let _ = self.used.insert(*client_ip, new_balance);
         Ok(bytes_to_add)
+    }
+
+    /// Compute the usage limit for any single client at the current point in time.
+    fn client_allowance(&self, client_ip: &IpAddr) -> u64 {
+        let num_clients = if self.used.contains_key(client_ip) {
+            self.used.len()
+        } else {
+            self.used.len() + 1
+        };
+        cmp::max(MIN_CLIENT_CAPACITY, SOFT_CAPACITY / num_clients as u64)
+    }
+
+    /// Clear out stale entries from `overcharged` when the given IP address's bucket is empty.
+    fn purge_overcharged(&mut self, client_ip: IpAddr) {
+        let overcharged = mem::replace(&mut self.overcharged, BTreeMap::new());
+        for (msg_id, (charge, ip)) in overcharged {
+            if ip != client_ip {
+                let _ = self.overcharged.insert(msg_id, (charge, ip));
+            }
+        }
+    }
+
+    /// Update a client's balance to compensate for initial over-counting.
+    ///
+    /// When a request is made, clients are charged at the maximum size of the data
+    /// being requested. This method compensates the client for the over-counting by
+    /// crediting them the difference between the maximum and the actual size of the response.
+    pub fn apply_refund_for_response(
+        &mut self,
+        client_ip: &IpAddr,
+        msg_id: &MessageId,
+        part_count: u32,
+        part_index: u32,
+        payload: &[u8],
+    ) -> Option<u64> {
+        use Response::*;
+
+        // Check that this is a message ID we overcharged for.
+        if !self.overcharged.contains_key(msg_id) {
+            return None;
+        }
+
+        // Check that the response isn't a single-part response that we never overcharged for.
+        // This prevents a malicious client from gaming the system: for example, by
+        // preceding a GET with a PUT with the same `msg_id`.
+        if part_count == 1 && part_index == 0 {
+            match serialisation::deserialise::<UserMessage>(payload) {
+                Ok(UserMessage::Response(response)) => {
+                    match response {
+                        // We overcharged for these, so we let them through.
+                        GetIData { .. } |
+                        GetAccountInfo { .. } |
+                        GetMData { .. } |
+                        GetMDataVersion { .. } |
+                        GetMDataShell { .. } |
+                        ListMDataEntries { .. } |
+                        ListMDataKeys { .. } |
+                        ListMDataValues { .. } |
+                        GetMDataValue { .. } |
+                        ListMDataPermissions { .. } |
+                        ListMDataUserPermissions { .. } |
+                        ListAuthKeysAndVersion { .. } => (),
+                        // These are responses to requests we didn't overcharge for.
+                        // All these responses *should* fit in a single part.
+                        PutIData { .. } |
+                        PutMData { .. } |
+                        MutateMDataEntries { .. } |
+                        SetMDataUserPermissions { .. } |
+                        DelMDataUserPermissions { .. } |
+                        ChangeMDataOwner { .. } |
+                        InsAuthKey { .. } |
+                        DelAuthKey { .. } => return None,
+                    }
+                }
+                _ => return None,
+            }
+        }
+
+        let amount_charged = match self.overcharged.remove(msg_id) {
+            Some((amount, _)) => amount,
+            None => return None,
+        };
+
+        let deduction = amount_charged.saturating_sub(part_count as u64 * MAX_PART_LEN as u64);
+
+        self.used.get_mut(client_ip).map(|used| {
+            *used = used.saturating_sub(deduction);
+            deduction
+        })
     }
 
     fn update(&mut self) {
@@ -173,73 +287,155 @@ impl RateLimiter {
             leaked_units -= quota;
             if used > quota {
                 let _ = self.used.insert(client, used - quota);
+            } else {
+                self.purge_overcharged(client);
             }
         }
+    }
+
+    #[cfg(feature = "use-mock-crust")]
+    pub fn usage_map(&self) -> &BTreeMap<IpAddr, u64> {
+        &self.used
     }
 }
 
 #[cfg(all(test, feature = "use-mock-crust"))]
 mod tests {
     use super::*;
+    use data::ImmutableData;
     use fake_clock::FakeClock;
     use maidsafe_utilities::SeededRng;
-    use messages::{Request, Response};
-    use rand::{self, Rng};
+    use messages::{MessageContent, Request, Response};
+    use rand::Rng;
     use std::collections::BTreeMap;
     use tiny_keccak::sha3_256;
     use types::MessageId;
 
-    static LARGE_MESSAGE: [u8; CLIENT_CAPACITY as usize] = [0; CLIENT_CAPACITY as usize];
-    static SMALL_MESSAGE: [u8; 1] = [0];
-
-    fn assert_large_message_can_be_added(rate_limiter: &mut RateLimiter, client: &IpAddr) {
-        check_message_addition(rate_limiter, client, true, true)
+    fn huge_message_can_be_added(rate_limiter: &mut RateLimiter, client: &IpAddr) -> bool {
+        sized_message_can_be_added(SOFT_CAPACITY, rate_limiter, client)
     }
 
-    fn assert_large_message_cannot_be_added(rate_limiter: &mut RateLimiter, client: &IpAddr) {
-        check_message_addition(rate_limiter, client, true, false)
+    fn huge_message_cannot_be_added(rate_limiter: &mut RateLimiter, client: &IpAddr) -> bool {
+        sized_message_cannot_be_added(SOFT_CAPACITY, rate_limiter, client)
     }
 
-    fn assert_small_message_can_be_added(rate_limiter: &mut RateLimiter, client: &IpAddr) {
-        check_message_addition(rate_limiter, client, false, true)
+    fn large_message_can_be_added(rate_limiter: &mut RateLimiter, client: &IpAddr) -> bool {
+        sized_message_can_be_added(MIN_CLIENT_CAPACITY, rate_limiter, client)
     }
 
-    fn assert_small_message_cannot_be_added(rate_limiter: &mut RateLimiter, client: &IpAddr) {
-        check_message_addition(rate_limiter, client, false, false)
+    fn large_message_cannot_be_added(rate_limiter: &mut RateLimiter, client: &IpAddr) -> bool {
+        sized_message_cannot_be_added(MIN_CLIENT_CAPACITY, rate_limiter, client)
     }
 
+    fn small_message_can_be_added(rate_limiter: &mut RateLimiter, client: &IpAddr) -> bool {
+        sized_message_can_be_added(1, rate_limiter, client)
+    }
+
+    fn small_message_cannot_be_added(rate_limiter: &mut RateLimiter, client: &IpAddr) -> bool {
+        sized_message_cannot_be_added(1, rate_limiter, client)
+    }
+
+    fn sized_message_can_be_added(
+        size: u64,
+        rate_limiter: &mut RateLimiter,
+        client: &IpAddr,
+    ) -> bool {
+        let content = vec![0; size as usize];
+        check_message_addition(rate_limiter, client, &content, true)
+    }
+
+    fn sized_message_cannot_be_added(
+        size: u64,
+        rate_limiter: &mut RateLimiter,
+        client: &IpAddr,
+    ) -> bool {
+        let content = vec![0; size as usize];
+        check_message_addition(rate_limiter, client, &content, false)
+    }
+
+    // Return `true` if the outcome is as expected.
     fn check_message_addition(
         rate_limiter: &mut RateLimiter,
         client: &IpAddr,
-        large_msg: bool,
+        payload: &[u8],
         should_succeed: bool,
-    ) {
-        let payload: &[u8] = if large_msg {
-            &LARGE_MESSAGE
-        } else {
-            &SMALL_MESSAGE
-        };
+    ) -> bool {
         let hash = sha3_256(payload);
-        match rate_limiter.add_message(client, &hash, 2, 1, payload) {
+        let msg_id = MessageId::new();
+        match rate_limiter.add_message(client, &hash, &msg_id, 2, 1, payload) {
             Err(RoutingError::ExceedsRateLimit(returned_hash)) => {
                 if should_succeed {
-                    panic!("unexpected result");
+                    false
                 } else {
                     assert_eq!(hash, returned_hash);
+                    true
                 }
             }
             Ok(returned_len) => {
                 if should_succeed {
                     assert_eq!(payload.len() as u64, returned_len);
+                    true
                 } else {
-                    panic!("unexpected result");
+                    false
                 }
             }
-            _ => panic!("unexpected result"),
+            _ => false,
         }
     }
 
-    /// Checks that a single client cannot exceed its individual limit and that its throughput is
+    // Add a single `UserMessagePart` for a GET request to the rate limiter.
+    fn add_user_msg_part(
+        rate_limiter: &mut RateLimiter,
+        client: &IpAddr,
+        msg: &MessageContent,
+    ) -> Result<u64, RoutingError> {
+        if let MessageContent::UserMessagePart {
+            ref hash,
+            ref msg_id,
+            part_count,
+            part_index,
+            ref payload,
+            ..
+        } = *msg
+        {
+            rate_limiter.add_message(client, hash, msg_id, part_count, part_index, payload)
+        } else {
+            panic!("message is not a UserMessagePart: {:?}", msg);
+        }
+    }
+
+    // Send a single `UserMessagePart` for a response to the rate limiter for refunding.
+    fn refund_user_msg_part(
+        rate_limiter: &mut RateLimiter,
+        client: &IpAddr,
+        msg: &MessageContent,
+    ) -> Option<u64> {
+        if let MessageContent::UserMessagePart {
+            ref msg_id,
+            part_count,
+            part_index,
+            ref payload,
+            ..
+        } = *msg
+        {
+            rate_limiter.apply_refund_for_response(client, msg_id, part_count, part_index, payload)
+        } else {
+            panic!("message is not a UserMessagePart: {:?}", msg);
+        }
+    }
+
+    // Generate a single `UserMessagePart` for a random `GetIData` request.
+    fn random_payload<R: Rng>(rng: &mut R) -> MessageContent {
+        let user_message = UserMessage::Request(Request::GetIData {
+            name: rng.gen(),
+            msg_id: MessageId::new(),
+        });
+        let message_parts = unwrap!(user_message.to_parts(0));
+        assert_eq!(message_parts.len(), 1);
+        message_parts[0].clone()
+    }
+
+    /// Checks that a single client cannot exceed the proxy's soft limit and that its throughput is
     /// the full rate of the rate-limiter.
     #[test]
     fn single_client() {
@@ -247,23 +443,150 @@ mod tests {
         let client = IpAddr::from([0, 0, 0, 0]);
 
         // Consume full allowance.
-        assert_large_message_can_be_added(&mut rate_limiter, &client);
+        assert!(huge_message_can_be_added(&mut rate_limiter, &client));
 
         // Check client can't add any more requests just now.
-        assert_small_message_cannot_be_added(&mut rate_limiter, &client);
+        assert!(small_message_cannot_be_added(&mut rate_limiter, &client));
 
         // Advance the clock 1ms and check the small request can now be added, but the large request
         // is still disallowed.
         FakeClock::advance_time(1);
-        assert_small_message_can_be_added(&mut rate_limiter, &client);
-        assert_large_message_cannot_be_added(&mut rate_limiter, &client);
+        assert!(small_message_can_be_added(&mut rate_limiter, &client));
+        assert!(huge_message_cannot_be_added(&mut rate_limiter, &client));
 
         // Advance the clock enough to allow the client's entry to fully drain away. (No need to
         // round up the calculation here as we've already advanced by 1ms which is equivalent to
         // rounding up the millisecond calculation).
-        let wait_millis = CLIENT_CAPACITY * 1000 / RATE as u64;
+        let wait_millis = SOFT_CAPACITY * 1000 / RATE as u64;
         FakeClock::advance_time(wait_millis);
-        assert_large_message_can_be_added(&mut rate_limiter, &client);
+        assert!(huge_message_can_be_added(&mut rate_limiter, &client));
+    }
+
+    #[test]
+    fn overcharge_correction() {
+        let mut rate_limiter = RateLimiter::new(false);
+        let client = IpAddr::from([0, 0, 0, 0]);
+
+        let data_size = SeededRng::new().gen_range(1, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES + 1);
+        let data = ImmutableData::new(vec![0; data_size as usize]);
+        let msg_id = MessageId::new();
+
+        let request = UserMessage::Request(Request::GetIData {
+            name: *data.name(),
+            msg_id,
+        });
+        let request_parts = unwrap!(request.to_parts(0));
+
+        let charge = add_user_msg_part(&mut rate_limiter, &client, &request_parts[0]);
+        assert_eq!(unwrap!(charge), MAX_IMMUTABLE_DATA_SIZE_IN_BYTES);
+
+        let response = UserMessage::Response(Response::GetIData {
+            res: Ok(data),
+            msg_id,
+        });
+        let response_parts = unwrap!(response.to_parts(0));
+
+        let mut single_deduction = None;
+
+        for part in &response_parts {
+            if let Some(deduction) = refund_user_msg_part(&mut rate_limiter, &client, part) {
+                if single_deduction.is_none() {
+                    single_deduction = Some(deduction);
+                } else {
+                    panic!("deduction was applied more than once!");
+                }
+            }
+        }
+        let expected_deduction = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES -
+            (response_parts.len() * MAX_PART_LEN) as u64;
+        assert_eq!(single_deduction, Some(expected_deduction));
+    }
+
+    #[test]
+    fn prevent_msg_id_reuse_attack() {
+        let mut rate_limiter = RateLimiter::new(false);
+        let client = IpAddr::from([0, 0, 0, 0]);
+
+        // Message ID used by both the put and the get.
+        let msg_id = MessageId::new();
+        let put_data = ImmutableData::new(vec![0; 4]);
+        let get_data = ImmutableData::new(vec![1; 10 * MAX_PART_LEN]);
+
+        let put_request = UserMessage::Request(Request::PutIData {
+            data: put_data,
+            msg_id,
+        });
+        let put_request_parts = unwrap!(put_request.to_parts(0));
+        let put_response = UserMessage::Response(Response::PutIData {
+            res: Ok(()),
+            msg_id,
+        });
+        let put_response_parts = unwrap!(put_response.to_parts(0));
+        let get_request = UserMessage::Request(Request::GetIData {
+            name: *get_data.name(),
+            msg_id,
+        });
+        let get_request_parts = unwrap!(get_request.to_parts(0));
+        let get_response = UserMessage::Response(Response::GetIData {
+            res: Ok(get_data),
+            msg_id,
+        });
+        let get_response_parts = unwrap!(get_response.to_parts(0));
+
+        // Put request hits the rate limiter first.
+        assert!(
+            add_user_msg_part(
+                &mut rate_limiter,
+                &client,
+                unwrap!(put_request_parts.first()),
+            ).is_ok()
+        );
+        // Then the get request.
+        assert!(
+            add_user_msg_part(
+                &mut rate_limiter,
+                &client,
+                unwrap!(get_request_parts.first()),
+            ).is_ok()
+        );
+        // Now if the put response comes back, the proxy *should not* apply a refund for it,
+        // even though it has the same message ID as the get that we just overcharged for.
+        assert!(
+            refund_user_msg_part(
+                &mut rate_limiter,
+                &client,
+                unwrap!(put_response_parts.first()),
+            ).is_none()
+        );
+        // The refund should still correctly be applied for the get response.
+        assert!(
+            refund_user_msg_part(
+                &mut rate_limiter,
+                &client,
+                unwrap!(get_response_parts.first()),
+            ).is_some()
+        );
+    }
+
+    // Check that a duplicate get request (same msg ID) is rejected.
+    #[test]
+    fn reject_duplicate_get() {
+        let mut rate_limiter = RateLimiter::new(false);
+        let client = IpAddr::from([0, 0, 0, 0]);
+        let mut rng = SeededRng::new();
+
+        let msg_id = MessageId::new();
+        let name = rng.gen();
+
+        let request = UserMessage::Request(Request::GetIData { name, msg_id });
+        let request_parts = unwrap!(request.to_parts(0));
+
+        assert!(
+            add_user_msg_part(&mut rate_limiter, &client, unwrap!(request_parts.first())).is_ok()
+        );
+        assert!(
+            add_user_msg_part(&mut rate_limiter, &client, unwrap!(request_parts.first())).is_err()
+        );
     }
 
     /// Checks that a second client can add messages even when an initial one has hit its limit.
@@ -274,40 +597,46 @@ mod tests {
         let client1 = IpAddr::from([0, 0, 0, 0]);
         let client2 = IpAddr::from([1, 1, 1, 1]);
 
-        // Each client consumes their full allowance.
-        assert_large_message_can_be_added(&mut rate_limiter, &client1);
-        assert_large_message_can_be_added(&mut rate_limiter, &client2);
+        // First client can use up to SOFT_CAPACITY in one go.
+        assert!(sized_message_can_be_added(
+            SOFT_CAPACITY,
+            &mut rate_limiter,
+            &client1,
+        ));
+        // Second client can only put up to SOFT_CAPACITY / 2 in its first hit.
+        assert!(sized_message_can_be_added(
+            SOFT_CAPACITY / 2,
+            &mut rate_limiter,
+            &client2,
+        ));
 
-        // Check neither client can add any more requests just now.
-        assert_small_message_cannot_be_added(&mut rate_limiter, &client1);
-        assert_small_message_cannot_be_added(&mut rate_limiter, &client2);
+        // Neither can put a single byte after that.
+        assert!(small_message_cannot_be_added(&mut rate_limiter, &client1));
+        assert!(small_message_cannot_be_added(&mut rate_limiter, &client2));
 
-        // Advance the clock 1ms and check the small request can now be added by each client, but
-        // the large request is still disallowed.
+        // Advance the clock 1ms and check the small request can now be added by Client 2.
+        // Client 1 is still over its capacity.
         FakeClock::advance_time(1);
-        assert_small_message_can_be_added(&mut rate_limiter, &client1);
-        assert_small_message_can_be_added(&mut rate_limiter, &client2);
-        assert_large_message_cannot_be_added(&mut rate_limiter, &client1);
-        assert_large_message_cannot_be_added(&mut rate_limiter, &client2);
+        assert!(small_message_cannot_be_added(&mut rate_limiter, &client1));
+        assert!(small_message_can_be_added(&mut rate_limiter, &client2));
+        assert!(large_message_cannot_be_added(&mut rate_limiter, &client1));
+        assert!(large_message_cannot_be_added(&mut rate_limiter, &client2));
 
-        // Advance the clock enough to allow a single large request to drain away and check that
-        // both clients still cannot add a large request.
-        let wait_millis = CLIENT_CAPACITY * 1000 / RATE as u64;
+        // Advance the clock enough to allow SOFT_CAPACITY bytes to drain away.
+        // Now client 2 should be able to add another SOFT_CAPACITY / 2.
+        let wait_millis = (SOFT_CAPACITY * 1000) / RATE as u64;
         FakeClock::advance_time(wait_millis);
-        assert_large_message_cannot_be_added(&mut rate_limiter, &client1);
-        assert_large_message_cannot_be_added(&mut rate_limiter, &client2);
-
-        // Advance the clock by just less than the same amount again and check that neither client
-        // still cannot add a large request.
-        FakeClock::advance_time(wait_millis - 1);
-        assert_large_message_cannot_be_added(&mut rate_limiter, &client1);
-        assert_large_message_cannot_be_added(&mut rate_limiter, &client2);
-
-        // Advance the clock a final small amount and check that both clients can now add large
-        // requests.
-        FakeClock::advance_time(2);
-        assert_large_message_can_be_added(&mut rate_limiter, &client1);
-        assert_large_message_can_be_added(&mut rate_limiter, &client2);
+        assert!(sized_message_can_be_added(
+            SOFT_CAPACITY / 2,
+            &mut rate_limiter,
+            &client2,
+        ));
+        assert!(sized_message_cannot_be_added(
+            SOFT_CAPACITY / 2,
+            &mut rate_limiter,
+            &client1,
+        ));
+        assert!(small_message_can_be_added(&mut rate_limiter, &client1));
     }
 
     /// Checks that if two clients add messages with a delay between them, the rate-limiter's
@@ -316,72 +645,67 @@ mod tests {
     #[test]
     fn staggered_start() {
         let mut rate_limiter = RateLimiter::new(false);
-        let client1 = IpAddr::from([0, 0, 0, 0]);
-        let client2 = IpAddr::from([1, 1, 1, 1]);
 
-        // This is the time during which half of a large request will leak away. Assert this
-        // is the case by adding a large request, then waiting for two times `wait_millis` then
-        // trying to add a large request again.
-        let wait_millis = (CLIENT_CAPACITY * 500 / RATE as u64) + 1; // round up
-        assert_large_message_can_be_added(&mut rate_limiter, &client1);
+        // Saturate the rate limiter so that every client's cap is reduced to MIN_CLIENT_CAPACITY.
+        let num_clients = (SOFT_CAPACITY as f64 / MIN_CLIENT_CAPACITY as f64).ceil() as u64;
+
+        let clients: Vec<_> = (0..num_clients as u8)
+            .map(|i| IpAddr::from([i, i, i, i]))
+            .collect();
+
+        // All clients put a message with `MIN_CLIENT_CAPACITY` bytes.
+        for client in &clients {
+            assert!(large_message_can_be_added(&mut rate_limiter, client));
+        }
+
+        // We wait for most of each message to drain.
+        let wait_millis = (num_clients * MIN_CLIENT_CAPACITY * 900) / RATE as u64;
         FakeClock::advance_time(wait_millis);
-        assert_large_message_cannot_be_added(&mut rate_limiter, &client1);
+
+        // A client that arrives late should only be able to put one large message.
+        let late_client = IpAddr::from([255, 255, 255, 255]);
+        assert!(large_message_can_be_added(&mut rate_limiter, &late_client));
+        // And not a byte more.
+        assert!(small_message_cannot_be_added(
+            &mut rate_limiter,
+            &late_client,
+        ));
+
+        // None of the saturated clients should be able to put any more large messages.
+        for client in &clients {
+            assert!(large_message_cannot_be_added(&mut rate_limiter, client));
+        }
+
+        // Now we wait for the remaining part of each saturating client's message to drain.
+        let wait_millis = (num_clients + 2) * MIN_CLIENT_CAPACITY * 100 / RATE as u64;
         FakeClock::advance_time(wait_millis);
-        assert_large_message_can_be_added(&mut rate_limiter, &client1);
 
-        // Allow the rate-limiter to empty.
-        FakeClock::advance_time(2 * wait_millis);
+        // Now, the late client should only have had half its message drained but it should
+        // still be able to put another message because of the soft capacity.
+        assert!(large_message_can_be_added(&mut rate_limiter, &late_client));
 
-        // Client 1 adds a large message then after `wait_millis`, Client 2 does likewise.
-        assert_large_message_can_be_added(&mut rate_limiter, &client1);
-        FakeClock::advance_time(wait_millis);
-        assert_large_message_can_be_added(&mut rate_limiter, &client2);
-
-        // We wait for a further `wait_millis` then confirm that neither client can add a further
-        // large message at this stage (3/4 of the first message and 1/4 of the second message
-        // should have drained).
-        FakeClock::advance_time(wait_millis);
-        assert_large_message_cannot_be_added(&mut rate_limiter, &client1);
-        assert_large_message_cannot_be_added(&mut rate_limiter, &client2);
-
-        // After a further `wait_millis`, Client 1 should be able to add a new large message, but
-        // not Client 2 (the first message and 1/2 of the second message should have drained).
-        FakeClock::advance_time(wait_millis);
-        assert_large_message_can_be_added(&mut rate_limiter, &client1);
-        assert_large_message_cannot_be_added(&mut rate_limiter, &client2);
-
-        // After a further `3 * wait_millis`, the second and third messages should both have drained
-        // allowing both clients to add new large messages.
-        FakeClock::advance_time(3 * wait_millis);
-        assert_large_message_can_be_added(&mut rate_limiter, &client1);
-        assert_large_message_can_be_added(&mut rate_limiter, &client2);
+        // All of the initial clients should be able to put large messages again too.
+        for client in &clients {
+            assert!(large_message_can_be_added(&mut rate_limiter, client));
+        }
     }
 
     /// Checks that many clients can all add messages at the same rate.
     #[test]
     fn many_clients() {
         let mut rate_limiter = RateLimiter::new(false);
-        let num_clients = 100;
+        let num_clients = 50;
         let mut clients_and_counts = (0..num_clients)
             .map(|i| (IpAddr::from([i, i, i, i]), 0))
             .collect::<BTreeMap<_, _>>();
-        let payload = unwrap!(serialisation::serialise(
-            &UserMessage::Request(Request::GetIData {
-                name: rand::random(),
-                msg_id: MessageId::new(),
-            }),
-        ));
-        let hash = sha3_256(&payload);
-        let mut rng = SeededRng::thread_rng();
+        let mut rng = SeededRng::new();
 
         let start = FakeClock::now();
-        for _ in 0..500 {
+        for _ in 0..200 {
             // Each client tries to add a large request and increments its count on success.
             for (client, count) in &mut clients_and_counts {
-                if rate_limiter
-                    .add_message(client, &hash, 1, 0, &payload)
-                    .is_ok()
-                {
+                let payload = random_payload(&mut rng);
+                if add_user_msg_part(&mut rate_limiter, client, &payload).is_ok() {
                     *count += 1;
                 }
             }
@@ -403,36 +727,39 @@ mod tests {
     fn invalid_messages() {
         let mut rate_limiter = RateLimiter::new(false);
         let client = IpAddr::from([0, 0, 0, 0]);
+        let mut rng = SeededRng::new();
 
         // Parses with `SerialisationError::DeserialiseExtraBytes` error.
+        let mut msg_id = MessageId::new();
         let mut payload = vec![0; MAX_IMMUTABLE_DATA_SIZE_IN_BYTES as usize];
-        match rate_limiter.add_message(&client, &sha3_256(&payload), 1, 0, &payload) {
+        match rate_limiter.add_message(&client, &sha3_256(&payload), &msg_id, 1, 0, &payload) {
             Err(RoutingError::InvalidMessage) => {}
             _ => panic!("unexpected result"),
         }
 
         // Parses with other serialisation error and part count is 1.
         payload = vec![0];
-        match rate_limiter.add_message(&client, &sha3_256(&payload), 1, 0, &payload) {
+        match rate_limiter.add_message(&client, &sha3_256(&payload), &msg_id, 1, 0, &payload) {
             Err(RoutingError::InvalidMessage) => {}
             _ => panic!("unexpected result"),
         }
 
         // Parses successfully but claims to be part 1 of 2.
         let mut msg = UserMessage::Request(Request::GetIData {
-            name: rand::random(),
+            name: rng.gen(),
             msg_id: MessageId::new(),
         });
         payload = unwrap!(serialisation::serialise(&msg));
-        match rate_limiter.add_message(&client, &sha3_256(&payload), 2, 0, &payload) {
+        match rate_limiter.add_message(&client, &sha3_256(&payload), &msg_id, 2, 0, &payload) {
             Err(RoutingError::InvalidMessage) => {}
             _ => panic!("unexpected result"),
         }
 
         // Parses as a refresh request.
         msg = UserMessage::Request(Request::Refresh(vec![0], MessageId::new()));
+        msg_id = *msg.message_id();
         payload = unwrap!(serialisation::serialise(&msg));
-        match rate_limiter.add_message(&client, &sha3_256(&payload), 1, 0, &payload) {
+        match rate_limiter.add_message(&client, &sha3_256(&payload), &msg_id, 1, 0, &payload) {
             Err(RoutingError::InvalidMessage) => {}
             _ => panic!("unexpected result"),
         }
@@ -442,8 +769,9 @@ mod tests {
             res: Ok(()),
             msg_id: MessageId::new(),
         });
+        msg_id = *msg.message_id();
         payload = unwrap!(serialisation::serialise(&msg));
-        match rate_limiter.add_message(&client, &sha3_256(&payload), 1, 0, &payload) {
+        match rate_limiter.add_message(&client, &sha3_256(&payload), &msg_id, 1, 0, &payload) {
             Err(RoutingError::InvalidMessage) => {}
             _ => panic!("unexpected result"),
         }
