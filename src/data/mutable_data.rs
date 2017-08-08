@@ -17,6 +17,7 @@
 
 use client_error::{ClientError, EntryError};
 use maidsafe_utilities::serialisation;
+use rand::{Rand, Rng};
 use rust_sodium::crypto::sign::PublicKey;
 use std::collections::BTreeSet;
 use std::collections::btree_map::{BTreeMap, Entry};
@@ -141,6 +142,17 @@ impl PermissionSet {
             Action::Update => self.update,
             Action::Delete => self.delete,
             Action::ManagePermissions => self.manage_permissions,
+        }
+    }
+}
+
+impl Rand for PermissionSet {
+    fn rand<R: Rng>(rng: &mut R) -> PermissionSet {
+        PermissionSet {
+            insert: Rand::rand(rng),
+            update: Rand::rand(rng),
+            delete: Rand::rand(rng),
+            manage_permissions: Rand::rand(rng),
         }
     }
 }
