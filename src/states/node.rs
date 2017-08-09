@@ -532,17 +532,15 @@ impl Node {
             return;
         };
 
-        if peer_kind == CrustUser::Client {
-            if self.banned_client_ips.contains_key(&ip) {
-                warn!(
-                    "{:?} Client {:?} is trying to bootstrap on banned IP {}.",
-                    self,
-                    pub_id,
-                    ip
-                );
-                self.ban_and_disconnect_peer(&pub_id);
-                return;
-            }
+        if peer_kind == CrustUser::Client && self.banned_client_ips.contains_key(&ip) {
+            warn!(
+                "{:?} Client {:?} is trying to bootstrap on banned IP {}.",
+                self,
+                pub_id,
+                ip
+            );
+            self.ban_and_disconnect_peer(&pub_id);
+            return;
         }
         self.peer_mgr.insert_peer(Peer::new(
             pub_id,
@@ -1714,30 +1712,33 @@ impl Node {
             return Err(RoutingError::UnknownConnection(pub_id));
         };
 
-        let ip = if let Ok(ip) = self.crust_service.get_peer_ip_addr(&pub_id) {
-            ip
-        } else {
-            debug!(
-                "{:?} Can't get IP address of bootstrapper {:?}.",
-                self,
-                pub_id
-            );
-            self.disconnect_peer(&pub_id, None);
-            return Err(RoutingError::UnknownConnection(pub_id));
-        };
+        if peer_kind == CrustUser::Client {
+            let ip = self.crust_service.get_peer_ip_addr(&pub_id).map_err(
+                |err| {
+                    debug!(
+                        "{:?} Can't get IP address of bootstrapper {:?} : {:?}",
+                        self,
+                        pub_id,
+                        err
+                    );
+                    self.disconnect_peer(&pub_id, None);
+                    err
+                },
+            )?;
 
-        if peer_kind == CrustUser::Client && !self.peer_mgr.can_accept_client(ip) {
-            debug!(
-                "{:?} Client {:?} rejected: We cannot accept more clients.",
-                self,
-                pub_id
-            );
-            self.send_direct_message(
-                pub_id,
-                DirectMessage::BootstrapResponse(Err(BootstrapResponseError::ClientLimit)),
-            );
-            self.disconnect_peer(&pub_id, None);
-            return Ok(());
+            if !self.peer_mgr.can_accept_client(ip) {
+                debug!(
+                    "{:?} Client {:?} rejected: We cannot accept more clients.",
+                    self,
+                    pub_id
+                );
+                self.send_direct_message(
+                    pub_id,
+                    DirectMessage::BootstrapResponse(Err(BootstrapResponseError::ClientLimit)),
+                );
+                self.disconnect_peer(&pub_id, None);
+                return Ok(());
+            }
         }
 
         let ser_pub_id = serialisation::serialise(&pub_id)?;
