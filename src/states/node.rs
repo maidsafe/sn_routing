@@ -532,31 +532,15 @@ impl Node {
             return;
         };
 
-        if peer_kind == CrustUser::Client {
-            if self.banned_client_ips.contains_key(&ip) {
-                warn!(
-                    "{:?} Client {:?} is trying to bootstrap on banned IP {}.",
-                    self,
-                    pub_id,
-                    ip
-                );
-                self.ban_and_disconnect_peer(&pub_id);
-                return;
-            }
-            if !self.peer_mgr.can_accept_client(ip) {
-                debug!(
-                    "{:?} Client {:?} rejected: We cannot accept more clients.",
-                    self,
-                    pub_id
-                );
-                self.send_direct_message(
-                    pub_id,
-                    DirectMessage::BootstrapResponse(Err(BootstrapResponseError::ClientLimit)),
-                );
-                self.disconnect_peer(&pub_id, None);
-                let _ = self.dropped_clients.insert(pub_id, ());
-                return;
-            }
+        if peer_kind == CrustUser::Client && self.banned_client_ips.contains_key(&ip) {
+            warn!(
+                "{:?} Client {:?} is trying to bootstrap on banned IP {}.",
+                self,
+                pub_id,
+                ip
+            );
+            self.ban_and_disconnect_peer(&pub_id);
+            return;
         }
         self.peer_mgr.insert_peer(Peer::new(
             pub_id,
@@ -1715,6 +1699,8 @@ impl Node {
         signature: sign::Signature,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError> {
+        self.remove_expired_peers(outbox);
+
         let peer_kind = if let Some(peer) = self.peer_mgr.get_peer(&pub_id) {
             match *peer.state() {
                 PeerState::Bootstrapper { peer_kind, .. } => peer_kind,
@@ -1726,12 +1712,39 @@ impl Node {
             return Err(RoutingError::UnknownConnection(pub_id));
         };
 
+        if peer_kind == CrustUser::Client {
+            let ip = self.crust_service.get_peer_ip_addr(&pub_id).map_err(
+                |err| {
+                    debug!(
+                        "{:?} Can't get IP address of bootstrapper {:?} : {:?}",
+                        self,
+                        pub_id,
+                        err
+                    );
+                    self.disconnect_peer(&pub_id, None);
+                    err
+                },
+            )?;
+
+            if !self.peer_mgr.can_accept_client(ip) {
+                debug!(
+                    "{:?} Client {:?} rejected: We cannot accept more clients.",
+                    self,
+                    pub_id
+                );
+                self.send_direct_message(
+                    pub_id,
+                    DirectMessage::BootstrapResponse(Err(BootstrapResponseError::ClientLimit)),
+                );
+                self.disconnect_peer(&pub_id, None);
+                return Ok(());
+            }
+        }
+
         let ser_pub_id = serialisation::serialise(&pub_id)?;
         if !sign::verify_detached(&signature, &ser_pub_id, pub_id.signing_public_key()) {
             return Err(RoutingError::FailedSignature);
         }
-
-        self.remove_expired_peers(outbox);
 
         if !self.is_approved {
             debug!(
