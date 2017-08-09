@@ -83,7 +83,12 @@ impl ExampleClient {
         // Try to connect the client to the network. If it fails, it probably means
         // the network isn't fully formed yet, so we restart and try again.
         'outer: loop {
-            client = unwrap!(Client::new(sender.clone(), Some(full_id.clone()), None));
+            client = unwrap!(Client::new(
+                sender.clone(),
+                Some(full_id.clone()),
+                None,
+                Duration::from_secs(90),
+            ));
 
             for event in receiver.iter() {
                 match event {

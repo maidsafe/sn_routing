@@ -64,6 +64,7 @@ pub struct Stats {
     msg_node_approval: usize,
     msg_ack: usize,
 
+    pub msg_user_parts: u64,
     msg_put_idata: UserMessageStats,
     msg_get_idata: UserMessageStats,
     msg_get_mdata: UserMessageStats,
@@ -109,6 +110,10 @@ impl Stats {
             self.routes.resize(route + 1, 0);
         }
         self.routes[route] += 1;
+    }
+
+    pub fn increase_user_msg_part(&mut self) {
+        self.msg_user_parts = self.msg_user_parts.wrapping_add(1);
     }
 
     /// Increments the counter for the given user message.
@@ -321,7 +326,7 @@ impl Stats {
                   self.msg_node_approval,
                   self.msg_ack);
             info!(target: "routing_stats",
-                  "Stats - User (Request/Success/Failure) - \
+                  "Stats - User (total parts: {}) (Request/Success/Failure) - \
                    PutIData: {}, \
                    GetIData: {}, \
                    PutMData: {}, \
@@ -342,6 +347,7 @@ impl Stats {
                    DelAuthKey: {}, \
                    GetAccountInfo: {}, \
                    Refresh: {}",
+                  self.msg_user_parts,
                   self.msg_put_idata,
                   self.msg_get_idata,
                   self.msg_put_mdata,

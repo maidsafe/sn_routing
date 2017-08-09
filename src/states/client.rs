@@ -17,30 +17,31 @@
 
 use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 use {CrustEvent, Service};
-use ack_manager::{Ack, AckManager};
+use ack_manager::{Ack, AckManager, UnacknowledgedMessage};
 use action::Action;
 use error::{InterfaceError, RoutingError};
 use event::Event;
+#[cfg(feature = "use-mock-crust")]
+use fake_clock::FakeClock as Instant;
 use id::{FullId, PublicId};
-use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation;
 use messages::{DirectMessage, HopMessage, Message, MessageContent, RoutingMessage, SignedMessage,
                UserMessage, UserMessageCache};
 use outbox::EventBox;
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use routing_table::Authority;
-use sha3::Digest256;
 use state_machine::Transition;
 use stats::Stats;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
 use std::time::Duration;
+#[cfg(not(feature = "use-mock-crust"))]
+use std::time::Instant;
 use timer::Timer;
-use types::MessageId;
 use xor_name::XorName;
 
-/// Duration for which user message IDs are kept in the cache, in seconds.
-const MESSAGE_ID_CACHE_SECS: u64 = 300;
+/// Duration to wait before sending rate limit exceeded messages.
+pub const RATE_EXCEED_RETRY_MS: u64 = 800;
 
 /// A node connecting a user to the network, as opposed to a routing / data storage node.
 ///
@@ -55,7 +56,8 @@ pub struct Client {
     stats: Stats,
     timer: Timer,
     user_msg_cache: UserMessageCache,
-    outgoing_user_msg_hashes: LruCache<Digest256, MessageId>,
+    resend_buf: BTreeMap<u64, UnacknowledgedMessage>,
+    msg_expiry_dur: Duration,
 }
 
 impl Client {
@@ -67,6 +69,7 @@ impl Client {
         proxy_pub_id: PublicId,
         stats: Stats,
         timer: Timer,
+        msg_expiry_dur: Duration,
         outbox: &mut EventBox,
     ) -> Self {
         let client = Client {
@@ -81,9 +84,8 @@ impl Client {
             user_msg_cache: UserMessageCache::with_expiry_duration(
                 Duration::from_secs(USER_MSG_CACHE_EXPIRY_DURATION_SECS),
             ),
-            outgoing_user_msg_hashes: LruCache::with_expiry_duration(
-                Duration::from_secs(MESSAGE_ID_CACHE_SECS),
-            ),
+            resend_buf: Default::default(),
+            msg_expiry_dur: msg_expiry_dur,
         };
 
         debug!("{:?} State changed to client.", client);
@@ -154,6 +156,33 @@ impl Client {
     }
 
     fn handle_timeout(&mut self, token: u64) {
+        let proxy_pub_id = self.proxy_pub_id;
+
+        // Check if token corresponds to a rate limit exceeded msg.
+        if let Some(unacked_msg) = self.resend_buf.remove(&token) {
+            if unacked_msg.expires_at.map_or(false, |i| i < Instant::now()) {
+                return;
+            }
+
+            self.routing_msg_filter().remove_from_outgoing_filter(
+                &unacked_msg.routing_msg,
+                &proxy_pub_id,
+                unacked_msg.route,
+            );
+            if let Err(error) = self.send_routing_message_via_route(
+                unacked_msg.routing_msg,
+                unacked_msg.route,
+                unacked_msg.expires_at,
+            )
+            {
+                debug!("{:?} Failed to send message: {:?}", self, error);
+            } else {
+                self.stats.increase_user_msg_part();
+            }
+            return;
+        }
+
+        // Check if token corresponds to an unacknowledged msg.
         self.resend_unacknowledged_timed_out_msgs(token)
     }
 
@@ -165,7 +194,7 @@ impl Client {
     ) -> Transition {
         let transition = match serialisation::deserialise(&bytes) {
             Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, pub_id, outbox),
-            Ok(Message::Direct(direct_msg)) => self.handle_direct_message(direct_msg, outbox),
+            Ok(Message::Direct(direct_msg)) => self.handle_direct_message(direct_msg),
             Ok(message) => {
                 debug!("{:?} Unhandled new message: {:?}", self, message);
                 Ok(Transition::Stay)
@@ -221,12 +250,13 @@ impl Client {
     fn handle_direct_message(
         &mut self,
         direct_msg: DirectMessage,
-        outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
-        if let DirectMessage::ProxyRateLimitExceeded { user_msg_hash, ack } = direct_msg {
-            self.ack_mgr.receive(ack);
-            if let Some(msg_id) = self.outgoing_user_msg_hashes.remove(&user_msg_hash) {
-                outbox.send_event(Event::ProxyRateLimitExceeded(msg_id));
+        if let DirectMessage::ProxyRateLimitExceeded { ack } = direct_msg {
+            if let Some(unack_msg) = self.ack_mgr.remove(&ack) {
+                let token = self.timer().schedule(
+                    Duration::from_millis(RATE_EXCEED_RETRY_MS),
+                );
+                let _ = self.resend_buf.insert(token, unack_msg);
             } else {
                 debug!(
                     "{:?} Got ProxyRateLimitExceeded, but no corresponding request found",
@@ -264,6 +294,7 @@ impl Client {
                     routing_msg.src,
                     routing_msg.dst
                 );
+                self.stats.increase_user_msg_part();
                 if let Some(msg) = self.user_msg_cache.add(
                     hash,
                     part_count,
@@ -298,14 +329,17 @@ impl Client {
         priority: u8,
     ) -> Result<(), RoutingError> {
         self.stats.count_user_message(&user_msg);
-        let (hash, parts) = user_msg.to_parts(priority)?;
+        let parts = user_msg.to_parts(priority)?;
+        let msg_expiry_dur = self.msg_expiry_dur;
         for part in parts {
-            self.send_routing_message(src, dst, part)?;
+            self.send_routing_message_with_expiry(
+                src,
+                dst,
+                part,
+                Some(Instant::now() + msg_expiry_dur),
+            )?;
+            self.stats.increase_user_msg_part();
         }
-        let _ = self.outgoing_user_msg_hashes.insert(
-            hash,
-            *user_msg.message_id(),
-        );
         Ok(())
     }
 }
@@ -367,7 +401,8 @@ impl Bootstrapped for Client {
                 unacked_msg
             );
 
-            if unacked_msg.route as usize == self.min_section_size {
+            let msg_expired = unacked_msg.expires_at.map_or(false, |i| i < Instant::now());
+            if msg_expired || unacked_msg.route as usize == self.min_section_size {
                 debug!(
                     "{:?} Message unable to be acknowledged - giving up. {:?}",
                     self,
@@ -377,10 +412,12 @@ impl Bootstrapped for Client {
             } else if let Err(error) = self.send_routing_message_via_route(
                 unacked_msg.routing_msg,
                 unacked_msg.route,
+                unacked_msg.expires_at,
             )
             {
                 debug!("{:?} Failed to send message: {:?}", self, error);
             }
+            // Resend a msg part on ack time out doesn't count in stats.
         }
     }
 
@@ -388,6 +425,7 @@ impl Bootstrapped for Client {
         &mut self,
         routing_msg: RoutingMessage,
         route: u8,
+        expires_at: Option<Instant>,
     ) -> Result<(), RoutingError> {
         self.stats.count_route(route);
 
@@ -418,7 +456,7 @@ impl Bootstrapped for Client {
         let signed_msg = SignedMessage::new(routing_msg, self.full_id(), vec![])?;
 
         let proxy_pub_id = self.proxy_pub_id;
-        if self.add_to_pending_acks(signed_msg.routing_message(), route) &&
+        if self.add_to_pending_acks(signed_msg.routing_message(), route, expires_at) &&
             !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_pub_id, route)
         {
             let bytes = self.to_hop_bytes(
@@ -445,6 +483,10 @@ impl Bootstrapped for Client {
 impl Client {
     pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
         self.timer.get_timed_out_tokens()
+    }
+
+    pub fn get_user_msg_parts_count(&self) -> u64 {
+        self.stats.msg_user_parts
     }
 }
 

@@ -26,6 +26,8 @@ use crust::{ConnectionInfoResult, CrustError, CrustUser};
 use cumulative_own_section_merge::CumulativeOwnSectionMerge;
 use error::{BootstrapResponseError, InterfaceError, RoutingError};
 use event::Event;
+#[cfg(feature = "use-mock-crust")]
+use fake_clock::FakeClock as Instant;
 use id::{FullId, PublicId};
 use itertools::Itertools;
 use log::LogLevel;
@@ -57,6 +59,8 @@ use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
 use std::net::IpAddr;
 use std::time::Duration;
+#[cfg(not(feature = "use-mock-crust"))]
+use std::time::Instant;
 use timer::Timer;
 use tunnels::Tunnels;
 use types::{MessageId, RoutingActionSender};
@@ -1062,7 +1066,6 @@ impl Node {
                 self.send_direct_message(
                     pub_id,
                     DirectMessage::ProxyRateLimitExceeded {
-                        user_msg_hash: hash,
                         ack: Ack::compute(hop_msg.content.routing_message())?,
                     },
                 );
@@ -1331,6 +1334,7 @@ impl Node {
              },
              src,
              dst) => {
+                self.stats.increase_user_msg_part();
                 if let Some(msg) = self.user_msg_cache.add(
                     hash,
                     part_count,
@@ -3217,7 +3221,8 @@ impl Node {
         priority: u8,
     ) -> Result<(), RoutingError> {
         self.stats.count_user_message(&user_msg);
-        for part in user_msg.to_parts(priority)?.1 {
+        for part in user_msg.to_parts(priority)? {
+            self.stats.increase_user_msg_part();
             self.send_routing_message(src, dst, part)?;
         }
         Ok(())
@@ -3965,6 +3970,10 @@ impl Node {
     pub fn has_unnormalised_routing_conn(&self, excludes: &BTreeSet<XorName>) -> bool {
         self.peer_mgr.has_unnormalised_routing_conn(excludes)
     }
+
+    pub fn get_user_msg_parts_count(&self) -> u64 {
+        self.stats.msg_user_parts
+    }
 }
 
 impl Bootstrapped for Node {
@@ -3983,6 +3992,7 @@ impl Bootstrapped for Node {
         &mut self,
         routing_msg: RoutingMessage,
         route: u8,
+        expires_at: Option<Instant>,
     ) -> Result<(), RoutingError> {
         if !self.in_authority(&routing_msg.src) {
             trace!(
@@ -3992,7 +4002,7 @@ impl Bootstrapped for Node {
             );
             return Ok(());
         }
-        if !self.add_to_pending_acks(&routing_msg, route) {
+        if !self.add_to_pending_acks(&routing_msg, route, expires_at) {
             debug!(
                 "{:?} already received an ack for {:?} - so not resending it.",
                 self,
