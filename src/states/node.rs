@@ -739,7 +739,7 @@ impl Node {
                     outbox,
                 );
             }
-            TunnelRequest(dst_id) => self.handle_tunnel_request(pub_id, dst_id),
+            TunnelRequest(dst_id) => self.handle_tunnel_request(pub_id, dst_id, outbox),
             TunnelSuccess(dst_id) => self.handle_tunnel_success(pub_id, dst_id, outbox),
             TunnelSelect(dst_id) => self.handle_tunnel_select(pub_id, dst_id),
             TunnelClosed(dst_id) => self.handle_tunnel_closed(pub_id, dst_id, outbox),
@@ -2236,6 +2236,7 @@ impl Node {
             dst,
             their_connection_info,
             message_id,
+            true,
         ) {
             Ok(Ready(our_info, their_info)) => {
                 debug!(
@@ -2315,6 +2316,7 @@ impl Node {
             dst,
             their_connection_info,
             message_id,
+            false,
         ) {
             Ok(Ready(our_info, their_info)) => {
                 trace!(
@@ -2348,7 +2350,8 @@ impl Node {
     }
 
     /// Handles a request by `src_id` to act as a tunnel connecting it with `dst_id`.
-    fn handle_tunnel_request(&mut self, srd_id: PublicId, dst_id: PublicId) {
+    fn handle_tunnel_request(&mut self, srd_id: PublicId, dst_id: PublicId, outbox: &mut EventBox) {
+        self.remove_expired_peers(outbox);
         if self.peer_mgr.can_tunnel_for(&srd_id, &dst_id) {
             if let Some((id0, id1)) = self.tunnels.consider_clients(srd_id, dst_id) {
                 debug!(
@@ -2376,6 +2379,7 @@ impl Node {
         dst_id: PublicId,
         outbox: &mut EventBox,
     ) {
+        self.remove_expired_peers(outbox);
         if let Some(current_tunnel_id) = self.tunnels.tunnel_for(&dst_id) {
             if *current_tunnel_id == tunnel_id {
                 return; // duplicate `TunnelSuccess`
