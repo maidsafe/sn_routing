@@ -29,6 +29,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::net::IpAddr;
 use std::ops::{Deref, DerefMut};
 use std::sync::mpsc::{RecvError, TryRecvError};
+use std::time::Duration;
 
 // Various utilities. Since this is all internal stuff we're a bit lax about the doc.
 #[allow(missing_docs)]
@@ -39,6 +40,9 @@ const BALANCED_POLLING: bool = true;
 // Maximum number of times to try and poll in a loop.  This is several orders higher than the
 // anticipated upper limit for any test, and if hit is likely to indicate an infinite loop.
 const MAX_POLL_CALLS: usize = 1000;
+
+// Duration clients expect a response by.
+const CLIENT_MSG_EXPIRY_DUR_SECS: u64 = 90;
 
 // -----  Random number generation  -----
 
@@ -257,12 +261,34 @@ impl TestClient {
         endpoint: Option<Endpoint>,
         full_id: FullId,
     ) -> Self {
+        let duration = Duration::from_secs(CLIENT_MSG_EXPIRY_DUR_SECS);
+        Self::new_impl(network, bootstrap_config, endpoint, full_id, duration)
+    }
+
+    pub fn new_with_expire_duration(
+        network: &Network<PublicId>,
+        bootstrap_config: Option<BootstrapConfig>,
+        endpoint: Option<Endpoint>,
+        duration: Duration,
+    ) -> Self {
+        let full_id = FullId::new();
+        Self::new_impl(network, bootstrap_config, endpoint, full_id, duration)
+    }
+
+    fn new_impl(
+        network: &Network<PublicId>,
+        bootstrap_config: Option<BootstrapConfig>,
+        endpoint: Option<Endpoint>,
+        full_id: FullId,
+        duration: Duration,
+    ) -> Self {
         let handle = network.new_service_handle(bootstrap_config.clone(), endpoint);
         let client = mock_crust::make_current(&handle, || {
             unwrap!(Client::new(
                 Some(full_id.clone()),
                 bootstrap_config,
                 create_config(network),
+                duration,
             ))
         });
 

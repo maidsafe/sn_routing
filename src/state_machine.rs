@@ -223,6 +223,14 @@ impl State {
             _ => false,
         }
     }
+
+    pub fn get_user_msg_parts_count(&self) -> u64 {
+        match *self {
+            State::Node(ref state) => state.get_user_msg_parts_count(),
+            State::Client(ref state) => state.get_user_msg_parts_count(),
+            _ => 0,
+        }
+    }
 }
 
 /// Enum returned from many message handlers

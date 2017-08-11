@@ -16,10 +16,13 @@
 // relating to use of the SAFE Network Software.
 
 use super::{MIN_SECTION_SIZE, TestClient, TestNode, create_connected_clients,
-            create_connected_nodes, poll_all};
+            create_connected_nodes, poll_all, poll_and_resend};
 use rand::Rng;
-use routing::{Authority, BootstrapConfig, Event, EventStream, FullId, MessageId, Request};
+use routing::{Authority, BootstrapConfig, Event, EventStream, FullId, ImmutableData,
+              MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MessageId, Request};
 use routing::mock_crust::Network;
+use routing::rate_limiter_consts::MAX_PARTS;
+use std::time::Duration;
 
 /// Connect a client to the network then send an invalid message.
 /// Expect the client will be disconnected and banned;
@@ -117,4 +120,98 @@ fn reconnect_disconnected_client() {
     ));
     let _ = poll_all(&mut nodes, &mut clients);
     expect_next_event!(unwrap!(clients.last_mut()), Event::Connected);
+}
+
+
+/// Confirming the number of user message parts being sent in case of exceeding limit.
+#[test]
+fn resend_parts_on_exceeding_limit() {
+    let network = Network::new(MIN_SECTION_SIZE, None);
+    let mut rng = network.new_rng();
+    let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE);
+    let mut clients = create_connected_clients(&network, &mut nodes, 1);
+
+    let mut data_vec = vec![
+        ImmutableData::new(
+            rng.gen_iter()
+                .take((MAX_IMMUTABLE_DATA_SIZE_IN_BYTES / 2) as usize)
+                .collect()
+        ),
+    ];
+    data_vec.push(ImmutableData::new(
+        rng.gen_iter()
+            .take(MAX_IMMUTABLE_DATA_SIZE_IN_BYTES as usize)
+            .collect(),
+    ));
+
+    for data in data_vec {
+        let msg_id = MessageId::new();
+        let dst = Authority::NaeManager(*data.name());
+        unwrap!(clients[0].inner.put_idata(dst, data, msg_id));
+    }
+    poll_and_resend(&mut nodes, &mut clients);
+
+    // `MAX_PARTS / 2` parts will be resent from client.
+    let expect_sent_parts = (2 * MAX_PARTS) as u64;
+    assert_eq!(
+        clients[0].inner.get_user_msg_parts_count(),
+        expect_sent_parts
+    );
+
+    // Node shall not receive any duplicated parts.
+    let expect_rcv_parts = (MAX_PARTS + MAX_PARTS / 2) as u64;
+    for node in nodes.iter() {
+        assert_eq!(node.inner.get_user_msg_parts_count(), expect_rcv_parts);
+    }
+}
+
+/// User message expired.
+#[test]
+fn resend_over_load() {
+    let network = Network::new(MIN_SECTION_SIZE, None);
+    let mut rng = network.new_rng();
+    let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE);
+
+    let config = Some(BootstrapConfig::with_contacts(
+        &[nodes[0].handle.endpoint()],
+    ));
+    let mut clients =
+        vec![
+            TestClient::new_with_expire_duration(&network, config, None, Duration::from_secs(10)),
+        ];
+    let _ = poll_all(&mut nodes, &mut clients);
+    expect_next_event!(unwrap!(clients.last_mut()), Event::Connected);
+
+    let data_vec: Vec<_> = (0..2)
+        .map(|_| {
+            ImmutableData::new(
+                rng.gen_iter()
+                    .take(MAX_IMMUTABLE_DATA_SIZE_IN_BYTES as usize)
+                    .collect(),
+            )
+        })
+        .collect();
+    for data in data_vec {
+        let msg_id = MessageId::new();
+        let dst = Authority::NaeManager(*data.name());
+        unwrap!(clients[0].inner.put_idata(dst, data, msg_id));
+    }
+    poll_and_resend(&mut nodes, &mut clients);
+
+    // `poll_and_resend` advance clock by 20 seconds (`ACK_TIME_OUT`), hence the message is expired
+    // when handling the timeout for re-sending parts.
+    let expect_sent_parts = (2 * MAX_PARTS) as u64;
+    assert_eq!(
+        clients[0].inner.get_user_msg_parts_count(),
+        expect_sent_parts
+    );
+
+    // Node shall not receive any re-sent parts.
+    let expect_rcv_parts = MAX_PARTS as u64;
+    for node in nodes.iter() {
+        assert_eq!(node.inner.get_user_msg_parts_count(), expect_rcv_parts);
+    }
+
+    // Routing client will not send any notification regarding this expiration.
+    assert!(clients[0].inner.try_next_ev().is_err());
 }

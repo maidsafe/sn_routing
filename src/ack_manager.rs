@@ -16,6 +16,8 @@
 // relating to use of the SAFE Network Software.
 
 use error::RoutingError;
+#[cfg(feature = "use-mock-crust")]
+use fake_clock::FakeClock as Instant;
 use maidsafe_utilities::serialisation;
 use message_filter::MessageFilter;
 use messages::RoutingMessage;
@@ -23,6 +25,8 @@ use sha3;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::time::Duration;
+#[cfg(not(feature = "use-mock-crust"))]
+use std::time::Instant;
 use tiny_keccak::sha3_256;
 
 /// Time (in seconds) after which a message is resent due to being unacknowledged by recipient.
@@ -36,6 +40,7 @@ pub struct UnacknowledgedMessage {
     pub routing_msg: RoutingMessage,
     pub route: u8,
     pub timer_token: u64,
+    pub expires_at: Option<Instant>,
 }
 
 pub struct AckManager {
@@ -102,6 +107,11 @@ impl AckManager {
         unacked_msg.route += 1;
 
         Some((unacked_msg, timed_out_ack))
+    }
+
+    // Removes a pending `UnacknowledgedMessage` and returns the same if found.
+    pub fn remove(&mut self, ack: &Ack) -> Option<UnacknowledgedMessage> {
+        self.pending.remove(ack)
     }
 }
 

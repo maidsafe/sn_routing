@@ -18,6 +18,8 @@
 use super::Base;
 use ack_manager::{ACK_TIMEOUT_SECS, Ack, AckManager, UnacknowledgedMessage};
 use error::RoutingError;
+#[cfg(feature = "use-mock-crust")]
+use fake_clock::FakeClock as Instant;
 use id::PublicId;
 use maidsafe_utilities::serialisation;
 use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage};
@@ -25,6 +27,8 @@ use routing_message_filter::RoutingMessageFilter;
 use routing_table::Authority;
 use std::collections::BTreeSet;
 use std::time::Duration;
+#[cfg(not(feature = "use-mock-crust"))]
+use std::time::Instant;
 use timer::Timer;
 use xor_name::XorName;
 
@@ -38,6 +42,7 @@ pub trait Bootstrapped: Base {
         &mut self,
         routing_msg: RoutingMessage,
         route: u8,
+        expires_at: Option<Instant>,
     ) -> Result<(), RoutingError>;
 
     fn routing_msg_filter(&mut self) -> &mut RoutingMessageFilter;
@@ -48,7 +53,12 @@ pub trait Bootstrapped: Base {
     ///
     /// This short-circuits when the message is an ack or is not from us; in
     /// these cases no ack is expected and the function returns true.
-    fn add_to_pending_acks(&mut self, routing_msg: &RoutingMessage, route: u8) -> bool {
+    fn add_to_pending_acks(
+        &mut self,
+        routing_msg: &RoutingMessage,
+        route: u8,
+        expires_at: Option<Instant>,
+    ) -> bool {
         // If this is not an ack and we're the source, expect to receive an ack for this.
         if let MessageContent::Ack(..) = routing_msg.content {
             return true;
@@ -71,6 +81,7 @@ pub trait Bootstrapped: Base {
             routing_msg: routing_msg.clone(),
             route: route,
             timer_token: token,
+            expires_at: expires_at,
         };
 
         if let Some(ejected) = self.ack_mgr_mut().add_to_pending(ack, unacked_msg) {
@@ -118,11 +129,27 @@ pub trait Bootstrapped: Base {
             } else if let Err(error) = self.send_routing_message_via_route(
                 unacked_msg.routing_msg,
                 unacked_msg.route,
+                unacked_msg.expires_at,
             )
             {
                 debug!("{:?} Failed to send message: {:?}", self, error);
             }
         }
+    }
+
+    fn send_routing_message_with_expiry(
+        &mut self,
+        src: Authority<XorName>,
+        dst: Authority<XorName>,
+        content: MessageContent,
+        expires_at: Option<Instant>,
+    ) -> Result<(), RoutingError> {
+        let routing_msg = RoutingMessage {
+            src: src,
+            dst: dst,
+            content: content,
+        };
+        self.send_routing_message_via_route(routing_msg, 0, expires_at)
     }
 
     fn send_routing_message(
@@ -131,12 +158,7 @@ pub trait Bootstrapped: Base {
         dst: Authority<XorName>,
         content: MessageContent,
     ) -> Result<(), RoutingError> {
-        let routing_msg = RoutingMessage {
-            src: src,
-            dst: dst,
-            content: content,
-        };
-        self.send_routing_message_via_route(routing_msg, 0)
+        self.send_routing_message_with_expiry(src, dst, content, None)
     }
 
     fn send_ack(&mut self, routing_msg: &RoutingMessage, route: u8) {
@@ -156,7 +178,8 @@ pub trait Bootstrapped: Base {
             }
         };
 
-        if let Err(error) = self.send_routing_message_via_route(response, route) {
+        // expires_at is set to None as we will not wait for an Ack for an Ack.
+        if let Err(error) = self.send_routing_message_via_route(response, route, None) {
             error!("{:?} Failed to send ack: {:?}", self, error);
         }
     }

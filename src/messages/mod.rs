@@ -168,9 +168,8 @@ pub enum DirectMessage {
     },
     /// Receipt of a part of a ResourceProofResponse
     ResourceProofResponseReceipt,
-    /// Sent from a proxy node to its client to indicate that the client will exceed its rate limit
-    /// for the message indicated by the included hash digest.
-    ProxyRateLimitExceeded { user_msg_hash: Digest256, ack: Ack },
+    /// Sent from a proxy node to its client to indicate that the client exceeded its rate limit.
+    ProxyRateLimitExceeded { ack: Ack },
 }
 
 impl DirectMessage {
@@ -732,18 +731,8 @@ impl Debug for DirectMessage {
                 )
             }
             ResourceProofResponseReceipt => write!(formatter, "ResourceProofResponseReceipt"),
-            ProxyRateLimitExceeded {
-                ref user_msg_hash,
-                ref ack,
-            } => {
-                write!(
-                    formatter,
-                    "ProxyRateLimitExceeded({:02x}{:02x}{:02x}.., {:?})",
-                    user_msg_hash[0],
-                    user_msg_hash[1],
-                    user_msg_hash[2],
-                    ack
-                )
+            ProxyRateLimitExceeded { ref ack } => {
+                write!(formatter, "ProxyRateLimitExceeded({:?})", ack)
             }
         }
     }
@@ -912,14 +901,13 @@ pub enum UserMessage {
 impl UserMessage {
     /// Splits up the message into smaller `MessageContent` parts, which can individually be sent
     /// and routed, and then be put back together by the receiver.
-    pub fn to_parts(&self, priority: u8) -> Result<(Digest256, Vec<MessageContent>), RoutingError> {
+    pub fn to_parts(&self, priority: u8) -> Result<Vec<MessageContent>, RoutingError> {
         let payload = serialise(self)?;
         let hash = sha3_256(&payload);
         let len = payload.len();
         let part_count = (len + MAX_PART_LEN - 1) / MAX_PART_LEN;
 
-        Ok((
-            hash,
+        Ok(
             (0..part_count)
                 .map(|i| {
                     MessageContent::UserMessagePart {
@@ -933,7 +921,7 @@ impl UserMessage {
                     }
                 })
                 .collect(),
-        ))
+        )
     }
 
     /// Puts the given parts of a serialised message together and verifies that it matches the
@@ -1105,7 +1093,7 @@ mod tests {
             data: data,
             msg_id: MessageId::new(),
         });
-        let parts = unwrap!(user_msg.to_parts(1)).1;
+        let parts = unwrap!(user_msg.to_parts(1));
         assert_eq!(1, parts.len());
         let part = parts[0].clone();
         let name: XorName = rand::random();
@@ -1216,7 +1204,7 @@ mod tests {
             msg_id: MessageId::new(),
         });
         let msg_hash = sha3_256(&unwrap!(serialise(&user_msg)));
-        let parts = unwrap!(user_msg.to_parts(42)).1;
+        let parts = unwrap!(user_msg.to_parts(42));
         assert_eq!(parts.len(), 3);
         let payloads: Vec<Vec<u8>> = parts
             .into_iter()

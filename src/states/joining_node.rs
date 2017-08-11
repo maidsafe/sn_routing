@@ -23,6 +23,8 @@ use action::Action;
 use cache::Cache;
 use error::{InterfaceError, RoutingError};
 use event::Event;
+#[cfg(feature = "use-mock-crust")]
+use fake_clock::FakeClock as Instant;
 use id::{FullId, PublicId};
 use maidsafe_utilities::serialisation;
 use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage};
@@ -37,6 +39,8 @@ use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
+#[cfg(not(feature = "use-mock-crust"))]
+use std::time::Instant;
 use timer::Timer;
 use types::{MessageId, RoutingActionSender};
 use xor_name::XorName;
@@ -400,6 +404,7 @@ impl Bootstrapped for JoiningNode {
         &mut self,
         routing_msg: RoutingMessage,
         route: u8,
+        expires_at: Option<Instant>,
     ) -> Result<(), RoutingError> {
         self.stats.count_route(route);
 
@@ -430,7 +435,7 @@ impl Bootstrapped for JoiningNode {
         let signed_msg = SignedMessage::new(routing_msg, self.full_id(), vec![])?;
 
         let proxy_pub_id = self.proxy_pub_id;
-        if self.add_to_pending_acks(signed_msg.routing_message(), route) &&
+        if self.add_to_pending_acks(signed_msg.routing_message(), route, expires_at) &&
             !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_pub_id, route)
         {
             let bytes = self.to_hop_bytes(

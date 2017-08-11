@@ -60,6 +60,7 @@ pub mod test_consts {
     pub const CONNECTING_PEER_TIMEOUT_SECS: u64 = super::CONNECTING_PEER_TIMEOUT_SECS;
     pub const CONNECTED_PEER_TIMEOUT_SECS: u64 = super::CONNECTED_PEER_TIMEOUT_SECS;
     pub const JOINING_NODE_TIMEOUT_SECS: u64 = super::JOINING_NODE_TIMEOUT_SECS;
+    pub const RATE_EXCEED_RETRY_MS: u64 = ::states::RATE_EXCEED_RETRY_MS;
 }
 
 pub type SectionMap = BTreeMap<VersionedPrefix<XorName>, BTreeSet<PublicId>>;
@@ -1055,7 +1056,6 @@ impl PeerManager {
     pub fn can_accept_client(&self, client_ip: IpAddr) -> bool {
         self.disable_client_rate_limiter ||
             !self.peers.values().any(|peer| match *peer.state() {
-                PeerState::Bootstrapper { ip, .. } |
                 PeerState::Client { ip, .. } => client_ip == ip,
                 _ => false,
             })

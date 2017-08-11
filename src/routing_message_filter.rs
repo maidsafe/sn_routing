@@ -83,4 +83,17 @@ impl RoutingMessageFilter {
             false
         }
     }
+
+    // Removes the given message from the outgoing filter if it exists.
+    pub fn remove_from_outgoing_filter(
+        &mut self,
+        msg: &RoutingMessage,
+        pub_id: &PublicId,
+        route: u8,
+    ) {
+        if let Ok(msg_bytes) = serialise(msg) {
+            let hash = sha3_256(&msg_bytes);
+            let _ = self.outgoing.remove(&(hash, *pub_id, route));
+        }
+    }
 }
