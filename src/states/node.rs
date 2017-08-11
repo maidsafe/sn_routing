@@ -2219,6 +2219,7 @@ impl Node {
             dst,
             their_connection_info,
             message_id,
+            true,
         ) {
             Ok(Ready(our_info, their_info)) => {
                 debug!(
@@ -2298,6 +2299,7 @@ impl Node {
             dst,
             their_connection_info,
             message_id,
+            false,
         ) {
             Ok(Ready(our_info, their_info)) => {
                 trace!(

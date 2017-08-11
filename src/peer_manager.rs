@@ -1387,6 +1387,7 @@ impl PeerManager {
         dst: Authority<XorName>,
         peer_info: PubConnectionInfo,
         msg_id: MessageId,
+        is_conn_info_req: bool,
     ) -> Result<ConnectionInfoReceivedResult, Error> {
         let pub_id = peer_info.id();
 
@@ -1446,6 +1447,10 @@ impl PeerManager {
             }
             // SearchingForTunnel or None
             x => {
+                if !is_conn_info_req {
+                    let _ = x.map(|peer| self.insert_peer(peer));
+                    return Ok(ConnectionInfoReceivedResult::Waiting);
+                }
                 let (valid, reconnecting) = x.map_or((false, ReconnectingPeer::False), |peer| {
                     (peer.valid, peer.reconnecting)
                 });
@@ -1734,6 +1739,7 @@ mod tests {
             node_auth(1),
             their_connection_info.clone(),
             MessageId::new(),
+            false,
         ) {
             Ok(ConnectionInfoReceivedResult::Ready(our_info, their_info)) => {
                 assert_eq!(our_connection_info, our_info);
@@ -1769,6 +1775,7 @@ mod tests {
             node_auth(1),
             their_connection_info.clone(),
             original_msg_id,
+            true,
         ) {
             Ok(ConnectionInfoReceivedResult::Prepare(token)) => token,
             result => panic!("Unexpected result: {:?}", result),
