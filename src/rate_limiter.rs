@@ -694,14 +694,24 @@ mod tests {
     #[test]
     fn many_clients() {
         let mut rate_limiter = RateLimiter::new(false);
-        let num_clients = 50;
+        let num_clients = 100;
+        let num_iterations = 500;
         let mut clients_and_counts = (0..num_clients)
             .map(|i| (IpAddr::from([i, i, i, i]), 0))
             .collect::<BTreeMap<_, _>>();
         let mut rng = SeededRng::new();
 
         let start = FakeClock::now();
-        for _ in 0..200 {
+        let mut elapsed_time: f64 = 0.0;
+        let mut offset: u64 = 0;
+        for i in 0..num_iterations {
+            if elapsed_time > 0.0 {
+                let per_client_leak = (elapsed_time * RATE / num_clients as f64) as u64;
+                let per_client_used = *unwrap!(rate_limiter.used.values().nth(0));
+                if per_client_leak > per_client_used {
+                    offset += (per_client_leak - per_client_used) * num_clients as u64;
+                }
+            }
             // Each client tries to add a large request and increments its count on success.
             for (client, count) in &mut clients_and_counts {
                 let payload = random_payload(&mut rng);
@@ -709,16 +719,22 @@ mod tests {
                     *count += 1;
                 }
             }
-            FakeClock::advance_time(rng.gen_range(500, 1500));
+            if i != num_iterations - 1 {
+                let elapse = rng.gen_range(500, 1500);
+                FakeClock::advance_time(elapse);
+                elapsed_time = elapse as f64 / 1E3;
+            }
         }
 
         // Check that all clients have managed to add the same number of messages.
-        let advanced_secs = (FakeClock::now() - start).as_secs() + 1;
-        let success_count = (advanced_secs * RATE as u64) /
-            (MAX_IMMUTABLE_DATA_SIZE_IN_BYTES * num_clients as u64);
+        let elapsed = FakeClock::now() - start;
+        let advanced_secs = elapsed.as_secs() as f64 + elapsed.subsec_nanos() as f64 / 1E9;
+        let numerator = MIN_CLIENT_CAPACITY as f64 * num_clients as f64 + advanced_secs * RATE -
+            offset as f64;
+        let denominator = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES as f64 * num_clients as f64;
+        let success_count = (numerator / denominator) as u64;
         for count in clients_and_counts.values() {
-            // Allow difference of 1 to accommodate for rounding errors.
-            assert!((*count as i64 - success_count as i64).abs() <= 1);
+            assert_eq!(*count, success_count);
         }
     }
 
