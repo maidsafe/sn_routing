@@ -25,7 +25,6 @@ use messages::{MAX_PART_LEN, UserMessage};
 use sha3::Digest256;
 use std::cmp;
 use std::collections::BTreeMap;
-use std::collections::btree_map::Entry;
 use std::mem;
 use std::net::IpAddr;
 #[cfg(not(feature = "use-mock-crust"))]
@@ -155,16 +154,13 @@ impl RateLimiter {
         }
 
         if overcharged {
-            match self.overcharged.entry(*msg_id) {
-                // If there's no overcharge recorded, record it.
-                Entry::Vacant(entry) => {
-                    let _ = entry.insert((bytes_to_add, *client_ip));
-                }
-                // Disallow a 2nd GET with the same message ID.
-                Entry::Occupied(_) => {
-                    return Err(RoutingError::InvalidMessage);
-                }
-            }
+            // Record the overcharge amount in the `overcharged` container.
+            // If an entry already exists, we leave it as is. This means that
+            // *at most 1* refund is applied if multiple messages are sent with
+            // the same `msg_id`.
+            let _ = self.overcharged.entry(*msg_id).or_insert(
+                (bytes_to_add, *client_ip),
+            );
         }
 
         let _ = self.used.insert(*client_ip, new_balance);
@@ -497,9 +493,9 @@ mod tests {
                 }
             }
         }
-        let expected_deduction = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES -
-            (response_parts.len() * MAX_PART_LEN) as u64;
-        assert_eq!(single_deduction, Some(expected_deduction));
+        let approx_data_size = (response_parts.len() * MAX_PART_LEN) as u64;
+        let expected_refund = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES.saturating_sub(approx_data_size);
+        assert_eq!(single_deduction, Some(expected_refund));
     }
 
     #[test]
@@ -568,25 +564,50 @@ mod tests {
         );
     }
 
-    // Check that a duplicate get request (same msg ID) is rejected.
+    // Check that a duplicate get request is allowed but only receives a single refund.
     #[test]
-    fn reject_duplicate_get() {
+    fn duplicate_get() {
         let mut rate_limiter = RateLimiter::new(false);
         let client = IpAddr::from([0, 0, 0, 0]);
         let mut rng = SeededRng::new();
 
         let msg_id = MessageId::new();
-        let name = rng.gen();
+        let data_size = rng.gen_range(1, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES + 1);
+        let data = ImmutableData::new(vec![0; data_size as usize]);
+        let name = *data.name();
 
         let request = UserMessage::Request(Request::GetIData { name, msg_id });
         let request_parts = unwrap!(request.to_parts(0));
+        let response = UserMessage::Response(Response::GetIData {
+            res: Ok(data),
+            msg_id,
+        });
+        let response_parts = unwrap!(response.to_parts(0));
 
-        assert!(
-            add_user_msg_part(&mut rate_limiter, &client, unwrap!(request_parts.first())).is_ok()
+        assert_eq!(
+            unwrap!(add_user_msg_part(
+                &mut rate_limiter,
+                &client,
+                &request_parts[0],
+            )),
+            MAX_IMMUTABLE_DATA_SIZE_IN_BYTES
         );
-        assert!(
-            add_user_msg_part(&mut rate_limiter, &client, unwrap!(request_parts.first())).is_err()
+        assert_eq!(
+            unwrap!(add_user_msg_part(
+                &mut rate_limiter,
+                &client,
+                &request_parts[0],
+            )),
+            MAX_IMMUTABLE_DATA_SIZE_IN_BYTES
         );
+
+        let approx_data_size = (response_parts.len() * MAX_PART_LEN) as u64;
+        let expected_refund = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES.saturating_sub(approx_data_size);
+        assert_eq!(
+            refund_user_msg_part(&mut rate_limiter, &client, &response_parts[0]),
+            Some(expected_refund)
+        );
+        assert!(refund_user_msg_part(&mut rate_limiter, &client, &response_parts[0]).is_none());
     }
 
     /// Checks that a second client can add messages even when an initial one has hit its limit.
