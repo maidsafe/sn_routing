@@ -17,11 +17,13 @@
 
 use super::{MIN_SECTION_SIZE, TestClient, TestNode, create_connected_clients,
             create_connected_nodes, poll_all, poll_and_resend};
+use maidsafe_utilities::SeededRng;
+use mock_crust::utils::gen_immutable_data;
 use rand::Rng;
 use routing::{Authority, BootstrapConfig, Event, EventStream, FullId, ImmutableData,
               MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MessageId, Request};
 use routing::mock_crust::Network;
-use routing::rate_limiter_consts::MAX_PARTS;
+use routing::rate_limiter_consts::{MAX_PARTS, SOFT_CAPACITY};
 use std::time::Duration;
 
 /// Connect a client to the network then send an invalid message.
@@ -122,6 +124,13 @@ fn reconnect_disconnected_client() {
     expect_next_event!(unwrap!(clients.last_mut()), Event::Connected);
 }
 
+fn immutable_data_vec(rng: &mut SeededRng, count: u64) -> Vec<ImmutableData> {
+    (0..count)
+        .map(|_| {
+            gen_immutable_data(rng, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES as usize)
+        })
+        .collect()
+}
 
 /// Confirming the number of user message parts being sent in case of exceeding limit.
 #[test]
@@ -131,18 +140,10 @@ fn resend_parts_on_exceeding_limit() {
     let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
 
-    let mut data_vec = vec![
-        ImmutableData::new(
-            rng.gen_iter()
-                .take((MAX_IMMUTABLE_DATA_SIZE_IN_BYTES / 2) as usize)
-                .collect()
-        ),
-    ];
-    data_vec.push(ImmutableData::new(
-        rng.gen_iter()
-            .take(MAX_IMMUTABLE_DATA_SIZE_IN_BYTES as usize)
-            .collect(),
-    ));
+    let num_immutable_data =
+        (SOFT_CAPACITY as f64 / MAX_IMMUTABLE_DATA_SIZE_IN_BYTES as f64).ceil() as u64 + 1;
+
+    let data_vec = immutable_data_vec(&mut rng, num_immutable_data);
 
     for data in data_vec {
         let msg_id = MessageId::new();
@@ -151,15 +152,22 @@ fn resend_parts_on_exceeding_limit() {
     }
     poll_and_resend(&mut nodes, &mut clients);
 
-    // `MAX_PARTS / 2` parts will be resent from client.
-    let expect_sent_parts = (2 * MAX_PARTS) as u64;
+    let total_data_parts = num_immutable_data * MAX_PARTS as u64;
+    // NOTE: this calculation is approximate and relies on some hardcoded knowledge about
+    // the size of serialised user messages.
+    let user_msg_header = 48;
+    let part_size = (MAX_IMMUTABLE_DATA_SIZE_IN_BYTES + user_msg_header) as f64 / MAX_PARTS as f64;
+    let parts_allowed_first_time = (SOFT_CAPACITY as f64 / part_size) as u64;
+    let parts_retried = total_data_parts - parts_allowed_first_time;
+
+    let expect_sent_parts = total_data_parts + parts_retried;
     assert_eq!(
         clients[0].inner.get_user_msg_parts_count(),
         expect_sent_parts
     );
 
     // Node shall not receive any duplicated parts.
-    let expect_rcv_parts = (MAX_PARTS + MAX_PARTS / 2) as u64;
+    let expect_rcv_parts = total_data_parts;
     for node in nodes.iter() {
         assert_eq!(node.inner.get_user_msg_parts_count(), expect_rcv_parts);
     }
@@ -182,15 +190,11 @@ fn resend_over_load() {
     let _ = poll_all(&mut nodes, &mut clients);
     expect_next_event!(unwrap!(clients.last_mut()), Event::Connected);
 
-    let data_vec: Vec<_> = (0..2)
-        .map(|_| {
-            ImmutableData::new(
-                rng.gen_iter()
-                    .take(MAX_IMMUTABLE_DATA_SIZE_IN_BYTES as usize)
-                    .collect(),
-            )
-        })
-        .collect();
+    let num_immutable_data =
+        (SOFT_CAPACITY as f64 / MAX_IMMUTABLE_DATA_SIZE_IN_BYTES as f64).ceil() as u64 + 1;
+
+    let data_vec = immutable_data_vec(&mut rng, num_immutable_data);
+
     for data in data_vec {
         let msg_id = MessageId::new();
         let dst = Authority::NaeManager(*data.name());
@@ -198,16 +202,23 @@ fn resend_over_load() {
     }
     poll_and_resend(&mut nodes, &mut clients);
 
+    let total_data_parts = num_immutable_data * MAX_PARTS as u64;
+    // NOTE: this calculation is approximate and relies on some hardcoded knowledge about
+    // the size of serialised user messages.
+    let user_msg_header = 48;
+    let part_size = (MAX_IMMUTABLE_DATA_SIZE_IN_BYTES + user_msg_header) as f64 / MAX_PARTS as f64;
+    let parts_allowed_through = (SOFT_CAPACITY as f64 / part_size) as u64;
+
     // `poll_and_resend` advance clock by 20 seconds (`ACK_TIME_OUT`), hence the message is expired
     // when handling the timeout for re-sending parts.
-    let expect_sent_parts = (2 * MAX_PARTS) as u64;
+    let expect_sent_parts = total_data_parts;
     assert_eq!(
         clients[0].inner.get_user_msg_parts_count(),
         expect_sent_parts
     );
 
     // Node shall not receive any re-sent parts.
-    let expect_rcv_parts = MAX_PARTS as u64;
+    let expect_rcv_parts = parts_allowed_through;
     for node in nodes.iter() {
         assert_eq!(node.inner.get_user_msg_parts_count(), expect_rcv_parts);
     }

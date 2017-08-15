@@ -629,6 +629,11 @@ impl Node {
     pub fn get_user_msg_parts_count(&self) -> u64 {
         self.machine.current().get_user_msg_parts_count()
     }
+
+    /// Get the rate limiter's bandwidth usage map.
+    pub fn get_clients_usage(&self) -> BTreeMap<IpAddr, u64> {
+        unwrap!(self.machine.current().get_clients_usage())
+    }
 }
 
 #[cfg(feature = "use-mock-crust")]
