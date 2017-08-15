@@ -231,6 +231,13 @@ impl State {
             _ => 0,
         }
     }
+
+    pub fn get_clients_usage(&self) -> Option<BTreeMap<IpAddr, u64>> {
+        match *self {
+            State::Node(ref state) => Some(state.get_clients_usage()),
+            _ => None,
+        }
+    }
 }
 
 /// Enum returned from many message handlers
