@@ -20,6 +20,7 @@ use error::RoutingError;
 #[cfg(feature = "use-mock-crust")]
 use fake_clock::FakeClock as Instant;
 use itertools::Itertools;
+use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::{self, SerialisationError};
 use messages::{MAX_PART_LEN, UserMessage};
 use sha3::Digest256;
@@ -27,20 +28,31 @@ use std::cmp;
 use std::collections::BTreeMap;
 use std::mem;
 use std::net::IpAddr;
+use std::time::Duration;
 #[cfg(not(feature = "use-mock-crust"))]
 use std::time::Instant;
 use types::MessageId;
 
 /// The number of bytes per second the `RateLimiter` will "leak".
-const RATE: f64 = 5.0 * 1024.0 * 1024.0;
-/// The number of bytes per second of bandwidth distributed between all clients when demand is low.
+const RATE: f64 = 8.0 * 1024.0 * 1024.0;
+/// The minimum allowance (in bytes) for a single client at any given moment in the `RateLimiter`.
+/// This is slightly larger than `MAX_IMMUTABLE_DATA_SIZE_IN_BYTES` to allow for the extra bytes
+/// created by wrapping the chunk in a `UserMessage`, splitting it into parts and wrapping those in
+/// `RoutingMessage`s.
+const MIN_CLIENT_CAPACITY: u64 = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES + 10240;
+/// The maximum number of bytes the `RateLimiter` will "hold" at any given moment. This allowance
+/// is split equally between clients with entries in the `RateLimiter`. It is a soft limit in that
+/// it can be exceeded if there are enough client entries: each client will be allowed a
+/// hard-minimum of `MIN_CLIENT_CAPACITY` even if this means the `RateLimiter`'s total capacity
+/// exceeds the `SOFT_CAPACITY`.
 #[cfg(not(feature = "use-mock-crust"))]
-const SOFT_CAPACITY: u64 = 20 * 1024 * 1024;
-// Soft capacity has to be at least 2 * MIN_CLIENT_CAPACITY for the multi-client tests to work.
+const SOFT_CAPACITY: u64 = 8 * 1024 * 1024;
+/// For the mock-crust tests, we want a small `SOFT_CAPACITY` in order to trigger more rate-limited
+/// rejections. This must be at least `2 * MIN_CLIENT_CAPACITY` for the multi-client tests to work.
 #[cfg(feature = "use-mock-crust")]
 const SOFT_CAPACITY: u64 = 2 * MIN_CLIENT_CAPACITY;
-/// The minimum number of bytes per second of bandwidth supplied to any client.
-const MIN_CLIENT_CAPACITY: u64 = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES + 10240;
+/// Duration for which entries are kept in the `overcharged` cache, in seconds.
+const OVERCHARGED_TIMEOUT_SECS: u64 = 20;
 
 #[cfg(feature = "use-mock-crust")]
 #[doc(hidden)]
@@ -55,13 +67,12 @@ pub mod rate_limiter_consts {
 /// Used to throttle the rate at which clients can send messages via this node. It works on a "leaky
 /// bucket" principle: there is a set rate at which bytes will leak out of the bucket, there is a
 /// maximum capacity for the bucket, and connected clients each get an equal share of this capacity.
-#[derive(Debug)]
 pub struct RateLimiter {
     /// Map of client IP address to their total bytes remaining in the `RateLimiter`.
     used: BTreeMap<IpAddr, u64>,
     /// Initial charge amount by GET request message ID.
     /// The IP address of the requesting peer is also tracked so that stale entries can be removed.
-    overcharged: BTreeMap<MessageId, (u64, IpAddr)>,
+    overcharged: LruCache<MessageId, u64>,
     /// Timestamp of when the `RateLimiter` was last updated.
     last_updated: Instant,
     /// Whether rate restriction is disabled.
@@ -72,7 +83,9 @@ impl RateLimiter {
     pub fn new(disabled: bool) -> Self {
         RateLimiter {
             used: BTreeMap::new(),
-            overcharged: BTreeMap::new(),
+            overcharged: LruCache::with_expiry_duration(
+                Duration::from_secs(OVERCHARGED_TIMEOUT_SECS),
+            ),
             last_updated: Instant::now(),
             disabled: disabled,
         }
@@ -154,13 +167,10 @@ impl RateLimiter {
         }
 
         if overcharged {
-            // Record the overcharge amount in the `overcharged` container.
-            // If an entry already exists, we leave it as is. This means that
-            // *at most 1* refund is applied if multiple messages are sent with
-            // the same `msg_id`.
-            let _ = self.overcharged.entry(*msg_id).or_insert(
-                (bytes_to_add, *client_ip),
-            );
+            // Record the overcharge amount in the `overcharged` container. If an entry already
+            // exists, we leave it as is. This means that *at most 1* refund is applied if multiple
+            // messages are sent with the same `msg_id`.
+            let _ = self.overcharged.entry(*msg_id).or_insert(bytes_to_add);
         }
 
         let _ = self.used.insert(*client_ip, new_balance);
@@ -177,21 +187,11 @@ impl RateLimiter {
         cmp::max(MIN_CLIENT_CAPACITY, SOFT_CAPACITY / num_clients as u64)
     }
 
-    /// Clear out stale entries from `overcharged` when the given IP address's bucket is empty.
-    fn purge_overcharged(&mut self, client_ip: IpAddr) {
-        let overcharged = mem::replace(&mut self.overcharged, BTreeMap::new());
-        for (msg_id, (charge, ip)) in overcharged {
-            if ip != client_ip {
-                let _ = self.overcharged.insert(msg_id, (charge, ip));
-            }
-        }
-    }
-
     /// Update a client's balance to compensate for initial over-counting.
     ///
-    /// When a request is made, clients are charged at the maximum size of the data
-    /// being requested. This method compensates the client for the over-counting by
-    /// crediting them the difference between the maximum and the actual size of the response.
+    /// When a request is made, clients are charged at the maximum size of the data being requested.
+    /// This method compensates the client for the over-counting by crediting them the difference
+    /// between the maximum and the actual size of the response.
     pub fn apply_refund_for_response(
         &mut self,
         client_ip: &IpAddr,
@@ -207,9 +207,9 @@ impl RateLimiter {
             return None;
         }
 
-        // Check that the response isn't a single-part response that we never overcharged for.
-        // This prevents a malicious client from gaming the system: for example, by
-        // preceding a GET with a PUT with the same `msg_id`.
+        // Check that the response isn't a single-part response that we never overcharged for. This
+        // prevents a malicious client from gaming the system: for example, by preceding a GET with
+        // a PUT with the same `msg_id`.
         if part_count == 1 && part_index == 0 {
             match serialisation::deserialise::<UserMessage>(payload) {
                 Ok(UserMessage::Response(response)) => {
@@ -227,8 +227,8 @@ impl RateLimiter {
                         ListMDataPermissions { .. } |
                         ListMDataUserPermissions { .. } |
                         ListAuthKeysAndVersion { .. } => (),
-                        // These are responses to requests we didn't overcharge for.
-                        // All these responses *should* fit in a single part.
+                        // These are responses to requests we didn't overcharge for. All these
+                        // responses *should* fit in a single part.
                         PutIData { .. } |
                         PutMData { .. } |
                         MutateMDataEntries { .. } |
@@ -244,7 +244,7 @@ impl RateLimiter {
         }
 
         let amount_charged = match self.overcharged.remove(msg_id) {
-            Some((amount, _)) => amount,
+            Some(amount) => amount,
             None => return None,
         };
 
@@ -283,8 +283,6 @@ impl RateLimiter {
             leaked_units -= quota;
             if used > quota {
                 let _ = self.used.insert(client, used - quota);
-            } else {
-                self.purge_overcharged(client);
             }
         }
     }
@@ -306,6 +304,7 @@ mod tests {
     use std::collections::BTreeMap;
     use tiny_keccak::sha3_256;
     use types::MessageId;
+    use xor_name::{XOR_NAME_LEN, XorName};
 
     fn huge_message_can_be_added(rate_limiter: &mut RateLimiter, client: &IpAddr) -> bool {
         sized_message_can_be_added(SOFT_CAPACITY, rate_limiter, client)
@@ -379,7 +378,7 @@ mod tests {
         }
     }
 
-    // Add a single `UserMessagePart` for a GET request to the rate limiter.
+    // Add a single `UserMessagePart` to the rate limiter.
     fn add_user_msg_part(
         rate_limiter: &mut RateLimiter,
         client: &IpAddr,
@@ -812,5 +811,33 @@ mod tests {
             Err(RoutingError::InvalidMessage) => {}
             _ => panic!("unexpected result"),
         }
+    }
+
+    /// Checks that the rate-limiter's `overcharged` container can't be over-filled.
+    ///
+    /// Keeps trying to add GET requests for `ImmutableData` with a short delay between each
+    /// attempt. Most will fail, but this should ensure the `RateLimiter` always has an entry for
+    /// this client in its `used` container (in case we go back to using the absence of a client as
+    /// a trigger to purge their overcharged entries).
+    ///
+    /// After `OVERCHARGED_TIMEOUT_SECS` plus one minute has elapsed, there should not be an
+    /// excessive number of entries in the `overcharged` container.
+    #[test]
+    fn overcharged_limit() {
+        let mut rate_limiter = RateLimiter::new(false);
+        let client = IpAddr::from([0, 0, 0, 0]);
+        let wait_millis = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES * 100 / RATE as u64;
+        let max_overcharged_entries = OVERCHARGED_TIMEOUT_SECS * RATE as u64 /
+            MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
+        let finish_time = FakeClock::now() + Duration::from_secs(OVERCHARGED_TIMEOUT_SECS + 60);
+        while FakeClock::now() < finish_time {
+            let name = XorName([0; XOR_NAME_LEN]);
+            let msg_id = MessageId::new();
+            let request = UserMessage::Request(Request::GetIData { name, msg_id });
+            let request_parts = unwrap!(request.to_parts(0));
+            let _ = add_user_msg_part(&mut rate_limiter, &client, &request_parts[0]);
+            FakeClock::advance_time(wait_millis);
+        }
+        assert!((rate_limiter.overcharged.len() as u64) <= max_overcharged_entries);
     }
 }
