@@ -625,6 +625,8 @@ pub enum MessageContent {
     UserMessagePart {
         /// The hash of this user message.
         hash: Digest256,
+        /// The unique message ID of this user message.
+        msg_id: MessageId,
         /// The number of parts.
         part_count: u32,
         /// The index of this part.
@@ -904,6 +906,7 @@ impl UserMessage {
     pub fn to_parts(&self, priority: u8) -> Result<Vec<MessageContent>, RoutingError> {
         let payload = serialise(self)?;
         let hash = sha3_256(&payload);
+        let msg_id = *self.message_id();
         let len = payload.len();
         let part_count = (len + MAX_PART_LEN - 1) / MAX_PART_LEN;
 
@@ -911,13 +914,14 @@ impl UserMessage {
             (0..part_count)
                 .map(|i| {
                     MessageContent::UserMessagePart {
-                        hash: hash,
+                        hash,
+                        msg_id,
                         part_count: part_count as u32,
                         part_index: i as u32,
                         cacheable: self.is_cacheable(),
                         payload: payload[(i * len / part_count)..((i + 1) * len / part_count)]
                             .to_vec(),
-                        priority: priority,
+                        priority,
                     }
                 })
                 .collect(),
@@ -963,6 +967,7 @@ impl UserMessage {
         }
     }
 
+    /// The unique message ID of this `UserMessage`.
     pub fn message_id(&self) -> &MessageId {
         match *self {
             UserMessage::Request(ref request) => request.message_id(),
@@ -1212,6 +1217,7 @@ mod tests {
             .map(|(i, msg)| match msg {
                 MessageContent::UserMessagePart {
                     hash,
+                    msg_id,
                     part_count,
                     part_index,
                     payload,
@@ -1219,6 +1225,7 @@ mod tests {
                     cacheable,
                 } => {
                     assert_eq!(msg_hash, hash);
+                    assert_eq!(user_msg.message_id(), &msg_id);
                     assert_eq!(3, part_count);
                     assert_eq!(i, part_index as usize);
                     assert_eq!(42, priority);
