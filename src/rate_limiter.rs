@@ -52,7 +52,7 @@ const SOFT_CAPACITY: u64 = 8 * 1024 * 1024;
 #[cfg(feature = "use-mock-crust")]
 const SOFT_CAPACITY: u64 = 2 * MIN_CLIENT_CAPACITY;
 /// Duration for which entries are kept in the `overcharged` cache, in seconds.
-const OVERCHARGED_TIMEOUT_SECS: u64 = 20;
+const OVERCHARGED_TIMEOUT_SECS: u64 = 300;
 
 #[cfg(feature = "use-mock-crust")]
 #[doc(hidden)]
@@ -827,8 +827,10 @@ mod tests {
         let mut rate_limiter = RateLimiter::new(false);
         let client = IpAddr::from([0, 0, 0, 0]);
         let wait_millis = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES * 100 / RATE as u64;
+        // Note: we add 1 here because the last request added doesn't have to fully drain before
+        // the test ends.
         let max_overcharged_entries = OVERCHARGED_TIMEOUT_SECS * RATE as u64 /
-            MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
+            MAX_IMMUTABLE_DATA_SIZE_IN_BYTES + 1;
         let finish_time = FakeClock::now() + Duration::from_secs(OVERCHARGED_TIMEOUT_SECS + 60);
         while FakeClock::now() < finish_time {
             let name = XorName([0; XOR_NAME_LEN]);
@@ -838,6 +840,10 @@ mod tests {
             let _ = add_user_msg_part(&mut rate_limiter, &client, &request_parts[0]);
             FakeClock::advance_time(wait_millis);
         }
-        assert!((rate_limiter.overcharged.len() as u64) <= max_overcharged_entries);
+        let overcharged_entries = rate_limiter.overcharged.len() as u64;
+        assert!(
+            overcharged_entries == max_overcharged_entries ||
+                overcharged_entries == max_overcharged_entries - 1
+        );
     }
 }
