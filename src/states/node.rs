@@ -1062,26 +1062,8 @@ impl Node {
         }
     }
 
-    // Acknowledge reception of the message and broadcast to our section if necessary
-    // The function is only called when we are in the destination authority
-    fn ack_and_broadcast(
-        &mut self,
-        signed_msg: &SignedMessage,
-        route: u8,
-        hop_name: XorName,
-        sent_to: &BTreeSet<XorName>,
-    ) {
-        self.send_ack(signed_msg.routing_message(), route);
-        // If the destination is our section we need to forward it to the rest of the section
-        if signed_msg.routing_message().dst.is_multiple() {
-            if let Err(error) = self.send_signed_message(signed_msg, route, &hop_name, sent_to) {
-                debug!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);
-            }
-        }
-    }
-
-    // Verify the message, then, if it is for us, handle the enclosed routing message; if not,
-    // forward it.
+    // Verify the message, then, if it is for us, handle the enclosed routing message and swarm it
+    // to the rest of our section when destination is targeting multiple; if not, forward it.
     fn handle_signed_message(
         &mut self,
         signed_msg: SignedMessage,
@@ -1111,7 +1093,19 @@ impl Node {
             frslt @ FilteringResult::KnownMessage |
             frslt @ FilteringResult::NewMessage => {
                 if self.in_authority(&signed_msg.routing_message().dst) {
-                    self.ack_and_broadcast(&signed_msg, route, hop_name, sent_to);
+                    self.send_ack(signed_msg.routing_message(), route);
+                    if signed_msg.routing_message().dst.is_multiple() {
+                        // Broadcast to the rest of the section.
+                        if let Err(error) = self.send_signed_message(
+                            &signed_msg,
+                            route,
+                            &hop_name,
+                            sent_to,
+                        )
+                        {
+                            debug!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);
+                        }
+                    }
                     if frslt == FilteringResult::NewMessage {
                         // if addressed to us, then we just queue it and return
                         self.msg_queue.push_back(signed_msg.into_routing_message());
