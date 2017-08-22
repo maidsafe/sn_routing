@@ -1,5 +1,15 @@
 # Routing - Change Log
 
+## [0.33.0]
+- Rate limiter refund on overcharge for get response.
+- Rate limiter having soft capacity for clients.
+- Bugfix to not mutate peer on receiving conn_info_response.
+- Bugfix to remove expired peers(normalise peers) when receiving TunnelSuccess or TunnelRequest.
+- Enforce one client per IP only on bootstrap request.
+- Add Rand impl for PermissionSet.
+- Resend rate exceeded user message parts and remove Event::ProxyRateLimitExceeded
+- Bugfix to not reject BootstrapRequest messages invalidly.
+
 ## [0.32.2]
 - Bugfix to avoid adding nodes to disconnected client list.
 
