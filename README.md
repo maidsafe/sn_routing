@@ -1,6 +1,6 @@
 # Routing
 
-**Maintainer:** Andreas Fackler (andreas.fackler@maidsafe.net)
+**Maintainer:** Spandan Sharma (spandan.sharma@maidsafe.net)
 
 Routing - a specialised storage DHT
 
