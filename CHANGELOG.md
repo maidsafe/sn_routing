@@ -1,5 +1,8 @@
 # Routing - Change Log
 
+## [0.33.1]
+- Increase MAX_MUTABLE_DATA_ENTRIES from 100 to 1000.
+
 ## [0.33.0]
 - Rate limiter refund on overcharge for get response.
 - Rate limiter having soft capacity for clients.
