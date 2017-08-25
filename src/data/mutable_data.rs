@@ -29,7 +29,7 @@ use xor_name::XorName;
 pub const MAX_MUTABLE_DATA_SIZE_IN_BYTES: u64 = 1024 * 1024;
 
 /// Maximum allowed entries in `MutableData`
-pub const MAX_MUTABLE_DATA_ENTRIES: u64 = 100;
+pub const MAX_MUTABLE_DATA_ENTRIES: u64 = 1000;
 
 /// Mutable data.
 #[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, Serialize, Deserialize)]
@@ -754,6 +754,7 @@ mod tests {
 
     #[test]
     fn max_entries_limit() {
+        let to_vec_of_u8 = |i: u64| vec![(i >> 24) as u8, (i >> 16) as u8, (i >> 8) as u8, i as u8];
         let val = Value {
             content: b"123".to_vec(),
             entry_version: 0,
@@ -762,7 +763,7 @@ mod tests {
         // It must not be possible to create MutableData whose number of entries exceeds the limit.
         let mut data = BTreeMap::new();
         for i in 0..MAX_MUTABLE_DATA_ENTRIES + 1 {
-            let _ = data.insert(vec![i as u8], val.clone());
+            assert!(data.insert(to_vec_of_u8(i), val.clone()).is_none());
         }
         assert_err!(
             MutableData::new(rand::random(), 0, BTreeMap::new(), data, BTreeSet::new()),
@@ -771,7 +772,7 @@ mod tests {
 
         let mut data = BTreeMap::new();
         for i in 0..MAX_MUTABLE_DATA_ENTRIES - 1 {
-            let _ = data.insert(vec![i as u8], val.clone());
+            assert!(data.insert(to_vec_of_u8(i), val.clone()).is_none());
         }
 
         let (owner, _) = sign::gen_keypair();
@@ -785,7 +786,10 @@ mod tests {
         ));
 
         // Reach the limit.
-        let actions = iter::once((vec![99u8], EntryAction::Ins(val.clone()))).collect();
+        let actions = iter::once((
+            to_vec_of_u8(MAX_MUTABLE_DATA_ENTRIES - 1),
+            EntryAction::Ins(val.clone()),
+        )).collect();
         unwrap!(md.mutate_entries(actions, owner));
 
         assert_eq!(md.keys().len(), MAX_MUTABLE_DATA_ENTRIES as usize);
@@ -793,14 +797,16 @@ mod tests {
         assert_eq!(md.entries().len(), MAX_MUTABLE_DATA_ENTRIES as usize);
 
         // Try to get over the limit.
-        let actions = iter::once((vec![100u8], EntryAction::Ins(val.clone()))).collect();
+        let actions = iter::once((
+            to_vec_of_u8(MAX_MUTABLE_DATA_ENTRIES),
+            EntryAction::Ins(val.clone()),
+        )).collect();
         assert_err!(
             md.mutate_entries(actions, owner),
             ClientError::TooManyEntries
         );
 
-
-        let actions = iter::once((vec![0u8], EntryAction::Del(1))).collect();
+        let actions = iter::once((to_vec_of_u8(0), EntryAction::Del(1))).collect();
         unwrap!(md.mutate_entries(actions, owner));
     }
 
