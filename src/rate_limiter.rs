@@ -725,11 +725,11 @@ mod tests {
         let mut elapsed_time: f64 = 0.0;
         let mut offset: u64 = 0;
         for i in 0..num_iterations {
-            if elapsed_time > 0.0 {
-                let per_client_leak = (elapsed_time * RATE / num_clients as f64) as u64;
+            if elapsed_time > 0.0 && i != num_iterations - 1 {
+                let per_client_leak = (elapsed_time * RATE / f64::from(num_clients)) as u64;
                 let per_client_used = *unwrap!(rate_limiter.used.values().nth(0));
                 if per_client_leak > per_client_used {
-                    offset += (per_client_leak - per_client_used) * num_clients as u64;
+                    offset += (per_client_leak - per_client_used) * u64::from(num_clients);
                 }
             }
             // Each client tries to add a large request and increments its count on success.
@@ -748,11 +748,11 @@ mod tests {
 
         // Check that all clients have managed to add the same number of messages.
         let elapsed = FakeClock::now() - start;
-        let advanced_secs = elapsed.as_secs() as f64 + elapsed.subsec_nanos() as f64 / 1E9;
-        let numerator = MIN_CLIENT_CAPACITY as f64 * num_clients as f64 + advanced_secs * RATE -
-            offset as f64;
-        let denominator = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES as f64 * num_clients as f64;
-        let success_count = (numerator / denominator).round() as u64;
+        let advanced_secs = elapsed.as_secs() as f64 + f64::from(elapsed.subsec_nanos()) / 1E9;
+        let numerator = MIN_CLIENT_CAPACITY as f64 * f64::from(num_clients) +
+            advanced_secs * RATE - offset as f64;
+        let denominator = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES as f64 * f64::from(num_clients);
+        let success_count = (numerator / denominator) as u64;
         for count in clients_and_counts.values() {
             assert_eq!(*count, success_count);
         }
