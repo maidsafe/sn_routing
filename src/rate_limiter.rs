@@ -725,7 +725,7 @@ mod tests {
         let mut elapsed_time: f64 = 0.0;
         let mut offset: u64 = 0;
         for i in 0..num_iterations {
-            if elapsed_time > 0.0 {
+            if elapsed_time > 0.0 && i != num_iterations - 1 {
                 let per_client_leak = (elapsed_time * RATE / num_clients as f64) as u64;
                 let per_client_used = *unwrap!(rate_limiter.used.values().nth(0));
                 if per_client_leak > per_client_used {
@@ -752,7 +752,7 @@ mod tests {
         let numerator = MIN_CLIENT_CAPACITY as f64 * num_clients as f64 + advanced_secs * RATE -
             offset as f64;
         let denominator = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES as f64 * num_clients as f64;
-        let success_count = (numerator / denominator).round() as u64;
+        let success_count = (numerator / denominator) as u64;
         for count in clients_and_counts.values() {
             assert_eq!(*count, success_count);
         }
