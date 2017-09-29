@@ -383,21 +383,22 @@ impl MutableData {
         }
 
         for (key, version) in delete {
-            /// TODO(nbaksalyar): find a way to decrease a number of entries after deletion.
-            /// In the current implementation if a number of entries exceeds the limit
-            /// there's no way for an owner to delete unneeded entries.
+            // TODO(nbaksalyar): find a way to decrease a number of entries after deletion.
+            // In the current implementation if a number of entries exceeds the limit
+            // there's no way for an owner to delete unneeded entries.
             match new_data.entry(key) {
                 Entry::Occupied(mut entry) => {
                     let current_version = entry.get().entry_version;
                     if version == current_version + 1 {
                         let _ = entry.insert(Value {
-                                                 content: Vec::new(),
-                                                 entry_version: version,
-                                             });
+                            content: Vec::new(),
+                            entry_version: version,
+                        });
                     } else {
-                        let _ =
-                            errors.insert(entry.key().clone(),
-                                          EntryError::InvalidSuccessor(current_version));
+                        let _ = errors.insert(
+                            entry.key().clone(),
+                            EntryError::InvalidSuccessor(current_version),
+                        );
                     }
                 }
                 Entry::Vacant(entry) => {

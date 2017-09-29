@@ -53,7 +53,7 @@ impl SignatureAccumulator {
         if let Some(&mut (ref mut msg, _, _)) = self.msgs.get_mut(&hash) {
             msg.add_signature(pub_id, sig);
         } else {
-            let mut sigs_vec = self.sigs.entry(hash).or_insert_with(
+            let sigs_vec = self.sigs.entry(hash).or_insert_with(
                 || (vec![], Instant::now()),
             );
             sigs_vec.0.push((pub_id, sig));

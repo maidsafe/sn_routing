@@ -119,7 +119,7 @@ impl NodeBuilder {
     /// request a new name and integrate itself into the network using the new name.
     ///
     /// The initial `Node` object will have newly generated keys.
-    pub fn create(self) -> Result<Node, RoutingError> {
+    pub fn create(self) -> Result<Peer, RoutingError> {
         // If we're not in a test environment where we might want to manually seed the crypto RNG
         // then seed randomly.
         #[cfg(not(feature = "use-mock-crust"))] rust_sodium::init();
@@ -130,7 +130,7 @@ impl NodeBuilder {
         let (_, machine) = self.make_state_machine(&mut ev_buffer);
         let (tx, rx) = channel();
 
-        Ok(Node {
+        Ok(Peer {
             interface_result_tx: tx,
             interface_result_rx: rx,
             machine: machine,
@@ -189,14 +189,14 @@ impl NodeBuilder {
 /// authority. Its methods can be used to send requests and responses as either an individual
 /// `ManagedNode` or as a part of a section or group authority. Their `src` argument indicates that
 /// role, and can be any [`Authority`](enum.Authority.html) other than `Client`.
-pub struct Node {
+pub struct Peer {
     interface_result_tx: Sender<Result<(), InterfaceError>>,
     interface_result_rx: Receiver<Result<(), InterfaceError>>,
     machine: StateMachine,
     event_buffer: EventBuf,
 }
 
-impl Node {
+impl Peer {
     /// Creates a new builder to configure and create a `Node`.
     pub fn builder() -> NodeBuilder {
         NodeBuilder {
@@ -540,7 +540,7 @@ impl Node {
     }
 }
 
-impl EventStepper for Node {
+impl EventStepper for Peer {
     type Item = Event;
 
     fn produce_events(&mut self) -> Result<(), RecvError> {
@@ -557,7 +557,7 @@ impl EventStepper for Node {
 }
 
 #[cfg(feature = "use-mock-crust")]
-impl Node {
+impl Peer {
     /// Purge invalid routing entries.
     pub fn purge_invalid_rt_entry(&mut self) {
         self.machine.current_mut().purge_invalid_rt_entry()
@@ -637,13 +637,13 @@ impl Node {
 }
 
 #[cfg(feature = "use-mock-crust")]
-impl Debug for Node {
+impl Debug for Peer {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         self.machine.fmt(formatter)
     }
 }
 
-impl Drop for Node {
+impl Drop for Peer {
     fn drop(&mut self) {
         let _ = self.machine.current_mut().handle_action(
             Action::Terminate,

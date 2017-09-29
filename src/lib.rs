@@ -47,7 +47,7 @@
 //! A decentralised service based on the `routing` library uses `Client` to send requests to the
 //! network of nodes and receive responses.
 //!
-//! `Node` is used to handle and send requests within that network, and to implement its
+//! `Peer` is used to handle and send requests within that network, and to implement its
 //! functionality, e.g. storing and retrieving data, validating permissions, managing metadata, etc.
 //!
 //!
@@ -72,15 +72,15 @@
 //! `receiver`.
 //!
 //!
-//! ## Node creation
+//! ## Peer creation
 //!
 //! Creating a node looks even simpler:
 //!
 //! ```no_run
 //! # #![allow(unused)]
-//! use routing::Node;
+//! use routing::Peer;
 //!
-//! let node = Node::builder().create().unwrap();
+//! let node = Peer::builder().create().unwrap();
 //! ```
 //!
 //! Upon creation, the node will first connect to the network as a client. Once it has client
@@ -96,7 +96,7 @@
 //! # Sequence diagrams
 //!
 //! - [Bootstrapping](bootstrap.png)
-//! - [Churn (`NewNode`)](new-node.png)
+//! - [Churn (`NewPeer`)](new-node.png)
 //! - [Tunnel](tunnel.png)
 
 #![doc(html_logo_url =
@@ -107,15 +107,15 @@
 // For explanation of lint checks, run `rustc -W help` or see
 // https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
 #![forbid(exceeding_bitshifts, mutable_transmutes, no_mangle_const_items,
-          unknown_crate_types, warnings)]
+          unknown_crate_types)]
 #![deny(bad_style, deprecated, improper_ctypes, missing_docs,
         non_shorthand_field_patterns, overflowing_literals, plugin_as_library,
         private_no_mangle_fns, private_no_mangle_statics, stable_features, unconditional_recursion,
-        unknown_lints, unsafe_code, unused, unused_allocation, unused_attributes,
+        unknown_lints, unsafe_code, unused_allocation, unused_attributes,
         unused_comparisons, unused_features, unused_parens, while_true)]
 #![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
         unused_qualifications, unused_results)]
-#![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
+#![allow(unused_results, box_pointers, fat_ptr_transmutes, missing_copy_implementations,
          missing_debug_implementations, variant_size_differences, non_camel_case_types)]
 
 #![cfg_attr(feature="cargo-clippy", deny(unicode_not_nfc, wrong_pub_self_convention,
@@ -170,7 +170,7 @@ mod section_list_cache;
 mod id;
 mod message_filter;
 mod messages;
-mod node;
+mod peer;
 mod outbox;
 mod peer_manager;
 mod rate_limiter;
@@ -237,7 +237,7 @@ pub use id::{FullId, PublicId};
 pub use messages::{AccountInfo, Request, Response};
 #[cfg(feature = "use-mock-crust")]
 pub use mock_crust::crust;
-pub use node::{Node, NodeBuilder};
+pub use peer::{NodeBuilder, Peer};
 #[cfg(feature = "use-mock-crust")]
 pub use peer_manager::test_consts;
 #[cfg(feature = "use-mock-crust")]
