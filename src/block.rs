@@ -15,84 +15,91 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use chain::block_identifier::BlockIdentifier;
-use chain::proof::Proof;
-use chain::vote::Vote;
-use error::Error;
+use serde::Serialize;
+use proof::Proof;
+use vote::Vote;
+use error::RoutingError;
+use rust_sodium::crypto::sign::PublicKey;
 use maidsafe_utilities::serialisation;
 
-/// Used to validate chain
-/// Block can be a data item or
-/// a chain link.
+
 #[allow(missing_docs)]
-#[derive(Debug, RustcEncodable, RustcDecodable, PartialEq, Clone)]
-pub struct Block {
-    identifier: BlockIdentifier,
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct Block<T> {
+    payload: T,
     proofs: Vec<Proof>,
     pub valid: bool,
 }
 
-impl Block {
+impl <T: Serialize + Clone>Block<T> {
     /// new block
-    pub fn new(vote: Vote) -> Result<Block, Error> {
-        if !vote.validate() {
-            return Err(Error::Signature);
-        }
-        Ok(Block {
-            identifier: vote.identifier().clone(),
-            proofs: vec![vote.proof().clone()],
+    #[allow(unused)]
+    pub fn new(vote: &Vote<T>, pub_key: &PublicKey) -> Result<Block<T>, RoutingError> {
+        vote.validate(pub_key)?;
+        let proof = Proof::new(&pub_key, vote)?;
+
+        Ok(Block::<T> {
+            payload: vote.payload().clone(),
+            proofs: vec![proof],
             valid: false,
         })
     }
 
     /// Add a proof from a peer
-    pub fn add_proof(&mut self, proof: Proof) -> Result<(), Error> {
+    #[allow(unused)]
+    pub fn add_proof(&mut self, proof: Proof) -> Result<(), RoutingError> {
         if !self.validate_proof(&proof) {
-            return Err(Error::Signature);
+            return Err(RoutingError::FailedSignature);
         }
         if !self.proofs.iter().any(|x| x.key() == proof.key()) {
             self.proofs.push(proof);
             return Ok(());
         }
-        Err(Error::Validation)
+        Err(RoutingError::FailedSignature)
     }
 
+    #[allow(unused)]
     /// validate signed correctly
     pub fn validate_proof(&self, proof: &Proof) -> bool {
-        match serialisation::serialise(&self.identifier) {
+        match serialisation::serialise(&self.payload) {
             Ok(data) => proof.validate(&data[..]),
             _ => false,
         }
     }
 
+    #[allow(unused)]
     /// validate signed correctly
     pub fn validate_block_signatures(&self) -> bool {
-        match serialisation::serialise(&self.identifier) {
+        match serialisation::serialise(&self.payload) {
             Ok(data) => self.proofs.iter().all(|proof| proof.validate(&data[..])),
             _ => false,
         }
     }
 
+    #[allow(unused)]
     /// Prune any bad signatures.
     pub fn remove_invalid_signatures(&mut self) {
-        match serialisation::serialise(&self.identifier) {
+        match serialisation::serialise(&self.payload) {
             Ok(data) => self.proofs.retain(|proof| proof.validate(&data[..])),
             _ => self.proofs.clear(),
         }
     }
 
+    #[allow(unused)]
     /// getter
     pub fn proofs(&self) -> &Vec<Proof> {
         &self.proofs
     }
 
+    #[allow(unused)]
     /// getter
     pub fn proofs_mut(&mut self) -> &mut Vec<Proof> {
         &mut self.proofs
     }
 
+    #[allow(unused)]
     /// getter
-    pub fn identifier(&self) -> &BlockIdentifier {
-        &self.identifier
+    pub fn identifier(&self) -> &T {
+        &self.payload
     }
 }

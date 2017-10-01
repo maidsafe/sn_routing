@@ -30,7 +30,7 @@ pub struct Vote<T> {
     signature: Signature,
 }
 
-impl <T: Serialize>Vote<T> {
+impl <T: Serialize + Clone>Vote<T> {
     /// Create a Vote
     #[allow(unused)]
     pub fn new(secret_key: &SecretKey,
@@ -52,15 +52,15 @@ impl <T: Serialize>Vote<T> {
 
     /// Getter
         #[allow(unused)]
-    pub fn signature(&self) -> &Signature {
-        &self.signature
+    pub fn signature(&self) -> Signature {
+        self.signature.clone()
     }
 
     /// validate signed correctly
         #[allow(unused)]
-    pub fn validate(&self, public_key: PublicKey) -> Result<bool, RoutingError> 
+    pub fn validate(&self, public_key: &PublicKey) -> Result<bool, RoutingError> 
     {
-        Ok(sign::verify_detached(&self.signature, &serialisation::serialise(&self.payload)?[..], &public_key))
+        Ok(sign::verify_detached(&self.signature, &serialisation::serialise(&self.payload)?[..], public_key))
     }
 }
 

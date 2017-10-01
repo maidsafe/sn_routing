@@ -22,19 +22,19 @@ use error::RoutingError;
 
 /// Proof as provided by a close group member
 /// This nay be extracted from a `Vote` to be inserted into a `Block`
-#[derive(Serialize, Deserialize, PartialOrd, Ord, PartialEq, Eq, Clone)]
+#[derive(Serialize, Deserialize, PartialOrd, Ord, PartialEq, Eq, Clone, Debug)]
 pub struct Proof {
     pub_key: PublicKey,
     sig: Signature,
 }
 
 impl Proof {
-    /// cstr
+    /// Create Proof from Vote and public key
     #[allow(unused)]
-    pub fn new<T: Serialize>(key: PublicKey, vote: Vote<T>) -> Result<Proof, RoutingError> {
+    pub fn new<T: Serialize + Clone>(key: &PublicKey, vote: &Vote<T>) -> Result<Proof, RoutingError> {
         vote.validate(key)?;
         Ok(Proof {
-            pub_key: key,
+            pub_key: key.clone(),
             sig: vote.signature().clone(),
         })
     }

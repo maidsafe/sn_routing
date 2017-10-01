@@ -188,6 +188,7 @@ mod utils;
 mod xor_name;
 pub (crate) mod vote;
 pub (crate) mod proof;
+pub (crate) mod block;
 
 #[cfg(feature = "use-mock-crypto")]
 pub mod mock_crypto;
