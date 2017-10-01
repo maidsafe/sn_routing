@@ -1075,7 +1075,7 @@ impl Peer {
 
         // TODO(MAID-1677): Remove this once messages are fully validated.
         // Expect group/section messages to be sent by at least a quorum of `min_section_size`.
-        if self.our_prefix().bit_count() > 0 && signed_msg.routing_message().src.is_multiple() &&
+        if self.our_prefix().bit_count() > 0 && signed_msg.routing_message().src.is_group() &&
             signed_msg.src_size() * QUORUM_DENOMINATOR <=
                 self.min_section_size() * QUORUM_NUMERATOR
         {
@@ -1094,7 +1094,7 @@ impl Peer {
             frslt @ FilteringResult::NewMessage => {
                 if self.in_authority(&signed_msg.routing_message().dst) {
                     self.send_ack(signed_msg.routing_message(), route);
-                    if signed_msg.routing_message().dst.is_multiple() {
+                    if signed_msg.routing_message().dst.is_group() {
                         // Broadcast to the rest of the section.
                         if let Err(error) = self.send_signed_message(
                             &signed_msg,
