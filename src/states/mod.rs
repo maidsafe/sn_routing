@@ -18,11 +18,11 @@
 mod bootstrapping;
 pub mod common;
 mod client;
-mod joining_node;
-mod node;
+mod joining_peer;
+mod peer;
 
 pub use self::bootstrapping::Bootstrapping;
 pub use self::bootstrapping::TargetState as BootstrappingTargetState;
 pub use self::client::{Client, RATE_EXCEED_RETRY_MS};
-pub use self::joining_node::JoiningNode;
-pub use self::node::Node;
+pub use self::joining_peer::JoiningPeer;
+pub use self::peer::Peer;

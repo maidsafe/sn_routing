@@ -86,7 +86,7 @@ const CLIENT_BAN_SECS: u64 = 2 * 60 * 60;
 /// Duration for which clients' IDs we disconnected from are retained, in seconds.
 const DROPPED_CLIENT_TIMEOUT_SECS: u64 = 2 * 60 * 60;
 
-pub struct Node {
+pub struct Peer {
     ack_mgr: AckManager,
     cacheable_user_msg_cache: UserMessageCache,
     crust_service: Service,
@@ -145,7 +145,7 @@ pub struct Node {
     disable_resource_proof: bool,
 }
 
-impl Node {
+impl Peer {
     pub fn first(
         action_sender: RoutingActionSender,
         cache: Box<Cache>,
@@ -233,7 +233,7 @@ impl Node {
         let tick_timer_token = timer.schedule(tick_period);
         let user_msg_cache_duration = Duration::from_secs(USER_MSG_CACHE_EXPIRY_DURATION_SECS);
 
-        Node {
+        Peer {
             ack_mgr: AckManager::new(),
             cacheable_user_msg_cache: UserMessageCache::with_expiry_duration(
                 user_msg_cache_duration,
@@ -3911,7 +3911,7 @@ impl Node {
     }
 }
 
-impl Base for Node {
+impl Base for Peer {
     fn crust_service(&self) -> &Service {
         &self.crust_service
     }
@@ -4022,7 +4022,7 @@ impl Node {
     }
 }
 
-impl Bootstrapped for Node {
+impl Bootstrapped for Peer {
     fn ack_mgr(&self) -> &AckManager {
         &self.ack_mgr
     }
@@ -4144,7 +4144,7 @@ impl Bootstrapped for Node {
     }
 }
 
-impl Debug for Node {
+impl Debug for Peer {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter, "Node({}({:b}))", self.name(), self.our_prefix())
     }

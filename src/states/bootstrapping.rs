@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use super::{Client, JoiningNode, Node};
+use super::{Client, JoiningPeer, Peer};
 use super::common::Base;
 use {CrustEvent, Service};
 use action::Action;
@@ -47,7 +47,7 @@ const BOOTSTRAP_TIMEOUT_SECS: u64 = 20;
 #[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
 pub enum TargetState {
     Client { msg_expiry_dur: Duration },
-    JoiningNode,
+    JoiningPeer,
     Node {
         old_full_id: FullId,
         our_section: (Prefix<XorName>, BTreeSet<PublicId>),
@@ -82,7 +82,7 @@ impl Bootstrapping {
             TargetState::Client { .. } => {
                 let _ = crust_service.start_bootstrap(HashSet::new(), CrustUser::Client);
             }
-            TargetState::JoiningNode |
+            TargetState::JoiningPeer |
             TargetState::Node { .. } => {
                 if let Err(error) = crust_service.start_listening_tcp() {
                     error!("Failed to start listening: {:?}", error);
@@ -194,9 +194,9 @@ impl Bootstrapping {
                     outbox,
                 ))
             }
-            TargetState::JoiningNode => {
+            TargetState::JoiningPeer => {
                 if let Some(joining_node) =
-                    JoiningNode::from_bootstrapping(
+                    JoiningPeer::from_bootstrapping(
                         self.action_sender,
                         self.cache,
                         self.crust_service,
@@ -218,7 +218,7 @@ impl Bootstrapping {
                 our_section,
                 ..
             } => {
-                State::Node(Node::from_bootstrapping(
+                State::Peer(Peer::from_bootstrapping(
                     our_section,
                     self.action_sender,
                     self.cache,
@@ -237,7 +237,7 @@ impl Bootstrapping {
     fn client_restriction(&self) -> bool {
         match self.target_state {
             TargetState::Client { .. } => true,
-            TargetState::JoiningNode |
+            TargetState::JoiningPeer |
             TargetState::Node { .. } => false,
         }
     }

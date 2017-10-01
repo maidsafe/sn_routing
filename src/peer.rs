@@ -147,7 +147,7 @@ impl NodeBuilder {
 
         StateMachine::new(
             move |action_sender, crust_service, timer, outbox2| if self.first {
-                if let Some(state) = states::Node::first(
+                if let Some(state) = states::Peer::first(
                     action_sender,
                     self.cache,
                     crust_service,
@@ -156,7 +156,7 @@ impl NodeBuilder {
                     timer,
                 )
                 {
-                    State::Node(state)
+                    State::Peer(state)
                 } else {
                     State::Terminated
                 }
@@ -168,7 +168,7 @@ impl NodeBuilder {
                 Bootstrapping::new(
                     action_sender,
                     self.cache,
-                    BootstrappingTargetState::JoiningNode,
+                    BootstrappingTargetState::JoiningPeer,
                     crust_service,
                     full_id,
                     min_section_size,

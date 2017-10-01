@@ -27,7 +27,7 @@ use outbox::EventBox;
 use routing_table::{Prefix, RoutingTable};
 #[cfg(feature = "use-mock-crust")]
 use rust_sodium::crypto::sign;
-use states::{Bootstrapping, Client, JoiningNode, Node};
+use states::{Bootstrapping, Client, JoiningPeer, Peer};
 use states::common::Base;
 #[cfg(feature = "use-mock-crust")]
 use std::collections::BTreeMap;
@@ -59,8 +59,8 @@ pub struct StateMachine {
 pub enum State {
     Bootstrapping(Bootstrapping),
     Client(Client),
-    JoiningNode(JoiningNode),
-    Node(Node),
+    JoiningNode(JoiningPeer),
+    Peer(Peer),
     Terminated,
 }
 
@@ -92,7 +92,7 @@ impl State {
             State::Bootstrapping(ref mut state) => state.handle_action(action),
             State::Client(ref mut state) => state.handle_action(action),
             State::JoiningNode(ref mut state) => state.handle_action(action, outbox),
-            State::Node(ref mut state) => state.handle_action(action, outbox),
+            State::Peer(ref mut state) => state.handle_action(action, outbox),
             State::Terminated => Transition::Terminate,
         }
     }
@@ -106,7 +106,7 @@ impl State {
             State::Bootstrapping(ref mut state) => state.handle_crust_event(event, outbox),
             State::Client(ref mut state) => state.handle_crust_event(event, outbox),
             State::JoiningNode(ref mut state) => state.handle_crust_event(event, outbox),
-            State::Node(ref mut state) => state.handle_crust_event(event, outbox),
+            State::Peer(ref mut state) => state.handle_crust_event(event, outbox),
             State::Terminated => Transition::Terminate,
         }
     }
@@ -117,7 +117,7 @@ impl State {
 
     fn routing_table(&self) -> Option<&RoutingTable<XorName>> {
         match *self {
-            State::Node(ref state) => Some(state.routing_table()),
+            State::Peer(ref state) => Some(state.routing_table()),
             _ => None,
         }
     }
@@ -146,7 +146,7 @@ impl State {
             State::Bootstrapping(ref bootstrapping) => Some(bootstrapping),
             State::Client(ref client) => Some(client),
             State::JoiningNode(ref joining_node) => Some(joining_node),
-            State::Node(ref node) => Some(node),
+            State::Peer(ref node) => Some(node),
             State::Terminated => None,
         }
     }
@@ -158,7 +158,7 @@ impl Debug for State {
             State::Bootstrapping(ref inner) => write!(formatter, "State::{:?}", inner),
             State::Client(ref inner) => write!(formatter, "State::{:?}", inner),
             State::JoiningNode(ref inner) => write!(formatter, "State::{:?}", inner),
-            State::Node(ref inner) => write!(formatter, "State::{:?}", inner),
+            State::Peer(ref inner) => write!(formatter, "State::{:?}", inner),
             State::Terminated => write!(formatter, "State::Terminated"),
         }
     }

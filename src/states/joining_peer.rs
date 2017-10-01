@@ -48,7 +48,7 @@ use xor_name::XorName;
 /// Total time (in seconds) to wait for `RelocateResponse`.
 const RELOCATE_TIMEOUT_SECS: u64 = 60 + RESOURCE_PROOF_DURATION_SECS;
 
-pub struct JoiningNode {
+pub struct JoiningPeer {
     action_sender: RoutingActionSender,
     ack_mgr: AckManager,
     crust_service: Service,
@@ -65,7 +65,7 @@ pub struct JoiningNode {
     timer: Timer,
 }
 
-impl JoiningNode {
+impl JoiningPeer {
     #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
     pub fn from_bootstrapping(
         action_sender: RoutingActionSender,
@@ -79,7 +79,7 @@ impl JoiningNode {
     ) -> Option<Self> {
         let duration = Duration::from_secs(RELOCATE_TIMEOUT_SECS);
         let relocation_timer_token = timer.schedule(duration);
-        let mut joining_node = JoiningNode {
+        let mut joining_node = JoiningPeer {
             action_sender: action_sender,
             ack_mgr: AckManager::new(),
             crust_service: crust_service,
@@ -350,7 +350,7 @@ impl JoiningNode {
     }
 }
 
-impl Base for JoiningNode {
+impl Base for JoiningPeer {
     fn crust_service(&self) -> &Service {
         &self.crust_service
     }
@@ -388,7 +388,7 @@ impl Base for JoiningNode {
     }
 }
 
-impl Bootstrapped for JoiningNode {
+impl Bootstrapped for JoiningPeer {
     fn ack_mgr(&self) -> &AckManager {
         &self.ack_mgr
     }
@@ -458,7 +458,7 @@ impl Bootstrapped for JoiningNode {
     }
 }
 
-impl Debug for JoiningNode {
+impl Debug for JoiningPeer {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter, "JoiningNode({}())", self.name())
     }
