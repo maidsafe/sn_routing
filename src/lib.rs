@@ -186,6 +186,8 @@ mod tunnels;
 mod types;
 mod utils;
 mod xor_name;
+pub (crate) mod vote;
+pub (crate) mod proof;
 
 #[cfg(feature = "use-mock-crypto")]
 pub mod mock_crypto;

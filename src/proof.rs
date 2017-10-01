@@ -15,46 +15,46 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use super::debug_bytes;
+use serde::Serialize;
 use rust_sodium::crypto::sign::{self, PublicKey, Signature};
-use std::fmt::{self, Debug, Formatter};
+use super::vote::Vote;
+use error::RoutingError;
 
 /// Proof as provided by a close group member
 /// This nay be extracted from a `Vote` to be inserted into a `Block`
-#[derive(RustcEncodable, RustcDecodable, PartialOrd, Ord, PartialEq, Eq, Clone)]
+#[derive(Serialize, Deserialize, PartialOrd, Ord, PartialEq, Eq, Clone)]
 pub struct Proof {
-    key: PublicKey,
+    pub_key: PublicKey,
     sig: Signature,
 }
 
 impl Proof {
     /// cstr
-    pub fn new(key: PublicKey, sig: Signature) -> Proof {
-        Proof {
-            key: key,
-            sig: sig,
-        }
+    #[allow(unused)]
+    pub fn new<T: Serialize>(key: PublicKey, vote: Vote<T>) -> Result<Proof, RoutingError> {
+        vote.validate(key)?;
+        Ok(Proof {
+            pub_key: key,
+            sig: vote.signature().clone(),
+        })
     }
 
     /// getter
+    #[allow(unused)]    
     pub fn key(&self) -> &PublicKey {
-        &self.key
+        &self.pub_key
     }
 
     /// getter
+    #[allow(unused)]    
     pub fn sig(&self) -> &Signature {
         &self.sig
     }
 
     /// Validates `data` against this `Proof`'s `key` and `sig`.
+    #[allow(unused)]    
     pub fn validate(&self, data: &[u8]) -> bool {
-        sign::verify_detached(&self.sig, data, &self.key)
-    }
-}
-
-impl Debug for Proof {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(formatter, "Proof {{ key: {} }}", debug_bytes(self.key))
+        sign::verify_detached(&self.sig, data, &self.pub_key)
     }
 }
 

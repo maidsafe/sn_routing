@@ -74,7 +74,7 @@ mod unnamed {
     use std::sync::mpsc::{Receiver, Sender};
     use std::thread as std_thread;
     use std::time::Duration;
-    use utils::{ExampleClient, ExampleNode};
+    use utils::{ExampleClient, ExamplePeer};
 
     // ==========================   Program Options   =================================
     #[cfg_attr(rustfmt, rustfmt_skip)]
@@ -253,9 +253,9 @@ Options:
             .unwrap_or_else(|error| error.exit());
 
         if args.flag_first {
-            ExampleNode::new(true).run();
+            ExamplePeer::new(true).run();
         } else if args.flag_node {
-            ExampleNode::new(false).run();
+            ExamplePeer::new(false).run();
         } else {
             KeyValueStore::new().run();
         }

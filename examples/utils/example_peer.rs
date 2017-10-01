@@ -18,26 +18,26 @@
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use routing::{Authority, ClientError, Event, EventStream, ImmutableData, MessageId, MutableData,
-              Node, Prefix, Request, Response, XorName};
+              Peer, Prefix, Request, Response, XorName};
 use std::collections::HashMap;
 use std::time::Duration;
 
 /// A simple example node implementation for a network based on the Routing library.
-pub struct ExampleNode {
+pub struct ExamplePeer {
     /// The node interface to the Routing library.
-    node: Node,
+    node: Peer,
     idata_store: HashMap<XorName, ImmutableData>,
     mdata_store: HashMap<(XorName, u64), MutableData>,
     client_accounts: HashMap<XorName, u64>,
     request_cache: LruCache<MessageId, (Authority<XorName>, Authority<XorName>)>,
 }
 
-impl ExampleNode {
+impl ExamplePeer {
     /// Creates a new node and attempts to establish a connection to the network.
-    pub fn new(first: bool) -> ExampleNode {
-        let node = unwrap!(Node::builder().first(first).create());
+    pub fn new(first: bool) -> ExamplePeer {
+        let node = unwrap!(Peer::builder().first(first).create());
 
-        ExampleNode {
+        ExamplePeer {
             node: node,
             idata_store: HashMap::new(),
             mdata_store: HashMap::new(),
@@ -76,7 +76,7 @@ impl ExampleNode {
                 }
                 Event::RestartRequired => {
                     info!("{} Received RestartRequired event", self.get_debug_name());
-                    self.node = unwrap!(Node::builder().create());
+                    self.node = unwrap!(Peer::builder().create());
                 }
                 Event::SectionSplit(prefix) => {
                     trace!(

@@ -21,4 +21,4 @@ mod example_peer;
 mod example_client;
 
 pub use self::example_client::ExampleClient;
-pub use self::example_node::ExampleNode;
+pub use self::example_peer::ExamplePeer;

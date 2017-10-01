@@ -76,7 +76,7 @@ mod unnamed {
     use std::sync::{Arc, Condvar, Mutex};
     use std::time::Duration;
     use term::{self, color};
-    use utils::{ExampleClient, ExampleNode};
+    use utils::{ExampleClient, ExamplePeer};
 
     const CHURN_MIN_WAIT_SEC: u64 = 20;
     const CHURN_MAX_WAIT_SEC: u64 = 30;
@@ -415,7 +415,7 @@ Options:
             if Some(true) == args.flag_client {
                 store_and_verify(requests, batches);
             } else {
-                ExampleNode::new(first).run();
+                ExamplePeer::new(first).run();
             }
         }
     }

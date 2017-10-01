@@ -15,66 +15,52 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use chain::block_identifier::BlockIdentifier;
-use chain::proof::Proof;
-use error::Error;
+use serde::Serialize;
+use error::RoutingError;
 use maidsafe_utilities::serialisation;
-use rust_sodium::crypto::sign::{self, PublicKey, SecretKey};
+use rust_sodium::crypto::sign::{self, Signature, PublicKey, SecretKey};
 
-/// If data block then this is sent by any group member when data is `Put`, `Post` or `Delete`.
-/// If this is a link then it is sent with a `churn` event.
-/// A `Link` is a vote that each member must send each other in times of churn.
-/// These will not accumulate but be `ManagedNode`  to `ManagedNode` messages in the routing layer
-#[derive(RustcEncodable, RustcDecodable, PartialEq, Debug, Clone)]
-pub struct Vote {
-    identifier: BlockIdentifier,
-    proof: Proof,
+/// A Vote is a nodes desire to initiate a network action or sub action.
+/// If there are Quorum votes the action will happen
+/// These are direct messages and therefor do not require the PublicKey
+/// Signature is detached and is the signed payload 
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct Vote<T> {
+    payload: T,
+    signature: Signature,
 }
 
-impl Vote {
-    /// Create a Block (used by nodes in network to send to holders of `DataChains`)
-    pub fn new(pub_key: &PublicKey,
-               secret_key: &SecretKey,
-               data_identifier: BlockIdentifier)
-               -> Result<Vote, Error> {
-        let signature = sign::sign_detached(&serialisation::serialise(&data_identifier)?[..],
+impl <T: Serialize>Vote<T> {
+    /// Create a Vote
+    #[allow(unused)]
+    pub fn new(secret_key: &SecretKey,
+               payload: T)
+               -> Result<Vote<T>, RoutingError> {
+        let signature = sign::sign_detached(&serialisation::serialise(&payload)?[..],
                                             secret_key);
         Ok(Vote {
-            identifier: data_identifier,
-            proof: Proof::new(*pub_key, signature),
+            payload: payload,
+            signature: signature,
         })
     }
 
     /// Getter
-    pub fn identifier(&self) -> &BlockIdentifier {
-        &self.identifier
+        #[allow(unused)]
+    pub fn payload(&self) -> &T {
+        &self.payload
     }
+
     /// Getter
-    pub fn proof(&self) -> &Proof {
-        &self.proof
+        #[allow(unused)]
+    pub fn signature(&self) -> &Signature {
+        &self.signature
     }
 
     /// validate signed correctly
-    pub fn validate(&self) -> bool {
-        self.validate_detached(&self.identifier)
-    }
-
-    /// Check vote is not for self added/removed
-    pub fn is_self_vote(&self) -> bool {
-        if let Some(name) = self.identifier.name() {
-            &self.proof.key().0 == name
-        } else {
-            false
-        }
-    }
-
-    /// validate signed correctly
-    pub fn validate_detached(&self, identifier: &BlockIdentifier) -> bool {
-
-        match serialisation::serialise(identifier) {
-            Ok(data) => self.proof.validate(&data[..]),
-            _ => false,
-        }
+        #[allow(unused)]
+    pub fn validate(&self, public_key: PublicKey) -> Result<bool, RoutingError> 
+    {
+        Ok(sign::verify_detached(&self.signature, &serialisation::serialise(&self.payload)?[..], &public_key))
     }
 }
 

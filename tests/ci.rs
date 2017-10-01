@@ -51,7 +51,7 @@ use maidsafe_utilities::SeededRng;
 use maidsafe_utilities::thread::{self, Joiner};
 use rand::Rng;
 use routing::{Authority, Client, ClientError, Event, EventStream, FullId, MIN_SECTION_SIZE,
-              MessageId, MutableData, Node, Request, Response, Value, XorName, Xorable};
+              MessageId, MutableData, Peer, Request, Response, Value, XorName, Xorable};
 use rust_sodium::crypto;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 #[cfg(target_os = "macos")]
@@ -103,13 +103,13 @@ fn recv_with_timeout(
 struct TestEvent(usize, Event);
 
 struct TestNode {
-    node: Node,
+    node: Peer,
 }
 
 impl TestNode {
     // If `index` is `0`, this will be treated as the first node of the network.
     fn new(index: usize) -> Self {
-        TestNode { node: unwrap!(Node::builder().first(index == 0).create()) }
+        TestNode { node: unwrap!(Peer::builder().first(index == 0).create()) }
     }
 
     fn name(&self) -> XorName {
@@ -294,7 +294,7 @@ fn gen_mutable_data<R: Rng>(full_id: &FullId, rng: &mut R) -> MutableData {
 
     let owner_pubkey = *full_id.public_id().signing_public_key();
     let mut owners = BTreeSet::new();
-    owners.insert(owner_pubkey);
+    let _dontcare = owners.insert(owner_pubkey);
 
     MutableData::new(rng.gen(), tag, Default::default(), entries, owners)
         .expect("Cannot create structured data for test")
@@ -652,7 +652,7 @@ fn core() {
                             client_key,
                         );
                         assert!(result.is_ok());
-                        sent_ids.insert(message_id);
+                        let _dontcare = sent_ids.insert(message_id);
                     }
                     TestEvent(index, Event::Request { request, src, dst }) => {
                         // A node received request from the client. Reply with a success.
