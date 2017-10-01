@@ -16,7 +16,6 @@
 // relating to use of the SAFE Network Software.
 
 use maidsafe_utilities::serialisation;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt::{self, Debug, Formatter};
 use tiny_keccak::sha3_256;
 use xor_name::XorName;
@@ -28,7 +27,7 @@ pub const MAX_IMMUTABLE_DATA_SIZE_IN_BYTES: u64 = 1024 * 1024 + 10 * 1024;
 ///
 /// Note that the `name` member is omitted when serialising `ImmutableData` and is calculated from
 /// the `value` when deserialising.
-#[derive(Hash, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Serialize, Deserialize, Hash, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ImmutableData {
     name: XorName,
     value: Vec<u8>,
@@ -66,19 +65,6 @@ impl ImmutableData {
     /// Return true if the size is valid
     pub fn validate_size(&self) -> bool {
         self.serialised_size() <= MAX_IMMUTABLE_DATA_SIZE_IN_BYTES
-    }
-}
-
-impl Serialize for ImmutableData {
-    fn serialize<S: Serializer>(&self, serialiser: S) -> Result<S::Ok, S::Error> {
-        self.value.serialize(serialiser)
-    }
-}
-
-impl<'de> Deserialize<'de> for ImmutableData {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<ImmutableData, D::Error> {
-        let value: Vec<u8> = Deserialize::deserialize(deserializer)?;
-        Ok(ImmutableData::new(value))
     }
 }
 
