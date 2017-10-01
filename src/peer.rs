@@ -580,14 +580,14 @@ impl Peer {
         self.machine.current().section_list_signatures(prefix)
     }
 
-    /// Returns the list of banned clients' IPs held by this node.
+    /// Returns the list  of banned clients' IPs held by this node.
     pub fn get_banned_client_ips(&self) -> BTreeSet<IpAddr> {
         self.machine.current().get_banned_client_ips()
     }
 
     /// Returns whether the current state is `Node`.
     pub fn is_node(&self) -> bool {
-        if let State::Node(..) = *self.machine.current() {
+        if let State::Peer(..) = *self.machine.current() {
             true
         } else {
             false

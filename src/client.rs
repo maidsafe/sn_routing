@@ -469,7 +469,7 @@ impl Client {
         bootstrap_config: Option<BootstrapConfig>,
         msg_expiry_dur: Duration,
     ) -> Result<Client, RoutingError> {
-        rust_sodium::init(); // enable shared global (i.e. safe to multithread now)
+        let _dontcare = rust_sodium::init(); // enable shared global (i.e. safe to multithread now)
 
         let (tx, rx) = channel();
         let (get_action_sender_tx, get_action_sender_rx) = channel();

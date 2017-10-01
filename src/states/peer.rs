@@ -3963,7 +3963,7 @@ impl Base for Peer {
 }
 
 #[cfg(feature = "use-mock-crust")]
-impl Node {
+impl Peer {
     /// Check whether this node acts as a tunnel node between `client_1` and `client_2`.
     pub fn has_tunnel_clients(&self, client_1: PublicId, client_2: PublicId) -> bool {
         self.tunnels.has_clients(client_1, client_2)

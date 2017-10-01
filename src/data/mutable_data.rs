@@ -574,21 +574,9 @@ impl MutableData {
             return Err(ClientError::InvalidSuccessor(self.version));
         }
         self.owners.clear();
-        self.owners.insert(new_owner);
+        let _dontcare = self.owners.insert(new_owner);
         self.version = version;
         Ok(())
-    }
-
-    /// Change the owner without performing any validation.
-    pub fn change_owner_without_validation(&mut self, new_owner: PublicKey, version: u64) -> bool {
-        if version <= self.version {
-            return false;
-        }
-
-        self.owners.clear();
-        self.owners.insert(new_owner);
-        self.version = version;
-        true
     }
 
     /// Return the size of this data after serialisation.

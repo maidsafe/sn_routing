@@ -15,19 +15,12 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use hex::{FromHex, FromHexError, ToHex};
+use hex::ToHex;
 use num_bigint::BigUint;
 use rand;
 use routing_table::Xorable;
 use std::{fmt, ops};
 use std::cmp::Ordering;
-
-/// Create a 32-byte array of `u8` from a 32-byte reference to a `u8` slice.
-pub fn slice_as_u8_32_array(slice: &[u8]) -> [u8; 32] {
-    let mut arr = [0u8; 32];
-    arr.clone_from_slice(slice);
-    arr
-}
 
 /// Constant byte length of `XorName`.
 pub const XOR_NAME_LEN: usize = 32;
@@ -43,7 +36,6 @@ pub enum XorNameFromHexError {
     /// The hex string did not encode `XOR_NAME_LEN` bytes.
     WrongLength,
 }
-
 
 /// A [`XOR_NAME_BITS`](constant.XOR_NAME_BITS.html)-bit number, viewed as a point in XOR space.
 ///
@@ -70,20 +62,20 @@ impl XorName {
         })
     }
 
-    /// Hex-decode a `XorName` from a `&str`.
-    pub fn from_hex(s: &str) -> Result<XorName, XorNameFromHexError> {
-        let data: Vec<u8> = match FromHex::from_hex(&s) {
-            Ok(v) => v,
-            Err(FromHexError::InvalidHexCharacter { c, index }) => {
-                return Err(XorNameFromHexError::InvalidCharacter(c, index))
-            }
-            Err(FromHexError::InvalidHexLength) => return Err(XorNameFromHexError::WrongLength),
-        };
-        if data.len() != XOR_NAME_LEN {
-            return Err(XorNameFromHexError::WrongLength);
-        }
-        Ok(XorName(slice_as_u8_32_array(&data[..])))
-    }
+    // /// Hex-decode a `XorName` from a `&str`.
+    // pub fn from_hex(s: &str) -> Result<XorName, XorNameFromHexError> {
+    //     let data: Vec<u8> = match FromHex::from_hex(&s) {
+    //         Ok(v) => v,
+    //         Err(FromHexError::InvalidHexCharacter { c, index }) => {
+    //             return Err(XorNameFromHexError::InvalidCharacter(c, index))
+    //         }
+    //         Err(FromHexError::InvalidHexLength) => return Err(XorNameFromHexError::WrongLength),
+    //     };
+    //     if data.len() != XOR_NAME_LEN {
+    //         return Err(XorNameFromHexError::WrongLength);
+    //     }
+    //     Ok(XorName(slice_as_u8_32_array(&data[..])))
+    // }
 
     /// Returns true if `lhs` is closer to `self` than `rhs`.
     ///
