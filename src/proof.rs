@@ -19,6 +19,7 @@ use serde::Serialize;
 use rust_sodium::crypto::sign::{self, PublicKey, Signature};
 use super::vote::Vote;
 use error::RoutingError;
+use maidsafe_utilities::serialisation;
 
 /// Proof as provided by a close group member
 /// This nay be extracted from a `Vote` to be inserted into a `Block`
@@ -53,8 +54,11 @@ impl Proof {
 
     /// Validates `data` against this `Proof`'s `key` and `sig`.
     #[allow(unused)]    
-    pub fn validate(&self, data: &[u8]) -> bool {
-        sign::verify_detached(&self.sig, data, &self.pub_key)
+    pub fn validate<T: Serialize>(&self, payload: &T) -> bool {
+         match serialisation::serialise(&payload) {
+            Ok(data) => sign::verify_detached(&self.sig, &data[..], &self.pub_key),
+            _ => false,
+        }
     }
 }
 

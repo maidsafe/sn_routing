@@ -62,7 +62,7 @@ impl <T: Serialize + Clone>Block<T> {
     /// validate signed correctly
     pub fn validate_proof(&self, proof: &Proof) -> bool {
         match serialisation::serialise(&self.payload) {
-            Ok(data) => proof.validate(&data[..]),
+            Ok(data) => proof.validate(&data),
             _ => false,
         }
     }
@@ -71,7 +71,7 @@ impl <T: Serialize + Clone>Block<T> {
     /// validate signed correctly
     pub fn validate_block_signatures(&self) -> bool {
         match serialisation::serialise(&self.payload) {
-            Ok(data) => self.proofs.iter().all(|proof| proof.validate(&data[..])),
+            Ok(data) => self.proofs.iter().all(|proof| proof.validate(&data)),
             _ => false,
         }
     }
@@ -80,7 +80,7 @@ impl <T: Serialize + Clone>Block<T> {
     /// Prune any bad signatures.
     pub fn remove_invalid_signatures(&mut self) {
         match serialisation::serialise(&self.payload) {
-            Ok(data) => self.proofs.retain(|proof| proof.validate(&data[..])),
+            Ok(data) => self.proofs.retain(|proof| proof.validate(&data)),
             _ => self.proofs.clear(),
         }
     }

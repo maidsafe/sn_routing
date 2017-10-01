@@ -52,8 +52,8 @@ impl <T: Serialize + Clone>Vote<T> {
 
     /// Getter
         #[allow(unused)]
-    pub fn signature(&self) -> Signature {
-        self.signature.clone()
+    pub fn signature(&self) -> &Signature {
+        &self.signature
     }
 
     /// validate signed correctly
