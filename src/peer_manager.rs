@@ -1749,7 +1749,7 @@ mod tests {
             result => panic!("Unexpected result: {:?}", result),
         }
         // Since both connection infos are present, the state should now be `CrustConnecting`.
-        match peer_mgr.get_peer(&their_pub_id).map(Peer::state) {
+        match peer_mgr.get_peer(&their_pub_id).map(DirectPeer::state) {
             Some(&PeerState::CrustConnecting) => (),
             state => panic!("Unexpected state: {:?}", state),
         }
@@ -1799,7 +1799,7 @@ mod tests {
             result => panic!("Unexpected result: {:?}", result),
         }
         // Since both connection infos are present, the state should now be `CrustConnecting`.
-        match peer_mgr.get_peer(&their_pub_id).map(Peer::state) {
+        match peer_mgr.get_peer(&their_pub_id).map(DirectPeer::state) {
             Some(&PeerState::CrustConnecting) => (),
             state => panic!("Unexpected state: {:?}", state),
         }
