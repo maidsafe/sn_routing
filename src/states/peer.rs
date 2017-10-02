@@ -37,7 +37,7 @@ use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, MAX_PARTS, MAX_PART_
                MessageContent, RoutingMessage, SectionList, SignedMessage, UserMessage,
                UserMessageCache};
 use outbox::{EventBox, EventBuf};
-use peer_manager::{ConnectionInfoPreparedResult, DirectPeer, PeerManager, PeerState, ReconnectingPeer,
+use peer_manager::{ConnectionInfoPreparedResult, PeerInfo, PeerManager, PeerState, ReconnectingPeer,
                    RoutingConnection, SectionMap};
 use rand::{self, Rng};
 use rate_limiter::RateLimiter;
@@ -204,7 +204,7 @@ impl Peer {
             our_section.1.len(),
         );
         node.joining_prefix = our_section.0;
-        node.peer_mgr.insert_peer(DirectPeer::new(
+        node.peer_mgr.insert_peer(PeerInfo::new(
             proxy_pub_id,
             PeerState::Proxy,
             false,
@@ -542,7 +542,7 @@ impl Peer {
             self.ban_and_disconnect_peer(&pub_id);
             return;
         }
-        self.peer_mgr.insert_peer(DirectPeer::new(
+        self.peer_mgr.insert_peer(PeerInfo::new(
             pub_id,
             PeerState::Bootstrapper { peer_kind, ip },
             false,
@@ -578,7 +578,7 @@ impl Peer {
 
     fn handle_connect_failure(&mut self, pub_id: PublicId) {
         if let Some(&PeerState::CrustConnecting) =
-            self.peer_mgr.get_peer(&pub_id).map(DirectPeer::state)
+            self.peer_mgr.get_peer(&pub_id).map(PeerInfo::state)
         {
             debug!("{:?} Failed to connect to peer {:?}.", self, pub_id);
             if self.tunnels.tunnel_for(&pub_id).is_none() {
@@ -791,7 +791,7 @@ impl Peer {
         direct_message: &DirectMessage,
         pub_id: &PublicId,
     ) -> Result<(), RoutingError> {
-        match self.peer_mgr.get_peer(pub_id).map(DirectPeer::state) {
+        match self.peer_mgr.get_peer(pub_id).map(PeerInfo::state) {
             Some(&PeerState::Bootstrapper { .. }) => {
                 if let DirectMessage::BootstrapRequest(_) = *direct_message {
                     return Ok(());
@@ -981,7 +981,7 @@ impl Peer {
     ) -> Result<(), RoutingError> {
         hop_msg.verify(pub_id.signing_public_key())?;
         let mut client_ip = None;
-        let mut hop_name_result = match self.peer_mgr.get_peer(&pub_id).map(DirectPeer::state) {
+        let mut hop_name_result = match self.peer_mgr.get_peer(&pub_id).map(PeerInfo::state) {
             Some(&PeerState::Bootstrapper { .. }) => {
                 warn!(
                     "{:?} Hop message received from bootstrapper {:?}, disconnecting.",
@@ -1075,7 +1075,7 @@ impl Peer {
 
         // TODO(MAID-1677): Remove this once messages are fully validated.
         // Expect group/section messages to be sent by at least a quorum of `min_section_size`.
-        if self.our_prefix().bit_count() > 0 && signed_msg.routing_message().src.is_group() &&
+        if self.our_prefix().bit_count() > 0 && signed_msg.routing_message().src.is_multiple() &&
             signed_msg.src_size() * QUORUM_DENOMINATOR <=
                 self.min_section_size() * QUORUM_NUMERATOR
         {
@@ -1094,7 +1094,7 @@ impl Peer {
             frslt @ FilteringResult::NewMessage => {
                 if self.in_authority(&signed_msg.routing_message().dst) {
                     self.send_ack(signed_msg.routing_message(), route);
-                    if signed_msg.routing_message().dst.is_group() {
+                    if signed_msg.routing_message().dst.is_multiple() {
                         // Broadcast to the rest of the section.
                         if let Err(error) = self.send_signed_message(
                             &signed_msg,
@@ -2288,7 +2288,7 @@ impl Peer {
                     self,
                     pub_id
                 );
-                if self.peer_mgr.get_peer(&pub_id).map_or(false, DirectPeer::valid) {
+                if self.peer_mgr.get_peer(&pub_id).map_or(false, PeerInfo::valid) {
                     self.process_connection(pub_id, outbox);
                 }
             }
@@ -2403,7 +2403,7 @@ impl Peer {
             }
         };
 
-        let can_tunnel_for = |peer: &DirectPeer| peer.state().can_tunnel_for();
+        let can_tunnel_for = |peer: &PeerInfo| peer.state().can_tunnel_for();
         if self.peer_mgr.get_peer(&tunnel_id).map_or(
             false,
             can_tunnel_for,
@@ -3355,7 +3355,7 @@ impl Peer {
             // If the message being relayed is a data response, update the client's
             // rate limit balance to account for the initial over-counting.
             if let Some(&PeerState::Client { ip, .. }) =
-                self.peer_mgr.get_peer(pub_id).map(DirectPeer::state)
+                self.peer_mgr.get_peer(pub_id).map(PeerInfo::state)
             {
                 let _ = self.correct_rate_limits(&ip, signed_msg.routing_message());
             }
@@ -3456,7 +3456,7 @@ impl Peer {
                 sent_to
                     .iter()
                     .chain(targets.iter().filter(|target| {
-                        match self.peer_mgr.get_peer_by_name(target).map(DirectPeer::state) {
+                        match self.peer_mgr.get_peer_by_name(target).map(PeerInfo::state) {
                             Some(&PeerState::Routing(RoutingConnection::Tunnel)) => false,
                             _ => true,
                         }
@@ -3475,7 +3475,7 @@ impl Peer {
             // We don't have any contacts in our routing table yet. Keep using
             // the proxy connection until we do.
             if let Some(pub_id) = self.peer_mgr.get_peer_by_name(proxy_node_name).map(
-                DirectPeer::pub_id,
+                PeerInfo::pub_id,
             )
             {
                 if self.peer_mgr.is_proxy(pub_id) {
@@ -3610,7 +3610,7 @@ impl Peer {
         // NOTE: If we do not have this peer in peer_mgr, `get_connection_token`
         // will flag them to `valid`
         self.peer_mgr.set_peer_valid(&their_public_id, true);
-        match self.peer_mgr.get_peer(&their_public_id).map(DirectPeer::state) {
+        match self.peer_mgr.get_peer(&their_public_id).map(PeerInfo::state) {
             Some(&PeerState::Connected(_)) |
             Some(&PeerState::Candidate(_)) => {
                 self.add_to_routing_table(&their_public_id, outbox);
@@ -3631,7 +3631,7 @@ impl Peer {
             return Ok(());
         }
 
-        let our_pub_info = match self.peer_mgr.get_peer(&their_public_id).map(DirectPeer::state) {
+        let our_pub_info = match self.peer_mgr.get_peer(&their_public_id).map(PeerInfo::state) {
             Some(&PeerState::ConnectionInfoReady(ref our_priv_info)) => {
                 our_priv_info.to_pub_connection_info()
             }

@@ -312,14 +312,14 @@ impl SignedMessage {
     /// lists isn't empty, the signature is only added if `pub_id` is a member of the first section
     /// list.
     pub fn add_signature(&mut self, pub_id: PublicId, sig: sign::Signature) {
-        if self.content.src.is_group() && self.is_sender(&pub_id) {
+        if self.content.src.is_multiple() && self.is_sender(&pub_id) {
             let _ = self.signatures.insert(pub_id, sig);
         }
     }
 
     /// Adds all signatures from the given message, without validating them.
     pub fn add_signatures(&mut self, msg: SignedMessage) {
-        if self.content.src.is_group() {
+        if self.content.src.is_multiple() {
             self.signatures.extend(msg.signatures);
         }
     }

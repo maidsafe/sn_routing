@@ -56,7 +56,7 @@ pub enum Authority<N: Xorable + Clone + Copy + Binary + Default> {
 
 impl<N: Xorable + Clone + Copy + Binary + Default> Authority<N> {
     /// Returns `true` if the authority consists of multiple nodes, otherwise `false`.
-    pub fn is_group(&self) -> bool {
+    pub fn is_multiple(&self) -> bool {
         match *self {
             Authority::Section(_) |
             Authority::PrefixSection(_) |

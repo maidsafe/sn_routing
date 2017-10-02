@@ -231,7 +231,7 @@ pub enum ReconnectingPeer {
 
 /// Represents peer we are connected or attempting connection to.
 #[derive(Debug)]
-pub struct DirectPeer
+pub struct PeerInfo
  {
     pub_id: PublicId,
     state: PeerState,
@@ -240,14 +240,14 @@ pub struct DirectPeer
     reconnecting: ReconnectingPeer,
 }
 
-impl DirectPeer {
+impl PeerInfo {
     pub fn new(
         pub_id: PublicId,
         state: PeerState,
         valid: bool,
         reconnecting: ReconnectingPeer,
     ) -> Self {
-        DirectPeer {
+        PeerInfo {
             pub_id: pub_id,
             state: state,
             timestamp: Instant::now(),
@@ -422,7 +422,7 @@ struct ResourceProofChallenge {
 /// we have verified, whom we are directly connected to or via a tunnel.
 pub struct PeerManager {
     connection_token_map: HashMap<u32, PublicId>,
-    peers: HashMap<PublicId, DirectPeer>,
+    peers: HashMap<PublicId, PeerInfo>,
     routing_table: RoutingTable<XorName>,
     our_public_id: PublicId,
     candidate: Candidate,
@@ -581,7 +581,7 @@ impl PeerManager {
 
         if self.peers
             .get(new_pub_id)
-            .and_then(DirectPeer::is_connected)
+            .and_then(PeerInfo::is_connected)
             .is_none()
         {
             log_or_panic!(
@@ -666,7 +666,7 @@ impl PeerManager {
             } if old_id == *old_pub_id => (res_proof_start, target_interval),
             candidate => {
                 self.candidate = candidate;
-                return if self.peers.get(new_pub_id).map_or(false, DirectPeer::valid) {
+                return if self.peers.get(new_pub_id).map_or(false, PeerInfo::valid) {
                     Ok(false)
                 } else {
                     Err(RoutingError::UnknownCandidate)
@@ -815,7 +815,7 @@ impl PeerManager {
         let mut ids_to_drop = names_to_drop
             .iter()
             .filter_map(|name| self.get_peer_by_name(name))
-            .map(DirectPeer::pub_id)
+            .map(PeerInfo::pub_id)
             .cloned()
             .collect_vec();
 
@@ -853,7 +853,7 @@ impl PeerManager {
         let ids_to_drop = names_to_drop
             .iter()
             .filter_map(|name| self.get_peer_by_name(name))
-            .map(DirectPeer::pub_id)
+            .map(PeerInfo::pub_id)
             .cloned()
             .collect_vec();
 
@@ -927,8 +927,8 @@ impl PeerManager {
 
     /// Returns `true` if we are directly connected to both peers.
     pub fn can_tunnel_for(&self, pub_id: &PublicId, dst_id: &PublicId) -> bool {
-        let peer_state = self.get_peer(pub_id).map(DirectPeer::state);
-        let dst_state = self.get_peer(dst_id).map(DirectPeer::state);
+        let peer_state = self.get_peer(pub_id).map(PeerInfo::state);
+        let dst_state = self.get_peer(dst_id).map(PeerInfo::state);
         let result = match (peer_state, dst_state) {
             (Some(peer1), Some(peer2)) => peer1.can_tunnel_for() && peer2.can_tunnel_for(),
             _ => false,
@@ -948,22 +948,22 @@ impl PeerManager {
 
     /// Returns if the given peer is a routing node.
     pub fn is_routing_peer(&self, pub_id: &PublicId) -> bool {
-        self.peers.get(pub_id).map_or(false, DirectPeer::is_routing)
+        self.peers.get(pub_id).map_or(false, PeerInfo::is_routing)
     }
 
     /// Returns if the given peer is our proxy node.
     pub fn is_proxy(&self, pub_id: &PublicId) -> bool {
-        self.peers.get(pub_id).map_or(false, DirectPeer::is_proxy)
+        self.peers.get(pub_id).map_or(false, PeerInfo::is_proxy)
     }
 
     /// Returns if the given peer is our client.
     pub fn is_client(&self, pub_id: &PublicId) -> bool {
-        self.peers.get(pub_id).map_or(false, DirectPeer::is_client)
+        self.peers.get(pub_id).map_or(false, PeerInfo::is_client)
     }
 
     /// Returns if the given peer is our joining node.
     pub fn is_joining_node(&self, pub_id: &PublicId) -> bool {
-        self.peers.get(pub_id).map_or(false, DirectPeer::is_joining_node)
+        self.peers.get(pub_id).map_or(false, PeerInfo::is_joining_node)
     }
 
     /// Returns the proxy node's name if we have a proxy.
@@ -975,7 +975,7 @@ impl PeerManager {
                 PeerState::Routing(RoutingConnection::Proxy(_)) => true,
                 _ => false,
             })
-            .map(DirectPeer::name)
+            .map(PeerInfo::name)
     }
 
     pub fn remove_expired_peers(&mut self) -> Vec<PublicId> {
@@ -1003,7 +1003,7 @@ impl PeerManager {
                 }
                 _ => peer.is_expired(),
             })
-            .map(DirectPeer::pub_id)
+            .map(PeerInfo::pub_id)
             .cloned()
             .chain(remove_candidate)
             .collect_vec();
@@ -1080,7 +1080,7 @@ impl PeerManager {
             return;
         }
 
-        self.insert_peer(DirectPeer::new(
+        self.insert_peer(PeerInfo::new(
             *pub_id,
             PeerState::Connected(false),
             false,
@@ -1090,7 +1090,7 @@ impl PeerManager {
 
     /// Marks the given peer as tunnel-connected. Returns `false` if a tunnel is not needed.
     pub fn tunnelling_to(&mut self, pub_id: &PublicId) -> bool {
-        match self.get_peer(pub_id).map(DirectPeer::state) {
+        match self.get_peer(pub_id).map(PeerInfo::state) {
             Some(&PeerState::Bootstrapper { .. }) |
             Some(&PeerState::Connected(_)) |
             Some(&PeerState::Candidate(_)) |
@@ -1108,7 +1108,7 @@ impl PeerManager {
         };
 
         if !found {
-            self.insert_peer(DirectPeer::new(
+            self.insert_peer(PeerInfo::new(
                 *pub_id,
                 PeerState::Connected(true),
                 false,
@@ -1120,12 +1120,12 @@ impl PeerManager {
     }
 
     /// Returns the given peer.
-    pub fn get_peer(&self, pub_id: &PublicId) -> Option<&DirectPeer> {
+    pub fn get_peer(&self, pub_id: &PublicId) -> Option<&PeerInfo> {
         self.peers.get(pub_id)
     }
 
     /// Returns the given peer.
-    pub fn get_peer_by_name(&self, name: &XorName) -> Option<&DirectPeer> {
+    pub fn get_peer_by_name(&self, name: &XorName) -> Option<&PeerInfo> {
         let id = if let Some(id) = self.peers.keys().find(|id| id.name() == name) {
             id
         } else {
@@ -1143,7 +1143,7 @@ impl PeerManager {
 
     /// Returns the `PublicId` of the node with a given name.
     pub fn get_pub_id(&self, name: &XorName) -> Option<&PublicId> {
-        self.get_peer_by_name(name).map(DirectPeer::pub_id)
+        self.get_peer_by_name(name).map(PeerInfo::pub_id)
     }
 
     /// Returns the `PublicId`s of nodes bearing the names.
@@ -1275,7 +1275,7 @@ impl PeerManager {
     /// match our sibling prefix instead.
     pub fn is_potential_tunnel_node(&self, tunnel_name: &XorName, client_name: &XorName) -> bool {
         if self.our_public_id.name() == tunnel_name || self.our_public_id.name() == client_name ||
-            !self.get_peer_by_name(tunnel_name).map(DirectPeer::state).map_or(
+            !self.get_peer_by_name(tunnel_name).map(PeerInfo::state).map_or(
                 false,
                 PeerState::can_tunnel_for,
             )
@@ -1312,7 +1312,7 @@ impl PeerManager {
             }
             None => ReconnectingPeer::False,
         };
-        self.insert_peer(DirectPeer::new(
+        self.insert_peer(PeerInfo::new(
             pub_id,
             PeerState::SearchingForTunnel,
             valid,
@@ -1325,7 +1325,7 @@ impl PeerManager {
                 self.is_potential_tunnel_node(tunnel_name, pub_id.name())
             })
             .filter_map(|name| self.get_peer_by_name(name))
-            .map(DirectPeer::pub_id)
+            .map(PeerInfo::pub_id)
             .cloned()
             .collect()
     }
@@ -1343,7 +1343,7 @@ impl PeerManager {
         )?;
         let (us_as_src, them_as_dst, opt_their_info, valid, reconnecting) =
             match self.peers.remove(&pub_id) {
-                Some(DirectPeer {
+                Some(PeerInfo {
                          state: PeerState::ConnectionInfoPreparing {
                              us_as_src,
                              them_as_dst,
@@ -1363,12 +1363,12 @@ impl PeerManager {
         let infos = match opt_their_info {
             Some((their_info, msg_id)) => {
                 let state = PeerState::CrustConnecting;
-                self.insert_peer(DirectPeer::new(pub_id, state, valid, reconnecting));
+                self.insert_peer(PeerInfo::new(pub_id, state, valid, reconnecting));
                 Some((our_info, their_info, msg_id))
             }
             None => {
                 let state = PeerState::ConnectionInfoReady(our_info);
-                self.insert_peer(DirectPeer::new(pub_id, state, valid, reconnecting));
+                self.insert_peer(PeerInfo::new(pub_id, state, valid, reconnecting));
                 None
             }
         };
@@ -1393,17 +1393,17 @@ impl PeerManager {
         let pub_id = peer_info.id();
 
         match self.peers.remove(&pub_id) {
-            Some(DirectPeer {
+            Some(PeerInfo {
                      state: PeerState::ConnectionInfoReady(our_info),
                      valid,
                      reconnecting,
                      ..
                  }) => {
                 let state = PeerState::CrustConnecting;
-                self.insert_peer(DirectPeer::new(pub_id, state, valid, reconnecting));
+                self.insert_peer(PeerInfo::new(pub_id, state, valid, reconnecting));
                 Ok(ConnectionInfoReceivedResult::Ready(our_info, peer_info))
             }
-            Some(DirectPeer {
+            Some(PeerInfo {
                      state: PeerState::ConnectionInfoPreparing {
                          us_as_src,
                          them_as_dst,
@@ -1418,30 +1418,30 @@ impl PeerManager {
                     them_as_dst: them_as_dst,
                     their_info: Some((peer_info, msg_id)),
                 };
-                self.insert_peer(DirectPeer::new(pub_id, state, valid, reconnecting));
+                self.insert_peer(PeerInfo::new(pub_id, state, valid, reconnecting));
                 Ok(ConnectionInfoReceivedResult::Waiting)
             }
-            Some(peer @ DirectPeer { state: PeerState::Bootstrapper { .. }, .. }) |
-            Some(peer @ DirectPeer { state: PeerState::ConnectionInfoPreparing { .. }, .. }) |
-            Some(peer @ DirectPeer { state: PeerState::CrustConnecting, .. }) |
-            Some(peer @ DirectPeer { state: PeerState::Connected(_), .. }) => {
+            Some(peer @ PeerInfo { state: PeerState::Bootstrapper { .. }, .. }) |
+            Some(peer @ PeerInfo { state: PeerState::ConnectionInfoPreparing { .. }, .. }) |
+            Some(peer @ PeerInfo { state: PeerState::CrustConnecting, .. }) |
+            Some(peer @ PeerInfo { state: PeerState::Connected(_), .. }) => {
                 self.insert_peer(peer);
                 Ok(ConnectionInfoReceivedResult::Waiting)
             }
-            Some(peer @ DirectPeer { state: PeerState::Client { .. }, .. }) => {
+            Some(peer @ PeerInfo { state: PeerState::Client { .. }, .. }) => {
                 self.insert_peer(peer);
                 Ok(ConnectionInfoReceivedResult::IsClient)
             }
-            Some(peer @ DirectPeer { state: PeerState::JoiningNode, .. }) => {
+            Some(peer @ PeerInfo { state: PeerState::JoiningNode, .. }) => {
                 self.insert_peer(peer);
                 Ok(ConnectionInfoReceivedResult::IsJoiningNode)
             }
-            Some(peer @ DirectPeer { state: PeerState::Proxy, .. }) => {
+            Some(peer @ PeerInfo { state: PeerState::Proxy, .. }) => {
                 self.insert_peer(peer);
                 Ok(ConnectionInfoReceivedResult::IsProxy)
             }
-            Some(peer @ DirectPeer { state: PeerState::Routing(_), .. }) |
-            Some(peer @ DirectPeer { state: PeerState::Candidate(_), .. }) => {
+            Some(peer @ PeerInfo { state: PeerState::Routing(_), .. }) |
+            Some(peer @ PeerInfo { state: PeerState::Candidate(_), .. }) => {
                 // TODO: We _should_ retry connecting if the peer is connected via tunnel.
                 self.insert_peer(peer);
                 Ok(ConnectionInfoReceivedResult::IsConnected)
@@ -1460,7 +1460,7 @@ impl PeerManager {
                     them_as_dst: src,
                     their_info: Some((peer_info, msg_id)),
                 };
-                self.insert_peer(DirectPeer::new(pub_id, state, valid, reconnecting));
+                self.insert_peer(PeerInfo::new(pub_id, state, valid, reconnecting));
                 let token = rand::random();
                 let _ = self.connection_token_map.insert(token, pub_id);
                 Ok(ConnectionInfoReceivedResult::Prepare(token))
@@ -1488,7 +1488,7 @@ impl PeerManager {
         };
         let token = rand::random();
         let _ = self.connection_token_map.insert(token, pub_id);
-        self.insert_peer(DirectPeer::new(
+        self.insert_peer(PeerInfo::new(
             pub_id,
             PeerState::ConnectionInfoPreparing {
                 us_as_src: src,
@@ -1528,7 +1528,7 @@ impl PeerManager {
         self.routing_table.need_to_add(name)
     }
 
-    pub fn insert_peer(&mut self, peer: DirectPeer) {
+    pub fn insert_peer(&mut self, peer: PeerInfo) {
         let _ = self.peers.insert(peer.pub_id, peer);
     }
 
@@ -1537,7 +1537,7 @@ impl PeerManager {
     pub fn remove_peer(
         &mut self,
         pub_id: &PublicId,
-    ) -> Option<(DirectPeer, Result<RemovalDetails<XorName>, RoutingTableError>)> {
+    ) -> Option<(PeerInfo, Result<RemovalDetails<XorName>, RoutingTableError>)> {
         let remove_candidate = match self.candidate {
             Candidate::None => false,
             Candidate::Expecting { ref old_pub_id, .. } |
@@ -1591,10 +1591,10 @@ impl PeerManager {
                 };
 
                 match peer {
-                    DirectPeer {
+                    PeerInfo {
                         state: PeerState::Routing(RoutingConnection::JoiningNode(_)), ..
                     } |
-                    DirectPeer {
+                    PeerInfo {
                         state: PeerState::Candidate(RoutingConnection::JoiningNode(_)), ..
                     } => {
                         debug!(
@@ -1606,7 +1606,7 @@ impl PeerManager {
                         self.insert_peer(peer);
                         None
                     }
-                    DirectPeer { state: PeerState::Routing(RoutingConnection::Proxy(_)), .. } => {
+                    PeerInfo { state: PeerState::Routing(RoutingConnection::Proxy(_)), .. } => {
                         debug!(
                             "{:?} Still the JoiningNode of {}, re-insert peer as Proxy",
                             self,
@@ -1616,7 +1616,7 @@ impl PeerManager {
                         self.insert_peer(peer);
                         None
                     }
-                    DirectPeer { pub_id, .. } => Some(pub_id),
+                    PeerInfo { pub_id, .. } => Some(pub_id),
                 }
             })
             .collect()
@@ -1749,7 +1749,7 @@ mod tests {
             result => panic!("Unexpected result: {:?}", result),
         }
         // Since both connection infos are present, the state should now be `CrustConnecting`.
-        match peer_mgr.get_peer(&their_pub_id).map(DirectPeer::state) {
+        match peer_mgr.get_peer(&their_pub_id).map(PeerInfo::state) {
             Some(&PeerState::CrustConnecting) => (),
             state => panic!("Unexpected state: {:?}", state),
         }
@@ -1799,7 +1799,7 @@ mod tests {
             result => panic!("Unexpected result: {:?}", result),
         }
         // Since both connection infos are present, the state should now be `CrustConnecting`.
-        match peer_mgr.get_peer(&their_pub_id).map(DirectPeer::state) {
+        match peer_mgr.get_peer(&their_pub_id).map(PeerInfo::state) {
             Some(&PeerState::CrustConnecting) => (),
             state => panic!("Unexpected state: {:?}", state),
         }

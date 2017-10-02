@@ -277,7 +277,7 @@ impl ExpectedPuts {
             }
             sent_count += 1;
         }
-        if src.is_group() {
+        if src.is_multiple() {
             assert!(sent_count * QUORUM_DENOMINATOR > min_section_size * QUORUM_NUMERATOR);
         } else {
             assert_eq!(sent_count, 1);
@@ -301,7 +301,7 @@ impl ExpectedPuts {
 
     /// Adds the expectation that the nodes belonging to `dst` receive the message.
     fn expect(&mut self, nodes: &mut [TestNode], dst: Authority<XorName>, key: PutKey) {
-        if dst.is_group() && !self.sections.contains_key(&dst) {
+        if dst.is_multiple() && !self.sections.contains_key(&dst) {
             let is_recipient = |n: &&TestNode| n.is_recipient(&dst);
             let section = nodes
                 .iter()
@@ -348,7 +348,7 @@ impl ExpectedPuts {
                 {
                     let name = *data.name();
                     let key = (name, msg_id, src, dst);
-                    if dst.is_group() {
+                    if dst.is_multiple() {
                         let checker = |entry: &HashSet<XorName>| entry.contains(&node.name());
                         if !self.sections.get(&key.3).map_or(false, checker) {
                             // TODO: depends on the affected tunnels due to the dropped nodes, there
@@ -415,7 +415,7 @@ impl ExpectedPuts {
         }
         for key in self.messages {
             // All received messages for single nodes were removed: if any are left, they failed.
-            assert!(key.3.is_group(), "Failed to receive request {:?}", key);
+            assert!(key.3.is_multiple(), "Failed to receive request {:?}", key);
             let section_size = section_sizes[&key.3];
             let count = section_msgs_received.remove(&key).unwrap_or(0);
             assert!(
