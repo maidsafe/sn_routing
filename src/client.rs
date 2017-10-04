@@ -587,7 +587,7 @@ impl Client {
         priority: u8,
     ) -> Result<(), InterfaceError> {
         // Make sure the state machine has processed any outstanding crust events.
-        self.poll();
+        let _fixme = self.poll();
 
         let action = Action::ClientSendRequest {
             content: request,
@@ -642,7 +642,7 @@ impl Drop for Client {
 #[cfg(feature = "use-mock-crust")]
 impl Drop for Client {
     fn drop(&mut self) {
-        self.poll();
+        let _fixme = self.poll();
         let _ = self.machine.current_mut().handle_action(
             Action::Terminate,
             &mut self.event_buffer,

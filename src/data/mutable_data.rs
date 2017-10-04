@@ -664,7 +664,7 @@ mod tests {
         let k2 = b"234".to_vec();
 
         let mut owners = BTreeSet::new();
-        owners.insert(owner);
+        let _fixme = owners.insert(owner);
         let mut md = unwrap!(MutableData::new(
             rand::random(),
             0,
@@ -853,7 +853,7 @@ mod tests {
         let (pk1, _) = sign::gen_keypair();
 
         let mut owners = BTreeSet::new();
-        owners.insert(owner);
+        let _fixme = owners.insert(owner);
 
         let mut md = unwrap!(MutableData::new(
             rand::random(),
@@ -873,7 +873,7 @@ mod tests {
         let (owner, _) = sign::gen_keypair();
 
         let mut owners = BTreeSet::new();
-        owners.insert(owner);
+        let _fixme = owners.insert(owner);
         let mut md = unwrap!(MutableData::new(
             rand::random(),
             0,
@@ -961,7 +961,7 @@ mod tests {
         let (pk1, _) = sign::gen_keypair();
 
         let mut owners = BTreeSet::new();
-        owners.insert(owner);
+        let _fixme = owners.insert(owner);
 
         let mut md = unwrap!(MutableData::new(
             rand::random(),

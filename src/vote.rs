@@ -22,7 +22,7 @@ use rust_sodium::crypto::sign::{self, Signature, PublicKey, SecretKey};
 
 /// A Vote is a nodes desire to initiate a network action or sub action.
 /// If there are Quorum votes the action will happen
-/// These are direct messages and therefor do not require the PublicKey
+/// These are DIRECT MESSAGES and therefor do not require the PublicKey
 /// Signature is detached and is the signed payload 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Vote<T> {
@@ -58,7 +58,7 @@ impl <T: Serialize + Clone>Vote<T> {
 
     /// validate signed correctly
         #[allow(unused)]
-    pub fn validate(&self, public_key: &PublicKey) -> bool
+    pub fn validate_signature(&self, public_key: &PublicKey) -> bool
     {
         match serialisation::serialise(&self.payload) {
             Ok(data) => sign::verify_detached(&self.signature, &data[..], public_key),
@@ -75,13 +75,13 @@ mod tests {
 
     #[test]
     fn wrong_key() {
-        ::rust_sodium::init();
+        let _dontcare = ::rust_sodium::init();
         let keys = sign::gen_keypair();
         let bad_keys = sign::gen_keypair();
         let payload = sha3_256(b"1");
         let vote = Vote::new(&keys.1, payload).unwrap();
-        assert!(vote.validate(&keys.0));
-        assert!(!vote.validate(&bad_keys.0));        
+        assert!(vote.validate_signature(&keys.0));
+        assert!(!vote.validate_signature(&bad_keys.0));        
     }
 
 }

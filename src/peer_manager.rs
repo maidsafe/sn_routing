@@ -1642,7 +1642,7 @@ impl PeerManager {
                     versioned_prefix.prefix().matches(pub_id.name())
                 })
             {
-                result
+                let _fixme = result
                     .entry(*versioned_prefix)
                     .or_insert_with(BTreeSet::new)
                     .insert(*pub_id);

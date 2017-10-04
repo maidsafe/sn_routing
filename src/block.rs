@@ -35,7 +35,7 @@ impl <T: Serialize + Clone>Block<T> {
     /// new block
     #[allow(unused)]
     pub fn new(vote: &Vote<T>, pub_key: &PublicKey) -> Result<Block<T>, RoutingError> {
-        vote.validate(pub_key);
+        if !vote.validate_signature(pub_key) { return Err(RoutingError::FailedSignature); }
         let proof = Proof::new(&pub_key, vote)?;
 
         Ok(Block::<T> {

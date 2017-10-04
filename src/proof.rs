@@ -33,7 +33,7 @@ impl Proof {
     /// Create Proof from Vote and public key
     #[allow(unused)]
     pub fn new<T: Serialize + Clone>(key: &PublicKey, vote: &Vote<T>) -> Result<Proof, RoutingError> {
-        if !vote.validate(key) {
+        if !vote.validate_signature(key) {
             return Err(RoutingError::FailedSignature);
         }
         Ok(Proof {
@@ -76,7 +76,7 @@ mod tests {
         let keys = sign::gen_keypair();
         let payload = sha3_256(b"1");
         let vote = Vote::new(&keys.1, payload).unwrap();
-        assert!(vote.validate(&keys.0));
+        assert!(vote.validate_signature(&keys.0));
         let proof = Proof::new(&keys.0, &vote).unwrap();
         assert!(proof.validate_signature(&payload));        
     }
@@ -87,7 +87,7 @@ mod tests {
         let other_keys = sign::gen_keypair();
         let payload = sha3_256(b"1");
         let vote = Vote::new(&keys.1, payload).unwrap();
-        assert!(vote.validate(&keys.0));
+        assert!(vote.validate_signature(&keys.0));
         let proof = Proof::new(&keys.0, &vote).unwrap();
         assert!(Proof::new(&keys.0, &vote).is_ok());
         assert!(Proof::new(&other_keys.0, &vote).is_err());
