@@ -58,34 +58,30 @@ impl <T: Serialize + Clone>Vote<T> {
 
     /// validate signed correctly
         #[allow(unused)]
-    pub fn validate(&self, public_key: &PublicKey) -> Result<bool, RoutingError> 
+    pub fn validate(&self, public_key: &PublicKey) -> bool
     {
-        Ok(sign::verify_detached(&self.signature, &serialisation::serialise(&self.payload)?[..], public_key))
+        match serialisation::serialise(&self.payload) {
+            Ok(data) => sign::verify_detached(&self.signature, &data[..], public_key),
+            Err(_) => false
+        } 
+    
     }
 }
 
 #[cfg(test)]
 mod tests {
-    // use super::*;
-    // use chain::block_identifier::BlockIdentifier;
-    // use rust_sodium::crypto::sign;
-    // use sha3::hash;
+    use super::*;
+    use tiny_keccak::sha3_256;
 
-    // #[test]
-    // fn vote_comparisons() {
-    //     ::rust_sodium::init();
-    //     let keys = sign::gen_keypair();
-    //     let test_data1 = BlockIdentifier::Link(hash(b"1"));
-    //     let test_data2 = BlockIdentifier::Link(hash(b"1"));
-    //     let test_data3 = BlockIdentifier::ImmutableData(hash(b"1"));
-    //     let test_node_data_block1 = Vote::new(&keys.0, &keys.1, test_data1).expect("fail1");
-    //     let test_node_data_block2 = Vote::new(&keys.0, &keys.1, test_data2).expect("fail2");
-    //     let test_node_data_block3 = Vote::new(&keys.0, &keys.1, test_data3).expect("fail3");
-    //     assert!(test_node_data_block1.validate());
-    //     assert!(test_node_data_block2.validate());
-    //     assert!(test_node_data_block3.validate());
-    //     assert_eq!(test_node_data_block1.clone(), test_node_data_block2.clone());
-    //     assert!(test_node_data_block1 != test_node_data_block3.clone());
-    //     assert!(test_node_data_block2 != test_node_data_block3);
-    // }
+    #[test]
+    fn wrong_key() {
+        ::rust_sodium::init();
+        let keys = sign::gen_keypair();
+        let bad_keys = sign::gen_keypair();
+        let payload = sha3_256(b"1");
+        let vote = Vote::new(&keys.1, payload).unwrap();
+        assert!(vote.validate(&keys.0));
+        assert!(!vote.validate(&bad_keys.0));        
+    }
+
 }

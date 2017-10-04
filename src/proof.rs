@@ -33,7 +33,9 @@ impl Proof {
     /// Create Proof from Vote and public key
     #[allow(unused)]
     pub fn new<T: Serialize + Clone>(key: &PublicKey, vote: &Vote<T>) -> Result<Proof, RoutingError> {
-        vote.validate(key)?;
+        if !vote.validate(key) {
+            return Err(RoutingError::FailedSignature);
+        }
         Ok(Proof {
             pub_key: key.clone(),
             sig: vote.signature().clone(),
@@ -54,7 +56,7 @@ impl Proof {
 
     /// Validates `data` against this `Proof`'s `key` and `sig`.
     #[allow(unused)]    
-    pub fn validate<T: Serialize>(&self, payload: &T) -> bool {
+    pub fn validate_signature<T: Serialize>(&self, payload: &T) -> bool {
          match serialisation::serialise(&payload) {
             Ok(data) => sign::verify_detached(&self.sig, &data[..], &self.pub_key),
             _ => false,
@@ -64,26 +66,32 @@ impl Proof {
 
 #[cfg(test)]
 mod tests {
-    // use super::*;
-    // use chain::block_identifier::BlockIdentifier;
-    // use rust_sodium::crypto::sign;
-    // use sha3::hash;
+    use super::*;
+    use vote::Vote;
+    use tiny_keccak::sha3_256;
 
-    // #[test]
-    // fn vote_comparisons() {
-    //     ::rust_sodium::init();
-    //     let keys = sign::gen_keypair();
-    //     let test_data1 = BlockIdentifier::Link(hash(b"1"));
-    //     let test_data2 = BlockIdentifier::Link(hash(b"1"));
-    //     let test_data3 = BlockIdentifier::ImmutableData(hash(b"1"));
-    //     let test_node_data_block1 = Vote::new(&keys.0, &keys.1, test_data1).expect("fail1");
-    //     let test_node_data_block2 = Vote::new(&keys.0, &keys.1, test_data2).expect("fail2");
-    //     let test_node_data_block3 = Vote::new(&keys.0, &keys.1, test_data3).expect("fail3");
-    //     assert!(test_node_data_block1.validate());
-    //     assert!(test_node_data_block2.validate());
-    //     assert!(test_node_data_block3.validate());
-    //     assert_eq!(test_node_data_block1.clone(), test_node_data_block2.clone());
-    //     assert!(test_node_data_block1 != test_node_data_block3.clone());
-    //     assert!(test_node_data_block2 != test_node_data_block3);
-    // }
+    #[test]
+    fn confirm_proof_for_vote() {
+        let _dont_care =  ::rust_sodium::init();
+        let keys = sign::gen_keypair();
+        let payload = sha3_256(b"1");
+        let vote = Vote::new(&keys.1, payload).unwrap();
+        assert!(vote.validate(&keys.0));
+        let proof = Proof::new(&keys.0, &vote).unwrap();
+        assert!(proof.validate_signature(&payload));        
+    }
+    #[test]
+    fn bad_construction() {
+        let _dont_care = ::rust_sodium::init();
+        let keys = sign::gen_keypair();
+        let other_keys = sign::gen_keypair();
+        let payload = sha3_256(b"1");
+        let vote = Vote::new(&keys.1, payload).unwrap();
+        assert!(vote.validate(&keys.0));
+        let proof = Proof::new(&keys.0, &vote).unwrap();
+        assert!(Proof::new(&keys.0, &vote).is_ok());
+        assert!(Proof::new(&other_keys.0, &vote).is_err());
+        assert!(proof.validate_signature(&payload));
+
+    }
 }

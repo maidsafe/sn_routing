@@ -134,7 +134,6 @@ impl SignatureAccumulator {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
