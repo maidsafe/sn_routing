@@ -102,11 +102,16 @@ impl<T: Serialize + Clone> Block<T> {
 
 mod tests {
     use super::*;
+    use maidsafe_utilities::SeededRng;
+    use rust_sodium;
     use rust_sodium::crypto::sign;
+
 
     #[test]
     fn create_then_remove_add_proofs() {
-        let _dontcare = ::rust_sodium::init();
+        let mut rng = SeededRng::thread_rng();
+        unwrap!(rust_sodium::init_with_rng(&mut rng));
+
         let keys0 = sign::gen_keypair();
         let keys1 = sign::gen_keypair();
         let payload = b"1";

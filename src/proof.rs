@@ -70,12 +70,16 @@ impl Proof {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use maidsafe_utilities::SeededRng;
+    use rust_sodium;
     use tiny_keccak::sha3_256;
     use vote::Vote;
 
+
     #[test]
     fn confirm_proof_for_vote() {
-        let _dont_care = ::rust_sodium::init();
+        let mut rng = SeededRng::thread_rng();
+        unwrap!(rust_sodium::init_with_rng(&mut rng));
         let keys = sign::gen_keypair();
         let payload = sha3_256(b"1");
         let vote = Vote::new(&keys.1, payload).unwrap();
@@ -85,7 +89,8 @@ mod tests {
     }
     #[test]
     fn bad_construction() {
-        let _dont_care = ::rust_sodium::init();
+        let mut rng = SeededRng::thread_rng();
+        unwrap!(rust_sodium::init_with_rng(&mut rng));
         let keys = sign::gen_keypair();
         let other_keys = sign::gen_keypair();
         let payload = sha3_256(b"1");

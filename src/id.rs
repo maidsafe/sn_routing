@@ -169,14 +169,14 @@ impl PublicId {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use maidsafe_utilities::serialisation;
+    use maidsafe_utilities::{SeededRng, serialisation};
     use rust_sodium;
 
     /// Confirm `PublicId` `Ord` trait favours name over sign or encryption keys.
     #[test]
     fn public_id_order() {
-
-        let _dontcare = rust_sodium::init();
+        let mut rng = SeededRng::thread_rng();
+        unwrap!(rust_sodium::init_with_rng(&mut rng));
 
         let pub_id_1 = *FullId::new().public_id();
         let pub_id_2;
@@ -195,7 +195,8 @@ mod tests {
 
     #[test]
     fn serialisation() {
-       let _dontcare = rust_sodium::init();
+        let mut rng = SeededRng::thread_rng();
+        unwrap!(rust_sodium::init_with_rng(&mut rng));
 
         let full_id = FullId::new();
         let serialised = unwrap!(serialisation::serialise(full_id.public_id()));

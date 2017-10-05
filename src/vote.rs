@@ -67,11 +67,14 @@ impl<T: Serialize + Clone> Vote<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use maidsafe_utilities::SeededRng;
+    use rust_sodium;
     use tiny_keccak::sha3_256;
 
     #[test]
     fn wrong_key() {
-        let _dontcare = ::rust_sodium::init();
+        let mut rng = SeededRng::thread_rng();
+        unwrap!(rust_sodium::init_with_rng(&mut rng));
         let keys = sign::gen_keypair();
         let bad_keys = sign::gen_keypair();
         let payload = sha3_256(b"1");
