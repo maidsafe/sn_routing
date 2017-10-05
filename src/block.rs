@@ -56,7 +56,7 @@ impl<T: Serialize + Clone> Block<T> {
     /// Add a proof from a peer when we know we have an existing `Block`
     #[allow(unused)]
     pub fn add_proof(&mut self, proof: Proof) -> Result<(), RoutingError> {
-        if !self.validate_proof(&proof) {
+        if !proof.validate_signature(&self.payload) {
             return Err(RoutingError::FailedSignature);
         }
         if self.proofs.insert(proof) {
@@ -83,11 +83,6 @@ impl<T: Serialize + Clone> Block<T> {
     #[allow(unused)]
     pub fn count_proofs(&self) -> usize {
         self.proofs.iter().count()
-    }
-
-    /// validate signed correctly
-    fn validate_proof(&self, proof: &Proof) -> bool {
-        proof.validate_signature(&self.payload)
     }
 
     #[allow(unused)]
