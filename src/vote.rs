@@ -76,8 +76,8 @@ mod tests {
         let bad_keys = sign::gen_keypair();
         let payload = sha3_256(b"1");
         let vote = Vote::new(&keys.1, payload).unwrap();
-        assert!(vote.validate_signature(&keys.0));
-        assert!(!vote.validate_signature(&bad_keys.0));
+        assert!(vote.validate_signature(&keys.0)); // right key
+        assert!(!vote.validate_signature(&bad_keys.0)); // wrong key
     }
 
 }

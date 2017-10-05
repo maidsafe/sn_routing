@@ -16,7 +16,6 @@
 // relating to use of the SAFE Network Software.
 
 use error::RoutingError;
-use maidsafe_utilities::serialisation;
 use proof::Proof;
 use rust_sodium::crypto::sign::PublicKey;
 use serde::Serialize;
@@ -61,7 +60,7 @@ impl<T: Serialize + Clone> Block<T> {
             return Err(RoutingError::FailedSignature);
         }
         if self.proofs.insert(proof) {
-                return Ok(());
+            return Ok(());
         }
         Err(RoutingError::FailedSignature)
     }
@@ -88,10 +87,7 @@ impl<T: Serialize + Clone> Block<T> {
 
     /// validate signed correctly
     fn validate_proof(&self, proof: &Proof) -> bool {
-        match serialisation::serialise(&self.payload) {
-            Ok(data) => proof.validate_signature(&data),
-            _ => false,
-        }
+        proof.validate_signature(&self.payload)
     }
 
     #[allow(unused)]
@@ -111,16 +107,14 @@ impl<T: Serialize + Clone> Block<T> {
 
 mod tests {
     use super::*;
-    use tiny_keccak::sha3_256;
     use rust_sodium::crypto::sign;
-    //use sha3::Digest256;
 
     #[test]
     fn create_then_remove_add_proofs() {
         let _dontcare = ::rust_sodium::init();
         let keys0 = sign::gen_keypair();
         let keys1 = sign::gen_keypair();
-        let payload = sha3_256(b"1");
+        let payload = b"1";
         let vote0 = Vote::new(&keys0.1, payload).unwrap();
         assert!(vote0.validate_signature(&keys0.0));
         let vote1 = Vote::new(&keys1.1, payload).unwrap();
@@ -128,17 +122,19 @@ mod tests {
         let proof0 = Proof::new(&keys0.0, &vote0).unwrap();
         assert!(proof0.validate_signature(&payload));
         let proof1 = Proof::new(&keys1.0, &vote1).unwrap();
-        assert!(proof1.validate_signature(&payload));        
+        assert!(proof1.validate_signature(&payload));
         let mut b0 = Block::new(&vote0, &keys0.0).unwrap();
-        assert!(proof1.validate_signature(&b0.payload));        
+        assert!(proof0.validate_signature(&b0.payload));
+        assert!(proof1.validate_signature(&b0.payload));
         assert!(b0.count_proofs() == 1);
-        // b0.remove_proof(&keys0.0);
-        // assert!(b0.count_proofs() == 0);
-        // assert!(b0.add_proof(Proof::new(&keys0.0, &vote0).unwrap()).is_ok());
+        b0.remove_proof(&keys0.0);
+        assert!(b0.count_proofs() == 0);
+        assert!(b0.add_proof(proof0).is_ok());
         assert!(b0.count_proofs() == 1);
-        assert!(b0.add_proof(Proof::new(&keys1.0, &vote1).unwrap()).is_ok());
+        assert!(b0.add_proof(proof1).is_ok());
         assert!(b0.count_proofs() == 2);
-        
+        b0.remove_proof(&keys1.0);
+        assert!(b0.count_proofs() == 1);
     }
 
 }

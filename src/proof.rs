@@ -15,11 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use serde::Serialize;
-use rust_sodium::crypto::sign::{self, PublicKey, Signature};
 use super::vote::Vote;
 use error::RoutingError;
 use maidsafe_utilities::serialisation;
+use rust_sodium::crypto::sign::{self, PublicKey, Signature};
+use serde::Serialize;
 
 /// Proof as provided by a close group member
 /// This nay be extracted from a `Vote` to be inserted into a `Block`
@@ -32,7 +32,10 @@ pub struct Proof {
 impl Proof {
     /// Create Proof from Vote and public key
     #[allow(unused)]
-    pub fn new<T: Serialize + Clone>(key: &PublicKey, vote: &Vote<T>) -> Result<Proof, RoutingError> {
+    pub fn new<T: Serialize + Clone>(
+        key: &PublicKey,
+        vote: &Vote<T>,
+    ) -> Result<Proof, RoutingError> {
         if !vote.validate_signature(key) {
             return Err(RoutingError::FailedSignature);
         }
@@ -43,21 +46,21 @@ impl Proof {
     }
 
     /// getter
-    #[allow(unused)]    
+    #[allow(unused)]
     pub fn key(&self) -> &PublicKey {
         &self.pub_key
     }
 
     /// getter
-    #[allow(unused)]    
+    #[allow(unused)]
     pub fn sig(&self) -> &Signature {
         &self.sig
     }
 
     /// Validates `data` against this `Proof`'s `key` and `sig`.
-    #[allow(unused)]    
+    #[allow(unused)]
     pub fn validate_signature<T: Serialize>(&self, payload: &T) -> bool {
-         match serialisation::serialise(&payload) {
+        match serialisation::serialise(&payload) {
             Ok(data) => sign::verify_detached(&self.sig, &data[..], &self.pub_key),
             _ => false,
         }
@@ -67,18 +70,18 @@ impl Proof {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use vote::Vote;
     use tiny_keccak::sha3_256;
+    use vote::Vote;
 
     #[test]
     fn confirm_proof_for_vote() {
-        let _dont_care =  ::rust_sodium::init();
+        let _dont_care = ::rust_sodium::init();
         let keys = sign::gen_keypair();
         let payload = sha3_256(b"1");
         let vote = Vote::new(&keys.1, payload).unwrap();
         assert!(vote.validate_signature(&keys.0));
         let proof = Proof::new(&keys.0, &vote).unwrap();
-        assert!(proof.validate_signature(&payload));        
+        assert!(proof.validate_signature(&payload));
     }
     #[test]
     fn bad_construction() {
