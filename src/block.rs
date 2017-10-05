@@ -15,52 +15,79 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use serde::Serialize;
-use proof::Proof;
-use vote::Vote;
 use error::RoutingError;
-use rust_sodium::crypto::sign::PublicKey;
 use maidsafe_utilities::serialisation;
+use proof::Proof;
+use rust_sodium::crypto::sign::PublicKey;
+use serde::Serialize;
+use std::collections::HashSet;
+use vote::Vote;
 
 
-#[allow(missing_docs)]
+/// A `Block` *is* network consensus. It covers a group of nodes closest to an address and is digitally signed
+/// With quorum valid votes, the consensus is then valid and therefor the `Block` however it is worth
+/// recodnising quorum is the weakest consensus as any differnce on network view will break it.
+/// Full group consensus is strongest, but likely unachievable most of the time, so a union of quorum `Block`
+/// can increase a single `Peer`s quorum valid `Block`
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Block<T> {
     payload: T,
-    proofs: Vec<Proof>,
-    pub valid: bool,
+    proofs: HashSet<Proof>,
 }
 
-impl <T: Serialize + Clone>Block<T> {
-    /// new block
+impl<T: Serialize + Clone> Block<T> {
+    /// A new `Block` requires a valid vote and the `PublicKey` of the node who sent us this. For this reason
+    /// The `Vote` require a Direct Message from a `Peer` to us.
     #[allow(unused)]
     pub fn new(vote: &Vote<T>, pub_key: &PublicKey) -> Result<Block<T>, RoutingError> {
-        if !vote.validate_signature(pub_key) { return Err(RoutingError::FailedSignature); }
+        if !vote.validate_signature(pub_key) {
+            return Err(RoutingError::FailedSignature);
+        }
         let proof = Proof::new(&pub_key, vote)?;
-
+        let mut proofset = HashSet::<Proof>::new();
+        if !proofset.insert(proof) {
+            return Err(RoutingError::FailedSignature);
+        }
         Ok(Block::<T> {
             payload: vote.payload().clone(),
-            proofs: vec![proof],
-            valid: false,
+            proofs: proofset,
         })
     }
 
-    /// Add a proof from a peer
+    /// Add a proof from a peer when we know we have an existing `Block`
     #[allow(unused)]
     pub fn add_proof(&mut self, proof: Proof) -> Result<(), RoutingError> {
         if !self.validate_proof(&proof) {
             return Err(RoutingError::FailedSignature);
         }
-        if !self.proofs.iter().any(|x| x.key() == proof.key()) {
-            self.proofs.push(proof);
-            return Ok(());
+        if self.proofs.insert(proof) {
+                return Ok(());
         }
         Err(RoutingError::FailedSignature)
     }
 
+    /// We may wish to remove a nodes `Proof` in cases where a `Peer` cannot be considered valid any more
     #[allow(unused)]
+    pub fn remove_proof(&mut self, pub_key: &PublicKey) {
+        self.proofs.retain(|proof| proof.key() != pub_key)
+    }
+
+    /// Ensure only the following `Peer`s are considered in the `Block`, Prune any that are not in this set.
+    /// Note this will first prune any invalid proofs from teh provided set;
+    #[allow(unused)]
+    pub fn prune_proofs_except(&mut self, mut proofs: HashSet<&Proof>) {
+        proofs.retain(|proof| proof.validate_signature(&self.payload));
+        self.proofs.retain(|proof| proofs.contains(proof));
+    }
+
+    /// Return numbes of `Proof`s
+    #[allow(unused)]
+    pub fn count_proofs(&self) -> usize {
+        self.proofs.iter().count()
+    }
+
     /// validate signed correctly
-    pub fn validate_proof(&self, proof: &Proof) -> bool {
+    fn validate_proof(&self, proof: &Proof) -> bool {
         match serialisation::serialise(&self.payload) {
             Ok(data) => proof.validate_signature(&data),
             _ => false,
@@ -68,38 +95,50 @@ impl <T: Serialize + Clone>Block<T> {
     }
 
     #[allow(unused)]
-    /// validate signed correctly
-    pub fn validate_block_signatures(&self) -> bool {
-        match serialisation::serialise(&self.payload) {
-            Ok(data) => self.proofs.iter().all(|proof| proof.validate_signature(&data)),
-            _ => false,
-        }
-    }
-
-    #[allow(unused)]
-    /// Prune any bad signatures.
-    pub fn remove_invalid_signatures(&mut self) {
-        match serialisation::serialise(&self.payload) {
-            Ok(data) => self.proofs.retain(|proof| proof.validate_signature(&data)),
-            _ => self.proofs.clear(),
-        }
-    }
-
-    #[allow(unused)]
     /// getter
-    pub fn proofs(&self) -> &Vec<Proof> {
+    pub fn proofs(&self) -> &HashSet<Proof> {
         &self.proofs
     }
 
     #[allow(unused)]
     /// getter
-    pub fn proofs_mut(&mut self) -> &mut Vec<Proof> {
-        &mut self.proofs
-    }
-
-    #[allow(unused)]
-    /// getter
-    pub fn identifier(&self) -> &T {
+    pub fn payload(&self) -> &T {
         &self.payload
     }
+}
+
+#[cfg(test)]
+
+mod tests {
+    use super::*;
+    use tiny_keccak::sha3_256;
+    use rust_sodium::crypto::sign;
+    //use sha3::Digest256;
+
+    #[test]
+    fn create_then_remove_add_proofs() {
+        let _dontcare = ::rust_sodium::init();
+        let keys0 = sign::gen_keypair();
+        let keys1 = sign::gen_keypair();
+        let payload = sha3_256(b"1");
+        let vote0 = Vote::new(&keys0.1, payload).unwrap();
+        assert!(vote0.validate_signature(&keys0.0));
+        let vote1 = Vote::new(&keys1.1, payload).unwrap();
+        assert!(vote1.validate_signature(&keys1.0));
+        let proof0 = Proof::new(&keys0.0, &vote0).unwrap();
+        assert!(proof0.validate_signature(&payload));
+        let proof1 = Proof::new(&keys1.0, &vote1).unwrap();
+        assert!(proof1.validate_signature(&payload));        
+        let mut b0 = Block::new(&vote0, &keys0.0).unwrap();
+        assert!(proof1.validate_signature(&b0.payload));        
+        assert!(b0.count_proofs() == 1);
+        // b0.remove_proof(&keys0.0);
+        // assert!(b0.count_proofs() == 0);
+        // assert!(b0.add_proof(Proof::new(&keys0.0, &vote0).unwrap()).is_ok());
+        assert!(b0.count_proofs() == 1);
+        assert!(b0.add_proof(Proof::new(&keys1.0, &vote1).unwrap()).is_ok());
+        assert!(b0.count_proofs() == 2);
+        
+    }
+
 }

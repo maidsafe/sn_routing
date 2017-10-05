@@ -15,29 +15,26 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use serde::Serialize;
 use error::RoutingError;
 use maidsafe_utilities::serialisation;
-use rust_sodium::crypto::sign::{self, Signature, PublicKey, SecretKey};
+use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
+use serde::Serialize;
 
 /// A Vote is a nodes desire to initiate a network action or sub action.
 /// If there are Quorum votes the action will happen
 /// These are DIRECT MESSAGES and therefor do not require the PublicKey
-/// Signature is detached and is the signed payload 
+/// Signature is detached and is the signed payload
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Vote<T> {
     payload: T,
     signature: Signature,
 }
 
-impl <T: Serialize + Clone>Vote<T> {
+impl<T: Serialize + Clone> Vote<T> {
     /// Create a Vote
     #[allow(unused)]
-    pub fn new(secret_key: &SecretKey,
-               payload: T)
-               -> Result<Vote<T>, RoutingError> {
-        let signature = sign::sign_detached(&serialisation::serialise(&payload)?[..],
-                                            secret_key);
+    pub fn new(secret_key: &SecretKey, payload: T) -> Result<Vote<T>, RoutingError> {
+        let signature = sign::sign_detached(&serialisation::serialise(&payload)?[..], secret_key);
         Ok(Vote {
             payload: payload,
             signature: signature,
@@ -45,26 +42,25 @@ impl <T: Serialize + Clone>Vote<T> {
     }
 
     /// Getter
-        #[allow(unused)]
+    #[allow(unused)]
     pub fn payload(&self) -> &T {
         &self.payload
     }
 
     /// Getter
-        #[allow(unused)]
+    #[allow(unused)]
     pub fn signature(&self) -> &Signature {
         &self.signature
     }
 
     /// validate signed correctly
-        #[allow(unused)]
-    pub fn validate_signature(&self, public_key: &PublicKey) -> bool
-    {
+    #[allow(unused)]
+    pub fn validate_signature(&self, public_key: &PublicKey) -> bool {
         match serialisation::serialise(&self.payload) {
             Ok(data) => sign::verify_detached(&self.signature, &data[..], public_key),
-            Err(_) => false
-        } 
-    
+            Err(_) => false,
+        }
+
     }
 }
 
@@ -81,7 +77,7 @@ mod tests {
         let payload = sha3_256(b"1");
         let vote = Vote::new(&keys.1, payload).unwrap();
         assert!(vote.validate_signature(&keys.0));
-        assert!(!vote.validate_signature(&bad_keys.0));        
+        assert!(!vote.validate_signature(&bad_keys.0));
     }
 
 }

@@ -23,7 +23,7 @@ use maidsafe_utilities::serialisation;
 
 /// Proof as provided by a close group member
 /// This nay be extracted from a `Vote` to be inserted into a `Block`
-#[derive(Serialize, Deserialize, PartialOrd, Ord, PartialEq, Eq, Clone, Debug)]
+#[derive(Serialize, Deserialize, PartialOrd, Ord, PartialEq, Eq, Clone, Hash, Debug)]
 pub struct Proof {
     pub_key: PublicKey,
     sig: Signature,
