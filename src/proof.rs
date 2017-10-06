@@ -26,6 +26,7 @@ use serde::Serialize;
 #[derive(Serialize, Deserialize, PartialOrd, Ord, PartialEq, Eq, Clone, Hash, Debug)]
 pub struct Proof {
     pub_key: PublicKey,
+    age: u8,
     sig: Signature,
 }
 
@@ -34,6 +35,7 @@ impl Proof {
     #[allow(unused)]
     pub fn new<T: Serialize + Clone>(
         key: &PublicKey,
+        age: u8,
         vote: &Vote<T>,
     ) -> Result<Proof, RoutingError> {
         if !vote.validate_signature(key) {
@@ -41,6 +43,7 @@ impl Proof {
         }
         Ok(Proof {
             pub_key: key.clone(),
+            age: age,
             sig: vote.signature().clone(),
         })
     }
@@ -50,6 +53,13 @@ impl Proof {
     pub fn key(&self) -> &PublicKey {
         &self.pub_key
     }
+
+    /// getter
+    #[allow(unused)]
+    pub fn age(&self) -> u8 {
+        self.age
+    }
+
 
     /// getter
     #[allow(unused)]
@@ -74,7 +84,7 @@ mod tests {
     use rust_sodium;
     use tiny_keccak::sha3_256;
     use vote::Vote;
-
+    use rand::random;
 
     #[test]
     fn confirm_proof_for_vote() {
@@ -84,7 +94,7 @@ mod tests {
         let payload = sha3_256(b"1");
         let vote = Vote::new(&keys.1, payload).unwrap();
         assert!(vote.validate_signature(&keys.0));
-        let proof = Proof::new(&keys.0, &vote).unwrap();
+        let proof = Proof::new(&keys.0, random::<u8>(),  &vote).unwrap();
         assert!(proof.validate_signature(&payload));
     }
     #[test]
@@ -96,9 +106,9 @@ mod tests {
         let payload = sha3_256(b"1");
         let vote = Vote::new(&keys.1, payload).unwrap();
         assert!(vote.validate_signature(&keys.0));
-        let proof = Proof::new(&keys.0, &vote).unwrap();
-        assert!(Proof::new(&keys.0, &vote).is_ok());
-        assert!(Proof::new(&other_keys.0, &vote).is_err());
+        let proof = Proof::new(&keys.0, random::<u8>(), &vote).unwrap();
+        assert!(Proof::new(&keys.0, random::<u8>(), &vote).is_ok());
+        assert!(Proof::new(&other_keys.0, random::<u8>(), &vote).is_err());
         assert!(proof.validate_signature(&payload));
 
     }
