@@ -72,11 +72,9 @@ impl<T: Serialize + Clone> Block<T> {
     }
 
     /// Ensure only the following `Peer`s are considered in the `Block`, Prune any that are not in this set.
-    /// Note this will first prune any invalid proofs from teh provided set;
     #[allow(unused)]
-    pub fn prune_proofs_except(&mut self, mut proofs: HashSet<&Proof>) {
-        proofs.retain(|proof| proof.validate_signature(&self.payload));
-        self.proofs.retain(|proof| proofs.contains(proof));
+    pub fn prune_proofs_except(&mut self, mut keys: &HashSet<&PublicKey>) {
+        self.proofs.retain(|proof| keys.contains(proof.key()));
     }
 
     /// Return numbes of `Proof`s
@@ -135,6 +133,34 @@ mod tests {
         assert!(b0.count_proofs() == 2);
         b0.remove_proof(&keys1.0);
         assert!(b0.count_proofs() == 1);
+    }
+
+    #[test]
+    fn confirm_new_proof_batch() {
+  let mut rng = SeededRng::thread_rng();
+        unwrap!(rust_sodium::init_with_rng(&mut rng));
+
+        let keys0 = sign::gen_keypair();
+        let keys1 = sign::gen_keypair();
+        let keys2 = sign::gen_keypair();
+        let payload = b"1";
+        let vote0 = Vote::new(&keys0.1, payload).unwrap();
+        let vote1 = Vote::new(&keys1.1, payload).unwrap();
+        let vote2 = Vote::new(&keys2.1, payload).unwrap();
+        let proof1 = Proof::new(&keys1.0, &vote1).unwrap();
+        let proof2 = Proof::new(&keys2.0, &vote2).unwrap();
+        // So 3 votes all valid will be added to block
+        let mut b0 = Block::new(&vote0, &keys0.0).unwrap();
+        assert!(b0.add_proof(proof1).is_ok());
+        assert!(b0.add_proof(proof2).is_ok());
+        assert!(b0.count_proofs() == 3);
+        // All added validly, so now only use 2 of these
+let mut my_known_nodes = HashSet::<&PublicKey>::new();
+        assert!(my_known_nodes.insert(&keys0.0));        
+        assert!(my_known_nodes.insert(&keys1.0));   
+        b0.prune_proofs_except(&my_known_nodes);
+        assert!(b0.count_proofs() == 2);
+
     }
 
 }
