@@ -82,6 +82,12 @@ impl<T: Serialize + Clone> Block<T> {
     pub fn count_proofs(&self) -> usize {
         self.proofs.iter().count()
     }
+    
+    /// Return numbes of `Proof`s
+    #[allow(unused)]
+    pub fn total_proofs_age(&self) -> usize {
+        self.proofs.iter().fold(0, |total , ref proof| total + proof.age() as usize)
+    }
 
     #[allow(unused)]
     /// getter
