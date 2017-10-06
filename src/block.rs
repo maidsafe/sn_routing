@@ -79,7 +79,7 @@ impl<T: Serialize + Clone> Block<T> {
 
     /// Return numbes of `Proof`s
     #[allow(unused)]
-    pub fn count_proofs(&self) -> usize {
+    pub fn total_proofs(&self) -> usize {
         self.proofs.iter().count()
     }
     
@@ -131,15 +131,15 @@ mod tests {
         let mut b0 = Block::new(&vote0,&keys0.0, random::<u8>()).unwrap();
         assert!(proof0.validate_signature(&b0.payload));
         assert!(proof1.validate_signature(&b0.payload));
-        assert!(b0.count_proofs() == 1);
+        assert!(b0.total_proofs() == 1);
         b0.remove_proof(&keys0.0);
-        assert!(b0.count_proofs() == 0);
+        assert!(b0.total_proofs() == 0);
         assert!(b0.add_proof(proof0).is_ok());
-        assert!(b0.count_proofs() == 1);
+        assert!(b0.total_proofs() == 1);
         assert!(b0.add_proof(proof1).is_ok());
-        assert!(b0.count_proofs() == 2);
+        assert!(b0.total_proofs() == 2);
         b0.remove_proof(&keys1.0);
-        assert!(b0.count_proofs() == 1);
+        assert!(b0.total_proofs() == 1);
     }
 
     #[test]
@@ -160,13 +160,13 @@ mod tests {
         let mut b0 = Block::new(&vote0,&keys0.0, random::<u8>()).unwrap();
         assert!(b0.add_proof(proof1).is_ok());
         assert!(b0.add_proof(proof2).is_ok());
-        assert!(b0.count_proofs() == 3);
+        assert!(b0.total_proofs() == 3);
         // All added validly, so now only use 2 of these
 let mut my_known_nodes = HashSet::<&PublicKey>::new();
         assert!(my_known_nodes.insert(&keys0.0));        
         assert!(my_known_nodes.insert(&keys1.0));   
         b0.prune_proofs_except(&my_known_nodes);
-        assert!(b0.count_proofs() == 2);
+        assert!(b0.total_proofs() == 2);
 
     }
 
