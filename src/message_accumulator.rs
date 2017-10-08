@@ -44,6 +44,16 @@ impl PeersAndAge {
             age: age,
         }
     }
+
+    #[allow(unused)]
+    pub fn peers(&self) -> usize {
+        self.peers
+    }
+
+    #[allow(unused)]
+    pub fn age(&self) -> usize {
+        self.age
+    }
 }
 
 /// Contains 2 lru cache types. The notion is that we check the blocks lru
