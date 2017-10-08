@@ -110,8 +110,13 @@ impl MessageAccumulator {
     #[allow(unused)]
     pub fn add_message(&mut self, message: MessageContent) -> Result<(), RoutingError> {
         let ref data = serialisation::serialise(&message)?;
-        let _ = self.data.insert(sha3_256(data), message);
+        let hash = sha3_256(data);
+        if self.blocks.contains_key(&hash) {
+        let _ = self.data.insert(hash, message);
         Ok(())
+        } else {
+            Err(RoutingError::InvalidMessage)
+        }
     }
 
     #[allow(unused)]
@@ -119,5 +124,6 @@ impl MessageAccumulator {
         self.data.get(&message_hash)
     }
 }
+
 
  
