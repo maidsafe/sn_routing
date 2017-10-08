@@ -1,124 +1,146 @@
 // Copyright 2015 MaidSafe.net limited.
 //
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net
-// Commercial License,
-// version 1.0 or later, or (2) The General Public License (GPL), version 3,
-// depending on which
-// licence you accepted on initial access to the Software (the "Licences").
+// Commercial License, version 1.0 or later, or (2) The General Public License (GPL), version 3,
+// depending on which licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project
 // generally, you agree to be
 // bound by the terms of the MaidSafe Contributor Agreement, version 1.0 This,
-// along with the
-// Licenses can be found in the root directory of this project at LICENSE,
+// along with the Licenses can be found in the root directory of this project at LICENSE,
 // COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network
 // Software distributed
 // under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES
-// OR CONDITIONS OF ANY
-// KIND, either express or implied.
+// OR CONDITIONS OF ANY KIND, either express or implied.
 //
 // Please review the Licences for the specific language governing permissions
-// and limitations
-// relating to use of the SAFE Network Software.
+// and limitations relating to use of the SAFE Network Software.
 
+use block::Block;
 use error::RoutingError;
+use lru_time_cache::LruCache;
+use maidsafe_utilities::serialisation;
+use messages::MessageContent;
 use proof::Proof;
 use rust_sodium::crypto::sign::PublicKey;
 use sha3::Digest256;
 use std::collections::HashSet;
+use std::time::Duration;
+use tiny_keccak::sha3_256;
 use vote::Vote;
 
-
-/// A `Block` *is* network consensus. It covers a group of nodes closest to an
-/// address and is signed
-/// With quorum valid votes, the consensus is then valid and therefor the
-/// `Block` however itsworth
-/// recodnising quorum is the weakest consensus as any differnce on network
-/// view will break it.
-/// Full group consensus is strongest, but likely unachievable most of the
-/// time, so a union
-/// can increase a single `Peer`s quorum valid `Block`
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
-pub struct Block {
-    payload: Digest256,
-    proofs: HashSet<Proof>,
+#[allow(unused)]
+pub struct PeersAndAge {
+    peers: usize,
+    age: usize,
 }
 
-impl Block {
-    /// A new `Block` requires a valid vote and the `PublicKey` of the node who
-    /// sent us this.
-    /// For this reason The `Vote` will require a Direct Message from a `Peer`
-    /// to
-    /// us.
+impl PeersAndAge {
+    pub fn new(peers: usize, age: usize) -> PeersAndAge {
+        PeersAndAge {
+            peers: peers,
+            age: age,
+        }
+    }
+}
+
+/// Contains 2 lru cache types. The notion is that we check the blocks lru
+/// to confirm we should store the message. The blocks lru may flush and element
+/// whilst the data cache will keep it a little longer.
+struct MessageAccumulator {
+    blocks: LruCache<[u8; 32], Block>, // TODO impl Hash for Block to only
+    // use Digest & then switch here to HashSet
+    data: LruCache<[u8; 32], MessageContent>,
+}
+
+impl MessageAccumulator {
     #[allow(unused)]
-    pub fn new(vote: &Vote, pub_key: &PublicKey, age: u8) -> Result<Block, RoutingError> {
+    fn new(keep_alive: Duration) -> MessageAccumulator {
+        MessageAccumulator {
+            blocks: LruCache::with_expiry_duration(keep_alive),
+            data: LruCache::with_expiry_duration(keep_alive),
+        }
+    }
+
+    /// A new `Block` requires a valid vote and the `PublicKey` of the node
+    ///  who sent us this. For this reason
+    /// The `Vote` require a Direct Message from a `Peer` to us.
+    #[allow(unused)]
+    pub fn add_vote(
+        &mut self,
+        vote: &Vote,
+        pub_key: &PublicKey,
+        age: u8,
+    ) -> Result<PeersAndAge, RoutingError> {
         if !vote.validate_signature(pub_key) {
             return Err(RoutingError::FailedSignature);
         }
+        let digest = vote.payload();
         let proof = Proof::new(&pub_key, age, vote)?;
+
+        if let Some(blk) = self.blocks.get_mut(&digest.clone()) {
+            blk.add_proof(proof);
+            return Ok(PeersAndAge::new(blk.total_proofs(), blk.total_proofs_age()));
+        };
+
         let mut proofset = HashSet::<Proof>::new();
         if !proofset.insert(proof) {
             return Err(RoutingError::FailedSignature);
         }
-        Ok(Block {
-            payload: vote.payload().clone(),
-            proofs: proofset,
-        })
+        let mut block = Block::new(&vote, &pub_key, age)?;
+        // let _fixme = self.blocks.insert(*digest, block.clone());
+        Ok(PeersAndAge::new(
+            block.clone().total_proofs(),
+            block.total_proofs_age(),
+        ))
     }
 
-    /// Add a proof from a peer when we know we have an existing `Block`
     #[allow(unused)]
-    pub fn add_proof(&mut self, proof: Proof) -> Result<(), RoutingError> {
-        if !proof.validate_signature(&self.payload) {
-            return Err(RoutingError::FailedSignature);
+    pub fn add_message(&mut self, message: MessageContent) -> bool {
+        match serialisation::serialise(&message) {
+            Ok(ref data) => self.data.insert(sha3_256(data), message).is_some(),
+            Err(_) => false,
         }
-        if self.proofs.insert(proof) {
-            return Ok(());
-        }
-        Err(RoutingError::FailedSignature)
-    }
-
-    /// We may wish to remove a nodes `Proof` in cases where a `Peer` cannot be
-    /// considered valid
-    #[allow(unused)]
-    pub fn remove_proof(&mut self, pub_key: &PublicKey) {
-        self.proofs.retain(|proof| proof.key() != pub_key)
-    }
-
-    /// Ensure only the following `Peer`s are considered in the `Block`,
-    /// Prune any that are not in this set.
-    #[allow(unused)]
-    pub fn prune_proofs_except(&mut self, mut keys: &HashSet<&PublicKey>) {
-        self.proofs.retain(|proof| keys.contains(proof.key()));
-    }
-
-    /// Return numbes of `Proof`s
-    #[allow(unused)]
-    pub fn total_proofs(&self) -> usize {
-        self.proofs.iter().count()
-    }
-
-    /// Return numbes of `Proof`s
-    #[allow(unused)]
-    pub fn total_proofs_age(&self) -> usize {
-        self.proofs.iter().fold(0, |total, ref proof| {
-            total + proof.age() as usize
-        })
     }
 
     #[allow(unused)]
-    /// getter
-    pub fn proofs(&self) -> &HashSet<Proof> {
-        &self.proofs
+    pub fn get_message(&mut self, message_hash: Digest256) -> Option<&MessageContent> {
+        self.data.get(&message_hash)
     }
 
-    #[allow(unused)]
-    /// getter
-    pub fn payload(&self) -> &Digest256 {
-        &self.payload
-    }
+    // /// Ensure only the following `Peer`s are considered in the `Block`,
+    // Prune any that are not in this set.
+    // #[allow(unused)]
+    // pub fn prune_proofs_except(&mut self, mut keys: &HashSet<&PublicKey>) {
+    //     self.proofs.retain(|proof| keys.contains(proof.key()));
+    // }
+
+    // /// Return numbes of `Proof`s
+    // #[allow(unused)]
+    // pub fn total_proofs(&self) -> usize {
+    //     self.proofs.iter().count()
+    // }
+
+    // /// Return numbes of `Proof`s
+    // #[allow(unused)]
+    // pub fn total_proofs_age(&self) -> usize {
+    // self.proofs.iter().fold(0, |total , ref proof| total + proof.age() as
+    // usize)
+    // }
+
+    // #[allow(unused)]
+    // /// getter
+    // pub fn proofs(&self) -> &HashSet<Proof> {
+    //     &self.proofs
+    // }
+
+    // #[allow(unused)]
+    // /// getter
+    // pub fn payload(&self) -> &T {
+    //     &self.payload
+    // }
 }
 
 #[cfg(test)]
@@ -129,8 +151,6 @@ mod tests {
     use rand::random;
     use rust_sodium;
     use rust_sodium::crypto::sign;
-    use tiny_keccak::sha3_256;
-
 
 
     #[test]
@@ -140,7 +160,7 @@ mod tests {
 
         let keys0 = sign::gen_keypair();
         let keys1 = sign::gen_keypair();
-        let payload = sha3_256(b"1");
+        let payload = b"1";
         let vote0 = Vote::new(&keys0.1, payload).unwrap();
         assert!(vote0.validate_signature(&keys0.0));
         let vote1 = Vote::new(&keys1.1, payload).unwrap();
@@ -171,7 +191,7 @@ mod tests {
         let keys0 = sign::gen_keypair();
         let keys1 = sign::gen_keypair();
         let keys2 = sign::gen_keypair();
-        let payload = sha3_256(b"1");
+        let payload = b"1";
         let vote0 = Vote::new(&keys0.1, payload).unwrap();
         let vote1 = Vote::new(&keys1.1, payload).unwrap();
         let vote2 = Vote::new(&keys2.1, payload).unwrap();

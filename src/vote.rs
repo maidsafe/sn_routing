@@ -1,39 +1,47 @@
 // Copyright 2015 MaidSafe.net limited.
 //
-// This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
-// version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
+// This SAFE Network Software is licensed to you under (1) the MaidSafe.net
+// Commercial License,
+// version 1.0 or later, or (2) The General Public License (GPL), version 3,
+// depending on which
 // licence you accepted on initial access to the Software (the "Licences").
 //
-// By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.0 This, along with the
-// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+// By contributing code to the SAFE Network Software, or to this project
+// generally, you agree to be
+// bound by the terms of the MaidSafe Contributor Agreement, version 1.0 This,
+// along with the
+// Licenses can be found in the root directory of this project at LICENSE,
+// COPYING and CONTRIBUTOR.
 //
-// Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
-// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// Unless required by applicable law or agreed to in writing, the SAFE Network
+// Software distributed
+// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES
+// OR CONDITIONS OF ANY
 // KIND, either express or implied.
 //
-// Please review the Licences for the specific language governing permissions and limitations
+// Please review the Licences for the specific language governing permissions
+// and limitations
 // relating to use of the SAFE Network Software.
 
 use error::RoutingError;
 use maidsafe_utilities::serialisation;
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
-use serde::Serialize;
+use sha3::Digest256;
 
 /// A Vote is a nodes desire to initiate a network action or sub action.
 /// If there are Quorum votes the action will happen
 /// These are DIRECT MESSAGES and therefor do not require the PublicKey
 /// Signature is detached and is the signed payload
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-pub struct Vote<T> {
-    payload: T,
+pub struct Vote {
+    payload: Digest256,
     signature: Signature,
 }
 
-impl<T: Serialize + Clone> Vote<T> {
+impl Vote {
     /// Create a Vote
     #[allow(unused)]
-    pub fn new(secret_key: &SecretKey, payload: T) -> Result<Vote<T>, RoutingError> {
+    pub fn new(secret_key: &SecretKey, payload: Digest256) -> Result<Vote, RoutingError> {
         let signature = sign::sign_detached(&serialisation::serialise(&payload)?[..], secret_key);
         Ok(Vote {
             payload: payload,
@@ -43,7 +51,7 @@ impl<T: Serialize + Clone> Vote<T> {
 
     /// Getter
     #[allow(unused)]
-    pub fn payload(&self) -> &T {
+    pub fn payload(&self) -> &Digest256 {
         &self.payload
     }
 
