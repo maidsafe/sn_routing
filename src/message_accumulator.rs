@@ -108,11 +108,10 @@ impl MessageAccumulator {
     }
 
     #[allow(unused)]
-    pub fn add_message(&mut self, message: MessageContent) -> bool {
-        match serialisation::serialise(&message) {
-            Ok(ref data) => self.data.insert(sha3_256(data), message).is_some(),
-            Err(_) => false,
-        }
+    pub fn add_message(&mut self, message: MessageContent) -> Result<(), RoutingError> {
+        let ref data = serialisation::serialise(&message)?;
+        let _ = self.data.insert(sha3_256(data), message);
+        Ok(())
     }
 
     #[allow(unused)]
