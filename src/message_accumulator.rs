@@ -100,13 +100,14 @@ impl MessageAccumulator {
             return Err(RoutingError::FailedSignature);
         }
         let mut block = Block::new(&vote, &pub_key, age)?;
-        // let _fixme = self.blocks.insert(*digest, block.clone());
+        let _fixme = self.blocks.insert(*digest, block.clone());
         Ok(PeersAndAge::new(
             block.clone().total_proofs(),
             block.total_proofs_age(),
         ))
     }
 
+    /// Confirm we have a `Block` and if so then add the message
     #[allow(unused)]
     pub fn add_message(&mut self, message: MessageContent) -> Result<(), RoutingError> {
         let ref data = serialisation::serialise(&message)?;
@@ -119,6 +120,7 @@ impl MessageAccumulator {
         }
     }
 
+    /// Retreive a message if we have it.
     #[allow(unused)]
     pub fn get_message(&mut self, message_hash: Digest256) -> Option<&MessageContent> {
         self.data.get(&message_hash)
