@@ -50,8 +50,7 @@ impl Block {
     /// A new `Block` requires a valid vote and the `PublicKey` of the node who
     /// sent us this.
     /// For this reason The `Vote` will require a Direct Message from a `Peer`
-    /// to
-    /// us.
+    /// to us.
     #[allow(unused)]
     pub fn new(vote: &Vote, pub_key: &PublicKey, age: u8) -> Result<Block, RoutingError> {
         if !vote.validate_signature(pub_key) {

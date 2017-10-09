@@ -60,9 +60,9 @@ impl PeersAndAge {
 /// to confirm we should store the message. The blocks lru may flush and element
 /// whilst the data cache will keep it a little longer.
 struct MessageAccumulator {
-    blocks: LruCache<[u8; 32], Block>, // TODO impl Hash for Block to only
+    blocks: LruCache<Digest256, Block>, // TODO impl Hash for Block to only
     // use Digest & then switch here to HashSet
-    data: LruCache<[u8; 32], MessageContent>,
+    data: LruCache<Digest256, MessageContent>,
 }
 
 impl MessageAccumulator {
