@@ -2723,21 +2723,6 @@ impl Node {
                 self.send_section_list_signature(*prefix, None);
             }
         }
-        // Filter list of members to just those we don't know about:
-        let members =
-            if let Some(section) = self.routing_table().section_with_prefix(ver_pfx.prefix()) {
-                members
-                    .into_iter()
-                    .filter(|id: &PublicId| !section.contains(id.name()))
-                    .collect_vec()
-            } else {
-                debug!(
-                    "{:?} Section update received from unknown neighbour {:?}",
-                    self,
-                    ver_pfx
-                );
-                return Ok(());
-            };
         let members = members
             .into_iter()
             .filter(|id: &PublicId| {
@@ -2749,6 +2734,8 @@ impl Node {
             .collect_vec();
 
         let own_name = *self.name();
+        // `send_connection_info_request` calls `peer_manager::allow_connect`, which checks whether
+        // the node is required by the routing table or already exists.
         for pub_id in members {
             if let Err(error) = self.send_connection_info_request(
                 pub_id,
