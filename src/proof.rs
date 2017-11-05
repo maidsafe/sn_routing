@@ -26,8 +26,8 @@
 use super::vote::Vote;
 use error::RoutingError;
 use maidsafe_utilities::serialisation;
+use network_event::NetworkEvent;
 use rust_sodium::crypto::sign::{self, PublicKey, Signature};
-use sha3::Digest256;
 
 /// Proof as provided by a close group member
 /// This nay be extracted from a `Vote` to be inserted into a `Block`
@@ -73,7 +73,7 @@ impl Proof {
 
     /// Validates `data` against this `Proof`'s `key` and `sig`.
     #[allow(unused)]
-    pub fn validate_signature(&self, payload: &Digest256) -> bool {
+    pub fn validate_signature(&self, payload: &NetworkEvent) -> bool {
         match serialisation::serialise(&payload) {
             Ok(data) => sign::verify_detached(&self.sig, &data[..], &self.pub_key),
             _ => false,

@@ -224,7 +224,8 @@ mod xor_name;
 pub(crate) mod vote;
 pub(crate) mod proof;
 pub(crate) mod block;
-pub(crate) mod message_accumulator;
+// pub(crate) mod message_accumulator;
+pub(crate) mod network_event;
 
 #[cfg(feature = "use-mock-crypto")]
 pub mod mock_crypto;

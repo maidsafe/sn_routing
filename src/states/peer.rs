@@ -37,8 +37,8 @@ use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, MAX_PARTS, MAX_PART_
                MessageContent, RoutingMessage, SectionList, SignedMessage, UserMessage,
                UserMessageCache};
 use outbox::{EventBox, EventBuf};
-use peer_manager::{ConnectionInfoPreparedResult, PeerInfo, PeerManager, PeerState, ReconnectingPeer,
-                   RoutingConnection, SectionMap};
+use peer_manager::{ConnectionInfoPreparedResult, PeerInfo, PeerManager, PeerState,
+                   ReconnectingPeer, RoutingConnection, SectionMap};
 use rand::{self, Rng};
 use rate_limiter::RateLimiter;
 use resource_prover::{RESOURCE_PROOF_DURATION_SECS, ResourceProver};
@@ -2288,7 +2288,11 @@ impl Peer {
                     self,
                     pub_id
                 );
-                if self.peer_mgr.get_peer(&pub_id).map_or(false, PeerInfo::valid) {
+                if self.peer_mgr.get_peer(&pub_id).map_or(
+                    false,
+                    PeerInfo::valid,
+                )
+                {
                     self.process_connection(pub_id, outbox);
                 }
             }
@@ -3610,7 +3614,9 @@ impl Peer {
         // NOTE: If we do not have this peer in peer_mgr, `get_connection_token`
         // will flag them to `valid`
         self.peer_mgr.set_peer_valid(&their_public_id, true);
-        match self.peer_mgr.get_peer(&their_public_id).map(PeerInfo::state) {
+        match self.peer_mgr.get_peer(&their_public_id).map(
+            PeerInfo::state,
+        ) {
             Some(&PeerState::Connected(_)) |
             Some(&PeerState::Candidate(_)) => {
                 self.add_to_routing_table(&their_public_id, outbox);
@@ -3631,7 +3637,9 @@ impl Peer {
             return Ok(());
         }
 
-        let our_pub_info = match self.peer_mgr.get_peer(&their_public_id).map(PeerInfo::state) {
+        let our_pub_info = match self.peer_mgr.get_peer(&their_public_id).map(
+            PeerInfo::state,
+        ) {
             Some(&PeerState::ConnectionInfoReady(ref our_priv_info)) => {
                 our_priv_info.to_pub_connection_info()
             }

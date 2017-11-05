@@ -231,8 +231,7 @@ pub enum ReconnectingPeer {
 
 /// Represents peer we are connected or attempting connection to.
 #[derive(Debug)]
-pub struct PeerInfo
- {
+pub struct PeerInfo {
     pub_id: PublicId,
     state: PeerState,
     timestamp: Instant,
@@ -963,7 +962,10 @@ impl PeerManager {
 
     /// Returns if the given peer is our joining node.
     pub fn is_joining_node(&self, pub_id: &PublicId) -> bool {
-        self.peers.get(pub_id).map_or(false, PeerInfo::is_joining_node)
+        self.peers.get(pub_id).map_or(
+            false,
+            PeerInfo::is_joining_node,
+        )
     }
 
     /// Returns the proxy node's name if we have a proxy.
@@ -1275,10 +1277,9 @@ impl PeerManager {
     /// match our sibling prefix instead.
     pub fn is_potential_tunnel_node(&self, tunnel_name: &XorName, client_name: &XorName) -> bool {
         if self.our_public_id.name() == tunnel_name || self.our_public_id.name() == client_name ||
-            !self.get_peer_by_name(tunnel_name).map(PeerInfo::state).map_or(
-                false,
-                PeerState::can_tunnel_for,
-            )
+            !self.get_peer_by_name(tunnel_name)
+                .map(PeerInfo::state)
+                .map_or(false, PeerState::can_tunnel_for)
         {
             return false;
         }

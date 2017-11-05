@@ -122,7 +122,7 @@ impl NodeBuilder {
     pub fn create(self) -> Result<Peer, RoutingError> {
         // If we're not in a test environment where we might want to manually seed the crypto RNG
         // then seed randomly.
-        #[cfg(not(feature = "use-mock-crust"))] 
+        #[cfg(not(feature = "use-mock-crust"))]
         let _dontcare = rust_sodium::init();
 
         let mut ev_buffer = EventBuf::new();

@@ -25,8 +25,8 @@
 
 use error::RoutingError;
 use maidsafe_utilities::serialisation;
+use network_event::NetworkEvent;
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
-use sha3::Digest256;
 
 /// A Vote is a nodes desire to initiate a network action or sub action.
 /// If there are Quorum votes the action will happen
@@ -34,14 +34,14 @@ use sha3::Digest256;
 /// Signature is detached and is the signed payload
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Vote {
-    payload: Digest256,
+    payload: NetworkEvent,
     signature: Signature,
 }
 
 impl Vote {
     /// Create a Vote
     #[allow(unused)]
-    pub fn new(secret_key: &SecretKey, payload: Digest256) -> Result<Vote, RoutingError> {
+    pub fn new(secret_key: &SecretKey, payload: NetworkEvent) -> Result<Vote, RoutingError> {
         let signature = sign::sign_detached(&serialisation::serialise(&payload)?[..], secret_key);
         Ok(Vote {
             payload: payload,
@@ -51,7 +51,7 @@ impl Vote {
 
     /// Getter
     #[allow(unused)]
-    pub fn payload(&self) -> &Digest256 {
+    pub fn payload(&self) -> &NetworkEvent {
         &self.payload
     }
 
@@ -85,7 +85,7 @@ mod tests {
         unwrap!(rust_sodium::init_with_rng(&mut rng));
         let keys = sign::gen_keypair();
         let bad_keys = sign::gen_keypair();
-        let payload = sha3_256(b"1");
+        let payload = NetworkEvent::PeerNew(keys.0.clone());
         let vote = Vote::new(&keys.1, payload).unwrap();
         assert!(vote.validate_signature(&keys.0)); // right key
         assert!(!vote.validate_signature(&bad_keys.0)); // wrong key

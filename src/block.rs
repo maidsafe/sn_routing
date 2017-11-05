@@ -24,9 +24,9 @@
 // relating to use of the SAFE Network Software.
 
 use error::RoutingError;
+use network_event::NetworkEvent;
 use proof::Proof;
 use rust_sodium::crypto::sign::PublicKey;
-use sha3::Digest256;
 use std::collections::HashSet;
 use vote::Vote;
 
@@ -42,7 +42,7 @@ use vote::Vote;
 /// can increase a single `Peer`s quorum valid `Block`
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Block {
-    payload: Digest256,
+    payload: NetworkEvent,
     proofs: HashSet<Proof>,
 }
 
@@ -115,7 +115,7 @@ impl Block {
 
     #[allow(unused)]
     /// getter
-    pub fn payload(&self) -> &Digest256 {
+    pub fn payload(&self) -> &NetworkEvent {
         &self.payload
     }
 }
