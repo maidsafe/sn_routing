@@ -128,7 +128,6 @@ mod tests {
     use rand::random;
     use rust_sodium;
     use rust_sodium::crypto::sign;
-    use tiny_keccak::sha3_256;
 
 
 
@@ -139,10 +138,10 @@ mod tests {
 
         let keys0 = sign::gen_keypair();
         let keys1 = sign::gen_keypair();
-        let payload = sha3_256(b"1");
-        let vote0 = Vote::new(&keys0.1, payload).unwrap();
+        let payload = NetworkEvent::PeerKill(keys0.0);
+        let vote0 = Vote::new(&keys0.1, payload.clone()).unwrap();
         assert!(vote0.validate_signature(&keys0.0));
-        let vote1 = Vote::new(&keys1.1, payload).unwrap();
+        let vote1 = Vote::new(&keys1.1, payload.clone()).unwrap();
         assert!(vote1.validate_signature(&keys1.0));
         let proof0 = Proof::new(&keys0.0, random::<u8>(), &vote0).unwrap();
         assert!(proof0.validate_signature(&payload));
@@ -170,10 +169,10 @@ mod tests {
         let keys0 = sign::gen_keypair();
         let keys1 = sign::gen_keypair();
         let keys2 = sign::gen_keypair();
-        let payload = sha3_256(b"1");
-        let vote0 = Vote::new(&keys0.1, payload).unwrap();
-        let vote1 = Vote::new(&keys1.1, payload).unwrap();
-        let vote2 = Vote::new(&keys2.1, payload).unwrap();
+        let payload = NetworkEvent::PeerKill(keys0.0);
+        let vote0 = Vote::new(&keys0.1, payload.clone()).unwrap();
+        let vote1 = Vote::new(&keys1.1, payload.clone()).unwrap();
+        let vote2 = Vote::new(&keys2.1, payload.clone()).unwrap();
         let proof1 = Proof::new(&keys1.0, random::<u8>(), &vote1).unwrap();
         let proof2 = Proof::new(&keys2.0, random::<u8>(), &vote2).unwrap();
         // So 3 votes all valid will be added to block
