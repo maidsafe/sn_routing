@@ -59,16 +59,16 @@ impl PeersAndAge {
 /// Contains 2 lru cache types. The notion is that we check the blocks lru
 /// to confirm we should store the message. The blocks lru may flush and element
 /// whilst the data cache will keep it a little longer.
-struct MessageAccumulator {
+struct Accumulator {
     blocks: LruCache<NetworkEvent, Block>, // TODO impl Hash for Block to only
     // use Digest & then switch here to HashSet
     data: LruCache<NetworkEvent, MessageContent>,
 }
 
-// impl MessageAccumulator {
+// impl Accumulator {
 //     #[allow(unused)]
-//     fn new(keep_alive: Duration) -> MessageAccumulator {
-//         MessageAccumulator {
+//     fn new(keep_alive: Duration) -> Accumulator {
+//         Accumulator {
 //             blocks: LruCache::with_expiry_duration(keep_alive),
 //             data: LruCache::with_expiry_duration(keep_alive),
 //         }
