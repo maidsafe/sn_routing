@@ -29,7 +29,7 @@ pub struct ExamplePeer {
     idata_store: HashMap<XorName, ImmutableData>,
     mdata_store: HashMap<(XorName, u64), MutableData>,
     client_accounts: HashMap<XorName, u64>,
-    request_cache: LruCache<MessageId, (Authority<XorName>, Authority<XorName>)>,
+    request_cache: LruCache<MessageId, (Authority, Authority)>,
 }
 
 impl ExamplePeer {
@@ -102,12 +102,7 @@ impl ExamplePeer {
         }
     }
 
-    fn handle_request(
-        &mut self,
-        request: Request,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
-    ) {
+    fn handle_request(&mut self, request: Request, src: Authority, dst: Authority) {
         match request {
             Request::Refresh(payload, msg_id) => self.handle_refresh(payload, msg_id),
             Request::GetIData { name, msg_id } => {
@@ -138,12 +133,7 @@ impl ExamplePeer {
         }
     }
 
-    fn handle_response(
-        &mut self,
-        response: Response,
-        _src: Authority<XorName>,
-        dst: Authority<XorName>,
-    ) {
+    fn handle_response(&mut self, response: Response, _src: Authority, dst: Authority) {
         match (response, dst) {
             (Response::PutIData { res, msg_id }, Authority::ClientManager(_)) => {
                 if let Some((src, dst)) = self.request_cache.remove(&msg_id) {
@@ -161,8 +151,8 @@ impl ExamplePeer {
 
     fn handle_get_idata_request(
         &mut self,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
+        src: Authority,
+        dst: Authority,
         name: XorName,
         msg_id: MessageId,
     ) {
@@ -187,8 +177,8 @@ impl ExamplePeer {
 
     fn handle_put_idata_request(
         &mut self,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
+        src: Authority,
+        dst: Authority,
         data: ImmutableData,
         msg_id: MessageId,
     ) {
@@ -231,8 +221,8 @@ impl ExamplePeer {
 
     fn handle_get_mdata_shell_request(
         &mut self,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
+        src: Authority,
+        dst: Authority,
         name: XorName,
         tag: u64,
         msg_id: MessageId,
@@ -261,8 +251,8 @@ impl ExamplePeer {
 
     fn handle_list_mdata_entries_request(
         &mut self,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
+        src: Authority,
+        dst: Authority,
         name: XorName,
         tag: u64,
         msg_id: MessageId,
@@ -291,8 +281,8 @@ impl ExamplePeer {
 
     fn handle_get_mdata_value_request(
         &mut self,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
+        src: Authority,
+        dst: Authority,
         name: XorName,
         tag: u64,
         key: Vec<u8>,
@@ -328,7 +318,7 @@ impl ExamplePeer {
         self.send_refresh(MessageId::from_added_node(name));
     }
 
-    fn handle_split(&mut self, prefix: Prefix<XorName>) {
+    fn handle_split(&mut self, prefix: Prefix) {
         let deleted_clients: Vec<_> = self.client_accounts
             .iter()
             .filter(|&(client_name, _)| !prefix.matches(client_name))

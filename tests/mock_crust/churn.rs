@@ -235,7 +235,7 @@ fn random_churn<R: Rng>(
 }
 
 /// The entries of a Put request: the data ID, message ID, source and destination authority.
-type PutKey = (XorName, MessageId, Authority<XorName>, Authority<XorName>);
+type PutKey = (XorName, MessageId, Authority, Authority);
 
 /// A set of expectations: Which nodes, groups and sections are supposed to receive Put requests.
 #[derive(Default)]
@@ -243,7 +243,7 @@ struct ExpectedPuts {
     /// The Put requests expected to be received.
     messages: HashSet<PutKey>,
     /// The section or section members of receiving groups or sections, at the time of sending.
-    sections: HashMap<Authority<XorName>, HashSet<XorName>>,
+    sections: HashMap<Authority, HashSet<XorName>>,
 }
 
 impl ExpectedPuts {
@@ -252,8 +252,8 @@ impl ExpectedPuts {
     fn send_and_expect(
         &mut self,
         data: ImmutableData,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
+        src: Authority,
+        dst: Authority,
         nodes: &mut [TestNode],
         min_section_size: usize,
     ) {
@@ -289,8 +289,8 @@ impl ExpectedPuts {
     fn client_send_and_expect(
         &mut self,
         data: ImmutableData,
-        client_auth: Authority<XorName>,
-        dst: Authority<XorName>,
+        client_auth: Authority,
+        dst: Authority,
         client: &mut TestClient,
         nodes: &mut [TestNode],
     ) {
@@ -300,7 +300,7 @@ impl ExpectedPuts {
     }
 
     /// Adds the expectation that the nodes belonging to `dst` receive the message.
-    fn expect(&mut self, nodes: &mut [TestNode], dst: Authority<XorName>, key: PutKey) {
+    fn expect(&mut self, nodes: &mut [TestNode], dst: Authority, key: PutKey) {
         if dst.is_multiple() && !self.sections.contains_key(&dst) {
             let is_recipient = |n: &&TestNode| n.is_recipient(&dst);
             let section = nodes

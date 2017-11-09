@@ -115,7 +115,7 @@ impl State {
         self.base_state().map(|state| *state.id())
     }
 
-    fn routing_table(&self) -> Option<&RoutingTable<XorName>> {
+    fn routing_table(&self) -> Option<&RoutingTable> {
         match *self {
             State::Peer(ref state) => Some(state.routing_table()),
             _ => None,
@@ -181,7 +181,7 @@ impl State {
 
     pub fn section_list_signatures(
         &self,
-        prefix: Prefix<XorName>,
+        prefix: Prefix,
     ) -> Option<BTreeMap<PublicId, sign::Signature>> {
         match *self {
             State::Peer(ref state) => state.section_list_signatures(prefix).ok(),
@@ -250,7 +250,7 @@ pub enum Transition {
     // `JoiningNode` state transitioning back to `Bootstrapping`.
     IntoBootstrapping {
         new_id: FullId,
-        our_section: (Prefix<XorName>, BTreeSet<PublicId>),
+        our_section: (Prefix, BTreeSet<PublicId>),
     },
     Terminate,
 }
@@ -514,7 +514,7 @@ impl StateMachine {
         self.state.id()
     }
 
-    pub fn routing_table(&self) -> Option<&RoutingTable<XorName>> {
+    pub fn routing_table(&self) -> Option<&RoutingTable> {
         self.state.routing_table()
     }
 

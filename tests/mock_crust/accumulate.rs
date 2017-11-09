@@ -18,7 +18,7 @@
 use super::{TestNode, create_connected_nodes, gen_immutable_data, poll_all,
             sort_nodes_by_distance_to};
 use routing::{Authority, Event, EventStream, MessageId, QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
-              Response, XorName};
+              Response};
 use routing::mock_crust::Network;
 use std::sync::mpsc;
 
@@ -33,7 +33,7 @@ fn messages_accumulate_with_quorum() {
     let src = Authority::NaeManager(*data.name()); // The data's NaeManager.
     sort_nodes_by_distance_to(&mut nodes, &src.name());
 
-    let send = |node: &mut TestNode, dst: &Authority<XorName>, message_id: MessageId| {
+    let send = |node: &mut TestNode, dst: &Authority, message_id: MessageId| {
         assert!(
             node.inner
                 .send_get_idata_response(src, *dst, Ok(data.clone()), message_id)

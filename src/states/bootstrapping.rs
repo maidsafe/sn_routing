@@ -37,7 +37,6 @@ use std::net::SocketAddr;
 use std::time::Duration;
 use timer::Timer;
 use types::RoutingActionSender;
-use xor_name::XorName;
 
 // Time (in seconds) after which bootstrap is cancelled (and possibly retried).
 const BOOTSTRAP_TIMEOUT_SECS: u64 = 20;
@@ -50,7 +49,7 @@ pub enum TargetState {
     JoiningPeer,
     Node {
         old_full_id: FullId,
-        our_section: (Prefix<XorName>, BTreeSet<PublicId>),
+        our_section: (Prefix, BTreeSet<PublicId>),
     },
 }
 
@@ -394,7 +393,7 @@ impl Base for Bootstrapping {
         &mut self.stats
     }
 
-    fn in_authority(&self, _: &Authority<XorName>) -> bool {
+    fn in_authority(&self, _: &Authority) -> bool {
         false
     }
 

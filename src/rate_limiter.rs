@@ -752,11 +752,9 @@ mod tests {
         let numerator = MIN_CLIENT_CAPACITY as f64 * num_clients as f64 + advanced_secs * RATE -
             offset as f64;
         let denominator = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES as f64 * num_clients as f64;
-        let success_count = (numerator / denominator).round() as u64;
+        let successes = (numerator / denominator).round() as u64;
         for count in clients_and_counts.values() {
-            assert!(
-                *count == success_count || *count <= success_count + 1 || *count >= success_count - 1
-            );
+            assert!(*count == successes || *count <= successes + 1 || *count >= successes - 1);
         }
     }
 

@@ -51,8 +51,8 @@ macro_rules! impl_request {
         #[allow(missing_docs)]
         #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
         pub fn $method(&mut self,
-                       src: Authority<XorName>,
-                       dst: Authority<XorName>,
+                       src: Authority,
+                       dst: Authority,
                        $($pname: $ptype),*)
                        -> Result<(), InterfaceError> {
             let msg = UserMessage::Request(Request::$message {
@@ -73,8 +73,8 @@ macro_rules! impl_response {
     ($method:ident, $message:ident, $payload:ty, $priority:expr) => {
         #[allow(missing_docs)]
         pub fn $method(&mut self,
-                       src: Authority<XorName>,
-                       dst: Authority<XorName>,
+                       src: Authority,
+                       dst: Authority,
                        res: Result<$payload, ClientError>,
                        msg_id: MessageId)
                        -> Result<(), InterfaceError> {
@@ -316,8 +316,8 @@ impl Peer {
     /// Send a `Refresh` request from `src` to `dst` to trigger churn.
     pub fn send_refresh_request(
         &mut self,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
+        src: Authority,
+        dst: Authority,
         content: Vec<u8>,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
@@ -334,8 +334,8 @@ impl Peer {
     /// Respond to a `GetIData` request.
     pub fn send_get_idata_response(
         &mut self,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
+        src: Authority,
+        dst: Authority,
         res: Result<ImmutableData, ClientError>,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
@@ -355,8 +355,8 @@ impl Peer {
     /// Note: this response is unlikely to accumulate during churn.
     pub fn send_get_mdata_response(
         &mut self,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
+        src: Authority,
+        dst: Authority,
         res: Result<MutableData, ClientError>,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
@@ -382,8 +382,8 @@ impl Peer {
     /// Respond to a `GetMDataShell` request.
     pub fn send_get_mdata_shell_response(
         &mut self,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
+        src: Authority,
+        dst: Authority,
         res: Result<MutableData, ClientError>,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
@@ -421,8 +421,8 @@ impl Peer {
     /// Respond to a `GetMDataValue` request.
     pub fn send_get_mdata_value_response(
         &mut self,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
+        src: Authority,
+        dst: Authority,
         res: Result<Value, ClientError>,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
@@ -502,7 +502,7 @@ impl Peer {
     }
 
     /// Returns the routing table of this node.
-    pub fn routing_table(&self) -> Result<&RoutingTable<XorName>, RoutingError> {
+    pub fn routing_table(&self) -> Result<&RoutingTable, RoutingError> {
         self.machine.routing_table().ok_or(RoutingError::Terminated)
     }
 
@@ -513,8 +513,8 @@ impl Peer {
 
     fn send_action(
         &mut self,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
+        src: Authority,
+        dst: Authority,
         user_msg: UserMessage,
         priority: u8,
     ) -> Result<(), InterfaceError> {
@@ -576,7 +576,7 @@ impl Peer {
     /// have one
     pub fn section_list_signatures(
         &self,
-        prefix: Prefix<XorName>,
+        prefix: Prefix,
     ) -> Option<BTreeMap<PublicId, sign::Signature>> {
         self.machine.current().section_list_signatures(prefix)
     }
@@ -656,7 +656,7 @@ impl Drop for Peer {
 
 // Priority of messages that might be used during relocation/churn, depending
 // on the destination.
-fn relocate_priority(dst: &Authority<XorName>) -> u8 {
+fn relocate_priority(dst: &Authority) -> u8 {
     if dst.is_client() {
         CLIENT_GET_PRIORITY
     } else {

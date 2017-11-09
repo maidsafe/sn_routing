@@ -1,63 +1,42 @@
 // Copyright 2015 MaidSafe.net limited.
 //
-// This SAFE Network Software is licensed to you under (1) the MaidSafe.net
-// Commercial License,
-// version 1.0 or later, or (2) The General Public License (GPL), version 3,
-// depending on which
+// This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
+// version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
 //
-// By contributing code to the SAFE Network Software, or to this project
-// generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement.  This, along with
-// the Licenses can be
-// found in the root directory of this project at LICENSE, COPYING and
-// CONTRIBUTOR.
+// By contributing code to the SAFE Network Software, or to this project generally, you agree to be
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
-// Unless required by applicable law or agreed to in writing, the SAFE Network
-// Software distributed
-// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES
-// OR CONDITIONS OF ANY
+// Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
+// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
 // KIND, either express or implied.
 //
-// Please review the Licences for the specific language governing permissions
-// and limitations
+// Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
 //! Client and node implementations for a resilient decentralised network.
 //!
-//! The network is based on the [`kademlia_routing_table`][1] and uses the XOR
-//! metric to define the
-//! "distance" between two [`XorName`][2]s. `XorName`s are used as addresses of
-//! nodes, clients as
+//! The network is based on the [`kademlia_routing_table`][1] and uses the XOR metric to define the
+//! "distance" between two [`XorName`][2]s. `XorName`s are used as addresses of nodes, clients as
 //! well as data.
 //!
 //! [1]: ../kademlia_routing_table/index.html
 //! [2]: ../xor_name/struct.XorName.html
 //!
-//! Messages are exchanged between _authorities_, where an `Authority` can be
-//! an individual client
-//! or node, or a collection of nodes called a "section", or a subset of a
-//! section called a "group".
-//! In all cases, messages are cryptographically signed by the sender, and in
-//! the case of sections
-//! and groups, it is verified that a sufficient number of members agree on the
-//! message: only if
-//! that quorum is reached, the message is delivered. In addition, each message
-//! has a unique ID, and
+//! Messages are exchanged between _authorities_, where an `Authority` can be an individual client
+//! or node, or a collection of nodes called a "section", or a subset of a section called a "group".
+//! In all cases, messages are cryptographically signed by the sender, and in the case of sections
+//! and groups, it is verified that a sufficient number of members agree on the message: only if
+//! that quorum is reached, the message is delivered. In addition, each message has a unique ID, and
 //! is delivered only once.
 //!
-//! Section and group authorities are also addressed using a single `XorName`.
-//! The members are the
-//! nodes that are closest to that name. Sections contain a minimum number of
-//! nodes with the minimum
-//! value specified as a network-wide constant. Groups are of fixed size,
-//! defined as the above
-//! minimum section size. Since nodes are assigned their name by the network,
-//! this provides
-//! redundancy and resilience: a node has no control over which section or
-//! group authority it will
-//! be a member of, and without a majority in the section or group it cannot
-//! forge a message from
+//! Section and group authorities are also addressed using a single `XorName`. The members are the
+//! nodes that are closest to that name. Sections contain a minimum number of nodes with the minimum
+//! value specified as a network-wide constant. Groups are of fixed size, defined as the above
+//! minimum section size. Since nodes are assigned their name by the network, this provides
+//! redundancy and resilience: a node has no control over which section or group authority it will
+//! be a member of, and without a majority in the section or group it cannot forge a message from
 //! there.
 //!
 //! The library also provides different types for the messages' data.
@@ -65,24 +44,18 @@
 //!
 //! # Usage
 //!
-//! A decentralised service based on the `routing` library uses `Client` to
-//! send requests to the
+//! A decentralised service based on the `routing` library uses `Client` to send requests to the
 //! network of nodes and receive responses.
 //!
-//! `Peer` is used to handle and send requests within that network, and to
-//! implement its
-//! functionality, e.g. storing and retrieving data, validating permissions,
-//! managing metadata, etc.
+//! `Peer` is used to handle and send requests within that network, and to implement its
+//! functionality, e.g. storing and retrieving data, validating permissions, managing metadata, etc.
 //!
 //!
 //! ## Client creation
 //!
-//! A client's name is a hash of its public keys. Upon creation, the client
-//! will attempt to connect
-//! to the network through any node, and exchange public keys with it. That
-//! node becomes a
-//! bootstrap node for the client, and messages to and from the client will be
-//! routed over it.
+//! A client's name is a hash of its public keys. Upon creation, the client will attempt to connect
+//! to the network through any node, and exchange public keys with it. That node becomes a
+//! bootstrap node for the client, and messages to and from the client will be routed over it.
 //!
 //! ```no_run
 //! # #![allow(unused)]
@@ -95,8 +68,7 @@
 //! let client = Client::new(sender, Some(full_id), None).unwrap();
 //! ```
 //!
-//! Messages can be sent using the methods of `client`, and received as
-//! `Event`s from the
+//! Messages can be sent using the methods of `client`, and received as `Event`s from the
 //! `receiver`.
 //!
 //!
@@ -111,18 +83,13 @@
 //! let node = Peer::builder().create().unwrap();
 //! ```
 //!
-//! Upon creation, the node will first connect to the network as a client. Once
-//! it has client
-//! status, it requests a new name from the network, and then integrates itself
-//! in the network with
+//! Upon creation, the node will first connect to the network as a client. Once it has client
+//! status, it requests a new name from the network, and then integrates itself in the network with
 //! that new name, adding close nodes to its routing table.
 //!
-//! Messages can be sent using the methods of `node`, and received as `Event`s
-//! from the `receiver`.
-//! The node can act as an individual node or as part of a section or group
-//! authority. Sending a
-//! message as a section or group authority only has an effect if sufficiently
-//! many other nodes in
+//! Messages can be sent using the methods of `node`, and received as `Event`s from the `receiver`.
+//! The node can act as an individual node or as part of a section or group authority. Sending a
+//! message as a section or group authority only has an effect if sufficiently many other nodes in
 //! that authority send the same message.
 //!
 //!
@@ -138,8 +105,7 @@
        html_root_url = "https://docs.rs/routing")]
 
 // For explanation of lint checks, run `rustc -W help` or see
-// https://github.
-// com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
+// https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
 #![forbid(exceeding_bitshifts, mutable_transmutes, no_mangle_const_items,
           unknown_crate_types)]
 #![deny(bad_style, deprecated, improper_ctypes, missing_docs,
@@ -250,8 +216,7 @@ pub const TYPE_TAG_SESSION_PACKET: u64 = 0;
 /// Structured Data Tag for DNS Packet Type
 pub const TYPE_TAG_DNS_PACKET: u64 = 5;
 
-/// Quorum is defined as having strictly greater than `QUORUM_NUMERATOR /
-/// QUORUM_DENOMINATOR`
+/// Quorum is defined as having strictly greater than `QUORUM_NUMERATOR / QUORUM_DENOMINATOR`
 /// agreement; using only integer arithmetic a quorum can be checked with
 /// `votes * QUORUM_DENOMINATOR > voters * QUORUM_NUMERATOR`.
 pub const QUORUM_NUMERATOR: usize = 1;
@@ -283,7 +248,7 @@ pub use peer::{NodeBuilder, Peer};
 pub use peer_manager::test_consts;
 #[cfg(feature = "use-mock-crust")]
 pub use rate_limiter::rate_limiter_consts;
-pub use routing_table::{Authority, Prefix, RoutingTable, Xorable};
+pub use routing_table::{Authority, Prefix, RoutingTable};
 pub use routing_table::Error as RoutingTableError;
 #[cfg(any(test, feature = "use-mock-crust"))]
 pub use routing_table::verify_network_invariant;

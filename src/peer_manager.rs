@@ -63,13 +63,13 @@ pub mod test_consts {
     pub const RATE_EXCEED_RETRY_MS: u64 = ::states::RATE_EXCEED_RETRY_MS;
 }
 
-pub type SectionMap = BTreeMap<VersionedPrefix<XorName>, BTreeSet<PublicId>>;
+pub type SectionMap = BTreeMap<VersionedPrefix, BTreeSet<PublicId>>;
 
 #[derive(Default)]
 pub struct PeerDetails {
     pub routing_peer_details: Vec<(PublicId, bool)>,
     pub out_of_sync_peers: Vec<PublicId>,
-    pub removal_details: Vec<RemovalDetails<XorName>>,
+    pub removal_details: Vec<RemovalDetails>,
 }
 
 #[derive(Debug)]
@@ -141,9 +141,9 @@ pub enum PeerState {
     /// if we already received it.
     ConnectionInfoPreparing {
         /// Our authority
-        us_as_src: Authority<XorName>,
+        us_as_src: Authority,
         /// Peer's authority
-        them_as_dst: Authority<XorName>,
+        them_as_dst: Authority,
         /// Peer's connection info if received
         their_info: Option<(PubConnectionInfo, MessageId)>,
     },
@@ -214,9 +214,9 @@ pub struct ConnectionInfoPreparedResult {
     /// The peer's public ID.
     pub pub_id: PublicId,
     /// The source authority for sending the connection info.
-    pub src: Authority<XorName>,
+    pub src: Authority,
     /// The destination authority for sending the connection info.
-    pub dst: Authority<XorName>,
+    pub dst: Authority,
     /// If the peer's connection info was already present, the peer has been moved to
     /// `CrustConnecting` status. Crust's `connect` method should be called with these infos now.
     pub infos: Option<(PrivConnectionInfo, PubConnectionInfo, MessageId)>,
@@ -385,7 +385,7 @@ enum Candidate {
     ResourceProof {
         res_proof_start: Instant,
         new_pub_id: PublicId,
-        new_client_auth: Authority<XorName>,
+        new_client_auth: Authority,
         challenge: Option<ResourceProofChallenge>,
         passed_our_challenge: bool,
     },
@@ -422,7 +422,7 @@ struct ResourceProofChallenge {
 pub struct PeerManager {
     connection_token_map: HashMap<u32, PublicId>,
     peers: HashMap<PublicId, PeerInfo>,
-    routing_table: RoutingTable<XorName>,
+    routing_table: RoutingTable,
     our_public_id: PublicId,
     candidate: Candidate,
     disable_client_rate_limiter: bool,
@@ -446,15 +446,12 @@ impl PeerManager {
     }
 
     /// Add prefixes into routing table.
-    pub fn add_prefixes(
-        &mut self,
-        prefixes: Vec<VersionedPrefix<XorName>>,
-    ) -> Result<(), RoutingError> {
+    pub fn add_prefixes(&mut self, prefixes: Vec<VersionedPrefix>) -> Result<(), RoutingError> {
         Ok(self.routing_table.add_prefixes(prefixes)?)
     }
 
     /// Returns the routing table.
-    pub fn routing_table(&self) -> &RoutingTable<XorName> {
+    pub fn routing_table(&self) -> &RoutingTable {
         &self.routing_table
     }
 
@@ -498,7 +495,7 @@ impl PeerManager {
         &mut self,
         old_pub_id: PublicId,
         target_interval: (XorName, XorName),
-    ) -> (Prefix<XorName>, BTreeSet<PublicId>) {
+    ) -> (Prefix, BTreeSet<PublicId>) {
         self.candidate = Candidate::AcceptedForResourceProof {
             res_proof_start: Instant::now(),
             old_pub_id: old_pub_id,
@@ -645,7 +642,7 @@ impl PeerManager {
         &mut self,
         old_pub_id: &PublicId,
         new_pub_id: &PublicId,
-        new_client_auth: &Authority<XorName>,
+        new_client_auth: &Authority,
         target_size: usize,
         difficulty: u8,
         seed: Vec<u8>,
@@ -802,10 +799,7 @@ impl PeerManager {
 
     /// Splits the indicated section and returns the `PublicId`s of any peers to which we should not
     /// remain connected.
-    pub fn split_section(
-        &mut self,
-        ver_pfx: VersionedPrefix<XorName>,
-    ) -> (Vec<PublicId>, Option<Prefix<XorName>>) {
+    pub fn split_section(&mut self, ver_pfx: VersionedPrefix) -> (Vec<PublicId>, Option<Prefix>) {
         let (names_to_drop, our_new_prefix) = self.routing_table.split(ver_pfx);
         for name in &names_to_drop {
             info!("{:?} Dropped {} from the routing table.", self, name);
@@ -843,7 +837,7 @@ impl PeerManager {
 
     /// Adds the given prefix to the routing table, splitting or merging them as necessary. Returns
     /// the list of peers that have been dropped and need to be disconnected.
-    pub fn add_prefix(&mut self, ver_pfx: VersionedPrefix<XorName>) -> Vec<PublicId> {
+    pub fn add_prefix(&mut self, ver_pfx: VersionedPrefix) -> Vec<PublicId> {
         let names_to_drop = self.routing_table.add_prefix(ver_pfx);
         for name in &names_to_drop {
             info!("{:?} Dropped {} from the routing table.", self, name);
@@ -869,7 +863,7 @@ impl PeerManager {
     }
 
     /// Returns the sender prefix and sections to prepare a merge.
-    pub fn merge_details(&self) -> (Prefix<XorName>, SectionMap) {
+    pub fn merge_details(&self) -> (Prefix, SectionMap) {
         let sections = self.routing_table
             .all_sections_iter()
             .map(|(prefix, (v, members))| {
@@ -884,10 +878,10 @@ impl PeerManager {
     /// should now connect to.
     pub fn merge_own_section(
         &mut self,
-        sender_prefix: Prefix<XorName>,
+        sender_prefix: Prefix,
         merge_version: u64,
         sections: SectionMap,
-    ) -> (OwnMergeState<XorName>, Vec<PublicId>) {
+    ) -> (OwnMergeState, Vec<PublicId>) {
         let needed = sections
             .iter()
             .flat_map(|(_, pub_ids)| pub_ids)
@@ -907,7 +901,7 @@ impl PeerManager {
 
     pub fn merge_other_section(
         &mut self,
-        ver_pfx: VersionedPrefix<XorName>,
+        ver_pfx: VersionedPrefix,
         section: BTreeSet<PublicId>,
     ) -> BTreeSet<PublicId> {
         let needed_names = self.routing_table.merge_other_section(
@@ -1385,8 +1379,8 @@ impl PeerManager {
     /// returns both if that's already present and sets the status to `CrustConnecting`.
     pub fn connection_info_received(
         &mut self,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
+        src: Authority,
+        dst: Authority,
         peer_info: PubConnectionInfo,
         msg_id: MessageId,
         is_conn_info_req: bool,
@@ -1473,8 +1467,8 @@ impl PeerManager {
     /// `ConnectionInfoPreparing` status.
     pub fn get_connection_token(
         &mut self,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
+        src: Authority,
+        dst: Authority,
         pub_id: PublicId,
         reconnecting_in: ReconnectingPeer,
     ) -> Option<u32> {
@@ -1538,7 +1532,7 @@ impl PeerManager {
     pub fn remove_peer(
         &mut self,
         pub_id: &PublicId,
-    ) -> Option<(PeerInfo, Result<RemovalDetails<XorName>, RoutingTableError>)> {
+    ) -> Option<(PeerInfo, Result<RemovalDetails, RoutingTableError>)> {
         let remove_candidate = match self.candidate {
             Candidate::None => false,
             Candidate::Expecting { ref old_pub_id, .. } |
@@ -1695,7 +1689,7 @@ mod tests {
     use types::MessageId;
     use xor_name::{XOR_NAME_LEN, XorName};
 
-    fn node_auth(byte: u8) -> Authority<XorName> {
+    fn node_auth(byte: u8) -> Authority {
         Authority::ManagedNode(XorName([byte; XOR_NAME_LEN]))
     }
 

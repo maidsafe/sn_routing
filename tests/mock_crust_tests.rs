@@ -43,12 +43,10 @@ extern crate routing;
 #[macro_use]
 extern crate unwrap;
 
-// This module is a driver and defines macros. See `mock_crust` modules for
-// tests.
+// This module is a driver and defines macros. See `mock_crust` modules for tests.
 
-/// Expect that the next event raised by the node matches the given pattern.
-/// Panics if no event, or an event that does not match the pattern is raised.
-/// (ignores ticks).
+/// Expect that the next event raised by the node matches the given pattern. Panics if no event, or
+/// an event that does not match the pattern is raised. (ignores ticks).
 macro_rules! expect_next_event {
     ($node:expr, $pattern:pat) => {
         loop {
@@ -64,9 +62,9 @@ macro_rules! expect_next_event {
     }
 }
 
-/// Expects that any event raised by the node matches the given pattern
-/// (with optional pattern guard). Ignores events that do not match the pattern.
-/// Panics if the event channel is exhausted before matching event is found.
+/// Expects that any event raised by the node matches the given pattern (with optional pattern
+/// guard). Ignores events that do not match the pattern. Panics if the event channel is exhausted
+/// before matching event is found.
 macro_rules! expect_any_event {
     ($node:expr, $pattern:pat) => {
         expect_any_event!($node, $pattern if true)

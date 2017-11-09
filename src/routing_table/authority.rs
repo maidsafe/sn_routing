@@ -15,9 +15,9 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use super::{Prefix, Xorable};
+use super::{Prefix, XorName};
 use id::PublicId;
-use std::fmt::{self, Binary, Debug, Display, Formatter};
+use std::fmt::{self, Debug, Formatter};
 
 /// An entity that can act as a source or destination of a message.
 ///
@@ -28,33 +28,33 @@ use std::fmt::{self, Binary, Debug, Display, Formatter};
 /// `PrefixSection` use _section_ verification: the set from which a quorum is required is all
 /// members of the section (`Section`) or of all sections matching the prefix (`PrefixSection`).
 #[derive(Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Hash)]
-pub enum Authority<N: Xorable + Clone + Copy + Binary + Default> {
+pub enum Authority {
     /// Manager of a Client.  XorName is the hash of the Client's `client_key`.
-    ClientManager(N),
+    ClientManager(XorName),
     /// Manager of a network-addressable element, i.e. the group matching this name.
     /// `XorName` is the name of the element in question.
-    NaeManager(N),
+    NaeManager(XorName),
     /// Manager of a ManagedNode.  XorName is that of the ManagedNode.
-    NodeManager(N),
+    NodeManager(XorName),
     /// A set of nodes with names sharing a common prefix.
-    Section(N),
+    Section(XorName),
     /// A set of nodes with names sharing a common prefix - may span multiple `Section`s present in
     /// the routing table or only a part of a `Section`
-    PrefixSection(Prefix<N>),
+    PrefixSection(Prefix),
     /// A non-client node (i.e. a vault) which is managed by NodeManagers.  XorName is provided
     /// by the network relocation process immediately after bootstrapping.
-    ManagedNode(N),
+    ManagedNode(XorName),
     /// A Client.
     Client {
         /// The Public ID of the client.
         client_id: PublicId,
         /// The name of the single ManagedNode which the Client connects to and proxies all messages
         /// through.
-        proxy_node_name: N,
+        proxy_node_name: XorName,
     },
 }
 
-impl<N: Xorable + Clone + Copy + Binary + Default> Authority<N> {
+impl Authority {
     /// Returns `true` if the authority consists of multiple nodes, otherwise `false`.
     pub fn is_multiple(&self) -> bool {
         match *self {
@@ -78,7 +78,7 @@ impl<N: Xorable + Clone + Copy + Binary + Default> Authority<N> {
     }
 
     /// Returns the name of authority.
-    pub fn name(&self) -> N {
+    pub fn name(&self) -> XorName {
         match *self {
             Authority::ClientManager(ref name) |
             Authority::NaeManager(ref name) |
@@ -91,7 +91,7 @@ impl<N: Xorable + Clone + Copy + Binary + Default> Authority<N> {
     }
 }
 
-impl<N: Xorable + Clone + Copy + Binary + Default + Display> Debug for Authority<N> {
+impl Debug for Authority {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
             Authority::ClientManager(ref name) => {

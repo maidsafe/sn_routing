@@ -107,8 +107,8 @@ fn remove_nodes_from_section_till_merge(
 fn add_a_pair(
     network: &Network<PublicId>,
     nodes: &mut Vec<TestNode>,
-    prefix0: Prefix<XorName>,
-    prefix1: Prefix<XorName>,
+    prefix0: Prefix,
+    prefix1: Prefix,
     is_tunnel: bool,
 ) -> (Endpoint, Endpoint) {
     let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);

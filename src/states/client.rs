@@ -38,7 +38,6 @@ use std::time::Duration;
 #[cfg(not(feature = "use-mock-crust"))]
 use std::time::Instant;
 use timer::Timer;
-use xor_name::XorName;
 
 /// Duration to wait before sending rate limit exceeded messages.
 pub const RATE_EXCEED_RETRY_MS: u64 = 800;
@@ -323,8 +322,8 @@ impl Client {
     /// Sends the given message, possibly splitting it up into smaller parts.
     fn send_user_message(
         &mut self,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
+        src: Authority,
+        dst: Authority,
         user_msg: UserMessage,
         priority: u8,
     ) -> Result<(), RoutingError> {
@@ -354,7 +353,7 @@ impl Base for Client {
     }
 
     /// Does the given authority represent us?
-    fn in_authority(&self, auth: &Authority<XorName>) -> bool {
+    fn in_authority(&self, auth: &Authority) -> bool {
         if let Authority::Client { ref client_id, .. } = *auth {
             client_id == self.full_id.public_id()
         } else {

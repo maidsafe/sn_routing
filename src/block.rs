@@ -1,26 +1,18 @@
-// Copyright 2015 MaidSafe.net limited.
+// Copyright 2017 MaidSafe.net limited.
 //
-// This SAFE Network Software is licensed to you under (1) the MaidSafe.net
-// Commercial License,
-// version 1.0 or later, or (2) The General Public License (GPL), version 3,
-// depending on which
+// This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
+// version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
 //
-// By contributing code to the SAFE Network Software, or to this project
-// generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.0 This,
-// along with the
-// Licenses can be found in the root directory of this project at LICENSE,
-// COPYING and CONTRIBUTOR.
+// By contributing code to the SAFE Network Software, or to this project generally, you agree to be
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
-// Unless required by applicable law or agreed to in writing, the SAFE Network
-// Software distributed
-// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES
-// OR CONDITIONS OF ANY
+// Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
+// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
 // KIND, either express or implied.
 //
-// Please review the Licences for the specific language governing permissions
-// and limitations
+// Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
 use error::RoutingError;
@@ -30,16 +22,11 @@ use rust_sodium::crypto::sign::PublicKey;
 use std::collections::HashSet;
 use vote::Vote;
 
-
-/// A `Block` *is* network consensus. It covers a group of nodes closest to an
-/// address and is signed
-/// With quorum valid votes, the consensus is then valid and therefor the
-/// `Block` however itsworth
-/// recodnising quorum is the weakest consensus as any differnce on network
-/// view will break it.
-/// Full group consensus is strongest, but likely unachievable most of the
-/// time, so a union
-/// can increase a single `Peer`s quorum valid `Block`
+/// A `Block` *is* network consensus. It covers a group of nodes closest to an address and is signed
+/// With quorum valid votes, the consensus is then valid and therefore the `Block` however it's
+/// worth recognising quorum is the weakest consensus as any difference on network view will break
+/// it. Full group consensus is strongest, but likely unachievable most of the time, so a union
+/// can increase a single `Peer`s quorum valid `Block`.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Block {
     payload: NetworkEvent,
@@ -47,16 +34,14 @@ pub struct Block {
 }
 
 impl Block {
-    /// A new `Block` requires a valid vote and the `PublicKey` of the node who
-    /// sent us this.
-    /// For this reason The `Vote` will require a Direct Message from a `Peer`
-    /// to us.
+    /// A new `Block` requires a valid vote and the `PublicKey` of the node who sent us this. For
+    /// this reason The `Vote` will require a Direct Message from a `Peer` to us.
     #[allow(unused)]
     pub fn new(vote: &Vote, pub_key: &PublicKey, age: u8) -> Result<Block, RoutingError> {
         if !vote.validate_signature(pub_key) {
             return Err(RoutingError::FailedSignature);
         }
-        let proof = Proof::new(&pub_key, age, vote)?;
+        let proof = Proof::new(pub_key, age, vote)?;
         let mut proofset = HashSet::<Proof>::new();
         if !proofset.insert(proof) {
             return Err(RoutingError::FailedSignature);
@@ -67,7 +52,7 @@ impl Block {
         })
     }
 
-    /// Add a proof from a peer when we know we have an existing `Block`
+    /// Add a proof from a peer when we know we have an existing `Block`.
     #[allow(unused)]
     pub fn add_proof(&mut self, proof: Proof) -> Result<(), RoutingError> {
         if !proof.validate_signature(&self.payload) {
@@ -79,30 +64,29 @@ impl Block {
         Err(RoutingError::FailedSignature)
     }
 
-    /// We may wish to remove a nodes `Proof` in cases where a `Peer` cannot be
-    /// considered valid
+    /// We may wish to remove a nodes `Proof` in cases where a `Peer` cannot be considered valid.
     #[allow(unused)]
     pub fn remove_proof(&mut self, pub_key: &PublicKey) {
         self.proofs.retain(|proof| proof.key() != pub_key)
     }
 
-    /// Ensure only the following `Peer`s are considered in the `Block`,
-    /// Prune any that are not in this set.
+    /// Ensure only the following `Peer`s are considered in the `Block`. Prune any that are not in
+    /// this set.
     #[allow(unused)]
     pub fn prune_proofs_except(&mut self, mut keys: &HashSet<&PublicKey>) {
         self.proofs.retain(|proof| keys.contains(proof.key()));
     }
 
-    /// Return numbes of `Proof`s
+    /// Return number of `Proof`s.
     #[allow(unused)]
     pub fn total_proofs(&self) -> usize {
         self.proofs.iter().count()
     }
 
-    /// Return numbes of `Proof`s
+    /// Return total age of all of signatories.
     #[allow(unused)]
     pub fn total_proofs_age(&self) -> usize {
-        self.proofs.iter().fold(0, |total, ref proof| {
+        self.proofs.iter().fold(0, |total, proof| {
             total + proof.age() as usize
         })
     }
@@ -121,15 +105,12 @@ impl Block {
 }
 
 #[cfg(test)]
-
 mod tests {
     use super::*;
     use maidsafe_utilities::SeededRng;
     use rand::random;
     use rust_sodium;
     use rust_sodium::crypto::sign;
-
-
 
     #[test]
     fn create_then_remove_add_proofs() {
@@ -150,15 +131,15 @@ mod tests {
         let mut b0 = Block::new(&vote0, &keys0.0, random::<u8>()).unwrap();
         assert!(proof0.validate_signature(&b0.payload));
         assert!(proof1.validate_signature(&b0.payload));
-        assert!(b0.total_proofs() == 1);
+        assert_eq!(b0.total_proofs(), 1);
         b0.remove_proof(&keys0.0);
-        assert!(b0.total_proofs() == 0);
+        assert_eq!(b0.total_proofs(), 0);
         assert!(b0.add_proof(proof0).is_ok());
-        assert!(b0.total_proofs() == 1);
+        assert_eq!(b0.total_proofs(), 1);
         assert!(b0.add_proof(proof1).is_ok());
-        assert!(b0.total_proofs() == 2);
+        assert_eq!(b0.total_proofs(), 2);
         b0.remove_proof(&keys1.0);
-        assert!(b0.total_proofs() == 1);
+        assert_eq!(b0.total_proofs(), 1);
     }
 
     #[test]
@@ -179,14 +160,12 @@ mod tests {
         let mut b0 = Block::new(&vote0, &keys0.0, random::<u8>()).unwrap();
         assert!(b0.add_proof(proof1).is_ok());
         assert!(b0.add_proof(proof2).is_ok());
-        assert!(b0.total_proofs() == 3);
+        assert_eq!(b0.total_proofs(), 3);
         // All added validly, so now only use 2 of these
         let mut my_known_nodes = HashSet::<&PublicKey>::new();
         assert!(my_known_nodes.insert(&keys0.0));
         assert!(my_known_nodes.insert(&keys1.0));
         b0.prune_proofs_except(&my_known_nodes);
-        assert!(b0.total_proofs() == 2);
-
+        assert_eq!(b0.total_proofs(), 2);
     }
-
 }

@@ -100,7 +100,7 @@ impl Client {
     /// Gets MAID account information.
     pub fn get_account_info(
         &mut self,
-        dst: Authority<XorName>,
+        dst: Authority,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
         let request = Request::GetAccountInfo(msg_id);
@@ -110,7 +110,7 @@ impl Client {
     /// Puts ImmutableData to the network
     pub fn put_idata(
         &mut self,
-        dst: Authority<XorName>,
+        dst: Authority,
         data: ImmutableData,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
@@ -125,7 +125,7 @@ impl Client {
     /// Fetches ImmutableData from the network by the given name.
     pub fn get_idata(
         &mut self,
-        dst: Authority<XorName>,
+        dst: Authority,
         name: XorName,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
@@ -140,7 +140,7 @@ impl Client {
     /// Fetches a latest version number of the provided MutableData
     pub fn get_mdata_version(
         &mut self,
-        dst: Authority<XorName>,
+        dst: Authority,
         name: XorName,
         tag: u64,
         msg_id: MessageId,
@@ -157,7 +157,7 @@ impl Client {
     /// Fetches the shell of the provided MutableData
     pub fn get_mdata_shell(
         &mut self,
-        dst: Authority<XorName>,
+        dst: Authority,
         name: XorName,
         tag: u64,
         msg_id: MessageId,
@@ -174,7 +174,7 @@ impl Client {
     /// Fetches the entire MutableData
     pub fn get_mdata(
         &mut self,
-        dst: Authority<XorName>,
+        dst: Authority,
         name: XorName,
         tag: u64,
         msg_id: MessageId,
@@ -192,7 +192,7 @@ impl Client {
     /// Note: response to this request is unlikely to accumulate during churn.
     pub fn list_mdata_entries(
         &mut self,
-        dst: Authority<XorName>,
+        dst: Authority,
         name: XorName,
         tag: u64,
         msg_id: MessageId,
@@ -210,7 +210,7 @@ impl Client {
     /// Note: response to this request is unlikely to accumulate during churn.
     pub fn list_mdata_keys(
         &mut self,
-        dst: Authority<XorName>,
+        dst: Authority,
         name: XorName,
         tag: u64,
         msg_id: MessageId,
@@ -228,7 +228,7 @@ impl Client {
     /// Note: response to this request is unlikely to accumulate during churn.
     pub fn list_mdata_values(
         &mut self,
-        dst: Authority<XorName>,
+        dst: Authority,
         name: XorName,
         tag: u64,
         msg_id: MessageId,
@@ -245,7 +245,7 @@ impl Client {
     /// Fetches a single value from the provided MutableData by the given key
     pub fn get_mdata_value(
         &mut self,
-        dst: Authority<XorName>,
+        dst: Authority,
         name: XorName,
         tag: u64,
         key: Vec<u8>,
@@ -264,7 +264,7 @@ impl Client {
     /// Creates a new `MutableData` in the network
     pub fn put_mdata(
         &mut self,
-        dst: Authority<XorName>,
+        dst: Authority,
         data: MutableData,
         msg_id: MessageId,
         requester: sign::PublicKey,
@@ -281,7 +281,7 @@ impl Client {
     /// Updates `MutableData` entries in bulk
     pub fn mutate_mdata_entries(
         &mut self,
-        dst: Authority<XorName>,
+        dst: Authority,
         name: XorName,
         tag: u64,
         actions: BTreeMap<Vec<u8>, EntryAction>,
@@ -302,7 +302,7 @@ impl Client {
     /// Lists all permissions for a given `MutableData`
     pub fn list_mdata_permissions(
         &mut self,
-        dst: Authority<XorName>,
+        dst: Authority,
         name: XorName,
         tag: u64,
         msg_id: MessageId,
@@ -319,7 +319,7 @@ impl Client {
     /// Lists a permission set for a given user
     pub fn list_mdata_user_permissions(
         &mut self,
-        dst: Authority<XorName>,
+        dst: Authority,
         name: XorName,
         tag: u64,
         user: User,
@@ -339,7 +339,7 @@ impl Client {
     #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
     pub fn set_mdata_user_permissions(
         &mut self,
-        dst: Authority<XorName>,
+        dst: Authority,
         name: XorName,
         tag: u64,
         user: User,
@@ -365,7 +365,7 @@ impl Client {
     #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
     pub fn del_mdata_user_permissions(
         &mut self,
-        dst: Authority<XorName>,
+        dst: Authority,
         name: XorName,
         tag: u64,
         user: User,
@@ -388,7 +388,7 @@ impl Client {
     /// Sends an ownership transfer request
     pub fn change_mdata_owner(
         &mut self,
-        dst: Authority<XorName>,
+        dst: Authority,
         name: XorName,
         tag: u64,
         new_owners: BTreeSet<sign::PublicKey>,
@@ -409,7 +409,7 @@ impl Client {
     /// Fetches a list of authorised keys and version in MaidManager
     pub fn list_auth_keys_and_version(
         &mut self,
-        dst: Authority<XorName>,
+        dst: Authority,
         message_id: MessageId,
     ) -> Result<(), InterfaceError> {
         let request = Request::ListAuthKeysAndVersion(message_id);
@@ -419,7 +419,7 @@ impl Client {
     /// Adds a new authorised key to MaidManager
     pub fn ins_auth_key(
         &mut self,
-        dst: Authority<XorName>,
+        dst: Authority,
         key: sign::PublicKey,
         version: u64,
         message_id: MessageId,
@@ -436,7 +436,7 @@ impl Client {
     /// Removes an authorised key from MaidManager
     pub fn del_auth_key(
         &mut self,
-        dst: Authority<XorName>,
+        dst: Authority,
         key: sign::PublicKey,
         version: u64,
         message_id: MessageId,
@@ -530,7 +530,7 @@ impl Client {
 
     fn send_request(
         &self,
-        dst: Authority<XorName>,
+        dst: Authority,
         request: Request,
         priority: u8,
     ) -> Result<(), InterfaceError> {
@@ -582,7 +582,7 @@ impl Client {
     /// FIXME: Review the usage poll here
     pub fn send_request(
         &mut self,
-        dst: Authority<XorName>,
+        dst: Authority,
         request: Request,
         priority: u8,
     ) -> Result<(), InterfaceError> {

@@ -18,7 +18,6 @@
 use hex::ToHex;
 use num_bigint::BigUint;
 use rand;
-use routing_table::Xorable;
 use std::{fmt, ops};
 use std::cmp::Ordering;
 
@@ -39,7 +38,7 @@ pub enum XorNameFromHexError {
 
 /// A [`XOR_NAME_BITS`](constant.XOR_NAME_BITS.html)-bit number, viewed as a point in XOR space.
 ///
-/// This wraps an array of [`XOR_NAME_LEN`](constant.XOR_NAME_LEN.html) bytes, i. e. a number
+/// This wraps an array of [`XOR_NAME_LEN`](constant.XOR_NAME_LEN.html) bytes, i.e. a number
 /// between 0 and 2<sup>`XOR_NAME_BITS`</sup> - 1.
 ///
 /// XOR space is the space of these numbers, with the [XOR metric][1] as a notion of distance,
@@ -50,20 +49,126 @@ pub enum XorNameFromHexError {
 pub struct XorName(pub [u8; XOR_NAME_LEN]);
 
 impl XorName {
+    /// Returns the length of the common prefix with the `other`; e.g. when `other = 11110000` and
+    /// `self = 11111111` this is 4.
+    pub fn common_prefix(&self, other: &Self) -> usize {
+        for byte_index in 0..XOR_NAME_LEN {
+            if self[byte_index] != other[byte_index] {
+                return (byte_index * 8) +
+                    (self[byte_index] ^ other[byte_index]).leading_zeros() as usize;
+            }
+        }
+        XOR_NAME_BITS
+    }
+
+    /// Compares the distance of the arguments to `self`. Returns `Less` if `lhs` is closer,
+    /// `Greater` if `rhs` is closer, and `Equal` if `lhs == rhs`. (The XOR distance can only be
+    /// equal if the arguments are equal.)
+    pub fn cmp_distance(&self, lhs: &Self, rhs: &Self) -> Ordering {
+        for i in 0..XOR_NAME_LEN {
+            if lhs[i] != rhs[i] {
+                return Ord::cmp(&(lhs[i] ^ self[i]), &(rhs[i] ^ self[i]));
+            }
+        }
+        Ordering::Equal
+    }
+
+    /// Returns `true` if the `bit_index`-th bit is `1`.
+    pub fn bit(&self, bit_index: usize) -> bool {
+        let byte_index = bit_index / 8;
+        let pow_i = 1 << (7 - (bit_index % 8));
+        self[byte_index] & pow_i != 0
+    }
+
+    /// Returns `true` if the `bit_index`-th bit of `other` has a different value to the
+    /// `bit_index`-th bit of `self`.
+    pub fn differs_in_bit(&self, other: &Self, bit_index: usize) -> bool {
+        let byte_index = bit_index / 8;
+        let pow_i = 1 << (7 - (bit_index % 8));
+        (self[byte_index] ^ other[byte_index]) & pow_i != 0
+    }
+
+    /// Returns a copy of `self`, with the `bit_index`-th bit flipped.
+    ///
+    /// If `bit_index` >= `XOR_NAME_BITS`, an unmodified copy of `self` is returned.
+    pub fn with_flipped_bit(mut self, bit_index: usize) -> Self {
+        if bit_index >= XOR_NAME_BITS {
+            return self;
+        }
+        self[bit_index / 8] ^= 1 << (7 - (bit_index % 8));
+        self
+    }
+
+    /// Returns a copy of `self`, with the `bit_index`-th bit set to 0 if `value` is false or 1 if
+    /// `value` is true.
+    ///
+    /// If `bit_index` >= `XOR_NAME_BITS`, an unmodified copy of `self` is returned.
+    pub fn with_bit(mut self, bit_index: usize, value: bool) -> Self {
+        if bit_index >= XOR_NAME_BITS {
+            return self;
+        }
+        let pow_i = 1 << (7 - (bit_index % 8));
+        if value {
+            self[bit_index / 8] |= pow_i;
+        } else {
+            self[bit_index / 8] &= !pow_i;
+        }
+        self
+    }
+
+    /// Returns a binary format string, with leading zero bits included.
+    pub fn binary(&self) -> String {
+        let mut result = String::with_capacity(XOR_NAME_BITS);
+        for value in &self.0 {
+            result.push_str(&format!("{:08b}", value));
+        }
+        result
+    }
+
+    /// Returns a binary debug format string of `????????...????????`
+    pub fn debug_binary(&self) -> String {
+        let mut result = String::with_capacity(19);
+        result.push_str(&format!("{:08b}", self[0]));
+        result.push_str("...");
+        result.push_str(&format!("{:08b}", self[XOR_NAME_LEN - 1]));
+        result
+    }
+
+    /// Returns a copy of self with first `n` bits preserved, and remaining bits set to 0 if `value`
+    /// is false or 1 if `value` is true.
+    ///
+    /// If `n` >= `XOR_NAME_BITS`, an unmodified copy of `self` is returned.
+    pub fn set_remaining(mut self, n: usize, value: bool) -> Self {
+        for (byte_index, byte_value) in self.0.iter_mut().enumerate() {
+            if n <= byte_index * 8 {
+                *byte_value = if value { !0 } else { 0 };
+            } else if n < (byte_index + 1) * 8 {
+                let mask = !0 >> (n - byte_index * 8);
+                if value {
+                    *byte_value |= mask
+                } else {
+                    *byte_value &= !mask
+                }
+            }
+            // else n >= XOR_NAME_BITS: nothing to do
+        }
+        self
+    }
+
     /// Hex-encode the `XorName` as a `String`.
     pub fn to_hex(&self) -> String {
         self.0.to_hex()
     }
 
     /// Returns the number of bits in which `self` differs from `other`.
-    pub fn count_differing_bits(&self, other: &XorName) -> u32 {
+    pub fn count_differing_bits(&self, other: &Self) -> u32 {
         self.0.iter().zip(other.0.iter()).fold(0, |acc, (a, b)| {
             acc + (a ^ b).count_ones()
         })
     }
 
     // /// Hex-decode a `XorName` from a `&str`.
-    // pub fn from_hex(s: &str) -> Result<XorName, XorNameFromHexError> {
+    // pub fn from_hex(s: &str) -> Result<Self, XorNameFromHexError> {
     //     let data: Vec<u8> = match FromHex::from_hex(&s) {
     //         Ok(v) => v,
     //         Err(FromHexError::InvalidHexCharacter { c, index }) => {
@@ -81,12 +186,12 @@ impl XorName {
     ///
     /// Equivalently, this returns `true` if in the most significant bit where `lhs` and `rhs`
     /// disagree, `lhs` agrees with `self`.
-    pub fn closer(&self, lhs: &XorName, rhs: &XorName) -> bool {
+    pub fn closer(&self, lhs: &Self, rhs: &Self) -> bool {
         self.cmp_distance(lhs, rhs) == Ordering::Less
     }
 
     /// Returns true if `lhs` is closer to `self` than `rhs`, or `lhs == rhs`.
-    pub fn closer_or_equal(&self, lhs: &XorName, rhs: &XorName) -> bool {
+    pub fn closer_or_equal(&self, lhs: &Self, rhs: &Self) -> bool {
         self.cmp_distance(lhs, rhs) != Ordering::Greater
     }
 
@@ -95,64 +200,22 @@ impl XorName {
         format!("{:02x}{:02x}{:02x}..", self.0[0], self.0[1], self.0[2])
     }
 
-    /// Used to construct an XorName from a `BigUint`. `value` should not represent a number greater
+    /// Used to construct a XorName from a `BigUint`. `value` should not represent a number greater
     /// than or equal to `2^XOR_NAME_BITS`. If it does, the excessive most significant bits are
     /// ignored.
-    fn from_big_uint(value: BigUint) -> XorName {
+    fn from_big_uint(value: BigUint) -> Self {
         let little_endian_value = value.to_bytes_le();
         if little_endian_value.len() > XOR_NAME_LEN {
             error!("This BigUint value exceeds the maximum capable of being held as an XorName.");
         }
         // Convert the little-endian vector to a 32-byte big-endian array.
-        let mut xor_name = XorName::default();
+        let mut xor_name = Self::default();
         for (xor_name_elt, little_endian_elt) in
             xor_name.0.iter_mut().rev().zip(little_endian_value.iter())
         {
             *xor_name_elt = *little_endian_elt;
         }
         xor_name
-    }
-}
-
-impl Xorable for XorName {
-    fn common_prefix(&self, other: &XorName) -> usize {
-        self.0.common_prefix(&other.0)
-    }
-
-    fn cmp_distance(&self, lhs: &XorName, rhs: &XorName) -> Ordering {
-        self.0.cmp_distance(&lhs.0, &rhs.0)
-    }
-
-    fn bit(&self, i: usize) -> bool {
-        self.0.bit(i)
-    }
-
-    fn differs_in_bit(&self, name: &XorName, i: usize) -> bool {
-        self.0.differs_in_bit(&name.0, i)
-    }
-
-    fn with_flipped_bit(self, i: usize) -> XorName {
-        XorName(self.0.with_flipped_bit(i))
-    }
-
-    fn with_bit(self, i: usize, bit: bool) -> Self {
-        XorName(self.0.with_bit(i, bit))
-    }
-
-    fn binary(&self) -> String {
-        self.0.binary()
-    }
-
-    fn debug_binary(&self) -> String {
-        self.0.debug_binary()
-    }
-
-    fn set_remaining(self, n: usize, val: bool) -> Self {
-        XorName(self.0.set_remaining(n, val))
-    }
-
-    fn from_hash<T: AsRef<[u8]>>(hash: T) -> Self {
-        XorName(Xorable::from_hash(hash))
     }
 }
 
@@ -176,11 +239,24 @@ impl fmt::Binary for XorName {
 
 impl rand::Rand for XorName {
     fn rand<R: rand::Rng>(rng: &mut R) -> XorName {
-        let mut ret = [0u8; XOR_NAME_LEN];
-        for r in ret[..].iter_mut() {
-            *r = <u8 as rand::Rand>::rand(rng);
-        }
-        XorName(ret)
+        let mut result = [0u8; XOR_NAME_LEN];
+        rng.fill_bytes(&mut result);
+        XorName(result)
+    }
+}
+
+impl ops::Index<usize> for XorName {
+    type Output = u8;
+    fn index(&self, index: usize) -> &u8 {
+        let &XorName(ref b) = self;
+        b.index(index)
+    }
+}
+
+impl ops::IndexMut<usize> for XorName {
+    fn index_mut(&mut self, index: usize) -> &mut u8 {
+        let &mut XorName(ref mut b) = self;
+        b.index_mut(index)
     }
 }
 
@@ -191,6 +267,7 @@ impl ops::Index<ops::Range<usize>> for XorName {
         b.index(index)
     }
 }
+
 impl ops::Index<ops::RangeTo<usize>> for XorName {
     type Output = [u8];
     fn index(&self, index: ops::RangeTo<usize>) -> &[u8] {
@@ -258,23 +335,113 @@ impl<'a> ops::Div<&'a u32> for &'a XorName {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use maidsafe_utilities::serialisation::{deserialise, serialise};
-    use rand;
-    use routing_table::Xorable;
+    use maidsafe_utilities::SeededRng;
+    use rand::Rng;
     use std::cmp::Ordering;
 
+    // Assigns the 8 bytes of `x` to the *last* 8 elements of a default `XorName`.
+    fn xor_name_from_int(x: u64) -> XorName {
+        let mut name = XorName::default();
+        for i in 0..8 {
+            name[XOR_NAME_LEN - 1 - i] = ((x >> (8 * i)) & 0xff) as u8;
+        }
+        name
+    }
+
+    // Assigns the 4 bytes of `x` to the *first* 4 elements of a default `XorName`.
+    fn xor_name_from_array(x: [u8; 4]) -> XorName {
+        let mut name = XorName::default();
+        for i in 0..4 {
+            name[i] = x[i];
+        }
+        name
+    }
+
     #[test]
-    fn serialisation_xor_name() {
-        let obj_before: XorName = rand::random();
-        let data = unwrap!(serialise(&obj_before));
-        assert_eq!(data.len(), XOR_NAME_LEN);
-        let obj_after: XorName = unwrap!(deserialise(&data));
-        assert_eq!(obj_before, obj_after);
+    fn common_prefix() {
+        // 0000.. and 1000..
+        let mut lhs = XorName::default();
+        let mut rhs = xor_name_from_array([128, 0, 0, 0]);
+        assert_eq!(0, lhs.common_prefix(&rhs));
+        assert_eq!(0, rhs.common_prefix(&lhs));
+
+        // 0000_0000_0000_1010.. and 0000_0000_0001_0000..
+        lhs = xor_name_from_array([0, 10, 0, 0]);
+        rhs = xor_name_from_array([0, 16, 0, 0]);
+        assert_eq!(11, lhs.common_prefix(&rhs));
+        assert_eq!(11, rhs.common_prefix(&lhs));
+
+        // equal `XorName`s
+        let mut rng = SeededRng::thread_rng();
+        lhs = rng.gen();
+        rhs = lhs;
+        assert_eq!(XOR_NAME_BITS, lhs.common_prefix(&rhs));
+        assert_eq!(XOR_NAME_BITS, rhs.common_prefix(&lhs));
+    }
+
+    #[test]
+    fn cmp_distance() {
+        let target = xor_name_from_array([1, 2, 3, 4]);
+        let mut name1 = xor_name_from_array([2, 3, 4, 5]);
+        let mut name2 = name1;
+        assert_eq!(Ordering::Equal, target.cmp_distance(&name1, &name2));
+
+        name1 = xor_name_from_array([2, 2, 4, 5]);
+        name2 = xor_name_from_array([2, 3, 6, 5]);
+        assert_eq!(Ordering::Less, target.cmp_distance(&name1, &name2));
+        assert_eq!(Ordering::Greater, target.cmp_distance(&name2, &name1));
+
+        name1 = xor_name_from_array([1, 2, 3, 8]);
+        name2 = xor_name_from_array([1, 2, 8, 4]);
+        assert_eq!(Ordering::Less, target.cmp_distance(&name1, &name2));
+        assert_eq!(Ordering::Greater, target.cmp_distance(&name2, &name1));
+
+        name1 = xor_name_from_array([1, 2, 7, 4]);
+        name2 = xor_name_from_array([1, 2, 6, 4]);
+        assert_eq!(Ordering::Less, target.cmp_distance(&name1, &name2));
+        assert_eq!(Ordering::Greater, target.cmp_distance(&name2, &name1));
+    }
+
+    #[test]
+    fn bit() {
+        let name = xor_name_from_array([2, 128, 1, 0]);
+        assert_eq!(true, name.bit(6));
+        assert_eq!(true, name.bit(8));
+        assert_eq!(true, name.bit(23));
+        assert_eq!(false, name.bit(5));
+        assert_eq!(false, name.bit(7));
+        assert_eq!(false, name.bit(9));
+        assert_eq!(false, name.bit(22));
+        assert_eq!(false, name.bit(24));
+    }
+
+    #[test]
+    fn differs_in_bit() {
+        let mut name = xor_name_from_array([0, 1, 0, 16]);
+        assert!(XorName::default().differs_in_bit(&name, 15));
+        name = xor_name_from_array([0, 7, 0, 0]);
+        assert!(name.differs_in_bit(&XorName::default(), 14));
+        assert!(!name.differs_in_bit(&XorName::default(), 26));
+    }
+
+    #[test]
+    fn set_remaining() {
+        let name = xor_name_from_array([13, 112, 9, 1]);
+        assert_eq!(name.set_remaining(0, false), XorName::default());
+        assert_eq!(name.set_remaining(100, false), name);
+        assert_eq!(
+            name.set_remaining(10, false),
+            xor_name_from_array([13, 64, 0, 0])
+        );
+        let mut expected = XorName([255; XOR_NAME_LEN]);
+        expected[0] = 13;
+        expected[1] = 127;
+        assert_eq!(name.set_remaining(10, true), expected);
     }
 
     #[test]
     #[cfg_attr(feature = "cargo-clippy", allow(eq_op))]
-    fn xor_name_ord() {
+    fn ord() {
         let type1: XorName = XorName([1u8; XOR_NAME_LEN]);
         let type2: XorName = XorName([2u8; XOR_NAME_LEN]);
         assert_eq!(Ord::cmp(&type1, &type1), Ordering::Equal);
@@ -293,10 +460,11 @@ mod tests {
     }
 
     #[test]
-    fn xor_name_equal_assertion() {
-        let type1: XorName = rand::random();
+    fn equal_assertion() {
+        let mut rng = SeededRng::thread_rng();
+        let type1: XorName = rng.gen();
         let type1_clone = type1;
-        let type2: XorName = rand::random();
+        let type2: XorName = rng.gen();
         assert_eq!(type1, type1_clone);
         assert!(!(type1 != type1_clone));
         assert_ne!(type1, type2);
@@ -304,9 +472,10 @@ mod tests {
 
     #[test]
     fn closeness() {
-        let obj0: XorName = rand::random();
+        let mut rng = SeededRng::thread_rng();
+        let obj0: XorName = rng.gen();
         let obj0_clone = obj0;
-        let obj1: XorName = rand::random();
+        let obj1: XorName = rng.gen();
         assert!(obj0.closer(&obj0_clone, &obj1));
         assert!(!obj0.closer(&obj1, &obj0_clone));
     }
@@ -314,8 +483,9 @@ mod tests {
     #[test]
     fn format_random_nametype() {
         // test for Random XorName
+        let mut rng = SeededRng::thread_rng();
         for _ in 0..5 {
-            let my_name: XorName = rand::random();
+            let my_name: XorName = rng.gen();
             let debug_id = my_name.get_debug_id();
             let full_id = my_name.to_hex();
             assert_eq!(debug_id.len(), 8);
@@ -338,7 +508,8 @@ mod tests {
 
     #[test]
     fn with_flipped_bit() {
-        let name: XorName = rand::random();
+        let mut rng = SeededRng::thread_rng();
+        let name: XorName = rng.gen();
         for i in 0..18 {
             assert_eq!(i, name.common_prefix(&name.with_flipped_bit(i)));
         }
@@ -351,7 +522,8 @@ mod tests {
 
     #[test]
     fn count_differing_bits() {
-        let name: XorName = rand::random();
+        let mut rng = SeededRng::thread_rng();
+        let name: XorName = rng.gen();
         assert_eq!(0, name.count_differing_bits(&name));
         let one_bit = name.with_flipped_bit(5);
         assert_eq!(1, name.count_differing_bits(&one_bit));
@@ -361,57 +533,54 @@ mod tests {
 
     #[test]
     fn subtraction() {
+        let mut rng = SeededRng::thread_rng();
         for _ in 0..100000 {
-            let x = rand::random();
-            let y = rand::random();
+            let x = rng.gen();
+            let y = rng.gen();
             let (larger, smaller) = if x > y { (x, y) } else { (y, x) };
             assert_eq!(
-                &xor_from_int(larger - smaller)[..],
-                &(xor_from_int(larger) - xor_from_int(smaller))[..]
+                &xor_name_from_int(larger - smaller)[..],
+                &(xor_name_from_int(larger) - xor_name_from_int(smaller))[..]
             );
-            assert_eq!(XorName::default(), xor_from_int(x) - xor_from_int(x));
+            assert_eq!(
+                XorName::default(),
+                xor_name_from_int(x) - xor_name_from_int(x)
+            );
         }
     }
 
     #[test]
     #[should_panic]
     fn subtraction_underflow() {
-        let _ = xor_from_int(1_000_001) - xor_from_int(1_000_002);
+        let _ = xor_name_from_int(1_000_001) - xor_name_from_int(1_000_002);
     }
 
     #[test]
     fn division() {
+        let mut rng = SeededRng::thread_rng();
         for _ in 0..100000 {
-            let x = rand::random();
-            let y = rand::random();
-            assert_eq!(xor_from_int(x / y as u64), xor_from_int(x) / y);
-            assert_eq!(xor_from_int(1), xor_from_int(y as u64) / y);
+            let x = rng.gen();
+            let y = rng.gen();
+            assert_eq!(xor_name_from_int(x / y as u64), xor_name_from_int(x) / y);
+            assert_eq!(xor_name_from_int(1), xor_name_from_int(y as u64) / y);
         }
     }
 
     #[test]
     #[should_panic]
     fn division_by_zero() {
-        let _ = xor_from_int(1) / 0;
+        let _ = xor_name_from_int(1) / 0;
     }
 
     #[test]
-    fn from_int() {
+    fn check_from_int() {
         assert_eq!(
-            &xor_from_int(0xabcdef)[XOR_NAME_LEN - 3..],
+            &xor_name_from_int(0xabcdef)[XOR_NAME_LEN - 3..],
             &[0xab, 0xcd, 0xef]
         );
         assert_eq!(
-            xor_from_int(0xabcdef)[..XOR_NAME_LEN - 3],
+            xor_name_from_int(0xabcdef)[..XOR_NAME_LEN - 3],
             XorName::default()[..XOR_NAME_LEN - 3]
         );
-    }
-
-    fn xor_from_int(x: u64) -> XorName {
-        let mut name = XorName::default();
-        for i in 0..8 {
-            name.0[XOR_NAME_LEN - 1 - i] = ((x >> (8 * i)) & 0xff) as u8;
-        }
-        name
     }
 }

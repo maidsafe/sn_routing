@@ -37,28 +37,28 @@ pub enum Event {
         /// The request message.
         request: Request,
         /// The source authority that sent the request.
-        src: Authority<XorName>,
+        src: Authority,
         /// The destination authority that receives the request.
-        dst: Authority<XorName>,
+        dst: Authority,
     },
     /// Received a response message.
     Response {
         /// The response message.
         response: Response,
         /// The source authority that sent the response.
-        src: Authority<XorName>,
+        src: Authority,
         /// The destination authority that receives the response.
-        dst: Authority<XorName>,
+        dst: Authority,
     },
     /// A node has connected to us.
-    NodeAdded(XorName, RoutingTable<XorName>),
+    NodeAdded(XorName, RoutingTable),
     /// A node has disconnected from us.
-    NodeLost(XorName, RoutingTable<XorName>),
+    NodeLost(XorName, RoutingTable),
     /// Our own section has been split, resulting in the included `Prefix` for our new section.
-    SectionSplit(Prefix<XorName>),
+    SectionSplit(Prefix),
     /// Our own section requires merged with others, resulting in the included `Prefix` for our new
     /// section.
-    SectionMerge(Prefix<XorName>),
+    SectionMerge(Prefix),
     /// The client has successfully connected to a proxy node on the network.
     Connected,
     /// Disconnected or failed to connect - restart required.

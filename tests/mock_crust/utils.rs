@@ -19,8 +19,8 @@ use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
 use routing::{Authority, BootstrapConfig, Cache, Client, Config, DevConfig, Event, EventStream,
-              FullId, ImmutableData, Peer, NullCache, Prefix, PublicId, Request, Response,
-              RoutingTable, XorName, Xorable, verify_network_invariant};
+              FullId, ImmutableData, NullCache, Peer, Prefix, PublicId, Request, Response,
+              RoutingTable, XorName, verify_network_invariant};
 use routing::mock_crust::{self, Endpoint, Network, ServiceHandle};
 use routing::test_consts::{ACK_TIMEOUT_SECS, CONNECTING_PEER_TIMEOUT_SECS};
 use std::{cmp, thread};
@@ -180,11 +180,11 @@ impl TestNode {
         ))
     }
 
-    pub fn routing_table(&self) -> &RoutingTable<XorName> {
+    pub fn routing_table(&self) -> &RoutingTable {
         unwrap!(self.inner.routing_table())
     }
 
-    pub fn is_recipient(&self, dst: &Authority<XorName>) -> bool {
+    pub fn is_recipient(&self, dst: &Authority) -> bool {
         self.inner.routing_table().ok().map_or(false, |rt| {
             rt.in_authority(dst)
         })
@@ -555,7 +555,7 @@ pub fn add_connected_nodes_until_split(
                 )
             {
                 // Assert that this can be split down to a desired prefix.
-                let is_valid = |prefix: &Prefix<XorName>| {
+                let is_valid = |prefix: &Prefix| {
                     if prefix.is_compatible(prefix_to_split) {
                         assert!(
                             prefix.bit_count() > prefix_to_split.bit_count(),
@@ -580,7 +580,7 @@ pub fn add_connected_nodes_until_split(
     }
 
     // Gather all the actual prefixes and check they are as expected.
-    let mut actual_prefixes = BTreeSet::<Prefix<XorName>>::new();
+    let mut actual_prefixes = BTreeSet::<Prefix>::new();
     for node in nodes.iter() {
         actual_prefixes.append(&mut unwrap!(node.inner.routing_table()).prefixes());
     }
@@ -693,7 +693,7 @@ fn sanity_check(prefix_lengths: &[usize]) {
     }
 }
 
-fn prefixes<T: Rng>(prefix_lengths: &[usize], rng: &mut T) -> Vec<Prefix<XorName>> {
+fn prefixes<T: Rng>(prefix_lengths: &[usize], rng: &mut T) -> Vec<Prefix> {
     let _ = prefix_lengths.iter().fold(0, |previous, &current| {
         assert!(
             previous <= current,
@@ -718,7 +718,7 @@ fn prefixes<T: Rng>(prefix_lengths: &[usize], rng: &mut T) -> Vec<Prefix<XorName
 fn add_node_to_section<T: Rng>(
     network: &Network<PublicId>,
     nodes: &mut Vec<TestNode>,
-    prefix: &Prefix<XorName>,
+    prefix: &Prefix,
     rng: &mut T,
     use_cache: bool,
 ) {

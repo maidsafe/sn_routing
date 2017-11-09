@@ -31,7 +31,7 @@ pub trait Base: Debug {
     fn crust_service(&self) -> &Service;
     fn full_id(&self) -> &FullId;
     fn stats(&mut self) -> &mut Stats;
-    fn in_authority(&self, auth: &Authority<XorName>) -> bool;
+    fn in_authority(&self, auth: &Authority) -> bool;
     fn min_section_size(&self) -> usize;
 
     fn handle_lost_peer(&mut self, _pub_id: PublicId, _outbox: &mut EventBox) -> Transition {

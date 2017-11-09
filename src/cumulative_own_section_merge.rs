@@ -23,7 +23,7 @@ use xor_name::XorName;
 
 #[derive(Default)]
 pub struct CumulativeOwnSectionMerge {
-    merge_prefix: Prefix<XorName>,
+    merge_prefix: Prefix,
     version: u64,
     send_other_section_merge: bool,
     our_merged_section: BTreeSet<XorName>,
@@ -39,7 +39,7 @@ impl CumulativeOwnSectionMerge {
     /// returns `Some(our_merged_section)` for resend `OtherSectionMerge`, otherwise returns `None`.
     pub fn extend_our_merged_section(
         &mut self,
-        merge_prefix: Prefix<XorName>,
+        merge_prefix: Prefix,
         sections: &SectionMap,
     ) -> Option<BTreeSet<XorName>> {
         let mut version = 1;
@@ -78,7 +78,7 @@ impl CumulativeOwnSectionMerge {
     /// Returns `our_merged_section` if the prefix_version is what currently being cumulated.
     pub fn get_our_merged_section(
         &mut self,
-        merge_prefix: Prefix<XorName>,
+        merge_prefix: Prefix,
         version: u64,
     ) -> Option<BTreeSet<XorName>> {
         if self.merge_prefix == merge_prefix && self.version == version {
@@ -89,7 +89,7 @@ impl CumulativeOwnSectionMerge {
     }
 
     /// Flags `OtherSectionMerge` has been sent for the prefix_version currently being cumulated.
-    pub fn set_send_other_section_merge(&mut self, merge_prefix: Prefix<XorName>, version: u64) {
+    pub fn set_send_other_section_merge(&mut self, merge_prefix: Prefix, version: u64) {
         if self.merge_prefix == merge_prefix && self.version == version {
             self.send_other_section_merge = true;
         }

@@ -1,26 +1,18 @@
-// Copyright 2015 MaidSafe.net limited.
+// Copyright 2017 MaidSafe.net limited.
 //
-// This SAFE Network Software is licensed to you under (1) the MaidSafe.net
-// Commercial License,
-// version 1.0 or later, or (2) The General Public License (GPL), version 3,
-// depending on which
+// This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
+// version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
 //
-// By contributing code to the SAFE Network Software, or to this project
-// generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.0 This,
-// along with the
-// Licenses can be found in the root directory of this project at LICENSE,
-// COPYING and CONTRIBUTOR.
+// By contributing code to the SAFE Network Software, or to this project generally, you agree to be
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
-// Unless required by applicable law or agreed to in writing, the SAFE Network
-// Software distributed
-// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES
-// OR CONDITIONS OF ANY
+// Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
+// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
 // KIND, either express or implied.
 //
-// Please review the Licences for the specific language governing permissions
-// and limitations
+// Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
 use super::vote::Vote;
@@ -29,8 +21,8 @@ use maidsafe_utilities::serialisation;
 use network_event::NetworkEvent;
 use rust_sodium::crypto::sign::{self, PublicKey, Signature};
 
-/// Proof as provided by a close group member
-/// This nay be extracted from a `Vote` to be inserted into a `Block`
+/// Proof as provided by a close group member. This may be constructed from a `Vote` to be inserted
+/// into a `Block`.
 #[derive(Serialize, Deserialize, PartialOrd, Ord, PartialEq, Eq, Clone, Hash, Debug)]
 pub struct Proof {
     pub_key: PublicKey,
@@ -39,16 +31,16 @@ pub struct Proof {
 }
 
 impl Proof {
-    /// Create Proof from Vote and public key
+    /// Create `Proof` from `Vote` and `PubKey`.
     #[allow(unused)]
     pub fn new(key: &PublicKey, age: u8, vote: &Vote) -> Result<Proof, RoutingError> {
         if !vote.validate_signature(key) {
             return Err(RoutingError::FailedSignature);
         }
         Ok(Proof {
-            pub_key: key.clone(),
+            pub_key: *key,
             age: age,
-            sig: vote.signature().clone(),
+            sig: *vote.signature(),
         })
     }
 
@@ -63,7 +55,6 @@ impl Proof {
     pub fn age(&self) -> u8 {
         self.age
     }
-
 
     /// getter
     #[allow(unused)]
@@ -100,6 +91,7 @@ mod tests {
         let proof = Proof::new(&keys.0, random::<u8>(), &vote).unwrap();
         assert!(proof.validate_signature(&payload));
     }
+
     #[test]
     fn bad_construction() {
         let mut rng = SeededRng::thread_rng();
@@ -113,6 +105,5 @@ mod tests {
         assert!(Proof::new(&keys.0, random::<u8>(), &vote).is_ok());
         assert!(Proof::new(&other_keys.0, random::<u8>(), &vote).is_err());
         assert!(proof.validate_signature(&payload));
-
     }
 }

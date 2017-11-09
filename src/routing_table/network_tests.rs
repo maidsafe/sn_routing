@@ -21,15 +21,14 @@
 #![allow(dead_code, missing_docs)]
 
 use super::{Error, RoutingTable};
+use super::XorName;
 use super::authority::Authority;
 use super::prefix::Prefix;
 use maidsafe_utilities::SeededRng;
 use rand::Rng;
 use routing_table::{OwnMergeState, Sections};
-use routing_table::xorable::Xorable;
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::{Binary, Debug};
-use std::hash::Hash;
+use std::fmt::Debug;
 use std::iter::IntoIterator;
 
 /// A simulated network, consisting of a set of "nodes" (routing tables) and a random number
@@ -38,7 +37,7 @@ use std::iter::IntoIterator;
 struct Network {
     min_section_size: usize,
     rng: SeededRng,
-    nodes: BTreeMap<u64, RoutingTable<u64>>,
+    nodes: BTreeMap<XorName, RoutingTable>,
 }
 
 impl Network {
@@ -59,7 +58,7 @@ impl Network {
 
     /// Adds a new node to the network and makes it join its new section, splitting if necessary.
     fn add_node(&mut self) {
-        let name = self.random_free_name(); // The new node's name.
+        let name = self.rng.gen(); // The new node's name.
         if self.nodes.is_empty() {
             // If this is the first node, just add it and return.
             let result = self.nodes.insert(
@@ -112,8 +111,8 @@ impl Network {
     }
 
     fn store_merge_info<T: PartialEq + Debug>(
-        merge_info: &mut BTreeMap<Prefix<u64>, T>,
-        prefix: Prefix<u64>,
+        merge_info: &mut BTreeMap<Prefix, T>,
+        prefix: Prefix,
         new_info: T,
     ) {
         if let Some(content) = merge_info.get(&prefix) {
@@ -130,7 +129,7 @@ impl Network {
         let keys = self.keys();
         let name = *unwrap!(self.rng.choose(&keys));
         let _ = self.nodes.remove(&name);
-        let mut merge_own_info: BTreeMap<Prefix<u64>, Sections<u64>> = BTreeMap::new();
+        let mut merge_own_info: BTreeMap<Prefix, Sections> = BTreeMap::new();
         // TODO: needs to verify how to broadcasting such info
         for node in self.nodes.values_mut() {
             if node.iter().any(|&name_in_table| name_in_table == name) {
@@ -231,9 +230,9 @@ impl Network {
         }
     }
 
-    fn nodes_covered_by_prefixes<'a, T>(&self, prefixes: T) -> Vec<u64>
+    fn nodes_covered_by_prefixes<'a, T>(&self, prefixes: T) -> Vec<XorName>
     where
-        T: IntoIterator<Item = &'a Prefix<u64>> + Copy,
+        T: IntoIterator<Item = &'a Prefix> + Copy,
     {
         self.nodes
             .keys()
@@ -244,24 +243,14 @@ impl Network {
             .collect()
     }
 
-    /// Returns a random name that is not taken by any node yet.
-    fn random_free_name(&mut self) -> u64 {
-        loop {
-            let name = self.rng.gen();
-            if !self.nodes.contains_key(&name) {
-                return name;
-            }
-        }
-    }
-
     /// Verifies that a message sent from node `src` would arrive at destination `dst` via the
     /// given `route`.
-    fn send_message(&self, src: u64, dst: Authority<u64>, route: usize) {
+    fn send_message(&self, src: XorName, dst: Authority, route: usize) {
         let mut received = Vec::new(); // These nodes have received but not handled the message.
         let mut handled = BTreeSet::new(); // These nodes have received and handled the message.
         received.push(src);
         while let Some(node) = received.pop() {
-            let _fixme = handled.insert(node); // `node` is now handling the message and relaying it.
+            let _fixme = handled.insert(node); // `node` is now handling the message & relaying it.
             for target in unwrap!(self.nodes[&node].targets(&dst, src, route)) {
                 if !handled.contains(&target) && !received.contains(&target) {
                     received.push(target);
@@ -285,7 +274,7 @@ impl Network {
 
     /// Returns any node that's close to the given address. Panics if the network is empty or no
     /// node is found.
-    fn close_node(&self, address: u64) -> u64 {
+    fn close_node(&self, address: XorName) -> XorName {
         let target = Authority::Section(address);
         unwrap!(
             self.nodes
@@ -296,7 +285,7 @@ impl Network {
     }
 
     /// Returns all node names.
-    fn keys(&self) -> Vec<u64> {
+    fn keys(&self) -> Vec<XorName> {
         self.nodes.keys().cloned().collect()
     }
 }
@@ -337,12 +326,8 @@ fn verify_invariant(network: &Network) {
     verify_network_invariant(network.nodes.values());
 }
 
-pub fn verify_network_invariant<'a, T, U>(nodes: U)
-where
-    T: Binary + Clone + Copy + Debug + Default + Hash + Xorable + 'a,
-    U: IntoIterator<Item = &'a RoutingTable<T>>,
-{
-    let mut sections: BTreeMap<Prefix<T>, _> = BTreeMap::new();
+pub fn verify_network_invariant<'a, T: IntoIterator<Item = &'a RoutingTable>>(nodes: T) {
+    let mut sections: BTreeMap<Prefix, _> = BTreeMap::new();
     // first, collect all sections in the network
     for node in nodes {
         node.verify_invariant();

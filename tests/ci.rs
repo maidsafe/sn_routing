@@ -51,7 +51,7 @@ use maidsafe_utilities::SeededRng;
 use maidsafe_utilities::thread::{self, Joiner};
 use rand::Rng;
 use routing::{Authority, Client, ClientError, Event, EventStream, FullId, MIN_SECTION_SIZE,
-              MessageId, MutableData, Peer, Request, Response, Value, XorName, Xorable};
+              MessageId, MutableData, Peer, Request, Response, Value, XorName};
 use rust_sodium::crypto;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 #[cfg(target_os = "macos")]

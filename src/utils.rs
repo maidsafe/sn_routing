@@ -17,7 +17,6 @@
 
 use Prefix;
 use itertools::Itertools;
-use routing_table::Xorable;
 use std::collections::BTreeSet;
 use std::fmt::{self, Display, Write};
 use std::iter;
@@ -105,7 +104,7 @@ pub fn calculate_relocation_dst(mut close_nodes: Vec<XorName>, current_name: &Xo
 
 /// Calculate the interval for a node joining our section to generate a key for.
 pub fn calculate_relocation_interval(
-    prefix: &Prefix<XorName>,
+    prefix: &Prefix,
     section: &BTreeSet<XorName>,
 ) -> (XorName, XorName) {
     let (lower_bound, upper_bound) = (prefix.lower_bound(), prefix.upper_bound());
@@ -130,7 +129,6 @@ pub fn calculate_relocation_interval(
 mod tests {
     use super::DisplayDuration;
     use rand;
-    use routing_table::Xorable;
     use std::time::Duration;
     use tiny_keccak::sha3_256;
     use xor_name::XorName;

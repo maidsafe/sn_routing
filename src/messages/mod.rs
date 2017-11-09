@@ -30,7 +30,7 @@ use itertools::Itertools;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use peer_manager::SectionMap;
-use routing_table::{Prefix, VersionedPrefix, Xorable};
+use routing_table::{Prefix, VersionedPrefix};
 use routing_table::Authority;
 use rust_sodium::crypto::{box_, sign};
 use sha3::Digest256;
@@ -129,7 +129,7 @@ pub enum DirectMessage {
         /// post-relocation key.
         signature_using_new: sign::Signature,
         /// Client authority from after relocation.
-        new_client_auth: Authority<XorName>,
+        new_client_auth: Authority,
     },
     /// Sent from a node that needs a tunnel to be able to connect to the given peer.
     TunnelRequest(PublicId),
@@ -234,14 +234,14 @@ impl HopMessage {
 /// A list of a section's public IDs, together with a list of signatures of a neighbouring section.
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize, Debug)]
 pub struct SectionList {
-    pub prefix: Prefix<XorName>,
+    pub prefix: Prefix,
     // TODO(MAID-1677): pub signatures: BTreeSet<(PublicId, sign::Signature)>,
     pub_ids: BTreeSet<PublicId>,
 }
 
 impl SectionList {
     /// Create
-    pub fn new(prefix: Prefix<XorName>, pub_ids: BTreeSet<PublicId>) -> Self {
+    pub fn new(prefix: Prefix, pub_ids: BTreeSet<PublicId>) -> Self {
         SectionList {
             prefix: prefix,
             pub_ids: pub_ids,
@@ -249,7 +249,7 @@ impl SectionList {
     }
 
     /// Create from any object convertable to an iterator
-    pub fn from<I: IntoIterator<Item = PublicId>>(prefix: Prefix<XorName>, pub_ids: I) -> Self {
+    pub fn from<I: IntoIterator<Item = PublicId>>(prefix: Prefix, pub_ids: I) -> Self {
         Self::new(prefix, pub_ids.into_iter().collect())
     }
 }
@@ -448,16 +448,16 @@ impl SignedMessage {
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, Serialize, Deserialize)]
 pub struct RoutingMessage {
     /// Source authority
-    pub src: Authority<XorName>,
+    pub src: Authority,
     /// Destination authority
-    pub dst: Authority<XorName>,
+    pub dst: Authority,
     /// The message content
     pub content: MessageContent,
 }
 
 impl RoutingMessage {
     /// Create ack for the given message
-    pub fn ack_from(msg: &RoutingMessage, src: Authority<XorName>) -> Result<Self, RoutingError> {
+    pub fn ack_from(msg: &RoutingMessage, src: Authority) -> Result<Self, RoutingError> {
         Ok(RoutingMessage {
             src: src,
             dst: msg.src,
@@ -558,7 +558,7 @@ pub enum MessageContent {
         /// The joining node's current public ID.
         old_public_id: PublicId,
         /// The joining node's current authority.
-        old_client_auth: Authority<XorName>,
+        old_client_auth: Authority,
         /// The message's unique identifier.
         message_id: MessageId,
     },
@@ -591,7 +591,7 @@ pub enum MessageContent {
         /// The interval into which the joining node should join.
         target_interval: (XorName, XorName),
         /// The section that the joining node shall connect to.
-        section: (Prefix<XorName>, BTreeSet<PublicId>),
+        section: (Prefix, BTreeSet<PublicId>),
         /// The message's unique identifier.
         message_id: MessageId,
     },
@@ -600,12 +600,12 @@ pub enum MessageContent {
     SectionUpdate {
         /// Section prefix and version. Included because this message is sent to both the section's
         /// own members and neighbouring sections.
-        versioned_prefix: VersionedPrefix<XorName>,
+        versioned_prefix: VersionedPrefix,
         /// Members of the section
         members: BTreeSet<PublicId>,
     },
     /// Sent to all connected peers when our own section splits
-    SectionSplit(VersionedPrefix<XorName>, XorName),
+    SectionSplit(VersionedPrefix, XorName),
     /// Sent amongst members of a newly-merged section to allow synchronisation of their routing
     /// tables before notifying other connected peers of the merge.
     ///
@@ -645,7 +645,7 @@ pub enum MessageContent {
         /// The joining node's current public ID.
         old_public_id: PublicId,
         /// The joining node's current authority.
-        old_client_auth: Authority<XorName>,
+        old_client_auth: Authority,
         /// The interval into which the joining node should join.
         target_interval: (XorName, XorName),
         /// The message's unique identifier.
@@ -656,7 +656,7 @@ pub enum MessageContent {
         /// The joining node's current public ID.
         new_public_id: PublicId,
         /// Client authority of the candidate.
-        new_client_auth: Authority<XorName>,
+        new_client_auth: Authority,
         /// The `PublicId`s of all routing table contacts shared by the nodes in our section.
         sections: SectionMap,
     },
@@ -948,7 +948,7 @@ impl UserMessage {
 
     /// Returns an event indicating that this message was received with the given source and
     /// destination authorities.
-    pub fn into_event(self, src: Authority<XorName>, dst: Authority<XorName>) -> Event {
+    pub fn into_event(self, src: Authority, dst: Authority) -> Event {
         match self {
             UserMessage::Request(request) => {
                 Event::Request {

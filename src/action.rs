@@ -22,7 +22,6 @@ use messages::DirectMessage;
 use routing_table::Authority;
 use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::Sender;
-use xor_name::XorName;
 
 /// An Action initiates a message flow < A | B > where we are (a part of) A.
 ///    1. `Action::SendMessage` hands a fully formed `SignedMessage` over to `Core`
@@ -34,15 +33,15 @@ use xor_name::XorName;
 #[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
 pub enum Action {
     NodeSendMessage {
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
+        src: Authority,
+        dst: Authority,
         content: UserMessage,
         priority: u8,
         result_tx: Sender<Result<(), InterfaceError>>,
     },
     ClientSendRequest {
         content: Request,
-        dst: Authority<XorName>,
+        dst: Authority,
         priority: u8,
         result_tx: Sender<Result<(), InterfaceError>>,
     },

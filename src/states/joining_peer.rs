@@ -146,7 +146,7 @@ impl JoiningPeer {
         crust_rx: &mut Receiver<CrustEvent<PublicId>>,
         crust_sender: CrustEventSender,
         new_full_id: FullId,
-        our_section: (Prefix<XorName>, BTreeSet<PublicId>),
+        our_section: (Prefix, BTreeSet<PublicId>),
         outbox: &mut EventBox,
     ) -> State {
         let service = Self::start_new_crust_service(
@@ -318,7 +318,7 @@ impl JoiningPeer {
     fn handle_relocate_response(
         &mut self,
         target_interval: (XorName, XorName),
-        section: (Prefix<XorName>, BTreeSet<PublicId>),
+        section: (Prefix, BTreeSet<PublicId>),
     ) -> Transition {
         let new_id = FullId::within_range(&target_interval.0, &target_interval.1);
         Transition::IntoBootstrapping {
@@ -359,7 +359,7 @@ impl Base for JoiningPeer {
         &self.full_id
     }
 
-    fn in_authority(&self, auth: &Authority<XorName>) -> bool {
+    fn in_authority(&self, auth: &Authority) -> bool {
         if let Authority::Client { ref client_id, .. } = *auth {
             client_id == self.full_id.public_id()
         } else {

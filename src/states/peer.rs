@@ -44,7 +44,7 @@ use rate_limiter::RateLimiter;
 use resource_prover::{RESOURCE_PROOF_DURATION_SECS, ResourceProver};
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use routing_table::{Authority, OwnMergeState, Prefix, RemovalDetails, RoutingTable,
-                    VersionedPrefix, Xorable};
+                    VersionedPrefix};
 use routing_table::Error as RoutingTableError;
 use rust_sodium::crypto::{box_, sign};
 use section_list_cache::SectionListCache;
@@ -120,7 +120,7 @@ pub struct Peer {
     /// `RoutingMessage`s affecting the routing table that arrived before `NodeApproval`.
     routing_msg_backlog: Vec<RoutingMessage>,
     /// Cache of `OwnSectionMerge` messages we have received, by sender section prefix.
-    merge_cache: LruCache<Prefix<XorName>, SectionMap>,
+    merge_cache: LruCache<Prefix, SectionMap>,
     /// Union of our merged section, deduced from multiple `OwnSectionMerge`.
     our_merged_section: CumulativeOwnSectionMerge,
     /// The timer token for sending a `CandidateApproval` message.
@@ -128,7 +128,7 @@ pub struct Peer {
     /// The timer token for displaying the current candidate status.
     candidate_status_token: Option<u64>,
     resource_prover: ResourceProver,
-    joining_prefix: Prefix<XorName>,
+    joining_prefix: Prefix,
     /// Limits the rate at which clients can pass messages through this node when it acts as their
     /// proxy.
     clients_rate_limiter: RateLimiter,
@@ -180,7 +180,7 @@ impl Peer {
 
     #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
     pub fn from_bootstrapping(
-        our_section: (Prefix<XorName>, BTreeSet<PublicId>),
+        our_section: (Prefix, BTreeSet<PublicId>),
         action_sender: RoutingActionSender,
         cache: Box<Cache>,
         crust_service: Service,
@@ -496,7 +496,7 @@ impl Peer {
     }
 
     /// Routing table of this node.
-    pub fn routing_table(&self) -> &RoutingTable<XorName> {
+    pub fn routing_table(&self) -> &RoutingTable {
         self.peer_mgr.routing_table()
     }
 
@@ -848,7 +848,7 @@ impl Peer {
         Ok(())
     }
 
-    fn get_section(&self, prefix: &Prefix<XorName>) -> Result<BTreeSet<XorName>, RoutingError> {
+    fn get_section(&self, prefix: &Prefix) -> Result<BTreeSet<XorName>, RoutingError> {
         let section = self.routing_table()
             .get_section(&prefix.lower_bound())
             .ok_or(RoutingError::InvalidSource)?
@@ -858,7 +858,7 @@ impl Peer {
         Ok(section)
     }
 
-    fn get_section_list(&self, prefix: &Prefix<XorName>) -> Result<SectionList, RoutingError> {
+    fn get_section_list(&self, prefix: &Prefix) -> Result<SectionList, RoutingError> {
         Ok(SectionList::new(
             *prefix,
             self.peer_mgr.get_pub_ids(&self.get_section(prefix)?),
@@ -874,7 +874,7 @@ impl Peer {
 
     /// Sends a signature for the list of members of a section with prefix `prefix` to our whole
     /// section if `dst` is `None`, or to the given node if it is `Some(name)`
-    fn send_section_list_signature(&mut self, prefix: Prefix<XorName>, dst: Option<XorName>) {
+    fn send_section_list_signature(&mut self, prefix: Prefix, dst: Option<XorName>) {
         if cfg!(not(feature = "use-mock-crust")) {
             return;
         }
@@ -1341,7 +1341,7 @@ impl Peer {
     fn handle_candidate_approval(
         &mut self,
         new_pub_id: PublicId,
-        new_client_auth: Authority<XorName>,
+        new_client_auth: Authority,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError> {
         self.remove_expired_peers(outbox);
@@ -1808,7 +1808,7 @@ impl Peer {
         new_pub_id: &PublicId,
         signature_using_old: &sign::Signature,
         signature_using_new: &sign::Signature,
-        new_client_auth: &Authority<XorName>,
+        new_client_auth: &Authority,
         outbox: &mut EventBox,
     ) {
         debug!(
@@ -2039,11 +2039,7 @@ impl Peer {
 
     /// Informs our peers that our section's member list changed. If `dst_prefix` is `Some`, only
     /// tells that section, otherwise tells all connected sections, including our own.
-    fn send_section_update(
-        &mut self,
-        dst_prefix: Option<Prefix<XorName>>,
-        allow_small_sections: bool,
-    ) {
+    fn send_section_update(&mut self, dst_prefix: Option<Prefix>, allow_small_sections: bool) {
         if dst_prefix.is_none() &&
             !self.routing_table()
                 .check_invariant(allow_small_sections, false)
@@ -2098,8 +2094,8 @@ impl Peer {
         &mut self,
         our_pub_info: PubConnectionInfo,
         their_pub_id: PublicId,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
+        src: Authority,
+        dst: Authority,
         msg_id: Option<MessageId>,
     ) {
         let encoded_connection_info = match serialisation::serialise(&our_pub_info) {
@@ -2226,8 +2222,8 @@ impl Peer {
         nonce_bytes: [u8; box_::NONCEBYTES],
         pub_id: PublicId,
         message_id: MessageId,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
+        src: Authority,
+        dst: Authority,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError> {
         self.peer_mgr.allow_connect(pub_id.name())?;
@@ -2308,7 +2304,7 @@ impl Peer {
         public_id: PublicId,
         message_id: MessageId,
         src: XorName,
-        dst: Authority<XorName>,
+        dst: Authority,
     ) -> Result<(), RoutingError> {
         self.peer_mgr.allow_connect(&src)?;
         if self.peer_mgr.get_peer(&public_id).is_none() {
@@ -2597,8 +2593,8 @@ impl Peer {
     fn handle_expect_candidate(
         &mut self,
         old_pub_id: PublicId,
-        old_client_auth: Authority<XorName>,
-        relocation_dst: Authority<XorName>,
+        old_client_auth: Authority,
+        relocation_dst: Authority,
         message_id: MessageId,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError> {
@@ -2660,8 +2656,8 @@ impl Peer {
     fn handle_accept_as_candidate(
         &mut self,
         old_pub_id: PublicId,
-        old_client_auth: Authority<XorName>,
-        relocation_dst: Authority<XorName>,
+        old_client_auth: Authority,
+        relocation_dst: Authority,
         target_interval: (XorName, XorName),
         message_id: MessageId,
         outbox: &mut EventBox,
@@ -2704,7 +2700,7 @@ impl Peer {
 
     fn handle_section_update(
         &mut self,
-        ver_pfx: VersionedPrefix<XorName>,
+        ver_pfx: VersionedPrefix,
         members: BTreeSet<PublicId>,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError> {
@@ -2775,7 +2771,7 @@ impl Peer {
 
     fn handle_section_split(
         &mut self,
-        ver_pfx: VersionedPrefix<XorName>,
+        ver_pfx: VersionedPrefix,
         joining_node: XorName,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError> {
@@ -2815,8 +2811,8 @@ impl Peer {
 
     fn handle_own_section_merge(
         &mut self,
-        sender_prefix: Prefix<XorName>,
-        merge_prefix: Prefix<XorName>,
+        sender_prefix: Prefix,
+        merge_prefix: Prefix,
         sections: SectionMap,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError> {
@@ -2916,7 +2912,7 @@ impl Peer {
 
     fn process_own_section_merge(
         &mut self,
-        sender_prefix: Prefix<XorName>,
+        sender_prefix: Prefix,
         merge_version: u64,
         sections: SectionMap,
         our_merged_section: BTreeSet<XorName>,
@@ -2983,7 +2979,7 @@ impl Peer {
 
     fn handle_other_section_merge(
         &mut self,
-        merge_ver_pfx: VersionedPrefix<XorName>,
+        merge_ver_pfx: VersionedPrefix,
         section: BTreeSet<PublicId>,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError> {
@@ -3253,8 +3249,8 @@ impl Peer {
     // ----- Send Functions -----------------------------------------------------------------------
     fn send_user_message(
         &mut self,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
+        src: Authority,
+        dst: Authority,
         user_msg: UserMessage,
         priority: u8,
     ) -> Result<(), RoutingError> {
@@ -3397,7 +3393,7 @@ impl Peer {
 
     /// Returns the peer that is responsible for collecting signatures to verify a message; this
     /// may be us or another node. If our signature is not required, this returns `None`.
-    fn get_signature_target(&self, src: &Authority<XorName>, route: u8) -> Option<XorName> {
+    fn get_signature_target(&self, src: &Authority, route: u8) -> Option<XorName> {
         use Authority::*;
         let list: Vec<&XorName> = match *src {
             ClientManager(_) | NaeManager(_) | NodeManager(_) => {
@@ -3590,8 +3586,8 @@ impl Peer {
     fn send_connection_info_request(
         &mut self,
         their_public_id: PublicId,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
+        src: Authority,
+        dst: Authority,
         outbox: &mut EventBox,
         reconnecting: ReconnectingPeer,
     ) -> Result<(), RoutingError> {
@@ -3740,7 +3736,7 @@ impl Peer {
     fn dropped_routing_node(
         &mut self,
         name: &XorName,
-        details: RemovalDetails<XorName>,
+        details: RemovalDetails,
         outbox: &mut EventBox,
     ) -> bool {
         info!(
@@ -3776,7 +3772,7 @@ impl Peer {
         true
     }
 
-    fn send_section_split(&mut self, our_ver_pfx: VersionedPrefix<XorName>, joining_node: XorName) {
+    fn send_section_split(&mut self, our_ver_pfx: VersionedPrefix, joining_node: XorName) {
         for prefix in self.routing_table().prefixes() {
             // this way of calculating the source avoids using the joining node as the route
             // src authority is a PrefixSection and not Section to help resend failed messages
@@ -3821,8 +3817,8 @@ impl Peer {
 
     fn send_other_section_merge(
         &mut self,
-        targets: BTreeSet<Prefix<XorName>>,
-        ver_pfx: VersionedPrefix<XorName>,
+        targets: BTreeSet<Prefix>,
+        ver_pfx: VersionedPrefix,
         section: BTreeSet<XorName>,
     ) {
         let pub_ids = self.peer_mgr.get_pub_ids(&section);
@@ -3899,7 +3895,7 @@ impl Peer {
         }
     }
 
-    fn our_prefix(&self) -> &Prefix<XorName> {
+    fn our_prefix(&self) -> &Prefix {
         self.routing_table().our_prefix()
     }
 
@@ -3928,7 +3924,7 @@ impl Base for Peer {
         &self.full_id
     }
 
-    fn in_authority(&self, auth: &Authority<XorName>) -> bool {
+    fn in_authority(&self, auth: &Authority) -> bool {
         if let Authority::Client { ref client_id, .. } = *auth {
             client_id == self.full_id.public_id()
         } else {
@@ -3988,7 +3984,7 @@ impl Peer {
 
     pub fn section_list_signatures(
         &self,
-        prefix: Prefix<XorName>,
+        prefix: Prefix,
     ) -> Result<BTreeMap<PublicId, sign::Signature>, RoutingError> {
         if let Some(&(_, ref signatures)) = self.section_list_sigs.get_signatures(prefix) {
             Ok(

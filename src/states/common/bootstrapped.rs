@@ -139,8 +139,8 @@ pub trait Bootstrapped: Base {
 
     fn send_routing_message_with_expiry(
         &mut self,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
+        src: Authority,
+        dst: Authority,
         content: MessageContent,
         expires_at: Option<Instant>,
     ) -> Result<(), RoutingError> {
@@ -154,8 +154,8 @@ pub trait Bootstrapped: Base {
 
     fn send_routing_message(
         &mut self,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
+        src: Authority,
+        dst: Authority,
         content: MessageContent,
     ) -> Result<(), RoutingError> {
         self.send_routing_message_with_expiry(src, dst, content, None)
@@ -165,7 +165,7 @@ pub trait Bootstrapped: Base {
         self.send_ack_from(routing_msg, route, routing_msg.dst);
     }
 
-    fn send_ack_from(&mut self, routing_msg: &RoutingMessage, route: u8, src: Authority<XorName>) {
+    fn send_ack_from(&mut self, routing_msg: &RoutingMessage, route: u8, src: Authority) {
         if let MessageContent::Ack(..) = routing_msg.content {
             return;
         }
