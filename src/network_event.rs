@@ -18,22 +18,80 @@
 use routing_table::Prefix;
 use rust_sodium::crypto::sign::PublicKey;
 
-pub type Age = u64;
+pub type Age = u8;
 pub type Version = u64;
 
 /// This is the events on the network,
 /// After alpha3 this may include daa related events
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub enum NetworkEvent {
-    PeerNew(PublicKey), // Age 1
-    PeerRelocate(PublicKey, u64, Prefix),
+    InfantNew(PublicKey), // Age 1
+    PeerRelocate(PublicKey, Age, Prefix),
     PeerAccept(PublicKey, Age), // Accept relocation from another section
+    AdultPromote(PublicKey, Age), // Promote to Elder, will be sent to siblings
     PeerRejoin(PublicKey), // immediately Relocate, not to be part of close group
-    PeerLost(PublicKey), // Immediate Add a new close group member after this
-    PeerKill(PublicKey), // Immediate Add a new close group member after this
-    PeerPenalise(PublicKey, Age), // may move the peer out of close group
+    ElderLost(PublicKey), // Immediate Add a new close group member after this
+    PeerLost(PublicKey),
+    ElderKill(PublicKey), // Immediate Add a new close group member after this
+    PeerKill(PublicKey),
     MergeTo(Prefix, Version),
     MergePeer(PublicKey, Prefix, Version), // each peer fom a merge is like adding a peer
     Split((Prefix, Version), (Prefix, Version)), // split to both these prefixes
     SplitPeer(PublicKey, Prefix, Version),
+}
+
+impl NetworkEvent {
+    pub fn is_after(&self, other: NetworkEvent) -> bool {
+        match other {
+            NetworkEvent::InfantNew(_) | 
+            NetworkEvent::PeerRelocate(_,_,_) | 
+            NetworkEvent::PeerAccept(_,_) | 
+            NetworkEvent::PeerRejoin(_) |
+            NetworkEvent::PeerLost(_) |
+            NetworkEvent::PeerKill(_) => true,
+            _ => false 
+        }
+    }
+
+    pub fn can_rejoin(&self) -> bool {
+       match *self {
+           NetworkEvent::PeerLost(_) |
+           NetworkEvent::ElderLost(_) => true,
+           _ => false
+       }
+    }
+
+    pub fn is_live(&self) -> bool {
+       match *self {
+           NetworkEvent::InfantNew(_) |
+           NetworkEvent::PeerAccept(_,_) => true,
+           _ => false
+       }
+    }
+    
+    pub fn is_dead(&self) -> bool {
+       match *self {
+           NetworkEvent::PeerRejoin(_) |
+           NetworkEvent::ElderKill(_) |
+           NetworkEvent::PeerKill(_) => true,
+           _ => false
+       }
+    }
+
+    fn before_peer_new(&self, _other : NetworkEvent) -> bool {
+        true
+    }
+
+    fn after_peer_new(&self, _other : NetworkEvent) -> bool {
+        true
+    }
+
+
+
+
+    pub fn is_before(&self, _other: NetworkEvent) -> bool {
+        true
+    }
+
+
 }

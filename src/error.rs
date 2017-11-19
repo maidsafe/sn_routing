@@ -57,6 +57,7 @@ impl From<RecvError> for InterfaceError {
 #[derive(Debug)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
+#[allow(missing_docs)]
 pub enum RoutingError {
     /// The node/client has not bootstrapped yet
     NotBootstrapped,
@@ -132,6 +133,7 @@ pub enum RoutingError {
     InvalidMessage,
     /// Invalid Peer
     InvalidPeer,
+    CannotWriteFile,
     /// The client's message indicated by the included hash digest has been rejected by the
     /// rate-limiter.
     ExceedsRateLimit(Digest256),

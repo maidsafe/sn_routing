@@ -115,7 +115,7 @@
         unused_comparisons, unused_features, unused_parens, while_true)]
 #![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
         unused_qualifications, unused_results)]
-#![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
+#![allow(box_pointers, missing_copy_implementations,
          missing_debug_implementations, variant_size_differences, non_camel_case_types)]
 
 #![cfg_attr(feature="cargo-clippy", deny(unicode_not_nfc, wrong_pub_self_convention,
@@ -150,6 +150,7 @@ extern crate serde_derive;
 #[cfg(test)]
 extern crate serde_json;
 extern crate tiny_keccak;
+extern crate fs2;
 
 // Needs to be before all other modules to make the macros available to them.
 #[macro_use]
@@ -190,8 +191,9 @@ mod xor_name;
 pub(crate) mod vote;
 pub(crate) mod proof;
 pub(crate) mod block;
-pub(crate) mod accumulator;
+pub(crate) mod chain;
 pub(crate) mod network_event;
+pub(crate) mod peer_id;
 
 #[cfg(feature = "use-mock-crypto")]
 pub mod mock_crypto;

@@ -60,6 +60,8 @@ impl Vote {
             Err(_) => false,
         }
     }
+
+
 }
 
 #[cfg(test)]

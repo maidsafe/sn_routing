@@ -15,45 +15,38 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use super::vote::Vote;
+use vote::Vote;
+use peer_id::PeerId;
 use error::RoutingError;
 use maidsafe_utilities::serialisation;
 use network_event::NetworkEvent;
-use rust_sodium::crypto::sign::{self, PublicKey, Signature};
+use rust_sodium::crypto::sign::{self, Signature};
 
 /// Proof as provided by a close group member. This may be constructed from a `Vote` to be inserted
-/// into a `Block`.
+/// into a `Block`. This struct is ordered by age then `PublicKey`
 #[derive(Serialize, Deserialize, PartialOrd, Ord, PartialEq, Eq, Clone, Hash, Debug)]
 pub struct Proof {
-    pub_key: PublicKey,
-    age: u8,
+    peer_id: PeerId,
     sig: Signature,
 }
 
 impl Proof {
     /// Create `Proof` from `Vote` and `PubKey`.
     #[allow(unused)]
-    pub fn new(key: &PublicKey, age: u8, vote: &Vote) -> Result<Proof, RoutingError> {
-        if !vote.validate_signature(key) {
+    pub fn new(peer_id: &PeerId, vote: &Vote) -> Result<Proof, RoutingError> {
+        if !vote.validate_signature(peer_id.pub_key()) {
             return Err(RoutingError::FailedSignature);
         }
         Ok(Proof {
-            pub_key: *key,
-            age: age,
+            peer_id: peer_id.clone(),
             sig: *vote.signature(),
         })
     }
 
     /// getter
     #[allow(unused)]
-    pub fn key(&self) -> &PublicKey {
-        &self.pub_key
-    }
-
-    /// getter
-    #[allow(unused)]
-    pub fn age(&self) -> u8 {
-        self.age
+    pub fn peer_id(&self) -> &PeerId {
+        &self.peer_id
     }
 
     /// getter
@@ -66,7 +59,7 @@ impl Proof {
     #[allow(unused)]
     pub fn validate_signature(&self, payload: &NetworkEvent) -> bool {
         match serialisation::serialise(&payload) {
-            Ok(data) => sign::verify_detached(&self.sig, &data[..], &self.pub_key),
+            Ok(data) => sign::verify_detached(&self.sig, &data[..], &self.peer_id.pub_key()),
             _ => false,
         }
     }

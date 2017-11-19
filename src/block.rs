@@ -18,31 +18,63 @@
 use error::RoutingError;
 use network_event::NetworkEvent;
 use proof::Proof;
-use rust_sodium::crypto::sign::PublicKey;
-use std::collections::HashSet;
+use peer_id::PeerId;
+use std::collections::BTreeSet;
 use vote::Vote;
+
+#[allow(unused)]
+pub struct PeersAndAge {
+    peers: usize,
+    age: usize,
+}
+
+#[allow(unused)]
+impl PeersAndAge {
+    pub fn new(peers: usize, age: usize) -> PeersAndAge {
+        PeersAndAge {
+            peers: peers,
+            age: age,
+        }
+    }
+
+    #[allow(unused)]
+    pub fn peers(&self) -> usize {
+        self.peers
+    }
+
+    #[allow(unused)]
+    pub fn age(&self) -> usize {
+        self.age
+    }
+}
+/// Validity and "completeness" of a `Block`. Some `Block`s are complete with less than group_size `Proof`s.
+pub enum BlockState {
+    NotYetValid,
+    Valid,
+    Full
+}
 
 /// A `Block` *is* network consensus. It covers a group of nodes closest to an address and is signed
 /// With quorum valid votes, the consensus is then valid and therefore the `Block` however it's
 /// worth recognising quorum is the weakest consensus as any difference on network view will break
 /// it. Full group consensus is strongest, but likely unachievable most of the time, so a union
 /// can increase a single `Peer`s quorum valid `Block`.
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Ord, PartialOrd, Clone)]
 pub struct Block {
     payload: NetworkEvent,
-    proofs: HashSet<Proof>,
+    proofs: BTreeSet<Proof>,
 }
 
 impl Block {
     /// A new `Block` requires a valid vote and the `PublicKey` of the node who sent us this. For
     /// this reason The `Vote` will require a Direct Message from a `Peer` to us.
     #[allow(unused)]
-    pub fn new(vote: &Vote, pub_key: &PublicKey, age: u8) -> Result<Block, RoutingError> {
-        if !vote.validate_signature(pub_key) {
+    pub fn new(vote: &Vote, peer_id : &PeerId) -> Result<Block, RoutingError> {
+        if !vote.validate_signature(peer_id.pub_key()) {
             return Err(RoutingError::FailedSignature);
         }
-        let proof = Proof::new(pub_key, age, vote)?;
-        let mut proofset = HashSet::<Proof>::new();
+        let proof = Proof::new(peer_id, vote)?;
+        let mut proofset = BTreeSet::<Proof>::new();
         if !proofset.insert(proof) {
             return Err(RoutingError::FailedSignature);
         }
@@ -64,36 +96,35 @@ impl Block {
         Err(RoutingError::FailedSignature)
     }
 
-    /// We may wish to remove a nodes `Proof` in cases where a `Peer` cannot be considered valid.
+    // /// We may wish to remove a nodes `Proof` in cases where a `Peer` cannot be considered valid.
     #[allow(unused)]
-    pub fn remove_proof(&mut self, pub_key: &PublicKey) {
-        self.proofs.retain(|proof| proof.key() != pub_key)
+    pub fn remove_proof(&self, peer_id: &PeerId) {
+        // let proofs : BTreeSet<Proof> =  self.proofs.into_iter().filter(|x| x.peer_id() == peer_id).collect();
     }
-
-    /// Ensure only the following `Peer`s are considered in the `Block`. Prune any that are not in
-    /// this set.
-    #[allow(unused)]
-    pub fn prune_proofs_except(&mut self, mut keys: &HashSet<&PublicKey>) {
-        self.proofs.retain(|proof| keys.contains(proof.key()));
-    }
+    // // /// Ensure only the following `Peer`s are considered in the `Block`. Prune any that are not in
+    // // /// this set.
+    // #[allow(unused)]
+    // pub fn prune_proofs_except(&mut self, mut ids: &BTreeSet<&PeerId>) {
+    //     self.proofs = self.proofs.intersection(&ids);
+    // }
 
     /// Return number of `Proof`s.
     #[allow(unused)]
-    pub fn total_proofs(&self) -> usize {
+    pub fn num_proofs(&self) -> usize {
         self.proofs.iter().count()
     }
 
     /// Return total age of all of signatories.
     #[allow(unused)]
-    pub fn total_proofs_age(&self) -> usize {
+    pub fn total_age(&self) -> usize {
         self.proofs.iter().fold(0, |total, proof| {
-            total + proof.age() as usize
+            total + proof.peer_id().age() as usize
         })
     }
 
     #[allow(unused)]
     /// getter
-    pub fn proofs(&self) -> &HashSet<Proof> {
+    pub fn proofs(&self) -> &BTreeSet<Proof> {
         &self.proofs
     }
 
