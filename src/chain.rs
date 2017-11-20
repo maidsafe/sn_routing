@@ -50,7 +50,14 @@ impl CurrentPeers {
         ((self.live_peers.iter().take(group_size).fold(0, |acc, ref x| acc + x.age()) + 1 ) / 2 ) as usize 
     }
 }
-
+/// Static function to allow current peers to be held in memory for easier chain handling
+    pub fn get_current_peers(blocks: & Vec<Block>) -> CurrentPeers {
+        // let mut live = BTreeSet::new();
+        // let mut rejoin = BTreeSet::new();
+        // let mut temp = BTreeSet::new();
+        // self.blocks.iter().map(|x| )
+        unimplemented!()
+    }
 /// gives us Blocks and or accusations
 /// TODO - We must get told when blocks are not accumuating - can be done later though when we
 /// start to penalise and manage false accusations etc.
@@ -97,11 +104,12 @@ impl DataChain {
         let _ = file.read_to_end(&mut buf)?;
         let blocks = serialisation::deserialise::<Vec<Block>>(
                 &buf[..])?;
+        let current_peers = get_current_peers(&blocks);
         Ok(DataChain {
             blocks: blocks,
             group_size: group_size,
             path: Some(path),
-            current_peers: CurrentPeers::default(), // blocks.get_current_peers(),
+            current_peers: current_peers,
         })
     }
 
@@ -177,13 +185,6 @@ impl DataChain {
 
     }
 
-    pub fn get_current_peers(&self) -> CurrentPeers {
-        // let mut live = BTreeSet::new();
-        // let mut rejoin = BTreeSet::new();
-        // let mut temp = BTreeSet::new();
-        // self.blocks.iter().map(|x| )
-        unimplemented!()
-    }
 //
 //     /// getter
 //     pub fn chain(&self) -> &Vec<Block> {
