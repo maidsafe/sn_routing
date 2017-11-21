@@ -173,12 +173,12 @@ impl<UID: Uid> Network<UID> {
         );
         let _ = service_2.borrow_mut().remove_connection_by_endpoint(node_1);
 
-        service_1.borrow_mut().send_event(CrustEvent::LostPeer(
-            unwrap!(service_2.borrow().uid),
-        ));
-        service_2.borrow_mut().send_event(CrustEvent::LostPeer(
-            unwrap!(service_1.borrow().uid),
-        ));
+        service_1
+            .borrow_mut()
+            .send_event(CrustEvent::LostPeer(unwrap!(service_2.borrow().uid)));
+        service_2
+            .borrow_mut()
+            .send_event(CrustEvent::LostPeer(unwrap!(service_1.borrow().uid)));
     }
 
     /// Simulates a crust event being sent to the node.
@@ -205,9 +205,10 @@ impl<UID: Uid> Network<UID> {
     }
 
     fn connection_blocked(&self, sender: Endpoint, receiver: Endpoint) -> bool {
-        self.0.borrow().blocked_connections.contains(
-            &(sender, receiver),
-        )
+        self.0
+            .borrow()
+            .blocked_connections
+            .contains(&(sender, receiver))
     }
 
     fn send(&self, sender: Endpoint, receiver: Endpoint, packet: Packet<UID>) {
@@ -249,11 +250,12 @@ impl<UID: Uid> Network<UID> {
         } else {
             return None;
         };
-        let result = network_impl.queue.get_mut(&(sender, receiver)).and_then(
-            |packets| {
+        let result = network_impl
+            .queue
+            .get_mut(&(sender, receiver))
+            .and_then(|packets| {
                 packets.pop_front().map(|packet| (sender, receiver, packet))
-            },
-        );
+            });
         if result.is_some() {
             if let Entry::Occupied(entry) = network_impl.queue.entry((sender, receiver)) {
                 if entry.get().is_empty() {
@@ -281,9 +283,11 @@ impl<UID: Uid> Network<UID> {
     }
 
     fn find_service(&self, endpoint: Endpoint) -> Option<Rc<RefCell<ServiceImpl<UID>>>> {
-        self.0.borrow().services.get(&endpoint).and_then(
-            |s| s.upgrade(),
-        )
+        self.0
+            .borrow()
+            .services
+            .get(&endpoint)
+            .and_then(|s| s.upgrade())
     }
 }
 
@@ -306,9 +310,9 @@ impl<UID: Uid> ServiceHandle<UID> {
 
     /// Returns `true` if this service is connected to the given one.
     pub fn is_connected(&self, handle: &Self) -> bool {
-        self.0.borrow().is_peer_connected(
-            &unwrap!(handle.0.borrow().uid),
-        )
+        self.0
+            .borrow()
+            .is_peer_connected(&unwrap!(handle.0.borrow().uid))
     }
 
     /// Delivers all messages that are queued in the network.
@@ -379,9 +383,7 @@ impl<UID: Uid> ServiceImpl<UID> {
         // If we have no contacts in the config, we can fire BootstrapFailed
         // immediately.
         if pending_bootstraps == 0 {
-            unwrap!(unwrap!(self.event_sender.as_ref()).send(
-                Event::BootstrapFailed,
-            ));
+            unwrap!(unwrap!(self.event_sender.as_ref()).send(Event::BootstrapFailed,));
         }
 
         self.pending_bootstraps = pending_bootstraps;
@@ -564,9 +566,9 @@ impl<UID: Uid> ServiceImpl<UID> {
     }
 
     fn remove_connection_by_endpoint(&mut self, endpoint: Endpoint) -> Option<UID> {
-        if let Some(i) = self.connections.iter().position(
-            |&(_, ep, _)| ep == endpoint,
-        )
+        if let Some(i) = self.connections
+            .iter()
+            .position(|&(_, ep, _)| ep == endpoint)
         {
             Some(self.connections.swap_remove(i).0)
         } else {
@@ -589,9 +591,9 @@ impl<UID: Uid> ServiceImpl<UID> {
     }
 
     fn is_connected(&self, endpoint: &Endpoint, uid: &UID) -> bool {
-        self.connections.iter().any(|&conn| {
-            conn.0 == *uid && conn.1 == *endpoint
-        })
+        self.connections
+            .iter()
+            .any(|&conn| conn.0 == *uid && conn.1 == *endpoint)
     }
 
     pub fn disconnect(&mut self, uid: &UID) -> bool {
@@ -653,7 +655,9 @@ impl Config {
 
     /// Create `Config` with the given hardcoded contacts.
     pub fn with_contacts(contacts: &[Endpoint]) -> Self {
-        Config { hard_coded_contacts: contacts.into_iter().cloned().collect() }
+        Config {
+            hard_coded_contacts: contacts.into_iter().cloned().collect(),
+        }
     }
 }
 

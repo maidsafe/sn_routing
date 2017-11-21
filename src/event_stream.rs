@@ -78,9 +78,7 @@ where
             return Ok(cached_ev);
         }
         match self.try_produce_events() {
-            Ok(()) => {
-                self.pop_item().ok_or(TryRecvError::Empty)
-            }
+            Ok(()) => self.pop_item().ok_or(TryRecvError::Empty),
             Err(err) => Err(err),
         }
     }

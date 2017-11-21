@@ -213,7 +213,6 @@ impl ExamplePeer {
                         msg_id,
                     ));
                 }
-
             }
             _ => unreachable!("ExampleNode: Unexpected dst ({:?})", dst),
         }
@@ -232,9 +231,11 @@ impl ExamplePeer {
                 let res = if let Some(data) = self.mdata_store.get(&(name, tag)) {
                     Ok(data.shell())
                 } else {
-                    trace!("{:?} GetMDataShell request failed for {:?}.",
-                           self.get_debug_name(),
-                           (name, tag));
+                    trace!(
+                        "{:?} GetMDataShell request failed for {:?}.",
+                        self.get_debug_name(),
+                        (name, tag)
+                    );
                     Err(ClientError::NoSuchData)
                 };
 
@@ -262,9 +263,11 @@ impl ExamplePeer {
                 let res = if let Some(data) = self.mdata_store.get(&(name, tag)) {
                     Ok(data.entries().clone())
                 } else {
-                    trace!("{:?} ListMDataEntries request failed for {:?}.",
-                           self.get_debug_name(),
-                           (name, tag));
+                    trace!(
+                        "{:?} ListMDataEntries request failed for {:?}.",
+                        self.get_debug_name(),
+                        (name, tag)
+                    );
                     Err(ClientError::NoSuchData)
                 };
 
@@ -297,9 +300,11 @@ impl ExamplePeer {
                         data.get(&key).cloned().ok_or(ClientError::NoSuchEntry)
                     })
                     .map_err(|error| {
-                        trace!("{:?} GetMDataValue request failed for {:?}.",
-                                        self.get_debug_name(),
-                                        (name, tag));
+                        trace!(
+                            "{:?} GetMDataValue request failed for {:?}.",
+                            self.get_debug_name(),
+                            (name, tag)
+                        );
                         error
                     });
 

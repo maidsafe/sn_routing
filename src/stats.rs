@@ -119,115 +119,97 @@ impl Stats {
     /// Increments the counter for the given user message.
     pub fn count_user_message(&mut self, msg: &UserMessage) {
         match *msg {
-            UserMessage::Request(ref request) => {
-                match *request {
-                    Request::PutIData { .. } => self.msg_put_idata.inc_request(),
-                    Request::GetIData { .. } => self.msg_get_idata.inc_request(),
-                    Request::GetMData { .. } => self.msg_get_mdata.inc_request(),
-                    Request::PutMData { .. } => self.msg_put_mdata.inc_request(),
-                    Request::GetMDataVersion { .. } => self.msg_get_mdata_version.inc_request(),
-                    Request::GetMDataShell { .. } => self.msg_get_mdata_shell.inc_request(),
-                    Request::ListMDataKeys { .. } => self.msg_list_mdata_keys.inc_request(),
-                    Request::ListMDataValues { .. } => self.msg_list_mdata_values.inc_request(),
-                    Request::ListMDataEntries { .. } => self.msg_list_mdata_entries.inc_request(),
-                    Request::GetMDataValue { .. } => self.msg_get_mdata_value.inc_request(),
-                    Request::MutateMDataEntries { .. } => {
-                        self.msg_mutate_mdata_entries.inc_request()
-                    }
-                    Request::ListMDataPermissions { .. } => {
-                        self.msg_list_mdata_permissions.inc_request()
-                    }
-                    Request::ListMDataUserPermissions { .. } => {
-                        self.msg_list_mdata_user_permissions.inc_request()
-                    }
-                    Request::SetMDataUserPermissions { .. } => {
-                        self.msg_set_mdata_user_permissions.inc_request()
-                    }
-                    Request::DelMDataUserPermissions { .. } => {
-                        self.msg_del_mdata_user_permissions.inc_request()
-                    }
-                    Request::ChangeMDataOwner { .. } => self.msg_change_mdata_owner.inc_request(),
-                    Request::ListAuthKeysAndVersion { .. } => {
-                        self.msg_list_auth_keys_and_version.inc_request()
-                    }
-                    Request::InsAuthKey { .. } => self.msg_ins_auth_key.inc_request(),
-                    Request::DelAuthKey { .. } => self.msg_del_auth_key.inc_request(),
-                    Request::GetAccountInfo { .. } => self.msg_get_account_info.inc_request(),
-                    Request::Refresh(..) => self.msg_refresh += 1,
+            UserMessage::Request(ref request) => match *request {
+                Request::PutIData { .. } => self.msg_put_idata.inc_request(),
+                Request::GetIData { .. } => self.msg_get_idata.inc_request(),
+                Request::GetMData { .. } => self.msg_get_mdata.inc_request(),
+                Request::PutMData { .. } => self.msg_put_mdata.inc_request(),
+                Request::GetMDataVersion { .. } => self.msg_get_mdata_version.inc_request(),
+                Request::GetMDataShell { .. } => self.msg_get_mdata_shell.inc_request(),
+                Request::ListMDataKeys { .. } => self.msg_list_mdata_keys.inc_request(),
+                Request::ListMDataValues { .. } => self.msg_list_mdata_values.inc_request(),
+                Request::ListMDataEntries { .. } => self.msg_list_mdata_entries.inc_request(),
+                Request::GetMDataValue { .. } => self.msg_get_mdata_value.inc_request(),
+                Request::MutateMDataEntries { .. } => self.msg_mutate_mdata_entries.inc_request(),
+                Request::ListMDataPermissions { .. } => {
+                    self.msg_list_mdata_permissions.inc_request()
                 }
-            }
-            UserMessage::Response(ref response) => {
-                match *response {
-                    Response::PutIData { ref res, .. } => {
-                        self.msg_put_idata.inc_response(res.is_ok())
-                    }
-                    Response::GetIData { ref res, .. } => {
-                        self.msg_get_idata.inc_response(res.is_ok())
-                    }
-                    Response::PutMData { ref res, .. } => {
-                        self.msg_put_mdata.inc_response(res.is_ok())
-                    }
-                    Response::GetMData { ref res, .. } => {
-                        self.msg_get_mdata.inc_response(res.is_ok())
-                    }
-                    Response::GetMDataVersion { ref res, .. } => {
-                        self.msg_get_mdata_version.inc_response(res.is_ok())
-                    }
-                    Response::GetMDataShell { ref res, .. } => {
-                        self.msg_get_mdata_shell.inc_response(res.is_ok())
-                    }
-                    Response::ListMDataKeys { ref res, .. } => {
-                        self.msg_list_mdata_keys.inc_response(res.is_ok())
-                    }
-                    Response::ListMDataValues { ref res, .. } => {
-                        self.msg_list_mdata_values.inc_response(res.is_ok())
-                    }
-                    Response::ListMDataEntries { ref res, .. } => {
-                        self.msg_list_mdata_entries.inc_response(res.is_ok())
-                    }
-                    Response::GetMDataValue { ref res, .. } => {
-                        self.msg_get_mdata_value.inc_response(res.is_ok())
-                    }
-                    Response::MutateMDataEntries { ref res, .. } => {
-                        self.msg_mutate_mdata_entries.inc_response(res.is_ok())
-                    }
-                    Response::ListMDataPermissions { ref res, .. } => {
-                        self.msg_list_mdata_permissions.inc_response(res.is_ok())
-                    }
-                    Response::ListMDataUserPermissions { ref res, .. } => {
-                        self.msg_list_mdata_user_permissions.inc_response(
-                            res.is_ok(),
-                        )
-                    }
-                    Response::SetMDataUserPermissions { ref res, .. } => {
-                        self.msg_set_mdata_user_permissions.inc_response(
-                            res.is_ok(),
-                        )
-                    }
-                    Response::DelMDataUserPermissions { ref res, .. } => {
-                        self.msg_del_mdata_user_permissions.inc_response(
-                            res.is_ok(),
-                        )
-                    }
-                    Response::ChangeMDataOwner { ref res, .. } => {
-                        self.msg_change_mdata_owner.inc_response(res.is_ok())
-                    }
-                    Response::ListAuthKeysAndVersion { ref res, .. } => {
-                        self.msg_list_auth_keys_and_version.inc_response(
-                            res.is_ok(),
-                        )
-                    }
-                    Response::InsAuthKey { ref res, .. } => {
-                        self.msg_ins_auth_key.inc_response(res.is_ok())
-                    }
-                    Response::DelAuthKey { ref res, .. } => {
-                        self.msg_del_auth_key.inc_response(res.is_ok())
-                    }
-                    Response::GetAccountInfo { ref res, .. } => {
-                        self.msg_get_account_info.inc_response(res.is_ok())
-                    }
+                Request::ListMDataUserPermissions { .. } => {
+                    self.msg_list_mdata_user_permissions.inc_request()
                 }
-            }
+                Request::SetMDataUserPermissions { .. } => {
+                    self.msg_set_mdata_user_permissions.inc_request()
+                }
+                Request::DelMDataUserPermissions { .. } => {
+                    self.msg_del_mdata_user_permissions.inc_request()
+                }
+                Request::ChangeMDataOwner { .. } => self.msg_change_mdata_owner.inc_request(),
+                Request::ListAuthKeysAndVersion { .. } => {
+                    self.msg_list_auth_keys_and_version.inc_request()
+                }
+                Request::InsAuthKey { .. } => self.msg_ins_auth_key.inc_request(),
+                Request::DelAuthKey { .. } => self.msg_del_auth_key.inc_request(),
+                Request::GetAccountInfo { .. } => self.msg_get_account_info.inc_request(),
+                Request::Refresh(..) => self.msg_refresh += 1,
+            },
+            UserMessage::Response(ref response) => match *response {
+                Response::PutIData { ref res, .. } => self.msg_put_idata.inc_response(res.is_ok()),
+                Response::GetIData { ref res, .. } => self.msg_get_idata.inc_response(res.is_ok()),
+                Response::PutMData { ref res, .. } => self.msg_put_mdata.inc_response(res.is_ok()),
+                Response::GetMData { ref res, .. } => self.msg_get_mdata.inc_response(res.is_ok()),
+                Response::GetMDataVersion { ref res, .. } => {
+                    self.msg_get_mdata_version.inc_response(res.is_ok())
+                }
+                Response::GetMDataShell { ref res, .. } => {
+                    self.msg_get_mdata_shell.inc_response(res.is_ok())
+                }
+                Response::ListMDataKeys { ref res, .. } => {
+                    self.msg_list_mdata_keys.inc_response(res.is_ok())
+                }
+                Response::ListMDataValues { ref res, .. } => {
+                    self.msg_list_mdata_values.inc_response(res.is_ok())
+                }
+                Response::ListMDataEntries { ref res, .. } => {
+                    self.msg_list_mdata_entries.inc_response(res.is_ok())
+                }
+                Response::GetMDataValue { ref res, .. } => {
+                    self.msg_get_mdata_value.inc_response(res.is_ok())
+                }
+                Response::MutateMDataEntries { ref res, .. } => {
+                    self.msg_mutate_mdata_entries.inc_response(res.is_ok())
+                }
+                Response::ListMDataPermissions { ref res, .. } => {
+                    self.msg_list_mdata_permissions.inc_response(res.is_ok())
+                }
+                Response::ListMDataUserPermissions { ref res, .. } => {
+                    self.msg_list_mdata_user_permissions
+                        .inc_response(res.is_ok())
+                }
+                Response::SetMDataUserPermissions { ref res, .. } => {
+                    self.msg_set_mdata_user_permissions
+                        .inc_response(res.is_ok())
+                }
+                Response::DelMDataUserPermissions { ref res, .. } => {
+                    self.msg_del_mdata_user_permissions
+                        .inc_response(res.is_ok())
+                }
+                Response::ChangeMDataOwner { ref res, .. } => {
+                    self.msg_change_mdata_owner.inc_response(res.is_ok())
+                }
+                Response::ListAuthKeysAndVersion { ref res, .. } => {
+                    self.msg_list_auth_keys_and_version
+                        .inc_response(res.is_ok())
+                }
+                Response::InsAuthKey { ref res, .. } => {
+                    self.msg_ins_auth_key.inc_response(res.is_ok())
+                }
+                Response::DelAuthKey { ref res, .. } => {
+                    self.msg_del_auth_key.inc_response(res.is_ok())
+                }
+                Response::GetAccountInfo { ref res, .. } => {
+                    self.msg_get_account_info.inc_response(res.is_ok())
+                }
+            },
         }
 
         self.increment_msg_total();

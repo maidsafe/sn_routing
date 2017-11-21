@@ -15,13 +15,13 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use super::{TestClient, TestNode, create_connected_clients, create_connected_nodes, gen_range,
-            gen_range_except, poll_and_resend, verify_invariant_for_all_nodes};
+use super::{create_connected_clients, create_connected_nodes, gen_range, gen_range_except,
+            poll_and_resend, verify_invariant_for_all_nodes, TestClient, TestNode};
 use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
 use routing::{Authority, BootstrapConfig, Event, EventStream, ImmutableData, MessageId, PublicId,
-              QUORUM_DENOMINATOR, QUORUM_NUMERATOR, Request, Response, XorName};
+              Request, Response, XorName, QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
 use routing::mock_crust::Network;
 use routing::test_consts::{ACCUMULATION_TIMEOUT_SECS, CANDIDATE_ACCEPT_TIMEOUT_SECS,
                            JOINING_NODE_TIMEOUT_SECS, RESOURCE_PROOF_DURATION_SECS};
@@ -116,9 +116,9 @@ fn add_node_and_poll<R: Rng>(
 
         // Status to the proxy of the new node doesn't matter.
         let _ = dropped_nodes.insert(nodes[proxy].name());
-        if nodes[block_peer].inner.has_unnormalised_routing_conn(
-            &dropped_nodes,
-        )
+        if nodes[block_peer]
+            .inner
+            .has_unnormalised_routing_conn(&dropped_nodes)
         {
             FakeClock::advance_time(JOINING_NODE_TIMEOUT_SECS * 1000);
         }
@@ -147,8 +147,7 @@ fn add_node_and_poll<R: Rng>(
     // This can occur due to NodeApproval not being sent out in some cases but nodes adding
     // joining nodes to their RT and expecting the joining node to eventually terminate itself
     match nodes[new_node].inner.try_next_ev() {
-        Err(_) |
-        Ok(Event::Terminate) => (),
+        Err(_) | Ok(Event::Terminate) => (),
         Ok(_) => return Some(new_node),
     };
 
@@ -508,14 +507,14 @@ fn verify_section_list_signatures(nodes: &[TestNode]) {
                 let sigs = unwrap!(
                     node.inner.section_list_signatures(prefix),
                     "{:?} Tried to unwrap None returned from \
-                                    section_list_signatures({:?})",
+                     section_list_signatures({:?})",
                     node.name(),
                     prefix
                 );
                 assert!(
                     sigs.len() * QUORUM_DENOMINATOR > section_size * QUORUM_NUMERATOR,
                     "{:?} Not enough signatures for prefix {:?} - {}/{}\n\tSignatures from: \
-                         {:?}",
+                     {:?}",
                     node.name(),
                     prefix,
                     sigs.len(),
@@ -561,15 +560,13 @@ fn aggressive_churn() {
 
         // A candidate could be blocked if some nodes of the section it connected to has lost node
         // due to loss of tunnel. In that case, a restart of candidate shall be carried out.
-        if let Some(added_index) =
-            add_node_and_poll(
-                &mut rng,
-                &network,
-                &mut nodes,
-                min_section_size,
-                BTreeSet::new(),
-            )
-        {
+        if let Some(added_index) = add_node_and_poll(
+            &mut rng,
+            &network,
+            &mut nodes,
+            min_section_size,
+            BTreeSet::new(),
+        ) {
             debug!("Added {}", nodes[added_index].name());
         } else {
             debug!("Unable to add new node.");
@@ -591,15 +588,13 @@ fn aggressive_churn() {
         // A candidate could be blocked if it connected to a pre-merge minority section.
         // Or be rejected when the proxy node's RT is not large enough due to a lost tunnel.
         // In that case, a restart of candidate shall be carried out.
-        if let Some(added_index) =
-            add_node_and_poll(
-                &mut rng,
-                &network,
-                &mut nodes,
-                min_section_size,
-                dropped_nodes,
-            )
-        {
+        if let Some(added_index) = add_node_and_poll(
+            &mut rng,
+            &network,
+            &mut nodes,
+            min_section_size,
+            dropped_nodes,
+        ) {
             debug!("Simultaneous added {}", nodes[added_index].name());
         } else {
             debug!("Unable to add new node.");

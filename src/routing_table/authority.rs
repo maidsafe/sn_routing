@@ -63,8 +63,7 @@ impl Authority {
             Authority::ClientManager(_) |
             Authority::NaeManager(_) |
             Authority::NodeManager(_) => true,
-            Authority::ManagedNode(_) |
-            Authority::Client { .. } => false,
+            Authority::ManagedNode(_) | Authority::Client { .. } => false,
         }
     }
 
@@ -86,7 +85,10 @@ impl Authority {
             Authority::Section(ref name) |
             Authority::ManagedNode(ref name) => *name,
             Authority::PrefixSection(ref prefix) => prefix.lower_bound(),
-            Authority::Client { ref proxy_node_name, .. } => *proxy_node_name,
+            Authority::Client {
+                ref proxy_node_name,
+                ..
+            } => *proxy_node_name,
         }
     }
 }
@@ -107,14 +109,12 @@ impl Debug for Authority {
             Authority::Client {
                 ref proxy_node_name,
                 ref client_id,
-            } => {
-                write!(
-                    formatter,
-                    "Client {{ client_name: {}, proxy_node_name: {} }}",
-                    client_id.name(),
-                    proxy_node_name
-                )
-            }
+            } => write!(
+                formatter,
+                "Client {{ client_name: {}, proxy_node_name: {} }}",
+                client_id.name(),
+                proxy_node_name
+            ),
         }
     }
 }

@@ -19,33 +19,32 @@
 
 // For explanation of lint checks, run `rustc -W help` or see
 // https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
-#![forbid(exceeding_bitshifts, mutable_transmutes, no_mangle_const_items,
-          unknown_crate_types, warnings)]
-#![deny(bad_style, deprecated, improper_ctypes, missing_docs,
-        non_shorthand_field_patterns, overflowing_literals, plugin_as_library,
-        private_no_mangle_fns, private_no_mangle_statics, stable_features, unconditional_recursion,
-        unknown_lints, unsafe_code, unused, unused_allocation, unused_attributes,
-        unused_comparisons, unused_features, unused_parens, while_true)]
+#![forbid(exceeding_bitshifts, mutable_transmutes, no_mangle_const_items, unknown_crate_types,
+          warnings)]
+#![deny(bad_style, deprecated, improper_ctypes, missing_docs, non_shorthand_field_patterns,
+        overflowing_literals, plugin_as_library, private_no_mangle_fns, private_no_mangle_statics,
+        stable_features, unconditional_recursion, unknown_lints, unsafe_code, unused,
+        unused_allocation, unused_attributes, unused_comparisons, unused_features, unused_parens,
+        while_true)]
 #![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
         unused_qualifications, unused_results)]
 #![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
          missing_debug_implementations, variant_size_differences, non_camel_case_types)]
-
 #![cfg_attr(feature = "use-mock-crust", allow(unused_extern_crates, unused_imports))]
 
+extern crate docopt;
 #[macro_use]
 extern crate log;
+extern crate lru_time_cache;
 extern crate maidsafe_utilities;
 extern crate rand;
-extern crate docopt;
-extern crate rust_sodium;
 extern crate routing;
-extern crate lru_time_cache;
+extern crate rust_sodium;
+#[macro_use]
+extern crate serde_derive;
 extern crate term;
 #[macro_use]
 extern crate unwrap;
-#[macro_use]
-extern crate serde_derive;
 
 mod utils;
 
@@ -63,9 +62,9 @@ mod unnamed {
     use maidsafe_utilities::log;
     use maidsafe_utilities::thread::Joiner;
     use maidsafe_utilities::thread::named as thread_named;
-    use rand::{Rng, ThreadRng, random, thread_rng};
+    use rand::{random, thread_rng, Rng, ThreadRng};
     use rand::distributions::{IndependentSample, Range};
-    use routing::{MIN_SECTION_SIZE, MutableData, Value};
+    use routing::{MutableData, Value, MIN_SECTION_SIZE};
     use rust_sodium::crypto::sign;
     use std::{env, io, thread};
     use std::collections::BTreeMap;
@@ -92,13 +91,11 @@ mod unnamed {
         fn drop(&mut self) {
             match self.0.kill() {
                 Ok(()) => println!("Killed Node with Process ID #{}", self.0.id()),
-                Err(err) => {
-                    println!(
-                        "Error killing Node with Process ID #{} - {:?}",
-                        self.0.id(),
-                        err
-                    )
-                }
+                Err(err) => println!(
+                    "Error killing Node with Process ID #{} - {:?}",
+                    self.0.id(),
+                    err
+                ),
             }
         }
     }
@@ -154,10 +151,9 @@ mod unnamed {
                     let wait_for = wait_range.ind_sample(&mut rng);
 
                     while !*stop_condition && !wait_timed_out {
-                        let wake_up_result = unwrap!(condvar.wait_timeout(
-                            stop_condition,
-                            Duration::from_secs(wait_for),
-                        ));
+                        let wake_up_result = unwrap!(
+                            condvar.wait_timeout(stop_condition, Duration::from_secs(wait_for),)
+                        );
                         stop_condition = wake_up_result.0;
                         wait_timed_out = wake_up_result.1.timed_out();
                     }
@@ -167,12 +163,8 @@ mod unnamed {
                     }
                 }
 
-                if let Err(err) = simulate_churn_impl(
-                    &mut nodes,
-                    &mut rng,
-                    network_size,
-                    &mut node_count,
-                )
+                if let Err(err) =
+                    simulate_churn_impl(&mut nodes, &mut rng, network_size, &mut node_count)
                 {
                     println!("{:?}", err);
                     break;
@@ -368,8 +360,8 @@ Options:
             .and_then(|docopt| docopt.deserialize())
             .unwrap_or_else(|error| error.exit());
 
-        let run_network_test = !(args.flag_output.is_some() ||
-                                     args.flag_delete_bootstrap_cache.is_some());
+        let run_network_test =
+            !(args.flag_output.is_some() || args.flag_delete_bootstrap_cache.is_some());
         let requests = args.arg_requests.unwrap_or(DEFAULT_REQUESTS);
         let batches = args.arg_batches.unwrap_or(DEFAULT_BATCHES);
         let first = args.flag_first.unwrap_or(false);
@@ -392,7 +384,9 @@ Options:
             let stop_flag = Arc::new((Mutex::new(false), Condvar::new()));
             let _raii_joiner = simulate_churn(nodes, node_count, stop_flag.clone());
 
-            let test_result = panic::catch_unwind(|| { store_and_verify(requests, batches); });
+            let test_result = panic::catch_unwind(|| {
+                store_and_verify(requests, batches);
+            });
 
             // Graceful exit
             {

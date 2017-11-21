@@ -169,7 +169,7 @@ impl PublicId {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use maidsafe_utilities::{SeededRng, serialisation};
+    use maidsafe_utilities::{serialisation, SeededRng};
     use rust_sodium;
 
     /// Confirm `PublicId` `Ord` trait favours name over sign or encryption keys.
@@ -182,9 +182,9 @@ mod tests {
         let pub_id_2;
         loop {
             let temp_pub_id = *FullId::new().public_id();
-            if temp_pub_id.name > pub_id_1.name &&
-                temp_pub_id.public_sign_key < pub_id_1.public_sign_key &&
-                temp_pub_id.public_encrypt_key < pub_id_1.public_encrypt_key
+            if temp_pub_id.name > pub_id_1.name
+                && temp_pub_id.public_sign_key < pub_id_1.public_sign_key
+                && temp_pub_id.public_encrypt_key < pub_id_1.public_encrypt_key
             {
                 pub_id_2 = temp_pub_id;
                 break;

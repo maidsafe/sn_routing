@@ -22,7 +22,7 @@ use fake_clock::FakeClock as Instant;
 use itertools::Itertools;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::{self, SerialisationError};
-use messages::{MAX_PART_LEN, UserMessage};
+use messages::{UserMessage, MAX_PART_LEN};
 use sha3::Digest256;
 use std::cmp;
 use std::collections::BTreeMap;
@@ -264,8 +264,8 @@ impl RateLimiter {
         }
 
         let now = Instant::now();
-        let leak_time = (now - self.last_updated).as_secs() as f64 +
-            ((now - self.last_updated).subsec_nanos() as f64 / 1_000_000_000.0);
+        let leak_time = (now - self.last_updated).as_secs() as f64
+            + ((now - self.last_updated).subsec_nanos() as f64 / 1_000_000_000.0);
         self.last_updated = now;
         let mut leaked_units = (RATE * leak_time) as u64;
 
@@ -304,7 +304,7 @@ mod tests {
     use std::collections::BTreeMap;
     use tiny_keccak::sha3_256;
     use types::MessageId;
-    use xor_name::{XOR_NAME_LEN, XorName};
+    use xor_name::{XorName, XOR_NAME_LEN};
 
     fn huge_message_can_be_added(rate_limiter: &mut RateLimiter, client: &IpAddr) -> bool {
         sized_message_can_be_added(SOFT_CAPACITY, rate_limiter, client)
@@ -358,22 +358,18 @@ mod tests {
         let hash = sha3_256(payload);
         let msg_id = MessageId::new();
         match rate_limiter.add_message(client, &hash, &msg_id, 2, 1, payload) {
-            Err(RoutingError::ExceedsRateLimit(returned_hash)) => {
-                if should_succeed {
-                    false
-                } else {
-                    assert_eq!(hash, returned_hash);
-                    true
-                }
-            }
-            Ok(returned_len) => {
-                if should_succeed {
-                    assert_eq!(payload.len() as u64, returned_len);
-                    true
-                } else {
-                    false
-                }
-            }
+            Err(RoutingError::ExceedsRateLimit(returned_hash)) => if should_succeed {
+                false
+            } else {
+                assert_eq!(hash, returned_hash);
+                true
+            },
+            Ok(returned_len) => if should_succeed {
+                assert_eq!(payload.len() as u64, returned_len);
+                true
+            } else {
+                false
+            },
             _ => false,
         }
     }
@@ -749,8 +745,8 @@ mod tests {
         // Check that all clients have managed to add the same number of messages.
         let elapsed = FakeClock::now() - start;
         let advanced_secs = elapsed.as_secs() as f64 + elapsed.subsec_nanos() as f64 / 1E9;
-        let numerator = MIN_CLIENT_CAPACITY as f64 * num_clients as f64 + advanced_secs * RATE -
-            offset as f64;
+        let numerator =
+            MIN_CLIENT_CAPACITY as f64 * num_clients as f64 + advanced_secs * RATE - offset as f64;
         let denominator = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES as f64 * num_clients as f64;
         let successes = (numerator / denominator).round() as u64;
         for count in clients_and_counts.values() {
@@ -829,8 +825,8 @@ mod tests {
         let wait_millis = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES * 100 / RATE as u64;
         // Note: we add 1 here because the last request added doesn't have to fully drain before
         // the test ends.
-        let max_overcharged_entries = OVERCHARGED_TIMEOUT_SECS * RATE as u64 /
-            MAX_IMMUTABLE_DATA_SIZE_IN_BYTES + 1;
+        let max_overcharged_entries =
+            OVERCHARGED_TIMEOUT_SECS * RATE as u64 / MAX_IMMUTABLE_DATA_SIZE_IN_BYTES + 1;
         let finish_time = FakeClock::now() + Duration::from_secs(OVERCHARGED_TIMEOUT_SECS + 60);
         while FakeClock::now() < finish_time {
             let name = XorName([0; XOR_NAME_LEN]);
@@ -842,8 +838,8 @@ mod tests {
         }
         let overcharged_entries = rate_limiter.overcharged.len() as u64;
         assert!(
-            overcharged_entries == max_overcharged_entries ||
-                overcharged_entries == max_overcharged_entries - 1
+            overcharged_entries == max_overcharged_entries
+                || overcharged_entries == max_overcharged_entries - 1
         );
     }
 }

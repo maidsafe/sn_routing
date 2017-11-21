@@ -58,8 +58,8 @@ impl Tunnels {
         src_id: PublicId,
         dst_id: PublicId,
     ) -> Option<(PublicId, PublicId)> {
-        if self.clients.len() >= MAX_TUNNEL_CLIENT_PAIRS || self.tunnels.contains_key(&src_id) ||
-            self.tunnels.contains_key(&dst_id)
+        if self.clients.len() >= MAX_TUNNEL_CLIENT_PAIRS || self.tunnels.contains_key(&src_id)
+            || self.tunnels.contains_key(&dst_id)
         {
             return None;
         }
@@ -98,7 +98,11 @@ impl Tunnels {
             .into_iter()
             .map(|pair| {
                 let _fixme = self.clients.remove(&pair);
-                if pair.0 == *pub_id { pair.1 } else { pair.0 }
+                if pair.0 == *pub_id {
+                    pair.1
+                } else {
+                    pair.0
+                }
             })
             .collect()
     }

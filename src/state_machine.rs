@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use {CrustEvent, CrustEventSender, MIN_SECTION_SIZE, Service};
+use {CrustEvent, CrustEventSender, Service, MIN_SECTION_SIZE};
 use BootstrapConfig;
 use action::Action;
 use id::{FullId, PublicId};
@@ -50,8 +50,7 @@ pub struct StateMachine {
     crust_tx: Sender<CrustEvent<PublicId>>,
     action_rx: Receiver<Action>,
     is_running: bool,
-    #[cfg(feature = "use-mock-crust")]
-    events: Vec<EventType>,
+    #[cfg(feature = "use-mock-crust")] events: Vec<EventType>,
 }
 
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
@@ -75,12 +74,10 @@ impl EventType {
     fn is_not_a_timeout(&self) -> bool {
         use std::borrow::Borrow;
         match *self {
-            EventType::Action(ref action) => {
-                match *action.borrow() {
-                    Action::Timeout(_) => false,
-                    _ => true,
-                }
-            }
+            EventType::Action(ref action) => match *action.borrow() {
+                Action::Timeout(_) => false,
+                _ => true,
+            },
             _ => true,
         }
     }
@@ -123,9 +120,8 @@ impl State {
     }
 
     fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
-        self.base_state().and_then(
-            |state| state.close_group(name, count),
-        )
+        self.base_state()
+            .and_then(|state| state.close_group(name, count))
     }
 
     fn min_section_size(&self) -> usize {
@@ -331,29 +327,25 @@ impl StateMachine {
 
     fn handle_event(&mut self, category: MaidSafeEventCategory, outbox: &mut EventBox) {
         let transition = match category {
-            MaidSafeEventCategory::Routing => {
-                if let Ok(action) = self.action_rx.try_recv() {
-                    self.state.handle_action(action, outbox)
-                } else {
+            MaidSafeEventCategory::Routing => if let Ok(action) = self.action_rx.try_recv() {
+                self.state.handle_action(action, outbox)
+            } else {
+                Transition::Terminate
+            },
+            MaidSafeEventCategory::Crust => match self.crust_rx.try_recv() {
+                Ok(crust_event) => self.state.handle_crust_event(crust_event, outbox),
+                Err(TryRecvError::Empty) => {
+                    debug!(
+                        "Crust receiver temporarily empty, probably due to node \
+                         relocation."
+                    );
+                    Transition::Stay
+                }
+                Err(TryRecvError::Disconnected) => {
+                    debug!("Logic error: Crust receiver disconnected.");
                     Transition::Terminate
                 }
-            }
-            MaidSafeEventCategory::Crust => {
-                match self.crust_rx.try_recv() {
-                    Ok(crust_event) => self.state.handle_crust_event(crust_event, outbox),
-                    Err(TryRecvError::Empty) => {
-                        debug!(
-                            "Crust receiver temporarily empty, probably due to node \
-                               relocation."
-                        );
-                        Transition::Stay
-                    }
-                    Err(TryRecvError::Disconnected) => {
-                        debug!("Logic error: Crust receiver disconnected.");
-                        Transition::Terminate
-                    }
-                }
-            }
+            },
         };
 
         self.apply_transition(transition, outbox)
@@ -459,22 +451,18 @@ impl StateMachine {
         let mut events = Vec::new();
         while let Ok(category) = self.category_rx.try_recv() {
             match category {
-                MaidSafeEventCategory::Routing => {
-                    if let Ok(action) = self.action_rx.try_recv() {
-                        events.push(EventType::Action(Box::new(action)));
-                    } else {
+                MaidSafeEventCategory::Routing => if let Ok(action) = self.action_rx.try_recv() {
+                    events.push(EventType::Action(Box::new(action)));
+                } else {
+                    return Ok(self.apply_transition(Transition::Terminate, outbox));
+                },
+                MaidSafeEventCategory::Crust => match self.crust_rx.try_recv() {
+                    Ok(crust_event) => events.push(EventType::CrustEvent(crust_event)),
+                    Err(TryRecvError::Empty) => {}
+                    Err(TryRecvError::Disconnected) => {
                         return Ok(self.apply_transition(Transition::Terminate, outbox));
                     }
-                }
-                MaidSafeEventCategory::Crust => {
-                    match self.crust_rx.try_recv() {
-                        Ok(crust_event) => events.push(EventType::CrustEvent(crust_event)),
-                        Err(TryRecvError::Empty) => {}
-                        Err(TryRecvError::Disconnected) => {
-                            return Ok(self.apply_transition(Transition::Terminate, outbox));
-                        }
-                    }
-                }
+                },
             }
         }
 
@@ -492,10 +480,12 @@ impl StateMachine {
         SeededRng::thread_rng().shuffle(&mut positions);
         let mut interleaved = positions
             .iter()
-            .filter_map(|is_timed_out| if *is_timed_out {
-                timed_out_events.pop()
-            } else {
-                events.pop()
+            .filter_map(|is_timed_out| {
+                if *is_timed_out {
+                    timed_out_events.pop()
+                } else {
+                    events.pop()
+                }
             })
             .collect_vec();
         interleaved.reverse();

@@ -17,8 +17,8 @@
 
 use error::RoutingError;
 use network_event::NetworkEvent;
-use proof::Proof;
 use peer_id::PeerId;
+use proof::Proof;
 use std::collections::BTreeSet;
 use vote::Vote;
 
@@ -51,7 +51,7 @@ impl PeersAndAge {
 pub enum BlockState {
     NotYetValid,
     Valid,
-    Full
+    Full,
 }
 
 /// A `Block` *is* network consensus. It covers a group of nodes closest to an address and is signed
@@ -69,7 +69,7 @@ impl Block {
     /// A new `Block` requires a valid vote and the `PublicKey` of the node who sent us this. For
     /// this reason The `Vote` will require a Direct Message from a `Peer` to us.
     #[allow(unused)]
-    pub fn new(vote: &Vote, peer_id : &PeerId) -> Result<Block, RoutingError> {
+    pub fn new(vote: &Vote, peer_id: &PeerId) -> Result<Block, RoutingError> {
         if !vote.validate_signature(peer_id.pub_key()) {
             return Err(RoutingError::FailedSignature);
         }
@@ -107,6 +107,13 @@ impl Block {
     // pub fn prune_proofs_except(&mut self, mut ids: &BTreeSet<&PeerId>) {
     //     self.proofs = self.proofs.intersection(&ids);
     // }
+    pub fn get_peer_ids(&self) -> BTreeSet<PeerId> {
+        let mut peers = BTreeSet::new();
+        for proof in self.proofs.iter() {
+            let _ = peers.insert(proof.peer_id().clone());
+        }
+        peers
+    }
 
     /// Return number of `Proof`s.
     #[allow(unused)]
@@ -117,9 +124,9 @@ impl Block {
     /// Return total age of all of signatories.
     #[allow(unused)]
     pub fn total_age(&self) -> usize {
-        self.proofs.iter().fold(0, |total, proof| {
-            total + proof.peer_id().age() as usize
-        })
+        self.proofs
+            .iter()
+            .fold(0, |total, proof| total + proof.peer_id().age() as usize)
     }
 
     #[allow(unused)]

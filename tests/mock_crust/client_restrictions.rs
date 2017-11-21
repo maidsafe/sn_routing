@@ -15,13 +15,13 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use super::{MIN_SECTION_SIZE, TestClient, TestNode, create_connected_clients,
-            create_connected_nodes, poll_all, poll_and_resend};
+use super::{create_connected_clients, create_connected_nodes, poll_all, poll_and_resend,
+            TestClient, TestNode, MIN_SECTION_SIZE};
 use maidsafe_utilities::SeededRng;
 use mock_crust::utils::gen_immutable_data;
 use rand::Rng;
-use routing::{Authority, BootstrapConfig, Event, EventStream, FullId, ImmutableData,
-              MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MessageId, Request};
+use routing::{Authority, BootstrapConfig, Event, EventStream, FullId, ImmutableData, MessageId,
+              Request, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES};
 use routing::mock_crust::Network;
 use routing::rate_limiter_consts::{MAX_PARTS, SOFT_CAPACITY};
 use std::time::Duration;
@@ -97,10 +97,9 @@ fn reconnect_disconnected_client() {
     let full_id = FullId::new();
 
     // Client will get rejected as network not having enough nodes.
-    let mut clients =
-        vec![
-            TestClient::new_with_full_id(&network, config.clone(), None, full_id.clone()),
-        ];
+    let mut clients = vec![
+        TestClient::new_with_full_id(&network, config.clone(), None, full_id.clone()),
+    ];
     let _ = poll_all(&mut nodes, &mut clients);
     expect_next_event!(unwrap!(clients.last_mut()), Event::Terminate);
 
@@ -183,10 +182,9 @@ fn resend_over_load() {
     let config = Some(BootstrapConfig::with_contacts(
         &[nodes[0].handle.endpoint()],
     ));
-    let mut clients =
-        vec![
-            TestClient::new_with_expire_duration(&network, config, None, Duration::from_secs(10)),
-        ];
+    let mut clients = vec![
+        TestClient::new_with_expire_duration(&network, config, None, Duration::from_secs(10)),
+    ];
     let _ = poll_all(&mut nodes, &mut clients);
     expect_next_event!(unwrap!(clients.last_mut()), Event::Connected);
 

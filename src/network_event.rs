@@ -15,8 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use peer_id::PeerId;
 use routing_table::Prefix;
-use rust_sodium::crypto::sign::PublicKey;
 
 pub type Age = u8;
 pub type Version = u64;
@@ -25,64 +25,62 @@ pub type Version = u64;
 /// After alpha3 this may include daa related events
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub enum NetworkEvent {
-    InfantNew(PublicKey), // Age 1
-    PeerRelocate(PublicKey, Age, Prefix),
-    PeerAccept(PublicKey, Age), // Accept relocation from another section
-    AdultPromote(PublicKey, Age), // Promote to Elder, will be sent to siblings
-    PeerRejoin(PublicKey), // immediately Relocate, not to be part of close group
-    ElderLost(PublicKey), // Immediate Add a new close group member after this
-    PeerLost(PublicKey),
-    ElderKill(PublicKey), // Immediate Add a new close group member after this
-    PeerKill(PublicKey),
-    MergeTo(Prefix, Version),
-    MergePeer(PublicKey, Prefix, Version), // each peer fom a merge is like adding a peer
-    Split((Prefix, Version), (Prefix, Version)), // split to both these prefixes
-    SplitPeer(PublicKey, Prefix, Version),
+    InfantNew(PeerId), // Age 1
+    PeerRelocate(PeerId, Prefix),
+    PeerAccept(PeerId),   // Accept relocation from another section
+    AdultPromote(PeerId), // Promote to Elder, will be sent to siblings
+    PeerRejoin(PeerId),   // immediately Relocate, not to be part of close group
+    ElderLost(PeerId),    // Immediate Add a new close group member after this
+    PeerLost(PeerId),
+    ElderKill(PeerId), // Immediate Add a new close group member after this
+    PeerKill(PeerId),
+    MergeTo(Prefix),
+    MergePeer(PeerId, Prefix), // each peer fom a merge is like adding a peer
+    Split(Prefix, Prefix),     // split to both these prefixes
+    SplitPeer(PeerId, Prefix),
 }
 
 impl NetworkEvent {
     pub fn is_after(&self, other: NetworkEvent) -> bool {
         match other {
-            NetworkEvent::InfantNew(_) | 
-            NetworkEvent::PeerRelocate(_,_,_) | 
-            NetworkEvent::PeerAccept(_,_) | 
+            NetworkEvent::InfantNew(_) |
+            NetworkEvent::PeerRelocate(_, _) |
+            NetworkEvent::PeerAccept(_) |
             NetworkEvent::PeerRejoin(_) |
             NetworkEvent::PeerLost(_) |
             NetworkEvent::PeerKill(_) => true,
-            _ => false 
+            _ => false,
         }
     }
 
     pub fn can_rejoin(&self) -> bool {
-       match *self {
-           NetworkEvent::PeerLost(_) |
-           NetworkEvent::ElderLost(_) => true,
-           _ => false
-       }
+        match *self {
+            NetworkEvent::PeerLost(_) | NetworkEvent::ElderLost(_) => true,
+            _ => false,
+        }
     }
 
     pub fn is_live(&self) -> bool {
-       match *self {
-           NetworkEvent::InfantNew(_) |
-           NetworkEvent::PeerAccept(_,_) => true,
-           _ => false
-       }
-    }
-    
-    pub fn is_dead(&self) -> bool {
-       match *self {
-           NetworkEvent::PeerRejoin(_) |
-           NetworkEvent::ElderKill(_) |
-           NetworkEvent::PeerKill(_) => true,
-           _ => false
-       }
+        match *self {
+            NetworkEvent::InfantNew(_) | NetworkEvent::PeerAccept(_) => true,
+            _ => false,
+        }
     }
 
-    fn before_peer_new(&self, _other : NetworkEvent) -> bool {
+    pub fn is_dead(&self) -> bool {
+        match *self {
+            NetworkEvent::PeerRejoin(_) |
+            NetworkEvent::ElderKill(_) |
+            NetworkEvent::PeerKill(_) => true,
+            _ => false,
+        }
+    }
+
+    fn before_peer_new(&self, _other: NetworkEvent) -> bool {
         true
     }
 
-    fn after_peer_new(&self, _other : NetworkEvent) -> bool {
+    fn after_peer_new(&self, _other: NetworkEvent) -> bool {
         true
     }
 
@@ -92,6 +90,4 @@ impl NetworkEvent {
     pub fn is_before(&self, _other: NetworkEvent) -> bool {
         true
     }
-
-
 }

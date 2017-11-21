@@ -25,21 +25,20 @@ pub struct PeerId {
 }
 
 impl PeerId {
-/// Cstr
-pub fn new(age: u8, key: PublicKey) -> PeerId {
-  PeerId {
-    age: age,
-    pub_key: key
-  }
-}
-/// Getter
-pub fn age(&self) -> u8 {
-  self.age
-}
+    /// Cstr
+    pub fn new(age: u8, key: PublicKey) -> PeerId {
+        PeerId {
+            age: age,
+            pub_key: key,
+        }
+    }
+    /// Getter
+    pub fn age(&self) -> u8 {
+        self.age
+    }
 
-/// Getter
-pub fn pub_key(&self) -> &PublicKey {
-  &self.pub_key
-}
-
+    /// Getter
+    pub fn pub_key(&self) -> &PublicKey {
+        &self.pub_key
+    }
 }

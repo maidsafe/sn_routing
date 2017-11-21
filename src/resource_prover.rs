@@ -45,8 +45,8 @@ pub const RESOURCE_PROOF_DURATION_SECS: u64 = 300;
 /// Maximum time a new node will wait to receive `NodeApproval` after receiving a
 /// `RelocateResponse`. This covers the built-in delay of the process and also allows time for the
 /// message to accumulate and be sent via four different routes.
-const APPROVAL_TIMEOUT_SECS: u64 = RESOURCE_PROOF_DURATION_SECS + ACCUMULATION_TIMEOUT_SECS +
-    (4 * ACK_TIMEOUT_SECS);
+const APPROVAL_TIMEOUT_SECS: u64 =
+    RESOURCE_PROOF_DURATION_SECS + ACCUMULATION_TIMEOUT_SECS + (4 * ACK_TIMEOUT_SECS);
 /// Interval between displaying info about ongoing approval progress, in seconds.
 const APPROVAL_PROGRESS_INTERVAL_SECS: u64 = 30;
 
@@ -92,9 +92,10 @@ impl ResourceProver {
         let duration = Duration::from_secs(self.approval_timeout_secs);
         self.approval_expiry_time = Instant::now() + duration;
         self.get_approval_timer_token = Some(self.timer.schedule(duration));
-        self.approval_progress_timer_token = Some(self.timer.schedule(Duration::from_secs(
-            APPROVAL_PROGRESS_INTERVAL_SECS,
-        )));
+        self.approval_progress_timer_token = Some(
+            self.timer
+                .schedule(Duration::from_secs(APPROVAL_PROGRESS_INTERVAL_SECS)),
+        );
     }
 
     /// Start generating a resource proof in a background thread
@@ -109,7 +110,7 @@ impl ResourceProver {
         if self.response_parts.is_empty() {
             info!(
                 "{} Starting approval process to test this node's resources. This will take \
-                   at least {} seconds.",
+                 at least {} seconds.",
                 log_ident,
                 RESOURCE_PROOF_DURATION_SECS
             );
@@ -169,7 +170,7 @@ impl ResourceProver {
 
             trace!(
                 "{} created proof data in {} seconds. Target size: {}, \
-                    Difficulty: {}, Seed: {:?}",
+                 Difficulty: {}, Seed: {:?}",
                 log_ident,
                 elapsed.display_secs(),
                 target_size,
@@ -238,9 +239,10 @@ impl ResourceProver {
             self.handle_approval_timeout(log_ident, outbox);
             Some(Transition::Terminate)
         } else if self.approval_progress_timer_token == Some(token) {
-            self.approval_progress_timer_token = Some(self.timer.schedule(Duration::from_secs(
-                APPROVAL_PROGRESS_INTERVAL_SECS,
-            )));
+            self.approval_progress_timer_token = Some(
+                self.timer
+                    .schedule(Duration::from_secs(APPROVAL_PROGRESS_INTERVAL_SECS)),
+            );
             let now = Instant::now();
             let remaining_duration = if now < self.approval_expiry_time {
                 self.approval_expiry_time - now
@@ -270,8 +272,8 @@ impl ResourceProver {
         if completed == self.challenger_count {
             info!(
                 "{} All {} resource proof responses fully sent, but timed out waiting \
-                   for approval from the network. This could be due to the target section \
-                   experiencing churn. Terminating node.",
+                 for approval from the network. This could be due to the target section \
+                 experiencing churn. Terminating node.",
                 log_ident,
                 completed
             );
@@ -304,7 +306,7 @@ impl ResourceProver {
                         parts_per_proof = part_count;
                         incomplete.push(part_index);
                     }
-                    _ => return String::new(),  // invalid situation
+                    _ => return String::new(), // invalid situation
                 }
             } else {
                 completed += 1;
@@ -322,8 +324,8 @@ impl ResourceProver {
                 // waiting to connect to some more peers and receive their challenges.
                 completed * 100 / self.challenger_count
             } else {
-                (((parts_per_proof * completed) + incomplete.iter().sum::<usize>()) * 100) /
-                    (parts_per_proof * self.challenger_count)
+                (((parts_per_proof * completed) + incomplete.iter().sum::<usize>()) * 100)
+                    / (parts_per_proof * self.challenger_count)
             };
             format!(
                 "{}/{} resource proof response(s) complete, {}% of data sent.",

@@ -22,33 +22,31 @@
 
 // For explanation of lint checks, run `rustc -W help` or see
 // https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
-#![forbid(exceeding_bitshifts, mutable_transmutes, no_mangle_const_items,
-          unknown_crate_types, warnings)]
-#![deny(bad_style, deprecated, improper_ctypes, missing_docs,
-        non_shorthand_field_patterns, overflowing_literals, plugin_as_library,
-        private_no_mangle_fns, private_no_mangle_statics, stable_features, unconditional_recursion,
-        unknown_lints, unsafe_code, unused, unused_allocation, unused_attributes,
-        unused_comparisons, unused_features, unused_parens, while_true)]
+#![forbid(exceeding_bitshifts, mutable_transmutes, no_mangle_const_items, unknown_crate_types,
+          warnings)]
+#![deny(bad_style, deprecated, improper_ctypes, missing_docs, non_shorthand_field_patterns,
+        overflowing_literals, plugin_as_library, private_no_mangle_fns, private_no_mangle_statics,
+        stable_features, unconditional_recursion, unknown_lints, unsafe_code, unused,
+        unused_allocation, unused_attributes, unused_comparisons, unused_features, unused_parens,
+        while_true)]
 #![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
         unused_qualifications, unused_results)]
 #![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
-         missing_debug_implementations, variant_size_differences,
-         non_camel_case_types)]
-
+         missing_debug_implementations, variant_size_differences, non_camel_case_types)]
 #![cfg_attr(feature = "use-mock-crust", allow(unused_extern_crates, unused_imports))]
 
+extern crate docopt;
 #[macro_use]
 extern crate log;
 extern crate maidsafe_utilities;
-#[macro_use]
-extern crate unwrap;
-extern crate docopt;
 extern crate rust_sodium;
 #[macro_use]
 extern crate serde_derive;
+#[macro_use]
+extern crate unwrap;
 
-extern crate routing;
 extern crate lru_time_cache;
+extern crate routing;
 
 mod utils;
 
@@ -137,10 +135,8 @@ Options:
             } else if parts.len() == 2 && parts[0] == "get" {
                 let _ = command_sender.send(UserCommand::Get(parts[1].to_string()));
             } else if parts.len() == 3 && parts[0] == "put" {
-                let _ = command_sender.send(UserCommand::Put(
-                    parts[1].to_string(),
-                    parts[2].to_string(),
-                ));
+                let _ = command_sender
+                    .send(UserCommand::Put(parts[1].to_string(), parts[2].to_string()));
             } else {
                 println!("Unrecognised command");
             }

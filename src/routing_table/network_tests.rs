@@ -61,10 +61,8 @@ impl Network {
         let name = self.rng.gen(); // The new node's name.
         if self.nodes.is_empty() {
             // If this is the first node, just add it and return.
-            let result = self.nodes.insert(
-                name,
-                RoutingTable::new(name, self.min_section_size),
-            );
+            let result = self.nodes
+                .insert(name, RoutingTable::new(name, self.min_section_size));
             assert!(result.is_none());
             return;
         }
@@ -342,7 +340,7 @@ pub fn verify_network_invariant<'a, T: IntoIterator<Item = &'a RoutingTable>>(no
                     *section,
                     section_content,
                     "Section with prefix {:?} doesn't agree between nodes {:?} and {:?}\n\
-                            {:?}: {:?}, {:?}: {:?}",
+                     {:?}: {:?}, {:?}: {:?}",
                     prefix,
                     node.our_name,
                     src,
@@ -365,8 +363,8 @@ pub fn verify_network_invariant<'a, T: IntoIterator<Item = &'a RoutingTable>>(no
             if prefix1.is_compatible(prefix2) {
                 panic!(
                     "Section prefixes should be disjoint, but these are not:\n\
-                    Section {:?}, according to node {:?}: {:?}\n\
-                    Section {:?}, according to node {:?}: {:?}",
+                     Section {:?}, according to node {:?}: {:?}\n\
+                     Section {:?}, according to node {:?}: {:?}",
                     prefix1,
                     sections[prefix1].0,
                     sections[prefix1].1,
@@ -384,7 +382,7 @@ pub fn verify_network_invariant<'a, T: IntoIterator<Item = &'a RoutingTable>>(no
             if !prefix.matches(name) {
                 panic!(
                     "Section members should match the prefix, but {:?} \
-                    does not match {:?}",
+                     does not match {:?}",
                     name,
                     prefix
                 );
@@ -413,9 +411,7 @@ fn merging_sections() {
         verify_invariant(&network);
     }
     assert!(network.nodes.iter().all(
-        |(_, table)| if table.num_of_sections() <
-            2
-        {
+        |(_, table)| if table.num_of_sections() < 2 {
             trace!("{:?}", table);
             false
         } else {
@@ -427,9 +423,7 @@ fn merging_sections() {
         verify_invariant(&network);
     }
     assert!(network.nodes.iter().all(
-        |(_, table)| if table.num_of_sections() >
-            0
-        {
+        |(_, table)| if table.num_of_sections() > 0 {
             trace!("{:?}", table);
             false
         } else {
