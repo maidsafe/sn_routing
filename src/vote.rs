@@ -18,21 +18,24 @@
 use error::RoutingError;
 use maidsafe_utilities::serialisation;
 use network_event::NetworkEvent;
+use peer_id::PeerId;
+use proof::Proof;
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
+use serde::Serialize;
 
 /// A Vote is a peer's desire to initiate a network action or sub action. If there are quorum votes
 /// the action will happen. These are DIRECT MESSAGES and therefore do not require the `PubKey`.
 /// Signature is detached and is the signed payload.
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-pub struct Vote {
-    payload: NetworkEvent,
+pub struct Vote<T> {
+    payload: T,
     signature: Signature,
 }
 
-impl Vote {
+impl<T: Serialize + Clone> Vote<T> {
     /// Create a Vote.
     #[allow(unused)]
-    pub fn new(secret_key: &SecretKey, payload: NetworkEvent) -> Result<Vote, RoutingError> {
+    pub fn new(secret_key: &SecretKey, payload: T) -> Result<Vote<T>, RoutingError> {
         let signature = sign::sign_detached(&serialisation::serialise(&payload)?[..], secret_key);
         Ok(Vote {
             payload: payload,
@@ -40,9 +43,19 @@ impl Vote {
         })
     }
 
+    pub fn proof(&self, peer_id: &PeerId) -> Option<Proof> {
+        if self.validate_signature(peer_id.pub_key()) {
+            return Some(Proof {
+                peer_id: peer_id.clone(),
+                sig: self.signature,
+            });
+        }
+        None
+    }
+
     /// Getter
     #[allow(unused)]
-    pub fn payload(&self) -> &NetworkEvent {
+    pub fn payload(&self) -> &T {
         &self.payload
     }
 

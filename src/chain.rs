@@ -20,7 +20,7 @@ use block::{Block, PeersAndAge};
 use error::RoutingError;
 use fs2::FileExt;
 use maidsafe_utilities::serialisation;
-use network_event::NetworkEvent;
+use network_event::{Chain, ValidPeers};
 // use rust_sodium::crypto::sign::PublicKey;
 use peer_id::PeerId;
 use proof::Proof;
@@ -33,60 +33,14 @@ use vote::Vote;
 
 // Vote -> Quorum Block -> FullBlock (or nearly full Block + Accusation)
 
-#[derive(Default, PartialEq, PartialOrd, Eq, Ord)]
-pub struct CurrentPeers {
-    live_peers: BTreeSet<PeerId>,
-    /// first group_size of these are the elders
-    rejoinable_peers: BTreeSet<PeerId>, // will all be older than infant
-}
-
-impl CurrentPeers {
-    /// All current Elders
-    pub fn elders(&self, group_size: usize) -> BTreeSet<&PeerId> {
-        unimplemented!();
-        // self.live_peers.iter().take(group_size).collect()
-    }
-    /// Qourum age
-    pub fn min_quorum_age(&self, group_size: usize) -> usize {
-        ((self.live_peers
-            .iter()
-            .take(group_size)
-            .fold(0, |acc, ref x| acc + x.age()) + 1) / 2) as usize
-    }
-}
-/// Static function to allow current peers to be held in memory for easier chain handling
-pub fn get_current_peers(blocks: &Vec<Block>) -> CurrentPeers {
-    let mut live = BTreeSet::new();
-    let mut rejoin = BTreeSet::new();
-    // TODO Validate all blocks first for quorum
-    // Any node missing from 3 otherwise full Blocks should be killed.
-    for x in blocks.iter() {
-        match *x.payload() {
-            NetworkEvent::InfantNew(ref id) | NetworkEvent::PeerAccept(ref id) => {
-                let _ = live.insert(id.clone());
-            }
-            NetworkEvent::PeerLost(ref id) | NetworkEvent::ElderLost(ref id) => {
-                let _ = live.remove(&id);
-                let _ = rejoin.insert(id.clone());
-            }
-            NetworkEvent::PeerKill(ref id) | NetworkEvent::ElderKill(ref id) => {
-                let _ = live.remove(&id);
-            }
-            _ => {}
-        }
-    }
-    unimplemented!()
-}
-/// gives us Blocks and or accusations
-/// TODO - We must get told when blocks are not accumuating - can be done later though when we
-/// start to penalise and manage false accusations etc.
 #[allow(unused)]
-#[derive(Default, PartialEq, PartialOrd, Eq, Ord)]
+#[derive(Default, Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord)]
 pub struct DataChain {
-    blocks: Vec<Block>,
+    blocks: Vec<Block<Chain>>,
     group_size: usize,
     path: Option<PathBuf>,
-    current_peers: CurrentPeers,
+    valid_peers: Vec<ValidPeers>, // save to aid network catastrophic failure and restart.
+                                  //data: Vec<Data>
 }
 
 impl DataChain {
@@ -102,10 +56,10 @@ impl DataChain {
         // hold a lock on the file for the whole session
         file.lock_exclusive()?;
         Ok(DataChain {
-            blocks: Vec::<Block>::default(),
+            blocks: Vec::<Block<Chain>>::default(),
             group_size: group_size,
             path: Some(path),
-            current_peers: CurrentPeers::default(),
+            valid_peers: Vec::<ValidPeers>::default(),
         })
     }
 
@@ -121,23 +75,16 @@ impl DataChain {
         file.lock_exclusive()?;
         let mut buf = Vec::<u8>::new();
         let _ = file.read_to_end(&mut buf)?;
-        let blocks = serialisation::deserialise::<Vec<Block>>(&buf[..])?;
-        let current_peers = get_current_peers(&blocks);
-        Ok(DataChain {
-            blocks: blocks,
-            group_size: group_size,
-            path: Some(path),
-            current_peers: current_peers,
-        })
+        Ok(serialisation::deserialise::<DataChain>(&buf[..])?)
     }
 
     /// Create chain in memory from some blocks
-    pub fn from_blocks(blocks: Vec<Block>, group_size: usize) -> DataChain {
+    pub fn from_blocks(blocks: Vec<Block<Chain>>, group_size: usize) -> DataChain {
         DataChain {
             blocks: blocks,
             group_size: group_size,
             path: None,
-            current_peers: CurrentPeers::default(),
+            valid_peers: Vec::<ValidPeers>::default(),
         }
     }
 
@@ -176,7 +123,7 @@ impl DataChain {
     }
 
 
-    fn add_vote(&mut self, vote: Vote, peer_id: &PeerId) -> Option<(NetworkEvent, PeersAndAge)> {
+    fn add_vote(&mut self, vote: Vote<Chain>, peer_id: &PeerId) -> Option<(Chain, PeersAndAge)> {
         if !vote.validate_signature(peer_id.pub_key()) {
             return None;
         }
@@ -191,7 +138,7 @@ impl DataChain {
                     return None;
                 }
 
-                blk.add_proof(Proof::new(&peer_id, &vote).unwrap()).unwrap();
+                blk.add_proof(vote.proof(peer_id).unwrap()).unwrap();
 
                 let p_age = PeersAndAge::new(blk.num_proofs(), blk.total_age());
                 return Some((blk.payload().clone(), p_age));
@@ -210,9 +157,6 @@ impl DataChain {
 
     /// Assumes we trust the first `Block`
     fn validate_quorums(&self) -> bool {
-        if self.blocks.is_empty() {
-            return false;
-        }
         if let Some(mut prev) = self.blocks.first() {
             for blk in self.blocks.iter().skip(1) {
                 if blk.get_peer_ids() // TODO, don't count like this use a loop and check quorum age as well
@@ -223,7 +167,7 @@ impl DataChain {
                 } else {
                     prev = blk; // TODO check `NetworkEvent` as we may need to add to prev or remove a possible voter
                                 // we can probably use a CurrentPeers / Elders list here to be more specific.
-                                // Also which `NetworkEvent`s can follow a sequence, i.e. a lost must be followed 
+                                // Also which `NetworkEvent`s can follow a sequence, i.e. a lost must be followed
                                 // with a promote if its an elder or a merge if peers drops to group size.
                                 // Most events will follow a sequence that is allowed. if blocks are out of sequence when
                                 // net is running a peer should sequence them properly. Here we would fail the chain.

@@ -19,6 +19,7 @@ use error::RoutingError;
 use network_event::NetworkEvent;
 use peer_id::PeerId;
 use proof::Proof;
+use serde::Serialize;
 use std::collections::BTreeSet;
 use vote::Vote;
 
@@ -60,28 +61,27 @@ pub enum BlockState {
 /// it. Full group consensus is strongest, but likely unachievable most of the time, so a union
 /// can increase a single `Peer`s quorum valid `Block`.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Ord, PartialOrd, Clone)]
-pub struct Block {
-    payload: NetworkEvent,
+pub struct Block<T> {
+    payload: T,
     proofs: BTreeSet<Proof>,
 }
 
-impl Block {
+impl<T: Serialize + Clone> Block<T> {
     /// A new `Block` requires a valid vote and the `PublicKey` of the node who sent us this. For
     /// this reason The `Vote` will require a Direct Message from a `Peer` to us.
     #[allow(unused)]
-    pub fn new(vote: &Vote, peer_id: &PeerId) -> Result<Block, RoutingError> {
-        if !vote.validate_signature(peer_id.pub_key()) {
-            return Err(RoutingError::FailedSignature);
+    pub fn new(vote: &Vote<T>, peer_id: &PeerId) -> Result<Block<T>, RoutingError> {
+        if let Some(proof) = vote.proof(peer_id) {
+            let mut proofset = BTreeSet::<Proof>::new();
+            if !proofset.insert(proof) {
+                return Err(RoutingError::FailedSignature);
+            }
+            return Ok(Block::<T> {
+                payload: vote.payload().clone(),
+                proofs: proofset,
+            });
         }
-        let proof = Proof::new(peer_id, vote)?;
-        let mut proofset = BTreeSet::<Proof>::new();
-        if !proofset.insert(proof) {
-            return Err(RoutingError::FailedSignature);
-        }
-        Ok(Block {
-            payload: vote.payload().clone(),
-            proofs: proofset,
-        })
+        Err(RoutingError::FailedSignature)
     }
 
     /// Add a proof from a peer when we know we have an existing `Block`.
@@ -137,7 +137,7 @@ impl Block {
 
     #[allow(unused)]
     /// getter
-    pub fn payload(&self) -> &NetworkEvent {
+    pub fn payload(&self) -> &T {
         &self.payload
     }
 }

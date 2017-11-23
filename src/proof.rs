@@ -20,28 +20,29 @@ use maidsafe_utilities::serialisation;
 use network_event::NetworkEvent;
 use peer_id::PeerId;
 use rust_sodium::crypto::sign::{self, Signature};
+use serde::Serialize;
 use vote::Vote;
 
 /// Proof as provided by a close group member. This may be constructed from a `Vote` to be inserted
 /// into a `Block`. This struct is ordered by age then `PublicKey`
 #[derive(Serialize, Deserialize, PartialOrd, Ord, PartialEq, Eq, Clone, Hash, Debug)]
 pub struct Proof {
-    peer_id: PeerId,
-    sig: Signature,
+    pub peer_id: PeerId,
+    pub sig: Signature,
 }
 
 impl Proof {
     /// Create `Proof` from `Vote` and `PubKey`.
-    #[allow(unused)]
-    pub fn new(peer_id: &PeerId, vote: &Vote) -> Result<Proof, RoutingError> {
-        if !vote.validate_signature(peer_id.pub_key()) {
-            return Err(RoutingError::FailedSignature);
-        }
-        Ok(Proof {
-            peer_id: peer_id.clone(),
-            sig: *vote.signature(),
-        })
-    }
+    // #[allow(unused)]
+    // pub fn new(peer_id: &PeerId, vote: &Vote) -> Result<Proof, RoutingError> {
+    //     if !vote.validate_signature(peer_id.pub_key()) {
+    //         return Err(RoutingError::FailedSignature);
+    //     }
+    //     Ok(Proof {
+    //         peer_id: peer_id.clone(),
+    //         sig: *vote.signature(),
+    //     })
+    // }
 
     /// getter
     #[allow(unused)]
@@ -57,7 +58,7 @@ impl Proof {
 
     /// Validates `data` against this `Proof`'s `key` and `sig`.
     #[allow(unused)]
-    pub fn validate_signature(&self, payload: &NetworkEvent) -> bool {
+    pub fn validate_signature<T: Serialize>(&self, payload: &T) -> bool {
         match serialisation::serialise(&payload) {
             Ok(data) => sign::verify_detached(&self.sig, &data[..], &self.peer_id.pub_key()),
             _ => false,
