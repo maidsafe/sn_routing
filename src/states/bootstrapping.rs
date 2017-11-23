@@ -81,7 +81,8 @@ impl Bootstrapping {
             TargetState::Client { .. } => {
                 let _ = crust_service.start_bootstrap(HashSet::new(), CrustUser::Client);
             }
-            TargetState::JoiningPeer | TargetState::Node { .. } => {
+            TargetState::JoiningPeer |
+            TargetState::Node { .. } => {
                 if let Err(error) = crust_service.start_listening_tcp() {
                     error!("Failed to start listening: {:?}", error);
                     return None;
@@ -156,8 +157,10 @@ impl Bootstrapping {
                     return Transition::Terminate;
                 }
                 trace!("{:?} Listener started on port {}.", self, port);
-                let _ = self.crust_service
-                    .start_bootstrap(HashSet::new(), CrustUser::Node);
+                let _ = self.crust_service.start_bootstrap(
+                    HashSet::new(),
+                    CrustUser::Node,
+                );
                 Transition::Stay
             }
             CrustEvent::ListenerFailed => {
@@ -188,22 +191,25 @@ impl Bootstrapping {
                 msg_expiry_dur,
                 outbox,
             )),
-            TargetState::JoiningPeer => if let Some(joining_node) =
-                JoiningPeer::from_bootstrapping(
-                    self.action_sender,
-                    self.cache,
-                    self.crust_service,
-                    self.full_id,
-                    self.min_section_size,
-                    proxy_public_id,
-                    self.stats,
-                    self.timer,
-                ) {
-                State::JoiningNode(joining_node)
-            } else {
-                outbox.send_event(Event::RestartRequired);
-                State::Terminated
-            },
+            TargetState::JoiningPeer => {
+                if let Some(joining_node) =
+                    JoiningPeer::from_bootstrapping(
+                        self.action_sender,
+                        self.cache,
+                        self.crust_service,
+                        self.full_id,
+                        self.min_section_size,
+                        proxy_public_id,
+                        self.stats,
+                        self.timer,
+                    )
+                {
+                    State::JoiningNode(joining_node)
+                } else {
+                    outbox.send_event(Event::RestartRequired);
+                    State::Terminated
+                }
+            }
             TargetState::Node {
                 old_full_id,
                 our_section,
@@ -226,7 +232,8 @@ impl Bootstrapping {
     fn client_restriction(&self) -> bool {
         match self.target_state {
             TargetState::Client { .. } => true,
-            TargetState::JoiningPeer | TargetState::Node { .. } => false,
+            TargetState::JoiningPeer |
+            TargetState::Node { .. } => false,
         }
     }
 
@@ -321,8 +328,9 @@ impl Bootstrapping {
     fn send_bootstrap_request(&mut self, pub_id: PublicId) {
         debug!("{:?} Sending BootstrapRequest to {}.", self, pub_id);
 
-        let token = self.timer
-            .schedule(Duration::from_secs(BOOTSTRAP_TIMEOUT_SECS));
+        let token = self.timer.schedule(
+            Duration::from_secs(BOOTSTRAP_TIMEOUT_SECS),
+        );
         self.bootstrap_connection = Some((pub_id, token));
 
         let serialised_public_id = match serialisation::serialise(self.full_id.public_id()) {
@@ -362,8 +370,10 @@ impl Bootstrapping {
             } else {
                 CrustUser::Node
             };
-            let _ = self.crust_service
-                .start_bootstrap(self.bootstrap_blacklist.clone(), crust_user);
+            let _ = self.crust_service.start_bootstrap(
+                self.bootstrap_blacklist.clone(),
+                crust_user,
+            );
         }
     }
 }
@@ -449,9 +459,7 @@ mod tests {
                     Bootstrapping::new(
                         action_sender,
                         Box::new(NullCache),
-                        TargetState::Client {
-                            msg_expiry_dur: Duration::from_secs(60),
-                        },
+                        TargetState::Client { msg_expiry_dur: Duration::from_secs(60) },
                         crust_service,
                         full_id,
                         min_section_size,
@@ -466,7 +474,8 @@ mod tests {
 
         // Check the Crust service received the `BootstrapAccept`.
         network.deliver_messages();
-        if let CrustEvent::BootstrapAccept::<_>(_, CrustUser::Client) = unwrap!(event_rx.try_recv())
+        if let CrustEvent::BootstrapAccept::<_>(_, CrustUser::Client) =
+            unwrap!(event_rx.try_recv())
         {
         } else {
             panic!("Should have received `BootstrapAccept` event.");

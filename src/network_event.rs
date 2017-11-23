@@ -23,29 +23,29 @@ pub type Version = u64;
 pub type NMessage = u64;
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
-pub enum Chain {
+pub enum Elders {
     // All INTERAL group votes
     ElderRelocate(PeerId, Prefix), // GROUP_SIZE = 8 : Followed by PeerPromote
     // Do not relocate if it makes group < 8, elder self votes
     ElderAccept(PeerId), // GROUP_SIZE = 8 (this peer will be an Elder but not until consensus) :
     //may be followed by ElderDemote new peer votes here so group is still oldest 8 members
     AdultPromote(PeerId), // Take an Adult ofmr ValidPeers and use it here if we lose an Elder
-    ElderDemote(PeerId),  // GROUP_SIZE = 8 or less if group not complete
-    ElderLost(PeerId),    // GROUP_SIZE-- (7 or less) an Elder will not vote for its own loss
-    ElderKill(PeerId),    // GROUP_SIZE-- (7 or less) we may kill more than one Elder at once ???
-    Merge(Prefix),        // GROUP_SIZE = 8 or less
+    ElderDemote(PeerId), // GROUP_SIZE = 8 or less if group not complete
+    ElderLost(PeerId), // GROUP_SIZE-- (7 or less) an Elder will not vote for its own loss
+    ElderKill(PeerId), // GROUP_SIZE-- (7 or less) we may kill more than one Elder at once ???
+    Merge(Prefix), // GROUP_SIZE = 8 or less
     Split(Prefix, Prefix), // GROUP_SIZE = 8
 }
 
 // TODO - could be a simple state machine !!
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
-pub enum ValidPeers {
+pub enum AdultsAndInfants {
     // All INTERNAL group votes
-    PeerAccept(PeerId),           // this one is live
+    PeerAccept(PeerId), // this one is live
     PeerRelocate(PeerId, Prefix), // then remove
-    PeerRejoin(PeerId),           // then relocate
-    PeerLost(PeerId),             // on reconnect remove this
-    PeerKill(PeerId),             // just remove
+    PeerRejoin(PeerId), // then relocate
+    PeerLost(PeerId), // on reconnect remove this
+    PeerKill(PeerId), // just remove
 }
 
 /// Trea this just like ValidPeers - i..e Eveny new Elder must give us its `Vote` for all of theese to be accepted.

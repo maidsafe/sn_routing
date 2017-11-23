@@ -90,12 +90,10 @@ pub enum Message {
 impl Message {
     pub fn priority(&self) -> u8 {
         match *self {
-            Message::Direct(ref content) | Message::TunnelDirect { ref content, .. } => {
-                content.priority()
-            }
-            Message::Hop(ref content) | Message::TunnelHop { ref content, .. } => {
-                content.content.content.priority()
-            }
+            Message::Direct(ref content) |
+            Message::TunnelDirect { ref content, .. } => content.priority(),
+            Message::Hop(ref content) |
+            Message::TunnelHop { ref content, .. } => content.content.content.priority(),
         }
     }
 }
@@ -371,9 +369,9 @@ impl SignedMessage {
 
     // Returns true iff `pub_id` is in self.section_lists
     fn is_sender(&self, pub_id: &PublicId) -> bool {
-        self.src_sections
-            .iter()
-            .any(|list| list.pub_ids.contains(pub_id))
+        self.src_sections.iter().any(
+            |list| list.pub_ids.contains(pub_id),
+        )
     }
 
     // Returns a list of all invalid signatures (not from an expected key or not cryptographically
@@ -384,17 +382,13 @@ impl SignedMessage {
             .filter_map(|(pub_id, sig)| {
                 // Remove if not in sending nodes or signature is invalid:
                 let is_valid = if let Authority::Client { ref client_id, .. } = self.content.src {
-                    client_id == pub_id
-                        && sign::verify_detached(sig, &signed_bytes, client_id.signing_public_key())
+                    client_id == pub_id &&
+                        sign::verify_detached(sig, &signed_bytes, client_id.signing_public_key())
                 } else {
-                    self.is_sender(pub_id)
-                        && sign::verify_detached(sig, &signed_bytes, pub_id.signing_public_key())
+                    self.is_sender(pub_id) &&
+                        sign::verify_detached(sig, &signed_bytes, pub_id.signing_public_key())
                 };
-                if is_valid {
-                    None
-                } else {
-                    Some(*pub_id)
-                }
+                if is_valid { None } else { Some(*pub_id) }
             })
             .collect_vec();
         if !invalid.is_empty() {
@@ -429,9 +423,9 @@ impl SignedMessage {
             }
             Section(_) => {
                 // Note: there should be exactly one source section, but we use safe code:
-                let num_sending = self.src_sections
-                    .iter()
-                    .fold(0, |count, list| count + list.pub_ids.len());
+                let num_sending = self.src_sections.iter().fold(0, |count, list| {
+                    count + list.pub_ids.len()
+                });
                 let valid_sigs = self.signatures.len();
                 valid_sigs * QUORUM_DENOMINATOR > num_sending * QUORUM_NUMERATOR
             }
@@ -680,9 +674,8 @@ impl MessageContent {
     /// The priority Crust should send this message with.
     pub fn priority(&self) -> u8 {
         match *self {
-            MessageContent::Ack(_, priority) | MessageContent::UserMessagePart { priority, .. } => {
-                priority
-            }
+            MessageContent::Ack(_, priority) |
+            MessageContent::UserMessagePart { priority, .. } => priority,
             _ => 0,
         }
     }
@@ -692,11 +685,13 @@ impl Debug for DirectMessage {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         use self::DirectMessage::*;
         match *self {
-            MessageSignature(ref digest, _) => write!(
-                formatter,
-                "MessageSignature ({}, ..)",
-                utils::format_binary_array(&digest)
-            ),
+            MessageSignature(ref digest, _) => {
+                write!(
+                    formatter,
+                    "MessageSignature ({}, ..)",
+                    utils::format_binary_array(&digest)
+                )
+            }
             SectionListSignature(ref sec_list, _) => {
                 write!(formatter, "SectionListSignature({:?}, ..)", sec_list.prefix)
             }
@@ -712,27 +707,31 @@ impl Debug for DirectMessage {
                 ref seed,
                 ref target_size,
                 ref difficulty,
-            } => write!(
-                formatter,
-                "ResourceProof {{ seed: {:?}, target_size: {:?}, difficulty: {:?} }}",
-                seed,
-                target_size,
-                difficulty
-            ),
+            } => {
+                write!(
+                    formatter,
+                    "ResourceProof {{ seed: {:?}, target_size: {:?}, difficulty: {:?} }}",
+                    seed,
+                    target_size,
+                    difficulty
+                )
+            }
             ResourceProofResponse {
                 part_index,
                 part_count,
                 ref proof,
                 leading_zero_bytes,
-            } => write!(
-                formatter,
-                "ResourceProofResponse {{ part {}/{}, proof_len: {:?}, leading_zero_bytes: \
+            } => {
+                write!(
+                    formatter,
+                    "ResourceProofResponse {{ part {}/{}, proof_len: {:?}, leading_zero_bytes: \
                  {:?} }}",
-                part_index + 1,
-                part_count,
-                proof.len(),
-                leading_zero_bytes
-            ),
+                    part_index + 1,
+                    part_count,
+                    proof.len(),
+                    leading_zero_bytes
+                )
+            }
             ResourceProofResponseReceipt => write!(formatter, "ResourceProofResponseReceipt"),
             ProxyRateLimitExceeded { ref ack } => {
                 write!(formatter, "ProxyRateLimitExceeded({:?})", ack)
@@ -773,53 +772,63 @@ impl Debug for MessageContent {
                 ref old_public_id,
                 ref old_client_auth,
                 ref message_id,
-            } => write!(
-                formatter,
-                "ExpectCandidate {{ {:?}, {:?}, {:?} }}",
-                old_public_id,
-                old_client_auth,
-                message_id
-            ),
+            } => {
+                write!(
+                    formatter,
+                    "ExpectCandidate {{ {:?}, {:?}, {:?} }}",
+                    old_public_id,
+                    old_client_auth,
+                    message_id
+                )
+            }
             ConnectionInfoRequest {
                 ref pub_id,
                 ref msg_id,
                 ..
-            } => write!(
-                formatter,
-                "ConnectionInfoRequest {{ {:?}, {:?}, .. }}",
-                pub_id,
-                msg_id
-            ),
+            } => {
+                write!(
+                    formatter,
+                    "ConnectionInfoRequest {{ {:?}, {:?}, .. }}",
+                    pub_id,
+                    msg_id
+                )
+            }
             ConnectionInfoResponse {
                 ref pub_id,
                 ref msg_id,
                 ..
-            } => write!(
-                formatter,
-                "ConnectionInfoResponse {{ {:?}, {:?}, .. }}",
-                pub_id,
-                msg_id
-            ),
+            } => {
+                write!(
+                    formatter,
+                    "ConnectionInfoResponse {{ {:?}, {:?}, .. }}",
+                    pub_id,
+                    msg_id
+                )
+            }
             RelocateResponse {
                 ref target_interval,
                 ref section,
                 ref message_id,
-            } => write!(
-                formatter,
-                "RelocateResponse {{ {:?}, {:?}, {:?} }}",
-                target_interval,
-                section,
-                message_id
-            ),
+            } => {
+                write!(
+                    formatter,
+                    "RelocateResponse {{ {:?}, {:?}, {:?} }}",
+                    target_interval,
+                    section,
+                    message_id
+                )
+            }
             SectionUpdate {
                 ref versioned_prefix,
                 ref members,
-            } => write!(
-                formatter,
-                "SectionUpdate {{ {:?}, {:?} }}",
-                versioned_prefix,
-                members
-            ),
+            } => {
+                write!(
+                    formatter,
+                    "SectionUpdate {{ {:?}, {:?} }}",
+                    versioned_prefix,
+                    members
+                )
+            }
             SectionSplit(ref ver_pfx, ref joining_node) => {
                 write!(formatter, "SectionSplit({:?}, {:?})", ver_pfx, joining_node)
             }
@@ -835,42 +844,48 @@ impl Debug for MessageContent {
                 priority,
                 cacheable,
                 ..
-            } => write!(
-                formatter,
-                "UserMessagePart {{ {}/{}, priority: {}, cacheable: {}, \
+            } => {
+                write!(
+                    formatter,
+                    "UserMessagePart {{ {}/{}, priority: {}, cacheable: {}, \
                  {:02x}{:02x}{:02x}.. }}",
-                part_index + 1,
-                part_count,
-                priority,
-                cacheable,
-                hash[0],
-                hash[1],
-                hash[2]
-            ),
+                    part_index + 1,
+                    part_count,
+                    priority,
+                    cacheable,
+                    hash[0],
+                    hash[1],
+                    hash[2]
+                )
+            }
             AcceptAsCandidate {
                 ref old_public_id,
                 ref old_client_auth,
                 ref target_interval,
                 ref message_id,
-            } => write!(
-                formatter,
-                "AcceptAsCandidate {{ {:?}, {:?}, {:?}, {:?} }}",
-                old_public_id,
-                old_client_auth,
-                target_interval,
-                message_id
-            ),
+            } => {
+                write!(
+                    formatter,
+                    "AcceptAsCandidate {{ {:?}, {:?}, {:?}, {:?} }}",
+                    old_public_id,
+                    old_client_auth,
+                    target_interval,
+                    message_id
+                )
+            }
             CandidateApproval {
                 ref new_public_id,
                 ref new_client_auth,
                 ref sections,
-            } => write!(
-                formatter,
-                "CandidateApproval {{ new: {:?}, client: {:?}, sections: {:?} }}",
-                new_public_id,
-                new_client_auth,
-                sections
-            ),
+            } => {
+                write!(
+                    formatter,
+                    "CandidateApproval {{ new: {:?}, client: {:?}, sections: {:?} }}",
+                    new_public_id,
+                    new_client_auth,
+                    sections
+                )
+            }
             NodeApproval { ref sections } => write!(formatter, "NodeApproval {{ {:?} }}", sections),
         }
     }
@@ -984,9 +999,9 @@ impl UserMessageCache {
         payload: Vec<u8>,
     ) -> Option<UserMessage> {
         {
-            let entry = self.0
-                .entry((hash, part_count))
-                .or_insert_with(BTreeMap::new);
+            let entry = self.0.entry((hash, part_count)).or_insert_with(
+                BTreeMap::new,
+            );
             if entry.insert(part_index, payload).is_some() {
                 debug!(
                     "Duplicate UserMessagePart {}/{} with hash {:02x}{:02x}{:02x}.. \
@@ -1096,7 +1111,7 @@ mod tests {
                     *full_id_0.public_id(),
                     *full_id_1.public_id(),
                     *full_id_2.public_id(),
-                ],
+                ]
             ),
         ];
         let mut signed_msg = unwrap!(SignedMessage::new(
@@ -1107,11 +1122,9 @@ mod tests {
         assert_eq!(signed_msg.signatures.len(), 1);
 
         // Try to add a signature which will not correspond to an ID from the sending nodes.
-        let irrelevant_sig = match unwrap!(
-            signed_msg
-                .routing_message()
-                .to_signature(irrelevant_full_id.signing_private_key(),)
-        ) {
+        let irrelevant_sig = match unwrap!(signed_msg.routing_message().to_signature(
+            irrelevant_full_id.signing_private_key(),
+        )) {
             DirectMessage::MessageSignature(_, sig) => {
                 signed_msg.add_signature(*irrelevant_full_id.public_id(), sig);
                 sig
@@ -1119,17 +1132,15 @@ mod tests {
             msg => panic!("Unexpected message: {:?}", msg),
         };
         assert_eq!(signed_msg.signatures.len(), 1);
-        assert!(!signed_msg
-            .signatures
-            .contains_key(irrelevant_full_id.public_id(),));
+        assert!(!signed_msg.signatures.contains_key(
+            irrelevant_full_id.public_id(),
+        ));
         assert!(!signed_msg.check_fully_signed(min_section_size));
 
         // Add a valid signature for ID 1 and an invalid one for ID 2
-        match unwrap!(
-            signed_msg
-                .routing_message()
-                .to_signature(full_id_1.signing_private_key(),)
-        ) {
+        match unwrap!(signed_msg.routing_message().to_signature(
+            full_id_1.signing_private_key(),
+        )) {
             DirectMessage::MessageSignature(hash, sig) => {
                 let serialised_msg = unwrap!(serialise(signed_msg.routing_message()));
                 assert_eq!(hash, sha3_256(&serialised_msg));
@@ -1149,9 +1160,9 @@ mod tests {
         // Check an irrelevant signature can't be added.
         signed_msg.add_signature(*irrelevant_full_id.public_id(), irrelevant_sig);
         assert_eq!(signed_msg.signatures.len(), 2);
-        assert!(!signed_msg
-            .signatures
-            .contains_key(irrelevant_full_id.public_id(),));
+        assert!(!signed_msg.signatures.contains_key(
+            irrelevant_full_id.public_id(),
+        ));
     }
 
     #[test]

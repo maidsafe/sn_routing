@@ -40,7 +40,6 @@ impl Proof {
     //         sig: *vote.signature(),
     //     })
     // }
-
     /// getter
     #[allow(unused)]
     pub fn peer_id(&self) -> &PeerId {

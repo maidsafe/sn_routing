@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use super::{XorName, XOR_NAME_BITS};
+use super::{XOR_NAME_BITS, XorName};
 use std::cmp::{self, Ordering};
 use std::fmt::{Binary, Debug, Formatter};
 use std::fmt::Result as FmtResult;
@@ -24,8 +24,7 @@ use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 
 /// A prefix with section version.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash, Deserialize,
-         Serialize)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash, Deserialize, Serialize)]
 pub struct VersionedPrefix {
     prefix: Prefix,
     version: u64,
@@ -183,12 +182,16 @@ impl Prefix {
     {
         prefixes.clone().into_iter().any(|x| {
             x.is_compatible(self) && x.bit_count() <= self.bit_count()
-        })
-            || (self.bit_count() <= max_prefix_len
-                && self.pushed(false)
-                    .is_covered_by_impl(prefixes.clone(), max_prefix_len)
-                && self.pushed(true)
-                    .is_covered_by_impl(prefixes, max_prefix_len))
+        }) ||
+            (self.bit_count() <= max_prefix_len &&
+                 self.pushed(false).is_covered_by_impl(
+                    prefixes.clone(),
+                    max_prefix_len,
+                ) &&
+                 self.pushed(true).is_covered_by_impl(
+                    prefixes,
+                    max_prefix_len,
+                ))
     }
 
     /// Returns the neighbouring prefix differing in the `i`-th bit
@@ -307,18 +310,27 @@ mod tests {
             unwrap!(Prefix::from_str("1011")).popped(),
             unwrap!(Prefix::from_str("101"))
         );
-        assert!(unwrap!(Prefix::from_str("101")).is_compatible(&unwrap!(Prefix::from_str("1010"))));
-        assert!(unwrap!(Prefix::from_str("1010")).is_compatible(&unwrap!(Prefix::from_str("101"))));
-        assert!(!unwrap!(Prefix::from_str("1010"))
-            .is_compatible(&unwrap!(Prefix::from_str("1011"))));
-        assert!(unwrap!(Prefix::from_str("101")).is_neighbour(&unwrap!(Prefix::from_str("1111"))));
-        assert!(!unwrap!(Prefix::from_str("1010"))
-            .is_neighbour(&unwrap!(Prefix::from_str("1111"))));
-        assert!(
-            unwrap!(Prefix::from_str("1010")).is_neighbour(&unwrap!(Prefix::from_str("10111")))
-        );
-        assert!(!unwrap!(Prefix::from_str("101"))
-            .is_neighbour(&unwrap!(Prefix::from_str("10111"))));
+        assert!(unwrap!(Prefix::from_str("101")).is_compatible(&unwrap!(
+            Prefix::from_str("1010")
+        )));
+        assert!(unwrap!(Prefix::from_str("1010")).is_compatible(&unwrap!(
+            Prefix::from_str("101")
+        )));
+        assert!(!unwrap!(Prefix::from_str("1010")).is_compatible(&unwrap!(
+            Prefix::from_str("1011")
+        )));
+        assert!(unwrap!(Prefix::from_str("101")).is_neighbour(&unwrap!(
+            Prefix::from_str("1111")
+        )));
+        assert!(!unwrap!(Prefix::from_str("1010")).is_neighbour(&unwrap!(
+            Prefix::from_str("1111")
+        )));
+        assert!(unwrap!(Prefix::from_str("1010")).is_neighbour(&unwrap!(
+            Prefix::from_str("10111")
+        )));
+        assert!(!unwrap!(Prefix::from_str("101")).is_neighbour(&unwrap!(
+            Prefix::from_str("10111")
+        )));
         let mut xor_name = XorName::default();
         xor_name[0] = 0b10101100;
         assert!(unwrap!(Prefix::from_str("101")).matches(&xor_name));

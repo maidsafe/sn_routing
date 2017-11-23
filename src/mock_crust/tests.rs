@@ -18,18 +18,16 @@
 // These tests are almost straight up copied from crust::service::tests
 
 use super::crust::{CrustEventSender, CrustUser, Service};
-use super::support::{to_socket_addr, Config, Network};
+use super::support::{Config, Network, to_socket_addr};
 use CrustEvent;
 use id::{FullId, PublicId};
 use maidsafe_utilities::event_sender::{MaidSafeEventCategory, MaidSafeObserver};
 use std::collections::HashSet;
 use std::sync::mpsc::{self, Receiver};
 
-fn get_event_sender() -> (
-    CrustEventSender<PublicId>,
-    Receiver<MaidSafeEventCategory>,
-    Receiver<CrustEvent<PublicId>>,
-) {
+fn get_event_sender()
+    -> (CrustEventSender<PublicId>, Receiver<MaidSafeEventCategory>, Receiver<CrustEvent<PublicId>>)
+{
     let (category_tx, category_rx) = mpsc::channel();
     let (event_tx, event_rx) = mpsc::channel();
 

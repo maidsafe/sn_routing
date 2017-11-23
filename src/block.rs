@@ -123,9 +123,9 @@ impl<T: Serialize + Clone> Block<T> {
     /// Return total age of all of signatories.
     #[allow(unused)]
     pub fn total_age(&self) -> usize {
-        self.proofs
-            .iter()
-            .fold(0, |total, proof| total + proof.peer_id().age() as usize)
+        self.proofs.iter().fold(0, |total, proof| {
+            total + proof.peer_id().age() as usize
+        })
     }
 
     #[allow(unused)]

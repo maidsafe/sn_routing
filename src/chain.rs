@@ -19,7 +19,7 @@ use block::{Block, PeersAndAge};
 use error::RoutingError;
 use fs2::FileExt;
 use maidsafe_utilities::serialisation;
-use network_event::{Chain, ValidPeers, DataIdentifier};
+use network_event::{Elders, DataIdentifier, AdultsAndInfants};
 use peer_id::PeerId;
 use std::fs;
 use std::io::{self, Read, Write};
@@ -31,11 +31,11 @@ use vote::Vote;
 #[allow(unused)]
 #[derive(Default, Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord)]
 pub struct DataChain {
-    blocks: Vec<Block<Chain>>,
+    blocks: Vec<Block<Elders>>,
     group_size: usize,
     path: Option<PathBuf>,
-    valid_peers: Vec<Block<ValidPeers>>, // save to aid network catastrophic failure and restart.
-    data: Vec<Block<DataIdentifier>>
+    valid_peers: Vec<Block<AdultsAndInfants>>, // save to aid network catastrophic failure and restart.
+    data: Vec<Block<DataIdentifier>>,
 }
 
 impl DataChain {
@@ -51,10 +51,10 @@ impl DataChain {
         // hold a lock on the file for the whole session
         file.lock_exclusive()?;
         Ok(DataChain {
-            blocks: Vec::<Block<Chain>>::default(),
+            blocks: Vec::<Block<Elders>>::default(),
             group_size: group_size,
             path: Some(path),
-            valid_peers: Vec::<Block<ValidPeers>>::default(),
+            valid_peers: Vec::<Block<AdultsAndInfants>>::default(),
             data: Vec::<Block<DataIdentifier>>::default(),
         })
     }
@@ -75,12 +75,12 @@ impl DataChain {
     }
 
     /// Create chain in memory from some blocks
-    pub fn from_blocks(blocks: Vec<Block<Chain>>, group_size: usize) -> DataChain {
+    pub fn from_blocks(blocks: Vec<Block<Elders>>, group_size: usize) -> DataChain {
         DataChain {
             blocks: blocks,
             group_size: group_size,
             path: None,
-            valid_peers: Vec::<Block<ValidPeers>>::default(),
+            valid_peers: Vec::<Block<AdultsAndInfants>>::default(),
             data: Vec::<Block<DataIdentifier>>::default(),
         }
     }
@@ -120,16 +120,16 @@ impl DataChain {
     }
 
 
-    fn add_vote(&mut self, vote: Vote<Chain>, peer_id: &PeerId) -> Option<(Chain, PeersAndAge)> {
+    fn add_vote(&mut self, vote: Vote<Elders>, peer_id: &PeerId) -> Option<(Elders, PeersAndAge)> {
         if !vote.validate_signature(peer_id.pub_key()) {
             return None;
         }
 
         for blk in &mut self.blocks.iter_mut() {
             if blk.payload() == vote.payload() {
-                if blk.proofs()
-                    .iter()
-                    .any(|x| x.peer_id().pub_key() == peer_id.pub_key())
+                if blk.proofs().iter().any(|x| {
+                    x.peer_id().pub_key() == peer_id.pub_key()
+                })
                 {
                     info!("duplicate proof");
                     return None;
