@@ -15,13 +15,10 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use error::RoutingError;
 use maidsafe_utilities::serialisation;
-use network_event::NetworkEvent;
 use peer_id::PeerId;
 use rust_sodium::crypto::sign::{self, Signature};
 use serde::Serialize;
-use vote::Vote;
 
 /// Proof as provided by a close group member. This may be constructed from a `Vote` to be inserted
 /// into a `Block`. This struct is ordered by age then `PublicKey`

@@ -16,7 +16,6 @@
 // relating to use of the SAFE Network Software.
 
 use error::RoutingError;
-use network_event::NetworkEvent;
 use peer_id::PeerId;
 use proof::Proof;
 use serde::Serialize;

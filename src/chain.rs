@@ -16,16 +16,11 @@
 // relating to use of the SAFE Network Software.
 
 use block::{Block, PeersAndAge};
-//, BlockState};
 use error::RoutingError;
 use fs2::FileExt;
 use maidsafe_utilities::serialisation;
-use network_event::{Chain, ValidPeers};
-// use rust_sodium::crypto::sign::PublicKey;
+use network_event::{Chain, ValidPeers, DataIdentifier};
 use peer_id::PeerId;
-use proof::Proof;
-use std::collections::BTreeSet;
-// use std::fmt::{self, Debug, Formatter};
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
@@ -39,8 +34,8 @@ pub struct DataChain {
     blocks: Vec<Block<Chain>>,
     group_size: usize,
     path: Option<PathBuf>,
-    valid_peers: Vec<ValidPeers>, // save to aid network catastrophic failure and restart.
-                                  //data: Vec<Data>
+    valid_peers: Vec<Block<ValidPeers>>, // save to aid network catastrophic failure and restart.
+    data: Vec<Block<DataIdentifier>>
 }
 
 impl DataChain {
@@ -59,12 +54,13 @@ impl DataChain {
             blocks: Vec::<Block<Chain>>::default(),
             group_size: group_size,
             path: Some(path),
-            valid_peers: Vec::<ValidPeers>::default(),
+            valid_peers: Vec::<Block<ValidPeers>>::default(),
+            data: Vec::<Block<DataIdentifier>>::default(),
         })
     }
 
     /// Open from existing directory
-    pub fn from_path(path: PathBuf, group_size: usize) -> Result<DataChain, RoutingError> {
+    pub fn from_path(path: PathBuf) -> Result<DataChain, RoutingError> {
         let path = path.join("data_chain");
         let mut file = fs::OpenOptions::new()
             .read(true)
@@ -84,7 +80,8 @@ impl DataChain {
             blocks: blocks,
             group_size: group_size,
             path: None,
-            valid_peers: Vec::<ValidPeers>::default(),
+            valid_peers: Vec::<Block<ValidPeers>>::default(),
+            data: Vec::<Block<DataIdentifier>>::default(),
         }
     }
 
@@ -96,7 +93,7 @@ impl DataChain {
                 .write(true)
                 .create(false)
                 .open(&path.as_path())?;
-            return Ok(file.write_all(&serialisation::serialise(&self.blocks)?)?);
+            return Ok(file.write_all(&serialisation::serialise(&self)?)?);
         }
         Err(RoutingError::CannotWriteFile)
     }
@@ -108,7 +105,7 @@ impl DataChain {
             .write(true)
             .create(false)
             .open(path.as_path())?;
-        file.write_all(&serialisation::serialise(&self.blocks)?)?;
+        file.write_all(&serialisation::serialise(&self)?)?;
         self.path = Some(path);
         Ok(file.lock_exclusive()?)
     }
@@ -128,7 +125,7 @@ impl DataChain {
             return None;
         }
 
-        for (pos, blk) in &mut self.blocks.iter_mut().enumerate() {
+        for blk in &mut self.blocks.iter_mut() {
             if blk.payload() == vote.payload() {
                 if blk.proofs()
                     .iter()

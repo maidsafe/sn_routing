@@ -17,7 +17,6 @@
 
 use error::RoutingError;
 use maidsafe_utilities::serialisation;
-use network_event::NetworkEvent;
 use peer_id::PeerId;
 use proof::Proof;
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};

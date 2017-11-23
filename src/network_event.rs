@@ -21,15 +21,6 @@ use routing_table::Prefix;
 pub type Age = u8;
 pub type Version = u64;
 pub type NMessage = u64;
-/// This is the events on the network,
-/// After alpha3 this may include daa related events
-#[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
-pub enum NetworkEvent {
-    Chain(Chain),
-    ValidPeers(ValidPeers),
-    Data(Data),
-    Message(NMessage),
-}
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub enum Chain {
@@ -59,25 +50,6 @@ pub enum ValidPeers {
 
 /// Trea this just like ValidPeers - i..e Eveny new Elder must give us its `Vote` for all of theese to be accepted.
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
-pub enum Data {
+pub enum DataIdentifier {
     Temp,
 }
-
-// pub enum NetworkEvent {
-//     InfantNew(PeerId), // GROUP_SIZE = 8 : Only ccept if there are no Infants right now
-//     PeerRelocate(PeerId, Prefix), // GROUP_SIZE = 8  :
-//     ElderRelocate(PeerId, Prefix), // GROUP_SIZE = 8 : Followed by PeerPromote or Merge
-//     PeerAccept(PeerId), // GROUP_SIZE = 8
-//     ElderAccept(PeerId), // GROUP_SIZE = 8 (this peer will be an Elder but not until consensus) : Followed by ElderDemote
-//     AdultPromote(PeerId), // GROUP_SIZE-- (7 or less)  (we must be missing at least 1 Elder)
-//     ElderDemote(PeerId), // GROUP_SIZE = 8 (Another Elder is accepted) so at least 1 members changed
-//     PeerRejoin(PeerId), //GROUP_SIZE = 8 (This has no effect on members no vote, cannot be Elder, immediate relocate)
-//     ElderLost(PeerId), // GROUP_SIZE-- (7 or less) an Elder will not vote for its own loss
-//     PeerLost(PeerId), // GROUP_SIZE = 8
-//     ElderKill(PeerId), // GROUP_SIZE-- (7 or less) we may kill more than one Elder at once ???
-//     PeerKill(PeerId), // GROUP_SIZE = 8
-//     Merge(Prefix), // GROUP_SIZE = 8 or less
-//     MergePeer(PeerId, Prefix), // GROUP_SIZE = 8 or less
-//     Split(Prefix, Prefix), // GROUP_SIZE = 8
-//     SplitPeer(PeerId, Prefix),// GROUP_SIZE = 8
-// }
