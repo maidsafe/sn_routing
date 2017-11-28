@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use super::Base;
-use ack_manager::{ACK_TIMEOUT_SECS, Ack, AckManager, UnacknowledgedMessage};
+use ack_manager::{Ack, AckManager, UnacknowledgedMessage, ACK_TIMEOUT_SECS};
 use error::RoutingError;
 #[cfg(feature = "use-mock-crust")]
 use fake_clock::FakeClock as Instant;
@@ -104,11 +104,8 @@ pub trait Bootstrapped: Base {
         pub_id: &PublicId,
         route: u8,
     ) -> bool {
-        if self.routing_msg_filter().filter_outgoing(
-            msg,
-            pub_id,
-            route,
-        )
+        if self.routing_msg_filter()
+            .filter_outgoing(msg, pub_id, route)
         {
             return true;
         }
@@ -130,8 +127,7 @@ pub trait Bootstrapped: Base {
                 unacked_msg.routing_msg,
                 unacked_msg.route,
                 unacked_msg.expires_at,
-            )
-            {
+            ) {
                 debug!("{:?} Failed to send message: {:?}", self, error);
             }
         }

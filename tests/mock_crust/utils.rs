@@ -454,10 +454,10 @@ pub fn create_connected_nodes_with_cache(
         while let Ok(event) = node.try_next_ev() {
             match event {
                 Event::NodeAdded(..) => node_added_count += 1,
-                Event::NodeLost(..) |
-                Event::SectionSplit(..) |
-                Event::RestartRequired |
-                Event::Tick => (),
+                Event::NodeLost(..)
+                | Event::SectionSplit(..)
+                | Event::RestartRequired
+                | Event::Tick => (),
                 event => panic!("Got unexpected event: {:?}", event),
             }
         }
@@ -599,10 +599,10 @@ pub fn add_connected_nodes_until_split(
     for node in nodes.iter_mut() {
         while let Ok(event) = node.try_next_ev() {
             match event {
-                Event::NodeAdded(..) |
-                Event::NodeLost(..) |
-                Event::Tick |
-                Event::SectionSplit(..) => (),
+                Event::NodeAdded(..)
+                | Event::NodeLost(..)
+                | Event::Tick
+                | Event::SectionSplit(..) => (),
                 event => panic!("Got unexpected event: {:?}", event),
             }
         }
@@ -644,7 +644,9 @@ pub fn create_connected_clients(
 /// events have been processed before sorting.
 pub fn sort_nodes_by_distance_to(nodes: &mut [TestNode], name: &XorName) {
     let _ = poll_all(nodes, &mut []); // Poll
-    nodes.sort_by(|node0, node1| name.cmp_distance(&node0.name(), &node1.name()));
+    nodes.sort_by(|node0, node1| {
+        name.cmp_distance(&node0.name(), &node1.name())
+    });
 }
 
 pub fn verify_invariant_for_all_nodes(nodes: &mut [TestNode]) {

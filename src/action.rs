@@ -45,7 +45,9 @@ pub enum Action {
         priority: u8,
         result_tx: Sender<Result<(), InterfaceError>>,
     },
-    Id { result_tx: Sender<PublicId> },
+    Id {
+        result_tx: Sender<PublicId>,
+    },
     Timeout(u64),
     ResourceProofResult(PublicId, Vec<DirectMessage>),
     Terminate,
@@ -54,25 +56,21 @@ pub enum Action {
 impl Debug for Action {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            Action::NodeSendMessage { ref content, .. } => {
-                write!(
-                    formatter,
-                    "Action::NodeSendMessage {{ {:?}, result_tx }}",
-                    content
-                )
-            }
+            Action::NodeSendMessage { ref content, .. } => write!(
+                formatter,
+                "Action::NodeSendMessage {{ {:?}, result_tx }}",
+                content
+            ),
             Action::ClientSendRequest {
                 ref content,
                 ref dst,
                 ..
-            } => {
-                write!(
-                    formatter,
-                    "Action::ClientSendRequest {{ {:?}, dst: {:?}, result_tx }}",
-                    content,
-                    dst
-                )
-            }
+            } => write!(
+                formatter,
+                "Action::ClientSendRequest {{ {:?}, dst: {:?}, result_tx }}",
+                content,
+                dst
+            ),
             Action::Id { .. } => write!(formatter, "Action::Id"),
             Action::Timeout(token) => write!(formatter, "Action::Timeout({})", token),
             Action::ResourceProofResult(pub_id, _) => {

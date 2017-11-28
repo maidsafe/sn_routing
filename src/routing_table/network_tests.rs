@@ -61,10 +61,8 @@ impl Network {
         let name = self.rng.gen(); // The new node's name.
         if self.nodes.is_empty() {
             // If this is the first node, just add it and return.
-            let result = self.nodes.insert(
-                name,
-                RoutingTable::new(name, self.min_section_size),
-            );
+            let result = self.nodes
+                .insert(name, RoutingTable::new(name, self.min_section_size));
             assert!(result.is_none());
             return;
         }
@@ -413,9 +411,7 @@ fn merging_sections() {
         verify_invariant(&network);
     }
     assert!(network.nodes.iter().all(
-        |(_, table)| if table.num_of_sections() <
-            2
-        {
+        |(_, table)| if table.num_of_sections() < 2 {
             trace!("{:?}", table);
             false
         } else {
@@ -427,9 +423,7 @@ fn merging_sections() {
         verify_invariant(&network);
     }
     assert!(network.nodes.iter().all(
-        |(_, table)| if table.num_of_sections() >
-            0
-        {
+        |(_, table)| if table.num_of_sections() > 0 {
             trace!("{:?}", table);
             false
         } else {

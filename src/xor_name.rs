@@ -54,8 +54,8 @@ impl XorName {
     pub fn common_prefix(&self, other: &Self) -> usize {
         for byte_index in 0..XOR_NAME_LEN {
             if self[byte_index] != other[byte_index] {
-                return (byte_index * 8) +
-                    (self[byte_index] ^ other[byte_index]).leading_zeros() as usize;
+                return (byte_index * 8)
+                    + (self[byte_index] ^ other[byte_index]).leading_zeros() as usize;
             }
         }
         XOR_NAME_BITS
@@ -162,9 +162,10 @@ impl XorName {
 
     /// Returns the number of bits in which `self` differs from `other`.
     pub fn count_differing_bits(&self, other: &Self) -> u32 {
-        self.0.iter().zip(other.0.iter()).fold(0, |acc, (a, b)| {
-            acc + (a ^ b).count_ones()
-        })
+        self.0
+            .iter()
+            .zip(other.0.iter())
+            .fold(0, |acc, (a, b)| acc + (a ^ b).count_ones())
     }
 
     // /// Hex-decode a `XorName` from a `&str`.
@@ -312,9 +313,7 @@ impl ops::Sub for XorName {
 impl<'a> ops::Sub for &'a XorName {
     type Output = XorName;
     fn sub(self, rhs: &XorName) -> Self::Output {
-        XorName::from_big_uint(
-            BigUint::from_bytes_be(&self.0) - BigUint::from_bytes_be(&rhs.0),
-        )
+        XorName::from_big_uint(BigUint::from_bytes_be(&self.0) - BigUint::from_bytes_be(&rhs.0))
     }
 }
 

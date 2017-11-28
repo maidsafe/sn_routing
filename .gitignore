@@ -7,10 +7,11 @@ tags*
 *bootstrap.cache
 build/
 build-tests/
-target/
+/target/
 /.idea
 /.project
 /bin
+/kcov-34
 *.sublime-*
 .cargo/
 .DS_Store

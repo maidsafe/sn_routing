@@ -29,7 +29,7 @@ use event_stream::{EventStepper, EventStream};
 use id::{FullId, PublicId};
 #[cfg(not(feature = "use-mock-crust"))]
 use maidsafe_utilities::thread::{self, Joiner};
-use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, Request};
+use messages::{Request, CLIENT_GET_PRIORITY, DEFAULT_PRIORITY};
 use outbox::{EventBox, EventBuf};
 use routing_table::Authority;
 #[cfg(not(feature = "use-mock-crust"))]
@@ -38,7 +38,7 @@ use rust_sodium::crypto::sign;
 use state_machine::{State, StateMachine};
 use states::{Bootstrapping, BootstrappingTargetState};
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::mpsc::{channel, Receiver, Sender};
 #[cfg(feature = "use-mock-crust")]
 use std::sync::mpsc::{RecvError, TryRecvError};
 use std::time::Duration;
@@ -54,15 +54,11 @@ pub struct Client {
     interface_result_tx: Sender<Result<(), InterfaceError>>,
     interface_result_rx: Receiver<Result<(), InterfaceError>>,
 
-    #[cfg(not(feature = "use-mock-crust"))]
-    action_sender: RoutingActionSender,
-    #[cfg(not(feature = "use-mock-crust"))]
-    _joiner: Joiner,
+    #[cfg(not(feature = "use-mock-crust"))] action_sender: RoutingActionSender,
+    #[cfg(not(feature = "use-mock-crust"))] _joiner: Joiner,
 
-    #[cfg(feature = "use-mock-crust")]
-    machine: StateMachine,
-    #[cfg(feature = "use-mock-crust")]
-    event_buffer: EventBuf,
+    #[cfg(feature = "use-mock-crust")] machine: StateMachine,
+    #[cfg(feature = "use-mock-crust")] event_buffer: EventBuf,
 }
 
 impl Client {
@@ -504,9 +500,9 @@ impl Client {
             // When there are no more events to process, terminate this thread.
         });
 
-        let action_sender = get_action_sender_rx.recv().map_err(
-            |_| RoutingError::NotBootstrapped,
-        )?;
+        let action_sender = get_action_sender_rx
+            .recv()
+            .map_err(|_| RoutingError::NotBootstrapped)?;
 
         Ok(Client {
             interface_result_tx: tx,
@@ -519,7 +515,9 @@ impl Client {
     /// Returns the `PublicId` of this client.
     pub fn id(&self) -> Result<PublicId, InterfaceError> {
         let (result_tx, result_rx) = channel();
-        self.action_sender.send(Action::Id { result_tx: result_tx })?;
+        self.action_sender.send(Action::Id {
+            result_tx: result_tx,
+        })?;
         Ok(result_rx.recv()?)
     }
 
@@ -596,14 +594,11 @@ impl Client {
             result_tx: self.interface_result_tx.clone(),
         };
 
-        let transition = self.machine.current_mut().handle_action(
-            action,
-            &mut self.event_buffer,
-        );
-        self.machine.apply_transition(
-            transition,
-            &mut self.event_buffer,
-        );
+        let transition = self.machine
+            .current_mut()
+            .handle_action(action, &mut self.event_buffer);
+        self.machine
+            .apply_transition(transition, &mut self.event_buffer);
         self.interface_result_rx.recv()?
     }
 
@@ -643,10 +638,9 @@ impl Drop for Client {
 impl Drop for Client {
     fn drop(&mut self) {
         let _fixme = self.poll();
-        let _ = self.machine.current_mut().handle_action(
-            Action::Terminate,
-            &mut self.event_buffer,
-        );
+        let _ = self.machine
+            .current_mut()
+            .handle_action(Action::Terminate, &mut self.event_buffer);
         let _ = self.event_buffer.take_all();
     }
 }

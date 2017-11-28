@@ -58,13 +58,12 @@ impl Authority {
     /// Returns `true` if the authority consists of multiple nodes, otherwise `false`.
     pub fn is_multiple(&self) -> bool {
         match *self {
-            Authority::Section(_) |
-            Authority::PrefixSection(_) |
-            Authority::ClientManager(_) |
-            Authority::NaeManager(_) |
-            Authority::NodeManager(_) => true,
-            Authority::ManagedNode(_) |
-            Authority::Client { .. } => false,
+            Authority::Section(_)
+            | Authority::PrefixSection(_)
+            | Authority::ClientManager(_)
+            | Authority::NaeManager(_)
+            | Authority::NodeManager(_) => true,
+            Authority::ManagedNode(_) | Authority::Client { .. } => false,
         }
     }
 
@@ -80,13 +79,16 @@ impl Authority {
     /// Returns the name of authority.
     pub fn name(&self) -> XorName {
         match *self {
-            Authority::ClientManager(ref name) |
-            Authority::NaeManager(ref name) |
-            Authority::NodeManager(ref name) |
-            Authority::Section(ref name) |
-            Authority::ManagedNode(ref name) => *name,
+            Authority::ClientManager(ref name)
+            | Authority::NaeManager(ref name)
+            | Authority::NodeManager(ref name)
+            | Authority::Section(ref name)
+            | Authority::ManagedNode(ref name) => *name,
             Authority::PrefixSection(ref prefix) => prefix.lower_bound(),
-            Authority::Client { ref proxy_node_name, .. } => *proxy_node_name,
+            Authority::Client {
+                ref proxy_node_name,
+                ..
+            } => *proxy_node_name,
         }
     }
 }
@@ -107,14 +109,12 @@ impl Debug for Authority {
             Authority::Client {
                 ref proxy_node_name,
                 ref client_id,
-            } => {
-                write!(
-                    formatter,
-                    "Client {{ client_name: {}, proxy_node_name: {} }}",
-                    client_id.name(),
-                    proxy_node_name
-                )
-            }
+            } => write!(
+                formatter,
+                "Client {{ client_name: {}, proxy_node_name: {} }}",
+                client_id.name(),
+                proxy_node_name
+            ),
         }
     }
 }

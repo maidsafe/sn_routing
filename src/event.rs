@@ -77,35 +77,29 @@ impl Debug for Event {
                 ref request,
                 ref src,
                 ref dst,
-            } => {
-                write!(
-                    formatter,
-                    "Event::Request {{ request: {:?}, src: {:?}, dst: {:?} }}",
-                    request,
-                    src,
-                    dst
-                )
-            }
+            } => write!(
+                formatter,
+                "Event::Request {{ request: {:?}, src: {:?}, dst: {:?} }}",
+                request,
+                src,
+                dst
+            ),
             Event::Response {
                 ref response,
                 ref src,
                 ref dst,
-            } => {
-                write!(
-                    formatter,
-                    "Event::Response {{ response: {:?}, src: {:?}, dst: {:?} }}",
-                    response,
-                    src,
-                    dst
-                )
-            }
-            Event::NodeAdded(ref node_name, _) => {
-                write!(
-                    formatter,
-                    "Event::NodeAdded({:?}, routing_table)",
-                    node_name
-                )
-            }
+            } => write!(
+                formatter,
+                "Event::Response {{ response: {:?}, src: {:?}, dst: {:?} }}",
+                response,
+                src,
+                dst
+            ),
+            Event::NodeAdded(ref node_name, _) => write!(
+                formatter,
+                "Event::NodeAdded({:?}, routing_table)",
+                node_name
+            ),
             Event::NodeLost(ref node_name, _) => {
                 write!(formatter, "Event::NodeLost({:?}, routing_table)", node_name)
             }

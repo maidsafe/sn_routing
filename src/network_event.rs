@@ -19,33 +19,30 @@ use peer_id::PeerId;
 use routing_table::Prefix;
 
 pub type Age = u8;
-pub type Version = u64;
-pub type NMessage = u64;
 
+
+/// Will create `Block`s we keep in a chain, transitions happens in pairs (i.e. Lost -> Live) (Live -> gone) (Live -> kill) etc.
+/// merge and split (prefix change) sparks pairs of (Live Gone) pairs (possibly none, but inlikely). Lost is out of the blue but
+/// pairs with Live or possibly Prefixchange as can Live create PrefixChange and then more pairs.
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub enum Elders {
-    // All INTERAL group votes
-    ElderRelocate(PeerId, Prefix), // GROUP_SIZE = 8 : Followed by PeerPromote
-    // Do not relocate if it makes group < 8, elder self votes
-    ElderAccept(PeerId), // GROUP_SIZE = 8 (this peer will be an Elder but not until consensus) :
-    //may be followed by ElderDemote new peer votes here so group is still oldest 8 members
-    AdultPromote(PeerId), // Take an Adult ofmr ValidPeers and use it here if we lose an Elder
-    ElderDemote(PeerId), // GROUP_SIZE = 8 or less if group not complete
-    ElderLost(PeerId), // GROUP_SIZE-- (7 or less) an Elder will not vote for its own loss
-    ElderKill(PeerId), // GROUP_SIZE-- (7 or less) we may kill more than one Elder at once ???
-    Merge(Prefix), // GROUP_SIZE = 8 or less
-    Split(Prefix, Prefix), // GROUP_SIZE = 8
+    Live(PeerId),         // accepted but not yet lost, may have come back from a merge
+    Killed(PeerId),       // Cannot ever become live again.
+    Lost(PeerId), // Lost and can restart (to us) to be relocated ONLY UNFORSEABLE STATE, can happen out of order, but forces next state
+    Gone(PeerId), // Gone to another section or become an Adult (Demoted), can again become `Live`
+    Relocated(PeerId), // Similar to killed as this cannot become Live ever again
+    PrefixChange(Prefix), // We merged or split here, can possibly be used as checkpoints later in network.
 }
 
 // TODO - could be a simple state machine !!
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub enum AdultsAndInfants {
     // All INTERNAL group votes
-    PeerAccept(PeerId), // this one is live
+    PeerAccept(PeerId),           // this one is live
     PeerRelocate(PeerId, Prefix), // then remove
-    PeerRejoin(PeerId), // then relocate
-    PeerLost(PeerId), // on reconnect remove this
-    PeerKill(PeerId), // just remove
+    PeerRejoin(PeerId),           // then relocate
+    PeerLost(PeerId),             // on reconnect remove this
+    PeerKill(PeerId),             // just remove
 }
 
 /// Trea this just like ValidPeers - i..e Eveny new Elder must give us its `Vote` for all of theese to be accepted.

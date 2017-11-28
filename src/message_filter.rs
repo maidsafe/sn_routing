@@ -99,10 +99,9 @@ impl<Message: Hash> MessageFilter<Message> {
 
     fn remove_expired(&mut self) {
         let now = Instant::now();
-        while self.timeout_queue.front().map_or(
-            false,
-            |&(_, ref t)| *t <= now,
-        )
+        while self.timeout_queue
+            .front()
+            .map_or(false, |&(_, ref t)| *t <= now)
         {
             let (hash_code, _) = unwrap!(self.timeout_queue.pop_front());
             if let Entry::Occupied(entry) = self.count.entry(hash_code) {
@@ -173,7 +172,9 @@ mod tests {
         impl Default for Temp {
             fn default() -> Temp {
                 let mut rng = rand::thread_rng();
-                Temp { id: rand::sample(&mut rng, 0u8..255, 64) }
+                Temp {
+                    id: rand::sample(&mut rng, 0u8..255, 64),
+                }
             }
         }
 
