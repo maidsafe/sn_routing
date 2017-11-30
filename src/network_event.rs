@@ -25,7 +25,7 @@ pub type Age = u8;
 /// merge and split (prefix change) sparks pairs of (Live Gone) pairs (possibly none, but inlikely). Lost is out of the blue but
 /// pairs with Live or possibly Prefixchange as can Live create PrefixChange and then more pairs.
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
-pub enum Elders {
+pub enum SectionState {
     Live(PeerId),         // accepted but not yet lost, may have come back from a merge
     Killed(PeerId),       // Cannot ever become live again.
     Lost(PeerId), // Lost and can restart (to us) to be relocated ONLY UNFORSEABLE STATE, can happen out of order, but forces next state
@@ -34,16 +34,6 @@ pub enum Elders {
     PrefixChange(Prefix), // We merged or split here, can possibly be used as checkpoints later in network.
 }
 
-// TODO - could be a simple state machine !!
-#[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
-pub enum AdultsAndInfants {
-    // All INTERNAL group votes
-    PeerAccept(PeerId),           // this one is live
-    PeerRelocate(PeerId, Prefix), // then remove
-    PeerRejoin(PeerId),           // then relocate
-    PeerLost(PeerId),             // on reconnect remove this
-    PeerKill(PeerId),             // just remove
-}
 
 /// Trea this just like ValidPeers - i..e Eveny new Elder must give us its `Vote` for all of theese to be accepted.
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
