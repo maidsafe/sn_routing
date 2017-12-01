@@ -19,7 +19,7 @@ use block::{Block, PeersAndAge};
 use error::RoutingError;
 use fs2::FileExt;
 use maidsafe_utilities::serialisation;
-use network_event::{AdultsAndInfants, DataIdentifier, Elders};
+use network_event::{SectionState, DataIdentifier};
 use peer_id::PeerId;
 use std::fs;
 use std::io::{self, Read, Write};
@@ -31,10 +31,10 @@ use vote::Vote;
 #[allow(unused)]
 #[derive(Default, Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord)]
 pub struct DataChain {
-    blocks: Vec<Block<Elders>>,
+    blocks: Vec<Block<SectionState>>,
     group_size: usize,
     path: Option<PathBuf>,
-    valid_peers: Vec<Block<AdultsAndInfants>>, // save to aid network catastrophic failure and restart.
+    valid_peers: Vec<Block<SectionState>>, // save to aid network catastrophic failure and restart.
     data: Vec<Block<DataIdentifier>>,
 }
 
@@ -51,10 +51,10 @@ impl DataChain {
         // hold a lock on the file for the whole session
         file.lock_exclusive()?;
         Ok(DataChain {
-            blocks: Vec::<Block<Elders>>::default(),
+            blocks: Vec::<Block<SectionState>>::default(),
             group_size: group_size,
             path: Some(path),
-            valid_peers: Vec::<Block<AdultsAndInfants>>::default(),
+            valid_peers: Vec::<Block<SectionState>>::default(),
             data: Vec::<Block<DataIdentifier>>::default(),
         })
     }
@@ -75,12 +75,12 @@ impl DataChain {
     }
 
     /// Create chain in memory from some blocks
-    pub fn from_blocks(blocks: Vec<Block<Elders>>, group_size: usize) -> DataChain {
+    pub fn from_blocks(blocks: Vec<Block<SectionState>>, group_size: usize) -> DataChain {
         DataChain {
             blocks: blocks,
             group_size: group_size,
             path: None,
-            valid_peers: Vec::<Block<AdultsAndInfants>>::default(),
+            valid_peers: Vec::<Block<SectionState>>::default(),
             data: Vec::<Block<DataIdentifier>>::default(),
         }
     }
@@ -120,7 +120,7 @@ impl DataChain {
     }
 
 
-    fn add_vote(&mut self, vote: Vote<Elders>, peer_id: &PeerId) -> Option<(Elders, PeersAndAge)> {
+    fn add_vote(&mut self, vote: Vote<SectionState>, peer_id: &PeerId) -> Option<(SectionState, PeersAndAge)> {
         if !vote.validate_signature(peer_id.pub_key()) {
             return None;
         }
@@ -165,7 +165,7 @@ impl DataChain {
                     return false;
                 } else {
                     prev = blk; // TODO check `NetworkEvent` as we may need to add to prev or remove a possible voter
-                                // we can probably use a CurrentPeers / Elders list here to be more specific.
+                                // we can probably use a CurrentPeers / SectionState list here to be more specific.
                                 // Also which `NetworkEvent`s can follow a sequence, i.e. a lost must be followed
                                 // with a promote if its an elder or a merge if peers drops to group size.
                                 // Most events will follow a sequence that is allowed. if blocks are out of sequence when
