@@ -79,6 +79,8 @@ mod tests {
     use super::*;
     use maidsafe_utilities::SeededRng;
     use rust_sodium;
+    use network_event::SectionState;
+    use rand::random;
 
     #[test]
     fn wrong_key() {
@@ -86,7 +88,7 @@ mod tests {
         unwrap!(rust_sodium::init_with_rng(&mut rng));
         let keys = sign::gen_keypair();
         let bad_keys = sign::gen_keypair();
-        let payload = NetworkEvent::PeerNew(keys.0);
+        let payload = SectionState::Live(PeerId::new(random::<u8>(), keys.0));
         let vote = Vote::new(&keys.1, payload).unwrap();
         assert!(vote.validate_signature(&keys.0)); // right key
         assert!(!vote.validate_signature(&bad_keys.0)); // wrong key

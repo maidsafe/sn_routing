@@ -29,17 +29,6 @@ pub struct Proof {
 }
 
 impl Proof {
-    /// Create `Proof` from `Vote` and `PubKey`.
-    // #[allow(unused)]
-    // pub fn new(peer_id: &PeerId, vote: &Vote) -> Result<Proof, RoutingError> {
-    //     if !vote.validate_signature(peer_id.pub_key()) {
-    //         return Err(RoutingError::FailedSignature);
-    //     }
-    //     Ok(Proof {
-    //         peer_id: peer_id.clone(),
-    //         sig: *vote.signature(),
-    //     })
-    // }
     /// getter
     #[allow(unused)]
     pub fn peer_id(&self) -> &PeerId {
@@ -69,16 +58,17 @@ mod tests {
     use rand::random;
     use rust_sodium;
     use vote::Vote;
+    use network_event::SectionState;
 
     #[test]
     fn confirm_proof_for_vote() {
         let mut rng = SeededRng::thread_rng();
         unwrap!(rust_sodium::init_with_rng(&mut rng));
         let keys = sign::gen_keypair();
-        let payload = NetworkEvent::PeerLost(keys.0);
+        let payload = SectionState::Live(PeerId::new(random::<u8>(), keys.0));
         let vote = Vote::new(&keys.1, payload.clone()).unwrap();
         assert!(vote.validate_signature(&keys.0));
-        let proof = Proof::new(&keys.0, random::<u8>(), &vote).unwrap();
+        let proof = vote.proof(&PeerId::new(random::<u8>(), keys.0)).unwrap();
         assert!(proof.validate_signature(&payload));
     }
 
@@ -88,12 +78,12 @@ mod tests {
         unwrap!(rust_sodium::init_with_rng(&mut rng));
         let keys = sign::gen_keypair();
         let other_keys = sign::gen_keypair();
-        let payload = NetworkEvent::PeerLost(keys.0);
+        let payload = SectionState::Live(PeerId::new(random::<u8>(), keys.0));
         let vote = Vote::new(&keys.1, payload.clone()).unwrap();
         assert!(vote.validate_signature(&keys.0));
-        let proof = Proof::new(&keys.0, random::<u8>(), &vote).unwrap();
-        assert!(Proof::new(&keys.0, random::<u8>(), &vote).is_ok());
-        assert!(Proof::new(&other_keys.0, random::<u8>(), &vote).is_err());
+        let proof = vote.proof(&PeerId::new(random::<u8>(), keys.0)).unwrap();
+        assert!(vote.proof(&PeerId::new(random::<u8>(), keys.0)).is_some());
+        assert!(vote.proof(&PeerId::new(random::<u8>(), other_keys.0)).is_none());
         assert!(proof.validate_signature(&payload));
     }
 }
