@@ -18,22 +18,34 @@
 use peer_id::PeerId;
 use routing_table::Prefix;
 
-
-/// Will create `Block`s we keep in a chain, transitions happens in pairs (i.e. Lost -> Live) (Live -> gone) (Live -> kill) etc.
-/// merge and split (prefix change) sparks pairs of (Live Gone) pairs (possibly none, but inlikely). Lost is out of the blue but
-/// pairs with Live or possibly Prefixchange as can Live create PrefixChange and then more pairs.
+/// Will create `Block`s we keep in a chain, transitions happens in pairs e.g. (`Lost` -> `Live`),
+/// (`Gone` -> `Live`), (`Killed` -> `Live`), etc.  Merge and split (`PrefixChange`) sparks pairs of
+/// (`Gone` -> `Live`) pairs (possibly none, but unlikely).  `Lost` is out of the blue but pairs
+/// with `Live` or possibly `PrefixChange` as can `Live` create `PrefixChange` and then more pairs.
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub enum SectionState {
-    Live(PeerId),         // accepted but not yet lost, may have come back from a merge
-    Killed(PeerId),       // Cannot ever become live again.
-    Lost(PeerId), // Lost and can restart (to us) to be relocated ONLY UNFORSEABLE STATE, can happen out of order, but forces next state
-    Gone(PeerId), // Gone to another section or become an Adult (Demoted), can again become `Live`
-    Relocated(PeerId), // Similar to killed as this cannot become Live ever again
-    PrefixChange(Prefix), // We merged or split here, can possibly be used as checkpoints later in network.
+    /// Accepted but not yet lost.  May have joined or been relocated here, or may have come back
+    /// via a merge or restart.
+    Live(PeerId),
+    /// Cannot ever become live again.
+    Killed(PeerId),
+    /// Lost (disconnected) and can become live here (restart) to be relocated (ONLY UNFORSEEABLE
+    /// STATE).  Can happen out of order, but forces next state.
+    Lost(PeerId),
+    /// Gone to another section via "split" or become an Adult (Demoted).  Can again become live
+    /// here.
+    Gone(PeerId),
+    /// Cannot ever become live here again.  Could be relocated to the same section it's leaving
+    /// during network start up or for balancing the network.
+    Relocated(PeerId),
+    /// Our section split or merged.  Prefix is "to" for split and "from" for merge to ensure
+    /// block's uniqueness.
+    PrefixChange(Prefix),
 }
 
 
-/// Trea this just like ValidPeers - i..e Eveny new Elder must give us its `Vote` for all of theese to be accepted.
+/// Treat this just like ValidPeers - i.e. every new Elder must give us its `Vote` for all of these
+/// to be accepted.
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub enum DataIdentifier {
     Temp,
