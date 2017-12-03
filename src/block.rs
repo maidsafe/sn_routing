@@ -95,17 +95,6 @@ impl<T: Serialize + Clone> Block<T> {
         Err(RoutingError::FailedSignature)
     }
 
-    // /// We may wish to remove a nodes `Proof` in cases where a `Peer` cannot be considered valid.
-    #[allow(unused)]
-    pub fn remove_proof(&self, peer_id: &PeerId) {
-        // let proofs : BTreeSet<Proof> =  self.proofs.into_iter().filter(|x| x.peer_id() == peer_id).collect();
-    }
-    // // /// Ensure only the following `Peer`s are considered in the `Block`. Prune any that are not in
-    // // /// this set.
-    // #[allow(unused)]
-    // pub fn prune_proofs_except(&mut self, mut ids: &BTreeSet<&PeerId>) {
-    //     self.proofs = self.proofs.intersection(&ids);
-    // }
 
     pub fn get_peer_ids(&self) -> BTreeSet<PeerId> {
         let mut peers = BTreeSet::new();
@@ -151,7 +140,7 @@ mod tests {
     use network_event::SectionState;
 
     #[test]
-    fn create_then_remove_add_proofs() {
+    fn create_then_add_proofs() {
         let mut rng = SeededRng::thread_rng();
         unwrap!(rust_sodium::init_with_rng(&mut rng));
 
@@ -162,22 +151,17 @@ mod tests {
         assert!(vote0.validate_signature(&keys0.0));
         let vote1 = Vote::new(&keys1.1, payload.clone()).unwrap();
         assert!(vote1.validate_signature(&keys1.0));
-        let proof0 = vote0.proof(&PeerId::new(random::<u8>(), keys0.0)).unwrap();
+        let proof0 = vote0.proof(&PeerId::new(1u8, keys0.0)).unwrap();
         assert!(proof0.validate_signature(&payload));
         let proof1 = vote1.proof(&PeerId::new(random::<u8>(), keys1.0)).unwrap();
         assert!(proof1.validate_signature(&payload));
-        let mut b0 = Block::new(&vote0, &PeerId::new(random::<u8>(), keys0.0)).unwrap();
+        let mut b0 = Block::new(&vote0, &PeerId::new(1u8, keys0.0)).unwrap();
         assert!(proof0.validate_signature(&b0.payload));
         assert!(proof1.validate_signature(&b0.payload));
-        assert_eq!(b0.num_proofs(), 1);
-        b0.remove_proof(&PeerId::new(random::<u8>(), keys0.0));
-        assert_eq!(b0.num_proofs(), 0);
-        assert!(b0.add_proof(proof0).is_ok());
+        assert!(b0.add_proof(proof0).is_err());
         assert_eq!(b0.num_proofs(), 1);
         assert!(b0.add_proof(proof1).is_ok());
         assert_eq!(b0.num_proofs(), 2);
-        b0.remove_proof(&PeerId::new(random::<u8>(), keys1.0));
-        assert_eq!(b0.num_proofs(), 1);
     }
 
     #[test]
@@ -192,7 +176,6 @@ mod tests {
         let vote0 = Vote::new(&keys0.1, payload.clone()).unwrap();
         let vote1 = Vote::new(&keys1.1, payload.clone()).unwrap();
         let vote2 = Vote::new(&keys2.1, payload.clone()).unwrap();
-        let proof0 = vote0.proof(&PeerId::new(random::<u8>(), keys0.0)).unwrap();
         let proof1 = vote1.proof(&PeerId::new(random::<u8>(), keys1.0)).unwrap();
         let proof2 = vote2.proof(&PeerId::new(random::<u8>(), keys2.0)).unwrap();
         // So 3 votes all valid will be added to block
@@ -200,12 +183,5 @@ mod tests {
         assert!(b0.add_proof(proof1).is_ok());
         assert!(b0.add_proof(proof2).is_ok());
         assert_eq!(b0.num_proofs(), 3);
-        // TODO Test if this is a required method
-        // All added validly, so now only use 2 of these
-        // let mut my_known_nodes = HashSet::<&Proof>::new();
-        // assert!(my_known_nodes.insert(&PeerId::new(random::<u8>(),keys0.0)));
-        // assert!(my_known_nodes.insert(&PeerId::new(random::<u8>(),keys1.0)));
-        // b0.prune_proofs_except(&my_known_nodes);
-        // assert_eq!(b0.num_proofs(), 2);
     }
 }
