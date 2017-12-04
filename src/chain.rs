@@ -21,6 +21,7 @@ use fs2::FileExt;
 use maidsafe_utilities::serialisation;
 use network_event::{DataIdentifier, SectionState};
 use peer_id::PeerId;
+use proof::Proof;
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
@@ -129,12 +130,10 @@ impl DataChain {
             return None;
         }
 
+        let pub_key_matches = |x: &Proof| x.peer_id().pub_key() == peer_id.pub_key();
         for blk in &mut self.blocks.iter_mut() {
             if blk.payload() == vote.payload() {
-                if blk.proofs().iter().any(|x| {
-                    x.peer_id().pub_key() == peer_id.pub_key()
-                })
-                {
+                if blk.proofs().iter().any(pub_key_matches) {
                     info!("duplicate proof");
                     return None;
                 }
@@ -145,7 +144,7 @@ impl DataChain {
                 return Some((blk.payload().clone(), p_age));
             }
         }
-        if let Ok(ref mut blk) = Block::new(&vote, &peer_id) {
+        if let Ok(ref mut blk) = Block::new(&vote, peer_id) {
             self.blocks.push(blk.clone());
             return Some((
                 blk.payload().clone(),

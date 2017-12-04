@@ -48,7 +48,7 @@ impl PeersAndAge {
     }
 }
 
-/// Validity and "completeness" of a `Block`. Some `Block`s are complete with less than group_size
+/// Validity and "completeness" of a `Block`. Some `Block`s are complete with less than `group_size`
 /// `Proof`s.
 pub enum BlockState {
     NotYetValid,
@@ -98,7 +98,7 @@ impl<T: Serialize + Clone> Block<T> {
 
     pub fn get_peer_ids(&self) -> BTreeSet<PeerId> {
         let mut peers = BTreeSet::new();
-        for proof in self.proofs.iter() {
+        for proof in &self.proofs {
             let _ = peers.insert(proof.peer_id().clone());
         }
         peers

@@ -45,7 +45,7 @@ impl Proof {
     #[allow(unused)]
     pub fn validate_signature<T: Serialize>(&self, payload: &T) -> bool {
         match serialisation::serialise(&payload) {
-            Ok(data) => sign::verify_detached(&self.sig, &data[..], &self.peer_id.pub_key()),
+            Ok(data) => sign::verify_detached(&self.sig, &data[..], self.peer_id.pub_key()),
             _ => false,
         }
     }

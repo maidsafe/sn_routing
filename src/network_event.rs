@@ -44,7 +44,7 @@ pub enum SectionState {
 }
 
 
-/// Treat this just like ValidPeers - i.e. every new Elder must give us its `Vote` for all of these
+/// Treat this just like `ValidPeers`, i.e. every new Elder must give us its `Vote` for all of these
 /// to be accepted.
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub enum DataIdentifier {
