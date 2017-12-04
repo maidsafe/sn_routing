@@ -18,8 +18,6 @@
 use peer_id::PeerId;
 use routing_table::Prefix;
 
-pub type Age = u8;
-
 /// Will create `Block`s we keep in a chain, transitions happens in pairs e.g. (`Lost` -> `Live`),
 /// (`Gone` -> `Live`), (`Killed` -> `Live`), etc.  Merge and split (`PrefixChange`) sparks pairs of
 /// (`Gone` -> `Live`) pairs (possibly none, but unlikely).  `Lost` is out of the blue but pairs
