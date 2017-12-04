@@ -19,7 +19,7 @@ use error::RoutingError;
 use maidsafe_utilities::serialisation;
 use peer_id::PeerId;
 use proof::Proof;
-use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
+use rust_sodium::crypto::sign::{self, SecretKey, Signature};
 use serde::Serialize;
 
 /// A Vote is a peer's desire to initiate a network action or sub action. If there are quorum votes
@@ -75,7 +75,7 @@ mod tests {
     use super::*;
     use maidsafe_utilities::SeededRng;
     use network_event::SectionState;
-    use rand::random;
+    use rand::Rng;
     use rust_sodium;
 
     #[test]
@@ -84,11 +84,11 @@ mod tests {
         unwrap!(rust_sodium::init_with_rng(&mut rng));
         let keys = sign::gen_keypair();
         let bad_keys = sign::gen_keypair();
-        let peer_id = PeerId::new(random::<u8>(), keys.0);
+        let peer_id = PeerId::new(rng.gen_range(0, 255), keys.0);
         let payload = SectionState::Live(peer_id.clone());
         let vote = Vote::new(&keys.1, payload).unwrap();
         assert!(vote.validate_signature(&peer_id)); // right key
-        let bad_peer_id = PeerId::new(random::<u8>(), bad_keys.0);
+        let bad_peer_id = PeerId::new(rng.gen_range(0, 255), bad_keys.0);
         assert!(!vote.validate_signature(&bad_peer_id)); // wrong key
     }
 }

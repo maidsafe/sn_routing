@@ -127,7 +127,7 @@ impl Block {
 mod tests {
     use super::*;
     use maidsafe_utilities::SeededRng;
-    use rand::random;
+    use rand::Rng;
     use rust_sodium;
     use rust_sodium::crypto::sign;
     use tiny_keccak::sha3_256;
@@ -141,18 +141,18 @@ mod tests {
 
         let keys0 = sign::gen_keypair();
         let keys1 = sign::gen_keypair();
-        let peer_id0 = PeerId::new(random::<u8>(), keys0.0);
-        let peer_id1 = PeerId::new(random::<u8>(), keys1.0);
+        let peer_id0 = PeerId::new(rng.gen_range(0, 255), keys0.0);
+        let peer_id1 = PeerId::new(rng.gen_range(0, 255), keys1.0);
         let payload = sha3_256(b"1");
         let vote0 = Vote::new(&keys0.1, payload).unwrap();
         assert!(vote0.validate_signature(&peer_id0));
         let vote1 = Vote::new(&keys1.1, payload).unwrap();
         assert!(vote1.validate_signature(&peer_id1));
-        let proof0 = Proof::new(&keys0.0, random::<u8>(), &vote0).unwrap();
+        let proof0 = Proof::new(&keys0.0, rng.gen_range(0, 255), &vote0).unwrap();
         assert!(proof0.validate_signature(&payload));
-        let proof1 = Proof::new(&keys1.0, random::<u8>(), &vote1).unwrap();
+        let proof1 = Proof::new(&keys1.0, rng.gen_range(0, 255), &vote1).unwrap();
         assert!(proof1.validate_signature(&payload));
-        let mut b0 = Block::new(&vote0, &keys0.0, random::<u8>()).unwrap();
+        let mut b0 = Block::new(&vote0, &keys0.0, rng.gen_range(0, 255)).unwrap();
         assert!(proof0.validate_signature(&b0.payload));
         assert!(proof1.validate_signature(&b0.payload));
         assert!(b0.total_proofs() == 1);
@@ -178,10 +178,10 @@ mod tests {
         let vote0 = Vote::new(&keys0.1, payload).unwrap();
         let vote1 = Vote::new(&keys1.1, payload).unwrap();
         let vote2 = Vote::new(&keys2.1, payload).unwrap();
-        let proof1 = Proof::new(&keys1.0, random::<u8>(), &vote1).unwrap();
-        let proof2 = Proof::new(&keys2.0, random::<u8>(), &vote2).unwrap();
+        let proof1 = Proof::new(&keys1.0, rng.gen_range(0, 255), &vote1).unwrap();
+        let proof2 = Proof::new(&keys2.0, rng.gen_range(0, 255), &vote2).unwrap();
         // So 3 votes all valid will be added to block
-        let mut b0 = Block::new(&vote0, &keys0.0, random::<u8>()).unwrap();
+        let mut b0 = Block::new(&vote0, &keys0.0, rng.gen_range(0, 255)).unwrap();
         assert!(b0.add_proof(proof1).is_ok());
         assert!(b0.add_proof(proof2).is_ok());
         assert!(b0.total_proofs() == 3);
