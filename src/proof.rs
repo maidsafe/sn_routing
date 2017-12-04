@@ -66,9 +66,10 @@ mod tests {
         let mut rng = SeededRng::thread_rng();
         unwrap!(rust_sodium::init_with_rng(&mut rng));
         let keys = sign::gen_keypair();
+        let peer_id = PeerId::new(random::<u8>(), keys.0);
         let payload = SectionState::Live(PeerId::new(random::<u8>(), keys.0));
         let vote = Vote::new(&keys.1, payload.clone()).unwrap();
-        assert!(vote.validate_signature(&keys.0));
+        assert!(vote.validate_signature(&peer_id));
         let proof = vote.proof(&PeerId::new(random::<u8>(), keys.0)).unwrap();
         assert!(proof.validate_signature(&payload));
     }
@@ -78,10 +79,11 @@ mod tests {
         let mut rng = SeededRng::thread_rng();
         unwrap!(rust_sodium::init_with_rng(&mut rng));
         let keys = sign::gen_keypair();
+        let peer_id = PeerId::new(random::<u8>(), keys.0);
         let other_keys = sign::gen_keypair();
         let payload = SectionState::Live(PeerId::new(random::<u8>(), keys.0));
         let vote = Vote::new(&keys.1, payload.clone()).unwrap();
-        assert!(vote.validate_signature(&keys.0));
+        assert!(vote.validate_signature(&peer_id));
         let proof = vote.proof(&PeerId::new(random::<u8>(), keys.0)).unwrap();
         assert!(vote.proof(&PeerId::new(random::<u8>(), keys.0)).is_ok());
         if let Err(RoutingError::FailedSignature) =

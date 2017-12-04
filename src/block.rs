@@ -146,11 +146,13 @@ mod tests {
 
         let keys0 = sign::gen_keypair();
         let keys1 = sign::gen_keypair();
-        let payload = SectionState::Gone(PeerId::new(0, keys0.0));
+        let peer_id0 = PeerId::new(0, keys0.0);
+        let peer_id1 = PeerId::new(0, keys1.0);
+        let payload = SectionState::Gone(peer_id0.clone());
         let vote0 = Vote::new(&keys0.1, payload.clone()).unwrap();
-        assert!(vote0.validate_signature(&keys0.0));
+        assert!(vote0.validate_signature(&peer_id0));
         let vote1 = Vote::new(&keys1.1, payload.clone()).unwrap();
-        assert!(vote1.validate_signature(&keys1.0));
+        assert!(vote1.validate_signature(&peer_id1));
         let proof0 = vote0.proof(&PeerId::new(1u8, keys0.0)).unwrap();
         assert!(proof0.validate_signature(&payload));
         let proof1 = vote1.proof(&PeerId::new(random::<u8>(), keys1.0)).unwrap();

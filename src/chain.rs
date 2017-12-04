@@ -126,7 +126,7 @@ impl DataChain {
         vote: Vote<SectionState>,
         peer_id: &PeerId,
     ) -> Option<(SectionState, PeersAndAge)> {
-        if !vote.validate_signature(peer_id.pub_key()) {
+        if !vote.validate_signature(peer_id) {
             return None;
         }
 

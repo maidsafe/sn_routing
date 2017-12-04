@@ -33,7 +33,6 @@ pub struct Vote<T> {
 
 impl<T: Serialize + Clone> Vote<T> {
     /// Create a Vote.
-    #[allow(unused)]
     pub fn new(secret_key: &SecretKey, payload: T) -> Result<Vote<T>, RoutingError> {
         let signature = sign::sign_detached(&serialisation::serialise(&payload)?[..], secret_key);
         Ok(Vote {
@@ -43,7 +42,7 @@ impl<T: Serialize + Clone> Vote<T> {
     }
 
     pub fn proof(&self, peer_id: &PeerId) -> Result<Proof, RoutingError> {
-        if self.validate_signature(peer_id.pub_key()) {
+        if self.validate_signature(peer_id) {
             return Ok(Proof {
                 peer_id: peer_id.clone(),
                 sig: self.signature,
@@ -53,22 +52,19 @@ impl<T: Serialize + Clone> Vote<T> {
     }
 
     /// Getter
-    #[allow(unused)]
     pub fn payload(&self) -> &T {
         &self.payload
     }
 
     /// Getter
-    #[allow(unused)]
     pub fn signature(&self) -> &Signature {
         &self.signature
     }
 
     /// Validate signed correctly.
-    #[allow(unused)]
-    pub fn validate_signature(&self, public_key: &PublicKey) -> bool {
+    pub fn validate_signature(&self, peer_id: &PeerId) -> bool {
         match serialisation::serialise(&self.payload) {
-            Ok(data) => sign::verify_detached(&self.signature, &data[..], public_key),
+            Ok(data) => sign::verify_detached(&self.signature, &data[..], peer_id.pub_key()),
             Err(_) => false,
         }
     }
@@ -88,9 +84,11 @@ mod tests {
         unwrap!(rust_sodium::init_with_rng(&mut rng));
         let keys = sign::gen_keypair();
         let bad_keys = sign::gen_keypair();
-        let payload = SectionState::Live(PeerId::new(random::<u8>(), keys.0));
+        let peer_id = PeerId::new(random::<u8>(), keys.0);
+        let payload = SectionState::Live(peer_id.clone());
         let vote = Vote::new(&keys.1, payload).unwrap();
-        assert!(vote.validate_signature(&keys.0)); // right key
-        assert!(!vote.validate_signature(&bad_keys.0)); // wrong key
+        assert!(vote.validate_signature(&peer_id)); // right key
+        let bad_peer_id = PeerId::new(random::<u8>(), bad_keys.0);
+        assert!(!vote.validate_signature(&bad_peer_id)); // wrong key
     }
 }
