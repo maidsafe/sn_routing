@@ -72,17 +72,15 @@ impl<T: Serialize + Clone> Block<T> {
     /// this reason The `Vote` will require a Direct Message from a `Peer` to us.
     #[allow(unused)]
     pub fn new(vote: &Vote<T>, peer_id: &PeerId) -> Result<Block<T>, RoutingError> {
-        if let Some(proof) = vote.proof(peer_id) {
-            let mut proofset = BTreeSet::<Proof>::new();
-            if !proofset.insert(proof) {
-                return Err(RoutingError::FailedSignature);
-            }
-            return Ok(Block::<T> {
-                payload: vote.payload().clone(),
-                proofs: proofset,
-            });
+        let proof = vote.proof(peer_id)?;
+        let mut proofset = BTreeSet::<Proof>::new();
+        if !proofset.insert(proof) {
+            return Err(RoutingError::FailedSignature);
         }
-        Err(RoutingError::FailedSignature)
+        Ok(Block::<T> {
+            payload: vote.payload().clone(),
+            proofs: proofset,
+        })
     }
 
     /// Add a proof from a peer when we know we have an existing `Block`.

@@ -42,14 +42,14 @@ impl<T: Serialize + Clone> Vote<T> {
         })
     }
 
-    pub fn proof(&self, peer_id: &PeerId) -> Option<Proof> {
+    pub fn proof(&self, peer_id: &PeerId) -> Result<Proof, RoutingError> {
         if self.validate_signature(peer_id.pub_key()) {
-            return Some(Proof {
+            return Ok(Proof {
                 peer_id: peer_id.clone(),
                 sig: self.signature,
             });
         }
-        None
+        Err(RoutingError::FailedSignature)
     }
 
     /// Getter

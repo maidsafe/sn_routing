@@ -54,6 +54,7 @@ impl Proof {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use RoutingError;
     use maidsafe_utilities::SeededRng;
     use network_event::SectionState;
     use rand::random;
@@ -82,11 +83,13 @@ mod tests {
         let vote = Vote::new(&keys.1, payload.clone()).unwrap();
         assert!(vote.validate_signature(&keys.0));
         let proof = vote.proof(&PeerId::new(random::<u8>(), keys.0)).unwrap();
-        assert!(vote.proof(&PeerId::new(random::<u8>(), keys.0)).is_some());
-        assert!(
+        assert!(vote.proof(&PeerId::new(random::<u8>(), keys.0)).is_ok());
+        if let Err(RoutingError::FailedSignature) =
             vote.proof(&PeerId::new(random::<u8>(), other_keys.0))
-                .is_none()
-        );
+        {
+        } else {
+            panic!("Should have failed signature check.");
+        }
         assert!(proof.validate_signature(&payload));
     }
 }
