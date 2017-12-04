@@ -19,8 +19,9 @@ mod immutable_data;
 mod mutable_data;
 
 pub use self::immutable_data::{ImmutableData, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES};
-pub use self::mutable_data::{Action, EntryAction, EntryActions, MutableData, PermissionSet, User,
-                             Value, MAX_MUTABLE_DATA_ENTRIES, MAX_MUTABLE_DATA_SIZE_IN_BYTES};
+pub use self::mutable_data::{Action, EntryAction, EntryActions, MAX_MUTABLE_DATA_ENTRIES,
+                             MAX_MUTABLE_DATA_SIZE_IN_BYTES, MutableData, PermissionSet, User,
+                             Value};
 use rust_sodium::crypto::sign::{self, PublicKey};
 
 /// A signing key with no matching private key. Passing ownership to it will make a chunk

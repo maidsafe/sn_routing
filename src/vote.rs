@@ -78,9 +78,9 @@ impl<T: Serialize + Clone> Vote<T> {
 mod tests {
     use super::*;
     use maidsafe_utilities::SeededRng;
-    use rust_sodium;
     use network_event::SectionState;
     use rand::random;
+    use rust_sodium;
 
     #[test]
     fn wrong_key() {

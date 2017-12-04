@@ -98,7 +98,7 @@ impl Default for MessageId {
 #[cfg_attr(feature = "cargo-clippy", allow(indexing_slicing))]
 mod tests {
     use super::MessageId;
-    use xor_name::{XorName, XOR_NAME_LEN};
+    use xor_name::{XOR_NAME_LEN, XorName};
 
     #[test]
     fn increment() {

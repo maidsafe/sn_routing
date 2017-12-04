@@ -172,7 +172,8 @@ impl Client {
                 unacked_msg.routing_msg,
                 unacked_msg.route,
                 unacked_msg.expires_at,
-            ) {
+            )
+            {
                 debug!("{:?} Failed to send message: {:?}", self, error);
             } else {
                 self.stats.increase_user_msg_part();
@@ -229,12 +230,12 @@ impl Client {
         let in_authority = self.in_authority(&routing_msg.dst);
 
         // Prevents us repeatedly handling identical messages sent by a malicious peer.
-        match self.routing_msg_filter
-            .filter_incoming(&routing_msg, hop_msg.route)
-        {
-            FilteringResult::KnownMessage | FilteringResult::KnownMessageAndRoute => {
-                return Err(RoutingError::FilterCheckFailed)
-            }
+        match self.routing_msg_filter.filter_incoming(
+            &routing_msg,
+            hop_msg.route,
+        ) {
+            FilteringResult::KnownMessage |
+            FilteringResult::KnownMessageAndRoute => return Err(RoutingError::FilterCheckFailed),
             FilteringResult::NewMessage => (),
         }
 
@@ -251,8 +252,9 @@ impl Client {
     ) -> Result<Transition, RoutingError> {
         if let DirectMessage::ProxyRateLimitExceeded { ack } = direct_msg {
             if let Some(unack_msg) = self.ack_mgr.remove(&ack) {
-                let token = self.timer()
-                    .schedule(Duration::from_millis(RATE_EXCEED_RETRY_MS));
+                let token = self.timer().schedule(
+                    Duration::from_millis(RATE_EXCEED_RETRY_MS),
+                );
                 let _ = self.resend_buf.insert(token, unack_msg);
             } else {
                 debug!(
@@ -292,8 +294,12 @@ impl Client {
                     routing_msg.dst
                 );
                 self.stats.increase_user_msg_part();
-                if let Some(msg) = self.user_msg_cache
-                    .add(hash, part_count, part_index, payload)
+                if let Some(msg) = self.user_msg_cache.add(
+                    hash,
+                    part_count,
+                    part_index,
+                    payload,
+                )
                 {
                     self.stats().count_user_message(&msg);
                     outbox.send_event(msg.into_event(routing_msg.src, routing_msg.dst));
@@ -406,7 +412,8 @@ impl Bootstrapped for Client {
                 unacked_msg.routing_msg,
                 unacked_msg.route,
                 unacked_msg.expires_at,
-            ) {
+            )
+            {
                 debug!("{:?} Failed to send message: {:?}", self, error);
             }
             // Resend a msg part on ack time out doesn't count in stats.
@@ -427,16 +434,15 @@ impl Bootstrapped for Client {
 
         // Get PublicId of the proxy node
         match routing_msg.src {
-            Authority::Client {
-                ref proxy_node_name,
-                ..
-            } => if *self.proxy_pub_id.name() != *proxy_node_name {
-                error!(
-                    "{:?} Unable to find connection to proxy node in proxy map",
-                    self
-                );
-                return Err(RoutingError::ProxyConnectionNotFound);
-            },
+            Authority::Client { ref proxy_node_name, .. } => {
+                if *self.proxy_pub_id.name() != *proxy_node_name {
+                    error!(
+                        "{:?} Unable to find connection to proxy node in proxy map",
+                        self
+                    );
+                    return Err(RoutingError::ProxyConnectionNotFound);
+                }
+            }
             _ => {
                 error!(
                     "{:?} Source should be client if our state is a Client",
@@ -449,10 +455,14 @@ impl Bootstrapped for Client {
         let signed_msg = SignedMessage::new(routing_msg, self.full_id(), vec![])?;
 
         let proxy_pub_id = self.proxy_pub_id;
-        if self.add_to_pending_acks(signed_msg.routing_message(), route, expires_at)
-            && !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_pub_id, route)
+        if self.add_to_pending_acks(signed_msg.routing_message(), route, expires_at) &&
+            !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_pub_id, route)
         {
-            let bytes = self.to_hop_bytes(signed_msg.clone(), route, BTreeSet::new())?;
+            let bytes = self.to_hop_bytes(
+                signed_msg.clone(),
+                route,
+                BTreeSet::new(),
+            )?;
             self.send_or_drop(&proxy_pub_id, bytes, signed_msg.priority());
         }
 

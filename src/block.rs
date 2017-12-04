@@ -47,7 +47,9 @@ impl PeersAndAge {
         self.age
     }
 }
-/// Validity and "completeness" of a `Block`. Some `Block`s are complete with less than group_size `Proof`s.
+
+/// Validity and "completeness" of a `Block`. Some `Block`s are complete with less than group_size
+/// `Proof`s.
 pub enum BlockState {
     NotYetValid,
     Valid,
@@ -113,9 +115,9 @@ impl<T: Serialize + Clone> Block<T> {
     /// Return total age of all of signatories.
     #[allow(unused)]
     pub fn total_age(&self) -> usize {
-        self.proofs
-            .iter()
-            .fold(0, |total, proof| total + proof.peer_id().age() as usize)
+        self.proofs.iter().fold(0, |total, proof| {
+            total + proof.peer_id().age() as usize
+        })
     }
 
     #[allow(unused)]
@@ -134,10 +136,10 @@ impl<T: Serialize + Clone> Block<T> {
 mod tests {
     use super::*;
     use maidsafe_utilities::SeededRng;
+    use network_event::SectionState;
     use rand::random;
     use rust_sodium;
     use rust_sodium::crypto::sign;
-    use network_event::SectionState;
 
     #[test]
     fn create_then_add_proofs() {

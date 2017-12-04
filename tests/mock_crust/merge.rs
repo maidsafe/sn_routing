@@ -19,7 +19,7 @@ use super::{create_connected_nodes_until_split, poll_all, poll_and_resend,
             verify_invariant_for_all_nodes};
 use fake_clock::FakeClock;
 use rand::Rng;
-use routing::{Event, EventStream, Prefix, XorName, XOR_NAME_LEN};
+use routing::{Event, EventStream, Prefix, XOR_NAME_LEN, XorName};
 use routing::mock_crust::Network;
 use routing::test_consts::ACK_TIMEOUT_SECS;
 use std::collections::{BTreeMap, BTreeSet};
@@ -56,10 +56,14 @@ fn merge(prefix_lengths: Vec<usize>) {
         for node in &mut *nodes {
             while let Ok(event) = node.try_next_ev() {
                 match event {
-                    Event::NodeAdded(..) | Event::NodeLost(..) | Event::Tick => (),
-                    Event::SectionMerge(prefix) => if prefix.bit_count() == 0 {
-                        merge_events_missing -= 1;
-                    },
+                    Event::NodeAdded(..) |
+                    Event::NodeLost(..) |
+                    Event::Tick => (),
+                    Event::SectionMerge(prefix) => {
+                        if prefix.bit_count() == 0 {
+                            merge_events_missing -= 1;
+                        }
+                    }
                     event => panic!("{} got unexpected event: {:?}", node.name(), event),
                 }
             }
@@ -117,11 +121,9 @@ fn concurrent_merge() {
     // `min_section_size`.
     for (prefix, len) in &mut section_map {
         while *len >= min_section_size {
-            let index = unwrap!(
-                nodes
-                    .iter()
-                    .position(|node| { node.routing_table().our_prefix() == prefix })
-            );
+            let index = unwrap!(nodes.iter().position(|node| {
+                node.routing_table().our_prefix() == prefix
+            }));
             let removed = nodes.remove(index);
             drop(removed);
             *len -= 1;
