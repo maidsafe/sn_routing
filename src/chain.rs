@@ -19,8 +19,9 @@ use block::{Block, PeersAndAge};
 use error::RoutingError;
 use fs2::FileExt;
 use maidsafe_utilities::serialisation;
-use network_event::{SectionState, DataIdentifier};
+use network_event::{DataIdentifier, SectionState};
 use peer_id::PeerId;
+use proof::Proof;
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
@@ -120,17 +121,19 @@ impl DataChain {
     }
 
 
-    fn add_vote(&mut self, vote: Vote<SectionState>, peer_id: &PeerId) -> Option<(SectionState, PeersAndAge)> {
+    fn add_vote(
+        &mut self,
+        vote: Vote<SectionState>,
+        peer_id: &PeerId,
+    ) -> Option<(SectionState, PeersAndAge)> {
         if !vote.validate_signature(peer_id.pub_key()) {
             return None;
         }
 
+        let pub_key_matches = |x: &Proof| x.peer_id().pub_key() == peer_id.pub_key();
         for blk in &mut self.blocks.iter_mut() {
             if blk.payload() == vote.payload() {
-                if blk.proofs()
-                    .iter()
-                    .any(|x| x.peer_id().pub_key() == peer_id.pub_key())
-                {
+                if blk.proofs().iter().any(pub_key_matches) {
                     info!("duplicate proof");
                     return None;
                 }
@@ -141,7 +144,7 @@ impl DataChain {
                 return Some((blk.payload().clone(), p_age));
             }
         }
-        if let Ok(ref mut blk) = Block::new(&vote, &peer_id) {
+        if let Ok(ref mut blk) = Block::new(&vote, peer_id) {
             self.blocks.push(blk.clone());
             return Some((
                 blk.payload().clone(),
@@ -158,18 +161,21 @@ impl DataChain {
     fn validate_quorums(&self) -> bool {
         if let Some(mut prev) = self.blocks.first() {
             for blk in self.blocks.iter().skip(1) {
-                if blk.get_peer_ids() // TODO, don't count like this use a loop and check quorum age as well
+                // TODO, don't count like this use a loop and check quorum age as well
+                if blk.get_peer_ids()
                     .intersection(&prev.get_peer_ids())
                     .count() <= self.group_size / 2
                 {
                     return false;
                 } else {
-                    prev = blk; // TODO check `NetworkEvent` as we may need to add to prev or remove a possible voter
-                                // we can probably use a CurrentPeers / SectionState list here to be more specific.
-                                // Also which `NetworkEvent`s can follow a sequence, i.e. a lost must be followed
-                                // with a promote if its an elder or a merge if peers drops to group size.
-                                // Most events will follow a sequence that is allowed. if blocks are out of sequence when
-                                // net is running a peer should sequence them properly. Here we would fail the chain.
+                    prev = blk;
+                    // TODO check `NetworkEvent` as we may need to add to prev or remove a possible
+                    // voter we can probably use a CurrentPeers / SectionState list here to be more
+                    // specific. Also which `NetworkEvent`s can follow a sequence, i.e. a lost must
+                    // be followed with a promote if its an elder or a merge if peers drops to group
+                    // size. Most events will follow a sequence that is allowed. if blocks are out
+                    // of sequence when net is running a peer should sequence them properly. Here we
+                    // would fail the chain.
                 }
             }
             true

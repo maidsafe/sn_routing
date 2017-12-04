@@ -135,8 +135,10 @@ Options:
             } else if parts.len() == 2 && parts[0] == "get" {
                 let _ = command_sender.send(UserCommand::Get(parts[1].to_string()));
             } else if parts.len() == 3 && parts[0] == "put" {
-                let _ = command_sender
-                    .send(UserCommand::Put(parts[1].to_string(), parts[2].to_string()));
+                let _ = command_sender.send(UserCommand::Put(
+                    parts[1].to_string(),
+                    parts[2].to_string(),
+                ));
             } else {
                 println!("Unrecognised command");
             }

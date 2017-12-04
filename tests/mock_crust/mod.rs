@@ -28,13 +28,14 @@ mod requests;
 mod tunnel;
 mod utils;
 
-pub use self::utils::{add_connected_nodes_until_split, create_connected_clients,
-                      create_connected_nodes, create_connected_nodes_until_split, gen_bytes,
-                      gen_immutable_data, gen_range, gen_range_except, poll_all, poll_and_resend,
+pub use self::utils::{Nodes, TestClient, TestNode, add_connected_nodes_until_split,
+                      create_connected_clients, create_connected_nodes,
+                      create_connected_nodes_until_split, gen_bytes, gen_immutable_data,
+                      gen_range, gen_range_except, poll_all, poll_and_resend,
                       remove_nodes_which_failed_to_connect, sort_nodes_by_distance_to,
-                      verify_invariant_for_all_nodes, Nodes, TestClient, TestNode};
+                      verify_invariant_for_all_nodes};
 use fake_clock::FakeClock;
-use routing::{BootstrapConfig, Event, EventStream, Prefix, XorName, XOR_NAME_LEN};
+use routing::{BootstrapConfig, Event, EventStream, Prefix, XOR_NAME_LEN, XorName};
 use routing::mock_crust::{Endpoint, Network};
 use routing::test_consts::JOINING_NODE_TIMEOUT_SECS;
 use std::collections::BTreeSet;

@@ -15,12 +15,12 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use super::{create_connected_clients, create_connected_nodes_until_split, gen_immutable_data,
-            poll_all, TestNode};
+use super::{TestNode, create_connected_clients, create_connected_nodes_until_split,
+            gen_immutable_data, poll_all};
 use fake_clock::FakeClock;
 use rand::Rng;
-use routing::{Authority, Event, EventStream, ImmutableData, MessageId, Prefix, Request, Response,
-              MAX_IMMUTABLE_DATA_SIZE_IN_BYTES};
+use routing::{Authority, Event, EventStream, ImmutableData, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
+              MessageId, Prefix, Request, Response};
 use routing::mock_crust::Network;
 use routing::rate_limiter_consts::RATE;
 use std::sync::mpsc;
@@ -75,22 +75,23 @@ fn response_caching() {
         loop {
             match node.try_next_ev() {
                 Ok(Event::Request {
-                    request:
-                        Request::GetIData {
-                            name: req_data_id,
-                            msg_id: req_message_id,
-                        },
-                    src: req_src,
-                    dst: req_dst,
-                }) => if req_data_id == data_id && req_message_id == message_id {
-                    unwrap!(node.inner.send_get_idata_response(
-                        req_dst,
-                        req_src,
-                        Ok(data.clone()),
-                        req_message_id,
-                    ));
-                    break;
-                },
+                       request: Request::GetIData {
+                           name: req_data_id,
+                           msg_id: req_message_id,
+                       },
+                       src: req_src,
+                       dst: req_dst,
+                   }) => {
+                    if req_data_id == data_id && req_message_id == message_id {
+                        unwrap!(node.inner.send_get_idata_response(
+                            req_dst,
+                            req_src,
+                            Ok(data.clone()),
+                            req_message_id,
+                        ));
+                        break;
+                    }
+                }
                 Ok(_) => (),
                 Err(_) => break,
             }

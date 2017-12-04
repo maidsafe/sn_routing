@@ -62,9 +62,9 @@ mod unnamed {
     use maidsafe_utilities::log;
     use maidsafe_utilities::thread::Joiner;
     use maidsafe_utilities::thread::named as thread_named;
-    use rand::{random, thread_rng, Rng, ThreadRng};
+    use rand::{Rng, ThreadRng, random, thread_rng};
     use rand::distributions::{IndependentSample, Range};
-    use routing::{MutableData, Value, MIN_SECTION_SIZE};
+    use routing::{MIN_SECTION_SIZE, MutableData, Value};
     use rust_sodium::crypto::sign;
     use std::{env, io, thread};
     use std::collections::BTreeMap;
@@ -91,11 +91,13 @@ mod unnamed {
         fn drop(&mut self) {
             match self.0.kill() {
                 Ok(()) => println!("Killed Node with Process ID #{}", self.0.id()),
-                Err(err) => println!(
-                    "Error killing Node with Process ID #{} - {:?}",
-                    self.0.id(),
-                    err
-                ),
+                Err(err) => {
+                    println!(
+                        "Error killing Node with Process ID #{} - {:?}",
+                        self.0.id(),
+                        err
+                    )
+                }
             }
         }
     }
@@ -151,9 +153,10 @@ mod unnamed {
                     let wait_for = wait_range.ind_sample(&mut rng);
 
                     while !*stop_condition && !wait_timed_out {
-                        let wake_up_result = unwrap!(
-                            condvar.wait_timeout(stop_condition, Duration::from_secs(wait_for),)
-                        );
+                        let wake_up_result = unwrap!(condvar.wait_timeout(
+                            stop_condition,
+                            Duration::from_secs(wait_for),
+                        ));
                         stop_condition = wake_up_result.0;
                         wait_timed_out = wake_up_result.1.timed_out();
                     }
@@ -163,8 +166,12 @@ mod unnamed {
                     }
                 }
 
-                if let Err(err) =
-                    simulate_churn_impl(&mut nodes, &mut rng, network_size, &mut node_count)
+                if let Err(err) = simulate_churn_impl(
+                    &mut nodes,
+                    &mut rng,
+                    network_size,
+                    &mut node_count,
+                )
                 {
                     println!("{:?}", err);
                     break;
@@ -360,8 +367,8 @@ Options:
             .and_then(|docopt| docopt.deserialize())
             .unwrap_or_else(|error| error.exit());
 
-        let run_network_test =
-            !(args.flag_output.is_some() || args.flag_delete_bootstrap_cache.is_some());
+        let run_network_test = !(args.flag_output.is_some() ||
+                                     args.flag_delete_bootstrap_cache.is_some());
         let requests = args.arg_requests.unwrap_or(DEFAULT_REQUESTS);
         let batches = args.arg_batches.unwrap_or(DEFAULT_BATCHES);
         let first = args.flag_first.unwrap_or(false);
@@ -384,9 +391,7 @@ Options:
             let stop_flag = Arc::new((Mutex::new(false), Condvar::new()));
             let _raii_joiner = simulate_churn(nodes, node_count, stop_flag.clone());
 
-            let test_result = panic::catch_unwind(|| {
-                store_and_verify(requests, batches);
-            });
+            let test_result = panic::catch_unwind(|| { store_and_verify(requests, batches); });
 
             // Graceful exit
             {

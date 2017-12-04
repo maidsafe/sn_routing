@@ -25,8 +25,8 @@ use error::{InterfaceError, RoutingError};
 use event::Event;
 use event_stream::{EventStepper, EventStream};
 use id::{FullId, PublicId};
-use messages::{AccountInfo, Request, Response, UserMessage, CLIENT_GET_PRIORITY, DEFAULT_PRIORITY,
-               RELOCATE_PRIORITY};
+use messages::{AccountInfo, CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, RELOCATE_PRIORITY, Request,
+               Response, UserMessage};
 use outbox::{EventBox, EventBuf};
 use routing_table::{Authority, RoutingTable};
 #[cfg(feature = "use-mock-crust")]
@@ -41,7 +41,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
 #[cfg(feature = "use-mock-crust")]
 use std::net::IpAddr;
-use std::sync::mpsc::{channel, Receiver, RecvError, Sender, TryRecvError};
+use std::sync::mpsc::{Receiver, RecvError, Sender, TryRecvError, channel};
 use types::{MessageId, RoutingActionSender};
 use xor_name::XorName;
 
@@ -155,7 +155,8 @@ impl NodeBuilder {
                     full_id,
                     min_section_size,
                     timer,
-                ) {
+                )
+                {
                     State::Peer(state)
                 } else {
                     State::Terminated
@@ -549,11 +550,14 @@ impl Peer {
             result_tx: self.interface_result_tx.clone(),
         };
 
-        let transition = self.machine
-            .current_mut()
-            .handle_action(action, &mut self.event_buffer);
-        self.machine
-            .apply_transition(transition, &mut self.event_buffer);
+        let transition = self.machine.current_mut().handle_action(
+            action,
+            &mut self.event_buffer,
+        );
+        self.machine.apply_transition(
+            transition,
+            &mut self.event_buffer,
+        );
         self.interface_result_rx.recv()?
     }
 }
@@ -583,9 +587,10 @@ impl Peer {
 
     /// Check whether this node acts as a tunnel node between `client_1` and `client_2`.
     pub fn has_tunnel_clients(&self, client_1: PublicId, client_2: PublicId) -> bool {
-        self.machine
-            .current()
-            .has_tunnel_clients(client_1, client_2)
+        self.machine.current().has_tunnel_clients(
+            client_1,
+            client_2,
+        )
     }
 
     /// Returns a quorum of signatures for the neighbouring section's list or `None` if we don't
@@ -613,16 +618,16 @@ impl Peer {
 
     /// Sets a name to be used when the next node relocation request is received by this node.
     pub fn set_next_relocation_dst(&mut self, dst: XorName) {
-        self.machine
-            .current_mut()
-            .set_next_relocation_dst(Some(dst))
+        self.machine.current_mut().set_next_relocation_dst(
+            Some(dst),
+        )
     }
 
     /// Sets an interval to be used when a node is required to generate a new name.
     pub fn set_next_relocation_interval(&mut self, interval: (XorName, XorName)) {
-        self.machine
-            .current_mut()
-            .set_next_relocation_interval(interval)
+        self.machine.current_mut().set_next_relocation_interval(
+            interval,
+        )
     }
 
     /// Clears the name to be used when the next node relocation request is received by this node so
@@ -637,9 +642,9 @@ impl Peer {
     /// `PeerState::Routing(RoutingConnection::Direct` after `JOINING_NODE_TIMEOUT_SECS` seconds
     /// have elapsed for the peer with whom we have the connection.
     pub fn has_unnormalised_routing_conn(&self, excludes: &BTreeSet<XorName>) -> bool {
-        self.machine
-            .current()
-            .has_unnormalised_routing_conn(excludes)
+        self.machine.current().has_unnormalised_routing_conn(
+            excludes,
+        )
     }
 
     /// Returns the number of received and sent user message parts.
@@ -662,9 +667,10 @@ impl Debug for Peer {
 
 impl Drop for Peer {
     fn drop(&mut self) {
-        let _ = self.machine
-            .current_mut()
-            .handle_action(Action::Terminate, &mut self.event_buffer);
+        let _ = self.machine.current_mut().handle_action(
+            Action::Terminate,
+            &mut self.event_buffer,
+        );
         let _ = self.event_buffer.take_all();
     }
 }

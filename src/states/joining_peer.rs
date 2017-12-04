@@ -103,8 +103,8 @@ impl JoiningPeer {
 
     pub fn handle_action(&mut self, action: Action, outbox: &mut EventBox) -> Transition {
         match action {
-            Action::ClientSendRequest { ref result_tx, .. }
-            | Action::NodeSendMessage { ref result_tx, .. } => {
+            Action::ClientSendRequest { ref result_tx, .. } |
+            Action::NodeSendMessage { ref result_tx, .. } => {
                 warn!("{:?} Cannot handle {:?} - not joined.", self, action);
                 let _ = result_tx.send(Err(InterfaceError::InvalidState));
             }
@@ -159,15 +159,17 @@ impl JoiningPeer {
             old_full_id: self.full_id,
             our_section: our_section,
         };
-        if let Some(bootstrapping) = Bootstrapping::new(
-            self.action_sender,
-            self.cache,
-            target_state,
-            service,
-            new_full_id,
-            self.min_section_size,
-            self.timer,
-        ) {
+        if let Some(bootstrapping) =
+            Bootstrapping::new(
+                self.action_sender,
+                self.cache,
+                target_state,
+                service,
+                new_full_id,
+                self.min_section_size,
+                self.timer,
+            )
+        {
             State::Bootstrapping(bootstrapping)
         } else {
             outbox.send_event(Event::RestartRequired);
@@ -246,12 +248,12 @@ impl JoiningPeer {
         }
 
         // Prevents us repeatedly handling identical messages sent by a malicious peer.
-        match self.routing_msg_filter
-            .filter_incoming(routing_msg, hop_msg.route)
-        {
-            FilteringResult::KnownMessage | FilteringResult::KnownMessageAndRoute => {
-                return Err(RoutingError::FilterCheckFailed)
-            }
+        match self.routing_msg_filter.filter_incoming(
+            routing_msg,
+            hop_msg.route,
+        ) {
+            FilteringResult::KnownMessage |
+            FilteringResult::KnownMessageAndRoute => return Err(RoutingError::FilterCheckFailed),
             FilteringResult::NewMessage => (),
         }
 
@@ -265,18 +267,18 @@ impl JoiningPeer {
     fn dispatch_routing_message(&mut self, routing_msg: RoutingMessage) -> Transition {
         use messages::MessageContent::*;
         match routing_msg.content {
-            Relocate { .. }
-            | ExpectCandidate { .. }
-            | ConnectionInfoRequest { .. }
-            | ConnectionInfoResponse { .. }
-            | SectionUpdate { .. }
-            | SectionSplit(..)
-            | OwnSectionMerge(..)
-            | OtherSectionMerge(..)
-            | UserMessagePart { .. }
-            | AcceptAsCandidate { .. }
-            | CandidateApproval { .. }
-            | NodeApproval { .. } => {
+            Relocate { .. } |
+            ExpectCandidate { .. } |
+            ConnectionInfoRequest { .. } |
+            ConnectionInfoResponse { .. } |
+            SectionUpdate { .. } |
+            SectionSplit(..) |
+            OwnSectionMerge(..) |
+            OtherSectionMerge(..) |
+            UserMessagePart { .. } |
+            AcceptAsCandidate { .. } |
+            CandidateApproval { .. } |
+            NodeApproval { .. } => {
                 warn!(
                     "{:?} Not joined yet. Not handling {:?} from {:?} to {:?}",
                     self,
@@ -298,9 +300,7 @@ impl JoiningPeer {
     }
 
     fn relocate(&mut self) -> Result<(), RoutingError> {
-        let request_content = MessageContent::Relocate {
-            message_id: MessageId::new(),
-        };
+        let request_content = MessageContent::Relocate { message_id: MessageId::new() };
         let src = Authority::Client {
             client_id: *self.full_id.public_id(),
             proxy_node_name: *self.proxy_pub_id.name(),
@@ -414,16 +414,15 @@ impl Bootstrapped for JoiningPeer {
 
         // Get PublicId of the proxy node
         match routing_msg.src {
-            Authority::Client {
-                ref proxy_node_name,
-                ..
-            } => if *self.proxy_pub_id.name() != *proxy_node_name {
-                error!(
-                    "{:?} Unable to find connection to proxy node in proxy map",
-                    self
-                );
-                return Err(RoutingError::ProxyConnectionNotFound);
-            },
+            Authority::Client { ref proxy_node_name, .. } => {
+                if *self.proxy_pub_id.name() != *proxy_node_name {
+                    error!(
+                        "{:?} Unable to find connection to proxy node in proxy map",
+                        self
+                    );
+                    return Err(RoutingError::ProxyConnectionNotFound);
+                }
+            }
             _ => {
                 error!(
                     "{:?} Source should be client if our state is a Client",
@@ -436,10 +435,14 @@ impl Bootstrapped for JoiningPeer {
         let signed_msg = SignedMessage::new(routing_msg, self.full_id(), vec![])?;
 
         let proxy_pub_id = self.proxy_pub_id;
-        if self.add_to_pending_acks(signed_msg.routing_message(), route, expires_at)
-            && !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_pub_id, route)
+        if self.add_to_pending_acks(signed_msg.routing_message(), route, expires_at) &&
+            !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_pub_id, route)
         {
-            let bytes = self.to_hop_bytes(signed_msg.clone(), route, BTreeSet::new())?;
+            let bytes = self.to_hop_bytes(
+                signed_msg.clone(),
+                route,
+                BTreeSet::new(),
+            )?;
             self.send_or_drop(&proxy_pub_id, bytes, signed_msg.priority());
         }
 

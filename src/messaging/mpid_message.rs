@@ -107,8 +107,8 @@ impl MpidMessage {
     pub fn verify(&self, public_key: &PublicKey) -> bool {
         match serialise(&self.detail) {
             Ok(recipient_and_body) => {
-                sign::verify_detached(&self.signature, &recipient_and_body, public_key)
-                    && self.header.verify(public_key)
+                sign::verify_detached(&self.signature, &recipient_and_body, public_key) &&
+                    self.header.verify(public_key)
             }
             Err(_) => false,
         }

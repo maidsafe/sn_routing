@@ -248,8 +248,10 @@ pub trait Uid
 /// `Service::prepare_contact_info`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PrivConnectionInfo<UID> {
-    #[doc(hidden)] pub id: UID,
-    #[doc(hidden)] pub endpoint: Endpoint,
+    #[doc(hidden)]
+    pub id: UID,
+    #[doc(hidden)]
+    pub endpoint: Endpoint,
 }
 
 impl<UID: Uid> PrivConnectionInfo<UID> {
@@ -265,8 +267,10 @@ impl<UID: Uid> PrivConnectionInfo<UID> {
 /// Mock version of `PubConnectionInfo`, used to connect to another peer.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PubConnectionInfo<UID> {
-    #[doc(hidden)] pub id: UID,
-    #[doc(hidden)] pub endpoint: Endpoint,
+    #[doc(hidden)]
+    pub id: UID,
+    #[doc(hidden)]
+    pub endpoint: Endpoint,
 }
 
 impl<UID: Uid> PubConnectionInfo<UID> {

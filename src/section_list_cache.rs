@@ -152,8 +152,10 @@ impl SectionListCache {
                 if sig_count * QUORUM_DENOMINATOR > our_section_size * QUORUM_NUMERATOR {
                     // we have a list with a quorum of signatures
                     let signatures = unwrap!(map.get(list));
-                    let _ = self.lists_cache
-                        .insert(*prefix, (list.clone(), signatures.clone()));
+                    let _ = self.lists_cache.insert(
+                        *prefix,
+                        (list.clone(), signatures.clone()),
+                    );
                 }
             }
         }
@@ -171,13 +173,16 @@ impl SectionListCache {
         for (prefix, list) in to_remove {
             // remove the signatures from self.signatures
             let _ = self.signatures.get_mut(&prefix).map_or(None, |map| {
-                map.get_mut(&list)
-                    .map_or(None, |sigmap| sigmap.remove(&author))
+                map.get_mut(&list).map_or(
+                    None,
+                    |sigmap| sigmap.remove(&author),
+                )
             });
             // remove those entries from self.signed_by
-            let _ = self.signed_by
-                .get_mut(&author)
-                .map_or(None, |map| map.remove(&prefix));
+            let _ = self.signed_by.get_mut(&author).map_or(
+                None,
+                |map| map.remove(&prefix),
+            );
         }
 
         self.prune();

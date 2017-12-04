@@ -99,7 +99,8 @@
 //! - [Churn (`NewPeer`)](new-node.png)
 //! - [Tunnel](tunnel.png)
 
-#![doc(html_logo_url = "https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png",
+#![doc(html_logo_url =
+           "https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png",
        html_favicon_url = "https://maidsafe.net/img/favicon.ico",
        html_root_url = "https://docs.rs/routing")]
 // For explanation of lint checks, run `rustc -W help` or see
@@ -230,9 +231,9 @@ pub use client::Client;
 pub use client_error::{ClientError, EntryError};
 pub use common_types::AccountPacket;
 pub use config_handler::{Config, DevConfig};
-pub use data::{Action, EntryAction, EntryActions, ImmutableData, MutableData, PermissionSet, User,
-               Value, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_MUTABLE_DATA_ENTRIES,
-               MAX_MUTABLE_DATA_SIZE_IN_BYTES, NO_OWNER_PUB_KEY};
+pub use data::{Action, EntryAction, EntryActions, ImmutableData, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
+               MAX_MUTABLE_DATA_ENTRIES, MAX_MUTABLE_DATA_SIZE_IN_BYTES, MutableData,
+               NO_OWNER_PUB_KEY, PermissionSet, User, Value};
 pub use error::{InterfaceError, RoutingError};
 pub use event::Event;
 pub use event_stream::EventStream;
@@ -250,7 +251,7 @@ pub use routing_table::Error as RoutingTableError;
 #[cfg(any(test, feature = "use-mock-crust"))]
 pub use routing_table::verify_network_invariant;
 pub use types::MessageId;
-pub use xor_name::{XorName, XorNameFromHexError, XOR_NAME_BITS, XOR_NAME_LEN};
+pub use xor_name::{XOR_NAME_BITS, XOR_NAME_LEN, XorName, XorNameFromHexError};
 
 type Service = crust::Service<PublicId>;
 use crust::Event as CrustEvent;

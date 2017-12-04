@@ -47,7 +47,9 @@ impl PeersAndAge {
         self.age
     }
 }
-/// Validity and "completeness" of a `Block`. Some `Block`s are complete with less than group_size `Proof`s.
+
+/// Validity and "completeness" of a `Block`. Some `Block`s are complete with less than `group_size`
+/// `Proof`s.
 pub enum BlockState {
     NotYetValid,
     Valid,
@@ -70,17 +72,15 @@ impl<T: Serialize + Clone> Block<T> {
     /// this reason The `Vote` will require a Direct Message from a `Peer` to us.
     #[allow(unused)]
     pub fn new(vote: &Vote<T>, peer_id: &PeerId) -> Result<Block<T>, RoutingError> {
-        if let Some(proof) = vote.proof(peer_id) {
-            let mut proofset = BTreeSet::<Proof>::new();
-            if !proofset.insert(proof) {
-                return Err(RoutingError::FailedSignature);
-            }
-            return Ok(Block::<T> {
-                payload: vote.payload().clone(),
-                proofs: proofset,
-            });
+        let proof = vote.proof(peer_id)?;
+        let mut proofset = BTreeSet::<Proof>::new();
+        if !proofset.insert(proof) {
+            return Err(RoutingError::FailedSignature);
         }
-        Err(RoutingError::FailedSignature)
+        Ok(Block::<T> {
+            payload: vote.payload().clone(),
+            proofs: proofset,
+        })
     }
 
     /// Add a proof from a peer when we know we have an existing `Block`.
@@ -98,7 +98,7 @@ impl<T: Serialize + Clone> Block<T> {
 
     pub fn get_peer_ids(&self) -> BTreeSet<PeerId> {
         let mut peers = BTreeSet::new();
-        for proof in self.proofs.iter() {
+        for proof in &self.proofs {
             let _ = peers.insert(proof.peer_id().clone());
         }
         peers
@@ -113,9 +113,9 @@ impl<T: Serialize + Clone> Block<T> {
     /// Return total age of all of signatories.
     #[allow(unused)]
     pub fn total_age(&self) -> usize {
-        self.proofs
-            .iter()
-            .fold(0, |total, proof| total + proof.peer_id().age() as usize)
+        self.proofs.iter().fold(0, |total, proof| {
+            total + proof.peer_id().age() as usize
+        })
     }
 
     #[allow(unused)]
@@ -134,10 +134,10 @@ impl<T: Serialize + Clone> Block<T> {
 mod tests {
     use super::*;
     use maidsafe_utilities::SeededRng;
+    use network_event::SectionState;
     use rand::random;
     use rust_sodium;
     use rust_sodium::crypto::sign;
-    use network_event::SectionState;
 
     #[test]
     fn create_then_add_proofs() {

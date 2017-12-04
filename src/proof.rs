@@ -45,7 +45,7 @@ impl Proof {
     #[allow(unused)]
     pub fn validate_signature<T: Serialize>(&self, payload: &T) -> bool {
         match serialisation::serialise(&payload) {
-            Ok(data) => sign::verify_detached(&self.sig, &data[..], &self.peer_id.pub_key()),
+            Ok(data) => sign::verify_detached(&self.sig, &data[..], self.peer_id.pub_key()),
             _ => false,
         }
     }
@@ -54,11 +54,12 @@ impl Proof {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use RoutingError;
     use maidsafe_utilities::SeededRng;
+    use network_event::SectionState;
     use rand::random;
     use rust_sodium;
     use vote::Vote;
-    use network_event::SectionState;
 
     #[test]
     fn confirm_proof_for_vote() {
@@ -82,8 +83,13 @@ mod tests {
         let vote = Vote::new(&keys.1, payload.clone()).unwrap();
         assert!(vote.validate_signature(&keys.0));
         let proof = vote.proof(&PeerId::new(random::<u8>(), keys.0)).unwrap();
-        assert!(vote.proof(&PeerId::new(random::<u8>(), keys.0)).is_some());
-        assert!(vote.proof(&PeerId::new(random::<u8>(), other_keys.0)).is_none());
+        assert!(vote.proof(&PeerId::new(random::<u8>(), keys.0)).is_ok());
+        if let Err(RoutingError::FailedSignature) =
+            vote.proof(&PeerId::new(random::<u8>(), other_keys.0))
+        {
+        } else {
+            panic!("Should have failed signature check.");
+        }
         assert!(proof.validate_signature(&payload));
     }
 }

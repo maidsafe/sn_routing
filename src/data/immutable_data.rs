@@ -92,7 +92,7 @@ impl Debug for ImmutableData {
 mod tests {
     use super::*;
     use hex::ToHex;
-    use maidsafe_utilities::{serialisation, SeededRng};
+    use maidsafe_utilities::{SeededRng, serialisation};
     use rand::Rng;
 
     #[test]
