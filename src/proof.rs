@@ -68,10 +68,9 @@ mod tests {
         let keys = sign::gen_keypair();
         let peer_id = PeerId::new(rng.gen_range(0, 255), keys.0);
         let payload = SectionState::Live(PeerId::new(rng.gen_range(0, 255), keys.0));
-        let vote = Vote::new(&keys.1, payload.clone()).unwrap();
+        let vote = unwrap!(Vote::new(&keys.1, payload.clone()));
         assert!(vote.validate_signature(&peer_id));
-        let proof = vote.proof(&PeerId::new(rng.gen_range(0, 255), keys.0))
-            .unwrap();
+        let proof = unwrap!(vote.proof(&PeerId::new(rng.gen_range(0, 255), keys.0)));
         assert!(proof.validate_signature(&payload));
     }
 
@@ -83,10 +82,9 @@ mod tests {
         let peer_id = PeerId::new(rng.gen_range(0, 255), keys.0);
         let other_keys = sign::gen_keypair();
         let payload = SectionState::Live(PeerId::new(rng.gen_range(0, 255), keys.0));
-        let vote = Vote::new(&keys.1, payload.clone()).unwrap();
+        let vote = unwrap!(Vote::new(&keys.1, payload.clone()));
         assert!(vote.validate_signature(&peer_id));
-        let proof = vote.proof(&PeerId::new(rng.gen_range(0, 255), keys.0))
-            .unwrap();
+        let proof = unwrap!(vote.proof(&PeerId::new(rng.gen_range(0, 255), keys.0)));
         assert!(
             vote.proof(&PeerId::new(rng.gen_range(0, 255), keys.0))
                 .is_ok()

@@ -70,8 +70,8 @@ pub struct Block<T> {
 }
 
 impl<T: Serialize + Clone> Block<T> {
-    /// A new `Block` requires a valid vote and the `PublicKey` of the node who sent us this. For
-    /// this reason The `Vote` will require a Direct Message from a `Peer` to us.
+    /// A new `Block` requires a valid vote and the `PeerId` of the peer who sent us this. For
+    /// this reason the `Vote` will require a `DirectMessage` from a peer to us.
     pub fn new(vote: &Vote<T>, peer_id: &PeerId) -> Result<Block<T>, RoutingError> {
         Ok(Block {
             payload: vote.payload().clone(),
@@ -87,7 +87,7 @@ impl<T: Serialize + Clone> Block<T> {
         valid_voters: &BTreeSet<PeerId>,
     ) -> Result<BlockState, RoutingError> {
         let proof = vote.proof(peer_id)?;
-        self.add_proof(proof, valid_voters)
+        self.insert_proof(proof, valid_voters)
     }
 
     /// Add a proof from a peer when we know we have an existing `Block`.
@@ -97,15 +97,9 @@ impl<T: Serialize + Clone> Block<T> {
         valid_voters: &BTreeSet<PeerId>,
     ) -> Result<BlockState, RoutingError> {
         if !proof.validate_signature(&self.payload) {
-            return Err(RoutingError::FailedSignature);
-        }
-        if !valid_voters.contains(proof.peer_id()) {
-            return Err(RoutingError::FailedSignature);
-        }
-        if self.proofs.insert(proof) {
-            self.get_block_state(valid_voters)
-        } else {
             Err(RoutingError::FailedSignature)
+        } else {
+            self.insert_proof(proof, valid_voters)
         }
     }
 
@@ -144,7 +138,7 @@ impl<T: Serialize + Clone> Block<T> {
         &self,
         valid_voters: &BTreeSet<PeerId>,
     ) -> Result<BlockState, RoutingError> {
-        if self.proofs.len() == valid_voters.len() {
+        if self.proofs.len() >= valid_voters.len() {
             return Ok(BlockState::Full);
         }
         let total_age = valid_voters
@@ -155,6 +149,21 @@ impl<T: Serialize + Clone> Block<T> {
             Ok(BlockState::Valid)
         } else {
             Ok(BlockState::NotYetValid)
+        }
+    }
+
+    fn insert_proof(
+        &mut self,
+        proof: Proof,
+        valid_voters: &BTreeSet<PeerId>,
+    ) -> Result<BlockState, RoutingError> {
+        if !valid_voters.contains(proof.peer_id()) {
+            return Err(RoutingError::InvalidSource);
+        }
+        if self.proofs.insert(proof) {
+            self.get_block_state(valid_voters)
+        } else {
+            Err(RoutingError::DuplicateSignatures)
         }
     }
 }
@@ -178,17 +187,17 @@ mod tests {
         let peer_id0 = PeerId::new(0, keys0.0);
         let peer_id1 = PeerId::new(0, keys1.0);
         let payload = SectionState::Gone(peer_id0.clone());
-        let vote0 = Vote::new(&keys0.1, payload.clone()).unwrap();
+        let vote0 = unwrap!(Vote::new(&keys0.1, payload.clone()));
         assert!(vote0.validate_signature(&peer_id0));
-        let vote1 = Vote::new(&keys1.1, payload.clone()).unwrap();
+        let vote1 = unwrap!(Vote::new(&keys1.1, payload.clone()));
         assert!(vote1.validate_signature(&peer_id1));
         let peer_id00 = PeerId::new(1u8, keys0.0);
         let peer_id10 = PeerId::new(rng.gen_range(0, 255), keys1.0);
-        let proof0 = vote0.proof(&peer_id00).unwrap();
+        let proof0 = unwrap!(vote0.proof(&peer_id00));
         assert!(proof0.validate_signature(&payload));
-        let proof1 = vote1.proof(&peer_id10).unwrap();
+        let proof1 = unwrap!(vote1.proof(&peer_id10));
         assert!(proof1.validate_signature(&payload));
-        let mut b0 = Block::new(&vote0, &peer_id00).unwrap();
+        let mut b0 = unwrap!(Block::new(&vote0, &peer_id00));
         assert!(proof0.validate_signature(&b0.payload));
         assert!(proof1.validate_signature(&b0.payload));
         let mut valid_voters = BTreeSet::new();
@@ -209,9 +218,9 @@ mod tests {
         let keys1 = sign::gen_keypair();
         let keys2 = sign::gen_keypair();
         let payload = SectionState::Gone(PeerId::new(0, keys0.0));
-        let vote0 = Vote::new(&keys0.1, payload.clone()).unwrap();
-        let vote1 = Vote::new(&keys1.1, payload.clone()).unwrap();
-        let vote2 = Vote::new(&keys2.1, payload.clone()).unwrap();
+        let vote0 = unwrap!(Vote::new(&keys0.1, payload.clone()));
+        let vote1 = unwrap!(Vote::new(&keys1.1, payload.clone()));
+        let vote2 = unwrap!(Vote::new(&keys2.1, payload.clone()));
         let age0 = rng.gen_range(0, 255);
         let age1 = rng.gen_range(0, 255);
         let age2 = rng.gen_range(0, 255);
@@ -222,23 +231,23 @@ mod tests {
         let _ = valid_voters.insert(peer_id0.clone());
         let _ = valid_voters.insert(peer_id1.clone());
         let _ = valid_voters.insert(peer_id2.clone());
-        let proof1 = vote1.proof(&peer_id1).unwrap();
-        let proof2 = vote2.proof(&peer_id2).unwrap();
+        let proof1 = unwrap!(vote1.proof(&peer_id1));
+        let proof2 = unwrap!(vote2.proof(&peer_id2));
         // So 3 votes all valid will be added to block
-        let mut b0 = Block::new(&vote0, &peer_id0).unwrap();
+        let mut b0 = unwrap!(Block::new(&vote0, &peer_id0));
         if (age0 as usize + age1 as usize) > age2 as usize {
             assert_eq!(
-                b0.add_proof(proof1, &valid_voters).unwrap(),
+                unwrap!(b0.add_proof(proof1, &valid_voters)),
                 BlockState::Valid
             );
         } else {
             assert_eq!(
-                b0.add_proof(proof1, &valid_voters).unwrap(),
+                unwrap!(b0.add_proof(proof1, &valid_voters)),
                 BlockState::NotYetValid
             );
         }
         assert_eq!(
-            b0.add_proof(proof2, &valid_voters).unwrap(),
+            unwrap!(b0.add_proof(proof2, &valid_voters)),
             BlockState::Full
         );
         assert_eq!(b0.num_proofs(), 3);

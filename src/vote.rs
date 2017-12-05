@@ -86,7 +86,7 @@ mod tests {
         let bad_keys = sign::gen_keypair();
         let peer_id = PeerId::new(rng.gen_range(0, 255), keys.0);
         let payload = SectionState::Live(peer_id.clone());
-        let vote = Vote::new(&keys.1, payload).unwrap();
+        let vote = unwrap!(Vote::new(&keys.1, payload));
         assert!(vote.validate_signature(&peer_id)); // right key
         let bad_peer_id = PeerId::new(rng.gen_range(0, 255), bad_keys.0);
         assert!(!vote.validate_signature(&bad_peer_id)); // wrong key
