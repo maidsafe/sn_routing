@@ -252,4 +252,65 @@ mod tests {
         );
         assert_eq!(b0.num_proofs(), 3);
     }
+
+    #[test]
+    fn random_vote_or_proof() {
+        let mut rng = SeededRng::thread_rng();
+        unwrap!(rust_sodium::init_with_rng(&mut rng));
+
+        let num_of_voters = 8;
+        let mut total_age = 0;
+        let mut keys_list = Vec::new();
+
+        let valid_voters: BTreeSet<PeerId> = (0..num_of_voters)
+            .map(|_| {
+                let age = rng.gen_range(0, 255);
+                total_age += age as usize;
+                let keys = sign::gen_keypair();
+                keys_list.push(keys.clone());
+                PeerId::new(age, keys.0)
+            })
+            .collect();
+
+        let peer_id0 = unwrap!(valid_voters.iter().find(|peer_id| {
+            *peer_id.pub_key() == keys_list[0].0
+        }));
+        let payload = SectionState::Live(PeerId::new(0, keys_list[0].0));
+        let vote0 = unwrap!(Vote::new(&keys_list[0].1, payload.clone()));
+        let mut block = unwrap!(Block::new(&vote0, peer_id0));
+        let mut accumulated_age = peer_id0.age() as usize;
+
+        for idx in 1..num_of_voters {
+            let peer_id = unwrap!(valid_voters.iter().find(|peer_id| {
+                *peer_id.pub_key() == keys_list[idx].0
+            }));
+            accumulated_age += peer_id.age() as usize;
+            let vote = unwrap!(Vote::new(&keys_list[idx].1, payload.clone()));
+            if rng.gen() {
+                // insert as vote
+                assert!(block.add_vote(&vote, peer_id, &valid_voters).is_ok());
+            } else {
+                // insert as proof
+                let proof = unwrap!(vote.proof(peer_id));
+                assert!(block.add_proof(proof, &valid_voters).is_ok());
+            }
+            assert_eq!(accumulated_age, block.total_age());
+            if block.num_proofs() == num_of_voters {
+                assert_eq!(
+                    unwrap!(block.get_block_state(&valid_voters)),
+                    BlockState::Full
+                );
+            } else if accumulated_age * 2 > total_age && block.num_proofs() * 2 > num_of_voters {
+                assert_eq!(
+                    unwrap!(block.get_block_state(&valid_voters)),
+                    BlockState::Valid
+                );
+            } else {
+                assert_eq!(
+                    unwrap!(block.get_block_state(&valid_voters)),
+                    BlockState::NotYetValid
+                );
+            }
+        }
+    }
 }
