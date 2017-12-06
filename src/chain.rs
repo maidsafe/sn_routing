@@ -22,6 +22,7 @@ use maidsafe_utilities::serialisation;
 use network_event::{DataIdentifier, SectionState};
 use peer_id::PeerId;
 use proof::Proof;
+use std::collections::BTreeSet;
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
@@ -126,7 +127,7 @@ impl DataChain {
         vote: Vote<SectionState>,
         peer_id: &PeerId,
     ) -> Option<(SectionState, PeersAndAge)> {
-        if !vote.validate_signature(peer_id.pub_key()) {
+        if !vote.validate_signature(peer_id) {
             return None;
         }
 
@@ -137,8 +138,9 @@ impl DataChain {
                     info!("duplicate proof");
                     return None;
                 }
-
-                blk.add_proof(vote.proof(peer_id).unwrap()).unwrap();
+                // TODO: use proper valid voters list instead of the empty list.
+                blk.add_proof(vote.proof(peer_id).unwrap(), &BTreeSet::new())
+                    .unwrap();
 
                 let p_age = PeersAndAge::new(blk.num_proofs(), blk.total_age());
                 return Some((blk.payload().clone(), p_age));

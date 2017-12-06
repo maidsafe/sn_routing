@@ -57,7 +57,7 @@ mod tests {
     use RoutingError;
     use maidsafe_utilities::SeededRng;
     use network_event::SectionState;
-    use rand::random;
+    use rand::Rng;
     use rust_sodium;
     use vote::Vote;
 
@@ -66,10 +66,11 @@ mod tests {
         let mut rng = SeededRng::thread_rng();
         unwrap!(rust_sodium::init_with_rng(&mut rng));
         let keys = sign::gen_keypair();
-        let payload = SectionState::Live(PeerId::new(random::<u8>(), keys.0));
-        let vote = Vote::new(&keys.1, payload.clone()).unwrap();
-        assert!(vote.validate_signature(&keys.0));
-        let proof = vote.proof(&PeerId::new(random::<u8>(), keys.0)).unwrap();
+        let peer_id = PeerId::new(rng.gen_range(0, 255), keys.0);
+        let payload = SectionState::Live(PeerId::new(rng.gen_range(0, 255), keys.0));
+        let vote = unwrap!(Vote::new(&keys.1, payload.clone()));
+        assert!(vote.validate_signature(&peer_id));
+        let proof = unwrap!(vote.proof(&PeerId::new(rng.gen_range(0, 255), keys.0)));
         assert!(proof.validate_signature(&payload));
     }
 
@@ -78,14 +79,18 @@ mod tests {
         let mut rng = SeededRng::thread_rng();
         unwrap!(rust_sodium::init_with_rng(&mut rng));
         let keys = sign::gen_keypair();
+        let peer_id = PeerId::new(rng.gen_range(0, 255), keys.0);
         let other_keys = sign::gen_keypair();
-        let payload = SectionState::Live(PeerId::new(random::<u8>(), keys.0));
-        let vote = Vote::new(&keys.1, payload.clone()).unwrap();
-        assert!(vote.validate_signature(&keys.0));
-        let proof = vote.proof(&PeerId::new(random::<u8>(), keys.0)).unwrap();
-        assert!(vote.proof(&PeerId::new(random::<u8>(), keys.0)).is_ok());
+        let payload = SectionState::Live(PeerId::new(rng.gen_range(0, 255), keys.0));
+        let vote = unwrap!(Vote::new(&keys.1, payload.clone()));
+        assert!(vote.validate_signature(&peer_id));
+        let proof = unwrap!(vote.proof(&PeerId::new(rng.gen_range(0, 255), keys.0)));
+        assert!(
+            vote.proof(&PeerId::new(rng.gen_range(0, 255), keys.0))
+                .is_ok()
+        );
         if let Err(RoutingError::FailedSignature) =
-            vote.proof(&PeerId::new(random::<u8>(), other_keys.0))
+            vote.proof(&PeerId::new(rng.gen_range(0, 255), other_keys.0))
         {
         } else {
             panic!("Should have failed signature check.");
