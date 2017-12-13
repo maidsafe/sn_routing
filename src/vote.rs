@@ -79,16 +79,18 @@ mod tests {
     use rust_sodium;
 
     #[test]
-    fn wrong_key() {
+    fn wrong_key_or_source() {
         let mut rng = SeededRng::thread_rng();
         unwrap!(rust_sodium::init_with_rng(&mut rng));
         let keys = sign::gen_keypair();
-        let bad_keys = sign::gen_keypair();
         let peer_id = PeerId::new(rng.gen_range(0, 255), keys.0);
         let payload = SectionState::Live(peer_id.clone());
         let vote = unwrap!(Vote::new(&keys.1, payload));
         assert!(vote.validate_signature(&peer_id)); // right key
+        assert!(vote.proof(&peer_id).is_ok()); // right source
+        let bad_keys = sign::gen_keypair();
         let bad_peer_id = PeerId::new(rng.gen_range(0, 255), bad_keys.0);
         assert!(!vote.validate_signature(&bad_peer_id)); // wrong key
+        assert!(vote.proof(&bad_peer_id).is_err()); // wrong source
     }
 }
