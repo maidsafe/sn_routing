@@ -1,5 +1,10 @@
 # Routing - Change Log
 
+## [0.34.0]
+- Fix rounding error in test.
+- Depend on Crust 0.29.0.
+- Depend on rust_sodium 0.6.0.
+
 ## [0.33.2]
 - Depend on Crust 0.28.1.
 
