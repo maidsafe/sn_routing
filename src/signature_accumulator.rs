@@ -53,6 +53,8 @@ impl SignatureAccumulator {
         if let Some(&mut (ref mut msg, _, _)) = self.msgs.get_mut(&hash) {
             msg.add_signature(pub_id, sig);
         } else {
+            // FIXME: rustc stable requires this to be non-mutable?
+            #[allow(unused)]
             let mut sigs_vec = self.sigs.entry(hash).or_insert_with(
                 || (vec![], Instant::now()),
             );

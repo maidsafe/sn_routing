@@ -138,11 +138,11 @@ mod tests {
     #[test]
     fn duration_formatting() {
         assert_eq!(
-            format!("{}", Duration::new(653105, 499_000_000).display_secs()),
+            format!("{}", Duration::new(653_105, 499_000_000).display_secs()),
             "653105 seconds"
         );
         assert_eq!(
-            format!("{}", Duration::new(653105, 500_000_000).display_secs()),
+            format!("{}", Duration::new(653_105, 500_000_000).display_secs()),
             "653106 seconds"
         );
         assert_eq!(

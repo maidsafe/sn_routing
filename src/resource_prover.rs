@@ -116,7 +116,7 @@ impl ResourceProver {
         }
 
         let atomic_cancel = Arc::new(AtomicBool::new(false));
-        let atomic_cancel_clone = atomic_cancel.clone();
+        let atomic_cancel_clone = Arc::clone(&atomic_cancel);
         let action_sender = self.action_sender.clone();
         let joiner = thread::named("resource_prover", move || {
             let start = Instant::now();

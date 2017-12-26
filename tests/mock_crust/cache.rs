@@ -69,7 +69,7 @@ fn response_caching() {
     // in the NAE manager section of the data.
     unwrap!(clients[0].inner.get_idata(dst, data_id, message_id));
 
-    poll_all(&mut nodes, &mut clients);
+    let _ = poll_all(&mut nodes, &mut clients);
 
     for node in &mut *nodes {
         loop {
@@ -98,7 +98,7 @@ fn response_caching() {
         }
     }
 
-    poll_all(&mut nodes, &mut clients);
+    let _ = poll_all(&mut nodes, &mut clients);
 
     expect_any_event!(
         clients[0],
@@ -123,7 +123,7 @@ fn response_caching() {
     // hit the proxy node and not be relayed to the other nodes.
     unwrap!(clients[0].inner.get_idata(dst, data_id, message_id));
 
-    poll_all(&mut nodes, &mut clients);
+    let _ = poll_all(&mut nodes, &mut clients);
 
     // The client should receive the response...
     expect_any_event!(

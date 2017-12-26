@@ -364,9 +364,9 @@ mod tests {
 
     #[test]
     fn bit() {
-        assert_eq!(false, 0b00101000u8.bit(0));
-        assert_eq!(true, 0b00101000u8.bit(2));
-        assert_eq!(false, 0b00101000u8.bit(3));
+        assert_eq!(false, 0b0010_1000u8.bit(0));
+        assert_eq!(true, 0b0010_1000u8.bit(2));
+        assert_eq!(false, 0b0010_1000u8.bit(3));
     }
 
     #[test]
@@ -383,9 +383,9 @@ mod tests {
 
     #[test]
     fn differs_in_bit() {
-        assert!(0b00101010u8.differs_in_bit(&0b00100010u8, 4));
-        assert!(0b00101010u8.differs_in_bit(&0b00000010u8, 4));
-        assert!(!0b00101010u8.differs_in_bit(&0b00001010u8, 4));
+        assert!(0b0010_1010u8.differs_in_bit(&0b0010_0010u8, 4));
+        assert!(0b0010_1010u8.differs_in_bit(&0b0000_0010u8, 4));
+        assert!(!0b0010_1010u8.differs_in_bit(&0b0000_1010u8, 4));
     }
 
     #[test]
@@ -397,9 +397,9 @@ mod tests {
 
     #[test]
     fn set_remaining() {
-        assert_eq!(0b10011011u8.set_remaining(5, false), 0b10011000);
-        assert_eq!(0b11111111u8.set_remaining(2, false), 0b11000000);
-        assert_eq!(0b00000000u8.set_remaining(4, true), 0b00001111);
+        assert_eq!(0b1001_1011u8.set_remaining(5, false), 0b1001_1000);
+        assert_eq!(0b1111_1111u8.set_remaining(2, false), 0b1100_0000);
+        assert_eq!(0b0000_0000u8.set_remaining(4, true), 0b0000_1111);
     }
 
     #[test]

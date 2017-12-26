@@ -31,7 +31,7 @@
         unused_comparisons, unused_features, unused_parens, while_true)]
 #![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
         unused_qualifications, unused_results)]
-#![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
+#![allow(box_pointers, missing_copy_implementations,
          missing_debug_implementations, variant_size_differences,
          non_camel_case_types)]
 
@@ -78,7 +78,7 @@ mod unnamed {
 
     // ==========================   Program Options   =================================
     #[cfg_attr(rustfmt, rustfmt_skip)]
-    static USAGE: &'static str = "
+    static USAGE: &str = "
 Usage:
   key_value_store
   key_value_store --node
@@ -101,7 +101,7 @@ Options:
 ";
 
     const TAG: u64 = 10_000;
-    const KEY: &'static [u8] = &[];
+    const KEY: &[u8] = &[];
 
     #[derive(Debug, Deserialize)]
     struct Args {
@@ -191,7 +191,7 @@ Options:
                     self.exit = true;
                 }
                 UserCommand::Get(what) => {
-                    self.get(what);
+                    self.get(&what);
                 }
                 UserCommand::Put(put_where, put_what) => {
                     self.put(put_where, put_what);
@@ -200,8 +200,8 @@ Options:
         }
 
         /// Get data from the network.
-        pub fn get(&mut self, what: String) {
-            let name = Self::calculate_key_name(&what);
+        pub fn get(&mut self, what: &str) {
+            let name = Self::calculate_key_name(what);
             match self.example_client.get_mdata_value(name, TAG, KEY.to_vec()) {
                 Ok(value) => {
                     let content = unwrap!(deserialise::<String>(&value.content));
@@ -212,11 +212,11 @@ Options:
         }
 
         /// Put data onto the network.
-        pub fn put(&mut self, put_where: String, put_what: String) {
-            let name = Self::calculate_key_name(&put_where);
+        pub fn put<S: AsRef<str>>(&mut self, put_where: S, put_what: S) {
+            let name = Self::calculate_key_name(put_where.as_ref());
 
             let value = Value {
-                content: unwrap!(serialise(&put_what)),
+                content: unwrap!(serialise(&put_what.as_ref())),
                 entry_version: 0,
             };
             let entries = iter::once((KEY.to_vec(), value)).collect();

@@ -217,7 +217,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// Creates a new `RoutingTable`.
     pub fn new(our_name: T, min_section_size: usize) -> Self {
         let mut our_section = BTreeSet::new();
-        our_section.insert(our_name);
+        let _ = our_section.insert(our_name);
         RoutingTable {
             our_name: our_name,
             min_section_size: min_section_size,
@@ -421,7 +421,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     pub fn other_close_names(&self, name: &T) -> Option<BTreeSet<T>> {
         if self.our_prefix.matches(name) {
             let mut section = self.our_section.clone();
-            section.remove(&self.our_name);
+            let _ = section.remove(&self.our_name);
             Some(section)
         } else {
             None
@@ -872,7 +872,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                 if *prefix == self.our_prefix {
                     // Exclude our name since we don't need to send to ourself
                     let mut section = section.clone();
-                    section.remove(&self.our_name);
+                    let _ = section.remove(&self.our_name);
                     return Ok(section);
                 }
                 candidates(target_name)

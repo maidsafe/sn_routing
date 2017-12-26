@@ -39,7 +39,7 @@ const RATE: f64 = 8.0 * 1024.0 * 1024.0;
 /// This is slightly larger than `MAX_IMMUTABLE_DATA_SIZE_IN_BYTES` to allow for the extra bytes
 /// created by wrapping the chunk in a `UserMessage`, splitting it into parts and wrapping those in
 /// `RoutingMessage`s.
-const MIN_CLIENT_CAPACITY: u64 = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES + 10240;
+const MIN_CLIENT_CAPACITY: u64 = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES + 10_240;
 /// The maximum number of bytes the `RateLimiter` will "hold" at any given moment. This allowance
 /// is split equally between clients with entries in the `RateLimiter`. It is a soft limit in that
 /// it can be exceeded if there are enough client entries: each client will be allowed a
@@ -248,7 +248,7 @@ impl RateLimiter {
             None => return None,
         };
 
-        let deduction = amount_charged.saturating_sub(part_count as u64 * MAX_PART_LEN as u64);
+        let deduction = amount_charged.saturating_sub(u64::from(part_count) * MAX_PART_LEN as u64);
 
         self.used.get_mut(client_ip).map(|used| {
             *used = used.saturating_sub(deduction);
@@ -265,7 +265,7 @@ impl RateLimiter {
 
         let now = Instant::now();
         let leak_time = (now - self.last_updated).as_secs() as f64 +
-            ((now - self.last_updated).subsec_nanos() as f64 / 1_000_000_000.0);
+            (f64::from((now - self.last_updated).subsec_nanos()) / 1_000_000_000.0);
         self.last_updated = now;
         let mut leaked_units = (RATE * leak_time) as u64;
 

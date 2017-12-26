@@ -28,7 +28,7 @@
         unused_comparisons, unused_features, unused_parens, while_true)]
 #![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
         unused_qualifications, unused_results)]
-#![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
+#![allow(box_pointers, missing_copy_implementations,
          missing_debug_implementations, variant_size_differences, non_camel_case_types)]
 
 #![cfg_attr(feature = "use-mock-crust", allow(unused_extern_crates, unused_imports))]
@@ -390,7 +390,7 @@ Options:
             let nodes = start_nodes(node_count);
 
             let stop_flag = Arc::new((Mutex::new(false), Condvar::new()));
-            let _raii_joiner = simulate_churn(nodes, node_count, stop_flag.clone());
+            let _raii_joiner = simulate_churn(nodes, node_count, Arc::clone(&stop_flag));
 
             let test_result = panic::catch_unwind(|| { store_and_verify(requests, batches); });
 

@@ -135,7 +135,7 @@ fn concurrent_merge() {
     verify_invariant_for_all_nodes(&mut nodes);
     let mut prefixes = BTreeSet::new();
     for node in nodes.iter() {
-        prefixes.insert(*node.routing_table().our_prefix());
+        let _ = prefixes.insert(*node.routing_table().our_prefix());
     }
     assert_eq!(prefixes.len(), 2);
 }
@@ -171,15 +171,15 @@ fn merge_exclude_reconnecting_peers() {
 
     // Poll the nodes, check the invariant and ensure the network has merged to `()`.
     for _ in 0..min_section_size {
-        poll_all(&mut nodes, &mut []);
+        let _ = poll_all(&mut nodes, &mut []);
         FakeClock::advance_time(ACK_TIMEOUT_SECS * 1000 + 1);
     }
-    poll_all(&mut nodes, &mut []);
+    let _ = poll_all(&mut nodes, &mut []);
 
     verify_invariant_for_all_nodes(&mut nodes);
     let mut prefixes = BTreeSet::new();
     for node in nodes.iter() {
-        prefixes.insert(*node.routing_table().our_prefix());
+        let _ = prefixes.insert(*node.routing_table().our_prefix());
     }
     assert_eq!(prefixes.len(), 1, "prefixes: {:?}", prefixes);
 }

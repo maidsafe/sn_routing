@@ -29,8 +29,7 @@
       unused_comparisons, unused_features, unused_parens, while_true)]
 #![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
         unused_qualifications, unused_results, variant_size_differences)]
-#![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
-         missing_debug_implementations)]
+#![allow(box_pointers, missing_copy_implementations, missing_debug_implementations)]
 
 #![cfg(not(feature = "use-mock-crust"))]
 #![cfg(not(feature = "use-mock-crypto"))]
@@ -274,7 +273,7 @@ fn create_connected_nodes(
 }
 
 fn gen_mutable_data<R: Rng>(full_id: &FullId, rng: &mut R) -> MutableData {
-    let tag = 10000;
+    let tag = 10_000;
 
     let num_entries = rng.gen_range(1, 10);
     let entries: BTreeMap<_, _> = (0..num_entries)
@@ -294,7 +293,7 @@ fn gen_mutable_data<R: Rng>(full_id: &FullId, rng: &mut R) -> MutableData {
 
     let owner_pubkey = *full_id.public_id().signing_public_key();
     let mut owners = BTreeSet::new();
-    owners.insert(owner_pubkey);
+    let _ = owners.insert(owner_pubkey);
 
     MutableData::new(rng.gen(), tag, Default::default(), entries, owners)
         .expect("Cannot create structured data for test")
@@ -652,7 +651,7 @@ fn core() {
                             client_key,
                         );
                         assert!(result.is_ok());
-                        sent_ids.insert(message_id);
+                        let _ = sent_ids.insert(message_id);
                     }
                     TestEvent(index, Event::Request { request, src, dst }) => {
                         // A node received request from the client. Reply with a success.

@@ -109,7 +109,7 @@ impl ExampleNode {
         dst: Authority<XorName>,
     ) {
         match request {
-            Request::Refresh(payload, msg_id) => self.handle_refresh(payload, msg_id),
+            Request::Refresh(payload, msg_id) => self.handle_refresh(&payload, msg_id),
             Request::GetIData { name, msg_id } => {
                 self.handle_get_idata_request(src, dst, name, msg_id)
             }
@@ -127,7 +127,7 @@ impl ExampleNode {
                 tag,
                 key,
                 msg_id,
-            } => self.handle_get_mdata_value_request(src, dst, name, tag, key, msg_id),
+            } => self.handle_get_mdata_value_request(src, dst, name, tag, &key, msg_id),
             _ => {
                 warn!(
                     "{:?} ExampleNode: handle for {:?} unimplemented.",
@@ -295,7 +295,7 @@ impl ExampleNode {
         dst: Authority<XorName>,
         name: XorName,
         tag: u64,
-        key: Vec<u8>,
+        key: &[u8],
         msg_id: MessageId,
     ) {
         match (src, dst) {
@@ -304,7 +304,7 @@ impl ExampleNode {
                     .get(&(name, tag))
                     .ok_or(ClientError::NoSuchData)
                     .and_then(|data| {
-                        data.get(&key).cloned().ok_or(ClientError::NoSuchEntry)
+                        data.get(key).cloned().ok_or(ClientError::NoSuchEntry)
                     })
                     .map_err(|error| {
                         trace!("{:?} GetMDataValue request failed for {:?}.",
@@ -385,8 +385,8 @@ impl ExampleNode {
 
     /// Receiving a refresh message means that a quorum has been reached: Enough other members in
     /// the section agree, so we need to update our data accordingly.
-    fn handle_refresh(&mut self, content: Vec<u8>, _id: MessageId) {
-        match unwrap!(deserialise(&content)) {
+    fn handle_refresh(&mut self, content: &[u8], _id: MessageId) {
+        match unwrap!(deserialise(content)) {
             RefreshContent::Account { client_name, data } => {
                 trace!(
                     "{:?} handle_refresh for account. client name: {:?}",

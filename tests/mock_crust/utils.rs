@@ -428,7 +428,7 @@ pub fn create_connected_nodes_with_cache(
             .cache(use_cache)
             .create(),
     );
-    nodes[0].poll();
+    let _ = nodes[0].poll();
 
     let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
 
@@ -486,7 +486,7 @@ pub fn create_connected_nodes_until_split(
             .cache(use_cache)
             .create(),
     ];
-    nodes[0].poll();
+    let _ = nodes[0].poll();
     add_connected_nodes_until_split(network, &mut nodes, prefix_lengths, use_cache);
     Nodes(nodes)
 }
