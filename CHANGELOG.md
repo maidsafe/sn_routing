@@ -1,5 +1,9 @@
 # Routing - Change Log
 
+## [0.35.0]
+- Use rust 1.22.1 stable / 2017-11-23 nightly
+- rustfmt 0.9.0 and clippy-0.0.174
+
 ## [0.34.0]
 - Fix rounding error in test.
 - Depend on Crust 0.29.0.

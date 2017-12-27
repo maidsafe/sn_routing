@@ -137,7 +137,7 @@ impl<UID: Uid> Network<UID> {
     /// Causes all packets from `sender` to `receiver` to fail.
     pub fn block_connection(&self, sender: Endpoint, receiver: Endpoint) {
         let mut imp = self.0.borrow_mut();
-        imp.blocked_connections.insert((sender, receiver));
+        let _ = imp.blocked_connections.insert((sender, receiver));
     }
 
     /// Make all packets from `sender` to `receiver` succeed.
@@ -149,7 +149,7 @@ impl<UID: Uid> Network<UID> {
     /// Delay the processing of packets from `sender` to `receiver`.
     pub fn delay_connection(&self, sender: Endpoint, receiver: Endpoint) {
         let mut imp = self.0.borrow_mut();
-        imp.delayed_connections.insert((sender, receiver));
+        let _ = imp.delayed_connections.insert((sender, receiver));
     }
 
     /// Simulates the loss of a connection.
@@ -464,12 +464,12 @@ impl<UID: Uid> ServiceImpl<UID> {
     }
 
     fn handle_bootstrap_accept(&mut self, peer_endpoint: Endpoint, uid: UID, kind: CrustUser) {
-        self.add_connection(uid, peer_endpoint, kind);
+        let _ = self.add_connection(uid, peer_endpoint, kind);
         self.send_event(CrustEvent::BootstrapAccept(uid, kind));
     }
 
     fn handle_bootstrap_success(&mut self, peer_endpoint: Endpoint, uid: UID) {
-        self.add_connection(uid, peer_endpoint, CrustUser::Node);
+        let _ = self.add_connection(uid, peer_endpoint, CrustUser::Node);
         self.send_event(CrustEvent::BootstrapConnect(
             uid,
             to_socket_addr(&peer_endpoint),

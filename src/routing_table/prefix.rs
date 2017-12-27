@@ -328,11 +328,11 @@ mod tests {
         assert!(!unwrap!(Prefix::from_str("101")).is_neighbour(&unwrap!(
             Prefix::from_str("10111")
         )));
-        assert!(unwrap!(Prefix::from_str("101")).matches(&0b10101100));
-        assert!(!unwrap!(Prefix::from_str("1011")).matches(&0b10101100));
+        assert!(unwrap!(Prefix::from_str("101")).matches(&0b1010_1100));
+        assert!(!unwrap!(Prefix::from_str("1011")).matches(&0b1010_1100));
 
-        assert_eq!(unwrap!(Prefix::from_str("0101")).lower_bound(), 0b01010000);
-        assert_eq!(unwrap!(Prefix::from_str("0101")).upper_bound(), 0b01011111);
+        assert_eq!(unwrap!(Prefix::from_str("0101")).lower_bound(), 0b0101_0000);
+        assert_eq!(unwrap!(Prefix::from_str("0101")).upper_bound(), 0b0101_1111);
 
         // Check we handle passing an excessive `bit_count` to `new()`.
         assert_eq!(Prefix::<u64>::new(64, 0).bit_count(), 64);

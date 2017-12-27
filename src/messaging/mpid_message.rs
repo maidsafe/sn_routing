@@ -17,7 +17,7 @@
 
 /// Maximum allowed length for a [message's `body`](struct.MpidMessage.html#method.new) (101,760
 /// bytes).
-pub const MAX_BODY_SIZE: usize = 102400 - 512 - super::MAX_HEADER_METADATA_SIZE;
+pub const MAX_BODY_SIZE: usize = 102_400 - 512 - super::MAX_HEADER_METADATA_SIZE;
 
 use super::{Error, MpidHeader};
 use maidsafe_utilities::serialisation::serialise;

@@ -295,14 +295,14 @@ fn disconnect_on_get_request() {
     // TODO: Assert a quorum here.
     assert!(2 * request_received_count > min_section_size);
 
-    clients[0].handle.0.borrow_mut().disconnect(&unwrap!(
+    let _ = clients[0].handle.0.borrow_mut().disconnect(&unwrap!(
         nodes[0]
             .handle
             .0
             .borrow()
             .uid
     ));
-    nodes[0].handle.0.borrow_mut().disconnect(&unwrap!(
+    let _ = nodes[0].handle.0.borrow_mut().disconnect(&unwrap!(
         clients[0]
             .handle
             .0

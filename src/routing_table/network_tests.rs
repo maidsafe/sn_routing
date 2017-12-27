@@ -195,7 +195,7 @@ impl Network {
                                 if let Err(e) = target_node.add(name) {
                                     panic!("Error adding node: {:?}", e);
                                 }
-                                node_expected.remove(&name);
+                                let _ = node_expected.remove(&name);
                             }
                             if node_expected.is_empty() && target_node.should_merge() {
                                 Network::store_merge_info(
@@ -261,7 +261,7 @@ impl Network {
         let mut handled = BTreeSet::new(); // These nodes have received and handled the message.
         received.push(src);
         while let Some(node) = received.pop() {
-            handled.insert(node); // `node` is now handling the message and relaying it.
+            let _ = handled.insert(node); // `node` is now handling the message and relaying it.
             for target in unwrap!(self.nodes[&node].targets(&dst, src, route)) {
                 if !handled.contains(&target) && !received.contains(&target) {
                     received.push(target);

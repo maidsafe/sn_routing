@@ -369,7 +369,7 @@ mod tests {
 
     #[test]
     fn subtraction() {
-        for _ in 0..100000 {
+        for _ in 0..100_000 {
             let x = rand::random();
             let y = rand::random();
             let (larger, smaller) = if x > y { (x, y) } else { (y, x) };
@@ -389,11 +389,11 @@ mod tests {
 
     #[test]
     fn division() {
-        for _ in 0..100000 {
+        for _ in 0..100_000 {
             let x = rand::random();
             let y = rand::random();
-            assert_eq!(xor_from_int(x / y as u64), xor_from_int(x) / y);
-            assert_eq!(xor_from_int(1), xor_from_int(y as u64) / y);
+            assert_eq!(xor_from_int(x / u64::from(y)), xor_from_int(x) / y);
+            assert_eq!(xor_from_int(1), xor_from_int(u64::from(y)) / y);
         }
     }
 
@@ -406,11 +406,11 @@ mod tests {
     #[test]
     fn from_int() {
         assert_eq!(
-            &xor_from_int(0xabcdef)[XOR_NAME_LEN - 3..],
+            &xor_from_int(0xab_cdef)[XOR_NAME_LEN - 3..],
             &[0xab, 0xcd, 0xef]
         );
         assert_eq!(
-            xor_from_int(0xabcdef)[..XOR_NAME_LEN - 3],
+            xor_from_int(0xab_cdef)[..XOR_NAME_LEN - 3],
             XorName::default()[..XOR_NAME_LEN - 3]
         );
     }

@@ -367,7 +367,7 @@ impl Bootstrapping {
                 self,
                 bootstrap_id
             );
-            self.crust_service.disconnect(&bootstrap_id);
+            let _ = self.crust_service.disconnect(&bootstrap_id);
             let crust_user = if self.client_restriction() {
                 CrustUser::Client
             } else {

@@ -122,7 +122,8 @@ impl NodeBuilder {
     pub fn create(self) -> Result<Node, RoutingError> {
         // If we're not in a test environment where we might want to manually seed the crypto RNG
         // then seed randomly.
-        #[cfg(not(feature = "use-mock-crust"))] rust_sodium::init();
+        #[cfg(not(feature = "use-mock-crust"))]
+        let _ = rust_sodium::init();
 
         let mut ev_buffer = EventBuf::new();
 
@@ -518,7 +519,7 @@ impl Node {
         priority: u8,
     ) -> Result<(), InterfaceError> {
         // Make sure the state machine has processed any outstanding crust events.
-        self.poll();
+        let _ = self.poll();
 
         let action = Action::NodeSendMessage {
             src: src,

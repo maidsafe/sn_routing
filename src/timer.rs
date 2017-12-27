@@ -173,7 +173,7 @@ mod implementation {
                 for i in 0..count {
                     let timeout = interval * (count - i);
                     let token = timer.schedule(timeout);
-                    assert_eq!(token, i as u64);
+                    assert_eq!(token, u64::from(i));
                 }
 
                 // Ensure timeout notifications are received correctly.
@@ -194,7 +194,7 @@ mod implementation {
                     }
                     let action = action_receiver.try_recv();
                     match action.expect("Should have received an action.") {
-                        Action::Timeout(token) => assert_eq!(token, (count - i - 1) as u64),
+                        Action::Timeout(token) => assert_eq!(token, u64::from(count - i - 1)),
                         unexpected_action => {
                             panic!(
                                 "Expected `Action::Timeout`, but received {:?}",

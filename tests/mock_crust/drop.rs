@@ -63,7 +63,7 @@ fn node_restart() {
         drop_node(&mut nodes, 0);
     }
 
-    poll_all(&mut nodes, &mut []);
+    let _ = poll_all(&mut nodes, &mut []);
 
     expect_next_event!(nodes[0], Event::RestartRequired);
 }

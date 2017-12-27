@@ -79,7 +79,7 @@ impl Tunnels {
         let pair = (src_id, dst_id);
         if self.new_clients.contains(&pair) {
             self.new_clients.remove(&pair);
-            self.clients.insert(pair);
+            let _ = self.clients.insert(pair);
             true
         } else {
             false
@@ -97,7 +97,7 @@ impl Tunnels {
         pairs
             .into_iter()
             .map(|pair| {
-                self.clients.remove(&pair);
+                let _ = self.clients.remove(&pair);
                 if pair.0 == *pub_id { pair.1 } else { pair.0 }
             })
             .collect()
@@ -200,10 +200,10 @@ mod tests {
         let mut tunnels: Tunnels = Default::default();
         assert_eq!(None, tunnels.tunnel_for(&our_id));
         // Peer 1 is acting as a tunnel for peer 0.
-        tunnels.add(our_id, their_id);
+        let _ = tunnels.add(our_id, their_id);
         assert_eq!(Some(&their_id), tunnels.tunnel_for(&our_id));
         assert_eq!(None, tunnels.tunnel_for(&their_id));
-        tunnels.remove(our_id, their_id);
+        let _ = tunnels.remove(our_id, their_id);
         assert_eq!(None, tunnels.tunnel_for(&our_id));
     }
 
@@ -217,9 +217,9 @@ mod tests {
 
         let mut tunnels: Tunnels = Default::default();
         // Peer 0 is acting as a tunnel for 1 and 2, but not 3.
-        tunnels.add(sorted_ids[1], sorted_ids[0]);
-        tunnels.add(sorted_ids[2], sorted_ids[0]);
-        tunnels.add(sorted_ids[3], sorted_ids[4]);
+        let _ = tunnels.add(sorted_ids[1], sorted_ids[0]);
+        let _ = tunnels.add(sorted_ids[2], sorted_ids[0]);
+        let _ = tunnels.add(sorted_ids[3], sorted_ids[4]);
         let removed_peers = tunnels.remove_tunnel(&sorted_ids[0]).into_iter().sorted();
         assert_eq!(&[sorted_ids[1], sorted_ids[2]], &*removed_peers);
         assert_eq!(None, tunnels.tunnel_for(&sorted_ids[1]));
@@ -237,7 +237,7 @@ mod tests {
 
         let mut tunnels: Tunnels = Default::default();
         // We are directly connected to 1, but not 0.
-        tunnels.add(sorted_ids[0], sorted_ids[1]);
+        let _ = tunnels.add(sorted_ids[0], sorted_ids[1]);
         // consider_clients has not been called yet.
         assert!(!tunnels.accept_clients(sorted_ids[1], sorted_ids[2]));
         assert!(!tunnels.accept_clients(sorted_ids[3], sorted_ids[4]));

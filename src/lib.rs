@@ -115,13 +115,13 @@
         unused_comparisons, unused_features, unused_parens, while_true)]
 #![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
         unused_qualifications, unused_results)]
-#![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
+#![allow(box_pointers, missing_copy_implementations,
          missing_debug_implementations, variant_size_differences, non_camel_case_types)]
 
 #![cfg_attr(feature="cargo-clippy", deny(unicode_not_nfc, wrong_pub_self_convention,
                                     option_unwrap_used))]
-// Allow `panic_params` until https://github.com/Manishearth/rust-clippy/issues/768 is resolved.
-#![cfg_attr(feature="cargo-clippy", allow(panic_params))]
+// FIXME: allow `needless_pass_by_value` until it's OK to change the public API
+#![cfg_attr(feature="cargo-clippy", allow(needless_pass_by_value))]
 
 extern crate config_file_handler;
 extern crate hex;
@@ -220,7 +220,7 @@ pub const QUORUM_DENOMINATOR: usize = 2;
 /// Default minimal section size.
 pub const MIN_SECTION_SIZE: usize = 8;
 /// Key of an account data in the account packet
-pub const ACC_LOGIN_ENTRY_KEY: &'static [u8] = b"Login";
+pub const ACC_LOGIN_ENTRY_KEY: &[u8] = b"Login";
 
 pub use cache::{Cache, NullCache};
 pub use client::Client;

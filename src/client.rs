@@ -469,7 +469,7 @@ impl Client {
         bootstrap_config: Option<BootstrapConfig>,
         msg_expiry_dur: Duration,
     ) -> Result<Client, RoutingError> {
-        rust_sodium::init(); // enable shared global (i.e. safe to multithread now)
+        let _ = rust_sodium::init(); // enable shared global (i.e. safe to multithread now)
 
         let (tx, rx) = channel();
         let (get_action_sender_tx, get_action_sender_rx) = channel();
@@ -587,7 +587,7 @@ impl Client {
         priority: u8,
     ) -> Result<(), InterfaceError> {
         // Make sure the state machine has processed any outstanding crust events.
-        self.poll();
+        let _ = self.poll();
 
         let action = Action::ClientSendRequest {
             content: request,
@@ -642,7 +642,7 @@ impl Drop for Client {
 #[cfg(feature = "use-mock-crust")]
 impl Drop for Client {
     fn drop(&mut self) {
-        self.poll();
+        let _ = self.poll();
         let _ = self.machine.current_mut().handle_action(
             Action::Terminate,
             &mut self.event_buffer,

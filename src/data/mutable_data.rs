@@ -383,21 +383,22 @@ impl MutableData {
         }
 
         for (key, version) in delete {
-            /// TODO(nbaksalyar): find a way to decrease a number of entries after deletion.
-            /// In the current implementation if a number of entries exceeds the limit
-            /// there's no way for an owner to delete unneeded entries.
+            // TODO(nbaksalyar): find a way to decrease a number of entries after deletion.
+            // In the current implementation if a number of entries exceeds the limit
+            // there's no way for an owner to delete unneeded entries.
             match new_data.entry(key) {
                 Entry::Occupied(mut entry) => {
                     let current_version = entry.get().entry_version;
                     if version == current_version + 1 {
                         let _ = entry.insert(Value {
-                                                 content: Vec::new(),
-                                                 entry_version: version,
-                                             });
+                            content: Vec::new(),
+                            entry_version: version,
+                        });
                     } else {
-                        let _ =
-                            errors.insert(entry.key().clone(),
-                                          EntryError::InvalidSuccessor(current_version));
+                        let _ = errors.insert(
+                            entry.key().clone(),
+                            EntryError::InvalidSuccessor(current_version),
+                        );
                     }
                 }
                 Entry::Vacant(entry) => {
@@ -573,7 +574,7 @@ impl MutableData {
             return Err(ClientError::InvalidSuccessor(self.version));
         }
         self.owners.clear();
-        self.owners.insert(new_owner);
+        let _ = self.owners.insert(new_owner);
         self.version = version;
         Ok(())
     }
@@ -585,7 +586,7 @@ impl MutableData {
         }
 
         self.owners.clear();
-        self.owners.insert(new_owner);
+        let _ = self.owners.insert(new_owner);
         self.version = version;
         true
     }
@@ -675,7 +676,7 @@ mod tests {
         let k2 = b"234".to_vec();
 
         let mut owners = BTreeSet::new();
-        owners.insert(owner);
+        let _ = owners.insert(owner);
         let mut md = unwrap!(MutableData::new(
             rand::random(),
             0,
@@ -864,7 +865,7 @@ mod tests {
         let (pk1, _) = sign::gen_keypair();
 
         let mut owners = BTreeSet::new();
-        owners.insert(owner);
+        let _ = owners.insert(owner);
 
         let mut md = unwrap!(MutableData::new(
             rand::random(),
@@ -884,7 +885,7 @@ mod tests {
         let (owner, _) = sign::gen_keypair();
 
         let mut owners = BTreeSet::new();
-        owners.insert(owner);
+        let _ = owners.insert(owner);
         let mut md = unwrap!(MutableData::new(
             rand::random(),
             0,
@@ -972,7 +973,7 @@ mod tests {
         let (pk1, _) = sign::gen_keypair();
 
         let mut owners = BTreeSet::new();
-        owners.insert(owner);
+        let _ = owners.insert(owner);
 
         let mut md = unwrap!(MutableData::new(
             rand::random(),
