@@ -152,11 +152,12 @@ fn resend_parts_on_exceeding_limit() {
     }
     poll_and_resend(&mut nodes, &mut clients);
 
-    let total_data_parts = num_immutable_data * MAX_PARTS as u64;
+    let total_data_parts = num_immutable_data * u64::from(MAX_PARTS);
     // NOTE: this calculation is approximate and relies on some hardcoded knowledge about
     // the size of serialised user messages.
     let user_msg_header = 48;
-    let part_size = (MAX_IMMUTABLE_DATA_SIZE_IN_BYTES + user_msg_header) as f64 / MAX_PARTS as f64;
+    let part_size = (MAX_IMMUTABLE_DATA_SIZE_IN_BYTES + user_msg_header) as f64 /
+        f64::from(MAX_PARTS);
     let parts_allowed_first_time = (SOFT_CAPACITY as f64 / part_size) as u64;
     let parts_retried = total_data_parts - parts_allowed_first_time;
 
@@ -202,11 +203,12 @@ fn resend_over_load() {
     }
     poll_and_resend(&mut nodes, &mut clients);
 
-    let total_data_parts = num_immutable_data * MAX_PARTS as u64;
+    let total_data_parts = num_immutable_data * u64::from(MAX_PARTS);
     // NOTE: this calculation is approximate and relies on some hardcoded knowledge about
     // the size of serialised user messages.
     let user_msg_header = 48;
-    let part_size = (MAX_IMMUTABLE_DATA_SIZE_IN_BYTES + user_msg_header) as f64 / MAX_PARTS as f64;
+    let part_size = (MAX_IMMUTABLE_DATA_SIZE_IN_BYTES + user_msg_header) as f64 /
+        f64::from(MAX_PARTS);
     let parts_allowed_through = (SOFT_CAPACITY as f64 / part_size) as u64;
 
     // `poll_and_resend` advance clock by 20 seconds (`ACK_TIME_OUT`), hence the message is expired

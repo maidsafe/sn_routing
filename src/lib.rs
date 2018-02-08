@@ -116,9 +116,6 @@
          variant_size_differences, non_camel_case_types)]
 #![cfg_attr(feature = "cargo-clippy",
             deny(unicode_not_nfc, wrong_pub_self_convention, option_unwrap_used))]
-// Allow `panic_params` until
-// https://github.com/Manishearth/rust-clippy/issues/768 is resolved.
-#![cfg_attr(feature = "cargo-clippy", allow(panic_params))]
 
 extern crate config_file_handler;
 #[cfg(not(feature = "use-mock-crust"))]
@@ -224,7 +221,7 @@ pub const QUORUM_DENOMINATOR: usize = 2;
 /// Default minimal section size.
 pub const MIN_SECTION_SIZE: usize = 8;
 /// Key of an account data in the account packet
-pub const ACC_LOGIN_ENTRY_KEY: &'static [u8] = b"Login";
+pub const ACC_LOGIN_ENTRY_KEY: &[u8] = b"Login";
 
 pub use cache::{Cache, NullCache};
 pub use client::Client;

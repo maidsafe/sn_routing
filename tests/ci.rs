@@ -273,7 +273,7 @@ fn create_connected_nodes(
 }
 
 fn gen_mutable_data<R: Rng>(full_id: &FullId, rng: &mut R) -> MutableData {
-    let tag = 10000;
+    let tag = 10_000;
 
     let num_entries = rng.gen_range(1, 10);
     let entries: BTreeMap<_, _> = (0..num_entries)
