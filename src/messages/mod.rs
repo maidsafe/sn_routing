@@ -45,7 +45,7 @@ use xor_name::XorName;
 
 /// The maximal length of a user message part, in bytes.
 pub const MAX_PART_LEN: usize = 20 * 1024;
-pub const MAX_PARTS: u32 = ((MAX_IMMUTABLE_DATA_SIZE_IN_BYTES / MAX_PART_LEN as u64) + 1) as u32;
+pub const MAX_PARTS: u32 = (MAX_IMMUTABLE_DATA_SIZE_IN_BYTES / MAX_PART_LEN as u64 + 1) as u32;
 
 /// Get and refresh messages from nodes have a high priority: They relocate data under churn and are
 /// critical to prevent data loss.
@@ -1014,7 +1014,7 @@ impl UserMessageCache {
                 );
             }
 
-            if entry.len() != part_count as usize {
+            if entry.len() as u32 != part_count {
                 return None;
             }
         }
@@ -1088,7 +1088,7 @@ mod tests {
         let full_id_1 = FullId::new();
         let full_id_2 = FullId::new();
         let irrelevant_full_id = FullId::new();
-        let data_bytes: Vec<u8> = (0..10).map(|i| i as u8).collect();
+        let data_bytes: Vec<u8> = (0..10).collect();
         let data = ImmutableData::new(data_bytes);
         let user_msg = UserMessage::Request(Request::PutIData {
             data: data,

@@ -122,7 +122,7 @@ impl<T: Serialize + Clone> Block<T> {
     /// Return total age of all of signatories.
     pub fn total_age(&self) -> usize {
         self.proofs.iter().fold(0, |total, proof| {
-            total + proof.peer_id().age() as usize
+            total + usize::from(proof.peer_id().age())
         })
     }
 
@@ -146,7 +146,7 @@ impl<T: Serialize + Clone> Block<T> {
         }
         let total_age = valid_voters
             .iter()
-            .map(|peer_id| peer_id.age() as usize)
+            .map(|peer_id| usize::from(peer_id.age()))
             .sum();
         if self.total_age() * 2 > total_age && self.num_proofs() * 2 > valid_voters.len() {
             Ok(BlockState::Valid)
@@ -238,7 +238,7 @@ mod tests {
         let proof2 = unwrap!(vote2.proof(&peer_id2));
         // So 3 votes all valid will be added to block
         let mut b0 = unwrap!(Block::new(&vote0, &peer_id0));
-        if (age0 as usize + age1 as usize) > age2 as usize {
+        if (usize::from(age0) + usize::from(age1)) > usize::from(age2) {
             assert_eq!(
                 unwrap!(b0.add_proof(proof1, &valid_voters)),
                 BlockState::Valid

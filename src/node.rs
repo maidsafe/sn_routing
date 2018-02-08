@@ -105,7 +105,7 @@ impl Block {
     #[allow(unused)]
     pub fn total_proofs_age(&self) -> usize {
         self.proofs.iter().fold(0, |total, ref proof| {
-            total + proof.age() as usize
+            total + usize::from(proof.age())
         })
     }
 

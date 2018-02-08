@@ -244,7 +244,7 @@ impl MutableData {
         if self.owners.len() > 1 {
             return Err(ClientError::InvalidOwners);
         }
-        if self.data.len() >= (MAX_MUTABLE_DATA_ENTRIES + 1) as usize {
+        if self.data.len() as u64 >= MAX_MUTABLE_DATA_ENTRIES + 1 {
             return Err(ClientError::TooManyEntries);
         }
 
@@ -411,7 +411,7 @@ impl MutableData {
             return Err(ClientError::InvalidEntryActions(errors));
         }
 
-        if new_data.len() > MAX_MUTABLE_DATA_ENTRIES as usize {
+        if new_data.len() as u64 > MAX_MUTABLE_DATA_ENTRIES {
             return Err(ClientError::TooManyEntries);
         }
 

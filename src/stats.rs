@@ -105,7 +105,7 @@ impl Stats {
     }
 
     pub fn count_route(&mut self, route: u8) {
-        let route = route as usize;
+        let route = usize::from(route);
         if route >= self.routes.len() {
             self.routes.resize(route + 1, 0);
         }
