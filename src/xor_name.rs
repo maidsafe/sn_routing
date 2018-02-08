@@ -534,7 +534,7 @@ mod tests {
     #[test]
     fn subtraction() {
         let mut rng = SeededRng::thread_rng();
-        for _ in 0..100000 {
+        for _ in 0..100_000 {
             let x = rng.gen();
             let y = rng.gen();
             let (larger, smaller) = if x > y { (x, y) } else { (y, x) };
@@ -558,7 +558,7 @@ mod tests {
     #[test]
     fn division() {
         let mut rng = SeededRng::thread_rng();
-        for _ in 0..100000 {
+        for _ in 0..100_000 {
             let x = rng.gen();
             let y = rng.gen();
             assert_eq!(xor_name_from_int(x / y as u64), xor_name_from_int(x) / y);
@@ -575,11 +575,11 @@ mod tests {
     #[test]
     fn check_from_int() {
         assert_eq!(
-            &xor_name_from_int(0xabcdef)[XOR_NAME_LEN - 3..],
+            &xor_name_from_int(0xab_cd_ef)[XOR_NAME_LEN - 3..],
             &[0xab, 0xcd, 0xef]
         );
         assert_eq!(
-            xor_name_from_int(0xabcdef)[..XOR_NAME_LEN - 3],
+            xor_name_from_int(0xab_cd_ef)[..XOR_NAME_LEN - 3],
             XorName::default()[..XOR_NAME_LEN - 3]
         );
     }

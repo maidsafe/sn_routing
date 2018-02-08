@@ -389,7 +389,7 @@ Options:
             let nodes = start_nodes(node_count);
 
             let stop_flag = Arc::new((Mutex::new(false), Condvar::new()));
-            let _raii_joiner = simulate_churn(nodes, node_count, stop_flag.clone());
+            let _raii_joiner = simulate_churn(nodes, node_count, Arc::clone(&stop_flag));
 
             let test_result = panic::catch_unwind(|| { store_and_verify(requests, batches); });
 

@@ -108,7 +108,7 @@ mod tests {
     #[test]
     fn serialisation() {
         let mut rng = SeededRng::thread_rng();
-        let len = rng.gen_range(1, 10000);
+        let len = rng.gen_range(1, 10_000);
         let value = rng.gen_iter().take(len).collect();
         let immutable_data = ImmutableData::new(value);
         let serialised = unwrap!(serialisation::serialise(&immutable_data));

@@ -332,14 +332,14 @@ mod tests {
             Prefix::from_str("10111")
         )));
         let mut xor_name = XorName::default();
-        xor_name[0] = 0b10101100;
+        xor_name[0] = 0b1010_1100;
         assert!(unwrap!(Prefix::from_str("101")).matches(&xor_name));
         assert!(!unwrap!(Prefix::from_str("1011")).matches(&xor_name));
 
-        xor_name[0] = 0b01010000;
+        xor_name[0] = 0b0101_0000;
         assert_eq!(unwrap!(Prefix::from_str("0101")).lower_bound(), xor_name);
         xor_name.0 = [255; XOR_NAME_LEN];
-        xor_name[0] = 0b01011111;
+        xor_name[0] = 0b0101_1111;
         assert_eq!(unwrap!(Prefix::from_str("0101")).upper_bound(), xor_name);
 
         // Check we handle passing an excessive `bit_count` to `new()`.

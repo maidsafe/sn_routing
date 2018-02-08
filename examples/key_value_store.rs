@@ -76,7 +76,7 @@ mod unnamed {
 
     // ==========================   Program Options   =================================
     #[cfg_attr(rustfmt, rustfmt_skip)]
-    static USAGE: &'static str = "
+    static USAGE: &str = "
 Usage:
   key_value_store
   key_value_store --node
@@ -99,7 +99,7 @@ Options:
 ";
 
     const TAG: u64 = 10_000;
-    const KEY: &'static [u8] = &[];
+    const KEY: &[u8] = &[];
 
     #[derive(Debug, Deserialize)]
     struct Args {
@@ -189,17 +189,17 @@ Options:
                     self.exit = true;
                 }
                 UserCommand::Get(what) => {
-                    self.get(what);
+                    self.get(&what);
                 }
                 UserCommand::Put(put_where, put_what) => {
-                    self.put(put_where, put_what);
+                    self.put(&put_where, &put_what);
                 }
             }
         }
 
         /// Get data from the network.
-        pub fn get(&mut self, what: String) {
-            let name = Self::calculate_key_name(&what);
+        pub fn get(&mut self, what: &str) {
+            let name = Self::calculate_key_name(what);
             match self.example_client.get_mdata_value(name, TAG, KEY.to_vec()) {
                 Ok(value) => {
                     let content = unwrap!(deserialise::<String>(&value.content));
@@ -210,8 +210,8 @@ Options:
         }
 
         /// Put data onto the network.
-        pub fn put(&mut self, put_where: String, put_what: String) {
-            let name = Self::calculate_key_name(&put_where);
+        pub fn put(&mut self, put_where: &str, put_what: &str) {
+            let name = Self::calculate_key_name(put_where);
 
             let value = Value {
                 content: unwrap!(serialise(&put_what)),

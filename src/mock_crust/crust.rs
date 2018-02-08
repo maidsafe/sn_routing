@@ -67,7 +67,7 @@ impl<UID: Uid> Service<UID> {
         uid: UID,
     ) -> Result<Self, CrustError> {
         let network = handle.0.borrow().network.clone();
-        let service = Service(handle.0.clone(), network);
+        let service = Service(Rc::clone(&handle.0), network);
         service.lock().start(event_sender, uid);
 
         Ok(service)
