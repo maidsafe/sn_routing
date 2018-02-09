@@ -52,7 +52,7 @@ mod implementation {
         pub fn new(sender: RoutingActionSender) -> Self {
             let (tx, rx) = mpsc::sync_channel(1);
 
-            let worker = thread::named("Timer", move || Self::run(sender, rx));
+            let worker = thread::named("Timer", move || Self::run(&sender, &rx));
 
             Timer {
                 inner: Rc::new(RefCell::new(Inner {
@@ -83,7 +83,7 @@ mod implementation {
             })
         }
 
-        fn run(sender: RoutingActionSender, rx: Receiver<Detail>) {
+        fn run(sender: &RoutingActionSender, rx: &Receiver<Detail>) {
             let mut deadlines: BTreeMap<Instant, Vec<u64>> = Default::default();
 
             loop {
@@ -173,7 +173,7 @@ mod implementation {
                 for i in 0..count {
                     let timeout = interval * (count - i);
                     let token = timer.schedule(timeout);
-                    assert_eq!(token, i as u64);
+                    assert_eq!(token, u64::from(i));
                 }
 
                 // Ensure timeout notifications are received correctly.
@@ -194,7 +194,7 @@ mod implementation {
                     }
                     let action = action_receiver.try_recv();
                     match action.expect("Should have received an action.") {
-                        Action::Timeout(token) => assert_eq!(token, (count - i - 1) as u64),
+                        Action::Timeout(token) => assert_eq!(token, u64::from(count - i - 1)),
                         unexpected_action => {
                             panic!(
                                 "Expected `Action::Timeout`, but received {:?}",
@@ -239,6 +239,10 @@ mod implementation {
 
 #[cfg(feature = "use-mock-crust")]
 mod implementation {
+    // This lint requires to make changes that might introduce discrepancies with the actual Crust code,
+    // so we turn it off for mock crust specifically.
+    #![cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
+
     use fake_clock::FakeClock as Instant;
     use itertools::Itertools;
     use std::cell::RefCell;

@@ -248,7 +248,7 @@ impl RateLimiter {
             None => return None,
         };
 
-        let deduction = amount_charged.saturating_sub(part_count as u64 * MAX_PART_LEN as u64);
+        let deduction = amount_charged.saturating_sub(u64::from(part_count) * MAX_PART_LEN as u64);
 
         self.used.get_mut(client_ip).map(|used| {
             *used = used.saturating_sub(deduction);
@@ -751,7 +751,7 @@ mod tests {
         let advanced_secs = elapsed.as_secs() as f64 + f64::from(elapsed.subsec_nanos()) / 1E9;
         let numerator = MIN_CLIENT_CAPACITY as f64 * f64::from(num_clients) +
             advanced_secs * RATE - offset as f64;
-        let denominator = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES as f64 * num_clients as f64;
+        let denominator = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES as f64 * f64::from(num_clients);
         let successes = (numerator / denominator).round() as u64;
         for count in clients_and_counts.values() {
             assert!(*count == successes || *count <= successes + 1 || *count >= successes - 1);

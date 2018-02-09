@@ -15,6 +15,9 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+// FIXME: remove when this module is finished
+#![allow(dead_code)]
+
 use block::{Block, PeersAndAge};
 use error::RoutingError;
 use fs2::FileExt;
@@ -43,7 +46,7 @@ pub struct DataChain {
 impl DataChain {
     /// Create a new chain backed up on disk
     /// Provide the directory to create the files in
-    pub fn create_in_path(path: PathBuf, group_size: usize) -> io::Result<DataChain> {
+    pub fn create_in_path(path: &PathBuf, group_size: usize) -> io::Result<DataChain> {
         let path = path.join("data_chain");
         let file = fs::OpenOptions::new()
             .read(true)
@@ -62,7 +65,7 @@ impl DataChain {
     }
 
     /// Open from existing directory
-    pub fn from_path(path: PathBuf) -> Result<DataChain, RoutingError> {
+    pub fn from_path(path: &PathBuf) -> Result<DataChain, RoutingError> {
         let path = path.join("data_chain");
         let mut file = fs::OpenOptions::new()
             .read(true)
@@ -124,7 +127,7 @@ impl DataChain {
 
     fn add_vote(
         &mut self,
-        vote: Vote<SectionState>,
+        vote: &Vote<SectionState>,
         peer_id: &PeerId,
     ) -> Option<(SectionState, PeersAndAge)> {
         if !vote.validate_signature(peer_id) {
@@ -139,14 +142,14 @@ impl DataChain {
                     return None;
                 }
                 // TODO: use proper valid voters list instead of the empty list.
-                blk.add_proof(vote.proof(peer_id).unwrap(), &BTreeSet::new())
+                let _ = blk.add_proof(vote.proof(peer_id).unwrap(), &BTreeSet::new())
                     .unwrap();
 
                 let p_age = PeersAndAge::new(blk.num_proofs(), blk.total_age());
                 return Some((blk.payload().clone(), p_age));
             }
         }
-        if let Ok(ref mut blk) = Block::new(&vote, peer_id) {
+        if let Ok(ref mut blk) = Block::new(vote, peer_id) {
             self.blocks.push(blk.clone());
             return Some((
                 blk.payload().clone(),

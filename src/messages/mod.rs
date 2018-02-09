@@ -289,7 +289,7 @@ impl SignedMessage {
     // TODO (MAID-1677): verify the sending SectionLists via each hop's signed lists
     pub fn check_integrity(&self, min_section_size: usize) -> Result<(), RoutingError> {
         let signed_bytes = serialise(&self.content)?;
-        if !self.find_invalid_sigs(signed_bytes).is_empty() {
+        if !self.find_invalid_sigs(&signed_bytes).is_empty() {
             return Err(RoutingError::FailedSignature);
         }
         if !self.has_enough_sigs(min_section_size) {
@@ -360,7 +360,7 @@ impl SignedMessage {
                 return false;
             }
         };
-        for invalid_signature in &self.find_invalid_sigs(signed_bytes) {
+        for invalid_signature in &self.find_invalid_sigs(&signed_bytes) {
             let _ = self.signatures.remove(invalid_signature);
         }
 
@@ -376,17 +376,17 @@ impl SignedMessage {
 
     // Returns a list of all invalid signatures (not from an expected key or not cryptographically
     // valid).
-    fn find_invalid_sigs(&self, signed_bytes: Vec<u8>) -> Vec<PublicId> {
+    fn find_invalid_sigs(&self, signed_bytes: &[u8]) -> Vec<PublicId> {
         let invalid = self.signatures
             .iter()
             .filter_map(|(pub_id, sig)| {
                 // Remove if not in sending nodes or signature is invalid:
                 let is_valid = if let Authority::Client { ref client_id, .. } = self.content.src {
                     client_id == pub_id &&
-                        sign::verify_detached(sig, &signed_bytes, client_id.signing_public_key())
+                        sign::verify_detached(sig, signed_bytes, client_id.signing_public_key())
                 } else {
                     self.is_sender(pub_id) &&
-                        sign::verify_detached(sig, &signed_bytes, pub_id.signing_public_key())
+                        sign::verify_detached(sig, signed_bytes, pub_id.signing_public_key())
                 };
                 if is_valid { None } else { Some(*pub_id) }
             })

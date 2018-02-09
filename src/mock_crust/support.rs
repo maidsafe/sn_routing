@@ -15,6 +15,10 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+// This lint requires to make changes that might introduce discrepancies with the actual Crust code,
+// so we turn it off for mock crust specifically.
+#![cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
+
 use super::crust::{ConnectionInfoResult, CrustEventSender, CrustUser, Event, PrivConnectionInfo,
                    PubConnectionInfo, Uid};
 use CrustEvent;

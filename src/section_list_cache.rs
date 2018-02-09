@@ -172,15 +172,11 @@ impl SectionListCache {
             .collect_vec();
         for (prefix, list) in to_remove {
             // remove the signatures from self.signatures
-            let _ = self.signatures.get_mut(&prefix).map_or(None, |map| {
-                map.get_mut(&list).map_or(
-                    None,
-                    |sigmap| sigmap.remove(&author),
-                )
+            let _ = self.signatures.get_mut(&prefix).and_then(|map| {
+                map.get_mut(&list).and_then(|sigmap| sigmap.remove(&author))
             });
             // remove those entries from self.signed_by
-            let _ = self.signed_by.get_mut(&author).map_or(
-                None,
+            let _ = self.signed_by.get_mut(&author).and_then(
                 |map| map.remove(&prefix),
             );
         }

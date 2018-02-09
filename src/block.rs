@@ -15,6 +15,9 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+// FIXME: remove when this module is finished
+#![allow(dead_code)]
+
 use error::RoutingError;
 use peer_id::PeerId;
 use proof::Proof;

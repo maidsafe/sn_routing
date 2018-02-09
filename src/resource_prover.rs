@@ -116,7 +116,7 @@ impl ResourceProver {
         }
 
         let atomic_cancel = Arc::new(AtomicBool::new(false));
-        let atomic_cancel_clone = atomic_cancel.clone();
+        let atomic_cancel_clone = Arc::clone(&atomic_cancel);
         let action_sender = self.action_sender.clone();
         let joiner = thread::named("resource_prover", move || {
             let start = Instant::now();
@@ -231,7 +231,7 @@ impl ResourceProver {
     pub fn handle_timeout(
         &mut self,
         token: u64,
-        log_ident: String,
+        log_ident: &str,
         outbox: &mut EventBox,
     ) -> Option<Transition> {
         if self.get_approval_timer_token == Some(token) {
@@ -262,7 +262,7 @@ impl ResourceProver {
         }
     }
 
-    fn handle_approval_timeout(&mut self, log_ident: String, outbox: &mut EventBox) {
+    fn handle_approval_timeout(&mut self, log_ident: &str, outbox: &mut EventBox) {
         let completed = self.response_parts
             .values()
             .filter(|parts| parts.is_empty())

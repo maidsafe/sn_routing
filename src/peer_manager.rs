@@ -830,7 +830,7 @@ impl PeerManager {
             .chain(remove_candidate.iter().cloned())
             .collect_vec();
 
-        let ids_to_drop = self.remove_split_peers(ids_to_drop);
+        let ids_to_drop = self.remove_split_peers(&ids_to_drop);
 
         (ids_to_drop, our_new_prefix)
     }
@@ -850,7 +850,7 @@ impl PeerManager {
             .cloned()
             .collect_vec();
 
-        self.remove_split_peers(ids_to_drop)
+        self.remove_split_peers(&ids_to_drop)
     }
 
     /// Returns whether we should initiate a merge.
@@ -880,7 +880,7 @@ impl PeerManager {
         &mut self,
         sender_prefix: Prefix,
         merge_version: u64,
-        sections: SectionMap,
+        sections: &SectionMap,
     ) -> (OwnMergeState, Vec<PublicId>) {
         let needed = sections
             .iter()
@@ -902,7 +902,7 @@ impl PeerManager {
     pub fn merge_other_section(
         &mut self,
         ver_pfx: VersionedPrefix,
-        section: BTreeSet<PublicId>,
+        section: &BTreeSet<PublicId>,
     ) -> BTreeSet<PublicId> {
         let needed_names = self.routing_table.merge_other_section(
             ver_pfx,
@@ -1558,7 +1558,7 @@ impl PeerManager {
     /// Removes the peer with the given ID if present, and returns such `PublicId`s.
     /// If the peer is also our proxy, or we are theirs,
     /// it is reinserted as a proxy or joining node.
-    fn remove_split_peers(&mut self, ids: Vec<PublicId>) -> Vec<PublicId> {
+    fn remove_split_peers(&mut self, ids: &[PublicId]) -> Vec<PublicId> {
         {
             // Filter out existing routing peers so we do not flag them to invalid
             let filtered_peers = self.peers.values_mut().filter(|peer| !peer.is_routing());
