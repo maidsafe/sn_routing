@@ -258,7 +258,7 @@ impl RoutingTable {
     /// Checks that the `NodeApproval` message contains a valid `RoutingTable`.
     pub fn check_node_approval_msg(
         &self,
-        sections: BTreeMap<Prefix, BTreeSet<XorName>>,
+        sections: &BTreeMap<Prefix, BTreeSet<XorName>>,
     ) -> Result<(), Error> {
         let mut temp_rt = RoutingTable::new(self.our_name, self.min_section_size);
         temp_rt.add_prefixes(

@@ -180,7 +180,7 @@ impl Peer {
 
     #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
     pub fn from_bootstrapping(
-        our_section: (Prefix, BTreeSet<PublicId>),
+        our_section: (Prefix, &BTreeSet<PublicId>),
         action_sender: RoutingActionSender,
         cache: Box<Cache>,
         crust_service: Service,
@@ -281,7 +281,7 @@ impl Peer {
 
     /// Called immediately after bootstrapping. Sends `ConnectionInfoRequest`s to all members of
     /// `our_section` to then start the candidate approval process.
-    fn join(&mut self, our_section: BTreeSet<PublicId>, proxy_public_id: &PublicId) {
+    fn join(&mut self, our_section: &BTreeSet<PublicId>, proxy_public_id: &PublicId) {
         self.resource_prover.start(self.disable_resource_proof);
 
         trace!("{:?} Relocation completed.", self);
@@ -298,7 +298,7 @@ impl Peer {
         // There will be no events raised as a result of these calls, so safe to just use a
         // throwaway `EventBox` here.
         let mut outbox = EventBuf::new();
-        for pub_id in &our_section {
+        for pub_id in our_section {
             debug!(
                 "{:?} Sending connection info to {:?} on Relocation response.",
                 self,
@@ -392,7 +392,7 @@ impl Peer {
                 priority,
                 result_tx,
             } => {
-                let result = match self.send_user_message(src, dst, content, priority) {
+                let result = match self.send_user_message(src, dst, &content, priority) {
                     Err(RoutingError::Interface(err)) => Err(err),
                     Err(_) | Ok(()) => Ok(()),
                 };
@@ -1239,7 +1239,7 @@ impl Peer {
              src @ ManagedNode(_),
              dst @ ManagedNode(_)) => {
                 self.handle_connection_info_request(
-                    encrypted_conn_info,
+                    &encrypted_conn_info,
                     nonce,
                     pub_id,
                     msg_id,
@@ -1265,7 +1265,7 @@ impl Peer {
              ManagedNode(src_name),
              dst @ ManagedNode(_)) => {
                 self.handle_connection_info_response(
-                    encrypted_conn_info,
+                    &encrypted_conn_info,
                     nonce,
                     pub_id,
                     msg_id,
@@ -1300,7 +1300,11 @@ impl Peer {
             (OtherSectionMerge(section, version),
              PrefixSection(merge_prefix),
              PrefixSection(_)) => {
-                self.handle_other_section_merge(merge_prefix.with_version(version), section, outbox)
+                self.handle_other_section_merge(
+                    merge_prefix.with_version(version),
+                    &section,
+                    outbox,
+                )
             }
             (Ack(ack, _), _, _) => self.handle_ack_response(ack),
             (UserMessagePart {
@@ -1431,7 +1435,7 @@ impl Peer {
             })
             .collect();
         if let Err(error) = self.routing_table().check_node_approval_msg(
-            mapped_sections,
+            &mapped_sections,
         )
         {
             info!(
@@ -1691,7 +1695,7 @@ impl Peer {
                         let msg = UserMessage::Response(response);
 
                         self.send_ack_from(routing_msg, route, src);
-                        self.send_user_message(src, dst, msg, priority)?;
+                        self.send_user_message(src, dst, &msg, priority)?;
 
                         return Ok(true);
                     }
@@ -2092,7 +2096,7 @@ impl Peer {
     // If `msg_id` is `Some` this is sent as a response, otherwise as a request.
     fn send_connection_info(
         &mut self,
-        our_pub_info: PubConnectionInfo,
+        our_pub_info: &PubConnectionInfo,
         their_pub_id: PublicId,
         src: Authority,
         dst: Authority,
@@ -2196,7 +2200,7 @@ impl Peer {
                 match infos {
                     None => {
                         debug!("{:?} Prepared connection info for {:?}.", self, pub_id);
-                        self.send_connection_info(our_pub_info, pub_id, src, dst, None);
+                        self.send_connection_info(&our_pub_info, pub_id, src, dst, None);
                     }
                     Some((our_info, their_info, msg_id)) => {
                         debug!(
@@ -2205,7 +2209,7 @@ impl Peer {
                             their_info.id(),
                             pub_id
                         );
-                        self.send_connection_info(our_pub_info, pub_id, src, dst, Some(msg_id));
+                        self.send_connection_info(&our_pub_info, pub_id, src, dst, Some(msg_id));
                         if let Err(error) = self.crust_service.connect(our_info, their_info) {
                             trace!("{:?} Unable to connect to {:?} - {:?}", self, pub_id, error);
                         }
@@ -2218,7 +2222,7 @@ impl Peer {
     #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
     fn handle_connection_info_request(
         &mut self,
-        encrypted_connection_info: Vec<u8>,
+        encrypted_connection_info: &[u8],
         nonce_bytes: [u8; box_::NONCEBYTES],
         pub_id: PublicId,
         message_id: MessageId,
@@ -2228,7 +2232,7 @@ impl Peer {
     ) -> Result<(), RoutingError> {
         self.peer_mgr.allow_connect(pub_id.name())?;
         let their_connection_info = self.decrypt_connection_info(
-            &encrypted_connection_info,
+            encrypted_connection_info,
             &box_::Nonce(nonce_bytes),
             &pub_id,
         )?;
@@ -2259,7 +2263,7 @@ impl Peer {
                     pub_id
                 );
                 self.send_connection_info(
-                    our_info.to_pub_connection_info(),
+                    &our_info.to_pub_connection_info(),
                     pub_id,
                     dst,
                     src,
@@ -2299,7 +2303,7 @@ impl Peer {
 
     fn handle_connection_info_response(
         &mut self,
-        encrypted_connection_info: Vec<u8>,
+        encrypted_connection_info: &[u8],
         nonce_bytes: [u8; box_::NONCEBYTES],
         public_id: PublicId,
         message_id: MessageId,
@@ -2312,7 +2316,7 @@ impl Peer {
         }
 
         let their_connection_info = self.decrypt_connection_info(
-            &encrypted_connection_info,
+            encrypted_connection_info,
             &box_::Nonce(nonce_bytes),
             &public_id,
         )?;
@@ -2829,7 +2833,7 @@ impl Peer {
                 );
                 let other_prefixes = self.routing_table().other_prefixes();
                 let our_ver_pfx = self.routing_table().our_versioned_prefix();
-                self.send_other_section_merge(other_prefixes, our_ver_pfx, our_merged_section);
+                self.send_other_section_merge(&other_prefixes, our_ver_pfx, &our_merged_section);
             }
         }
         if !merge_prefix.is_compatible(&sender_prefix) ||
@@ -2889,8 +2893,8 @@ impl Peer {
             self.process_own_section_merge(
                 their_prefix,
                 version,
-                their_sections,
-                our_merged_section,
+                &their_sections,
+                &our_merged_section,
                 outbox,
             );
             self.our_merged_section.set_send_other_section_merge(
@@ -2914,8 +2918,8 @@ impl Peer {
         &mut self,
         sender_prefix: Prefix,
         merge_version: u64,
-        sections: SectionMap,
-        our_merged_section: BTreeSet<XorName>,
+        sections: &SectionMap,
+        our_merged_section: &BTreeSet<XorName>,
         outbox: &mut EventBox,
     ) {
         self.remove_expired_peers(outbox);
@@ -2969,8 +2973,8 @@ impl Peer {
 
                 // Send an `OtherSectionMerge` containing just the prefix to ensure accumulation,
                 // followed by a second one with the full details of the our section.
-                self.send_other_section_merge(targets.clone(), versioned_prefix, BTreeSet::new());
-                self.send_other_section_merge(targets, versioned_prefix, our_merged_section);
+                self.send_other_section_merge(&targets, versioned_prefix, &BTreeSet::new());
+                self.send_other_section_merge(&targets, versioned_prefix, our_merged_section);
             }
         }
 
@@ -2980,15 +2984,12 @@ impl Peer {
     fn handle_other_section_merge(
         &mut self,
         merge_ver_pfx: VersionedPrefix,
-        section: BTreeSet<PublicId>,
+        section: &BTreeSet<PublicId>,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError> {
         self.remove_expired_peers(outbox);
 
-        let needed_peers = self.peer_mgr.merge_other_section(
-            merge_ver_pfx,
-            section.clone(),
-        );
+        let needed_peers = self.peer_mgr.merge_other_section(merge_ver_pfx, section);
         let own_name = *self.name();
 
         for needed in needed_peers {
@@ -3043,7 +3044,7 @@ impl Peer {
         let log_ident = format!("{:?}", self);
         if let Some(transition) = self.resource_prover.handle_timeout(
             token,
-            log_ident,
+            &log_ident,
             outbox,
         )
         {
@@ -3120,7 +3121,7 @@ impl Peer {
         }
         for removal_detail in peer_details.removal_details {
             let name = removal_detail.name;
-            let _fixme = self.dropped_routing_node(&name, removal_detail, outbox);
+            let _fixme = self.dropped_routing_node(&name, &removal_detail, outbox);
         }
         let mut pub_ids_to_drop = vec![];
         for (pub_id, is_tunnel) in peer_details.routing_peer_details {
@@ -3251,10 +3252,10 @@ impl Peer {
         &mut self,
         src: Authority,
         dst: Authority,
-        user_msg: UserMessage,
+        user_msg: &UserMessage,
         priority: u8,
     ) -> Result<(), RoutingError> {
-        self.stats.count_user_message(&user_msg);
+        self.stats.count_user_message(user_msg);
         for part in user_msg.to_parts(priority)? {
             self.stats.increase_user_msg_part();
             self.send_routing_message(src, dst, part)?;
@@ -3654,7 +3655,7 @@ impl Peer {
             self,
             their_name
         );
-        self.send_connection_info(our_pub_info, their_public_id, src, dst, None);
+        self.send_connection_info(&our_pub_info, their_public_id, src, dst, None);
         Ok(())
     }
 
@@ -3672,7 +3673,7 @@ impl Peer {
         };
 
         if let Ok(removal_details) = removal_result {
-            if !self.dropped_routing_node(peer.name(), removal_details, outbox) {
+            if !self.dropped_routing_node(peer.name(), &removal_details, outbox) {
                 return false;
             }
         }
@@ -3736,7 +3737,7 @@ impl Peer {
     fn dropped_routing_node(
         &mut self,
         name: &XorName,
-        details: RemovalDetails,
+        details: &RemovalDetails,
         outbox: &mut EventBox,
     ) -> bool {
         info!(
@@ -3817,15 +3818,15 @@ impl Peer {
 
     fn send_other_section_merge(
         &mut self,
-        targets: BTreeSet<Prefix>,
+        targets: &BTreeSet<Prefix>,
         ver_pfx: VersionedPrefix,
-        section: BTreeSet<XorName>,
+        section: &BTreeSet<XorName>,
     ) {
-        let pub_ids = self.peer_mgr.get_pub_ids(&section);
+        let pub_ids = self.peer_mgr.get_pub_ids(section);
         let version = self.routing_table().our_version();
         let content = MessageContent::OtherSectionMerge(pub_ids, version);
         let src = Authority::PrefixSection(*ver_pfx.prefix());
-        for target in &targets {
+        for target in targets {
             let dst = Authority::PrefixSection(*target);
             debug!(
                 "{:?} Sending OtherSectionMerge from {:?} to {:?} with content {:?}",

@@ -107,7 +107,7 @@ impl Client {
                 };
 
                 let user_msg = UserMessage::Request(content);
-                let result = match self.send_user_message(src, dst, user_msg, priority) {
+                let result = match self.send_user_message(src, dst, &user_msg, priority) {
                     Err(RoutingError::Interface(err)) => Err(err),
                     Err(_) | Ok(_) => Ok(()),
                 };
@@ -140,7 +140,7 @@ impl Client {
         match crust_event {
             CrustEvent::LostPeer(pub_id) => self.handle_lost_peer(pub_id, outbox),
             CrustEvent::NewMessage(pub_id, _, bytes) => {
-                self.handle_new_message(pub_id, bytes, outbox)
+                self.handle_new_message(pub_id, &bytes, outbox)
             }
             _ => {
                 debug!("{:?} Unhandled crust event {:?}", self, crust_event);
@@ -188,12 +188,12 @@ impl Client {
     fn handle_new_message(
         &mut self,
         pub_id: PublicId,
-        bytes: Vec<u8>,
+        bytes: &[u8],
         outbox: &mut EventBox,
     ) -> Transition {
-        let transition = match serialisation::deserialise(&bytes) {
+        let transition = match serialisation::deserialise(bytes) {
             Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, pub_id, outbox),
-            Ok(Message::Direct(direct_msg)) => self.handle_direct_message(direct_msg),
+            Ok(Message::Direct(direct_msg)) => self.handle_direct_message(&direct_msg),
             Ok(message) => {
                 debug!("{:?} Unhandled new message: {:?}", self, message);
                 Ok(Transition::Stay)
@@ -248,10 +248,10 @@ impl Client {
 
     fn handle_direct_message(
         &mut self,
-        direct_msg: DirectMessage,
+        direct_msg: &DirectMessage,
     ) -> Result<Transition, RoutingError> {
-        if let DirectMessage::ProxyRateLimitExceeded { ack } = direct_msg {
-            if let Some(unack_msg) = self.ack_mgr.remove(&ack) {
+        if let DirectMessage::ProxyRateLimitExceeded { ref ack } = *direct_msg {
+            if let Some(unack_msg) = self.ack_mgr.remove(ack) {
                 let token = self.timer().schedule(
                     Duration::from_millis(RATE_EXCEED_RETRY_MS),
                 );
@@ -324,10 +324,10 @@ impl Client {
         &mut self,
         src: Authority,
         dst: Authority,
-        user_msg: UserMessage,
+        user_msg: &UserMessage,
         priority: u8,
     ) -> Result<(), RoutingError> {
-        self.stats.count_user_message(&user_msg);
+        self.stats.count_user_message(user_msg);
         let parts = user_msg.to_parts(priority)?;
         let msg_expiry_dur = self.msg_expiry_dur;
         for part in parts {

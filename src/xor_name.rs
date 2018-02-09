@@ -203,7 +203,7 @@ impl XorName {
     /// Used to construct a XorName from a `BigUint`. `value` should not represent a number greater
     /// than or equal to `2^XOR_NAME_BITS`. If it does, the excessive most significant bits are
     /// ignored.
-    fn from_big_uint(value: BigUint) -> Self {
+    fn from_big_uint(value: &BigUint) -> Self {
         let little_endian_value = value.to_bytes_le();
         if little_endian_value.len() > XOR_NAME_LEN {
             error!("This BigUint value exceeds the maximum capable of being held as an XorName.");
@@ -313,7 +313,7 @@ impl<'a> ops::Sub for &'a XorName {
     type Output = XorName;
     fn sub(self, rhs: &XorName) -> Self::Output {
         XorName::from_big_uint(
-            BigUint::from_bytes_be(&self.0) - BigUint::from_bytes_be(&rhs.0),
+            &(BigUint::from_bytes_be(&self.0) - BigUint::from_bytes_be(&rhs.0)),
         )
     }
 }
@@ -328,7 +328,9 @@ impl ops::Div<u32> for XorName {
 impl<'a> ops::Div<&'a u32> for &'a XorName {
     type Output = XorName;
     fn div(self, rhs: &u32) -> Self::Output {
-        XorName::from_big_uint(BigUint::from_bytes_be(&self.0) / BigUint::new(vec![*rhs]))
+        XorName::from_big_uint(
+            &(BigUint::from_bytes_be(&self.0) / BigUint::new(vec![*rhs])),
+        )
     }
 }
 
@@ -561,8 +563,11 @@ mod tests {
         for _ in 0..100_000 {
             let x = rng.gen();
             let y = rng.gen();
-            assert_eq!(xor_name_from_int(x / y as u64), xor_name_from_int(x) / y);
-            assert_eq!(xor_name_from_int(1), xor_name_from_int(y as u64) / y);
+            assert_eq!(
+                xor_name_from_int(x / u64::from(y)),
+                xor_name_from_int(x) / y
+            );
+            assert_eq!(xor_name_from_int(1), xor_name_from_int(u64::from(y)) / y);
         }
     }
 

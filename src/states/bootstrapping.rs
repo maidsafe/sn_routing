@@ -142,7 +142,7 @@ impl Bootstrapping {
                 Transition::Stay
             }
             CrustEvent::NewMessage(pub_id, _, bytes) => {
-                match self.handle_new_message(pub_id, bytes) {
+                match self.handle_new_message(pub_id, &bytes) {
                     Ok(transition) => transition,
                     Err(error) => {
                         debug!("{:?} {:?}", self, error);
@@ -215,7 +215,7 @@ impl Bootstrapping {
                 our_section,
                 ..
             } => State::Peer(Peer::from_bootstrapping(
-                our_section,
+                (our_section.0, &our_section.1),
                 self.action_sender,
                 self.cache,
                 self.crust_service,
@@ -287,9 +287,9 @@ impl Bootstrapping {
     fn handle_new_message(
         &mut self,
         pub_id: PublicId,
-        bytes: Vec<u8>,
+        bytes: &[u8],
     ) -> Result<Transition, RoutingError> {
-        match serialisation::deserialise(&bytes) {
+        match serialisation::deserialise(bytes) {
             Ok(Message::Direct(direct_msg)) => Ok(self.handle_direct_message(direct_msg, pub_id)),
             Ok(message) => {
                 debug!("{:?} Unhandled new message: {:?}", self, message);

@@ -329,8 +329,8 @@ impl StateMachine {
         (action_sender, machine)
     }
 
-    fn handle_event(&mut self, category: MaidSafeEventCategory, outbox: &mut EventBox) {
-        let transition = match category {
+    fn handle_event(&mut self, category: &MaidSafeEventCategory, outbox: &mut EventBox) {
+        let transition = match *category {
             MaidSafeEventCategory::Routing => {
                 if let Ok(action) = self.action_rx.try_recv() {
                     self.state.handle_action(action, outbox)
@@ -426,7 +426,7 @@ impl StateMachine {
     pub fn step(&mut self, outbox: &mut EventBox) -> Result<(), RecvError> {
         if self.is_running {
             let category = self.category_rx.recv()?;
-            self.handle_event(category, outbox);
+            self.handle_event(&category, outbox);
             Ok(())
         } else {
             Err(RecvError)
@@ -438,7 +438,7 @@ impl StateMachine {
     pub fn try_step(&mut self, outbox: &mut EventBox) -> Result<(), TryRecvError> {
         if self.is_running {
             let category = self.category_rx.try_recv()?;
-            self.handle_event(category, outbox);
+            self.handle_event(&category, outbox);
             Ok(())
         } else {
             Err(TryRecvError::Disconnected)
