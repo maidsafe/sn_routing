@@ -239,8 +239,8 @@ mod implementation {
 
 #[cfg(feature = "use-mock-crust")]
 mod implementation {
-    // This lint requires to make changes that might introduce discrepancies with the actual Crust code,
-    // so we turn it off for mock crust specifically.
+    // This lint requires to make changes that might introduce discrepancies with the actual
+    // Crust code, so we turn it off for mock crust specifically.
     #![cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 
     use fake_clock::FakeClock as Instant;

@@ -215,7 +215,7 @@ impl Bootstrapping {
                 our_section,
                 ..
             } => State::Peer(Peer::from_bootstrapping(
-                &our_section,
+                (our_section.0, &our_section.1),
                 self.action_sender,
                 self.cache,
                 self.crust_service,

@@ -180,7 +180,7 @@ impl Peer {
 
     #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
     pub fn from_bootstrapping(
-        our_section: &(Prefix, BTreeSet<PublicId>),
+        our_section: (Prefix, &BTreeSet<PublicId>),
         action_sender: RoutingActionSender,
         cache: Box<Cache>,
         crust_service: Service,
@@ -210,7 +210,7 @@ impl Peer {
             false,
             ReconnectingPeer::False,
         ));
-        node.join(&our_section.1, &proxy_pub_id);
+        node.join(our_section.1, &proxy_pub_id);
         node
     }
 
