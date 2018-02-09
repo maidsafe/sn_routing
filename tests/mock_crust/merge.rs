@@ -155,14 +155,18 @@ fn merge_exclude_reconnecting_peers() {
     let mut nodes_count = nodes
         .iter()
         .filter(|node| {
-            node.routing_table().our_prefix() == &prefix_to_drop_from
+            node.routing_table().our_prefix().eq_unversioned(
+                &prefix_to_drop_from,
+            )
         })
         .count();
 
     // Drop enough nodes (without polling) from that section to just below `min_section_size`.
     while nodes_count >= min_section_size {
         let index = unwrap!(nodes.iter().position(|node| {
-            node.routing_table().our_prefix() == &prefix_to_drop_from
+            node.routing_table().our_prefix().eq_unversioned(
+                &prefix_to_drop_from,
+            )
         }));
         let removed = nodes.remove(index);
         drop(removed);

@@ -23,7 +23,7 @@
 use super::{Error, RoutingTable};
 use super::XorName;
 use super::authority::Authority;
-use super::prefix::Prefix;
+use super::prefix::{Prefix, PrefixMap};
 use maidsafe_utilities::SeededRng;
 use rand::Rng;
 use routing_table::{OwnMergeState, Sections};
@@ -78,7 +78,7 @@ impl Network {
                     close_peer
                         .all_sections()
                         .into_iter()
-                        .map(|(pfx, (version, _))| pfx.with_version(version))
+                        .map(|(prefix, _)| prefix)
                         .collect(),
                 )
             );
@@ -90,13 +90,13 @@ impl Network {
                 trace!("failed to add node with error {:?}", e);
             }
             if node.should_split() {
-                let _ = split_prefixes.insert(node.our_versioned_prefix());
+                let _ = split_prefixes.insert(*node.our_prefix());
             }
             if let Err(e) = new_table.add(*node.our_name()) {
                 trace!("failed to add node into new with error {:?}", e);
             }
             if new_table.should_split() {
-                let ver_pfx = new_table.our_versioned_prefix();
+                let ver_pfx = *new_table.our_prefix();
                 let _ = split_prefixes.insert(ver_pfx);
                 let _ = new_table.split(ver_pfx);
             }
@@ -115,7 +115,10 @@ impl Network {
         prefix: Prefix,
         new_info: T,
     ) {
-        if let Some(content) = merge_info.get(&prefix) {
+        if let Some(content) = merge_info.find_unversioned(&prefix).map(
+            |(_, content)| content,
+        )
+        {
             assert_eq!(new_info, *content);
             return;
         }
@@ -164,28 +167,28 @@ impl Network {
                 for node in &nodes {
                     let target_node = unwrap!(self.nodes.get_mut(node));
                     let node_expected = expected_peers.entry(*node).or_insert_with(BTreeSet::new);
-                    for (_, &(_, ref section)) in &sections {
+                    for (_, section) in &sections {
                         node_expected.extend(section.iter().filter(|name| !target_node.has(name)));
                     }
                     let merge_pfx = sender_pfx.popped();
                     let version = sections
-                        .iter()
-                        .filter(|&(pfx, _)| pfx.is_extension_of(&merge_pfx))
-                        .map(|(_, &(v, _))| v + 1)
+                        .keys()
+                        .filter(|pfx| pfx.is_extension_of(&merge_pfx))
+                        .map(|pfx| pfx.version() + 1)
                         .max();
-                    let merge_ver_pfx = merge_pfx.with_version(unwrap!(version));
-                    let ver_pfxs = sections.iter().map(|(pfx, &(v, _))| pfx.with_version(v));
-                    match target_node.merge_own_section(merge_ver_pfx, ver_pfxs) {
+                    let merge_pfx = merge_pfx.with_version(unwrap!(version));
+                    let prefixes = sections.keys().cloned();
+                    match target_node.merge_own_section(merge_pfx, prefixes) {
                         OwnMergeState::AlreadyMerged => (),
                         OwnMergeState::Completed {
                             targets,
-                            versioned_prefix,
+                            prefix,
                             section,
                         } => {
                             Network::store_merge_info(
                                 &mut merge_other_info,
                                 *target_node.our_prefix(),
-                                (targets, versioned_prefix, section),
+                                (targets, prefix, section),
                             );
                             // Forcibly add new connections.
                             for name in node_expected.clone() {
@@ -331,16 +334,11 @@ pub fn verify_network_invariant<'a, T: IntoIterator<Item = &'a RoutingTable>>(no
     // first, collect all sections in the network
     for node in nodes {
         node.verify_invariant();
-        for prefix in node.prefixes() {
-            let section_content = if prefix == node.our_prefix {
-                (node.our_version, node.our_section.clone())
-            } else {
-                node.sections[&prefix].clone()
-            };
+        for (prefix, section_content) in node.all_sections_iter() {
             if let Some(&mut (ref mut src, ref mut section)) = sections.get_mut(&prefix) {
                 assert_eq!(
                     *section,
-                    section_content,
+                    *section_content,
                     "Section with prefix {:?} doesn't agree between nodes {:?} and {:?}\n\
                      {:?}: {:?}, {:?}: {:?}",
                     prefix,
@@ -353,7 +351,7 @@ pub fn verify_network_invariant<'a, T: IntoIterator<Item = &'a RoutingTable>>(no
                 );
                 continue;
             }
-            let _ = sections.insert(prefix, (node.our_name, section_content));
+            let _ = sections.insert(prefix, (node.our_name, section_content.clone()));
         }
     }
     // check that prefixes are disjoint
@@ -379,7 +377,7 @@ pub fn verify_network_invariant<'a, T: IntoIterator<Item = &'a RoutingTable>>(no
     }
 
     // check that each section contains names agreeing with its prefix
-    for (prefix, &(_, (_, ref data))) in &sections {
+    for (prefix, &(_, ref data)) in &sections {
         for name in data {
             if !prefix.matches(name) {
                 panic!(
@@ -412,8 +410,8 @@ fn merging_sections() {
         network.add_node();
         verify_invariant(&network);
     }
-    assert!(network.nodes.iter().all(
-        |(_, table)| if table.num_of_sections() <
+    assert!(network.nodes.values().all(
+        |table| if table.num_of_sections() <
             2
         {
             trace!("{:?}", table);
@@ -426,8 +424,8 @@ fn merging_sections() {
         network.drop_node();
         verify_invariant(&network);
     }
-    assert!(network.nodes.iter().all(
-        |(_, table)| if table.num_of_sections() >
+    assert!(network.nodes.values().all(
+        |table| if table.num_of_sections() >
             0
         {
             trace!("{:?}", table);
