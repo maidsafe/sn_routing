@@ -318,7 +318,7 @@ mod tests {
                     if let Some((mut returned_msg, returned_route)) = result {
                         expected_msgs_count -= 1;
                         assert_eq!(sig_accumulator.msgs.len(), expected_msgs_count);
-                        assert_eq!(route as u8, returned_route);
+                        assert_eq!(route, usize::from(returned_route));
                         assert_eq!(
                             msg_and_sigs.signed_msg.routing_message(),
                             returned_msg.routing_message()

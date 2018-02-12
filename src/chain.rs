@@ -153,7 +153,7 @@ impl DataChain {
             self.blocks.push(blk.clone());
             return Some((
                 blk.payload().clone(),
-                PeersAndAge::new(1, peer_id.age() as usize),
+                PeersAndAge::new(1, usize::from(peer_id.age())),
             ));
         }
         info!("Could not find any block for this proof");

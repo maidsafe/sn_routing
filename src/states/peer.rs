@@ -3426,7 +3426,7 @@ impl Peer {
         if !list.contains(&self.name()) {
             None
         } else {
-            Some(*list[route as usize % list.len()])
+            Some(*list[usize::from(route) % list.len()])
         }
     }
 
@@ -3449,7 +3449,7 @@ impl Peer {
 
         if self.is_proper() && !force_via_proxy {
             let targets: BTreeSet<_> = self.routing_table()
-                .targets(&routing_msg.dst, *exclude, route as usize)?
+                .targets(&routing_msg.dst, *exclude, usize::from(route))?
                 .into_iter()
                 .filter(|target| !sent_to.contains(target))
                 .collect();

@@ -118,7 +118,8 @@ impl<UID: Uid> Network<UID> {
                 let imp = self.0.borrow();
                 assert_eq!(ipv4.octets()[0], 127);
                 assert_eq!(ipv4.octets()[1], 0);
-                let initial_value = ((ipv4.octets()[2] as usize) << 8) + ipv4.octets()[3] as usize;
+                let initial_value = (usize::from(ipv4.octets()[2]) << 8) +
+                    usize::from(ipv4.octets()[3]);
                 for i in 0..0xFF {
                     let endpoint = Endpoint(initial_value + (i << 16));
                     if !imp.services.contains_key(&endpoint) {
