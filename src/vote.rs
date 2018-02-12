@@ -77,7 +77,6 @@ impl<T: Serialize + Clone> Vote<T> {
 mod tests {
     use super::*;
     use maidsafe_utilities::SeededRng;
-    use network_event::SectionState;
     use rand::Rng;
     use rust_sodium;
 
@@ -88,7 +87,7 @@ mod tests {
         let keys = sign::gen_keypair();
         let bad_keys = sign::gen_keypair();
         let peer_id = PeerId::new(rng.gen_range(0, 255), keys.0);
-        let payload = SectionState::Live(peer_id.clone());
+        let payload = "Live";
         let vote = unwrap!(Vote::new(&keys.1, payload));
         assert!(vote.validate_signature(&peer_id)); // right key
         let bad_peer_id = PeerId::new(rng.gen_range(0, 255), bad_keys.0);

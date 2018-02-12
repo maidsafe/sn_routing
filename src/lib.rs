@@ -167,6 +167,7 @@ mod id;
 mod message_filter;
 mod messages;
 mod node;
+mod node_state;
 mod outbox;
 mod peer_manager;
 mod rate_limiter;
@@ -186,7 +187,6 @@ pub(crate) mod vote;
 pub(crate) mod proof;
 pub(crate) mod block;
 pub(crate) mod chain;
-pub(crate) mod network_event;
 pub(crate) mod peer_id;
 
 #[cfg(feature = "use-mock-crypto")]
@@ -238,6 +238,7 @@ pub use messages::{AccountInfo, Request, Response};
 #[cfg(feature = "use-mock-crust")]
 pub use mock_crust::crust;
 pub use node::{Node, NodeBuilder};
+pub use node_state::{NodeState, State};
 #[cfg(feature = "use-mock-crust")]
 pub use peer_manager::test_consts;
 #[cfg(feature = "use-mock-crust")]

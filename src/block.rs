@@ -175,7 +175,6 @@ impl<T: Serialize + Clone> Block<T> {
 mod tests {
     use super::*;
     use maidsafe_utilities::SeededRng;
-    use network_event::SectionState;
     use rand::Rng;
     use rust_sodium;
     use rust_sodium::crypto::sign;
@@ -189,10 +188,10 @@ mod tests {
         let keys1 = sign::gen_keypair();
         let peer_id0 = PeerId::new(0, keys0.0);
         let peer_id1 = PeerId::new(0, keys1.0);
-        let payload = SectionState::Gone(peer_id0.clone());
-        let vote0 = unwrap!(Vote::new(&keys0.1, payload.clone()));
+        let payload = "Gone";
+        let vote0 = unwrap!(Vote::new(&keys0.1, payload));
         assert!(vote0.validate_signature(&peer_id0));
-        let vote1 = unwrap!(Vote::new(&keys1.1, payload.clone()));
+        let vote1 = unwrap!(Vote::new(&keys1.1, payload));
         assert!(vote1.validate_signature(&peer_id1));
         let peer_id00 = PeerId::new(1u8, keys0.0);
         let peer_id10 = PeerId::new(rng.gen_range(0, 255), keys1.0);
@@ -220,10 +219,10 @@ mod tests {
         let keys0 = sign::gen_keypair();
         let keys1 = sign::gen_keypair();
         let keys2 = sign::gen_keypair();
-        let payload = SectionState::Gone(PeerId::new(0, keys0.0));
-        let vote0 = unwrap!(Vote::new(&keys0.1, payload.clone()));
-        let vote1 = unwrap!(Vote::new(&keys1.1, payload.clone()));
-        let vote2 = unwrap!(Vote::new(&keys2.1, payload.clone()));
+        let payload = "Gone";
+        let vote0 = unwrap!(Vote::new(&keys0.1, payload));
+        let vote1 = unwrap!(Vote::new(&keys1.1, payload));
+        let vote2 = unwrap!(Vote::new(&keys2.1, payload));
         let age0 = rng.gen_range(0, 255);
         let age1 = rng.gen_range(0, 255);
         let age2 = rng.gen_range(0, 255);

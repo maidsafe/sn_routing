@@ -59,7 +59,6 @@ mod tests {
     use super::*;
     use RoutingError;
     use maidsafe_utilities::SeededRng;
-    use network_event::SectionState;
     use rand::Rng;
     use rust_sodium;
     use vote::Vote;
@@ -70,8 +69,8 @@ mod tests {
         unwrap!(rust_sodium::init_with_rng(&mut rng));
         let keys = sign::gen_keypair();
         let peer_id = PeerId::new(rng.gen_range(0, 255), keys.0);
-        let payload = SectionState::Live(PeerId::new(rng.gen_range(0, 255), keys.0));
-        let vote = unwrap!(Vote::new(&keys.1, payload.clone()));
+        let payload = "Live";
+        let vote = unwrap!(Vote::new(&keys.1, payload));
         assert!(vote.validate_signature(&peer_id));
         let proof = unwrap!(vote.proof(&PeerId::new(rng.gen_range(0, 255), keys.0)));
         assert!(proof.validate_signature(&payload));
@@ -84,8 +83,8 @@ mod tests {
         let keys = sign::gen_keypair();
         let peer_id = PeerId::new(rng.gen_range(0, 255), keys.0);
         let other_keys = sign::gen_keypair();
-        let payload = SectionState::Live(PeerId::new(rng.gen_range(0, 255), keys.0));
-        let vote = unwrap!(Vote::new(&keys.1, payload.clone()));
+        let payload = "Live";
+        let vote = unwrap!(Vote::new(&keys.1, payload));
         assert!(vote.validate_signature(&peer_id));
         let proof = unwrap!(vote.proof(&PeerId::new(rng.gen_range(0, 255), keys.0)));
         assert!(
