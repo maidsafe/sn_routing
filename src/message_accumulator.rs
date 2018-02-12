@@ -29,22 +29,22 @@ use tiny_keccak::sha3_256;
 use vote::Vote;
 
 #[allow(unused)]
-pub struct PeersAndAge {
-    peers: usize,
+pub struct NodesAndAge {
+    nodes: usize,
     age: usize,
 }
 
-impl PeersAndAge {
-    pub fn new(peers: usize, age: usize) -> PeersAndAge {
-        PeersAndAge {
-            peers: peers,
+impl NodesAndAge {
+    pub fn new(nodes: usize, age: usize) -> NodesAndAge {
+        NodesAndAge {
+            nodes: nodes,
             age: age,
         }
     }
 
     #[allow(unused)]
-    pub fn peers(&self) -> usize {
-        self.peers
+    pub fn nodes(&self) -> usize {
+        self.nodes
     }
 
     #[allow(unused)]
@@ -73,14 +73,14 @@ struct Accumulator {
 //
 //     /// A new `Block` requires a valid vote and the `PublicKey` of the node
 //     ///  who sent us this. For this reason
-//     /// The `Vote` require a Direct Message from a `Peer` to us.
+//     /// The `Vote` require a Direct Message from a `Node` to us.
 //     #[allow(unused)]
 //     pub fn add_vote(
 //         &mut self,
 //         vote: &Vote,
 //         pub_key: &PublicKey,
 //         age: u8,
-//     ) -> Result<PeersAndAge, RoutingError> {
+//     ) -> Result<NodesAndAge, RoutingError> {
 //         if !vote.validate_signature(pub_key) {
 //             return Err(RoutingError::FailedSignature);
 //         }
@@ -89,7 +89,7 @@ struct Accumulator {
 //
 //         if let Some(blk) = self.blocks.get_mut(&digest.clone()) {
 //             blk.add_proof(proof);
-//             return Ok(PeersAndAge::new(blk.total_proofs(), blk.total_proofs_age()));
+//             return Ok(NodesAndAge::new(blk.total_proofs(), blk.total_proofs_age()));
 //         };
 //
 //         let mut proofset = HashSet::<Proof>::new();
@@ -98,7 +98,7 @@ struct Accumulator {
 //         }
 //         let mut block = Block::new(&vote, &pub_key, age)?;
 //         let _fixme = self.blocks.insert(*digest, block.clone());
-//         Ok(PeersAndAge::new(
+//         Ok(NodesAndAge::new(
 //             block.clone().total_proofs(),
 //             block.total_proofs_age(),
 //         ))

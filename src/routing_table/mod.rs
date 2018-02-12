@@ -163,9 +163,9 @@ impl<'a> Iterator for Iter<'a> {
 // Details returned by a successful `RoutingTable::remove()`.
 #[derive(Debug)]
 pub struct RemovalDetails {
-    // Peer name
+    // Node name
     pub name: XorName,
-    // True if the removed peer was in our section.
+    // True if the removed node was in our section.
     pub was_in_our_section: bool,
 }
 
@@ -190,8 +190,8 @@ pub enum OwnMergeState {
 
 /// A routing table to manage contacts for a node.
 ///
-/// It maintains a list of sections (identified by a `Prefix`), each with a list of peer identifiers
-/// of type `XorName` representing connected peers, and provides algorithms for routing messages.
+/// It maintains a list of sections (identified by a `Prefix`), each with a list of node identifiers
+/// of type `XorName` representing connected nodes, and provides algorithms for routing messages.
 ///
 /// See the [crate documentation](index.html) for details.
 #[derive(Clone, Eq, PartialEq)]
@@ -225,7 +225,7 @@ impl RoutingTable {
 
     /// Adds the list of `Prefix`es as empty sections.
     ///
-    /// Called once a node has been approved by its own section and is given its peers' tables.
+    /// Called once a node has been approved by its own section and is given its nodes' tables.
     /// Expects the current sections to be empty and have version 0.
     pub fn add_prefixes(&mut self, ver_pfxs: Vec<VersionedPrefix>) -> Result<(), Error> {
         if self.our_version != 0 || !self.sections.is_empty() {
@@ -267,8 +267,8 @@ impl RoutingTable {
                 .map(|pfx| pfx.with_version(0))
                 .collect(),
         )?;
-        for peer in sections.values().flat_map(BTreeSet::iter) {
-            let _ = temp_rt.add(*peer);
+        for node in sections.values().flat_map(BTreeSet::iter) {
+            let _ = temp_rt.add(*node);
         }
         temp_rt.check_invariant(false, true)
     }
@@ -469,14 +469,14 @@ impl RoutingTable {
                 Ok(())
             }
         } else {
-            Err(Error::PeerNameUnsuitable)
+            Err(Error::NodeNameUnsuitable)
         }
     }
 
     /// Validates a joining node's name.
     pub fn validate_joining_node(&self, name: &XorName) -> Result<(), Error> {
         if !self.our_prefix.matches(name) {
-            return Err(Error::PeerNameUnsuitable);
+            return Err(Error::NodeNameUnsuitable);
         }
         if self.our_section.contains(name) {
             return Err(Error::AlreadyExists);
@@ -498,7 +498,7 @@ impl RoutingTable {
                 return Err(Error::AlreadyExists);
             }
         } else {
-            return Err(Error::PeerNameUnsuitable);
+            return Err(Error::NodeNameUnsuitable);
         }
         Ok(())
     }
@@ -660,14 +660,14 @@ impl RoutingTable {
                 iter::once(self.our_name).collect(),
             ))
             .filter(|name| {
-                *name != self.our_name && self.add(*name) == Err(Error::PeerNameUnsuitable)
+                *name != self.our_name && self.add(*name) == Err(Error::NodeNameUnsuitable)
             })
             .collect()
     }
 
     /// Removes a contact from the routing table.
     ///
-    /// If no entry with that name is found, `Err(Error::NoSuchPeer)` is returned. Otherwise, the
+    /// If no entry with that name is found, `Err(Error::NoSuchNode)` is returned. Otherwise, the
     /// entry is removed from the routing table and `RemovalDetails` is returned. See that struct's
     /// docs for further info.
     pub fn remove(&mut self, name: &XorName) -> Result<RemovalDetails, Error> {
@@ -680,16 +680,16 @@ impl RoutingTable {
                 return Err(Error::OwnNameDisallowed);
             }
             if !self.our_section.remove(name) {
-                return Err(Error::NoSuchPeer);
+                return Err(Error::NoSuchNode);
             }
         } else if let Some(prefix) = self.find_section_prefix(name) {
             if let Some(&mut (_, ref mut section)) = self.sections.get_mut(&prefix) {
                 if !section.remove(name) {
-                    return Err(Error::NoSuchPeer);
+                    return Err(Error::NoSuchNode);
                 }
             }
         } else {
-            return Err(Error::NoSuchPeer);
+            return Err(Error::NoSuchNode);
         }
         Ok(removal_details)
     }
@@ -714,7 +714,7 @@ impl RoutingTable {
     }
 
     /// When a merge of our own section is triggered (either from our own section or a neighbouring
-    /// one) this function handles the incoming merge details from the peers within the merging
+    /// one) this function handles the incoming merge details from the nodes within the merging
     /// sections.
     ///
     /// The actual merge of the section is only done once all expected merging sections have
@@ -746,7 +746,7 @@ impl RoutingTable {
         if !dropped_names.is_empty() {
             log_or_panic!(
                 LogLevel::Warn,
-                "{:?} Removed peers from RT as part of OwnSectionMerge {:?}",
+                "{:?} Removed nodes from RT as part of OwnSectionMerge {:?}",
                 self.our_name,
                 dropped_names
             );
@@ -776,7 +776,7 @@ impl RoutingTable {
     ///
     /// The appropriate targets (all contacts from `merge_details.sections` which are not currently
     /// held in the routing table) are returned so the caller can establish connections to these
-    /// peers and subsequently add them.
+    /// nodes and subsequently add them.
     pub fn merge_other_section<I>(
         &mut self,
         ver_pfx: VersionedPrefix,
@@ -1459,7 +1459,7 @@ mod tests {
         assert_eq!(table.len(), expected_rt_len);
 
         // Try to add a name which doesn't fit any section.
-        assert_eq!(table.add(nodes_to_drop[0]), Err(Error::PeerNameUnsuitable));
+        assert_eq!(table.add(nodes_to_drop[0]), Err(Error::NodeNameUnsuitable));
         table.verify_invariant();
         assert_eq!(table.len(), expected_rt_len);
 
@@ -1501,7 +1501,7 @@ mod tests {
         assert_eq!(table.need_to_add(&our_name), Err(Error::OwnNameDisallowed));
         assert_eq!(
             table.need_to_add(&nodes_to_drop[0]),
-            Err(Error::PeerNameUnsuitable)
+            Err(Error::NodeNameUnsuitable)
         );
         assert_eq!(table.need_to_add(&(section_001_name + 1)), Ok(()));
     }

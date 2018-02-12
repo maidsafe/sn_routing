@@ -47,7 +47,7 @@
 //! A decentralised service based on the `routing` library uses `Client` to send requests to the
 //! network of nodes and receive responses.
 //!
-//! `Peer` is used to handle and send requests within that network, and to implement its
+//! `Node` is used to handle and send requests within that network, and to implement its
 //! functionality, e.g. storing and retrieving data, validating permissions, managing metadata, etc.
 //!
 //!
@@ -72,15 +72,15 @@
 //! `receiver`.
 //!
 //!
-//! ## Peer creation
+//! ## Node creation
 //!
 //! Creating a node looks even simpler:
 //!
 //! ```no_run
 //! # #![allow(unused)]
-//! use routing::Peer;
+//! use routing::Node;
 //!
-//! let node = Peer::builder().create().unwrap();
+//! let node = Node::builder().create().unwrap();
 //! ```
 //!
 //! Upon creation, the node will first connect to the network as a client. Once it has client
@@ -96,7 +96,7 @@
 //! # Sequence diagrams
 //!
 //! - [Bootstrapping](bootstrap.png)
-//! - [Churn (`NewPeer`)](new-node.png)
+//! - [Churn (`NewNode`)](new-node.png)
 //! - [Tunnel](tunnel.png)
 
 #![doc(html_logo_url =
@@ -166,7 +166,7 @@ mod section_list_cache;
 mod id;
 mod message_filter;
 mod messages;
-mod peer;
+mod node;
 mod outbox;
 mod peer_manager;
 mod rate_limiter;
@@ -239,7 +239,7 @@ pub use id::{FullId, PublicId};
 pub use messages::{AccountInfo, Request, Response};
 #[cfg(feature = "use-mock-crust")]
 pub use mock_crust::crust;
-pub use peer::{NodeBuilder, Peer};
+pub use node::{Node, NodeBuilder};
 #[cfg(feature = "use-mock-crust")]
 pub use peer_manager::test_consts;
 #[cfg(feature = "use-mock-crust")]

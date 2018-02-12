@@ -48,7 +48,7 @@ use xor_name::XorName;
 /// Total time (in seconds) to wait for `RelocateResponse`.
 const RELOCATE_TIMEOUT_SECS: u64 = 60 + RESOURCE_PROOF_DURATION_SECS;
 
-pub struct JoiningPeer {
+pub struct JoiningNode {
     action_sender: RoutingActionSender,
     ack_mgr: AckManager,
     crust_service: Service,
@@ -65,7 +65,7 @@ pub struct JoiningPeer {
     timer: Timer,
 }
 
-impl JoiningPeer {
+impl JoiningNode {
     #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
     pub fn from_bootstrapping(
         action_sender: RoutingActionSender,
@@ -79,7 +79,7 @@ impl JoiningPeer {
     ) -> Option<Self> {
         let duration = Duration::from_secs(RELOCATE_TIMEOUT_SECS);
         let relocation_timer_token = timer.schedule(duration);
-        let mut joining_node = JoiningPeer {
+        let mut joining_node = JoiningNode {
             action_sender: action_sender,
             ack_mgr: AckManager::new(),
             crust_service: crust_service,
@@ -247,7 +247,7 @@ impl JoiningPeer {
             self.send_ack(routing_msg, 0);
         }
 
-        // Prevents us repeatedly handling identical messages sent by a malicious peer.
+        // Prevents us repeatedly handling identical messages sent by a malicious node.
         match self.routing_msg_filter.filter_incoming(
             routing_msg,
             hop_msg.route,
@@ -350,7 +350,7 @@ impl JoiningPeer {
     }
 }
 
-impl Base for JoiningPeer {
+impl Base for JoiningNode {
     fn crust_service(&self) -> &Service {
         &self.crust_service
     }
@@ -388,7 +388,7 @@ impl Base for JoiningPeer {
     }
 }
 
-impl Bootstrapped for JoiningPeer {
+impl Bootstrapped for JoiningNode {
     fn ack_mgr(&self) -> &AckManager {
         &self.ack_mgr
     }
@@ -458,7 +458,7 @@ impl Bootstrapped for JoiningPeer {
     }
 }
 
-impl Debug for JoiningPeer {
+impl Debug for JoiningNode {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter, "JoiningNode({}())", self.name())
     }

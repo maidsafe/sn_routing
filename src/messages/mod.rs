@@ -131,13 +131,13 @@ pub enum DirectMessage {
         /// Client authority from after relocation.
         new_client_auth: Authority,
     },
-    /// Sent from a node that needs a tunnel to be able to connect to the given peer.
+    /// Sent from a node that needs a tunnel to be able to connect to the given node.
     TunnelRequest(PublicId),
     /// Sent as a response to `TunnelRequest` if the node can act as a tunnel.
     TunnelSuccess(PublicId),
     /// Sent as a response to `TunnelSuccess` if the node is selected to act as a tunnel.
     TunnelSelect(PublicId),
-    /// Sent from a tunnel node to indicate that the given peer has disconnected.
+    /// Sent from a tunnel node to indicate that the given node has disconnected.
     TunnelClosed(PublicId),
     /// Sent to a tunnel node to indicate the tunnel is not needed any more.
     TunnelDisconnect(PublicId),
@@ -191,7 +191,7 @@ impl DirectMessage {
 pub struct HopMessage {
     /// Wrapped signed message.
     pub content: SignedMessage,
-    /// Route number; corresponds to the index of the peer in the section of target peers being
+    /// Route number; corresponds to the index of the node in the section of target nodes being
     /// considered for the next hop.
     pub route: u8,
     /// Every node this has already been sent to.
@@ -504,7 +504,7 @@ impl RoutingMessage {
 /// ## Becoming a node
 ///
 /// If A wants to become a full routing node (`client_restriction == false`), it needs to relocate,
-/// i. e. change its name to a value chosen by the network, and then add its peers to its routing
+/// i. e. change its name to a value chosen by the network, and then add its nodes to its routing
 /// table and get added to their routing tables.
 ///
 ///
@@ -518,7 +518,7 @@ impl RoutingMessage {
 /// into which A should relocate and also the public IDs of the members of Y. A then disconnects
 /// from the network and reconnects with a new ID which falls within the specified address range.
 /// After connecting to the members of Y, it begins the resource proof process. Upon successful
-/// completion, A is regarded as a full node and connects to all neighbouring sections' peers.
+/// completion, A is regarded as a full node and connects to all neighbouring sections' nodes.
 ///
 ///
 /// ### Connecting to the matching section
@@ -604,15 +604,15 @@ pub enum MessageContent {
         /// Members of the section
         members: BTreeSet<PublicId>,
     },
-    /// Sent to all connected peers when our own section splits
+    /// Sent to all connected nodes when our own section splits
     SectionSplit(VersionedPrefix, XorName),
     /// Sent amongst members of a newly-merged section to allow synchronisation of their routing
-    /// tables before notifying other connected peers of the merge.
+    /// tables before notifying other connected nodes of the merge.
     ///
     /// The source and destination authorities are both `PrefixSection` types, conveying the
     /// section sending this merge message and the target prefix of the merge respectively.
     OwnSectionMerge(SectionMap),
-    /// Sent by members of a newly-merged section to peers outwith the merged section to notify them
+    /// Sent by members of a newly-merged section to nodes outwith the merged section to notify them
     /// of the merge.
     ///
     /// The source authority is a `PrefixSection` conveying the section which just merged. The

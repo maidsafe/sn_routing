@@ -71,11 +71,11 @@ impl Network {
 
         let mut new_table = RoutingTable::new(name, self.min_section_size);
         {
-            let close_node = self.close_node(name);
-            let close_peer = &self.nodes[&close_node];
+            let node = self.close_node(name);
+            let close_node = &self.nodes[&node];
             unwrap!(
                 new_table.add_prefixes(
-                    close_peer
+                    close_node
                         .all_sections()
                         .into_iter()
                         .map(|(pfx, (version, _))| pfx.with_version(version))
@@ -146,14 +146,14 @@ impl Network {
                 }
             } else {
                 match node.remove(&name) {
-                    Err(Error::NoSuchPeer) => {}
-                    Err(error) => panic!("Expected NoSuchPeer, but got {:?}", error),
-                    Ok(details) => panic!("Expected NoSuchPeer, but got {:?}", details),
+                    Err(Error::NoSuchNode) => {}
+                    Err(error) => panic!("Expected NoSuchNode, but got {:?}", error),
+                    Ok(details) => panic!("Expected NoSuchNode, but got {:?}", details),
                 }
             }
         }
 
-        let mut expected_peers = BTreeMap::new();
+        let mut expected_nodes = BTreeMap::new();
         while !merge_own_info.is_empty() {
             let mut merge_other_info = BTreeMap::new();
             // handle broadcast of merge_own_section
@@ -163,7 +163,7 @@ impl Network {
                 let nodes = self.nodes_covered_by_prefixes(&[sender_pfx.sibling()]);
                 for node in &nodes {
                     let target_node = unwrap!(self.nodes.get_mut(node));
-                    let node_expected = expected_peers.entry(*node).or_insert_with(BTreeSet::new);
+                    let node_expected = expected_nodes.entry(*node).or_insert_with(BTreeSet::new);
                     for (_, &(_, ref section)) in &sections {
                         node_expected.extend(section.iter().filter(|name| !target_node.has(name)));
                     }
@@ -280,7 +280,7 @@ impl Network {
             self.nodes
                 .iter()
                 .find(|&(_, table)| table.in_authority(&target))
-                .map(|(&peer, _)| peer)
+                .map(|(&node, _)| node)
         )
     }
 

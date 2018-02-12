@@ -33,7 +33,7 @@ use timer::Timer;
 use xor_name::XorName;
 
 // Common functionality for states that are bootstrapped (have established a crust
-// connection to at least one peer).
+// connection to at least one node).
 pub trait Bootstrapped: Base {
     fn ack_mgr(&self) -> &AckManager;
     fn ack_mgr_mut(&mut self) -> &mut AckManager;

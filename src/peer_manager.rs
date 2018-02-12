@@ -99,16 +99,16 @@ impl error::Error for Error {
     }
 }
 
-/// The type of a connection with a peer in our routing table.
+/// The type of a connection with a node in our routing table.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RoutingConnection {
-    /// We are/were the peer's proxy node.
+    /// We are/were the node's proxy node.
     JoiningNode(Instant),
-    /// The peer is/was our proxy node.
+    /// The node is/was our proxy node.
     Proxy(Instant),
-    /// The peer is directly connected to us.
+    /// The node is directly connected to us.
     Direct,
-    /// The peer is connected via a tunnel.
+    /// The node is connected via a tunnel.
     Tunnel,
 }
 
@@ -164,11 +164,11 @@ pub enum PeerState {
     },
     /// We are the proxy for the joining node
     JoiningNode,
-    /// We are approved and routing to that peer.
+    /// We are approved and routing to that node.
     Routing(RoutingConnection),
     /// Connected peer is a joining node and waiting for approval of routing.
     Candidate(RoutingConnection),
-    /// We are connected to the peer who is our proxy node.
+    /// We are connected to the node who is our proxy node.
     Proxy,
 }
 
@@ -203,7 +203,7 @@ pub enum ConnectionInfoReceivedResult {
     IsClient,
     /// We are already connected: They are becoming a routing node.
     IsJoiningNode,
-    /// We are already connected: They are a routing peer.
+    /// We are already connected: They are a routing node.
     IsConnected,
 }
 
@@ -1580,7 +1580,7 @@ impl PeerManager {
                         );
                         peer
                     }
-                    Some((peer, Err(RoutingTableError::NoSuchPeer))) => peer,
+                    Some((peer, Err(RoutingTableError::NoSuchNode))) => peer,
                     _ => return None,
                 };
 
