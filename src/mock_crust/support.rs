@@ -22,8 +22,8 @@
 use super::crust::{ConnectionInfoResult, CrustEventSender, CrustUser, Event, PrivConnectionInfo,
                    PubConnectionInfo, Uid};
 use CrustEvent;
-use id::PublicId;
 use maidsafe_utilities::SeededRng;
+use public_info::PublicInfo;
 use rand::Rng;
 use rust_sodium;
 use std::cell::RefCell;
@@ -451,9 +451,15 @@ impl<UID: Uid> ServiceImpl<UID> {
             Packet::BootstrapRequest(uid, kind) => self.handle_bootstrap_request(sender, uid, kind),
             Packet::BootstrapSuccess(uid) => self.handle_bootstrap_success(sender, uid),
             Packet::BootstrapFailure => self.handle_bootstrap_failure(sender),
-            Packet::ConnectRequest(their_id, _) => self.handle_connect_request(sender, their_id),
-            Packet::ConnectSuccess(their_id, _) => self.handle_connect_success(sender, their_id),
-            Packet::ConnectFailure(their_id, _) => self.handle_connect_failure(sender, their_id),
+            Packet::ConnectRequest(their_info, _) => {
+                self.handle_connect_request(sender, their_info)
+            }
+            Packet::ConnectSuccess(their_info, _) => {
+                self.handle_connect_success(sender, their_info)
+            }
+            Packet::ConnectFailure(their_info, _) => {
+                self.handle_connect_failure(sender, their_info)
+            }
             Packet::Message(data) => self.handle_message(sender, data),
             Packet::Disconnect => self.handle_disconnect(sender),
         }
@@ -486,24 +492,24 @@ impl<UID: Uid> ServiceImpl<UID> {
         self.decrement_pending_bootstraps();
     }
 
-    fn handle_connect_request(&mut self, peer_endpoint: Endpoint, their_id: UID) {
-        if self.is_connected(&peer_endpoint, &their_id) {
+    fn handle_connect_request(&mut self, peer_endpoint: Endpoint, their_info: UID) {
+        if self.is_connected(&peer_endpoint, &their_info) {
             return;
         }
 
-        self.add_rendezvous_connection(their_id, peer_endpoint);
+        self.add_rendezvous_connection(their_info, peer_endpoint);
         self.send_packet(
             peer_endpoint,
-            Packet::ConnectSuccess(unwrap!(self.uid), their_id),
+            Packet::ConnectSuccess(unwrap!(self.uid), their_info),
         );
     }
 
-    fn handle_connect_success(&mut self, peer_endpoint: Endpoint, their_id: UID) {
-        self.add_rendezvous_connection(their_id, peer_endpoint);
+    fn handle_connect_success(&mut self, peer_endpoint: Endpoint, their_info: UID) {
+        self.add_rendezvous_connection(their_info, peer_endpoint);
     }
 
-    fn handle_connect_failure(&self, _peer_endpoint: Endpoint, their_id: UID) {
-        self.send_event(CrustEvent::ConnectFailure(their_id));
+    fn handle_connect_failure(&self, _peer_endpoint: Endpoint, their_info: UID) {
+        self.send_event(CrustEvent::ConnectFailure(their_info));
     }
 
     fn handle_message(&self, peer_endpoint: Endpoint, data: Vec<u8>) {
@@ -692,8 +698,8 @@ impl<UID: Uid> Packet<UID> {
     fn to_failure(&self) -> Option<Packet<UID>> {
         match *self {
             Packet::BootstrapRequest(..) => Some(Packet::BootstrapFailure),
-            Packet::ConnectRequest(our_id, their_id) => {
-                Some(Packet::ConnectFailure(their_id, our_id))
+            Packet::ConnectRequest(our_info, their_info) => {
+                Some(Packet::ConnectFailure(their_info, our_info))
             }
             _ => None,
         }
@@ -703,12 +709,12 @@ impl<UID: Uid> Packet<UID> {
 // The following code facilitates passing ServiceHandles to mock Services, so we
 // don't need separate test and non-test version of `routing::Core::new`.
 thread_local! {
-    static CURRENT: RefCell<Option<ServiceHandle<PublicId>>> = RefCell::new(None)
+    static CURRENT: RefCell<Option<ServiceHandle<PublicInfo>>> = RefCell::new(None)
 }
 
 /// Make the `ServiceHandle` current so it can be picked up by mock `Service`s created
 /// inside the passed-in lambda.
-pub fn make_current<F, R>(handle: &ServiceHandle<PublicId>, f: F) -> R
+pub fn make_current<F, R>(handle: &ServiceHandle<PublicInfo>, f: F) -> R
 where
     F: FnOnce() -> R,
 {
@@ -721,7 +727,7 @@ where
 }
 
 /// Unsets and returns the `ServiceHandle` set with `make_current`.
-pub fn take_current() -> ServiceHandle<PublicId> {
+pub fn take_current() -> ServiceHandle<PublicInfo> {
     CURRENT.with(|current| {
         unwrap!(
             current.borrow_mut().take(),
@@ -733,7 +739,7 @@ pub fn take_current() -> ServiceHandle<PublicId> {
 /// Invokes the given lambda with a reference to the `ServiceHandle` set with `make_current`.
 pub fn with_current<F, R>(f: F) -> R
 where
-    F: FnOnce(&ServiceHandle<PublicId>) -> R,
+    F: FnOnce(&ServiceHandle<PublicInfo>) -> R,
 {
     CURRENT.with(|current| {
         f(unwrap!(

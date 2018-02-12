@@ -20,9 +20,9 @@ use ack_manager::{ACK_TIMEOUT_SECS, Ack, AckManager, UnacknowledgedMessage};
 use error::RoutingError;
 #[cfg(feature = "use-mock-crust")]
 use fake_clock::FakeClock as Instant;
-use id::PublicId;
 use maidsafe_utilities::serialisation;
 use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage};
+use public_info::PublicInfo;
 use routing_message_filter::RoutingMessageFilter;
 use routing_table::Authority;
 use std::collections::BTreeSet;
@@ -101,12 +101,12 @@ pub trait Bootstrapped: Base {
     fn filter_outgoing_routing_msg(
         &mut self,
         msg: &RoutingMessage,
-        pub_id: &PublicId,
+        pub_info: &PublicInfo,
         route: u8,
     ) -> bool {
         if self.routing_msg_filter().filter_outgoing(
             msg,
-            pub_id,
+            pub_info,
             route,
         )
         {
@@ -195,7 +195,7 @@ pub trait Bootstrapped: Base {
             signed_msg,
             route,
             sent_to,
-            self.full_id().signing_private_key(),
+            self.full_info().secret_sign_key(),
         )?;
         let message = Message::Hop(hop_msg);
         Ok(serialisation::serialise(&message)?)

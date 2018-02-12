@@ -23,10 +23,11 @@ use cache::Cache;
 use crust::CrustUser;
 use error::RoutingError;
 use event::Event;
-use id::{FullId, PublicId};
+use full_info::FullInfo;
 use maidsafe_utilities::serialisation;
 use messages::{DirectMessage, Message};
 use outbox::EventBox;
+use public_info::PublicInfo;
 use routing_table::{Authority, Prefix};
 use rust_sodium::crypto::sign;
 use state_machine::{State, Transition};
@@ -48,8 +49,8 @@ pub enum TargetState {
     Client { msg_expiry_dur: Duration },
     JoiningPeer,
     Node {
-        old_full_id: FullId,
-        our_section: (Prefix, BTreeSet<PublicId>),
+        old_full_info: FullInfo,
+        our_section: (Prefix, BTreeSet<PublicInfo>),
     },
 }
 
@@ -57,11 +58,11 @@ pub enum TargetState {
 pub struct Bootstrapping {
     action_sender: RoutingActionSender,
     bootstrap_blacklist: HashSet<SocketAddr>,
-    bootstrap_connection: Option<(PublicId, u64)>,
+    bootstrap_connection: Option<(PublicInfo, u64)>,
     cache: Box<Cache>,
     target_state: TargetState,
     crust_service: Service,
-    full_id: FullId,
+    full_info: FullInfo,
     min_section_size: usize,
     stats: Stats,
     timer: Timer,
@@ -73,7 +74,7 @@ impl Bootstrapping {
         cache: Box<Cache>,
         target_state: TargetState,
         mut crust_service: Service,
-        full_id: FullId,
+        full_info: FullInfo,
         min_section_size: usize,
         timer: Timer,
     ) -> Option<Self> {
@@ -96,7 +97,7 @@ impl Bootstrapping {
             cache: cache,
             target_state: target_state,
             crust_service: crust_service,
-            full_id: full_id,
+            full_info: full_info,
             min_section_size: min_section_size,
             stats: Stats::new(),
             timer: timer,
@@ -128,21 +129,21 @@ impl Bootstrapping {
 
     pub fn handle_crust_event(
         &mut self,
-        crust_event: CrustEvent<PublicId>,
+        crust_event: CrustEvent<PublicInfo>,
         outbox: &mut EventBox,
     ) -> Transition {
         match crust_event {
-            CrustEvent::BootstrapConnect(pub_id, socket_addr) => {
-                self.handle_bootstrap_connect(pub_id, socket_addr)
+            CrustEvent::BootstrapConnect(pub_info, socket_addr) => {
+                self.handle_bootstrap_connect(pub_info, socket_addr)
             }
             CrustEvent::BootstrapFailed => self.handle_bootstrap_failed(outbox),
-            CrustEvent::LostPeer(pub_id) => {
-                info!("{:?} Lost connection to proxy {:?}.", self, pub_id);
+            CrustEvent::LostPeer(pub_info) => {
+                info!("{:?} Lost connection to proxy {:?}.", self, pub_info);
                 self.rebootstrap();
                 Transition::Stay
             }
-            CrustEvent::NewMessage(pub_id, _, bytes) => {
-                match self.handle_new_message(pub_id, &bytes) {
+            CrustEvent::NewMessage(pub_info, _, bytes) => {
+                match self.handle_new_message(pub_info, &bytes) {
                     Ok(transition) => transition,
                     Err(error) => {
                         debug!("{:?} {:?}", self, error);
@@ -179,13 +180,13 @@ impl Bootstrapping {
         }
     }
 
-    pub fn into_target_state(self, proxy_public_id: PublicId, outbox: &mut EventBox) -> State {
+    pub fn into_target_state(self, proxy_public_info: PublicInfo, outbox: &mut EventBox) -> State {
         match self.target_state {
             TargetState::Client { msg_expiry_dur } => State::Client(Client::from_bootstrapping(
                 self.crust_service,
-                self.full_id,
+                self.full_info,
                 self.min_section_size,
-                proxy_public_id,
+                proxy_public_info,
                 self.stats,
                 self.timer,
                 msg_expiry_dur,
@@ -197,9 +198,9 @@ impl Bootstrapping {
                         self.action_sender,
                         self.cache,
                         self.crust_service,
-                        self.full_id,
+                        self.full_info,
                         self.min_section_size,
-                        proxy_public_id,
+                        proxy_public_info,
                         self.stats,
                         self.timer,
                     )
@@ -211,7 +212,7 @@ impl Bootstrapping {
                 }
             }
             TargetState::Node {
-                old_full_id,
+                old_full_info,
                 our_section,
                 ..
             } => State::Peer(Peer::from_bootstrapping(
@@ -219,10 +220,10 @@ impl Bootstrapping {
                 self.action_sender,
                 self.cache,
                 self.crust_service,
-                old_full_id,
-                self.full_id,
+                old_full_info,
+                self.full_info,
                 self.min_section_size,
-                proxy_public_id,
+                proxy_public_info,
                 self.stats,
                 self.timer,
             )),
@@ -238,12 +239,12 @@ impl Bootstrapping {
     }
 
     fn handle_timeout(&mut self, token: u64) {
-        if let Some((bootstrap_id, bootstrap_token)) = self.bootstrap_connection {
+        if let Some((bootstrap_info, bootstrap_token)) = self.bootstrap_connection {
             if bootstrap_token == token {
                 debug!(
                     "{:?} Timeout when trying to bootstrap against {:?}.",
                     self,
-                    bootstrap_id
+                    bootstrap_info
                 );
 
                 self.rebootstrap();
@@ -253,25 +254,25 @@ impl Bootstrapping {
 
     fn handle_bootstrap_connect(
         &mut self,
-        pub_id: PublicId,
+        pub_info: PublicInfo,
         socket_addr: SocketAddr,
     ) -> Transition {
         match self.bootstrap_connection {
             None => {
-                debug!("{:?} Received BootstrapConnect from {}.", self, pub_id);
+                debug!("{:?} Received BootstrapConnect from {}.", self, pub_info);
                 // Established connection. Pending Validity checks
-                self.send_bootstrap_request(pub_id);
+                self.send_bootstrap_request(pub_info);
                 let _ = self.bootstrap_blacklist.insert(socket_addr);
             }
-            Some((bootstrap_id, _)) if bootstrap_id == pub_id => {
+            Some((bootstrap_info, _)) if bootstrap_info == pub_info => {
                 warn!(
                     "{:?} Got more than one BootstrapConnect for peer {}.",
                     self,
-                    pub_id
+                    pub_info
                 );
             }
             _ => {
-                self.disconnect_peer(&pub_id);
+                self.disconnect_peer(&pub_info);
             }
         }
 
@@ -286,11 +287,11 @@ impl Bootstrapping {
 
     fn handle_new_message(
         &mut self,
-        pub_id: PublicId,
+        pub_info: PublicInfo,
         bytes: &[u8],
     ) -> Result<Transition, RoutingError> {
         match serialisation::deserialise(bytes) {
-            Ok(Message::Direct(direct_msg)) => Ok(self.handle_direct_message(direct_msg, pub_id)),
+            Ok(Message::Direct(direct_msg)) => Ok(self.handle_direct_message(direct_msg, pub_info)),
             Ok(message) => {
                 debug!("{:?} Unhandled new message: {:?}", self, message);
                 Ok(Transition::Stay)
@@ -302,12 +303,12 @@ impl Bootstrapping {
     fn handle_direct_message(
         &mut self,
         direct_message: DirectMessage,
-        pub_id: PublicId,
+        pub_info: PublicInfo,
     ) -> Transition {
         use self::DirectMessage::*;
         match direct_message {
             BootstrapResponse(Ok(())) => Transition::IntoBootstrapped {
-                proxy_public_id: pub_id,
+                proxy_public_info: pub_info,
             },
             BootstrapResponse(Err(error)) => {
                 info!("{:?} Connection failed: {}", self, error);
@@ -325,15 +326,15 @@ impl Bootstrapping {
         }
     }
 
-    fn send_bootstrap_request(&mut self, pub_id: PublicId) {
-        debug!("{:?} Sending BootstrapRequest to {}.", self, pub_id);
+    fn send_bootstrap_request(&mut self, pub_info: PublicInfo) {
+        debug!("{:?} Sending BootstrapRequest to {}.", self, pub_info);
 
         let token = self.timer.schedule(
             Duration::from_secs(BOOTSTRAP_TIMEOUT_SECS),
         );
-        self.bootstrap_connection = Some((pub_id, token));
+        self.bootstrap_connection = Some((pub_info, token));
 
-        let serialised_public_id = match serialisation::serialise(self.full_id.public_id()) {
+        let serialised_public_info = match serialisation::serialise(self.full_info.public_info()) {
             Ok(rslt) => rslt,
             Err(e) => {
                 error!("Failed to serialise public ID: {:?}", e);
@@ -341,30 +342,30 @@ impl Bootstrapping {
             }
         };
         let signature =
-            sign::sign_detached(&serialised_public_id, self.full_id.signing_private_key());
+            sign::sign_detached(&serialised_public_info, self.full_info.secret_sign_key());
         let direct_message = DirectMessage::BootstrapRequest(signature);
 
         self.stats().count_direct_message(&direct_message);
-        self.send_message(&pub_id, Message::Direct(direct_message));
+        self.send_message(&pub_info, Message::Direct(direct_message));
     }
 
-    fn disconnect_peer(&mut self, pub_id: &PublicId) {
+    fn disconnect_peer(&mut self, pub_info: &PublicInfo) {
         debug!(
             "{:?} Disconnecting {}. Calling crust::Service::disconnect.",
             self,
-            pub_id
+            pub_info
         );
-        let _ = self.crust_service.disconnect(pub_id);
+        let _ = self.crust_service.disconnect(pub_info);
     }
 
     fn rebootstrap(&mut self) {
-        if let Some((bootstrap_id, _)) = self.bootstrap_connection.take() {
+        if let Some((bootstrap_info, _)) = self.bootstrap_connection.take() {
             debug!(
                 "{:?} Dropping bootstrap node {:?} and retrying.",
                 self,
-                bootstrap_id
+                bootstrap_info
             );
-            let _fixme = self.crust_service.disconnect(&bootstrap_id);
+            let _fixme = self.crust_service.disconnect(&bootstrap_info);
             let crust_user = if self.client_restriction() {
                 CrustUser::Client
             } else {
@@ -383,8 +384,8 @@ impl Base for Bootstrapping {
         &self.crust_service
     }
 
-    fn full_id(&self) -> &FullId {
-        &self.full_id
+    fn full_info(&self) -> &FullInfo {
+        &self.full_info
     }
 
     fn stats(&mut self) -> &mut Stats {
@@ -411,7 +412,7 @@ mod tests {
     use super::*;
     use CrustEvent;
     use cache::NullCache;
-    use id::FullId;
+    use full_info::FullInfo;
     use maidsafe_utilities::event_sender::{MaidSafeEventCategory, MaidSafeObserver};
     use mock_crust::{self, Network};
     use mock_crust::crust::{Config, Service};
@@ -437,7 +438,7 @@ mod tests {
         let mut crust_service = unwrap!(Service::with_handle(
             &handle0,
             event_sender,
-            *FullId::new().public_id(),
+            *FullInfo::node_new(1u8).public_info(),
         ));
 
         unwrap!(crust_service.start_listening_tcp());
@@ -452,8 +453,8 @@ mod tests {
         let handle1 = network.new_service_handle(Some(config.clone()), None);
         let mut outbox = EventBuf::new();
         let mut state_machine = mock_crust::make_current(&handle1, || {
-            let full_id = FullId::new();
-            let pub_id = *full_id.public_id();
+            let full_info = FullInfo::node_new(1u8);
+            let pub_info = *full_info.public_info();
             StateMachine::new(
                 move |action_sender, crust_service, timer, _outbox2| {
                     Bootstrapping::new(
@@ -461,12 +462,12 @@ mod tests {
                         Box::new(NullCache),
                         TargetState::Client { msg_expiry_dur: Duration::from_secs(60) },
                         crust_service,
-                        full_id,
+                        full_info,
                         min_section_size,
                         timer,
                     ).map_or(State::Terminated, State::Bootstrapping)
                 },
-                pub_id,
+                pub_info,
                 Some(config),
                 &mut outbox,
             ).1

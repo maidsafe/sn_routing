@@ -166,8 +166,8 @@ mod tests {
         combined_one_node_vec.push(close_nodes_one_entry[0]);
 
         let mut combined_one_node: Vec<u8> = Vec::new();
-        for node_id in combined_one_node_vec {
-            for i in &node_id.0 {
+        for node_info in combined_one_node_vec {
+            for i in &node_info.0 {
                 combined_one_node.push(*i);
             }
         }

@@ -25,11 +25,12 @@ use ack_manager::Ack;
 use data::MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
 use error::{BootstrapResponseError, RoutingError};
 use event::Event;
-use id::{FullId, PublicId};
+use full_info::FullInfo;
 use itertools::Itertools;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use peer_manager::SectionMap;
+use public_info::PublicInfo;
 use routing_table::{Prefix, VersionedPrefix};
 use routing_table::Authority;
 use rust_sodium::crypto::{box_, sign};
@@ -72,18 +73,18 @@ pub enum Message {
         /// The wrapped message
         content: DirectMessage,
         /// The sender
-        src: PublicId,
+        src: PublicInfo,
         /// The receiver
-        dst: PublicId,
+        dst: PublicInfo,
     },
     /// A hop message sent via a tunnel because the nodes could not connect directly
     TunnelHop {
         /// The wrapped message
         content: HopMessage,
         /// The sender
-        src: PublicId,
+        src: PublicInfo,
         /// The receiver
-        dst: PublicId,
+        dst: PublicInfo,
     },
 }
 
@@ -119,28 +120,28 @@ pub enum DirectMessage {
     /// Sent from a node which is still joining the network to another node, to allow the latter to
     /// add the former to its routing table.
     CandidateInfo {
-        /// `PublicId` from before relocation.
-        old_public_id: PublicId,
-        /// `PublicId` from after relocation.
-        new_public_id: PublicId,
-        /// Signature of concatenated `PublicId`s using the pre-relocation key.
+        /// `PublicInfo` from before relocation.
+        old_public_info: PublicInfo,
+        /// `PublicInfo` from after relocation.
+        new_public_info: PublicInfo,
+        /// Signature of concatenated `PublicInfo`s using the pre-relocation key.
         signature_using_old: sign::Signature,
-        /// Signature of concatenated `PublicId`s and `signature_using_old` using the
+        /// Signature of concatenated `PublicInfo`s and `signature_using_old` using the
         /// post-relocation key.
         signature_using_new: sign::Signature,
         /// Client authority from after relocation.
         new_client_auth: Authority,
     },
     /// Sent from a node that needs a tunnel to be able to connect to the given peer.
-    TunnelRequest(PublicId),
+    TunnelRequest(PublicInfo),
     /// Sent as a response to `TunnelRequest` if the node can act as a tunnel.
-    TunnelSuccess(PublicId),
+    TunnelSuccess(PublicInfo),
     /// Sent as a response to `TunnelSuccess` if the node is selected to act as a tunnel.
-    TunnelSelect(PublicId),
+    TunnelSelect(PublicInfo),
     /// Sent from a tunnel node to indicate that the given peer has disconnected.
-    TunnelClosed(PublicId),
+    TunnelClosed(PublicInfo),
     /// Sent to a tunnel node to indicate the tunnel is not needed any more.
-    TunnelDisconnect(PublicId),
+    TunnelDisconnect(PublicInfo),
     /// Request a proof to be provided by the joining node.
     ///
     /// This is sent from member of Group Y to the joining node.
@@ -235,22 +236,22 @@ impl HopMessage {
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize, Debug)]
 pub struct SectionList {
     pub prefix: Prefix,
-    // TODO(MAID-1677): pub signatures: BTreeSet<(PublicId, sign::Signature)>,
-    pub_ids: BTreeSet<PublicId>,
+    // TODO(MAID-1677): pub signatures: BTreeSet<(PublicInfo, sign::Signature)>,
+    pub_infos: BTreeSet<PublicInfo>,
 }
 
 impl SectionList {
     /// Create
-    pub fn new(prefix: Prefix, pub_ids: BTreeSet<PublicId>) -> Self {
+    pub fn new(prefix: Prefix, pub_infos: BTreeSet<PublicInfo>) -> Self {
         SectionList {
             prefix: prefix,
-            pub_ids: pub_ids,
+            pub_infos: pub_infos,
         }
     }
 
     /// Create from any object convertable to an iterator
-    pub fn from<I: IntoIterator<Item = PublicId>>(prefix: Prefix, pub_ids: I) -> Self {
-        Self::new(prefix, pub_ids.into_iter().collect())
+    pub fn from<I: IntoIterator<Item = PublicInfo>>(prefix: Prefix, pub_infos: I) -> Self {
+        Self::new(prefix, pub_infos.into_iter().collect())
     }
 }
 
@@ -264,24 +265,24 @@ pub struct SignedMessage {
     /// The lists of the sections involved in routing this message, in chronological order.
     // TODO: implement (MAID-1677): sec_lists: Vec<SectionList>,
     /// The IDs and signatures of the source authority's members.
-    signatures: BTreeMap<PublicId, sign::Signature>,
+    signatures: BTreeMap<PublicInfo, sign::Signature>,
 }
 
 impl SignedMessage {
-    /// Creates a `SignedMessage` with the given `content` and signed by the given `full_id`.
+    /// Creates a `SignedMessage` with the given `content` and signed by the given `full_info`.
     ///
     /// Requires the list `src_sections` of nodes who should sign this message.
     pub fn new(
         content: RoutingMessage,
-        full_id: &FullId,
+        full_info: &FullInfo,
         mut src_sections: Vec<SectionList>,
     ) -> Result<SignedMessage, RoutingError> {
         src_sections.sort_by_key(|list| list.prefix);
-        let sig = sign::sign_detached(&serialise(&content)?, full_id.signing_private_key());
+        let sig = sign::sign_detached(&serialise(&content)?, full_info.secret_sign_key());
         Ok(SignedMessage {
             content: content,
             src_sections: src_sections,
-            signatures: iter::once((*full_id.public_id(), sig)).collect(),
+            signatures: iter::once((*full_info.public_info(), sig)).collect(),
         })
     }
 
@@ -299,21 +300,21 @@ impl SignedMessage {
     }
 
     /// Returns whether the message is signed by the given public ID.
-    pub fn signed_by(&self, pub_id: &PublicId) -> bool {
-        self.signatures.contains_key(pub_id)
+    pub fn signed_by(&self, pub_info: &PublicInfo) -> bool {
+        self.signatures.contains_key(pub_info)
     }
 
     /// Returns the number of nodes in the source authority.
     pub fn src_size(&self) -> usize {
-        self.src_sections.iter().map(|sl| sl.pub_ids.len()).sum()
+        self.src_sections.iter().map(|sl| sl.pub_infos.len()).sum()
     }
 
     /// Adds the given signature if it is new, without validating it. If the collection of section
-    /// lists isn't empty, the signature is only added if `pub_id` is a member of the first section
-    /// list.
-    pub fn add_signature(&mut self, pub_id: PublicId, sig: sign::Signature) {
-        if self.content.src.is_multiple() && self.is_sender(&pub_id) {
-            let _ = self.signatures.insert(pub_id, sig);
+    /// lists isn't empty, the signature is only added if `pub_info` is a member of the first
+    /// section list.
+    pub fn add_signature(&mut self, pub_info: PublicInfo, sig: sign::Signature) {
+        if self.content.src.is_multiple() && self.is_sender(&pub_info) {
+            let _ = self.signatures.insert(pub_info, sig);
         }
     }
 
@@ -367,28 +368,29 @@ impl SignedMessage {
         self.has_enough_sigs(min_section_size)
     }
 
-    // Returns true iff `pub_id` is in self.section_lists
-    fn is_sender(&self, pub_id: &PublicId) -> bool {
-        self.src_sections.iter().any(
-            |list| list.pub_ids.contains(pub_id),
-        )
+    // Returns true iff `pub_info` is in self.section_lists
+    fn is_sender(&self, pub_info: &PublicInfo) -> bool {
+        self.src_sections.iter().any(|list| {
+            list.pub_infos.contains(pub_info)
+        })
     }
 
     // Returns a list of all invalid signatures (not from an expected key or not cryptographically
     // valid).
-    fn find_invalid_sigs(&self, signed_bytes: &[u8]) -> Vec<PublicId> {
+    fn find_invalid_sigs(&self, signed_bytes: &[u8]) -> Vec<PublicInfo> {
         let invalid = self.signatures
             .iter()
-            .filter_map(|(pub_id, sig)| {
+            .filter_map(|(pub_info, sig)| {
                 // Remove if not in sending nodes or signature is invalid:
-                let is_valid = if let Authority::Client { ref client_id, .. } = self.content.src {
-                    client_id == pub_id &&
-                        sign::verify_detached(sig, signed_bytes, client_id.signing_public_key())
-                } else {
-                    self.is_sender(pub_id) &&
-                        sign::verify_detached(sig, signed_bytes, pub_id.signing_public_key())
-                };
-                if is_valid { None } else { Some(*pub_id) }
+                let is_valid =
+                    if let Authority::Client { ref client_info, .. } = self.content.src {
+                        client_info == pub_info &&
+                            sign::verify_detached(sig, signed_bytes, client_info.sign_key())
+                    } else {
+                        self.is_sender(pub_info) &&
+                            sign::verify_detached(sig, signed_bytes, pub_info.sign_key())
+                    };
+                if is_valid { None } else { Some(*pub_info) }
             })
             .collect_vec();
         if !invalid.is_empty() {
@@ -406,14 +408,14 @@ impl SignedMessage {
                 // Note: there should be exactly one source section, but we use safe code:
                 let valid_names: HashSet<_> = self.src_sections
                     .iter()
-                    .flat_map(|list| list.pub_ids.iter().map(PublicId::name))
+                    .flat_map(|list| list.pub_infos.iter().map(PublicInfo::name))
                     .sorted_by(|lhs, rhs| self.content.src.name().cmp_distance(lhs, rhs))
                     .into_iter()
                     .take(min_section_size)
                     .collect();
                 let valid_sigs = self.signatures
                     .keys()
-                    .filter(|pub_id| valid_names.contains(pub_id.name()))
+                    .filter(|pub_info| valid_names.contains(&pub_info.name()))
                     .count();
                 // TODO: we should consider replacing valid_names.len() with
                 // cmp::min(routing_table.len(), min_section_size)
@@ -424,7 +426,7 @@ impl SignedMessage {
             Section(_) => {
                 // Note: there should be exactly one source section, but we use safe code:
                 let num_sending = self.src_sections.iter().fold(0, |count, list| {
-                    count + list.pub_ids.len()
+                    count + list.pub_infos.len()
                 });
                 let valid_sigs = self.signatures.len();
                 valid_sigs * QUORUM_DENOMINATOR > num_sending * QUORUM_NUMERATOR
@@ -434,9 +436,9 @@ impl SignedMessage {
                 self.src_sections.iter().all(|list| {
                     let valid_sigs = self.signatures
                         .keys()
-                        .filter(|pub_id| list.pub_ids.contains(pub_id))
+                        .filter(|pub_info| list.pub_infos.contains(pub_info))
                         .count();
-                    valid_sigs * QUORUM_DENOMINATOR > list.pub_ids.len() * QUORUM_NUMERATOR
+                    valid_sigs * QUORUM_DENOMINATOR > list.pub_infos.len() * QUORUM_NUMERATOR
                 })
             }
             ManagedNode(_) | Client { .. } => self.signatures.len() == 1,
@@ -556,7 +558,7 @@ pub enum MessageContent {
     /// Notify a joining node's `NaeManager` so that it sends a `RelocateResponse`.
     ExpectCandidate {
         /// The joining node's current public ID.
-        old_public_id: PublicId,
+        old_public_info: PublicInfo,
         /// The joining node's current authority.
         old_client_auth: Authority,
         /// The message's unique identifier.
@@ -570,7 +572,7 @@ pub enum MessageContent {
         /// Nonce used to provide a salt in the encrypted message.
         nonce: [u8; box_::NONCEBYTES],
         /// The sender's public ID.
-        pub_id: PublicId,
+        pub_info: PublicInfo,
         /// The message's unique identifier.
         msg_id: MessageId,
     },
@@ -581,8 +583,8 @@ pub enum MessageContent {
         encrypted_conn_info: Vec<u8>,
         /// Nonce used to provide a salt in the encrypted message.
         nonce: [u8; box_::NONCEBYTES],
-        /// The sender's public ID.
-        pub_id: PublicId,
+        /// The sender's public info.
+        pub_info: PublicInfo,
         /// The message's unique identifier.
         msg_id: MessageId,
     },
@@ -591,7 +593,7 @@ pub enum MessageContent {
         /// The interval into which the joining node should join.
         target_interval: (XorName, XorName),
         /// The section that the joining node shall connect to.
-        section: (Prefix, BTreeSet<PublicId>),
+        section: (Prefix, BTreeSet<PublicInfo>),
         /// The message's unique identifier.
         message_id: MessageId,
     },
@@ -602,7 +604,7 @@ pub enum MessageContent {
         /// own members and neighbouring sections.
         versioned_prefix: VersionedPrefix,
         /// Members of the section
-        members: BTreeSet<PublicId>,
+        members: BTreeSet<PublicInfo>,
     },
     /// Sent to all connected peers when our own section splits
     SectionSplit(VersionedPrefix, XorName),
@@ -617,7 +619,7 @@ pub enum MessageContent {
     ///
     /// The source authority is a `PrefixSection` conveying the section which just merged. The
     /// first field is the set of members of the section, and the second is the section version.
-    OtherSectionMerge(BTreeSet<PublicId>, u64),
+    OtherSectionMerge(BTreeSet<PublicInfo>, u64),
     /// Acknowledge receipt of any message except an `Ack`. It contains the hash of the
     /// received message and the priority.
     Ack(Ack, u8),
@@ -643,7 +645,7 @@ pub enum MessageContent {
     /// Sent from the `NaeManager` to the `NaeManager`.
     AcceptAsCandidate {
         /// The joining node's current public ID.
-        old_public_id: PublicId,
+        old_public_info: PublicInfo,
         /// The joining node's current authority.
         old_client_auth: Authority,
         /// The interval into which the joining node should join.
@@ -654,17 +656,17 @@ pub enum MessageContent {
     /// Sent among Group Y to vote to accept a joining node.
     CandidateApproval {
         /// The joining node's current public ID.
-        new_public_id: PublicId,
+        new_public_info: PublicInfo,
         /// Client authority of the candidate.
         new_client_auth: Authority,
-        /// The `PublicId`s of all routing table contacts shared by the nodes in our section.
+        /// The `PublicInfo`s of all routing table contacts shared by the nodes in our section.
         sections: SectionMap,
     },
     /// Approves the joining node as a routing node.
     ///
     /// Sent from Group Y to the joining node.
     NodeApproval {
-        /// The routing table shared by the nodes in our group, including the `PublicId`s of our
+        /// The routing table shared by the nodes in our group, including the `PublicInfo`s of our
         /// contacts.
         sections: SectionMap,
     },
@@ -698,11 +700,11 @@ impl Debug for DirectMessage {
             BootstrapRequest(_) => write!(formatter, "BootstrapRequest"),
             BootstrapResponse(ref result) => write!(formatter, "BootstrapResponse({:?})", result),
             CandidateInfo { .. } => write!(formatter, "CandidateInfo {{ .. }}"),
-            TunnelRequest(pub_id) => write!(formatter, "TunnelRequest({:?})", pub_id),
-            TunnelSuccess(pub_id) => write!(formatter, "TunnelSuccess({:?})", pub_id),
-            TunnelSelect(pub_id) => write!(formatter, "TunnelSelect({:?})", pub_id),
-            TunnelClosed(pub_id) => write!(formatter, "TunnelClosed({:?})", pub_id),
-            TunnelDisconnect(pub_id) => write!(formatter, "TunnelDisconnect({:?})", pub_id),
+            TunnelRequest(pub_info) => write!(formatter, "TunnelRequest({:?})", pub_info),
+            TunnelSuccess(pub_info) => write!(formatter, "TunnelSuccess({:?})", pub_info),
+            TunnelSelect(pub_info) => write!(formatter, "TunnelSelect({:?})", pub_info),
+            TunnelClosed(pub_info) => write!(formatter, "TunnelClosed({:?})", pub_info),
+            TunnelDisconnect(pub_info) => write!(formatter, "TunnelDisconnect({:?})", pub_info),
             ResourceProof {
                 ref seed,
                 ref target_size,
@@ -769,39 +771,39 @@ impl Debug for MessageContent {
         match *self {
             Relocate { ref message_id } => write!(formatter, "Relocate {{ {:?} }}", message_id),
             ExpectCandidate {
-                ref old_public_id,
+                ref old_public_info,
                 ref old_client_auth,
                 ref message_id,
             } => {
                 write!(
                     formatter,
                     "ExpectCandidate {{ {:?}, {:?}, {:?} }}",
-                    old_public_id,
+                    old_public_info,
                     old_client_auth,
                     message_id
                 )
             }
             ConnectionInfoRequest {
-                ref pub_id,
+                ref pub_info,
                 ref msg_id,
                 ..
             } => {
                 write!(
                     formatter,
                     "ConnectionInfoRequest {{ {:?}, {:?}, .. }}",
-                    pub_id,
+                    pub_info,
                     msg_id
                 )
             }
             ConnectionInfoResponse {
-                ref pub_id,
+                ref pub_info,
                 ref msg_id,
                 ..
             } => {
                 write!(
                     formatter,
                     "ConnectionInfoResponse {{ {:?}, {:?}, .. }}",
-                    pub_id,
+                    pub_info,
                     msg_id
                 )
             }
@@ -859,7 +861,7 @@ impl Debug for MessageContent {
                 )
             }
             AcceptAsCandidate {
-                ref old_public_id,
+                ref old_public_info,
                 ref old_client_auth,
                 ref target_interval,
                 ref message_id,
@@ -867,21 +869,21 @@ impl Debug for MessageContent {
                 write!(
                     formatter,
                     "AcceptAsCandidate {{ {:?}, {:?}, {:?}, {:?} }}",
-                    old_public_id,
+                    old_public_info,
                     old_client_auth,
                     target_interval,
                     message_id
                 )
             }
             CandidateApproval {
-                ref new_public_id,
+                ref new_public_info,
                 ref new_client_auth,
                 ref sections,
             } => {
                 write!(
                     formatter,
                     "CandidateApproval {{ new: {:?}, client: {:?}, sections: {:?} }}",
-                    new_public_id,
+                    new_public_info,
                     new_client_auth,
                     sections
                 )
@@ -1029,7 +1031,7 @@ impl UserMessageCache {
 mod tests {
     use super::*;
     use data::ImmutableData;
-    use id::FullId;
+    use full_info::FullInfo;
     use maidsafe_utilities::serialisation::serialise;
     use rand;
     use routing_table::{Authority, Prefix};
@@ -1044,34 +1046,35 @@ mod tests {
     fn signed_message_check_integrity() {
         let min_section_size = 1000;
         let name: XorName = rand::random();
-        let full_id = FullId::new();
+        let full_info = FullInfo::node_new(1u8);
         let routing_message = RoutingMessage {
             src: Authority::Client {
-                client_id: *full_id.public_id(),
+                client_info: *full_info.public_info(),
                 proxy_node_name: name,
             },
             dst: Authority::ClientManager(name),
             content: MessageContent::SectionSplit(Prefix::new(0, name).with_version(0), name),
         };
         let senders = iter::empty().collect();
-        let signed_message_result = SignedMessage::new(routing_message.clone(), &full_id, senders);
+        let signed_message_result =
+            SignedMessage::new(routing_message.clone(), &full_info, senders);
 
         let mut signed_message = unwrap!(signed_message_result);
 
         assert_eq!(routing_message, *signed_message.routing_message());
         assert_eq!(1, signed_message.signatures.len());
         assert_eq!(
-            Some(full_id.public_id()),
+            Some(full_info.public_info()),
             signed_message.signatures.keys().next()
         );
 
         unwrap!(signed_message.check_integrity(min_section_size));
 
-        let full_id = FullId::new();
-        let bytes_to_sign = unwrap!(serialise(&(&routing_message, full_id.public_id())));
-        let signature = sign::sign_detached(&bytes_to_sign, full_id.signing_private_key());
+        let full_info = FullInfo::node_new(1u8);
+        let bytes_to_sign = unwrap!(serialise(&(&routing_message, full_info.public_info())));
+        let signature = sign::sign_detached(&bytes_to_sign, full_info.secret_sign_key());
 
-        signed_message.signatures = iter::once((*full_id.public_id(), signature)).collect();
+        signed_message.signatures = iter::once((*full_info.public_info(), signature)).collect();
 
         // Invalid because it's not signed by the sender:
         assert!(signed_message.check_integrity(min_section_size).is_err());
@@ -1083,11 +1086,11 @@ mod tests {
     fn msg_signatures() {
         let min_section_size = 8;
 
-        let full_id_0 = FullId::new();
-        let prefix = Prefix::new(0, *full_id_0.public_id().name());
-        let full_id_1 = FullId::new();
-        let full_id_2 = FullId::new();
-        let irrelevant_full_id = FullId::new();
+        let full_info_0 = FullInfo::node_new(1u8);
+        let prefix = Prefix::new(0, full_info_0.public_info().name());
+        let full_info_1 = FullInfo::node_new(1u8);
+        let full_info_2 = FullInfo::node_new(1u8);
+        let irrelevant_full_info = FullInfo::node_new(1u8);
         let data_bytes: Vec<u8> = (0..10).collect();
         let data = ImmutableData::new(data_bytes);
         let user_msg = UserMessage::Request(Request::PutIData {
@@ -1108,60 +1111,62 @@ mod tests {
             SectionList::from(
                 prefix,
                 vec![
-                    *full_id_0.public_id(),
-                    *full_id_1.public_id(),
-                    *full_id_2.public_id(),
+                    *full_info_0.public_info(),
+                    *full_info_1.public_info(),
+                    *full_info_2.public_info(),
                 ]
             ),
         ];
         let mut signed_msg = unwrap!(SignedMessage::new(
             routing_message,
-            &full_id_0,
+            &full_info_0,
             src_sections,
         ));
         assert_eq!(signed_msg.signatures.len(), 1);
 
         // Try to add a signature which will not correspond to an ID from the sending nodes.
         let irrelevant_sig = match unwrap!(signed_msg.routing_message().to_signature(
-            irrelevant_full_id.signing_private_key(),
+            irrelevant_full_info.secret_sign_key(),
         )) {
             DirectMessage::MessageSignature(_, sig) => {
-                signed_msg.add_signature(*irrelevant_full_id.public_id(), sig);
+                signed_msg.add_signature(*irrelevant_full_info.public_info(), sig);
                 sig
             }
             msg => panic!("Unexpected message: {:?}", msg),
         };
         assert_eq!(signed_msg.signatures.len(), 1);
         assert!(!signed_msg.signatures.contains_key(
-            irrelevant_full_id.public_id(),
+            irrelevant_full_info.public_info(),
         ));
         assert!(!signed_msg.check_fully_signed(min_section_size));
 
         // Add a valid signature for ID 1 and an invalid one for ID 2
         match unwrap!(signed_msg.routing_message().to_signature(
-            full_id_1.signing_private_key(),
+            full_info_1.secret_sign_key(),
         )) {
             DirectMessage::MessageSignature(hash, sig) => {
                 let serialised_msg = unwrap!(serialise(signed_msg.routing_message()));
                 assert_eq!(hash, sha3_256(&serialised_msg));
-                signed_msg.add_signature(*full_id_1.public_id(), sig);
+                signed_msg.add_signature(*full_info_1.public_info(), sig);
             }
             msg => panic!("Unexpected message: {:?}", msg),
         }
         let bad_sig = sign::Signature([0; sign::SIGNATUREBYTES]);
-        signed_msg.add_signature(*full_id_2.public_id(), bad_sig);
+        signed_msg.add_signature(*full_info_2.public_info(), bad_sig);
         assert_eq!(signed_msg.signatures.len(), 3);
         assert!(signed_msg.check_fully_signed(min_section_size));
 
         // Check the bad signature got removed (by check_fully_signed) properly.
         assert_eq!(signed_msg.signatures.len(), 2);
-        assert!(!signed_msg.signatures.contains_key(full_id_2.public_id()));
+        assert!(!signed_msg.signatures.contains_key(
+            full_info_2.public_info(),
+        ));
 
         // Check an irrelevant signature can't be added.
-        signed_msg.add_signature(*irrelevant_full_id.public_id(), irrelevant_sig);
+        signed_msg.add_signature(*irrelevant_full_info.public_info(), irrelevant_sig);
         assert_eq!(signed_msg.signatures.len(), 2);
         assert!(!signed_msg.signatures.contains_key(
-            irrelevant_full_id.public_id(),
+            irrelevant_full_info.public_info(),
         ));
     }
 
@@ -1173,18 +1178,15 @@ mod tests {
             dst: Authority::ClientManager(name),
             content: MessageContent::SectionSplit(Prefix::new(0, name).with_version(1), name),
         };
-        let full_id = FullId::new();
+        let full_info = FullInfo::node_new(1u8);
         let senders = iter::empty().collect();
-        let signed_message_result = SignedMessage::new(routing_message.clone(), &full_id, senders);
+        let signed_message_result =
+            SignedMessage::new(routing_message.clone(), &full_info, senders);
         let signed_message = unwrap!(signed_message_result);
 
-        let (public_signing_key, secret_signing_key) = sign::gen_keypair();
-        let hop_message_result = HopMessage::new(
-            signed_message.clone(),
-            0,
-            BTreeSet::new(),
-            &secret_signing_key,
-        );
+        let (public_signing_key, secret_sign_key) = sign::gen_keypair();
+        let hop_message_result =
+            HopMessage::new(signed_message.clone(), 0, BTreeSet::new(), &secret_sign_key);
 
         let hop_message = unwrap!(hop_message_result);
 

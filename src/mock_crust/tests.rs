@@ -20,13 +20,16 @@
 use super::crust::{CrustEventSender, CrustUser, Service};
 use super::support::{Config, Network, to_socket_addr};
 use CrustEvent;
-use id::{FullId, PublicId};
+use full_info::FullInfo;
 use maidsafe_utilities::event_sender::{MaidSafeEventCategory, MaidSafeObserver};
+use public_info::PublicInfo;
 use std::collections::HashSet;
 use std::sync::mpsc::{self, Receiver};
 
 fn get_event_sender()
-    -> (CrustEventSender<PublicId>, Receiver<MaidSafeEventCategory>, Receiver<CrustEvent<PublicId>>)
+    -> (CrustEventSender<PublicInfo>,
+        Receiver<MaidSafeEventCategory>,
+        Receiver<CrustEvent<PublicInfo>>)
 {
     let (category_tx, category_rx) = mpsc::channel();
     let (event_tx, event_rx) = mpsc::channel();
@@ -72,11 +75,11 @@ fn start_two_services_bootstrap_communicate_exit() {
     let mut service_0 = unwrap!(Service::with_handle(
         &handle0,
         event_sender_0,
-        *FullId::new().public_id(),
+        *FullInfo::node_new(1u8).public_info(),
     ));
 
     unwrap!(service_0.start_listening_tcp());
-    expect_event!(event_rx_0, CrustEvent::ListenerStarted::<PublicId>(..));
+    expect_event!(event_rx_0, CrustEvent::ListenerStarted::<PublicInfo>(..));
 
     service_0.start_service_discovery();
     let _ = service_0.set_accept_bootstrap(true);
@@ -84,14 +87,14 @@ fn start_two_services_bootstrap_communicate_exit() {
     let mut service_1 = unwrap!(Service::with_handle(
         &handle1,
         event_sender_1,
-        *FullId::new().public_id(),
+        *FullInfo::node_new(1u8).public_info(),
     ));
 
     unwrap!(service_1.start_bootstrap(HashSet::new(), CrustUser::Node));
     network.deliver_messages();
-    let id_0 = expect_event!(event_rx_1, CrustEvent::BootstrapConnect::<PublicId>(id, _) => id);
+    let id_0 = expect_event!(event_rx_1, CrustEvent::BootstrapConnect::<PublicInfo>(id, _) => id);
     let id_1 = expect_event!(event_rx_0,
-        CrustEvent::BootstrapAccept::<PublicId>(id, CrustUser::Node) => id);
+        CrustEvent::BootstrapAccept::<PublicInfo>(id, CrustUser::Node) => id);
 
     assert_ne!(id_0, id_1);
 
@@ -101,11 +104,11 @@ fn start_two_services_bootstrap_communicate_exit() {
     network.deliver_messages();
 
     // 1 should rx data
-    let (data_recvd, pub_id) = expect_event!(event_rx_1,
-                      CrustEvent::NewMessage::<PublicId>(their_id, _, msg) => (msg, their_id));
+    let (data_recvd, pub_info) = expect_event!(event_rx_1,
+                    CrustEvent::NewMessage::<PublicInfo>(their_info, _, msg) => (msg, their_info));
 
     assert_eq!(data_recvd, data_sent);
-    assert_eq!(pub_id, id_0);
+    assert_eq!(pub_info, id_0);
 
     // send data from 1 to 0
     let data_sent = vec![10, 11, 155, 214, 202];
@@ -113,15 +116,15 @@ fn start_two_services_bootstrap_communicate_exit() {
 
     network.deliver_messages();
     // 0 should rx data
-    let (data_recvd, pub_id) = expect_event!(event_rx_0,
-                      CrustEvent::NewMessage::<PublicId>(their_id, _, msg) => (msg, their_id));
+    let (data_recvd, pub_info) = expect_event!(event_rx_0,
+                    CrustEvent::NewMessage::<PublicInfo>(their_info, _, msg) => (msg, their_info));
 
     assert_eq!(data_recvd, data_sent);
-    assert_eq!(pub_id, id_1);
+    assert_eq!(pub_info, id_1);
 
     assert!(service_0.disconnect(&id_1));
     network.deliver_messages();
-    expect_event!(event_rx_1, CrustEvent::LostPeer::<PublicId>(id) => assert_eq!(id, id_0));
+    expect_event!(event_rx_1, CrustEvent::LostPeer::<PublicInfo>(id) => assert_eq!(id, id_0));
 }
 
 #[test]
@@ -139,18 +142,18 @@ fn start_two_services_rendezvous_connect() {
     let service_0 = unwrap!(Service::with_handle(
         &handle0,
         event_sender_0,
-        *FullId::new().public_id()
+        *FullInfo::node_new(1u8).public_info()
     ));
     let service_1 = unwrap!(Service::with_handle(
         &handle1,
         event_sender_1,
-        *FullId::new().public_id()
+        *FullInfo::node_new(1u8).public_info()
     ));
 
     service_0.prepare_connection_info(PREPARE_CI_TOKEN);
     network.deliver_messages();
     let our_ci_0 = expect_event!(event_rx_0,
-                                 CrustEvent::ConnectionInfoPrepared::<PublicId>(cir) => {
+                                 CrustEvent::ConnectionInfoPrepared::<PublicInfo>(cir) => {
         assert_eq!(cir.result_token, PREPARE_CI_TOKEN);
         unwrap!(cir.result)
     });
@@ -158,7 +161,7 @@ fn start_two_services_rendezvous_connect() {
     service_1.prepare_connection_info(PREPARE_CI_TOKEN);
     network.deliver_messages();
     let our_ci_1 = expect_event!(event_rx_1,
-                                 CrustEvent::ConnectionInfoPrepared::<PublicId>(cir) => {
+                                 CrustEvent::ConnectionInfoPrepared::<PublicInfo>(cir) => {
         assert_eq!(cir.result_token, PREPARE_CI_TOKEN);
         unwrap!(cir.result)
     });
@@ -170,8 +173,8 @@ fn start_two_services_rendezvous_connect() {
     unwrap!(service_1.connect(our_ci_1, their_ci_0));
     network.deliver_messages();
 
-    let id_1 = expect_event!(event_rx_0, CrustEvent::ConnectSuccess::<PublicId>(id) => id);
-    let id_0 = expect_event!(event_rx_1, CrustEvent::ConnectSuccess::<PublicId>(id) => id);
+    let id_1 = expect_event!(event_rx_0, CrustEvent::ConnectSuccess::<PublicInfo>(id) => id);
+    let id_0 = expect_event!(event_rx_1, CrustEvent::ConnectSuccess::<PublicInfo>(id) => id);
 
     // send data from 0 to 1
     let data_sent = vec![0, 1, 255, 254, 222, 1];
@@ -179,11 +182,11 @@ fn start_two_services_rendezvous_connect() {
     network.deliver_messages();
 
     // 1 should rx data
-    let (data_recvd, pub_id) = expect_event!(event_rx_1,
-                      CrustEvent::NewMessage::<PublicId>(their_id, _, msg) => (msg, their_id));
+    let (data_recvd, pub_info) = expect_event!(event_rx_1,
+                    CrustEvent::NewMessage::<PublicInfo>(their_info, _, msg) => (msg, their_info));
 
     assert_eq!(data_recvd, data_sent);
-    assert_eq!(pub_id, id_0);
+    assert_eq!(pub_info, id_0);
 
     // send data from 1 to 0
     let data_sent = vec![10, 11, 155, 214, 202];
@@ -191,11 +194,11 @@ fn start_two_services_rendezvous_connect() {
     network.deliver_messages();
 
     // 0 should rx data
-    let (data_recvd, pub_id) = expect_event!(event_rx_0,
-                      CrustEvent::NewMessage::<PublicId>(their_id, _, msg) => (msg, their_id));
+    let (data_recvd, pub_info) = expect_event!(event_rx_0,
+                    CrustEvent::NewMessage::<PublicInfo>(their_info, _, msg) => (msg, their_info));
 
     assert_eq!(data_recvd, data_sent);
-    assert_eq!(pub_id, id_1);
+    assert_eq!(pub_info, id_1);
 }
 
 #[test]
@@ -213,25 +216,25 @@ fn unidirectional_rendezvous_connect() {
     let service_0 = unwrap!(Service::with_handle(
         &handle0,
         event_tx_0,
-        *FullId::new().public_id()
+        *FullInfo::node_new(1u8).public_info()
     ));
     let service_1 = unwrap!(Service::with_handle(
         &handle1,
         event_tx_1,
-        *FullId::new().public_id()
+        *FullInfo::node_new(1u8).public_info()
     ));
 
     service_0.prepare_connection_info(PREPARE_CI_TOKEN);
     network.deliver_messages();
     let our_ci_0 = expect_event!(event_rx_0,
-                                 CrustEvent::ConnectionInfoPrepared::<PublicId>(cir) => {
+                                 CrustEvent::ConnectionInfoPrepared::<PublicInfo>(cir) => {
         unwrap!(cir.result)
     });
 
     service_1.prepare_connection_info(PREPARE_CI_TOKEN);
     network.deliver_messages();
     let our_ci_1 = expect_event!(event_rx_1,
-                                 CrustEvent::ConnectionInfoPrepared::<PublicId>(cir) => {
+                                 CrustEvent::ConnectionInfoPrepared::<PublicInfo>(cir) => {
         unwrap!(cir.result)
     });
 
@@ -240,8 +243,8 @@ fn unidirectional_rendezvous_connect() {
     unwrap!(service_0.connect(our_ci_0, their_ci_1));
     network.deliver_messages();
 
-    expect_event!(event_rx_0, CrustEvent::ConnectSuccess::<PublicId>(_));
-    expect_event!(event_rx_1, CrustEvent::ConnectSuccess::<PublicId>(_));
+    expect_event!(event_rx_0, CrustEvent::ConnectSuccess::<PublicInfo>(_));
+    expect_event!(event_rx_1, CrustEvent::ConnectSuccess::<PublicInfo>(_));
 }
 
 #[test]
@@ -261,35 +264,35 @@ fn drop() {
     let mut service_0 = unwrap!(Service::with_handle(
         &handle0,
         event_sender_0,
-        *FullId::new().public_id()
+        *FullInfo::node_new(1u8).public_info()
     ));
 
     unwrap!(service_0.start_listening_tcp());
-    expect_event!(event_rx_0, CrustEvent::ListenerStarted::<PublicId>(_));
+    expect_event!(event_rx_0, CrustEvent::ListenerStarted::<PublicInfo>(_));
     let _ = service_0.set_accept_bootstrap(true);
 
     let mut service_1 = unwrap!(Service::with_handle(
         &handle1,
         event_sender_1,
-        *FullId::new().public_id()
+        *FullInfo::node_new(1u8).public_info()
     ));
     unwrap!(service_1.start_bootstrap(HashSet::new(), CrustUser::Node));
 
     network.deliver_messages();
 
-    let id_0 = expect_event!(event_rx_1, CrustEvent::BootstrapConnect::<PublicId>(id, _) => id);
-    expect_event!(event_rx_0, CrustEvent::BootstrapAccept::<PublicId>(..));
+    let id_0 = expect_event!(event_rx_1, CrustEvent::BootstrapConnect::<PublicInfo>(id, _) => id);
+    expect_event!(event_rx_0, CrustEvent::BootstrapAccept::<PublicInfo>(..));
 
     // Dropping service_0 should make service_1 receive a LostPeer event.
     mem::drop(service_0);
     network.deliver_messages();
-    expect_event!(event_rx_1, CrustEvent::LostPeer::<PublicId>(id) => assert_eq!(id, id_0));
+    expect_event!(event_rx_1, CrustEvent::LostPeer::<PublicInfo>(id) => assert_eq!(id, id_0));
 }
 
 #[test]
 fn gen_endpoint_with_ip() {
     let min_section_size = 8;
-    let network = Network::<PublicId>::new(min_section_size, None);
+    let network = Network::<PublicInfo>::new(min_section_size, None);
     for _ in 0..258 {
         let handle0 = network.new_service_handle(None, None);
         let endpoint0 = handle0.endpoint();

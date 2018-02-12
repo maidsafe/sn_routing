@@ -16,9 +16,9 @@
 // relating to use of the SAFE Network Software.
 
 use error::InterfaceError;
-use id::PublicId;
 use messages::{Request, UserMessage};
 use messages::DirectMessage;
+use public_info::PublicInfo;
 use routing_table::Authority;
 use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::Sender;
@@ -45,9 +45,9 @@ pub enum Action {
         priority: u8,
         result_tx: Sender<Result<(), InterfaceError>>,
     },
-    Id { result_tx: Sender<PublicId> },
+    Id { result_tx: Sender<PublicInfo> },
     Timeout(u64),
-    ResourceProofResult(PublicId, Vec<DirectMessage>),
+    ResourceProofResult(PublicInfo, Vec<DirectMessage>),
     Terminate,
 }
 
@@ -75,8 +75,12 @@ impl Debug for Action {
             }
             Action::Id { .. } => write!(formatter, "Action::Id"),
             Action::Timeout(token) => write!(formatter, "Action::Timeout({})", token),
-            Action::ResourceProofResult(pub_id, _) => {
-                write!(formatter, "Action::ResourceProofResult({:?}, ...)", pub_id)
+            Action::ResourceProofResult(pub_info, _) => {
+                write!(
+                    formatter,
+                    "Action::ResourceProofResult({:?}, ...)",
+                    pub_info
+                )
             }
             Action::Terminate => write!(formatter, "Action::Terminate"),
         }

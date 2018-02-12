@@ -20,8 +20,8 @@ use super::{TestClient, TestNode, create_connected_clients, create_connected_nod
 use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
-use routing::{Authority, BootstrapConfig, Event, EventStream, ImmutableData, MessageId, PublicId,
-              QUORUM_DENOMINATOR, QUORUM_NUMERATOR, Request, Response, XorName};
+use routing::{Authority, BootstrapConfig, Event, EventStream, ImmutableData, MessageId,
+              PublicInfo, QUORUM_DENOMINATOR, QUORUM_NUMERATOR, Request, Response, XorName};
 use routing::mock_crust::Network;
 use routing::test_consts::{ACCUMULATION_TIMEOUT_SECS, CANDIDATE_ACCEPT_TIMEOUT_SECS,
                            JOINING_NODE_TIMEOUT_SECS, RESOURCE_PROOF_DURATION_SECS};
@@ -84,7 +84,7 @@ fn drop_random_nodes<R: Rng>(
 // Note: This fn will call `poll_and_resend` itself
 fn add_node_and_poll<R: Rng>(
     rng: &mut R,
-    network: &Network<PublicId>,
+    network: &Network<PublicInfo>,
     mut nodes: &mut Vec<TestNode>,
     min_section_size: usize,
     mut dropped_nodes: BTreeSet<XorName>,
@@ -171,7 +171,7 @@ fn add_node_and_poll<R: Rng>(
 // returns `None` (it never adds more than one node).
 fn random_churn<R: Rng>(
     rng: &mut R,
-    network: &Network<PublicId>,
+    network: &Network<PublicInfo>,
     nodes: &mut Vec<TestNode>,
 ) -> Option<usize> {
     let len = nodes.len();
@@ -466,10 +466,10 @@ fn send_and_receive<R: Rng>(rng: &mut R, nodes: &mut [TestNode], min_section_siz
     expected_puts.verify(nodes, &mut [], None);
 }
 
-fn client_puts(network: &mut Network<PublicId>, nodes: &mut [TestNode], min_section_size: usize) {
+fn client_puts(network: &mut Network<PublicInfo>, nodes: &mut [TestNode], min_section_size: usize) {
     let mut clients = create_connected_clients(network, nodes, 1);
     let cl_auth = Authority::Client {
-        client_id: *clients[0].full_id.public_id(),
+        client_info: *clients[0].full_id.public_info(),
         proxy_node_name: nodes[0].name(),
     };
 
@@ -645,7 +645,7 @@ fn messages_during_churn() {
     let mut nodes = create_connected_nodes(&network, 20);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
     let cl_auth = Authority::Client {
-        client_id: *clients[0].full_id.public_id(),
+        client_info: *clients[0].full_id.public_info(),
         proxy_node_name: nodes[0].name(),
     };
 

@@ -15,9 +15,9 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use id::PublicId;
 use itertools::Itertools;
 use message_filter::MessageFilter;
+use public_info::PublicInfo;
 use std::collections::{BTreeSet, HashMap};
 use std::collections::hash_map::Entry;
 use std::time::Duration;
@@ -33,21 +33,21 @@ const MAX_TUNNEL_CLIENT_PAIRS: usize = 40;
 /// routing logic.
 pub struct Tunnels {
     /// Maps the peer we failed to directly connect to to the one that acts as a tunnel.
-    tunnels: HashMap<PublicId, PublicId>,
+    tunnels: HashMap<PublicInfo, PublicInfo>,
     /// Contains peers that are looking for a tunnel, with the lower ID first. Only once it sends
     /// a message to the latter via us, the pair is moved to `clients`.
-    new_clients: MessageFilter<(PublicId, PublicId)>,
+    new_clients: MessageFilter<(PublicInfo, PublicInfo)>,
     /// Contains all pairs of names we act as a tunnel node for, with the lower ID first.
-    clients: BTreeSet<(PublicId, PublicId)>,
+    clients: BTreeSet<(PublicInfo, PublicInfo)>,
 }
 
 impl Tunnels {
     /// Returns `true` if we are acting as a tunnel for the given clients.
-    pub fn has_clients(&self, src_id: PublicId, dst_id: PublicId) -> bool {
-        if src_id < dst_id {
-            self.clients.contains(&(src_id, dst_id))
+    pub fn has_clients(&self, src_info: PublicInfo, dst_info: PublicInfo) -> bool {
+        if src_info < dst_info {
+            self.clients.contains(&(src_info, dst_info))
         } else {
-            self.clients.contains(&(dst_id, src_id))
+            self.clients.contains(&(dst_info, src_info))
         }
     }
 
@@ -55,18 +55,18 @@ impl Tunnels {
     /// the case, adds them to the `new_clients` map.
     pub fn consider_clients(
         &mut self,
-        src_id: PublicId,
-        dst_id: PublicId,
-    ) -> Option<(PublicId, PublicId)> {
-        if self.clients.len() >= MAX_TUNNEL_CLIENT_PAIRS || self.tunnels.contains_key(&src_id) ||
-            self.tunnels.contains_key(&dst_id)
+        src_info: PublicInfo,
+        dst_info: PublicInfo,
+    ) -> Option<(PublicInfo, PublicInfo)> {
+        if self.clients.len() >= MAX_TUNNEL_CLIENT_PAIRS || self.tunnels.contains_key(&src_info) ||
+            self.tunnels.contains_key(&dst_info)
         {
             return None;
         }
-        let (id0, id1) = if src_id < dst_id {
-            (src_id, dst_id)
+        let (id0, id1) = if src_info < dst_info {
+            (src_info, dst_info)
         } else {
-            (dst_id, src_id)
+            (dst_info, src_info)
         };
         let _ = self.new_clients.insert(&(id0, id1));
         Some((id0, id1))
@@ -75,8 +75,8 @@ impl Tunnels {
     /// Returns `true` if the given client pair can be made permanent, and does so.
     ///
     /// `consider_clients` must be called with the client pair before this.
-    pub fn accept_clients(&mut self, src_id: PublicId, dst_id: PublicId) -> bool {
-        let pair = (src_id, dst_id);
+    pub fn accept_clients(&mut self, src_info: PublicInfo, dst_info: PublicInfo) -> bool {
+        let pair = (src_info, dst_info);
         if self.new_clients.contains(&pair) {
             self.new_clients.remove(&pair);
             let _fixme = self.clients.insert(pair);
@@ -88,48 +88,48 @@ impl Tunnels {
 
     /// Removes all pairs with the given client and returns a list of all clients that used us as a
     /// tunnel for them.
-    pub fn drop_client(&mut self, pub_id: &PublicId) -> Vec<PublicId> {
+    pub fn drop_client(&mut self, pub_info: &PublicInfo) -> Vec<PublicInfo> {
         let pairs = self.clients
             .iter()
-            .filter(|pair| pair.0 == *pub_id || pair.1 == *pub_id)
+            .filter(|pair| pair.0 == *pub_info || pair.1 == *pub_info)
             .cloned()
             .collect_vec();
         pairs
             .into_iter()
             .map(|pair| {
                 let _fixme = self.clients.remove(&pair);
-                if pair.0 == *pub_id { pair.1 } else { pair.0 }
+                if pair.0 == *pub_info { pair.1 } else { pair.0 }
             })
             .collect()
     }
 
-    /// Removes the pair matching `src_id` and `dst_id` from our tunnel clients
-    pub fn drop_client_pair(&mut self, src_id: PublicId, dst_id: PublicId) -> bool {
-        let (id0, id1) = if src_id < dst_id {
-            (src_id, dst_id)
+    /// Removes the pair matching `src_info` and `dst_info` from our tunnel clients
+    pub fn drop_client_pair(&mut self, src_info: PublicInfo, dst_info: PublicInfo) -> bool {
+        let (id0, id1) = if src_info < dst_info {
+            (src_info, dst_info)
         } else {
-            (dst_id, src_id)
+            (dst_info, src_info)
         };
 
         self.clients.remove(&(id0, id1))
     }
 
-    /// Adds the given `tunnel_id` as a tunnel to `dst_id` if one is needed, otherwise returns
+    /// Adds the given `tunnel_info` as a tunnel to `dst_info` if one is needed, otherwise returns
     /// `false`.
-    pub fn add(&mut self, dst_id: PublicId, tunnel_id: PublicId) -> bool {
-        match self.tunnels.entry(dst_id) {
+    pub fn add(&mut self, dst_info: PublicInfo, tunnel_info: PublicInfo) -> bool {
+        match self.tunnels.entry(dst_info) {
             Entry::Occupied(_) => false,
             Entry::Vacant(entry) => {
-                let _ = entry.insert(tunnel_id);
+                let _ = entry.insert(tunnel_info);
                 true
             }
         }
     }
 
     /// Removes the given tunnel to the given destination, and return whether it was present.
-    pub fn remove(&mut self, dst_id: PublicId, tunnel_id: PublicId) -> bool {
-        if let Entry::Occupied(entry) = self.tunnels.entry(dst_id) {
-            if entry.get() == &tunnel_id {
+    pub fn remove(&mut self, dst_info: PublicInfo, tunnel_info: PublicInfo) -> bool {
+        if let Entry::Occupied(entry) = self.tunnels.entry(dst_info) {
+            if entry.get() == &tunnel_info {
                 let _ = entry.remove();
                 return true;
             }
@@ -138,32 +138,32 @@ impl Tunnels {
     }
 
     /// Removes and the peer that is acting as a tunnel for the given peer, if any.
-    pub fn remove_tunnel_for(&mut self, dst_id: &PublicId) -> Option<PublicId> {
-        self.tunnels.remove(dst_id)
+    pub fn remove_tunnel_for(&mut self, dst_info: &PublicInfo) -> Option<PublicInfo> {
+        self.tunnels.remove(dst_info)
     }
 
-    /// Is the given `tunnel_id` acting as a tunnel node?
-    pub fn is_tunnel_node(&self, tunnel_id: &PublicId) -> bool {
-        self.tunnels.values().any(|id| id == tunnel_id)
+    /// Is the given `tunnel_info` acting as a tunnel node?
+    pub fn is_tunnel_node(&self, tunnel_info: &PublicInfo) -> bool {
+        self.tunnels.values().any(|id| id == tunnel_info)
     }
 
     /// Removes the given tunnel node and returns a list of all peers it was acting as a tunnel
     /// for.
-    pub fn remove_tunnel(&mut self, tunnel_id: &PublicId) -> Vec<PublicId> {
-        let dst_ids = self.tunnels
+    pub fn remove_tunnel(&mut self, tunnel_info: &PublicInfo) -> Vec<PublicInfo> {
+        let dst_infos = self.tunnels
             .iter()
-            .filter(|&(_, id)| id == tunnel_id)
-            .map(|(&dst_id, _)| dst_id)
+            .filter(|&(_, id)| id == tunnel_info)
+            .map(|(&dst_info, _)| dst_info)
             .collect_vec();
-        for dst_id in &dst_ids {
-            let _ = self.tunnels.remove(dst_id);
+        for dst_info in &dst_infos {
+            let _ = self.tunnels.remove(dst_info);
         }
-        dst_ids
+        dst_infos
     }
 
     /// Returns the peer that is acting as a tunnel to the given peer, if any.
-    pub fn tunnel_for(&self, dst_id: &PublicId) -> Option<&PublicId> {
-        self.tunnels.get(dst_id)
+    pub fn tunnel_for(&self, dst_info: &PublicInfo) -> Option<&PublicInfo> {
+        self.tunnels.get(dst_info)
     }
 
     /// Returns the number of client pairs we are acting as a tunnel for.
@@ -190,70 +190,73 @@ impl Default for Tunnels {
 #[cfg(all(test, feature = "use-mock-crust"))]
 mod tests {
     use super::*;
-    use id::FullId;
+    use full_info::FullInfo;
     use itertools::Itertools;
 
     #[test]
     fn tunnel_nodes_test() {
-        let our_id = *FullId::new().public_id();
-        let their_id = *FullId::new().public_id();
+        let our_info = *FullInfo::node_new(1u8).public_info();
+        let their_info = *FullInfo::node_new(1u8).public_info();
         let mut tunnels: Tunnels = Default::default();
-        assert_eq!(None, tunnels.tunnel_for(&our_id));
+        assert_eq!(None, tunnels.tunnel_for(&our_info));
         // Peer 1 is acting as a tunnel for peer 0.
-        let _fixme = tunnels.add(our_id, their_id);
-        assert_eq!(Some(&their_id), tunnels.tunnel_for(&our_id));
-        assert_eq!(None, tunnels.tunnel_for(&their_id));
-        let _fixme = tunnels.remove(our_id, their_id);
-        assert_eq!(None, tunnels.tunnel_for(&our_id));
+        let _fixme = tunnels.add(our_info, their_info);
+        assert_eq!(Some(&their_info), tunnels.tunnel_for(&our_info));
+        assert_eq!(None, tunnels.tunnel_for(&their_info));
+        let _fixme = tunnels.remove(our_info, their_info);
+        assert_eq!(None, tunnels.tunnel_for(&our_info));
     }
 
     #[test]
     fn remove_tunnel_test() {
-        let mut sorted_ids = vec![];
+        let mut sorted_infos = vec![];
         for _ in 0..5 {
-            sorted_ids.push(*FullId::new().public_id());
+            sorted_infos.push(*FullInfo::node_new(1u8).public_info());
         }
-        sorted_ids.sort();
+        sorted_infos.sort();
 
         let mut tunnels: Tunnels = Default::default();
         // Peer 0 is acting as a tunnel for 1 and 2, but not 3.
-        let _fixme = tunnels.add(sorted_ids[1], sorted_ids[0]);
-        let _fixme = tunnels.add(sorted_ids[2], sorted_ids[0]);
-        let _fixme = tunnels.add(sorted_ids[3], sorted_ids[4]);
-        let removed_peers = tunnels.remove_tunnel(&sorted_ids[0]).into_iter().sorted();
-        assert_eq!(&[sorted_ids[1], sorted_ids[2]], &*removed_peers);
-        assert_eq!(None, tunnels.tunnel_for(&sorted_ids[1]));
-        assert_eq!(None, tunnels.tunnel_for(&sorted_ids[2]));
-        assert_eq!(Some(&sorted_ids[4]), tunnels.tunnel_for(&sorted_ids[3]));
+        let _fixme = tunnels.add(sorted_infos[1], sorted_infos[0]);
+        let _fixme = tunnels.add(sorted_infos[2], sorted_infos[0]);
+        let _fixme = tunnels.add(sorted_infos[3], sorted_infos[4]);
+        let removed_peers = tunnels.remove_tunnel(&sorted_infos[0]).into_iter().sorted();
+        assert_eq!(&[sorted_infos[1], sorted_infos[2]], &*removed_peers);
+        assert_eq!(None, tunnels.tunnel_for(&sorted_infos[1]));
+        assert_eq!(None, tunnels.tunnel_for(&sorted_infos[2]));
+        assert_eq!(Some(&sorted_infos[4]), tunnels.tunnel_for(&sorted_infos[3]));
     }
 
     #[test]
     fn clients_test() {
-        let mut sorted_ids = vec![];
+        let mut sorted_infos = vec![];
         for _ in 0..6 {
-            sorted_ids.push(*FullId::new().public_id());
+            sorted_infos.push(*FullInfo::node_new(1u8).public_info());
         }
-        sorted_ids.sort();
+        sorted_infos.sort();
 
         let mut tunnels: Tunnels = Default::default();
         // We are directly connected to 1, but not 0.
-        let _fixme = tunnels.add(sorted_ids[0], sorted_ids[1]);
+        let _fixme = tunnels.add(sorted_infos[0], sorted_infos[1]);
         // consider_clients has not been called yet.
-        assert!(!tunnels.accept_clients(sorted_ids[1], sorted_ids[2]));
-        assert!(!tunnels.accept_clients(sorted_ids[3], sorted_ids[4]));
+        assert!(!tunnels.accept_clients(sorted_infos[1], sorted_infos[2]));
+        assert!(!tunnels.accept_clients(sorted_infos[3], sorted_infos[4]));
         // Reject 0 as client, as we are not directly connected to them.
-        assert_eq!(None, tunnels.consider_clients(sorted_ids[5], sorted_ids[0]));
         assert_eq!(
-            Some((sorted_ids[1], sorted_ids[2])),
-            tunnels.consider_clients(sorted_ids[1], sorted_ids[2])
+            None,
+            tunnels.consider_clients(sorted_infos[5], sorted_infos[0])
         );
         assert_eq!(
-            Some((sorted_ids[3], sorted_ids[4])),
-            tunnels.consider_clients(sorted_ids[4], sorted_ids[3])
+            Some((sorted_infos[1], sorted_infos[2])),
+            tunnels.consider_clients(sorted_infos[1], sorted_infos[2])
         );
-        assert!(tunnels.accept_clients(sorted_ids[1], sorted_ids[2]));
-        assert!(tunnels.accept_clients(sorted_ids[3], sorted_ids[4]));
-        assert!(tunnels.has_clients(sorted_ids[2], sorted_ids[1]));
-        assert!(tunnels.has_clients(sorted_ids[3], sorted_ids[4]));
+        assert_eq!(
+            Some((sorted_infos[3], sorted_infos[4])),
+            tunnels.consider_clients(sorted_infos[4], sorted_infos[3])
+        );
+        assert!(tunnels.accept_clients(sorted_infos[1], sorted_infos[2]));
+        assert!(tunnels.accept_clients(sorted_infos[3], sorted_infos[4]));
+        assert!(tunnels.has_clients(sorted_infos[2], sorted_infos[1]));
+        assert!(tunnels.has_clients(sorted_infos[3], sorted_infos[4]));
     }
 }

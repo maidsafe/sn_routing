@@ -17,10 +17,10 @@
 
 #[cfg(feature = "use-mock-crust")]
 use fake_clock::FakeClock as Instant;
-use id::PublicId;
 use itertools::Itertools;
 use maidsafe_utilities::serialisation;
 use messages::SignedMessage;
+use public_info::PublicInfo;
 use rust_sodium::crypto::sign;
 use sha3::Digest256;
 use std::collections::HashMap;
@@ -35,7 +35,7 @@ pub const ACCUMULATION_TIMEOUT_SECS: u64 = 30;
 
 #[derive(Default)]
 pub struct SignatureAccumulator {
-    sigs: HashMap<Digest256, (Vec<(PublicId, sign::Signature)>, Instant)>,
+    sigs: HashMap<Digest256, (Vec<(PublicInfo, sign::Signature)>, Instant)>,
     msgs: HashMap<Digest256, (SignedMessage, u8, Instant)>,
 }
 
@@ -47,16 +47,16 @@ impl SignatureAccumulator {
         min_section_size: usize,
         hash: Digest256,
         sig: sign::Signature,
-        pub_id: PublicId,
+        pub_info: PublicInfo,
     ) -> Option<(SignedMessage, u8)> {
         self.remove_expired();
         if let Some(&mut (ref mut msg, _, _)) = self.msgs.get_mut(&hash) {
-            msg.add_signature(pub_id, sig);
+            msg.add_signature(pub_info, sig);
         } else {
             let sigs_vec = self.sigs.entry(hash).or_insert_with(
                 || (vec![], Instant::now()),
             );
-            sigs_vec.0.push((pub_id, sig));
+            sigs_vec.0.push((pub_info, sig));
             return None;
         }
         self.remove_if_complete(min_section_size, &hash)
@@ -85,8 +85,11 @@ impl SignatureAccumulator {
                 entry.get_mut().0.add_signatures(msg);
             }
             Entry::Vacant(entry) => {
-                for (pub_id, sig) in self.sigs.remove(&hash).into_iter().flat_map(|(vec, _)| vec) {
-                    msg.add_signature(pub_id, sig);
+                for (pub_info, sig) in self.sigs.remove(&hash).into_iter().flat_map(
+                    |(vec, _)| vec,
+                )
+                {
+                    msg.add_signature(pub_info, sig);
                 }
                 let _ = entry.insert((msg, route, Instant::now()));
             }
@@ -137,9 +140,10 @@ impl SignatureAccumulator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use id::{FullId, PublicId};
+    use full_info::FullInfo;
     use itertools::Itertools;
     use messages::{DirectMessage, MessageContent, RoutingMessage, SectionList, SignedMessage};
+    use public_info::PublicInfo;
     use rand;
     use routing_table::Authority;
     use routing_table::Prefix;
@@ -152,12 +156,12 @@ mod tests {
 
     impl MessageAndSignatures {
         fn new<'a, I>(
-            msg_sender_id: &FullId,
-            other_ids: I,
-            all_ids: BTreeSet<PublicId>,
+            msg_sender_info: &FullInfo,
+            other_infos: I,
+            all_infos: BTreeSet<PublicInfo>,
         ) -> MessageAndSignatures
         where
-            I: Iterator<Item = &'a FullId>,
+            I: Iterator<Item = &'a FullInfo>,
         {
             let routing_msg = RoutingMessage {
                 src: Authority::ClientManager(rand::random()),
@@ -167,13 +171,13 @@ mod tests {
                     rand::random(),
                 ),
             };
-            let prefix = Prefix::new(0, *unwrap!(all_ids.iter().next()).name());
-            let lists = vec![SectionList::new(prefix, all_ids)];
-            let signed_msg = unwrap!(SignedMessage::new(routing_msg, msg_sender_id, lists));
-            let signature_msgs = other_ids
+            let prefix = Prefix::new(0, unwrap!(all_infos.iter().next()).name());
+            let lists = vec![SectionList::new(prefix, all_infos)];
+            let signed_msg = unwrap!(SignedMessage::new(routing_msg, msg_sender_info, lists));
+            let signature_msgs = other_infos
                 .map(|id| {
                     unwrap!(signed_msg.routing_message().to_signature(
-                        id.signing_private_key(),
+                        id.secret_sign_key(),
                     ))
                 })
                 .collect();
@@ -185,33 +189,37 @@ mod tests {
     }
 
     struct Env {
-        _msg_sender_id: FullId,
-        other_ids: Vec<FullId>,
-        senders: BTreeSet<PublicId>,
+        _msg_sender_info: FullInfo,
+        other_infos: Vec<FullInfo>,
+        senders: BTreeSet<PublicInfo>,
         msgs_and_sigs: Vec<MessageAndSignatures>,
     }
 
     impl Env {
         fn new() -> Env {
-            let msg_sender_id = FullId::new();
-            let mut pub_ids = vec![*msg_sender_id.public_id()]
+            let msg_sender_info = FullInfo::node_new(1u8);
+            let mut pub_infos = vec![*msg_sender_info.public_info()]
                 .into_iter()
                 .collect::<BTreeSet<_>>();
-            let mut other_ids = vec![];
+            let mut other_infos = vec![];
             for _ in 0..8 {
-                let full_id = FullId::new();
-                let _ = pub_ids.insert(*full_id.public_id());
-                other_ids.push(full_id);
+                let full_info = FullInfo::node_new(1u8);
+                let _ = pub_infos.insert(*full_info.public_info());
+                other_infos.push(full_info);
             }
             let msgs_and_sigs = (0..5)
                 .map(|_| {
-                    MessageAndSignatures::new(&msg_sender_id, other_ids.iter(), pub_ids.clone())
+                    MessageAndSignatures::new(
+                        &msg_sender_info,
+                        other_infos.iter(),
+                        pub_infos.clone(),
+                    )
                 })
                 .collect();
             Env {
-                _msg_sender_id: msg_sender_id,
-                other_ids: other_ids,
-                senders: pub_ids,
+                _msg_sender_info: msg_sender_info,
+                other_infos: other_infos,
+                senders: pub_infos,
                 msgs_and_sigs: msgs_and_sigs,
             }
         }
@@ -231,14 +239,14 @@ mod tests {
             msg_and_sigs
                 .signature_msgs
                 .iter()
-                .zip(env.other_ids.iter())
-                .foreach(|(signature_msg, full_id)| match *signature_msg {
+                .zip(env.other_infos.iter())
+                .foreach(|(signature_msg, full_info)| match *signature_msg {
                     DirectMessage::MessageSignature(ref hash, ref sig) => {
                         let result = sig_accumulator.add_signature(
                             env.num_nodes(),
                             *hash,
                             *sig,
-                            *full_id.public_id(),
+                            *full_info.public_info(),
                         );
                         assert!(result.is_none());
                     }
@@ -249,8 +257,9 @@ mod tests {
         assert!(sig_accumulator.msgs.is_empty());
         assert_eq!(sig_accumulator.sigs.len(), env.msgs_and_sigs.len());
         sig_accumulator.sigs.values().foreach(
-            |&(ref pub_ids_and_sigs, _)| {
-                assert_eq!(pub_ids_and_sigs.len(), env.other_ids.len())
+            |&(ref pub_infos_and_sigs,
+               _)| {
+                assert_eq!(pub_infos_and_sigs.len(), env.other_infos.len())
             },
         );
 
@@ -273,8 +282,8 @@ mod tests {
             assert_eq!(signed_msg.routing_message(), returned_msg.routing_message());
             unwrap!(returned_msg.check_integrity(1000));
             assert!(returned_msg.check_fully_signed(env.num_nodes()));
-            env.senders.iter().foreach(|pub_id| {
-                assert!(returned_msg.signed_by(pub_id))
+            env.senders.iter().foreach(|pub_info| {
+                assert!(returned_msg.signed_by(pub_info))
             });
         });
     }
@@ -301,15 +310,15 @@ mod tests {
             msg_and_sigs
                 .signature_msgs
                 .iter()
-                .zip(env.other_ids.iter())
-                .foreach(|(signature_msg, full_id)| {
+                .zip(env.other_infos.iter())
+                .foreach(|(signature_msg, full_info)| {
                     let result = match *signature_msg {
                         DirectMessage::MessageSignature(hash, sig) => {
                             sig_accumulator.add_signature(
                                 env.num_nodes(),
                                 hash,
                                 sig,
-                                *full_id.public_id(),
+                                *full_info.public_info(),
                             )
                         }
                         ref unexpected_msg => panic!("Unexpected message: {:?}", unexpected_msg),

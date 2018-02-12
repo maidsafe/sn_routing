@@ -20,11 +20,11 @@ use action::Action;
 use event::Event;
 #[cfg(feature = "use-mock-crust")]
 use fake_clock::FakeClock as Instant;
-use id::PublicId;
 use itertools::Itertools;
 use maidsafe_utilities::thread;
 use messages::{DirectMessage, MAX_PART_LEN};
 use outbox::EventBox;
+use public_info::PublicInfo;
 use resource_proof::ResourceProof;
 use signature_accumulator::ACCUMULATION_TIMEOUT_SECS;
 use state_machine::Transition;
@@ -61,9 +61,9 @@ pub struct ResourceProver {
     /// Number of expected resource proof challengers.
     challenger_count: usize,
     /// Map of ResourceProofResponse parts.
-    response_parts: HashMap<PublicId, Vec<DirectMessage>>,
+    response_parts: HashMap<PublicInfo, Vec<DirectMessage>>,
     /// Map of workers
-    workers: HashMap<PublicId, (Arc<AtomicBool>, thread::Joiner)>,
+    workers: HashMap<PublicInfo, (Arc<AtomicBool>, thread::Joiner)>,
     timer: Timer,
 }
 
@@ -100,17 +100,17 @@ impl ResourceProver {
     /// Start generating a resource proof in a background thread
     pub fn handle_request(
         &mut self,
-        pub_id: PublicId,
+        pub_info: PublicInfo,
         seed: Vec<u8>,
         target_size: usize,
         difficulty: u8,
-        log_ident: String,
+        log_infoent: String,
     ) {
         if self.response_parts.is_empty() {
             info!(
                 "{} Starting approval process to test this node's resources. This will take \
                  at least {} seconds.",
-                log_ident,
+                log_infoent,
                 RESOURCE_PROOF_DURATION_SECS
             );
         }
@@ -131,7 +131,7 @@ impl ResourceProver {
                     break;
                 }
                 if atomic_cancel_clone.load(Ordering::Relaxed) {
-                    info!("{} Approval process cancelled", log_ident);
+                    info!("{} Approval process cancelled", log_infoent);
                     return;
                 }
             }
@@ -170,19 +170,19 @@ impl ResourceProver {
             trace!(
                 "{} created proof data in {} seconds. Target size: {}, \
                  Difficulty: {}, Seed: {:?}",
-                log_ident,
+                log_infoent,
                 elapsed.display_secs(),
                 target_size,
                 difficulty,
                 seed
             );
 
-            let action = Action::ResourceProofResult(pub_id, messages);
+            let action = Action::ResourceProofResult(pub_info, messages);
             if action_sender.send(action).is_err() {
                 // In theory this means the receiver disconnected, so the main thread stopped/reset
                 error!(
                     "{}: resource proof worker thread failed to send result",
-                    log_ident
+                    log_infoent
                 );
             }
         });
@@ -190,7 +190,7 @@ impl ResourceProver {
         if cfg!(feature = "use-mock-crust") {
             let _ = joiner;
         } else {
-            let old = self.workers.insert(pub_id, (atomic_cancel, joiner));
+            let old = self.workers.insert(pub_info, (atomic_cancel, joiner));
             if let Some((atomic_cancel, _old_worker)) = old {
                 // This is probably a bug if it happens, but in any case the Drop impl on
                 // _old_worker will implicitly join the thread.
@@ -204,20 +204,20 @@ impl ResourceProver {
     /// This function returns the first message to send.
     pub fn handle_action_res_proof(
         &mut self,
-        pub_id: PublicId,
+        pub_info: PublicInfo,
         mut messages: Vec<DirectMessage>,
     ) -> DirectMessage {
         // Thread signalled it was complete; implicit join on Joiner thus shouldn't hang.
-        let _old = self.workers.remove(&pub_id);
+        let _old = self.workers.remove(&pub_info);
 
         let first_message = unwrap!(messages.pop()); // Sender guarantees at least one message
-        let _ = self.response_parts.insert(pub_id, messages);
+        let _ = self.response_parts.insert(pub_info, messages);
         first_message
     }
 
     /// Get the next part of the proof to be sent, if any.
-    pub fn handle_receipt(&mut self, pub_id: PublicId) -> Option<DirectMessage> {
-        self.response_parts.get_mut(&pub_id).and_then(Vec::pop)
+    pub fn handle_receipt(&mut self, pub_info: PublicInfo) -> Option<DirectMessage> {
+        self.response_parts.get_mut(&pub_info).and_then(Vec::pop)
     }
 
     /// Reset timers
@@ -231,11 +231,11 @@ impl ResourceProver {
     pub fn handle_timeout(
         &mut self,
         token: u64,
-        log_ident: &str,
+        log_infoent: &str,
         outbox: &mut EventBox,
     ) -> Option<Transition> {
         if self.get_approval_timer_token == Some(token) {
-            self.handle_approval_timeout(log_ident, outbox);
+            self.handle_approval_timeout(log_infoent, outbox);
             Some(Transition::Terminate)
         } else if self.approval_progress_timer_token == Some(token) {
             self.approval_progress_timer_token = Some(self.timer.schedule(Duration::from_secs(
@@ -249,7 +249,7 @@ impl ResourceProver {
             };
             info!(
                 "{} {} {}/{} seconds remaining.",
-                log_ident,
+                log_infoent,
                 self.response_progress(),
                 remaining_duration.display_secs(),
                 self.approval_timeout_secs
@@ -262,7 +262,7 @@ impl ResourceProver {
         }
     }
 
-    fn handle_approval_timeout(&mut self, log_ident: &str, outbox: &mut EventBox) {
+    fn handle_approval_timeout(&mut self, log_infoent: &str, outbox: &mut EventBox) {
         let completed = self.response_parts
             .values()
             .filter(|parts| parts.is_empty())
@@ -272,13 +272,13 @@ impl ResourceProver {
                 "{} All {} resource proof responses fully sent, but timed out waiting \
                  for approval from the network. This could be due to the target section \
                  experiencing churn. Terminating node.",
-                log_ident,
+                log_infoent,
                 completed
             );
         } else {
             info!(
                 "{} Failed to get approval from the network. {} Terminating node.",
-                log_ident,
+                log_infoent,
                 self.response_progress()
             );
         }

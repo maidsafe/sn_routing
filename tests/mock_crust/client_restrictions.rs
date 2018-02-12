@@ -20,7 +20,7 @@ use super::{MIN_SECTION_SIZE, TestClient, TestNode, create_connected_clients,
 use maidsafe_utilities::SeededRng;
 use mock_crust::utils::gen_immutable_data;
 use rand::Rng;
-use routing::{Authority, BootstrapConfig, Event, EventStream, FullId, ImmutableData,
+use routing::{Authority, BootstrapConfig, Event, EventStream, FullInfo, ImmutableData,
               MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MessageId, Request};
 use routing::mock_crust::Network;
 use routing::rate_limiter_consts::{MAX_PARTS, SOFT_CAPACITY};
@@ -94,12 +94,12 @@ fn reconnect_disconnected_client() {
     let config = Some(BootstrapConfig::with_contacts(
         &[nodes[1].handle.endpoint()],
     ));
-    let full_id = FullId::new();
+    let full_info = FullInfo::client_new();
 
     // Client will get rejected as network not having enough nodes.
     let mut clients =
         vec![
-            TestClient::new_with_full_id(&network, config.clone(), None, full_id.clone()),
+            TestClient::new_with_full_id(&network, config.clone(), None, full_info.clone()),
         ];
     let _ = poll_all(&mut nodes, &mut clients);
     expect_next_event!(unwrap!(clients.last_mut()), Event::Terminate);
@@ -118,7 +118,7 @@ fn reconnect_disconnected_client() {
         &network,
         config,
         None,
-        full_id,
+        full_info,
     ));
     let _ = poll_all(&mut nodes, &mut clients);
     expect_next_event!(unwrap!(clients.last_mut()), Event::Connected);

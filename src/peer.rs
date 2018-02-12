@@ -24,10 +24,11 @@ use data::{EntryAction, ImmutableData, MutableData, PermissionSet, User, Value};
 use error::{InterfaceError, RoutingError};
 use event::Event;
 use event_stream::{EventStepper, EventStream};
-use id::{FullId, PublicId};
+use full_info::FullInfo;
 use messages::{AccountInfo, CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, RELOCATE_PRIORITY, Request,
                Response, UserMessage};
 use outbox::{EventBox, EventBuf};
+use public_info::PublicInfo;
 use routing_table::{Authority, RoutingTable};
 #[cfg(feature = "use-mock-crust")]
 use routing_table::Prefix;
@@ -140,8 +141,8 @@ impl NodeBuilder {
     }
 
     fn make_state_machine(self, outbox: &mut EventBox) -> (RoutingActionSender, StateMachine) {
-        let full_id = FullId::new();
-        let pub_id = *full_id.public_id();
+        let full_info = FullInfo::node_new(0u8);
+        let pub_info = *full_info.public_info();
         let config = self.config.unwrap_or_else(config_handler::get_config);
         let dev_config = config.dev.unwrap_or_default();
         let min_section_size = dev_config.min_section_size.unwrap_or(MIN_SECTION_SIZE);
@@ -152,7 +153,7 @@ impl NodeBuilder {
                     action_sender,
                     self.cache,
                     crust_service,
-                    full_id,
+                    full_info,
                     min_section_size,
                     timer,
                 )
@@ -171,12 +172,12 @@ impl NodeBuilder {
                     self.cache,
                     BootstrappingTargetState::JoiningPeer,
                     crust_service,
-                    full_id,
+                    full_info,
                     min_section_size,
                     timer,
                 ).map_or(State::Terminated, State::Bootstrapping)
             },
-            pub_id,
+            pub_info,
             None,
             outbox,
         )
@@ -517,8 +518,8 @@ impl Peer {
         self.machine.close_group(name, count)
     }
 
-    /// Returns the `PublicId` of this node.
-    pub fn id(&self) -> Result<PublicId, RoutingError> {
+    /// Returns the `PublicInfo` of this node.
+    pub fn id(&self) -> Result<PublicInfo, RoutingError> {
         self.machine.id().ok_or(RoutingError::Terminated)
     }
 
@@ -586,7 +587,7 @@ impl Peer {
     }
 
     /// Check whether this node acts as a tunnel node between `client_1` and `client_2`.
-    pub fn has_tunnel_clients(&self, client_1: PublicId, client_2: PublicId) -> bool {
+    pub fn has_tunnel_clients(&self, client_1: PublicInfo, client_2: PublicInfo) -> bool {
         self.machine.current().has_tunnel_clients(
             client_1,
             client_2,
@@ -598,7 +599,7 @@ impl Peer {
     pub fn section_list_signatures(
         &self,
         prefix: Prefix,
-    ) -> Option<BTreeMap<PublicId, sign::Signature>> {
+    ) -> Option<BTreeMap<PublicInfo, sign::Signature>> {
         self.machine.current().section_list_signatures(prefix)
     }
 

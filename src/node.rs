@@ -24,8 +24,8 @@
 // relating to use of the SAFE Network Software.
 
 use error::RoutingError;
-use peer_id::PeerId;
 use proof::Proof;
+use public_info::PublicInfo;
 use rust_sodium::crypto::sign::PublicKey;
 use sha3::Digest256;
 use std::collections::HashSet;
@@ -54,8 +54,8 @@ impl Block {
     /// to us.
     #[allow(unused)]
     pub fn new(vote: &Vote, pub_key: &PublicKey, age: u8) -> Result<Block, RoutingError> {
-        let peer_id = PeerId::new(age, pub_key);
-        if !vote.validate_signature(&peer_id) {
+        let peer_info = PublicInfo::new(age, pub_key);
+        if !vote.validate_signature(&peer_info) {
             return Err(RoutingError::FailedSignature);
         }
         let proof = Proof::new(&pub_key, age, vote)?;
@@ -141,13 +141,13 @@ mod tests {
 
         let keys0 = sign::gen_keypair();
         let keys1 = sign::gen_keypair();
-        let peer_id0 = PeerId::new(rng.gen_range(0, 255), keys0.0);
-        let peer_id1 = PeerId::new(rng.gen_range(0, 255), keys1.0);
+        let peer_info0 = PublicInfo::new(rng.gen_range(0, 255), keys0.0);
+        let peer_info1 = PublicInfo::new(rng.gen_range(0, 255), keys1.0);
         let payload = sha3_256(b"1");
         let vote0 = unwrap!(Vote::new(&keys0.1, payload));
-        assert!(vote0.validate_signature(&peer_id0));
+        assert!(vote0.validate_signature(&peer_info0));
         let vote1 = unwrap!(Vote::new(&keys1.1, payload));
-        assert!(vote1.validate_signature(&peer_id1));
+        assert!(vote1.validate_signature(&peer_info1));
         let proof0 = unwrap!(Proof::new(&keys0.0, rng.gen_range(0, 255), &vote0));
         assert!(proof0.validate_signature(&payload));
         let proof1 = unwrap!(Proof::new(&keys1.0, rng.gen_range(0, 255), &vote1));
