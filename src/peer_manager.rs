@@ -431,14 +431,14 @@ pub struct PeerManager {
 impl PeerManager {
     /// Returns a new peer manager with no entries.
     pub fn new(
-        min_section_size: usize,
+        group_size: usize,
         our_public_id: PublicId,
         disable_client_rate_limiter: bool,
     ) -> PeerManager {
         PeerManager {
             connection_token_map: HashMap::new(),
             peers: HashMap::new(),
-            routing_table: RoutingTable::new(*our_public_id.name(), min_section_size),
+            routing_table: RoutingTable::new(*our_public_id.name(), group_size),
             our_public_id: our_public_id,
             candidate: Candidate::None,
             disable_client_rate_limiter: disable_client_rate_limiter,
@@ -1694,10 +1694,10 @@ mod tests {
 
     #[test]
     pub fn connection_info_prepare_receive() {
-        let min_section_size = 8;
+        let group_size = 8;
         let our_pub_id = *FullId::new().public_id();
         let their_pub_id = *FullId::new().public_id();
-        let mut peer_mgr = PeerManager::new(min_section_size, our_pub_id, false);
+        let mut peer_mgr = PeerManager::new(group_size, our_pub_id, false);
 
         let our_connection_info = PrivConnectionInfo {
             id: our_pub_id,
@@ -1751,10 +1751,10 @@ mod tests {
 
     #[test]
     pub fn connection_info_receive_prepare() {
-        let min_section_size = 8;
+        let group_size = 8;
         let our_pub_id = *FullId::new().public_id();
         let their_pub_id = *FullId::new().public_id();
-        let mut peer_mgr = PeerManager::new(min_section_size, our_pub_id, false);
+        let mut peer_mgr = PeerManager::new(group_size, our_pub_id, false);
         let our_connection_info = PrivConnectionInfo {
             id: our_pub_id,
             endpoint: Endpoint(0),

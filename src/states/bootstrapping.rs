@@ -62,7 +62,7 @@ pub struct Bootstrapping {
     target_state: TargetState,
     crust_service: Service,
     full_id: FullId,
-    min_section_size: usize,
+    group_size: usize,
     stats: Stats,
     timer: Timer,
 }
@@ -74,7 +74,7 @@ impl Bootstrapping {
         target_state: TargetState,
         mut crust_service: Service,
         full_id: FullId,
-        min_section_size: usize,
+        group_size: usize,
         timer: Timer,
     ) -> Option<Self> {
         match target_state {
@@ -97,7 +97,7 @@ impl Bootstrapping {
             target_state: target_state,
             crust_service: crust_service,
             full_id: full_id,
-            min_section_size: min_section_size,
+            group_size: group_size,
             stats: Stats::new(),
             timer: timer,
         })
@@ -184,7 +184,7 @@ impl Bootstrapping {
             TargetState::Client { msg_expiry_dur } => State::Client(Client::from_bootstrapping(
                 self.crust_service,
                 self.full_id,
-                self.min_section_size,
+                self.group_size,
                 proxy_public_id,
                 self.stats,
                 self.timer,
@@ -198,7 +198,7 @@ impl Bootstrapping {
                         self.cache,
                         self.crust_service,
                         self.full_id,
-                        self.min_section_size,
+                        self.group_size,
                         proxy_public_id,
                         self.stats,
                         self.timer,
@@ -221,7 +221,7 @@ impl Bootstrapping {
                 self.crust_service,
                 old_full_id,
                 self.full_id,
-                self.min_section_size,
+                self.group_size,
                 proxy_public_id,
                 self.stats,
                 self.timer,
@@ -395,8 +395,8 @@ impl Base for Bootstrapping {
         false
     }
 
-    fn min_section_size(&self) -> usize {
-        self.min_section_size
+    fn group_size(&self) -> usize {
+        self.group_size
     }
 }
 
@@ -423,8 +423,8 @@ mod tests {
     // Check that losing our proxy connection while in the `Bootstrapping` state doesn't stall and
     // instead triggers a re-bootstrap attempt..
     fn lose_proxy_connection() {
-        let min_section_size = 8;
-        let network = Network::new(min_section_size, None);
+        let group_size = 8;
+        let network = Network::new(group_size, None);
 
         // Start a bare-bones Crust service, set it to listen on TCP and to accept bootstrap
         // connections.
@@ -462,7 +462,7 @@ mod tests {
                         TargetState::Client { msg_expiry_dur: Duration::from_secs(60) },
                         crust_service,
                         full_id,
-                        min_section_size,
+                        group_size,
                         timer,
                     ).map_or(State::Terminated, State::Bootstrapping)
                 },

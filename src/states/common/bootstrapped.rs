@@ -119,7 +119,7 @@ pub trait Bootstrapped: Base {
 
     fn resend_unacknowledged_timed_out_msgs(&mut self, token: u64) {
         if let Some((unacked_msg, _ack)) = self.ack_mgr_mut().find_timed_out(token) {
-            if usize::from(unacked_msg.route) == self.min_section_size() {
+            if usize::from(unacked_msg.route) == self.group_size() {
                 debug!(
                     "{:?} Message unable to be acknowledged - giving up. {:?}",
                     self,

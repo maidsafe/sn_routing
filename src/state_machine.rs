@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use {CrustEvent, CrustEventSender, MIN_SECTION_SIZE, Service};
+use {CrustEvent, CrustEventSender, GROUP_SIZE, Service};
 use BootstrapConfig;
 use action::Action;
 use id::{FullId, PublicId};
@@ -128,16 +128,13 @@ impl State {
         )
     }
 
-    fn min_section_size(&self) -> usize {
+    fn group_size(&self) -> usize {
         self.base_state().map_or_else(
             || {
-                log_or_panic!(
-                    LogLevel::Error,
-                    "Can't get min_section_size when Terminated."
-                );
-                MIN_SECTION_SIZE
+                log_or_panic!(LogLevel::Error, "Can't get group_size when Terminated.");
+                GROUP_SIZE
             },
-            Base::min_section_size,
+            Base::group_size,
         )
     }
 
@@ -522,8 +519,8 @@ impl StateMachine {
         self.state.close_group(name, count)
     }
 
-    pub fn min_section_size(&self) -> usize {
-        self.state.min_section_size()
+    pub fn group_size(&self) -> usize {
+        self.state.group_size()
     }
 
     #[cfg(feature = "use-mock-crust")]

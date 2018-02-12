@@ -64,7 +64,7 @@ mod unnamed {
     use maidsafe_utilities::thread::named as thread_named;
     use rand::{Rng, ThreadRng, random, thread_rng};
     use rand::distributions::{IndependentSample, Range};
-    use routing::{MIN_SECTION_SIZE, MutableData, Value};
+    use routing::{GROUP_SIZE, MutableData, Value};
     use rust_sodium::crypto::sign;
     use std::{env, io, thread};
     use std::collections::BTreeMap;
@@ -190,7 +190,7 @@ mod unnamed {
         io::stdout().flush().expect("Could not flush stdout");
 
         let kill_node = match nodes.len() {
-            size if size == MIN_SECTION_SIZE => false,
+            size if size == GROUP_SIZE => false,
             size if size == network_size => true,
             _ => random(),
         };
@@ -377,8 +377,8 @@ Options:
             unwrap!(log::init(false));
             let node_count = match args.arg_nodes {
                 Some(number) => {
-                    if number <= MIN_SECTION_SIZE {
-                        panic!("The number of nodes should be > {}.", MIN_SECTION_SIZE);
+                    if number <= GROUP_SIZE {
+                        panic!("The number of nodes should be > {}.", GROUP_SIZE);
                     }
 
                     number

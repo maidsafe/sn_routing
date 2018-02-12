@@ -57,8 +57,8 @@ macro_rules! expect_event {
 
 #[test]
 fn start_two_services_bootstrap_communicate_exit() {
-    let min_section_size = 8;
-    let network = Network::new(min_section_size, None);
+    let group_size = 8;
+    let network = Network::new(group_size, None);
     let endpoint0 = network.gen_endpoint(None);
     let handle0 = network.new_service_handle(None, Some(endpoint0));
 
@@ -128,8 +128,8 @@ fn start_two_services_bootstrap_communicate_exit() {
 fn start_two_services_rendezvous_connect() {
     const PREPARE_CI_TOKEN: u32 = 1;
 
-    let min_section_size = 8;
-    let network = Network::new(min_section_size, None);
+    let group_size = 8;
+    let network = Network::new(group_size, None);
     let handle0 = network.new_service_handle(None, None);
     let handle1 = network.new_service_handle(None, None);
 
@@ -202,8 +202,8 @@ fn start_two_services_rendezvous_connect() {
 fn unidirectional_rendezvous_connect() {
     const PREPARE_CI_TOKEN: u32 = 1;
 
-    let min_section_size = 8;
-    let network = Network::new(min_section_size, None);
+    let group_size = 8;
+    let network = Network::new(group_size, None);
     let handle0 = network.new_service_handle(None, None);
     let handle1 = network.new_service_handle(None, None);
 
@@ -248,8 +248,8 @@ fn unidirectional_rendezvous_connect() {
 fn drop() {
     use std::mem;
 
-    let min_section_size = 8;
-    let network = Network::new(min_section_size, None);
+    let group_size = 8;
+    let network = Network::new(group_size, None);
     let handle0 = network.new_service_handle(None, None);
 
     let config = Config::with_contacts(&[handle0.endpoint()]);
@@ -288,8 +288,8 @@ fn drop() {
 
 #[test]
 fn gen_endpoint_with_ip() {
-    let min_section_size = 8;
-    let network = Network::<PublicId>::new(min_section_size, None);
+    let group_size = 8;
+    let network = Network::<PublicId>::new(group_size, None);
     for _ in 0..258 {
         let handle0 = network.new_service_handle(None, None);
         let endpoint0 = handle0.endpoint();

@@ -15,8 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use super::{MIN_SECTION_SIZE, TestClient, TestNode, create_connected_clients,
-            create_connected_nodes, poll_all, poll_and_resend};
+use super::{GROUP_SIZE, TestClient, TestNode, create_connected_clients, create_connected_nodes,
+            poll_all, poll_and_resend};
 use maidsafe_utilities::SeededRng;
 use mock_crust::utils::gen_immutable_data;
 use rand::Rng;
@@ -30,8 +30,8 @@ use std::time::Duration;
 /// Expect the client will be disconnected and banned;
 #[test]
 fn ban_malicious_client() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
-    let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE);
+    let network = Network::new(GROUP_SIZE, None);
+    let mut nodes = create_connected_nodes(&network, GROUP_SIZE);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
     let mut rng = network.new_rng();
 
@@ -68,8 +68,8 @@ fn ban_malicious_client() {
 /// Expect only one client got connected.
 #[test]
 fn only_one_client_per_ip() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
-    let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE);
+    let network = Network::new(GROUP_SIZE, None);
+    let mut nodes = create_connected_nodes(&network, GROUP_SIZE);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
 
     // Connect a new client with the same ip address shall get rejected.
@@ -88,8 +88,8 @@ fn only_one_client_per_ip() {
 /// Reconnect a client (disconnected as network not having enough nodes) with the same id.
 #[test]
 fn reconnect_disconnected_client() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
-    let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE - 1);
+    let network = Network::new(GROUP_SIZE, None);
+    let mut nodes = create_connected_nodes(&network, GROUP_SIZE - 1);
 
     let config = Some(BootstrapConfig::with_contacts(
         &[nodes[1].handle.endpoint()],
@@ -135,9 +135,9 @@ fn immutable_data_vec(rng: &mut SeededRng, count: u64) -> Vec<ImmutableData> {
 /// Confirming the number of user message parts being sent in case of exceeding limit.
 #[test]
 fn resend_parts_on_exceeding_limit() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
+    let network = Network::new(GROUP_SIZE, None);
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE);
+    let mut nodes = create_connected_nodes(&network, GROUP_SIZE);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
 
     let num_immutable_data =
@@ -177,9 +177,9 @@ fn resend_parts_on_exceeding_limit() {
 /// User message expired.
 #[test]
 fn resend_over_load() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
+    let network = Network::new(GROUP_SIZE, None);
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE);
+    let mut nodes = create_connected_nodes(&network, GROUP_SIZE);
 
     let config = Some(BootstrapConfig::with_contacts(
         &[nodes[0].handle.endpoint()],

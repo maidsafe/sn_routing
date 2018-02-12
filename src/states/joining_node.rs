@@ -55,7 +55,7 @@ pub struct JoiningNode {
     full_id: FullId,
     /// Only held here to be passed eventually to the `Node` state.
     cache: Box<Cache>,
-    min_section_size: usize,
+    group_size: usize,
     proxy_pub_id: PublicId,
     /// The queue of routing messages addressed to us. These do not themselves need forwarding,
     /// although they may wrap a message which needs forwarding.
@@ -72,7 +72,7 @@ impl JoiningNode {
         cache: Box<Cache>,
         crust_service: Service,
         full_id: FullId,
-        min_section_size: usize,
+        group_size: usize,
         proxy_pub_id: PublicId,
         stats: Stats,
         timer: Timer,
@@ -85,7 +85,7 @@ impl JoiningNode {
             crust_service: crust_service,
             full_id: full_id,
             cache: cache,
-            min_section_size: min_section_size,
+            group_size: group_size,
             proxy_pub_id: proxy_pub_id,
             routing_msg_filter: RoutingMessageFilter::new(),
             stats: stats,
@@ -166,7 +166,7 @@ impl JoiningNode {
                 target_state,
                 service,
                 new_full_id,
-                self.min_section_size,
+                self.group_size,
                 self.timer,
             )
         {
@@ -239,7 +239,7 @@ impl JoiningNode {
         }
 
         let signed_msg = hop_msg.content;
-        signed_msg.check_integrity(self.min_section_size())?;
+        signed_msg.check_integrity(self.group_size())?;
 
         let routing_msg = signed_msg.routing_message();
         let in_authority = self.in_authority(&routing_msg.dst);
@@ -383,8 +383,8 @@ impl Base for JoiningNode {
         &mut self.stats
     }
 
-    fn min_section_size(&self) -> usize {
-        self.min_section_size
+    fn group_size(&self) -> usize {
+        self.group_size
     }
 }
 

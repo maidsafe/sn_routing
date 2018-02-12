@@ -69,7 +69,7 @@ pub fn gen_range_except<T: Rng>(
 fn create_config(network: &Network<PublicId>) -> Config {
     Config {
         dev: Some(DevConfig {
-            min_section_size: Some(network.min_section_size()),
+            group_size: Some(network.group_size()),
             ..DevConfig::default()
         }),
     }
@@ -445,7 +445,7 @@ pub fn create_connected_nodes_with_cache(
         verify_invariant_for_all_nodes(&mut nodes);
     }
 
-    let n = cmp::min(nodes.len(), network.min_section_size()) - 1;
+    let n = cmp::min(nodes.len(), network.group_size()) - 1;
 
     for node in &mut nodes {
         expect_next_event!(node, Event::Connected);

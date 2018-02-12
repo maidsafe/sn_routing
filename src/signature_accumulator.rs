@@ -44,7 +44,7 @@ impl SignatureAccumulator {
     /// `SignedMessage`. Returns the message, if it has enough signatures now.
     pub fn add_signature(
         &mut self,
-        min_section_size: usize,
+        group_size: usize,
         hash: Digest256,
         sig: sign::Signature,
         pub_id: PublicId,
@@ -59,7 +59,7 @@ impl SignatureAccumulator {
             sigs_vec.0.push((pub_id, sig));
             return None;
         }
-        self.remove_if_complete(min_section_size, &hash)
+        self.remove_if_complete(group_size, &hash)
     }
 
     /// Adds the given message to the list of pending messages. Returns it if it has enough
@@ -67,7 +67,7 @@ impl SignatureAccumulator {
     pub fn add_message(
         &mut self,
         mut msg: SignedMessage,
-        min_section_size: usize,
+        group_size: usize,
         route: u8,
     ) -> Option<(SignedMessage, u8)> {
         self.remove_expired();
@@ -91,7 +91,7 @@ impl SignatureAccumulator {
                 let _ = entry.insert((msg, route, Instant::now()));
             }
         }
-        self.remove_if_complete(min_section_size, &hash)
+        self.remove_if_complete(group_size, &hash)
     }
 
     fn remove_expired(&mut self) {
@@ -119,13 +119,13 @@ impl SignatureAccumulator {
 
     fn remove_if_complete(
         &mut self,
-        min_section_size: usize,
+        group_size: usize,
         hash: &Digest256,
     ) -> Option<(SignedMessage, u8)> {
         match self.msgs.get_mut(hash) {
             None => return None,
             Some(&mut (ref mut msg, _, _)) => {
-                if !msg.check_fully_signed(min_section_size) {
+                if !msg.check_fully_signed(group_size) {
                     return None;
                 }
             }

@@ -42,9 +42,9 @@ fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
 
 #[test]
 fn node_drops() {
-    let min_section_size = 8;
-    let network = Network::new(min_section_size, None);
-    let mut nodes = create_connected_nodes(&network, min_section_size + 2);
+    let group_size = 8;
+    let network = Network::new(group_size, None);
+    let mut nodes = create_connected_nodes(&network, group_size + 2);
     drop_node(&mut nodes, 0);
 
     verify_invariant_for_all_nodes(&mut nodes);
@@ -54,9 +54,9 @@ fn node_drops() {
 fn node_restart() {
     // Idea of test: if a node disconnects from all other nodes, it should restart
     // (with the exception of the first node which is special).
-    let min_section_size = 5;
-    let network = Network::new(min_section_size, None);
-    let mut nodes = create_connected_nodes(&network, min_section_size);
+    let group_size = 5;
+    let network = Network::new(group_size, None);
+    let mut nodes = create_connected_nodes(&network, group_size);
 
     // Drop all but last node:
     while nodes.len() > 1 {
