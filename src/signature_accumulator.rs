@@ -146,7 +146,7 @@ mod tests {
     use public_info::PublicInfo;
     use rand;
     use routing_table::Authority;
-    use routing_table::Prefix;
+    use routing_table::VersionedPrefix;
     use std::collections::BTreeSet;
 
     struct MessageAndSignatures {
@@ -167,11 +167,11 @@ mod tests {
                 src: Authority::ClientManager(rand::random()),
                 dst: Authority::ClientManager(rand::random()),
                 content: MessageContent::SectionSplit(
-                    Prefix::new(0, rand::random()).with_version(0),
+                    VersionedPrefix::new(0, rand::random(), 0),
                     rand::random(),
                 ),
             };
-            let prefix = Prefix::new(0, unwrap!(all_infos.iter().next()).name());
+            let prefix = VersionedPrefix::new(0, unwrap!(all_infos.iter().next()).name(), 0);
             let lists = vec![SectionList::new(prefix, all_infos)];
             let signed_msg = unwrap!(SignedMessage::new(routing_msg, msg_sender_info, lists));
             let signature_msgs = other_infos

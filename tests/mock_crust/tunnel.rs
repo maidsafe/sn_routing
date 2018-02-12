@@ -19,7 +19,8 @@ use super::{TestNode, add_connected_nodes_until_split, create_connected_nodes, p
             poll_and_resend, verify_invariant_for_all_nodes};
 use fake_clock::FakeClock;
 use itertools::Itertools;
-use routing::{BootstrapConfig, Event, EventStream, Prefix, PublicInfo, XOR_NAME_LEN, XorName};
+use routing::{BootstrapConfig, Event, EventStream, PublicInfo, VersionedPrefix, XOR_NAME_LEN,
+              XorName};
 use routing::mock_crust::{Endpoint, Network, crust};
 use routing::test_consts::CONNECTED_PEER_TIMEOUT_SECS;
 
@@ -107,8 +108,8 @@ fn remove_nodes_from_section_till_merge(
 fn add_a_pair(
     network: &Network<PublicInfo>,
     nodes: &mut Vec<TestNode>,
-    prefix0: Prefix,
-    prefix1: Prefix,
+    prefix0: VersionedPrefix,
+    prefix1: VersionedPrefix,
     is_tunnel: bool,
 ) -> (Endpoint, Endpoint) {
     let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
@@ -189,24 +190,24 @@ fn tunnel_clients() {
     let direct_pair = add_a_pair(
         &network,
         &mut nodes,
-        Prefix::new(bit_count, XorName([0u8; XOR_NAME_LEN])),
-        Prefix::new(bit_count, XorName([253u8; XOR_NAME_LEN])),
+        VersionedPrefix::new(bit_count, XorName([0u8; XOR_NAME_LEN]), 0),
+        VersionedPrefix::new(bit_count, XorName([253u8; XOR_NAME_LEN]), 0),
         false,
     );
     let direct_pair_peer_ids = (nodes[nodes.len() - 1].id(), nodes[nodes.len() - 2].id());
     let _ = add_a_pair(
         &network,
         &mut nodes,
-        Prefix::new(bit_count, XorName([1u8; XOR_NAME_LEN])),
-        Prefix::new(bit_count, XorName([255u8; XOR_NAME_LEN])),
+        VersionedPrefix::new(bit_count, XorName([1u8; XOR_NAME_LEN]), 0),
+        VersionedPrefix::new(bit_count, XorName([255u8; XOR_NAME_LEN]), 0),
         true,
     );
     let tunnel_pair_1_peer_ids = (nodes[nodes.len() - 1].id(), nodes[nodes.len() - 2].id());
     let tunnel_pair = add_a_pair(
         &network,
         &mut nodes,
-        Prefix::new(bit_count, XorName([2u8; XOR_NAME_LEN])),
-        Prefix::new(bit_count, XorName([254u8; XOR_NAME_LEN])),
+        VersionedPrefix::new(bit_count, XorName([2u8; XOR_NAME_LEN]), 0),
+        VersionedPrefix::new(bit_count, XorName([254u8; XOR_NAME_LEN]), 0),
         true,
     );
     let tunnel_pair_2_peer_ids = (nodes[nodes.len() - 1].id(), nodes[nodes.len() - 2].id());
@@ -385,7 +386,7 @@ fn tunnel_node_split_out() {
     let bit_count = 4;
 
     // Create nodes that don't match node 1 in their first 2 bits.
-    let node1_prefix = Prefix::new(bit_count, nodes[1].name());
+    let node1_prefix = VersionedPrefix::new(bit_count, nodes[1].name(), 0);
     let tunnel_clients_prefix = node1_prefix.with_flipped_bit(0).with_flipped_bit(1);
     let _ = add_a_pair(
         &network,

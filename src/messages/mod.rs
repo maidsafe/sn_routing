@@ -31,8 +31,8 @@ use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use peer_manager::SectionMap;
 use public_info::PublicInfo;
-use routing_table::{Prefix, VersionedPrefix};
 use routing_table::Authority;
+use routing_table::VersionedPrefix;
 use rust_sodium::crypto::{box_, sign};
 use sha3::Digest256;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -235,23 +235,28 @@ impl HopMessage {
 /// A list of a section's public IDs, together with a list of signatures of a neighbouring section.
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize, Debug)]
 pub struct SectionList {
-    pub prefix: Prefix,
+    prefix: VersionedPrefix,
     // TODO(MAID-1677): pub signatures: BTreeSet<(PublicInfo, sign::Signature)>,
     pub_infos: BTreeSet<PublicInfo>,
 }
 
 impl SectionList {
     /// Create
-    pub fn new(prefix: Prefix, pub_infos: BTreeSet<PublicInfo>) -> Self {
+    pub fn new(prefix: VersionedPrefix, pub_infos: BTreeSet<PublicInfo>) -> Self {
         SectionList {
-            prefix: prefix,
-            pub_infos: pub_infos,
+            prefix: prefix.with_version(0),
+            pub_infos,
         }
     }
 
     /// Create from any object convertable to an iterator
-    pub fn from<I: IntoIterator<Item = PublicInfo>>(prefix: Prefix, pub_infos: I) -> Self {
+    pub fn from<I: IntoIterator<Item = PublicInfo>>(prefix: VersionedPrefix, pub_infos: I) -> Self {
         Self::new(prefix, pub_infos.into_iter().collect())
+    }
+
+    /// Returns the section prefix
+    pub fn prefix(&self) -> &VersionedPrefix {
+        &self.prefix
     }
 }
 
@@ -593,7 +598,7 @@ pub enum MessageContent {
         /// The interval into which the joining node should join.
         target_interval: (XorName, XorName),
         /// The section that the joining node shall connect to.
-        section: (Prefix, BTreeSet<PublicInfo>),
+        section: (VersionedPrefix, BTreeSet<PublicInfo>),
         /// The message's unique identifier.
         message_id: MessageId,
     },
@@ -1034,7 +1039,7 @@ mod tests {
     use full_info::FullInfo;
     use maidsafe_utilities::serialisation::serialise;
     use rand;
-    use routing_table::{Authority, Prefix};
+    use routing_table::{Authority, VersionedPrefix};
     use rust_sodium::crypto::sign;
     use std::collections::BTreeSet;
     use std::iter;
@@ -1053,7 +1058,7 @@ mod tests {
                 proxy_node_name: name,
             },
             dst: Authority::ClientManager(name),
-            content: MessageContent::SectionSplit(Prefix::new(0, name).with_version(0), name),
+            content: MessageContent::SectionSplit(VersionedPrefix::new(0, name, 0), name),
         };
         let senders = iter::empty().collect();
         let signed_message_result =
@@ -1087,7 +1092,7 @@ mod tests {
         let group_size = 8;
 
         let full_info_0 = FullInfo::node_new(1u8);
-        let prefix = Prefix::new(0, full_info_0.public_info().name());
+        let prefix = VersionedPrefix::new(0, full_info_0.public_info().name(), 0);
         let full_info_1 = FullInfo::node_new(1u8);
         let full_info_2 = FullInfo::node_new(1u8);
         let irrelevant_full_info = FullInfo::node_new(1u8);
@@ -1176,7 +1181,7 @@ mod tests {
         let routing_message = RoutingMessage {
             src: Authority::ClientManager(name),
             dst: Authority::ClientManager(name),
-            content: MessageContent::SectionSplit(Prefix::new(0, name).with_version(1), name),
+            content: MessageContent::SectionSplit(VersionedPrefix::new(0, name, 1), name),
         };
         let full_info = FullInfo::node_new(1u8);
         let senders = iter::empty().collect();

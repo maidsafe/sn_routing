@@ -20,7 +20,7 @@ use super::XorName;
 use itertools::Itertools;
 use messages::SectionList;
 use public_info::PublicInfo;
-use routing_table::Prefix;
+use routing_table::{Prefix, VersionedPrefix};
 use rust_sodium::crypto::sign::Signature;
 use std::collections::HashMap;
 
@@ -66,7 +66,7 @@ impl SectionListCache {
     /// Adds a new signature for a section list
     pub fn add_signature(
         &mut self,
-        prefix: Prefix,
+        prefix: VersionedPrefix,
         pub_info: PublicInfo,
         list: SectionList,
         sig: Signature,
@@ -78,10 +78,10 @@ impl SectionListCache {
         let _ = self.signed_by
             .entry(pub_info)
             .or_insert_with(HashMap::new)
-            .insert(prefix, list.clone());
+            .insert(prefix.unversioned(), list.clone());
         // remember that this section list has a new signature
         let _ = self.signatures
-            .entry(prefix)
+            .entry(prefix.unversioned())
             .or_insert_with(HashMap::new)
             .entry(list)
             .or_insert_with(HashMap::new)
@@ -92,12 +92,12 @@ impl SectionListCache {
     /// Returns the given signature, if present.
     pub fn get_signature_for(
         &self,
-        prefix: &Prefix,
+        prefix: &VersionedPrefix,
         pub_info: &PublicInfo,
         list: &SectionList,
     ) -> Option<&Signature> {
         self.signatures
-            .get(prefix)
+            .get(&prefix.unversioned())
             .and_then(|lists| lists.get(list))
             .and_then(|sigs| sigs.get(pub_info))
     }
@@ -105,8 +105,8 @@ impl SectionListCache {
     /// Returns the currently signed section list for `prefix` along with a quorum of signatures.
     // TODO: Remove this when the method is used in production
     #[cfg(feature = "use-mock-crust")]
-    pub fn get_signatures(&self, prefix: Prefix) -> Option<&(SectionList, Signatures)> {
-        self.lists_cache.get(&prefix)
+    pub fn get_signatures(&self, prefix: &VersionedPrefix) -> Option<&(SectionList, Signatures)> {
+        self.lists_cache.get(&prefix.unversioned())
     }
 
     fn prune(&mut self) {
@@ -163,13 +163,13 @@ impl SectionListCache {
         }
     }
 
-    fn remove_signatures_for_prefix_by(&mut self, prefix: Prefix, author: PublicInfo) {
+    fn remove_signatures_for_prefix_by(&mut self, prefix: VersionedPrefix, author: PublicInfo) {
         // vector of tuples (prefix, section list) to be removed
         let to_remove = self.signed_by
             .get(&author)
             .into_iter()
             .flat_map(|map| map.iter())
-            .filter(|&(p, _)| p.is_compatible(&prefix))
+            .filter(|&(p, _)| p.with_version(0).is_compatible(&prefix))
             .map(|(&prefix, list)| (prefix, list.clone()))
             .collect_vec();
         for (prefix, list) in to_remove {

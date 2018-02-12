@@ -18,7 +18,7 @@
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use routing::{Authority, ClientError, Event, EventStream, ImmutableData, MessageId, MutableData,
-              Node, Prefix, Request, Response, XorName};
+              Node, Request, Response, VersionedPrefix, XorName};
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -92,7 +92,11 @@ impl ExampleNode {
                         self.get_debug_name(),
                         prefix
                     );
-                    let pfx = Prefix::new(prefix.bit_count() + 1, unwrap!(self.node.id()).name());
+                    let pfx = VersionedPrefix::new(
+                        prefix.bit_count() + 1,
+                        unwrap!(self.node.id()).name(),
+                        0,
+                    );
                     self.send_refresh(MessageId::from_lost_node(pfx.lower_bound()));
                 }
                 event => {
@@ -323,7 +327,7 @@ impl ExampleNode {
         self.send_refresh(MessageId::from_added_node(name));
     }
 
-    fn handle_split(&mut self, prefix: Prefix) {
+    fn handle_split(&mut self, prefix: VersionedPrefix) {
         let deleted_clients: Vec<_> = self.client_accounts
             .iter()
             .filter(|&(client_name, _)| !prefix.matches(client_name))

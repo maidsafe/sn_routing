@@ -16,15 +16,14 @@
 // relating to use of the SAFE Network Software.
 
 use peer_manager::SectionMap;
-use routing_table::Prefix;
+use routing_table::VersionedPrefix;
 use std::cmp;
 use std::collections::BTreeSet;
 use xor_name::XorName;
 
 #[derive(Default)]
 pub struct CumulativeOwnSectionMerge {
-    merge_prefix: Prefix,
-    version: u64,
+    merge_prefix: VersionedPrefix,
     send_other_section_merge: bool,
     our_merged_section: BTreeSet<XorName>,
 }
@@ -39,21 +38,23 @@ impl CumulativeOwnSectionMerge {
     /// returns `Some(our_merged_section)` for resend `OtherSectionMerge`, otherwise returns `None`.
     pub fn extend_our_merged_section(
         &mut self,
-        merge_prefix: Prefix,
+        merge_prefix: VersionedPrefix,
         sections: &SectionMap,
     ) -> Option<BTreeSet<XorName>> {
         let mut version = 1;
         let mut our_merged_section = BTreeSet::new();
         // Extract the version and merged_section list from the incoming section map.
-        for (ver_pfx, nodes) in sections {
-            if ver_pfx.prefix().is_extension_of(&merge_prefix) {
-                version = cmp::max(version, ver_pfx.version() + 1);
+        for (pfx, nodes) in sections {
+            if pfx.is_extension_of(&merge_prefix) {
+                version = cmp::max(version, pfx.version() + 1);
                 our_merged_section.extend(nodes.into_iter().map(|node| node.name()));
             }
         }
 
+        let merge_prefix = merge_prefix.with_version(version);
+
         let mut result = None;
-        if self.merge_prefix == merge_prefix && self.version == version {
+        if self.merge_prefix == merge_prefix {
             // Only extends the current our_merged_section when the incoming `OwnSectionMerge` is
             // for the merge_prfix and version currently cumulating.
             our_merged_section.extend(self.our_merged_section.iter());
@@ -66,9 +67,8 @@ impl CumulativeOwnSectionMerge {
         }
 
         // When incoming `OwnSectionMerge` have a higher version, overwrites the current record.
-        if self.version < version {
+        if self.merge_prefix.version() < version {
             self.merge_prefix = merge_prefix;
-            self.version = version;
             self.send_other_section_merge = false;
             self.our_merged_section = our_merged_section;
         }
@@ -78,10 +78,9 @@ impl CumulativeOwnSectionMerge {
     /// Returns `our_merged_section` if the prefix_version is what currently being cumulated.
     pub fn get_our_merged_section(
         &mut self,
-        merge_prefix: Prefix,
-        version: u64,
+        merge_prefix: VersionedPrefix,
     ) -> Option<BTreeSet<XorName>> {
-        if self.merge_prefix == merge_prefix && self.version == version {
+        if self.merge_prefix == merge_prefix {
             Some(self.our_merged_section.clone())
         } else {
             None
@@ -89,8 +88,8 @@ impl CumulativeOwnSectionMerge {
     }
 
     /// Flags `OtherSectionMerge` has been sent for the prefix_version currently being cumulated.
-    pub fn set_send_other_section_merge(&mut self, merge_prefix: Prefix, version: u64) {
-        if self.merge_prefix == merge_prefix && self.version == version {
+    pub fn set_send_other_section_merge(&mut self, merge_prefix: VersionedPrefix) {
+        if self.merge_prefix == merge_prefix {
             self.send_other_section_merge = true;
         }
     }

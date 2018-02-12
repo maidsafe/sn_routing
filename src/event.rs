@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use messages::{Request, Response};
-use routing_table::{Prefix, RoutingTable};
+use routing_table::{RoutingTable, VersionedPrefix};
 use routing_table::Authority;
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
@@ -54,11 +54,12 @@ pub enum Event {
     NodeAdded(XorName, RoutingTable),
     /// A node has disconnected from us.
     NodeLost(XorName, RoutingTable),
-    /// Our own section has been split, resulting in the included `Prefix` for our new section.
-    SectionSplit(Prefix),
-    /// Our own section requires merged with others, resulting in the included `Prefix` for our new
-    /// section.
-    SectionMerge(Prefix),
+    /// Our own section has been split, resulting in the included `VersionedPrefix`
+    /// for our new section.
+    SectionSplit(VersionedPrefix),
+    /// Our own section requires merged with others, resulting in the included
+    /// `VersionedPrefix` for our new section.
+    SectionMerge(VersionedPrefix),
     /// The client has successfully connected to a proxy node on the network.
     Connected,
     /// Disconnected or failed to connect - restart required.

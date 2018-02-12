@@ -32,7 +32,7 @@ use outbox::EventBox;
 use public_info::PublicInfo;
 use resource_prover::RESOURCE_PROOF_DURATION_SECS;
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
-use routing_table::{Authority, Prefix};
+use routing_table::{Authority, VersionedPrefix};
 use state_machine::{State, Transition};
 use stats::Stats;
 use std::collections::BTreeSet;
@@ -147,7 +147,7 @@ impl JoiningNode {
         crust_rx: &mut Receiver<CrustEvent<PublicInfo>>,
         crust_sender: CrustEventSender,
         new_full_info: FullInfo,
-        our_section: (Prefix, BTreeSet<PublicInfo>),
+        our_section: (VersionedPrefix, BTreeSet<PublicInfo>),
         outbox: &mut EventBox,
     ) -> State {
         let service = Self::start_new_crust_service(
@@ -319,7 +319,7 @@ impl JoiningNode {
     fn handle_relocate_response(
         &mut self,
         target_interval: (XorName, XorName),
-        section: (Prefix, BTreeSet<PublicInfo>),
+        section: (VersionedPrefix, BTreeSet<PublicInfo>),
     ) -> Transition {
         // TODO: initial age needs to be defined
         let new_info = FullInfo::within_range(1u8, &target_interval.0, &target_interval.1);

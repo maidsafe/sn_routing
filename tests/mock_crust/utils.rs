@@ -20,7 +20,7 @@ use itertools::Itertools;
 use rand::Rng;
 use routing::{Authority, BootstrapConfig, Cache, Client, Config, DevConfig, Event, EventStream,
               FullInfo, ImmutableData, Node, NullCache, Prefix, PublicInfo, Request, Response,
-              RoutingTable, XorName, verify_network_invariant};
+              RoutingTable, VersionedPrefix, XorName, verify_network_invariant};
 use routing::mock_crust::{self, Endpoint, Network, ServiceHandle};
 use routing::test_consts::{ACK_TIMEOUT_SECS, CONNECTING_PEER_TIMEOUT_SECS};
 use std::{cmp, thread};
@@ -551,11 +551,16 @@ pub fn add_connected_nodes_until_split(
         for node in nodes.iter() {
             if let Some(prefix_to_split) =
                 unwrap!(node.inner.routing_table()).prefixes().iter().find(
-                    |&prefix| !prefixes.contains(prefix),
+                    |&prefix| {
+                        prefixes
+                            .iter()
+                            .find(|pfx| pfx.unversioned() == prefix.unversioned())
+                            .is_none()
+                    },
                 )
             {
                 // Assert that this can be split down to a desired prefix.
-                let is_valid = |prefix: &Prefix| {
+                let is_valid = |prefix: &VersionedPrefix| {
                     if prefix.is_compatible(prefix_to_split) {
                         assert!(
                             prefix.bit_count() > prefix_to_split.bit_count(),
@@ -582,10 +587,18 @@ pub fn add_connected_nodes_until_split(
     // Gather all the actual prefixes and check they are as expected.
     let mut actual_prefixes = BTreeSet::<Prefix>::new();
     for node in nodes.iter() {
-        actual_prefixes.append(&mut unwrap!(node.inner.routing_table()).prefixes());
+        actual_prefixes.extend(
+            unwrap!(node.inner.routing_table())
+                .prefixes()
+                .into_iter()
+                .map(|p| p.unversioned()),
+        );
     }
     assert_eq!(
-        prefixes.iter().cloned().collect::<BTreeSet<_>>(),
+        prefixes
+            .iter()
+            .map(|p| p.unversioned())
+            .collect::<BTreeSet<_>>(),
         actual_prefixes
     );
     assert_eq!(
@@ -693,7 +706,7 @@ fn sanity_check(prefix_lengths: &[usize]) {
     }
 }
 
-fn prefixes<T: Rng>(prefix_lengths: &[usize], rng: &mut T) -> Vec<Prefix> {
+fn prefixes<T: Rng>(prefix_lengths: &[usize], rng: &mut T) -> Vec<VersionedPrefix> {
     let _ = prefix_lengths.iter().fold(0, |previous, &current| {
         assert!(
             previous <= current,
@@ -702,9 +715,9 @@ fn prefixes<T: Rng>(prefix_lengths: &[usize], rng: &mut T) -> Vec<Prefix> {
         );
         current
     });
-    let mut prefixes = vec![Prefix::new(prefix_lengths[0], rng.gen())];
+    let mut prefixes = vec![VersionedPrefix::new(prefix_lengths[0], rng.gen(), 0)];
     while prefixes.len() < prefix_lengths.len() {
-        let new_prefix = Prefix::new(prefix_lengths[prefixes.len()], rng.gen());
+        let new_prefix = VersionedPrefix::new(prefix_lengths[prefixes.len()], rng.gen(), 0);
         if prefixes.iter().all(
             |prefix| !prefix.is_compatible(&new_prefix),
         )
@@ -718,7 +731,7 @@ fn prefixes<T: Rng>(prefix_lengths: &[usize], rng: &mut T) -> Vec<Prefix> {
 fn add_node_to_section<T: Rng>(
     network: &Network<PublicInfo>,
     nodes: &mut Vec<TestNode>,
-    prefix: &Prefix,
+    prefix: &VersionedPrefix,
     rng: &mut T,
     use_cache: bool,
 ) {

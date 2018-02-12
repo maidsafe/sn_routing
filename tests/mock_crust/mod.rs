@@ -35,7 +35,7 @@ pub use self::utils::{Nodes, TestClient, TestNode, add_connected_nodes_until_spl
                       remove_nodes_which_failed_to_connect, sort_nodes_by_distance_to,
                       verify_invariant_for_all_nodes};
 use fake_clock::FakeClock;
-use routing::{BootstrapConfig, Event, EventStream, Prefix, XOR_NAME_LEN, XorName};
+use routing::{BootstrapConfig, Event, EventStream, VersionedPrefix, XOR_NAME_LEN, XorName};
 use routing::mock_crust::{Endpoint, Network};
 use routing::test_consts::JOINING_NODE_TIMEOUT_SECS;
 use std::collections::BTreeSet;
@@ -154,7 +154,7 @@ fn simultaneous_joining_nodes() {
     // This is to test that the routing table gets updated correctly (previously one new node would
     // miss the new node added to the neighbouring section).
     let (name0, name1) = (XorName([0u8; XOR_NAME_LEN]), XorName([255u8; XOR_NAME_LEN]));
-    let prefix0 = Prefix::new(1, name0);
+    let prefix0 = VersionedPrefix::new(1, name0, 0);
 
     for node in &mut *nodes {
         if prefix0.matches(&node.name()) {
@@ -167,7 +167,7 @@ fn simultaneous_joining_nodes() {
     let node = TestNode::builder(&network)
         .bootstrap_config(bootstrap_config.clone())
         .create();
-    let prefix = Prefix::new(1, node.name());
+    let prefix = VersionedPrefix::new(1, node.name(), 0);
     nodes.push(node);
     loop {
         let node = TestNode::builder(&network)

@@ -25,7 +25,7 @@ use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 use mock_crust;
 use outbox::EventBox;
 use public_info::PublicInfo;
-use routing_table::{Prefix, RoutingTable};
+use routing_table::{RoutingTable, VersionedPrefix};
 #[cfg(feature = "use-mock-crust")]
 use rust_sodium::crypto::sign;
 use states::{Bootstrapping, Client, JoiningNode, Node};
@@ -179,7 +179,7 @@ impl State {
 
     pub fn section_list_signatures(
         &self,
-        prefix: Prefix,
+        prefix: &VersionedPrefix,
     ) -> Option<BTreeMap<PublicInfo, sign::Signature>> {
         match *self {
             State::Node(ref state) => state.section_list_signatures(prefix).ok(),
@@ -248,7 +248,7 @@ pub enum Transition {
     // `JoiningNode` state transitioning back to `Bootstrapping`.
     IntoBootstrapping {
         new_info: FullInfo,
-        our_section: (Prefix, BTreeSet<PublicInfo>),
+        our_section: (VersionedPrefix, BTreeSet<PublicInfo>),
     },
     Terminate,
 }

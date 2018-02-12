@@ -28,7 +28,7 @@ use maidsafe_utilities::serialisation;
 use messages::{DirectMessage, Message};
 use outbox::EventBox;
 use public_info::PublicInfo;
-use routing_table::{Authority, Prefix};
+use routing_table::{Authority, VersionedPrefix};
 use rust_sodium::crypto::sign;
 use state_machine::{State, Transition};
 use stats::Stats;
@@ -50,7 +50,7 @@ pub enum TargetState {
     JoiningNode,
     Node {
         old_full_info: FullInfo,
-        our_section: (Prefix, BTreeSet<PublicInfo>),
+        our_section: (VersionedPrefix, BTreeSet<PublicInfo>),
     },
 }
 

@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use super::{Prefix, XorName};
+use super::{VersionedPrefix, XorName};
 use public_info::PublicInfo;
 use std::fmt::{self, Debug, Formatter};
 
@@ -40,7 +40,7 @@ pub enum Authority {
     Section(XorName),
     /// A set of nodes with names sharing a common prefix - may span multiple `Section`s present in
     /// the routing table or only a part of a `Section`
-    PrefixSection(Prefix),
+    PrefixSection(VersionedPrefix),
     /// A non-client node (i.e. a vault) which is managed by NodeManagers.  XorName is provided
     /// by the network relocation process immediately after bootstrapping.
     ManagedNode(XorName),
