@@ -71,7 +71,7 @@ pub struct RateLimiter {
     /// Map of client IP address to their total bytes remaining in the `RateLimiter`.
     used: BTreeMap<IpAddr, u64>,
     /// Initial charge amount by GET request message ID.
-    /// The IP address of the requesting peer is also tracked so that stale entries can be removed.
+    /// The IP address of the requesting node is also tracked so that stale entries can be removed.
     overcharged: LruCache<MessageId, u64>,
     /// Timestamp of when the `RateLimiter` was last updated.
     last_updated: Instant,

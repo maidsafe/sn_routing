@@ -33,7 +33,7 @@ use timer::Timer;
 use xor_name::XorName;
 
 // Common functionality for states that are bootstrapped (have established a crust
-// connection to at least one peer).
+// connection to at least one node).
 pub trait Bootstrapped: Base {
     fn ack_mgr(&self) -> &AckManager;
     fn ack_mgr_mut(&mut self) -> &mut AckManager;
@@ -119,7 +119,7 @@ pub trait Bootstrapped: Base {
 
     fn resend_unacknowledged_timed_out_msgs(&mut self, token: u64) {
         if let Some((unacked_msg, _ack)) = self.ack_mgr_mut().find_timed_out(token) {
-            if usize::from(unacked_msg.route) == self.min_section_size() {
+            if usize::from(unacked_msg.route) == self.group_size() {
                 debug!(
                     "{:?} Message unable to be acknowledged - giving up. {:?}",
                     self,

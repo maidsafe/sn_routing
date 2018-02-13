@@ -50,7 +50,7 @@ pub struct Client {
     ack_mgr: AckManager,
     crust_service: Service,
     full_info: FullInfo,
-    min_section_size: usize,
+    group_size: usize,
     proxy_pub_info: PublicInfo,
     routing_msg_filter: RoutingMessageFilter,
     stats: Stats,
@@ -65,7 +65,7 @@ impl Client {
     pub fn from_bootstrapping(
         crust_service: Service,
         full_info: FullInfo,
-        min_section_size: usize,
+        group_size: usize,
         proxy_pub_info: PublicInfo,
         stats: Stats,
         timer: Timer,
@@ -76,7 +76,7 @@ impl Client {
             ack_mgr: AckManager::new(),
             crust_service: crust_service,
             full_info: full_info,
-            min_section_size: min_section_size,
+            group_size: group_size,
             proxy_pub_info: proxy_pub_info,
             routing_msg_filter: RoutingMessageFilter::new(),
             stats: stats,
@@ -225,12 +225,12 @@ impl Client {
         }
 
         let signed_msg = hop_msg.content;
-        signed_msg.check_integrity(self.min_section_size())?;
+        signed_msg.check_integrity(self.group_size())?;
 
         let routing_msg = signed_msg.into_routing_message();
         let in_authority = self.in_authority(&routing_msg.dst);
 
-        // Prevents us repeatedly handling identical messages sent by a malicious peer.
+        // Prevents us repeatedly handling identical messages sent by a malicious node.
         match self.routing_msg_filter.filter_incoming(
             &routing_msg,
             hop_msg.route,
@@ -378,8 +378,8 @@ impl Base for Client {
         &mut self.stats
     }
 
-    fn min_section_size(&self) -> usize {
-        self.min_section_size
+    fn group_size(&self) -> usize {
+        self.group_size
     }
 }
 
@@ -402,7 +402,7 @@ impl Bootstrapped for Client {
             );
 
             let msg_expired = unacked_msg.expires_at.map_or(false, |i| i < Instant::now());
-            if msg_expired || unacked_msg.route as usize == self.min_section_size {
+            if msg_expired || unacked_msg.route as usize == self.group_size {
                 debug!(
                     "{:?} Message unable to be acknowledged - giving up. {:?}",
                     self,

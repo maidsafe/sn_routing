@@ -38,7 +38,7 @@ pub struct Network<UID: Uid>(Rc<RefCell<NetworkImpl<UID>>>);
 
 pub struct NetworkImpl<UID: Uid> {
     services: HashMap<Endpoint, Weak<RefCell<ServiceImpl<UID>>>>,
-    min_section_size: usize,
+    group_size: usize,
     queue: BTreeMap<(Endpoint, Endpoint), VecDeque<Packet<UID>>>,
     blocked_connections: HashSet<(Endpoint, Endpoint)>,
     delayed_connections: HashSet<(Endpoint, Endpoint)>,
@@ -48,7 +48,7 @@ pub struct NetworkImpl<UID: Uid> {
 
 impl<UID: Uid> Network<UID> {
     /// Create new mock Network.
-    pub fn new(min_section_size: usize, optional_seed: Option<[u32; 4]>) -> Self {
+    pub fn new(group_size: usize, optional_seed: Option<[u32; 4]>) -> Self {
         let mut rng = if let Some(seed) = optional_seed {
             SeededRng::from_seed(seed)
         } else {
@@ -57,7 +57,7 @@ impl<UID: Uid> Network<UID> {
         unwrap!(rust_sodium::init_with_rng(&mut rng));
         Network(Rc::new(RefCell::new(NetworkImpl {
             services: HashMap::new(),
-            min_section_size: min_section_size,
+            group_size: group_size,
             queue: BTreeMap::new(),
             blocked_connections: HashSet::new(),
             delayed_connections: HashSet::new(),
@@ -91,9 +91,9 @@ impl<UID: Uid> Network<UID> {
         handle
     }
 
-    /// Get min_section_size
-    pub fn min_section_size(&self) -> usize {
-        self.0.borrow().min_section_size
+    /// Get group_size
+    pub fn group_size(&self) -> usize {
+        self.0.borrow().group_size
     }
 
     /// Generate unique `Endpoint`

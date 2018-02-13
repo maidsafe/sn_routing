@@ -71,14 +71,14 @@
 //
 // * If the destination is the address of a node, the message will reach that node after at most
 //   `B - 1` hops.
-// * Otherwise, if the destination is a `k`-close group with `k <= min_section_size`, the message
+// * Otherwise, if the destination is a `k`-close group with `k <= group_size`, the message
 //   will reach every member of the `k`-close group of the destination address, i.e. all `k` nodes
 //   in the network that are XOR-closest to that address, and each node knows whether it belongs to
 //   that group.
 // * Each node in a given address' close group is connected to each other node in that section. In
 //   particular, every node is connected to its own close group.
 // * The number of total hop messages created for each message is at most `B`.
-// * There are `min_section_size` different paths along which a message can be sent, to provide
+// * There are `group_size` different paths along which a message can be sent, to provide
 //   redundancy.
 //
 // However, to be able to make these guarantees, the routing table must be filled with sufficiently
@@ -130,7 +130,7 @@ use std::fmt::Result as FmtResult;
 pub type Sections = BTreeMap<Prefix, (u64, BTreeSet<XorName>)>;
 type SectionItem<'a> = (Prefix, (u64, &'a BTreeSet<XorName>));
 
-// Amount added to `min_section_size` when deciding whether a bucket split can happen. This helps
+// Amount added to `group_size` when deciding whether a bucket split can happen. This helps
 // protect against rapid splitting and merging in the face of moderate churn.
 const SPLIT_BUFFER: usize = 3;
 
@@ -163,9 +163,9 @@ impl<'a> Iterator for Iter<'a> {
 // Details returned by a successful `RoutingTable::remove()`.
 #[derive(Debug)]
 pub struct RemovalDetails {
-    // Peer name
+    // Node name
     pub name: XorName,
-    // True if the removed peer was in our section.
+    // True if the removed node was in our section.
     pub was_in_our_section: bool,
 }
 
@@ -190,14 +190,14 @@ pub enum OwnMergeState {
 
 /// A routing table to manage contacts for a node.
 ///
-/// It maintains a list of sections (identified by a `Prefix`), each with a list of peer identifiers
-/// of type `XorName` representing connected peers, and provides algorithms for routing messages.
+/// It maintains a list of sections (identified by a `Prefix`), each with a list of node identifiers
+/// of type `XorName` representing connected nodes, and provides algorithms for routing messages.
 ///
 /// See the [crate documentation](index.html) for details.
 #[derive(Clone, Eq, PartialEq)]
 pub struct RoutingTable {
     /// Minimum number of nodes we consider acceptable in a section
-    min_section_size: usize,
+    group_size: usize,
     /// Name of node holding this table
     our_name: XorName,
     /// Prefix of our section
@@ -212,10 +212,10 @@ pub struct RoutingTable {
 
 impl RoutingTable {
     /// Creates a new `RoutingTable`.
-    pub fn new(our_name: XorName, min_section_size: usize) -> Self {
+    pub fn new(our_name: XorName, group_size: usize) -> Self {
         RoutingTable {
             our_name,
-            min_section_size,
+            group_size,
             our_section: iter::once(our_name).collect(),
             our_prefix: Default::default(),
             our_version: 0,
@@ -225,7 +225,7 @@ impl RoutingTable {
 
     /// Adds the list of `Prefix`es as empty sections.
     ///
-    /// Called once a node has been approved by its own section and is given its peers' tables.
+    /// Called once a node has been approved by its own section and is given its nodes' tables.
     /// Expects the current sections to be empty and have version 0.
     pub fn add_prefixes(&mut self, ver_pfxs: Vec<VersionedPrefix>) -> Result<(), Error> {
         if self.our_version != 0 || !self.sections.is_empty() {
@@ -260,15 +260,15 @@ impl RoutingTable {
         &self,
         sections: &BTreeMap<Prefix, BTreeSet<XorName>>,
     ) -> Result<(), Error> {
-        let mut temp_rt = RoutingTable::new(self.our_name, self.min_section_size);
+        let mut temp_rt = RoutingTable::new(self.our_name, self.group_size);
         temp_rt.add_prefixes(
             sections
                 .keys()
                 .map(|pfx| pfx.with_version(0))
                 .collect(),
         )?;
-        for peer in sections.values().flat_map(BTreeSet::iter) {
-            let _ = temp_rt.add(*peer);
+        for node in sections.values().flat_map(BTreeSet::iter) {
+            let _ = temp_rt.add(*node);
         }
         temp_rt.check_invariant(false, true)
     }
@@ -338,15 +338,15 @@ impl RoutingTable {
             )
     }
 
-    /// Returns the minimum section size.
-    pub fn min_section_size(&self) -> usize {
-        self.min_section_size
+    /// Returns the group size.
+    pub fn group_size(&self) -> usize {
+        self.group_size
     }
 
     /// Returns the number of nodes which need to exist in each subsection of a given section to
     /// allow it to be split.
     pub fn min_split_size(&self) -> usize {
-        self.min_section_size + SPLIT_BUFFER
+        self.group_size + SPLIT_BUFFER
     }
 
     /// Returns whether the table contains the given `name`.
@@ -469,14 +469,14 @@ impl RoutingTable {
                 Ok(())
             }
         } else {
-            Err(Error::PeerNameUnsuitable)
+            Err(Error::NodeNameUnsuitable)
         }
     }
 
     /// Validates a joining node's name.
     pub fn validate_joining_node(&self, name: &XorName) -> Result<(), Error> {
         if !self.our_prefix.matches(name) {
-            return Err(Error::PeerNameUnsuitable);
+            return Err(Error::NodeNameUnsuitable);
         }
         if self.our_section.contains(name) {
             return Err(Error::AlreadyExists);
@@ -498,7 +498,7 @@ impl RoutingTable {
                 return Err(Error::AlreadyExists);
             }
         } else {
-            return Err(Error::PeerNameUnsuitable);
+            return Err(Error::NodeNameUnsuitable);
         }
         Ok(())
     }
@@ -530,7 +530,7 @@ impl RoutingTable {
 
     /// Return true if any neighbouring section needs to merge with our section.
     fn neighbour_needs_merge(&self) -> bool {
-        self.neighbour_size_is_below(self.min_section_size)
+        self.neighbour_size_is_below(self.group_size)
     }
 
     /// Return true if any neighbouring section might soon need to merge with our section.
@@ -660,14 +660,14 @@ impl RoutingTable {
                 iter::once(self.our_name).collect(),
             ))
             .filter(|name| {
-                *name != self.our_name && self.add(*name) == Err(Error::PeerNameUnsuitable)
+                *name != self.our_name && self.add(*name) == Err(Error::NodeNameUnsuitable)
             })
             .collect()
     }
 
     /// Removes a contact from the routing table.
     ///
-    /// If no entry with that name is found, `Err(Error::NoSuchPeer)` is returned. Otherwise, the
+    /// If no entry with that name is found, `Err(Error::NoSuchNode)` is returned. Otherwise, the
     /// entry is removed from the routing table and `RemovalDetails` is returned. See that struct's
     /// docs for further info.
     pub fn remove(&mut self, name: &XorName) -> Result<RemovalDetails, Error> {
@@ -680,16 +680,16 @@ impl RoutingTable {
                 return Err(Error::OwnNameDisallowed);
             }
             if !self.our_section.remove(name) {
-                return Err(Error::NoSuchPeer);
+                return Err(Error::NoSuchNode);
             }
         } else if let Some(prefix) = self.find_section_prefix(name) {
             if let Some(&mut (_, ref mut section)) = self.sections.get_mut(&prefix) {
                 if !section.remove(name) {
-                    return Err(Error::NoSuchPeer);
+                    return Err(Error::NoSuchNode);
                 }
             }
         } else {
-            return Err(Error::NoSuchPeer);
+            return Err(Error::NoSuchNode);
         }
         Ok(removal_details)
     }
@@ -710,11 +710,11 @@ impl RoutingTable {
         if bit_count == 0 || !self.sections.contains_key(&self.our_prefix.sibling()) {
             return false; // We can't merge, or we already sent our merge message.
         }
-        self.our_section.len() < self.min_section_size || self.neighbour_needs_merge()
+        self.our_section.len() < self.group_size || self.neighbour_needs_merge()
     }
 
     /// When a merge of our own section is triggered (either from our own section or a neighbouring
-    /// one) this function handles the incoming merge details from the peers within the merging
+    /// one) this function handles the incoming merge details from the nodes within the merging
     /// sections.
     ///
     /// The actual merge of the section is only done once all expected merging sections have
@@ -746,7 +746,7 @@ impl RoutingTable {
         if !dropped_names.is_empty() {
             log_or_panic!(
                 LogLevel::Warn,
-                "{:?} Removed peers from RT as part of OwnSectionMerge {:?}",
+                "{:?} Removed nodes from RT as part of OwnSectionMerge {:?}",
                 self.our_name,
                 dropped_names
             );
@@ -776,7 +776,7 @@ impl RoutingTable {
     ///
     /// The appropriate targets (all contacts from `merge_details.sections` which are not currently
     /// held in the routing table) are returned so the caller can establish connections to these
-    /// peers and subsequently add them.
+    /// nodes and subsequently add them.
     pub fn merge_other_section<I>(
         &mut self,
         ver_pfx: VersionedPrefix,
@@ -840,7 +840,7 @@ impl RoutingTable {
         route: usize,
     ) -> Result<BTreeSet<XorName>, Error> {
         let candidates = |target_name: &XorName| {
-            self.closest_known_names(target_name, self.min_section_size)
+            self.closest_known_names(target_name, self.group_size)
                 .into_iter()
                 .filter(|name| **name != self.our_name)
                 .cloned()
@@ -861,7 +861,7 @@ impl RoutingTable {
             Authority::ClientManager(ref target_name) |
             Authority::NaeManager(ref target_name) |
             Authority::NodeManager(ref target_name) => {
-                if let Some(group) = self.other_closest_names(target_name, self.min_section_size) {
+                if let Some(group) = self.other_closest_names(target_name, self.group_size) {
                     return Ok(group.into_iter().cloned().collect());
                 }
                 candidates(target_name)
@@ -924,7 +924,7 @@ impl RoutingTable {
             Authority::ManagedNode(ref name) => self.our_name == *name,
             Authority::ClientManager(ref name) |
             Authority::NaeManager(ref name) |
-            Authority::NodeManager(ref name) => self.is_closest(name, self.min_section_size),
+            Authority::NodeManager(ref name) => self.is_closest(name, self.group_size),
             Authority::Section(ref name) => self.our_prefix.matches(name),
             Authority::PrefixSection(ref prefix) => self.our_prefix.is_compatible(prefix),
         }
@@ -1148,10 +1148,10 @@ impl RoutingTable {
                 self
             ));
         }
-        let has_enough_nodes = self.len() >= self.min_section_size;
-        if has_enough_nodes && self.our_section.len() < self.min_section_size {
+        let has_enough_nodes = self.len() >= self.group_size;
+        if has_enough_nodes && self.our_section.len() < self.group_size {
             return warn(format!(
-                "Minimum section size not met for section {:?}: {:?}",
+                "Group size not met for section {:?}: {:?}",
                 self.our_prefix,
                 self
             ));
@@ -1168,7 +1168,7 @@ impl RoutingTable {
         }
 
         for (prefix, &(_, ref section)) in &self.sections {
-            if has_enough_nodes && section.len() < self.min_section_size {
+            if has_enough_nodes && section.len() < self.group_size {
                 if section.len() <= 1 && allow_small_sections {
                     continue;
                 }
@@ -1234,7 +1234,7 @@ impl RoutingTable {
 impl Binary for RoutingTable {
     fn fmt(&self, formatter: &mut Formatter) -> FmtResult {
         writeln!(formatter, "RoutingTable {{")?;
-        writeln!(formatter, "\tmin_section_size: {},", self.min_section_size)?;
+        writeln!(formatter, "\tgroup_size: {},", self.group_size)?;
         writeln!(
             formatter,
             "\tour_name: {:?} ({}),",
@@ -1459,7 +1459,7 @@ mod tests {
         assert_eq!(table.len(), expected_rt_len);
 
         // Try to add a name which doesn't fit any section.
-        assert_eq!(table.add(nodes_to_drop[0]), Err(Error::PeerNameUnsuitable));
+        assert_eq!(table.add(nodes_to_drop[0]), Err(Error::NodeNameUnsuitable));
         table.verify_invariant();
         assert_eq!(table.len(), expected_rt_len);
 
@@ -1501,7 +1501,7 @@ mod tests {
         assert_eq!(table.need_to_add(&our_name), Err(Error::OwnNameDisallowed));
         assert_eq!(
             table.need_to_add(&nodes_to_drop[0]),
-            Err(Error::PeerNameUnsuitable)
+            Err(Error::NodeNameUnsuitable)
         );
         assert_eq!(table.need_to_add(&(section_001_name + 1)), Ok(()));
     }

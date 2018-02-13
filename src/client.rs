@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use {BootstrapConfig, MIN_SECTION_SIZE};
+use {BootstrapConfig, GROUP_SIZE};
 use action::Action;
 use cache::NullCache;
 use config_handler::{self, Config};
@@ -78,7 +78,7 @@ impl Client {
         let pub_info = *full_info.public_info();
         let config = config.unwrap_or_else(config_handler::get_config);
         let dev_config = config.dev.unwrap_or_default();
-        let min_section_size = dev_config.min_section_size.unwrap_or(MIN_SECTION_SIZE);
+        let group_size = dev_config.group_size.unwrap_or(GROUP_SIZE);
 
         StateMachine::new(
             move |action_sender, crust_service, timer, _outbox2| {
@@ -88,7 +88,7 @@ impl Client {
                     BootstrappingTargetState::Client { msg_expiry_dur },
                     crust_service,
                     full_info,
-                    min_section_size,
+                    group_size,
                     timer,
                 ).map_or(State::Terminated, State::Bootstrapping)
             },

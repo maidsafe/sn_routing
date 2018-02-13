@@ -47,8 +47,8 @@ fn gen_immutable_data_not_in_first_node_section<T: Rng>(
 
 #[test]
 fn response_caching() {
-    let min_section_size = 8;
-    let network = Network::new(min_section_size, None);
+    let group_size = 8;
+    let network = Network::new(group_size, None);
 
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1], true);
@@ -142,7 +142,7 @@ fn response_caching() {
 
     // The request should not be relayed to any other node, so no node should
     // raise Event::Request.
-    for node in nodes.iter_mut().take(min_section_size) {
+    for node in nodes.iter_mut().take(group_size) {
         expect_no_event!(node);
     }
 }

@@ -25,9 +25,9 @@ use routing::test_consts::CONNECTED_PEER_TIMEOUT_SECS;
 
 #[test]
 fn failing_connections_ring() {
-    let min_section_size = 8;
-    let network = Network::new(min_section_size, None);
-    let len = min_section_size * 2;
+    let group_size = 8;
+    let network = Network::new(group_size, None);
+    let len = group_size * 2;
     for i in 0..(len - 1) {
         let ep0 = Endpoint(1 + i);
         let ep1 = Endpoint(1 + (i % len));
@@ -41,32 +41,32 @@ fn failing_connections_ring() {
 
 #[test]
 fn failing_connections_bidirectional() {
-    let min_section_size = 4;
-    let network = Network::new(min_section_size, None);
+    let group_size = 4;
+    let network = Network::new(group_size, None);
     network.block_connection(Endpoint(2), Endpoint(3));
     network.block_connection(Endpoint(3), Endpoint(2));
 
-    let mut nodes = create_connected_nodes(&network, min_section_size);
+    let mut nodes = create_connected_nodes(&network, group_size);
     verify_invariant_for_all_nodes(&mut nodes);
 }
 
 #[test]
 fn failing_connections_unidirectional() {
-    let min_section_size = 8;
-    let network = Network::new(min_section_size, None);
+    let group_size = 8;
+    let network = Network::new(group_size, None);
     network.block_connection(Endpoint(1), Endpoint(6));
     network.block_connection(Endpoint(1), Endpoint(7));
     network.block_connection(Endpoint(6), Endpoint(7));
 
-    let mut nodes = create_connected_nodes(&network, min_section_size);
+    let mut nodes = create_connected_nodes(&network, group_size);
     verify_invariant_for_all_nodes(&mut nodes);
 }
 
 #[test]
 fn lost_connection_and_unidirectional_block() {
-    let min_section_size = 5;
-    let network = Network::new(min_section_size, None);
-    let mut nodes = create_connected_nodes(&network, min_section_size);
+    let group_size = 5;
+    let network = Network::new(group_size, None);
+    let mut nodes = create_connected_nodes(&network, group_size);
     verify_invariant_for_all_nodes(&mut nodes);
 
     network.lost_connection(Endpoint(2), Endpoint(3));
@@ -80,7 +80,7 @@ fn lost_connection_and_unidirectional_block() {
 fn remove_nodes_from_section_till_merge(
     prefix_name: &XorName,
     nodes: &mut Vec<TestNode>,
-    min_section_size: usize,
+    group_size: usize,
 ) {
     let section_indexes: Vec<usize> = nodes
         .iter()
@@ -97,7 +97,7 @@ fn remove_nodes_from_section_till_merge(
         .collect();
     section_indexes
         .iter()
-        .take(section_indexes.len() - min_section_size + 1)
+        .take(section_indexes.len() - group_size + 1)
         .foreach(|index| drop(nodes.remove(*index)));
     poll_and_resend(nodes, &mut []);
 }
@@ -178,9 +178,9 @@ fn locate_tunnel_node(
 
 #[test]
 fn tunnel_clients() {
-    let min_section_size = 3;
-    let network = Network::new(min_section_size, None);
-    let mut nodes = create_connected_nodes(&network, min_section_size);
+    let group_size = 3;
+    let network = Network::new(group_size, None);
+    let mut nodes = create_connected_nodes(&network, group_size);
     // This specifies the length of prefix used to set the target range for nodes being added to the
     // network via `add_a_pair`. The higher the bit count, the more specific the new nodes' names
     // will be, but they will take longer to generate them.
@@ -231,11 +231,7 @@ fn tunnel_clients() {
     FakeClock::advance_time(CONNECTED_PEER_TIMEOUT_SECS * 1000 + 1);
     let _ = poll_all(&mut nodes, &mut []);
 
-    remove_nodes_from_section_till_merge(
-        &XorName([64u8; XOR_NAME_LEN]),
-        &mut nodes,
-        min_section_size,
-    );
+    remove_nodes_from_section_till_merge(&XorName([64u8; XOR_NAME_LEN]), &mut nodes, group_size);
     verify_invariant_for_all_nodes(&mut nodes);
     assert!(locate_tunnel_node(&nodes, direct_pair_peer_ids.0, direct_pair_peer_ids.1).is_some());
     assert!(
@@ -250,11 +246,11 @@ fn tunnel_clients() {
 // established, a ConnectFailure of a tunnel_client to peer tunnel_client won't incur any action
 #[test]
 fn tunnel_client_connect_failure() {
-    let min_section_size = 5;
-    let network = Network::new(min_section_size, None);
+    let group_size = 5;
+    let network = Network::new(group_size, None);
     network.block_connection(Endpoint(2), Endpoint(3));
     network.block_connection(Endpoint(3), Endpoint(2));
-    let mut nodes = create_connected_nodes(&network, min_section_size);
+    let mut nodes = create_connected_nodes(&network, group_size);
     let tunnel_node_index = unwrap!(locate_tunnel_node(&nodes, nodes[2].id(), nodes[3].id()));
 
     network.send_crust_event(Endpoint(2), crust::Event::ConnectFailure(nodes[3].id()));
@@ -313,11 +309,11 @@ fn verify_tunnel_switch(nodes: &mut Vec<TestNode>, node: usize, client_1: usize,
 
 #[test]
 fn tunnel_node_disrupted() {
-    let min_section_size = 5;
-    let network = Network::new(min_section_size, None);
+    let group_size = 5;
+    let network = Network::new(group_size, None);
     network.block_connection(Endpoint(2), Endpoint(3));
     network.block_connection(Endpoint(3), Endpoint(2));
-    let mut nodes = create_connected_nodes(&network, min_section_size);
+    let mut nodes = create_connected_nodes(&network, group_size);
     let tunnel_node_index = unwrap!(locate_tunnel_node(&nodes, nodes[2].id(), nodes[3].id()));
 
     network.lost_connection(Endpoint(2), Endpoint(tunnel_node_index));
@@ -332,11 +328,11 @@ fn tunnel_node_disrupted() {
 
 #[test]
 fn tunnel_node_blocked() {
-    let min_section_size = 5;
-    let network = Network::new(min_section_size, None);
+    let group_size = 5;
+    let network = Network::new(group_size, None);
     network.block_connection(Endpoint(2), Endpoint(3));
     network.block_connection(Endpoint(3), Endpoint(2));
-    let mut nodes = create_connected_nodes(&network, min_section_size);
+    let mut nodes = create_connected_nodes(&network, group_size);
     let tunnel_node_index = unwrap!(locate_tunnel_node(&nodes, nodes[2].id(), nodes[3].id()));
 
     network.block_connection(Endpoint(2), Endpoint(tunnel_node_index));
@@ -353,11 +349,11 @@ fn tunnel_node_blocked() {
 
 #[test]
 fn tunnel_node_dropped() {
-    let min_section_size = 5;
-    let network = Network::new(min_section_size, None);
+    let group_size = 5;
+    let network = Network::new(group_size, None);
     network.block_connection(Endpoint(2), Endpoint(3));
     network.block_connection(Endpoint(3), Endpoint(2));
-    let mut nodes = create_connected_nodes(&network, min_section_size);
+    let mut nodes = create_connected_nodes(&network, group_size);
     let _ = poll_all(&mut nodes, &mut []);
     verify_invariant_for_all_nodes(&mut nodes);
 
@@ -383,8 +379,8 @@ fn tunnel_node_dropped() {
 
 #[test]
 fn tunnel_node_split_out() {
-    let min_section_size = 3;
-    let network = Network::new(min_section_size, None);
+    let group_size = 3;
+    let network = Network::new(group_size, None);
     let mut nodes = create_connected_nodes(&network, 2);
     let bit_count = 4;
 
@@ -415,11 +411,11 @@ fn tunnel_node_split_out() {
 
 #[test]
 fn avoid_tunnelling_when_proxying() {
-    let min_section_size = 5;
-    let network = Network::new(min_section_size, None);
+    let group_size = 5;
+    let network = Network::new(group_size, None);
     network.block_connection(Endpoint(2), Endpoint(3));
     network.block_connection(Endpoint(3), Endpoint(2));
-    let mut nodes = create_connected_nodes(&network, min_section_size);
+    let mut nodes = create_connected_nodes(&network, group_size);
     verify_invariant_for_all_nodes(&mut nodes);
     // Nodes[0] acts as proxy to others, shall not be chosen as tunnel node.
     assert_ne!(

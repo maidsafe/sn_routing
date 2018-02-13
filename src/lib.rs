@@ -32,12 +32,12 @@
 //! is delivered only once.
 //!
 //! Section and group authorities are also addressed using a single `XorName`. The members are the
-//! nodes that are closest to that name. Sections contain a minimum number of nodes with the minimum
-//! value specified as a network-wide constant. Groups are of fixed size, defined as the above
-//! minimum section size. Since nodes are assigned their name by the network, this provides
-//! redundancy and resilience: a node has no control over which section or group authority it will
-//! be a member of, and without a majority in the section or group it cannot forge a message from
-//! there.
+//! nodes that are closest to that name. Groups are of fixed size specified as a
+//! network-wide constant. Sections contain a minimum number of nodes with the minimum
+//! value defined as the above group size. Since nodes are assigned their name by the network, this
+//! provides redundancy and resilience: a node has no control over which section or group authority
+//! it will be a member of, and without a majority in the section or group it cannot forge a message
+//! from there.
 //!
 //! The library also provides different types for the messages' data.
 //!
@@ -47,7 +47,7 @@
 //! A decentralised service based on the `routing` library uses `Client` to send requests to the
 //! network of nodes and receive responses.
 //!
-//! `Peer` is used to handle and send requests within that network, and to implement its
+//! `Node` is used to handle and send requests within that network, and to implement its
 //! functionality, e.g. storing and retrieving data, validating permissions, managing metadata, etc.
 //!
 //!
@@ -72,15 +72,15 @@
 //! `receiver`.
 //!
 //!
-//! ## Peer creation
+//! ## Node creation
 //!
 //! Creating a node looks even simpler:
 //!
 //! ```no_run
 //! # #![allow(unused)]
-//! use routing::Peer;
+//! use routing::Node;
 //!
-//! let node = Peer::builder().create().unwrap();
+//! let node = Node::builder().create().unwrap();
 //! ```
 //!
 //! Upon creation, the node will first connect to the network as a client. Once it has client
@@ -96,7 +96,7 @@
 //! # Sequence diagrams
 //!
 //! - [Bootstrapping](bootstrap.png)
-//! - [Churn (`NewPeer`)](new-node.png)
+//! - [Churn (`NewNode`)](new-node.png)
 //! - [Tunnel](tunnel.png)
 
 #![doc(html_logo_url =
@@ -165,8 +165,8 @@ mod event_stream;
 mod full_info;
 mod messages;
 mod message_filter;
+mod node;
 mod outbox;
-mod peer;
 mod peer_manager;
 mod public_info;
 mod rate_limiter;
@@ -205,8 +205,6 @@ pub mod mock_crust;
 /// SHA-3 type alias.
 pub mod sha3;
 
-/// Messaging infrastructure
-pub mod messaging;
 /// Structured Data Tag for Session Packet Type
 pub const TYPE_TAG_SESSION_PACKET: u64 = 0;
 /// Structured Data Tag for DNS Packet Type
@@ -220,7 +218,7 @@ pub const QUORUM_NUMERATOR: usize = 1;
 pub const QUORUM_DENOMINATOR: usize = 2;
 
 /// Default minimal section size.
-pub const MIN_SECTION_SIZE: usize = 8;
+pub const GROUP_SIZE: usize = 8;
 /// Key of an account data in the account packet
 pub const ACC_LOGIN_ENTRY_KEY: &[u8] = b"Login";
 
@@ -239,7 +237,7 @@ pub use full_info::FullInfo;
 pub use messages::{AccountInfo, Request, Response};
 #[cfg(feature = "use-mock-crust")]
 pub use mock_crust::crust;
-pub use peer::{NodeBuilder, Peer};
+pub use node::{Node, NodeBuilder};
 #[cfg(feature = "use-mock-crust")]
 pub use peer_manager::test_consts;
 pub use public_info::PublicInfo;

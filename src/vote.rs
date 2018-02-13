@@ -25,7 +25,7 @@ use public_info::PublicInfo;
 use rust_sodium::crypto::sign::{self, SecretKey, Signature};
 use serde::Serialize;
 
-/// A Vote is a peer's desire to initiate a network action or sub action. If there are quorum votes
+/// A Vote is a node's desire to initiate a network action or sub action. If there are quorum votes
 /// the action will happen. These are DIRECT MESSAGES and therefore do not require the `PubKey`.
 /// Signature is detached and is the signed payload.
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]

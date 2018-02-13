@@ -49,14 +49,14 @@ use xor_name::XorName;
 /// Total time (in seconds) to wait for `RelocateResponse`.
 const RELOCATE_TIMEOUT_SECS: u64 = 60 + RESOURCE_PROOF_DURATION_SECS;
 
-pub struct JoiningPeer {
+pub struct JoiningNode {
     action_sender: RoutingActionSender,
     ack_mgr: AckManager,
     crust_service: Service,
     full_info: FullInfo,
     /// Only held here to be passed eventually to the `Node` state.
     cache: Box<Cache>,
-    min_section_size: usize,
+    group_size: usize,
     proxy_pub_info: PublicInfo,
     /// The queue of routing messages addressed to us. These do not themselves need forwarding,
     /// although they may wrap a message which needs forwarding.
@@ -66,27 +66,27 @@ pub struct JoiningPeer {
     timer: Timer,
 }
 
-impl JoiningPeer {
+impl JoiningNode {
     #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
     pub fn from_bootstrapping(
         action_sender: RoutingActionSender,
         cache: Box<Cache>,
         crust_service: Service,
         full_info: FullInfo,
-        min_section_size: usize,
+        group_size: usize,
         proxy_pub_info: PublicInfo,
         stats: Stats,
         timer: Timer,
     ) -> Option<Self> {
         let duration = Duration::from_secs(RELOCATE_TIMEOUT_SECS);
         let relocation_timer_token = timer.schedule(duration);
-        let mut joining_node = JoiningPeer {
+        let mut joining_node = JoiningNode {
             action_sender: action_sender,
             ack_mgr: AckManager::new(),
             crust_service: crust_service,
             full_info: full_info,
             cache: cache,
-            min_section_size: min_section_size,
+            group_size: group_size,
             proxy_pub_info: proxy_pub_info,
             routing_msg_filter: RoutingMessageFilter::new(),
             stats: stats,
@@ -167,7 +167,7 @@ impl JoiningPeer {
                 target_state,
                 service,
                 new_full_info,
-                self.min_section_size,
+                self.group_size,
                 self.timer,
             )
         {
@@ -240,7 +240,7 @@ impl JoiningPeer {
         }
 
         let signed_msg = hop_msg.content;
-        signed_msg.check_integrity(self.min_section_size())?;
+        signed_msg.check_integrity(self.group_size())?;
 
         let routing_msg = signed_msg.routing_message();
         let in_authority = self.in_authority(&routing_msg.dst);
@@ -248,7 +248,7 @@ impl JoiningPeer {
             self.send_ack(routing_msg, 0);
         }
 
-        // Prevents us repeatedly handling identical messages sent by a malicious peer.
+        // Prevents us repeatedly handling identical messages sent by a malicious node.
         match self.routing_msg_filter.filter_incoming(
             routing_msg,
             hop_msg.route,
@@ -352,7 +352,7 @@ impl JoiningPeer {
     }
 }
 
-impl Base for JoiningPeer {
+impl Base for JoiningNode {
     fn crust_service(&self) -> &Service {
         &self.crust_service
     }
@@ -385,12 +385,12 @@ impl Base for JoiningPeer {
         &mut self.stats
     }
 
-    fn min_section_size(&self) -> usize {
-        self.min_section_size
+    fn group_size(&self) -> usize {
+        self.group_size
     }
 }
 
-impl Bootstrapped for JoiningPeer {
+impl Bootstrapped for JoiningNode {
     fn ack_mgr(&self) -> &AckManager {
         &self.ack_mgr
     }
@@ -464,7 +464,7 @@ impl Bootstrapped for JoiningPeer {
     }
 }
 
-impl Debug for JoiningPeer {
+impl Debug for JoiningNode {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter, "JoiningNode({}())", self.name())
     }

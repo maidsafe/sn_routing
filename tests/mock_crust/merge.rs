@@ -26,8 +26,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 // See docs for `create_connected_nodes_with_cache_until_split` for details on `prefix_lengths`.
 fn merge(prefix_lengths: Vec<usize>) {
-    let min_section_size = 8;
-    let network = Network::new(min_section_size, None);
+    let group_size = 8;
+    let network = Network::new(group_size, None);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split(&network, prefix_lengths, false);
     verify_invariant_for_all_nodes(&mut nodes);
@@ -97,8 +97,8 @@ fn merge_five_sections_into_one() {
 
 #[test]
 fn concurrent_merge() {
-    let min_section_size = 5;
-    let network = Network::new(min_section_size, None);
+    let group_size = 5;
+    let network = Network::new(group_size, None);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split(&network, vec![2, 2, 2, 2], false);
     verify_invariant_for_all_nodes(&mut nodes);
@@ -118,9 +118,9 @@ fn concurrent_merge() {
     }
 
     // Drop enough nodes (without polling) from each of the two sections to take them just below
-    // `min_section_size`.
+    // `group_size`.
     for (prefix, len) in &mut section_map {
-        while *len >= min_section_size {
+        while *len >= group_size {
             let index = unwrap!(nodes.iter().position(|node| {
                 node.routing_table().our_prefix() == prefix
             }));
@@ -141,9 +141,9 @@ fn concurrent_merge() {
 }
 
 #[test]
-fn merge_exclude_reconnecting_peers() {
-    let min_section_size = 3;
-    let network = Network::new(min_section_size, None);
+fn merge_exclude_reconnecting_nodes() {
+    let group_size = 3;
+    let network = Network::new(group_size, None);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1], false);
     verify_invariant_for_all_nodes(&mut nodes);
@@ -159,8 +159,8 @@ fn merge_exclude_reconnecting_peers() {
         })
         .count();
 
-    // Drop enough nodes (without polling) from that section to just below `min_section_size`.
-    while nodes_count >= min_section_size {
+    // Drop enough nodes (without polling) from that section to just below `group_size`.
+    while nodes_count >= group_size {
         let index = unwrap!(nodes.iter().position(|node| {
             node.routing_table().our_prefix() == &prefix_to_drop_from
         }));
@@ -170,7 +170,7 @@ fn merge_exclude_reconnecting_peers() {
     }
 
     // Poll the nodes, check the invariant and ensure the network has merged to `()`.
-    for _ in 0..min_section_size {
+    for _ in 0..group_size {
         poll_all(&mut nodes, &mut []);
         FakeClock::advance_time(ACK_TIMEOUT_SECS * 1000 + 1);
     }

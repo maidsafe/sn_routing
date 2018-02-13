@@ -32,9 +32,9 @@ const MAX_TUNNEL_CLIENT_PAIRS: usize = 40;
 /// cases, relaying messages between the two nodes in a way that is transparent to the rest of the
 /// routing logic.
 pub struct Tunnels {
-    /// Maps the peer we failed to directly connect to to the one that acts as a tunnel.
+    /// Maps the node we failed to directly connect to to the one that acts as a tunnel.
     tunnels: HashMap<PublicInfo, PublicInfo>,
-    /// Contains peers that are looking for a tunnel, with the lower ID first. Only once it sends
+    /// Contains nodes that are looking for a tunnel, with the lower ID first. Only once it sends
     /// a message to the latter via us, the pair is moved to `clients`.
     new_clients: MessageFilter<(PublicInfo, PublicInfo)>,
     /// Contains all pairs of names we act as a tunnel node for, with the lower ID first.
@@ -137,7 +137,7 @@ impl Tunnels {
         false
     }
 
-    /// Removes and the peer that is acting as a tunnel for the given peer, if any.
+    /// Removes and the node that is acting as a tunnel for the given node, if any.
     pub fn remove_tunnel_for(&mut self, dst_info: &PublicInfo) -> Option<PublicInfo> {
         self.tunnels.remove(dst_info)
     }
@@ -147,7 +147,7 @@ impl Tunnels {
         self.tunnels.values().any(|id| id == tunnel_info)
     }
 
-    /// Removes the given tunnel node and returns a list of all peers it was acting as a tunnel
+    /// Removes the given tunnel node and returns a list of all nodes it was acting as a tunnel
     /// for.
     pub fn remove_tunnel(&mut self, tunnel_info: &PublicInfo) -> Vec<PublicInfo> {
         let dst_infos = self.tunnels
@@ -161,7 +161,7 @@ impl Tunnels {
         dst_infos
     }
 
-    /// Returns the peer that is acting as a tunnel to the given peer, if any.
+    /// Returns the node that is acting as a tunnel to the given node, if any.
     pub fn tunnel_for(&self, dst_info: &PublicInfo) -> Option<&PublicInfo> {
         self.tunnels.get(dst_info)
     }
@@ -171,7 +171,7 @@ impl Tunnels {
         self.clients.len()
     }
 
-    /// Returns the number of peers we are indirectly connected to via a tunnel.
+    /// Returns the number of nodes we are indirectly connected to via a tunnel.
     pub fn tunnel_count(&self) -> usize {
         self.tunnels.len()
     }
@@ -199,7 +199,7 @@ mod tests {
         let their_info = *FullInfo::node_new(1u8).public_info();
         let mut tunnels: Tunnels = Default::default();
         assert_eq!(None, tunnels.tunnel_for(&our_info));
-        // Peer 1 is acting as a tunnel for peer 0.
+        // Node 1 is acting as a tunnel for node 0.
         let _fixme = tunnels.add(our_info, their_info);
         assert_eq!(Some(&their_info), tunnels.tunnel_for(&our_info));
         assert_eq!(None, tunnels.tunnel_for(&their_info));
@@ -216,12 +216,12 @@ mod tests {
         sorted_infos.sort();
 
         let mut tunnels: Tunnels = Default::default();
-        // Peer 0 is acting as a tunnel for 1 and 2, but not 3.
+        // Node 0 is acting as a tunnel for 1 and 2, but not 3.
         let _fixme = tunnels.add(sorted_infos[1], sorted_infos[0]);
         let _fixme = tunnels.add(sorted_infos[2], sorted_infos[0]);
         let _fixme = tunnels.add(sorted_infos[3], sorted_infos[4]);
-        let removed_peers = tunnels.remove_tunnel(&sorted_infos[0]).into_iter().sorted();
-        assert_eq!(&[sorted_infos[1], sorted_infos[2]], &*removed_peers);
+        let removed_nodes = tunnels.remove_tunnel(&sorted_infos[0]).into_iter().sorted();
+        assert_eq!(&[sorted_infos[1], sorted_infos[2]], &*removed_nodes);
         assert_eq!(None, tunnels.tunnel_for(&sorted_infos[1]));
         assert_eq!(None, tunnels.tunnel_for(&sorted_infos[2]));
         assert_eq!(Some(&sorted_infos[4]), tunnels.tunnel_for(&sorted_infos[3]));

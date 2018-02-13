@@ -1,197 +1,687 @@
 // Copyright 2015 MaidSafe.net limited.
 //
-// This SAFE Network Software is licensed to you under (1) the MaidSafe.net
-// Commercial License,
-// version 1.0 or later, or (2) The General Public License (GPL), version 3,
-// depending on which
+// This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
+// version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
 //
-// By contributing code to the SAFE Network Software, or to this project
-// generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.0 This,
-// along with the
-// Licenses can be found in the root directory of this project at LICENSE,
-// COPYING and CONTRIBUTOR.
+// By contributing code to the SAFE Network Software, or to this project generally, you agree to be
+// bound by the terms of the MaidSafe Contributor Agreement.  This, along with the Licenses can be
+// found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
-// Unless required by applicable law or agreed to in writing, the SAFE Network
-// Software distributed
-// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES
-// OR CONDITIONS OF ANY
+// Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
+// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
 // KIND, either express or implied.
 //
-// Please review the Licences for the specific language governing permissions
-// and limitations
+// Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use error::RoutingError;
-use proof::Proof;
+use GROUP_SIZE;
+use action::Action;
+use cache::{Cache, NullCache};
+use client_error::ClientError;
+use config_handler::{self, Config};
+use data::{EntryAction, ImmutableData, MutableData, PermissionSet, User, Value};
+use error::{InterfaceError, RoutingError};
+use event::Event;
+use event_stream::{EventStepper, EventStream};
+use full_info::FullInfo;
+use messages::{AccountInfo, CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, RELOCATE_PRIORITY, Request,
+               Response, UserMessage};
+use outbox::{EventBox, EventBuf};
 use public_info::PublicInfo;
-use rust_sodium::crypto::sign::PublicKey;
-use sha3::Digest256;
-use std::collections::HashSet;
-use vote::Vote;
+use routing_table::{Authority, RoutingTable};
+#[cfg(feature = "use-mock-crust")]
+use routing_table::Prefix;
+#[cfg(not(feature = "use-mock-crust"))]
+use rust_sodium;
+use rust_sodium::crypto::sign;
+use state_machine::{State, StateMachine};
+use states::{self, Bootstrapping, BootstrappingTargetState};
+use std::collections::{BTreeMap, BTreeSet};
+#[cfg(feature = "use-mock-crust")]
+use std::fmt::{self, Debug, Formatter};
+#[cfg(feature = "use-mock-crust")]
+use std::net::IpAddr;
+use std::sync::mpsc::{Receiver, RecvError, Sender, TryRecvError, channel};
+use types::{MessageId, RoutingActionSender};
+use xor_name::XorName;
 
+// Helper macro to implement request sending methods.
+macro_rules! impl_request {
+    ($method:ident, $message:ident { $($pname:ident : $ptype:ty),*, }, $priority:expr) => {
+        #[allow(missing_docs)]
+        #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
+        pub fn $method(&mut self,
+                       src: Authority,
+                       dst: Authority,
+                       $($pname: $ptype),*)
+                       -> Result<(), InterfaceError> {
+            let msg = UserMessage::Request(Request::$message {
+                $($pname: $pname),*,
+            });
 
-/// A `Block` *is* network consensus. It covers a group of nodes closest to an
-/// address and is signed
-/// With quorum valid votes, the consensus is then valid and therefor the
-/// `Block` however itsworth
-/// recodnising quorum is the weakest consensus as any differnce on network
-/// view will break it.
-/// Full group consensus is strongest, but likely unachievable most of the
-/// time, so a union
-/// can increase a single `Peer`s quorum valid `Block`
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
-pub struct Block {
-    payload: Digest256,
-    proofs: HashSet<Proof>,
+            self.send_action(src, dst, msg, $priority)
+        }
+    };
+
+    ($method:ident, $message:ident { $($pname:ident : $ptype:ty),* }, $priority:expr) => {
+        impl_request!($method, $message { $($pname:$ptype),*, }, $priority);
+    };
 }
 
-impl Block {
-    /// A new `Block` requires a valid vote and the `PublicKey` of the node who
-    /// sent us this.
-    /// For this reason The `Vote` will require a Direct Message from a `Peer`
-    /// to us.
-    #[allow(unused)]
-    pub fn new(vote: &Vote, pub_key: &PublicKey, age: u8) -> Result<Block, RoutingError> {
-        let peer_info = PublicInfo::new(age, pub_key);
-        if !vote.validate_signature(&peer_info) {
-            return Err(RoutingError::FailedSignature);
+// Helper macro to implement response sending methods.
+macro_rules! impl_response {
+    ($method:ident, $message:ident, $payload:ty, $priority:expr) => {
+        #[allow(missing_docs)]
+        pub fn $method(&mut self,
+                       src: Authority,
+                       dst: Authority,
+                       res: Result<$payload, ClientError>,
+                       msg_id: MessageId)
+                       -> Result<(), InterfaceError> {
+            let msg = UserMessage::Response(Response::$message {
+                res: res,
+                msg_id: msg_id,
+            });
+            self.send_action(src, dst, msg, $priority)
         }
-        let proof = Proof::new(&pub_key, age, vote)?;
-        let mut proofset = HashSet::<Proof>::new();
-        if !proofset.insert(proof) {
-            return Err(RoutingError::FailedSignature);
+    };
+}
+
+/// A builder to configure and create a new `Node`.
+pub struct NodeBuilder {
+    cache: Box<Cache>,
+    first: bool,
+    config: Option<Config>,
+}
+
+impl NodeBuilder {
+    /// Configures the node to use the given request cache.
+    pub fn cache(self, cache: Box<Cache>) -> NodeBuilder {
+        NodeBuilder { cache, ..self }
+    }
+
+    /// Configures the node to start a new network instead of joining an existing one.
+    pub fn first(self, first: bool) -> NodeBuilder {
+        NodeBuilder { first, ..self }
+    }
+
+    /// The node will use the configuration options from `config` rather than defaults.
+    pub fn config(self, config: Config) -> NodeBuilder {
+        NodeBuilder {
+            config: Some(config),
+            ..self
         }
-        Ok(Block {
-            payload: vote.payload().clone(),
-            proofs: proofset,
+    }
+
+    /// Creates new `Node`.
+    ///
+    /// It will automatically connect to the network in the same way a client does, but then
+    /// request a new name and integrate itself into the network using the new name.
+    ///
+    /// The initial `Node` object will have newly generated keys.
+    pub fn create(self) -> Result<Node, RoutingError> {
+        // If we're not in a test environment where we might want to manually seed the crypto RNG
+        // then seed randomly.
+        #[cfg(not(feature = "use-mock-crust"))]
+        let _dontcare = rust_sodium::init();
+
+        let mut ev_buffer = EventBuf::new();
+
+        // start the handler for routing without a restriction to become a full node
+        let (_, machine) = self.make_state_machine(&mut ev_buffer);
+        let (tx, rx) = channel();
+
+        Ok(Node {
+            interface_result_tx: tx,
+            interface_result_rx: rx,
+            machine: machine,
+            event_buffer: ev_buffer,
         })
     }
 
-    /// Add a proof from a peer when we know we have an existing `Block`
-    #[allow(unused)]
-    pub fn add_proof(&mut self, proof: Proof) -> Result<(), RoutingError> {
-        if !proof.validate_signature(&self.payload) {
-            return Err(RoutingError::FailedSignature);
-        }
-        if self.proofs.insert(proof) {
-            return Ok(());
-        }
-        Err(RoutingError::FailedSignature)
-    }
+    fn make_state_machine(self, outbox: &mut EventBox) -> (RoutingActionSender, StateMachine) {
+        let full_info = FullInfo::node_new(1u8);
+        let pub_info = *full_info.public_info();
+        let config = self.config.unwrap_or_else(config_handler::get_config);
+        let dev_config = config.dev.unwrap_or_default();
+        let group_size = dev_config.group_size.unwrap_or(GROUP_SIZE);
 
-    /// We may wish to remove a nodes `Proof` in cases where a `Peer` cannot be
-    /// considered valid
-    #[allow(unused)]
-    pub fn remove_proof(&mut self, pub_key: &PublicKey) {
-        self.proofs.retain(|proof| proof.key() != pub_key)
-    }
-
-    /// Ensure only the following `Peer`s are considered in the `Block`,
-    /// Prune any that are not in this set.
-    #[allow(unused)]
-    pub fn prune_proofs_except(&mut self, mut keys: &HashSet<&PublicKey>) {
-        self.proofs.retain(|proof| keys.contains(proof.key()));
-    }
-
-    /// Return numbes of `Proof`s
-    #[allow(unused)]
-    pub fn total_proofs(&self) -> usize {
-        self.proofs.iter().count()
-    }
-
-    /// Return numbes of `Proof`s
-    #[allow(unused)]
-    pub fn total_proofs_age(&self) -> usize {
-        self.proofs.iter().fold(0, |total, ref proof| {
-            total + usize::from(proof.age())
-        })
-    }
-
-    #[allow(unused)]
-    /// getter
-    pub fn proofs(&self) -> &HashSet<Proof> {
-        &self.proofs
-    }
-
-    #[allow(unused)]
-    /// getter
-    pub fn payload(&self) -> &Digest256 {
-        &self.payload
+        StateMachine::new(
+            move |action_sender, crust_service, timer, outbox2| if self.first {
+                if let Some(state) = states::Node::first(
+                    action_sender,
+                    self.cache,
+                    crust_service,
+                    full_info,
+                    group_size,
+                    timer,
+                )
+                {
+                    State::Node(state)
+                } else {
+                    State::Terminated
+                }
+            } else if !dev_config.allow_multiple_lan_nodes && crust_service.has_peers_on_lan() {
+                error!("More than one routing node found on LAN. Currently this is not supported.");
+                outbox2.send_event(Event::Terminate);
+                State::Terminated
+            } else {
+                Bootstrapping::new(
+                    action_sender,
+                    self.cache,
+                    BootstrappingTargetState::JoiningNode,
+                    crust_service,
+                    full_info,
+                    group_size,
+                    timer,
+                ).map_or(State::Terminated, State::Bootstrapping)
+            },
+            pub_info,
+            None,
+            outbox,
+        )
     }
 }
 
-#[cfg(test)]
+/// Interface for sending and receiving messages to and from other nodes, in the role of a full
+/// routing node.
+///
+/// A node is a part of the network that can route messages and be a member of a section or group
+/// authority. Its methods can be used to send requests and responses as either an individual
+/// `ManagedNode` or as a part of a section or group authority. Their `src` argument indicates that
+/// role, and can be any [`Authority`](enum.Authority.html) other than `Client`.
+pub struct Node {
+    interface_result_tx: Sender<Result<(), InterfaceError>>,
+    interface_result_rx: Receiver<Result<(), InterfaceError>>,
+    machine: StateMachine,
+    event_buffer: EventBuf,
+}
 
-mod tests {
-    use super::*;
-    use maidsafe_utilities::SeededRng;
-    use rand::Rng;
-    use rust_sodium;
-    use rust_sodium::crypto::sign;
-    use tiny_keccak::sha3_256;
-
-
-
-    #[test]
-    fn create_then_remove_add_proofs() {
-        let mut rng = SeededRng::thread_rng();
-        unwrap!(rust_sodium::init_with_rng(&mut rng));
-
-        let keys0 = sign::gen_keypair();
-        let keys1 = sign::gen_keypair();
-        let peer_info0 = PublicInfo::new(rng.gen_range(0, 255), keys0.0);
-        let peer_info1 = PublicInfo::new(rng.gen_range(0, 255), keys1.0);
-        let payload = sha3_256(b"1");
-        let vote0 = unwrap!(Vote::new(&keys0.1, payload));
-        assert!(vote0.validate_signature(&peer_info0));
-        let vote1 = unwrap!(Vote::new(&keys1.1, payload));
-        assert!(vote1.validate_signature(&peer_info1));
-        let proof0 = unwrap!(Proof::new(&keys0.0, rng.gen_range(0, 255), &vote0));
-        assert!(proof0.validate_signature(&payload));
-        let proof1 = unwrap!(Proof::new(&keys1.0, rng.gen_range(0, 255), &vote1));
-        assert!(proof1.validate_signature(&payload));
-        let mut b0 = unwrap!(Block::new(&vote0, &keys0.0, rng.gen_range(0, 255)));
-        assert!(proof0.validate_signature(&b0.payload));
-        assert!(proof1.validate_signature(&b0.payload));
-        assert!(b0.total_proofs() == 1);
-        b0.remove_proof(&keys0.0);
-        assert!(b0.total_proofs() == 0);
-        assert!(b0.add_proof(proof0).is_ok());
-        assert!(b0.total_proofs() == 1);
-        assert!(b0.add_proof(proof1).is_ok());
-        assert!(b0.total_proofs() == 2);
-        b0.remove_proof(&keys1.0);
-        assert!(b0.total_proofs() == 1);
+impl Node {
+    /// Creates a new builder to configure and create a `Node`.
+    pub fn builder() -> NodeBuilder {
+        NodeBuilder {
+            cache: Box::new(NullCache),
+            first: false,
+            config: None,
+        }
     }
 
-    #[test]
-    fn confirm_new_proof_batch() {
-        let mut rng = SeededRng::thread_rng();
-        unwrap!(rust_sodium::init_with_rng(&mut rng));
+    /// Send a `GetIData` request to `dst` to retrieve data from the network.
+    impl_request!(
+        send_get_idata_request,
+        GetIData {
+            name: XorName,
+            msg_id: MessageId,
+        },
+        RELOCATE_PRIORITY
+    );
 
-        let keys0 = sign::gen_keypair();
-        let keys1 = sign::gen_keypair();
-        let keys2 = sign::gen_keypair();
-        let payload = sha3_256(b"1");
-        let vote0 = unwrap!(Vote::new(&keys0.1, payload));
-        let vote1 = unwrap!(Vote::new(&keys1.1, payload));
-        let vote2 = unwrap!(Vote::new(&keys2.1, payload));
-        let proof1 = unwrap!(Proof::new(&keys1.0, rng.gen_range(0, 255), &vote1));
-        let proof2 = unwrap!(Proof::new(&keys2.0, rng.gen_range(0, 255), &vote2));
-        // So 3 votes all valid will be added to block
-        let mut b0 = unwrap!(Block::new(&vote0, &keys0.0, rng.gen_range(0, 255)));
-        assert!(b0.add_proof(proof1).is_ok());
-        assert!(b0.add_proof(proof2).is_ok());
-        assert!(b0.total_proofs() == 3);
-        // All added validly, so now only use 2 of these
-        let mut my_known_nodes = HashSet::<&PublicKey>::new();
-        assert!(my_known_nodes.insert(&keys0.0));
-        assert!(my_known_nodes.insert(&keys1.0));
-        b0.prune_proofs_except(&my_known_nodes);
-        assert!(b0.total_proofs() == 2);
+    /// Send a `PutIData` request to `dst` to store data on the network.
+    impl_request!(
+        send_put_idata_request,
+        PutIData {
+            data: ImmutableData,
+            msg_id: MessageId,
+        },
+        DEFAULT_PRIORITY
+    );
 
+    /// Send a `GetMData` request to `dst` to retrieve data from the network.
+    /// Note: responses to this request are unlikely to accumulate during churn.
+    impl_request!(
+        send_get_mdata_request,
+        GetMData {
+            name: XorName,
+            tag: u64,
+            msg_id: MessageId,
+        },
+        RELOCATE_PRIORITY
+    );
+
+    /// Send a `PutMData` request.
+    impl_request!(
+        send_put_mdata_request,
+        PutMData {
+            data: MutableData,
+            msg_id: MessageId,
+            requester: sign::PublicKey,
+        },
+        DEFAULT_PRIORITY
+    );
+
+    /// Send a `MutateMDataEntries` request.
+    impl_request!(send_mutate_mdata_entries_request,
+                  MutateMDataEntries {
+                      name: XorName,
+                      tag: u64,
+                      actions: BTreeMap<Vec<u8>, EntryAction>,
+                      msg_id: MessageId,
+                      requester: sign::PublicKey,
+                  },
+                  DEFAULT_PRIORITY);
+
+    /// Send a `GetMDataShell` request.
+    impl_request!(
+        send_get_mdata_shell_request,
+        GetMDataShell {
+            name: XorName,
+            tag: u64,
+            msg_id: MessageId,
+        },
+        RELOCATE_PRIORITY
+    );
+
+    /// Send a `GetMDataValue` request.
+    impl_request!(send_get_mdata_value_request,
+                  GetMDataValue {
+                      name: XorName,
+                      tag: u64,
+                      key: Vec<u8>,
+                      msg_id: MessageId,
+                  },
+                  RELOCATE_PRIORITY);
+
+    /// Send a `SetMDataUserPermissions` request.
+    impl_request!(
+        send_set_mdata_user_permissions_request,
+        SetMDataUserPermissions {
+            name: XorName,
+            tag: u64,
+            user: User,
+            permissions: PermissionSet,
+            version: u64,
+            msg_id: MessageId,
+            requester: sign::PublicKey,
+        },
+        DEFAULT_PRIORITY
+    );
+
+    /// Send a `DelMDataUserPermissions` request.
+    impl_request!(
+        send_del_mdata_user_permissions_request,
+        DelMDataUserPermissions {
+            name: XorName,
+            tag: u64,
+            user: User,
+            version: u64,
+            msg_id: MessageId,
+            requester: sign::PublicKey,
+        },
+        DEFAULT_PRIORITY
+    );
+
+    /// Send a `ChangeMDataOwner` request.
+    impl_request!(send_change_mdata_owner_request,
+                  ChangeMDataOwner {
+                      name: XorName,
+                      tag: u64,
+                      new_owners: BTreeSet<sign::PublicKey>,
+                      version: u64,
+                      msg_id: MessageId,
+                  }, DEFAULT_PRIORITY);
+
+    /// Send a `Refresh` request from `src` to `dst` to trigger churn.
+    pub fn send_refresh_request(
+        &mut self,
+        src: Authority,
+        dst: Authority,
+        content: Vec<u8>,
+        msg_id: MessageId,
+    ) -> Result<(), InterfaceError> {
+        let msg = UserMessage::Request(Request::Refresh(content, msg_id));
+        self.send_action(src, dst, msg, RELOCATE_PRIORITY)
     }
 
+    /// Respond to a `GetAccountInfo` request.
+    impl_response!(
+        send_get_account_info_response,
+        GetAccountInfo,
+        AccountInfo,
+        CLIENT_GET_PRIORITY
+    );
+
+    /// Respond to a `GetIData` request.
+    pub fn send_get_idata_response(
+        &mut self,
+        src: Authority,
+        dst: Authority,
+        res: Result<ImmutableData, ClientError>,
+        msg_id: MessageId,
+    ) -> Result<(), InterfaceError> {
+        let msg = UserMessage::Response(Response::GetIData {
+            res: res,
+            msg_id: msg_id,
+        });
+
+        let priority = relocate_priority(&dst);
+        self.send_action(src, dst, msg, priority)
+    }
+
+    /// Respond to a `PutIData` request.
+    impl_response!(send_put_idata_response, PutIData, (), DEFAULT_PRIORITY);
+
+    /// Respond to a `GetMData` request.
+    /// Note: this response is unlikely to accumulate during churn.
+    pub fn send_get_mdata_response(
+        &mut self,
+        src: Authority,
+        dst: Authority,
+        res: Result<MutableData, ClientError>,
+        msg_id: MessageId,
+    ) -> Result<(), InterfaceError> {
+        let msg = UserMessage::Response(Response::GetMData {
+            res: res,
+            msg_id: msg_id,
+        });
+
+        let priority = relocate_priority(&dst);
+        self.send_action(src, dst, msg, priority)
+    }
+
+    /// Respond to a `PutMData` request.
+    impl_response!(send_put_mdata_response, PutMData, (), DEFAULT_PRIORITY);
+
+    /// Respond to a `GetMDataVersion` request.
+    impl_response!(
+        send_get_mdata_version_response,
+        GetMDataVersion,
+        u64,
+        CLIENT_GET_PRIORITY
+    );
+
+    /// Respond to a `GetMDataShell` request.
+    pub fn send_get_mdata_shell_response(
+        &mut self,
+        src: Authority,
+        dst: Authority,
+        res: Result<MutableData, ClientError>,
+        msg_id: MessageId,
+    ) -> Result<(), InterfaceError> {
+        let msg = UserMessage::Response(Response::GetMDataShell {
+            res: res,
+            msg_id: msg_id,
+        });
+
+        let priority = relocate_priority(&dst);
+        self.send_action(src, dst, msg, priority)
+    }
+
+    /// Respond to a `ListMDataEntries` request.
+    /// Note: this response is unlikely to accumulate during churn.
+    impl_response!(
+        send_list_mdata_entries_response,
+        ListMDataEntries,
+        BTreeMap<Vec<u8>, Value>,
+        CLIENT_GET_PRIORITY
+    );
+
+    /// Respond to a `ListMDataKeys` request.
+    /// Note: this response is unlikely to accumulate during churn.
+    impl_response!(
+        send_list_mdata_keys_response,
+        ListMDataKeys,
+        BTreeSet<Vec<u8>>,
+        CLIENT_GET_PRIORITY
+    );
+
+    /// Respond to a `ListMDataValues` request.
+    /// Note: this response is unlikely to accumulate during churn.
+    impl_response!(
+        send_list_mdata_values_response,
+        ListMDataValues,
+        Vec<Value>,
+        CLIENT_GET_PRIORITY
+    );
+
+    /// Respond to a `GetMDataValue` request.
+    pub fn send_get_mdata_value_response(
+        &mut self,
+        src: Authority,
+        dst: Authority,
+        res: Result<Value, ClientError>,
+        msg_id: MessageId,
+    ) -> Result<(), InterfaceError> {
+        let msg = UserMessage::Response(Response::GetMDataValue {
+            res: res,
+            msg_id: msg_id,
+        });
+
+        let priority = relocate_priority(&dst);
+        self.send_action(src, dst, msg, priority)
+    }
+
+    /// Respond to a `MutateMDataEntries` request.
+    impl_response!(
+        send_mutate_mdata_entries_response,
+        MutateMDataEntries,
+        (),
+        DEFAULT_PRIORITY
+    );
+
+    /// Respond to a `ListMDataPermissions` request.
+    impl_response!(send_list_mdata_permissions_response,
+                   ListMDataPermissions,
+                   BTreeMap<User, PermissionSet>,
+                   CLIENT_GET_PRIORITY);
+
+    /// Respond to a `ListMDataUserPermissions` request.
+    impl_response!(
+        send_list_mdata_user_permissions_response,
+        ListMDataUserPermissions,
+        PermissionSet,
+        CLIENT_GET_PRIORITY
+    );
+
+    /// Respond to a `SetMDataUserPermissions` request.
+    impl_response!(
+        send_set_mdata_user_permissions_response,
+        SetMDataUserPermissions,
+        (),
+        DEFAULT_PRIORITY
+    );
+
+    /// Respond to a `ListAuthKeysAndVersion` request.
+    impl_response!(
+        send_list_auth_keys_and_version_response,
+        ListAuthKeysAndVersion,
+        (BTreeSet<sign::PublicKey>, u64),
+        CLIENT_GET_PRIORITY
+    );
+
+    /// Respond to a `InsAuthKey` request.
+    impl_response!(send_ins_auth_key_response, InsAuthKey, (), DEFAULT_PRIORITY);
+
+    /// Respond to a `DelAuthKey` request.
+    impl_response!(send_del_auth_key_response, DelAuthKey, (), DEFAULT_PRIORITY);
+
+    /// Respond to a `DelMDataUserPermissions` request.
+    impl_response!(
+        send_del_mdata_user_permissions_response,
+        DelMDataUserPermissions,
+        (),
+        DEFAULT_PRIORITY
+    );
+
+    /// Respond to a `ChangeMDataOwner` request.
+    impl_response!(
+        send_change_mdata_owner_response,
+        ChangeMDataOwner,
+        (),
+        DEFAULT_PRIORITY
+    );
+
+    /// Returns the first `count` names of the nodes in the routing table which are closest
+    /// to the given one.
+    pub fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
+        self.machine.close_group(name, count)
+    }
+
+    /// Returns the `PublicInfo` of this node.
+    pub fn id(&self) -> Result<PublicInfo, RoutingError> {
+        self.machine.id().ok_or(RoutingError::Terminated)
+    }
+
+    /// Returns the routing table of this node.
+    pub fn routing_table(&self) -> Result<&RoutingTable, RoutingError> {
+        self.machine.routing_table().ok_or(RoutingError::Terminated)
+    }
+
+    /// Returns the group size this vault is using.
+    pub fn group_size(&self) -> usize {
+        self.machine.group_size()
+    }
+
+    fn send_action(
+        &mut self,
+        src: Authority,
+        dst: Authority,
+        user_msg: UserMessage,
+        priority: u8,
+    ) -> Result<(), InterfaceError> {
+        // Make sure the state machine has processed any outstanding crust events.
+        let _dontcare = self.poll();
+
+        let action = Action::NodeSendMessage {
+            src: src,
+            dst: dst,
+            content: user_msg,
+            priority: priority,
+            result_tx: self.interface_result_tx.clone(),
+        };
+
+        let transition = self.machine.current_mut().handle_action(
+            action,
+            &mut self.event_buffer,
+        );
+        self.machine.apply_transition(
+            transition,
+            &mut self.event_buffer,
+        );
+        self.interface_result_rx.recv()?
+    }
+}
+
+impl EventStepper for Node {
+    type Item = Event;
+
+    fn produce_events(&mut self) -> Result<(), RecvError> {
+        self.machine.step(&mut self.event_buffer)
+    }
+
+    fn try_produce_events(&mut self) -> Result<(), TryRecvError> {
+        self.machine.try_step(&mut self.event_buffer)
+    }
+
+    fn pop_item(&mut self) -> Option<Event> {
+        self.event_buffer.take_first()
+    }
+}
+
+#[cfg(feature = "use-mock-crust")]
+impl Node {
+    /// Purge invalid routing entries.
+    pub fn purge_invalid_rt_entry(&mut self) {
+        self.machine.current_mut().purge_invalid_rt_entry()
+    }
+
+    /// Check whether this node acts as a tunnel node between `client_1` and `client_2`.
+    pub fn has_tunnel_clients(&self, client_1: PublicInfo, client_2: PublicInfo) -> bool {
+        self.machine.current().has_tunnel_clients(
+            client_1,
+            client_2,
+        )
+    }
+
+    /// Returns a quorum of signatures for the neighbouring section's list or `None` if we don't
+    /// have one
+    pub fn section_list_signatures(
+        &self,
+        prefix: Prefix,
+    ) -> Option<BTreeMap<PublicInfo, sign::Signature>> {
+        self.machine.current().section_list_signatures(prefix)
+    }
+
+    /// Returns the list  of banned clients' IPs held by this node.
+    pub fn get_banned_client_ips(&self) -> BTreeSet<IpAddr> {
+        self.machine.current().get_banned_client_ips()
+    }
+
+    /// Returns whether the current state is `Node`.
+    pub fn is_node(&self) -> bool {
+        if let State::Node(..) = *self.machine.current() {
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Sets a name to be used when the next node relocation request is received by this node.
+    pub fn set_next_relocation_dst(&mut self, dst: XorName) {
+        self.machine.current_mut().set_next_relocation_dst(
+            Some(dst),
+        )
+    }
+
+    /// Sets an interval to be used when a node is required to generate a new name.
+    pub fn set_next_relocation_interval(&mut self, interval: (XorName, XorName)) {
+        self.machine.current_mut().set_next_relocation_interval(
+            interval,
+        )
+    }
+
+    /// Clears the name to be used when the next node relocation request is received by this node so
+    /// the normal process is followed to calculate the relocated name.
+    pub fn clear_next_relocation_dst(&mut self) {
+        self.machine.current_mut().set_next_relocation_dst(None)
+    }
+
+    /// Normalisation of routing connection means converting the
+    /// `NodeState::Routing(RoutingConnnection::Proxy)` or
+    /// `NodeState::Routing(RoutingConnnection::JoiningNode)` to
+    /// `NodeState::Routing(RoutingConnection::Direct` after `JOINING_NODE_TIMEOUT_SECS` seconds
+    /// have elapsed for the peer with whom we have the connection.
+    pub fn has_unnormalised_routing_conn(&self, excludes: &BTreeSet<XorName>) -> bool {
+        self.machine.current().has_unnormalised_routing_conn(
+            excludes,
+        )
+    }
+
+    /// Returns the number of received and sent user message parts.
+    pub fn get_user_msg_parts_count(&self) -> u64 {
+        self.machine.current().get_user_msg_parts_count()
+    }
+
+    /// Get the rate limiter's bandwidth usage map.
+    pub fn get_clients_usage(&self) -> BTreeMap<IpAddr, u64> {
+        unwrap!(self.machine.current().get_clients_usage())
+    }
+}
+
+#[cfg(feature = "use-mock-crust")]
+impl Debug for Node {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        self.machine.fmt(formatter)
+    }
+}
+
+impl Drop for Node {
+    fn drop(&mut self) {
+        let _ = self.machine.current_mut().handle_action(
+            Action::Terminate,
+            &mut self.event_buffer,
+        );
+        let _ = self.event_buffer.take_all();
+    }
+}
+
+// Priority of messages that might be used during relocation/churn, depending
+// on the destination.
+fn relocate_priority(dst: &Authority) -> u8 {
+    if dst.is_client() {
+        CLIENT_GET_PRIORITY
+    } else {
+        RELOCATE_PRIORITY
+    }
 }

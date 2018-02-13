@@ -34,8 +34,8 @@ pub struct DevConfig {
     pub disable_client_rate_limiter: bool,
     /// Disables requirement to provide a resource proof to bootstrap
     pub disable_resource_proof: bool,
-    /// Overrides default `MIN_SECTION_SIZE`
-    pub min_section_size: Option<usize>,
+    /// Overrides default `GROUP_SIZE`
+    pub group_size: Option<usize>,
 }
 
 /// Reads the routing config file and returns it or a default if this fails
@@ -80,8 +80,8 @@ mod test {
 
         let dev_config = unwrap!(config.dev, "{} is missing `dev` field.", path.display());
         assert!(
-            dev_config.min_section_size.is_some(),
-            "{} is missing `dev.min_section_size` field.",
+            dev_config.group_size.is_some(),
+            "{} is missing `dev.group_size` field.",
             path.display()
         );
     }

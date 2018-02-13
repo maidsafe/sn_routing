@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use super::{Client, JoiningPeer, Peer};
+use super::{Client, JoiningNode, Node};
 use super::common::Base;
 use {CrustEvent, Service};
 use action::Action;
@@ -47,7 +47,7 @@ const BOOTSTRAP_TIMEOUT_SECS: u64 = 20;
 #[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
 pub enum TargetState {
     Client { msg_expiry_dur: Duration },
-    JoiningPeer,
+    JoiningNode,
     Node {
         old_full_info: FullInfo,
         our_section: (Prefix, BTreeSet<PublicInfo>),
@@ -63,7 +63,7 @@ pub struct Bootstrapping {
     target_state: TargetState,
     crust_service: Service,
     full_info: FullInfo,
-    min_section_size: usize,
+    group_size: usize,
     stats: Stats,
     timer: Timer,
 }
@@ -75,14 +75,14 @@ impl Bootstrapping {
         target_state: TargetState,
         mut crust_service: Service,
         full_info: FullInfo,
-        min_section_size: usize,
+        group_size: usize,
         timer: Timer,
     ) -> Option<Self> {
         match target_state {
             TargetState::Client { .. } => {
                 let _ = crust_service.start_bootstrap(HashSet::new(), CrustUser::Client);
             }
-            TargetState::JoiningPeer |
+            TargetState::JoiningNode |
             TargetState::Node { .. } => {
                 if let Err(error) = crust_service.start_listening_tcp() {
                     error!("Failed to start listening: {:?}", error);
@@ -98,7 +98,7 @@ impl Bootstrapping {
             target_state: target_state,
             crust_service: crust_service,
             full_info: full_info,
-            min_section_size: min_section_size,
+            group_size: group_size,
             stats: Stats::new(),
             timer: timer,
         })
@@ -185,21 +185,21 @@ impl Bootstrapping {
             TargetState::Client { msg_expiry_dur } => State::Client(Client::from_bootstrapping(
                 self.crust_service,
                 self.full_info,
-                self.min_section_size,
+                self.group_size,
                 proxy_public_info,
                 self.stats,
                 self.timer,
                 msg_expiry_dur,
                 outbox,
             )),
-            TargetState::JoiningPeer => {
+            TargetState::JoiningNode => {
                 if let Some(joining_node) =
-                    JoiningPeer::from_bootstrapping(
+                    JoiningNode::from_bootstrapping(
                         self.action_sender,
                         self.cache,
                         self.crust_service,
                         self.full_info,
-                        self.min_section_size,
+                        self.group_size,
                         proxy_public_info,
                         self.stats,
                         self.timer,
@@ -215,14 +215,14 @@ impl Bootstrapping {
                 old_full_info,
                 our_section,
                 ..
-            } => State::Peer(Peer::from_bootstrapping(
+            } => State::Node(Node::from_bootstrapping(
                 (our_section.0, &our_section.1),
                 self.action_sender,
                 self.cache,
                 self.crust_service,
                 old_full_info,
                 self.full_info,
-                self.min_section_size,
+                self.group_size,
                 proxy_public_info,
                 self.stats,
                 self.timer,
@@ -233,7 +233,7 @@ impl Bootstrapping {
     fn client_restriction(&self) -> bool {
         match self.target_state {
             TargetState::Client { .. } => true,
-            TargetState::JoiningPeer |
+            TargetState::JoiningNode |
             TargetState::Node { .. } => false,
         }
     }
@@ -266,13 +266,13 @@ impl Bootstrapping {
             }
             Some((bootstrap_info, _)) if bootstrap_info == pub_info => {
                 warn!(
-                    "{:?} Got more than one BootstrapConnect for peer {}.",
+                    "{:?} Got more than one BootstrapConnect for node {}.",
                     self,
                     pub_info
                 );
             }
             _ => {
-                self.disconnect_peer(&pub_info);
+                self.disconnect_node(&pub_info);
             }
         }
 
@@ -349,7 +349,7 @@ impl Bootstrapping {
         self.send_message(&pub_info, Message::Direct(direct_message));
     }
 
-    fn disconnect_peer(&mut self, pub_info: &PublicInfo) {
+    fn disconnect_node(&mut self, pub_info: &PublicInfo) {
         debug!(
             "{:?} Disconnecting {}. Calling crust::Service::disconnect.",
             self,
@@ -396,8 +396,8 @@ impl Base for Bootstrapping {
         false
     }
 
-    fn min_section_size(&self) -> usize {
-        self.min_section_size
+    fn group_size(&self) -> usize {
+        self.group_size
     }
 }
 
@@ -424,8 +424,8 @@ mod tests {
     // Check that losing our proxy connection while in the `Bootstrapping` state doesn't stall and
     // instead triggers a re-bootstrap attempt..
     fn lose_proxy_connection() {
-        let min_section_size = 8;
-        let network = Network::new(min_section_size, None);
+        let group_size = 8;
+        let network = Network::new(group_size, None);
 
         // Start a bare-bones Crust service, set it to listen on TCP and to accept bootstrap
         // connections.
@@ -463,7 +463,7 @@ mod tests {
                         TargetState::Client { msg_expiry_dur: Duration::from_secs(60) },
                         crust_service,
                         full_info,
-                        min_section_size,
+                        group_size,
                         timer,
                     ).map_or(State::Terminated, State::Bootstrapping)
                 },

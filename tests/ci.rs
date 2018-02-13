@@ -48,8 +48,8 @@ use itertools::Itertools;
 use maidsafe_utilities::SeededRng;
 use maidsafe_utilities::thread::{self, Joiner};
 use rand::Rng;
-use routing::{Authority, Client, ClientError, Event, EventStream, FullInfo, MIN_SECTION_SIZE,
-              MessageId, MutableData, Peer, Request, Response, Value, XorName};
+use routing::{Authority, Client, ClientError, Event, EventStream, FullInfo, GROUP_SIZE, MessageId,
+              MutableData, Node, Request, Response, Value, XorName};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 #[cfg(target_os = "macos")]
 use std::io;
@@ -100,13 +100,13 @@ fn recv_with_timeout(
 struct TestEvent(usize, Event);
 
 struct TestNode {
-    node: Peer,
+    node: Node,
 }
 
 impl TestNode {
     // If `index` is `0`, this will be treated as the first node of the network.
     fn new(index: usize) -> Self {
-        TestNode { node: unwrap!(Peer::builder().first(index == 0).create()) }
+        TestNode { node: unwrap!(Node::builder().first(index == 0).create()) }
     }
 
     fn name(&self) -> XorName {
@@ -226,7 +226,7 @@ fn wait_for_nodes_to_connect(
 
                 let k = nodes.len();
                 let all_events_received = (0..k).map(|i| connection_counts[i]).all(|n| {
-                    n >= k - 1 || n >= MIN_SECTION_SIZE
+                    n >= k - 1 || n >= GROUP_SIZE
                 });
                 if all_events_received {
                     break;
@@ -300,7 +300,7 @@ fn closest_nodes(node_names: &[XorName], target: &XorName) -> Vec<XorName> {
         .iter()
         .sorted_by(|a, b| target.cmp_distance(a, b))
         .into_iter()
-        .take(MIN_SECTION_SIZE)
+        .take(GROUP_SIZE)
         .cloned()
         .collect()
 }
@@ -309,7 +309,7 @@ fn closest_nodes(node_names: &[XorName], target: &XorName) -> Vec<XorName> {
 #[cfg_attr(feature = "cargo-clippy", allow(cyclomatic_complexity))]
 fn core() {
     let (event_sender, event_receiver) = mpsc::channel();
-    let mut nodes = create_connected_nodes(MIN_SECTION_SIZE + 1, &event_sender, &event_receiver);
+    let mut nodes = create_connected_nodes(GROUP_SIZE + 1, &event_sender, &event_receiver);
     let mut rng = SeededRng::new();
 
     {
@@ -603,7 +603,7 @@ fn core() {
                 }
                 TestEvent(index, Event::Request { request, src, dst }) => {
                     if let Request::PutMData { msg_id, .. } = request {
-                        if 2 * (index + 1) < MIN_SECTION_SIZE {
+                        if 2 * (index + 1) < GROUP_SIZE {
                             unwrap!(nodes[index].node.send_put_mdata_response(
                                 dst,
                                 src,

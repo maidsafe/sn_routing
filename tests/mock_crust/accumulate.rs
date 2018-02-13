@@ -24,8 +24,8 @@ use std::sync::mpsc;
 
 #[test]
 fn messages_accumulate_with_quorum() {
-    let min_section_size = 8;
-    let network = Network::new(min_section_size, None);
+    let group_size = 8;
+    let network = Network::new(group_size, None);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, 15);
 
@@ -43,8 +43,8 @@ fn messages_accumulate_with_quorum() {
 
     let dst = Authority::ManagedNode(nodes[0].name()); // The closest node.
     // The smallest number such that
-    // `quorum * QUORUM_DENOMINATOR > min_section_size * QUORUM_NUMERATOR`:
-    let quorum = 1 + (min_section_size * QUORUM_NUMERATOR) / QUORUM_DENOMINATOR;
+    // `quorum * QUORUM_DENOMINATOR > group_size * QUORUM_NUMERATOR`:
+    let quorum = 1 + (group_size * QUORUM_NUMERATOR) / QUORUM_DENOMINATOR;
 
     // Send a message from the section `src` to the node `dst`.
     // Only the `quorum`-th sender should cause accumulation and a

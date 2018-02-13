@@ -40,20 +40,20 @@ use routing::mock_crust::{Endpoint, Network};
 use routing::test_consts::JOINING_NODE_TIMEOUT_SECS;
 use std::collections::BTreeSet;
 
-pub const MIN_SECTION_SIZE: usize = 8;
+pub const GROUP_SIZE: usize = 8;
 
 // -----  Miscellaneous tests below  -----
 
 fn test_nodes(percentage_size: usize) {
-    let size = MIN_SECTION_SIZE * percentage_size / 100;
-    let network = Network::new(MIN_SECTION_SIZE, None);
+    let size = GROUP_SIZE * percentage_size / 100;
+    let network = Network::new(GROUP_SIZE, None);
     let mut nodes = create_connected_nodes(&network, size);
     verify_invariant_for_all_nodes(&mut nodes);
 }
 
 #[test]
 fn disconnect_on_rebootstrap() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
+    let network = Network::new(GROUP_SIZE, None);
     let mut nodes = create_connected_nodes(&network, 2);
     // Try to bootstrap to another than the first node. With network size 2, this should fail.
     let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[1].handle.endpoint()]);
@@ -70,31 +70,31 @@ fn disconnect_on_rebootstrap() {
 }
 
 #[test]
-fn less_than_section_size_nodes() {
+fn less_than_group_size_nodes() {
     test_nodes(38)
 }
 
 #[test]
-fn equal_section_size_nodes() {
+fn equal_to_group_size_nodes() {
     test_nodes(100);
 }
 
 #[test]
-fn more_than_section_size_nodes() {
+fn more_than_group_size_nodes() {
     test_nodes(600);
 }
 
 #[test]
 fn client_connects_to_nodes() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
-    let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE + 1);
+    let network = Network::new(GROUP_SIZE, None);
+    let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
     let _ = create_connected_clients(&network, &mut nodes, 1);
 }
 
 #[test]
 fn node_joins_in_front() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
-    let mut nodes = create_connected_nodes(&network, 2 * MIN_SECTION_SIZE);
+    let network = Network::new(GROUP_SIZE, None);
+    let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
     let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
     nodes.insert(
         0,
@@ -110,8 +110,8 @@ fn node_joins_in_front() {
 
 #[test]
 fn multiple_joining_nodes() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
-    let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE);
+    let network = Network::new(GROUP_SIZE, None);
+    let mut nodes = create_connected_nodes(&network, GROUP_SIZE);
     let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
 
     while nodes.len() < 40 {
@@ -144,7 +144,7 @@ fn multiple_joining_nodes() {
 #[test]
 fn simultaneous_joining_nodes() {
     // Create a network with two sections:
-    let network = Network::new(MIN_SECTION_SIZE, None);
+    let network = Network::new(GROUP_SIZE, None);
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1], false);
     let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
 
@@ -185,8 +185,8 @@ fn simultaneous_joining_nodes() {
 }
 
 #[test]
-fn check_close_names_for_min_section_size_nodes() {
-    let nodes = create_connected_nodes(&Network::new(MIN_SECTION_SIZE, None), MIN_SECTION_SIZE);
+fn check_close_names_for_group_size_nodes() {
+    let nodes = create_connected_nodes(&Network::new(GROUP_SIZE, None), GROUP_SIZE);
     let close_sections_complete = nodes.iter().all(|n| {
         nodes.iter().all(|m| m.close_names().contains(&n.name()))
     });

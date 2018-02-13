@@ -27,23 +27,23 @@ use std::iter;
 use vote::Vote;
 
 #[allow(unused)]
-pub struct PeersAndAge {
-    peers: usize,
+pub struct NodesAndAge {
+    nodes: usize,
     age: usize,
 }
 
 #[allow(unused)]
-impl PeersAndAge {
-    pub fn new(peers: usize, age: usize) -> PeersAndAge {
-        PeersAndAge {
-            peers: peers,
+impl NodesAndAge {
+    pub fn new(nodes: usize, age: usize) -> NodesAndAge {
+        NodesAndAge {
+            nodes: nodes,
             age: age,
         }
     }
 
     #[allow(unused)]
-    pub fn peers(&self) -> usize {
-        self.peers
+    pub fn nodes(&self) -> usize {
+        self.nodes
     }
 
     #[allow(unused)]
@@ -65,7 +65,7 @@ pub enum BlockState {
 /// With quorum valid votes, the consensus is then valid and therefore the `Block` however it's
 /// worth recognising quorum is the weakest consensus as any difference on network view will break
 /// it. Full group consensus is strongest, but likely unachievable most of the time, so a union
-/// can increase a single `Peer`s quorum valid `Block`.
+/// can increase a single `Node`s quorum valid `Block`.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Ord, PartialOrd, Clone)]
 pub struct Block<T> {
     payload: T,
@@ -73,8 +73,8 @@ pub struct Block<T> {
 }
 
 impl<T: Serialize + Clone> Block<T> {
-    /// A new `Block` requires a valid vote and the `PublicInfo` of the peer who sent us this. For
-    /// this reason the `Vote` will require a `DirectMessage` from a peer to us.
+    /// A new `Block` requires a valid vote and the `PublicInfo` of the node who sent us this. For
+    /// this reason the `Vote` will require a `DirectMessage` from a node to us.
     pub fn new(vote: &Vote<T>, peer_info: &PublicInfo) -> Result<Block<T>, RoutingError> {
         Ok(Block {
             payload: vote.payload().clone(),
@@ -82,7 +82,7 @@ impl<T: Serialize + Clone> Block<T> {
         })
     }
 
-    /// Add a vote from a peer when we know we have an existing `Block`.
+    /// Add a vote from a node when we know we have an existing `Block`.
     pub fn add_vote(
         &mut self,
         vote: &Vote<T>,
@@ -93,7 +93,7 @@ impl<T: Serialize + Clone> Block<T> {
         self.insert_proof(proof, valid_voters)
     }
 
-    /// Add a proof from a peer when we know we have an existing `Block`.
+    /// Add a proof from a node when we know we have an existing `Block`.
     pub fn add_proof(
         &mut self,
         proof: Proof,
@@ -107,16 +107,16 @@ impl<T: Serialize + Clone> Block<T> {
     }
 
     pub fn get_peer_infos(&self) -> BTreeSet<PublicInfo> {
-        let mut peers = BTreeSet::new();
+        let mut peer_infos = BTreeSet::new();
         for proof in &self.proofs {
-            let _ = peers.insert(proof.peer_info().clone());
+            let _ = peer_infos.insert(proof.peer_info().clone());
         }
-        peers
+        peer_infos
     }
 
     /// Return number of `Proof`s.
     pub fn num_proofs(&self) -> usize {
-        self.proofs.iter().count()
+        self.proofs.len()
     }
 
     /// Return total age of all of signatories.

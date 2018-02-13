@@ -33,7 +33,7 @@ pub trait Base: Debug {
     fn full_info(&self) -> &FullInfo;
     fn stats(&mut self) -> &mut Stats;
     fn in_authority(&self, auth: &Authority) -> bool;
-    fn min_section_size(&self) -> usize;
+    fn group_size(&self) -> usize;
 
     fn handle_lost_peer(&mut self, _pub_info: PublicInfo, _outbox: &mut EventBox) -> Transition {
         Transition::Stay

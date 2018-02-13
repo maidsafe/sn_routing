@@ -18,7 +18,7 @@
 // FIXME: remove when this module is finished
 #![allow(dead_code)]
 
-use block::{Block, PeersAndAge};
+use block::{Block, NodesAndAge};
 use error::RoutingError;
 use fs2::FileExt;
 use maidsafe_utilities::serialisation;
@@ -39,7 +39,7 @@ pub struct DataChain {
     blocks: Vec<Block<SectionState>>,
     group_size: usize,
     path: Option<PathBuf>,
-    valid_peers: Vec<Block<SectionState>>, // save to aid network catastrophic failure and restart.
+    valid_nodes: Vec<Block<SectionState>>, // save to aid network catastrophic failure and restart.
     data: Vec<Block<DataIdentifier>>,
 }
 
@@ -59,7 +59,7 @@ impl DataChain {
             blocks: Vec::<Block<SectionState>>::default(),
             group_size: group_size,
             path: Some(path),
-            valid_peers: Vec::<Block<SectionState>>::default(),
+            valid_nodes: Vec::<Block<SectionState>>::default(),
             data: Vec::<Block<DataIdentifier>>::default(),
         })
     }
@@ -85,7 +85,7 @@ impl DataChain {
             blocks: blocks,
             group_size: group_size,
             path: None,
-            valid_peers: Vec::<Block<SectionState>>::default(),
+            valid_nodes: Vec::<Block<SectionState>>::default(),
             data: Vec::<Block<DataIdentifier>>::default(),
         }
     }
@@ -129,7 +129,7 @@ impl DataChain {
         &mut self,
         vote: &Vote<SectionState>,
         peer_info: &PublicInfo,
-    ) -> Option<(SectionState, PeersAndAge)> {
+    ) -> Option<(SectionState, NodesAndAge)> {
         if !vote.validate_signature(peer_info) {
             return None;
         }
@@ -145,7 +145,7 @@ impl DataChain {
                 let _ = blk.add_proof(vote.proof(peer_info).unwrap(), &BTreeSet::new())
                     .unwrap();
 
-                let p_age = PeersAndAge::new(blk.num_proofs(), blk.total_age());
+                let p_age = NodesAndAge::new(blk.num_proofs(), blk.total_age());
                 return Some((blk.payload().clone(), p_age));
             }
         }
@@ -153,7 +153,7 @@ impl DataChain {
             self.blocks.push(blk.clone());
             return Some((
                 blk.payload().clone(),
-                PeersAndAge::new(1, usize::from(peer_info.age())),
+                NodesAndAge::new(1, usize::from(peer_info.age())),
             ));
         }
         info!("Could not find any block for this proof");
@@ -175,11 +175,11 @@ impl DataChain {
                 } else {
                     prev = blk;
                     // TODO check `NetworkEvent` as we may need to add to prev or remove a possible
-                    // voter we can probably use a CurrentPeers / SectionState list here to be more
+                    // voter we can probably use a CurrentNodes / SectionState list here to be more
                     // specific. Also which `NetworkEvent`s can follow a sequence, i.e. a lost must
-                    // be followed with a promote if its an elder or a merge if peers drops to group
+                    // be followed with a promote if its an elder or a merge if nodes drops to group
                     // size. Most events will follow a sequence that is allowed. if blocks are out
-                    // of sequence when net is running a peer should sequence them properly. Here we
+                    // of sequence when net is running a node should sequence them properly. Here we
                     // would fail the chain.
                 }
             }

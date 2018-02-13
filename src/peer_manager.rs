@@ -99,16 +99,16 @@ impl error::Error for Error {
     }
 }
 
-/// The type of a connection with a peer in our routing table.
+/// The type of a connection with a node in our routing table.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RoutingConnection {
-    /// We are/were the peer's proxy node.
+    /// We are/were the node's proxy node.
     JoiningNode(Instant),
-    /// The peer is/was our proxy node.
+    /// The node is/was our proxy node.
     Proxy(Instant),
-    /// The peer is directly connected to us.
+    /// The node is directly connected to us.
     Direct,
-    /// The peer is connected via a tunnel.
+    /// The node is connected via a tunnel.
     Tunnel,
 }
 
@@ -164,11 +164,11 @@ pub enum PeerState {
     },
     /// We are the proxy for the joining node
     JoiningNode,
-    /// We are approved and routing to that peer.
+    /// We are approved and routing to that node.
     Routing(RoutingConnection),
     /// Connected peer is a joining node and waiting for approval of routing.
     Candidate(RoutingConnection),
-    /// We are connected to the peer who is our proxy node.
+    /// We are connected to the node who is our proxy node.
     Proxy,
 }
 
@@ -203,7 +203,7 @@ pub enum ConnectionInfoReceivedResult {
     IsClient,
     /// We are already connected: They are becoming a routing node.
     IsJoiningNode,
-    /// We are already connected: They are a routing peer.
+    /// We are already connected: They are a routing node.
     IsConnected,
 }
 
@@ -431,14 +431,14 @@ pub struct PeerManager {
 impl PeerManager {
     /// Returns a new peer manager with no entries.
     pub fn new(
-        min_section_size: usize,
+        group_size: usize,
         our_public_info: PublicInfo,
         disable_client_rate_limiter: bool,
     ) -> PeerManager {
         PeerManager {
             connection_token_map: HashMap::new(),
             peers: HashMap::new(),
-            routing_table: RoutingTable::new(our_public_info.name(), min_section_size),
+            routing_table: RoutingTable::new(our_public_info.name(), group_size),
             our_public_info: our_public_info,
             candidate: Candidate::None,
             disable_client_rate_limiter: disable_client_rate_limiter,
@@ -1597,7 +1597,7 @@ impl PeerManager {
                         );
                         peer
                     }
-                    Some((peer, Err(RoutingTableError::NoSuchPeer))) => peer,
+                    Some((peer, Err(RoutingTableError::NoSuchNode))) => peer,
                     _ => return None,
                 };
 
@@ -1711,10 +1711,10 @@ mod tests {
 
     #[test]
     pub fn connection_info_prepare_receive() {
-        let min_section_size = 8;
+        let group_size = 8;
         let our_pub_info = *FullInfo::node_new(1u8).public_info();
         let their_pub_info = *FullInfo::node_new(1u8).public_info();
-        let mut peer_mgr = PeerManager::new(min_section_size, our_pub_info, false);
+        let mut peer_mgr = PeerManager::new(group_size, our_pub_info, false);
 
         let our_connection_info = PrivConnectionInfo {
             id: our_pub_info,
@@ -1768,10 +1768,10 @@ mod tests {
 
     #[test]
     pub fn connection_info_receive_prepare() {
-        let min_section_size = 8;
+        let group_size = 8;
         let our_pub_info = *FullInfo::node_new(1u8).public_info();
         let their_pub_info = *FullInfo::node_new(1u8).public_info();
-        let mut peer_mgr = PeerManager::new(min_section_size, our_pub_info, false);
+        let mut peer_mgr = PeerManager::new(group_size, our_pub_info, false);
         let our_connection_info = PrivConnectionInfo {
             id: our_pub_info,
             endpoint: Endpoint(0),

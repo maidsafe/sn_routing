@@ -19,7 +19,7 @@ use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
 use routing::{Authority, BootstrapConfig, Cache, Client, Config, DevConfig, Event, EventStream,
-              FullInfo, ImmutableData, NullCache, Peer, Prefix, PublicInfo, Request, Response,
+              FullInfo, ImmutableData, Node, NullCache, Prefix, PublicInfo, Request, Response,
               RoutingTable, XorName, verify_network_invariant};
 use routing::mock_crust::{self, Endpoint, Network, ServiceHandle};
 use routing::test_consts::{ACK_TIMEOUT_SECS, CONNECTING_PEER_TIMEOUT_SECS};
@@ -69,7 +69,7 @@ pub fn gen_range_except<T: Rng>(
 fn create_config(network: &Network<PublicInfo>) -> Config {
     Config {
         dev: Some(DevConfig {
-            min_section_size: Some(network.min_section_size()),
+            group_size: Some(network.group_size()),
             ..DevConfig::default()
         }),
     }
@@ -127,7 +127,7 @@ impl EventStream for TestNode {
 
 pub struct TestNode {
     pub handle: ServiceHandle<PublicInfo>,
-    pub inner: Peer,
+    pub inner: Node,
 }
 
 impl TestNode {
@@ -152,7 +152,7 @@ impl TestNode {
         let config = create_config(network);
         let node = mock_crust::make_current(&handle, || {
             unwrap!(
-                Peer::builder()
+                Node::builder()
                     .cache(cache)
                     .first(first_node)
                     .config(config)
@@ -445,7 +445,7 @@ pub fn create_connected_nodes_with_cache(
         verify_invariant_for_all_nodes(&mut nodes);
     }
 
-    let n = cmp::min(nodes.len(), network.min_section_size()) - 1;
+    let n = cmp::min(nodes.len(), network.group_size()) - 1;
 
     for node in &mut nodes {
         expect_next_event!(node, Event::Connected);

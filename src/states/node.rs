@@ -87,7 +87,7 @@ const CLIENT_BAN_SECS: u64 = 2 * 60 * 60;
 /// Duration for which clients' IDs we disconnected from are retained, in seconds.
 const DROPPED_CLIENT_TIMEOUT_SECS: u64 = 2 * 60 * 60;
 
-pub struct Peer {
+pub struct Node {
     ack_mgr: AckManager,
     cacheable_user_msg_cache: UserMessageCache,
     crust_service: Service,
@@ -146,13 +146,13 @@ pub struct Peer {
     disable_resource_proof: bool,
 }
 
-impl Peer {
+impl Node {
     pub fn first(
         action_sender: RoutingActionSender,
         cache: Box<Cache>,
         crust_service: Service,
         full_info: FullInfo,
-        min_section_size: usize,
+        group_size: usize,
         timer: Timer,
     ) -> Option<Self> {
         // old_info is useless for first node
@@ -164,7 +164,7 @@ impl Peer {
             true,
             old_info,
             full_info,
-            min_section_size,
+            group_size,
             Stats::new(),
             timer,
             0,
@@ -187,7 +187,7 @@ impl Peer {
         crust_service: Service,
         old_full_info: FullInfo,
         new_full_info: FullInfo,
-        min_section_size: usize,
+        group_size: usize,
         proxy_pub_info: PublicInfo,
         stats: Stats,
         timer: Timer,
@@ -199,7 +199,7 @@ impl Peer {
             false,
             old_full_info,
             new_full_info,
-            min_section_size,
+            group_size,
             stats,
             timer,
             our_section.1.len(),
@@ -223,7 +223,7 @@ impl Peer {
         first_node: bool,
         old_full_info: FullInfo,
         new_full_info: FullInfo,
-        min_section_size: usize,
+        group_size: usize,
         stats: Stats,
         timer: Timer,
         challenger_count: usize,
@@ -234,7 +234,7 @@ impl Peer {
         let tick_timer_token = timer.schedule(tick_period);
         let user_msg_cache_duration = Duration::from_secs(USER_MSG_CACHE_EXPIRY_DURATION_SECS);
 
-        Peer {
+        Node {
             ack_mgr: AckManager::new(),
             cacheable_user_msg_cache: UserMessageCache::with_expiry_duration(
                 user_msg_cache_duration,
@@ -246,7 +246,7 @@ impl Peer {
             is_approved: first_node,
             msg_queue: VecDeque::new(),
             peer_mgr: PeerManager::new(
-                min_section_size,
+                group_size,
                 public_info,
                 dev_config.disable_client_rate_limiter,
             ),
@@ -287,7 +287,7 @@ impl Peer {
 
         trace!("{:?} Relocation completed.", self);
         info!(
-            "{:?} Received relocation section. Establishing connections to {} peers.",
+            "{:?} Received relocation section. Establishing connections to {} nodes.",
             self,
             our_section.len()
         );
@@ -557,7 +557,7 @@ impl Peer {
     }
 
     fn handle_connect_success(&mut self, pub_info: PublicInfo, outbox: &mut EventBox) {
-        // Remove tunnel connection if we have one for this peer already
+        // Remove tunnel connection if we have one for this node already
         if let Some(tunnel_info) = self.tunnels.remove_tunnel_for(&pub_info) {
             debug!("{:?} Removing unwanted tunnel for {:?}", self, pub_info);
             let message = DirectMessage::TunnelDisconnect(pub_info);
@@ -581,20 +581,20 @@ impl Peer {
         if let Some(&PeerState::CrustConnecting) =
             self.peer_mgr.get_peer(&pub_info).map(PeerInfo::state)
         {
-            debug!("{:?} Failed to connect to peer {:?}.", self, pub_info);
+            debug!("{:?} Failed to connect to node {:?}.", self, pub_info);
             if self.tunnels.tunnel_for(&pub_info).is_none() {
                 let valid = self.peer_mgr.get_peer(&pub_info).map_or(
                     false,
                     |peer| peer.valid(),
                 );
-                self.find_tunnel_for_peer(&pub_info, valid);
+                self.find_tunnel_for_node(&pub_info, valid);
             } else {
-                debug!("{:?} already has tunnel to peer {}.", self, pub_info);
+                debug!("{:?} already has tunnel to node {}.", self, pub_info);
             }
         }
     }
 
-    fn find_tunnel_for_peer(&mut self, pub_info: &PublicInfo, valid: bool) {
+    fn find_tunnel_for_node(&mut self, pub_info: &PublicInfo, valid: bool) {
         for dst_pub_info in self.peer_mgr.set_searching_for_tunnel(*pub_info, valid) {
             trace!(
                 "{:?} Asking {} to serve as a tunnel for {:?}.",
@@ -822,17 +822,17 @@ impl Peer {
     ) -> Result<(), RoutingError> {
         if !self.peer_mgr.is_routing_peer(&pub_info) {
             debug!(
-                "{:?} Received message signature from unknown peer {}",
+                "{:?} Received message signature from unknown node {}",
                 self,
                 pub_info
             );
             return Err(RoutingError::UnknownConnection(pub_info));
         }
 
-        let min_section_size = self.min_section_size();
+        let group_size = self.group_size();
         if let Some((signed_msg, route)) =
             self.sig_accumulator.add_signature(
-                min_section_size,
+                group_size,
                 digest,
                 sig,
                 pub_info,
@@ -927,7 +927,7 @@ impl Peer {
 
         // this defines whom we are sending signature to: our section if dst is None, or given
         // name if it's Some
-        let peers = if let Some(dst) = dst {
+        let nodes = if let Some(dst) = dst {
             self.peer_mgr
                 .get_pub_info(&dst)
                 .into_iter()
@@ -943,7 +943,7 @@ impl Peer {
                 .collect_vec()
         };
 
-        for pub_info in peers {
+        for pub_info in nodes {
             let msg = DirectMessage::SectionListSignature(section.clone(), sig);
             self.send_direct_message(pub_info, msg);
         }
@@ -1072,13 +1072,12 @@ impl Peer {
         hop_name: XorName,
         sent_to: &BTreeSet<XorName>,
     ) -> Result<(), RoutingError> {
-        signed_msg.check_integrity(self.min_section_size())?;
+        signed_msg.check_integrity(self.group_size())?;
 
         // TODO(MAID-1677): Remove this once messages are fully validated.
-        // Expect group/section messages to be sent by at least a quorum of `min_section_size`.
+        // Expect group/section messages to be sent by at least a quorum of `group_size`.
         if self.our_prefix().bit_count() > 0 && signed_msg.routing_message().src.is_multiple() &&
-            signed_msg.src_size() * QUORUM_DENOMINATOR <=
-                self.min_section_size() * QUORUM_NUMERATOR
+            signed_msg.src_size() * QUORUM_DENOMINATOR <= self.group_size() * QUORUM_NUMERATOR
         {
             warn!("{:?} Not enough signatures in {:?}.", self, signed_msg);
             return Err(RoutingError::NotEnoughSignatures);
@@ -1785,18 +1784,18 @@ impl Peer {
         }
 
         if (peer_kind == CrustUser::Client || !self.is_first_node) &&
-            self.routing_table().len() < self.min_section_size() - 1
+            self.routing_table().len() < self.group_size() - 1
         {
             debug!(
                 "{:?} Client {:?} rejected: Routing table has {} entries. {} required.",
                 self,
                 pub_info,
                 self.routing_table().len(),
-                self.min_section_size() - 1
+                self.group_size() - 1
             );
             self.send_direct_message(
                 pub_info,
-                DirectMessage::BootstrapResponse(Err(BootstrapResponseError::TooFewPeers)),
+                DirectMessage::BootstrapResponse(Err(BootstrapResponseError::TooFewNodes)),
             );
             self.disconnect_peer(&pub_info, Some(outbox));
             return Ok(());
@@ -1832,7 +1831,7 @@ impl Peer {
         )
         {
             warn!(
-                "{:?} Signature check failed in CandidateInfo, so dropping peer {:?}.",
+                "{:?} Signature check failed in CandidateInfo, so dropping node {:?}.",
                 self,
                 new_pub_info
             );
@@ -1960,7 +1959,7 @@ impl Peer {
             Err(RoutingError::RoutingTable(RoutingTableError::AlreadyExists)) => return,
             Err(error) => {
                 debug!(
-                    "{:?} Peer {:?} was not added to the routing table: {:?}",
+                    "{:?} Node {:?} was not added to the routing table: {:?}",
                     self,
                     pub_info,
                     error
@@ -2431,7 +2430,7 @@ impl Peer {
             self.process_connection(dst_info, outbox);
         } else {
             debug!(
-                "{:?} Rejecting TunnelSuccess from {:?} for peer {:?}",
+                "{:?} Rejecting TunnelSuccess from {:?} for node {:?}",
                 self,
                 tunnel_info,
                 dst_info
@@ -2792,14 +2791,14 @@ impl Peer {
         if split_us && !self.routing_table().has(&joining_node) {
             self.send_section_split(ver_pfx, joining_node);
         }
-        // None of the `peers_to_drop` will have been in our section, so no need to notify Routing
+        // None of the `nodes_to_drop` will have been in our section, so no need to notify Routing
         // user about them.
-        let (peers_to_drop, our_new_prefix) = self.peer_mgr.split_section(ver_pfx);
+        let (nodes_to_drop, our_new_prefix) = self.peer_mgr.split_section(ver_pfx);
         if let Some(new_prefix) = our_new_prefix {
             outbox.send_event(Event::SectionSplit(new_prefix));
         }
 
-        for pub_info in peers_to_drop {
+        for pub_info in nodes_to_drop {
             self.disconnect_peer(&pub_info, Some(outbox));
         }
         info!(
@@ -2937,13 +2936,13 @@ impl Peer {
             merge_version,
             sections,
         ) {
-            (OwnMergeState::AlreadyMerged, _needed_peers) => (),
+            (OwnMergeState::AlreadyMerged, _needed_nodes) => (),
             (OwnMergeState::Completed {
                  targets,
                  versioned_prefix,
                  ..
              },
-             needed_peers) => {
+             needed_nodes) => {
                 // TODO - the event should maybe only fire once all new connections have been made?
                 outbox.send_event(Event::SectionMerge(*versioned_prefix.prefix()));
                 info!(
@@ -2953,7 +2952,7 @@ impl Peer {
                 );
 
                 let own_name = self.name();
-                for needed in &needed_peers {
+                for needed in &needed_nodes {
                     debug!(
                         "{:?} Sending connection info to {:?} due to merging own section.",
                         self,
@@ -2997,10 +2996,10 @@ impl Peer {
     ) -> Result<(), RoutingError> {
         self.remove_expired_peers(outbox);
 
-        let needed_peers = self.peer_mgr.merge_other_section(merge_ver_pfx, section);
+        let needed_nodes = self.peer_mgr.merge_other_section(merge_ver_pfx, section);
         let own_name = self.name();
 
-        for needed in needed_peers {
+        for needed in needed_nodes {
             debug!(
                 "{:?} Sending connection info to {:?} due to merging other section.",
                 self,
@@ -3271,7 +3270,7 @@ impl Peer {
         Ok(())
     }
 
-    // Send signed_msg on route. Hop is the name of the peer we received this from, or our name if
+    // Send signed_msg on route. Hop is the name of the node we received this from, or our name if
     // we are the first sender or the proxy for a client or joining node.
     //
     // Don't send to any nodes already sent_to.
@@ -3400,7 +3399,7 @@ impl Peer {
         result
     }
 
-    /// Returns the peer that is responsible for collecting signatures to verify a message; this
+    /// Returns the node that is responsible for collecting signatures to verify a message; this
     /// may be us or another node. If our signature is not required, this returns `None`.
     fn get_signature_target(&self, src: &Authority, route: u8) -> Option<XorName> {
         let self_name = self.name();
@@ -3412,7 +3411,7 @@ impl Peer {
                         src.name().cmp_distance(lhs, rhs)
                     },
                 );
-                v.truncate(self.min_section_size());
+                v.truncate(self.group_size());
                 v
             }
             Section(_) => {
@@ -3704,7 +3703,7 @@ impl Peer {
             PeerState::Proxy => {
                 debug!("{:?} Lost bootstrap connection to {:?}.", self, peer);
 
-                if self.routing_table().len() < self.min_section_size() - 1 {
+                if self.routing_table().len() < self.group_size() - 1 {
                     outbox.send_event(Event::Terminate);
                     return false;
                 }
@@ -3740,7 +3739,7 @@ impl Peer {
         true
     }
 
-    /// Handles dropped routing peer with the given name and removal details. Returns true if we
+    /// Handles dropped routing node with the given name and removal details. Returns true if we
     /// should keep running, false if we should terminate.
     fn dropped_routing_node(
         &mut self,
@@ -3867,7 +3866,7 @@ impl Peer {
     }
 
     fn dropped_tunnel_node(&mut self, pub_info: &PublicInfo, outbox: &mut EventBox) {
-        let peers = self.tunnels
+        let nodes = self.tunnels
             .remove_tunnel(pub_info)
             .into_iter()
             .filter_map(|dst_info| {
@@ -3876,14 +3875,14 @@ impl Peer {
                 })
             })
             .collect_vec();
-        for (dst_info, valid) in peers {
+        for (dst_info, valid) in nodes {
             let _fixme = self.dropped_peer(&dst_info, outbox, false);
             debug!(
-                "{:?} Lost tunnel for peer {:?}. Requesting new tunnel.",
+                "{:?} Lost tunnel for node {:?}. Requesting new tunnel.",
                 self,
                 dst_info
             );
-            self.find_tunnel_for_peer(&dst_info, valid);
+            self.find_tunnel_for_node(&dst_info, valid);
         }
     }
 
@@ -3928,7 +3927,7 @@ impl Peer {
     }
 }
 
-impl Base for Peer {
+impl Base for Node {
     fn crust_service(&self) -> &Service {
         &self.crust_service
     }
@@ -3974,13 +3973,13 @@ impl Base for Peer {
         &mut self.stats
     }
 
-    fn min_section_size(&self) -> usize {
-        self.routing_table().min_section_size()
+    fn group_size(&self) -> usize {
+        self.routing_table().group_size()
     }
 }
 
 #[cfg(feature = "use-mock-crust")]
-impl Peer {
+impl Node {
     /// Check whether this node acts as a tunnel node between `client_1` and `client_2`.
     pub fn has_tunnel_clients(&self, client_1: PublicInfo, client_2: PublicInfo) -> bool {
         self.tunnels.has_clients(client_1, client_2)
@@ -4039,7 +4038,7 @@ impl Peer {
     }
 }
 
-impl Bootstrapped for Peer {
+impl Bootstrapped for Node {
     fn ack_mgr(&self) -> &AckManager {
         &self.ack_mgr
     }
@@ -4077,7 +4076,7 @@ impl Bootstrapped for Peer {
         let sending_names = match routing_msg.src {
             ClientManager(_) | NaeManager(_) | NodeManager(_) | ManagedNode(_) => {
                 let section = self.routing_table().get_section(&self.name()).ok_or(
-                    RoutingError::RoutingTable(RoutingTableError::NoSuchPeer),
+                    RoutingError::RoutingTable(RoutingTableError::NoSuchNode),
                 )?;
                 let pub_infos = self.peer_mgr.get_pub_infos(section);
                 vec![SectionList::new(*self.our_prefix(), pub_infos)]
@@ -4111,11 +4110,11 @@ impl Bootstrapped for Peer {
         match self.get_signature_target(&signed_msg.routing_message().src, route) {
             None => Ok(()),
             Some(our_name) if our_name == self.name() => {
-                let min_section_size = self.min_section_size();
+                let group_size = self.group_size();
                 if let Some((msg, route)) =
                     self.sig_accumulator.add_message(
                         signed_msg,
-                        min_section_size,
+                        group_size,
                         route,
                     )
                 {
@@ -4145,7 +4144,7 @@ impl Bootstrapped for Peer {
                     self.send_direct_message(pub_info, direct_msg);
                     Ok(())
                 } else {
-                    Err(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer))
+                    Err(RoutingError::RoutingTable(RoutingTableError::NoSuchNode))
                 }
             }
         }
@@ -4160,7 +4159,7 @@ impl Bootstrapped for Peer {
     }
 }
 
-impl Debug for Peer {
+impl Debug for Node {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter, "Node({}({:b}))", self.name(), self.our_prefix())
     }

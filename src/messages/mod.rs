@@ -132,13 +132,13 @@ pub enum DirectMessage {
         /// Client authority from after relocation.
         new_client_auth: Authority,
     },
-    /// Sent from a node that needs a tunnel to be able to connect to the given peer.
+    /// Sent from a node that needs a tunnel to be able to connect to the given node.
     TunnelRequest(PublicInfo),
     /// Sent as a response to `TunnelRequest` if the node can act as a tunnel.
     TunnelSuccess(PublicInfo),
     /// Sent as a response to `TunnelSuccess` if the node is selected to act as a tunnel.
     TunnelSelect(PublicInfo),
-    /// Sent from a tunnel node to indicate that the given peer has disconnected.
+    /// Sent from a tunnel node to indicate that the given node has disconnected.
     TunnelClosed(PublicInfo),
     /// Sent to a tunnel node to indicate the tunnel is not needed any more.
     TunnelDisconnect(PublicInfo),
@@ -192,7 +192,7 @@ impl DirectMessage {
 pub struct HopMessage {
     /// Wrapped signed message.
     pub content: SignedMessage,
-    /// Route number; corresponds to the index of the peer in the section of target peers being
+    /// Route number; corresponds to the index of the node in the section of target nodes being
     /// considered for the next hop.
     pub route: u8,
     /// Every node this has already been sent to.
@@ -288,12 +288,12 @@ impl SignedMessage {
 
     /// Confirms the signatures.
     // TODO (MAID-1677): verify the sending SectionLists via each hop's signed lists
-    pub fn check_integrity(&self, min_section_size: usize) -> Result<(), RoutingError> {
+    pub fn check_integrity(&self, group_size: usize) -> Result<(), RoutingError> {
         let signed_bytes = serialise(&self.content)?;
         if !self.find_invalid_sigs(&signed_bytes).is_empty() {
             return Err(RoutingError::FailedSignature);
         }
-        if !self.has_enough_sigs(min_section_size) {
+        if !self.has_enough_sigs(group_size) {
             return Err(RoutingError::NotEnoughSignatures);
         }
         Ok(())
@@ -341,8 +341,8 @@ impl SignedMessage {
     }
 
     /// Returns whether there are enough signatures from the sender.
-    pub fn check_fully_signed(&mut self, min_section_size: usize) -> bool {
-        if !self.has_enough_sigs(min_section_size) {
+    pub fn check_fully_signed(&mut self, group_size: usize) -> bool {
+        if !self.has_enough_sigs(group_size) {
             return false;
         }
 
@@ -365,7 +365,7 @@ impl SignedMessage {
             let _ = self.signatures.remove(invalid_signature);
         }
 
-        self.has_enough_sigs(min_section_size)
+        self.has_enough_sigs(group_size)
     }
 
     // Returns true iff `pub_info` is in self.section_lists
@@ -401,7 +401,7 @@ impl SignedMessage {
 
     // Returns true if there are enough signatures (note that this method does not verify the
     // signatures, it only counts them; it also does not verify `self.src_sections`).
-    fn has_enough_sigs(&self, min_section_size: usize) -> bool {
+    fn has_enough_sigs(&self, group_size: usize) -> bool {
         use Authority::*;
         match self.content.src {
             ClientManager(_) | NaeManager(_) | NodeManager(_) => {
@@ -411,15 +411,15 @@ impl SignedMessage {
                     .flat_map(|list| list.pub_infos.iter().map(PublicInfo::name))
                     .sorted_by(|lhs, rhs| self.content.src.name().cmp_distance(lhs, rhs))
                     .into_iter()
-                    .take(min_section_size)
+                    .take(group_size)
                     .collect();
                 let valid_sigs = self.signatures
                     .keys()
                     .filter(|pub_info| valid_names.contains(&pub_info.name()))
                     .count();
                 // TODO: we should consider replacing valid_names.len() with
-                // cmp::min(routing_table.len(), min_section_size)
-                // (or just min_section_size, but in that case we will not be able to handle user
+                // cmp::min(routing_table.len(), group_size)
+                // (or just group_size, but in that case we will not be able to handle user
                 // messages during boot-up).
                 valid_sigs * QUORUM_DENOMINATOR > valid_names.len() * QUORUM_NUMERATOR
             }
@@ -506,7 +506,7 @@ impl RoutingMessage {
 /// ## Becoming a node
 ///
 /// If A wants to become a full routing node (`client_restriction == false`), it needs to relocate,
-/// i. e. change its name to a value chosen by the network, and then add its peers to its routing
+/// i. e. change its name to a value chosen by the network, and then add its nodes to its routing
 /// table and get added to their routing tables.
 ///
 ///
@@ -520,7 +520,7 @@ impl RoutingMessage {
 /// into which A should relocate and also the public IDs of the members of Y. A then disconnects
 /// from the network and reconnects with a new ID which falls within the specified address range.
 /// After connecting to the members of Y, it begins the resource proof process. Upon successful
-/// completion, A is regarded as a full node and connects to all neighbouring sections' peers.
+/// completion, A is regarded as a full node and connects to all neighbouring sections' nodes.
 ///
 ///
 /// ### Connecting to the matching section
@@ -606,15 +606,15 @@ pub enum MessageContent {
         /// Members of the section
         members: BTreeSet<PublicInfo>,
     },
-    /// Sent to all connected peers when our own section splits
+    /// Sent to all connected nodes when our own section splits
     SectionSplit(VersionedPrefix, XorName),
     /// Sent amongst members of a newly-merged section to allow synchronisation of their routing
-    /// tables before notifying other connected peers of the merge.
+    /// tables before notifying other connected nodes of the merge.
     ///
     /// The source and destination authorities are both `PrefixSection` types, conveying the
     /// section sending this merge message and the target prefix of the merge respectively.
     OwnSectionMerge(SectionMap),
-    /// Sent by members of a newly-merged section to peers outwith the merged section to notify them
+    /// Sent by members of a newly-merged section to nodes outwith the merged section to notify them
     /// of the merge.
     ///
     /// The source authority is a `PrefixSection` conveying the section which just merged. The
@@ -1044,7 +1044,7 @@ mod tests {
 
     #[test]
     fn signed_message_check_integrity() {
-        let min_section_size = 1000;
+        let group_size = 1000;
         let name: XorName = rand::random();
         let full_info = FullInfo::node_new(1u8);
         let routing_message = RoutingMessage {
@@ -1068,7 +1068,7 @@ mod tests {
             signed_message.signatures.keys().next()
         );
 
-        unwrap!(signed_message.check_integrity(min_section_size));
+        unwrap!(signed_message.check_integrity(group_size));
 
         let full_info = FullInfo::node_new(1u8);
         let bytes_to_sign = unwrap!(serialise(&(&routing_message, full_info.public_info())));
@@ -1077,14 +1077,14 @@ mod tests {
         signed_message.signatures = iter::once((*full_info.public_info(), signature)).collect();
 
         // Invalid because it's not signed by the sender:
-        assert!(signed_message.check_integrity(min_section_size).is_err());
+        assert!(signed_message.check_integrity(group_size).is_err());
         // However, the signature itself should be valid:
-        assert!(signed_message.has_enough_sigs(min_section_size));
+        assert!(signed_message.has_enough_sigs(group_size));
     }
 
     #[test]
     fn msg_signatures() {
-        let min_section_size = 8;
+        let group_size = 8;
 
         let full_info_0 = FullInfo::node_new(1u8);
         let prefix = Prefix::new(0, full_info_0.public_info().name());
@@ -1138,7 +1138,7 @@ mod tests {
         assert!(!signed_msg.signatures.contains_key(
             irrelevant_full_info.public_info(),
         ));
-        assert!(!signed_msg.check_fully_signed(min_section_size));
+        assert!(!signed_msg.check_fully_signed(group_size));
 
         // Add a valid signature for ID 1 and an invalid one for ID 2
         match unwrap!(signed_msg.routing_message().to_signature(
@@ -1154,7 +1154,7 @@ mod tests {
         let bad_sig = sign::Signature([0; sign::SIGNATUREBYTES]);
         signed_msg.add_signature(*full_info_2.public_info(), bad_sig);
         assert_eq!(signed_msg.signatures.len(), 3);
-        assert!(signed_msg.check_fully_signed(min_section_size));
+        assert!(signed_msg.check_fully_signed(group_size));
 
         // Check the bad signature got removed (by check_fully_signed) properly.
         assert_eq!(signed_msg.signatures.len(), 2);
