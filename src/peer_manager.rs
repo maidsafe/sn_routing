@@ -27,8 +27,7 @@ use messages::MessageContent;
 use rand;
 use resource_proof::ResourceProof;
 use resource_prover::RESOURCE_PROOF_DURATION_SECS;
-use routing_table::{Authority, OwnMergeState, Prefix, RemovalDetails, RoutingTable,
-                    VersionedPrefix};
+use routing_table::{Authority, OwnMergeState, Prefix, RemovalDetails, RoutingTable};
 use routing_table::Error as RoutingTableError;
 use signature_accumulator::ACCUMULATION_TIMEOUT_SECS;
 use std::{error, fmt, iter, mem};
@@ -63,7 +62,7 @@ pub mod test_consts {
     pub const RATE_EXCEED_RETRY_MS: u64 = ::states::RATE_EXCEED_RETRY_MS;
 }
 
-pub type SectionMap = BTreeMap<VersionedPrefix, BTreeSet<PublicId>>;
+pub type SectionMap = BTreeMap<Prefix, BTreeSet<PublicId>>;
 
 #[derive(Default)]
 pub struct PeerDetails {
@@ -446,7 +445,7 @@ impl PeerManager {
     }
 
     /// Add prefixes into routing table.
-    pub fn add_prefixes(&mut self, prefixes: Vec<VersionedPrefix>) -> Result<(), RoutingError> {
+    pub fn add_prefixes(&mut self, prefixes: Vec<Prefix>) -> Result<(), RoutingError> {
         Ok(self.routing_table.add_prefixes(prefixes)?)
     }
 
@@ -799,8 +798,8 @@ impl PeerManager {
 
     /// Splits the indicated section and returns the `PublicId`s of any peers to which we should not
     /// remain connected.
-    pub fn split_section(&mut self, ver_pfx: VersionedPrefix) -> (Vec<PublicId>, Option<Prefix>) {
-        let (names_to_drop, our_new_prefix) = self.routing_table.split(ver_pfx);
+    pub fn split_section(&mut self, prefix: Prefix) -> (Vec<PublicId>, Option<Prefix>) {
+        let (names_to_drop, our_new_prefix) = self.routing_table.split(prefix);
         for name in &names_to_drop {
             info!("{:?} Dropped {} from the routing table.", self, name);
         }
@@ -837,8 +836,8 @@ impl PeerManager {
 
     /// Adds the given prefix to the routing table, splitting or merging them as necessary. Returns
     /// the list of peers that have been dropped and need to be disconnected.
-    pub fn add_prefix(&mut self, ver_pfx: VersionedPrefix) -> Vec<PublicId> {
-        let names_to_drop = self.routing_table.add_prefix(ver_pfx);
+    pub fn add_prefix(&mut self, prefix: Prefix) -> Vec<PublicId> {
+        let names_to_drop = self.routing_table.add_prefix(prefix);
         for name in &names_to_drop {
             info!("{:?} Dropped {} from the routing table.", self, name);
         }
@@ -866,9 +865,7 @@ impl PeerManager {
     pub fn merge_details(&self) -> (Prefix, SectionMap) {
         let sections = self.routing_table
             .all_sections_iter()
-            .map(|(prefix, (v, members))| {
-                (prefix.with_version(v), self.get_pub_ids(members))
-            })
+            .map(|(prefix, members)| (prefix, self.get_pub_ids(members)))
             .collect();
         (*self.routing_table.our_prefix(), sections)
     }
@@ -901,11 +898,11 @@ impl PeerManager {
 
     pub fn merge_other_section(
         &mut self,
-        ver_pfx: VersionedPrefix,
+        prefix: Prefix,
         section: &BTreeSet<PublicId>,
     ) -> BTreeSet<PublicId> {
         let needed_names = self.routing_table.merge_other_section(
-            ver_pfx,
+            prefix,
             section
                 .iter()
                 .map(PublicId::name)
@@ -1619,10 +1616,10 @@ impl PeerManager {
     /// Returns the public IDs of all routing table entries connected or not that we see as valid
     /// peers, sorted by section.
     pub fn ideal_rt(&self) -> SectionMap {
-        let versioned_prefixes = self.routing_table
+        let prefixes = self.routing_table
             .all_sections()
-            .into_iter()
-            .map(|(prefix, (v, _))| prefix.with_version(v))
+            .keys()
+            .cloned()
             .collect_vec();
         let mut result = SectionMap::new();
         for pub_id in self.peers
@@ -1631,15 +1628,10 @@ impl PeerManager {
             .map(|peer| peer.pub_id())
             .chain(iter::once(&self.our_public_id))
         {
-            if let Some(versioned_prefix) =
-                versioned_prefixes.iter().find(|versioned_prefix| {
-                    versioned_prefix.prefix().matches(pub_id.name())
-                })
-            {
-                let _fixme = result
-                    .entry(*versioned_prefix)
-                    .or_insert_with(BTreeSet::new)
-                    .insert(*pub_id);
+            if let Some(prefix) = prefixes.iter().find(|prefix| prefix.matches(pub_id.name())) {
+                let _fixme = result.entry(*prefix).or_insert_with(BTreeSet::new).insert(
+                    *pub_id,
+                );
             }
         }
         result

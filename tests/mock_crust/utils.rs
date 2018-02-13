@@ -19,8 +19,8 @@ use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
 use routing::{Authority, BootstrapConfig, Cache, Client, Config, DevConfig, Event, EventStream,
-              FullId, ImmutableData, NullCache, Peer, Prefix, PublicId, Request, Response,
-              RoutingTable, XorName, verify_network_invariant};
+              FullId, ImmutableData, NullCache, Peer, Prefix, PrefixCollection, PrefixSet,
+              PublicId, Request, Response, RoutingTable, XorName, verify_network_invariant};
 use routing::mock_crust::{self, Endpoint, Network, ServiceHandle};
 use routing::test_consts::{ACK_TIMEOUT_SECS, CONNECTING_PEER_TIMEOUT_SECS};
 use std::{cmp, thread};
@@ -551,7 +551,7 @@ pub fn add_connected_nodes_until_split(
         for node in nodes.iter() {
             if let Some(prefix_to_split) =
                 unwrap!(node.inner.routing_table()).prefixes().iter().find(
-                    |&prefix| !prefixes.contains(prefix),
+                    |prefix| !prefixes.contains_unversioned(prefix),
                 )
             {
                 // Assert that this can be split down to a desired prefix.
@@ -584,9 +584,12 @@ pub fn add_connected_nodes_until_split(
     for node in nodes.iter() {
         actual_prefixes.append(&mut unwrap!(node.inner.routing_table()).prefixes());
     }
-    assert_eq!(
-        prefixes.iter().cloned().collect::<BTreeSet<_>>(),
-        actual_prefixes
+    assert!(
+        prefixes
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<_>>()
+            .eq_unversioned(&actual_prefixes)
     );
     assert_eq!(
         prefix_lengths,

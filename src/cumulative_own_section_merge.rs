@@ -45,9 +45,9 @@ impl CumulativeOwnSectionMerge {
         let mut version = 1;
         let mut our_merged_section = BTreeSet::new();
         // Extract the version and merged_section list from the incoming section map.
-        for (ver_pfx, peers) in sections {
-            if ver_pfx.prefix().is_extension_of(&merge_prefix) {
-                version = cmp::max(version, ver_pfx.version() + 1);
+        for (pfx, peers) in sections {
+            if pfx.is_extension_of(&merge_prefix) {
+                version = cmp::max(version, pfx.version() + 1);
                 our_merged_section.extend(peers.into_iter().map(|peer| *peer.name()));
             }
         }

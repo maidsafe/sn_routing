@@ -30,8 +30,8 @@ use itertools::Itertools;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use peer_manager::SectionMap;
-use routing_table::{Prefix, VersionedPrefix};
 use routing_table::Authority;
+use routing_table::Prefix;
 use rust_sodium::crypto::{box_, sign};
 use sha3::Digest256;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -598,14 +598,14 @@ pub enum MessageContent {
     /// Sent to notify neighbours and own members when our section's member list changed (for now,
     /// only when new nodes join).
     SectionUpdate {
-        /// Section prefix and version. Included because this message is sent to both the section's
+        /// Section prefix. Included because this message is sent to both the section's
         /// own members and neighbouring sections.
-        versioned_prefix: VersionedPrefix,
+        prefix: Prefix,
         /// Members of the section
         members: BTreeSet<PublicId>,
     },
     /// Sent to all connected peers when our own section splits
-    SectionSplit(VersionedPrefix, XorName),
+    SectionSplit(Prefix, XorName),
     /// Sent amongst members of a newly-merged section to allow synchronisation of their routing
     /// tables before notifying other connected peers of the merge.
     ///
@@ -819,18 +819,11 @@ impl Debug for MessageContent {
                 )
             }
             SectionUpdate {
-                ref versioned_prefix,
+                ref prefix,
                 ref members,
-            } => {
-                write!(
-                    formatter,
-                    "SectionUpdate {{ {:?}, {:?} }}",
-                    versioned_prefix,
-                    members
-                )
-            }
-            SectionSplit(ref ver_pfx, ref joining_node) => {
-                write!(formatter, "SectionSplit({:?}, {:?})", ver_pfx, joining_node)
+            } => write!(formatter, "SectionUpdate {{ {:?}, {:?} }}", prefix, members),
+            SectionSplit(ref prefix, ref joining_node) => {
+                write!(formatter, "SectionSplit({:?}, {:?})", prefix, joining_node)
             }
             OwnSectionMerge(ref sections) => write!(formatter, "OwnSectionMerge({:?})", sections),
             OtherSectionMerge(ref section, ref version) => {
