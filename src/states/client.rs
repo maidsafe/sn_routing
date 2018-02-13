@@ -49,7 +49,7 @@ pub struct Client {
     ack_mgr: AckManager,
     crust_service: Service,
     full_id: FullId,
-    min_section_size: usize,
+    group_size: usize,
     proxy_pub_id: PublicId,
     routing_msg_filter: RoutingMessageFilter,
     stats: Stats,
@@ -64,7 +64,7 @@ impl Client {
     pub fn from_bootstrapping(
         crust_service: Service,
         full_id: FullId,
-        min_section_size: usize,
+        group_size: usize,
         proxy_pub_id: PublicId,
         stats: Stats,
         timer: Timer,
@@ -75,7 +75,7 @@ impl Client {
             ack_mgr: AckManager::new(),
             crust_service: crust_service,
             full_id: full_id,
-            min_section_size: min_section_size,
+            group_size: group_size,
             proxy_pub_id: proxy_pub_id,
             routing_msg_filter: RoutingMessageFilter::new(),
             stats: stats,
@@ -224,7 +224,7 @@ impl Client {
         }
 
         let signed_msg = hop_msg.content;
-        signed_msg.check_integrity(self.min_section_size())?;
+        signed_msg.check_integrity(self.group_size())?;
 
         let routing_msg = signed_msg.into_routing_message();
         let in_authority = self.in_authority(&routing_msg.dst);
@@ -377,8 +377,8 @@ impl Base for Client {
         &mut self.stats
     }
 
-    fn min_section_size(&self) -> usize {
-        self.min_section_size
+    fn group_size(&self) -> usize {
+        self.group_size
     }
 }
 
@@ -401,7 +401,7 @@ impl Bootstrapped for Client {
             );
 
             let msg_expired = unacked_msg.expires_at.map_or(false, |i| i < Instant::now());
-            if msg_expired || unacked_msg.route as usize == self.min_section_size {
+            if msg_expired || unacked_msg.route as usize == self.group_size {
                 debug!(
                     "{:?} Message unable to be acknowledged - giving up. {:?}",
                     self,

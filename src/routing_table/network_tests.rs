@@ -35,25 +35,24 @@ use std::iter::IntoIterator;
 /// generator.
 #[derive(Default)]
 struct Network {
-    min_section_size: usize,
+    group_size: usize,
     rng: SeededRng,
     nodes: BTreeMap<XorName, RoutingTable>,
 }
 
 impl Network {
-    /// Creates a new empty network with specified minimum section size and a seeded random number
-    /// generator.
-    fn new(min_section_size: usize, optional_seed: Option<[u32; 4]>) -> Network {
+    /// Creates a new empty network with specified group size and a seeded random number generator.
+    fn new(group_size: usize, optional_seed: Option<[u32; 4]>) -> Network {
         Network {
-            min_section_size: min_section_size,
+            group_size: group_size,
             rng: optional_seed.map_or_else(SeededRng::new, SeededRng::from_seed),
             nodes: BTreeMap::new(),
         }
     }
 
-    /// Get min_section_size
-    pub fn min_section_size(&self) -> usize {
-        self.min_section_size
+    /// Get group_size
+    pub fn group_size(&self) -> usize {
+        self.group_size
     }
 
     /// Adds a new node to the network and makes it join its new section, splitting if necessary.
@@ -63,13 +62,13 @@ impl Network {
             // If this is the first node, just add it and return.
             let result = self.nodes.insert(
                 name,
-                RoutingTable::new(name, self.min_section_size),
+                RoutingTable::new(name, self.group_size),
             );
             assert!(result.is_none());
             return;
         }
 
-        let mut new_table = RoutingTable::new(name, self.min_section_size);
+        let mut new_table = RoutingTable::new(name, self.group_size);
         {
             let node = self.close_node(name);
             let close_node = &self.nodes[&node];
@@ -300,7 +299,7 @@ fn node_to_node_message() {
     for _ in 0..20 {
         let src = *unwrap!(network.rng.choose(&keys));
         let dst = *unwrap!(network.rng.choose(&keys));
-        for route in 0..network.min_section_size {
+        for route in 0..network.group_size {
             network.send_message(src, Authority::ManagedNode(dst), route);
         }
     }
@@ -316,7 +315,7 @@ fn node_to_section_message() {
     for _ in 0..20 {
         let src = *unwrap!(network.rng.choose(&keys));
         let dst = network.rng.gen();
-        for route in 0..network.min_section_size {
+        for route in 0..network.group_size {
             network.send_message(src, Authority::Section(dst), route);
         }
     }

@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use MIN_SECTION_SIZE;
+use GROUP_SIZE;
 use action::Action;
 use cache::{Cache, NullCache};
 use client_error::ClientError;
@@ -144,7 +144,7 @@ impl NodeBuilder {
         let pub_id = *full_id.public_id();
         let config = self.config.unwrap_or_else(config_handler::get_config);
         let dev_config = config.dev.unwrap_or_default();
-        let min_section_size = dev_config.min_section_size.unwrap_or(MIN_SECTION_SIZE);
+        let group_size = dev_config.group_size.unwrap_or(GROUP_SIZE);
 
         StateMachine::new(
             move |action_sender, crust_service, timer, outbox2| if self.first {
@@ -153,7 +153,7 @@ impl NodeBuilder {
                     self.cache,
                     crust_service,
                     full_id,
-                    min_section_size,
+                    group_size,
                     timer,
                 )
                 {
@@ -172,7 +172,7 @@ impl NodeBuilder {
                     BootstrappingTargetState::JoiningNode,
                     crust_service,
                     full_id,
-                    min_section_size,
+                    group_size,
                     timer,
                 ).map_or(State::Terminated, State::Bootstrapping)
             },
@@ -527,9 +527,9 @@ impl Node {
         self.machine.routing_table().ok_or(RoutingError::Terminated)
     }
 
-    /// Returns the minimum section size this vault is using.
-    pub fn min_section_size(&self) -> usize {
-        self.machine.min_section_size()
+    /// Returns the group size this vault is using.
+    pub fn group_size(&self) -> usize {
+        self.machine.group_size()
     }
 
     fn send_action(

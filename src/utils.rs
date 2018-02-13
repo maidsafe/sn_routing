@@ -151,7 +151,7 @@ mod tests {
 
     #[test]
     fn calculate_relocation_dst() {
-        let min_section_size = 8;
+        let group_size = 8;
         let original_name: XorName = rand::random();
 
         // one entry
@@ -182,7 +182,7 @@ mod tests {
         // TODO: we're not using fixed sizes any more: this code should possibly change!
         // populated closed nodes
         let mut close_nodes: Vec<XorName> = Vec::new();
-        for _ in 0..min_section_size {
+        for _ in 0..group_size {
             close_nodes.push(rand::random());
         }
         let actual_relocated_name =

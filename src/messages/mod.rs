@@ -287,12 +287,12 @@ impl SignedMessage {
 
     /// Confirms the signatures.
     // TODO (MAID-1677): verify the sending SectionLists via each hop's signed lists
-    pub fn check_integrity(&self, min_section_size: usize) -> Result<(), RoutingError> {
+    pub fn check_integrity(&self, group_size: usize) -> Result<(), RoutingError> {
         let signed_bytes = serialise(&self.content)?;
         if !self.find_invalid_sigs(&signed_bytes).is_empty() {
             return Err(RoutingError::FailedSignature);
         }
-        if !self.has_enough_sigs(min_section_size) {
+        if !self.has_enough_sigs(group_size) {
             return Err(RoutingError::NotEnoughSignatures);
         }
         Ok(())
@@ -340,8 +340,8 @@ impl SignedMessage {
     }
 
     /// Returns whether there are enough signatures from the sender.
-    pub fn check_fully_signed(&mut self, min_section_size: usize) -> bool {
-        if !self.has_enough_sigs(min_section_size) {
+    pub fn check_fully_signed(&mut self, group_size: usize) -> bool {
+        if !self.has_enough_sigs(group_size) {
             return false;
         }
 
@@ -364,7 +364,7 @@ impl SignedMessage {
             let _ = self.signatures.remove(invalid_signature);
         }
 
-        self.has_enough_sigs(min_section_size)
+        self.has_enough_sigs(group_size)
     }
 
     // Returns true iff `pub_id` is in self.section_lists
@@ -399,7 +399,7 @@ impl SignedMessage {
 
     // Returns true if there are enough signatures (note that this method does not verify the
     // signatures, it only counts them; it also does not verify `self.src_sections`).
-    fn has_enough_sigs(&self, min_section_size: usize) -> bool {
+    fn has_enough_sigs(&self, group_size: usize) -> bool {
         use Authority::*;
         match self.content.src {
             ClientManager(_) | NaeManager(_) | NodeManager(_) => {
@@ -409,15 +409,15 @@ impl SignedMessage {
                     .flat_map(|list| list.pub_ids.iter().map(PublicId::name))
                     .sorted_by(|lhs, rhs| self.content.src.name().cmp_distance(lhs, rhs))
                     .into_iter()
-                    .take(min_section_size)
+                    .take(group_size)
                     .collect();
                 let valid_sigs = self.signatures
                     .keys()
                     .filter(|pub_id| valid_names.contains(pub_id.name()))
                     .count();
                 // TODO: we should consider replacing valid_names.len() with
-                // cmp::min(routing_table.len(), min_section_size)
-                // (or just min_section_size, but in that case we will not be able to handle user
+                // cmp::min(routing_table.len(), group_size)
+                // (or just group_size, but in that case we will not be able to handle user
                 // messages during boot-up).
                 valid_sigs * QUORUM_DENOMINATOR > valid_names.len() * QUORUM_NUMERATOR
             }
@@ -1042,7 +1042,7 @@ mod tests {
 
     #[test]
     fn signed_message_check_integrity() {
-        let min_section_size = 1000;
+        let group_size = 1000;
         let name: XorName = rand::random();
         let full_id = FullId::new();
         let routing_message = RoutingMessage {
@@ -1065,7 +1065,7 @@ mod tests {
             signed_message.signatures.keys().next()
         );
 
-        unwrap!(signed_message.check_integrity(min_section_size));
+        unwrap!(signed_message.check_integrity(group_size));
 
         let full_id = FullId::new();
         let bytes_to_sign = unwrap!(serialise(&(&routing_message, full_id.public_id())));
@@ -1074,14 +1074,14 @@ mod tests {
         signed_message.signatures = iter::once((*full_id.public_id(), signature)).collect();
 
         // Invalid because it's not signed by the sender:
-        assert!(signed_message.check_integrity(min_section_size).is_err());
+        assert!(signed_message.check_integrity(group_size).is_err());
         // However, the signature itself should be valid:
-        assert!(signed_message.has_enough_sigs(min_section_size));
+        assert!(signed_message.has_enough_sigs(group_size));
     }
 
     #[test]
     fn msg_signatures() {
-        let min_section_size = 8;
+        let group_size = 8;
 
         let full_id_0 = FullId::new();
         let prefix = Prefix::new(0, *full_id_0.public_id().name());
@@ -1135,7 +1135,7 @@ mod tests {
         assert!(!signed_msg.signatures.contains_key(
             irrelevant_full_id.public_id(),
         ));
-        assert!(!signed_msg.check_fully_signed(min_section_size));
+        assert!(!signed_msg.check_fully_signed(group_size));
 
         // Add a valid signature for ID 1 and an invalid one for ID 2
         match unwrap!(signed_msg.routing_message().to_signature(
@@ -1151,7 +1151,7 @@ mod tests {
         let bad_sig = sign::Signature([0; sign::SIGNATUREBYTES]);
         signed_msg.add_signature(*full_id_2.public_id(), bad_sig);
         assert_eq!(signed_msg.signatures.len(), 3);
-        assert!(signed_msg.check_fully_signed(min_section_size));
+        assert!(signed_msg.check_fully_signed(group_size));
 
         // Check the bad signature got removed (by check_fully_signed) properly.
         assert_eq!(signed_msg.signatures.len(), 2);

@@ -151,7 +151,7 @@ impl Node {
         cache: Box<Cache>,
         crust_service: Service,
         full_id: FullId,
-        min_section_size: usize,
+        group_size: usize,
         timer: Timer,
     ) -> Option<Self> {
         // old_id is useless for first node
@@ -163,7 +163,7 @@ impl Node {
             true,
             old_id,
             full_id,
-            min_section_size,
+            group_size,
             Stats::new(),
             timer,
             0,
@@ -186,7 +186,7 @@ impl Node {
         crust_service: Service,
         old_full_id: FullId,
         new_full_id: FullId,
-        min_section_size: usize,
+        group_size: usize,
         proxy_pub_id: PublicId,
         stats: Stats,
         timer: Timer,
@@ -198,7 +198,7 @@ impl Node {
             false,
             old_full_id,
             new_full_id,
-            min_section_size,
+            group_size,
             stats,
             timer,
             our_section.1.len(),
@@ -222,7 +222,7 @@ impl Node {
         first_node: bool,
         old_full_id: FullId,
         new_full_id: FullId,
-        min_section_size: usize,
+        group_size: usize,
         stats: Stats,
         timer: Timer,
         challenger_count: usize,
@@ -245,7 +245,7 @@ impl Node {
             is_approved: first_node,
             msg_queue: VecDeque::new(),
             peer_mgr: PeerManager::new(
-                min_section_size,
+                group_size,
                 public_id,
                 dev_config.disable_client_rate_limiter,
             ),
@@ -828,10 +828,10 @@ impl Node {
             return Err(RoutingError::UnknownConnection(pub_id));
         }
 
-        let min_section_size = self.min_section_size();
+        let group_size = self.group_size();
         if let Some((signed_msg, route)) =
             self.sig_accumulator.add_signature(
-                min_section_size,
+                group_size,
                 digest,
                 sig,
                 pub_id,
@@ -1071,13 +1071,12 @@ impl Node {
         hop_name: XorName,
         sent_to: &BTreeSet<XorName>,
     ) -> Result<(), RoutingError> {
-        signed_msg.check_integrity(self.min_section_size())?;
+        signed_msg.check_integrity(self.group_size())?;
 
         // TODO(MAID-1677): Remove this once messages are fully validated.
-        // Expect group/section messages to be sent by at least a quorum of `min_section_size`.
+        // Expect group/section messages to be sent by at least a quorum of `group_size`.
         if self.our_prefix().bit_count() > 0 && signed_msg.routing_message().src.is_multiple() &&
-            signed_msg.src_size() * QUORUM_DENOMINATOR <=
-                self.min_section_size() * QUORUM_NUMERATOR
+            signed_msg.src_size() * QUORUM_DENOMINATOR <= self.group_size() * QUORUM_NUMERATOR
         {
             warn!("{:?} Not enough signatures in {:?}.", self, signed_msg);
             return Err(RoutingError::NotEnoughSignatures);
@@ -1782,14 +1781,14 @@ impl Node {
         }
 
         if (peer_kind == CrustUser::Client || !self.is_first_node) &&
-            self.routing_table().len() < self.min_section_size() - 1
+            self.routing_table().len() < self.group_size() - 1
         {
             debug!(
                 "{:?} Client {:?} rejected: Routing table has {} entries. {} required.",
                 self,
                 pub_id,
                 self.routing_table().len(),
-                self.min_section_size() - 1
+                self.group_size() - 1
             );
             self.send_direct_message(
                 pub_id,
@@ -3403,7 +3402,7 @@ impl Node {
                         src.name().cmp_distance(lhs, rhs)
                     },
                 );
-                v.truncate(self.min_section_size());
+                v.truncate(self.group_size());
                 v
             }
             Section(_) => {
@@ -3696,7 +3695,7 @@ impl Node {
             PeerState::Proxy => {
                 debug!("{:?} Lost bootstrap connection to {:?}.", self, peer);
 
-                if self.routing_table().len() < self.min_section_size() - 1 {
+                if self.routing_table().len() < self.group_size() - 1 {
                     outbox.send_event(Event::Terminate);
                     return false;
                 }
@@ -3962,8 +3961,8 @@ impl Base for Node {
         &mut self.stats
     }
 
-    fn min_section_size(&self) -> usize {
-        self.routing_table().min_section_size()
+    fn group_size(&self) -> usize {
+        self.routing_table().group_size()
     }
 }
 
@@ -4099,11 +4098,11 @@ impl Bootstrapped for Node {
         match self.get_signature_target(&signed_msg.routing_message().src, route) {
             None => Ok(()),
             Some(our_name) if our_name == *self.name() => {
-                let min_section_size = self.min_section_size();
+                let group_size = self.group_size();
                 if let Some((msg, route)) =
                     self.sig_accumulator.add_message(
                         signed_msg,
-                        min_section_size,
+                        group_size,
                         route,
                     )
                 {
