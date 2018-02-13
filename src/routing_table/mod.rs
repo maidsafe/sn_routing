@@ -338,7 +338,7 @@ impl RoutingTable {
             )
     }
 
-    /// Returns the minimum section size.
+    /// Returns the group size.
     pub fn group_size(&self) -> usize {
         self.group_size
     }
@@ -1151,7 +1151,7 @@ impl RoutingTable {
         let has_enough_nodes = self.len() >= self.group_size;
         if has_enough_nodes && self.our_section.len() < self.group_size {
             return warn(format!(
-                "Minimum section size not met for section {:?}: {:?}",
+                "Group size not met for section {:?}: {:?}",
                 self.our_prefix,
                 self
             ));

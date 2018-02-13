@@ -41,8 +41,7 @@ struct Network {
 }
 
 impl Network {
-    /// Creates a new empty network with specified minimum section size and a seeded random number
-    /// generator.
+    /// Creates a new empty network with specified group size and a seeded random number generator.
     fn new(group_size: usize, optional_seed: Option<[u32; 4]>) -> Network {
         Network {
             group_size: group_size,

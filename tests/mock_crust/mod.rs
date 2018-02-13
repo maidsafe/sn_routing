@@ -70,17 +70,17 @@ fn disconnect_on_rebootstrap() {
 }
 
 #[test]
-fn less_than_section_size_nodes() {
+fn less_than_group_size_nodes() {
     test_nodes(38)
 }
 
 #[test]
-fn equal_section_size_nodes() {
+fn equal_to_group_size_nodes() {
     test_nodes(100);
 }
 
 #[test]
-fn more_than_section_size_nodes() {
+fn more_than_group_size_nodes() {
     test_nodes(600);
 }
 

@@ -527,7 +527,7 @@ impl Node {
         self.machine.routing_table().ok_or(RoutingError::Terminated)
     }
 
-    /// Returns the minimum section size this vault is using.
+    /// Returns the group size this vault is using.
     pub fn group_size(&self) -> usize {
         self.machine.group_size()
     }

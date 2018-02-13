@@ -39,7 +39,7 @@ fn drop_random_nodes<R: Rng>(
 ) -> BTreeSet<XorName> {
     let mut dropped_nodes = BTreeSet::new();
     let len = nodes.len();
-    // Nodes needed for quorum with minimum section size. Round up.
+    // Nodes needed for quorum with group size. Round up.
     let min_quorum = 1 + (group_size * QUORUM_NUMERATOR) / QUORUM_DENOMINATOR;
     if rng.gen_weighted_bool(3) {
         // Pick a section then remove as many nodes as possible from it without breaking quorum.

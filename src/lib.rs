@@ -32,12 +32,12 @@
 //! is delivered only once.
 //!
 //! Section and group authorities are also addressed using a single `XorName`. The members are the
-//! nodes that are closest to that name. Sections contain a minimum number of nodes with the minimum
-//! value specified as a network-wide constant. Groups are of fixed size, defined as the above
-//! minimum section size. Since nodes are assigned their name by the network, this provides
-//! redundancy and resilience: a node has no control over which section or group authority it will
-//! be a member of, and without a majority in the section or group it cannot forge a message from
-//! there.
+//! nodes that are closest to that name. Groups are of fixed size specified as a
+//! network-wide constant. Sections contain a minimum number of nodes with the minimum
+//! value defined as the above group size. Since nodes are assigned their name by the network, this
+//! provides redundancy and resilience: a node has no control over which section or group authority
+//! it will be a member of, and without a majority in the section or group it cannot forge a message
+//! from there.
 //!
 //! The library also provides different types for the messages' data.
 //!
