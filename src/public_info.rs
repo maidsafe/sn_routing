@@ -1,4 +1,4 @@
-// Copyright 2017 MaidSafe.net limited.
+// Copyright 2018 MaidSafe.net limited.
 //
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
@@ -15,9 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-// FIXME: remove when this module is finished
-#![allow(dead_code)]
-
 use crust::Uid;
 use rust_sodium::crypto::{box_, sign};
 use std::fmt::{self, Debug, Display, Formatter};
@@ -28,20 +25,19 @@ use xor_name::XorName;
 pub enum PublicInfo {
     /// Public identifier for a client
     Client {
-        /// Client's public signing key
-        sign_key: sign::PublicKey,
         /// Client's public encrypting key
         encrypt_key: box_::PublicKey,
+        /// Client's public signing key
+        sign_key: sign::PublicKey,
     },
     /// Public identifier for a node
     Node {
-        // DO NOT REORDER, the age field is the primary sort field to be held in set!
         /// Node's age
         age: u8,
-        /// Node's public signing key
-        sign_key: sign::PublicKey,
         /// Node's public encrypting key
         encrypt_key: box_::PublicKey,
+        /// Node's public signing key
+        sign_key: sign::PublicKey,
     },
 }
 
@@ -79,6 +75,7 @@ impl PublicInfo {
     }
 
     /// Updating a peer's age (void if peer is client)
+    #[cfg(test)]
     pub fn set_age(&mut self, new_age: u8) {
         match *self {
             PublicInfo::Client { .. } => {}

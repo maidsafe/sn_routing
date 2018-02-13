@@ -750,13 +750,13 @@ impl Peer {
                 target_size,
                 difficulty,
             } => {
-                let log_infoent = format!("{:?}", self);
+                let log_ident = format!("{:?}", self);
                 self.resource_prover.handle_request(
                     pub_info,
                     seed,
                     target_size,
                     difficulty,
-                    log_infoent,
+                    log_ident,
                 );
             }
             ResourceProofResponseReceipt => {
@@ -3049,10 +3049,10 @@ impl Peer {
     }
 
     fn handle_timeout(&mut self, token: u64, outbox: &mut EventBox) -> Transition {
-        let log_infoent = format!("{:?}", self);
+        let log_ident = format!("{:?}", self);
         if let Some(transition) = self.resource_prover.handle_timeout(
             token,
-            &log_infoent,
+            &log_ident,
             outbox,
         )
         {

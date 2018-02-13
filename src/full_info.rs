@@ -1,4 +1,4 @@
-// Copyright 2015 MaidSafe.net limited.
+// Copyright 2018 MaidSafe.net limited.
 //
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
@@ -19,7 +19,8 @@ use public_info::PublicInfo;
 use rust_sodium::crypto::{box_, sign};
 use xor_name::XorName;
 
-/// Network identity component containing name, and public and private keys.
+/// A container for a peer's cryptographic keys, and in the case of a node, its age too. The public
+/// signing key defines the peer's name on the network.
 #[derive(Clone)]
 pub struct FullInfo {
     public_info: PublicInfo,
@@ -75,11 +76,6 @@ impl FullInfo {
         }
     }
 
-    /// Update the age of the node
-    pub fn set_age(&mut self, new_age: u8) {
-        self.public_info.set_age(new_age)
-    }
-
     /// Returns public ID reference.
     pub fn public_info(&self) -> &PublicInfo {
         &self.public_info
@@ -93,6 +89,12 @@ impl FullInfo {
     /// Secret signing key.
     pub fn secret_sign_key(&self) -> &sign::SecretKey {
         &self.secret_sign_key
+    }
+
+    /// Update the age of the node
+    #[cfg(test)]
+    pub fn set_age(&mut self, new_age: u8) {
+        self.public_info.set_age(new_age)
     }
 
     fn new(node_age: Option<u8>) -> FullInfo {
@@ -124,26 +126,6 @@ mod tests {
     use super::*;
     use maidsafe_utilities::{SeededRng, serialisation};
     use rust_sodium;
-
-    /// Confirm `PublicInfo` `Ord` trait favours name (sign key) over encrypt key.
-    #[test]
-    fn public_info_order() {
-        let mut rng = SeededRng::thread_rng();
-        unwrap!(rust_sodium::init_with_rng(&mut rng));
-
-        let pub_info_1 = *FullInfo::node_new(1u8).public_info();
-        let pub_info_2;
-        loop {
-            let temp_pub_info = *FullInfo::node_new(1u8).public_info();
-            if temp_pub_info.name() > pub_info_1.name() &&
-                temp_pub_info.encrypt_key() < pub_info_1.encrypt_key()
-            {
-                pub_info_2 = temp_pub_info;
-                break;
-            }
-        }
-        assert!(pub_info_1 < pub_info_2);
-    }
 
     #[test]
     fn serialisation() {

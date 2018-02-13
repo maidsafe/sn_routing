@@ -104,13 +104,13 @@ impl ResourceProver {
         seed: Vec<u8>,
         target_size: usize,
         difficulty: u8,
-        log_infoent: String,
+        log_ident: String,
     ) {
         if self.response_parts.is_empty() {
             info!(
                 "{} Starting approval process to test this node's resources. This will take \
                  at least {} seconds.",
-                log_infoent,
+                log_ident,
                 RESOURCE_PROOF_DURATION_SECS
             );
         }
@@ -131,7 +131,7 @@ impl ResourceProver {
                     break;
                 }
                 if atomic_cancel_clone.load(Ordering::Relaxed) {
-                    info!("{} Approval process cancelled", log_infoent);
+                    info!("{} Approval process cancelled", log_ident);
                     return;
                 }
             }
@@ -170,7 +170,7 @@ impl ResourceProver {
             trace!(
                 "{} created proof data in {} seconds. Target size: {}, \
                  Difficulty: {}, Seed: {:?}",
-                log_infoent,
+                log_ident,
                 elapsed.display_secs(),
                 target_size,
                 difficulty,
@@ -182,7 +182,7 @@ impl ResourceProver {
                 // In theory this means the receiver disconnected, so the main thread stopped/reset
                 error!(
                     "{}: resource proof worker thread failed to send result",
-                    log_infoent
+                    log_ident
                 );
             }
         });
@@ -231,11 +231,11 @@ impl ResourceProver {
     pub fn handle_timeout(
         &mut self,
         token: u64,
-        log_infoent: &str,
+        log_ident: &str,
         outbox: &mut EventBox,
     ) -> Option<Transition> {
         if self.get_approval_timer_token == Some(token) {
-            self.handle_approval_timeout(log_infoent, outbox);
+            self.handle_approval_timeout(log_ident, outbox);
             Some(Transition::Terminate)
         } else if self.approval_progress_timer_token == Some(token) {
             self.approval_progress_timer_token = Some(self.timer.schedule(Duration::from_secs(
@@ -249,7 +249,7 @@ impl ResourceProver {
             };
             info!(
                 "{} {} {}/{} seconds remaining.",
-                log_infoent,
+                log_ident,
                 self.response_progress(),
                 remaining_duration.display_secs(),
                 self.approval_timeout_secs
@@ -262,7 +262,7 @@ impl ResourceProver {
         }
     }
 
-    fn handle_approval_timeout(&mut self, log_infoent: &str, outbox: &mut EventBox) {
+    fn handle_approval_timeout(&mut self, log_ident: &str, outbox: &mut EventBox) {
         let completed = self.response_parts
             .values()
             .filter(|parts| parts.is_empty())
@@ -272,13 +272,13 @@ impl ResourceProver {
                 "{} All {} resource proof responses fully sent, but timed out waiting \
                  for approval from the network. This could be due to the target section \
                  experiencing churn. Terminating node.",
-                log_infoent,
+                log_ident,
                 completed
             );
         } else {
             info!(
                 "{} Failed to get approval from the network. {} Terminating node.",
-                log_infoent,
+                log_ident,
                 self.response_progress()
             );
         }

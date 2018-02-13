@@ -397,7 +397,7 @@ pub fn verify_network_invariant<'a, T: IntoIterator<Item = &'a RoutingTable>>(no
 }
 
 #[test]
-fn sections_have_infoentical_routing_tables() {
+fn sections_have_identical_routing_tables() {
     let mut network = Network::new(8, None);
     for _ in 0..100 {
         network.add_node();
