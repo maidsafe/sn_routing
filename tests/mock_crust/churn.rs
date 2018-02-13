@@ -112,11 +112,11 @@ fn add_node_and_poll<R: Rng>(
 
     if len > (2 * min_section_size) {
         let exclude = vec![new_node, proxy].into_iter().collect();
-        let block_peer = gen_range_except(rng, 1, nodes.len(), &exclude);
+        let blocked_index = gen_range_except(rng, 1, nodes.len(), &exclude);
 
         // Status to the proxy of the new node doesn't matter.
         let _ = dropped_nodes.insert(nodes[proxy].name());
-        if nodes[block_peer].inner.has_unnormalised_routing_conn(
+        if nodes[blocked_index].inner.has_unnormalised_routing_conn(
             &dropped_nodes,
         )
         {
@@ -125,14 +125,14 @@ fn add_node_and_poll<R: Rng>(
         debug!(
             "Connection between {} and {} blocked.",
             nodes[new_node].name(),
-            nodes[block_peer].name()
+            nodes[blocked_index].name()
         );
         network.block_connection(
             nodes[new_node].handle.endpoint(),
-            nodes[block_peer].handle.endpoint(),
+            nodes[blocked_index].handle.endpoint(),
         );
         network.block_connection(
-            nodes[block_peer].handle.endpoint(),
+            nodes[blocked_index].handle.endpoint(),
             nodes[new_node].handle.endpoint(),
         );
     }
@@ -187,16 +187,16 @@ fn random_churn<R: Rng>(
         let index = gen_range(rng, 1, len + 1);
 
         if nodes.len() > 2 * network.min_section_size() {
-            let peer_1 = gen_range(rng, 1, len);
-            let peer_2 = gen_range_except(rng, 1, len, &iter::once(peer_1).collect());
+            let index1 = gen_range(rng, 1, len);
+            let index2 = gen_range_except(rng, 1, len, &iter::once(index1).collect());
             debug!(
                 "Lost connection between {} and {}",
-                nodes[peer_1].name(),
-                nodes[peer_2].name()
+                nodes[index1].name(),
+                nodes[index2].name()
             );
             network.lost_connection(
-                nodes[peer_1].handle.endpoint(),
-                nodes[peer_2].handle.endpoint(),
+                nodes[index1].handle.endpoint(),
+                nodes[index2].handle.endpoint(),
             );
         }
 
@@ -214,18 +214,18 @@ fn random_churn<R: Rng>(
                 proxy += 1;
             }
             let exclude = vec![index, proxy].into_iter().collect();
-            let block_peer = gen_range_except(rng, 1, nodes.len(), &exclude);
+            let blocked_index = gen_range_except(rng, 1, nodes.len(), &exclude);
             debug!(
                 "Connection between {} and {} blocked.",
                 nodes[index].name(),
-                nodes[block_peer].name()
+                nodes[blocked_index].name()
             );
             network.block_connection(
                 nodes[index].handle.endpoint(),
-                nodes[block_peer].handle.endpoint(),
+                nodes[blocked_index].handle.endpoint(),
             );
             network.block_connection(
-                nodes[block_peer].handle.endpoint(),
+                nodes[blocked_index].handle.endpoint(),
                 nodes[index].handle.endpoint(),
             );
         }
@@ -546,16 +546,16 @@ fn aggressive_churn() {
     );
     while count_sections(&nodes) <= target_section_num || nodes.len() < target_network_size {
         if nodes.len() > (2 * min_section_size) {
-            let peer_1 = gen_range(&mut rng, 0, nodes.len());
-            let peer_2 = gen_range_except(&mut rng, 0, nodes.len(), &iter::once(peer_1).collect());
+            let index1 = gen_range(&mut rng, 0, nodes.len());
+            let index2 = gen_range_except(&mut rng, 0, nodes.len(), &iter::once(index1).collect());
             debug!(
                 "Lost connection between {} and {}",
-                nodes[peer_1].name(),
-                nodes[peer_2].name()
+                nodes[index1].name(),
+                nodes[index2].name()
             );
             network.lost_connection(
-                nodes[peer_1].handle.endpoint(),
-                nodes[peer_2].handle.endpoint(),
+                nodes[index1].handle.endpoint(),
+                nodes[index2].handle.endpoint(),
             );
         }
 
