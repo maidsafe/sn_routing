@@ -28,17 +28,17 @@ use std::u64;
 
 /// A prefix with section version.
 #[derive(Clone, Copy, Default, Eq, PartialEq, Deserialize, Serialize)]
-pub struct VersionedPrefix {
+pub struct Prefix {
     inner: UnversionedPrefix,
     version: u64,
 }
 
-impl VersionedPrefix {
+impl Prefix {
     /// Creates a new `Prefix` with the first `bit_count` bits of `name`. Insignificant bits are all
     /// set to 0. If `bit_count` exceeds the `XOR_NAME_BITS`, then it is reduced to this lower
     /// value.
     pub fn new(bit_count: usize, name: XorName, version: u64) -> Self {
-        VersionedPrefix {
+        Prefix {
             inner: UnversionedPrefix {
                 bit_count: cmp::min(bit_count, XOR_NAME_BITS) as u16,
                 name: name.set_remaining(bit_count, false),
@@ -52,9 +52,9 @@ impl VersionedPrefix {
         self.version
     }
 
-    /// Returns a new `VersionedPrefix` with the same `Prefix` and the given version number.
+    /// Returns a new `Prefix` with the same `Prefix` and the given version number.
     pub fn with_version(self, version: u64) -> Self {
-        VersionedPrefix {
+        Prefix {
             inner: self.inner,
             version: version,
         }
@@ -142,7 +142,7 @@ impl VersionedPrefix {
     }
 }
 
-impl Deref for VersionedPrefix {
+impl Deref for Prefix {
     type Target = UnversionedPrefix;
 
     fn deref(&self) -> &Self::Target {
@@ -150,13 +150,13 @@ impl Deref for VersionedPrefix {
     }
 }
 
-impl PartialOrd for VersionedPrefix {
+impl PartialOrd for Prefix {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for VersionedPrefix {
+impl Ord for Prefix {
     fn cmp(&self, other: &Self) -> Ordering {
         self.inner.cmp(&other.inner).then_with(|| {
             self.version.cmp(&other.version)
@@ -164,27 +164,27 @@ impl Ord for VersionedPrefix {
     }
 }
 
-impl Hash for VersionedPrefix {
+impl Hash for Prefix {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.inner.hash(state);
         self.version.hash(state);
     }
 }
 
-impl Binary for VersionedPrefix {
+impl Binary for Prefix {
     fn fmt(&self, formatter: &mut Formatter) -> FmtResult {
         write!(formatter, "{:b}", self.inner)
     }
 }
 
-impl Debug for VersionedPrefix {
+impl Debug for Prefix {
     fn fmt(&self, formatter: &mut Formatter) -> FmtResult {
         write!(formatter, "Prefix({:b}, v{})", self.inner, self.version)
     }
 }
 
 #[cfg(test)]
-impl FromStr for VersionedPrefix {
+impl FromStr for Prefix {
     type Err = String;
     fn from_str(bits: &str) -> Result<Self, String> {
         let mut first_byte = 0u8;
@@ -213,9 +213,9 @@ pub struct UnversionedPrefix {
 }
 
 impl UnversionedPrefix {
-    /// Returns a `VersionedPrefix` with this prefix and the given version number.
-    pub fn with_version(self, version: u64) -> VersionedPrefix {
-        VersionedPrefix {
+    /// Returns a `Prefix` with this prefix and the given version number.
+    pub fn with_version(self, version: u64) -> Prefix {
+        Prefix {
             inner: self,
             version: version,
         }
@@ -341,9 +341,9 @@ impl Debug for UnversionedPrefix {
 
 /// Find the entry at the given prefix, ignoring versions.
 pub fn unversioned_find<'a, T>(
-    map: &'a BTreeMap<VersionedPrefix, T>,
+    map: &'a BTreeMap<Prefix, T>,
     key: &UnversionedPrefix,
-) -> Option<(VersionedPrefix, &'a T)> {
+) -> Option<(Prefix, &'a T)> {
     map.range(key.with_version(0)..key.with_version(u64::MAX))
         .next()
         .map(|(prefix, value)| (*prefix, value))
@@ -351,7 +351,7 @@ pub fn unversioned_find<'a, T>(
 
 /// Get the value at the given prefix, ignoring versions.
 pub fn unversioned_get<'a, T>(
-    map: &'a BTreeMap<VersionedPrefix, T>,
+    map: &'a BTreeMap<Prefix, T>,
     key: &UnversionedPrefix,
 ) -> Option<&'a T> {
     map.range(key.with_version(0)..key.with_version(u64::MAX))
@@ -361,7 +361,7 @@ pub fn unversioned_get<'a, T>(
 
 /// Check whether the map contains a key equal to the given prefix but ignoring versions.
 pub fn unversioned_contains_key<'a, T>(
-    map: &'a BTreeMap<VersionedPrefix, T>,
+    map: &'a BTreeMap<Prefix, T>,
     key: &UnversionedPrefix,
 ) -> bool {
     map.range(key.with_version(0)..key.with_version(u64::MAX))
@@ -370,10 +370,7 @@ pub fn unversioned_contains_key<'a, T>(
 }
 
 /// Remove and return the element at the given prefix, ignoring versions.
-pub fn unversioned_remove(
-    set: &mut BTreeSet<VersionedPrefix>,
-    key: &UnversionedPrefix,
-) -> Option<VersionedPrefix> {
+pub fn unversioned_remove(set: &mut BTreeSet<Prefix>, key: &UnversionedPrefix) -> Option<Prefix> {
     if let Some(prefix) = set.range(key.with_version(0)..key.with_version(u64::MAX))
         .cloned()
         .next()
@@ -394,78 +391,56 @@ mod tests {
     #[test]
     fn prefix() {
         assert_eq!(
-            unwrap!(VersionedPrefix::from_str("101")).pushed(true),
-            unwrap!(VersionedPrefix::from_str("1011"))
+            unwrap!(Prefix::from_str("101")).pushed(true),
+            unwrap!(Prefix::from_str("1011"))
         );
         assert_eq!(
-            unwrap!(VersionedPrefix::from_str("101")).pushed(false),
-            unwrap!(VersionedPrefix::from_str("1010"))
+            unwrap!(Prefix::from_str("101")).pushed(false),
+            unwrap!(Prefix::from_str("1010"))
         );
         assert_eq!(
-            unwrap!(VersionedPrefix::from_str("1011")).popped(),
-            unwrap!(VersionedPrefix::from_str("101"))
+            unwrap!(Prefix::from_str("1011")).popped(),
+            unwrap!(Prefix::from_str("101"))
         );
-        assert!(unwrap!(VersionedPrefix::from_str("101")).is_compatible(
-            &unwrap!(
-                VersionedPrefix::from_str("1010")
-            ),
-        ));
-        assert!(unwrap!(VersionedPrefix::from_str("1010")).is_compatible(
-            &unwrap!(
-                VersionedPrefix::from_str("101")
-            ),
-        ));
-        assert!(!unwrap!(VersionedPrefix::from_str("1010")).is_compatible(
-            &unwrap!(
-                VersionedPrefix::from_str("1011")
-            ),
-        ));
-        assert!(unwrap!(VersionedPrefix::from_str("101")).is_neighbour(
-            &unwrap!(
-                VersionedPrefix::from_str("1111")
-            ),
-        ));
-        assert!(!unwrap!(VersionedPrefix::from_str("1010")).is_neighbour(
-            &unwrap!(
-                VersionedPrefix::from_str("1111")
-            ),
-        ));
-        assert!(unwrap!(VersionedPrefix::from_str("1010")).is_neighbour(
-            &unwrap!(
-                VersionedPrefix::from_str("10111")
-            ),
-        ));
-        assert!(!unwrap!(VersionedPrefix::from_str("101")).is_neighbour(
-            &unwrap!(
-                VersionedPrefix::from_str("10111")
-            ),
-        ));
+        assert!(unwrap!(Prefix::from_str("101")).is_compatible(&unwrap!(
+            Prefix::from_str("1010")
+        )));
+        assert!(unwrap!(Prefix::from_str("1010")).is_compatible(&unwrap!(
+            Prefix::from_str("101")
+        )));
+        assert!(!unwrap!(Prefix::from_str("1010")).is_compatible(&unwrap!(
+            Prefix::from_str("1011")
+        )));
+        assert!(unwrap!(Prefix::from_str("101")).is_neighbour(&unwrap!(
+            Prefix::from_str("1111")
+        )));
+        assert!(!unwrap!(Prefix::from_str("1010")).is_neighbour(&unwrap!(
+            Prefix::from_str("1111")
+        )));
+        assert!(unwrap!(Prefix::from_str("1010")).is_neighbour(&unwrap!(
+            Prefix::from_str("10111")
+        )));
+        assert!(!unwrap!(Prefix::from_str("101")).is_neighbour(&unwrap!(
+            Prefix::from_str("10111")
+        )));
         let mut xor_name = XorName::default();
         xor_name[0] = 0b1010_1100;
-        assert!(unwrap!(VersionedPrefix::from_str("101")).matches(&xor_name));
-        assert!(!unwrap!(VersionedPrefix::from_str("1011")).matches(
-            &xor_name,
-        ));
+        assert!(unwrap!(Prefix::from_str("101")).matches(&xor_name));
+        assert!(!unwrap!(Prefix::from_str("1011")).matches(&xor_name));
 
         xor_name[0] = 0b0101_0000;
-        assert_eq!(
-            unwrap!(VersionedPrefix::from_str("0101")).lower_bound(),
-            xor_name
-        );
+        assert_eq!(unwrap!(Prefix::from_str("0101")).lower_bound(), xor_name);
         xor_name.0 = [255; XOR_NAME_LEN];
         xor_name[0] = 0b0101_1111;
-        assert_eq!(
-            unwrap!(VersionedPrefix::from_str("0101")).upper_bound(),
-            xor_name
-        );
+        assert_eq!(unwrap!(Prefix::from_str("0101")).upper_bound(), xor_name);
 
         // Check we handle passing an excessive `bit_count` to `new()`.
         assert_eq!(
-            VersionedPrefix::new(XOR_NAME_BITS, XorName::default(), 0).bit_count(),
+            Prefix::new(XOR_NAME_BITS, XorName::default(), 0).bit_count(),
             XOR_NAME_BITS
         );
         assert_eq!(
-            VersionedPrefix::new(XOR_NAME_BITS + 1, XorName::default(), 0).bit_count(),
+            Prefix::new(XOR_NAME_BITS + 1, XorName::default(), 0).bit_count(),
             XOR_NAME_BITS
         );
     }

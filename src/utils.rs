@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use VersionedPrefix;
+use Prefix;
 use itertools::Itertools;
 use std::collections::BTreeSet;
 use std::fmt::{self, Display, Write};
@@ -104,7 +104,7 @@ pub fn calculate_relocation_dst(mut close_nodes: Vec<XorName>, current_name: &Xo
 
 /// Calculate the interval for a node joining our section to generate a key for.
 pub fn calculate_relocation_interval(
-    prefix: &VersionedPrefix,
+    prefix: &Prefix,
     section: &BTreeSet<XorName>,
 ) -> (XorName, XorName) {
     let (lower_bound, upper_bound) = (prefix.lower_bound(), prefix.upper_bound());

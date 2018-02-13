@@ -20,7 +20,7 @@ use super::XorName;
 use itertools::Itertools;
 use messages::SectionList;
 use public_info::PublicInfo;
-use routing_table::{UnversionedPrefix, VersionedPrefix};
+use routing_table::{Prefix, UnversionedPrefix};
 use rust_sodium::crypto::sign::Signature;
 use std::collections::HashMap;
 
@@ -66,7 +66,7 @@ impl SectionListCache {
     /// Adds a new signature for a section list
     pub fn add_signature(
         &mut self,
-        prefix: VersionedPrefix,
+        prefix: Prefix,
         pub_info: PublicInfo,
         list: SectionList,
         sig: Signature,
@@ -92,7 +92,7 @@ impl SectionListCache {
     /// Returns the given signature, if present.
     pub fn get_signature_for(
         &self,
-        prefix: &VersionedPrefix,
+        prefix: &Prefix,
         pub_info: &PublicInfo,
         list: &SectionList,
     ) -> Option<&Signature> {
@@ -105,7 +105,7 @@ impl SectionListCache {
     /// Returns the currently signed section list for `prefix` along with a quorum of signatures.
     // TODO: Remove this when the method is used in production
     #[cfg(feature = "use-mock-crust")]
-    pub fn get_signatures(&self, prefix: &VersionedPrefix) -> Option<&(SectionList, Signatures)> {
+    pub fn get_signatures(&self, prefix: &Prefix) -> Option<&(SectionList, Signatures)> {
         self.lists_cache.get(&prefix.unversioned())
     }
 
@@ -163,13 +163,13 @@ impl SectionListCache {
         }
     }
 
-    fn remove_signatures_for_prefix_by(&mut self, prefix: VersionedPrefix, author: PublicInfo) {
+    fn remove_signatures_for_prefix_by(&mut self, prefix: Prefix, author: PublicInfo) {
         // vector of tuples (prefix, section list) to be removed
         let to_remove = self.signed_by
             .get(&author)
             .into_iter()
             .flat_map(|map| map.iter())
-            .filter(|&(p, _)| p.with_version(0).is_compatible(&prefix))
+            .filter(|&(p, _)| p.is_compatible(&prefix))
             .map(|(&prefix, list)| (prefix, list.clone()))
             .collect_vec();
         for (prefix, list) in to_remove {

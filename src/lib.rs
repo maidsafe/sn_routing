@@ -244,7 +244,7 @@ pub use peer_manager::test_consts;
 pub use public_info::PublicInfo;
 #[cfg(feature = "use-mock-crust")]
 pub use rate_limiter::rate_limiter_consts;
-pub use routing_table::{Authority, RoutingTable, UnversionedPrefix, VersionedPrefix};
+pub use routing_table::{Authority, Prefix, RoutingTable, UnversionedPrefix};
 pub use routing_table::Error as RoutingTableError;
 #[cfg(any(test, feature = "use-mock-crust"))]
 pub use routing_table::verify_network_invariant;

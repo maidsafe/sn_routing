@@ -44,8 +44,8 @@ use rand::{self, Rng};
 use rate_limiter::RateLimiter;
 use resource_prover::{RESOURCE_PROOF_DURATION_SECS, ResourceProver};
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
-use routing_table::{Authority, OwnMergeState, RemovalDetails, RoutingTable, UnversionedPrefix,
-                    VersionedPrefix, prefix};
+use routing_table::{Authority, OwnMergeState, Prefix, RemovalDetails, RoutingTable,
+                    UnversionedPrefix, prefix};
 use routing_table::Error as RoutingTableError;
 use rust_sodium::crypto::{box_, sign};
 use section_list_cache::SectionListCache;
@@ -129,7 +129,7 @@ pub struct Node {
     /// The timer token for displaying the current candidate status.
     candidate_status_token: Option<u64>,
     resource_prover: ResourceProver,
-    joining_prefix: VersionedPrefix,
+    joining_prefix: Prefix,
     /// Limits the rate at which clients can pass messages through this node when it acts as their
     /// proxy.
     clients_rate_limiter: RateLimiter,
@@ -181,7 +181,7 @@ impl Node {
 
     #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
     pub fn from_bootstrapping(
-        our_section: (VersionedPrefix, &BTreeSet<PublicInfo>),
+        our_section: (Prefix, &BTreeSet<PublicInfo>),
         action_sender: RoutingActionSender,
         cache: Box<Cache>,
         crust_service: Service,
@@ -849,7 +849,7 @@ impl Node {
         Ok(())
     }
 
-    fn get_section(&self, prefix: &VersionedPrefix) -> Result<BTreeSet<XorName>, RoutingError> {
+    fn get_section(&self, prefix: &Prefix) -> Result<BTreeSet<XorName>, RoutingError> {
         let section = self.routing_table()
             .get_section(&prefix.lower_bound())
             .ok_or(RoutingError::InvalidSource)?
@@ -859,7 +859,7 @@ impl Node {
         Ok(section)
     }
 
-    fn get_section_list(&self, prefix: &VersionedPrefix) -> Result<SectionList, RoutingError> {
+    fn get_section_list(&self, prefix: &Prefix) -> Result<SectionList, RoutingError> {
         Ok(SectionList::new(
             *prefix,
             self.peer_mgr.get_pub_infos(&self.get_section(prefix)?),
@@ -875,7 +875,7 @@ impl Node {
 
     /// Sends a signature for the list of members of a section with prefix `prefix` to our whole
     /// section if `dst` is `None`, or to the given node if it is `Some(name)`
-    fn send_section_list_signature(&mut self, prefix: VersionedPrefix, dst: Option<XorName>) {
+    fn send_section_list_signature(&mut self, prefix: Prefix, dst: Option<XorName>) {
         if cfg!(not(feature = "use-mock-crust")) {
             return;
         }
@@ -2035,11 +2035,7 @@ impl Node {
 
     /// Informs our peers that our section's member list changed. If `dst_prefix` is `Some`, only
     /// tells that section, otherwise tells all connected sections, including our own.
-    fn send_section_update(
-        &mut self,
-        dst_prefix: Option<VersionedPrefix>,
-        allow_small_sections: bool,
-    ) {
+    fn send_section_update(&mut self, dst_prefix: Option<Prefix>, allow_small_sections: bool) {
         if dst_prefix.is_none() &&
             !self.routing_table()
                 .check_invariant(allow_small_sections, false)
@@ -2715,7 +2711,7 @@ impl Node {
 
     fn handle_section_update(
         &mut self,
-        prefix: VersionedPrefix,
+        prefix: Prefix,
         members: BTreeSet<PublicInfo>,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError> {
@@ -2794,7 +2790,7 @@ impl Node {
 
     fn handle_section_split(
         &mut self,
-        prefix: VersionedPrefix,
+        prefix: Prefix,
         joining_node: XorName,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError> {
@@ -2835,8 +2831,8 @@ impl Node {
 
     fn handle_own_section_merge(
         &mut self,
-        sender_prefix: VersionedPrefix,
-        merge_prefix: VersionedPrefix,
+        sender_prefix: Prefix,
+        merge_prefix: Prefix,
         sections: SectionMap,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError> {
@@ -2934,7 +2930,7 @@ impl Node {
 
     fn process_own_section_merge(
         &mut self,
-        merge_prefix: VersionedPrefix,
+        merge_prefix: Prefix,
         sections: &SectionMap,
         our_merged_section: &BTreeSet<XorName>,
         outbox: &mut EventBox,
@@ -2991,7 +2987,7 @@ impl Node {
 
     fn handle_other_section_merge(
         &mut self,
-        merge_prefix: VersionedPrefix,
+        merge_prefix: Prefix,
         section: &BTreeSet<PublicInfo>,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError> {
@@ -3781,7 +3777,7 @@ impl Node {
         true
     }
 
-    fn send_section_split(&mut self, our_prefix: VersionedPrefix, joining_node: XorName) {
+    fn send_section_split(&mut self, our_prefix: Prefix, joining_node: XorName) {
         for prefix in self.routing_table().prefixes() {
             // this way of calculating the source avoids using the joining node as the route
             // src authority is a PrefixSection and not Section to help resend failed messages
@@ -3830,8 +3826,8 @@ impl Node {
 
     fn send_other_section_merge(
         &mut self,
-        targets: &BTreeSet<VersionedPrefix>,
-        prefix: VersionedPrefix,
+        targets: &BTreeSet<Prefix>,
+        prefix: Prefix,
         section: &BTreeSet<XorName>,
     ) {
         let pub_infos = self.peer_mgr.get_pub_infos(section);
@@ -3908,7 +3904,7 @@ impl Node {
         }
     }
 
-    fn our_prefix(&self) -> &VersionedPrefix {
+    fn our_prefix(&self) -> &Prefix {
         self.routing_table().our_prefix()
     }
 
@@ -3997,7 +3993,7 @@ impl Node {
 
     pub fn section_list_signatures(
         &self,
-        prefix: &VersionedPrefix,
+        prefix: &Prefix,
     ) -> Result<BTreeMap<PublicInfo, sign::Signature>, RoutingError> {
         if let Some(&(_, ref signatures)) = self.section_list_sigs.get_signatures(prefix) {
             Ok(
@@ -4177,15 +4173,15 @@ impl MergeCache {
         MergeCache(LruCache::with_expiry_duration(duration))
     }
 
-    fn insert(&mut self, prefix: VersionedPrefix, sections: SectionMap) -> Option<SectionMap> {
+    fn insert(&mut self, prefix: Prefix, sections: SectionMap) -> Option<SectionMap> {
         self.0.insert(prefix.unversioned(), sections)
     }
 
-    fn remove(&mut self, prefix: &VersionedPrefix) -> Option<SectionMap> {
+    fn remove(&mut self, prefix: &Prefix) -> Option<SectionMap> {
         self.0.remove(prefix)
     }
 
-    fn contains_key(&self, prefix: &VersionedPrefix) -> bool {
+    fn contains_key(&self, prefix: &Prefix) -> bool {
         self.0.contains_key(prefix)
     }
 }

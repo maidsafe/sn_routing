@@ -23,7 +23,7 @@
 use super::{Error, RoutingTable};
 use super::XorName;
 use super::authority::Authority;
-use super::prefix::{self, VersionedPrefix};
+use super::prefix::{self, Prefix};
 use maidsafe_utilities::SeededRng;
 use rand::Rng;
 use routing_table::{OwnMergeState, Sections};
@@ -104,8 +104,8 @@ impl Network {
     }
 
     fn store_merge_info<T: PartialEq + Debug>(
-        merge_info: &mut BTreeMap<VersionedPrefix, T>,
-        prefix: VersionedPrefix,
+        merge_info: &mut BTreeMap<Prefix, T>,
+        prefix: Prefix,
         new_info: T,
     ) {
         if let Some(content) = prefix::unversioned_get(merge_info, &prefix) {
@@ -122,7 +122,7 @@ impl Network {
         let keys = self.keys();
         let name = *unwrap!(self.rng.choose(&keys));
         let _ = self.nodes.remove(&name);
-        let mut merge_own_info: BTreeMap<VersionedPrefix, Sections> = BTreeMap::new();
+        let mut merge_own_info: BTreeMap<Prefix, Sections> = BTreeMap::new();
         // TODO: needs to verify how to broadcast such info
         for node in self.nodes.values_mut() {
             if node.iter().any(|&name_in_table| name_in_table == name) {
@@ -224,7 +224,7 @@ impl Network {
 
     fn nodes_covered_by_prefixes<T>(&self, prefixes: T) -> Vec<XorName>
     where
-        T: IntoIterator<Item = VersionedPrefix> + Clone,
+        T: IntoIterator<Item = Prefix> + Clone,
     {
         self.nodes
             .keys()
@@ -321,7 +321,7 @@ fn verify_invariant(network: &Network) {
 }
 
 pub fn verify_network_invariant<'a, T: IntoIterator<Item = &'a RoutingTable>>(nodes: T) {
-    let mut sections: BTreeMap<VersionedPrefix, _> = BTreeMap::new();
+    let mut sections: BTreeMap<Prefix, _> = BTreeMap::new();
     // first, collect all sections in the network
     for node in nodes {
         node.verify_invariant();
@@ -384,7 +384,7 @@ pub fn verify_network_invariant<'a, T: IntoIterator<Item = &'a RoutingTable>>(no
     }
 
     // check that sections cover the whole namespace
-    assert!(VersionedPrefix::default().is_covered_by(sections.keys()));
+    assert!(Prefix::default().is_covered_by(sections.keys()));
 }
 
 #[test]

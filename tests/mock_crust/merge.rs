@@ -19,7 +19,7 @@ use super::{create_connected_nodes_until_split, poll_all, poll_and_resend,
             verify_invariant_for_all_nodes};
 use fake_clock::FakeClock;
 use rand::Rng;
-use routing::{Event, EventStream, VersionedPrefix, XOR_NAME_LEN, XorName};
+use routing::{Event, EventStream, Prefix, XOR_NAME_LEN, XorName};
 use routing::mock_crust::Network;
 use routing::test_consts::ACK_TIMEOUT_SECS;
 use std::collections::{BTreeMap, BTreeSet};
@@ -105,10 +105,8 @@ fn concurrent_merge() {
     rng.shuffle(&mut nodes);
 
     // Choose two sections to drop nodes from, one of `00`/`01` and the other one of `10`/`11`.
-    let prefix_0_to_drop_from = VersionedPrefix::new(1, XorName([0; XOR_NAME_LEN]), 0)
-        .pushed(rng.gen());
-    let prefix_1_to_drop_from = VersionedPrefix::new(1, XorName([255; XOR_NAME_LEN]), 0)
-        .pushed(rng.gen());
+    let prefix_0_to_drop_from = Prefix::new(1, XorName([0; XOR_NAME_LEN]), 0).pushed(rng.gen());
+    let prefix_1_to_drop_from = Prefix::new(1, XorName([255; XOR_NAME_LEN]), 0).pushed(rng.gen());
 
     // Create a map with <section, number of members> as key/value for these two sections.
     let mut section_map = BTreeMap::new();
@@ -154,7 +152,7 @@ fn merge_exclude_reconnecting_nodes() {
     rng.shuffle(&mut nodes);
 
     // Choose one section to drop nodes from.
-    let prefix_to_drop_from = VersionedPrefix::new(1, XorName([0; XOR_NAME_LEN]), 0);
+    let prefix_to_drop_from = Prefix::new(1, XorName([0; XOR_NAME_LEN]), 0);
 
     let mut nodes_count = nodes
         .iter()

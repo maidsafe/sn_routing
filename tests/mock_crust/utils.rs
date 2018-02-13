@@ -19,8 +19,8 @@ use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
 use routing::{Authority, BootstrapConfig, Cache, Client, Config, DevConfig, Event, EventStream,
-              FullInfo, ImmutableData, Node, NullCache, PublicInfo, Request, Response,
-              RoutingTable, UnversionedPrefix, VersionedPrefix, XorName, verify_network_invariant};
+              FullInfo, ImmutableData, Node, NullCache, Prefix, PublicInfo, Request, Response,
+              RoutingTable, UnversionedPrefix, XorName, verify_network_invariant};
 use routing::mock_crust::{self, Endpoint, Network, ServiceHandle};
 use routing::test_consts::{ACK_TIMEOUT_SECS, CONNECTING_PEER_TIMEOUT_SECS};
 use std::{cmp, thread};
@@ -560,7 +560,7 @@ pub fn add_connected_nodes_until_split(
                 )
             {
                 // Assert that this can be split down to a desired prefix.
-                let is_valid = |prefix: &VersionedPrefix| {
+                let is_valid = |prefix: &Prefix| {
                     if prefix.is_compatible(prefix_to_split) {
                         assert!(
                             prefix.bit_count() > prefix_to_split.bit_count(),
@@ -706,7 +706,7 @@ fn sanity_check(prefix_lengths: &[usize]) {
     }
 }
 
-fn prefixes<T: Rng>(prefix_lengths: &[usize], rng: &mut T) -> Vec<VersionedPrefix> {
+fn prefixes<T: Rng>(prefix_lengths: &[usize], rng: &mut T) -> Vec<Prefix> {
     let _ = prefix_lengths.iter().fold(0, |previous, &current| {
         assert!(
             previous <= current,
@@ -715,9 +715,9 @@ fn prefixes<T: Rng>(prefix_lengths: &[usize], rng: &mut T) -> Vec<VersionedPrefi
         );
         current
     });
-    let mut prefixes = vec![VersionedPrefix::new(prefix_lengths[0], rng.gen(), 0)];
+    let mut prefixes = vec![Prefix::new(prefix_lengths[0], rng.gen(), 0)];
     while prefixes.len() < prefix_lengths.len() {
-        let new_prefix = VersionedPrefix::new(prefix_lengths[prefixes.len()], rng.gen(), 0);
+        let new_prefix = Prefix::new(prefix_lengths[prefixes.len()], rng.gen(), 0);
         if prefixes.iter().all(
             |prefix| !prefix.is_compatible(&new_prefix),
         )
@@ -731,7 +731,7 @@ fn prefixes<T: Rng>(prefix_lengths: &[usize], rng: &mut T) -> Vec<VersionedPrefi
 fn add_node_to_section<T: Rng>(
     network: &Network<PublicInfo>,
     nodes: &mut Vec<TestNode>,
-    prefix: &VersionedPrefix,
+    prefix: &Prefix,
     rng: &mut T,
     use_cache: bool,
 ) {

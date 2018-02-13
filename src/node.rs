@@ -31,7 +31,7 @@ use outbox::{EventBox, EventBuf};
 use public_info::PublicInfo;
 use routing_table::{Authority, RoutingTable};
 #[cfg(feature = "use-mock-crust")]
-use routing_table::VersionedPrefix;
+use routing_table::Prefix;
 #[cfg(not(feature = "use-mock-crust"))]
 use rust_sodium;
 use rust_sodium::crypto::sign;
@@ -598,7 +598,7 @@ impl Node {
     /// have one
     pub fn section_list_signatures(
         &self,
-        prefix: &VersionedPrefix,
+        prefix: &Prefix,
     ) -> Option<BTreeMap<PublicInfo, sign::Signature>> {
         self.machine.current().section_list_signatures(prefix)
     }

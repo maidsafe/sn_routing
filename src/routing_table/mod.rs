@@ -116,7 +116,7 @@ pub use self::authority::Authority;
 pub use self::error::Error;
 #[cfg(any(test, feature = "use-mock-crust"))]
 pub use self::network_tests::verify_network_invariant;
-pub use self::prefix::{UnversionedPrefix, VersionedPrefix};
+pub use self::prefix::{Prefix, UnversionedPrefix};
 pub use super::{XOR_NAME_BITS, XOR_NAME_LEN, XorName};
 use itertools::Itertools;
 use log::LogLevel;
@@ -126,8 +126,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{Binary, Debug, Formatter};
 use std::fmt::Result as FmtResult;
 
-pub type Sections = BTreeMap<VersionedPrefix, BTreeSet<XorName>>;
-type SectionItem<'a> = (VersionedPrefix, &'a BTreeSet<XorName>);
+pub type Sections = BTreeMap<Prefix, BTreeSet<XorName>>;
+type SectionItem<'a> = (Prefix, &'a BTreeSet<XorName>);
 
 // Amount added to `group_size` when deciding whether a bucket split can happen. This helps
 // protect against rapid splitting and merging in the face of moderate churn.
@@ -177,8 +177,8 @@ pub enum OwnMergeState {
     // containing the appropriate targets (the `Prefix`es of all sections outwith the merging ones)
     // and the merge details they each need to receive (the new prefix and merged section).
     Completed {
-        targets: BTreeSet<VersionedPrefix>,
-        prefix: VersionedPrefix,
+        targets: BTreeSet<Prefix>,
+        prefix: Prefix,
         section: BTreeSet<XorName>,
     },
     // The merge has already completed, implying that no further action by the caller is required.
@@ -200,7 +200,7 @@ pub struct RoutingTable {
     /// Name of node holding this table
     our_name: XorName,
     /// Prefix of our section
-    our_prefix: VersionedPrefix,
+    our_prefix: Prefix,
     /// Members of our section, including our own name
     our_section: BTreeSet<XorName>,
     /// Other sections (excludes our own) (TODO: rename)
@@ -223,7 +223,7 @@ impl RoutingTable {
     ///
     /// Called once a node has been approved by its own section and is given its nodes' tables.
     /// Expects the current sections to be empty and have version 0.
-    pub fn add_prefixes(&mut self, ver_pfxs: Vec<VersionedPrefix>) -> Result<(), Error> {
+    pub fn add_prefixes(&mut self, ver_pfxs: Vec<Prefix>) -> Result<(), Error> {
         if self.our_prefix.version() != 0 || !self.sections.is_empty() {
             return Err(Error::InvariantViolation);
         }
@@ -249,7 +249,7 @@ impl RoutingTable {
     /// Checks that the `NodeApproval` message contains a valid `RoutingTable`.
     pub fn check_node_approval_msg(
         &self,
-        sections: &BTreeMap<VersionedPrefix, BTreeSet<XorName>>,
+        sections: &BTreeMap<Prefix, BTreeSet<XorName>>,
     ) -> Result<(), Error> {
         let mut temp_rt = RoutingTable::new(self.our_name, self.group_size);
         temp_rt.add_prefixes(
@@ -264,8 +264,8 @@ impl RoutingTable {
         temp_rt.check_invariant(false, true)
     }
 
-    /// Returns the `VersionedPrefix` of our section.
-    pub fn our_prefix(&self) -> &VersionedPrefix {
+    /// Returns the `Prefix` of our section.
+    pub fn our_prefix(&self) -> &Prefix {
         &self.our_prefix
     }
 
@@ -295,7 +295,7 @@ impl RoutingTable {
     pub fn section_matching_prefix(
         &self,
         prefix: &UnversionedPrefix,
-    ) -> Option<(VersionedPrefix, &BTreeSet<XorName>)> {
+    ) -> Option<(Prefix, &BTreeSet<XorName>)> {
         if *prefix == self.our_prefix.unversioned() {
             Some((self.our_prefix, &self.our_section))
         } else {
@@ -354,7 +354,7 @@ impl RoutingTable {
     /// routing table.
     pub fn network_size_estimate(&self) -> (u64, bool) {
         let known_prefixes = self.prefixes();
-        let is_exact = VersionedPrefix::default().is_covered_by(known_prefixes.iter());
+        let is_exact = Prefix::default().is_covered_by(known_prefixes.iter());
 
         // Estimated fraction of the network that we have in our RT.
         // Computed as the sum of 1 / 2^(prefix.bit_count) for all known section prefixes.
@@ -371,12 +371,12 @@ impl RoutingTable {
 
     /// Collects prefixes of all sections known by the routing table other than ours into a
     /// `BTreeSet`.
-    pub fn other_prefixes(&self) -> BTreeSet<VersionedPrefix> {
+    pub fn other_prefixes(&self) -> BTreeSet<Prefix> {
         self.sections.keys().cloned().collect()
     }
 
     /// Collects prefixes of all sections known by the routing table into a `BTreeSet`.
-    pub fn prefixes(&self) -> BTreeSet<VersionedPrefix> {
+    pub fn prefixes(&self) -> BTreeSet<Prefix> {
         self.all_sections_iter().map(|(prefix, _)| prefix).collect()
     }
 
@@ -539,7 +539,7 @@ impl RoutingTable {
     /// more (i.e. only differ in one bit from our own prefix), they are removed and those contacts
     /// are returned. If the split is happening to our own section, our new prefix is returned in
     /// the optional field.
-    pub fn split(&mut self, prefix: VersionedPrefix) -> (Vec<XorName>, Option<VersionedPrefix>) {
+    pub fn split(&mut self, prefix: Prefix) -> (Vec<XorName>, Option<Prefix>) {
         let mut result = vec![];
 
         if prefix == self.our_prefix {
@@ -573,7 +573,7 @@ impl RoutingTable {
     /// Adds the given prefix to the routing table, merging or splitting if necessary. Returns the
     /// entries that have been dropped. If the version is lower or equal to the one in the routing
     /// table, the change is not applied.
-    pub fn add_prefix(&mut self, ver_pfx: VersionedPrefix) -> Vec<XorName> {
+    pub fn add_prefix(&mut self, ver_pfx: Prefix) -> Vec<XorName> {
         // If the prefix isn't relevant to our RT, reject the change.
         if !ver_pfx.is_compatible(&self.our_prefix) && !ver_pfx.is_neighbour(&self.our_prefix) {
             return vec![];
@@ -602,7 +602,7 @@ impl RoutingTable {
         if ver_pfx.matches(&self.our_name) {
             self.our_prefix = ver_pfx;
         } else if ver_pfx.is_compatible(&self.our_prefix) {
-            self.our_prefix = VersionedPrefix::new(
+            self.our_prefix = Prefix::new(
                 ver_pfx.common_prefix(&self.our_name) + 1,
                 self.our_name,
                 self.our_prefix.version(),
@@ -681,13 +681,9 @@ impl RoutingTable {
     ///
     /// The actual merge of the section is only done once all expected merging sections have
     /// provided details. See the docs for `OwnMergeState` for full details of the return value.
-    pub fn merge_own_section<I>(
-        &mut self,
-        merge_prefix: VersionedPrefix,
-        prefixes: I,
-    ) -> OwnMergeState
+    pub fn merge_own_section<I>(&mut self, merge_prefix: Prefix, prefixes: I) -> OwnMergeState
     where
-        I: IntoIterator<Item = VersionedPrefix>,
+        I: IntoIterator<Item = Prefix>,
     {
         // TODO: Return an error if they are not compatible instead?
         if !self.our_prefix.is_compatible(&merge_prefix) ||
@@ -738,11 +734,7 @@ impl RoutingTable {
     /// The appropriate targets (all contacts from `merge_details.sections` which are not currently
     /// held in the routing table) are returned so the caller can establish connections to these
     /// nodes and subsequently add them.
-    pub fn merge_other_section<I>(
-        &mut self,
-        ver_pfx: VersionedPrefix,
-        members: I,
-    ) -> BTreeSet<XorName>
+    pub fn merge_other_section<I>(&mut self, ver_pfx: Prefix, members: I) -> BTreeSet<XorName>
     where
         I: IntoIterator<Item = XorName>,
     {
@@ -917,7 +909,7 @@ impl RoutingTable {
 
     /// Returns the prefix of the section in which `name` belongs, or `None` if there is no such
     /// section in the routing table.
-    pub fn find_section_prefix(&self, name: &XorName) -> Option<VersionedPrefix> {
+    pub fn find_section_prefix(&self, name: &XorName) -> Option<Prefix> {
         if self.our_prefix.matches(name) {
             return Some(self.our_prefix);
         }
@@ -928,7 +920,7 @@ impl RoutingTable {
     }
 
     /// Return a minimum length prefix, favouring our prefix if it is one of the shortest.
-    pub fn min_len_prefix(&self) -> VersionedPrefix {
+    pub fn min_len_prefix(&self) -> Prefix {
         *iter::once(&self.our_prefix)
             .chain(self.sections.keys())
             .min_by_key(|prefix| prefix.bit_count())
@@ -960,7 +952,7 @@ impl RoutingTable {
     }
 
     /// Inserts the given section. Logs an error if it already exists.
-    fn insert_new_section(&mut self, prefix: VersionedPrefix, section: BTreeSet<XorName>) {
+    fn insert_new_section(&mut self, prefix: Prefix, section: BTreeSet<XorName>) {
         let section = if let Some(old_prefix) = prefix::unversioned_find(&self.sections, &prefix)
             .map(|(old_prefix, old_section)| {
                 error!(
@@ -988,7 +980,7 @@ impl RoutingTable {
         let _ = self.sections.insert(prefix, section);
     }
 
-    fn merge(&mut self, new_pfx: &VersionedPrefix) {
+    fn merge(&mut self, new_pfx: &Prefix) {
         if new_pfx.is_extension_of(&self.our_prefix) ||
             self.sections.keys().any(|pfx| new_pfx.is_extension_of(pfx))
         {
@@ -1027,7 +1019,7 @@ impl RoutingTable {
 
     /// Returns the prefix of the closest non-empty section to `name`, regardless of whether `name`
     /// belongs in that section or not, and the section itself.
-    fn closest_section(&self, name: &XorName) -> (VersionedPrefix, &BTreeSet<XorName>) {
+    fn closest_section(&self, name: &XorName) -> (Prefix, &BTreeSet<XorName>) {
         let mut result = (self.our_prefix, &self.our_section);
         for (prefix, section) in &self.sections {
             if !section.is_empty() && result.0.cmp_distance(prefix, name) == Ordering::Greater {

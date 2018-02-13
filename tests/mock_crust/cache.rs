@@ -20,7 +20,7 @@ use super::{TestNode, create_connected_clients, create_connected_nodes_until_spl
 use fake_clock::FakeClock;
 use rand::Rng;
 use routing::{Authority, Event, EventStream, ImmutableData, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
-              MessageId, Request, Response, VersionedPrefix};
+              MessageId, Prefix, Request, Response};
 use routing::mock_crust::Network;
 use routing::rate_limiter_consts::RATE;
 use std::sync::mpsc;
@@ -35,7 +35,7 @@ fn gen_immutable_data_not_in_first_node_section<T: Rng>(
     // We want to make sure the data is inserted into a different section. Since the
     // root prefix uses 0 bits, we will have at least one section starting bit 0 and at
     // least one starting bit 1. If this differs, the sections are guaranteed different.
-    let prefix = VersionedPrefix::new(1, first_name, 0);
+    let prefix = Prefix::new(1, first_name, 0);
 
     loop {
         let data = gen_immutable_data(rng, 8);

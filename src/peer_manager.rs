@@ -27,7 +27,7 @@ use public_info::PublicInfo;
 use rand;
 use resource_proof::ResourceProof;
 use resource_prover::RESOURCE_PROOF_DURATION_SECS;
-use routing_table::{Authority, OwnMergeState, RemovalDetails, RoutingTable, VersionedPrefix};
+use routing_table::{Authority, OwnMergeState, Prefix, RemovalDetails, RoutingTable};
 use routing_table::Error as RoutingTableError;
 use signature_accumulator::ACCUMULATION_TIMEOUT_SECS;
 use std::{error, fmt, iter, mem};
@@ -62,7 +62,7 @@ pub mod test_consts {
     pub const RATE_EXCEED_RETRY_MS: u64 = ::states::RATE_EXCEED_RETRY_MS;
 }
 
-pub type SectionMap = BTreeMap<VersionedPrefix, BTreeSet<PublicInfo>>;
+pub type SectionMap = BTreeMap<Prefix, BTreeSet<PublicInfo>>;
 
 #[derive(Default)]
 pub struct PeerDetails {
@@ -445,7 +445,7 @@ impl PeerManager {
     }
 
     /// Add prefixes into routing table.
-    pub fn add_prefixes(&mut self, prefixes: Vec<VersionedPrefix>) -> Result<(), RoutingError> {
+    pub fn add_prefixes(&mut self, prefixes: Vec<Prefix>) -> Result<(), RoutingError> {
         Ok(self.routing_table.add_prefixes(prefixes)?)
     }
 
@@ -494,7 +494,7 @@ impl PeerManager {
         &mut self,
         old_pub_info: PublicInfo,
         target_interval: (XorName, XorName),
-    ) -> (VersionedPrefix, BTreeSet<PublicInfo>) {
+    ) -> (Prefix, BTreeSet<PublicInfo>) {
         self.candidate = Candidate::AcceptedForResourceProof {
             res_proof_start: Instant::now(),
             old_pub_info: old_pub_info,
@@ -805,10 +805,7 @@ impl PeerManager {
 
     /// Splits the indicated section and returns the `PublicInfo`s of any peers to which we should
     /// not remain connected.
-    pub fn split_section(
-        &mut self,
-        prefix: VersionedPrefix,
-    ) -> (Vec<PublicInfo>, Option<VersionedPrefix>) {
+    pub fn split_section(&mut self, prefix: Prefix) -> (Vec<PublicInfo>, Option<Prefix>) {
         let (names_to_drop, our_new_prefix) = self.routing_table.split(prefix);
         for name in &names_to_drop {
             info!("{:?} Dropped {} from the routing table.", self, name);
@@ -849,8 +846,8 @@ impl PeerManager {
 
     /// Adds the given prefix to the routing table, splitting or merging them as necessary. Returns
     /// the list of peers that have been dropped and need to be disconnected.
-    pub fn add_prefix(&mut self, ver_pfx: VersionedPrefix) -> Vec<PublicInfo> {
-        let names_to_drop = self.routing_table.add_prefix(ver_pfx);
+    pub fn add_prefix(&mut self, prefix: Prefix) -> Vec<PublicInfo> {
+        let names_to_drop = self.routing_table.add_prefix(prefix);
         for name in &names_to_drop {
             info!("{:?} Dropped {} from the routing table.", self, name);
         }
@@ -875,7 +872,7 @@ impl PeerManager {
     }
 
     /// Returns the sender prefix and sections to prepare a merge.
-    pub fn merge_details(&self) -> (VersionedPrefix, SectionMap) {
+    pub fn merge_details(&self) -> (Prefix, SectionMap) {
         let sections = self.routing_table
             .all_sections_iter()
             .map(|(prefix, members)| (prefix, self.get_pub_infos(members)))
@@ -888,7 +885,7 @@ impl PeerManager {
     /// should now connect to.
     pub fn merge_own_section(
         &mut self,
-        merge_prefix: VersionedPrefix,
+        merge_prefix: Prefix,
         sections: &SectionMap,
     ) -> (OwnMergeState, Vec<PublicInfo>) {
         let needed = sections
@@ -905,7 +902,7 @@ impl PeerManager {
 
     pub fn merge_other_section(
         &mut self,
-        ver_pfx: VersionedPrefix,
+        ver_pfx: Prefix,
         section: &BTreeSet<PublicInfo>,
     ) -> BTreeSet<PublicInfo> {
         let needed_names = self.routing_table.merge_other_section(
