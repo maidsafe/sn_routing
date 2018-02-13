@@ -153,7 +153,7 @@ impl Network {
             let own_info = merge_own_info;
             merge_own_info = BTreeMap::new();
             for (sender_pfx, sections) in own_info {
-                let nodes = self.nodes_covered_by_prefixes(iter::once(sender_pfx.sibling()));
+                let nodes = self.nodes_covered_by_prefixes(iter::once(&sender_pfx.sibling()));
                 for node in &nodes {
                     let target_node = unwrap!(self.nodes.get_mut(node));
                     let node_expected = expected_nodes.entry(*node).or_insert_with(BTreeSet::new);
@@ -202,7 +202,7 @@ impl Network {
 
             // handle broadcast of merge_other_section
             for (_, (target_prefixes, prefix, section)) in merge_other_info {
-                let targets = self.nodes_covered_by_prefixes(target_prefixes);
+                let targets = self.nodes_covered_by_prefixes(&target_prefixes);
                 for target in targets {
                     let target_node = unwrap!(self.nodes.get_mut(&target));
                     let contacts = target_node.merge_other_section(prefix, section.clone());
@@ -222,17 +222,15 @@ impl Network {
         }
     }
 
-    fn nodes_covered_by_prefixes<T>(&self, prefixes: T) -> Vec<XorName>
+    fn nodes_covered_by_prefixes<'a, T>(&self, prefixes: T) -> Vec<XorName>
     where
-        T: IntoIterator<Item = Prefix> + Clone,
+        T: IntoIterator<Item = &'a Prefix>,
     {
+        let prefixes: Vec<_> = prefixes.into_iter().collect();
+
         self.nodes
             .keys()
-            .filter(|&name| {
-                prefixes.clone().into_iter().any(
-                    |prefix| prefix.matches(name),
-                )
-            })
+            .filter(|&name| prefixes.iter().any(|prefix| prefix.matches(name)))
             .cloned()
             .collect()
     }

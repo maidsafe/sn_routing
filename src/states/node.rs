@@ -4092,7 +4092,7 @@ impl Bootstrapped for Node {
                 self.routing_table()
                     .all_sections_iter()
                     .filter_map(|(p, members)| if prefix.is_compatible(&p) {
-                        Some(SectionList::new(p, self.peer_mgr.get_pub_infos(&members)))
+                        Some(SectionList::new(p, self.peer_mgr.get_pub_infos(members)))
                     } else {
                         None
                     })

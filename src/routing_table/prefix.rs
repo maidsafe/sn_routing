@@ -27,7 +27,7 @@ use std::str::FromStr;
 use std::u64;
 
 /// A prefix with section version.
-#[derive(Clone, Copy, Default, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Copy, Default, Eq, PartialEq, Hash, Deserialize, Serialize)]
 pub struct Prefix {
     inner: UnversionedPrefix,
     version: u64,
@@ -161,13 +161,6 @@ impl Ord for Prefix {
         self.inner.cmp(&other.inner).then_with(|| {
             self.version.cmp(&other.version)
         })
-    }
-}
-
-impl Hash for Prefix {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.inner.hash(state);
-        self.version.hash(state);
     }
 }
 
