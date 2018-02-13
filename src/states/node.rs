@@ -44,7 +44,7 @@ use rand::{self, Rng};
 use rate_limiter::RateLimiter;
 use resource_prover::{RESOURCE_PROOF_DURATION_SECS, ResourceProver};
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
-use routing_table::{Authority, OwnMergeState, Prefix, RemovalDetails, RoutingTable,
+use routing_table::{Authority, OwnMergeState, RemovalDetails, RoutingTable, UnversionedPrefix,
                     VersionedPrefix, prefix};
 use routing_table::Error as RoutingTableError;
 use rust_sodium::crypto::{box_, sign};
@@ -2715,15 +2715,15 @@ impl Node {
 
     fn handle_section_update(
         &mut self,
-        ver_pfx: VersionedPrefix,
+        prefix: VersionedPrefix,
         members: BTreeSet<PublicInfo>,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError> {
-        trace!("{:?} Got section update for {:?}", self, ver_pfx);
+        trace!("{:?} Got section update for {:?}", self, prefix);
 
         let old_prefixes = self.routing_table().prefixes();
         // Perform splits and merges that we missed, according to the section update.
-        for pub_info in self.peer_mgr.add_prefix(ver_pfx) {
+        for pub_info in self.peer_mgr.add_prefix(prefix) {
             self.disconnect_peer(&pub_info, Some(outbox));
         }
 
@@ -2745,8 +2745,8 @@ impl Node {
         }
         // Filter list of members to just those we don't know about:
         let members = if let Some((_, section)) =
-            self.routing_table().section_with_prefix(
-                &ver_pfx.unversioned(),
+            self.routing_table().section_matching_prefix(
+                &prefix.unversioned(),
             )
         {
             members
@@ -2757,7 +2757,7 @@ impl Node {
             debug!(
                 "{:?} Section update received from unknown neighbour {:?}",
                 self,
-                ver_pfx
+                prefix
             );
             return Ok(());
         };
@@ -3034,7 +3034,7 @@ impl Node {
         self.send_section_list_signatures();
 
         if self.routing_table()
-            .section_with_prefix(&merge_prefix.unversioned())
+            .section_matching_prefix(&merge_prefix)
             .is_some()
         {
             self.reset_su_timer();
@@ -4170,7 +4170,7 @@ impl Debug for Node {
     }
 }
 
-struct MergeCache(LruCache<Prefix, SectionMap>);
+struct MergeCache(LruCache<UnversionedPrefix, SectionMap>);
 
 impl MergeCache {
     fn new(duration: Duration) -> Self {

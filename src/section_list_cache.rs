@@ -20,12 +20,12 @@ use super::XorName;
 use itertools::Itertools;
 use messages::SectionList;
 use public_info::PublicInfo;
-use routing_table::{Prefix, VersionedPrefix};
+use routing_table::{UnversionedPrefix, VersionedPrefix};
 use rust_sodium::crypto::sign::Signature;
 use std::collections::HashMap;
 
 pub type Signatures = HashMap<PublicInfo, Signature>;
-pub type PrefixMap<T> = HashMap<Prefix, T>;
+pub type PrefixMap<T> = HashMap<UnversionedPrefix, T>;
 
 #[derive(Default)]
 pub struct SectionListCache {

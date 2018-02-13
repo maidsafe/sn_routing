@@ -19,8 +19,8 @@ use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
 use routing::{Authority, BootstrapConfig, Cache, Client, Config, DevConfig, Event, EventStream,
-              FullInfo, ImmutableData, Node, NullCache, Prefix, PublicInfo, Request, Response,
-              RoutingTable, VersionedPrefix, XorName, verify_network_invariant};
+              FullInfo, ImmutableData, Node, NullCache, PublicInfo, Request, Response,
+              RoutingTable, UnversionedPrefix, VersionedPrefix, XorName, verify_network_invariant};
 use routing::mock_crust::{self, Endpoint, Network, ServiceHandle};
 use routing::test_consts::{ACK_TIMEOUT_SECS, CONNECTING_PEER_TIMEOUT_SECS};
 use std::{cmp, thread};
@@ -585,7 +585,7 @@ pub fn add_connected_nodes_until_split(
     }
 
     // Gather all the actual prefixes and check they are as expected.
-    let mut actual_prefixes = BTreeSet::<Prefix>::new();
+    let mut actual_prefixes = BTreeSet::<UnversionedPrefix>::new();
     for node in nodes.iter() {
         actual_prefixes.extend(
             unwrap!(node.inner.routing_table())

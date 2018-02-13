@@ -29,7 +29,7 @@ use std::u64;
 /// A prefix with section version.
 #[derive(Clone, Copy, Default, Eq, PartialEq, Deserialize, Serialize)]
 pub struct VersionedPrefix {
-    prefix: Prefix,
+    inner: UnversionedPrefix,
     version: u64,
 }
 
@@ -39,7 +39,7 @@ impl VersionedPrefix {
     /// value.
     pub fn new(bit_count: usize, name: XorName, version: u64) -> Self {
         VersionedPrefix {
-            prefix: Prefix {
+            inner: UnversionedPrefix {
                 bit_count: cmp::min(bit_count, XOR_NAME_BITS) as u16,
                 name: name.set_remaining(bit_count, false),
             },
@@ -55,32 +55,32 @@ impl VersionedPrefix {
     /// Returns a new `VersionedPrefix` with the same `Prefix` and the given version number.
     pub fn with_version(self, version: u64) -> Self {
         VersionedPrefix {
-            prefix: self.prefix,
+            inner: self.inner,
             version: version,
         }
     }
 
     /// Strip the version info.
-    pub fn unversioned(self) -> Prefix {
-        self.prefix
+    pub fn unversioned(self) -> UnversionedPrefix {
+        self.inner
     }
 
     /// Returns `self` with an appended bit: `0` if `bit` is `false`, and `1` if `bit` is `true`. If
     /// `self.bit_count` is already at the maximum for this type, then an unmodified copy of `self`
     /// is returned.
     pub fn pushed(mut self, bit: bool) -> Self {
-        self.prefix.name = self.prefix.name.with_bit(self.bit_count(), bit);
-        self.prefix.bit_count = cmp::min(self.prefix.bit_count + 1, XOR_NAME_BITS as u16);
+        self.inner.name = self.inner.name.with_bit(self.bit_count(), bit);
+        self.inner.bit_count = cmp::min(self.inner.bit_count + 1, XOR_NAME_BITS as u16);
         self
     }
 
     /// Returns a prefix copying the first `bitcount() - 1` bits from `self`,
     /// or `self` if it is already empty.
     pub fn popped(mut self) -> Self {
-        if self.prefix.bit_count > 0 {
-            self.prefix.bit_count -= 1;
+        if self.inner.bit_count > 0 {
+            self.inner.bit_count -= 1;
             // unused bits should be zero:
-            self.prefix.name = self.prefix.name.with_bit(self.bit_count(), false);
+            self.inner.name = self.inner.name.with_bit(self.bit_count(), false);
         }
         self
     }
@@ -93,7 +93,7 @@ impl VersionedPrefix {
         } else {
             Self::new(
                 self.bit_count(),
-                self.prefix.name.with_flipped_bit(i),
+                self.inner.name.with_flipped_bit(i),
                 self.version,
             )
         }
@@ -143,10 +143,10 @@ impl VersionedPrefix {
 }
 
 impl Deref for VersionedPrefix {
-    type Target = Prefix;
+    type Target = UnversionedPrefix;
 
     fn deref(&self) -> &Self::Target {
-        &self.prefix
+        &self.inner
     }
 }
 
@@ -158,7 +158,7 @@ impl PartialOrd for VersionedPrefix {
 
 impl Ord for VersionedPrefix {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.prefix.cmp(&other.prefix).then_with(|| {
+        self.inner.cmp(&other.inner).then_with(|| {
             self.version.cmp(&other.version)
         })
     }
@@ -166,20 +166,20 @@ impl Ord for VersionedPrefix {
 
 impl Hash for VersionedPrefix {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.prefix.hash(state);
+        self.inner.hash(state);
         self.version.hash(state);
     }
 }
 
 impl Binary for VersionedPrefix {
     fn fmt(&self, formatter: &mut Formatter) -> FmtResult {
-        write!(formatter, "{:b}", self.prefix)
+        write!(formatter, "{:b}", self.inner)
     }
 }
 
 impl Debug for VersionedPrefix {
     fn fmt(&self, formatter: &mut Formatter) -> FmtResult {
-        write!(formatter, "Prefix({:b}, v{})", self.prefix, self.version)
+        write!(formatter, "Prefix({:b}, v{})", self.inner, self.version)
     }
 }
 
@@ -207,16 +207,16 @@ impl FromStr for VersionedPrefix {
 /// A section prefix, i.e. a sequence of bits specifying the part of the network's name space
 /// consisting of all names that start with this sequence.
 #[derive(Clone, Copy, Default, Eq, Deserialize, Serialize)]
-pub struct Prefix {
+pub struct UnversionedPrefix {
     bit_count: u16,
     name: XorName,
 }
 
-impl Prefix {
+impl UnversionedPrefix {
     /// Returns a `VersionedPrefix` with this prefix and the given version number.
     pub fn with_version(self, version: u64) -> VersionedPrefix {
         VersionedPrefix {
-            prefix: self,
+            inner: self,
             version: version,
         }
     }
@@ -295,19 +295,19 @@ impl Prefix {
     }
 }
 
-impl PartialEq<Prefix> for Prefix {
+impl PartialEq<Self> for UnversionedPrefix {
     fn eq(&self, other: &Self) -> bool {
         self.is_compatible(other) && self.bit_count == other.bit_count
     }
 }
 
-impl PartialOrd<Prefix> for Prefix {
+impl PartialOrd<Self> for UnversionedPrefix {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for Prefix {
+impl Ord for UnversionedPrefix {
     fn cmp(&self, other: &Self) -> Ordering {
         if self.is_compatible(other) {
             self.bit_count().cmp(&other.bit_count())
@@ -317,7 +317,7 @@ impl Ord for Prefix {
     }
 }
 
-impl Hash for Prefix {
+impl Hash for UnversionedPrefix {
     fn hash<H: Hasher>(&self, state: &mut H) {
         for i in 0..self.bit_count() {
             self.name.bit(i).hash(state);
@@ -325,7 +325,7 @@ impl Hash for Prefix {
     }
 }
 
-impl Binary for Prefix {
+impl Binary for UnversionedPrefix {
     fn fmt(&self, formatter: &mut Formatter) -> FmtResult {
         let mut binary = self.name.binary();
         binary.truncate(self.bit_count());
@@ -333,7 +333,7 @@ impl Binary for Prefix {
     }
 }
 
-impl Debug for Prefix {
+impl Debug for UnversionedPrefix {
     fn fmt(&self, formatter: &mut Formatter) -> FmtResult {
         write!(formatter, "Prefix({:b})", self)
     }
@@ -342,7 +342,7 @@ impl Debug for Prefix {
 /// Find the entry at the given prefix, ignoring versions.
 pub fn unversioned_find<'a, T>(
     map: &'a BTreeMap<VersionedPrefix, T>,
-    key: &Prefix,
+    key: &UnversionedPrefix,
 ) -> Option<(VersionedPrefix, &'a T)> {
     map.range(key.with_version(0)..key.with_version(u64::MAX))
         .next()
@@ -352,7 +352,7 @@ pub fn unversioned_find<'a, T>(
 /// Get the value at the given prefix, ignoring versions.
 pub fn unversioned_get<'a, T>(
     map: &'a BTreeMap<VersionedPrefix, T>,
-    key: &Prefix,
+    key: &UnversionedPrefix,
 ) -> Option<&'a T> {
     map.range(key.with_version(0)..key.with_version(u64::MAX))
         .next()
@@ -362,7 +362,7 @@ pub fn unversioned_get<'a, T>(
 /// Check whether the map contains a key equal to the given prefix but ignoring versions.
 pub fn unversioned_contains_key<'a, T>(
     map: &'a BTreeMap<VersionedPrefix, T>,
-    key: &Prefix,
+    key: &UnversionedPrefix,
 ) -> bool {
     map.range(key.with_version(0)..key.with_version(u64::MAX))
         .next()
@@ -372,7 +372,7 @@ pub fn unversioned_contains_key<'a, T>(
 /// Remove and return the element at the given prefix, ignoring versions.
 pub fn unversioned_remove(
     set: &mut BTreeSet<VersionedPrefix>,
-    key: &Prefix,
+    key: &UnversionedPrefix,
 ) -> Option<VersionedPrefix> {
     if let Some(prefix) = set.range(key.with_version(0)..key.with_version(u64::MAX))
         .cloned()

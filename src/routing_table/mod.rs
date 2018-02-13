@@ -116,7 +116,7 @@ pub use self::authority::Authority;
 pub use self::error::Error;
 #[cfg(any(test, feature = "use-mock-crust"))]
 pub use self::network_tests::verify_network_invariant;
-pub use self::prefix::{Prefix, VersionedPrefix};
+pub use self::prefix::{UnversionedPrefix, VersionedPrefix};
 pub use super::{XOR_NAME_BITS, XOR_NAME_LEN, XorName};
 use itertools::Itertools;
 use log::LogLevel;
@@ -290,10 +290,11 @@ impl RoutingTable {
         Box::new(iter)
     }
 
-    /// Returns the section with the given prefix, if any (includes own name if is own section)
-    pub fn section_with_prefix(
+    /// Returns the section with the given prefix (ignoring version), if any (includes
+    /// own name if is own section)
+    pub fn section_matching_prefix(
         &self,
-        prefix: &Prefix,
+        prefix: &UnversionedPrefix,
     ) -> Option<(VersionedPrefix, &BTreeSet<XorName>)> {
         if *prefix == self.our_prefix.unversioned() {
             Some((self.our_prefix, &self.our_section))
