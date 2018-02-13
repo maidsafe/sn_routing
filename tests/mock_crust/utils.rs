@@ -19,7 +19,7 @@ use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
 use routing::{Authority, BootstrapConfig, Cache, Client, Config, DevConfig, Event, EventStream,
-              FullId, ImmutableData, NullCache, Peer, Prefix, PublicId, Request, Response,
+              FullId, ImmutableData, Node, NullCache, Prefix, PublicId, Request, Response,
               RoutingTable, XorName, verify_network_invariant};
 use routing::mock_crust::{self, Endpoint, Network, ServiceHandle};
 use routing::test_consts::{ACK_TIMEOUT_SECS, CONNECTING_PEER_TIMEOUT_SECS};
@@ -127,7 +127,7 @@ impl EventStream for TestNode {
 
 pub struct TestNode {
     pub handle: ServiceHandle<PublicId>,
-    pub inner: Peer,
+    pub inner: Node,
 }
 
 impl TestNode {
@@ -152,7 +152,7 @@ impl TestNode {
         let config = create_config(network);
         let node = mock_crust::make_current(&handle, || {
             unwrap!(
-                Peer::builder()
+                Node::builder()
                     .cache(cache)
                     .first(first_node)
                     .config(config)

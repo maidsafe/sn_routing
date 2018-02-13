@@ -131,7 +131,7 @@ pub enum RoutingError {
     CandidateIsTunnelling,
     /// Content of a received message is inconsistent.
     InvalidMessage,
-    /// Invalid Peer
+    /// Invalid peer.
     InvalidPeer,
     CannotWriteFile,
     /// The client's message indicated by the included hash digest has been rejected by the
@@ -196,9 +196,9 @@ quick_error! {
             description("Proxy not approved yet")
             display("The chosen proxy node has not yet been approved by the network.")
         }
-        TooFewPeers {
-            description("Proxy has too few peers")
-            display("The chosen proxy node has too few connections to peers.")
+        TooFewNodes {
+            description("Proxy has too few nodes")
+            display("The chosen proxy node has too few connections to nodes.")
         }
         ClientLimit {
             description("Proxy has max. clients")

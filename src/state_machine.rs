@@ -27,7 +27,7 @@ use outbox::EventBox;
 use routing_table::{Prefix, RoutingTable};
 #[cfg(feature = "use-mock-crust")]
 use rust_sodium::crypto::sign;
-use states::{Bootstrapping, Client, JoiningPeer, Peer};
+use states::{Bootstrapping, Client, JoiningNode, Node};
 use states::common::Base;
 #[cfg(feature = "use-mock-crust")]
 use std::collections::BTreeMap;
@@ -59,8 +59,8 @@ pub struct StateMachine {
 pub enum State {
     Bootstrapping(Bootstrapping),
     Client(Client),
-    JoiningNode(JoiningPeer),
-    Peer(Peer),
+    JoiningNode(JoiningNode),
+    Node(Node),
     Terminated,
 }
 
@@ -92,7 +92,7 @@ impl State {
             State::Bootstrapping(ref mut state) => state.handle_action(action),
             State::Client(ref mut state) => state.handle_action(action),
             State::JoiningNode(ref mut state) => state.handle_action(action, outbox),
-            State::Peer(ref mut state) => state.handle_action(action, outbox),
+            State::Node(ref mut state) => state.handle_action(action, outbox),
             State::Terminated => Transition::Terminate,
         }
     }
@@ -106,7 +106,7 @@ impl State {
             State::Bootstrapping(ref mut state) => state.handle_crust_event(event, outbox),
             State::Client(ref mut state) => state.handle_crust_event(event, outbox),
             State::JoiningNode(ref mut state) => state.handle_crust_event(event, outbox),
-            State::Peer(ref mut state) => state.handle_crust_event(event, outbox),
+            State::Node(ref mut state) => state.handle_crust_event(event, outbox),
             State::Terminated => Transition::Terminate,
         }
     }
@@ -117,7 +117,7 @@ impl State {
 
     fn routing_table(&self) -> Option<&RoutingTable> {
         match *self {
-            State::Peer(ref state) => Some(state.routing_table()),
+            State::Node(ref state) => Some(state.routing_table()),
             _ => None,
         }
     }
@@ -146,7 +146,7 @@ impl State {
             State::Bootstrapping(ref bootstrapping) => Some(bootstrapping),
             State::Client(ref client) => Some(client),
             State::JoiningNode(ref joining_node) => Some(joining_node),
-            State::Peer(ref node) => Some(node),
+            State::Node(ref node) => Some(node),
             State::Terminated => None,
         }
     }
@@ -158,7 +158,7 @@ impl Debug for State {
             State::Bootstrapping(ref inner) => write!(formatter, "State::{:?}", inner),
             State::Client(ref inner) => write!(formatter, "State::{:?}", inner),
             State::JoiningNode(ref inner) => write!(formatter, "State::{:?}", inner),
-            State::Peer(ref inner) => write!(formatter, "State::{:?}", inner),
+            State::Node(ref inner) => write!(formatter, "State::{:?}", inner),
             State::Terminated => write!(formatter, "State::Terminated"),
         }
     }
@@ -167,14 +167,14 @@ impl Debug for State {
 #[cfg(feature = "use-mock-crust")]
 impl State {
     pub fn purge_invalid_rt_entry(&mut self) {
-        if let State::Peer(ref mut state) = *self {
+        if let State::Node(ref mut state) = *self {
             state.purge_invalid_rt_entry();
         }
     }
 
     pub fn has_tunnel_clients(&self, client_1: PublicId, client_2: PublicId) -> bool {
         match *self {
-            State::Peer(ref state) => state.has_tunnel_clients(client_1, client_2),
+            State::Node(ref state) => state.has_tunnel_clients(client_1, client_2),
             _ => false,
         }
     }
@@ -184,33 +184,33 @@ impl State {
         prefix: Prefix,
     ) -> Option<BTreeMap<PublicId, sign::Signature>> {
         match *self {
-            State::Peer(ref state) => state.section_list_signatures(prefix).ok(),
+            State::Node(ref state) => state.section_list_signatures(prefix).ok(),
             _ => None,
         }
     }
 
     pub fn get_banned_client_ips(&self) -> BTreeSet<IpAddr> {
         match *self {
-            State::Peer(ref state) => state.get_banned_client_ips(),
+            State::Node(ref state) => state.get_banned_client_ips(),
             _ => panic!("Should be State::Node"),
         }
     }
 
     pub fn set_next_relocation_dst(&mut self, dst: Option<XorName>) {
-        if let State::Peer(ref mut node) = *self {
+        if let State::Node(ref mut node) = *self {
             node.set_next_relocation_dst(dst);
         }
     }
 
     pub fn set_next_relocation_interval(&mut self, interval: (XorName, XorName)) {
-        if let State::Peer(ref mut node) = *self {
+        if let State::Node(ref mut node) = *self {
             node.set_next_relocation_interval(interval);
         }
     }
 
     pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
         match *self {
-            State::Peer(ref mut state) => state.get_timed_out_tokens(),
+            State::Node(ref mut state) => state.get_timed_out_tokens(),
             State::Client(ref mut state) => state.get_timed_out_tokens(),
             State::JoiningNode(ref mut state) => state.get_timed_out_tokens(),
             _ => vec![],
@@ -219,14 +219,14 @@ impl State {
 
     pub fn has_unnormalised_routing_conn(&self, excludes: &BTreeSet<XorName>) -> bool {
         match *self {
-            State::Peer(ref state) => state.has_unnormalised_routing_conn(excludes),
+            State::Node(ref state) => state.has_unnormalised_routing_conn(excludes),
             _ => false,
         }
     }
 
     pub fn get_user_msg_parts_count(&self) -> u64 {
         match *self {
-            State::Peer(ref state) => state.get_user_msg_parts_count(),
+            State::Node(ref state) => state.get_user_msg_parts_count(),
             State::Client(ref state) => state.get_user_msg_parts_count(),
             _ => 0,
         }
@@ -234,7 +234,7 @@ impl State {
 
     pub fn get_clients_usage(&self) -> Option<BTreeMap<IpAddr, u64>> {
         match *self {
-            State::Peer(ref state) => Some(state.get_clients_usage()),
+            State::Node(ref state) => Some(state.get_clients_usage()),
             _ => None,
         }
     }

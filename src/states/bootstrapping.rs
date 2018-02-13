@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use super::{Client, JoiningPeer, Peer};
+use super::{Client, JoiningNode, Node};
 use super::common::Base;
 use {CrustEvent, Service};
 use action::Action;
@@ -46,7 +46,7 @@ const BOOTSTRAP_TIMEOUT_SECS: u64 = 20;
 #[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
 pub enum TargetState {
     Client { msg_expiry_dur: Duration },
-    JoiningPeer,
+    JoiningNode,
     Node {
         old_full_id: FullId,
         our_section: (Prefix, BTreeSet<PublicId>),
@@ -81,7 +81,7 @@ impl Bootstrapping {
             TargetState::Client { .. } => {
                 let _ = crust_service.start_bootstrap(HashSet::new(), CrustUser::Client);
             }
-            TargetState::JoiningPeer |
+            TargetState::JoiningNode |
             TargetState::Node { .. } => {
                 if let Err(error) = crust_service.start_listening_tcp() {
                     error!("Failed to start listening: {:?}", error);
@@ -191,9 +191,9 @@ impl Bootstrapping {
                 msg_expiry_dur,
                 outbox,
             )),
-            TargetState::JoiningPeer => {
+            TargetState::JoiningNode => {
                 if let Some(joining_node) =
-                    JoiningPeer::from_bootstrapping(
+                    JoiningNode::from_bootstrapping(
                         self.action_sender,
                         self.cache,
                         self.crust_service,
@@ -214,7 +214,7 @@ impl Bootstrapping {
                 old_full_id,
                 our_section,
                 ..
-            } => State::Peer(Peer::from_bootstrapping(
+            } => State::Node(Node::from_bootstrapping(
                 (our_section.0, &our_section.1),
                 self.action_sender,
                 self.cache,
@@ -232,7 +232,7 @@ impl Bootstrapping {
     fn client_restriction(&self) -> bool {
         match self.target_state {
             TargetState::Client { .. } => true,
-            TargetState::JoiningPeer |
+            TargetState::JoiningNode |
             TargetState::Node { .. } => false,
         }
     }
@@ -265,13 +265,13 @@ impl Bootstrapping {
             }
             Some((bootstrap_id, _)) if bootstrap_id == pub_id => {
                 warn!(
-                    "{:?} Got more than one BootstrapConnect for peer {}.",
+                    "{:?} Got more than one BootstrapConnect for node {}.",
                     self,
                     pub_id
                 );
             }
             _ => {
-                self.disconnect_peer(&pub_id);
+                self.disconnect_node(&pub_id);
             }
         }
 
@@ -348,7 +348,7 @@ impl Bootstrapping {
         self.send_message(&pub_id, Message::Direct(direct_message));
     }
 
-    fn disconnect_peer(&mut self, pub_id: &PublicId) {
+    fn disconnect_node(&mut self, pub_id: &PublicId) {
         debug!(
             "{:?} Disconnecting {}. Calling crust::Service::disconnect.",
             self,

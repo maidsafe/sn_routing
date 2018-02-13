@@ -229,7 +229,7 @@ impl Client {
         let routing_msg = signed_msg.into_routing_message();
         let in_authority = self.in_authority(&routing_msg.dst);
 
-        // Prevents us repeatedly handling identical messages sent by a malicious peer.
+        // Prevents us repeatedly handling identical messages sent by a malicious node.
         match self.routing_msg_filter.filter_incoming(
             &routing_msg,
             hop_msg.route,

@@ -17,8 +17,8 @@
 
 #![cfg(not(feature = "use-mock-crust"))]
 
-mod example_peer;
+mod example_node;
 mod example_client;
 
 pub use self::example_client::ExampleClient;
-pub use self::example_peer::ExamplePeer;
+pub use self::example_node::ExampleNode;

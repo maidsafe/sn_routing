@@ -50,7 +50,7 @@ use maidsafe_utilities::SeededRng;
 use maidsafe_utilities::thread::{self, Joiner};
 use rand::Rng;
 use routing::{Authority, Client, ClientError, Event, EventStream, FullId, MIN_SECTION_SIZE,
-              MessageId, MutableData, Peer, Request, Response, Value, XorName};
+              MessageId, MutableData, Node, Request, Response, Value, XorName};
 use rust_sodium::crypto;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 #[cfg(target_os = "macos")]
@@ -102,13 +102,13 @@ fn recv_with_timeout(
 struct TestEvent(usize, Event);
 
 struct TestNode {
-    node: Peer,
+    node: Node,
 }
 
 impl TestNode {
     // If `index` is `0`, this will be treated as the first node of the network.
     fn new(index: usize) -> Self {
-        TestNode { node: unwrap!(Peer::builder().first(index == 0).create()) }
+        TestNode { node: unwrap!(Node::builder().first(index == 0).create()) }
     }
 
     fn name(&self) -> XorName {

@@ -287,7 +287,7 @@ impl ResourceProver {
 
     // For the ongoing collection of `ResourceProofResponse` messages, returns a tuple comprising:
     // the `part_count` they all use; the number of fully-completed ones; a vector for the
-    // incomplete ones specifying how many parts have been sent to each peer; and a `String`
+    // incomplete ones specifying how many parts have been sent to each node; and a `String`
     // containing this info.
     fn response_progress(&self) -> String {
         let mut parts_per_proof = 0;
@@ -312,14 +312,14 @@ impl ResourceProver {
         }
 
         if self.response_parts.is_empty() {
-            "No resource proof challenges received yet; still establishing connections to peers."
+            "No resource proof challenges received yet; still establishing connections to nodes."
                 .to_string()
         } else if self.challenger_count == completed {
             format!("All {} resource proof responses fully sent.", completed)
         } else {
             let progress = if parts_per_proof == 0 {
-                // We've completed all challenges for those peers we've connected to, but are still
-                // waiting to connect to some more peers and receive their challenges.
+                // We've completed all challenges for those nodes we've connected to, but are still
+                // waiting to connect to some more nodes and receive their challenges.
                 completed * 100 / self.challenger_count
             } else {
                 (((parts_per_proof * completed) + incomplete.iter().sum::<usize>()) * 100) /

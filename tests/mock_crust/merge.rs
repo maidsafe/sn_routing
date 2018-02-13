@@ -141,7 +141,7 @@ fn concurrent_merge() {
 }
 
 #[test]
-fn merge_exclude_reconnecting_peers() {
+fn merge_exclude_reconnecting_nodes() {
     let min_section_size = 3;
     let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
