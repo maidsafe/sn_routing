@@ -902,11 +902,11 @@ impl PeerManager {
 
     pub fn merge_other_section(
         &mut self,
-        ver_pfx: Prefix,
+        prefix: Prefix,
         section: &BTreeSet<PublicInfo>,
     ) -> BTreeSet<PublicInfo> {
         let needed_names = self.routing_table.merge_other_section(
-            ver_pfx,
+            prefix,
             section.iter().map(
                 |peer_info| peer_info.name(),
             ),

@@ -89,16 +89,16 @@ impl Network {
                 trace!("failed to add node into new with error {:?}", e);
             }
             if new_table.should_split() {
-                let ver_pfx = *new_table.our_prefix();
-                let _ = split_prefixes.insert(ver_pfx);
-                let _ = new_table.split(ver_pfx);
+                let prefix = *new_table.our_prefix();
+                let _ = split_prefixes.insert(prefix);
+                let _ = new_table.split(prefix);
             }
         }
 
         assert!(self.nodes.insert(name, new_table).is_none());
-        for &ver_pfx in &split_prefixes {
+        for &prefix in &split_prefixes {
             for node in self.nodes.values_mut() {
-                let _ = node.split(ver_pfx);
+                let _ = node.split(prefix);
             }
         }
     }

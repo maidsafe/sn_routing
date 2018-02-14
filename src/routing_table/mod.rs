@@ -223,14 +223,14 @@ impl RoutingTable {
     ///
     /// Called once a node has been approved by its own section and is given its nodes' tables.
     /// Expects the current sections to be empty and have version 0.
-    pub fn add_prefixes(&mut self, ver_pfxs: Vec<Prefix>) -> Result<(), Error> {
+    pub fn add_prefixes(&mut self, prefixes: Vec<Prefix>) -> Result<(), Error> {
         if self.our_prefix.version() != 0 || !self.sections.is_empty() {
             return Err(Error::InvariantViolation);
         }
-        for ver_pfx in ver_pfxs {
-            if ver_pfx.matches(&self.our_name) {
-                self.our_prefix = ver_pfx;
-            } else if self.sections.insert(ver_pfx, BTreeSet::new()).is_some() {
+        for prefix in prefixes {
+            if prefix.matches(&self.our_name) {
+                self.our_prefix = prefix;
+            } else if self.sections.insert(prefix, BTreeSet::new()).is_some() {
                 return Err(Error::InvariantViolation);
             };
         }
@@ -573,20 +573,20 @@ impl RoutingTable {
     /// Adds the given prefix to the routing table, merging or splitting if necessary. Returns the
     /// entries that have been dropped. If the version is lower or equal to the one in the routing
     /// table, the change is not applied.
-    pub fn add_prefix(&mut self, ver_pfx: Prefix) -> Vec<XorName> {
+    pub fn add_prefix(&mut self, prefix: Prefix) -> Vec<XorName> {
         // If the prefix isn't relevant to our RT, reject the change.
-        if !ver_pfx.is_compatible(&self.our_prefix) && !ver_pfx.is_neighbour(&self.our_prefix) {
+        if !prefix.is_compatible(&self.our_prefix) && !prefix.is_neighbour(&self.our_prefix) {
             return vec![];
         }
 
         // If the prefix doesn't supersede an existing one, reject.
         for (pfx, _) in self.all_sections_iter() {
-            if ver_pfx.is_compatible(&pfx) && ver_pfx.version() <= pfx.version() {
+            if prefix.is_compatible(&pfx) && prefix.version() <= pfx.version() {
                 trace!(
                     "{:?} Not adding {:?} to the RT as the existing {:?} \
                      does not predate it.",
                     self.our_name,
-                    ver_pfx,
+                    prefix,
                     pfx,
                 );
                 return vec![];
@@ -597,19 +597,19 @@ impl RoutingTable {
         let (sections_to_replace, sections) =
             original_sections
                 .into_iter()
-                .partition::<BTreeMap<_, _>, _>(|&(ref pfx, _)| ver_pfx.is_compatible(pfx));
+                .partition::<BTreeMap<_, _>, _>(|&(ref pfx, _)| prefix.is_compatible(pfx));
         self.sections = sections;
-        if ver_pfx.matches(&self.our_name) {
-            self.our_prefix = ver_pfx;
-        } else if ver_pfx.is_compatible(&self.our_prefix) {
+        if prefix.matches(&self.our_name) {
+            self.our_prefix = prefix;
+        } else if prefix.is_compatible(&self.our_prefix) {
             self.our_prefix = Prefix::new(
-                ver_pfx.common_prefix(&self.our_name) + 1,
+                prefix.common_prefix(&self.our_name) + 1,
                 self.our_name,
                 self.our_prefix.version(),
             );
-            self.insert_new_section(ver_pfx, BTreeSet::new());
+            self.insert_new_section(prefix, BTreeSet::new());
         } else {
-            self.insert_new_section(ver_pfx, BTreeSet::new());
+            self.insert_new_section(prefix, BTreeSet::new());
         }
         self.add_missing_prefixes();
         sections_to_replace
@@ -699,7 +699,7 @@ impl RoutingTable {
         self.merge(&merge_prefix);
         let dropped_names = prefixes
             .into_iter()
-            .flat_map(|ver_pfx| self.add_prefix(ver_pfx))
+            .flat_map(|prefix| self.add_prefix(prefix))
             .collect_vec();
         if !dropped_names.is_empty() {
             log_or_panic!(
@@ -734,22 +734,22 @@ impl RoutingTable {
     /// The appropriate targets (all contacts from `merge_details.sections` which are not currently
     /// held in the routing table) are returned so the caller can establish connections to these
     /// nodes and subsequently add them.
-    pub fn merge_other_section<I>(&mut self, ver_pfx: Prefix, members: I) -> BTreeSet<XorName>
+    pub fn merge_other_section<I>(&mut self, prefix: Prefix, members: I) -> BTreeSet<XorName>
     where
         I: IntoIterator<Item = XorName>,
     {
-        if self.our_prefix.is_compatible(&ver_pfx) {
+        if self.our_prefix.is_compatible(&prefix) {
             error!(
                 "{:?} Attempt to merge other section {:?} when our prefix is {:?}",
                 self.our_name,
-                ver_pfx,
+                prefix,
                 self.our_prefix
             );
             return BTreeSet::new();
         }
-        self.merge(&ver_pfx);
+        self.merge(&prefix);
         // Establish list of provided contacts which are currently missing from our table.
-        prefix::unversioned_get(&self.sections, &ver_pfx).map_or_else(BTreeSet::new, |section| {
+        prefix::unversioned_get(&self.sections, &prefix).map_or_else(BTreeSet::new, |section| {
             members
                 .into_iter()
                 .filter(|name| !section.contains(name))

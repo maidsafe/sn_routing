@@ -26,7 +26,8 @@ use std::ops::Deref;
 use std::str::FromStr;
 use std::u64;
 
-/// A prefix with section version.
+/// A section prefix, i.e. a sequence of bits specifying the part of the network's name space
+/// consisting of all names that start with this sequence.
 #[derive(Clone, Copy, Default, Eq, PartialEq, Hash, Deserialize, Serialize)]
 pub struct Prefix {
     inner: UnversionedPrefix,
@@ -197,8 +198,7 @@ impl FromStr for Prefix {
     }
 }
 
-/// A section prefix, i.e. a sequence of bits specifying the part of the network's name space
-/// consisting of all names that start with this sequence.
+/// Prefix without version information.
 #[derive(Clone, Copy, Default, Eq, Deserialize, Serialize)]
 pub struct UnversionedPrefix {
     bit_count: u16,

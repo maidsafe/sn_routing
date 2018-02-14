@@ -1285,14 +1285,11 @@ impl Node {
             (NodeApproval { sections }, Section(_), Client { .. }) => {
                 self.handle_node_approval(&sections, outbox)
             }
-            (SectionUpdate {
-                 versioned_prefix,
-                 members,
-             },
-             Section(_),
-             PrefixSection(_)) => self.handle_section_update(versioned_prefix, members, outbox),
-            (SectionSplit(ver_pfx, joining_node), PrefixSection(_), PrefixSection(_)) => {
-                self.handle_section_split(ver_pfx, joining_node, outbox)
+            (SectionUpdate { prefix, members }, Section(_), PrefixSection(_)) => {
+                self.handle_section_update(prefix, members, outbox)
+            }
+            (SectionSplit(prefix, joining_node), PrefixSection(_), PrefixSection(_)) => {
+                self.handle_section_split(prefix, joining_node, outbox)
             }
             (OwnSectionMerge(sections),
              PrefixSection(sender_prefix),
@@ -2059,7 +2056,7 @@ impl Node {
         );
 
         let content = MessageContent::SectionUpdate {
-            versioned_prefix: *self.routing_table().our_prefix(),
+            prefix: *self.routing_table().our_prefix(),
             members: members,
         };
 
