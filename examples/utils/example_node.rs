@@ -92,7 +92,7 @@ impl ExampleNode {
                         self.get_debug_name(),
                         prefix
                     );
-                    let pfx = Prefix::new(prefix.bit_count() + 1, *unwrap!(self.node.id()).name());
+                    let pfx = Prefix::new(prefix.bit_count() + 1, unwrap!(self.node.id()).name());
                     self.send_refresh(MessageId::from_lost_node(pfx.lower_bound()));
                 }
                 event => {

@@ -23,11 +23,12 @@ use error::{InterfaceError, RoutingError};
 use event::Event;
 #[cfg(feature = "use-mock-crust")]
 use fake_clock::FakeClock as Instant;
-use id::{FullId, PublicId};
+use full_info::FullInfo;
 use maidsafe_utilities::serialisation;
 use messages::{DirectMessage, HopMessage, Message, MessageContent, RoutingMessage, SignedMessage,
                UserMessage, UserMessageCache};
 use outbox::EventBox;
+use public_info::PublicInfo;
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use routing_table::Authority;
 use state_machine::Transition;
@@ -48,9 +49,9 @@ pub const RATE_EXCEED_RETRY_MS: u64 = 800;
 pub struct Client {
     ack_mgr: AckManager,
     crust_service: Service,
-    full_id: FullId,
+    full_info: FullInfo,
     group_size: usize,
-    proxy_pub_id: PublicId,
+    proxy_pub_info: PublicInfo,
     routing_msg_filter: RoutingMessageFilter,
     stats: Stats,
     timer: Timer,
@@ -63,9 +64,9 @@ impl Client {
     #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
     pub fn from_bootstrapping(
         crust_service: Service,
-        full_id: FullId,
+        full_info: FullInfo,
         group_size: usize,
-        proxy_pub_id: PublicId,
+        proxy_pub_info: PublicInfo,
         stats: Stats,
         timer: Timer,
         msg_expiry_dur: Duration,
@@ -74,9 +75,9 @@ impl Client {
         let client = Client {
             ack_mgr: AckManager::new(),
             crust_service: crust_service,
-            full_id: full_id,
+            full_info: full_info,
             group_size: group_size,
-            proxy_pub_id: proxy_pub_id,
+            proxy_pub_info: proxy_pub_info,
             routing_msg_filter: RoutingMessageFilter::new(),
             stats: stats,
             timer: timer,
@@ -102,8 +103,8 @@ impl Client {
                 result_tx,
             } => {
                 let src = Authority::Client {
-                    client_id: *self.full_id.public_id(),
-                    proxy_node_name: *self.proxy_pub_id.name(),
+                    client_info: *self.full_info.public_info(),
+                    proxy_node_name: self.proxy_pub_info.name(),
                 };
 
                 let user_msg = UserMessage::Request(content);
@@ -134,13 +135,13 @@ impl Client {
 
     pub fn handle_crust_event(
         &mut self,
-        crust_event: CrustEvent<PublicId>,
+        crust_event: CrustEvent<PublicInfo>,
         outbox: &mut EventBox,
     ) -> Transition {
         match crust_event {
-            CrustEvent::LostPeer(pub_id) => self.handle_lost_peer(pub_id, outbox),
-            CrustEvent::NewMessage(pub_id, _, bytes) => {
-                self.handle_new_message(pub_id, &bytes, outbox)
+            CrustEvent::LostPeer(pub_info) => self.handle_lost_peer(pub_info, outbox),
+            CrustEvent::NewMessage(pub_info, _, bytes) => {
+                self.handle_new_message(pub_info, &bytes, outbox)
             }
             _ => {
                 debug!("{:?} Unhandled crust event {:?}", self, crust_event);
@@ -155,7 +156,7 @@ impl Client {
     }
 
     fn handle_timeout(&mut self, token: u64) {
-        let proxy_pub_id = self.proxy_pub_id;
+        let proxy_pub_info = self.proxy_pub_info;
 
         // Check if token corresponds to a rate limit exceeded msg.
         if let Some(unacked_msg) = self.resend_buf.remove(&token) {
@@ -165,7 +166,7 @@ impl Client {
 
             self.routing_msg_filter().remove_from_outgoing_filter(
                 &unacked_msg.routing_msg,
-                &proxy_pub_id,
+                &proxy_pub_info,
                 unacked_msg.route,
             );
             if let Err(error) = self.send_routing_message_via_route(
@@ -187,12 +188,12 @@ impl Client {
 
     fn handle_new_message(
         &mut self,
-        pub_id: PublicId,
+        pub_info: PublicInfo,
         bytes: &[u8],
         outbox: &mut EventBox,
     ) -> Transition {
         let transition = match serialisation::deserialise(bytes) {
-            Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, pub_id, outbox),
+            Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, pub_info, outbox),
             Ok(Message::Direct(direct_msg)) => self.handle_direct_message(&direct_msg),
             Ok(message) => {
                 debug!("{:?} Unhandled new message: {:?}", self, message);
@@ -214,13 +215,13 @@ impl Client {
     fn handle_hop_message(
         &mut self,
         hop_msg: HopMessage,
-        pub_id: PublicId,
+        pub_info: PublicInfo,
         outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
-        if self.proxy_pub_id == pub_id {
-            hop_msg.verify(self.proxy_pub_id.signing_public_key())?;
+        if self.proxy_pub_info == pub_info {
+            hop_msg.verify(self.proxy_pub_info.sign_key())?;
         } else {
-            return Err(RoutingError::UnknownConnection(pub_id));
+            return Err(RoutingError::UnknownConnection(pub_info));
         }
 
         let signed_msg = hop_msg.content;
@@ -348,24 +349,24 @@ impl Base for Client {
         &self.crust_service
     }
 
-    fn full_id(&self) -> &FullId {
-        &self.full_id
+    fn full_info(&self) -> &FullInfo {
+        &self.full_info
     }
 
     /// Does the given authority represent us?
     fn in_authority(&self, auth: &Authority) -> bool {
-        if let Authority::Client { ref client_id, .. } = *auth {
-            client_id == self.full_id.public_id()
+        if let Authority::Client { ref client_info, .. } = *auth {
+            client_info == self.full_info.public_info()
         } else {
             false
         }
     }
 
-    fn handle_lost_peer(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
-        debug!("{:?} Received LostPeer - {:?}", self, pub_id);
+    fn handle_lost_peer(&mut self, pub_info: PublicInfo, outbox: &mut EventBox) -> Transition {
+        debug!("{:?} Received LostPeer - {:?}", self, pub_info);
 
-        if self.proxy_pub_id == pub_id {
-            debug!("{:?} Lost bootstrap connection to {}.", self, pub_id);
+        if self.proxy_pub_info == pub_info {
+            debug!("{:?} Lost bootstrap connection to {}.", self, pub_info);
             outbox.send_event(Event::Terminate);
             Transition::Terminate
         } else {
@@ -432,10 +433,10 @@ impl Bootstrapped for Client {
             return Ok(()); // Message is for us.
         }
 
-        // Get PublicId of the proxy node
+        // Get PublicInfo of the proxy node
         match routing_msg.src {
             Authority::Client { ref proxy_node_name, .. } => {
-                if *self.proxy_pub_id.name() != *proxy_node_name {
+                if self.proxy_pub_info.name() != *proxy_node_name {
                     error!(
                         "{:?} Unable to find connection to proxy node in proxy map",
                         self
@@ -452,18 +453,22 @@ impl Bootstrapped for Client {
             }
         };
 
-        let signed_msg = SignedMessage::new(routing_msg, self.full_id(), vec![])?;
+        let signed_msg = SignedMessage::new(routing_msg, self.full_info(), vec![])?;
 
-        let proxy_pub_id = self.proxy_pub_id;
+        let proxy_pub_info = self.proxy_pub_info;
         if self.add_to_pending_acks(signed_msg.routing_message(), route, expires_at) &&
-            !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_pub_id, route)
+            !self.filter_outgoing_routing_msg(
+                signed_msg.routing_message(),
+                &proxy_pub_info,
+                route,
+            )
         {
             let bytes = self.to_hop_bytes(
                 signed_msg.clone(),
                 route,
                 BTreeSet::new(),
             )?;
-            self.send_or_drop(&proxy_pub_id, bytes, signed_msg.priority());
+            self.send_or_drop(&proxy_pub_info, bytes, signed_msg.priority());
         }
 
         Ok(())

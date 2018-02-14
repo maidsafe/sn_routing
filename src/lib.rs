@@ -60,12 +60,12 @@
 //! ```no_run
 //! # #![allow(unused)]
 //! use std::sync::mpsc;
-//! use routing::{Client, Event, FullId};
+//! use routing::{Client, Event, FullInfo};
 //!
 //! let (sender, receiver) = mpsc::channel::<Event>();
-//! let full_id = FullId::new(); // Generate new keys.
+//! let full_info = FullInfo::node_new(1u8); // Generate new keys.
 //! # #[cfg(not(feature = "use-mock-crust"))]
-//! let client = Client::new(sender, Some(full_id), None).unwrap();
+//! let client = Client::new(sender, Some(full_info), None).unwrap();
 //! ```
 //!
 //! Messages can be sent using the methods of `client`, and received as `Event`s from the
@@ -162,17 +162,18 @@ mod data;
 mod error;
 mod event;
 mod event_stream;
-mod section_list_cache;
-mod id;
-mod message_filter;
+mod full_info;
 mod messages;
+mod message_filter;
 mod node;
 mod outbox;
 mod peer_manager;
+mod public_info;
 mod rate_limiter;
 mod resource_prover;
 mod routing_message_filter;
 mod routing_table;
+mod section_list_cache;
 mod signature_accumulator;
 mod state_machine;
 mod states;
@@ -187,7 +188,6 @@ pub(crate) mod proof;
 pub(crate) mod block;
 pub(crate) mod chain;
 pub(crate) mod network_event;
-pub(crate) mod peer_id;
 
 #[cfg(feature = "use-mock-crypto")]
 pub mod mock_crypto;
@@ -233,13 +233,14 @@ pub use data::{Action, EntryAction, EntryActions, ImmutableData, MAX_IMMUTABLE_D
 pub use error::{InterfaceError, RoutingError};
 pub use event::Event;
 pub use event_stream::EventStream;
-pub use id::{FullId, PublicId};
+pub use full_info::FullInfo;
 pub use messages::{AccountInfo, Request, Response};
 #[cfg(feature = "use-mock-crust")]
 pub use mock_crust::crust;
 pub use node::{Node, NodeBuilder};
 #[cfg(feature = "use-mock-crust")]
 pub use peer_manager::test_consts;
+pub use public_info::PublicInfo;
 #[cfg(feature = "use-mock-crust")]
 pub use rate_limiter::rate_limiter_consts;
 pub use routing_table::{Authority, Prefix, RoutingTable};
@@ -249,11 +250,11 @@ pub use routing_table::verify_network_invariant;
 pub use types::MessageId;
 pub use xor_name::{XOR_NAME_BITS, XOR_NAME_LEN, XorName, XorNameFromHexError};
 
-type Service = crust::Service<PublicId>;
+type Service = crust::Service<PublicInfo>;
 use crust::Event as CrustEvent;
-type CrustEventSender = crust::CrustEventSender<PublicId>;
-type PrivConnectionInfo = crust::PrivConnectionInfo<PublicId>;
-type PubConnectionInfo = crust::PubConnectionInfo<PublicId>;
+type CrustEventSender = crust::CrustEventSender<PublicInfo>;
+type PrivConnectionInfo = crust::PrivConnectionInfo<PublicInfo>;
+type PubConnectionInfo = crust::PubConnectionInfo<PublicInfo>;
 
 #[cfg(test)]
 mod tests {

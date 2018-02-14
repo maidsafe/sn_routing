@@ -19,7 +19,7 @@ use super::{TestNode, add_connected_nodes_until_split, create_connected_nodes, p
             poll_and_resend, verify_invariant_for_all_nodes};
 use fake_clock::FakeClock;
 use itertools::Itertools;
-use routing::{BootstrapConfig, Event, EventStream, Prefix, PublicId, XOR_NAME_LEN, XorName};
+use routing::{BootstrapConfig, Event, EventStream, Prefix, PublicInfo, XOR_NAME_LEN, XorName};
 use routing::mock_crust::{Endpoint, Network, crust};
 use routing::test_consts::CONNECTED_PEER_TIMEOUT_SECS;
 
@@ -105,7 +105,7 @@ fn remove_nodes_from_section_till_merge(
 // Adds a pair of nodes with names matching the specified prefixes into the network. Also blocks
 // direct connection between these them if `is_tunnel` is true. Returns the endpoints of the nodes.
 fn add_a_pair(
-    network: &Network<PublicId>,
+    network: &Network<PublicInfo>,
     nodes: &mut Vec<TestNode>,
     prefix0: Prefix,
     prefix1: Prefix,
@@ -148,7 +148,11 @@ fn add_a_pair(
     endpoints
 }
 
-fn locate_tunnel_node(nodes: &[TestNode], client_1: PublicId, client_2: PublicId) -> Option<usize> {
+fn locate_tunnel_node(
+    nodes: &[TestNode],
+    client_1: PublicInfo,
+    client_2: PublicInfo,
+) -> Option<usize> {
     let tunnel_node_indexes: Vec<usize> = nodes
         .iter()
         .enumerate()

@@ -196,7 +196,7 @@ impl XorName {
     }
 
     /// Private function exposed in fmt Debug {:?} and Display {} traits.
-    fn get_debug_id(&self) -> String {
+    fn get_debug_info(&self) -> String {
         format!("{:02x}{:02x}{:02x}..", self.0[0], self.0[1], self.0[2])
     }
 
@@ -221,13 +221,13 @@ impl XorName {
 
 impl fmt::Debug for XorName {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(formatter, "{}", self.get_debug_id())
+        write!(formatter, "{}", self.get_debug_info())
     }
 }
 
 impl fmt::Display for XorName {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(formatter, "{}", self.get_debug_id())
+        write!(formatter, "{}", self.get_debug_info())
     }
 }
 
@@ -488,24 +488,24 @@ mod tests {
         let mut rng = SeededRng::thread_rng();
         for _ in 0..5 {
             let my_name: XorName = rng.gen();
-            let debug_id = my_name.get_debug_id();
-            let full_id = my_name.to_hex();
-            assert_eq!(debug_id.len(), 8);
-            assert_eq!(full_id.len(), 2 * XOR_NAME_LEN);
-            assert_eq!(&debug_id[0..6].to_owned(), &full_id[0..6]);
+            let debug_info = my_name.get_debug_info();
+            let full_info = my_name.to_hex();
+            assert_eq!(debug_info.len(), 8);
+            assert_eq!(full_info.len(), 2 * XOR_NAME_LEN);
+            assert_eq!(&debug_info[0..6].to_owned(), &full_info[0..6]);
         }
     }
 
     #[test]
     fn format_fixed_low_char_nametype() {
         // test for fixed low char values in XorName
-        let low_char_id = [1u8; XOR_NAME_LEN];
-        let my_low_char_name = XorName(low_char_id);
-        let debug_id = my_low_char_name.get_debug_id();
-        let full_id = my_low_char_name.to_hex();
-        assert_eq!(debug_id.len(), 8);
-        assert_eq!(full_id.len(), 2 * XOR_NAME_LEN);
-        assert_eq!(&debug_id[0..6], &full_id[0..6].to_owned());
+        let low_char_info = [1u8; XOR_NAME_LEN];
+        let my_low_char_name = XorName(low_char_info);
+        let debug_info = my_low_char_name.get_debug_info();
+        let full_info = my_low_char_name.to_hex();
+        assert_eq!(debug_info.len(), 8);
+        assert_eq!(full_info.len(), 2 * XOR_NAME_LEN);
+        assert_eq!(&debug_info[0..6], &full_info[0..6].to_owned());
     }
 
     #[test]

@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use super::{Prefix, XorName};
-use id::PublicId;
+use public_info::PublicInfo;
 use std::fmt::{self, Debug, Formatter};
 
 /// An entity that can act as a source or destination of a message.
@@ -47,7 +47,7 @@ pub enum Authority {
     /// A Client.
     Client {
         /// The Public ID of the client.
-        client_id: PublicId,
+        client_info: PublicInfo,
         /// The name of the single ManagedNode which the Client connects to and proxies all messages
         /// through.
         proxy_node_name: XorName,
@@ -106,12 +106,12 @@ impl Debug for Authority {
             Authority::ManagedNode(ref name) => write!(formatter, "ManagedNode(name: {})", name),
             Authority::Client {
                 ref proxy_node_name,
-                ref client_id,
+                ref client_info,
             } => {
                 write!(
                     formatter,
                     "Client {{ client_name: {}, proxy_node_name: {} }}",
-                    client_id.name(),
+                    client_info.name(),
                     proxy_node_name
                 )
             }

@@ -19,7 +19,7 @@
 #![allow(dead_code)]
 
 use maidsafe_utilities::serialisation;
-use peer_id::PeerId;
+use public_info::PublicInfo;
 use rust_sodium::crypto::sign::{self, Signature};
 use serde::Serialize;
 
@@ -27,15 +27,15 @@ use serde::Serialize;
 /// into a `Block`. This struct is ordered by age then `PublicKey`
 #[derive(Serialize, Deserialize, PartialOrd, Ord, PartialEq, Eq, Clone, Hash, Debug)]
 pub struct Proof {
-    pub peer_id: PeerId,
+    pub node_info: PublicInfo,
     pub sig: Signature,
 }
 
 impl Proof {
     /// getter
     #[allow(unused)]
-    pub fn peer_id(&self) -> &PeerId {
-        &self.peer_id
+    pub fn node_info(&self) -> &PublicInfo {
+        &self.node_info
     }
 
     /// getter
@@ -48,7 +48,7 @@ impl Proof {
     #[allow(unused)]
     pub fn validate_signature<T: Serialize>(&self, payload: &T) -> bool {
         match serialisation::serialise(&payload) {
-            Ok(data) => sign::verify_detached(&self.sig, &data[..], self.peer_id.pub_key()),
+            Ok(data) => sign::verify_detached(&self.sig, &data[..], self.node_info.sign_key()),
             _ => false,
         }
     }
@@ -56,8 +56,8 @@ impl Proof {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use RoutingError;
+    use full_info::FullInfo;
     use maidsafe_utilities::SeededRng;
     use network_event::SectionState;
     use rand::Rng;
@@ -68,12 +68,13 @@ mod tests {
     fn confirm_proof_for_vote() {
         let mut rng = SeededRng::thread_rng();
         unwrap!(rust_sodium::init_with_rng(&mut rng));
-        let keys = sign::gen_keypair();
-        let peer_id = PeerId::new(rng.gen_range(0, 255), keys.0);
-        let payload = SectionState::Live(PeerId::new(rng.gen_range(0, 255), keys.0));
-        let vote = unwrap!(Vote::new(&keys.1, payload.clone()));
-        assert!(vote.validate_signature(&peer_id));
-        let proof = unwrap!(vote.proof(&PeerId::new(rng.gen_range(0, 255), keys.0)));
+        let mut full_info = FullInfo::node_new(rng.gen_range(0, 255));
+        let node_info = *full_info.public_info();
+        let payload = SectionState::Live(node_info);
+        let vote = unwrap!(Vote::new(full_info.secret_sign_key(), payload.clone()));
+        assert!(vote.validate_signature(&node_info));
+        full_info.set_age(rng.gen_range(0, 255));
+        let proof = unwrap!(vote.proof(full_info.public_info()));
         assert!(proof.validate_signature(&payload));
     }
 
@@ -81,20 +82,18 @@ mod tests {
     fn bad_construction() {
         let mut rng = SeededRng::thread_rng();
         unwrap!(rust_sodium::init_with_rng(&mut rng));
-        let keys = sign::gen_keypair();
-        let peer_id = PeerId::new(rng.gen_range(0, 255), keys.0);
-        let other_keys = sign::gen_keypair();
-        let payload = SectionState::Live(PeerId::new(rng.gen_range(0, 255), keys.0));
-        let vote = unwrap!(Vote::new(&keys.1, payload.clone()));
-        assert!(vote.validate_signature(&peer_id));
-        let proof = unwrap!(vote.proof(&PeerId::new(rng.gen_range(0, 255), keys.0)));
-        assert!(
-            vote.proof(&PeerId::new(rng.gen_range(0, 255), keys.0))
-                .is_ok()
-        );
-        if let Err(RoutingError::FailedSignature) =
-            vote.proof(&PeerId::new(rng.gen_range(0, 255), other_keys.0))
-        {
+        let mut full_info = FullInfo::node_new(rng.gen_range(0, 255));
+        let node_info = *full_info.public_info();
+        full_info.set_age(rng.gen_range(0, 255));
+        let other_node_info = *FullInfo::node_new(rng.gen_range(0, 255)).public_info();
+        let payload = SectionState::Live(*full_info.public_info());
+        let vote = unwrap!(Vote::new(full_info.secret_sign_key(), payload.clone()));
+        assert!(vote.validate_signature(&node_info));
+        full_info.set_age(rng.gen_range(0, 255));
+        let proof = unwrap!(vote.proof(full_info.public_info()));
+        full_info.set_age(rng.gen_range(0, 255));
+        assert!(vote.proof(full_info.public_info()).is_ok());
+        if let Err(RoutingError::FailedSignature) = vote.proof(&other_node_info) {
         } else {
             panic!("Should have failed signature check.");
         }

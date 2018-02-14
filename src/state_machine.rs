@@ -18,12 +18,13 @@
 use {CrustEvent, CrustEventSender, GROUP_SIZE, Service};
 use BootstrapConfig;
 use action::Action;
-use id::{FullId, PublicId};
+use full_info::FullInfo;
 use log::LogLevel;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 #[cfg(feature = "use-mock-crust")]
 use mock_crust;
 use outbox::EventBox;
+use public_info::PublicInfo;
 use routing_table::{Prefix, RoutingTable};
 #[cfg(feature = "use-mock-crust")]
 use rust_sodium::crypto::sign;
@@ -46,8 +47,8 @@ pub struct StateMachine {
     state: State,
     category_rx: Receiver<MaidSafeEventCategory>,
     category_tx: Sender<MaidSafeEventCategory>,
-    crust_rx: Receiver<CrustEvent<PublicId>>,
-    crust_tx: Sender<CrustEvent<PublicId>>,
+    crust_rx: Receiver<CrustEvent<PublicInfo>>,
+    crust_tx: Sender<CrustEvent<PublicInfo>>,
     action_rx: Receiver<Action>,
     is_running: bool,
     #[cfg(feature = "use-mock-crust")]
@@ -66,7 +67,7 @@ pub enum State {
 
 #[cfg(feature = "use-mock-crust")]
 enum EventType {
-    CrustEvent(CrustEvent<PublicId>),
+    CrustEvent(CrustEvent<PublicInfo>),
     Action(Box<Action>),
 }
 
@@ -99,7 +100,7 @@ impl State {
 
     fn handle_crust_event(
         &mut self,
-        event: CrustEvent<PublicId>,
+        event: CrustEvent<PublicInfo>,
         outbox: &mut EventBox,
     ) -> Transition {
         match *self {
@@ -111,7 +112,7 @@ impl State {
         }
     }
 
-    fn id(&self) -> Option<PublicId> {
+    fn id(&self) -> Option<PublicInfo> {
         self.base_state().map(|state| *state.id())
     }
 
@@ -169,7 +170,7 @@ impl State {
         }
     }
 
-    pub fn has_tunnel_clients(&self, client_1: PublicId, client_2: PublicId) -> bool {
+    pub fn has_tunnel_clients(&self, client_1: PublicInfo, client_2: PublicInfo) -> bool {
         match *self {
             State::Node(ref state) => state.has_tunnel_clients(client_1, client_2),
             _ => false,
@@ -179,7 +180,7 @@ impl State {
     pub fn section_list_signatures(
         &self,
         prefix: Prefix,
-    ) -> Option<BTreeMap<PublicId, sign::Signature>> {
+    ) -> Option<BTreeMap<PublicInfo, sign::Signature>> {
         match *self {
             State::Node(ref state) => state.section_list_signatures(prefix).ok(),
             _ => None,
@@ -243,11 +244,11 @@ impl State {
 pub enum Transition {
     Stay,
     // `Bootstrapping` state transitioning to `Client`, `JoiningNode`, or `Node`.
-    IntoBootstrapped { proxy_public_id: PublicId },
+    IntoBootstrapped { proxy_public_info: PublicInfo },
     // `JoiningNode` state transitioning back to `Bootstrapping`.
     IntoBootstrapping {
-        new_id: FullId,
-        our_section: (Prefix, BTreeSet<PublicId>),
+        new_info: FullInfo,
+        our_section: (Prefix, BTreeSet<PublicInfo>),
     },
     Terminate,
 }
@@ -256,7 +257,7 @@ impl StateMachine {
     // Construct a new StateMachine by passing a function returning the initial state.
     pub fn new<F>(
         init_state: F,
-        pub_id: PublicId,
+        pub_info: PublicInfo,
         bootstrap_config: Option<BootstrapConfig>,
         outbox: &mut EventBox,
     ) -> (RoutingActionSender, Self)
@@ -281,13 +282,13 @@ impl StateMachine {
 
         let res = match bootstrap_config {
             #[cfg(feature = "use-mock-crust")]
-            Some(c) => Service::with_config(mock_crust::take_current(), crust_sender, c, pub_id),
+            Some(c) => Service::with_config(mock_crust::take_current(), crust_sender, c, pub_info),
             #[cfg(not(feature = "use-mock-crust"))]
-            Some(c) => Service::with_config(crust_sender, c, pub_id),
+            Some(c) => Service::with_config(crust_sender, c, pub_info),
             #[cfg(feature = "use-mock-crust")]
-            None => Service::new(mock_crust::take_current(), crust_sender, pub_id),
+            None => Service::new(mock_crust::take_current(), crust_sender, pub_info),
             #[cfg(not(feature = "use-mock-crust"))]
-            None => Service::new(crust_sender, pub_id),
+            None => Service::new(crust_sender, pub_info),
         };
 
         let mut crust_service = unwrap!(res, "Unable to start crust::Service");
@@ -375,17 +376,17 @@ impl StateMachine {
         use self::Transition::*;
         match transition {
             Stay => (),
-            IntoBootstrapped { proxy_public_id } => {
+            IntoBootstrapped { proxy_public_info } => {
                 let new_state = match mem::replace(&mut self.state, State::Terminated) {
                     State::Bootstrapping(bootstrapping) => {
-                        bootstrapping.into_target_state(proxy_public_id, outbox)
+                        bootstrapping.into_target_state(proxy_public_info, outbox)
                     }
                     _ => unreachable!(),
                 };
                 self.state = new_state;
             }
             IntoBootstrapping {
-                new_id,
+                new_info,
                 our_section,
             } => {
                 let new_state = match mem::replace(&mut self.state, State::Terminated) {
@@ -398,7 +399,7 @@ impl StateMachine {
                         joining_node.into_bootstrapping(
                             &mut self.crust_rx,
                             crust_sender,
-                            new_id,
+                            new_info,
                             our_section,
                             outbox,
                         )
@@ -507,7 +508,7 @@ impl StateMachine {
         Err(TryRecvError::Empty)
     }
 
-    pub fn id(&self) -> Option<PublicId> {
+    pub fn id(&self) -> Option<PublicInfo> {
         self.state.id()
     }
 

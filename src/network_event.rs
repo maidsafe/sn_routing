@@ -18,7 +18,7 @@
 // FIXME: remove when this module is finished
 #![allow(dead_code)]
 
-use peer_id::PeerId;
+use public_info::PublicInfo;
 use routing_table::Prefix;
 
 /// Will create `Block`s we keep in a chain, transitions happens in pairs e.g. (`Lost` -> `Live`),
@@ -29,18 +29,18 @@ use routing_table::Prefix;
 pub enum SectionState {
     /// Accepted but not yet lost.  May have joined or been relocated here, or may have come back
     /// via a merge or restart.
-    Live(PeerId),
+    Live(PublicInfo),
     /// Cannot ever become live again.
-    Killed(PeerId),
+    Killed(PublicInfo),
     /// Lost (disconnected) and can become live here (restart) to be relocated (ONLY UNFORSEEABLE
     /// STATE).  Can happen out of order, but forces next state.
-    Lost(PeerId),
+    Lost(PublicInfo),
     /// Gone to another section via "split" or become an Adult (Demoted).  Can again become live
     /// here.
-    Gone(PeerId),
+    Gone(PublicInfo),
     /// Cannot ever become live here again.  Could be relocated to the same section it's leaving
     /// during network start up or for balancing the network.
-    Relocated(PeerId),
+    Relocated(PublicInfo),
     /// Our section split or merged.  Prefix is "to" for split and "from" for merge to ensure
     /// block's uniqueness.
     PrefixChange(Prefix),

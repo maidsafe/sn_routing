@@ -19,8 +19,8 @@
 #![allow(dead_code)]
 
 use error::RoutingError;
-use peer_id::PeerId;
 use proof::Proof;
+use public_info::PublicInfo;
 use serde::Serialize;
 use std::collections::BTreeSet;
 use std::iter;
@@ -73,12 +73,12 @@ pub struct Block<T> {
 }
 
 impl<T: Serialize + Clone> Block<T> {
-    /// A new `Block` requires a valid vote and the `PeerId` of the node who sent us this. For
+    /// A new `Block` requires a valid vote and the `PublicInfo` of the node who sent us this. For
     /// this reason the `Vote` will require a `DirectMessage` from a node to us.
-    pub fn new(vote: &Vote<T>, peer_id: &PeerId) -> Result<Block<T>, RoutingError> {
+    pub fn new(vote: &Vote<T>, node_info: &PublicInfo) -> Result<Block<T>, RoutingError> {
         Ok(Block {
             payload: vote.payload().clone(),
-            proofs: iter::once(vote.proof(peer_id)?).collect(),
+            proofs: iter::once(vote.proof(node_info)?).collect(),
         })
     }
 
@@ -86,10 +86,10 @@ impl<T: Serialize + Clone> Block<T> {
     pub fn add_vote(
         &mut self,
         vote: &Vote<T>,
-        peer_id: &PeerId,
-        valid_voters: &BTreeSet<PeerId>,
+        node_info: &PublicInfo,
+        valid_voters: &BTreeSet<PublicInfo>,
     ) -> Result<BlockState, RoutingError> {
-        let proof = vote.proof(peer_id)?;
+        let proof = vote.proof(node_info)?;
         self.insert_proof(proof, valid_voters)
     }
 
@@ -97,7 +97,7 @@ impl<T: Serialize + Clone> Block<T> {
     pub fn add_proof(
         &mut self,
         proof: Proof,
-        valid_voters: &BTreeSet<PeerId>,
+        valid_voters: &BTreeSet<PublicInfo>,
     ) -> Result<BlockState, RoutingError> {
         if !proof.validate_signature(&self.payload) {
             Err(RoutingError::FailedSignature)
@@ -106,12 +106,12 @@ impl<T: Serialize + Clone> Block<T> {
         }
     }
 
-    pub fn get_peer_ids(&self) -> BTreeSet<PeerId> {
-        let mut peer_ids = BTreeSet::new();
+    pub fn get_node_infos(&self) -> BTreeSet<PublicInfo> {
+        let mut node_infos = BTreeSet::new();
         for proof in &self.proofs {
-            let _ = peer_ids.insert(proof.peer_id().clone());
+            let _ = node_infos.insert(proof.node_info().clone());
         }
-        peer_ids
+        node_infos
     }
 
     /// Return number of `Proof`s.
@@ -121,9 +121,10 @@ impl<T: Serialize + Clone> Block<T> {
 
     /// Return total age of all of signatories.
     pub fn total_age(&self) -> usize {
-        self.proofs.iter().fold(0, |total, proof| {
-            total + usize::from(proof.peer_id().age())
-        })
+        self.proofs.iter().fold(
+            0,
+            |total, proof| total + usize::from(proof.node_info().age()),
+        )
     }
 
     /// getter
@@ -139,14 +140,14 @@ impl<T: Serialize + Clone> Block<T> {
     /// Return the block state given a set of valid voters.
     pub fn get_block_state(
         &self,
-        valid_voters: &BTreeSet<PeerId>,
+        valid_voters: &BTreeSet<PublicInfo>,
     ) -> Result<BlockState, RoutingError> {
         if self.proofs.len() >= valid_voters.len() {
             return Ok(BlockState::Full);
         }
         let total_age = valid_voters
             .iter()
-            .map(|peer_id| usize::from(peer_id.age()))
+            .map(|node_info| usize::from(node_info.age()))
             .sum();
         if self.total_age() * 2 > total_age && self.num_proofs() * 2 > valid_voters.len() {
             Ok(BlockState::Valid)
@@ -158,9 +159,9 @@ impl<T: Serialize + Clone> Block<T> {
     fn insert_proof(
         &mut self,
         proof: Proof,
-        valid_voters: &BTreeSet<PeerId>,
+        valid_voters: &BTreeSet<PublicInfo>,
     ) -> Result<BlockState, RoutingError> {
-        if !valid_voters.contains(proof.peer_id()) {
+        if !valid_voters.contains(proof.node_info()) {
             return Err(RoutingError::InvalidSource);
         }
         if self.proofs.insert(proof) {
@@ -174,38 +175,43 @@ impl<T: Serialize + Clone> Block<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use full_info::FullInfo;
     use maidsafe_utilities::SeededRng;
     use network_event::SectionState;
     use rand::Rng;
     use rust_sodium;
-    use rust_sodium::crypto::sign;
 
     #[test]
     fn create_then_add_proofs() {
         let mut rng = SeededRng::thread_rng();
         unwrap!(rust_sodium::init_with_rng(&mut rng));
 
-        let keys0 = sign::gen_keypair();
-        let keys1 = sign::gen_keypair();
-        let peer_id0 = PeerId::new(0, keys0.0);
-        let peer_id1 = PeerId::new(0, keys1.0);
-        let payload = SectionState::Gone(peer_id0.clone());
-        let vote0 = unwrap!(Vote::new(&keys0.1, payload.clone()));
-        assert!(vote0.validate_signature(&peer_id0));
-        let vote1 = unwrap!(Vote::new(&keys1.1, payload.clone()));
-        assert!(vote1.validate_signature(&peer_id1));
-        let peer_id00 = PeerId::new(1u8, keys0.0);
-        let peer_id10 = PeerId::new(rng.gen_range(0, 255), keys1.0);
-        let proof0 = unwrap!(vote0.proof(&peer_id00));
+        let mut full_info_0 = FullInfo::node_new(0);
+        let mut full_info_1 = FullInfo::node_new(0);
+        let public_info_0 = *full_info_0.public_info();
+        let public_info_1 = *full_info_1.public_info();
+
+        let payload = SectionState::Gone(public_info_0);
+        let vote0 = unwrap!(Vote::new(full_info_0.secret_sign_key(), payload.clone()));
+        assert!(vote0.validate_signature(&public_info_0));
+        let vote1 = unwrap!(Vote::new(full_info_1.secret_sign_key(), payload.clone()));
+        assert!(vote1.validate_signature(&public_info_1));
+
+        full_info_0.set_age(1u8);
+        full_info_1.set_age(rng.gen_range(0, 255));
+        let public_info_00 = *full_info_0.public_info();
+        let public_info_10 = *full_info_1.public_info();
+
+        let proof0 = unwrap!(vote0.proof(&public_info_00));
         assert!(proof0.validate_signature(&payload));
-        let proof1 = unwrap!(vote1.proof(&peer_id10));
+        let proof1 = unwrap!(vote1.proof(&public_info_10));
         assert!(proof1.validate_signature(&payload));
-        let mut b0 = unwrap!(Block::new(&vote0, &peer_id00));
+        let mut b0 = unwrap!(Block::new(&vote0, &public_info_00));
         assert!(proof0.validate_signature(&b0.payload));
         assert!(proof1.validate_signature(&b0.payload));
         let mut valid_voters = BTreeSet::new();
-        let _ = valid_voters.insert(peer_id00);
-        let _ = valid_voters.insert(peer_id10);
+        let _ = valid_voters.insert(public_info_00);
+        let _ = valid_voters.insert(public_info_10);
         assert!(b0.add_proof(proof0, &valid_voters).is_err());
         assert_eq!(b0.num_proofs(), 1);
         assert!(b0.add_proof(proof1, &valid_voters).is_ok());
@@ -217,27 +223,32 @@ mod tests {
         let mut rng = SeededRng::thread_rng();
         unwrap!(rust_sodium::init_with_rng(&mut rng));
 
-        let keys0 = sign::gen_keypair();
-        let keys1 = sign::gen_keypair();
-        let keys2 = sign::gen_keypair();
-        let payload = SectionState::Gone(PeerId::new(0, keys0.0));
-        let vote0 = unwrap!(Vote::new(&keys0.1, payload.clone()));
-        let vote1 = unwrap!(Vote::new(&keys1.1, payload.clone()));
-        let vote2 = unwrap!(Vote::new(&keys2.1, payload.clone()));
-        let age0 = rng.gen_range(0, 255);
-        let age1 = rng.gen_range(0, 255);
-        let age2 = rng.gen_range(0, 255);
-        let peer_id0 = PeerId::new(age0, keys0.0);
-        let peer_id1 = PeerId::new(age1, keys1.0);
-        let peer_id2 = PeerId::new(age2, keys2.0);
+        let mut full_info_0 = FullInfo::node_new(0);
+        let mut full_info_1 = FullInfo::node_new(0);
+        let mut full_info_2 = FullInfo::node_new(0);
+
+        let payload = SectionState::Gone(*full_info_0.public_info());
+        let vote0 = unwrap!(Vote::new(full_info_0.secret_sign_key(), payload.clone()));
+        let vote1 = unwrap!(Vote::new(full_info_1.secret_sign_key(), payload.clone()));
+        let vote2 = unwrap!(Vote::new(full_info_2.secret_sign_key(), payload.clone()));
+        let age0: u8 = rng.gen_range(0, 255);
+        let age1: u8 = rng.gen_range(0, 255);
+        let age2: u8 = rng.gen_range(0, 255);
+        full_info_0.set_age(age0);
+        full_info_1.set_age(age1);
+        full_info_2.set_age(age2);
+        let public_info_0 = *full_info_0.public_info();
+        let public_info_1 = *full_info_1.public_info();
+        let public_info_2 = *full_info_2.public_info();
+
         let mut valid_voters = BTreeSet::new();
-        let _ = valid_voters.insert(peer_id0.clone());
-        let _ = valid_voters.insert(peer_id1.clone());
-        let _ = valid_voters.insert(peer_id2.clone());
-        let proof1 = unwrap!(vote1.proof(&peer_id1));
-        let proof2 = unwrap!(vote2.proof(&peer_id2));
+        let _ = valid_voters.insert(public_info_0);
+        let _ = valid_voters.insert(public_info_1);
+        let _ = valid_voters.insert(public_info_2);
+        let proof1 = unwrap!(vote1.proof(&public_info_1));
+        let proof2 = unwrap!(vote2.proof(&public_info_2));
         // So 3 votes all valid will be added to block
-        let mut b0 = unwrap!(Block::new(&vote0, &peer_id0));
+        let mut b0 = unwrap!(Block::new(&vote0, &public_info_0));
         if (usize::from(age0) + usize::from(age1)) > usize::from(age2) {
             assert_eq!(
                 unwrap!(b0.add_proof(proof1, &valid_voters)),
