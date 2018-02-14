@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use routing::{Authority, Client, ClientError, Event, FullId, ImmutableData, MessageId,
+use routing::{Authority, Client, ClientError, Event, FullInfo, ImmutableData, MessageId,
               MutableData, Response, Value, XorName};
 use rust_sodium::crypto;
 use std::collections::BTreeMap;
@@ -64,7 +64,7 @@ pub struct ExampleClient {
     /// The receiver through which the Routing library will send events.
     receiver: Receiver<Event>,
     /// This client's ID.
-    full_id: FullId,
+    full_id: FullInfo,
 }
 
 impl ExampleClient {
@@ -75,9 +75,7 @@ impl ExampleClient {
         // Generate new key pairs. The client's name will be computed from them. This is a
         // requirement for clients: If the name does not match the keys, it will be rejected by the
         // network.
-        let sign_keys = crypto::sign::gen_keypair();
-        let encrypt_keys = crypto::box_::gen_keypair();
-        let full_id = FullId::with_keys(encrypt_keys.clone(), sign_keys.clone());
+        let full_id = FullInfo::client_new();
         let mut client;
 
         // Try to connect the client to the network. If it fails, it probably means
@@ -133,7 +131,7 @@ impl ExampleClient {
     /// This is a blocking call and will wait indefinitely for a response.
     #[allow(unused)]
     pub fn put_idata(&mut self, data: ImmutableData) -> Result<(), ClientError> {
-        let dst = Authority::ClientManager(*self.name());
+        let dst = Authority::ClientManager(self.name());
         let name = *data.name();
         let msg_id = MessageId::new();
         unwrap!(self.client.put_idata(dst, data, msg_id));
@@ -202,7 +200,7 @@ impl ExampleClient {
     ///
     /// This is a blocking call and will wait indefinitely for a response.
     pub fn put_mdata(&mut self, data: MutableData) -> Result<(), ClientError> {
-        let dst = Authority::ClientManager(*self.name());
+        let dst = Authority::ClientManager(self.name());
         let name = *data.name();
         let tag = data.tag();
         let msg_id = MessageId::new();
@@ -217,13 +215,13 @@ impl ExampleClient {
     }
 
     /// Returns network name.
-    pub fn name(&self) -> &XorName {
-        self.full_id.public_id().name()
+    pub fn name(&self) -> XorName {
+        self.full_id.public_info().name()
     }
 
     /// Returns the signing public key of this client.
     pub fn signing_public_key(&self) -> &crypto::sign::PublicKey {
-        self.full_id.public_id().signing_public_key()
+        self.full_id.public_info().sign_key()
     }
 }
 

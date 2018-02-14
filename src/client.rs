@@ -26,11 +26,12 @@ use error::{InterfaceError, RoutingError};
 use event::Event;
 #[cfg(feature = "use-mock-crust")]
 use event_stream::{EventStepper, EventStream};
-use id::{FullId, PublicId};
+use full_info::FullInfo;
 #[cfg(not(feature = "use-mock-crust"))]
 use maidsafe_utilities::thread::{self, Joiner};
 use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, Request};
 use outbox::{EventBox, EventBuf};
+use public_info::PublicInfo;
 use routing_table::Authority;
 #[cfg(not(feature = "use-mock-crust"))]
 use rust_sodium;
@@ -67,14 +68,14 @@ pub struct Client {
 
 impl Client {
     fn make_state_machine(
-        keys: Option<FullId>,
+        keys: Option<FullInfo>,
         outbox: &mut EventBox,
         bootstrap_config: Option<BootstrapConfig>,
         config: Option<Config>,
         msg_expiry_dur: Duration,
     ) -> (RoutingActionSender, StateMachine) {
-        let full_id = keys.unwrap_or_else(FullId::new);
-        let pub_id = *full_id.public_id();
+        let full_info = keys.unwrap_or_else(FullInfo::client_new);
+        let pub_info = *full_info.public_info();
         let config = config.unwrap_or_else(config_handler::get_config);
         let dev_config = config.dev.unwrap_or_default();
         let group_size = dev_config.group_size.unwrap_or(GROUP_SIZE);
@@ -86,12 +87,12 @@ impl Client {
                     Box::new(NullCache),
                     BootstrappingTargetState::Client { msg_expiry_dur },
                     crust_service,
-                    full_id,
+                    full_info,
                     group_size,
                     timer,
                 ).map_or(State::Terminated, State::Bootstrapping)
             },
-            pub_id,
+            pub_info,
             bootstrap_config,
             outbox,
         )
@@ -456,7 +457,7 @@ impl Client {
     /// Create a new `Client`.
     ///
     /// It will automatically connect to the network, but not attempt to achieve full routing node
-    /// status. The name of the client will be the name of the `PublicId` of the `keys` and must
+    /// status. The name of the client will be the name of the `PublicInfo` of the `keys` and must
     /// equal the SHA512 hash of its public signing key, otherwise the client will be instantly
     /// terminated.
     ///
@@ -465,7 +466,7 @@ impl Client {
     /// exists to ensure that the client cannot choose its `ClientAuthority`.
     pub fn new(
         event_sender: Sender<Event>,
-        keys: Option<FullId>,
+        keys: Option<FullInfo>,
         bootstrap_config: Option<BootstrapConfig>,
         msg_expiry_dur: Duration,
     ) -> Result<Client, RoutingError> {
@@ -516,8 +517,8 @@ impl Client {
         })
     }
 
-    /// Returns the `PublicId` of this client.
-    pub fn id(&self) -> Result<PublicId, InterfaceError> {
+    /// Returns the `PublicInfo` of this client.
+    pub fn id(&self) -> Result<PublicInfo, InterfaceError> {
         let (result_tx, result_rx) = channel();
         self.action_sender.send(Action::Id { result_tx: result_tx })?;
         Ok(result_rx.recv()?)
@@ -550,7 +551,7 @@ impl Client {
 impl Client {
     /// Create a new `Client` for testing with mock crust.
     pub fn new(
-        keys: Option<FullId>,
+        keys: Option<FullInfo>,
         bootstrap_config: Option<BootstrapConfig>,
         config: Config,
         msg_expiry_dur: Duration,
@@ -575,7 +576,7 @@ impl Client {
     }
 
     /// Returns the name of this client.
-    pub fn id(&self) -> Result<PublicId, RoutingError> {
+    pub fn id(&self) -> Result<PublicInfo, RoutingError> {
         self.machine.id().ok_or(RoutingError::Terminated)
     }
 

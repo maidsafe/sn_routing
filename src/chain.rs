@@ -23,8 +23,8 @@ use error::RoutingError;
 use fs2::FileExt;
 use maidsafe_utilities::serialisation;
 use node_state::NodeState;
-use peer_id::PeerId;
 use proof::Proof;
+use public_info::PublicInfo;
 use std::collections::BTreeSet;
 use std::fs;
 use std::io::{self, Read, Write};
@@ -129,13 +129,13 @@ impl DataChain {
     fn add_vote(
         &mut self,
         vote: &Vote<NodeState>,
-        peer_id: &PeerId,
+        node_info: &PublicInfo,
     ) -> Option<(NodeState, NodesAndAge)> {
-        if !vote.validate_signature(peer_id) {
+        if !vote.validate_signature(node_info) {
             return None;
         }
 
-        let pub_key_matches = |x: &Proof| x.peer_id().pub_key() == peer_id.pub_key();
+        let pub_key_matches = |x: &Proof| x.node_info().sign_key() == node_info.sign_key();
         for blk in &mut self.blocks.iter_mut() {
             if blk.payload() == vote.payload() {
                 if blk.proofs().iter().any(pub_key_matches) {
@@ -143,18 +143,18 @@ impl DataChain {
                     return None;
                 }
                 // TODO: use proper valid voters list instead of the empty list.
-                let _ = blk.add_proof(vote.proof(peer_id).unwrap(), &BTreeSet::new())
+                let _ = blk.add_proof(vote.proof(node_info).unwrap(), &BTreeSet::new())
                     .unwrap();
 
                 let p_age = NodesAndAge::new(blk.num_proofs(), blk.total_age());
                 return Some((blk.payload().clone(), p_age));
             }
         }
-        if let Ok(ref mut blk) = Block::new(vote, peer_id) {
+        if let Ok(ref mut blk) = Block::new(vote, node_info) {
             self.blocks.push(blk.clone());
             return Some((
                 blk.payload().clone(),
-                NodesAndAge::new(1, usize::from(peer_id.age())),
+                NodesAndAge::new(1, usize::from(node_info.age())),
             ));
         }
         info!("Could not find any block for this proof");
@@ -166,8 +166,8 @@ impl DataChain {
         if let Some(mut prev) = self.blocks.first() {
             for blk in self.blocks.iter().skip(1) {
                 // TODO, don't count like this use a loop and check quorum age as well
-                if blk.get_peer_ids()
-                    .intersection(&prev.get_peer_ids())
+                if blk.get_node_infos()
+                    .intersection(&prev.get_node_infos())
                     .count() <= self.group_size / 2
                 {
                     return false;

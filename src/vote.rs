@@ -20,8 +20,8 @@
 
 use error::RoutingError;
 use maidsafe_utilities::serialisation;
-use peer_id::PeerId;
 use proof::Proof;
+use public_info::PublicInfo;
 use rust_sodium::crypto::sign::{self, SecretKey, Signature};
 use serde::Serialize;
 
@@ -44,10 +44,10 @@ impl<T: Serialize + Clone> Vote<T> {
         })
     }
 
-    pub fn proof(&self, peer_id: &PeerId) -> Result<Proof, RoutingError> {
-        if self.validate_signature(peer_id) {
+    pub fn proof(&self, node_info: &PublicInfo) -> Result<Proof, RoutingError> {
+        if self.validate_signature(node_info) {
             return Ok(Proof {
-                peer_id: peer_id.clone(),
+                node_info: *node_info,
                 sig: self.signature,
             });
         }
@@ -65,9 +65,9 @@ impl<T: Serialize + Clone> Vote<T> {
     }
 
     /// Validate signed correctly.
-    pub fn validate_signature(&self, peer_id: &PeerId) -> bool {
+    pub fn validate_signature(&self, node_info: &PublicInfo) -> bool {
         match serialisation::serialise(&self.payload) {
-            Ok(data) => sign::verify_detached(&self.signature, &data[..], peer_id.pub_key()),
+            Ok(data) => sign::verify_detached(&self.signature, &data[..], node_info.sign_key()),
             Err(_) => false,
         }
     }
@@ -76,6 +76,7 @@ impl<T: Serialize + Clone> Vote<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use full_info::FullInfo;
     use maidsafe_utilities::SeededRng;
     use rand::Rng;
     use rust_sodium;
@@ -84,13 +85,12 @@ mod tests {
     fn wrong_key() {
         let mut rng = SeededRng::thread_rng();
         unwrap!(rust_sodium::init_with_rng(&mut rng));
-        let keys = sign::gen_keypair();
-        let bad_keys = sign::gen_keypair();
-        let peer_id = PeerId::new(rng.gen_range(0, 255), keys.0);
+        let full_info = FullInfo::node_new(rng.gen_range(0, 255));
+        let node_info = *full_info.public_info();
         let payload = "Live";
-        let vote = unwrap!(Vote::new(&keys.1, payload));
-        assert!(vote.validate_signature(&peer_id)); // right key
-        let bad_peer_id = PeerId::new(rng.gen_range(0, 255), bad_keys.0);
-        assert!(!vote.validate_signature(&bad_peer_id)); // wrong key
+        let vote = unwrap!(Vote::new(full_info.secret_sign_key(), payload));
+        assert!(vote.validate_signature(&node_info)); // right key
+        let bad_node_info = *FullInfo::node_new(rng.gen_range(0, 255)).public_info();
+        assert!(!vote.validate_signature(&bad_node_info)); // wrong key
     }
 }

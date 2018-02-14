@@ -25,10 +25,11 @@ use error::{InterfaceError, RoutingError};
 use event::Event;
 #[cfg(feature = "use-mock-crust")]
 use fake_clock::FakeClock as Instant;
-use id::{FullId, PublicId};
+use full_info::FullInfo;
 use maidsafe_utilities::serialisation;
 use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage};
 use outbox::EventBox;
+use public_info::PublicInfo;
 use resource_prover::RESOURCE_PROOF_DURATION_SECS;
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use routing_table::{Authority, Prefix};
@@ -52,11 +53,11 @@ pub struct JoiningNode {
     action_sender: RoutingActionSender,
     ack_mgr: AckManager,
     crust_service: Service,
-    full_id: FullId,
+    full_info: FullInfo,
     /// Only held here to be passed eventually to the `Node` state.
     cache: Box<Cache>,
     group_size: usize,
-    proxy_pub_id: PublicId,
+    proxy_pub_info: PublicInfo,
     /// The queue of routing messages addressed to us. These do not themselves need forwarding,
     /// although they may wrap a message which needs forwarding.
     routing_msg_filter: RoutingMessageFilter,
@@ -71,9 +72,9 @@ impl JoiningNode {
         action_sender: RoutingActionSender,
         cache: Box<Cache>,
         crust_service: Service,
-        full_id: FullId,
+        full_info: FullInfo,
         group_size: usize,
-        proxy_pub_id: PublicId,
+        proxy_pub_info: PublicInfo,
         stats: Stats,
         timer: Timer,
     ) -> Option<Self> {
@@ -83,10 +84,10 @@ impl JoiningNode {
             action_sender: action_sender,
             ack_mgr: AckManager::new(),
             crust_service: crust_service,
-            full_id: full_id,
+            full_info: full_info,
             cache: cache,
             group_size: group_size,
-            proxy_pub_id: proxy_pub_id,
+            proxy_pub_info: proxy_pub_info,
             routing_msg_filter: RoutingMessageFilter::new(),
             stats: stats,
             relocation_timer_token: relocation_timer_token,
@@ -128,12 +129,12 @@ impl JoiningNode {
 
     pub fn handle_crust_event(
         &mut self,
-        crust_event: CrustEvent<PublicId>,
+        crust_event: CrustEvent<PublicInfo>,
         outbox: &mut EventBox,
     ) -> Transition {
         match crust_event {
-            CrustEvent::LostPeer(pub_id) => self.handle_lost_peer(pub_id, outbox),
-            CrustEvent::NewMessage(pub_id, _, bytes) => self.handle_new_message(pub_id, &bytes),
+            CrustEvent::LostPeer(pub_info) => self.handle_lost_peer(pub_info, outbox),
+            CrustEvent::NewMessage(pub_info, _, bytes) => self.handle_new_message(pub_info, &bytes),
             _ => {
                 debug!("{:?} - Unhandled crust event: {:?}", self, crust_event);
                 Transition::Stay
@@ -143,20 +144,20 @@ impl JoiningNode {
 
     pub fn into_bootstrapping(
         self,
-        crust_rx: &mut Receiver<CrustEvent<PublicId>>,
+        crust_rx: &mut Receiver<CrustEvent<PublicInfo>>,
         crust_sender: CrustEventSender,
-        new_full_id: FullId,
-        our_section: (Prefix, BTreeSet<PublicId>),
+        new_full_info: FullInfo,
+        our_section: (Prefix, BTreeSet<PublicInfo>),
         outbox: &mut EventBox,
     ) -> State {
         let service = Self::start_new_crust_service(
             self.crust_service,
-            *new_full_id.public_id(),
+            *new_full_info.public_info(),
             crust_rx,
             crust_sender,
         );
         let target_state = BootstrappingTargetState::Node {
-            old_full_id: self.full_id,
+            old_full_info: self.full_info,
             our_section: our_section,
         };
         if let Some(bootstrapping) =
@@ -165,7 +166,7 @@ impl JoiningNode {
                 self.cache,
                 target_state,
                 service,
-                new_full_id,
+                new_full_info,
                 self.group_size,
                 self.timer,
             )
@@ -180,15 +181,15 @@ impl JoiningNode {
     #[cfg(not(feature = "use-mock-crust"))]
     fn start_new_crust_service(
         old_crust_service: Service,
-        pub_id: PublicId,
-        crust_rx: &mut Receiver<CrustEvent<PublicId>>,
+        pub_info: PublicInfo,
+        crust_rx: &mut Receiver<CrustEvent<PublicInfo>>,
         crust_sender: CrustEventSender,
     ) -> Service {
         // Drop the current Crust service and flush the receiver
         drop(old_crust_service);
         while let Ok(_crust_event) = crust_rx.try_recv() {}
 
-        let mut crust_service = match Service::new(crust_sender, pub_id) {
+        let mut crust_service = match Service::new(crust_sender, pub_info) {
             Ok(service) => service,
             Err(error) => panic!("Unable to start crust::Service {:?}", error),
         };
@@ -199,17 +200,17 @@ impl JoiningNode {
     #[cfg(feature = "use-mock-crust")]
     fn start_new_crust_service(
         old_crust_service: Service,
-        pub_id: PublicId,
-        _crust_rx: &mut Receiver<CrustEvent<PublicId>>,
+        pub_info: PublicInfo,
+        _crust_rx: &mut Receiver<CrustEvent<PublicInfo>>,
         crust_sender: CrustEventSender,
     ) -> Service {
-        old_crust_service.restart(crust_sender, pub_id);
+        old_crust_service.restart(crust_sender, pub_info);
         old_crust_service
     }
 
-    fn handle_new_message(&mut self, pub_id: PublicId, bytes: &[u8]) -> Transition {
+    fn handle_new_message(&mut self, pub_info: PublicInfo, bytes: &[u8]) -> Transition {
         let transition = match serialisation::deserialise(bytes) {
-            Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, pub_id),
+            Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, pub_info),
             Ok(message) => {
                 debug!("{:?} - Unhandled new message: {:?}", self, message);
                 Ok(Transition::Stay)
@@ -230,12 +231,12 @@ impl JoiningNode {
     fn handle_hop_message(
         &mut self,
         hop_msg: HopMessage,
-        pub_id: PublicId,
+        pub_info: PublicInfo,
     ) -> Result<Transition, RoutingError> {
-        if self.proxy_pub_id == pub_id {
-            hop_msg.verify(self.proxy_pub_id.signing_public_key())?;
+        if self.proxy_pub_info == pub_info {
+            hop_msg.verify(self.proxy_pub_info.sign_key())?;
         } else {
-            return Err(RoutingError::UnknownConnection(pub_id));
+            return Err(RoutingError::UnknownConnection(pub_info));
         }
 
         let signed_msg = hop_msg.content;
@@ -302,10 +303,10 @@ impl JoiningNode {
     fn relocate(&mut self) -> Result<(), RoutingError> {
         let request_content = MessageContent::Relocate { message_id: MessageId::new() };
         let src = Authority::Client {
-            client_id: *self.full_id.public_id(),
-            proxy_node_name: *self.proxy_pub_id.name(),
+            client_info: *self.full_info.public_info(),
+            proxy_node_name: self.proxy_pub_info.name(),
         };
-        let dst = Authority::Section(*self.name());
+        let dst = Authority::Section(self.name());
 
         info!(
             "{:?} Requesting a relocated name from the network. This can take a while.",
@@ -318,11 +319,12 @@ impl JoiningNode {
     fn handle_relocate_response(
         &mut self,
         target_interval: (XorName, XorName),
-        section: (Prefix, BTreeSet<PublicId>),
+        section: (Prefix, BTreeSet<PublicInfo>),
     ) -> Transition {
-        let new_id = FullId::within_range(&target_interval.0, &target_interval.1);
+        // TODO: initial age needs to be defined
+        let new_info = FullInfo::within_range(1u8, &target_interval.0, &target_interval.1);
         Transition::IntoBootstrapping {
-            new_id: new_id,
+            new_info: new_info,
             our_section: section,
         }
     }
@@ -355,23 +357,23 @@ impl Base for JoiningNode {
         &self.crust_service
     }
 
-    fn full_id(&self) -> &FullId {
-        &self.full_id
+    fn full_info(&self) -> &FullInfo {
+        &self.full_info
     }
 
     fn in_authority(&self, auth: &Authority) -> bool {
-        if let Authority::Client { ref client_id, .. } = *auth {
-            client_id == self.full_id.public_id()
+        if let Authority::Client { ref client_info, .. } = *auth {
+            client_info == self.full_info.public_info()
         } else {
             false
         }
     }
 
-    fn handle_lost_peer(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
-        debug!("{:?} Received LostPeer - {}", self, pub_id);
+    fn handle_lost_peer(&mut self, pub_info: PublicInfo, outbox: &mut EventBox) -> Transition {
+        debug!("{:?} Received LostPeer - {}", self, pub_info);
 
-        if self.proxy_pub_id == pub_id {
-            debug!("{:?} Lost bootstrap connection to {}.", self, pub_id);
+        if self.proxy_pub_info == pub_info {
+            debug!("{:?} Lost bootstrap connection to {}.", self, pub_info);
             outbox.send_event(Event::Terminate);
             Transition::Terminate
         } else {
@@ -412,10 +414,10 @@ impl Bootstrapped for JoiningNode {
             return Ok(()); // Message is for us.
         }
 
-        // Get PublicId of the proxy node
+        // Get PublicInfo of the proxy node
         match routing_msg.src {
             Authority::Client { ref proxy_node_name, .. } => {
-                if *self.proxy_pub_id.name() != *proxy_node_name {
+                if self.proxy_pub_info.name() != *proxy_node_name {
                     error!(
                         "{:?} Unable to find connection to proxy node in proxy map",
                         self
@@ -432,18 +434,22 @@ impl Bootstrapped for JoiningNode {
             }
         };
 
-        let signed_msg = SignedMessage::new(routing_msg, self.full_id(), vec![])?;
+        let signed_msg = SignedMessage::new(routing_msg, self.full_info(), vec![])?;
 
-        let proxy_pub_id = self.proxy_pub_id;
+        let proxy_pub_info = self.proxy_pub_info;
         if self.add_to_pending_acks(signed_msg.routing_message(), route, expires_at) &&
-            !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_pub_id, route)
+            !self.filter_outgoing_routing_msg(
+                signed_msg.routing_message(),
+                &proxy_pub_info,
+                route,
+            )
         {
             let bytes = self.to_hop_bytes(
                 signed_msg.clone(),
                 route,
                 BTreeSet::new(),
             )?;
-            self.send_or_drop(&proxy_pub_id, bytes, signed_msg.priority());
+            self.send_or_drop(&proxy_pub_info, bytes, signed_msg.priority());
         }
 
         Ok(())

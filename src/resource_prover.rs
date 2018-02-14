@@ -20,11 +20,11 @@ use action::Action;
 use event::Event;
 #[cfg(feature = "use-mock-crust")]
 use fake_clock::FakeClock as Instant;
-use id::PublicId;
 use itertools::Itertools;
 use maidsafe_utilities::thread;
 use messages::{DirectMessage, MAX_PART_LEN};
 use outbox::EventBox;
+use public_info::PublicInfo;
 use resource_proof::ResourceProof;
 use signature_accumulator::ACCUMULATION_TIMEOUT_SECS;
 use state_machine::Transition;
@@ -61,9 +61,9 @@ pub struct ResourceProver {
     /// Number of expected resource proof challengers.
     challenger_count: usize,
     /// Map of ResourceProofResponse parts.
-    response_parts: HashMap<PublicId, Vec<DirectMessage>>,
+    response_parts: HashMap<PublicInfo, Vec<DirectMessage>>,
     /// Map of workers
-    workers: HashMap<PublicId, (Arc<AtomicBool>, thread::Joiner)>,
+    workers: HashMap<PublicInfo, (Arc<AtomicBool>, thread::Joiner)>,
     timer: Timer,
 }
 
@@ -100,7 +100,7 @@ impl ResourceProver {
     /// Start generating a resource proof in a background thread
     pub fn handle_request(
         &mut self,
-        pub_id: PublicId,
+        pub_info: PublicInfo,
         seed: Vec<u8>,
         target_size: usize,
         difficulty: u8,
@@ -177,7 +177,7 @@ impl ResourceProver {
                 seed
             );
 
-            let action = Action::ResourceProofResult(pub_id, messages);
+            let action = Action::ResourceProofResult(pub_info, messages);
             if action_sender.send(action).is_err() {
                 // In theory this means the receiver disconnected, so the main thread stopped/reset
                 error!(
@@ -190,7 +190,7 @@ impl ResourceProver {
         if cfg!(feature = "use-mock-crust") {
             let _ = joiner;
         } else {
-            let old = self.workers.insert(pub_id, (atomic_cancel, joiner));
+            let old = self.workers.insert(pub_info, (atomic_cancel, joiner));
             if let Some((atomic_cancel, _old_worker)) = old {
                 // This is probably a bug if it happens, but in any case the Drop impl on
                 // _old_worker will implicitly join the thread.
@@ -204,20 +204,20 @@ impl ResourceProver {
     /// This function returns the first message to send.
     pub fn handle_action_res_proof(
         &mut self,
-        pub_id: PublicId,
+        pub_info: PublicInfo,
         mut messages: Vec<DirectMessage>,
     ) -> DirectMessage {
         // Thread signalled it was complete; implicit join on Joiner thus shouldn't hang.
-        let _old = self.workers.remove(&pub_id);
+        let _old = self.workers.remove(&pub_info);
 
         let first_message = unwrap!(messages.pop()); // Sender guarantees at least one message
-        let _ = self.response_parts.insert(pub_id, messages);
+        let _ = self.response_parts.insert(pub_info, messages);
         first_message
     }
 
     /// Get the next part of the proof to be sent, if any.
-    pub fn handle_receipt(&mut self, pub_id: PublicId) -> Option<DirectMessage> {
-        self.response_parts.get_mut(&pub_id).and_then(Vec::pop)
+    pub fn handle_receipt(&mut self, pub_info: PublicInfo) -> Option<DirectMessage> {
+        self.response_parts.get_mut(&pub_info).and_then(Vec::pop)
     }
 
     /// Reset timers
