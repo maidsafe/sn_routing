@@ -27,15 +27,15 @@ use serde::Serialize;
 /// into a `Block`. This struct is ordered by age then `PublicKey`
 #[derive(Serialize, Deserialize, PartialOrd, Ord, PartialEq, Eq, Clone, Hash, Debug)]
 pub struct Proof {
-    pub peer_info: PublicInfo,
+    pub node_info: PublicInfo,
     pub sig: Signature,
 }
 
 impl Proof {
     /// getter
     #[allow(unused)]
-    pub fn peer_info(&self) -> &PublicInfo {
-        &self.peer_info
+    pub fn node_info(&self) -> &PublicInfo {
+        &self.node_info
     }
 
     /// getter
@@ -48,7 +48,7 @@ impl Proof {
     #[allow(unused)]
     pub fn validate_signature<T: Serialize>(&self, payload: &T) -> bool {
         match serialisation::serialise(&payload) {
-            Ok(data) => sign::verify_detached(&self.sig, &data[..], self.peer_info.sign_key()),
+            Ok(data) => sign::verify_detached(&self.sig, &data[..], self.node_info.sign_key()),
             _ => false,
         }
     }
@@ -69,10 +69,10 @@ mod tests {
         let mut rng = SeededRng::thread_rng();
         unwrap!(rust_sodium::init_with_rng(&mut rng));
         let mut full_info = FullInfo::node_new(rng.gen_range(0, 255));
-        let peer_info = *full_info.public_info();
-        let payload = SectionState::Live(peer_info);
+        let node_info = *full_info.public_info();
+        let payload = SectionState::Live(node_info);
         let vote = unwrap!(Vote::new(full_info.secret_sign_key(), payload.clone()));
-        assert!(vote.validate_signature(&peer_info));
+        assert!(vote.validate_signature(&node_info));
         full_info.set_age(rng.gen_range(0, 255));
         let proof = unwrap!(vote.proof(full_info.public_info()));
         assert!(proof.validate_signature(&payload));
@@ -83,17 +83,17 @@ mod tests {
         let mut rng = SeededRng::thread_rng();
         unwrap!(rust_sodium::init_with_rng(&mut rng));
         let mut full_info = FullInfo::node_new(rng.gen_range(0, 255));
-        let peer_info = *full_info.public_info();
+        let node_info = *full_info.public_info();
         full_info.set_age(rng.gen_range(0, 255));
-        let other_peer_info = *FullInfo::node_new(rng.gen_range(0, 255)).public_info();
+        let other_node_info = *FullInfo::node_new(rng.gen_range(0, 255)).public_info();
         let payload = SectionState::Live(*full_info.public_info());
         let vote = unwrap!(Vote::new(full_info.secret_sign_key(), payload.clone()));
-        assert!(vote.validate_signature(&peer_info));
+        assert!(vote.validate_signature(&node_info));
         full_info.set_age(rng.gen_range(0, 255));
         let proof = unwrap!(vote.proof(full_info.public_info()));
         full_info.set_age(rng.gen_range(0, 255));
         assert!(vote.proof(full_info.public_info()).is_ok());
-        if let Err(RoutingError::FailedSignature) = vote.proof(&other_peer_info) {
+        if let Err(RoutingError::FailedSignature) = vote.proof(&other_node_info) {
         } else {
             panic!("Should have failed signature check.");
         }

@@ -75,10 +75,10 @@ pub struct Block<T> {
 impl<T: Serialize + Clone> Block<T> {
     /// A new `Block` requires a valid vote and the `PublicInfo` of the node who sent us this. For
     /// this reason the `Vote` will require a `DirectMessage` from a node to us.
-    pub fn new(vote: &Vote<T>, peer_info: &PublicInfo) -> Result<Block<T>, RoutingError> {
+    pub fn new(vote: &Vote<T>, node_info: &PublicInfo) -> Result<Block<T>, RoutingError> {
         Ok(Block {
             payload: vote.payload().clone(),
-            proofs: iter::once(vote.proof(peer_info)?).collect(),
+            proofs: iter::once(vote.proof(node_info)?).collect(),
         })
     }
 
@@ -86,10 +86,10 @@ impl<T: Serialize + Clone> Block<T> {
     pub fn add_vote(
         &mut self,
         vote: &Vote<T>,
-        peer_info: &PublicInfo,
+        node_info: &PublicInfo,
         valid_voters: &BTreeSet<PublicInfo>,
     ) -> Result<BlockState, RoutingError> {
-        let proof = vote.proof(peer_info)?;
+        let proof = vote.proof(node_info)?;
         self.insert_proof(proof, valid_voters)
     }
 
@@ -106,12 +106,12 @@ impl<T: Serialize + Clone> Block<T> {
         }
     }
 
-    pub fn get_peer_infos(&self) -> BTreeSet<PublicInfo> {
-        let mut peer_infos = BTreeSet::new();
+    pub fn get_node_infos(&self) -> BTreeSet<PublicInfo> {
+        let mut node_infos = BTreeSet::new();
         for proof in &self.proofs {
-            let _ = peer_infos.insert(proof.peer_info().clone());
+            let _ = node_infos.insert(proof.node_info().clone());
         }
-        peer_infos
+        node_infos
     }
 
     /// Return number of `Proof`s.
@@ -123,7 +123,7 @@ impl<T: Serialize + Clone> Block<T> {
     pub fn total_age(&self) -> usize {
         self.proofs.iter().fold(
             0,
-            |total, proof| total + usize::from(proof.peer_info().age()),
+            |total, proof| total + usize::from(proof.node_info().age()),
         )
     }
 
@@ -147,7 +147,7 @@ impl<T: Serialize + Clone> Block<T> {
         }
         let total_age = valid_voters
             .iter()
-            .map(|peer_info| usize::from(peer_info.age()))
+            .map(|node_info| usize::from(node_info.age()))
             .sum();
         if self.total_age() * 2 > total_age && self.num_proofs() * 2 > valid_voters.len() {
             Ok(BlockState::Valid)
@@ -161,7 +161,7 @@ impl<T: Serialize + Clone> Block<T> {
         proof: Proof,
         valid_voters: &BTreeSet<PublicInfo>,
     ) -> Result<BlockState, RoutingError> {
-        if !valid_voters.contains(proof.peer_info()) {
+        if !valid_voters.contains(proof.node_info()) {
             return Err(RoutingError::InvalidSource);
         }
         if self.proofs.insert(proof) {

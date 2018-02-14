@@ -44,10 +44,10 @@ impl<T: Serialize + Clone> Vote<T> {
         })
     }
 
-    pub fn proof(&self, peer_info: &PublicInfo) -> Result<Proof, RoutingError> {
-        if self.validate_signature(peer_info) {
+    pub fn proof(&self, node_info: &PublicInfo) -> Result<Proof, RoutingError> {
+        if self.validate_signature(node_info) {
             return Ok(Proof {
-                peer_info: *peer_info,
+                node_info: *node_info,
                 sig: self.signature,
             });
         }
@@ -65,9 +65,9 @@ impl<T: Serialize + Clone> Vote<T> {
     }
 
     /// Validate signed correctly.
-    pub fn validate_signature(&self, peer_info: &PublicInfo) -> bool {
+    pub fn validate_signature(&self, node_info: &PublicInfo) -> bool {
         match serialisation::serialise(&self.payload) {
-            Ok(data) => sign::verify_detached(&self.signature, &data[..], peer_info.sign_key()),
+            Ok(data) => sign::verify_detached(&self.signature, &data[..], node_info.sign_key()),
             Err(_) => false,
         }
     }
@@ -87,11 +87,11 @@ mod tests {
         let mut rng = SeededRng::thread_rng();
         unwrap!(rust_sodium::init_with_rng(&mut rng));
         let full_info = FullInfo::node_new(rng.gen_range(0, 255));
-        let peer_info = *full_info.public_info();
-        let payload = SectionState::Live(peer_info);
+        let node_info = *full_info.public_info();
+        let payload = SectionState::Live(node_info);
         let vote = unwrap!(Vote::new(full_info.secret_sign_key(), payload));
-        assert!(vote.validate_signature(&peer_info)); // right key
-        let bad_peer_info = *FullInfo::node_new(rng.gen_range(0, 255)).public_info();
-        assert!(!vote.validate_signature(&bad_peer_info)); // wrong key
+        assert!(vote.validate_signature(&node_info)); // right key
+        let bad_node_info = *FullInfo::node_new(rng.gen_range(0, 255)).public_info();
+        assert!(!vote.validate_signature(&bad_node_info)); // wrong key
     }
 }
