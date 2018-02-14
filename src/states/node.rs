@@ -2370,17 +2370,17 @@ impl Node {
     /// Handles a request by `src_info` to act as a tunnel connecting it with `dst_info`.
     fn handle_tunnel_request(
         &mut self,
-        srd_info: PublicInfo,
+        src_info: PublicInfo,
         dst_info: PublicInfo,
         outbox: &mut EventBox,
     ) {
         self.remove_expired_peers(outbox);
-        if self.peer_mgr.can_tunnel_for(&srd_info, &dst_info) {
-            if let Some((id0, id1)) = self.tunnels.consider_clients(srd_info, dst_info) {
+        if self.peer_mgr.can_tunnel_for(&src_info, &dst_info) {
+            if let Some((id0, id1)) = self.tunnels.consider_clients(src_info, dst_info) {
                 debug!(
                     "{:?} Accepted tunnel request from {} for {}.",
                     self,
-                    srd_info,
+                    src_info,
                     dst_info
                 );
                 self.send_direct_message(id0, DirectMessage::TunnelSuccess(id1));
@@ -2389,7 +2389,7 @@ impl Node {
             debug!(
                 "{:?} Rejected tunnel request from {} for {}.",
                 self,
-                srd_info,
+                src_info,
                 dst_info
             );
         }
