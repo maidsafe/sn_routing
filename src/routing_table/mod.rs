@@ -111,12 +111,14 @@ mod authority;
 mod error;
 mod network_tests;
 pub mod prefix;
+mod prefix_map;
 
 pub use self::authority::Authority;
 pub use self::error::Error;
 #[cfg(any(test, feature = "use-mock-crust"))]
 pub use self::network_tests::verify_network_invariant;
 pub use self::prefix::{Prefix, UnversionedPrefix};
+pub use self::prefix_map::PrefixMap;
 pub use super::{XOR_NAME_BITS, XOR_NAME_LEN, XorName};
 use itertools::Itertools;
 use log::LogLevel;
@@ -126,7 +128,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{Binary, Debug, Formatter};
 use std::fmt::Result as FmtResult;
 
-pub type Sections = BTreeMap<Prefix, BTreeSet<XorName>>;
+pub type Sections = PrefixMap<BTreeSet<XorName>>;
 type SectionItem<'a> = (Prefix, &'a BTreeSet<XorName>);
 
 // Amount added to `group_size` when deciding whether a bucket split can happen. This helps
@@ -215,7 +217,7 @@ impl RoutingTable {
             group_size,
             our_section: iter::once(our_name).collect(),
             our_prefix: Default::default(),
-            sections: BTreeMap::new(),
+            sections: Default::default(),
         }
     }
 
@@ -296,10 +298,10 @@ impl RoutingTable {
         &self,
         prefix: &UnversionedPrefix,
     ) -> Option<(Prefix, &BTreeSet<XorName>)> {
-        if *prefix == self.our_prefix.unversioned() {
+        if *prefix == *self.our_prefix.unversioned() {
             Some((self.our_prefix, &self.our_section))
         } else {
-            prefix::unversioned_find(&self.sections, prefix)
+            self.sections.find_unversioned(prefix)
         }
     }
 
@@ -595,9 +597,11 @@ impl RoutingTable {
 
         let original_sections = mem::replace(&mut self.sections, Sections::new());
         let (sections_to_replace, sections) =
-            original_sections
-                .into_iter()
-                .partition::<BTreeMap<_, _>, _>(|&(ref pfx, _)| prefix.is_compatible(pfx));
+            original_sections.into_iter().partition::<PrefixMap<_>, _>(
+                |&(ref pfx, _)| {
+                    prefix.is_compatible(pfx)
+                },
+            );
         self.sections = sections;
         if prefix.matches(&self.our_name) {
             self.our_prefix = prefix;
@@ -668,7 +672,9 @@ impl RoutingTable {
         let bit_count = self.our_prefix.bit_count();
 
         if bit_count == 0 ||
-            !prefix::unversioned_contains_key(&self.sections, &self.our_prefix.sibling())
+            !self.sections.contains_key_unversioned(
+                self.our_prefix.sibling().unversioned(),
+            )
         {
             return false; // We can't merge, or we already sent our merge message.
         }
@@ -749,12 +755,14 @@ impl RoutingTable {
         }
         self.merge(&prefix);
         // Establish list of provided contacts which are currently missing from our table.
-        prefix::unversioned_get(&self.sections, &prefix).map_or_else(BTreeSet::new, |section| {
-            members
-                .into_iter()
-                .filter(|name| !section.contains(name))
-                .collect()
-        })
+        self.sections
+            .get_unversioned(prefix.unversioned())
+            .map_or_else(BTreeSet::new, |section| {
+                members
+                    .into_iter()
+                    .filter(|name| !section.contains(name))
+                    .collect()
+            })
     }
 
     /// Returns a collection of nodes to which a message for the given `Authority` should be sent
@@ -953,7 +961,8 @@ impl RoutingTable {
 
     /// Inserts the given section. Logs an error if it already exists.
     fn insert_new_section(&mut self, prefix: Prefix, section: BTreeSet<XorName>) {
-        let section = if let Some(old_prefix) = prefix::unversioned_find(&self.sections, &prefix)
+        let section = if let Some(old_prefix) = self.sections
+            .find_unversioned(prefix.unversioned())
             .map(|(old_prefix, old_section)| {
                 error!(
                     "{:?} Inserting section {:?}, but already has members {:?}. This is a bug!",

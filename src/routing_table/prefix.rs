@@ -17,18 +17,17 @@
 
 use super::{XOR_NAME_BITS, XorName};
 use std::cmp::{self, Ordering};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fmt::{Binary, Debug, Formatter};
 use std::fmt::Result as FmtResult;
 use std::hash::{Hash, Hasher};
-use std::ops::Deref;
 #[cfg(test)]
 use std::str::FromStr;
 use std::u64;
 
 /// A section prefix, i.e. a sequence of bits specifying the part of the network's name space
 /// consisting of all names that start with this sequence.
-#[derive(Clone, Copy, Default, Eq, PartialEq, Hash, Deserialize, Serialize)]
+#[derive(Clone, Copy, Default, Eq, PartialEq, Ord, PartialOrd, Hash, Deserialize, Serialize)]
 pub struct Prefix {
     inner: UnversionedPrefix,
     version: u64,
@@ -62,8 +61,13 @@ impl Prefix {
     }
 
     /// Strip the version info.
-    pub fn unversioned(self) -> UnversionedPrefix {
-        self.inner
+    pub fn unversioned(&self) -> &UnversionedPrefix {
+        &self.inner
+    }
+
+    /// Returns the number of bits in the prefix.
+    pub fn bit_count(&self) -> usize {
+        self.inner.bit_count()
     }
 
     /// Returns `self` with an appended bit: `0` if `bit` is `false`, and `1` if `bit` is `true`. If
@@ -109,6 +113,30 @@ impl Prefix {
         }
     }
 
+    /// Returns `true` if `self` is a prefix of `other` or vice versa.
+    pub fn is_compatible(&self, other: &Self) -> bool {
+        self.inner.is_compatible(&other.inner)
+    }
+
+    /// Returns `true` if `other` is compatible but strictly shorter than `self`.
+    pub fn is_extension_of(&self, other: &Self) -> bool {
+        let i = self.inner.name.common_prefix(&other.inner.name);
+        i >= other.bit_count() && self.bit_count() > other.bit_count()
+    }
+
+    /// Returns `true` if the `other` prefix differs in exactly one bit from this one.
+    pub fn is_neighbour(&self, other: &Self) -> bool {
+        let i = self.inner.name.common_prefix(&other.inner.name);
+        if i >= self.bit_count() || i >= other.bit_count() {
+            false
+        } else {
+            let j = self.inner.name.with_flipped_bit(i).common_prefix(
+                &other.inner.name,
+            );
+            j >= self.bit_count() || j >= other.bit_count()
+        }
+    }
+
     /// Returns whether the namespace defined by `self` is covered by prefixes in the `prefixes`
     /// set
     pub fn is_covered_by<'a, I>(&self, prefixes: I) -> bool
@@ -141,27 +169,50 @@ impl Prefix {
                     max_prefix_len,
                 ))
     }
-}
 
-impl Deref for Prefix {
-    type Target = UnversionedPrefix;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
+    /// Compares the distance of `self` and `other` to `target`. Returns `Less` if `self` is closer,
+    /// `Greater` if `other` is closer, and compares the prefix directly if of equal distance
+    /// (this is to make sorting deterministic).
+    pub fn cmp_distance(&self, other: &Self, target: &XorName) -> Ordering {
+        if self.is_compatible(other) {
+            // Note that if bit_counts are equal, prefixes are also equal since
+            // one is a prefix of the other (is_compatible).
+            Ord::cmp(&self.bit_count(), &other.bit_count())
+        } else {
+            Ord::cmp(
+                &other.inner.name.common_prefix(target),
+                &self.inner.name.common_prefix(target),
+            )
+        }
     }
-}
 
-impl PartialOrd for Prefix {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
+    /// Returns `true` if this is a prefix of the given `name`.
+    pub fn matches(&self, name: &XorName) -> bool {
+        self.inner.name.common_prefix(name) >= self.bit_count()
     }
-}
 
-impl Ord for Prefix {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.inner.cmp(&other.inner).then_with(|| {
-            self.version.cmp(&other.version)
-        })
+    /// Returns the number of common leading bits with the input name, capped with prefix length.
+    pub fn common_prefix(&self, name: &XorName) -> usize {
+        cmp::min(self.bit_count(), self.inner.name.common_prefix(name))
+    }
+
+    /// Returns the smallest name matching the prefix
+    pub fn lower_bound(&self) -> XorName {
+        self.inner.name.set_remaining(self.bit_count(), false)
+    }
+
+    /// Returns the largest name matching the prefix
+    pub fn upper_bound(&self) -> XorName {
+        self.inner.name.set_remaining(self.bit_count(), true)
+    }
+
+    /// Returns the given `name` with first bits replaced by `self`
+    pub fn substituted_in(&self, mut name: XorName) -> XorName {
+        // TODO: is there a more efficient way of doing that?
+        for i in 0..self.bit_count() {
+            name = name.with_bit(i, self.inner.name.bit(i));
+        }
+        name
     }
 }
 
@@ -224,68 +275,6 @@ impl UnversionedPrefix {
         let i = self.name.common_prefix(&other.name);
         i >= self.bit_count() || i >= other.bit_count()
     }
-
-    /// Returns `true` if `other` is compatible but strictly shorter than `self`.
-    pub fn is_extension_of(&self, other: &Self) -> bool {
-        let i = self.name.common_prefix(&other.name);
-        i >= other.bit_count() && self.bit_count() > other.bit_count()
-    }
-
-    /// Returns `true` if the `other` prefix differs in exactly one bit from this one.
-    pub fn is_neighbour(&self, other: &Self) -> bool {
-        let i = self.name.common_prefix(&other.name);
-        if i >= self.bit_count() || i >= other.bit_count() {
-            false
-        } else {
-            let j = self.name.with_flipped_bit(i).common_prefix(&other.name);
-            j >= self.bit_count() || j >= other.bit_count()
-        }
-    }
-
-    /// Returns `true` if this is a prefix of the given `name`.
-    pub fn matches(&self, name: &XorName) -> bool {
-        self.name.common_prefix(name) >= self.bit_count()
-    }
-
-    /// Compares the distance of `self` and `other` to `target`. Returns `Less` if `self` is closer,
-    /// `Greater` if `other` is closer, and compares the prefix directly if of equal distance
-    /// (this is to make sorting deterministic).
-    pub fn cmp_distance(&self, other: &Self, target: &XorName) -> Ordering {
-        if self.is_compatible(other) {
-            // Note that if bit_counts are equal, prefixes are also equal since
-            // one is a prefix of the other (is_compatible).
-            Ord::cmp(&self.bit_count, &other.bit_count)
-        } else {
-            Ord::cmp(
-                &other.name.common_prefix(target),
-                &self.name.common_prefix(target),
-            )
-        }
-    }
-
-    /// Returns the smallest name matching the prefix
-    pub fn lower_bound(&self) -> XorName {
-        self.name.set_remaining(self.bit_count(), false)
-    }
-
-    /// Returns the largest name matching the prefix
-    pub fn upper_bound(&self) -> XorName {
-        self.name.set_remaining(self.bit_count(), true)
-    }
-
-    /// Returns the given `name` with first bits replaced by `self`
-    pub fn substituted_in(&self, mut name: XorName) -> XorName {
-        // TODO: is there a more efficient way of doing that?
-        for i in 0..self.bit_count() {
-            name = name.with_bit(i, self.name.bit(i));
-        }
-        name
-    }
-
-    /// Returns the number of common leading bits with the input name, capped with prefix length.
-    pub fn common_prefix(&self, name: &XorName) -> usize {
-        cmp::min(self.bit_count(), self.name.common_prefix(name))
-    }
 }
 
 impl PartialEq<Self> for UnversionedPrefix {
@@ -332,36 +321,6 @@ impl Debug for UnversionedPrefix {
     }
 }
 
-/// Find the entry at the given prefix, ignoring versions.
-pub fn unversioned_find<'a, T>(
-    map: &'a BTreeMap<Prefix, T>,
-    key: &UnversionedPrefix,
-) -> Option<(Prefix, &'a T)> {
-    map.range(key.with_version(0)..key.with_version(u64::MAX))
-        .next()
-        .map(|(prefix, value)| (*prefix, value))
-}
-
-/// Get the value at the given prefix, ignoring versions.
-pub fn unversioned_get<'a, T>(
-    map: &'a BTreeMap<Prefix, T>,
-    key: &UnversionedPrefix,
-) -> Option<&'a T> {
-    map.range(key.with_version(0)..key.with_version(u64::MAX))
-        .next()
-        .map(|(_, value)| value)
-}
-
-/// Check whether the map contains a key equal to the given prefix but ignoring versions.
-pub fn unversioned_contains_key<'a, T>(
-    map: &'a BTreeMap<Prefix, T>,
-    key: &UnversionedPrefix,
-) -> bool {
-    map.range(key.with_version(0)..key.with_version(u64::MAX))
-        .next()
-        .is_some()
-}
-
 /// Remove and return the element at the given prefix, ignoring versions.
 pub fn unversioned_remove(set: &mut BTreeSet<Prefix>, key: &UnversionedPrefix) -> Option<Prefix> {
     if let Some(prefix) = set.range(key.with_version(0)..key.with_version(u64::MAX))
@@ -375,6 +334,7 @@ pub fn unversioned_remove(set: &mut BTreeSet<Prefix>, key: &UnversionedPrefix) -
 
     None
 }
+
 
 #[cfg(test)]
 mod tests {

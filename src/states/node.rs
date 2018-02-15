@@ -2723,7 +2723,7 @@ impl Node {
         let mut new_prefixes = self.routing_table().prefixes();
 
         for old_prefix in old_prefixes {
-            let _ = prefix::unversioned_remove(&mut new_prefixes, &old_prefix);
+            let _ = prefix::unversioned_remove(&mut new_prefixes, old_prefix.unversioned());
         }
 
         if !new_prefixes.is_empty() {
@@ -2739,7 +2739,7 @@ impl Node {
         // Filter list of members to just those we don't know about:
         let members = if let Some((_, section)) =
             self.routing_table().section_matching_prefix(
-                &prefix.unversioned(),
+                prefix.unversioned(),
             )
         {
             members
@@ -2903,7 +2903,6 @@ impl Node {
             }
 
             self.process_own_section_merge(
-                // their_prefix.popped().with_version(version),
                 merge_prefix,
                 &their_sections,
                 &our_merged_section,
@@ -3027,7 +3026,7 @@ impl Node {
         self.send_section_list_signatures();
 
         if self.routing_table()
-            .section_matching_prefix(&merge_prefix)
+            .section_matching_prefix(merge_prefix.unversioned())
             .is_some()
         {
             self.reset_su_timer();
@@ -4171,14 +4170,14 @@ impl MergeCache {
     }
 
     fn insert(&mut self, prefix: Prefix, sections: SectionMap) -> Option<SectionMap> {
-        self.0.insert(prefix.unversioned(), sections)
+        self.0.insert(*prefix.unversioned(), sections)
     }
 
     fn remove(&mut self, prefix: &Prefix) -> Option<SectionMap> {
-        self.0.remove(prefix)
+        self.0.remove(prefix.unversioned())
     }
 
     fn contains_key(&self, prefix: &Prefix) -> bool {
-        self.0.contains_key(prefix)
+        self.0.contains_key(prefix.unversioned())
     }
 }

@@ -111,9 +111,9 @@ fn concurrent_merge() {
     // Create a map with <section, number of members> as key/value for these two sections.
     let mut section_map = BTreeMap::new();
     for node in nodes.iter() {
-        let prefix = node.routing_table().our_prefix().unversioned();
-        if prefix == prefix_0_to_drop_from.unversioned() ||
-            prefix == prefix_1_to_drop_from.unversioned()
+        let prefix = *node.routing_table().our_prefix().unversioned();
+        if prefix == *prefix_0_to_drop_from.unversioned() ||
+            prefix == *prefix_1_to_drop_from.unversioned()
         {
             *section_map.entry(prefix).or_insert(0) += 1;
         }
@@ -124,7 +124,7 @@ fn concurrent_merge() {
     for (prefix, len) in &mut section_map {
         while *len >= group_size {
             let index = unwrap!(nodes.iter().position(|node| {
-                node.routing_table().our_prefix().unversioned() == *prefix
+                *node.routing_table().our_prefix().unversioned() == *prefix
             }));
             let removed = nodes.remove(index);
             drop(removed);

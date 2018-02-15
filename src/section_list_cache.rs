@@ -78,10 +78,10 @@ impl SectionListCache {
         let _ = self.signed_by
             .entry(pub_info)
             .or_insert_with(HashMap::new)
-            .insert(prefix.unversioned(), list.clone());
+            .insert(*prefix.unversioned(), list.clone());
         // remember that this section list has a new signature
         let _ = self.signatures
-            .entry(prefix.unversioned())
+            .entry(*prefix.unversioned())
             .or_insert_with(HashMap::new)
             .entry(list)
             .or_insert_with(HashMap::new)
@@ -97,7 +97,7 @@ impl SectionListCache {
         list: &SectionList,
     ) -> Option<&Signature> {
         self.signatures
-            .get(&prefix.unversioned())
+            .get(prefix.unversioned())
             .and_then(|lists| lists.get(list))
             .and_then(|sigs| sigs.get(pub_info))
     }
@@ -106,7 +106,7 @@ impl SectionListCache {
     // TODO: Remove this when the method is used in production
     #[cfg(feature = "use-mock-crust")]
     pub fn get_signatures(&self, prefix: &Prefix) -> Option<&(SectionList, Signatures)> {
-        self.lists_cache.get(&prefix.unversioned())
+        self.lists_cache.get(prefix.unversioned())
     }
 
     fn prune(&mut self) {
@@ -169,7 +169,7 @@ impl SectionListCache {
             .get(&author)
             .into_iter()
             .flat_map(|map| map.iter())
-            .filter(|&(p, _)| p.is_compatible(&prefix))
+            .filter(|&(p, _)| p.is_compatible(prefix.unversioned()))
             .map(|(&prefix, list)| (prefix, list.clone()))
             .collect_vec();
         for (prefix, list) in to_remove {

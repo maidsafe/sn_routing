@@ -23,7 +23,8 @@
 use super::{Error, RoutingTable};
 use super::XorName;
 use super::authority::Authority;
-use super::prefix::{self, Prefix};
+use super::prefix::Prefix;
+use super::prefix_map::PrefixMap;
 use maidsafe_utilities::SeededRng;
 use rand::Rng;
 use routing_table::{OwnMergeState, Sections};
@@ -104,11 +105,11 @@ impl Network {
     }
 
     fn store_merge_info<T: PartialEq + Debug>(
-        merge_info: &mut BTreeMap<Prefix, T>,
+        merge_info: &mut PrefixMap<T>,
         prefix: Prefix,
         new_info: T,
     ) {
-        if let Some(content) = prefix::unversioned_get(merge_info, &prefix) {
+        if let Some(content) = merge_info.get_unversioned(prefix.unversioned()) {
             assert_eq!(new_info, *content);
             return;
         }
@@ -122,7 +123,7 @@ impl Network {
         let keys = self.keys();
         let name = *unwrap!(self.rng.choose(&keys));
         let _ = self.nodes.remove(&name);
-        let mut merge_own_info: BTreeMap<Prefix, Sections> = BTreeMap::new();
+        let mut merge_own_info: PrefixMap<Sections> = PrefixMap::new();
         // TODO: needs to verify how to broadcast such info
         for node in self.nodes.values_mut() {
             if node.iter().any(|&name_in_table| name_in_table == name) {
@@ -148,10 +149,10 @@ impl Network {
 
         let mut expected_nodes = BTreeMap::new();
         while !merge_own_info.is_empty() {
-            let mut merge_other_info = BTreeMap::new();
+            let mut merge_other_info = PrefixMap::new();
             // handle broadcast of merge_own_section
             let own_info = merge_own_info;
-            merge_own_info = BTreeMap::new();
+            merge_own_info = PrefixMap::new();
             for (sender_pfx, sections) in own_info {
                 let nodes = self.nodes_covered_by_prefixes(iter::once(&sender_pfx.sibling()));
                 for node in &nodes {

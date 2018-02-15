@@ -591,13 +591,13 @@ pub fn add_connected_nodes_until_split(
             unwrap!(node.inner.routing_table())
                 .prefixes()
                 .into_iter()
-                .map(|p| p.unversioned()),
+                .map(|p| *p.unversioned()),
         );
     }
     assert_eq!(
         prefixes
             .iter()
-            .map(|p| p.unversioned())
+            .map(|p| *p.unversioned())
             .collect::<BTreeSet<_>>(),
         actual_prefixes
     );
