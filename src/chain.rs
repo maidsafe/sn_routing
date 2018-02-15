@@ -22,7 +22,7 @@ use block::{Block, NodesAndAge};
 use error::RoutingError;
 use fs2::FileExt;
 use maidsafe_utilities::serialisation;
-use network_event::{DataIdentifier, SectionState};
+use node_state::NodeState;
 use proof::Proof;
 use public_info::PublicInfo;
 use std::collections::BTreeSet;
@@ -30,16 +30,18 @@ use std::fs;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use vote::Vote;
+use xor_name::XorName;
 
-// Vote -> Quorum Block -> FullBlock (or nearly full Block + Accusation)
+/// Placeholder pending design of inclusion of data into data-chain
+type DataIdentifier = XorName;
 
 #[allow(unused)]
 #[derive(Default, Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord)]
 pub struct DataChain {
-    blocks: Vec<Block<SectionState>>,
+    blocks: Vec<Block<NodeState>>,
     group_size: usize,
     path: Option<PathBuf>,
-    valid_nodes: Vec<Block<SectionState>>, // save to aid network catastrophic failure and restart.
+    valid_nodes: Vec<Block<NodeState>>, // save to aid network catastrophic failure and restart.
     data: Vec<Block<DataIdentifier>>,
 }
 
@@ -56,11 +58,11 @@ impl DataChain {
         // hold a lock on the file for the whole session
         file.lock_exclusive()?;
         Ok(DataChain {
-            blocks: Vec::<Block<SectionState>>::default(),
-            group_size: group_size,
+            blocks: vec![],
+            group_size,
             path: Some(path),
-            valid_nodes: Vec::<Block<SectionState>>::default(),
-            data: Vec::<Block<DataIdentifier>>::default(),
+            valid_nodes: vec![],
+            data: vec![],
         })
     }
 
@@ -74,19 +76,19 @@ impl DataChain {
             .open(&path)?;
         // hold a lock on the file for the whole session
         file.lock_exclusive()?;
-        let mut buf = Vec::<u8>::new();
+        let mut buf = vec![];
         let _ = file.read_to_end(&mut buf)?;
-        Ok(serialisation::deserialise::<DataChain>(&buf[..])?)
+        Ok(serialisation::deserialise(&buf[..])?)
     }
 
     /// Create chain in memory from some blocks
-    pub fn from_blocks(blocks: Vec<Block<SectionState>>, group_size: usize) -> DataChain {
+    pub fn from_blocks(blocks: Vec<Block<NodeState>>, group_size: usize) -> DataChain {
         DataChain {
-            blocks: blocks,
-            group_size: group_size,
+            blocks,
+            group_size,
             path: None,
-            valid_nodes: Vec::<Block<SectionState>>::default(),
-            data: Vec::<Block<DataIdentifier>>::default(),
+            valid_nodes: vec![],
+            data: vec![],
         }
     }
 
@@ -124,12 +126,11 @@ impl DataChain {
         }
     }
 
-
     fn add_vote(
         &mut self,
-        vote: &Vote<SectionState>,
+        vote: &Vote<NodeState>,
         node_info: &PublicInfo,
-    ) -> Option<(SectionState, NodesAndAge)> {
+    ) -> Option<(NodeState, NodesAndAge)> {
         if !vote.validate_signature(node_info) {
             return None;
         }
@@ -160,8 +161,6 @@ impl DataChain {
         None
     }
 
-
-
     /// Assumes we trust the first `Block`
     fn validate_quorums(&self) -> bool {
         if let Some(mut prev) = self.blocks.first() {
@@ -175,7 +174,7 @@ impl DataChain {
                 } else {
                     prev = blk;
                     // TODO check `NetworkEvent` as we may need to add to prev or remove a possible
-                    // voter we can probably use a CurrentNodes / SectionState list here to be more
+                    // voter we can probably use a CurrentNodes / NodeState list here to be more
                     // specific. Also which `NetworkEvent`s can follow a sequence, i.e. a lost must
                     // be followed with a promote if its an elder or a merge if nodes drops to group
                     // size. Most events will follow a sequence that is allowed. if blocks are out

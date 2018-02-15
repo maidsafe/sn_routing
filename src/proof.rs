@@ -59,7 +59,6 @@ mod tests {
     use RoutingError;
     use full_info::FullInfo;
     use maidsafe_utilities::SeededRng;
-    use network_event::SectionState;
     use rand::Rng;
     use rust_sodium;
     use vote::Vote;
@@ -70,8 +69,8 @@ mod tests {
         unwrap!(rust_sodium::init_with_rng(&mut rng));
         let mut full_info = FullInfo::node_new(rng.gen_range(0, 255));
         let node_info = *full_info.public_info();
-        let payload = SectionState::Live(node_info);
-        let vote = unwrap!(Vote::new(full_info.secret_sign_key(), payload.clone()));
+        let payload = "Live";
+        let vote = unwrap!(Vote::new(full_info.secret_sign_key(), payload));
         assert!(vote.validate_signature(&node_info));
         full_info.set_age(rng.gen_range(0, 255));
         let proof = unwrap!(vote.proof(full_info.public_info()));
@@ -86,8 +85,8 @@ mod tests {
         let node_info = *full_info.public_info();
         full_info.set_age(rng.gen_range(0, 255));
         let other_node_info = *FullInfo::node_new(rng.gen_range(0, 255)).public_info();
-        let payload = SectionState::Live(*full_info.public_info());
-        let vote = unwrap!(Vote::new(full_info.secret_sign_key(), payload.clone()));
+        let payload = "Live";
+        let vote = unwrap!(Vote::new(full_info.secret_sign_key(), payload));
         assert!(vote.validate_signature(&node_info));
         full_info.set_age(rng.gen_range(0, 255));
         let proof = unwrap!(vote.proof(full_info.public_info()));

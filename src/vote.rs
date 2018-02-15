@@ -78,7 +78,6 @@ mod tests {
     use super::*;
     use full_info::FullInfo;
     use maidsafe_utilities::SeededRng;
-    use network_event::SectionState;
     use rand::Rng;
     use rust_sodium;
 
@@ -88,7 +87,7 @@ mod tests {
         unwrap!(rust_sodium::init_with_rng(&mut rng));
         let full_info = FullInfo::node_new(rng.gen_range(0, 255));
         let node_info = *full_info.public_info();
-        let payload = SectionState::Live(node_info);
+        let payload = "Live";
         let vote = unwrap!(Vote::new(full_info.secret_sign_key(), payload));
         assert!(vote.validate_signature(&node_info)); // right key
         let bad_node_info = *FullInfo::node_new(rng.gen_range(0, 255)).public_info();

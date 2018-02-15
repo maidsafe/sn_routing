@@ -177,7 +177,6 @@ mod tests {
     use super::*;
     use full_info::FullInfo;
     use maidsafe_utilities::SeededRng;
-    use network_event::SectionState;
     use rand::Rng;
     use rust_sodium;
 
@@ -191,10 +190,10 @@ mod tests {
         let public_info_0 = *full_info_0.public_info();
         let public_info_1 = *full_info_1.public_info();
 
-        let payload = SectionState::Gone(public_info_0);
-        let vote0 = unwrap!(Vote::new(full_info_0.secret_sign_key(), payload.clone()));
+        let payload = "Gone";
+        let vote0 = unwrap!(Vote::new(full_info_0.secret_sign_key(), payload));
         assert!(vote0.validate_signature(&public_info_0));
-        let vote1 = unwrap!(Vote::new(full_info_1.secret_sign_key(), payload.clone()));
+        let vote1 = unwrap!(Vote::new(full_info_1.secret_sign_key(), payload));
         assert!(vote1.validate_signature(&public_info_1));
 
         full_info_0.set_age(1u8);
@@ -227,10 +226,10 @@ mod tests {
         let mut full_info_1 = FullInfo::node_new(0);
         let mut full_info_2 = FullInfo::node_new(0);
 
-        let payload = SectionState::Gone(*full_info_0.public_info());
-        let vote0 = unwrap!(Vote::new(full_info_0.secret_sign_key(), payload.clone()));
-        let vote1 = unwrap!(Vote::new(full_info_1.secret_sign_key(), payload.clone()));
-        let vote2 = unwrap!(Vote::new(full_info_2.secret_sign_key(), payload.clone()));
+        let payload = "Gone";
+        let vote0 = unwrap!(Vote::new(full_info_0.secret_sign_key(), payload));
+        let vote1 = unwrap!(Vote::new(full_info_1.secret_sign_key(), payload));
+        let vote2 = unwrap!(Vote::new(full_info_2.secret_sign_key(), payload));
         let age0: u8 = rng.gen_range(0, 255);
         let age1: u8 = rng.gen_range(0, 255);
         let age2: u8 = rng.gen_range(0, 255);
