@@ -44,6 +44,11 @@ impl<T: Serialize + Clone> Vote<T> {
         })
     }
 
+    /// Compose a Vote.
+    pub(crate) fn compose(payload: T, signature: Signature) -> Self {
+        Vote { payload, signature }
+    }
+
     pub fn proof(&self, node_info: &PublicInfo) -> Result<Proof, RoutingError> {
         if self.validate_signature(node_info) {
             return Ok(Proof {

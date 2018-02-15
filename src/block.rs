@@ -156,6 +156,16 @@ impl<T: Serialize + Clone> Block<T> {
         }
     }
 
+    /// Create an iterator over all proofs and transform into votes.
+    pub fn votes_iter<'a>(&'a self) -> Box<Iterator<Item = (&PublicInfo, Vote<T>)> + 'a> {
+        Box::new(self.proofs.iter().map(move |proof| {
+            (
+                proof.node_info(),
+                Vote::compose(self.payload.clone(), *proof.sig()),
+            )
+        }))
+    }
+
     fn insert_proof(
         &mut self,
         proof: Proof,

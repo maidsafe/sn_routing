@@ -33,13 +33,11 @@ pub struct Proof {
 
 impl Proof {
     /// getter
-    #[allow(unused)]
     pub fn node_info(&self) -> &PublicInfo {
         &self.node_info
     }
 
     /// getter
-    #[allow(unused)]
     pub fn sig(&self) -> &Signature {
         &self.sig
     }
