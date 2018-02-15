@@ -18,9 +18,9 @@
 // FIXME: remove when this module is finished
 #![allow(dead_code)]
 
+use super::Proof;
 use error::RoutingError;
 use maidsafe_utilities::serialisation;
-use proof::Proof;
 use public_info::PublicInfo;
 use rust_sodium::crypto::sign::{self, SecretKey, Signature};
 use serde::Serialize;
@@ -45,7 +45,7 @@ impl<T: Serialize + Clone> Vote<T> {
     }
 
     /// Compose a Vote.
-    pub(crate) fn compose(payload: T, signature: Signature) -> Self {
+    pub(super) fn compose(payload: T, signature: Signature) -> Self {
         Vote { payload, signature }
     }
 

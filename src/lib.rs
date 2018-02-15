@@ -159,6 +159,7 @@ mod common_types;
 mod config_handler;
 mod cumulative_own_section_merge;
 mod data;
+mod data_chain;
 mod error;
 mod event;
 mod event_stream;
@@ -166,7 +167,6 @@ mod full_info;
 mod messages;
 mod message_filter;
 mod node;
-mod node_state;
 mod outbox;
 mod peer_manager;
 mod public_info;
@@ -184,10 +184,6 @@ mod tunnels;
 mod types;
 mod utils;
 mod xor_name;
-pub(crate) mod vote;
-pub(crate) mod proof;
-pub(crate) mod block;
-pub(crate) mod chain;
 
 #[cfg(feature = "use-mock-crypto")]
 pub mod mock_crypto;
@@ -230,6 +226,7 @@ pub use config_handler::{Config, DevConfig};
 pub use data::{Action, EntryAction, EntryActions, ImmutableData, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
                MAX_MUTABLE_DATA_ENTRIES, MAX_MUTABLE_DATA_SIZE_IN_BYTES, MutableData,
                NO_OWNER_PUB_KEY, PermissionSet, User, Value};
+pub use data_chain::{NodeState, State};
 pub use error::{InterfaceError, RoutingError};
 pub use event::Event;
 pub use event_stream::EventStream;
@@ -238,7 +235,6 @@ pub use messages::{AccountInfo, Request, Response};
 #[cfg(feature = "use-mock-crust")]
 pub use mock_crust::crust;
 pub use node::{Node, NodeBuilder};
-pub use node_state::{NodeState, State};
 #[cfg(feature = "use-mock-crust")]
 pub use peer_manager::test_consts;
 pub use public_info::PublicInfo;

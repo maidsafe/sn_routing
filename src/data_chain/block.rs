@@ -18,13 +18,13 @@
 // FIXME: remove when this module is finished
 #![allow(dead_code)]
 
+use super::{Proof, Vote};
 use error::RoutingError;
-use proof::Proof;
 use public_info::PublicInfo;
 use serde::Serialize;
 use std::collections::BTreeSet;
 use std::iter;
-use vote::Vote;
+
 
 #[allow(unused)]
 pub struct NodesAndAge {
