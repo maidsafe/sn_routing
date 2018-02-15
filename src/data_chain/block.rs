@@ -25,7 +25,6 @@ use serde::Serialize;
 use std::collections::BTreeSet;
 use std::iter;
 
-
 #[allow(unused)]
 pub struct NodesAndAge {
     nodes: usize,
@@ -189,6 +188,7 @@ mod tests {
     use maidsafe_utilities::SeededRng;
     use rand::Rng;
     use rust_sodium;
+    use std::collections::BTreeMap;
 
     #[test]
     fn create_then_add_proofs() {
@@ -274,5 +274,34 @@ mod tests {
             BlockState::Full
         );
         assert_eq!(b0.num_proofs(), 3);
+    }
+
+    #[test]
+    fn votes_iter() {
+        let mut rng = SeededRng::thread_rng();
+        unwrap!(rust_sodium::init_with_rng(&mut rng));
+
+        let full_info_0 = FullInfo::node_new(0);
+        let full_info_1 = FullInfo::node_new(0);
+
+        let payload = "Gone";
+        let vote0 = unwrap!(Vote::new(full_info_0.secret_sign_key(), payload));
+        let vote1 = unwrap!(Vote::new(full_info_1.secret_sign_key(), payload));
+
+        let mut voters = BTreeSet::new();
+        let _ = voters.insert(*full_info_0.public_info());
+        let _ = voters.insert(*full_info_1.public_info());
+
+        let mut block = unwrap!(Block::new(&vote0, full_info_0.public_info()));
+        let _ = unwrap!(block.add_vote(&vote1, full_info_1.public_info(), &voters));
+
+        let votes: BTreeMap<_, _> = block.votes_iter().collect();
+        assert_eq!(votes.len(), 2);
+
+        let vote_0 = unwrap!(votes.get(full_info_0.public_info()));
+        assert!(vote_0.validate_signature(full_info_0.public_info()));
+
+        let vote_1 = unwrap!(votes.get(full_info_1.public_info()));
+        assert!(vote_1.validate_signature(full_info_1.public_info()));
     }
 }
