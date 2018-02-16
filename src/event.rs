@@ -54,10 +54,11 @@ pub enum Event {
     NodeAdded(XorName, RoutingTable),
     /// A node has disconnected from us.
     NodeLost(XorName, RoutingTable),
-    /// Our own section has been split, resulting in the included `Prefix` for our new section.
+    /// Our own section has been split, resulting in the included `Prefix`
+    /// for our new section.
     SectionSplit(Prefix),
-    /// Our own section requires merged with others, resulting in the included `Prefix` for our new
-    /// section.
+    /// Our own section requires merged with others, resulting in the included
+    /// `Prefix` for our new section.
     SectionMerge(Prefix),
     /// The client has successfully connected to a proxy node on the network.
     Connected,

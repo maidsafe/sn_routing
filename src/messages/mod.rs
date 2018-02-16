@@ -31,8 +31,8 @@ use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use peer_manager::SectionMap;
 use public_info::PublicInfo;
-use routing_table::{Prefix, VersionedPrefix};
 use routing_table::Authority;
+use routing_table::Prefix;
 use rust_sodium::crypto::{box_, sign};
 use sha3::Digest256;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -235,7 +235,7 @@ impl HopMessage {
 /// A list of a section's public IDs, together with a list of signatures of a neighbouring section.
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize, Debug)]
 pub struct SectionList {
-    pub prefix: Prefix,
+    prefix: Prefix,
     // TODO(MAID-1677): pub signatures: BTreeSet<(PublicInfo, sign::Signature)>,
     pub_infos: BTreeSet<PublicInfo>,
 }
@@ -244,14 +244,19 @@ impl SectionList {
     /// Create
     pub fn new(prefix: Prefix, pub_infos: BTreeSet<PublicInfo>) -> Self {
         SectionList {
-            prefix: prefix,
-            pub_infos: pub_infos,
+            prefix: prefix.with_version(0),
+            pub_infos,
         }
     }
 
     /// Create from any object convertable to an iterator
     pub fn from<I: IntoIterator<Item = PublicInfo>>(prefix: Prefix, pub_infos: I) -> Self {
         Self::new(prefix, pub_infos.into_iter().collect())
+    }
+
+    /// Returns the section prefix
+    pub fn prefix(&self) -> &Prefix {
+        &self.prefix
     }
 }
 
@@ -600,14 +605,14 @@ pub enum MessageContent {
     /// Sent to notify neighbours and own members when our section's member list changed (for now,
     /// only when new nodes join).
     SectionUpdate {
-        /// Section prefix and version. Included because this message is sent to both the section's
+        /// Section prefix. Included because this message is sent to both the section's
         /// own members and neighbouring sections.
-        versioned_prefix: VersionedPrefix,
+        prefix: Prefix,
         /// Members of the section
         members: BTreeSet<PublicInfo>,
     },
     /// Sent to all connected nodes when our own section splits
-    SectionSplit(VersionedPrefix, XorName),
+    SectionSplit(Prefix, XorName),
     /// Sent amongst members of a newly-merged section to allow synchronisation of their routing
     /// tables before notifying other connected nodes of the merge.
     ///
@@ -821,18 +826,11 @@ impl Debug for MessageContent {
                 )
             }
             SectionUpdate {
-                ref versioned_prefix,
+                ref prefix,
                 ref members,
-            } => {
-                write!(
-                    formatter,
-                    "SectionUpdate {{ {:?}, {:?} }}",
-                    versioned_prefix,
-                    members
-                )
-            }
-            SectionSplit(ref ver_pfx, ref joining_node) => {
-                write!(formatter, "SectionSplit({:?}, {:?})", ver_pfx, joining_node)
+            } => write!(formatter, "SectionUpdate {{ {:?}, {:?} }}", prefix, members),
+            SectionSplit(ref prefix, ref joining_node) => {
+                write!(formatter, "SectionSplit({:?}, {:?})", prefix, joining_node)
             }
             OwnSectionMerge(ref sections) => write!(formatter, "OwnSectionMerge({:?})", sections),
             OtherSectionMerge(ref section, ref version) => {
@@ -1053,7 +1051,7 @@ mod tests {
                 proxy_node_name: name,
             },
             dst: Authority::ClientManager(name),
-            content: MessageContent::SectionSplit(Prefix::new(0, name).with_version(0), name),
+            content: MessageContent::SectionSplit(Prefix::new(0, name, 0), name),
         };
         let senders = iter::empty().collect();
         let signed_message_result =
@@ -1087,7 +1085,7 @@ mod tests {
         let group_size = 8;
 
         let full_info_0 = FullInfo::node_new(1u8);
-        let prefix = Prefix::new(0, full_info_0.public_info().name());
+        let prefix = Prefix::new(0, full_info_0.public_info().name(), 0);
         let full_info_1 = FullInfo::node_new(1u8);
         let full_info_2 = FullInfo::node_new(1u8);
         let irrelevant_full_info = FullInfo::node_new(1u8);
@@ -1176,7 +1174,7 @@ mod tests {
         let routing_message = RoutingMessage {
             src: Authority::ClientManager(name),
             dst: Authority::ClientManager(name),
-            content: MessageContent::SectionSplit(Prefix::new(0, name).with_version(1), name),
+            content: MessageContent::SectionSplit(Prefix::new(0, name, 1), name),
         };
         let full_info = FullInfo::node_new(1u8);
         let senders = iter::empty().collect();

@@ -598,7 +598,7 @@ impl Node {
     /// have one
     pub fn section_list_signatures(
         &self,
-        prefix: Prefix,
+        prefix: &Prefix,
     ) -> Option<BTreeMap<PublicInfo, sign::Signature>> {
         self.machine.current().section_list_signatures(prefix)
     }

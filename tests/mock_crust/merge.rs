@@ -105,14 +105,16 @@ fn concurrent_merge() {
     rng.shuffle(&mut nodes);
 
     // Choose two sections to drop nodes from, one of `00`/`01` and the other one of `10`/`11`.
-    let prefix_0_to_drop_from = Prefix::new(1, XorName([0; XOR_NAME_LEN])).pushed(rng.gen());
-    let prefix_1_to_drop_from = Prefix::new(1, XorName([255; XOR_NAME_LEN])).pushed(rng.gen());
+    let prefix_0_to_drop_from = Prefix::new(1, XorName([0; XOR_NAME_LEN]), 0).pushed(rng.gen());
+    let prefix_1_to_drop_from = Prefix::new(1, XorName([255; XOR_NAME_LEN]), 0).pushed(rng.gen());
 
     // Create a map with <section, number of members> as key/value for these two sections.
     let mut section_map = BTreeMap::new();
     for node in nodes.iter() {
-        let prefix = *node.routing_table().our_prefix();
-        if prefix == prefix_0_to_drop_from || prefix == prefix_1_to_drop_from {
+        let prefix = *node.routing_table().our_prefix().unversioned();
+        if prefix == *prefix_0_to_drop_from.unversioned() ||
+            prefix == *prefix_1_to_drop_from.unversioned()
+        {
             *section_map.entry(prefix).or_insert(0) += 1;
         }
     }
@@ -122,7 +124,7 @@ fn concurrent_merge() {
     for (prefix, len) in &mut section_map {
         while *len >= group_size {
             let index = unwrap!(nodes.iter().position(|node| {
-                node.routing_table().our_prefix() == prefix
+                *node.routing_table().our_prefix().unversioned() == *prefix
             }));
             let removed = nodes.remove(index);
             drop(removed);
@@ -150,19 +152,19 @@ fn merge_exclude_reconnecting_nodes() {
     rng.shuffle(&mut nodes);
 
     // Choose one section to drop nodes from.
-    let prefix_to_drop_from = Prefix::new(1, XorName([0; XOR_NAME_LEN]));
+    let prefix_to_drop_from = Prefix::new(1, XorName([0; XOR_NAME_LEN]), 0);
 
     let mut nodes_count = nodes
         .iter()
         .filter(|node| {
-            node.routing_table().our_prefix() == &prefix_to_drop_from
+            node.routing_table().our_prefix().unversioned() == prefix_to_drop_from.unversioned()
         })
         .count();
 
     // Drop enough nodes (without polling) from that section to just below `group_size`.
     while nodes_count >= group_size {
         let index = unwrap!(nodes.iter().position(|node| {
-            node.routing_table().our_prefix() == &prefix_to_drop_from
+            node.routing_table().our_prefix().unversioned() == prefix_to_drop_from.unversioned()
         }));
         let removed = nodes.remove(index);
         drop(removed);

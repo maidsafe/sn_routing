@@ -179,7 +179,7 @@ impl State {
 
     pub fn section_list_signatures(
         &self,
-        prefix: Prefix,
+        prefix: &Prefix,
     ) -> Option<BTreeMap<PublicInfo, sign::Signature>> {
         match *self {
             State::Node(ref state) => state.section_list_signatures(prefix).ok(),

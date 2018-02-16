@@ -35,7 +35,7 @@ fn gen_immutable_data_not_in_first_node_section<T: Rng>(
     // We want to make sure the data is inserted into a different section. Since the
     // root prefix uses 0 bits, we will have at least one section starting bit 0 and at
     // least one starting bit 1. If this differs, the sections are guaranteed different.
-    let prefix = Prefix::new(1, first_name);
+    let prefix = Prefix::new(1, first_name, 0);
 
     loop {
         let data = gen_immutable_data(rng, 8);

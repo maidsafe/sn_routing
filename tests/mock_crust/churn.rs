@@ -501,9 +501,9 @@ fn verify_section_list_signatures(nodes: &[TestNode]) {
         let rt = node.routing_table();
         let section_size = rt.our_section().len();
         for prefix in rt.prefixes() {
-            if prefix != *rt.our_prefix() {
+            if prefix.unversioned() != rt.our_prefix().unversioned() {
                 let sigs = unwrap!(
-                    node.inner.section_list_signatures(prefix),
+                    node.inner.section_list_signatures(&prefix),
                     "{:?} Tried to unwrap None returned from \
                      section_list_signatures({:?})",
                     node.name(),
