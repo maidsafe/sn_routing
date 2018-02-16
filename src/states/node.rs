@@ -1970,12 +1970,12 @@ impl Node {
             self.routing_table().should_split()
         {
             // i.e. the section should split
-            let our_ver_pfx = *self.routing_table().our_prefix();
+            let our_prefix = *self.routing_table().our_prefix();
             // In the future we'll look to remove this restriction so we always call
             // `send_section_split()` here and also check whether another round of splitting is
             // required in `handle_section_split()` so splitting becomes recursive like merging.
-            if our_ver_pfx.matches(&pub_info.name()) {
-                self.send_section_split(our_ver_pfx, pub_info.name());
+            if our_prefix.matches(&pub_info.name()) {
+                self.send_section_split(our_prefix, pub_info.name());
             }
         } else {
             self.merge_if_necessary(outbox);
