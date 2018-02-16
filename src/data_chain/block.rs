@@ -18,13 +18,13 @@
 // FIXME: remove when this module is finished
 #![allow(dead_code)]
 
+use super::{Proof, Vote};
 use error::RoutingError;
-use proof::Proof;
 use public_info::PublicInfo;
 use serde::Serialize;
 use std::collections::BTreeSet;
 use std::iter;
-use vote::Vote;
+
 
 #[allow(unused)]
 pub struct NodesAndAge {
@@ -154,6 +154,16 @@ impl<T: Serialize + Clone> Block<T> {
         } else {
             Ok(BlockState::NotYetValid)
         }
+    }
+
+    /// Create an iterator over all proofs and transform into votes.
+    pub fn votes_iter<'a>(&'a self) -> Box<Iterator<Item = (&PublicInfo, Vote<T>)> + 'a> {
+        Box::new(self.proofs.iter().map(move |proof| {
+            (
+                proof.node_info(),
+                Vote::compose(self.payload.clone(), *proof.sig()),
+            )
+        }))
     }
 
     fn insert_proof(

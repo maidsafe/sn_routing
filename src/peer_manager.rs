@@ -1627,7 +1627,7 @@ impl PeerManager {
     /// Returns the public IDs of all routing table entries connected or not that we see as valid
     /// peers, sorted by section.
     pub fn ideal_rt(&self) -> SectionMap {
-        let versioned_prefixes = self.routing_table
+        let prefixes = self.routing_table
             .all_sections_iter()
             .map(|(prefix, _)| prefix)
             .collect_vec();
@@ -1639,7 +1639,7 @@ impl PeerManager {
             .chain(iter::once(&self.our_public_info))
         {
             if let Some(versioned_prefix) =
-                versioned_prefixes.iter().find(|versioned_prefix| {
+                prefixes.iter().find(|versioned_prefix| {
                     versioned_prefix.matches(&pub_info.name())
                 })
             {

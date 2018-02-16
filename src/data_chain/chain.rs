@@ -18,18 +18,15 @@
 // FIXME: remove when this module is finished
 #![allow(dead_code)]
 
-use block::{Block, NodesAndAge};
+use super::{Block, NodeState, NodesAndAge, Proof, Vote};
 use error::RoutingError;
 use fs2::FileExt;
 use maidsafe_utilities::serialisation;
-use node_state::NodeState;
-use proof::Proof;
 use public_info::PublicInfo;
 use std::collections::BTreeSet;
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
-use vote::Vote;
 use xor_name::XorName;
 
 /// Placeholder pending design of inclusion of data into data-chain
@@ -37,7 +34,7 @@ type DataIdentifier = XorName;
 
 #[allow(unused)]
 #[derive(Default, Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord)]
-pub struct DataChain {
+pub struct Chain {
     blocks: Vec<Block<NodeState>>,
     group_size: usize,
     path: Option<PathBuf>,
@@ -45,10 +42,10 @@ pub struct DataChain {
     data: Vec<Block<DataIdentifier>>,
 }
 
-impl DataChain {
+impl Chain {
     /// Create a new chain backed up on disk
     /// Provide the directory to create the files in
-    pub fn create_in_path(path: &PathBuf, group_size: usize) -> io::Result<DataChain> {
+    pub fn create_in_path(path: &PathBuf, group_size: usize) -> io::Result<Chain> {
         let path = path.join("data_chain");
         let file = fs::OpenOptions::new()
             .read(true)
@@ -57,7 +54,7 @@ impl DataChain {
             .open(&path)?;
         // hold a lock on the file for the whole session
         file.lock_exclusive()?;
-        Ok(DataChain {
+        Ok(Chain {
             blocks: vec![],
             group_size,
             path: Some(path),
@@ -67,7 +64,7 @@ impl DataChain {
     }
 
     /// Open from existing directory
-    pub fn from_path(path: &PathBuf) -> Result<DataChain, RoutingError> {
+    pub fn from_path(path: &PathBuf) -> Result<Chain, RoutingError> {
         let path = path.join("data_chain");
         let mut file = fs::OpenOptions::new()
             .read(true)
@@ -82,8 +79,8 @@ impl DataChain {
     }
 
     /// Create chain in memory from some blocks
-    pub fn from_blocks(blocks: Vec<Block<NodeState>>, group_size: usize) -> DataChain {
-        DataChain {
+    pub fn from_blocks(blocks: Vec<Block<NodeState>>, group_size: usize) -> Chain {
+        Chain {
             blocks,
             group_size,
             path: None,

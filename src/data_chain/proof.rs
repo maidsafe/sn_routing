@@ -33,13 +33,11 @@ pub struct Proof {
 
 impl Proof {
     /// getter
-    #[allow(unused)]
     pub fn node_info(&self) -> &PublicInfo {
         &self.node_info
     }
 
     /// getter
-    #[allow(unused)]
     pub fn sig(&self) -> &Signature {
         &self.sig
     }
@@ -57,11 +55,11 @@ impl Proof {
 #[cfg(test)]
 mod tests {
     use RoutingError;
+    use data_chain::Vote;
     use full_info::FullInfo;
     use maidsafe_utilities::SeededRng;
     use rand::Rng;
     use rust_sodium;
-    use vote::Vote;
 
     #[test]
     fn confirm_proof_for_vote() {
