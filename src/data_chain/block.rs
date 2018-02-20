@@ -25,7 +25,6 @@ use serde::Serialize;
 use std::collections::BTreeSet;
 use std::iter;
 
-
 #[allow(unused)]
 pub struct NodesAndAge {
     nodes: usize,
@@ -189,90 +188,133 @@ mod tests {
     use maidsafe_utilities::SeededRng;
     use rand::Rng;
     use rust_sodium;
+    use std::collections::BTreeMap;
 
     #[test]
     fn create_then_add_proofs() {
         let mut rng = SeededRng::thread_rng();
         unwrap!(rust_sodium::init_with_rng(&mut rng));
 
-        let mut full_info_0 = FullInfo::node_new(0);
-        let mut full_info_1 = FullInfo::node_new(0);
-        let public_info_0 = *full_info_0.public_info();
-        let public_info_1 = *full_info_1.public_info();
+        let full_info_0 = FullInfo::node_new(1);
+        let full_info_1 = FullInfo::node_new(rng.gen_range(0, 255));
 
         let payload = "Gone";
         let vote0 = unwrap!(Vote::new(full_info_0.secret_sign_key(), payload));
-        assert!(vote0.validate_signature(&public_info_0));
         let vote1 = unwrap!(Vote::new(full_info_1.secret_sign_key(), payload));
-        assert!(vote1.validate_signature(&public_info_1));
 
-        full_info_0.set_age(1u8);
-        full_info_1.set_age(rng.gen_range(0, 255));
-        let public_info_00 = *full_info_0.public_info();
-        let public_info_10 = *full_info_1.public_info();
-
-        let proof0 = unwrap!(vote0.proof(&public_info_00));
+        let proof0 = unwrap!(vote0.proof(full_info_0.public_info()));
         assert!(proof0.validate_signature(&payload));
-        let proof1 = unwrap!(vote1.proof(&public_info_10));
+        let proof1 = unwrap!(vote1.proof(full_info_1.public_info()));
         assert!(proof1.validate_signature(&payload));
-        let mut b0 = unwrap!(Block::new(&vote0, &public_info_00));
-        assert!(proof0.validate_signature(&b0.payload));
-        assert!(proof1.validate_signature(&b0.payload));
+
+        let mut block = unwrap!(Block::new(&vote0, full_info_0.public_info()));
+        assert_eq!(*block.payload(), payload);
+        assert_eq!(block.num_proofs(), 1);
+
         let mut valid_voters = BTreeSet::new();
-        let _ = valid_voters.insert(public_info_00);
-        let _ = valid_voters.insert(public_info_10);
-        assert!(b0.add_proof(proof0, &valid_voters).is_err());
-        assert_eq!(b0.num_proofs(), 1);
-        assert!(b0.add_proof(proof1, &valid_voters).is_ok());
-        assert_eq!(b0.num_proofs(), 2);
+        let _ = valid_voters.insert(*full_info_0.public_info());
+        let _ = valid_voters.insert(*full_info_1.public_info());
+
+        match block.add_proof(proof0, &valid_voters) {
+            Err(RoutingError::DuplicateSignatures) => (),
+            x => panic!("Unexpected result {:?}", x),
+        }
+
+        assert_eq!(block.num_proofs(), 1);
+        assert!(block.add_proof(proof1, &valid_voters).is_ok());
+        assert_eq!(block.num_proofs(), 2);
     }
 
     #[test]
-    fn confirm_new_proof_batch() {
+    fn random_vote_or_proof() {
         let mut rng = SeededRng::thread_rng();
         unwrap!(rust_sodium::init_with_rng(&mut rng));
 
-        let mut full_info_0 = FullInfo::node_new(0);
-        let mut full_info_1 = FullInfo::node_new(0);
-        let mut full_info_2 = FullInfo::node_new(0);
+        let num_of_voters = 8;
+        let mut total_age = 0;
+        let mut full_infos = Vec::with_capacity(num_of_voters);
+
+        let valid_voters: BTreeSet<_> = (0..num_of_voters)
+            .map(|_| {
+                let age = rng.gen_range(0, 255);
+                total_age += age as usize;
+
+                let full_info = FullInfo::node_new(age);
+                let public_info = *full_info.public_info();
+                full_infos.push(full_info);
+                public_info
+            })
+            .collect();
+
+        let payload = "Live";
+        let vote0 = unwrap!(Vote::new(full_infos[0].secret_sign_key(), payload));
+        let mut block = unwrap!(Block::new(&vote0, full_infos[0].public_info()));
+        let mut accumulated_age = full_infos[0].public_info().age() as usize;
+
+        for full_info in full_infos.iter().skip(1) {
+            accumulated_age += full_info.public_info().age() as usize;
+
+            let vote = unwrap!(Vote::new(full_info.secret_sign_key(), payload));
+            if rng.gen() {
+                // insert as vote
+                assert!(
+                    block
+                        .add_vote(&vote, full_info.public_info(), &valid_voters)
+                        .is_ok()
+                );
+            } else {
+                // insert as proof
+                let proof = unwrap!(vote.proof(full_info.public_info()));
+                assert!(block.add_proof(proof, &valid_voters).is_ok());
+            }
+
+            assert_eq!(accumulated_age, block.total_age());
+
+            if block.num_proofs() == num_of_voters {
+                assert_eq!(
+                    unwrap!(block.get_block_state(&valid_voters)),
+                    BlockState::Full
+                );
+            } else if accumulated_age * 2 > total_age && block.num_proofs() * 2 > num_of_voters {
+                assert_eq!(
+                    unwrap!(block.get_block_state(&valid_voters)),
+                    BlockState::Valid
+                );
+            } else {
+                assert_eq!(
+                    unwrap!(block.get_block_state(&valid_voters)),
+                    BlockState::NotYetValid
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn votes_iter() {
+        let mut rng = SeededRng::thread_rng();
+        unwrap!(rust_sodium::init_with_rng(&mut rng));
+
+        let full_info_0 = FullInfo::node_new(0);
+        let full_info_1 = FullInfo::node_new(0);
 
         let payload = "Gone";
         let vote0 = unwrap!(Vote::new(full_info_0.secret_sign_key(), payload));
         let vote1 = unwrap!(Vote::new(full_info_1.secret_sign_key(), payload));
-        let vote2 = unwrap!(Vote::new(full_info_2.secret_sign_key(), payload));
-        let age0: u8 = rng.gen_range(0, 255);
-        let age1: u8 = rng.gen_range(0, 255);
-        let age2: u8 = rng.gen_range(0, 255);
-        full_info_0.set_age(age0);
-        full_info_1.set_age(age1);
-        full_info_2.set_age(age2);
-        let public_info_0 = *full_info_0.public_info();
-        let public_info_1 = *full_info_1.public_info();
-        let public_info_2 = *full_info_2.public_info();
 
-        let mut valid_voters = BTreeSet::new();
-        let _ = valid_voters.insert(public_info_0);
-        let _ = valid_voters.insert(public_info_1);
-        let _ = valid_voters.insert(public_info_2);
-        let proof1 = unwrap!(vote1.proof(&public_info_1));
-        let proof2 = unwrap!(vote2.proof(&public_info_2));
-        // So 3 votes all valid will be added to block
-        let mut b0 = unwrap!(Block::new(&vote0, &public_info_0));
-        if (usize::from(age0) + usize::from(age1)) > usize::from(age2) {
-            assert_eq!(
-                unwrap!(b0.add_proof(proof1, &valid_voters)),
-                BlockState::Valid
-            );
-        } else {
-            assert_eq!(
-                unwrap!(b0.add_proof(proof1, &valid_voters)),
-                BlockState::NotYetValid
-            );
-        }
-        assert_eq!(
-            unwrap!(b0.add_proof(proof2, &valid_voters)),
-            BlockState::Full
-        );
-        assert_eq!(b0.num_proofs(), 3);
+        let mut voters = BTreeSet::new();
+        let _ = voters.insert(*full_info_0.public_info());
+        let _ = voters.insert(*full_info_1.public_info());
+
+        let mut block = unwrap!(Block::new(&vote0, full_info_0.public_info()));
+        let _ = unwrap!(block.add_vote(&vote1, full_info_1.public_info(), &voters));
+
+        let votes: BTreeMap<_, _> = block.votes_iter().collect();
+        assert_eq!(votes.len(), 2);
+
+        let vote_0 = unwrap!(votes.get(full_info_0.public_info()));
+        assert!(vote_0.validate_signature(full_info_0.public_info()));
+
+        let vote_1 = unwrap!(votes.get(full_info_1.public_info()));
+        assert!(vote_1.validate_signature(full_info_1.public_info()));
     }
 }
