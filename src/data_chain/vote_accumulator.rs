@@ -48,7 +48,7 @@ impl<T: Ord> VoteAccumulator<T> {
     // FIXME - remove these
     #[allow(unused)]
     #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
-    pub fn add_vote<'a, I: Iterator<Item = &'a PublicInfo>>(
+    pub fn add_vote<'a, I: IntoIterator<Item = &'a PublicInfo>>(
         &mut self,
         _vote: Vote<T>,
         _node_info: &PublicInfo,
@@ -78,6 +78,7 @@ mod tests {
     use rust_sodium;
     use serde::Serialize;
     use std::collections::BTreeSet;
+    #[cfg(feature = "use-mock-crust")]
     use std::iter;
 
     // Creates a collection of `GROUP_SIZE` `FullInfo`s for nodes with ages 5, 6, 7, etc.
@@ -139,16 +140,16 @@ mod tests {
             let results1 = unwrap!(accumulator.add_vote(
                 vote1,
                 node.public_info(),
-                valid_voters.iter().cloned(),
+                valid_voters.clone(),
             ));
             let results2 = unwrap!(accumulator.add_vote(
                 vote2,
                 node.public_info(),
-                valid_voters.iter().cloned(),
+                valid_voters.clone(),
             ));
             nodes_added.push(node.public_info());
 
-            if data_chain::quorum(valid_voters.iter().cloned(), nodes_added.iter().cloned()) {
+            if data_chain::quorum(valid_voters.clone(), nodes_added.iter().cloned()) {
                 assert_eq!(results1.len(), 1);
                 assert_eq!(results2.len(), 1);
                 if is_valid {
@@ -208,7 +209,7 @@ mod tests {
                 Vote::new(last_node.secret_sign_key(), payload)
             ),
             last_node.public_info(),
-            valid_voters.iter().cloned(),
+            valid_voters,
         ));
 
         block_in = create_block(payload, &nodes, false);
@@ -275,7 +276,7 @@ mod tests {
             if !unwrap!(accumulator.add_vote(
                 vote,
                 node.public_info(),
-                valid_voters.iter().cloned(),
+                valid_voters.clone(),
             )).is_empty()
             {
                 break;
@@ -290,7 +291,7 @@ mod tests {
         let mut results = unwrap!(accumulator.add_vote(
             vote,
             late_node1.public_info(),
-            valid_voters.iter().cloned(),
+            valid_voters.clone(),
         ));
         assert_eq!(results.len(), 1);
         if let AccumulationReturn::ExpiredValid(ref block) = results[0] {
@@ -309,7 +310,7 @@ mod tests {
         results = unwrap!(accumulator.add_vote(
             vote,
             late_node2.public_info(),
-            valid_voters.iter().cloned(),
+            valid_voters.clone(),
         ));
         assert_eq!(results.len(), 1);
         if let AccumulationReturn::ExpiredInvalid(ref block) = results[0] {
@@ -331,7 +332,7 @@ mod tests {
         results = unwrap!(accumulator.add_vote(
             vote,
             nodes[0].public_info(),
-            valid_voters.iter().cloned(),
+            valid_voters.clone(),
         ));
         assert_eq!(results.len(), 1);
         if let AccumulationReturn::ExpiredInvalid(ref block) = results[0] {
@@ -348,7 +349,7 @@ mod tests {
             let _ = unwrap!(accumulator.add_vote(
                 vote,
                 node.public_info(),
-                valid_voters.iter().cloned(),
+                valid_voters.clone(),
             ));
         }
 
@@ -358,7 +359,7 @@ mod tests {
         results = unwrap!(accumulator.add_vote(
             vote,
             nodes[0].public_info(),
-            valid_voters.iter().cloned(),
+            valid_voters.clone(),
         ));
         assert!(results.is_empty());
     }
