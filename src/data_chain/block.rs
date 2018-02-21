@@ -19,6 +19,7 @@
 #![allow(dead_code)]
 
 use super::{Proof, Vote};
+use data_chain;
 use error::RoutingError;
 use public_info::PublicInfo;
 use serde::Serialize;
@@ -137,18 +138,20 @@ impl<T: Serialize + Clone> Block<T> {
     }
 
     /// Return the block state given a set of valid voters.
-    pub fn get_block_state(
+    pub fn get_block_state<'a, I: IntoIterator<Item = &'a PublicInfo>>(
         &self,
-        valid_voters: &BTreeSet<PublicInfo>,
+        valid_nodes_itr: I,
     ) -> Result<BlockState, RoutingError> {
-        if self.proofs.len() >= valid_voters.len() {
+        let valid_nodes = valid_nodes_itr.into_iter().collect::<BTreeSet<_>>();
+        let valid_voters = self.proofs
+            .iter()
+            .map(Proof::node_info)
+            .filter(|voter| valid_nodes.contains(voter))
+            .collect::<BTreeSet<_>>();
+        if valid_nodes.len() == valid_voters.len() {
             return Ok(BlockState::Full);
         }
-        let total_age = valid_voters
-            .iter()
-            .map(|node_info| usize::from(node_info.age()))
-            .sum();
-        if self.total_age() * 2 > total_age && self.num_proofs() * 2 > valid_voters.len() {
+        if data_chain::quorum(valid_voters, valid_nodes) {
             Ok(BlockState::Valid)
         } else {
             Ok(BlockState::NotYetValid)

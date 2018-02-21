@@ -32,8 +32,6 @@ pub use self::vote_accumulator::VoteAccumulator;
 use public_info::PublicInfo;
 use std::collections::BTreeSet;
 
-// FIXME - remove
-#[allow(unused)]
 /// Calculates whether a quorum of nodes have voted.  In this case, "quorum" means >50% of the
 /// members in `valid_nodes_itr` are included in `voters_itr` and that their cumulative age is >50%
 /// of the cumulative age of all members of `valid_nodes_itr`.
@@ -43,18 +41,17 @@ where
     J: IntoIterator<Item = &'b PublicInfo>,
 {
     let valid_nodes = valid_nodes_itr.into_iter().collect::<BTreeSet<_>>();
-    let voters = voters_itr.into_iter().collect::<BTreeSet<_>>();
+    let valid_voters = voters_itr
+        .into_iter()
+        .filter(|voter| valid_nodes.contains(voter))
+        .collect::<BTreeSet<_>>();
 
     let valid_total_age = valid_nodes.iter().map(|node| usize::from(node.age())).sum();
     let mut running_total_age = 0;
-    let mut count = 0;
-    for voter in voters.iter().rev() {
-        if valid_nodes.contains(voter) {
-            running_total_age += usize::from(voter.age());
-            count += 1;
-            if running_total_age * 2 > valid_total_age && count * 2 > valid_nodes.len() {
-                return true;
-            }
+    for (count, voter) in valid_voters.iter().rev().enumerate() {
+        running_total_age += usize::from(voter.age());
+        if running_total_age * 2 > valid_total_age && (count + 1) * 2 > valid_nodes.len() {
+            return true;
         }
     }
     false

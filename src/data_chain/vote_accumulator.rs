@@ -149,7 +149,7 @@ mod tests {
             ));
             nodes_added.push(node.public_info());
 
-            if data_chain::quorum(valid_voters.clone(), nodes_added.iter().cloned()) {
+            if data_chain::quorum(nodes_added.iter().cloned(), valid_voters.clone()) {
                 assert_eq!(results1.len(), 1);
                 assert_eq!(results2.len(), 1);
                 if is_valid {
