@@ -22,10 +22,11 @@ use maidsafe_utilities::serialisation;
 use public_info::PublicInfo;
 use rust_sodium::crypto::sign::{self, Signature};
 use serde::Serialize;
+use std::fmt::{self, Debug, Formatter};
 
 /// Proof as provided by a close group member. This may be constructed from a `Vote` to be inserted
 /// into a `Block`. This struct is ordered by age then `PublicKey`
-#[derive(Serialize, Deserialize, PartialOrd, Ord, PartialEq, Eq, Clone, Hash, Debug)]
+#[derive(Serialize, Deserialize, PartialOrd, Ord, PartialEq, Eq, Clone, Hash)]
 pub struct Proof {
     pub node_info: PublicInfo,
     pub sig: Signature,
@@ -49,6 +50,17 @@ impl Proof {
             Ok(data) => sign::verify_detached(&self.sig, &data[..], self.node_info.sign_key()),
             _ => false,
         }
+    }
+}
+
+impl Debug for Proof {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(
+            formatter,
+            "Proof{{ {}, age: {}, sig: ... }}",
+            self.node_info.name(),
+            self.node_info.age()
+        )
     }
 }
 

@@ -24,11 +24,12 @@ use maidsafe_utilities::serialisation;
 use public_info::PublicInfo;
 use rust_sodium::crypto::sign::{self, SecretKey, Signature};
 use serde::Serialize;
+use std::fmt::{self, Debug, Formatter};
 
 /// A Vote is a node's desire to initiate a network action or sub action. If there are quorum votes
 /// the action will happen. These are DIRECT MESSAGES and therefore do not require the `PubKey`.
 /// Signature is detached and is the signed payload.
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Clone)]
 pub struct Vote<T> {
     payload: T,
     signature: Signature,
@@ -75,6 +76,16 @@ impl<T: Serialize + Clone> Vote<T> {
             Ok(data) => sign::verify_detached(&self.signature, &data[..], node_info.sign_key()),
             Err(_) => false,
         }
+    }
+}
+
+impl<T: Debug> Debug for Vote<T> {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(
+            formatter,
+            "Vote{{ payload: {:?}, signature: ... }}",
+            self.payload
+        )
     }
 }
 

@@ -60,10 +60,63 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use GROUP_SIZE;
     use full_info::FullInfo;
+    use itertools::{self, Itertools};
     use maidsafe_utilities::SeededRng;
+    use routing_table::Prefix;
     use rust_sodium;
+    use serde::Serialize;
     use std::iter;
+
+    /// Creates a collection of `GROUP_SIZE` `FullInfo`s for nodes with ages 5, 6, 7, etc.  If
+    /// `in_prefix` is `Some`, all nodes' IDs will fit that prefix.
+    pub fn create_full_infos(in_prefix: Option<Prefix>) -> Vec<FullInfo> {
+        let mut rng = SeededRng::thread_rng();
+        unwrap!(rust_sodium::init_with_rng(&mut rng));
+
+        let initialiser = || if let Some(prefix) = in_prefix {
+            FullInfo::within_range(0, &prefix.lower_bound(), &prefix.upper_bound())
+        } else {
+            FullInfo::node_new(0)
+        };
+
+        let mut nodes = itertools::repeat_call(initialiser)
+            .take(GROUP_SIZE)
+            .collect_vec();
+        nodes.sort_by(|lhs, rhs| lhs.public_info().cmp(rhs.public_info()));
+        for (index, node) in nodes.iter_mut().enumerate() {
+            node.set_age(index as u8 + 5);
+        }
+        nodes
+    }
+
+    /// Create a block.  If `fill` is true, add votes for every member of `nodes`, otherwise only
+    /// add votes until the block is valid.
+    pub fn create_block<T: Serialize + Clone>(
+        payload: T,
+        nodes: &[FullInfo],
+        fill: bool,
+    ) -> Block<T> {
+        let valid_voters = nodes
+            .iter()
+            .map(|full_info| *full_info.public_info())
+            .collect();
+        let mut vote = unwrap!(Vote::new(nodes[0].secret_sign_key(), payload.clone()));
+        let mut block = unwrap!(Block::new(&vote, nodes[0].public_info()));
+        for node in &nodes[1..] {
+            vote = unwrap!(Vote::new(node.secret_sign_key(), payload.clone()));
+            if let BlockState::Valid = unwrap!(
+                block.add_vote(&vote, node.public_info(), &valid_voters)
+            )
+            {
+                if !fill {
+                    break;
+                }
+            }
+        }
+        block
+    }
 
     #[test]
     fn quorum_check() {

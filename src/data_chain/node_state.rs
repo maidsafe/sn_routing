@@ -76,7 +76,7 @@ impl Debug for NodeState {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
             formatter,
-            "{:?} for {:02x}{:02x}{:02x}.. age {:02} in {:?}",
+            "{:?} for {:02x}{:02x}{:02x}.. age {} in {:?}",
             self.state,
             self.public_key.0[0],
             self.public_key.0[1],
