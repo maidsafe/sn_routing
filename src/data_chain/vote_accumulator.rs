@@ -195,7 +195,7 @@ mod tests {
         let payload1 = "Live";
         let payload2 = "DoubleVote";
         let mut is_valid = false;
-        let mut nodes_added = vec![];
+        let mut nodes_added = BTreeSet::new();
         for node in &nodes {
             let vote1 = unwrap!(Vote::new(node.secret_sign_key(), payload1));
             let vote2 = unwrap!(Vote::new(node.secret_sign_key(), payload2));
@@ -209,9 +209,9 @@ mod tests {
                 node.public_info(),
                 &valid_voters,
             ));
-            nodes_added.push(node.public_info());
+            let _ = nodes_added.insert(*node.public_info());
 
-            if data_chain::quorum(nodes_added.iter().cloned(), &valid_voters) {
+            if data_chain::quorum(&nodes_added, &valid_voters) {
                 assert_eq!(results1.len(), 1);
                 assert_eq!(results2.len(), 1);
                 if is_valid {

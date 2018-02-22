@@ -147,20 +147,16 @@ impl<T: Serialize + Clone> Block<T> {
     }
 
     /// Return the block state given a set of valid voters.
-    pub fn get_block_state<'a, I: IntoIterator<Item = &'a PublicInfo>>(
-        &self,
-        valid_nodes_itr: I,
-    ) -> BlockState {
-        let valid_nodes = valid_nodes_itr.into_iter().collect::<BTreeSet<_>>();
+    pub fn get_block_state(&self, valid_nodes: &BTreeSet<PublicInfo>) -> BlockState {
         let valid_voters = self.proofs
             .iter()
-            .map(Proof::node_info)
+            .map(|p| *p.node_info())
             .filter(|voter| valid_nodes.contains(voter))
             .collect::<BTreeSet<_>>();
         if valid_nodes.len() == valid_voters.len() {
             return BlockState::Full;
         }
-        if data_chain::quorum(valid_voters, valid_nodes) {
+        if data_chain::quorum(&valid_voters, valid_nodes) {
             BlockState::Valid
         } else {
             BlockState::NotYetValid
