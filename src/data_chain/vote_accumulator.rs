@@ -48,7 +48,7 @@ impl<T: Clone + Ord + Serialize> VoteAccumulator<T> {
     #[allow(unused)]
     pub fn add_vote(
         &mut self,
-        vote: Vote<T>,
+        vote: &Vote<T>,
         node_info: &PublicInfo,
         valid_nodes: &BTreeSet<PublicInfo>,
     ) -> Result<Vec<AccumulationReturn<T>>, RoutingError> {
@@ -57,7 +57,7 @@ impl<T: Clone + Ord + Serialize> VoteAccumulator<T> {
         match self.blocks.entry(vote.payload().clone()) {
             Entry::Vacant(entry) => {
                 let _ = entry.insert(State {
-                    block: Block::new(&vote, node_info)?,
+                    block: Block::new(vote, node_info)?,
                     timestamp: Instant::now(),
                 });
             }
@@ -70,7 +70,7 @@ impl<T: Clone + Ord + Serialize> VoteAccumulator<T> {
                 let valid_after = entry
                     .get_mut()
                     .block
-                    .add_vote(&vote, node_info, valid_nodes)?
+                    .add_vote(vote, node_info, valid_nodes)?
                     .valid_or_full();
 
                 if valid_after {
@@ -200,12 +200,12 @@ mod tests {
             let vote1 = unwrap!(Vote::new(node.secret_sign_key(), payload1));
             let vote2 = unwrap!(Vote::new(node.secret_sign_key(), payload2));
             let results1 = unwrap!(accumulator.add_vote(
-                vote1,
+                &vote1,
                 node.public_info(),
                 &valid_voters,
             ));
             let results2 = unwrap!(accumulator.add_vote(
-                vote2,
+                &vote2,
                 node.public_info(),
                 &valid_voters,
             ));
@@ -266,7 +266,7 @@ mod tests {
         payload = "Case 2";
         let last_node = &nodes[nodes.len() - 1];
         let _ = unwrap!(accumulator.add_vote(
-            unwrap!(
+            &unwrap!(
                 Vote::new(last_node.secret_sign_key(), payload)
             ),
             last_node.public_info(),
@@ -334,7 +334,7 @@ mod tests {
         for node in &nodes {
             let vote = unwrap!(Vote::new(node.secret_sign_key(), payload));
             if !unwrap!(accumulator.add_vote(
-                vote,
+                &vote,
                 node.public_info(),
                 &valid_voters,
             )).is_empty()
@@ -349,7 +349,7 @@ mod tests {
         let late_node1 = &nodes[nodes.len() - 1];
         let mut vote = unwrap!(Vote::new(late_node1.secret_sign_key(), payload));
         let mut results = unwrap!(accumulator.add_vote(
-            vote,
+            &vote,
             late_node1.public_info(),
             &valid_voters,
         ));
@@ -368,7 +368,7 @@ mod tests {
         let late_node2 = &nodes[nodes.len() - 2];
         vote = unwrap!(Vote::new(late_node2.secret_sign_key(), payload));
         results = unwrap!(accumulator.add_vote(
-            vote,
+            &vote,
             late_node2.public_info(),
             &valid_voters,
         ));
@@ -390,7 +390,7 @@ mod tests {
         let new_payload = "SilentlyDrop";
         vote = unwrap!(Vote::new(nodes[0].secret_sign_key(), new_payload));
         results = unwrap!(accumulator.add_vote(
-            vote,
+            &vote,
             nodes[0].public_info(),
             &valid_voters,
         ));
@@ -407,7 +407,7 @@ mod tests {
         for node in &nodes[1..] {
             vote = unwrap!(Vote::new(node.secret_sign_key(), new_payload));
             let _ = unwrap!(accumulator.add_vote(
-                vote,
+                &vote,
                 node.public_info(),
                 &valid_voters,
             ));
@@ -417,7 +417,7 @@ mod tests {
         FakeClock::advance_time(TIMEOUT_SECS * 1000);
         vote = unwrap!(Vote::new(nodes[0].secret_sign_key(), "Dummy"));
         results = unwrap!(accumulator.add_vote(
-            vote,
+            &vote,
             nodes[0].public_info(),
             &valid_voters,
         ));
