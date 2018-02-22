@@ -21,7 +21,7 @@ use rust_sodium::crypto::sign;
 use std::fmt::{self, Debug, Formatter};
 
 /// The state of a node in a given section as voted for by the other elders in that section.
-#[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
 pub enum State {
     /// Node has been accepted to this section as an elder.  May have been relocated here, or may
     /// have come back via a merge or via a promotion from adult.
@@ -63,18 +63,14 @@ pub enum State {
 /// non-elders.
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct NodeState {
-    /// The state the node is transitioning into.
-    pub state: State,
-    /// The public signing key of the affected node.
-    pub public_key: sign::PublicKey,
-    /// The age of the affected node.
-    pub age: u8,
-    /// The section to which the affected node belongs.
-    pub section: Prefix,
+    state: State,
+    public_key: sign::PublicKey,
+    age: u8,
+    section: Prefix,
 }
 
 impl NodeState {
-    /// Constructor
+    /// Constructor.
     pub fn new(state: State, public_info: &PublicInfo, prefix: Prefix) -> Self {
         NodeState {
             state,
@@ -82,6 +78,26 @@ impl NodeState {
             age: public_info.age(),
             section: prefix,
         }
+    }
+
+    /// The state the node is transitioning into.
+    pub fn state(&self) -> State {
+        self.state
+    }
+
+    /// The public signing key of the affected node.
+    pub fn public_key(&self) -> &sign::PublicKey {
+        &self.public_key
+    }
+
+    /// The age of the affected node.
+    pub fn age(&self) -> u8 {
+        self.age
+    }
+
+    /// The section to which the affected node belongs.
+    pub fn section(&self) -> &Prefix {
+        &self.section
     }
 }
 
