@@ -60,7 +60,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use GROUP_SIZE;
+    use {GROUP_SIZE, MIN_ADULT_AGE};
     use full_info::FullInfo;
     use itertools::{self, Itertools};
     use maidsafe_utilities::SeededRng;
@@ -69,7 +69,8 @@ mod tests {
     use serde::Serialize;
     use std::iter;
 
-    /// Creates a collection of `GROUP_SIZE` `FullInfo`s for nodes with ages 5, 6, 7, etc.  If
+    /// Creates a collection of `GROUP_SIZE` `FullInfo`s for nodes with ages `MIN_ADULT_AGE`,
+    /// `MIN_ADULT_AGE + 1`, `MIN_ADULT_AGE + 2`, etc.  If
     /// `in_prefix` is `Some`, all nodes' IDs will fit that prefix.
     pub fn create_full_infos(in_prefix: Option<Prefix>) -> Vec<FullInfo> {
         let mut rng = SeededRng::thread_rng();
@@ -86,7 +87,7 @@ mod tests {
             .collect_vec();
         nodes.sort_by(|lhs, rhs| lhs.public_info().cmp(rhs.public_info()));
         for (index, node) in nodes.iter_mut().enumerate() {
-            node.set_age(index as u8 + 5);
+            node.set_age(index as u8 + MIN_ADULT_AGE);
         }
         nodes
     }

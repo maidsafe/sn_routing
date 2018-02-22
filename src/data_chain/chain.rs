@@ -144,6 +144,16 @@ impl Chain {
         unimplemented!();
     }
 
+    /// The blocks contained and correctly sequenced into the the chain.
+    pub fn blocks(&self) -> &[Block<NodeState>] {
+        &self.blocks
+    }
+
+    /// Valid blocks which can't yet be added into the chain due to sequencing constraints.
+    pub fn pending_blocks(&self) -> &[Block<NodeState>] {
+        &self.pending_blocks
+    }
+
     /// Assumes we trust the first `Block`
     fn validate_quorums(&self) -> bool {
         if let Some(mut prev) = self.blocks.first() {
@@ -242,50 +252,26 @@ mod tests {
 
         // Create Live(A) and Offline(A).
         let node_a = FullInfo::within_range(5, &prefix.lower_bound(), &prefix.upper_bound());
-        let mut payload = NodeState {
-            state: State::ElderLive,
-            public_key: *node_a.public_info().sign_key(),
-            age: node_a.public_info().age(),
-            section: prefix,
-        };
+        let mut payload = NodeState::new(State::ElderLive, node_a.public_info(), prefix);
         let live_a = tests::create_block(payload, &nodes, false);
-        payload = NodeState {
-            state: State::ElderOffline,
-            public_key: *node_a.public_info().sign_key(),
-            age: node_a.public_info().age(),
-            section: prefix,
-        };
+        payload = NodeState::new(State::ElderOffline, node_a.public_info(), prefix);
         let offline_a = tests::create_block(payload, &nodes, false);
 
         // Create Live(B) and Relocated(B).
         let node_b = FullInfo::within_range(6, &prefix.lower_bound(), &prefix.upper_bound());
-        payload = NodeState {
-            state: State::ElderLive,
-            public_key: *node_b.public_info().sign_key(),
-            age: node_b.public_info().age(),
-            section: prefix,
-        };
+        payload = NodeState::new(State::ElderLive, node_b.public_info(), prefix);
         let live_b = tests::create_block(payload, &nodes, false);
-        payload = NodeState {
-            state: State::ElderRelocated,
-            public_key: *node_b.public_info().sign_key(),
-            age: node_b.public_info().age(),
-            section: prefix,
-        };
+        payload = NodeState::new(State::ElderRelocated, node_b.public_info(), prefix);
         let relocated_b = tests::create_block(payload, &nodes, false);
 
         // Create Live(C).
         let node_c = FullInfo::within_range(7, &prefix.lower_bound(), &prefix.upper_bound());
-        payload = NodeState {
-            state: State::ElderLive,
-            public_key: *node_c.public_info().sign_key(),
-            age: node_c.public_info().age(),
-            section: prefix,
-        };
+        payload = NodeState::new(State::ElderLive, node_c.public_info(), prefix);
         let live_c = tests::create_block(payload, &nodes, false);
 
         // Create chain containing just Live(A).
-        let mut chain = Chain::from_blocks(vec![live_a.clone()], vec![], nodes.len());
+        let group_size = nodes.len();
+        let mut chain = Chain::from_blocks(vec![live_a.clone()], vec![], group_size);
         let mut expected_blocks = vec![live_a.clone()];
         let mut expected_pendings = vec![];
 
@@ -293,23 +279,23 @@ mod tests {
         // Demoted/Relocated in the `pending_blocks`.
         chain.add_block(live_c.clone());
         expected_pendings.push(live_c.clone());
-        assert_eq!(chain.blocks, expected_blocks);
-        assert_eq!(chain.pending_blocks, expected_pendings);
+        assert_eq!(chain.blocks(), &expected_blocks[..]);
+        assert_eq!(chain.pending_blocks(), &expected_pendings[..]);
 
         // Add Relocated(B) - should be held in `pending_blocks` as B isn't marked as Live in the
         // chain anywhere yet.
         chain.add_block(relocated_b.clone());
         expected_pendings.push(relocated_b.clone());
-        assert_eq!(chain.blocks, expected_blocks);
-        assert_eq!(chain.pending_blocks, expected_pendings);
+        assert_eq!(chain.blocks(), &expected_blocks[..]);
+        assert_eq!(chain.pending_blocks(), &expected_pendings[..]);
 
         // Add Live(B) - should be held in `pending_blocks` as the only possible Offline/Demoted/
         // Relocated in the `pending_blocks` is Relocated(B), and that can't be added since B isn't
         // marked as Live in the chain anywhere yet.
         chain.add_block(live_b.clone());
         expected_pendings.push(live_b.clone());
-        assert_eq!(chain.blocks, expected_blocks);
-        assert_eq!(chain.pending_blocks, expected_pendings);
+        assert_eq!(chain.blocks(), &expected_blocks[..]);
+        assert_eq!(chain.pending_blocks(), &expected_pendings[..]);
 
         // Add Offline(A) - should cause Offline(A)/Live(B) to be added as a pair (favouring Live(B)
         // over Live(C) since there's a valid Offline/Demoted/Relocated for B, but not C), then also
@@ -317,8 +303,8 @@ mod tests {
         // empty.
         chain.add_block(offline_a.clone());
         expected_blocks = vec![live_a, offline_a, live_b, relocated_b, live_c];
-        assert_eq!(chain.blocks, expected_blocks);
-        assert!(chain.pending_blocks.is_empty());
+        assert_eq!(chain.blocks(), &expected_blocks[..]);
+        assert_eq!(chain.pending_blocks(), &expected_pendings[..]);
     }
 
     #[ignore]
@@ -334,38 +320,29 @@ mod tests {
 
         // Create Live(A) block and extra vote for Live(A).
         let node_a = FullInfo::within_range(5, &prefix.lower_bound(), &prefix.upper_bound());
-        let mut payload = NodeState {
-            state: State::ElderLive,
-            public_key: *node_a.public_info().sign_key(),
-            age: node_a.public_info().age(),
-            section: prefix,
-        };
+        let mut payload = NodeState::new(State::ElderLive, node_a.public_info(), prefix);
         let live_a_block = tests::create_block(payload.clone(), &nodes, false);
         let last_node = &nodes[nodes.len() - 1];
         assert!(!live_a_block.get_node_infos().contains(
             last_node.public_info(),
         ));
-        let live_a_vote = unwrap!(Vote::new(nodes[0].secret_sign_key(), payload));
+        let live_a_vote = unwrap!(Vote::new(last_node.secret_sign_key(), payload));
 
         // Create Live(B) and extra vote for Live(B).
         let node_b = FullInfo::within_range(6, &prefix.lower_bound(), &prefix.upper_bound());
-        payload = NodeState {
-            state: State::ElderLive,
-            public_key: *node_b.public_info().sign_key(),
-            age: node_b.public_info().age(),
-            section: prefix,
-        };
+        payload = NodeState::new(State::ElderLive, node_b.public_info(), prefix);
         let live_b_block = tests::create_block(payload.clone(), &nodes, false);
         assert!(!live_b_block.get_node_infos().contains(
             last_node.public_info(),
         ));
-        let live_b_vote = unwrap!(Vote::new(nodes[0].secret_sign_key(), payload));
+        let live_b_vote = unwrap!(Vote::new(last_node.secret_sign_key(), payload));
 
         // Create chain containing Live(A) in `blocks` and Live(B) in `pending_blocks`.
+        let group_size = nodes.len();
         let mut chain = Chain::from_blocks(
             vec![live_a_block.clone()],
             vec![live_b_block.clone()],
-            nodes.len(),
+            group_size,
         );
 
         // Add the vote for Live(A) and check it gets added to the Live(A) block.
@@ -374,18 +351,18 @@ mod tests {
             sig: *live_a_vote.signature(),
         };
         chain.add_vote(live_a_vote, *last_node.public_info());
-        assert_eq!(chain.blocks.len(), 1);
-        assert!(chain.blocks[0].proofs().contains(&proof));
-        assert_eq!(chain.pending_blocks.len(), 1);
-        assert!(!chain.pending_blocks[0].proofs().contains(&proof));
+        assert_eq!(chain.blocks().len(), 1);
+        assert!(chain.blocks()[0].proofs().contains(&proof));
+        assert_eq!(chain.pending_blocks().len(), 1);
+        assert!(!chain.pending_blocks()[0].proofs().contains(&proof));
 
         // Add the vote for Live(B) and check it gets added to the Live(B) block.
         proof.sig = *live_b_vote.signature();
         chain.add_vote(live_b_vote, *last_node.public_info());
-        assert_eq!(chain.blocks.len(), 1);
-        assert!(!chain.blocks[0].proofs().contains(&proof));
-        assert_eq!(chain.pending_blocks.len(), 1);
-        assert!(chain.pending_blocks[0].proofs().contains(&proof));
+        assert_eq!(chain.blocks().len(), 1);
+        assert!(!chain.blocks()[0].proofs().contains(&proof));
+        assert_eq!(chain.pending_blocks().len(), 1);
+        assert!(chain.pending_blocks()[0].proofs().contains(&proof));
     }
 
     #[ignore]
@@ -403,59 +380,30 @@ mod tests {
 
         // Create Live(A) and Offline(A).
         let node_a = FullInfo::within_range(5, &prefix.lower_bound(), &prefix.upper_bound());
-        let mut payload = NodeState {
-            state: State::ElderLive,
-            public_key: *node_a.public_info().sign_key(),
-            age: node_a.public_info().age(),
-            section: prefix,
-        };
+        let mut payload = NodeState::new(State::ElderLive, node_a.public_info(), prefix);
         let live_a = tests::create_block(payload, &nodes, false);
-        payload = NodeState {
-            state: State::ElderOffline,
-            public_key: *node_a.public_info().sign_key(),
-            age: node_a.public_info().age(),
-            section: prefix,
-        };
+        payload = NodeState::new(State::ElderOffline, node_a.public_info(), prefix);
         let offline_a = tests::create_block(payload, &nodes, false);
 
         // Create Live(B) and Relocated(B).
         let node_b = FullInfo::within_range(6, &prefix.lower_bound(), &prefix.upper_bound());
-        payload = NodeState {
-            state: State::ElderLive,
-            public_key: *node_b.public_info().sign_key(),
-            age: node_b.public_info().age(),
-            section: prefix,
-        };
+        payload = NodeState::new(State::ElderLive, node_b.public_info(), prefix);
         let live_b = tests::create_block(payload, &nodes, false);
-        payload = NodeState {
-            state: State::ElderRelocated,
-            public_key: *node_b.public_info().sign_key(),
-            age: node_b.public_info().age(),
-            section: prefix,
-        };
+        payload = NodeState::new(State::ElderRelocated, node_b.public_info(), prefix);
         let relocated_b = tests::create_block(payload, &nodes, false);
 
         // Create Live(C).
         let node_c = FullInfo::within_range(7, &prefix.lower_bound(), &prefix.upper_bound());
-        payload = NodeState {
-            state: State::ElderLive,
-            public_key: *node_c.public_info().sign_key(),
-            age: node_c.public_info().age(),
-            section: prefix,
-        };
+        payload = NodeState::new(State::ElderLive, node_c.public_info(), prefix);
         let live_c = tests::create_block(payload, &nodes, false);
 
         // Create Live(D).
         let node_d = FullInfo::within_range(6, &prefix.lower_bound(), &prefix.upper_bound());
-        payload = NodeState {
-            state: State::ElderLive,
-            public_key: *node_d.public_info().sign_key(),
-            age: node_d.public_info().age(),
-            section: prefix,
-        };
+        payload = NodeState::new(State::ElderLive, node_d.public_info(), prefix);
         let live_d = tests::create_block(payload, &nodes, false);
 
         // Create chains and assert that they compare equal.
+        let group_size = nodes.len();
         let chain1 = Chain::from_blocks(
             vec![
                 live_a.clone(),
@@ -466,14 +414,14 @@ mod tests {
                 live_d.clone(),
             ],
             vec![],
-            nodes.len(),
+            group_size,
         );
         let chain2 = Chain::from_blocks(
             vec![live_a, live_b, relocated_b, live_c, offline_a, live_d],
             vec![],
-            nodes.len(),
+            group_size,
         );
-        assert_ne!(chain1.blocks, chain2.blocks);
+        assert_ne!(chain1.blocks(), chain2.blocks());
         assert_eq!(chain1, chain2);
     }
 }

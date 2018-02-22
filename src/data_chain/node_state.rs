@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use public_info::PublicInfo;
 use routing_table::Prefix;
 use rust_sodium::crypto::sign;
 use std::fmt::{self, Debug, Formatter};
@@ -70,6 +71,18 @@ pub struct NodeState {
     pub age: u8,
     /// The section to which the affected node belongs.
     pub section: Prefix,
+}
+
+impl NodeState {
+    /// Constructor
+    pub fn new(state: State, public_info: &PublicInfo, prefix: Prefix) -> Self {
+        NodeState {
+            state,
+            public_key: *public_info.sign_key(),
+            age: public_info.age(),
+            section: prefix,
+        }
+    }
 }
 
 impl Debug for NodeState {
