@@ -15,22 +15,21 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use super::{Block, Proof, Vote};
+use super::{Block, BlockState, Proof, Vote};
 use error::RoutingError;
 #[cfg(feature = "use-mock-crust")]
 use fake_clock::FakeClock as Instant;
 use public_info::PublicInfo;
-use std::collections::BTreeMap;
+use serde::Serialize;
+use std::collections::{BTreeMap, BTreeSet};
+use std::collections::btree_map::Entry;
+use std::mem;
 #[cfg(not(feature = "use-mock-crust"))]
 use std::time::Instant;
 
-// FIXME - remove
-#[allow(unused)]
 /// Time (in seconds) after which a not-yet-valid `Block` will be purged from the accumulator.
 const TIMEOUT_SECS: u64 = 600;
 
-// FIXME - remove
-#[allow(unused)]
 #[derive(Debug)]
 pub enum AccumulationReturn<T> {
     ExpiredValid(Block<T>), // this allows penalising non-voter(s)
@@ -39,33 +38,136 @@ pub enum AccumulationReturn<T> {
     ValidProof(Proof), // block corresponding to this has already accumulated - add to the chain
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct VoteAccumulator<T: Ord> {
-    votes: BTreeMap<T, (Vec<Proof>, Instant)>,
+    blocks: BTreeMap<T, State<T>>,
 }
 
-impl<T: Ord> VoteAccumulator<T> {
+impl<T: Clone + Ord + Serialize> VoteAccumulator<T> {
     // FIXME - remove these
     #[allow(unused)]
-    #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
-    pub fn add_vote<'a, I: IntoIterator<Item = &'a PublicInfo>>(
+    pub fn add_vote(
         &mut self,
-        _vote: Vote<T>,
-        _node_info: &PublicInfo,
-        _valid_nodes_itr: I,
+        vote: Vote<T>,
+        node_info: &PublicInfo,
+        valid_nodes: &BTreeSet<PublicInfo>,
     ) -> Result<Vec<AccumulationReturn<T>>, RoutingError> {
-        Ok(vec![])
+        let mut results = self.expire(valid_nodes);
+
+        match self.blocks.entry(vote.payload().clone()) {
+            Entry::Vacant(entry) => {
+                let _ = entry.insert(State {
+                    block: Block::new(&vote, node_info)?,
+                    timestamp: Instant::now(),
+                });
+            }
+            Entry::Occupied(mut entry) => {
+                let valid_before = entry
+                    .get()
+                    .block
+                    .get_block_state(valid_nodes)
+                    .valid_or_full();
+                let valid_after = entry
+                    .get_mut()
+                    .block
+                    .add_vote(&vote, node_info, valid_nodes)?
+                    .valid_or_full();
+
+                if valid_after {
+                    if valid_before {
+                        let proof = vote.proof(node_info)?;
+                        results.push(AccumulationReturn::ValidProof(proof));
+                    } else {
+                        let block = entry.get().block.clone();
+                        results.push(AccumulationReturn::ValidBlock(block));
+                    }
+                }
+            }
+        }
+
+        Ok(results)
     }
 
     // FIXME - remove these
     #[allow(unused)]
-    #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
     pub fn add_block(
         &mut self,
-        _block: Block<T>,
+        block: Block<T>,
+        valid_nodes: &BTreeSet<PublicInfo>,
     ) -> Result<Vec<AccumulationReturn<T>>, RoutingError> {
-        Ok(vec![])
+        let mut results = self.expire(valid_nodes);
+
+        match self.blocks.entry(block.payload().clone()) {
+            Entry::Vacant(entry) => {
+                if block.get_block_state(valid_nodes).valid_or_full() {
+                    results.push(AccumulationReturn::ValidBlock(block.clone()));
+                }
+
+                let _ = entry.insert(State {
+                    block,
+                    timestamp: Instant::now(),
+                });
+            }
+            Entry::Occupied(mut entry) => {
+                let valid_before = entry
+                    .get()
+                    .block
+                    .get_block_state(valid_nodes)
+                    .valid_or_full();
+                let mut valid_after = false;
+                let mut new_proofs = Vec::new();
+
+                for proof in block.proofs() {
+                    match entry.get_mut().block.add_proof(*proof, valid_nodes) {
+                        Ok(state) => {
+                            valid_after = state.valid_or_full();
+                            new_proofs.push(*proof);
+                        }
+                        /// Duplicate votes are ignored.
+                        Err(RoutingError::DuplicateSignatures) => (),
+                        Err(error) => return Err(error),
+                    }
+                }
+
+                if valid_after {
+                    if valid_before {
+                        results.extend(new_proofs.into_iter().map(AccumulationReturn::ValidProof));
+                    } else {
+                        results.push(AccumulationReturn::ValidBlock(entry.get().block.clone()));
+                    }
+                }
+            }
+        }
+
+        Ok(results)
     }
+
+    fn expire(&mut self, valid_nodes: &BTreeSet<PublicInfo>) -> Vec<AccumulationReturn<T>> {
+        let (retained, expired): (BTreeMap<_, _>, _) =
+            mem::replace(&mut self.blocks, BTreeMap::new())
+                .into_iter()
+                .partition(|&(_, ref state)| {
+                    state.timestamp.elapsed().as_secs() < TIMEOUT_SECS
+                });
+
+        self.blocks = retained;
+
+        expired
+            .into_iter()
+            .filter_map(|(_, state)| match state.block.get_block_state(
+                valid_nodes,
+            ) {
+                BlockState::NotYetValid => Some(AccumulationReturn::ExpiredInvalid(state.block)),
+                BlockState::Valid => Some(AccumulationReturn::ExpiredValid(state.block)),
+                BlockState::Full => None,
+            })
+            .collect()
+    }
+}
+
+struct State<T> {
+    block: Block<T>,
+    timestamp: Instant,
 }
 
 #[cfg(test)]
@@ -73,7 +175,6 @@ mod tests {
     use super::*;
     use super::super::tests;
     use data_chain;
-    use full_info::FullInfo;
     use std::collections::BTreeSet;
     #[cfg(feature = "use-mock-crust")]
     use std::iter;
@@ -82,7 +183,7 @@ mod tests {
     #[test]
     fn add_vote() {
         let nodes = tests::create_full_infos(None);
-        let valid_voters = nodes.iter().map(FullInfo::public_info).collect::<Vec<_>>();
+        let valid_voters: BTreeSet<_> = nodes.iter().map(|info| *info.public_info()).collect();
         let mut accumulator = VoteAccumulator::default();
 
         // Add votes for the same payload repeatedly.  Until we get to quorum, an empty vec should
@@ -101,16 +202,16 @@ mod tests {
             let results1 = unwrap!(accumulator.add_vote(
                 vote1,
                 node.public_info(),
-                valid_voters.clone(),
+                &valid_voters,
             ));
             let results2 = unwrap!(accumulator.add_vote(
                 vote2,
                 node.public_info(),
-                valid_voters.clone(),
+                &valid_voters,
             ));
             nodes_added.push(node.public_info());
 
-            if data_chain::quorum(nodes_added.iter().cloned(), valid_voters.clone()) {
+            if data_chain::quorum(nodes_added.iter().cloned(), &valid_voters) {
                 assert_eq!(results1.len(), 1);
                 assert_eq!(results2.len(), 1);
                 if is_valid {
@@ -143,17 +244,16 @@ mod tests {
         }
     }
 
-    #[ignore]
     #[test]
     fn add_block() {
         let nodes = tests::create_full_infos(None);
-        let valid_voters = nodes.iter().map(FullInfo::public_info).collect::<Vec<_>>();
+        let valid_voters: BTreeSet<_> = nodes.iter().map(|info| *info.public_info()).collect();
         let mut accumulator = VoteAccumulator::default();
 
         // Add a block which doesn't pre-exist.  It should be returned as a `ValidBlock`.
         let mut payload = "Case 1";
         let mut block_in = tests::create_block(payload, &nodes, false);
-        let mut results = unwrap!(accumulator.add_block(block_in.clone()));
+        let mut results = unwrap!(accumulator.add_block(block_in.clone(), &valid_voters));
         assert_eq!(results.len(), 1);
         if let AccumulationReturn::ValidBlock(ref block_out) = results[0] {
             assert_eq!(block_in, *block_out);
@@ -170,11 +270,11 @@ mod tests {
                 Vote::new(last_node.secret_sign_key(), payload)
             ),
             last_node.public_info(),
-            valid_voters,
+            &valid_voters,
         ));
 
         block_in = tests::create_block(payload, &nodes, false);
-        results = unwrap!(accumulator.add_block(block_in.clone()));
+        results = unwrap!(accumulator.add_block(block_in.clone(), &valid_voters));
         assert_eq!(results.len(), 1);
         if let AccumulationReturn::ValidBlock(ref block_out) = results[0] {
             assert_eq!(block_in.payload(), block_out.payload());
@@ -187,10 +287,10 @@ mod tests {
         }
 
         // Add a block to one which is already valid for us, but which holds more proofs than ours.
-        // A vector of `ValidVote`s for these extra proofs should be returned.
+        // A vector of `ValidProof`s for these extra proofs should be returned.
         payload = "Case 3";
         let valid_block = tests::create_block(payload, &nodes, false);
-        let _ = unwrap!(accumulator.add_block(valid_block.clone()));
+        let _ = unwrap!(accumulator.add_block(valid_block.clone(), &valid_voters));
 
         block_in = tests::create_block(payload, &nodes, true);
         let mut extra_voters = block_in
@@ -198,7 +298,7 @@ mod tests {
             .difference(&valid_block.get_node_infos())
             .cloned()
             .collect::<BTreeSet<_>>();
-        results = unwrap!(accumulator.add_block(block_in.clone()));
+        results = unwrap!(accumulator.add_block(block_in.clone(), &valid_voters));
         assert_eq!(results.len(), extra_voters.len());
         for result in results {
             if let AccumulationReturn::ValidProof(ref proof) = result {
@@ -213,21 +313,20 @@ mod tests {
         // in ours.  Nothing should be returned.
         payload = "Case 4";
         let full_block = tests::create_block(payload, &nodes, true);
-        let _ = unwrap!(accumulator.add_block(full_block.clone()));
+        let _ = unwrap!(accumulator.add_block(full_block.clone(), &valid_voters));
 
         block_in = tests::create_block(payload, &nodes, false);
-        results = unwrap!(accumulator.add_block(block_in.clone()));
+        results = unwrap!(accumulator.add_block(block_in.clone(), &valid_voters));
         assert!(results.is_empty());
     }
 
     #[cfg(feature = "use-mock-crust")]
-    #[ignore]
     #[test]
     fn timeout() {
         use fake_clock::FakeClock;
 
         let nodes = tests::create_full_infos(None);
-        let valid_voters = nodes.iter().map(FullInfo::public_info).collect::<Vec<_>>();
+        let valid_voters: BTreeSet<_> = nodes.iter().map(|info| *info.public_info()).collect();
         let mut accumulator = VoteAccumulator::default();
 
         // Add enough votes to just reach quorum then stop.
@@ -237,7 +336,7 @@ mod tests {
             if !unwrap!(accumulator.add_vote(
                 vote,
                 node.public_info(),
-                valid_voters.clone(),
+                &valid_voters,
             )).is_empty()
             {
                 break;
@@ -252,7 +351,7 @@ mod tests {
         let mut results = unwrap!(accumulator.add_vote(
             vote,
             late_node1.public_info(),
-            valid_voters.clone(),
+            &valid_voters,
         ));
         assert_eq!(results.len(), 1);
         if let AccumulationReturn::ExpiredValid(ref block) = results[0] {
@@ -271,7 +370,7 @@ mod tests {
         results = unwrap!(accumulator.add_vote(
             vote,
             late_node2.public_info(),
-            valid_voters.clone(),
+            &valid_voters,
         ));
         assert_eq!(results.len(), 1);
         if let AccumulationReturn::ExpiredInvalid(ref block) = results[0] {
@@ -293,7 +392,7 @@ mod tests {
         results = unwrap!(accumulator.add_vote(
             vote,
             nodes[0].public_info(),
-            valid_voters.clone(),
+            &valid_voters,
         ));
         assert_eq!(results.len(), 1);
         if let AccumulationReturn::ExpiredInvalid(ref block) = results[0] {
@@ -310,7 +409,7 @@ mod tests {
             let _ = unwrap!(accumulator.add_vote(
                 vote,
                 node.public_info(),
-                valid_voters.clone(),
+                &valid_voters,
             ));
         }
 
@@ -320,7 +419,7 @@ mod tests {
         results = unwrap!(accumulator.add_vote(
             vote,
             nodes[0].public_info(),
-            valid_voters.clone(),
+            &valid_voters,
         ));
         assert!(results.is_empty());
     }

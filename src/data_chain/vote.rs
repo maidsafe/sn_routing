@@ -35,7 +35,7 @@ pub struct Vote<T> {
     signature: Signature,
 }
 
-impl<T: Serialize + Clone> Vote<T> {
+impl<T: Serialize> Vote<T> {
     /// Create a Vote.
     pub fn new(secret_key: &SecretKey, payload: T) -> Result<Vote<T>, RoutingError> {
         let signature = sign::sign_detached(&serialisation::serialise(&payload)?[..], secret_key);

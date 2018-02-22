@@ -26,7 +26,7 @@ use std::fmt::{self, Debug, Formatter};
 
 /// Proof as provided by a close group member. This may be constructed from a `Vote` to be inserted
 /// into a `Block`. This struct is ordered by age then `PublicKey`
-#[derive(Serialize, Deserialize, PartialOrd, Ord, PartialEq, Eq, Clone, Hash)]
+#[derive(Serialize, Deserialize, PartialOrd, Ord, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct Proof {
     pub node_info: PublicInfo,
     pub sig: Signature,

@@ -54,11 +54,20 @@ impl NodesAndAge {
 
 /// Validity and "completeness" of a `Block`. Some `Block`s are complete with less than `group_size`
 /// `Proof`s.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BlockState {
     NotYetValid,
     Valid,
     Full,
+}
+
+impl BlockState {
+    pub fn valid_or_full(&self) -> bool {
+        match *self {
+            BlockState::NotYetValid => false,
+            BlockState::Valid | BlockState::Full => true,
+        }
+    }
 }
 
 /// A `Block` *is* network consensus. It covers a group of nodes closest to an address and is signed
@@ -141,7 +150,7 @@ impl<T: Serialize + Clone> Block<T> {
     pub fn get_block_state<'a, I: IntoIterator<Item = &'a PublicInfo>>(
         &self,
         valid_nodes_itr: I,
-    ) -> Result<BlockState, RoutingError> {
+    ) -> BlockState {
         let valid_nodes = valid_nodes_itr.into_iter().collect::<BTreeSet<_>>();
         let valid_voters = self.proofs
             .iter()
@@ -149,12 +158,12 @@ impl<T: Serialize + Clone> Block<T> {
             .filter(|voter| valid_nodes.contains(voter))
             .collect::<BTreeSet<_>>();
         if valid_nodes.len() == valid_voters.len() {
-            return Ok(BlockState::Full);
+            return BlockState::Full;
         }
         if data_chain::quorum(valid_voters, valid_nodes) {
-            Ok(BlockState::Valid)
+            BlockState::Valid
         } else {
-            Ok(BlockState::NotYetValid)
+            BlockState::NotYetValid
         }
     }
 
@@ -177,7 +186,7 @@ impl<T: Serialize + Clone> Block<T> {
             return Err(RoutingError::InvalidSource);
         }
         if self.proofs.insert(proof) {
-            self.get_block_state(valid_voters)
+            Ok(self.get_block_state(valid_voters))
         } else {
             Err(RoutingError::DuplicateSignatures)
         }
@@ -274,18 +283,12 @@ mod tests {
             assert_eq!(accumulated_age, block.total_age());
 
             if block.num_proofs() == num_of_voters {
-                assert_eq!(
-                    unwrap!(block.get_block_state(&valid_voters)),
-                    BlockState::Full
-                );
+                assert_eq!(block.get_block_state(&valid_voters), BlockState::Full);
             } else if accumulated_age * 2 > total_age && block.num_proofs() * 2 > num_of_voters {
-                assert_eq!(
-                    unwrap!(block.get_block_state(&valid_voters)),
-                    BlockState::Valid
-                );
+                assert_eq!(block.get_block_state(&valid_voters), BlockState::Valid);
             } else {
                 assert_eq!(
-                    unwrap!(block.get_block_state(&valid_voters)),
+                    block.get_block_state(&valid_voters),
                     BlockState::NotYetValid
                 );
             }
