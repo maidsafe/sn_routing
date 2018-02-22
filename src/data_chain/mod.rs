@@ -33,8 +33,8 @@ use public_info::PublicInfo;
 use std::collections::BTreeSet;
 
 /// Calculates whether a quorum of nodes have voted.  In this case, "quorum" means >50% of the
-/// members in `valid_nodes_itr` are included in `voters_itr` and that their cumulative age is >50%
-/// of the cumulative age of all members of `valid_nodes_itr`.
+/// members in `valid_nodes` are included in `voters` and that their cumulative age is >50%
+/// of the cumulative age of all members of `valid_nodes`.
 pub fn quorum(voters: &BTreeSet<PublicInfo>, valid_nodes: &BTreeSet<PublicInfo>) -> bool {
     let valid_total_age = valid_nodes.iter().map(|node| usize::from(node.age())).sum();
     let mut running_total_age = 0;

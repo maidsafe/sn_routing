@@ -25,6 +25,7 @@ use public_info::PublicInfo;
 use serde::Serialize;
 use std::collections::BTreeSet;
 use std::iter;
+use std::mem;
 
 #[allow(unused)]
 pub struct NodesAndAge {
@@ -115,6 +116,14 @@ impl<T: Serialize + Clone> Block<T> {
         }
     }
 
+    /// Remove all proofs by the given node.
+    pub fn remove_proofs_by(&mut self, node_info: &PublicInfo) {
+        self.proofs = mem::replace(&mut self.proofs, BTreeSet::new())
+            .into_iter()
+            .filter(|proof| proof.node_info() != node_info)
+            .collect()
+    }
+
     pub fn get_node_infos(&self) -> BTreeSet<PublicInfo> {
         let mut node_infos = BTreeSet::new();
         for proof in &self.proofs {
@@ -173,14 +182,18 @@ impl<T: Serialize + Clone> Block<T> {
         }))
     }
 
+    /// Validate signatures of all the proofs in the block.
+    pub fn validate_signatures(&self) -> bool {
+        self.proofs.iter().all(|proof| {
+            proof.validate_signature(&self.payload)
+        })
+    }
+
     fn insert_proof(
         &mut self,
         proof: Proof,
         valid_voters: &BTreeSet<PublicInfo>,
     ) -> Result<BlockState, RoutingError> {
-        if !valid_voters.contains(proof.node_info()) {
-            return Err(RoutingError::InvalidSource);
-        }
         if self.proofs.insert(proof) {
             Ok(self.get_block_state(valid_voters))
         } else {

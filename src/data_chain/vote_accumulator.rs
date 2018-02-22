@@ -19,6 +19,7 @@ use super::{Block, BlockState, Proof, Vote};
 use error::RoutingError;
 #[cfg(feature = "use-mock-crust")]
 use fake_clock::FakeClock as Instant;
+use log::LogLevel;
 use public_info::PublicInfo;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
@@ -95,6 +96,10 @@ impl<T: Clone + Ord + Serialize> VoteAccumulator<T> {
         block: Block<T>,
         valid_nodes: &BTreeSet<PublicInfo>,
     ) -> Result<Vec<AccumulationReturn<T>>, RoutingError> {
+        if !block.validate_signatures() {
+            log_or_panic!(LogLevel::Error, "Block has invalid signatures.");
+        }
+
         let mut results = self.expire(valid_nodes);
 
         match self.blocks.entry(block.payload().clone()) {
@@ -115,13 +120,14 @@ impl<T: Clone + Ord + Serialize> VoteAccumulator<T> {
                     .get_block_state(valid_nodes)
                     .valid_or_full();
                 let mut valid_after = false;
-                let mut new_proofs = Vec::new();
 
                 for proof in block.proofs() {
                     match entry.get_mut().block.add_proof(*proof, valid_nodes) {
                         Ok(state) => {
                             valid_after = state.valid_or_full();
-                            new_proofs.push(*proof);
+                            if valid_before {
+                                results.push(AccumulationReturn::ValidProof(*proof));
+                            }
                         }
                         /// Duplicate votes are ignored.
                         Err(RoutingError::DuplicateSignatures) => (),
@@ -129,17 +135,26 @@ impl<T: Clone + Ord + Serialize> VoteAccumulator<T> {
                     }
                 }
 
-                if valid_after {
-                    if valid_before {
-                        results.extend(new_proofs.into_iter().map(AccumulationReturn::ValidProof));
-                    } else {
-                        results.push(AccumulationReturn::ValidBlock(entry.get().block.clone()));
-                    }
+                if valid_after && !valid_before {
+                    results.push(AccumulationReturn::ValidBlock(entry.get().block.clone()));
                 }
             }
         }
 
         Ok(results)
+    }
+
+    /// Remove all votes cast by the given node.
+    #[allow(unused)]
+    pub fn remove_votes_by(&mut self, node_info: &PublicInfo) {
+        for state in self.blocks.values_mut() {
+            state.block.remove_proofs_by(node_info)
+        }
+
+        self.blocks = mem::replace(&mut self.blocks, BTreeMap::new())
+            .into_iter()
+            .filter(|&(_, ref state)| state.block.num_proofs() > 0)
+            .collect()
     }
 
     fn expire(&mut self, valid_nodes: &BTreeSet<PublicInfo>) -> Vec<AccumulationReturn<T>> {
@@ -179,7 +194,6 @@ mod tests {
     #[cfg(feature = "use-mock-crust")]
     use std::iter;
 
-    #[ignore]
     #[test]
     fn add_vote() {
         let nodes = tests::create_full_infos(None);
