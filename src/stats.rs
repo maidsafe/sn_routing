@@ -43,6 +43,13 @@ pub struct Stats {
     msg_direct_resource_proof_rsp_receipt: usize,
     msg_direct_proxy_rate_limit_exceed: usize,
     msg_direct_sls: usize,
+    msg_direct_vote: usize,
+    msg_direct_block: usize,
+    msg_direct_chain_req: usize,
+    msg_direct_chain_rsp: usize,
+    msg_direct_node_approval: usize,
+    msg_direct_encrypt_key_req: usize,
+    msg_direct_encrypt_key_rsp: usize,
 
     msg_get: usize,
     msg_put: usize,
@@ -265,6 +272,13 @@ impl Stats {
             ResourceProofResponse { .. } => self.msg_direct_resource_proof_rsp += 1,
             ResourceProofResponseReceipt => self.msg_direct_resource_proof_rsp_receipt += 1,
             ProxyRateLimitExceeded { .. } => self.msg_direct_proxy_rate_limit_exceed += 1,
+            Vote { .. } => self.msg_direct_vote += 1,
+            Block { .. } => self.msg_direct_block += 1,
+            ChainRequest => self.msg_direct_chain_req += 1,
+            ChainResponse { .. } => self.msg_direct_chain_rsp += 1,
+            NodeApproval { .. } => self.msg_direct_node_approval += 1,
+            EncryptionKeyRequest { .. } => self.msg_direct_encrypt_key_req += 1,
+            EncryptionKeyResponse { .. } => self.msg_direct_encrypt_key_rsp += 1,
             BootstrapRequest(_) |
             BootstrapResponse(_) |
             TunnelRequest(_) |
@@ -299,14 +313,22 @@ impl Stats {
                   self.unacked_msgs);
             info!(target: "routing_stats",
                   "Stats - Direct - CandidateInfo: {}, MessageSignature: {}, \
-                   ResourceProof: {}/{}/{}, SectionListSignature: {}, ProxyRateLimitExceeded: {}",
+                   ResourceProof: {}/{}/{}, SectionListSignature: {}, ProxyRateLimitExceeded: {}, \
+                   Vote: {}, Block: {}, Chain: {}/{}, NodeApproval: {}, EncryptionKey: {}/{}",
                   self.msg_direct_candidate_info,
                   self.msg_direct_sig,
                   self.msg_direct_resource_proof,
                   self.msg_direct_resource_proof_rsp,
                   self.msg_direct_resource_proof_rsp_receipt,
                   self.msg_direct_sls,
-                  self.msg_direct_proxy_rate_limit_exceed);
+                  self.msg_direct_proxy_rate_limit_exceed,
+                  self.msg_direct_vote,
+                  self.msg_direct_block,
+                  self.msg_direct_chain_req,
+                  self.msg_direct_chain_rsp,
+                  self.msg_direct_node_approval,
+                  self.msg_direct_encrypt_key_req,
+                  self.msg_direct_encrypt_key_rsp);
             info!(target: "routing_stats",
                   "Stats - Hops (Request/Response) - Relocate: {}/{}, ExpectCandidate: {}, \
                    AcceptAsCandidate: {}, SectionUpdate: {}, SectionSplit: {}, \

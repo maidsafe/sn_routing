@@ -291,7 +291,11 @@ impl Bootstrapping {
         bytes: &[u8],
     ) -> Result<Transition, RoutingError> {
         match serialisation::deserialise(bytes) {
-            Ok(Message::Direct(direct_msg)) => Ok(self.handle_direct_message(direct_msg, pub_info)),
+            Ok(Message::Direct { content, signature }) => Ok(self.handle_direct_message(
+                content,
+                signature,
+                pub_info,
+            )),
             Ok(message) => {
                 debug!("{:?} Unhandled new message: {:?}", self, message);
                 Ok(Transition::Stay)
@@ -303,9 +307,15 @@ impl Bootstrapping {
     fn handle_direct_message(
         &mut self,
         direct_message: DirectMessage,
+        signature: sign::Signature,
         pub_info: PublicInfo,
     ) -> Transition {
         use self::DirectMessage::*;
+
+        if !self.verify_direct_message(&direct_message, &signature, &pub_info) {
+            return Transition::Stay;
+        }
+
         match direct_message {
             BootstrapResponse(Ok(())) => Transition::IntoBootstrapped {
                 proxy_public_info: pub_info,
@@ -335,18 +345,19 @@ impl Bootstrapping {
         self.bootstrap_connection = Some((pub_info, token));
 
         let serialised_public_info = match serialisation::serialise(self.full_info.public_info()) {
-            Ok(rslt) => rslt,
-            Err(e) => {
-                error!("Failed to serialise public ID: {:?}", e);
+            Ok(result) => result,
+            Err(error) => {
+                error!("Failed to serialise public ID: {:?}", error);
                 return;
             }
         };
-        let signature =
+        let inner_signature =
             sign::sign_detached(&serialised_public_info, self.full_info.secret_sign_key());
-        let direct_message = DirectMessage::BootstrapRequest(signature);
-
-        self.stats().count_direct_message(&direct_message);
-        self.send_message(&pub_info, Message::Direct(direct_message));
+        let content = DirectMessage::BootstrapRequest(inner_signature);
+        let _ = self.sign_direct_message(&content).map(|signature| {
+            self.stats().count_direct_message(&content);
+            self.send_message(&pub_info, Message::Direct { content, signature });
+        });
     }
 
     fn disconnect_node(&mut self, pub_info: &PublicInfo) {
@@ -502,7 +513,7 @@ mod tests {
         network.deliver_messages();
         if let CrustEvent::NewMessage::<_>(_, _, serialised_msg) = unwrap!(event_rx.try_recv()) {
             match unwrap!(serialisation::deserialise(&serialised_msg)) {
-                Message::Direct(DirectMessage::BootstrapRequest(_)) => (),
+                Message::Direct { content: DirectMessage::BootstrapRequest(_), .. } => (),
                 _ => panic!("Should have received a `BootstrapRequest`."),
             }
         } else {

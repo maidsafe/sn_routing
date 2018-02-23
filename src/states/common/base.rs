@@ -16,12 +16,14 @@
 // relating to use of the SAFE Network Software.
 
 use Service;
+use error::RoutingError;
 use full_info::FullInfo;
 use maidsafe_utilities::serialisation;
-use messages::Message;
+use messages::{DirectMessage, Message};
 use outbox::EventBox;
 use public_info::PublicInfo;
 use routing_table::Authority;
+use rust_sodium::crypto::sign;
 use state_machine::Transition;
 use stats::Stats;
 use std::fmt::Debug;
@@ -84,5 +86,44 @@ pub trait Base: Debug {
             // self.crust_service().disconnect(*pub_info);
             // return self.handle_lost_peer(*pub_info).map(|_| Err(err.into()));
         }
+    }
+
+    fn sign_direct_message(
+        &self,
+        direct_message: &DirectMessage,
+    ) -> Result<sign::Signature, RoutingError> {
+        let serialised_content = match serialisation::serialise(direct_message) {
+            Ok(result) => result,
+            Err(error) => {
+                error!("Failed to serialise direct message: {:?}", error);
+                return Err(error.into());
+            }
+        };
+        Ok(sign::sign_detached(
+            &serialised_content,
+            self.full_info().secret_sign_key(),
+        ))
+    }
+
+    fn verify_direct_message(
+        &self,
+        direct_message: &DirectMessage,
+        signature: &sign::Signature,
+        pub_info: &PublicInfo,
+    ) -> bool {
+        let serialised_content = match serialisation::serialise(direct_message) {
+            Ok(result) => result,
+            Err(error) => {
+                error!("Failed to serialise direct message: {:?}", error);
+                return false;
+            }
+        };
+
+        if !sign::verify_detached(signature, &serialised_content, pub_info.sign_key()) {
+            info!("Direct message has an invalid signature");
+            return false;
+        }
+
+        true
     }
 }

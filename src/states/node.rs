@@ -615,13 +615,18 @@ impl Node {
     ) -> Result<(), RoutingError> {
         match serialisation::deserialise(&bytes) {
             Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, pub_info),
-            Ok(Message::Direct(direct_msg)) => {
-                self.handle_direct_message(direct_msg, pub_info, outbox)
+            Ok(Message::Direct { content, signature }) => {
+                self.handle_direct_message(content, signature, pub_info, outbox)
             }
-            Ok(Message::TunnelDirect { content, src, dst }) => {
+            Ok(Message::TunnelDirect {
+                   content,
+                   signature,
+                   src,
+                   dst,
+               }) => {
                 if dst == *self.full_info.public_info() {
                     if self.tunnels.tunnel_for(&src) == Some(&pub_info) {
-                        self.handle_direct_message(content, src, outbox)
+                        self.handle_direct_message(content, signature, src, outbox)
                     } else {
                         debug!(
                             "{:?} Message recd via unregistered tunnel node {} from src {:?}",
@@ -682,10 +687,17 @@ impl Node {
     fn handle_direct_message(
         &mut self,
         direct_message: DirectMessage,
+        signature: sign::Signature,
         pub_info: PublicInfo,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError> {
         use messages::DirectMessage::*;
+
+        if !self.verify_direct_message(&direct_message, &signature, &pub_info) {
+            self.ban_and_disconnect_peer(&pub_info);
+            return Err(RoutingError::FailedSignature);
+        }
+
         if let Err(error) = self.check_direct_message_sender(&direct_message, &pub_info) {
             match error {
                 RoutingError::ClientConnectionNotFound => (),
@@ -778,6 +790,13 @@ impl Node {
                     leading_zero_bytes,
                 );
             }
+            Vote { .. } => unimplemented!(),
+            Block { .. } => unimplemented!(),
+            ChainRequest => unimplemented!(),
+            ChainResponse { .. } => unimplemented!(),
+            NodeApproval { .. } => unimplemented!(),
+            EncryptionKeyRequest { .. } => unimplemented!(),
+            EncryptionKeyResponse { .. } => unimplemented!(),
             msg @ BootstrapResponse(_) |
             msg @ ProxyRateLimitExceeded { .. } => {
                 debug!("{:?} Unhandled direct message: {:?}", self, msg);
@@ -3887,16 +3906,30 @@ impl Node {
 
     fn send_direct_message(&mut self, dst_info: PublicInfo, direct_message: DirectMessage) {
         self.stats().count_direct_message(&direct_message);
+        let signature = match self.sign_direct_message(&direct_message) {
+            Ok(result) => result,
+            Err(error) => {
+                error!("Failed to sign direct message: {:?}", error);
+                return;
+            }
+        };
 
         if let Some(&tunnel_info) = self.tunnels.tunnel_for(&dst_info) {
             let message = Message::TunnelDirect {
                 content: direct_message,
+                signature,
                 src: *self.full_info.public_info(),
                 dst: dst_info,
             };
             self.send_message(&tunnel_info, message);
         } else {
-            self.send_message(&dst_info, Message::Direct(direct_message));
+            self.send_message(
+                &dst_info,
+                Message::Direct {
+                    content: direct_message,
+                    signature,
+                },
+            );
         }
     }
 

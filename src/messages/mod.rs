@@ -23,6 +23,7 @@ pub use self::response::{AccountInfo, Response};
 use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
 use ack_manager::Ack;
 use data::MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
+use data_chain::{Block, NodeState, Vote};
 use error::{BootstrapResponseError, RoutingError};
 use event::Event;
 use full_info::FullInfo;
@@ -65,13 +66,17 @@ pub const CLIENT_GET_PRIORITY: u8 = 3;
 #[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
 pub enum Message {
     /// A message sent between two nodes directly
-    Direct(DirectMessage),
+    Direct {
+        content: DirectMessage,
+        signature: sign::Signature,
+    },
     /// A message sent across the network (in transit)
     Hop(HopMessage),
     /// A direct message sent via a tunnel because the nodes could not connect directly
     TunnelDirect {
         /// The wrapped message
         content: DirectMessage,
+        signature: sign::Signature,
         /// The sender
         src: PublicInfo,
         /// The receiver
@@ -91,7 +96,7 @@ pub enum Message {
 impl Message {
     pub fn priority(&self) -> u8 {
         match *self {
-            Message::Direct(ref content) |
+            Message::Direct { ref content, .. } |
             Message::TunnelDirect { ref content, .. } => content.priority(),
             Message::Hop(ref content) |
             Message::TunnelHop { ref content, .. } => content.content.content.priority(),
@@ -171,6 +176,28 @@ pub enum DirectMessage {
     ResourceProofResponseReceipt,
     /// Sent from a proxy node to its client to indicate that the client exceeded its rate limit.
     ProxyRateLimitExceeded { ack: Ack },
+    Vote { vote: Vote<NodeState> },
+    Block { block: Block<NodeState> },
+    ChainRequest,
+    ChainResponse {
+        blocks: Vec<Block<NodeState>>,
+        pending_blocks: Vec<Block<NodeState>>,
+    },
+    /// Sent to a newly-joined and relocated node (after passing resource-proofing)
+    NodeApproval {
+        /// The latest valid blocks relating to elders.
+        blocks: Vec<Block<NodeState>>,
+        /// The valid pending blocks relating to elders.
+        pending_blocks: Vec<Block<NodeState>>,
+        // All adults and infants in our section.
+        non_elders: Vec<PublicInfo>,
+        not_yet_valid_blocks: Vec<Block<NodeState>>,
+    },
+    EncryptionKeyRequest { public_sign_key: sign::PublicKey },
+    EncryptionKeyResponse {
+        public_sign_key: sign::PublicKey,
+        public_encrypt_key: Option<box_::PublicKey>,
+    },
 }
 
 impl DirectMessage {
@@ -732,7 +759,7 @@ impl Debug for DirectMessage {
                 write!(
                     formatter,
                     "ResourceProofResponse {{ part {}/{}, proof_len: {:?}, leading_zero_bytes: \
-                 {:?} }}",
+                    {:?} }}",
                     part_index + 1,
                     part_count,
                     proof.len(),
@@ -742,6 +769,69 @@ impl Debug for DirectMessage {
             ResourceProofResponseReceipt => write!(formatter, "ResourceProofResponseReceipt"),
             ProxyRateLimitExceeded { ref ack } => {
                 write!(formatter, "ProxyRateLimitExceeded({:?})", ack)
+            }
+            Vote { ref vote } => write!(formatter, "{:?}", vote),
+            Block { ref block } => write!(formatter, "{:?}", block),
+            ChainRequest => write!(formatter, "ChainRequest"),
+            ChainResponse {
+                ref blocks,
+                ref pending_blocks,
+            } => {
+                write!(
+                    formatter,
+                    "ChainResponse {{ blocks: {:?}, pending_blocks: {:?} }}",
+                    blocks,
+                    pending_blocks
+                )
+            }
+            NodeApproval {
+                ref blocks,
+                ref pending_blocks,
+                ref non_elders,
+                ref not_yet_valid_blocks,
+            } => {
+                write!(
+                    formatter,
+                    "NodeApproval {{ blocks: {:?}, pending_blocks: {:?}, non_elders: {:?}, \
+                    not_yet_valid_blocks: {:?} }}",
+                    blocks,
+                    pending_blocks,
+                    non_elders,
+                    not_yet_valid_blocks
+                )
+            }
+            EncryptionKeyRequest { ref public_sign_key } => {
+                write!(
+                    formatter,
+                    "EncryptionKeyRequest {{ {:02x}{:02x}{:02x}.. }}",
+                    public_sign_key.0[0],
+                    public_sign_key.0[1],
+                    public_sign_key.0[2]
+                )
+            }
+            EncryptionKeyResponse {
+                ref public_sign_key,
+                ref public_encrypt_key,
+            } => {
+                write!(
+                    formatter,
+                    "EncryptionKeyResponse {{ public_sign_key: {:02x}{:02x}{:02x}.., \
+                    public_encrypt_key: ",
+                    public_sign_key.0[0],
+                    public_sign_key.0[1],
+                    public_sign_key.0[2]
+                )?;
+                if let Some(ref key) = *public_encrypt_key {
+                    write!(
+                        formatter,
+                        "Some({:02x}{:02x}{:02x}..) }}",
+                        key.0[0],
+                        key.0[1],
+                        key.0[2]
+                    )
+                } else {
+                    write!(formatter, "None }}")
+                }
             }
         }
     }

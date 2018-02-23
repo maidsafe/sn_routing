@@ -31,6 +31,7 @@ use outbox::EventBox;
 use public_info::PublicInfo;
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use routing_table::Authority;
+use rust_sodium::crypto::sign;
 use state_machine::Transition;
 use stats::Stats;
 use std::collections::{BTreeMap, BTreeSet};
@@ -194,7 +195,9 @@ impl Client {
     ) -> Transition {
         let transition = match serialisation::deserialise(bytes) {
             Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, pub_info, outbox),
-            Ok(Message::Direct(direct_msg)) => self.handle_direct_message(&direct_msg),
+            Ok(Message::Direct { content, signature }) => {
+                self.handle_direct_message(&content, &signature, &pub_info)
+            }
             Ok(message) => {
                 debug!("{:?} Unhandled new message: {:?}", self, message);
                 Ok(Transition::Stay)
@@ -250,7 +253,13 @@ impl Client {
     fn handle_direct_message(
         &mut self,
         direct_msg: &DirectMessage,
+        signature: &sign::Signature,
+        pub_info: &PublicInfo,
     ) -> Result<Transition, RoutingError> {
+        if !self.verify_direct_message(direct_msg, signature, pub_info) {
+            return Ok(Transition::Stay);
+        }
+
         if let DirectMessage::ProxyRateLimitExceeded { ref ack } = *direct_msg {
             if let Some(unack_msg) = self.ack_mgr.remove(ack) {
                 let token = self.timer().schedule(
