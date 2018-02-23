@@ -71,56 +71,17 @@ impl<T: Ord> VoteAccumulator<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use GROUP_SIZE;
-    use data_chain::{self, BlockState};
+    use super::super::tests;
+    use data_chain;
     use full_info::FullInfo;
-    use maidsafe_utilities::SeededRng;
-    use rust_sodium;
-    use serde::Serialize;
     use std::collections::BTreeSet;
     #[cfg(feature = "use-mock-crust")]
     use std::iter;
 
-    // Creates a collection of `GROUP_SIZE` `FullInfo`s for nodes with ages 5, 6, 7, etc.
-    fn create_full_infos() -> Vec<FullInfo> {
-        let mut rng = SeededRng::thread_rng();
-        unwrap!(rust_sodium::init_with_rng(&mut rng));
-
-        let mut nodes: Vec<_> = (0..GROUP_SIZE).map(|_| FullInfo::node_new(0)).collect();
-        nodes.sort_by(|lhs, rhs| lhs.public_info().cmp(rhs.public_info()));
-        for (index, node) in nodes.iter_mut().enumerate() {
-            node.set_age(index as u8 + 5);
-        }
-        nodes
-    }
-
-    // Create a block.  If `fill` is true, add votes for every member of `nodes`, otherwise only add
-    // votes until the block is valid.
-    fn create_block<T: Serialize + Clone>(payload: T, nodes: &[FullInfo], fill: bool) -> Block<T> {
-        let valid_voters = nodes
-            .iter()
-            .map(|full_info| *full_info.public_info())
-            .collect();
-        let mut vote = unwrap!(Vote::new(nodes[0].secret_sign_key(), payload.clone()));
-        let mut block = unwrap!(Block::new(&vote, nodes[0].public_info()));
-        for node in &nodes[1..] {
-            vote = unwrap!(Vote::new(node.secret_sign_key(), payload.clone()));
-            if let BlockState::Valid = unwrap!(
-                block.add_vote(&vote, node.public_info(), &valid_voters)
-            )
-            {
-                if !fill {
-                    break;
-                }
-            }
-        }
-        block
-    }
-
     #[ignore]
     #[test]
     fn add_vote() {
-        let nodes = create_full_infos();
+        let nodes = tests::create_full_infos(None);
         let valid_voters = nodes.iter().map(FullInfo::public_info).collect::<Vec<_>>();
         let mut accumulator = VoteAccumulator::default();
 
@@ -185,13 +146,13 @@ mod tests {
     #[ignore]
     #[test]
     fn add_block() {
-        let nodes = create_full_infos();
+        let nodes = tests::create_full_infos(None);
         let valid_voters = nodes.iter().map(FullInfo::public_info).collect::<Vec<_>>();
         let mut accumulator = VoteAccumulator::default();
 
         // Add a block which doesn't pre-exist.  It should be returned as a `ValidBlock`.
         let mut payload = "Case 1";
-        let mut block_in = create_block(payload, &nodes, false);
+        let mut block_in = tests::create_block(payload, &nodes, false);
         let mut results = unwrap!(accumulator.add_block(block_in.clone()));
         assert_eq!(results.len(), 1);
         if let AccumulationReturn::ValidBlock(ref block_out) = results[0] {
@@ -212,7 +173,7 @@ mod tests {
             valid_voters,
         ));
 
-        block_in = create_block(payload, &nodes, false);
+        block_in = tests::create_block(payload, &nodes, false);
         results = unwrap!(accumulator.add_block(block_in.clone()));
         assert_eq!(results.len(), 1);
         if let AccumulationReturn::ValidBlock(ref block_out) = results[0] {
@@ -228,10 +189,10 @@ mod tests {
         // Add a block to one which is already valid for us, but which holds more proofs than ours.
         // A vector of `ValidVote`s for these extra proofs should be returned.
         payload = "Case 3";
-        let valid_block = create_block(payload, &nodes, false);
+        let valid_block = tests::create_block(payload, &nodes, false);
         let _ = unwrap!(accumulator.add_block(valid_block.clone()));
 
-        block_in = create_block(payload, &nodes, true);
+        block_in = tests::create_block(payload, &nodes, true);
         let mut extra_voters = block_in
             .get_node_infos()
             .difference(&valid_block.get_node_infos())
@@ -251,10 +212,10 @@ mod tests {
         // Add a block to one which is already valid for us, but which holds a subset of the proofs
         // in ours.  Nothing should be returned.
         payload = "Case 4";
-        let full_block = create_block(payload, &nodes, true);
+        let full_block = tests::create_block(payload, &nodes, true);
         let _ = unwrap!(accumulator.add_block(full_block.clone()));
 
-        block_in = create_block(payload, &nodes, false);
+        block_in = tests::create_block(payload, &nodes, false);
         results = unwrap!(accumulator.add_block(block_in.clone()));
         assert!(results.is_empty());
     }
@@ -265,7 +226,7 @@ mod tests {
     fn timeout() {
         use fake_clock::FakeClock;
 
-        let nodes = create_full_infos();
+        let nodes = tests::create_full_infos(None);
         let valid_voters = nodes.iter().map(FullInfo::public_info).collect::<Vec<_>>();
         let mut accumulator = VoteAccumulator::default();
 

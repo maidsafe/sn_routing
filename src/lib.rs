@@ -218,6 +218,9 @@ pub const GROUP_SIZE: usize = 8;
 /// Key of an account data in the account packet
 pub const ACC_LOGIN_ENTRY_KEY: &[u8] = b"Login";
 
+/// The minimum age for an adult (and hence elder) node.
+pub const MIN_ADULT_AGE: u8 = 5;
+
 pub use cache::{Cache, NullCache};
 pub use client::Client;
 pub use client_error::{ClientError, EntryError};

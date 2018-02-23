@@ -15,12 +15,13 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use public_info::PublicInfo;
 use routing_table::Prefix;
 use rust_sodium::crypto::sign;
 use std::fmt::{self, Debug, Formatter};
 
 /// The state of a node in a given section as voted for by the other elders in that section.
-#[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
 pub enum State {
     /// Node has been accepted to this section as an elder.  May have been relocated here, or may
     /// have come back via a merge or via a promotion from adult.
@@ -62,21 +63,49 @@ pub enum State {
 /// non-elders.
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct NodeState {
+    state: State,
+    public_key: sign::PublicKey,
+    age: u8,
+    section: Prefix,
+}
+
+impl NodeState {
+    /// Constructor.
+    pub fn new(state: State, public_info: &PublicInfo, prefix: Prefix) -> Self {
+        NodeState {
+            state,
+            public_key: *public_info.sign_key(),
+            age: public_info.age(),
+            section: prefix,
+        }
+    }
+
     /// The state the node is transitioning into.
-    pub state: State,
+    pub fn state(&self) -> State {
+        self.state
+    }
+
     /// The public signing key of the affected node.
-    pub public_key: sign::PublicKey,
+    pub fn public_key(&self) -> &sign::PublicKey {
+        &self.public_key
+    }
+
     /// The age of the affected node.
-    pub age: u8,
+    pub fn age(&self) -> u8 {
+        self.age
+    }
+
     /// The section to which the affected node belongs.
-    pub section: Prefix,
+    pub fn section(&self) -> &Prefix {
+        &self.section
+    }
 }
 
 impl Debug for NodeState {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
             formatter,
-            "{:?} for {:02x}{:02x}{:02x}.. age {:02} in {:?}",
+            "{:?} for {:02x}{:02x}{:02x}.. age {} in {:?}",
             self.state,
             self.public_key.0[0],
             self.public_key.0[1],
