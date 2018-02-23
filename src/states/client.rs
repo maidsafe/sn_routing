@@ -19,6 +19,7 @@ use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 use {CrustEvent, Service};
 use ack_manager::{Ack, AckManager, UnacknowledgedMessage};
 use action::Action;
+use data_chain::SigningKeyAndAge;
 use error::{InterfaceError, RoutingError};
 use event::Event;
 #[cfg(feature = "use-mock-crust")]

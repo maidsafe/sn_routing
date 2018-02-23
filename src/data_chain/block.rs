@@ -18,7 +18,7 @@
 // FIXME: remove when this module is finished
 #![allow(dead_code)]
 
-use super::{Proof, Vote};
+use super::{Proof, SigningKeyAndAge, Vote};
 use data_chain;
 use error::RoutingError;
 use public_info::PublicInfo;
@@ -92,21 +92,21 @@ impl<T: Serialize + Clone> Block<T> {
     }
 
     /// Add a vote from a node when we know we have an existing `Block`.
-    pub fn add_vote(
+    pub fn add_vote<S: SigningKeyAndAge>(
         &mut self,
         vote: &Vote<T>,
         node_info: &PublicInfo,
-        valid_voters: &BTreeSet<PublicInfo>,
+        valid_voters: &BTreeSet<S>,
     ) -> Result<BlockState, RoutingError> {
         let proof = vote.proof(node_info)?;
         self.insert_proof(proof, valid_voters)
     }
 
     /// Add a proof from a node when we know we have an existing `Block`.
-    pub fn add_proof(
+    pub fn add_proof<S: SigningKeyAndAge>(
         &mut self,
         proof: Proof,
-        valid_voters: &BTreeSet<PublicInfo>,
+        valid_voters: &BTreeSet<S>,
     ) -> Result<BlockState, RoutingError> {
         if !proof.validate_signature(&self.payload) {
             Err(RoutingError::FailedSignature)
@@ -147,16 +147,20 @@ impl<T: Serialize + Clone> Block<T> {
     }
 
     /// Return the block state given a set of valid voters.
-    pub fn get_block_state(&self, valid_nodes: &BTreeSet<PublicInfo>) -> BlockState {
+    pub fn get_block_state<S: SigningKeyAndAge>(&self, valid_nodes: &BTreeSet<S>) -> BlockState {
+        let valid_nodes = valid_nodes
+            .iter()
+            .map(|node| (*node.sign_key(), node.age()))
+            .collect::<BTreeSet<_>>();
         let valid_voters = self.proofs
             .iter()
-            .map(|p| *p.node_info())
+            .map(|p| (*p.node_info().sign_key(), p.node_info().age()))
             .filter(|voter| valid_nodes.contains(voter))
             .collect::<BTreeSet<_>>();
         if valid_nodes.len() == valid_voters.len() {
             return BlockState::Full;
         }
-        if data_chain::quorum(&valid_voters, valid_nodes) {
+        if data_chain::quorum(&valid_voters, &valid_nodes) {
             BlockState::Valid
         } else {
             BlockState::NotYetValid
@@ -180,10 +184,10 @@ impl<T: Serialize + Clone> Block<T> {
         })
     }
 
-    fn insert_proof(
+    fn insert_proof<S: SigningKeyAndAge>(
         &mut self,
         proof: Proof,
-        valid_voters: &BTreeSet<PublicInfo>,
+        valid_voters: &BTreeSet<S>,
     ) -> Result<BlockState, RoutingError> {
         if self.proofs.insert(proof) {
             Ok(self.get_block_state(valid_voters))

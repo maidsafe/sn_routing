@@ -18,11 +18,13 @@
 // FIXME: remove when this module is finished
 #![allow(dead_code)]
 
-use super::{Block, NodeState, Vote};
+use super::{Block, NodeState, Proof, SigningKeyAndAge, State};
 use error::RoutingError;
 use fs2::FileExt;
+use log::LogLevel;
 use maidsafe_utilities::serialisation;
-use public_info::PublicInfo;
+use rust_sodium::crypto::sign::PublicKey;
+use std::collections::BTreeSet;
 use std::fmt::{self, Debug, Formatter};
 use std::fs;
 use std::io::{self, Read, Write};
@@ -38,7 +40,7 @@ pub struct Chain {
     blocks: Vec<Block<NodeState>>,
     group_size: usize,
     path: Option<PathBuf>,
-    valid_nodes: Vec<Block<NodeState>>, // save to aid network catastrophic failure and restart.
+    current_lives: BTreeSet<(PublicKey, u8)>,
     data: Vec<Block<DataIdentifier>>,
     pending_blocks: Vec<Block<NodeState>>,
 }
@@ -59,7 +61,7 @@ impl Chain {
             blocks: vec![],
             group_size,
             path: Some(path),
-            valid_nodes: vec![],
+            current_lives: BTreeSet::new(),
             data: vec![],
             pending_blocks: vec![],
         })
@@ -90,7 +92,7 @@ impl Chain {
             blocks,
             group_size,
             path: None,
-            valid_nodes: vec![],
+            current_lives: BTreeSet::new(),
             data: vec![],
             pending_blocks,
         }
@@ -133,22 +135,71 @@ impl Chain {
     }
 
     /// Check the order of the blocks is valid.
-    pub fn is_valid_pair(&self, _first: &Block<NodeState>, _second: &Block<NodeState>) -> bool {
+    fn is_valid_pair(&self, _first: &Block<NodeState>, _second: &Block<NodeState>) -> bool {
         unimplemented!()
     }
 
-    // FIXME - re-enable this lint check
-    #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
     /// Add the given valid `block` to the chain.
-    pub fn add_block(&mut self, _block: Block<NodeState>) {
-        unimplemented!();
+    pub fn add_block(&mut self, block_in: Block<NodeState>) {
+        if let Some(block) = self.find_existing_block(block_in.payload()) {
+            log_or_panic!(
+                LogLevel::Error,
+                "Chain shall have an existing block of {:?}.",
+                block
+            );
+            return;
+        }
+        let valid_blocks = self.insert_block(block_in);
+        for block in &valid_blocks {
+            let node_state = block.payload();
+            match node_state.state() {
+                State::ElderLive => {
+                    let _ = self.current_lives.insert((
+                        *node_state.public_key(),
+                        node_state.age(),
+                    ));
+                }
+                State::ElderOffline |
+                State::ElderSplitTo { .. } |
+                State::ElderDemoted |
+                State::ElderRelocated => {
+                    let _ = self.current_lives.remove(&(
+                        *node_state.public_key(),
+                        node_state.age(),
+                    ));
+                }
+                State::ElderRejoined => {}
+                _ => {
+                    log_or_panic!(
+                        LogLevel::Error,
+                        "Chain shall not consider {:?} as a valid_block.",
+                        block
+                    )
+                }
+
+            }
+        }
+        self.blocks.extend(valid_blocks);
     }
 
     // FIXME - re-enable this lint check
     #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
-    /// Add the given valid `vote` to the chain.
-    pub fn add_vote(&mut self, _vote: Vote<NodeState>, _node_info: PublicInfo) {
+    fn insert_block(&mut self, _block: Block<NodeState>) -> Vec<Block<NodeState>> {
         unimplemented!();
+    }
+
+    /// Add the given valid `proof` to the chain.
+    pub fn add_proof(&mut self, payload: &NodeState, proof: Proof) {
+        let current_lives = self.current_lives.clone();
+        if let Some(block) = self.find_existing_block(payload) {
+            let _ = block.add_proof(proof, &current_lives);
+        } else {
+            log_or_panic!(
+                LogLevel::Error,
+                "Chain doesn't have existing block for {:?}.",
+                payload,
+            );
+        }
     }
 
     /// The blocks contained and correctly sequenced into the the chain.
@@ -159,6 +210,21 @@ impl Chain {
     /// Valid blocks which can't yet be added into the chain due to sequencing constraints.
     pub fn pending_blocks(&self) -> &[Block<NodeState>] {
         &self.pending_blocks
+    }
+
+    fn find_existing_block(&mut self, node_state: &NodeState) -> Option<&mut Block<NodeState>> {
+        if let Some(block) = self.pending_blocks.iter_mut().find(|block| {
+            block.payload() == node_state
+        })
+        {
+            return Some(block);
+        } else if let Some(block) = self.blocks.iter_mut().rev().find(|block| {
+            block.payload() == node_state
+        })
+        {
+            return Some(block);
+        }
+        None
     }
 
     /// Assumes we trust the first `Block`
@@ -203,12 +269,15 @@ impl Debug for Chain {
                 block.proofs()
             )?;
         }
-        writeln!(formatter, "    valid_nodes:")?;
-        for block in &self.valid_nodes {
+        writeln!(formatter, "    current_lives:")?;
+        for node in &self.current_lives {
             writeln!(
                 formatter,
-                "        {:?},",
-                block.payload(),
+                "        {{ {:02x}{:02x}{:02x}.. , {}}},",
+                node.sign_key().0[0],
+                node.sign_key().0[1],
+                node.sign_key().0[2],
+                node.1
             )?;
         }
         writeln!(formatter, "    data:")?;
@@ -238,7 +307,7 @@ mod tests {
     use super::*;
     use super::super::tests;
     use MIN_ADULT_AGE;
-    use data_chain::{NodeState, Proof, State};
+    use data_chain::{NodeState, Proof, State, Vote};
     use full_info::FullInfo;
     use maidsafe_utilities::SeededRng;
     use rand::Rng;
@@ -358,7 +427,7 @@ mod tests {
             node_info: *last_node.public_info(),
             sig: *live_a_vote.signature(),
         };
-        chain.add_vote(live_a_vote, *last_node.public_info());
+        chain.add_proof(live_a_vote.payload(), proof);
         assert_eq!(chain.blocks().len(), 1);
         assert!(chain.blocks()[0].proofs().contains(&proof));
         assert_eq!(chain.pending_blocks().len(), 1);
@@ -366,7 +435,7 @@ mod tests {
 
         // Add the vote for Live(B) and check it gets added to the Live(B) block.
         proof.sig = *live_b_vote.signature();
-        chain.add_vote(live_b_vote, *last_node.public_info());
+        chain.add_proof(live_b_vote.payload(), proof);
         assert_eq!(chain.blocks().len(), 1);
         assert!(!chain.blocks()[0].proofs().contains(&proof));
         assert_eq!(chain.pending_blocks().len(), 1);

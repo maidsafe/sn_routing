@@ -49,7 +49,7 @@ use maidsafe_utilities::SeededRng;
 use maidsafe_utilities::thread::{self, Joiner};
 use rand::Rng;
 use routing::{Authority, Client, ClientError, Event, EventStream, FullInfo, GROUP_SIZE, MessageId,
-              MutableData, Node, Request, Response, Value, XorName};
+              MutableData, Node, Request, Response, SigningKeyAndAge, Value, XorName};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 #[cfg(target_os = "macos")]
 use std::io;

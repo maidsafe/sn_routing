@@ -21,6 +21,7 @@ use {CrustEvent, CrustEventSender, Service};
 use ack_manager::{Ack, AckManager};
 use action::Action;
 use cache::Cache;
+use data_chain::SigningKeyAndAge;
 use error::{InterfaceError, RoutingError};
 use event::Event;
 #[cfg(feature = "use-mock-crust")]

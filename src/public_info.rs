@@ -16,6 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use crust::Uid;
+use data_chain::SigningKeyAndAge;
 use rust_sodium::crypto::{box_, sign};
 use std::fmt::{self, Debug, Display, Formatter};
 use xor_name::XorName;
@@ -58,8 +59,19 @@ impl PublicInfo {
         }
     }
 
+    /// Updating a peer's age (void if peer is client)
+    #[cfg(test)]
+    pub fn set_age(&mut self, new_age: u8) {
+        match *self {
+            PublicInfo::Client { .. } => {}
+            PublicInfo::Node { ref mut age, .. } => *age = new_age,
+        }
+    }
+}
+
+impl SigningKeyAndAge for PublicInfo {
     /// Returning peer's public signing key
-    pub fn sign_key(&self) -> &sign::PublicKey {
+    fn sign_key(&self) -> &sign::PublicKey {
         match *self {
             PublicInfo::Client { ref sign_key, .. } |
             PublicInfo::Node { ref sign_key, .. } => sign_key,
@@ -67,19 +79,10 @@ impl PublicInfo {
     }
 
     /// Returning peer's age (client always having age of 0)
-    pub fn age(&self) -> u8 {
+    fn age(&self) -> u8 {
         match *self {
             PublicInfo::Client { .. } => 0,
             PublicInfo::Node { age, .. } => age,
-        }
-    }
-
-    /// Updating a peer's age (void if peer is client)
-    #[cfg(test)]
-    pub fn set_age(&mut self, new_age: u8) {
-        match *self {
-            PublicInfo::Client { .. } => {}
-            PublicInfo::Node { ref mut age, .. } => *age = new_age,
         }
     }
 }

@@ -23,6 +23,7 @@ pub use self::response::{AccountInfo, Response};
 use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
 use ack_manager::Ack;
 use data::MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
+use data_chain::SigningKeyAndAge;
 use error::{BootstrapResponseError, RoutingError};
 use event::Event;
 use full_info::FullInfo;

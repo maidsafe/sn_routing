@@ -18,6 +18,7 @@
 // FIXME: remove when this module is finished
 #![allow(dead_code)]
 
+use super::SigningKeyAndAge;
 use maidsafe_utilities::serialisation;
 use public_info::PublicInfo;
 use rust_sodium::crypto::sign::{self, Signature};

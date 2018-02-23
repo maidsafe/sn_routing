@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use routing::{Authority, Client, ClientError, Event, FullInfo, ImmutableData, MessageId,
-              MutableData, Response, Value, XorName};
+              MutableData, Response, SigningKeyAndAge, Value, XorName};
 use rust_sodium::crypto;
 use std::collections::BTreeMap;
 use std::sync::mpsc::{self, Receiver};

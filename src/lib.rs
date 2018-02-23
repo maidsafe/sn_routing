@@ -229,7 +229,7 @@ pub use config_handler::{Config, DevConfig};
 pub use data::{Action, EntryAction, EntryActions, ImmutableData, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
                MAX_MUTABLE_DATA_ENTRIES, MAX_MUTABLE_DATA_SIZE_IN_BYTES, MutableData,
                NO_OWNER_PUB_KEY, PermissionSet, User, Value};
-pub use data_chain::{NodeState, State};
+pub use data_chain::{NodeState, SigningKeyAndAge, State};
 pub use error::{InterfaceError, RoutingError};
 pub use event::Event;
 pub use event_stream::EventStream;

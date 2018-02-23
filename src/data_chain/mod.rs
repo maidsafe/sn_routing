@@ -29,13 +29,30 @@ pub use self::proof::Proof;
 pub use self::vote::Vote;
 pub use self::vote_accumulator::VoteAccumulator;
 
-use public_info::PublicInfo;
+use rust_sodium::crypto::sign;
 use std::collections::BTreeSet;
+
+/// Trait for returning the signing public key and the age.
+pub trait SigningKeyAndAge: Ord {
+    /// Returns the signing public key.
+    fn sign_key(&self) -> &sign::PublicKey;
+    /// Returns the age.
+    fn age(&self) -> u8;
+}
+
+impl SigningKeyAndAge for (sign::PublicKey, u8) {
+    fn sign_key(&self) -> &sign::PublicKey {
+        &self.0
+    }
+    fn age(&self) -> u8 {
+        self.1
+    }
+}
 
 /// Calculates whether a quorum of nodes have voted.  In this case, "quorum" means >50% of the
 /// members in `valid_nodes` are included in `voters` and that their cumulative age is >50%
 /// of the cumulative age of all members of `valid_nodes`.
-pub fn quorum(voters: &BTreeSet<PublicInfo>, valid_nodes: &BTreeSet<PublicInfo>) -> bool {
+pub fn quorum<T: SigningKeyAndAge>(voters: &BTreeSet<T>, valid_nodes: &BTreeSet<T>) -> bool {
     let valid_total_age = valid_nodes.iter().map(|node| usize::from(node.age())).sum();
     let mut running_total_age = 0;
 

@@ -18,7 +18,7 @@
 // FIXME: remove when this module is finished
 #![allow(dead_code)]
 
-use super::Proof;
+use super::{Proof, SigningKeyAndAge};
 use error::RoutingError;
 use maidsafe_utilities::serialisation;
 use public_info::PublicInfo;
