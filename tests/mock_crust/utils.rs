@@ -31,9 +31,6 @@ use std::ops::{Deref, DerefMut};
 use std::sync::mpsc::{RecvError, TryRecvError};
 use std::time::Duration;
 
-// Various utilities. Since this is all internal stuff we're a bit lax about the doc.
-#[allow(missing_docs)]
-
 // Poll one event per node. Otherwise, all events in a single node are polled before moving on.
 const BALANCED_POLLING: bool = true;
 
