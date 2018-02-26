@@ -104,7 +104,8 @@ impl Chain {
                 .write(true)
                 .create(false)
                 .open(&path.as_path())?;
-            return Ok(file.write_all(&serialisation::serialise(&self)?)?);
+            file.write_all(&serialisation::serialise(&self)?)?;
+            return Ok(());
         }
         Err(RoutingError::CannotWriteFile)
     }
@@ -118,7 +119,8 @@ impl Chain {
             .open(path.as_path())?;
         file.write_all(&serialisation::serialise(&self)?)?;
         self.path = Some(path);
-        Ok(file.lock_exclusive()?)
+        file.lock_exclusive()?;
+        Ok(())
     }
 
     /// Unlock the lock file

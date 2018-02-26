@@ -446,7 +446,8 @@ impl PeerManager {
 
     /// Add prefixes into routing table.
     pub fn add_prefixes(&mut self, prefixes: Vec<Prefix>) -> Result<(), RoutingError> {
-        Ok(self.routing_table.add_prefixes(prefixes)?)
+        self.routing_table.add_prefixes(prefixes)?;
+        Ok(())
     }
 
     /// Returns the routing table.
@@ -800,7 +801,9 @@ impl PeerManager {
         peer.state = PeerState::Routing(conn);
         trace!("{} Set {} to {:?}", self_debug, pub_info, peer.state);
 
-        Ok(res?)
+        res?;
+
+        Ok(())
     }
 
     /// Splits the indicated section and returns the `PublicInfo`s of any peers to which we should
