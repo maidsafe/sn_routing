@@ -33,27 +33,20 @@ use public_info::PublicInfo;
 use std::collections::BTreeSet;
 
 /// Calculates whether a quorum of nodes have voted.  In this case, "quorum" means >50% of the
-/// members in `valid_nodes_itr` are included in `voters_itr` and that their cumulative age is >50%
-/// of the cumulative age of all members of `valid_nodes_itr`.
-pub fn quorum<'a, 'b, I, J>(voters_itr: I, valid_nodes_itr: J) -> bool
-where
-    I: IntoIterator<Item = &'a PublicInfo>,
-    J: IntoIterator<Item = &'b PublicInfo>,
-{
-    let valid_nodes = valid_nodes_itr.into_iter().collect::<BTreeSet<_>>();
-    let valid_voters = voters_itr
-        .into_iter()
-        .filter(|voter| valid_nodes.contains(voter))
-        .collect::<BTreeSet<_>>();
-
+/// members in `valid_nodes` are included in `voters` and that their cumulative age is >50%
+/// of the cumulative age of all members of `valid_nodes`.
+pub fn quorum(voters: &BTreeSet<PublicInfo>, valid_nodes: &BTreeSet<PublicInfo>) -> bool {
     let valid_total_age = valid_nodes.iter().map(|node| usize::from(node.age())).sum();
     let mut running_total_age = 0;
-    for (count, voter) in valid_voters.iter().rev().enumerate() {
+
+    let valid_voters = voters.intersection(valid_nodes);
+    for (count, voter) in valid_voters.enumerate() {
         running_total_age += usize::from(voter.age());
         if running_total_age * 2 > valid_total_age && (count + 1) * 2 > valid_nodes.len() {
             return true;
         }
     }
+
     false
 }
 
@@ -133,30 +126,37 @@ mod tests {
             node.set_age(index as u8 + 5);
         }
 
+        let nodes_set = nodes.iter().cloned().collect();
+
         // Check a majority of nodes, but comprising the youngest, don't get quorum.
-        assert!(!quorum(nodes.iter().take(count / 2 + 1), &nodes));
+        assert!(!quorum(
+            &nodes.iter().take(count / 2 + 1).cloned().collect(),
+            &nodes_set,
+        ));
 
         // Check that a non-majority of eldest nodes don't get quorum.
-        assert!(!quorum(nodes.iter().rev().take(count / 2), &nodes));
+        assert!(!quorum(
+            &nodes.iter().rev().take(count / 2).cloned().collect(),
+            &nodes_set,
+        ));
 
         // Check that only valid voters are considered.
         let invalid = *FullInfo::node_new(100).public_info();
         assert!(!quorum(
-            nodes.iter().rev().take(count / 2).chain(
-                iter::once(&invalid),
-            ),
-            &nodes,
-        ));
-
-        // Check that duplicate valid voters are counted only once.
-        assert!(!quorum(
-            nodes.iter().rev().take(count / 2).chain(iter::once(
-                &nodes[count - 1],
-            )),
-            &nodes,
+            &nodes
+                .iter()
+                .rev()
+                .take(count / 2)
+                .cloned()
+                .chain(iter::once(invalid))
+                .collect(),
+            &nodes_set,
         ));
 
         // Check a majority of nodes with more than half the total age get quorum.
-        assert!(quorum(nodes.iter().rev().take(count / 2 + 1), &nodes));
+        assert!(quorum(
+            &nodes.iter().rev().take(count / 2 + 1).cloned().collect(),
+            &nodes_set,
+        ));
     }
 }

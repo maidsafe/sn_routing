@@ -25,6 +25,7 @@ use public_info::PublicInfo;
 use serde::Serialize;
 use std::collections::BTreeSet;
 use std::iter;
+use std::mem;
 
 #[allow(unused)]
 pub struct NodesAndAge {
@@ -54,11 +55,20 @@ impl NodesAndAge {
 
 /// Validity and "completeness" of a `Block`. Some `Block`s are complete with less than `group_size`
 /// `Proof`s.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BlockState {
     NotYetValid,
     Valid,
     Full,
+}
+
+impl BlockState {
+    pub fn valid_or_full(&self) -> bool {
+        match *self {
+            BlockState::NotYetValid => false,
+            BlockState::Valid | BlockState::Full => true,
+        }
+    }
 }
 
 /// A `Block` *is* network consensus. It covers a group of nodes closest to an address and is signed
@@ -106,6 +116,14 @@ impl<T: Serialize + Clone> Block<T> {
         }
     }
 
+    /// Remove all proofs by the given node.
+    pub fn remove_proofs_by(&mut self, node_info: &PublicInfo) {
+        self.proofs = mem::replace(&mut self.proofs, BTreeSet::new())
+            .into_iter()
+            .filter(|proof| proof.node_info() != node_info)
+            .collect()
+    }
+
     pub fn get_node_infos(&self) -> BTreeSet<PublicInfo> {
         let mut node_infos = BTreeSet::new();
         for proof in &self.proofs {
@@ -138,23 +156,19 @@ impl<T: Serialize + Clone> Block<T> {
     }
 
     /// Return the block state given a set of valid voters.
-    pub fn get_block_state<'a, I: IntoIterator<Item = &'a PublicInfo>>(
-        &self,
-        valid_nodes_itr: I,
-    ) -> Result<BlockState, RoutingError> {
-        let valid_nodes = valid_nodes_itr.into_iter().collect::<BTreeSet<_>>();
+    pub fn get_block_state(&self, valid_nodes: &BTreeSet<PublicInfo>) -> BlockState {
         let valid_voters = self.proofs
             .iter()
-            .map(Proof::node_info)
+            .map(|p| *p.node_info())
             .filter(|voter| valid_nodes.contains(voter))
             .collect::<BTreeSet<_>>();
         if valid_nodes.len() == valid_voters.len() {
-            return Ok(BlockState::Full);
+            return BlockState::Full;
         }
-        if data_chain::quorum(valid_voters, valid_nodes) {
-            Ok(BlockState::Valid)
+        if data_chain::quorum(&valid_voters, valid_nodes) {
+            BlockState::Valid
         } else {
-            Ok(BlockState::NotYetValid)
+            BlockState::NotYetValid
         }
     }
 
@@ -168,16 +182,20 @@ impl<T: Serialize + Clone> Block<T> {
         }))
     }
 
+    /// Validate signatures of all the proofs in the block.
+    pub fn validate_signatures(&self) -> bool {
+        self.proofs.iter().all(|proof| {
+            proof.validate_signature(&self.payload)
+        })
+    }
+
     fn insert_proof(
         &mut self,
         proof: Proof,
         valid_voters: &BTreeSet<PublicInfo>,
     ) -> Result<BlockState, RoutingError> {
-        if !valid_voters.contains(proof.node_info()) {
-            return Err(RoutingError::InvalidSource);
-        }
         if self.proofs.insert(proof) {
-            self.get_block_state(valid_voters)
+            Ok(self.get_block_state(valid_voters))
         } else {
             Err(RoutingError::DuplicateSignatures)
         }
@@ -274,18 +292,12 @@ mod tests {
             assert_eq!(accumulated_age, block.total_age());
 
             if block.num_proofs() == num_of_voters {
-                assert_eq!(
-                    unwrap!(block.get_block_state(&valid_voters)),
-                    BlockState::Full
-                );
+                assert_eq!(block.get_block_state(&valid_voters), BlockState::Full);
             } else if accumulated_age * 2 > total_age && block.num_proofs() * 2 > num_of_voters {
-                assert_eq!(
-                    unwrap!(block.get_block_state(&valid_voters)),
-                    BlockState::Valid
-                );
+                assert_eq!(block.get_block_state(&valid_voters), BlockState::Valid);
             } else {
                 assert_eq!(
-                    unwrap!(block.get_block_state(&valid_voters)),
+                    block.get_block_state(&valid_voters),
                     BlockState::NotYetValid
                 );
             }
