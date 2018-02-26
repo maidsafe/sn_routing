@@ -463,7 +463,8 @@ impl StateMachine {
                     if let Ok(action) = self.action_rx.try_recv() {
                         events.push(EventType::Action(Box::new(action)));
                     } else {
-                        return Ok(self.apply_transition(Transition::Terminate, outbox));
+                        self.apply_transition(Transition::Terminate, outbox);
+                        return Ok(());
                     }
                 }
                 MaidSafeEventCategory::Crust => {
@@ -471,7 +472,8 @@ impl StateMachine {
                         Ok(crust_event) => events.push(EventType::CrustEvent(crust_event)),
                         Err(TryRecvError::Empty) => {}
                         Err(TryRecvError::Disconnected) => {
-                            return Ok(self.apply_transition(Transition::Terminate, outbox));
+                            self.apply_transition(Transition::Terminate, outbox);
+                            return Ok(());
                         }
                     }
                 }
@@ -502,7 +504,8 @@ impl StateMachine {
         self.events.extend(interleaved);
 
         if self.events.iter().any(EventType::is_not_a_timeout) {
-            return Ok(self.handle_event_from_list(outbox));
+            self.handle_event_from_list(outbox);
+            return Ok(());
         }
         while !self.events.is_empty() {
             self.handle_event_from_list(outbox);

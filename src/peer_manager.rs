@@ -450,7 +450,8 @@ impl PeerManager {
         &mut self,
         prefixes: Vec<VersionedPrefix<XorName>>,
     ) -> Result<(), RoutingError> {
-        Ok(self.routing_table.add_prefixes(prefixes)?)
+        self.routing_table.add_prefixes(prefixes)?;
+        Ok(())
     }
 
     /// Returns the routing table.
@@ -797,7 +798,9 @@ impl PeerManager {
         peer.state = PeerState::Routing(conn);
         trace!("{} Set {} to {:?}", self_debug, pub_id, peer.state);
 
-        Ok(res?)
+        res?;
+
+        Ok(())
     }
 
     /// Splits the indicated section and returns the `PublicId`s of any peers to which we should not

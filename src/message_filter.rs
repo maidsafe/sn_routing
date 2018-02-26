@@ -118,7 +118,7 @@ impl<Message: Hash> MessageFilter<Message> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::{self, Rng};
+    use rand::{self, Rng, seq};
     use std::time::Duration;
 
     #[cfg(feature = "use-mock-crust")]
@@ -173,7 +173,7 @@ mod tests {
         impl Default for Temp {
             fn default() -> Temp {
                 let mut rng = rand::thread_rng();
-                Temp { id: rand::sample(&mut rng, 0u8..255, 64) }
+                Temp { id: unwrap!(seq::sample_iter(&mut rng, 0u8..255, 64)) }
             }
         }
 
