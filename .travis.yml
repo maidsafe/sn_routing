@@ -1,7 +1,7 @@
 env:
   global:
     - RUST_BACKTRACE=1
-    - RUST_STABLE=1.22.1
+    - RUST_STABLE=1.24.0
     - PATH=$PATH:$HOME/.cargo/bin
     - TEST_FEATURES="use-mock-crust use-mock-crypto"
 os:
@@ -9,8 +9,8 @@ os:
   - osx
 language: rust
 rust:
-  - 1.22.1
-  - nightly-2017-12-02
+  - 1.24.0
+  - nightly-2018-02-05
 sudo: false
 cache:
   cargo: true
@@ -20,7 +20,7 @@ before_script:
   - if [ "${TRAVIS_RUST_VERSION}" = "$RUST_STABLE" ]; then
       bash cargo_install.sh rustfmt 0.9.0;
     elif [ "${TRAVIS_OS_NAME}" = linux ]; then
-      bash cargo_install.sh clippy 0.0.175;
+      bash cargo_install.sh clippy 0.0.186;
     fi
 script:
   - export RUSTFLAGS="-C opt-level=2 -C codegen-units=8"
