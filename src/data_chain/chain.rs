@@ -104,7 +104,8 @@ impl Chain {
                 .write(true)
                 .create(false)
                 .open(&path.as_path())?;
-            return Ok(file.write_all(&serialisation::serialise(&self)?)?);
+            file.write_all(&serialisation::serialise(&self)?)?;
+            return Ok(());
         }
         Err(RoutingError::CannotWriteFile)
     }
@@ -118,7 +119,8 @@ impl Chain {
             .open(path.as_path())?;
         file.write_all(&serialisation::serialise(&self)?)?;
         self.path = Some(path);
-        Ok(file.lock_exclusive()?)
+        file.lock_exclusive()?;
+        Ok(())
     }
 
     /// Unlock the lock file
@@ -128,6 +130,11 @@ impl Chain {
                 let _ = file.unlock();
             }
         }
+    }
+
+    /// Check the order of the blocks is valid.
+    pub fn is_valid_pair(&self, _first: &Block<NodeState>, _second: &Block<NodeState>) -> bool {
+        unimplemented!()
     }
 
     // FIXME - re-enable this lint check
@@ -230,6 +237,7 @@ impl Debug for Chain {
 mod tests {
     use super::*;
     use super::super::tests;
+    use MIN_ADULT_AGE;
     use data_chain::{NodeState, Proof, State};
     use full_info::FullInfo;
     use maidsafe_utilities::SeededRng;
@@ -423,5 +431,130 @@ mod tests {
         );
         assert_ne!(chain1.blocks(), chain2.blocks());
         assert_eq!(chain1, chain2);
+    }
+
+    // TODO: remove #[ignore] when the impl is done.
+    #[ignore]
+    #[test]
+    fn is_valid_pair() {
+        let mut rng = SeededRng::thread_rng();
+        unwrap!(rust_sodium::init_with_rng(&mut rng));
+
+        let prefix = Prefix::default().pushed(true).with_version(1);
+        let nodes = tests::create_full_infos(Some(prefix));
+        let group_size = nodes.len();
+
+        let node_a =
+            FullInfo::within_range(MIN_ADULT_AGE, &prefix.lower_bound(), &prefix.upper_bound());
+        let node_b =
+            FullInfo::within_range(MIN_ADULT_AGE, &prefix.lower_bound(), &prefix.upper_bound());
+        let node_c =
+            FullInfo::within_range(MIN_ADULT_AGE, &prefix.lower_bound(), &prefix.upper_bound());
+
+        // Startup phase (Two `ElderLive`s are allowed).
+        let block_0 = tests::create_block(
+            NodeState::new(State::ElderLive, node_a.public_info(), prefix),
+            &nodes,
+            false,
+        );
+        let block_1 = tests::create_block(
+            NodeState::new(State::ElderLive, node_b.public_info(), prefix),
+            &nodes,
+            false,
+        );
+
+        // No blocks.
+        let chain = Chain::from_blocks(vec![], vec![], group_size);
+        assert!(chain.is_valid_pair(&block_0, &block_1));
+
+        // Block with empty prefix.
+        let chain = {
+            let block = tests::create_block(
+                NodeState::new(State::ElderLive, nodes[0].public_info(), Prefix::default()),
+                &nodes,
+                false,
+            );
+            Chain::from_blocks(vec![block], vec![], group_size)
+        };
+        assert!(chain.is_valid_pair(&block_0, &block_1));
+
+        // Multiple blocks, last one has empty prefix.
+        let chain = {
+            let block_0 = tests::create_block(
+                NodeState::new(
+                    State::ElderOffline,
+                    unwrap!(nodes.last()).public_info(),
+                    prefix,
+                ),
+                &nodes,
+                false,
+            );
+            let block_1 = tests::create_block(
+                NodeState::new(State::ElderLive, node_c.public_info(), Prefix::default()),
+                &nodes,
+                false,
+            );
+            Chain::from_blocks(vec![block_0, block_1], vec![], group_size)
+        };
+        assert!(chain.is_valid_pair(&block_0, &block_1));
+
+        // Post startup phase.
+        let chain = {
+            let block = tests::create_block(
+                NodeState::new(State::ElderLive, nodes[0].public_info(), prefix),
+                &nodes,
+                false,
+            );
+            Chain::from_blocks(vec![block], vec![], group_size)
+        };
+
+        let valid_pairs = [
+            (State::ElderOffline, State::ElderLive),
+            (State::ElderDemoted, State::ElderLive),
+            (State::ElderRelocated, State::ElderLive),
+        ];
+        for &(state_0, state_1) in &valid_pairs {
+            let block_0 = tests::create_block(
+                NodeState::new(state_0, nodes[0].public_info(), prefix),
+                &nodes,
+                false,
+            );
+            let block_1 = tests::create_block(
+                NodeState::new(state_1, node_a.public_info(), prefix),
+                &nodes,
+                false,
+            );
+
+            assert!(chain.is_valid_pair(&block_0, &block_1));
+        }
+
+        // Two `ElderLive`s are not allowed in post-startup phase.
+        assert!(!chain.is_valid_pair(&block_0, &block_1));
+
+        let invalid_pairs = [
+            (State::ElderOffline, State::ElderOffline),
+            (State::ElderOffline, State::ElderDemoted),
+            (State::ElderOffline, State::ElderRelocated),
+            (State::ElderDemoted, State::ElderOffline),
+            (State::ElderDemoted, State::ElderDemoted),
+            (State::ElderDemoted, State::ElderRelocated),
+            (State::ElderRelocated, State::ElderOffline),
+            (State::ElderRelocated, State::ElderDemoted),
+            (State::ElderRelocated, State::ElderRelocated),
+        ];
+        for &(state_0, state_1) in &invalid_pairs {
+            let block_0 = tests::create_block(
+                NodeState::new(state_0, nodes[0].public_info(), prefix),
+                &nodes,
+                false,
+            );
+            let block_1 = tests::create_block(
+                NodeState::new(state_1, nodes[1].public_info(), prefix),
+                &nodes,
+                false,
+            );
+
+            assert!(!chain.is_valid_pair(&block_0, &block_1));
+        }
     }
 }
