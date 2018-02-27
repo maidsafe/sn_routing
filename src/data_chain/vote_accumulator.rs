@@ -144,19 +144,6 @@ impl<T: Clone + Ord + Serialize> VoteAccumulator<T> {
         Ok(results)
     }
 
-    /// Remove all votes cast by the given node.
-    #[allow(unused)]
-    pub fn remove_votes_by(&mut self, node_info: &PublicInfo) {
-        for state in self.blocks.values_mut() {
-            state.block.remove_proofs_by(node_info)
-        }
-
-        self.blocks = mem::replace(&mut self.blocks, BTreeMap::new())
-            .into_iter()
-            .filter(|&(_, ref state)| state.block.num_proofs() > 0)
-            .collect()
-    }
-
     fn expire(&mut self, valid_nodes: &BTreeSet<PublicInfo>) -> Vec<AccumulationReturn<T>> {
         let (retained, expired): (BTreeMap<_, _>, _) =
             mem::replace(&mut self.blocks, BTreeMap::new())

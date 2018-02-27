@@ -25,7 +25,6 @@ use public_info::PublicInfo;
 use serde::Serialize;
 use std::collections::BTreeSet;
 use std::iter;
-use std::mem;
 
 #[allow(unused)]
 pub struct NodesAndAge {
@@ -114,14 +113,6 @@ impl<T: Serialize + Clone> Block<T> {
         } else {
             self.insert_proof(proof, valid_voters)
         }
-    }
-
-    /// Remove all proofs by the given node.
-    pub fn remove_proofs_by(&mut self, node_info: &PublicInfo) {
-        self.proofs = mem::replace(&mut self.proofs, BTreeSet::new())
-            .into_iter()
-            .filter(|proof| proof.node_info() != node_info)
-            .collect()
     }
 
     pub fn get_node_infos(&self) -> BTreeSet<PublicInfo> {
