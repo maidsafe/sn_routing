@@ -15,8 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use super::crust::{ConnectionInfoResult, CrustEventSender, CrustUser, Event, PrivConnectionInfo,
-                   PubConnectionInfo, Uid};
+use super::crust::{CrustUser, PrivConnectionInfo, PubConnectionInfo, Uid};
+use super::crust::compat::{ConnectionInfoResult, CrustEventSender, Event};
 use CrustEvent;
 use id::PublicId;
 use maidsafe_utilities::SeededRng;
