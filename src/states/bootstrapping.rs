@@ -84,7 +84,7 @@ impl Bootstrapping {
             }
             TargetState::JoiningNode |
             TargetState::Node { .. } => {
-                if let Err(error) = crust_service.start_listening_tcp() {
+                if let Err(error) = crust_service.start_listening() {
                     error!("Failed to start listening: {:?}", error);
                     return None;
                 }
