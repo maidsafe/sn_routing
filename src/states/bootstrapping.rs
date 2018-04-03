@@ -20,7 +20,7 @@ use super::common::Base;
 use {CrustEvent, Service};
 use action::Action;
 use cache::Cache;
-use crust::CrustUser;
+use crust::{CrustUser, PaAddr};
 use error::RoutingError;
 use event::Event;
 use id::{FullId, PublicId};
@@ -33,7 +33,6 @@ use state_machine::{State, Transition};
 use stats::Stats;
 use std::collections::{BTreeSet, HashSet};
 use std::fmt::{self, Debug, Formatter};
-use std::net::SocketAddr;
 use std::time::Duration;
 use timer::Timer;
 use types::RoutingActionSender;
@@ -57,7 +56,7 @@ pub enum TargetState {
 // State of Client, JoiningNode or Node while bootstrapping.
 pub struct Bootstrapping {
     action_sender: RoutingActionSender,
-    bootstrap_blacklist: HashSet<SocketAddr>,
+    bootstrap_blacklist: HashSet<PaAddr>,
     bootstrap_connection: Option<(PublicId, u64)>,
     cache: Box<Cache>,
     target_state: TargetState,
@@ -256,11 +255,7 @@ impl Bootstrapping {
         }
     }
 
-    fn handle_bootstrap_connect(
-        &mut self,
-        pub_id: PublicId,
-        socket_addr: SocketAddr,
-    ) -> Transition {
+    fn handle_bootstrap_connect(&mut self, pub_id: PublicId, socket_addr: PaAddr) -> Transition {
         match self.bootstrap_connection {
             None => {
                 debug!("{:?} Received BootstrapConnect from {}.", self, pub_id);
