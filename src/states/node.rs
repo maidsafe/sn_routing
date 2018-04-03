@@ -157,7 +157,7 @@ impl Node {
     ) -> Option<Self> {
         // old_id is useless for first node
         let old_id = FullId::new();
-        let mut node = Self::new(
+        let node = Self::new(
             action_sender,
             cache,
             crust_service,

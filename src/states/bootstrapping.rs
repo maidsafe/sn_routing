@@ -72,7 +72,7 @@ impl Bootstrapping {
         action_sender: RoutingActionSender,
         cache: Box<Cache>,
         target_state: TargetState,
-        mut crust_service: Service,
+        crust_service: Service,
         full_id: FullId,
         min_section_size: usize,
         timer: Timer,
