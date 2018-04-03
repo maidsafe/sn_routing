@@ -20,7 +20,7 @@ use action::Action;
 use cache::NullCache;
 use config_handler::{self, Config};
 #[cfg(not(feature = "use-mock-crust"))]
-use crust::read_config_file as read_bootstrap_config_file;
+use crust::ConfigFile;
 use data::{EntryAction, ImmutableData, MutableData, PermissionSet, User};
 use error::{InterfaceError, RoutingError};
 use event::Event;
@@ -525,7 +525,7 @@ impl Client {
 
     /// Returns the bootstrap config that this client was created with.
     pub fn bootstrap_config() -> Result<BootstrapConfig, RoutingError> {
-        Ok(read_bootstrap_config_file()?)
+        Ok(ConfigFile::open_default()?)
     }
 
     fn send_request(

@@ -194,7 +194,7 @@ pub mod mock_crypto;
 use mock_crypto::rust_sodium;
 
 /// Reexports `crust::Config`
-pub type BootstrapConfig = crust::Config;
+pub type BootstrapConfig = crust::ConfigFile;
 
 /// Mock crust
 #[cfg(feature = "use-mock-crust")]
