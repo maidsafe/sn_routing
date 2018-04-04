@@ -17,8 +17,9 @@
 
 // These tests are almost straight up copied from crust::service::tests
 
-use super::crust::{CrustEventSender, CrustUser, Service};
-use super::support::{Config, Network, to_socket_addr};
+use super::crust::CrustUser;
+use super::crust::compat::{CrustEventSender, Service};
+use super::support::{ConfigFile, Network, to_socket_addr};
 use CrustEvent;
 use id::{FullId, PublicId};
 use maidsafe_utilities::event_sender::{MaidSafeEventCategory, MaidSafeObserver};
@@ -63,25 +64,25 @@ fn start_two_services_bootstrap_communicate_exit() {
     let handle0 = network.new_service_handle(None, Some(endpoint0));
 
     let endpoint1 = network.gen_endpoint(None);
-    let config = Config::with_contacts(&[endpoint0, endpoint1]);
+    let config = ConfigFile::with_contacts(&[endpoint0, endpoint1]);
     let handle1 = network.new_service_handle(Some(config.clone()), Some(endpoint1));
 
     let (event_sender_0, _category_rx_0, event_rx_0) = get_event_sender();
     let (event_sender_1, _category_rx_1, event_rx_1) = get_event_sender();
 
-    let mut service_0 = unwrap!(Service::with_handle(
+    let service_0 = unwrap!(Service::with_handle(
         &handle0,
         event_sender_0,
         *FullId::new().public_id(),
     ));
 
-    unwrap!(service_0.start_listening_tcp());
+    unwrap!(service_0.start_listening());
     expect_event!(event_rx_0, CrustEvent::ListenerStarted::<PublicId>(..));
 
     service_0.start_service_discovery();
     let _ = service_0.set_accept_bootstrap(true);
 
-    let mut service_1 = unwrap!(Service::with_handle(
+    let service_1 = unwrap!(Service::with_handle(
         &handle1,
         event_sender_1,
         *FullId::new().public_id(),
@@ -240,21 +241,21 @@ fn drop() {
     let network = Network::new(min_section_size, None);
     let handle0 = network.new_service_handle(None, None);
 
-    let config = Config::with_contacts(&[handle0.endpoint()]);
+    let config = ConfigFile::with_contacts(&[handle0.endpoint()]);
     let handle1 = network.new_service_handle(Some(config), None);
 
     let (event_sender_0, _category_rx_0, event_rx_0) = get_event_sender();
     let (event_sender_1, _category_rx_1, event_rx_1) = get_event_sender();
 
-    let mut service_0 = unwrap!(Service::with_handle(&handle0,
+    let service_0 = unwrap!(Service::with_handle(&handle0,
                                                      event_sender_0,
                                                      *FullId::new().public_id()));
 
-    unwrap!(service_0.start_listening_tcp());
+    unwrap!(service_0.start_listening());
     expect_event!(event_rx_0, CrustEvent::ListenerStarted::<PublicId>(_));
     let _ = service_0.set_accept_bootstrap(true);
 
-    let mut service_1 = unwrap!(Service::with_handle(&handle1,
+    let service_1 = unwrap!(Service::with_handle(&handle1,
                                                      event_sender_1,
                                                      *FullId::new().public_id()));
     unwrap!(service_1.start_bootstrap(HashSet::new(), CrustUser::Node));

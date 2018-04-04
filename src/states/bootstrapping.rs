@@ -412,7 +412,8 @@ mod tests {
     use id::FullId;
     use maidsafe_utilities::event_sender::{MaidSafeEventCategory, MaidSafeObserver};
     use mock_crust::{self, Network};
-    use mock_crust::crust::{Config, Service};
+    use mock_crust::crust::ConfigFile;
+    use mock_crust::crust::compat::Service;
     use outbox::EventBuf;
     use state_machine::StateMachine;
     use std::sync::mpsc;
@@ -431,14 +432,14 @@ mod tests {
         let event_sender =
             MaidSafeObserver::new(event_tx, MaidSafeEventCategory::Crust, category_tx);
         let handle0 = network.new_service_handle(None, None);
-        let config = Config::with_contacts(&[handle0.endpoint()]);
-        let mut crust_service = unwrap!(Service::with_handle(
+        let config = ConfigFile::with_contacts(&[handle0.endpoint()]);
+        let crust_service = unwrap!(Service::with_handle(
             &handle0,
             event_sender,
             *FullId::new().public_id(),
         ));
 
-        unwrap!(crust_service.start_listening_tcp());
+        unwrap!(crust_service.start_listening());
         if let CrustEvent::ListenerStarted::<_>(_) = unwrap!(event_rx.try_recv()) {
         } else {
             panic!("Should have received `ListenerStarted` event.");
