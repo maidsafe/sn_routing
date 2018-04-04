@@ -120,7 +120,7 @@ pub use self::network_tests::verify_network_invariant;
 pub use self::prefix::{Prefix, VersionedPrefix};
 pub use self::xorable::Xorable;
 use itertools::Itertools;
-use log::LogLevel;
+use log::Level;
 use std::{iter, mem};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
@@ -750,7 +750,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             .collect_vec();
         if !dropped_names.is_empty() {
             log_or_panic!(
-                LogLevel::Warn,
+                Level::Warn,
                 "{:?} Removed peers from RT as part of OwnSectionMerge {:?}",
                 self.our_name,
                 dropped_names

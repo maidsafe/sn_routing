@@ -30,7 +30,7 @@ use event::Event;
 use fake_clock::FakeClock as Instant;
 use id::{FullId, PublicId};
 use itertools::Itertools;
-use log::LogLevel;
+use log::Level;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation;
 use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, MAX_PARTS, MAX_PART_LEN, Message,
@@ -360,7 +360,7 @@ impl Node {
     }
 
     fn print_rt_size(&self) {
-        const TABLE_LVL: LogLevel = LogLevel::Info;
+        const TABLE_LVL: Level = Level::Info;
         if log_enabled!(TABLE_LVL) {
             let status_str = format!(
                 "{:?} - Routing Table size: {:3}",
@@ -2282,7 +2282,7 @@ impl Node {
                 // TODO: we should not be getting conn info req from Proxy/JoiningNode
 
                 log_or_panic!(
-                    LogLevel::Error,
+                    Level::Error,
                     "{:?} Received ConnectionInfoRequest from peer {} \
                               with invalid state.",
                     self,
@@ -3129,7 +3129,7 @@ impl Node {
                     Some(tunnel_node_id) => {
                         if !self.crust_service.is_connected(tunnel_node_id) {
                             log_or_panic!(
-                                LogLevel::Debug,
+                                Level::Debug,
                                 "{:?} Should have a tunnel connection to {} via \
                                           {}, but tunnel node not connected.",
                                 self,
@@ -3142,7 +3142,7 @@ impl Node {
                     None => {
                         if self.crust_service.is_connected(&pub_id) {
                             log_or_panic!(
-                                LogLevel::Debug,
+                                Level::Debug,
                                 "{:?} Should have a tunnel connection to {}, but \
                                           instead have a direct connection.",
                                 self,
@@ -3151,7 +3151,7 @@ impl Node {
                             self.peer_mgr.correct_state_to_direct(&pub_id);
                         } else {
                             log_or_panic!(
-                                LogLevel::Debug,
+                                Level::Debug,
                                 "{:?} Should have a tunnel connection to {}, but no \
                                           tunnel node or direct connection exists.",
                                 self,
@@ -3163,7 +3163,7 @@ impl Node {
                 }
             } else if !self.crust_service.is_connected(&pub_id) {
                 log_or_panic!(
-                    LogLevel::Error,
+                    Level::Error,
                     "{:?} Should have a direct connection to {}, but don't.",
                     self,
                     pub_id

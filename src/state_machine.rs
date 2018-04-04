@@ -19,7 +19,7 @@ use {CrustEvent, CrustEventSender, MIN_SECTION_SIZE, Service};
 use BootstrapConfig;
 use action::Action;
 use id::{FullId, PublicId};
-use log::LogLevel;
+use log::Level;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 #[cfg(feature = "use-mock-crust")]
 use mock_crust;
@@ -131,10 +131,7 @@ impl State {
     fn min_section_size(&self) -> usize {
         self.base_state().map_or_else(
             || {
-                log_or_panic!(
-                    LogLevel::Error,
-                    "Can't get min_section_size when Terminated."
-                );
+                log_or_panic!(Level::Error, "Can't get min_section_size when Terminated.");
                 MIN_SECTION_SIZE
             },
             Base::min_section_size,

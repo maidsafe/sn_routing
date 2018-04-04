@@ -22,7 +22,7 @@ use error::RoutingError;
 use fake_clock::FakeClock as Instant;
 use id::PublicId;
 use itertools::Itertools;
-use log::LogLevel;
+use log::Level;
 use messages::MessageContent;
 use rand;
 use resource_proof::ResourceProof;
@@ -471,7 +471,7 @@ impl PeerManager {
             }
         }
         log_or_panic!(
-            LogLevel::Error,
+            Level::Error,
             "{:?} does not have {:?} as a bootstrapper.",
             self,
             pub_id
@@ -585,7 +585,7 @@ impl PeerManager {
             .is_none()
         {
             log_or_panic!(
-                LogLevel::Error,
+                Level::Error,
                 "{:?} Not connected to {}.",
                 self,
                 new_pub_id.name()
@@ -684,7 +684,7 @@ impl PeerManager {
         let peer = match self.peers.get_mut(new_pub_id) {
             Some(peer) => peer,
             None => {
-                log_or_panic!(LogLevel::Error, "{} is not connected to us.", debug_prefix);
+                log_or_panic!(Level::Error, "{} is not connected to us.", debug_prefix);
                 return Err(RoutingError::UnknownConnection(*new_pub_id));
             }
         };
@@ -762,13 +762,13 @@ impl PeerManager {
         let peer = if let Some(peer) = self.peers.get_mut(pub_id) {
             peer
         } else {
-            log_or_panic!(LogLevel::Error, "{} Peer {} not found.", self_debug, pub_id);
+            log_or_panic!(Level::Error, "{} Peer {} not found.", self_debug, pub_id);
             return Err(RoutingError::UnknownConnection(*pub_id));
         };
 
         if !peer.valid() {
             log_or_panic!(
-                LogLevel::Error,
+                Level::Error,
                 "{} Not adding invalid Peer {} to RT.",
                 self_debug,
                 pub_id
@@ -780,7 +780,7 @@ impl PeerManager {
             Ok(conn) => conn,
             Err(e) => {
                 log_or_panic!(
-                    LogLevel::Error,
+                    Level::Error,
                     "{} Not adding Peer {} to RT - not connected.",
                     self_debug,
                     pub_id
@@ -1171,7 +1171,7 @@ impl PeerManager {
             match self.get_peer_by_name(name) {
                 None => {
                     log_or_panic!(
-                        LogLevel::Error,
+                        Level::Error,
                         "{:?} Have {} in RT, but have no entry in peer_map for it.",
                         self,
                         name
@@ -1181,7 +1181,7 @@ impl PeerManager {
                 Some(peer) => {
                     if !peer.is_routing() {
                         log_or_panic!(
-                            LogLevel::Error,
+                            Level::Error,
                             "{:?} Have {} in RT, but have state {:?} for it.",
                             self,
                             name,
@@ -1219,7 +1219,7 @@ impl PeerManager {
         for id in nodes_missing_from_rt {
             if let Some(peer) = self.peers.remove(&id) {
                 log_or_panic!(
-                    LogLevel::Error,
+                    Level::Error,
                     "{:?} Peer {:?} with state {:?} is missing from RT.",
                     self,
                     peer.name(),
@@ -1238,7 +1238,7 @@ impl PeerManager {
             Some(&PeerState::Connected(_)) => PeerState::Connected(false),
             state => {
                 log_or_panic!(
-                    LogLevel::Error,
+                    Level::Error,
                     "{} Cannot set state {:?} to direct.",
                     pub_id,
                     state
@@ -1259,7 +1259,7 @@ impl PeerManager {
             Some(&PeerState::Connected(_)) => PeerState::Connected(true),
             state => {
                 log_or_panic!(
-                    LogLevel::Error,
+                    Level::Error,
                     "{:?} Cannot set state {:?} to tunnel.",
                     self,
                     state
@@ -1582,7 +1582,7 @@ impl PeerManager {
                 let mut peer = match self.remove_peer(id) {
                     Some((peer, Ok(_))) => {
                         log_or_panic!(
-                            LogLevel::Error,
+                            Level::Error,
                             "{:?} RT split peer has returned removal detail.",
                             self
                         );

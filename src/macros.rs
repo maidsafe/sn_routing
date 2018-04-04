@@ -19,7 +19,7 @@
 /// will simply log the message at the requested level.
 ///
 /// Example usage:
-/// `log_or_panic!(LogLevel::Warn, "{:?} Bad value: {}", self, value);`
+/// `log_or_panic!(Level::Warn, "{:?} Bad value: {}", self, value);`
 #[macro_export]
 macro_rules! log_or_panic {
     ($log_level:expr, $($arg:tt)*) => {
