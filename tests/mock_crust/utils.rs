@@ -15,6 +15,9 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+// Various utilities. Since this is all internal stuff we're a bit lax about the doc.
+#![allow(missing_docs)]
+
 use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
@@ -30,9 +33,6 @@ use std::net::IpAddr;
 use std::ops::{Deref, DerefMut};
 use std::sync::mpsc::{RecvError, TryRecvError};
 use std::time::Duration;
-
-// Various utilities. Since this is all internal stuff we're a bit lax about the doc.
-#[allow(missing_docs)]
 
 // Poll one event per node. Otherwise, all events in a single node are polled before moving on.
 const BALANCED_POLLING: bool = true;

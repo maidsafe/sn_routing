@@ -19,7 +19,7 @@ use {CrustEvent, CrustEventSender, MIN_SECTION_SIZE, Service};
 use BootstrapConfig;
 use action::Action;
 use id::{FullId, PublicId};
-use log::LogLevel;
+use log::Level;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 #[cfg(feature = "use-mock-crust")]
 use mock_crust;
@@ -131,10 +131,7 @@ impl State {
     fn min_section_size(&self) -> usize {
         self.base_state().map_or_else(
             || {
-                log_or_panic!(
-                    LogLevel::Error,
-                    "Can't get min_section_size when Terminated."
-                );
+                log_or_panic!(Level::Error, "Can't get min_section_size when Terminated.");
                 MIN_SECTION_SIZE
             },
             Base::min_section_size,
@@ -463,7 +460,8 @@ impl StateMachine {
                     if let Ok(action) = self.action_rx.try_recv() {
                         events.push(EventType::Action(Box::new(action)));
                     } else {
-                        return Ok(self.apply_transition(Transition::Terminate, outbox));
+                        self.apply_transition(Transition::Terminate, outbox);
+                        return Ok(());
                     }
                 }
                 MaidSafeEventCategory::Crust => {
@@ -471,7 +469,8 @@ impl StateMachine {
                         Ok(crust_event) => events.push(EventType::CrustEvent(crust_event)),
                         Err(TryRecvError::Empty) => {}
                         Err(TryRecvError::Disconnected) => {
-                            return Ok(self.apply_transition(Transition::Terminate, outbox));
+                            self.apply_transition(Transition::Terminate, outbox);
+                            return Ok(());
                         }
                     }
                 }
@@ -502,7 +501,8 @@ impl StateMachine {
         self.events.extend(interleaved);
 
         if self.events.iter().any(EventType::is_not_a_timeout) {
-            return Ok(self.handle_event_from_list(outbox));
+            self.handle_event_from_list(outbox);
+            return Ok(());
         }
         while !self.events.is_empty() {
             self.handle_event_from_list(outbox);
