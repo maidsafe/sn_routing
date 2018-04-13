@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use {PrivConnectionInfo, PubConnectionInfo};
+use PubConnectionInfo;
 use crust::CrustUser;
 use error::RoutingError;
 #[cfg(feature = "use-mock-crust")]
@@ -136,7 +136,7 @@ pub enum PeerState {
         /// IP address of peer.
         ip: IpAddr,
     },
-    /// Waiting for Crust to prepare our `PrivConnectionInfo`. Contains source and destination for
+    /// Waiting for Crust to prepare our `PubConnectionInfo`. Contains source and destination for
     /// sending it to the peer, and their connection info with the associated request's message ID,
     /// if we already received it.
     ConnectionInfoPreparing {
@@ -148,7 +148,7 @@ pub enum PeerState {
         their_info: Option<(PubConnectionInfo, MessageId)>,
     },
     /// The prepared connection info that has been sent to the peer.
-    ConnectionInfoReady(PrivConnectionInfo),
+    ConnectionInfoReady(PubConnectionInfo),
     /// We called `connect` and are waiting for a `NewPeer` event.
     CrustConnecting,
     /// We failed to connect and are trying to find a tunnel node.
@@ -189,7 +189,7 @@ impl PeerState {
 pub enum ConnectionInfoReceivedResult {
     /// Our own connection info has already been prepared: The peer was switched to
     /// `CrustConnecting` status; Crust's `connect` method should be called with these infos now.
-    Ready(PrivConnectionInfo, PubConnectionInfo),
+    Ready(PubConnectionInfo, PubConnectionInfo),
     /// We don't have a connection info for that peer yet. The peer was switched to
     /// `ConnectionInfoPreparing` status; Crust's `prepare_connection_info` should be called with
     /// this token now.
@@ -207,7 +207,7 @@ pub enum ConnectionInfoReceivedResult {
     IsConnected,
 }
 
-/// The result of adding our prepared `PrivConnectionInfo`. It needs to be sent to a peer as a
+/// The result of adding our prepared `PubConnectionInfo`. It needs to be sent to a peer as a
 /// `PubConnectionInfo`.
 #[derive(Debug)]
 pub struct ConnectionInfoPreparedResult {
@@ -219,7 +219,7 @@ pub struct ConnectionInfoPreparedResult {
     pub dst: Authority<XorName>,
     /// If the peer's connection info was already present, the peer has been moved to
     /// `CrustConnecting` status. Crust's `connect` method should be called with these infos now.
-    pub infos: Option<(PrivConnectionInfo, PubConnectionInfo, MessageId)>,
+    pub infos: Option<(PubConnectionInfo, PubConnectionInfo, MessageId)>,
 }
 
 /// Toggle switch indicates whether is reconnecting to peer or not.
@@ -1338,7 +1338,7 @@ impl PeerManager {
     pub fn connection_info_prepared(
         &mut self,
         token: u32,
-        our_info: PrivConnectionInfo,
+        our_info: PubConnectionInfo,
     ) -> Result<ConnectionInfoPreparedResult, Error> {
         let pub_id = self.connection_token_map.remove(&token).ok_or(
             Error::PeerNotFound,
@@ -1691,7 +1691,7 @@ mod tests {
     use super::*;
     use id::FullId;
     use mock_crust::Endpoint;
-    use mock_crust::crust::{PrivConnectionInfo, PubConnectionInfo};
+    use mock_crust::crust::PubConnectionInfo;
     use routing_table::Authority;
     use types::MessageId;
     use xor_name::{XOR_NAME_LEN, XorName};
@@ -1707,7 +1707,7 @@ mod tests {
         let their_pub_id = *FullId::new().public_id();
         let mut peer_mgr = PeerManager::new(min_section_size, our_pub_id, false);
 
-        let our_connection_info = PrivConnectionInfo {
+        let our_connection_info = PubConnectionInfo {
             id: our_pub_id,
             endpoint: Endpoint(0),
         };
@@ -1763,7 +1763,7 @@ mod tests {
         let our_pub_id = *FullId::new().public_id();
         let their_pub_id = *FullId::new().public_id();
         let mut peer_mgr = PeerManager::new(min_section_size, our_pub_id, false);
-        let our_connection_info = PrivConnectionInfo {
+        let our_connection_info = PubConnectionInfo {
             id: our_pub_id,
             endpoint: Endpoint(0),
         };

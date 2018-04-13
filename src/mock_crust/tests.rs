@@ -160,8 +160,8 @@ fn start_two_services_rendezvous_connect() {
         unwrap!(cir.result)
     });
 
-    let their_ci_0 = our_ci_0.to_pub_connection_info();
-    let their_ci_1 = our_ci_1.to_pub_connection_info();
+    let their_ci_0 = our_ci_0.clone();
+    let their_ci_1 = our_ci_1.clone();
 
     unwrap!(service_0.connect(our_ci_0, their_ci_1));
     unwrap!(service_1.connect(our_ci_1, their_ci_0));
@@ -224,7 +224,7 @@ fn unidirectional_rendezvous_connect() {
         unwrap!(cir.result)
     });
 
-    let their_ci_1 = our_ci_1.to_pub_connection_info();
+    let their_ci_1 = our_ci_1.clone();
 
     unwrap!(service_0.connect(our_ci_0, their_ci_1));
     network.deliver_messages();

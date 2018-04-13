@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use super::crust::{CrustUser, PrivConnectionInfo, PubConnectionInfo, Uid};
+use super::crust::{CrustUser, PubConnectionInfo, Uid};
 use super::crust::compat::{ConnectionInfoResult, CrustEventSender, Event};
 use CrustEvent;
 use id::PublicId;
@@ -414,7 +414,7 @@ impl<UID: Uid> ServiceImpl<UID> {
 
         let result = ConnectionInfoResult {
             result_token: result_token,
-            result: Ok(PrivConnectionInfo {
+            result: Ok(PubConnectionInfo {
                 id: unwrap!(self.uid),
                 endpoint: self.endpoint,
             }),
@@ -423,7 +423,7 @@ impl<UID: Uid> ServiceImpl<UID> {
         self.send_event(CrustEvent::ConnectionInfoPrepared(result));
     }
 
-    pub fn connect(&self, _our_info: PrivConnectionInfo<UID>, their_info: PubConnectionInfo<UID>) {
+    pub fn connect(&self, _our_info: PubConnectionInfo<UID>, their_info: PubConnectionInfo<UID>) {
         let packet = Packet::ConnectRequest(unwrap!(self.uid), their_info.id);
         self.send_packet(their_info.endpoint, packet);
     }
