@@ -42,3 +42,9 @@ Example:
 ## License
 
 Licensed under the General Public License (GPL), version 3 ([LICENSE](LICENSE) http://www.gnu.org/licenses/gpl-3.0.en.html).
+
+### Linking exception
+
+Routing is licensed under GPLv3 with linking exception. This means you can link to and use the library from any program, proprietary or open source; paid or gratis. However, if you modify Routing, you must distribute the source to your modified version under the terms of the GPLv3.
+
+See the LICENSE file for more details.
