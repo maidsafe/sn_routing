@@ -185,7 +185,7 @@ pub mod mock_crypto;
 use mock_crypto::rust_sodium;
 
 /// Reexports `crust::Config`
-pub type BootstrapConfig = crust::Config;
+pub type BootstrapConfig = crust::ConfigFile;
 
 /// Mock crust
 #[cfg(feature = "use-mock-crust")]
@@ -240,10 +240,9 @@ pub use routing_table::verify_network_invariant;
 pub use types::MessageId;
 pub use xor_name::{XOR_NAME_BITS, XOR_NAME_LEN, XorName, XorNameFromHexError};
 
-type Service = crust::Service<PublicId>;
-use crust::Event as CrustEvent;
-type CrustEventSender = crust::CrustEventSender<PublicId>;
-type PrivConnectionInfo = crust::PrivConnectionInfo<PublicId>;
+type Service = crust::compat::Service<PublicId>;
+use crust::compat::Event as CrustEvent;
+type CrustEventSender = crust::compat::CrustEventSender<PublicId>;
 type PubConnectionInfo = crust::PubConnectionInfo<PublicId>;
 
 #[cfg(test)]

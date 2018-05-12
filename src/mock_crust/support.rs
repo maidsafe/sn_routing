@@ -6,8 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::crust::{ConnectionInfoResult, CrustEventSender, CrustUser, Event, PrivConnectionInfo,
-                   PubConnectionInfo, Uid};
+use super::crust::{CrustUser, PubConnectionInfo, Uid};
+use super::crust::compat::{ConnectionInfoResult, CrustEventSender, Event};
 use CrustEvent;
 use id::PublicId;
 use maidsafe_utilities::SeededRng;
@@ -59,10 +59,10 @@ impl<UID: Uid> Network<UID> {
     /// Create new ServiceHandle.
     pub fn new_service_handle(
         &self,
-        opt_config: Option<Config>,
+        opt_config: Option<ConfigFile>,
         opt_endpoint: Option<Endpoint>,
     ) -> ServiceHandle<UID> {
-        let config = opt_config.unwrap_or_else(Config::new);
+        let config = opt_config.unwrap_or_else(ConfigFile::new);
         let endpoint = self.gen_endpoint(opt_endpoint);
 
         let handle = ServiceHandle::new(self.clone(), config, endpoint);
@@ -284,7 +284,7 @@ impl<UID: Uid> Network<UID> {
 pub struct ServiceHandle<UID: Uid>(pub Rc<RefCell<ServiceImpl<UID>>>);
 
 impl<UID: Uid> ServiceHandle<UID> {
-    fn new(network: Network<UID>, config: Config, endpoint: Endpoint) -> Self {
+    fn new(network: Network<UID>, config: ConfigFile, endpoint: Endpoint) -> Self {
         ServiceHandle(Rc::new(
             RefCell::new(ServiceImpl::new(network, config, endpoint)),
         ))
@@ -318,7 +318,7 @@ pub struct ServiceImpl<UID: Uid> {
     pub network: Network<UID>,
     endpoint: Endpoint,
     pub uid: Option<UID>,
-    config: Config,
+    config: ConfigFile,
     pub accept_bootstrap: bool,
     pub listening_tcp: bool,
     event_sender: Option<CrustEventSender<UID>>,
@@ -327,7 +327,7 @@ pub struct ServiceImpl<UID: Uid> {
 }
 
 impl<UID: Uid> ServiceImpl<UID> {
-    fn new(network: Network<UID>, config: Config, endpoint: Endpoint) -> Self {
+    fn new(network: Network<UID>, config: ConfigFile, endpoint: Endpoint) -> Self {
         ServiceImpl {
             network: network,
             endpoint: endpoint,
@@ -405,7 +405,7 @@ impl<UID: Uid> ServiceImpl<UID> {
 
         let result = ConnectionInfoResult {
             result_token: result_token,
-            result: Ok(PrivConnectionInfo {
+            result: Ok(PubConnectionInfo {
                 id: unwrap!(self.uid),
                 endpoint: self.endpoint,
             }),
@@ -414,7 +414,7 @@ impl<UID: Uid> ServiceImpl<UID> {
         self.send_event(CrustEvent::ConnectionInfoPrepared(result));
     }
 
-    pub fn connect(&self, _our_info: PrivConnectionInfo<UID>, their_info: PubConnectionInfo<UID>) {
+    pub fn connect(&self, _our_info: PubConnectionInfo<UID>, their_info: PubConnectionInfo<UID>) {
         let packet = Packet::ConnectRequest(unwrap!(self.uid), their_info.id);
         self.send_packet(their_info.endpoint, packet);
     }
@@ -631,26 +631,26 @@ pub fn to_socket_addr(endpoint: &Endpoint) -> SocketAddr {
 
 /// Simulated crust config file.
 #[derive(Clone)]
-pub struct Config {
+pub struct ConfigFile {
     /// Contacts to bootstrap against.
     pub hard_coded_contacts: Vec<Endpoint>,
 }
 
-impl Config {
-    /// Create default `Config`.
+impl ConfigFile {
+    /// Create default `ConfigFile`.
     pub fn new() -> Self {
         Self::with_contacts(&[])
     }
 
-    /// Create `Config` with the given hardcoded contacts.
+    /// Create `ConfigFile` with the given hardcoded contacts.
     pub fn with_contacts(contacts: &[Endpoint]) -> Self {
-        Config { hard_coded_contacts: contacts.into_iter().cloned().collect() }
+        ConfigFile { hard_coded_contacts: contacts.into_iter().cloned().collect() }
     }
 }
 
-impl Default for Config {
-    fn default() -> Config {
-        Config::new()
+impl Default for ConfigFile {
+    fn default() -> ConfigFile {
+        ConfigFile::new()
     }
 }
 

@@ -7,13 +7,13 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
-use {CrustEvent, PrivConnectionInfo, PubConnectionInfo, QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
-     Service};
+use {CrustEvent, PubConnectionInfo, QUORUM_DENOMINATOR, QUORUM_NUMERATOR, Service};
 use ack_manager::{Ack, AckManager};
 use action::Action;
 use cache::Cache;
 use config_handler;
-use crust::{ConnectionInfoResult, CrustError, CrustUser};
+use crust::{CrustError, CrustUser};
+use crust::compat::ConnectionInfoResult;
 use cumulative_own_section_merge::CumulativeOwnSectionMerge;
 use error::{BootstrapResponseError, InterfaceError, RoutingError};
 use event::Event;
@@ -147,7 +147,7 @@ impl Node {
     ) -> Option<Self> {
         // old_id is useless for first node
         let old_id = FullId::new();
-        let mut node = Self::new(
+        let node = Self::new(
             action_sender,
             cache,
             crust_service,
@@ -159,7 +159,7 @@ impl Node {
             timer,
             0,
         );
-        if let Err(error) = node.crust_service.start_listening_tcp() {
+        if let Err(error) = node.crust_service.start_listening() {
             error!("{:?} Failed to start listening: {:?}", node, error);
             None
         } else {
@@ -2141,7 +2141,7 @@ impl Node {
     fn handle_connection_info_prepared(
         &mut self,
         result_token: u32,
-        result: Result<PrivConnectionInfo, CrustError>,
+        result: Result<PubConnectionInfo, CrustError>,
     ) {
         let our_connection_info = match result {
             Err(err) => {
@@ -2168,7 +2168,7 @@ impl Node {
             Ok(connection_info) => connection_info,
         };
 
-        let our_pub_info = our_connection_info.to_pub_connection_info();
+        let our_pub_info = our_connection_info.clone();
         match self.peer_mgr.connection_info_prepared(
             result_token,
             our_connection_info,
@@ -2253,13 +2253,7 @@ impl Node {
                     self,
                     pub_id
                 );
-                self.send_connection_info(
-                    our_info.to_pub_connection_info(),
-                    pub_id,
-                    dst,
-                    src,
-                    Some(message_id),
-                );
+                self.send_connection_info(our_info.clone(), pub_id, dst, src, Some(message_id));
                 if let Err(error) = self.crust_service.connect(our_info, their_info) {
                     trace!("{:?} Unable to connect to {:?} - {:?}", self, src, error);
                 }
@@ -3623,9 +3617,7 @@ impl Node {
         }
 
         let our_pub_info = match self.peer_mgr.get_peer(&their_public_id).map(Peer::state) {
-            Some(&PeerState::ConnectionInfoReady(ref our_priv_info)) => {
-                our_priv_info.to_pub_connection_info()
-            }
+            Some(&PeerState::ConnectionInfoReady(ref our_priv_info)) => our_priv_info.clone(),
             state => {
                 trace!(
                     "{:?} Not sending connection info request to {:?}. State: {:?}",

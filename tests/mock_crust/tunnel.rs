@@ -244,7 +244,10 @@ fn tunnel_client_connect_failure() {
     let mut nodes = create_connected_nodes(&network, min_section_size);
     let tunnel_node_index = unwrap!(locate_tunnel_node(&nodes, nodes[2].id(), nodes[3].id()));
 
-    network.send_crust_event(Endpoint(2), crust::Event::ConnectFailure(nodes[3].id()));
+    network.send_crust_event(
+        Endpoint(2),
+        crust::compat::Event::ConnectFailure(nodes[3].id()),
+    );
     let _ = poll_all(&mut nodes, &mut []);
     verify_invariant_for_all_nodes(&mut nodes);
     assert_eq!(

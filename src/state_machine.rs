@@ -281,7 +281,7 @@ impl StateMachine {
             None => Service::new(crust_sender, pub_id),
         };
 
-        let mut crust_service = unwrap!(res, "Unable to start crust::Service");
+        let crust_service = unwrap!(res, "Unable to start crust::Service");
 
         crust_service.start_service_discovery();
 

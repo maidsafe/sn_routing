@@ -11,7 +11,7 @@ use super::common::Base;
 use {CrustEvent, Service};
 use action::Action;
 use cache::Cache;
-use crust::CrustUser;
+use crust::{CrustUser, PaAddr};
 use error::RoutingError;
 use event::Event;
 use id::{FullId, PublicId};
@@ -24,7 +24,6 @@ use state_machine::{State, Transition};
 use stats::Stats;
 use std::collections::{BTreeSet, HashSet};
 use std::fmt::{self, Debug, Formatter};
-use std::net::SocketAddr;
 use std::time::Duration;
 use timer::Timer;
 use types::RoutingActionSender;
@@ -48,7 +47,7 @@ pub enum TargetState {
 // State of Client, JoiningNode or Node while bootstrapping.
 pub struct Bootstrapping {
     action_sender: RoutingActionSender,
-    bootstrap_blacklist: HashSet<SocketAddr>,
+    bootstrap_blacklist: HashSet<PaAddr>,
     bootstrap_connection: Option<(PublicId, u64)>,
     cache: Box<Cache>,
     target_state: TargetState,
@@ -64,7 +63,7 @@ impl Bootstrapping {
         action_sender: RoutingActionSender,
         cache: Box<Cache>,
         target_state: TargetState,
-        mut crust_service: Service,
+        crust_service: Service,
         full_id: FullId,
         min_section_size: usize,
         timer: Timer,
@@ -75,7 +74,7 @@ impl Bootstrapping {
             }
             TargetState::JoiningNode |
             TargetState::Node { .. } => {
-                if let Err(error) = crust_service.start_listening_tcp() {
+                if let Err(error) = crust_service.start_listening() {
                     error!("Failed to start listening: {:?}", error);
                     return None;
                 }
@@ -247,11 +246,7 @@ impl Bootstrapping {
         }
     }
 
-    fn handle_bootstrap_connect(
-        &mut self,
-        pub_id: PublicId,
-        socket_addr: SocketAddr,
-    ) -> Transition {
+    fn handle_bootstrap_connect(&mut self, pub_id: PublicId, socket_addr: PaAddr) -> Transition {
         match self.bootstrap_connection {
             None => {
                 debug!("{:?} Received BootstrapConnect from {}.", self, pub_id);
@@ -408,7 +403,8 @@ mod tests {
     use id::FullId;
     use maidsafe_utilities::event_sender::{MaidSafeEventCategory, MaidSafeObserver};
     use mock_crust::{self, Network};
-    use mock_crust::crust::{Config, Service};
+    use mock_crust::crust::ConfigFile;
+    use mock_crust::crust::compat::Service;
     use outbox::EventBuf;
     use state_machine::StateMachine;
     use std::sync::mpsc;
@@ -427,14 +423,14 @@ mod tests {
         let event_sender =
             MaidSafeObserver::new(event_tx, MaidSafeEventCategory::Crust, category_tx);
         let handle0 = network.new_service_handle(None, None);
-        let config = Config::with_contacts(&[handle0.endpoint()]);
-        let mut crust_service = unwrap!(Service::with_handle(
+        let config = ConfigFile::with_contacts(&[handle0.endpoint()]);
+        let crust_service = unwrap!(Service::with_handle(
             &handle0,
             event_sender,
             *FullId::new().public_id(),
         ));
 
-        unwrap!(crust_service.start_listening_tcp());
+        unwrap!(crust_service.start_listening());
         if let CrustEvent::ListenerStarted::<_>(_) = unwrap!(event_rx.try_recv()) {
         } else {
             panic!("Should have received `ListenerStarted` event.");
