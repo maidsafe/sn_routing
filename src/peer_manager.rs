@@ -238,11 +238,11 @@ impl Peer {
         reconnecting: ReconnectingPeer,
     ) -> Self {
         Self {
-            pub_id: pub_id,
-            state: state,
+            pub_id,
+            state,
             timestamp: Instant::now(),
-            valid: valid,
-            reconnecting: reconnecting,
+            valid,
+            reconnecting,
         }
     }
 
@@ -430,9 +430,9 @@ impl PeerManager {
             connection_token_map: HashMap::new(),
             peers: HashMap::new(),
             routing_table: RoutingTable::new(*our_public_id.name(), min_section_size),
-            our_public_id: our_public_id,
+            our_public_id,
             candidate: Candidate::None,
-            disable_client_rate_limiter: disable_client_rate_limiter,
+            disable_client_rate_limiter,
         }
     }
 
@@ -478,7 +478,7 @@ impl PeerManager {
         }
         self.candidate = Candidate::Expecting {
             timestamp: Instant::now(),
-            old_pub_id: old_pub_id,
+            old_pub_id,
         };
         Ok(())
     }
@@ -493,8 +493,8 @@ impl PeerManager {
     ) -> (Prefix<XorName>, BTreeSet<PublicId>) {
         self.candidate = Candidate::AcceptedForResourceProof {
             res_proof_start: Instant::now(),
-            old_pub_id: old_pub_id,
-            target_interval: target_interval,
+            old_pub_id,
+            target_interval,
         };
 
         let our_section = self.routing_table.our_section().iter().cloned().collect();
@@ -689,19 +689,19 @@ impl PeerManager {
             (
                 Ok(true),
                 Some(ResourceProofChallenge {
-                    target_size: target_size,
-                    difficulty: difficulty,
-                    seed: seed,
+                    target_size,
+                    difficulty,
+                    seed,
                     proof: VecDeque::new(),
                 }),
             )
         };
 
         self.candidate = Candidate::ResourceProof {
-            res_proof_start: res_proof_start,
+            res_proof_start,
             new_pub_id: *new_pub_id,
             new_client_auth: *new_client_auth,
-            challenge: challenge,
+            challenge,
             passed_our_challenge: false,
         };
 
@@ -1366,10 +1366,10 @@ impl PeerManager {
             }
         };
         Ok(ConnectionInfoPreparedResult {
-            pub_id: pub_id,
+            pub_id,
             src: us_as_src,
             dst: them_as_dst,
-            infos: infos,
+            infos,
         })
     }
 
@@ -1407,8 +1407,8 @@ impl PeerManager {
                      ..
                  }) => {
                 let state = PeerState::ConnectionInfoPreparing {
-                    us_as_src: us_as_src,
-                    them_as_dst: them_as_dst,
+                    us_as_src,
+                    them_as_dst,
                     their_info: Some((peer_info, msg_id)),
                 };
                 self.insert_peer(Peer::new(pub_id, state, valid, reconnecting));

@@ -62,7 +62,7 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
     pub fn with_version(self, version: u64) -> VersionedPrefix<T> {
         VersionedPrefix {
             prefix: self,
-            version: version,
+            version,
         }
     }
 

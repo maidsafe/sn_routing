@@ -106,8 +106,8 @@ impl Client {
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
         let request = Request::PutIData {
-            data: data,
-            msg_id: msg_id,
+            data,
+            msg_id,
         };
 
         self.send_request(dst, request, DEFAULT_PRIORITY)
@@ -121,8 +121,8 @@ impl Client {
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
         let request = Request::GetIData {
-            name: name,
-            msg_id: msg_id,
+            name,
+            msg_id,
         };
 
         self.send_request(dst, request, CLIENT_GET_PRIORITY)
@@ -137,9 +137,9 @@ impl Client {
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
         let request = Request::GetMDataVersion {
-            name: name,
-            tag: tag,
-            msg_id: msg_id,
+            name,
+            tag,
+            msg_id,
         };
 
         self.send_request(dst, request, CLIENT_GET_PRIORITY)
@@ -154,9 +154,9 @@ impl Client {
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
         let request = Request::GetMDataShell {
-            name: name,
-            tag: tag,
-            msg_id: msg_id,
+            name,
+            tag,
+            msg_id,
         };
 
         self.send_request(dst, request, CLIENT_GET_PRIORITY)
@@ -171,9 +171,9 @@ impl Client {
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
         let request = Request::GetMData {
-            name: name,
-            tag: tag,
-            msg_id: msg_id,
+            name,
+            tag,
+            msg_id,
         };
 
         self.send_request(dst, request, CLIENT_GET_PRIORITY)
@@ -189,9 +189,9 @@ impl Client {
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
         let request = Request::ListMDataEntries {
-            name: name,
-            tag: tag,
-            msg_id: msg_id,
+            name,
+            tag,
+            msg_id,
         };
 
         self.send_request(dst, request, CLIENT_GET_PRIORITY)
@@ -207,9 +207,9 @@ impl Client {
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
         let request = Request::ListMDataKeys {
-            name: name,
-            tag: tag,
-            msg_id: msg_id,
+            name,
+            tag,
+            msg_id,
         };
 
         self.send_request(dst, request, CLIENT_GET_PRIORITY)
@@ -225,9 +225,9 @@ impl Client {
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
         let request = Request::ListMDataValues {
-            name: name,
-            tag: tag,
-            msg_id: msg_id,
+            name,
+            tag,
+            msg_id,
         };
 
         self.send_request(dst, request, CLIENT_GET_PRIORITY)
@@ -243,10 +243,10 @@ impl Client {
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
         let request = Request::GetMDataValue {
-            name: name,
-            tag: tag,
-            key: key,
-            msg_id: msg_id,
+            name,
+            tag,
+            key,
+            msg_id,
         };
 
         self.send_request(dst, request, CLIENT_GET_PRIORITY)
@@ -261,9 +261,9 @@ impl Client {
         requester: sign::PublicKey,
     ) -> Result<(), InterfaceError> {
         let request = Request::PutMData {
-            data: data,
-            msg_id: msg_id,
-            requester: requester,
+            data,
+            msg_id,
+            requester,
         };
 
         self.send_request(dst, request, DEFAULT_PRIORITY)
@@ -280,11 +280,11 @@ impl Client {
         requester: sign::PublicKey,
     ) -> Result<(), InterfaceError> {
         let request = Request::MutateMDataEntries {
-            name: name,
-            tag: tag,
-            actions: actions,
-            msg_id: msg_id,
-            requester: requester,
+            name,
+            tag,
+            actions,
+            msg_id,
+            requester,
         };
 
         self.send_request(dst, request, DEFAULT_PRIORITY)
@@ -299,9 +299,9 @@ impl Client {
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
         let request = Request::ListMDataPermissions {
-            name: name,
-            tag: tag,
-            msg_id: msg_id,
+            name,
+            tag,
+            msg_id,
         };
 
         self.send_request(dst, request, CLIENT_GET_PRIORITY)
@@ -317,10 +317,10 @@ impl Client {
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
         let request = Request::ListMDataUserPermissions {
-            name: name,
-            tag: tag,
-            user: user,
-            msg_id: msg_id,
+            name,
+            tag,
+            user,
+            msg_id,
         };
 
         self.send_request(dst, request, CLIENT_GET_PRIORITY)
@@ -340,13 +340,13 @@ impl Client {
         requester: sign::PublicKey,
     ) -> Result<(), InterfaceError> {
         let request = Request::SetMDataUserPermissions {
-            name: name,
-            tag: tag,
-            user: user,
-            permissions: permissions,
-            version: version,
-            msg_id: msg_id,
-            requester: requester,
+            name,
+            tag,
+            user,
+            permissions,
+            version,
+            msg_id,
+            requester,
         };
 
         self.send_request(dst, request, DEFAULT_PRIORITY)
@@ -365,12 +365,12 @@ impl Client {
         requester: sign::PublicKey,
     ) -> Result<(), InterfaceError> {
         let request = Request::DelMDataUserPermissions {
-            name: name,
-            tag: tag,
-            user: user,
-            version: version,
-            msg_id: msg_id,
-            requester: requester,
+            name,
+            tag,
+            user,
+            version,
+            msg_id,
+            requester,
         };
 
         self.send_request(dst, request, DEFAULT_PRIORITY)
@@ -387,11 +387,11 @@ impl Client {
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
         let request = Request::ChangeMDataOwner {
-            name: name,
-            tag: tag,
-            new_owners: new_owners,
-            version: version,
-            msg_id: msg_id,
+            name,
+            tag,
+            new_owners,
+            version,
+            msg_id,
         };
 
         self.send_request(dst, request, DEFAULT_PRIORITY)
@@ -416,8 +416,8 @@ impl Client {
         message_id: MessageId,
     ) -> Result<(), InterfaceError> {
         let request = Request::InsAuthKey {
-            key: key,
-            version: version,
+            key,
+            version,
             msg_id: message_id,
         };
 
@@ -433,8 +433,8 @@ impl Client {
         message_id: MessageId,
     ) -> Result<(), InterfaceError> {
         let request = Request::DelAuthKey {
-            key: key,
-            version: version,
+            key,
+            version,
             msg_id: message_id,
         };
 
@@ -502,7 +502,7 @@ impl Client {
         Ok(Client {
             interface_result_tx: tx,
             interface_result_rx: rx,
-            action_sender: action_sender,
+            action_sender,
             _joiner: joiner,
         })
     }
@@ -510,7 +510,7 @@ impl Client {
     /// Returns the `PublicId` of this client.
     pub fn id(&self) -> Result<PublicId, InterfaceError> {
         let (result_tx, result_rx) = channel();
-        self.action_sender.send(Action::Id { result_tx: result_tx })?;
+        self.action_sender.send(Action::Id { result_tx })?;
         Ok(result_rx.recv()?)
     }
 
@@ -527,8 +527,8 @@ impl Client {
     ) -> Result<(), InterfaceError> {
         let action = Action::ClientSendRequest {
             content: request,
-            dst: dst,
-            priority: priority,
+            dst,
+            priority,
             result_tx: self.interface_result_tx.clone(),
         };
 
@@ -560,8 +560,8 @@ impl Client {
         Ok(Client {
             interface_result_tx: tx,
             interface_result_rx: rx,
-            machine: machine,
-            event_buffer: event_buffer,
+            machine,
+            event_buffer,
         })
     }
 
@@ -582,8 +582,8 @@ impl Client {
 
         let action = Action::ClientSendRequest {
             content: request,
-            dst: dst,
-            priority: priority,
+            dst,
+            priority,
             result_tx: self.interface_result_tx.clone(),
         };
 

@@ -78,7 +78,7 @@ impl RateLimiter {
                 Duration::from_secs(OVERCHARGED_TIMEOUT_SECS),
             ),
             last_updated: Instant::now(),
-            disabled: disabled,
+            disabled,
         }
     }
 

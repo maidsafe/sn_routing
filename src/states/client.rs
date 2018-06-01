@@ -65,18 +65,18 @@ impl Client {
     ) -> Self {
         let client = Client {
             ack_mgr: AckManager::new(),
-            crust_service: crust_service,
-            full_id: full_id,
-            min_section_size: min_section_size,
-            proxy_pub_id: proxy_pub_id,
+            crust_service,
+            full_id,
+            min_section_size,
+            proxy_pub_id,
             routing_msg_filter: RoutingMessageFilter::new(),
-            stats: stats,
-            timer: timer,
+            stats,
+            timer,
             user_msg_cache: UserMessageCache::with_expiry_duration(
                 Duration::from_secs(USER_MSG_CACHE_EXPIRY_DURATION_SECS),
             ),
             resend_buf: Default::default(),
-            msg_expiry_dur: msg_expiry_dur,
+            msg_expiry_dur,
         };
 
         debug!("{:?} State changed to client.", client);

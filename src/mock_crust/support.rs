@@ -44,7 +44,7 @@ impl<UID: Uid> Network<UID> {
         unwrap!(rust_sodium::init_with_rng(&mut rng));
         Network(Rc::new(RefCell::new(NetworkImpl {
             services: HashMap::new(),
-            min_section_size: min_section_size,
+            min_section_size,
             queue: BTreeMap::new(),
             blocked_connections: HashSet::new(),
             delayed_connections: HashSet::new(),
@@ -329,10 +329,10 @@ pub struct ServiceImpl<UID: Uid> {
 impl<UID: Uid> ServiceImpl<UID> {
     fn new(network: Network<UID>, config: Config, endpoint: Endpoint) -> Self {
         ServiceImpl {
-            network: network,
-            endpoint: endpoint,
+            network,
+            endpoint,
             uid: None,
-            config: config,
+            config,
             accept_bootstrap: false,
             listening_tcp: false,
             event_sender: None,
@@ -404,7 +404,7 @@ impl<UID: Uid> ServiceImpl<UID> {
         // TODO: should we simulate asynchrony here?
 
         let result = ConnectionInfoResult {
-            result_token: result_token,
+            result_token,
             result: Ok(PrivConnectionInfo {
                 id: unwrap!(self.uid),
                 endpoint: self.endpoint,

@@ -82,16 +82,16 @@ impl Bootstrapping {
             }
         }
         Some(Bootstrapping {
-            action_sender: action_sender,
+            action_sender,
             bootstrap_blacklist: HashSet::new(),
             bootstrap_connection: None,
-            cache: cache,
-            target_state: target_state,
-            crust_service: crust_service,
-            full_id: full_id,
-            min_section_size: min_section_size,
+            cache,
+            target_state,
+            crust_service,
+            full_id,
+            min_section_size,
             stats: Stats::new(),
-            timer: timer,
+            timer,
         })
     }
 

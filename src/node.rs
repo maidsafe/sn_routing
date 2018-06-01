@@ -125,7 +125,7 @@ impl NodeBuilder {
         Ok(Node {
             interface_result_tx: tx,
             interface_result_rx: rx,
-            machine: machine,
+            machine,
             event_buffer: ev_buffer,
         })
     }
@@ -331,8 +331,8 @@ impl Node {
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
         let msg = UserMessage::Response(Response::GetIData {
-            res: res,
-            msg_id: msg_id,
+            res,
+            msg_id,
         });
 
         let priority = relocate_priority(&dst);
@@ -353,8 +353,8 @@ impl Node {
     ) -> Result<(), InterfaceError> {
 
         let msg = UserMessage::Response(Response::GetMData {
-            res: res,
-            msg_id: msg_id,
+            res,
+            msg_id,
         });
 
         let priority = relocate_priority(&dst);
@@ -380,8 +380,8 @@ impl Node {
     ) -> Result<(), InterfaceError> {
 
         let msg = UserMessage::Response(Response::GetMDataShell {
-            res: res,
-            msg_id: msg_id,
+            res,
+            msg_id,
         });
 
         let priority = relocate_priority(&dst);
@@ -419,8 +419,8 @@ impl Node {
     ) -> Result<(), InterfaceError> {
 
         let msg = UserMessage::Response(Response::GetMDataValue {
-            res: res,
-            msg_id: msg_id,
+            res,
+            msg_id,
         });
 
         let priority = relocate_priority(&dst);
@@ -513,10 +513,10 @@ impl Node {
         let _ = self.poll();
 
         let action = Action::NodeSendMessage {
-            src: src,
-            dst: dst,
+            src,
+            dst,
             content: user_msg,
-            priority: priority,
+            priority,
             result_tx: self.interface_result_tx.clone(),
         };
 

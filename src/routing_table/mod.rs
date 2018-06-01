@@ -210,9 +210,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         let mut our_section = BTreeSet::new();
         let _ = our_section.insert(our_name);
         RoutingTable {
-            our_name: our_name,
-            min_section_size: min_section_size,
-            our_section: our_section,
+            our_name,
+            min_section_size,
+            our_section,
             our_prefix: Default::default(),
             our_version: 0,
             sections: BTreeMap::new(),
@@ -761,7 +761,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             ))
             .collect();
         OwnMergeState::Completed {
-            targets: targets,
+            targets,
             versioned_prefix: self.our_versioned_prefix(),
             section: self.our_section().clone(),
         }
@@ -1238,9 +1238,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Binary for Rou
 
         let sections = self.all_sections_iter().collect::<BTreeSet<_>>();
         for (section_index, &(prefix, (version, section))) in sections.iter().enumerate() {
-            write!(
+            writeln!(
                 formatter,
-                "\tsection {} with {:?} v{}: {{\n",
+                "\tsection {} with {:?} v{}: {{",
                 section_index,
                 prefix,
                 version

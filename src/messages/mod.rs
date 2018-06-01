@@ -201,9 +201,9 @@ impl HopMessage {
     ) -> Result<HopMessage, RoutingError> {
         let bytes_to_sign = serialise(&content)?;
         Ok(HopMessage {
-            content: content,
-            route: route,
-            sent_to: sent_to,
+            content,
+            route,
+            sent_to,
             signature: sign::sign_detached(&bytes_to_sign, signing_key),
         })
     }
@@ -234,8 +234,8 @@ impl SectionList {
     /// Create
     pub fn new(prefix: Prefix<XorName>, pub_ids: BTreeSet<PublicId>) -> Self {
         SectionList {
-            prefix: prefix,
-            pub_ids: pub_ids,
+            prefix,
+            pub_ids,
         }
     }
 
@@ -270,8 +270,8 @@ impl SignedMessage {
         src_sections.sort_by_key(|list| list.prefix);
         let sig = sign::sign_detached(&serialise(&content)?, full_id.signing_private_key());
         Ok(SignedMessage {
-            content: content,
-            src_sections: src_sections,
+            content,
+            src_sections,
             signatures: iter::once((*full_id.public_id(), sig)).collect(),
         })
     }
@@ -450,7 +450,7 @@ impl RoutingMessage {
     /// Create ack for the given message
     pub fn ack_from(msg: &RoutingMessage, src: Authority<XorName>) -> Result<Self, RoutingError> {
         Ok(RoutingMessage {
-            src: src,
+            src,
             dst: msg.src,
             content: MessageContent::Ack(Ack::compute(msg)?, msg.priority()),
         })
@@ -943,16 +943,16 @@ impl UserMessage {
         match self {
             UserMessage::Request(request) => {
                 Event::Request {
-                    request: request,
-                    src: src,
-                    dst: dst,
+                    request,
+                    src,
+                    dst,
                 }
             }
             UserMessage::Response(response) => {
                 Event::Response {
-                    response: response,
-                    src: src,
-                    dst: dst,
+                    response,
+                    src,
+                    dst,
                 }
             }
         }
@@ -1086,7 +1086,7 @@ mod tests {
         let data_bytes: Vec<u8> = (0..10).map(|i| i as u8).collect();
         let data = ImmutableData::new(data_bytes);
         let user_msg = UserMessage::Request(Request::PutIData {
-            data: data,
+            data,
             msg_id: MessageId::new(),
         });
         let parts = unwrap!(user_msg.to_parts(1));
@@ -1196,7 +1196,7 @@ mod tests {
         let data_bytes: Vec<u8> = (0..(MAX_PART_LEN * 2)).map(|i| i as u8).collect();
         let data = ImmutableData::new(data_bytes);
         let user_msg = UserMessage::Request(Request::PutIData {
-            data: data,
+            data,
             msg_id: MessageId::new(),
         });
         let msg_hash = sha3_256(&unwrap!(serialise(&user_msg)));

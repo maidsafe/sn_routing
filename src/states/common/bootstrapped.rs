@@ -70,9 +70,9 @@ pub trait Bootstrapped: Base {
         let token = self.timer().schedule(Duration::from_secs(ACK_TIMEOUT_SECS));
         let unacked_msg = UnacknowledgedMessage {
             routing_msg: routing_msg.clone(),
-            route: route,
+            route,
             timer_token: token,
-            expires_at: expires_at,
+            expires_at,
         };
 
         if let Some(ejected) = self.ack_mgr_mut().add_to_pending(ack, unacked_msg) {
@@ -136,9 +136,9 @@ pub trait Bootstrapped: Base {
         expires_at: Option<Instant>,
     ) -> Result<(), RoutingError> {
         let routing_msg = RoutingMessage {
-            src: src,
-            dst: dst,
-            content: content,
+            src,
+            dst,
+            content,
         };
         self.send_routing_message_via_route(routing_msg, 0, expires_at)
     }

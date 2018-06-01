@@ -62,15 +62,15 @@ impl ResourceProver {
     /// Create an instance.
     pub fn new(action_sender: RoutingActionSender, timer: Timer, challenger_count: usize) -> Self {
         ResourceProver {
-            action_sender: action_sender,
+            action_sender,
             get_approval_timer_token: None,
             approval_progress_timer_token: None,
             approval_expiry_time: Instant::now(),
             approval_timeout_secs: APPROVAL_TIMEOUT_SECS,
-            challenger_count: challenger_count,
+            challenger_count,
             response_parts: Default::default(),
             workers: Default::default(),
-            timer: timer,
+            timer,
         }
     }
 
@@ -142,10 +142,10 @@ impl ResourceProver {
                 .rev()
                 .map(|(part_index, part)| {
                     DirectMessage::ResourceProofResponse {
-                        part_index: part_index,
-                        part_count: part_count,
+                        part_index,
+                        part_count,
                         proof: part,
-                        leading_zero_bytes: leading_zero_bytes,
+                        leading_zero_bytes,
                     }
                 })
                 .collect_vec();
@@ -154,7 +154,7 @@ impl ResourceProver {
                     part_index: 0,
                     part_count: 1,
                     proof: vec![],
-                    leading_zero_bytes: leading_zero_bytes,
+                    leading_zero_bytes,
                 });
             }
 

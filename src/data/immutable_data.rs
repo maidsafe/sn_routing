@@ -30,7 +30,7 @@ impl ImmutableData {
     pub fn new(value: Vec<u8>) -> ImmutableData {
         ImmutableData {
             name: XorName(sha3_256(&value)),
-            value: value,
+            value,
         }
     }
 

@@ -294,24 +294,24 @@ impl StateMachine {
         };
         #[cfg(feature = "use-mock-crust")]
         let machine = StateMachine {
-            category_rx: category_rx,
-            category_tx: category_tx,
-            crust_rx: crust_rx,
-            crust_tx: crust_tx,
-            action_rx: action_rx,
-            state: state,
-            is_running: is_running,
+            category_rx,
+            category_tx,
+            crust_rx,
+            crust_tx,
+            action_rx,
+            state,
+            is_running,
             events: Vec::new(),
         };
         #[cfg(not(feature = "use-mock-crust"))]
         let machine = StateMachine {
-            category_rx: category_rx,
-            category_tx: category_tx,
-            crust_rx: crust_rx,
-            crust_tx: crust_tx,
-            action_rx: action_rx,
-            state: state,
-            is_running: is_running,
+            category_rx,
+            category_tx,
+            crust_rx,
+            crust_tx,
+            action_rx,
+            state,
+            is_running,
         };
 
         (action_sender, machine)

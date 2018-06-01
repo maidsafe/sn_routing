@@ -71,17 +71,17 @@ impl JoiningNode {
         let duration = Duration::from_secs(RELOCATE_TIMEOUT_SECS);
         let relocation_timer_token = timer.schedule(duration);
         let mut joining_node = JoiningNode {
-            action_sender: action_sender,
+            action_sender,
             ack_mgr: AckManager::new(),
-            crust_service: crust_service,
-            full_id: full_id,
-            cache: cache,
-            min_section_size: min_section_size,
-            proxy_pub_id: proxy_pub_id,
+            crust_service,
+            full_id,
+            cache,
+            min_section_size,
+            proxy_pub_id,
             routing_msg_filter: RoutingMessageFilter::new(),
-            stats: stats,
-            relocation_timer_token: relocation_timer_token,
-            timer: timer,
+            stats,
+            relocation_timer_token,
+            timer,
         };
         if let Err(error) = joining_node.relocate() {
             error!("{:?} Failed to start relocation: {:?}", joining_node, error);
@@ -148,7 +148,7 @@ impl JoiningNode {
         );
         let target_state = BootstrappingTargetState::Node {
             old_full_id: self.full_id,
-            our_section: our_section,
+            our_section,
         };
         if let Some(bootstrapping) =
             Bootstrapping::new(
@@ -313,7 +313,7 @@ impl JoiningNode {
     ) -> Transition {
         let new_id = FullId::within_range(&target_interval.0, &target_interval.1);
         Transition::IntoBootstrapping {
-            new_id: new_id,
+            new_id,
             our_section: section,
         }
     }

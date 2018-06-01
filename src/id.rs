@@ -146,8 +146,8 @@ impl PublicId {
 
     fn new(public_encrypt_key: box_::PublicKey, public_sign_key: sign::PublicKey) -> PublicId {
         PublicId {
-            public_encrypt_key: public_encrypt_key,
-            public_sign_key: public_sign_key,
+            public_encrypt_key,
+            public_sign_key,
             name: Self::name_from_key(&public_sign_key),
         }
     }

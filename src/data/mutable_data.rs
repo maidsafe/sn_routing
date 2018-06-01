@@ -177,7 +177,7 @@ impl EntryActions {
             key,
             EntryAction::Ins(Value {
                 entry_version: version,
-                content: content,
+                content,
             }),
         );
         self
@@ -189,7 +189,7 @@ impl EntryActions {
             key,
             EntryAction::Update(Value {
                 entry_version: version,
-                content: content,
+                content,
             }),
         );
         self
@@ -218,12 +218,12 @@ impl MutableData {
         owners: BTreeSet<PublicKey>,
     ) -> Result<MutableData, ClientError> {
         let md = MutableData {
-            name: name,
-            tag: tag,
-            data: data,
-            permissions: permissions,
+            name,
+            tag,
+            data,
+            permissions,
             version: 0,
-            owners: owners,
+            owners,
         };
 
         md.validate()?;

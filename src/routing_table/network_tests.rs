@@ -37,7 +37,7 @@ impl Network {
     /// generator.
     fn new(min_section_size: usize, optional_seed: Option<[u32; 4]>) -> Network {
         Network {
-            min_section_size: min_section_size,
+            min_section_size,
             rng: optional_seed.map_or_else(SeededRng::new, SeededRng::from_seed),
             nodes: BTreeMap::new(),
         }

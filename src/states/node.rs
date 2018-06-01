@@ -229,8 +229,8 @@ impl Node {
             cacheable_user_msg_cache: UserMessageCache::with_expiry_duration(
                 user_msg_cache_duration,
             ),
-            crust_service: crust_service,
-            old_full_id: old_full_id,
+            crust_service,
+            old_full_id,
             full_id: new_full_id,
             is_first_node: first_node,
             is_approved: first_node,
@@ -244,8 +244,8 @@ impl Node {
             routing_msg_filter: RoutingMessageFilter::new(),
             sig_accumulator: Default::default(),
             section_list_sigs: SectionListCache::new(),
-            stats: stats,
-            tick_timer_token: tick_timer_token,
+            stats,
+            tick_timer_token,
             timer: timer.clone(),
             tunnels: Default::default(),
             user_msg_cache: UserMessageCache::with_expiry_duration(user_msg_cache_duration),
@@ -1377,7 +1377,7 @@ impl Node {
                 "{:?} Not sending NodeApproval since our section is currently merging.",
                 self
             );
-        } else if !self.routing_table().check_invariant(false, false).is_ok() {
+        } else if self.routing_table().check_invariant(false, false).is_err() {
             debug!(
                 "{:?} Not sending NodeApproval since our routing table isn't valid.",
                 self
@@ -1860,9 +1860,9 @@ impl Node {
         ) {
             Ok(true) => {
                 let direct_message = DirectMessage::ResourceProof {
-                    seed: seed,
-                    target_size: target_size,
-                    difficulty: difficulty,
+                    seed,
+                    target_size,
+                    difficulty,
                 };
                 info!(
                     "{:?} Sending resource proof challenge to candidate {}->{}",
@@ -2036,9 +2036,9 @@ impl Node {
         allow_small_sections: bool,
     ) {
         if dst_prefix.is_none() &&
-            !self.routing_table()
+            self.routing_table()
                 .check_invariant(allow_small_sections, false)
-                .is_ok()
+                .is_err()
         {
             warn!(
                 "{:?} Not sending section update since RT invariant not held.",
@@ -2059,7 +2059,7 @@ impl Node {
 
         let content = MessageContent::SectionUpdate {
             versioned_prefix: self.routing_table().our_versioned_prefix(),
-            members: members,
+            members,
         };
 
         let prefixes = match dst_prefix {
@@ -2114,14 +2114,14 @@ impl Node {
         );
         let msg_content = if let Some(msg_id) = msg_id {
             MessageContent::ConnectionInfoResponse {
-                encrypted_conn_info: encrypted_conn_info,
+                encrypted_conn_info,
                 nonce: nonce.0,
                 pub_id: *self.full_id.public_id(),
-                msg_id: msg_id,
+                msg_id,
             }
         } else {
             MessageContent::ConnectionInfoRequest {
-                encrypted_conn_info: encrypted_conn_info,
+                encrypted_conn_info,
                 nonce: nonce.0,
                 pub_id: *self.full_id.public_id(),
                 msg_id: MessageId::new(),
@@ -2407,7 +2407,7 @@ impl Node {
                 tunnel_id,
                 dst_id
             );
-            if self.id() < &dst_id {
+            if *self.id() < dst_id {
                 // We need to confirm tunnel selection
                 let message = DirectMessage::TunnelSelect(dst_id);
                 self.send_direct_message(tunnel_id, message);
@@ -2570,7 +2570,7 @@ impl Node {
                 client_id: relocating_node_id,
                 proxy_node_name: proxy_name,
             },
-            message_id: message_id,
+            message_id,
         };
 
         let src = Authority::Section(dst_name);
@@ -2583,7 +2583,7 @@ impl Node {
     // network is unbalanced, sends `ExpectCandidate` on to a section with a shorter prefix.
     fn handle_expect_candidate(
         &mut self,
-        old_pub_id: PublicId,
+        old_public_id: PublicId,
         old_client_auth: Authority<XorName>,
         relocation_dst: Authority<XorName>,
         message_id: MessageId,
@@ -2591,7 +2591,7 @@ impl Node {
     ) -> Result<(), RoutingError> {
         self.remove_expired_peers(outbox);
 
-        if old_pub_id == *self.full_id.public_id() {
+        if old_public_id == *self.full_id.public_id() {
             return Ok(()); // This is a delayed message belonging to our own relocate request.
         }
 
@@ -2609,9 +2609,9 @@ impl Node {
 
         if &min_len_prefix != self.our_prefix() && !forbid_join_balancing {
             let request_content = MessageContent::ExpectCandidate {
-                old_public_id: old_pub_id,
-                old_client_auth: old_client_auth,
-                message_id: message_id,
+                old_public_id,
+                old_client_auth,
+                message_id,
             };
             let src = relocation_dst;
             let dst = Authority::Section(min_len_prefix.substituted_in(relocation_dst.name()));
@@ -2625,18 +2625,18 @@ impl Node {
             )
         });
 
-        self.peer_mgr.expect_candidate(old_pub_id)?;
+        self.peer_mgr.expect_candidate(old_public_id)?;
 
         let response_content = MessageContent::AcceptAsCandidate {
-            old_public_id: old_pub_id,
-            old_client_auth: old_client_auth,
-            target_interval: target_interval,
-            message_id: message_id,
+            old_public_id,
+            old_client_auth,
+            target_interval,
+            message_id,
         };
         info!(
             "{:?} Expecting candidate with old name {}.",
             self,
-            old_pub_id
+            old_public_id
         );
 
         self.send_routing_message(relocation_dst, relocation_dst, response_content)
@@ -2669,9 +2669,9 @@ impl Node {
             target_interval,
         );
         let response_content = MessageContent::RelocateResponse {
-            target_interval: target_interval,
+            target_interval,
             section: own_section,
-            message_id: message_id,
+            message_id,
         };
         info!(
             "{:?} Our section with {:?} accepted candidate with old name {}.",
@@ -3510,7 +3510,7 @@ impl Node {
         let message = Message::TunnelHop {
             content: hop_msg,
             src: *self.full_id.public_id(),
-            dst: dst,
+            dst,
         };
 
         Ok(serialisation::serialise(&message)?)
@@ -3557,15 +3557,15 @@ impl Node {
             };
             let new_client_auth = Authority::Client {
                 client_id: *self.full_id.public_id(),
-                proxy_node_name: proxy_node_name,
+                proxy_node_name,
             };
 
             DirectMessage::CandidateInfo {
                 old_public_id: *self.old_full_id.public_id(),
                 new_public_id: *self.full_id.public_id(),
-                signature_using_old: signature_using_old,
-                signature_using_new: signature_using_new,
-                new_client_auth: new_client_auth,
+                signature_using_old,
+                signature_using_new,
+                new_client_auth,
             }
         };
 
@@ -3864,7 +3864,7 @@ impl Node {
     // Proper node is either the first node in the network or a node which has at least one entry
     // in its routing table.
     fn is_proper(&self) -> bool {
-        self.is_first_node || self.routing_table().len() >= 1
+        self.is_first_node || !self.routing_table().is_empty()
     }
 
     fn send_direct_message(&mut self, dst_id: PublicId, direct_message: DirectMessage) {

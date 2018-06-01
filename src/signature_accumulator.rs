@@ -172,8 +172,8 @@ mod tests {
                 })
                 .collect();
             MessageAndSignatures {
-                signed_msg: signed_msg,
-                signature_msgs: signature_msgs,
+                signed_msg,
+                signature_msgs,
             }
         }
     }
@@ -204,9 +204,9 @@ mod tests {
                 .collect();
             Env {
                 _msg_sender_id: msg_sender_id,
-                other_ids: other_ids,
+                other_ids,
                 senders: pub_ids,
-                msgs_and_sigs: msgs_and_sigs,
+                msgs_and_sigs,
             }
         }
 
