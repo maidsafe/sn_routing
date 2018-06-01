@@ -6,13 +6,15 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{TestNode, add_connected_nodes_until_split, create_connected_nodes, poll_all,
-            poll_and_resend, verify_invariant_for_all_nodes};
+use super::{
+    add_connected_nodes_until_split, create_connected_nodes, poll_all, poll_and_resend,
+    verify_invariant_for_all_nodes, TestNode,
+};
 use fake_clock::FakeClock;
 use itertools::Itertools;
-use routing::{BootstrapConfig, Event, EventStream, Prefix, PublicId, XOR_NAME_LEN, XorName};
-use routing::mock_crust::{Endpoint, Network, crust};
+use routing::mock_crust::{crust, Endpoint, Network};
 use routing::test_consts::CONNECTED_PEER_TIMEOUT_SECS;
+use routing::{BootstrapConfig, Event, EventStream, Prefix, PublicId, XorName, XOR_NAME_LEN};
 
 #[test]
 fn failing_connections_ring() {
@@ -77,13 +79,12 @@ fn remove_nodes_from_section_till_merge(
         .iter()
         .enumerate()
         .rev()
-        .filter_map(|(index, node)| if node.routing_table()
-            .our_prefix()
-            .matches(prefix_name)
-        {
-            Some(index)
-        } else {
-            None
+        .filter_map(|(index, node)| {
+            if node.routing_table().our_prefix().matches(prefix_name) {
+                Some(index)
+            } else {
+                None
+            }
         })
         .collect();
     section_indexes
@@ -106,9 +107,8 @@ fn add_a_pair(
 
     nodes.iter_mut().foreach(|node| {
         node.inner.set_next_relocation_dst(prefix0.lower_bound());
-        node.inner.set_next_relocation_interval(
-            (prefix0.lower_bound(), prefix0.upper_bound()),
-        );
+        node.inner
+            .set_next_relocation_interval((prefix0.lower_bound(), prefix0.upper_bound()));
     });
     nodes.push(
         TestNode::builder(network)
@@ -119,9 +119,8 @@ fn add_a_pair(
 
     nodes.iter_mut().foreach(|node| {
         node.inner.set_next_relocation_dst(prefix1.lower_bound());
-        node.inner.set_next_relocation_interval(
-            (prefix1.lower_bound(), prefix1.upper_bound()),
-        );
+        node.inner
+            .set_next_relocation_interval((prefix1.lower_bound(), prefix1.upper_bound()));
     });
     nodes.push(
         TestNode::builder(network)
@@ -143,14 +142,12 @@ fn locate_tunnel_node(nodes: &[TestNode], client_1: PublicId, client_2: PublicId
     let tunnel_node_indexes: Vec<usize> = nodes
         .iter()
         .enumerate()
-        .filter_map(|(index, node)| if node.inner.has_tunnel_clients(
-            client_1,
-            client_2,
-        )
-        {
-            Some(index)
-        } else {
-            None
+        .filter_map(|(index, node)| {
+            if node.inner.has_tunnel_clients(client_1, client_2) {
+                Some(index)
+            } else {
+                None
+            }
         })
         .collect();
     // There shall be only one tunnel_node for a pair of tunnel_clients across the network
@@ -266,13 +263,11 @@ fn verify_tunnel_switch(nodes: &mut Vec<TestNode>, node: usize, client_1: usize,
                 assert_eq!(event_count, 2);
             }
             Event::Tick => {}
-            _ => {
-                panic!(
-                    "{:?} received unexpected event {:?}",
-                    nodes[client_1].name(),
-                    event
-                )
-            }
+            _ => panic!(
+                "{:?} received unexpected event {:?}",
+                nodes[client_1].name(),
+                event
+            ),
         }
     }
     event_count = 0;
@@ -287,13 +282,11 @@ fn verify_tunnel_switch(nodes: &mut Vec<TestNode>, node: usize, client_1: usize,
                 assert_eq!(event_count, 1);
             }
             Event::Tick => {}
-            _ => {
-                panic!(
-                    "{:?} received unexpected event {:?}",
-                    nodes[client_2].name(),
-                    event
-                )
-            }
+            _ => panic!(
+                "{:?} received unexpected event {:?}",
+                nodes[client_2].name(),
+                event
+            ),
         }
     }
 }

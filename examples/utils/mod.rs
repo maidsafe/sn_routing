@@ -8,8 +8,8 @@
 
 #![cfg(not(feature = "use-mock-crust"))]
 
-mod example_node;
 mod example_client;
+mod example_node;
 
 pub use self::example_client::ExampleClient;
 pub use self::example_node::ExampleNode;

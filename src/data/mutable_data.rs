@@ -10,8 +10,8 @@ use client_error::{ClientError, EntryError};
 use maidsafe_utilities::serialisation;
 use rand::{Rand, Rng};
 use rust_sodium::crypto::sign::PublicKey;
-use std::collections::BTreeSet;
 use std::collections::btree_map::{BTreeMap, Entry};
+use std::collections::BTreeSet;
 use std::fmt::{self, Debug, Formatter};
 use std::mem;
 use xor_name::XorName;
@@ -74,7 +74,8 @@ pub enum Action {
 }
 
 /// Set of user permissions.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord, Serialize, Deserialize, Default)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord, Serialize, Deserialize,
+         Default)]
 pub struct PermissionSet {
     insert: Option<bool>,
     update: Option<bool>,
@@ -311,28 +312,27 @@ impl MutableData {
         requester: PublicKey,
     ) -> Result<(), ClientError> {
         // Deconstruct actions into inserts, updates, and deletes
-        let (insert, update, delete) =
-            actions.into_iter().fold(
-                (BTreeMap::new(), BTreeMap::new(), BTreeMap::new()),
-                |(mut insert, mut update, mut delete), (key, item)| {
-                    match item {
-                        EntryAction::Ins(value) => {
-                            let _ = insert.insert(key, value);
-                        }
-                        EntryAction::Update(value) => {
-                            let _ = update.insert(key, value);
-                        }
-                        EntryAction::Del(version) => {
-                            let _ = delete.insert(key, version);
-                        }
-                    };
-                    (insert, update, delete)
-                },
-            );
+        let (insert, update, delete) = actions.into_iter().fold(
+            (BTreeMap::new(), BTreeMap::new(), BTreeMap::new()),
+            |(mut insert, mut update, mut delete), (key, item)| {
+                match item {
+                    EntryAction::Ins(value) => {
+                        let _ = insert.insert(key, value);
+                    }
+                    EntryAction::Update(value) => {
+                        let _ = update.insert(key, value);
+                    }
+                    EntryAction::Del(version) => {
+                        let _ = delete.insert(key, version);
+                    }
+                };
+                (insert, update, delete)
+            },
+        );
 
-        if (!insert.is_empty() && !self.is_action_allowed(requester, Action::Insert)) ||
-            (!update.is_empty() && !self.is_action_allowed(requester, Action::Update)) ||
-            (!delete.is_empty() && !self.is_action_allowed(requester, Action::Delete))
+        if (!insert.is_empty() && !self.is_action_allowed(requester, Action::Insert))
+            || (!update.is_empty() && !self.is_action_allowed(requester, Action::Update))
+            || (!delete.is_empty() && !self.is_action_allowed(requester, Action::Delete))
         {
             return Err(ClientError::AccessDenied);
         }
@@ -426,18 +426,16 @@ impl MutableData {
                 EntryAction::Ins(new_value) => {
                     let _ = self.data.insert(key, new_value);
                 }
-                EntryAction::Update(new_value) => {
-                    match self.data.entry(key) {
-                        Entry::Occupied(mut entry) => {
-                            if new_value.entry_version > entry.get().entry_version {
-                                let _ = entry.insert(new_value);
-                            }
-                        }
-                        Entry::Vacant(entry) => {
+                EntryAction::Update(new_value) => match self.data.entry(key) {
+                    Entry::Occupied(mut entry) => {
+                        if new_value.entry_version > entry.get().entry_version {
                             let _ = entry.insert(new_value);
                         }
                     }
-                }
+                    Entry::Vacant(entry) => {
+                        let _ = entry.insert(new_value);
+                    }
+                },
                 EntryAction::Del(new_version) => {
                     if let Entry::Occupied(mut entry) = self.data.entry(key) {
                         if new_version > entry.get().entry_version {
@@ -604,11 +602,9 @@ impl MutableData {
             return true;
         }
         match self.permissions.get(&User::Key(requester)) {
-            Some(perms) => {
-                perms.is_allowed(action).unwrap_or_else(|| {
-                    self.check_anyone_permissions(action)
-                })
-            }
+            Some(perms) => perms
+                .is_allowed(action)
+                .unwrap_or_else(|| self.check_anyone_permissions(action)),
             None => self.check_anyone_permissions(action),
         }
     }
@@ -638,13 +634,13 @@ mod tests {
     use std::iter;
 
     macro_rules! assert_err {
-        ($left: expr, $err: pat) => {{
+        ($left:expr, $err:pat) => {{
             let result = $left; // required to prevent multiple repeating expansions
             match result {
                 Err($err) => (),
                 _ => panic!("Expected Err({:?}), found {:?}", stringify!($err), result),
             }
-        }}
+        }};
     }
 
     #[test]
@@ -658,9 +654,9 @@ mod tests {
         let ps1 = PermissionSet::new().allow(Action::Update);
         let _ = perms.insert(User::Anyone, ps1);
 
-        let ps2 = PermissionSet::new().deny(Action::Update).allow(
-            Action::Insert,
-        );
+        let ps2 = PermissionSet::new()
+            .deny(Action::Update)
+            .allow(Action::Insert);
         let _ = perms.insert(User::Key(pk1), ps2);
 
         let k1 = b"123".to_vec();
@@ -682,7 +678,7 @@ mod tests {
                 EntryActions::new()
                     .ins(k1.clone(), b"abc".to_vec(), 0)
                     .into(),
-                pk1,
+                pk1
             ).is_ok()
         );
 
@@ -723,9 +719,9 @@ mod tests {
 
     #[test]
     fn permissions() {
-        let anyone = PermissionSet::new().allow(Action::Insert).deny(
-            Action::Delete,
-        );
+        let anyone = PermissionSet::new()
+            .allow(Action::Insert)
+            .deny(Action::Delete);
         assert!(unwrap!(anyone.is_allowed(Action::Insert)));
         assert!(anyone.is_allowed(Action::Update).is_none());
         assert!(!unwrap!(anyone.is_allowed(Action::Delete)));
@@ -838,8 +834,8 @@ mod tests {
         ));
 
         // Try to get over the size limit
-        let actions0: BTreeMap<_, _> = iter::once((vec![1], EntryAction::Ins(small_val.clone())))
-            .collect();
+        let actions0: BTreeMap<_, _> =
+            iter::once((vec![1], EntryAction::Ins(small_val.clone()))).collect();
         assert_err!(
             md.mutate_entries(actions0.clone(), owner),
             ClientError::DataTooLarge
@@ -989,9 +985,9 @@ mod tests {
         );
 
         // Now allow inserts for pk1
-        let ps1 = PermissionSet::new().allow(Action::Insert).allow(
-            Action::ManagePermissions,
-        );
+        let ps1 = PermissionSet::new()
+            .allow(Action::Insert)
+            .allow(Action::ManagePermissions);
         assert!(
             md.set_user_permissions(User::Key(pk1), ps1, 1, owner)
                 .is_ok()
@@ -1000,9 +996,9 @@ mod tests {
         assert!(md.mutate_entries(v1, pk1).is_ok());
 
         // pk1 now can change permissions
-        let ps2 = PermissionSet::new().allow(Action::Insert).deny(
-            Action::ManagePermissions,
-        );
+        let ps2 = PermissionSet::new()
+            .allow(Action::Insert)
+            .deny(Action::ManagePermissions);
         assert_err!(
             md.set_user_permissions(User::Key(pk1), ps2, 1, pk1),
             ClientError::InvalidSuccessor(1)

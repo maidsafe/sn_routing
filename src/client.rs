@@ -6,7 +6,6 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use {BootstrapConfig, MIN_SECTION_SIZE};
 use action::Action;
 use cache::NullCache;
 use config_handler::{self, Config};
@@ -20,7 +19,7 @@ use event_stream::{EventStepper, EventStream};
 use id::{FullId, PublicId};
 #[cfg(not(feature = "use-mock-crust"))]
 use maidsafe_utilities::thread::{self, Joiner};
-use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, Request};
+use messages::{Request, CLIENT_GET_PRIORITY, DEFAULT_PRIORITY};
 use outbox::{EventBox, EventBuf};
 use routing_table::Authority;
 #[cfg(not(feature = "use-mock-crust"))]
@@ -29,12 +28,13 @@ use rust_sodium::crypto::sign;
 use state_machine::{State, StateMachine};
 use states::{Bootstrapping, BootstrappingTargetState};
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::mpsc::{channel, Receiver, Sender};
 #[cfg(feature = "use-mock-crust")]
 use std::sync::mpsc::{RecvError, TryRecvError};
 use std::time::Duration;
 use types::{MessageId, RoutingActionSender};
 use xor_name::XorName;
+use {BootstrapConfig, MIN_SECTION_SIZE};
 
 /// Interface for sending and receiving messages to and from a network of nodes in the role of a
 /// client.
@@ -105,10 +105,7 @@ impl Client {
         data: ImmutableData,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
-        let request = Request::PutIData {
-            data,
-            msg_id,
-        };
+        let request = Request::PutIData { data, msg_id };
 
         self.send_request(dst, request, DEFAULT_PRIORITY)
     }
@@ -120,10 +117,7 @@ impl Client {
         name: XorName,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
-        let request = Request::GetIData {
-            name,
-            msg_id,
-        };
+        let request = Request::GetIData { name, msg_id };
 
         self.send_request(dst, request, CLIENT_GET_PRIORITY)
     }
@@ -136,11 +130,7 @@ impl Client {
         tag: u64,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
-        let request = Request::GetMDataVersion {
-            name,
-            tag,
-            msg_id,
-        };
+        let request = Request::GetMDataVersion { name, tag, msg_id };
 
         self.send_request(dst, request, CLIENT_GET_PRIORITY)
     }
@@ -153,11 +143,7 @@ impl Client {
         tag: u64,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
-        let request = Request::GetMDataShell {
-            name,
-            tag,
-            msg_id,
-        };
+        let request = Request::GetMDataShell { name, tag, msg_id };
 
         self.send_request(dst, request, CLIENT_GET_PRIORITY)
     }
@@ -170,11 +156,7 @@ impl Client {
         tag: u64,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
-        let request = Request::GetMData {
-            name,
-            tag,
-            msg_id,
-        };
+        let request = Request::GetMData { name, tag, msg_id };
 
         self.send_request(dst, request, CLIENT_GET_PRIORITY)
     }
@@ -188,11 +170,7 @@ impl Client {
         tag: u64,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
-        let request = Request::ListMDataEntries {
-            name,
-            tag,
-            msg_id,
-        };
+        let request = Request::ListMDataEntries { name, tag, msg_id };
 
         self.send_request(dst, request, CLIENT_GET_PRIORITY)
     }
@@ -206,11 +184,7 @@ impl Client {
         tag: u64,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
-        let request = Request::ListMDataKeys {
-            name,
-            tag,
-            msg_id,
-        };
+        let request = Request::ListMDataKeys { name, tag, msg_id };
 
         self.send_request(dst, request, CLIENT_GET_PRIORITY)
     }
@@ -224,11 +198,7 @@ impl Client {
         tag: u64,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
-        let request = Request::ListMDataValues {
-            name,
-            tag,
-            msg_id,
-        };
+        let request = Request::ListMDataValues { name, tag, msg_id };
 
         self.send_request(dst, request, CLIENT_GET_PRIORITY)
     }
@@ -298,11 +268,7 @@ impl Client {
         tag: u64,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
-        let request = Request::ListMDataPermissions {
-            name,
-            tag,
-            msg_id,
-        };
+        let request = Request::ListMDataPermissions { name, tag, msg_id };
 
         self.send_request(dst, request, CLIENT_GET_PRIORITY)
     }
@@ -495,9 +461,9 @@ impl Client {
             // When there are no more events to process, terminate this thread.
         });
 
-        let action_sender = get_action_sender_rx.recv().map_err(
-            |_| RoutingError::NotBootstrapped,
-        )?;
+        let action_sender = get_action_sender_rx
+            .recv()
+            .map_err(|_| RoutingError::NotBootstrapped)?;
 
         Ok(Client {
             interface_result_tx: tx,
@@ -587,14 +553,12 @@ impl Client {
             result_tx: self.interface_result_tx.clone(),
         };
 
-        let transition = self.machine.current_mut().handle_action(
-            action,
-            &mut self.event_buffer,
-        );
-        self.machine.apply_transition(
-            transition,
-            &mut self.event_buffer,
-        );
+        let transition = self
+            .machine
+            .current_mut()
+            .handle_action(action, &mut self.event_buffer);
+        self.machine
+            .apply_transition(transition, &mut self.event_buffer);
         self.interface_result_rx.recv()?
     }
 
@@ -634,10 +598,10 @@ impl Drop for Client {
 impl Drop for Client {
     fn drop(&mut self) {
         let _ = self.poll();
-        let _ = self.machine.current_mut().handle_action(
-            Action::Terminate,
-            &mut self.event_buffer,
-        );
+        let _ = self
+            .machine
+            .current_mut()
+            .handle_action(Action::Terminate, &mut self.event_buffer);
         let _ = self.event_buffer.take_all();
     }
 }

@@ -10,8 +10,8 @@ use hex::{self, FromHex, FromHexError};
 use num_bigint::BigUint;
 use rand;
 use routing_table::Xorable;
-use std::{fmt, ops};
 use std::cmp::Ordering;
+use std::{fmt, ops};
 
 /// Create a 32-byte array of `u8` from a 32-byte reference to a `u8` slice.
 pub fn slice_as_u8_32_array(slice: &[u8]) -> [u8; 32] {
@@ -35,7 +35,6 @@ pub enum XorNameFromHexError {
     WrongLength,
 }
 
-
 /// A [`XOR_NAME_BITS`](constant.XOR_NAME_BITS.html)-bit number, viewed as a point in XOR space.
 ///
 /// This wraps an array of [`XOR_NAME_LEN`](constant.XOR_NAME_LEN.html) bytes, i. e. a number
@@ -56,9 +55,10 @@ impl XorName {
 
     /// Returns the number of bits in which `self` differs from `other`.
     pub fn count_differing_bits(&self, other: &XorName) -> u32 {
-        self.0.iter().zip(other.0.iter()).fold(0, |acc, (a, b)| {
-            acc + (a ^ b).count_ones()
-        })
+        self.0
+            .iter()
+            .zip(other.0.iter())
+            .fold(0, |acc, (a, b)| acc + (a ^ b).count_ones())
     }
 
     /// Hex-decode a `XorName` from a `&str`.
@@ -68,8 +68,9 @@ impl XorName {
             Err(FromHexError::InvalidHexCharacter { c, index }) => {
                 return Err(XorNameFromHexError::InvalidCharacter(c, index))
             }
-            Err(FromHexError::InvalidStringLength) |
-            Err(FromHexError::OddLength) => return Err(XorNameFromHexError::WrongLength),
+            Err(FromHexError::InvalidStringLength) | Err(FromHexError::OddLength) => {
+                return Err(XorNameFromHexError::WrongLength)
+            }
         };
         if data.len() != XOR_NAME_LEN {
             return Err(XorNameFromHexError::WrongLength);
@@ -235,9 +236,7 @@ impl ops::Sub for XorName {
 impl<'a> ops::Sub for &'a XorName {
     type Output = XorName;
     fn sub(self, rhs: &XorName) -> Self::Output {
-        XorName::from_big_uint(
-            BigUint::from_bytes_be(&self.0) - BigUint::from_bytes_be(&rhs.0),
-        )
+        XorName::from_big_uint(BigUint::from_bytes_be(&self.0) - BigUint::from_bytes_be(&rhs.0))
     }
 }
 

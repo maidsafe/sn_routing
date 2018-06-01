@@ -6,11 +6,13 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{create_connected_clients, create_connected_nodes, gen_bytes, gen_immutable_data,
-            poll_all};
-use routing::{Authority, ClientError, Event, EventStream, ImmutableData, MessageId, Request,
-              Response};
+use super::{
+    create_connected_clients, create_connected_nodes, gen_bytes, gen_immutable_data, poll_all,
+};
 use routing::mock_crust::Network;
+use routing::{
+    Authority, ClientError, Event, EventStream, ImmutableData, MessageId, Request, Response,
+};
 
 #[test]
 fn successful_put_request() {
@@ -38,12 +40,13 @@ fn successful_put_request() {
         loop {
             match node.try_next_ev() {
                 Ok(Event::Request {
-                       request: Request::PutIData {
-                           data: ref req_data,
-                           msg_id: ref req_message_id,
-                       },
-                       ..
-                   }) => {
+                    request:
+                        Request::PutIData {
+                            data: ref req_data,
+                            msg_id: ref req_message_id,
+                        },
+                    ..
+                }) => {
                     request_received_count += 1;
                     if data == *req_data && message_id == *req_message_id {
                         break;
@@ -86,13 +89,14 @@ fn successful_get_request() {
         loop {
             match node.try_next_ev() {
                 Ok(Event::Request {
-                       request: Request::GetIData {
-                           name: ref req_name,
-                           msg_id: req_message_id,
-                       },
-                       src,
-                       dst,
-                   }) => {
+                    request:
+                        Request::GetIData {
+                            name: ref req_name,
+                            msg_id: req_message_id,
+                        },
+                    src,
+                    dst,
+                }) => {
                     request_received_count += 1;
                     if data.name() == req_name && message_id == req_message_id {
                         if let Err(err) = node.inner.send_get_idata_response(
@@ -100,8 +104,7 @@ fn successful_get_request() {
                             src,
                             Ok(data.clone()),
                             req_message_id,
-                        )
-                        {
+                        ) {
                             trace!("Failed to send GetIData success response: {:?}", err);
                         }
                         break;
@@ -124,12 +127,13 @@ fn successful_get_request() {
         loop {
             match client.inner.try_next_ev() {
                 Ok(Event::Response {
-                       response: Response::GetIData {
-                           res: Ok(ref res_data),
-                           msg_id: ref res_message_id,
-                       },
-                       ..
-                   }) => {
+                    response:
+                        Response::GetIData {
+                            res: Ok(ref res_data),
+                            msg_id: ref res_message_id,
+                        },
+                    ..
+                }) => {
                     response_received_count += 1;
                     if data == *res_data && message_id == *res_message_id {
                         break;
@@ -171,13 +175,14 @@ fn failed_get_request() {
         loop {
             match node.try_next_ev() {
                 Ok(Event::Request {
-                       request: Request::GetIData {
-                           name: ref req_name,
-                           msg_id: ref req_message_id,
-                       },
-                       src,
-                       dst,
-                   }) => {
+                    request:
+                        Request::GetIData {
+                            name: ref req_name,
+                            msg_id: ref req_message_id,
+                        },
+                    src,
+                    dst,
+                }) => {
                     request_received_count += 1;
                     if data.name() == req_name && message_id == *req_message_id {
                         if let Err(err) = node.inner.send_get_idata_response(
@@ -185,8 +190,7 @@ fn failed_get_request() {
                             src,
                             Err(ClientError::NoSuchData),
                             *req_message_id,
-                        )
-                        {
+                        ) {
                             trace!("Failed to send GetIData failure response: {:?}", err);
                         }
                         break;
@@ -209,12 +213,13 @@ fn failed_get_request() {
         loop {
             match client.inner.try_next_ev() {
                 Ok(Event::Response {
-                       response: Response::GetIData {
-                           res: Err(_),
-                           msg_id: ref res_message_id,
-                       },
-                       ..
-                   }) => {
+                    response:
+                        Response::GetIData {
+                            res: Err(_),
+                            msg_id: ref res_message_id,
+                        },
+                    ..
+                }) => {
                     response_received_count += 1;
                     if message_id == *res_message_id {
                         break;
@@ -256,13 +261,14 @@ fn disconnect_on_get_request() {
         loop {
             match node.try_next_ev() {
                 Ok(Event::Request {
-                       request: Request::GetIData {
-                           name: ref req_name,
-                           msg_id: ref req_message_id,
-                       },
-                       src,
-                       dst,
-                   }) => {
+                    request:
+                        Request::GetIData {
+                            name: ref req_name,
+                            msg_id: ref req_message_id,
+                        },
+                    src,
+                    dst,
+                }) => {
                     request_received_count += 1;
                     if data.name() == req_name && message_id == *req_message_id {
                         if let Err(err) = node.inner.send_get_idata_response(
@@ -270,8 +276,7 @@ fn disconnect_on_get_request() {
                             src,
                             Ok(data.clone()),
                             *req_message_id,
-                        )
-                        {
+                        ) {
                             trace!("Failed to send GetIData success response: {:?}", err);
                         }
                         break;
@@ -286,20 +291,16 @@ fn disconnect_on_get_request() {
     // TODO: Assert a quorum here.
     assert!(2 * request_received_count > min_section_size);
 
-    let _ = clients[0].handle.0.borrow_mut().disconnect(&unwrap!(
-        nodes[0]
-            .handle
-            .0
-            .borrow()
-            .uid
-    ));
-    let _ = nodes[0].handle.0.borrow_mut().disconnect(&unwrap!(
-        clients[0]
-            .handle
-            .0
-            .borrow()
-            .uid
-    ));
+    let _ = clients[0]
+        .handle
+        .0
+        .borrow_mut()
+        .disconnect(&unwrap!(nodes[0].handle.0.borrow().uid));
+    let _ = nodes[0]
+        .handle
+        .0
+        .borrow_mut()
+        .disconnect(&unwrap!(clients[0].handle.0.borrow().uid));
 
     let _ = poll_all(&mut nodes, &mut clients);
 

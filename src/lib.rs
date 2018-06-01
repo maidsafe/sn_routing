@@ -90,32 +90,37 @@
 //! - [Churn (`NewNode`)](new-node.png)
 //! - [Tunnel](tunnel.png)
 
-#![doc(html_logo_url =
-           "https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png",
-       html_favicon_url = "https://maidsafe.net/img/favicon.ico",
-       html_root_url = "https://docs.rs/routing")]
-
+#![doc(
+    html_logo_url = "https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png",
+    html_favicon_url = "https://maidsafe.net/img/favicon.ico",
+    html_root_url = "https://docs.rs/routing"
+)]
 // For explanation of lint checks, run `rustc -W help` or see
 // https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
-#![forbid(exceeding_bitshifts, mutable_transmutes, no_mangle_const_items,
-          unknown_crate_types, warnings)]
-#![deny(bad_style, deprecated, improper_ctypes, missing_docs,
-        non_shorthand_field_patterns, overflowing_literals, plugin_as_library,
-        private_no_mangle_fns, private_no_mangle_statics, stable_features, unconditional_recursion,
-        unknown_lints, unsafe_code, unused, unused_allocation, unused_attributes,
-        unused_comparisons, unused_features, unused_parens, while_true)]
-#![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
-        unused_qualifications, unused_results)]
+#![forbid(
+    exceeding_bitshifts, mutable_transmutes, no_mangle_const_items, unknown_crate_types, warnings
+)]
+#![deny(
+    bad_style, deprecated, improper_ctypes, missing_docs, non_shorthand_field_patterns,
+    overflowing_literals, plugin_as_library, private_no_mangle_fns, private_no_mangle_statics,
+    stable_features, unconditional_recursion, unknown_lints, unsafe_code, unused, unused_allocation,
+    unused_attributes, unused_comparisons, unused_features, unused_parens, while_true
+)]
+#![warn(
+    trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
+    unused_qualifications, unused_results
+)]
 // TODO: Remove `renamed_and_removed_lints` once
 // https://github.com/rust-lang-nursery/error-chain/pull/246 has been fixed.
-#![allow(box_pointers, missing_copy_implementations,
-         missing_debug_implementations, variant_size_differences, non_camel_case_types,
-         renamed_and_removed_lints)]
-
-#![cfg_attr(feature="cargo-clippy", deny(unicode_not_nfc, wrong_pub_self_convention,
-                                    option_unwrap_used))]
+#![allow(
+    box_pointers, missing_copy_implementations, missing_debug_implementations,
+    variant_size_differences, non_camel_case_types, renamed_and_removed_lints
+)]
+#![cfg_attr(
+    feature = "cargo-clippy", deny(unicode_not_nfc, wrong_pub_self_convention, option_unwrap_used)
+)]
 // FIXME: allow `needless_pass_by_value` until it's OK to change the public API
-#![cfg_attr(feature="cargo-clippy", allow(needless_pass_by_value))]
+#![cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 
 extern crate config_file_handler;
 extern crate hex;
@@ -160,7 +165,6 @@ mod data;
 mod error;
 mod event;
 mod event_stream;
-mod section_list_cache;
 mod id;
 mod message_filter;
 mod messages;
@@ -171,6 +175,7 @@ mod rate_limiter;
 mod resource_prover;
 mod routing_message_filter;
 mod routing_table;
+mod section_list_cache;
 mod signature_accumulator;
 mod state_machine;
 mod states;
@@ -221,9 +226,11 @@ pub use client::Client;
 pub use client_error::{ClientError, EntryError};
 pub use common_types::AccountPacket;
 pub use config_handler::{Config, DevConfig};
-pub use data::{Action, EntryAction, EntryActions, ImmutableData, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
-               MAX_MUTABLE_DATA_ENTRIES, MAX_MUTABLE_DATA_SIZE_IN_BYTES, MutableData,
-               NO_OWNER_PUB_KEY, PermissionSet, User, Value};
+pub use data::{
+    Action, EntryAction, EntryActions, ImmutableData, MutableData, PermissionSet, User, Value,
+    MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_MUTABLE_DATA_ENTRIES, MAX_MUTABLE_DATA_SIZE_IN_BYTES,
+    NO_OWNER_PUB_KEY,
+};
 pub use error::{InterfaceError, RoutingError};
 pub use event::Event;
 pub use event_stream::EventStream;
@@ -236,12 +243,12 @@ pub use node::{Node, NodeBuilder};
 pub use peer_manager::test_consts;
 #[cfg(feature = "use-mock-crust")]
 pub use rate_limiter::rate_limiter_consts;
-pub use routing_table::{Authority, Prefix, RoutingTable, Xorable};
-pub use routing_table::Error as RoutingTableError;
 #[cfg(any(test, feature = "use-mock-crust"))]
 pub use routing_table::verify_network_invariant;
+pub use routing_table::Error as RoutingTableError;
+pub use routing_table::{Authority, Prefix, RoutingTable, Xorable};
 pub use types::MessageId;
-pub use xor_name::{XOR_NAME_BITS, XOR_NAME_LEN, XorName, XorNameFromHexError};
+pub use xor_name::{XorName, XorNameFromHexError, XOR_NAME_BITS, XOR_NAME_LEN};
 
 type Service = crust::Service<PublicId>;
 use crust::Event as CrustEvent;

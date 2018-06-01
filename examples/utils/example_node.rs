@@ -8,8 +8,10 @@
 
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-use routing::{Authority, ClientError, Event, EventStream, ImmutableData, MessageId, MutableData,
-              Node, Prefix, Request, Response, XorName};
+use routing::{
+    Authority, ClientError, Event, EventStream, ImmutableData, MessageId, MutableData, Node,
+    Prefix, Request, Response, XorName,
+};
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -214,7 +216,6 @@ impl ExampleNode {
                         msg_id,
                     ));
                 }
-
             }
             _ => unreachable!("ExampleNode: Unexpected dst ({:?})", dst),
         }
@@ -233,18 +234,18 @@ impl ExampleNode {
                 let res = if let Some(data) = self.mdata_store.get(&(name, tag)) {
                     Ok(data.shell())
                 } else {
-                    trace!("{:?} GetMDataShell request failed for {:?}.",
-                           self.get_debug_name(),
-                           (name, tag));
+                    trace!(
+                        "{:?} GetMDataShell request failed for {:?}.",
+                        self.get_debug_name(),
+                        (name, tag)
+                    );
                     Err(ClientError::NoSuchData)
                 };
 
-                unwrap!(self.node.send_get_mdata_shell_response(
-                    dst,
-                    src,
-                    res,
-                    msg_id,
-                ))
+                unwrap!(
+                    self.node
+                        .send_get_mdata_shell_response(dst, src, res, msg_id,)
+                )
             }
             (src, dst) => unreachable!("Wrong Src and Dest Authority {:?} - {:?}", src, dst),
         }
@@ -263,18 +264,18 @@ impl ExampleNode {
                 let res = if let Some(data) = self.mdata_store.get(&(name, tag)) {
                     Ok(data.entries().clone())
                 } else {
-                    trace!("{:?} ListMDataEntries request failed for {:?}.",
-                           self.get_debug_name(),
-                           (name, tag));
+                    trace!(
+                        "{:?} ListMDataEntries request failed for {:?}.",
+                        self.get_debug_name(),
+                        (name, tag)
+                    );
                     Err(ClientError::NoSuchData)
                 };
 
-                unwrap!(self.node.send_list_mdata_entries_response(
-                    dst,
-                    src,
-                    res,
-                    msg_id,
-                ))
+                unwrap!(
+                    self.node
+                        .send_list_mdata_entries_response(dst, src, res, msg_id,)
+                )
             }
             (src, dst) => unreachable!("Wrong Src and Dest Authority {:?} - {:?}", src, dst),
         }
@@ -291,25 +292,24 @@ impl ExampleNode {
     ) {
         match (src, dst) {
             (src @ Authority::Client { .. }, dst @ Authority::NaeManager(_)) => {
-                let res = self.mdata_store
+                let res = self
+                    .mdata_store
                     .get(&(name, tag))
                     .ok_or(ClientError::NoSuchData)
-                    .and_then(|data| {
-                        data.get(key).cloned().ok_or(ClientError::NoSuchEntry)
-                    })
+                    .and_then(|data| data.get(key).cloned().ok_or(ClientError::NoSuchEntry))
                     .map_err(|error| {
-                        trace!("{:?} GetMDataValue request failed for {:?}.",
-                                        self.get_debug_name(),
-                                        (name, tag));
+                        trace!(
+                            "{:?} GetMDataValue request failed for {:?}.",
+                            self.get_debug_name(),
+                            (name, tag)
+                        );
                         error
                     });
 
-                unwrap!(self.node.send_get_mdata_value_response(
-                    dst,
-                    src,
-                    res,
-                    msg_id,
-                ))
+                unwrap!(
+                    self.node
+                        .send_get_mdata_value_response(dst, src, res, msg_id,)
+                )
             }
             (src, dst) => unreachable!("Wrong Src and Dest Authority {:?} - {:?}", src, dst),
         }
@@ -320,7 +320,8 @@ impl ExampleNode {
     }
 
     fn handle_split(&mut self, prefix: Prefix<XorName>) {
-        let deleted_clients: Vec<_> = self.client_accounts
+        let deleted_clients: Vec<_> = self
+            .client_accounts
             .iter()
             .filter(|&(client_name, _)| !prefix.matches(client_name))
             .map(|(client_name, _)| *client_name)
@@ -329,7 +330,8 @@ impl ExampleNode {
             let _ = self.client_accounts.remove(client);
         }
 
-        let deleted_data: Vec<_> = self.idata_store
+        let deleted_data: Vec<_> = self
+            .idata_store
             .iter()
             .filter(|&(name, _)| !prefix.matches(name))
             .map(|(name, _)| *name)
@@ -338,7 +340,8 @@ impl ExampleNode {
             let _ = self.idata_store.remove(id);
         }
 
-        let deleted_data: Vec<_> = self.mdata_store
+        let deleted_data: Vec<_> = self
+            .mdata_store
             .iter()
             .filter(|&(&(ref name, _), _)| !prefix.matches(name))
             .map(|(id, _)| *id)

@@ -6,8 +6,6 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use {CrustEvent, CrustEventSender, MIN_SECTION_SIZE, Service};
-use BootstrapConfig;
 use action::Action;
 use id::{FullId, PublicId};
 use log::Level;
@@ -18,8 +16,8 @@ use outbox::EventBox;
 use routing_table::{Prefix, RoutingTable};
 #[cfg(feature = "use-mock-crust")]
 use rust_sodium::crypto::sign;
-use states::{Bootstrapping, Client, JoiningNode, Node};
 use states::common::Base;
+use states::{Bootstrapping, Client, JoiningNode, Node};
 #[cfg(feature = "use-mock-crust")]
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
@@ -31,6 +29,8 @@ use std::sync::mpsc::{self, Receiver, RecvError, Sender, TryRecvError};
 use timer::Timer;
 use types::RoutingActionSender;
 use xor_name::XorName;
+use BootstrapConfig;
+use {CrustEvent, CrustEventSender, Service, MIN_SECTION_SIZE};
 
 /// Holds the current state and handles state transitions.
 pub struct StateMachine {
@@ -66,12 +66,10 @@ impl EventType {
     fn is_not_a_timeout(&self) -> bool {
         use std::borrow::Borrow;
         match *self {
-            EventType::Action(ref action) => {
-                match *action.borrow() {
-                    Action::Timeout(_) => false,
-                    _ => true,
-                }
-            }
+            EventType::Action(ref action) => match *action.borrow() {
+                Action::Timeout(_) => false,
+                _ => true,
+            },
             _ => true,
         }
     }
@@ -114,9 +112,8 @@ impl State {
     }
 
     fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
-        self.base_state().and_then(
-            |state| state.close_group(name, count),
-        )
+        self.base_state()
+            .and_then(|state| state.close_group(name, count))
     }
 
     fn min_section_size(&self) -> usize {
@@ -234,7 +231,9 @@ impl State {
 pub enum Transition {
     Stay,
     // `Bootstrapping` state transitioning to `Client`, `JoiningNode`, or `Node`.
-    IntoBootstrapped { proxy_public_id: PublicId },
+    IntoBootstrapped {
+        proxy_public_id: PublicId,
+    },
     // `JoiningNode` state transitioning back to `Bootstrapping`.
     IntoBootstrapping {
         new_id: FullId,
@@ -326,22 +325,20 @@ impl StateMachine {
                     Transition::Terminate
                 }
             }
-            MaidSafeEventCategory::Crust => {
-                match self.crust_rx.try_recv() {
-                    Ok(crust_event) => self.state.handle_crust_event(crust_event, outbox),
-                    Err(TryRecvError::Empty) => {
-                        debug!(
-                            "Crust receiver temporarily empty, probably due to node \
-                               relocation."
-                        );
-                        Transition::Stay
-                    }
-                    Err(TryRecvError::Disconnected) => {
-                        debug!("Logic error: Crust receiver disconnected.");
-                        Transition::Terminate
-                    }
+            MaidSafeEventCategory::Crust => match self.crust_rx.try_recv() {
+                Ok(crust_event) => self.state.handle_crust_event(crust_event, outbox),
+                Err(TryRecvError::Empty) => {
+                    debug!(
+                        "Crust receiver temporarily empty, probably due to node \
+                         relocation."
+                    );
+                    Transition::Stay
                 }
-            }
+                Err(TryRecvError::Disconnected) => {
+                    debug!("Logic error: Crust receiver disconnected.");
+                    Transition::Terminate
+                }
+            },
         };
 
         self.apply_transition(transition, outbox)
@@ -455,20 +452,19 @@ impl StateMachine {
                         return Ok(());
                     }
                 }
-                MaidSafeEventCategory::Crust => {
-                    match self.crust_rx.try_recv() {
-                        Ok(crust_event) => events.push(EventType::CrustEvent(crust_event)),
-                        Err(TryRecvError::Empty) => {}
-                        Err(TryRecvError::Disconnected) => {
-                            self.apply_transition(Transition::Terminate, outbox);
-                            return Ok(());
-                        }
+                MaidSafeEventCategory::Crust => match self.crust_rx.try_recv() {
+                    Ok(crust_event) => events.push(EventType::CrustEvent(crust_event)),
+                    Err(TryRecvError::Empty) => {}
+                    Err(TryRecvError::Disconnected) => {
+                        self.apply_transition(Transition::Terminate, outbox);
+                        return Ok(());
                     }
-                }
+                },
             }
         }
 
-        let mut timed_out_events = self.state
+        let mut timed_out_events = self
+            .state
             .get_timed_out_tokens()
             .iter()
             .map(|token| EventType::Action(Box::new(Action::Timeout(*token))))
@@ -482,10 +478,12 @@ impl StateMachine {
         SeededRng::thread_rng().shuffle(&mut positions);
         let mut interleaved = positions
             .iter()
-            .filter_map(|is_timed_out| if *is_timed_out {
-                timed_out_events.pop()
-            } else {
-                events.pop()
+            .filter_map(|is_timed_out| {
+                if *is_timed_out {
+                    timed_out_events.pop()
+                } else {
+                    events.pop()
+                }
             })
             .collect_vec();
         interleaved.reverse();

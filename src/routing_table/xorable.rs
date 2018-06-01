@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use std::cmp::{Ordering, min};
+use std::cmp::{min, Ordering};
 use std::marker::Sized;
 use std::mem;
 use std::num::Wrapping;
@@ -74,13 +74,13 @@ pub fn debug_format(input: String) -> String {
 }
 
 macro_rules! impl_xorable_for_array {
-    ($t: ident, $l: expr) => {
+    ($t:ident, $l:expr) => {
         impl Xorable for [$t; $l] {
             fn common_prefix(&self, other: &[$t; $l]) -> usize {
                 for byte_index in 0..$l {
                     if self[byte_index] != other[byte_index] {
-                        return (byte_index * mem::size_of::<$t>() * 8) +
-                               (self[byte_index] ^ other[byte_index]).leading_zeros() as usize;
+                        return (byte_index * mem::size_of::<$t>() * 8)
+                            + (self[byte_index] ^ other[byte_index]).leading_zeros() as usize;
                     }
                 }
                 $l * mem::size_of::<$t>() * 8
@@ -177,7 +177,7 @@ macro_rules! impl_xorable_for_array {
                         x <<= 4;
                         x <<= 4;
                         *elem = x.0;
-                        *elem |= hash[i*size + j];
+                        *elem |= hash[i * size + j];
                     }
                 }
                 for j in 0..(needed_bytes % size) {
@@ -186,12 +186,12 @@ macro_rules! impl_xorable_for_array {
                     x <<= 4;
                     x <<= 4;
                     result[full_elems] = x.0;
-                    result[full_elems] |= hash[full_elems*size + j];
+                    result[full_elems] |= hash[full_elems * size + j];
                 }
                 result
             }
         }
-    }
+    };
 }
 
 impl_xorable_for_array!(u8, 32);
@@ -281,7 +281,7 @@ macro_rules! impl_xorable {
                 result
             }
         }
-    }
+    };
 }
 
 impl_xorable!(usize);
@@ -289,8 +289,6 @@ impl_xorable!(u64);
 impl_xorable!(u32);
 impl_xorable!(u16);
 impl_xorable!(u8);
-
-
 
 #[cfg(test)]
 mod tests {

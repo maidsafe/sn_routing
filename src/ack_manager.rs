@@ -83,10 +83,10 @@ impl AckManager {
     // If such message exists, returns it with the corresponding ack hash. Otherwise
     // returns None.
     pub fn find_timed_out(&mut self, token: u64) -> Option<(UnacknowledgedMessage, Ack)> {
-        let timed_out_ack = if let Some((sip_hash, _)) =
-            self.pending.iter().find(|&(_, unacked_msg)| {
-                unacked_msg.timer_token == token
-            })
+        let timed_out_ack = if let Some((sip_hash, _)) = self
+            .pending
+            .iter()
+            .find(|&(_, unacked_msg)| unacked_msg.timer_token == token)
         {
             *sip_hash
         } else {
@@ -110,7 +110,9 @@ impl Ack {
     /// Compute an `Ack` from a message.
     pub fn compute(routing_msg: &RoutingMessage) -> Result<Ack, RoutingError> {
         let hash_msg = serialisation::serialise(routing_msg)?;
-        Ok(Ack { m_hash: sha3_256(&hash_msg) })
+        Ok(Ack {
+            m_hash: sha3_256(&hash_msg),
+        })
     }
 }
 
@@ -119,8 +121,7 @@ impl fmt::Debug for Ack {
         write!(
             formatter,
             "Ack({:02x}{:02x}..)",
-            self.m_hash[0],
-            self.m_hash[1]
+            self.m_hash[0], self.m_hash[1]
         )
     }
 }

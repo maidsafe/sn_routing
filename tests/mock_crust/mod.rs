@@ -8,24 +8,24 @@
 
 mod accumulate;
 mod cache;
-mod client_restrictions;
 mod churn;
+mod client_restrictions;
 mod drop;
 mod merge;
 mod requests;
 mod tunnel;
 mod utils;
 
-pub use self::utils::{Nodes, TestClient, TestNode, add_connected_nodes_until_split,
-                      create_connected_clients, create_connected_nodes,
-                      create_connected_nodes_until_split, gen_bytes, gen_immutable_data,
-                      gen_range, gen_range_except, poll_all, poll_and_resend,
-                      remove_nodes_which_failed_to_connect, sort_nodes_by_distance_to,
-                      verify_invariant_for_all_nodes};
+pub use self::utils::{
+    add_connected_nodes_until_split, create_connected_clients, create_connected_nodes,
+    create_connected_nodes_until_split, gen_bytes, gen_immutable_data, gen_range, gen_range_except,
+    poll_all, poll_and_resend, remove_nodes_which_failed_to_connect, sort_nodes_by_distance_to,
+    verify_invariant_for_all_nodes, Nodes, TestClient, TestNode,
+};
 use fake_clock::FakeClock;
-use routing::{BootstrapConfig, Event, EventStream, Prefix, XOR_NAME_LEN, XorName};
 use routing::mock_crust::{Endpoint, Network};
 use routing::test_consts::JOINING_NODE_TIMEOUT_SECS;
+use routing::{BootstrapConfig, Event, EventStream, Prefix, XorName, XOR_NAME_LEN};
 use std::collections::BTreeSet;
 
 pub const MIN_SECTION_SIZE: usize = 8;
@@ -175,9 +175,9 @@ fn simultaneous_joining_nodes() {
 #[test]
 fn check_close_names_for_min_section_size_nodes() {
     let nodes = create_connected_nodes(&Network::new(MIN_SECTION_SIZE, None), MIN_SECTION_SIZE);
-    let close_sections_complete = nodes.iter().all(|n| {
-        nodes.iter().all(|m| m.close_names().contains(&n.name()))
-    });
+    let close_sections_complete = nodes
+        .iter()
+        .all(|n| nodes.iter().all(|m| m.close_names().contains(&n.name())));
     assert!(close_sections_complete);
 }
 

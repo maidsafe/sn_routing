@@ -12,18 +12,20 @@
 use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
-use routing::{Authority, BootstrapConfig, Cache, Client, Config, DevConfig, Event, EventStream,
-              FullId, ImmutableData, Node, NullCache, Prefix, PublicId, Request, Response,
-              RoutingTable, XorName, Xorable, verify_network_invariant};
 use routing::mock_crust::{self, Endpoint, Network, ServiceHandle};
 use routing::test_consts::{ACK_TIMEOUT_SECS, CONNECTING_PEER_TIMEOUT_SECS};
-use std::{cmp, thread};
+use routing::{
+    verify_network_invariant, Authority, BootstrapConfig, Cache, Client, Config, DevConfig, Event,
+    EventStream, FullId, ImmutableData, Node, NullCache, Prefix, PublicId, Request, Response,
+    RoutingTable, XorName, Xorable,
+};
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap};
 use std::net::IpAddr;
 use std::ops::{Deref, DerefMut};
 use std::sync::mpsc::{RecvError, TryRecvError};
 use std::time::Duration;
+use std::{cmp, thread};
 
 // Poll one event per node. Otherwise, all events in a single node are polled before moving on.
 const BALANCED_POLLING: bool = true;
@@ -97,7 +99,6 @@ impl DerefMut for Nodes {
     }
 }
 
-
 // -----  TestNode and builder  -----
 
 impl EventStream for TestNode {
@@ -166,9 +167,7 @@ impl TestNode {
     }
 
     pub fn close_names(&self) -> BTreeSet<XorName> {
-        unwrap!(unwrap!(self.inner.routing_table()).close_names(
-            &self.name(),
-        ))
+        unwrap!(unwrap!(self.inner.routing_table()).close_names(&self.name()))
     }
 
     pub fn routing_table(&self) -> &RoutingTable<XorName> {
@@ -176,9 +175,10 @@ impl TestNode {
     }
 
     pub fn is_recipient(&self, dst: &Authority<XorName>) -> bool {
-        self.inner.routing_table().ok().map_or(false, |rt| {
-            rt.in_authority(dst)
-        })
+        self.inner
+            .routing_table()
+            .ok()
+            .map_or(false, |rt| rt.in_authority(dst))
     }
 }
 
@@ -226,7 +226,6 @@ impl<'a> TestNodeBuilder<'a> {
         )
     }
 }
-
 
 // -----  TestClient  -----
 
@@ -313,11 +312,9 @@ impl TestCache {
 impl Cache for TestCache {
     fn get(&self, request: &Request) -> Option<Response> {
         if let Request::GetIData { ref name, msg_id } = *request {
-            self.0.borrow().get(name).map(|data| {
-                Response::GetIData {
-                    res: Ok(data.clone()),
-                    msg_id: msg_id,
-                }
+            self.0.borrow().get(name).map(|data| Response::GetIData {
+                res: Ok(data.clone()),
+                msg_id: msg_id,
             })
         } else {
             None
@@ -331,7 +328,6 @@ impl Cache for TestCache {
     }
 }
 
-
 // -----  poll_all, create_connected_...  -----
 
 /// Process all events. Returns whether there were any events.
@@ -343,9 +339,9 @@ pub fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
         nodes[0].handle.deliver_messages();
         if BALANCED_POLLING {
             // handle all current messages for each node in turn, then repeat (via outer loop):
-            nodes.iter_mut().foreach(|node| {
-                handled_message = node.poll() || handled_message
-            });
+            nodes
+                .iter_mut()
+                .foreach(|node| handled_message = node.poll() || handled_message);
         } else {
             handled_message = nodes.iter_mut().any(TestNode::poll);
         }
@@ -446,10 +442,10 @@ pub fn create_connected_nodes_with_cache(
         while let Ok(event) = node.try_next_ev() {
             match event {
                 Event::NodeAdded(..) => node_added_count += 1,
-                Event::NodeLost(..) |
-                Event::SectionSplit(..) |
-                Event::RestartRequired |
-                Event::Tick => (),
+                Event::NodeLost(..)
+                | Event::SectionSplit(..)
+                | Event::RestartRequired
+                | Event::Tick => (),
                 event => panic!("Got unexpected event: {:?}", event),
             }
         }
@@ -520,7 +516,7 @@ pub fn add_connected_nodes_until_split(
         assert!(
             num_in_section <= nodes[0].routing_table().min_split_size(),
             "The existing nodes' names disallow creation of the requested prefixes. There \
-                 are {} nodes which all belong in {:?} which exceeds the limit here of {}.",
+             are {} nodes which all belong in {:?} which exceeds the limit here of {}.",
             num_in_section,
             prefix,
             nodes[0].routing_table().min_split_size()
@@ -540,10 +536,10 @@ pub fn add_connected_nodes_until_split(
     loop {
         let mut found_prefix = None;
         for node in nodes.iter() {
-            if let Some(prefix_to_split) =
-                unwrap!(node.inner.routing_table()).prefixes().iter().find(
-                    |&prefix| !prefixes.contains(prefix),
-                )
+            if let Some(prefix_to_split) = unwrap!(node.inner.routing_table())
+                .prefixes()
+                .iter()
+                .find(|&prefix| !prefixes.contains(prefix))
             {
                 // Assert that this can be split down to a desired prefix.
                 let is_valid = |prefix: &Prefix<XorName>| {
@@ -591,10 +587,10 @@ pub fn add_connected_nodes_until_split(
     for node in nodes.iter_mut() {
         while let Ok(event) = node.try_next_ev() {
             match event {
-                Event::NodeAdded(..) |
-                Event::NodeLost(..) |
-                Event::Tick |
-                Event::SectionSplit(..) => (),
+                Event::NodeAdded(..)
+                | Event::NodeLost(..)
+                | Event::Tick
+                | Event::SectionSplit(..) => (),
                 event => panic!("Got unexpected event: {:?}", event),
             }
         }
@@ -628,7 +624,6 @@ pub fn create_connected_clients(
     clients
 }
 
-
 // -----  Small misc functions  -----
 
 /// Sorts the given nodes by their distance to `name`. Note that this will call the `name()`
@@ -636,9 +631,7 @@ pub fn create_connected_clients(
 /// events have been processed before sorting.
 pub fn sort_nodes_by_distance_to(nodes: &mut [TestNode], name: &XorName) {
     let _ = poll_all(nodes, &mut []); // Poll
-    nodes.sort_by(|node0, node1| {
-        name.cmp_distance(&node0.name(), &node1.name())
-    });
+    nodes.sort_by(|node0, node1| name.cmp_distance(&node0.name(), &node1.name()));
 }
 
 pub fn verify_invariant_for_all_nodes(nodes: &mut [TestNode]) {
@@ -696,9 +689,9 @@ fn prefixes<T: Rng>(prefix_lengths: &[usize], rng: &mut T) -> Vec<Prefix<XorName
     let mut prefixes = vec![Prefix::new(prefix_lengths[0], rng.gen())];
     while prefixes.len() < prefix_lengths.len() {
         let new_prefix = Prefix::new(prefix_lengths[prefixes.len()], rng.gen());
-        if prefixes.iter().all(
-            |prefix| !prefix.is_compatible(&new_prefix),
-        )
+        if prefixes
+            .iter()
+            .all(|prefix| !prefix.is_compatible(&new_prefix))
         {
             prefixes.push(new_prefix);
         }
@@ -716,9 +709,8 @@ fn add_node_to_section<T: Rng>(
     let relocation_name = prefix.substituted_in(rng.gen());
     nodes.iter_mut().foreach(|node| {
         node.inner.set_next_relocation_dst(relocation_name);
-        node.inner.set_next_relocation_interval(
-            (prefix.lower_bound(), prefix.upper_bound()),
-        );
+        node.inner
+            .set_next_relocation_interval((prefix.lower_bound(), prefix.upper_bound()));
     });
 
     let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
@@ -732,9 +724,7 @@ fn add_node_to_section<T: Rng>(
     );
     poll_and_resend(nodes, &mut []);
     expect_any_event!(unwrap!(nodes.last_mut()), Event::Connected);
-    assert!(prefix.matches(
-        nodes[nodes.len() - 1].routing_table().our_name(),
-    ));
+    assert!(prefix.matches(nodes[nodes.len() - 1].routing_table().our_name(),));
 }
 
 mod tests {

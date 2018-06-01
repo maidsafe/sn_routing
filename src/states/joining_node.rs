@@ -6,9 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{Bootstrapping, BootstrappingTargetState};
 use super::common::{Base, Bootstrapped};
-use {CrustEvent, CrustEventSender, Service};
+use super::{Bootstrapping, BootstrappingTargetState};
 use ack_manager::{Ack, AckManager};
 use action::Action;
 use cache::Cache;
@@ -35,6 +34,7 @@ use std::time::Instant;
 use timer::Timer;
 use types::{MessageId, RoutingActionSender};
 use xor_name::XorName;
+use {CrustEvent, CrustEventSender, Service};
 
 /// Total time (in seconds) to wait for `RelocateResponse`.
 const RELOCATE_TIMEOUT_SECS: u64 = 60 + RESOURCE_PROOF_DURATION_SECS;
@@ -94,8 +94,8 @@ impl JoiningNode {
 
     pub fn handle_action(&mut self, action: Action, outbox: &mut EventBox) -> Transition {
         match action {
-            Action::ClientSendRequest { ref result_tx, .. } |
-            Action::NodeSendMessage { ref result_tx, .. } => {
+            Action::ClientSendRequest { ref result_tx, .. }
+            | Action::NodeSendMessage { ref result_tx, .. } => {
                 warn!("{:?} Cannot handle {:?} - not joined.", self, action);
                 let _ = result_tx.send(Err(InterfaceError::InvalidState));
             }
@@ -150,17 +150,15 @@ impl JoiningNode {
             old_full_id: self.full_id,
             our_section,
         };
-        if let Some(bootstrapping) =
-            Bootstrapping::new(
-                self.action_sender,
-                self.cache,
-                target_state,
-                service,
-                new_full_id,
-                self.min_section_size,
-                self.timer,
-            )
-        {
+        if let Some(bootstrapping) = Bootstrapping::new(
+            self.action_sender,
+            self.cache,
+            target_state,
+            service,
+            new_full_id,
+            self.min_section_size,
+            self.timer,
+        ) {
             State::Bootstrapping(bootstrapping)
         } else {
             outbox.send_event(Event::RestartRequired);
@@ -239,12 +237,13 @@ impl JoiningNode {
         }
 
         // Prevents us repeatedly handling identical messages sent by a malicious peer.
-        match self.routing_msg_filter.filter_incoming(
-            routing_msg,
-            hop_msg.route,
-        ) {
-            FilteringResult::KnownMessage |
-            FilteringResult::KnownMessageAndRoute => return Err(RoutingError::FilterCheckFailed),
+        match self
+            .routing_msg_filter
+            .filter_incoming(routing_msg, hop_msg.route)
+        {
+            FilteringResult::KnownMessage | FilteringResult::KnownMessageAndRoute => {
+                return Err(RoutingError::FilterCheckFailed)
+            }
             FilteringResult::NewMessage => (),
         }
 
@@ -258,24 +257,21 @@ impl JoiningNode {
     fn dispatch_routing_message(&mut self, routing_msg: RoutingMessage) -> Transition {
         use messages::MessageContent::*;
         match routing_msg.content {
-            Relocate { .. } |
-            ExpectCandidate { .. } |
-            ConnectionInfoRequest { .. } |
-            ConnectionInfoResponse { .. } |
-            SectionUpdate { .. } |
-            SectionSplit(..) |
-            OwnSectionMerge(..) |
-            OtherSectionMerge(..) |
-            UserMessagePart { .. } |
-            AcceptAsCandidate { .. } |
-            CandidateApproval { .. } |
-            NodeApproval { .. } => {
+            Relocate { .. }
+            | ExpectCandidate { .. }
+            | ConnectionInfoRequest { .. }
+            | ConnectionInfoResponse { .. }
+            | SectionUpdate { .. }
+            | SectionSplit(..)
+            | OwnSectionMerge(..)
+            | OtherSectionMerge(..)
+            | UserMessagePart { .. }
+            | AcceptAsCandidate { .. }
+            | CandidateApproval { .. }
+            | NodeApproval { .. } => {
                 warn!(
                     "{:?} Not joined yet. Not handling {:?} from {:?} to {:?}",
-                    self,
-                    routing_msg.content,
-                    routing_msg.src,
-                    routing_msg.dst
+                    self, routing_msg.content, routing_msg.src, routing_msg.dst
                 );
             }
             Ack(ack, _) => self.handle_ack_response(ack),
@@ -291,7 +287,9 @@ impl JoiningNode {
     }
 
     fn relocate(&mut self) -> Result<(), RoutingError> {
-        let request_content = MessageContent::Relocate { message_id: MessageId::new() };
+        let request_content = MessageContent::Relocate {
+            message_id: MessageId::new(),
+        };
         let src = Authority::Client {
             client_id: *self.full_id.public_id(),
             proxy_node_name: *self.proxy_pub_id.name(),
@@ -405,7 +403,10 @@ impl Bootstrapped for JoiningNode {
 
         // Get PublicId of the proxy node
         match routing_msg.src {
-            Authority::Client { ref proxy_node_name, .. } => {
+            Authority::Client {
+                ref proxy_node_name,
+                ..
+            } => {
                 if *self.proxy_pub_id.name() != *proxy_node_name {
                     error!(
                         "{:?} Unable to find connection to proxy node in proxy map",
@@ -426,14 +427,10 @@ impl Bootstrapped for JoiningNode {
         let signed_msg = SignedMessage::new(routing_msg, self.full_id(), vec![])?;
 
         let proxy_pub_id = self.proxy_pub_id;
-        if self.add_to_pending_acks(signed_msg.routing_message(), route, expires_at) &&
-            !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_pub_id, route)
+        if self.add_to_pending_acks(signed_msg.routing_message(), route, expires_at)
+            && !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_pub_id, route)
         {
-            let bytes = self.to_hop_bytes(
-                signed_msg.clone(),
-                route,
-                BTreeSet::new(),
-            )?;
+            let bytes = self.to_hop_bytes(signed_msg.clone(), route, BTreeSet::new())?;
             self.send_or_drop(&proxy_pub_id, bytes, signed_msg.priority());
         }
 

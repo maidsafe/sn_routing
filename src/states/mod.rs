@@ -7,8 +7,8 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 mod bootstrapping;
-pub mod common;
 mod client;
+pub mod common;
 mod joining_node;
 mod node;
 

@@ -11,17 +11,21 @@
 
 // For explanation of lint checks, run `rustc -W help` or see
 // https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
-#![forbid(bad_style, exceeding_bitshifts, mutable_transmutes, no_mangle_const_items,
-          unknown_crate_types, warnings)]
-#![deny(deprecated, improper_ctypes, missing_docs,
-      non_shorthand_field_patterns, overflowing_literals, plugin_as_library,
-      private_no_mangle_fns, private_no_mangle_statics, stable_features, unconditional_recursion,
-      unknown_lints, unsafe_code, unused, unused_allocation, unused_attributes,
-      unused_comparisons, unused_features, unused_parens, while_true)]
-#![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
-        unused_qualifications, unused_results, variant_size_differences)]
+#![forbid(
+    bad_style, exceeding_bitshifts, mutable_transmutes, no_mangle_const_items, unknown_crate_types,
+    warnings
+)]
+#![deny(
+    deprecated, improper_ctypes, missing_docs, non_shorthand_field_patterns, overflowing_literals,
+    plugin_as_library, private_no_mangle_fns, private_no_mangle_statics, stable_features,
+    unconditional_recursion, unknown_lints, unsafe_code, unused, unused_allocation,
+    unused_attributes, unused_comparisons, unused_features, unused_parens, while_true
+)]
+#![warn(
+    trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
+    unused_qualifications, unused_results, variant_size_differences
+)]
 #![allow(box_pointers, missing_copy_implementations, missing_debug_implementations)]
-
 #![cfg(not(feature = "use-mock-crust"))]
 #![cfg(not(feature = "use-mock-crypto"))]
 
@@ -35,13 +39,14 @@ extern crate rust_sodium;
 #[macro_use]
 extern crate unwrap;
 
-
 use itertools::Itertools;
-use maidsafe_utilities::SeededRng;
 use maidsafe_utilities::thread::{self, Joiner};
+use maidsafe_utilities::SeededRng;
 use rand::Rng;
-use routing::{Authority, Client, ClientError, Event, EventStream, FullId, MIN_SECTION_SIZE,
-              MessageId, MutableData, Node, Request, Response, Value, XorName, Xorable};
+use routing::{
+    Authority, Client, ClientError, Event, EventStream, FullId, MessageId, MutableData, Node,
+    Request, Response, Value, XorName, Xorable, MIN_SECTION_SIZE,
+};
 use rust_sodium::crypto;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 #[cfg(target_os = "macos")]
@@ -99,7 +104,9 @@ struct TestNode {
 impl TestNode {
     // If `index` is `0`, this will be treated as the first node of the network.
     fn new(index: usize) -> Self {
-        TestNode { node: unwrap!(Node::builder().first(index == 0).create()) }
+        TestNode {
+            node: unwrap!(Node::builder().first(index == 0).create()),
+        }
     }
 
     fn name(&self) -> XorName {
@@ -194,8 +201,10 @@ fn spawn_select_thread(
 ) -> (Sender<Event>, Joiner) {
     let (sender, receiver) = mpsc::channel();
 
-    let thread_handle = thread::named(thread_name, move || for event in receiver.iter() {
-        unwrap!(main_sender.send(TestEvent(index, event)));
+    let thread_handle = thread::named(thread_name, move || {
+        for event in receiver.iter() {
+            unwrap!(main_sender.send(TestEvent(index, event)));
+        }
     });
 
     (sender, thread_handle)
@@ -209,20 +218,16 @@ fn wait_for_nodes_to_connect(
 ) {
     // Wait for each node to connect to all the other nodes by counting churns.
     loop {
-        if let Ok(test_event) = recv_with_timeout(
-            nodes,
-            event_sender,
-            event_receiver,
-            Duration::from_secs(30),
-        )
+        if let Ok(test_event) =
+            recv_with_timeout(nodes, event_sender, event_receiver, Duration::from_secs(30))
         {
             if let TestEvent(index, Event::NodeAdded(..)) = test_event {
                 connection_counts[index] += 1;
 
                 let k = nodes.len();
-                let all_events_received = (0..k).map(|i| connection_counts[i]).all(|n| {
-                    n >= k - 1 || n >= MIN_SECTION_SIZE
-                });
+                let all_events_received = (0..k)
+                    .map(|i| connection_counts[i])
+                    .all(|n| n >= k - 1 || n >= MIN_SECTION_SIZE);
                 if all_events_received {
                     break;
                 }
@@ -320,18 +325,15 @@ fn core() {
                 &event_sender,
                 &event_receiver,
                 Duration::from_secs(20),
-            )
-            {
+            ) {
                 match test_event {
                     TestEvent(index, Event::Connected) if index == client.index => {
                         // The client is connected now. Send some request.
                         let src = Authority::ClientManager(*client.name());
-                        let result = client.client.put_mdata(
-                            src,
-                            data.clone(),
-                            message_id,
-                            client_key,
-                        );
+                        let result =
+                            client
+                                .client
+                                .put_mdata(src, data.clone(), message_id, client_key);
                         assert!(result.is_ok());
                     }
 
@@ -343,12 +345,18 @@ fn core() {
                         }
                     }
 
-                    TestEvent(index,
-                              Event::Response {
-                                  response: Response::PutMData {
-                                      res: Ok(()), msg_id: res_message_id,
-                                  }, ..
-                              }) if index == client.index => {
+                    TestEvent(
+                        index,
+                        Event::Response {
+                            response:
+                                Response::PutMData {
+                                    res: Ok(()),
+                                    msg_id: res_message_id,
+                                },
+                            ..
+                        },
+                    ) if index == client.index =>
+                    {
                         // The client received response to its request. We are done.
                         assert_eq!(message_id, res_message_id);
                         break;
@@ -376,8 +384,7 @@ fn core() {
                 &event_sender,
                 &event_receiver,
                 Duration::from_secs(20),
-            )
-            {
+            ) {
                 match test_event {
                     TestEvent(index, Event::Connected) if index == client.index => {
                         let dst = Authority::ClientManager(*client.name());
@@ -388,7 +395,13 @@ fn core() {
                                 .is_ok()
                         );
                     }
-                    TestEvent(index, Event::Request { request: Request::PutMData { .. }, .. }) => {
+                    TestEvent(
+                        index,
+                        Event::Request {
+                            request: Request::PutMData { .. },
+                            ..
+                        },
+                    ) => {
                         close_group.retain(|&name| name != nodes[index].name());
 
                         if close_group.is_empty() {
@@ -419,8 +432,7 @@ fn core() {
                 &event_sender,
                 &event_receiver,
                 Duration::from_secs(20),
-            )
-            {
+            ) {
                 match test_event {
                     TestEvent(index, Event::Connected) if index == client.index => {
                         let dst = Authority::ClientManager(*client.name());
@@ -431,16 +443,19 @@ fn core() {
                                 .is_ok()
                         );
                     }
-                    TestEvent(index,
-                              Event::Request {
-                                  request: Request::PutMData {
-                                      data,
-                                      msg_id,
-                                      requester,
-                                  },
-                                  src: Authority::Client { .. },
-                                  dst: Authority::ClientManager(name),
-                              }) => {
+                    TestEvent(
+                        index,
+                        Event::Request {
+                            request:
+                                Request::PutMData {
+                                    data,
+                                    msg_id,
+                                    requester,
+                                },
+                            src: Authority::Client { .. },
+                            dst: Authority::ClientManager(name),
+                        },
+                    ) => {
                         let src = Authority::ClientManager(name);
                         let dst = Authority::NaeManager(*data.name());
                         unwrap!(nodes[index].node.send_put_mdata_request(
@@ -461,10 +476,13 @@ fn core() {
                             ));
                         }
                     }
-                    TestEvent(index,
-                              Event::Response {
-                                  response: Response::PutMData { res: Err(_), .. }, ..
-                              }) => {
+                    TestEvent(
+                        index,
+                        Event::Response {
+                            response: Response::PutMData { res: Err(_), .. },
+                            ..
+                        },
+                    ) => {
                         close_group.retain(|&name| name != nodes[index].name());
 
                         if close_group.is_empty() {
@@ -497,11 +515,11 @@ fn core() {
                 &event_sender,
                 &event_receiver,
                 Duration::from_secs(20),
-            )
-            {
+            ) {
                 match test_event {
                     TestEvent(index, Event::NodeLost(lost_name, _))
-                        if index < nodes.len() && lost_name == name => {
+                        if index < nodes.len() && lost_name == name =>
+                    {
                         churns[index] = true;
                         if churns.iter().all(|b| *b) {
                             break;
@@ -529,8 +547,7 @@ fn core() {
                 &event_sender,
                 &event_receiver,
                 Duration::from_secs(20),
-            )
-            {
+            ) {
                 match test_event {
                     TestEvent(index, Event::NodeAdded(..)) if index < nodes.len() => {
                         churns[index] = true;
@@ -558,8 +575,7 @@ fn core() {
             &event_sender,
             &event_receiver,
             Duration::from_secs(5),
-        )
-        {
+        ) {
             match test_event {
                 TestEvent(index, Event::Connected) if index == client.index => {
                     let dst = Authority::ClientManager(*client.name());
@@ -570,16 +586,19 @@ fn core() {
                             .is_ok()
                     );
                 }
-                TestEvent(index,
-                          Event::Request {
-                              request: Request::PutMData {
-                                  data,
-                                  msg_id,
-                                  requester,
-                              },
-                              src: Authority::Client { .. },
-                              dst: Authority::ClientManager(name),
-                          }) => {
+                TestEvent(
+                    index,
+                    Event::Request {
+                        request:
+                            Request::PutMData {
+                                data,
+                                msg_id,
+                                requester,
+                            },
+                        src: Authority::Client { .. },
+                        dst: Authority::ClientManager(name),
+                    },
+                ) => {
                     let src = Authority::ClientManager(name);
                     let dst = Authority::NaeManager(*data.name());
                     unwrap!(nodes[index].node.send_put_mdata_request(
@@ -602,10 +621,13 @@ fn core() {
                         }
                     }
                 }
-                TestEvent(_index,
-                          Event::Response {
-                              response: Response::PutMData { res: Err(_), .. }, ..
-                          }) => {
+                TestEvent(
+                    _index,
+                    Event::Response {
+                        response: Response::PutMData { res: Err(_), .. },
+                        ..
+                    },
+                ) => {
                     // TODO: Once the new quorum definition is implemented, reactivate this.
                     // panic!("Unexpected response.");
                 }
@@ -628,19 +650,16 @@ fn core() {
                 &event_sender,
                 &event_receiver,
                 Duration::from_secs(5),
-            )
-            {
+            ) {
                 match test_event {
                     TestEvent(index, Event::Connected) if index == client.index => {
                         // The client is connected now. Send some request.
                         let src = Authority::ClientManager(*client.name());
                         let message_id = MessageId::new();
-                        let result = client.client.put_mdata(
-                            src,
-                            data.clone(),
-                            message_id,
-                            client_key,
-                        );
+                        let result =
+                            client
+                                .client
+                                .put_mdata(src, data.clone(), message_id, client_key);
                         assert!(result.is_ok());
                         let _ = sent_ids.insert(message_id);
                     }
@@ -655,10 +674,18 @@ fn core() {
                             ));
                         }
                     }
-                    TestEvent(index,
-                              Event::Response {
-                                  response: Response::PutMData { res: Ok(()), msg_id }, ..
-                              }) if index == client.index => {
+                    TestEvent(
+                        index,
+                        Event::Response {
+                            response:
+                                Response::PutMData {
+                                    res: Ok(()),
+                                    msg_id,
+                                },
+                            ..
+                        },
+                    ) if index == client.index =>
+                    {
                         // TODO: assert!(received_ids.insert(id));
                         let _ = received_ids.insert(msg_id);
                     }
