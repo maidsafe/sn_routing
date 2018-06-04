@@ -6,8 +6,10 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use routing::{Authority, Client, ClientError, Event, FullId, ImmutableData, MessageId,
-              MutableData, Response, Value, XorName};
+use routing::{
+    Authority, Client, ClientError, Event, FullId, ImmutableData, MessageId, MutableData, Response,
+    Value, XorName,
+};
 use rust_sodium::crypto;
 use std::collections::BTreeMap;
 use std::sync::mpsc::{self, Receiver};
@@ -19,33 +21,45 @@ const RESPONSE_TIMEOUT_SECS: u64 = 10;
 macro_rules! recv_response {
     ($client:expr, $resp:ident, $data_id:expr, $req_msg_id:expr) => {
         loop {
-            match $client.receiver.recv_timeout(Duration::from_secs(RESPONSE_TIMEOUT_SECS)) {
-                Ok(Event::Response { response: Response::$resp { res, msg_id }, .. }) => {
+            match $client
+                .receiver
+                .recv_timeout(Duration::from_secs(RESPONSE_TIMEOUT_SECS))
+            {
+                Ok(Event::Response {
+                    response: Response::$resp { res, msg_id },
+                    ..
+                }) => {
                     if $req_msg_id != msg_id {
-                        error!("{} response for {:?}, but with wrong message_id {:?} \
-                                instead of {:?}.",
-                               stringify!($resp),
-                               $data_id,
-                               msg_id,
-                               $req_msg_id);
+                        error!(
+                            "{} response for {:?}, but with wrong message_id {:?} \
+                             instead of {:?}.",
+                            stringify!($resp),
+                            $data_id,
+                            msg_id,
+                            $req_msg_id
+                        );
                         return Err(ClientError::from("Wrong message_id"));
                     }
 
                     if let Err(ref error) = res {
-                        error!("{} for {:?} failed: {:?}", stringify!($resp), $data_id, error);
+                        error!(
+                            "{} for {:?} failed: {:?}",
+                            stringify!($resp),
+                            $data_id,
+                            error
+                        );
                     } else {
                         trace!("{} for {:?} successful", stringify!($resp), $data_id)
                     }
 
                     return res;
                 }
-                Ok(Event::Terminate) |
-                Ok(Event::RestartRequired) => $client.disconnected(),
+                Ok(Event::Terminate) | Ok(Event::RestartRequired) => $client.disconnected(),
                 Ok(_) => (),
                 Err(_) => return Err(ClientError::from("No response")),
             }
         }
-    }
+    };
 }
 
 /// A simple example client implementation for a network based on the Routing library.
@@ -111,11 +125,10 @@ impl ExampleClient {
     #[allow(unused)]
     pub fn get_idata(&mut self, name: XorName) -> Result<ImmutableData, ClientError> {
         let msg_id = MessageId::new();
-        unwrap!(self.client.get_idata(
-            Authority::NaeManager(name),
-            name,
-            msg_id,
-        ));
+        unwrap!(
+            self.client
+                .get_idata(Authority::NaeManager(name), name, msg_id,)
+        );
         recv_response!(self, GetIData, name, msg_id)
     }
 
@@ -138,12 +151,10 @@ impl ExampleClient {
     #[allow(unused)]
     pub fn get_mdata_shell(&mut self, name: XorName, tag: u64) -> Result<MutableData, ClientError> {
         let msg_id = MessageId::new();
-        unwrap!(self.client.get_mdata_shell(
-            Authority::NaeManager(name),
-            name,
-            tag,
-            msg_id,
-        ));
+        unwrap!(
+            self.client
+                .get_mdata_shell(Authority::NaeManager(name), name, tag, msg_id,)
+        );
         recv_response!(self, GetMDataShell, name, msg_id)
     }
 
@@ -158,12 +169,10 @@ impl ExampleClient {
         tag: u64,
     ) -> Result<BTreeMap<Vec<u8>, Value>, ClientError> {
         let msg_id = MessageId::new();
-        unwrap!(self.client.list_mdata_entries(
-            Authority::NaeManager(name),
-            name,
-            tag,
-            msg_id,
-        ));
+        unwrap!(
+            self.client
+                .list_mdata_entries(Authority::NaeManager(name), name, tag, msg_id,)
+        );
         recv_response!(self, ListMDataEntries, name, msg_id)
     }
 
@@ -179,13 +188,10 @@ impl ExampleClient {
         key: Vec<u8>,
     ) -> Result<Value, ClientError> {
         let msg_id = MessageId::new();
-        unwrap!(self.client.get_mdata_value(
-            Authority::NaeManager(name),
-            name,
-            tag,
-            key,
-            msg_id,
-        ));
+        unwrap!(
+            self.client
+                .get_mdata_value(Authority::NaeManager(name), name, tag, key, msg_id,)
+        );
         recv_response!(self, GetMDataValue, name, msg_id)
     }
 

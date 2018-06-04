@@ -8,14 +8,15 @@
 
 use super::xorable::Xorable;
 use std::cmp::{self, Ordering};
-use std::fmt::{Binary, Debug, Formatter};
 use std::fmt::Result as FmtResult;
+use std::fmt::{Binary, Debug, Formatter};
 use std::hash::{Hash, Hasher};
 #[cfg(test)]
 use std::str::FromStr;
 
 /// A prefix with section version.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash, Deserialize,
+         Serialize)]
 pub struct VersionedPrefix<T: Clone + Copy + Default + Binary + Xorable> {
     prefix: Prefix<T>,
     version: u64,
@@ -62,7 +63,7 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
     pub fn with_version(self, version: u64) -> VersionedPrefix<T> {
         VersionedPrefix {
             prefix: self,
-            version: version,
+            version,
         }
     }
 
@@ -171,18 +172,17 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
         T: 'a,
         U: IntoIterator<Item = &'a Prefix<T>> + Clone,
     {
-        prefixes.clone().into_iter().any(|x| {
-            x.is_compatible(self) && x.bit_count() <= self.bit_count()
-        }) ||
-            (self.bit_count() <= max_prefix_len &&
-                 self.pushed(false).is_covered_by_impl(
-                    prefixes.clone(),
-                    max_prefix_len,
-                ) &&
-                 self.pushed(true).is_covered_by_impl(
-                    prefixes,
-                    max_prefix_len,
-                ))
+        prefixes
+            .clone()
+            .into_iter()
+            .any(|x| x.is_compatible(self) && x.bit_count() <= self.bit_count())
+            || (self.bit_count() <= max_prefix_len
+                && self
+                    .pushed(false)
+                    .is_covered_by_impl(prefixes.clone(), max_prefix_len)
+                && self
+                    .pushed(true)
+                    .is_covered_by_impl(prefixes, max_prefix_len))
     }
 
     /// Returns the neighbouring prefix differing in the `i`-th bit
@@ -279,7 +279,6 @@ impl FromStr for Prefix<u8> {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -298,27 +297,21 @@ mod tests {
             unwrap!(Prefix::from_str("1011")).popped(),
             unwrap!(Prefix::from_str("101"))
         );
-        assert!(unwrap!(Prefix::from_str("101")).is_compatible(&unwrap!(
-            Prefix::from_str("1010")
-        )));
-        assert!(unwrap!(Prefix::from_str("1010")).is_compatible(&unwrap!(
-            Prefix::from_str("101")
-        )));
-        assert!(!unwrap!(Prefix::from_str("1010")).is_compatible(&unwrap!(
-            Prefix::from_str("1011")
-        )));
-        assert!(unwrap!(Prefix::from_str("101")).is_neighbour(&unwrap!(
-            Prefix::from_str("1111")
-        )));
-        assert!(!unwrap!(Prefix::from_str("1010")).is_neighbour(&unwrap!(
-            Prefix::from_str("1111")
-        )));
-        assert!(unwrap!(Prefix::from_str("1010")).is_neighbour(&unwrap!(
-            Prefix::from_str("10111")
-        )));
-        assert!(!unwrap!(Prefix::from_str("101")).is_neighbour(&unwrap!(
-            Prefix::from_str("10111")
-        )));
+        assert!(unwrap!(Prefix::from_str("101")).is_compatible(&unwrap!(Prefix::from_str("1010"))));
+        assert!(unwrap!(Prefix::from_str("1010")).is_compatible(&unwrap!(Prefix::from_str("101"))));
+        assert!(
+            !unwrap!(Prefix::from_str("1010")).is_compatible(&unwrap!(Prefix::from_str("1011")))
+        );
+        assert!(unwrap!(Prefix::from_str("101")).is_neighbour(&unwrap!(Prefix::from_str("1111"))));
+        assert!(
+            !unwrap!(Prefix::from_str("1010")).is_neighbour(&unwrap!(Prefix::from_str("1111")))
+        );
+        assert!(
+            unwrap!(Prefix::from_str("1010")).is_neighbour(&unwrap!(Prefix::from_str("10111")))
+        );
+        assert!(
+            !unwrap!(Prefix::from_str("101")).is_neighbour(&unwrap!(Prefix::from_str("10111")))
+        );
         assert!(unwrap!(Prefix::from_str("101")).matches(&0b1010_1100));
         assert!(!unwrap!(Prefix::from_str("1011")).matches(&0b1010_1100));
 

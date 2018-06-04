@@ -6,9 +6,9 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{TestNode, create_connected_nodes, poll_all, verify_invariant_for_all_nodes};
-use routing::{Event, EventStream};
+use super::{create_connected_nodes, poll_all, verify_invariant_for_all_nodes, TestNode};
 use routing::mock_crust::Network;
+use routing::{Event, EventStream};
 
 // Drop node at index and verify its own section receives NodeLost.
 fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {

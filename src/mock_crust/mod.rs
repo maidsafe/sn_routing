@@ -14,5 +14,6 @@ mod support;
 #[cfg(test)]
 mod tests;
 
-pub use self::support::{Endpoint, Network, ServiceHandle, make_current, take_current,
-                        to_socket_addr, with_current};
+pub use self::support::{
+    make_current, take_current, to_socket_addr, with_current, Endpoint, Network, ServiceHandle,
+};

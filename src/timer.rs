@@ -6,7 +6,6 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-
 pub use self::implementation::Timer;
 
 #[cfg(not(feature = "use-mock-crust"))]
@@ -48,7 +47,7 @@ mod implementation {
             Timer {
                 inner: Rc::new(RefCell::new(Inner {
                     next_token: 0,
-                    tx: tx,
+                    tx,
                     _worker: worker,
                 })),
             }
@@ -66,7 +65,7 @@ mod implementation {
 
             let detail = Detail {
                 expiry: Instant::now() + duration,
-                token: token,
+                token,
             };
             inner.tx.send(detail).map(|()| token).unwrap_or_else(|e| {
                 error!("Timer could not be scheduled: {:?}", e);

@@ -7,7 +7,6 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
-use {CrustEvent, Service};
 use ack_manager::{Ack, AckManager, UnacknowledgedMessage};
 use action::Action;
 use error::{InterfaceError, RoutingError};
@@ -16,8 +15,10 @@ use event::Event;
 use fake_clock::FakeClock as Instant;
 use id::{FullId, PublicId};
 use maidsafe_utilities::serialisation;
-use messages::{DirectMessage, HopMessage, Message, MessageContent, RoutingMessage, SignedMessage,
-               UserMessage, UserMessageCache};
+use messages::{
+    DirectMessage, HopMessage, Message, MessageContent, RoutingMessage, SignedMessage, UserMessage,
+    UserMessageCache,
+};
 use outbox::EventBox;
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use routing_table::Authority;
@@ -30,6 +31,7 @@ use std::time::Duration;
 use std::time::Instant;
 use timer::Timer;
 use xor_name::XorName;
+use {CrustEvent, Service};
 
 /// Duration to wait before sending rate limit exceeded messages.
 pub const RATE_EXCEED_RETRY_MS: u64 = 800;
@@ -65,18 +67,18 @@ impl Client {
     ) -> Self {
         let client = Client {
             ack_mgr: AckManager::new(),
-            crust_service: crust_service,
-            full_id: full_id,
-            min_section_size: min_section_size,
-            proxy_pub_id: proxy_pub_id,
+            crust_service,
+            full_id,
+            min_section_size,
+            proxy_pub_id,
             routing_msg_filter: RoutingMessageFilter::new(),
-            stats: stats,
-            timer: timer,
-            user_msg_cache: UserMessageCache::with_expiry_duration(
-                Duration::from_secs(USER_MSG_CACHE_EXPIRY_DURATION_SECS),
-            ),
+            stats,
+            timer,
+            user_msg_cache: UserMessageCache::with_expiry_duration(Duration::from_secs(
+                USER_MSG_CACHE_EXPIRY_DURATION_SECS,
+            )),
             resend_buf: Default::default(),
-            msg_expiry_dur: msg_expiry_dur,
+            msg_expiry_dur,
         };
 
         debug!("{:?} State changed to client.", client);
@@ -164,8 +166,7 @@ impl Client {
                 unacked_msg.routing_msg,
                 unacked_msg.route,
                 unacked_msg.expires_at,
-            )
-            {
+            ) {
                 debug!("{:?} Failed to send message: {:?}", self, error);
             } else {
                 self.stats.increase_user_msg_part();
@@ -222,12 +223,13 @@ impl Client {
         let in_authority = self.in_authority(&routing_msg.dst);
 
         // Prevents us repeatedly handling identical messages sent by a malicious peer.
-        match self.routing_msg_filter.filter_incoming(
-            &routing_msg,
-            hop_msg.route,
-        ) {
-            FilteringResult::KnownMessage |
-            FilteringResult::KnownMessageAndRoute => return Err(RoutingError::FilterCheckFailed),
+        match self
+            .routing_msg_filter
+            .filter_incoming(&routing_msg, hop_msg.route)
+        {
+            FilteringResult::KnownMessage | FilteringResult::KnownMessageAndRoute => {
+                return Err(RoutingError::FilterCheckFailed)
+            }
             FilteringResult::NewMessage => (),
         }
 
@@ -244,9 +246,9 @@ impl Client {
     ) -> Result<Transition, RoutingError> {
         if let DirectMessage::ProxyRateLimitExceeded { ack } = direct_msg {
             if let Some(unack_msg) = self.ack_mgr.remove(&ack) {
-                let token = self.timer().schedule(
-                    Duration::from_millis(RATE_EXCEED_RETRY_MS),
-                );
+                let token = self
+                    .timer()
+                    .schedule(Duration::from_millis(RATE_EXCEED_RETRY_MS));
                 let _ = self.resend_buf.insert(token, unack_msg);
             } else {
                 debug!(
@@ -286,12 +288,9 @@ impl Client {
                     routing_msg.dst
                 );
                 self.stats.increase_user_msg_part();
-                if let Some(msg) = self.user_msg_cache.add(
-                    hash,
-                    part_count,
-                    part_index,
-                    payload,
-                )
+                if let Some(msg) = self
+                    .user_msg_cache
+                    .add(hash, part_count, part_index, payload)
                 {
                     self.stats().count_user_message(&msg);
                     outbox.send_event(msg.into_event(routing_msg.src, routing_msg.dst));
@@ -301,10 +300,7 @@ impl Client {
             content => {
                 debug!(
                     "{:?} Unhandled routing message: {:?} from {:?} to {:?}",
-                    self,
-                    content,
-                    routing_msg.src,
-                    routing_msg.dst
+                    self, content, routing_msg.src, routing_msg.dst
                 );
                 Transition::Stay
             }
@@ -396,16 +392,14 @@ impl Bootstrapped for Client {
             if msg_expired || unacked_msg.route as usize == self.min_section_size {
                 debug!(
                     "{:?} Message unable to be acknowledged - giving up. {:?}",
-                    self,
-                    unacked_msg
+                    self, unacked_msg
                 );
                 self.stats.count_unacked();
             } else if let Err(error) = self.send_routing_message_via_route(
                 unacked_msg.routing_msg,
                 unacked_msg.route,
                 unacked_msg.expires_at,
-            )
-            {
+            ) {
                 debug!("{:?} Failed to send message: {:?}", self, error);
             }
             // Resend a msg part on ack time out doesn't count in stats.
@@ -426,7 +420,10 @@ impl Bootstrapped for Client {
 
         // Get PublicId of the proxy node
         match routing_msg.src {
-            Authority::Client { ref proxy_node_name, .. } => {
+            Authority::Client {
+                ref proxy_node_name,
+                ..
+            } => {
                 if *self.proxy_pub_id.name() != *proxy_node_name {
                     error!(
                         "{:?} Unable to find connection to proxy node in proxy map",
@@ -447,14 +444,10 @@ impl Bootstrapped for Client {
         let signed_msg = SignedMessage::new(routing_msg, self.full_id(), vec![])?;
 
         let proxy_pub_id = self.proxy_pub_id;
-        if self.add_to_pending_acks(signed_msg.routing_message(), route, expires_at) &&
-            !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_pub_id, route)
+        if self.add_to_pending_acks(signed_msg.routing_message(), route, expires_at)
+            && !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_pub_id, route)
         {
-            let bytes = self.to_hop_bytes(
-                signed_msg.clone(),
-                route,
-                BTreeSet::new(),
-            )?;
+            let bytes = self.to_hop_bytes(signed_msg.clone(), route, BTreeSet::new())?;
             self.send_or_drop(&proxy_pub_id, bytes, signed_msg.priority());
         }
 

@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::Base;
-use ack_manager::{ACK_TIMEOUT_SECS, Ack, AckManager, UnacknowledgedMessage};
+use ack_manager::{Ack, AckManager, UnacknowledgedMessage, ACK_TIMEOUT_SECS};
 use error::RoutingError;
 #[cfg(feature = "use-mock-crust")]
 use fake_clock::FakeClock as Instant;
@@ -70,17 +70,15 @@ pub trait Bootstrapped: Base {
         let token = self.timer().schedule(Duration::from_secs(ACK_TIMEOUT_SECS));
         let unacked_msg = UnacknowledgedMessage {
             routing_msg: routing_msg.clone(),
-            route: route,
+            route,
             timer_token: token,
-            expires_at: expires_at,
+            expires_at,
         };
 
         if let Some(ejected) = self.ack_mgr_mut().add_to_pending(ack, unacked_msg) {
             debug!(
                 "{:?} - Ejected pending ack: {:?} - {:?}",
-                self,
-                ack,
-                ejected
+                self, ack, ejected
             );
         }
 
@@ -95,11 +93,9 @@ pub trait Bootstrapped: Base {
         pub_id: &PublicId,
         route: u8,
     ) -> bool {
-        if self.routing_msg_filter().filter_outgoing(
-            msg,
-            pub_id,
-            route,
-        )
+        if self
+            .routing_msg_filter()
+            .filter_outgoing(msg, pub_id, route)
         {
             return true;
         }
@@ -113,16 +109,14 @@ pub trait Bootstrapped: Base {
             if unacked_msg.route as usize == self.min_section_size() {
                 debug!(
                     "{:?} Message unable to be acknowledged - giving up. {:?}",
-                    self,
-                    unacked_msg
+                    self, unacked_msg
                 );
                 self.stats().count_unacked();
             } else if let Err(error) = self.send_routing_message_via_route(
                 unacked_msg.routing_msg,
                 unacked_msg.route,
                 unacked_msg.expires_at,
-            )
-            {
+            ) {
                 debug!("{:?} Failed to send message: {:?}", self, error);
             }
         }
@@ -135,11 +129,7 @@ pub trait Bootstrapped: Base {
         content: MessageContent,
         expires_at: Option<Instant>,
     ) -> Result<(), RoutingError> {
-        let routing_msg = RoutingMessage {
-            src: src,
-            dst: dst,
-            content: content,
-        };
+        let routing_msg = RoutingMessage { src, dst, content };
         self.send_routing_message_via_route(routing_msg, 0, expires_at)
     }
 

@@ -30,7 +30,7 @@ impl ImmutableData {
     pub fn new(value: Vec<u8>) -> ImmutableData {
         ImmutableData {
             name: XorName(sha3_256(&value)),
-            value: value,
+            value,
         }
     }
 
@@ -83,7 +83,7 @@ impl Debug for ImmutableData {
 mod tests {
     use super::*;
     use hex::encode;
-    use maidsafe_utilities::{SeededRng, serialisation};
+    use maidsafe_utilities::{serialisation, SeededRng};
     use rand::Rng;
 
     #[test]

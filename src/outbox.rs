@@ -16,7 +16,6 @@ use std::collections::VecDeque;
 use std::default::Default;
 use std::mem;
 
-
 /// An event dispatcher. Collects things to deliver and "sends".
 ///
 /// The API doesn't specify whether objects get sent immediately synchronously or asynchronously,

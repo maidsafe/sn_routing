@@ -9,16 +9,18 @@
 // These tests are almost straight up copied from crust::service::tests
 
 use super::crust::{CrustEventSender, CrustUser, Service};
-use super::support::{Config, Network, to_socket_addr};
-use CrustEvent;
+use super::support::{to_socket_addr, Config, Network};
 use id::{FullId, PublicId};
 use maidsafe_utilities::event_sender::{MaidSafeEventCategory, MaidSafeObserver};
 use std::collections::HashSet;
 use std::sync::mpsc::{self, Receiver};
+use CrustEvent;
 
-fn get_event_sender()
-    -> (CrustEventSender<PublicId>, Receiver<MaidSafeEventCategory>, Receiver<CrustEvent<PublicId>>)
-{
+fn get_event_sender() -> (
+    CrustEventSender<PublicId>,
+    Receiver<MaidSafeEventCategory>,
+    Receiver<CrustEvent<PublicId>>,
+) {
     let (category_tx, category_rx) = mpsc::channel();
     let (event_tx, event_rx) = mpsc::channel();
 
@@ -43,7 +45,7 @@ macro_rules! expect_event {
             $pattern => $arm,
             e => panic!("unexpected event {:?}", e),
         }
-    }
+    };
 }
 
 #[test]
@@ -127,12 +129,16 @@ fn start_two_services_rendezvous_connect() {
     let (event_sender_0, _category_rx_0, event_rx_0) = get_event_sender();
     let (event_sender_1, _category_rx_1, event_rx_1) = get_event_sender();
 
-    let service_0 = unwrap!(Service::with_handle(&handle0,
-                                                 event_sender_0,
-                                                 *FullId::new().public_id()));
-    let service_1 = unwrap!(Service::with_handle(&handle1,
-                                                 event_sender_1,
-                                                 *FullId::new().public_id()));
+    let service_0 = unwrap!(Service::with_handle(
+        &handle0,
+        event_sender_0,
+        *FullId::new().public_id()
+    ));
+    let service_1 = unwrap!(Service::with_handle(
+        &handle1,
+        event_sender_1,
+        *FullId::new().public_id()
+    ));
 
     service_0.prepare_connection_info(PREPARE_CI_TOKEN);
     network.deliver_messages();
@@ -197,8 +203,16 @@ fn unidirectional_rendezvous_connect() {
     let (event_tx_0, _category_rx_0, event_rx_0) = get_event_sender();
     let (event_tx_1, _category_rx_1, event_rx_1) = get_event_sender();
 
-    let service_0 = unwrap!(Service::with_handle(&handle0, event_tx_0, *FullId::new().public_id()));
-    let service_1 = unwrap!(Service::with_handle(&handle1, event_tx_1, *FullId::new().public_id()));
+    let service_0 = unwrap!(Service::with_handle(
+        &handle0,
+        event_tx_0,
+        *FullId::new().public_id()
+    ));
+    let service_1 = unwrap!(Service::with_handle(
+        &handle1,
+        event_tx_1,
+        *FullId::new().public_id()
+    ));
 
     service_0.prepare_connection_info(PREPARE_CI_TOKEN);
     network.deliver_messages();
@@ -237,17 +251,21 @@ fn drop() {
     let (event_sender_0, _category_rx_0, event_rx_0) = get_event_sender();
     let (event_sender_1, _category_rx_1, event_rx_1) = get_event_sender();
 
-    let mut service_0 = unwrap!(Service::with_handle(&handle0,
-                                                     event_sender_0,
-                                                     *FullId::new().public_id()));
+    let mut service_0 = unwrap!(Service::with_handle(
+        &handle0,
+        event_sender_0,
+        *FullId::new().public_id()
+    ));
 
     unwrap!(service_0.start_listening_tcp());
     expect_event!(event_rx_0, CrustEvent::ListenerStarted::<PublicId>(_));
     let _ = service_0.set_accept_bootstrap(true);
 
-    let mut service_1 = unwrap!(Service::with_handle(&handle1,
-                                                     event_sender_1,
-                                                     *FullId::new().public_id()));
+    let mut service_1 = unwrap!(Service::with_handle(
+        &handle1,
+        event_sender_1,
+        *FullId::new().public_id()
+    ));
     unwrap!(service_1.start_bootstrap(HashSet::new(), CrustUser::Node));
 
     network.deliver_messages();

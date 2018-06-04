@@ -59,15 +59,15 @@ impl MpidHeader {
         }
 
         let mut detail = Detail {
-            sender: sender,
+            sender,
             guid: [0u8; GUID_SIZE],
-            metadata: metadata,
+            metadata,
         };
         rand::thread_rng().fill_bytes(&mut detail.guid);
 
         let encoded = serialise(&detail)?;
         Ok(MpidHeader {
-            detail: detail,
+            detail,
             signature: sign::sign_detached(&encoded, secret_key),
         })
     }

@@ -8,8 +8,8 @@
 
 #[cfg(feature = "use-mock-crust")]
 use fake_clock::FakeClock as Instant;
-use std::collections::{HashMap, VecDeque};
 use std::collections::hash_map::{DefaultHasher, Entry};
+use std::collections::{HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::time::Duration;
@@ -40,7 +40,7 @@ impl<Message: Hash> MessageFilter<Message> {
         MessageFilter {
             count: HashMap::new(),
             timeout_queue: VecDeque::new(),
-            time_to_live: time_to_live,
+            time_to_live,
             phantom: PhantomData,
         }
     }
@@ -90,10 +90,10 @@ impl<Message: Hash> MessageFilter<Message> {
 
     fn remove_expired(&mut self) {
         let now = Instant::now();
-        while self.timeout_queue.front().map_or(
-            false,
-            |&(_, ref t)| *t <= now,
-        )
+        while self
+            .timeout_queue
+            .front()
+            .map_or(false, |&(_, ref t)| *t <= now)
         {
             let (hash_code, _) = unwrap!(self.timeout_queue.pop_front());
             if let Entry::Occupied(entry) = self.count.entry(hash_code) {
@@ -105,11 +105,10 @@ impl<Message: Hash> MessageFilter<Message> {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::{self, Rng, seq};
+    use rand::{self, seq, Rng};
     use std::time::Duration;
 
     #[cfg(feature = "use-mock-crust")]
@@ -164,7 +163,9 @@ mod tests {
         impl Default for Temp {
             fn default() -> Temp {
                 let mut rng = rand::thread_rng();
-                Temp { id: unwrap!(seq::sample_iter(&mut rng, 0u8..255, 64)) }
+                Temp {
+                    id: unwrap!(seq::sample_iter(&mut rng, 0u8..255, 64)),
+                }
             }
         }
 

@@ -6,9 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{Client, JoiningNode, Node};
 use super::common::Base;
-use {CrustEvent, Service};
+use super::{Client, JoiningNode, Node};
 use action::Action;
 use cache::Cache;
 use crust::CrustUser;
@@ -29,6 +28,7 @@ use std::time::Duration;
 use timer::Timer;
 use types::RoutingActionSender;
 use xor_name::XorName;
+use {CrustEvent, Service};
 
 // Time (in seconds) after which bootstrap is cancelled (and possibly retried).
 const BOOTSTRAP_TIMEOUT_SECS: u64 = 20;
@@ -37,7 +37,9 @@ const BOOTSTRAP_TIMEOUT_SECS: u64 = 20;
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
 pub enum TargetState {
-    Client { msg_expiry_dur: Duration },
+    Client {
+        msg_expiry_dur: Duration,
+    },
     JoiningNode,
     Node {
         old_full_id: FullId,
@@ -73,8 +75,7 @@ impl Bootstrapping {
             TargetState::Client { .. } => {
                 let _ = crust_service.start_bootstrap(HashSet::new(), CrustUser::Client);
             }
-            TargetState::JoiningNode |
-            TargetState::Node { .. } => {
+            TargetState::JoiningNode | TargetState::Node { .. } => {
                 if let Err(error) = crust_service.start_listening_tcp() {
                     error!("Failed to start listening: {:?}", error);
                     return None;
@@ -82,23 +83,23 @@ impl Bootstrapping {
             }
         }
         Some(Bootstrapping {
-            action_sender: action_sender,
+            action_sender,
             bootstrap_blacklist: HashSet::new(),
             bootstrap_connection: None,
-            cache: cache,
-            target_state: target_state,
-            crust_service: crust_service,
-            full_id: full_id,
-            min_section_size: min_section_size,
+            cache,
+            target_state,
+            crust_service,
+            full_id,
+            min_section_size,
             stats: Stats::new(),
-            timer: timer,
+            timer,
         })
     }
 
     pub fn handle_action(&mut self, action: Action) -> Transition {
         match action {
-            Action::ClientSendRequest { ref result_tx, .. } |
-            Action::NodeSendMessage { ref result_tx, .. } => {
+            Action::ClientSendRequest { ref result_tx, .. }
+            | Action::NodeSendMessage { ref result_tx, .. } => {
                 warn!("{:?} Cannot handle {:?} - not bootstrapped.", self, action);
                 // TODO: return Err here eventually. Returning Ok for now to
                 // preserve the pre-refactor behaviour.
@@ -149,10 +150,9 @@ impl Bootstrapping {
                     return Transition::Terminate;
                 }
                 trace!("{:?} Listener started on port {}.", self, port);
-                let _ = self.crust_service.start_bootstrap(
-                    HashSet::new(),
-                    CrustUser::Node,
-                );
+                let _ = self
+                    .crust_service
+                    .start_bootstrap(HashSet::new(), CrustUser::Node);
                 Transition::Stay
             }
             CrustEvent::ListenerFailed => {
@@ -173,31 +173,27 @@ impl Bootstrapping {
 
     pub fn into_target_state(self, proxy_public_id: PublicId, outbox: &mut EventBox) -> State {
         match self.target_state {
-            TargetState::Client { msg_expiry_dur } => {
-                State::Client(Client::from_bootstrapping(
+            TargetState::Client { msg_expiry_dur } => State::Client(Client::from_bootstrapping(
+                self.crust_service,
+                self.full_id,
+                self.min_section_size,
+                proxy_public_id,
+                self.stats,
+                self.timer,
+                msg_expiry_dur,
+                outbox,
+            )),
+            TargetState::JoiningNode => {
+                if let Some(joining_node) = JoiningNode::from_bootstrapping(
+                    self.action_sender,
+                    self.cache,
                     self.crust_service,
                     self.full_id,
                     self.min_section_size,
                     proxy_public_id,
                     self.stats,
                     self.timer,
-                    msg_expiry_dur,
-                    outbox,
-                ))
-            }
-            TargetState::JoiningNode => {
-                if let Some(joining_node) =
-                    JoiningNode::from_bootstrapping(
-                        self.action_sender,
-                        self.cache,
-                        self.crust_service,
-                        self.full_id,
-                        self.min_section_size,
-                        proxy_public_id,
-                        self.stats,
-                        self.timer,
-                    )
-                {
+                ) {
                     State::JoiningNode(joining_node)
                 } else {
                     outbox.send_event(Event::RestartRequired);
@@ -208,28 +204,25 @@ impl Bootstrapping {
                 old_full_id,
                 our_section,
                 ..
-            } => {
-                State::Node(Node::from_bootstrapping(
-                    our_section,
-                    self.action_sender,
-                    self.cache,
-                    self.crust_service,
-                    old_full_id,
-                    self.full_id,
-                    self.min_section_size,
-                    proxy_public_id,
-                    self.stats,
-                    self.timer,
-                ))
-            }
+            } => State::Node(Node::from_bootstrapping(
+                our_section,
+                self.action_sender,
+                self.cache,
+                self.crust_service,
+                old_full_id,
+                self.full_id,
+                self.min_section_size,
+                proxy_public_id,
+                self.stats,
+                self.timer,
+            )),
         }
     }
 
     fn client_restriction(&self) -> bool {
         match self.target_state {
             TargetState::Client { .. } => true,
-            TargetState::JoiningNode |
-            TargetState::Node { .. } => false,
+            TargetState::JoiningNode | TargetState::Node { .. } => false,
         }
     }
 
@@ -238,8 +231,7 @@ impl Bootstrapping {
             if bootstrap_token == token {
                 debug!(
                     "{:?} Timeout when trying to bootstrap against {:?}.",
-                    self,
-                    bootstrap_id
+                    self, bootstrap_id
                 );
 
                 self.rebootstrap();
@@ -262,8 +254,7 @@ impl Bootstrapping {
             Some((bootstrap_id, _)) if bootstrap_id == pub_id => {
                 warn!(
                     "{:?} Got more than one BootstrapConnect for peer {}.",
-                    self,
-                    pub_id
+                    self, pub_id
                 );
             }
             _ => {
@@ -302,7 +293,9 @@ impl Bootstrapping {
     ) -> Transition {
         use self::DirectMessage::*;
         match direct_message {
-            BootstrapResponse(Ok(())) => Transition::IntoBootstrapped { proxy_public_id: pub_id },
+            BootstrapResponse(Ok(())) => Transition::IntoBootstrapped {
+                proxy_public_id: pub_id,
+            },
             BootstrapResponse(Err(error)) => {
                 info!("{:?} Connection failed: {}", self, error);
                 self.rebootstrap();
@@ -311,8 +304,7 @@ impl Bootstrapping {
             _ => {
                 debug!(
                     "{:?} - Unhandled direct message: {:?}",
-                    self,
-                    direct_message
+                    self, direct_message
                 );
                 Transition::Stay
             }
@@ -322,9 +314,9 @@ impl Bootstrapping {
     fn send_bootstrap_request(&mut self, pub_id: PublicId) {
         debug!("{:?} Sending BootstrapRequest to {}.", self, pub_id);
 
-        let token = self.timer.schedule(
-            Duration::from_secs(BOOTSTRAP_TIMEOUT_SECS),
-        );
+        let token = self
+            .timer
+            .schedule(Duration::from_secs(BOOTSTRAP_TIMEOUT_SECS));
         self.bootstrap_connection = Some((pub_id, token));
 
         let serialised_public_id = match serialisation::serialise(self.full_id.public_id()) {
@@ -345,8 +337,7 @@ impl Bootstrapping {
     fn disconnect_peer(&mut self, pub_id: &PublicId) {
         debug!(
             "{:?} Disconnecting {}. Calling crust::Service::disconnect.",
-            self,
-            pub_id
+            self, pub_id
         );
         let _ = self.crust_service.disconnect(pub_id);
     }
@@ -355,8 +346,7 @@ impl Bootstrapping {
         if let Some((bootstrap_id, _)) = self.bootstrap_connection.take() {
             debug!(
                 "{:?} Dropping bootstrap node {:?} and retrying.",
-                self,
-                bootstrap_id
+                self, bootstrap_id
             );
             let _ = self.crust_service.disconnect(&bootstrap_id);
             let crust_user = if self.client_restriction() {
@@ -364,10 +354,9 @@ impl Bootstrapping {
             } else {
                 CrustUser::Node
             };
-            let _ = self.crust_service.start_bootstrap(
-                self.bootstrap_blacklist.clone(),
-                crust_user,
-            );
+            let _ = self
+                .crust_service
+                .start_bootstrap(self.bootstrap_blacklist.clone(), crust_user);
         }
     }
 }
@@ -403,15 +392,15 @@ impl Debug for Bootstrapping {
 #[cfg(all(test, feature = "use-mock-crust"))]
 mod tests {
     use super::*;
-    use CrustEvent;
     use cache::NullCache;
     use id::FullId;
     use maidsafe_utilities::event_sender::{MaidSafeEventCategory, MaidSafeObserver};
-    use mock_crust::{self, Network};
     use mock_crust::crust::{Config, Service};
+    use mock_crust::{self, Network};
     use outbox::EventBuf;
     use state_machine::StateMachine;
     use std::sync::mpsc;
+    use CrustEvent;
 
     #[test]
     // Check that losing our proxy connection while in the `Bootstrapping` state doesn't stall and
@@ -453,7 +442,9 @@ mod tests {
                     Bootstrapping::new(
                         action_sender,
                         Box::new(NullCache),
-                        TargetState::Client { msg_expiry_dur: Duration::from_secs(60) },
+                        TargetState::Client {
+                            msg_expiry_dur: Duration::from_secs(60),
+                        },
                         crust_service,
                         full_id,
                         min_section_size,
@@ -468,8 +459,7 @@ mod tests {
 
         // Check the Crust service received the `BootstrapAccept`.
         network.deliver_messages();
-        if let CrustEvent::BootstrapAccept::<_>(_, CrustUser::Client) =
-            unwrap!(event_rx.try_recv())
+        if let CrustEvent::BootstrapAccept::<_>(_, CrustUser::Client) = unwrap!(event_rx.try_recv())
         {
         } else {
             panic!("Should have received `BootstrapAccept` event.");

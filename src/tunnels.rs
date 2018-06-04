@@ -9,8 +9,8 @@
 use id::PublicId;
 use itertools::Itertools;
 use message_filter::MessageFilter;
-use std::collections::{BTreeSet, HashMap};
 use std::collections::hash_map::Entry;
+use std::collections::{BTreeSet, HashMap};
 use std::time::Duration;
 
 /// The maximum number of pairs of nodes that this node will act as a tunnel for.
@@ -49,8 +49,9 @@ impl Tunnels {
         src_id: PublicId,
         dst_id: PublicId,
     ) -> Option<(PublicId, PublicId)> {
-        if self.clients.len() >= MAX_TUNNEL_CLIENT_PAIRS || self.tunnels.contains_key(&src_id) ||
-            self.tunnels.contains_key(&dst_id)
+        if self.clients.len() >= MAX_TUNNEL_CLIENT_PAIRS
+            || self.tunnels.contains_key(&src_id)
+            || self.tunnels.contains_key(&dst_id)
         {
             return None;
         }
@@ -80,7 +81,8 @@ impl Tunnels {
     /// Removes all pairs with the given client and returns a list of all clients that used us as a
     /// tunnel for them.
     pub fn drop_client(&mut self, pub_id: &PublicId) -> Vec<PublicId> {
-        let pairs = self.clients
+        let pairs = self
+            .clients
             .iter()
             .filter(|pair| pair.0 == *pub_id || pair.1 == *pub_id)
             .cloned()
@@ -89,7 +91,11 @@ impl Tunnels {
             .into_iter()
             .map(|pair| {
                 let _ = self.clients.remove(&pair);
-                if pair.0 == *pub_id { pair.1 } else { pair.0 }
+                if pair.0 == *pub_id {
+                    pair.1
+                } else {
+                    pair.0
+                }
             })
             .collect()
     }
@@ -141,7 +147,8 @@ impl Tunnels {
     /// Removes the given tunnel node and returns a list of all peers it was acting as a tunnel
     /// for.
     pub fn remove_tunnel(&mut self, tunnel_id: &PublicId) -> Vec<PublicId> {
-        let dst_ids = self.tunnels
+        let dst_ids = self
+            .tunnels
             .iter()
             .filter(|&(_, id)| id == tunnel_id)
             .map(|(&dst_id, _)| dst_id)

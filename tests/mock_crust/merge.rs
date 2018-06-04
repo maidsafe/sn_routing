@@ -6,13 +6,14 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{create_connected_nodes_until_split, poll_all, poll_and_resend,
-            verify_invariant_for_all_nodes};
+use super::{
+    create_connected_nodes_until_split, poll_all, poll_and_resend, verify_invariant_for_all_nodes,
+};
 use fake_clock::FakeClock;
 use rand::Rng;
-use routing::{Event, EventStream, Prefix, XOR_NAME_LEN, XorName};
 use routing::mock_crust::Network;
 use routing::test_consts::ACK_TIMEOUT_SECS;
+use routing::{Event, EventStream, Prefix, XorName, XOR_NAME_LEN};
 use std::collections::{BTreeMap, BTreeSet};
 
 // See docs for `create_connected_nodes_with_cache_until_split` for details on `prefix_lengths`.
@@ -47,9 +48,7 @@ fn merge(prefix_lengths: Vec<usize>) {
         for node in &mut *nodes {
             while let Ok(event) = node.try_next_ev() {
                 match event {
-                    Event::NodeAdded(..) |
-                    Event::NodeLost(..) |
-                    Event::Tick => (),
+                    Event::NodeAdded(..) | Event::NodeLost(..) | Event::Tick => (),
                     Event::SectionMerge(prefix) => {
                         if prefix.bit_count() == 0 {
                             merge_events_missing -= 1;
@@ -112,9 +111,11 @@ fn concurrent_merge() {
     // `min_section_size`.
     for (prefix, len) in &mut section_map {
         while *len >= min_section_size {
-            let index = unwrap!(nodes.iter().position(|node| {
-                node.routing_table().our_prefix() == prefix
-            }));
+            let index = unwrap!(
+                nodes
+                    .iter()
+                    .position(|node| node.routing_table().our_prefix() == prefix)
+            );
             let removed = nodes.remove(index);
             drop(removed);
             *len -= 1;
@@ -145,16 +146,16 @@ fn merge_exclude_reconnecting_peers() {
 
     let mut nodes_count = nodes
         .iter()
-        .filter(|node| {
-            node.routing_table().our_prefix() == &prefix_to_drop_from
-        })
+        .filter(|node| node.routing_table().our_prefix() == &prefix_to_drop_from)
         .count();
 
     // Drop enough nodes (without polling) from that section to just below `min_section_size`.
     while nodes_count >= min_section_size {
-        let index = unwrap!(nodes.iter().position(|node| {
-            node.routing_table().our_prefix() == &prefix_to_drop_from
-        }));
+        let index = unwrap!(
+            nodes
+                .iter()
+                .position(|node| node.routing_table().our_prefix() == &prefix_to_drop_from)
+        );
         let removed = nodes.remove(index);
         drop(removed);
         nodes_count -= 1;

@@ -49,26 +49,24 @@ impl<N: Xorable + Clone + Copy + Binary + Default> Authority<N> {
     /// Returns `true` if the authority consists of multiple nodes, otherwise `false`.
     pub fn is_multiple(&self) -> bool {
         match *self {
-            Authority::Section(_) |
-            Authority::PrefixSection(_) |
-            Authority::ClientManager(_) |
-            Authority::NaeManager(_) |
-            Authority::NodeManager(_) => true,
-            Authority::ManagedNode(_) |
-            Authority::Client { .. } => false,
+            Authority::Section(_)
+            | Authority::PrefixSection(_)
+            | Authority::ClientManager(_)
+            | Authority::NaeManager(_)
+            | Authority::NodeManager(_) => true,
+            Authority::ManagedNode(_) | Authority::Client { .. } => false,
         }
     }
 
     /// Returns `true` if the authority is a single node, and `false` otherwise.
     pub fn is_single(&self) -> bool {
         match *self {
-            Authority::ClientManager(_) |
-            Authority::NaeManager(_) |
-            Authority::Section(_) |
-            Authority::PrefixSection(_) |
-            Authority::NodeManager(_) => false,
-            Authority::ManagedNode(_) |
-            Authority::Client { .. } => true,
+            Authority::ClientManager(_)
+            | Authority::NaeManager(_)
+            | Authority::Section(_)
+            | Authority::PrefixSection(_)
+            | Authority::NodeManager(_) => false,
+            Authority::ManagedNode(_) | Authority::Client { .. } => true,
         }
     }
 
@@ -84,13 +82,16 @@ impl<N: Xorable + Clone + Copy + Binary + Default> Authority<N> {
     /// Returns the name of authority.
     pub fn name(&self) -> N {
         match *self {
-            Authority::ClientManager(ref name) |
-            Authority::NaeManager(ref name) |
-            Authority::NodeManager(ref name) |
-            Authority::Section(ref name) |
-            Authority::ManagedNode(ref name) => *name,
+            Authority::ClientManager(ref name)
+            | Authority::NaeManager(ref name)
+            | Authority::NodeManager(ref name)
+            | Authority::Section(ref name)
+            | Authority::ManagedNode(ref name) => *name,
             Authority::PrefixSection(ref prefix) => prefix.lower_bound(),
-            Authority::Client { ref proxy_node_name, .. } => *proxy_node_name,
+            Authority::Client {
+                ref proxy_node_name,
+                ..
+            } => *proxy_node_name,
         }
     }
 }
@@ -111,14 +112,12 @@ impl<N: Xorable + Clone + Copy + Binary + Default + Display> Debug for Authority
             Authority::Client {
                 ref proxy_node_name,
                 ref client_id,
-            } => {
-                write!(
-                    formatter,
-                    "Client {{ client_name: {}, proxy_node_name: {} }}",
-                    client_id.name(),
-                    proxy_node_name
-                )
-            }
+            } => write!(
+                formatter,
+                "Client {{ client_name: {}, proxy_node_name: {} }}",
+                client_id.name(),
+                proxy_node_name
+            ),
         }
     }
 }

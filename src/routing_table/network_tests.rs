@@ -11,13 +11,13 @@
 #![cfg(any(test, feature = "use-mock-crust"))]
 #![allow(dead_code, missing_docs)]
 
-use super::{Error, RoutingTable};
 use super::authority::Authority;
 use super::prefix::Prefix;
+use super::{Error, RoutingTable};
 use maidsafe_utilities::SeededRng;
 use rand::Rng;
-use routing_table::{OwnMergeState, Sections};
 use routing_table::xorable::Xorable;
+use routing_table::{OwnMergeState, Sections};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{Binary, Debug};
 use std::hash::Hash;
@@ -37,7 +37,7 @@ impl Network {
     /// generator.
     fn new(min_section_size: usize, optional_seed: Option<[u32; 4]>) -> Network {
         Network {
-            min_section_size: min_section_size,
+            min_section_size,
             rng: optional_seed.map_or_else(SeededRng::new, SeededRng::from_seed),
             nodes: BTreeMap::new(),
         }
@@ -53,10 +53,9 @@ impl Network {
         let name = self.random_free_name(); // The new node's name.
         if self.nodes.is_empty() {
             // If this is the first node, just add it and return.
-            let result = self.nodes.insert(
-                name,
-                RoutingTable::new(name, self.min_section_size),
-            );
+            let result = self
+                .nodes
+                .insert(name, RoutingTable::new(name, self.min_section_size));
             assert!(result.is_none());
             return;
         }
@@ -228,9 +227,7 @@ impl Network {
     {
         self.nodes
             .keys()
-            .filter(|&name| {
-                prefixes.into_iter().any(|prefix| prefix.matches(name))
-            })
+            .filter(|&name| prefixes.into_iter().any(|prefix| prefix.matches(name)))
             .cloned()
             .collect()
     }
@@ -345,17 +342,10 @@ where
             };
             if let Some(&mut (ref mut src, ref mut section)) = sections.get_mut(&prefix) {
                 assert_eq!(
-                    *section,
-                    section_content,
+                    *section, section_content,
                     "Section with prefix {:?} doesn't agree between nodes {:?} and {:?}\n\
-                            {:?}: {:?}, {:?}: {:?}",
-                    prefix,
-                    node.our_name,
-                    src,
-                    node.our_name,
-                    section_content,
-                    src,
-                    section
+                     {:?}: {:?}, {:?}: {:?}",
+                    prefix, node.our_name, src, node.our_name, section_content, src, section
                 );
                 continue;
             }
@@ -371,8 +361,8 @@ where
             if prefix1.is_compatible(prefix2) {
                 panic!(
                     "Section prefixes should be disjoint, but these are not:\n\
-                    Section {:?}, according to node {:?}: {:?}\n\
-                    Section {:?}, according to node {:?}: {:?}",
+                     Section {:?}, according to node {:?}: {:?}\n\
+                     Section {:?}, according to node {:?}: {:?}",
                     prefix1,
                     sections[prefix1].0,
                     sections[prefix1].1,
@@ -390,9 +380,8 @@ where
             if !prefix.matches(name) {
                 panic!(
                     "Section members should match the prefix, but {:?} \
-                    does not match {:?}",
-                    name,
-                    prefix
+                     does not match {:?}",
+                    name, prefix
                 );
             }
         }
@@ -418,28 +407,30 @@ fn merging_sections() {
         network.add_node();
         verify_invariant(&network);
     }
-    assert!(network.nodes.iter().all(
-        |(_, table)| if table.num_of_sections() <
-            2
-        {
-            trace!("{:?}", table);
-            false
-        } else {
-            true
-        },
-    ));
+    assert!(
+        network
+            .nodes
+            .iter()
+            .all(|(_, table)| if table.num_of_sections() < 2 {
+                trace!("{:?}", table);
+                false
+            } else {
+                true
+            },)
+    );
     for _ in 0..95 {
         network.drop_node();
         verify_invariant(&network);
     }
-    assert!(network.nodes.iter().all(
-        |(_, table)| if table.num_of_sections() >
-            0
-        {
-            trace!("{:?}", table);
-            false
-        } else {
-            true
-        },
-    ));
+    assert!(
+        network
+            .nodes
+            .iter()
+            .all(|(_, table)| if table.num_of_sections() > 0 {
+                trace!("{:?}", table);
+                false
+            } else {
+                true
+            },)
+    );
 }

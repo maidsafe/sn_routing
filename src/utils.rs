@@ -6,7 +6,6 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use Prefix;
 use itertools::Itertools;
 use routing_table::Xorable;
 use std::collections::BTreeSet;
@@ -15,7 +14,7 @@ use std::iter;
 use std::time::Duration;
 use tiny_keccak::sha3_256;
 use xor_name::XorName;
-
+use Prefix;
 
 /// Display a "number" to the given number of decimal places
 pub trait DisplayDuration {
@@ -43,7 +42,6 @@ impl Display for DisplayDurObj {
         write!(f, "{} seconds", secs)
     }
 }
-
 
 /// Format a vector of bytes as a hexadecimal number, ellipsising all but the first and last three.
 ///

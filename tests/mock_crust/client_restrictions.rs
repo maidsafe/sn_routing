@@ -6,15 +6,19 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{MIN_SECTION_SIZE, TestClient, TestNode, create_connected_clients,
-            create_connected_nodes, poll_all, poll_and_resend};
+use super::{
+    create_connected_clients, create_connected_nodes, poll_all, poll_and_resend, TestClient,
+    TestNode, MIN_SECTION_SIZE,
+};
 use maidsafe_utilities::SeededRng;
 use mock_crust::utils::gen_immutable_data;
 use rand::Rng;
-use routing::{Authority, BootstrapConfig, Event, EventStream, FullId, ImmutableData,
-              MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MessageId, Request};
 use routing::mock_crust::Network;
 use routing::rate_limiter_consts::{MAX_PARTS, SOFT_CAPACITY};
+use routing::{
+    Authority, BootstrapConfig, Event, EventStream, FullId, ImmutableData, MessageId, Request,
+    MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
+};
 use std::time::Duration;
 
 /// Connect a client to the network then send an invalid message.
@@ -82,16 +86,18 @@ fn reconnect_disconnected_client() {
     let network = Network::new(MIN_SECTION_SIZE, None);
     let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE - 1);
 
-    let config = Some(BootstrapConfig::with_contacts(
-        &[nodes[1].handle.endpoint()],
-    ));
+    let config = Some(BootstrapConfig::with_contacts(&[nodes[1]
+        .handle
+        .endpoint()]));
     let full_id = FullId::new();
 
     // Client will get rejected as network not having enough nodes.
-    let mut clients =
-        vec![
-            TestClient::new_with_full_id(&network, config.clone(), None, full_id.clone()),
-        ];
+    let mut clients = vec![TestClient::new_with_full_id(
+        &network,
+        config.clone(),
+        None,
+        full_id.clone(),
+    )];
     let _ = poll_all(&mut nodes, &mut clients);
     expect_next_event!(unwrap!(clients.last_mut()), Event::Terminate);
 
@@ -106,10 +112,7 @@ fn reconnect_disconnected_client() {
 
     // Reconnecting the client (with same id) shall succeed.
     clients.push(TestClient::new_with_full_id(
-        &network,
-        config,
-        None,
-        full_id,
+        &network, config, None, full_id,
     ));
     let _ = poll_all(&mut nodes, &mut clients);
     expect_next_event!(unwrap!(clients.last_mut()), Event::Connected);
@@ -117,9 +120,7 @@ fn reconnect_disconnected_client() {
 
 fn immutable_data_vec(rng: &mut SeededRng, count: u64) -> Vec<ImmutableData> {
     (0..count)
-        .map(|_| {
-            gen_immutable_data(rng, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES as usize)
-        })
+        .map(|_| gen_immutable_data(rng, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES as usize))
         .collect()
 }
 
@@ -147,8 +148,8 @@ fn resend_parts_on_exceeding_limit() {
     // NOTE: this calculation is approximate and relies on some hardcoded knowledge about
     // the size of serialised user messages.
     let user_msg_header = 48;
-    let part_size = (MAX_IMMUTABLE_DATA_SIZE_IN_BYTES + user_msg_header) as f64 /
-        f64::from(MAX_PARTS);
+    let part_size =
+        (MAX_IMMUTABLE_DATA_SIZE_IN_BYTES + user_msg_header) as f64 / f64::from(MAX_PARTS);
     let parts_allowed_first_time = (SOFT_CAPACITY as f64 / part_size) as u64;
     let parts_retried = total_data_parts - parts_allowed_first_time;
 
@@ -172,13 +173,15 @@ fn resend_over_load() {
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE);
 
-    let config = Some(BootstrapConfig::with_contacts(
-        &[nodes[0].handle.endpoint()],
-    ));
-    let mut clients =
-        vec![
-            TestClient::new_with_expire_duration(&network, config, None, Duration::from_secs(10)),
-        ];
+    let config = Some(BootstrapConfig::with_contacts(&[nodes[0]
+        .handle
+        .endpoint()]));
+    let mut clients = vec![TestClient::new_with_expire_duration(
+        &network,
+        config,
+        None,
+        Duration::from_secs(10),
+    )];
     let _ = poll_all(&mut nodes, &mut clients);
     expect_next_event!(unwrap!(clients.last_mut()), Event::Connected);
 
@@ -198,8 +201,8 @@ fn resend_over_load() {
     // NOTE: this calculation is approximate and relies on some hardcoded knowledge about
     // the size of serialised user messages.
     let user_msg_header = 48;
-    let part_size = (MAX_IMMUTABLE_DATA_SIZE_IN_BYTES + user_msg_header) as f64 /
-        f64::from(MAX_PARTS);
+    let part_size =
+        (MAX_IMMUTABLE_DATA_SIZE_IN_BYTES + user_msg_header) as f64 / f64::from(MAX_PARTS);
     let parts_allowed_through = (SOFT_CAPACITY as f64 / part_size) as u64;
 
     // `poll_and_resend` advance clock by 20 seconds (`ACK_TIME_OUT`), hence the message is expired

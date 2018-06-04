@@ -6,7 +6,6 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use Service;
 use id::{FullId, PublicId};
 use maidsafe_utilities::serialisation;
 use messages::Message;
@@ -16,6 +15,7 @@ use state_machine::Transition;
 use stats::Stats;
 use std::fmt::Debug;
 use xor_name::XorName;
+use Service;
 
 // Trait for all states.
 pub trait Base: Debug {
@@ -51,9 +51,7 @@ pub trait Base: Debug {
             Err(error) => {
                 error!(
                     "{:?} Failed to serialise message {:?}: {:?}",
-                    self,
-                    message,
-                    error
+                    self, message, error
                 );
                 // The caller can't do much to handle this except log more messages, so just stop
                 // trying to send here and let other mechanisms handle the lost message. If the

@@ -59,15 +59,12 @@ impl MpidMessage {
 
         let header = MpidHeader::new(sender, metadata, secret_key)?;
 
-        let detail = Detail {
-            recipient: recipient,
-            body: body,
-        };
+        let detail = Detail { recipient, body };
 
         let recipient_and_body = serialise(&detail)?;
         Ok(MpidMessage {
-            header: header,
-            detail: detail,
+            header,
+            detail,
             signature: sign::sign_detached(&recipient_and_body, secret_key),
         })
     }
@@ -98,8 +95,8 @@ impl MpidMessage {
     pub fn verify(&self, public_key: &PublicKey) -> bool {
         match serialise(&self.detail) {
             Ok(recipient_and_body) => {
-                sign::verify_detached(&self.signature, &recipient_and_body, public_key) &&
-                    self.header.verify(public_key)
+                sign::verify_detached(&self.signature, &recipient_and_body, public_key)
+                    && self.header.verify(public_key)
             }
             Err(_) => false,
         }

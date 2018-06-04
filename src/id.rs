@@ -8,8 +8,8 @@
 
 use crust::Uid;
 use rust_sodium::crypto::{box_, sign};
-use serde::{Deserializer, Serialize, Serializer};
 use serde::de::Deserialize;
+use serde::{Deserializer, Serialize, Serializer};
 use std::fmt::{self, Debug, Display, Formatter};
 use tiny_keccak::sha3_256;
 use xor_name::XorName;
@@ -146,8 +146,8 @@ impl PublicId {
 
     fn new(public_encrypt_key: box_::PublicKey, public_sign_key: sign::PublicKey) -> PublicId {
         PublicId {
-            public_encrypt_key: public_encrypt_key,
-            public_sign_key: public_sign_key,
+            public_encrypt_key,
+            public_sign_key,
             name: Self::name_from_key(&public_sign_key),
         }
     }
@@ -160,7 +160,7 @@ impl PublicId {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use maidsafe_utilities::{SeededRng, serialisation};
+    use maidsafe_utilities::{serialisation, SeededRng};
     use rust_sodium;
 
     /// Confirm `PublicId` `Ord` trait favours name over sign or encryption keys.
@@ -173,9 +173,9 @@ mod tests {
         let pub_id_2;
         loop {
             let temp_pub_id = *FullId::new().public_id();
-            if temp_pub_id.name > pub_id_1.name &&
-                temp_pub_id.public_sign_key < pub_id_1.public_sign_key &&
-                temp_pub_id.public_encrypt_key < pub_id_1.public_encrypt_key
+            if temp_pub_id.name > pub_id_1.name
+                && temp_pub_id.public_sign_key < pub_id_1.public_sign_key
+                && temp_pub_id.public_encrypt_key < pub_id_1.public_encrypt_key
             {
                 pub_id_2 = temp_pub_id;
                 break;

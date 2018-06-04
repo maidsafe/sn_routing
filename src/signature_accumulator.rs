@@ -14,8 +14,8 @@ use maidsafe_utilities::serialisation;
 use messages::SignedMessage;
 use rust_sodium::crypto::sign;
 use sha3::Digest256;
-use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 #[cfg(not(feature = "use-mock-crust"))]
 use std::time::Instant;
 use tiny_keccak::sha3_256;
@@ -46,9 +46,10 @@ impl SignatureAccumulator {
         } else {
             // FIXME: rustc stable requires this to be non-mutable?
             #[allow(unused)]
-            let mut sigs_vec = self.sigs.entry(hash).or_insert_with(
-                || (vec![], Instant::now()),
-            );
+            let mut sigs_vec = self
+                .sigs
+                .entry(hash)
+                .or_insert_with(|| (vec![], Instant::now()));
             sigs_vec.0.push((pub_id, sig));
             return None;
         }
@@ -88,21 +89,19 @@ impl SignatureAccumulator {
     }
 
     fn remove_expired(&mut self) {
-        let expired_sigs = self.sigs
+        let expired_sigs = self
+            .sigs
             .iter()
-            .filter(|&(_, &(_, ref time))| {
-                time.elapsed().as_secs() > ACCUMULATION_TIMEOUT_SECS
-            })
+            .filter(|&(_, &(_, ref time))| time.elapsed().as_secs() > ACCUMULATION_TIMEOUT_SECS)
             .map(|(hash, _)| *hash)
             .collect_vec();
         for hash in expired_sigs {
             let _ = self.sigs.remove(&hash);
         }
-        let expired_msgs = self.msgs
+        let expired_msgs = self
+            .msgs
             .iter()
-            .filter(|&(_, &(_, _, ref time))| {
-                time.elapsed().as_secs() > ACCUMULATION_TIMEOUT_SECS
-            })
+            .filter(|&(_, &(_, _, ref time))| time.elapsed().as_secs() > ACCUMULATION_TIMEOUT_SECS)
             .map(|(hash, _)| *hash)
             .collect_vec();
         for hash in expired_msgs {
@@ -126,7 +125,6 @@ impl SignatureAccumulator {
         self.msgs.remove(hash).map(|(msg, route, _)| (msg, route))
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -166,14 +164,16 @@ mod tests {
             let signed_msg = unwrap!(SignedMessage::new(routing_msg, msg_sender_id, lists));
             let signature_msgs = other_ids
                 .map(|id| {
-                    unwrap!(signed_msg.routing_message().to_signature(
-                        id.signing_private_key(),
-                    ))
+                    unwrap!(
+                        signed_msg
+                            .routing_message()
+                            .to_signature(id.signing_private_key(),)
+                    )
                 })
                 .collect();
             MessageAndSignatures {
-                signed_msg: signed_msg,
-                signature_msgs: signature_msgs,
+                signed_msg,
+                signature_msgs,
             }
         }
     }
@@ -204,9 +204,9 @@ mod tests {
                 .collect();
             Env {
                 _msg_sender_id: msg_sender_id,
-                other_ids: other_ids,
+                other_ids,
                 senders: pub_ids,
-                msgs_and_sigs: msgs_and_sigs,
+                msgs_and_sigs,
             }
         }
 
@@ -242,11 +242,12 @@ mod tests {
 
         assert!(sig_accumulator.msgs.is_empty());
         assert_eq!(sig_accumulator.sigs.len(), env.msgs_and_sigs.len());
-        sig_accumulator.sigs.values().foreach(
-            |&(ref pub_ids_and_sigs, _)| {
+        sig_accumulator
+            .sigs
+            .values()
+            .foreach(|&(ref pub_ids_and_sigs, _)| {
                 assert_eq!(pub_ids_and_sigs.len(), env.other_ids.len())
-            },
-        );
+            });
 
         // Add each message with the section list added - each should accumulate.
         let mut expected_sigs_count = env.msgs_and_sigs.len();
@@ -256,20 +257,17 @@ mod tests {
             expected_sigs_count -= 1;
             let signed_msg = msg_and_sigs.signed_msg.clone();
             let route = rand::random();
-            let (mut returned_msg, returned_route) = unwrap!(sig_accumulator.add_message(
-                signed_msg.clone(),
-                env.num_nodes(),
-                route,
-            ));
+            let (mut returned_msg, returned_route) =
+                unwrap!(sig_accumulator.add_message(signed_msg.clone(), env.num_nodes(), route,));
             assert_eq!(sig_accumulator.sigs.len(), expected_sigs_count);
             assert!(sig_accumulator.msgs.is_empty());
             assert_eq!(route, returned_route);
             assert_eq!(signed_msg.routing_message(), returned_msg.routing_message());
             unwrap!(returned_msg.check_integrity(1000));
             assert!(returned_msg.check_fully_signed(env.num_nodes()));
-            env.senders.iter().foreach(|pub_id| {
-                assert!(returned_msg.signed_by(pub_id))
-            });
+            env.senders
+                .iter()
+                .foreach(|pub_id| assert!(returned_msg.signed_by(pub_id)));
         });
     }
 
@@ -279,48 +277,48 @@ mod tests {
         let env = Env::new();
 
         // Add each message with the section list added - none should accumulate.
-        env.msgs_and_sigs.iter().enumerate().foreach(|(route,
-          msg_and_sigs)| {
-            let signed_msg = msg_and_sigs.signed_msg.clone();
-            let result = sig_accumulator.add_message(signed_msg, env.num_nodes(), route as u8);
-            assert!(result.is_none());
-        });
+        env.msgs_and_sigs
+            .iter()
+            .enumerate()
+            .foreach(|(route, msg_and_sigs)| {
+                let signed_msg = msg_and_sigs.signed_msg.clone();
+                let result = sig_accumulator.add_message(signed_msg, env.num_nodes(), route as u8);
+                assert!(result.is_none());
+            });
         let mut expected_msgs_count = env.msgs_and_sigs.len();
         assert_eq!(sig_accumulator.msgs.len(), expected_msgs_count);
         assert!(sig_accumulator.sigs.is_empty());
 
         // Add each message's signatures - each should accumulate once quorum has been reached.
-        env.msgs_and_sigs.iter().enumerate().foreach(|(route,
-          msg_and_sigs)| {
-            msg_and_sigs
-                .signature_msgs
-                .iter()
-                .zip(env.other_ids.iter())
-                .foreach(|(signature_msg, full_id)| {
-                    let result = match *signature_msg {
-                        DirectMessage::MessageSignature(hash, sig) => {
-                            sig_accumulator.add_signature(
-                                env.num_nodes(),
-                                hash,
-                                sig,
-                                *full_id.public_id(),
-                            )
-                        }
-                        ref unexpected_msg => panic!("Unexpected message: {:?}", unexpected_msg),
-                    };
+        env.msgs_and_sigs
+            .iter()
+            .enumerate()
+            .foreach(|(route, msg_and_sigs)| {
+                msg_and_sigs
+                    .signature_msgs
+                    .iter()
+                    .zip(env.other_ids.iter())
+                    .foreach(|(signature_msg, full_id)| {
+                        let result = match *signature_msg {
+                            DirectMessage::MessageSignature(hash, sig) => sig_accumulator
+                                .add_signature(env.num_nodes(), hash, sig, *full_id.public_id()),
+                            ref unexpected_msg => {
+                                panic!("Unexpected message: {:?}", unexpected_msg)
+                            }
+                        };
 
-                    if let Some((mut returned_msg, returned_route)) = result {
-                        expected_msgs_count -= 1;
-                        assert_eq!(sig_accumulator.msgs.len(), expected_msgs_count);
-                        assert_eq!(route as u8, returned_route);
-                        assert_eq!(
-                            msg_and_sigs.signed_msg.routing_message(),
-                            returned_msg.routing_message()
-                        );
-                        unwrap!(returned_msg.check_integrity(1000));
-                        assert!(returned_msg.check_fully_signed(env.num_nodes()));
-                    }
-                });
-        });
+                        if let Some((mut returned_msg, returned_route)) = result {
+                            expected_msgs_count -= 1;
+                            assert_eq!(sig_accumulator.msgs.len(), expected_msgs_count);
+                            assert_eq!(route as u8, returned_route);
+                            assert_eq!(
+                                msg_and_sigs.signed_msg.routing_message(),
+                                returned_msg.routing_message()
+                            );
+                            unwrap!(returned_msg.check_integrity(1000));
+                            assert!(returned_msg.check_fully_signed(env.num_nodes()));
+                        }
+                    });
+            });
     }
 }

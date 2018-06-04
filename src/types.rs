@@ -6,9 +6,9 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use maidsafe_utilities::event_sender::MaidSafeObserver;
 #[cfg(any(test, feature = "use-mock-crust"))]
 use maidsafe_utilities::SeededRng;
-use maidsafe_utilities::event_sender::MaidSafeObserver;
 #[cfg(all(not(test), not(feature = "use-mock-crust")))]
 use rand;
 #[cfg(any(test, feature = "use-mock-crust"))]
@@ -89,7 +89,7 @@ impl Default for MessageId {
 #[cfg_attr(feature = "cargo-clippy", allow(indexing_slicing))]
 mod tests {
     use super::MessageId;
-    use xor_name::{XOR_NAME_LEN, XorName};
+    use xor_name::{XorName, XOR_NAME_LEN};
 
     #[test]
     fn increment() {
