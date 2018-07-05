@@ -6,14 +6,13 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::XorName;
 use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
-use id::PublicId;
 use itertools::Itertools;
 use messages::SectionList;
 use routing_table::Prefix;
-use rust_sodium::crypto::sign::Signature;
+use safe_crypto::{PublicId, Signature};
 use std::collections::HashMap;
+use xor_name::{PublicIdExt, XorName};
 
 pub type Signatures = HashMap<PublicId, Signature>;
 pub type PrefixMap<T> = HashMap<Prefix<XorName>, T>;
@@ -38,7 +37,7 @@ impl SectionListCache {
         let pub_id_opt = self
             .signed_by
             .keys()
-            .find(|pub_id| name == pub_id.name())
+            .find(|pub_id| name == &pub_id.xor_name())
             .cloned();
         if let Some(pub_id) = pub_id_opt {
             if let Some(lists) = self.signed_by.remove(&pub_id) {
@@ -63,11 +62,11 @@ impl SectionListCache {
         our_section_size: usize,
     ) {
         // remove all conflicting signatures
-        self.remove_signatures_for_prefix_by(prefix, pub_id);
+        self.remove_signatures_for_prefix_by(prefix, pub_id.clone());
         // remember that this public id signed this section list
         let _ = self
             .signed_by
-            .entry(pub_id)
+            .entry(pub_id.clone())
             .or_insert_with(HashMap::new)
             .insert(prefix, list.clone());
         // remember that this section list has a new signature
@@ -129,7 +128,7 @@ impl SectionListCache {
             .signed_by
             .iter()
             .filter(|&(_, map)| map.is_empty())
-            .map(|(pub_id, _)| *pub_id)
+            .map(|(pub_id, _)| pub_id.clone())
             .collect_vec();
         // prune pub_ids signing nothing
         for pub_id in to_remove {

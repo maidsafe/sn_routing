@@ -7,8 +7,9 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{Prefix, Xorable};
-use id::PublicId;
+use safe_crypto::PublicId;
 use std::fmt::{self, Binary, Debug, Display, Formatter};
+use xor_name::PublicIdExt;
 
 /// An entity that can act as a source or destination of a message.
 ///
@@ -18,7 +19,7 @@ use std::fmt::{self, Binary, Debug, Display, Formatter};
 /// require quorum agreement from the group of nodes closest to the source, while `Section` and
 /// `PrefixSection` use _section_ verification: the set from which a quorum is required is all
 /// members of the section (`Section`) or of all sections matching the prefix (`PrefixSection`).
-#[derive(Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Hash)]
+#[derive(Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord, Clone, Hash)]
 pub enum Authority<N: Xorable + Clone + Copy + Binary + Default> {
     /// Manager of a Client.  XorName is the hash of the Client's `client_key`.
     ClientManager(N),
@@ -115,7 +116,7 @@ impl<N: Xorable + Clone + Copy + Binary + Default + Display> Debug for Authority
             } => write!(
                 formatter,
                 "Client {{ client_name: {}, proxy_node_name: {} }}",
-                client_id.name(),
+                client_id.xor_name(),
                 proxy_node_name
             ),
         }

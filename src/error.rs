@@ -11,9 +11,9 @@ use action::Action;
 use config_file_handler::Error as ConfigFileHandlerError;
 use crust::CrustError;
 use event::Event;
-use id::PublicId;
 use maidsafe_utilities::event_sender::{EventSenderError, MaidSafeEventCategory};
 use maidsafe_utilities::serialisation;
+use safe_crypto::PublicId;
 use sha3::Digest256;
 use std::sync::mpsc::{RecvError, SendError};
 

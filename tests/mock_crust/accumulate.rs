@@ -30,7 +30,7 @@ fn messages_accumulate_with_quorum() {
     let send = |node: &mut TestNode, dst: &Authority<XorName>, message_id: MessageId| {
         assert!(
             node.inner
-                .send_get_idata_response(src, *dst, Ok(data.clone()), message_id)
+                .send_get_idata_response(src.clone(), dst.clone(), Ok(data.clone()), message_id)
                 .is_ok()
         );
     };

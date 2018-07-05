@@ -97,7 +97,7 @@ fn remove_nodes_from_section_till_merge(
 // Adds a pair of nodes with names matching the specified prefixes into the network. Also blocks
 // direct connection between these them if `is_tunnel` is true. Returns the endpoints of the nodes.
 fn add_a_pair(
-    network: &Network<PublicId>,
+    network: &Network,
     nodes: &mut Vec<TestNode>,
     prefix0: Prefix<XorName>,
     prefix1: Prefix<XorName>,
@@ -143,7 +143,10 @@ fn locate_tunnel_node(nodes: &[TestNode], client_1: PublicId, client_2: PublicId
         .iter()
         .enumerate()
         .filter_map(|(index, node)| {
-            if node.inner.has_tunnel_clients(client_1, client_2) {
+            if node
+                .inner
+                .has_tunnel_clients(client_1.clone(), client_2.clone())
+            {
                 Some(index)
             } else {
                 None
@@ -195,12 +198,26 @@ fn tunnel_clients() {
     );
     let tunnel_pair_2_peer_ids = (nodes[nodes.len() - 1].id(), nodes[nodes.len() - 2].id());
     verify_invariant_for_all_nodes(&mut nodes);
-    assert!(locate_tunnel_node(&nodes, direct_pair_peer_ids.0, direct_pair_peer_ids.1).is_none());
     assert!(
-        locate_tunnel_node(&nodes, tunnel_pair_1_peer_ids.0, tunnel_pair_1_peer_ids.1).is_some()
+        locate_tunnel_node(
+            &nodes,
+            direct_pair_peer_ids.0.clone(),
+            direct_pair_peer_ids.1.clone()
+        ).is_none()
     );
     assert!(
-        locate_tunnel_node(&nodes, tunnel_pair_2_peer_ids.0, tunnel_pair_2_peer_ids.1).is_some()
+        locate_tunnel_node(
+            &nodes,
+            tunnel_pair_1_peer_ids.0.clone(),
+            tunnel_pair_1_peer_ids.1.clone()
+        ).is_some()
+    );
+    assert!(
+        locate_tunnel_node(
+            &nodes,
+            tunnel_pair_2_peer_ids.0.clone(),
+            tunnel_pair_2_peer_ids.1.clone()
+        ).is_some()
     );
 
     add_connected_nodes_until_split(&network, &mut nodes, vec![2, 2, 2, 2], false);
@@ -241,7 +258,10 @@ fn tunnel_client_connect_failure() {
     let mut nodes = create_connected_nodes(&network, min_section_size);
     let tunnel_node_index = unwrap!(locate_tunnel_node(&nodes, nodes[2].id(), nodes[3].id()));
 
-    network.send_crust_event(Endpoint(2), crust::Event::ConnectFailure(nodes[3].id()));
+    network.send_crust_event(
+        Endpoint(2),
+        crust::compat::Event::ConnectFailure(nodes[3].id()),
+    );
     let _ = poll_all(&mut nodes, &mut []);
     verify_invariant_for_all_nodes(&mut nodes);
     assert_eq!(
@@ -343,7 +363,7 @@ fn tunnel_node_dropped() {
 
     let id_2 = nodes[2].id();
     let id_3 = nodes[3].id();
-    let tunnel_node_index = unwrap!(locate_tunnel_node(&nodes, id_2, id_3));
+    let tunnel_node_index = unwrap!(locate_tunnel_node(&nodes, id_2.clone(), id_3.clone()));
     // Node 1 would have been the only possible tunnel while node 2 and 3 started.
     // Confirm it is the tunnel node at this stage
     assert_eq!(1, tunnel_node_index);
@@ -381,7 +401,11 @@ fn tunnel_node_split_out() {
     let (tunnel_client_1, tunnel_client_2) = (nodes.len() - 1, nodes.len() - 2);
     let (peer_id_1, peer_id_2) = (nodes[tunnel_client_1].id(), nodes[tunnel_client_2].id());
     verify_invariant_for_all_nodes(&mut nodes);
-    let tunnel_node_index = unwrap!(locate_tunnel_node(&nodes, peer_id_1, peer_id_2));
+    let tunnel_node_index = unwrap!(locate_tunnel_node(
+        &nodes,
+        peer_id_1.clone(),
+        peer_id_2.clone()
+    ));
     assert_eq!(1, tunnel_node_index);
 
     add_connected_nodes_until_split(&network, &mut nodes, vec![2, 2, 2, 2], false);

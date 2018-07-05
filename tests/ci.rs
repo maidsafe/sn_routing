@@ -35,7 +35,6 @@ extern crate libc;
 extern crate maidsafe_utilities;
 extern crate rand;
 extern crate routing;
-extern crate rust_sodium;
 #[macro_use]
 extern crate unwrap;
 
@@ -44,10 +43,9 @@ use maidsafe_utilities::thread::{self, Joiner};
 use maidsafe_utilities::SeededRng;
 use rand::Rng;
 use routing::{
-    Authority, Client, ClientError, Event, EventStream, FullId, MessageId, MutableData, Node,
-    Request, Response, Value, XorName, Xorable, MIN_SECTION_SIZE,
+    Authority, Client, ClientError, Event, EventStream, MessageId, MutableData, Node, PublicIdExt,
+    Request, Response, SecretId, Value, XorName, Xorable, MIN_SECTION_SIZE,
 };
-use rust_sodium::crypto;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 #[cfg(target_os = "macos")]
 use std::io;
@@ -110,13 +108,13 @@ impl TestNode {
     }
 
     fn name(&self) -> XorName {
-        *unwrap!(self.node.id()).name()
+        unwrap!(self.node.id()).xor_name()
     }
 }
 
 struct TestClient {
     index: usize,
-    full_id: FullId,
+    full_id: SecretId,
     client: Client,
     _thread_joiner: Joiner,
 }
@@ -126,9 +124,7 @@ impl TestClient {
         let thread_name = format!("TestClient {} event sender", index);
         let (sender, joiner) = spawn_select_thread(index, main_sender, thread_name);
 
-        let sign_keys = crypto::sign::gen_keypair();
-        let encrypt_keys = crypto::box_::gen_keypair();
-        let full_id = FullId::with_keys(encrypt_keys, sign_keys);
+        let full_id = SecretId::new();
 
         TestClient {
             index: index,
@@ -143,11 +139,11 @@ impl TestClient {
         }
     }
 
-    pub fn name(&self) -> &XorName {
-        self.full_id.public_id().name()
+    pub fn name(&self) -> XorName {
+        self.full_id.public_id().xor_name()
     }
 
-    pub fn full_id(&self) -> &FullId {
+    pub fn full_id(&self) -> &SecretId {
         &self.full_id
     }
 }
@@ -268,7 +264,7 @@ fn create_connected_nodes(
     nodes
 }
 
-fn gen_mutable_data<R: Rng>(full_id: &FullId, rng: &mut R) -> MutableData {
+fn gen_mutable_data<R: Rng>(full_id: &SecretId, rng: &mut R) -> MutableData {
     let tag = 10_000;
 
     let num_entries = rng.gen_range(1, 10);
@@ -287,7 +283,7 @@ fn gen_mutable_data<R: Rng>(full_id: &FullId, rng: &mut R) -> MutableData {
         })
         .collect();
 
-    let owner_pubkey = *full_id.public_id().signing_public_key();
+    let owner_pubkey = full_id.public_id().clone();
     let mut owners = BTreeSet::new();
     let _ = owners.insert(owner_pubkey);
 
@@ -315,7 +311,7 @@ fn core() {
     {
         // request and response
         let mut client = TestClient::new(nodes.len(), event_sender.clone());
-        let client_key = *client.full_id().public_id().signing_public_key();
+        let client_key = client.full_id().public_id().clone();
         let data = gen_mutable_data(client.full_id(), &mut rng);
         let message_id = MessageId::new();
 
@@ -329,11 +325,13 @@ fn core() {
                 match test_event {
                     TestEvent(index, Event::Connected) if index == client.index => {
                         // The client is connected now. Send some request.
-                        let src = Authority::ClientManager(*client.name());
-                        let result =
-                            client
-                                .client
-                                .put_mdata(src, data.clone(), message_id, client_key);
+                        let src = Authority::ClientManager(client.name());
+                        let result = client.client.put_mdata(
+                            src,
+                            data.clone(),
+                            message_id,
+                            client_key.clone(),
+                        );
                         assert!(result.is_ok());
                     }
 
@@ -374,9 +372,9 @@ fn core() {
         // request to group authority
         let node_names = nodes.iter().map(|node| node.name()).collect_vec();
         let mut client = TestClient::new(nodes.len(), event_sender.clone());
-        let client_key = *client.full_id().public_id().signing_public_key();
+        let client_key = client.full_id().public_id().clone();
         let data = gen_mutable_data(client.full_id(), &mut rng);
-        let mut close_group = closest_nodes(&node_names, client.name());
+        let mut close_group = closest_nodes(&node_names, &client.name());
 
         loop {
             if let Ok(test_event) = recv_with_timeout(
@@ -387,11 +385,11 @@ fn core() {
             ) {
                 match test_event {
                     TestEvent(index, Event::Connected) if index == client.index => {
-                        let dst = Authority::ClientManager(*client.name());
+                        let dst = Authority::ClientManager(client.name());
                         assert!(
                             client
                                 .client
-                                .put_mdata(dst, data.clone(), MessageId::new(), client_key)
+                                .put_mdata(dst, data.clone(), MessageId::new(), client_key.clone())
                                 .is_ok()
                         );
                     }
@@ -422,9 +420,9 @@ fn core() {
         // response from group authority
         let node_names = nodes.iter().map(|node| node.name()).collect_vec();
         let mut client = TestClient::new(nodes.len(), event_sender.clone());
-        let client_key = *client.full_id().public_id().signing_public_key();
+        let client_key = client.full_id().public_id().clone();
         let data = gen_mutable_data(client.full_id(), &mut rng);
-        let mut close_group = closest_nodes(&node_names, client.name());
+        let mut close_group = closest_nodes(&node_names, &client.name());
 
         loop {
             if let Ok(test_event) = recv_with_timeout(
@@ -435,11 +433,11 @@ fn core() {
             ) {
                 match test_event {
                     TestEvent(index, Event::Connected) if index == client.index => {
-                        let dst = Authority::ClientManager(*client.name());
+                        let dst = Authority::ClientManager(client.name());
                         assert!(
                             client
                                 .client
-                                .put_mdata(dst, data.clone(), MessageId::new(), client_key)
+                                .put_mdata(dst, data.clone(), MessageId::new(), client_key.clone())
                                 .is_ok()
                         );
                     }
@@ -567,7 +565,7 @@ fn core() {
     {
         // message from quorum - 1 section members
         let mut client = TestClient::new(nodes.len(), event_sender.clone());
-        let client_key = *client.full_id().public_id().signing_public_key();
+        let client_key = client.full_id().public_id().clone();
         let data = gen_mutable_data(client.full_id(), &mut rng);
 
         while let Ok(test_event) = recv_with_timeout(
@@ -578,11 +576,11 @@ fn core() {
         ) {
             match test_event {
                 TestEvent(index, Event::Connected) if index == client.index => {
-                    let dst = Authority::ClientManager(*client.name());
+                    let dst = Authority::ClientManager(client.name());
                     assert!(
                         client
                             .client
-                            .put_mdata(dst, data.clone(), MessageId::new(), client_key)
+                            .put_mdata(dst, data.clone(), MessageId::new(), client_key.clone())
                             .is_ok()
                     );
                 }
@@ -639,7 +637,7 @@ fn core() {
     {
         // message from more than quorum section members
         let mut client = TestClient::new(nodes.len(), event_sender.clone());
-        let client_key = *client.full_id().public_id().signing_public_key();
+        let client_key = client.full_id().public_id().clone();
         let data = gen_mutable_data(client.full_id(), &mut rng);
         let mut sent_ids = HashSet::new();
         let mut received_ids = HashSet::new();
@@ -654,12 +652,14 @@ fn core() {
                 match test_event {
                     TestEvent(index, Event::Connected) if index == client.index => {
                         // The client is connected now. Send some request.
-                        let src = Authority::ClientManager(*client.name());
+                        let src = Authority::ClientManager(client.name());
                         let message_id = MessageId::new();
-                        let result =
-                            client
-                                .client
-                                .put_mdata(src, data.clone(), message_id, client_key);
+                        let result = client.client.put_mdata(
+                            src,
+                            data.clone(),
+                            message_id,
+                            client_key.clone(),
+                        );
                         assert!(result.is_ok());
                         let _ = sent_ids.insert(message_id);
                     }

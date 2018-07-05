@@ -9,7 +9,7 @@
 use client_error::{ClientError, EntryError};
 use maidsafe_utilities::serialisation;
 use rand::{Rand, Rng};
-use rust_sodium::crypto::sign::PublicKey;
+use safe_crypto::PublicId;
 use std::collections::btree_map::{BTreeMap, Entry};
 use std::collections::BTreeSet;
 use std::fmt::{self, Debug, Formatter};
@@ -39,7 +39,7 @@ pub struct MutableData {
     version: u64,
     /// Contains a set of owners which are allowed to mutate permissions.
     /// Currently limited to one owner to disallow multisig.
-    owners: BTreeSet<PublicKey>,
+    owners: BTreeSet<PublicId>,
 }
 
 /// A value in `MutableData`
@@ -52,12 +52,12 @@ pub struct Value {
 }
 
 /// Subject of permissions
-#[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum User {
     /// Permissions apply to anyone.
     Anyone,
     /// Permissions apply to a single public key.
-    Key(PublicKey),
+    Key(PublicId),
 }
 
 /// Action a permission applies to
@@ -216,7 +216,7 @@ impl MutableData {
         tag: u64,
         permissions: BTreeMap<User, PermissionSet>,
         data: BTreeMap<Vec<u8>, Value>,
-        owners: BTreeSet<PublicKey>,
+        owners: BTreeSet<PublicId>,
     ) -> Result<MutableData, ClientError> {
         let md = MutableData {
             name,
@@ -276,7 +276,7 @@ impl MutableData {
     }
 
     /// Returns the owner keys
-    pub fn owners(&self) -> &BTreeSet<PublicKey> {
+    pub fn owners(&self) -> &BTreeSet<PublicId> {
         &self.owners
     }
 
@@ -309,7 +309,7 @@ impl MutableData {
     pub fn mutate_entries(
         &mut self,
         actions: BTreeMap<Vec<u8>, EntryAction>,
-        requester: PublicKey,
+        requester: PublicId,
     ) -> Result<(), ClientError> {
         // Deconstruct actions into inserts, updates, and deletes
         let (insert, update, delete) = actions.into_iter().fold(
@@ -330,9 +330,9 @@ impl MutableData {
             },
         );
 
-        if (!insert.is_empty() && !self.is_action_allowed(requester, Action::Insert))
-            || (!update.is_empty() && !self.is_action_allowed(requester, Action::Update))
-            || (!delete.is_empty() && !self.is_action_allowed(requester, Action::Delete))
+        if (!insert.is_empty() && !self.is_action_allowed(&requester, Action::Insert))
+            || (!update.is_empty() && !self.is_action_allowed(&requester, Action::Update))
+            || (!delete.is_empty() && !self.is_action_allowed(&requester, Action::Delete))
         {
             return Err(ClientError::AccessDenied);
         }
@@ -488,15 +488,15 @@ impl MutableData {
         user: User,
         permissions: PermissionSet,
         version: u64,
-        requester: PublicKey,
+        requester: PublicId,
     ) -> Result<(), ClientError> {
-        if !self.is_action_allowed(requester, Action::ManagePermissions) {
+        if !self.is_action_allowed(&requester, Action::ManagePermissions) {
             return Err(ClientError::AccessDenied);
         }
         if version != self.version + 1 {
             return Err(ClientError::InvalidSuccessor(self.version));
         }
-        let prev = self.permissions.insert(user, permissions);
+        let prev = self.permissions.insert(user.clone(), permissions);
         if !self.validate_size() {
             // Serialised data size limit is exceeded
             let _ = match prev {
@@ -530,9 +530,9 @@ impl MutableData {
         &mut self,
         user: &User,
         version: u64,
-        requester: PublicKey,
+        requester: PublicId,
     ) -> Result<(), ClientError> {
-        if !self.is_action_allowed(requester, Action::ManagePermissions) {
+        if !self.is_action_allowed(&requester, Action::ManagePermissions) {
             return Err(ClientError::AccessDenied);
         }
         if version != self.version + 1 {
@@ -558,7 +558,7 @@ impl MutableData {
     }
 
     /// Change owner of the mutable data.
-    pub fn change_owner(&mut self, new_owner: PublicKey, version: u64) -> Result<(), ClientError> {
+    pub fn change_owner(&mut self, new_owner: PublicId, version: u64) -> Result<(), ClientError> {
         if version != self.version + 1 {
             return Err(ClientError::InvalidSuccessor(self.version));
         }
@@ -569,7 +569,7 @@ impl MutableData {
     }
 
     /// Change the owner without performing any validation.
-    pub fn change_owner_without_validation(&mut self, new_owner: PublicKey, version: u64) -> bool {
+    pub fn change_owner_without_validation(&mut self, new_owner: PublicId, version: u64) -> bool {
         if version <= self.version {
             return false;
         }
@@ -597,11 +597,11 @@ impl MutableData {
         }
     }
 
-    fn is_action_allowed(&self, requester: PublicKey, action: Action) -> bool {
-        if self.owners.contains(&requester) {
+    fn is_action_allowed(&self, requester: &PublicId, action: Action) -> bool {
+        if self.owners.contains(requester) {
             return true;
         }
-        match self.permissions.get(&User::Key(requester)) {
+        match self.permissions.get(&User::Key(requester.clone())) {
             Some(perms) => perms
                 .is_allowed(action)
                 .unwrap_or_else(|| self.check_anyone_permissions(action)),
@@ -629,7 +629,7 @@ mod tests {
     use super::*;
     use client_error::ClientError;
     use rand;
-    use rust_sodium::crypto::sign;
+    use safe_crypto::SecretId;
     use std::collections::{BTreeMap, BTreeSet};
     use std::iter;
 
@@ -645,9 +645,12 @@ mod tests {
 
     #[test]
     fn mutable_data_permissions() {
-        let (owner, _) = sign::gen_keypair();
-        let (pk1, _) = sign::gen_keypair();
-        let (pk2, _) = sign::gen_keypair();
+        let sk = SecretId::new();
+        let owner = sk.public_id().clone();
+        let sk = SecretId::new();
+        let pk1 = sk.public_id().clone();
+        let sk = SecretId::new();
+        let pk2 = sk.public_id().clone();
 
         let mut perms = BTreeMap::new();
 
@@ -657,13 +660,13 @@ mod tests {
         let ps2 = PermissionSet::new()
             .deny(Action::Update)
             .allow(Action::Insert);
-        let _ = perms.insert(User::Key(pk1), ps2);
+        let _ = perms.insert(User::Key(pk1.clone()), ps2);
 
         let k1 = b"123".to_vec();
         let k2 = b"234".to_vec();
 
         let mut owners = BTreeSet::new();
-        let _ = owners.insert(owner);
+        let _ = owners.insert(owner.clone());
         let mut md = unwrap!(MutableData::new(
             rand::random(),
             0,
@@ -678,7 +681,7 @@ mod tests {
                 EntryActions::new()
                     .ins(k1.clone(), b"abc".to_vec(), 0)
                     .into(),
-                pk1
+                pk1.clone()
             ).is_ok()
         );
 
@@ -687,7 +690,7 @@ mod tests {
                 EntryActions::new()
                     .ins(k2.clone(), b"def".to_vec(), 0)
                     .into(),
-                pk2,
+                pk2.clone(),
             ),
             ClientError::AccessDenied
         );
@@ -698,7 +701,7 @@ mod tests {
         let upd = EntryActions::new().update(k1.clone(), b"def".to_vec(), 1);
 
         assert_err!(
-            md.mutate_entries(upd.clone().into(), pk1),
+            md.mutate_entries(upd.clone().into(), pk1.clone()),
             ClientError::AccessDenied
         );
 
@@ -763,8 +766,9 @@ mod tests {
             assert!(data.insert(to_vec_of_u8(i), val.clone()).is_none());
         }
 
-        let (owner, _) = sign::gen_keypair();
-        let owners = iter::once(owner).collect();
+        let sk = SecretId::new();
+        let owner = sk.public_id().clone();
+        let owners = iter::once(owner.clone()).collect();
         let mut md = unwrap!(MutableData::new(
             rand::random(),
             0,
@@ -778,7 +782,7 @@ mod tests {
             to_vec_of_u8(MAX_MUTABLE_DATA_ENTRIES - 1),
             EntryAction::Ins(val.clone()),
         )).collect();
-        unwrap!(md.mutate_entries(actions, owner));
+        unwrap!(md.mutate_entries(actions, owner.clone()));
 
         assert_eq!(md.keys().len(), MAX_MUTABLE_DATA_ENTRIES as usize);
         assert_eq!(md.values().len(), MAX_MUTABLE_DATA_ENTRIES as usize);
@@ -790,7 +794,7 @@ mod tests {
             EntryAction::Ins(val.clone()),
         )).collect();
         assert_err!(
-            md.mutate_entries(actions, owner),
+            md.mutate_entries(actions, owner.clone()),
             ClientError::TooManyEntries
         );
 
@@ -823,8 +827,9 @@ mod tests {
         let mut data = BTreeMap::new();
         let _ = data.insert(vec![0], big_val.clone());
 
-        let (owner, _) = sign::gen_keypair();
-        let owners = iter::once(owner).collect();
+        let sk = SecretId::new();
+        let owner = sk.public_id().clone();
+        let owners = iter::once(owner.clone()).collect();
         let mut md = unwrap!(MutableData::new(
             rand::random(),
             0,
@@ -837,22 +842,24 @@ mod tests {
         let actions0: BTreeMap<_, _> =
             iter::once((vec![1], EntryAction::Ins(small_val.clone()))).collect();
         assert_err!(
-            md.mutate_entries(actions0.clone(), owner),
+            md.mutate_entries(actions0.clone(), owner.clone()),
             ClientError::DataTooLarge
         );
 
         let actions1 = iter::once((vec![0], EntryAction::Del(1))).collect();
-        unwrap!(md.mutate_entries(actions1, owner));
-        unwrap!(md.mutate_entries(actions0, owner));
+        unwrap!(md.mutate_entries(actions1, owner.clone()));
+        unwrap!(md.mutate_entries(actions0, owner.clone()));
     }
 
     #[test]
     fn transfer_ownership() {
-        let (owner, _) = sign::gen_keypair();
-        let (pk1, _) = sign::gen_keypair();
+        let sk = SecretId::new();
+        let owner = sk.public_id().clone();
+        let sk = SecretId::new();
+        let pk1 = sk.public_id().clone();
 
         let mut owners = BTreeSet::new();
-        let _ = owners.insert(owner);
+        let _ = owners.insert(owner.clone());
 
         let mut md = unwrap!(MutableData::new(
             rand::random(),
@@ -862,17 +869,18 @@ mod tests {
             owners,
         ));
 
-        assert!(md.change_owner(pk1, 1).is_ok());
+        assert!(md.change_owner(pk1.clone(), 1).is_ok());
         assert!(md.owners().contains(&pk1));
         assert!(!md.owners().contains(&owner));
     }
 
     #[test]
     fn versions_succession() {
-        let (owner, _) = sign::gen_keypair();
+        let sk = SecretId::new();
+        let owner = sk.public_id().clone();
 
         let mut owners = BTreeSet::new();
-        let _ = owners.insert(owner);
+        let _ = owners.insert(owner.clone());
         let mut md = unwrap!(MutableData::new(
             rand::random(),
             0,
@@ -889,7 +897,7 @@ mod tests {
                 entry_version: 0,
             }),
         );
-        assert!(md.mutate_entries(v1, owner).is_ok());
+        assert!(md.mutate_entries(v1, owner.clone()).is_ok());
 
         // Check update with invalid versions
         let mut v2 = BTreeMap::new();
@@ -900,7 +908,7 @@ mod tests {
                 entry_version: 0,
             }),
         );
-        match md.mutate_entries(v2.clone(), owner) {
+        match md.mutate_entries(v2.clone(), owner.clone()) {
             Err(ClientError::InvalidEntryActions(errors)) => {
                 assert_eq!(
                     errors.get([1].as_ref()),
@@ -917,7 +925,7 @@ mod tests {
                 entry_version: 2,
             }),
         );
-        match md.mutate_entries(v2.clone(), owner) {
+        match md.mutate_entries(v2.clone(), owner.clone()) {
             Err(ClientError::InvalidEntryActions(errors)) => {
                 assert_eq!(
                     errors.get([1].as_ref()),
@@ -935,12 +943,12 @@ mod tests {
                 entry_version: 1,
             }),
         );
-        assert!(md.mutate_entries(v2, owner).is_ok());
+        assert!(md.mutate_entries(v2, owner.clone()).is_ok());
 
         // Check delete version
         let mut del = BTreeMap::new();
         let _ = del.insert(vec![1], EntryAction::Del(1));
-        match md.mutate_entries(del.clone(), owner) {
+        match md.mutate_entries(del.clone(), owner.clone()) {
             Err(ClientError::InvalidEntryActions(errors)) => {
                 assert_eq!(
                     errors.get([1].as_ref()),
@@ -956,11 +964,13 @@ mod tests {
 
     #[test]
     fn changing_permissions() {
-        let (owner, _) = sign::gen_keypair();
-        let (pk1, _) = sign::gen_keypair();
+        let sk = SecretId::new();
+        let owner = sk.public_id().clone();
+        let sk = SecretId::new();
+        let pk1 = sk.public_id().clone();
 
         let mut owners = BTreeSet::new();
-        let _ = owners.insert(owner);
+        let _ = owners.insert(owner.clone());
 
         let mut md = unwrap!(MutableData::new(
             rand::random(),
@@ -980,7 +990,7 @@ mod tests {
             }),
         );
         assert_err!(
-            md.mutate_entries(v1.clone(), pk1),
+            md.mutate_entries(v1.clone(), pk1.clone()),
             ClientError::AccessDenied
         );
 
@@ -989,29 +999,35 @@ mod tests {
             .allow(Action::Insert)
             .allow(Action::ManagePermissions);
         assert!(
-            md.set_user_permissions(User::Key(pk1), ps1, 1, owner)
+            md.set_user_permissions(User::Key(pk1.clone()), ps1, 1, owner.clone())
                 .is_ok()
         );
 
-        assert!(md.mutate_entries(v1, pk1).is_ok());
+        assert!(md.mutate_entries(v1, pk1.clone()).is_ok());
 
         // pk1 now can change permissions
         let ps2 = PermissionSet::new()
             .allow(Action::Insert)
             .deny(Action::ManagePermissions);
         assert_err!(
-            md.set_user_permissions(User::Key(pk1), ps2, 1, pk1),
+            md.set_user_permissions(User::Key(pk1.clone()), ps2, 1, pk1.clone()),
             ClientError::InvalidSuccessor(1)
         );
-        assert!(md.set_user_permissions(User::Key(pk1), ps2, 2, pk1).is_ok());
+        assert!(
+            md.set_user_permissions(User::Key(pk1.clone()), ps2, 2, pk1.clone())
+                .is_ok()
+        );
 
         // Revoke permissions for pk1
         assert_err!(
-            md.del_user_permissions(&User::Key(pk1), 3, pk1),
+            md.del_user_permissions(&User::Key(pk1.clone()), 3, pk1.clone()),
             ClientError::AccessDenied
         );
 
-        assert!(md.del_user_permissions(&User::Key(pk1), 3, owner).is_ok());
+        assert!(
+            md.del_user_permissions(&User::Key(pk1.clone()), 3, owner.clone())
+                .is_ok()
+        );
 
         let mut v2 = BTreeMap::new();
         let _ = v2.insert(
@@ -1021,7 +1037,10 @@ mod tests {
                 entry_version: 0,
             }),
         );
-        assert_err!(md.mutate_entries(v2, pk1), ClientError::AccessDenied);
+        assert_err!(
+            md.mutate_entries(v2, pk1.clone()),
+            ClientError::AccessDenied
+        );
 
         // Revoking permissions for a non-existing user should return an error
         assert_err!(

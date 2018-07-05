@@ -11,12 +11,12 @@ use action::Action;
 use event::Event;
 #[cfg(feature = "use-mock-crust")]
 use fake_clock::FakeClock as Instant;
-use id::PublicId;
 use itertools::Itertools;
 use maidsafe_utilities::thread;
 use messages::{DirectMessage, MAX_PART_LEN};
 use outbox::EventBox;
 use resource_proof::ResourceProof;
+use safe_crypto::PublicId;
 use signature_accumulator::ACCUMULATION_TIMEOUT_SECS;
 use state_machine::Transition;
 use std::collections::HashMap;
@@ -109,6 +109,7 @@ impl ResourceProver {
         let atomic_cancel = Arc::new(AtomicBool::new(false));
         let atomic_cancel_clone = Arc::clone(&atomic_cancel);
         let action_sender = self.action_sender.clone();
+        let pub_id_0 = pub_id.clone();
         let joiner = thread::named("resource_prover", move || {
             let start = Instant::now();
             let rp_object = ResourceProof::new(target_size, difficulty);
@@ -166,7 +167,7 @@ impl ResourceProver {
                 seed
             );
 
-            let action = Action::ResourceProofResult(pub_id, messages);
+            let action = Action::ResourceProofResult(pub_id_0, messages);
             if action_sender.send(action).is_err() {
                 // In theory this means the receiver disconnected, so the main thread stopped/reset
                 error!(

@@ -7,7 +7,6 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use action::Action;
-use id::{FullId, PublicId};
 use log::Level;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 #[cfg(feature = "use-mock-crust")]
@@ -15,7 +14,8 @@ use mock_crust;
 use outbox::EventBox;
 use routing_table::{Prefix, RoutingTable};
 #[cfg(feature = "use-mock-crust")]
-use rust_sodium::crypto::sign;
+use safe_crypto::Signature;
+use safe_crypto::{PublicId, SecretId};
 use states::common::Base;
 use states::{Bootstrapping, Client, JoiningNode, Node};
 #[cfg(feature = "use-mock-crust")]
@@ -37,8 +37,8 @@ pub struct StateMachine {
     state: State,
     category_rx: Receiver<MaidSafeEventCategory>,
     category_tx: Sender<MaidSafeEventCategory>,
-    crust_rx: Receiver<CrustEvent<PublicId>>,
-    crust_tx: Sender<CrustEvent<PublicId>>,
+    crust_rx: Receiver<CrustEvent>,
+    crust_tx: Sender<CrustEvent>,
     action_rx: Receiver<Action>,
     is_running: bool,
     #[cfg(feature = "use-mock-crust")]
@@ -57,7 +57,7 @@ pub enum State {
 
 #[cfg(feature = "use-mock-crust")]
 enum EventType {
-    CrustEvent(CrustEvent<PublicId>),
+    CrustEvent(CrustEvent),
     Action(Box<Action>),
 }
 
@@ -86,11 +86,7 @@ impl State {
         }
     }
 
-    fn handle_crust_event(
-        &mut self,
-        event: CrustEvent<PublicId>,
-        outbox: &mut EventBox,
-    ) -> Transition {
+    fn handle_crust_event(&mut self, event: CrustEvent, outbox: &mut EventBox) -> Transition {
         match *self {
             State::Bootstrapping(ref mut state) => state.handle_crust_event(event, outbox),
             State::Client(ref mut state) => state.handle_crust_event(event, outbox),
@@ -101,7 +97,7 @@ impl State {
     }
 
     fn id(&self) -> Option<PublicId> {
-        self.base_state().map(|state| *state.id())
+        self.base_state().map(|state| state.id().clone())
     }
 
     fn routing_table(&self) -> Option<&RoutingTable<XorName>> {
@@ -167,7 +163,7 @@ impl State {
     pub fn section_list_signatures(
         &self,
         prefix: Prefix<XorName>,
-    ) -> Option<BTreeMap<PublicId, sign::Signature>> {
+    ) -> Option<BTreeMap<PublicId, Signature>> {
         match *self {
             State::Node(ref state) => state.section_list_signatures(prefix).ok(),
             _ => None,
@@ -236,7 +232,7 @@ pub enum Transition {
     },
     // `JoiningNode` state transitioning back to `Bootstrapping`.
     IntoBootstrapping {
-        new_id: FullId,
+        new_id: SecretId,
         our_section: (Prefix<XorName>, BTreeSet<PublicId>),
     },
     Terminate,
@@ -246,7 +242,7 @@ impl StateMachine {
     // Construct a new StateMachine by passing a function returning the initial state.
     pub fn new<F>(
         init_state: F,
-        pub_id: PublicId,
+        sec_id: SecretId,
         bootstrap_config: Option<BootstrapConfig>,
         outbox: &mut EventBox,
     ) -> (RoutingActionSender, Self)
@@ -271,16 +267,16 @@ impl StateMachine {
 
         let res = match bootstrap_config {
             #[cfg(feature = "use-mock-crust")]
-            Some(c) => Service::with_config(mock_crust::take_current(), crust_sender, c, pub_id),
+            Some(c) => Service::with_config(mock_crust::take_current(), crust_sender, c, sec_id),
             #[cfg(not(feature = "use-mock-crust"))]
-            Some(c) => Service::with_config(crust_sender, c, pub_id),
+            Some(c) => Service::with_config(crust_sender, c, sec_id),
             #[cfg(feature = "use-mock-crust")]
-            None => Service::new(mock_crust::take_current(), crust_sender, pub_id),
+            None => Service::new(mock_crust::take_current(), crust_sender, sec_id),
             #[cfg(not(feature = "use-mock-crust"))]
-            None => Service::new(crust_sender, pub_id),
+            None => Service::new(crust_sender, sec_id),
         };
 
-        let mut crust_service = unwrap!(res, "Unable to start crust::Service");
+        let crust_service = unwrap!(res, "Unable to start crust::Service");
 
         crust_service.start_service_discovery();
 

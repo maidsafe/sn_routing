@@ -6,11 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use id::PublicId;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::serialise;
 use message_filter::MessageFilter;
 use messages::RoutingMessage;
+use safe_crypto::PublicId;
 use sha3;
 use std::time::Duration;
 use tiny_keccak::sha3_256;
@@ -68,7 +68,9 @@ impl RoutingMessageFilter {
     pub fn filter_outgoing(&mut self, msg: &RoutingMessage, pub_id: &PublicId, route: u8) -> bool {
         if let Ok(msg_bytes) = serialise(msg) {
             let hash = sha3_256(&msg_bytes);
-            self.outgoing.insert((hash, *pub_id, route), ()).is_some()
+            self.outgoing
+                .insert((hash, pub_id.clone(), route), ())
+                .is_some()
         } else {
             trace!("Tried to filter oversized routing message: {:?}", msg);
             false
@@ -84,7 +86,7 @@ impl RoutingMessageFilter {
     ) {
         if let Ok(msg_bytes) = serialise(msg) {
             let hash = sha3_256(&msg_bytes);
-            let _ = self.outgoing.remove(&(hash, *pub_id, route));
+            let _ = self.outgoing.remove(&(hash, pub_id.clone(), route));
         }
     }
 }

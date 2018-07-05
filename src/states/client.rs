@@ -13,7 +13,6 @@ use error::{InterfaceError, RoutingError};
 use event::Event;
 #[cfg(feature = "use-mock-crust")]
 use fake_clock::FakeClock as Instant;
-use id::{FullId, PublicId};
 use maidsafe_utilities::serialisation;
 use messages::{
     DirectMessage, HopMessage, Message, MessageContent, RoutingMessage, SignedMessage, UserMessage,
@@ -22,6 +21,7 @@ use messages::{
 use outbox::EventBox;
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use routing_table::Authority;
+use safe_crypto::{PublicId, SecretId};
 use state_machine::Transition;
 use stats::Stats;
 use std::collections::{BTreeMap, BTreeSet};
@@ -30,7 +30,7 @@ use std::time::Duration;
 #[cfg(not(feature = "use-mock-crust"))]
 use std::time::Instant;
 use timer::Timer;
-use xor_name::XorName;
+use xor_name::{PublicIdExt, XorName};
 use {CrustEvent, Service};
 
 /// Duration to wait before sending rate limit exceeded messages.
@@ -42,7 +42,7 @@ pub const RATE_EXCEED_RETRY_MS: u64 = 800;
 pub struct Client {
     ack_mgr: AckManager,
     crust_service: Service,
-    full_id: FullId,
+    full_id: SecretId,
     min_section_size: usize,
     proxy_pub_id: PublicId,
     routing_msg_filter: RoutingMessageFilter,
@@ -57,7 +57,7 @@ impl Client {
     #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
     pub fn from_bootstrapping(
         crust_service: Service,
-        full_id: FullId,
+        full_id: SecretId,
         min_section_size: usize,
         proxy_pub_id: PublicId,
         stats: Stats,
@@ -96,8 +96,8 @@ impl Client {
                 result_tx,
             } => {
                 let src = Authority::Client {
-                    client_id: *self.full_id.public_id(),
-                    proxy_node_name: *self.proxy_pub_id.name(),
+                    client_id: self.full_id.public_id().clone(),
+                    proxy_node_name: self.proxy_pub_id.xor_name(),
                 };
 
                 let user_msg = UserMessage::Request(content);
@@ -112,7 +112,7 @@ impl Client {
                 let _ = result_tx.send(Err(InterfaceError::InvalidState));
             }
             Action::Id { result_tx } => {
-                let _ = result_tx.send(*self.id());
+                let _ = result_tx.send(self.id().clone());
             }
             Action::Timeout(token) => self.handle_timeout(token),
             Action::ResourceProofResult(..) => {
@@ -128,7 +128,7 @@ impl Client {
 
     pub fn handle_crust_event(
         &mut self,
-        crust_event: CrustEvent<PublicId>,
+        crust_event: CrustEvent,
         outbox: &mut EventBox,
     ) -> Transition {
         match crust_event {
@@ -149,7 +149,7 @@ impl Client {
     }
 
     fn handle_timeout(&mut self, token: u64) {
-        let proxy_pub_id = self.proxy_pub_id;
+        let proxy_pub_id = self.proxy_pub_id.clone();
 
         // Check if token corresponds to a rate limit exceeded msg.
         if let Some(unacked_msg) = self.resend_buf.remove(&token) {
@@ -211,7 +211,7 @@ impl Client {
         outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
         if self.proxy_pub_id == pub_id {
-            hop_msg.verify(self.proxy_pub_id.signing_public_key())?;
+            hop_msg.verify(&self.proxy_pub_id)?;
         } else {
             return Err(RoutingError::UnknownConnection(pub_id));
         }
@@ -320,8 +320,8 @@ impl Client {
         let msg_expiry_dur = self.msg_expiry_dur;
         for part in parts {
             self.send_routing_message_with_expiry(
-                src,
-                dst,
+                src.clone(),
+                dst.clone(),
                 part,
                 Some(Instant::now() + msg_expiry_dur),
             )?;
@@ -336,7 +336,7 @@ impl Base for Client {
         &self.crust_service
     }
 
-    fn full_id(&self) -> &FullId {
+    fn full_id(&self) -> &SecretId {
         &self.full_id
     }
 
@@ -424,7 +424,7 @@ impl Bootstrapped for Client {
                 ref proxy_node_name,
                 ..
             } => {
-                if *self.proxy_pub_id.name() != *proxy_node_name {
+                if self.proxy_pub_id.xor_name() != *proxy_node_name {
                     error!(
                         "{:?} Unable to find connection to proxy node in proxy map",
                         self
@@ -443,7 +443,7 @@ impl Bootstrapped for Client {
 
         let signed_msg = SignedMessage::new(routing_msg, self.full_id(), vec![])?;
 
-        let proxy_pub_id = self.proxy_pub_id;
+        let proxy_pub_id = self.proxy_pub_id.clone();
         if self.add_to_pending_acks(signed_msg.routing_message(), route, expires_at)
             && !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_pub_id, route)
         {

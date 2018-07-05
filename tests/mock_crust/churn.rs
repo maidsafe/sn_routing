@@ -19,8 +19,8 @@ use routing::test_consts::{
     RESOURCE_PROOF_DURATION_SECS,
 };
 use routing::{
-    Authority, BootstrapConfig, Event, EventStream, ImmutableData, MessageId, PublicId, Request,
-    Response, XorName, QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
+    Authority, BootstrapConfig, Event, EventStream, ImmutableData, MessageId, Request, Response,
+    XorName, QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
 };
 use std::cmp;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -81,7 +81,7 @@ fn drop_random_nodes<R: Rng>(
 // Note: This fn will call `poll_and_resend` itself
 fn add_node_and_poll<R: Rng>(
     rng: &mut R,
-    network: &Network<PublicId>,
+    network: &Network,
     mut nodes: &mut Vec<TestNode>,
     min_section_size: usize,
     mut dropped_nodes: BTreeSet<XorName>,
@@ -167,7 +167,7 @@ fn add_node_and_poll<R: Rng>(
 // returns `None` (it never adds more than one node).
 fn random_churn<R: Rng>(
     rng: &mut R,
-    network: &Network<PublicId>,
+    network: &Network,
     nodes: &mut Vec<TestNode>,
 ) -> Option<usize> {
     let len = nodes.len();
@@ -257,15 +257,19 @@ impl ExpectedPuts {
         let mut sent_count = 0;
         for node in nodes.iter_mut().filter(|node| node.is_recipient(&src)) {
             if dst.is_client() {
-                unwrap!(
-                    node.inner
-                        .send_get_idata_response(src, dst, Ok(data.clone()), msg_id,)
-                );
+                unwrap!(node.inner.send_get_idata_response(
+                    src.clone(),
+                    dst.clone(),
+                    Ok(data.clone()),
+                    msg_id,
+                ));
             } else {
-                unwrap!(
-                    node.inner
-                        .send_put_idata_request(src, dst, data.clone(), msg_id,)
-                );
+                unwrap!(node.inner.send_put_idata_request(
+                    src.clone(),
+                    dst.clone(),
+                    data.clone(),
+                    msg_id,
+                ));
             }
             sent_count += 1;
         }
@@ -274,7 +278,7 @@ impl ExpectedPuts {
         } else {
             assert_eq!(sent_count, 1);
         }
-        self.expect(nodes, dst, (*data.name(), msg_id, src, dst));
+        self.expect(nodes, dst.clone(), (*data.name(), msg_id, src, dst));
     }
 
     /// Sends a request from the client, and adds the expectation.
@@ -287,8 +291,8 @@ impl ExpectedPuts {
         nodes: &mut [TestNode],
     ) {
         let msg_id = MessageId::new();
-        unwrap!(client.inner.put_idata(dst, data.clone(), msg_id));
-        self.expect(nodes, dst, (*data.name(), msg_id, client_auth, dst));
+        unwrap!(client.inner.put_idata(dst.clone(), data.clone(), msg_id));
+        self.expect(nodes, dst.clone(), (*data.name(), msg_id, client_auth, dst));
     }
 
     /// Adds the expectation that the nodes belonging to `dst` receive the message.
@@ -300,7 +304,7 @@ impl ExpectedPuts {
                 .filter(is_recipient)
                 .map(TestNode::name)
                 .collect();
-            let _ = self.sections.insert(dst, section);
+            let _ = self.sections.insert(dst.clone(), section);
         }
         let _ = self.messages.insert(key);
     }
@@ -327,7 +331,7 @@ impl ExpectedPuts {
                     .collect_vec();
                 let count = cmp::min(section.len(), new_section.len());
                 section.extend(new_section);
-                (*dst, count)
+                (dst.clone(), count)
             })
             .collect();
         let mut section_msgs_received = HashMap::new(); // The count of received section messages.
@@ -340,7 +344,7 @@ impl ExpectedPuts {
                 } = event
                 {
                     let name = *data.name();
-                    let key = (name, msg_id, src, dst);
+                    let key = (name, msg_id, src, dst.clone());
                     if dst.is_multiple() {
                         let checker = |entry: &HashSet<XorName>| entry.contains(&node.name());
                         if !self.sections.get(&key.3).map_or(false, checker) {
@@ -439,30 +443,102 @@ fn send_and_receive<R: Rng>(rng: &mut R, nodes: &mut [TestNode], min_section_siz
     let mut expected_puts = ExpectedPuts::default();
 
     // Test messages from a node to itself, another node, a group and a section...
-    expected_puts.send_and_expect(&data, auth_n0, auth_n0, nodes, min_section_size);
-    expected_puts.send_and_expect(&data, auth_n0, auth_n1, nodes, min_section_size);
-    expected_puts.send_and_expect(&data, auth_n0, auth_g0, nodes, min_section_size);
-    expected_puts.send_and_expect(&data, auth_n0, auth_s0, nodes, min_section_size);
+    expected_puts.send_and_expect(
+        &data,
+        auth_n0.clone(),
+        auth_n0.clone(),
+        nodes,
+        min_section_size,
+    );
+    expected_puts.send_and_expect(
+        &data,
+        auth_n0.clone(),
+        auth_n1.clone(),
+        nodes,
+        min_section_size,
+    );
+    expected_puts.send_and_expect(
+        &data,
+        auth_n0.clone(),
+        auth_g0.clone(),
+        nodes,
+        min_section_size,
+    );
+    expected_puts.send_and_expect(
+        &data,
+        auth_n0.clone(),
+        auth_s0.clone(),
+        nodes,
+        min_section_size,
+    );
     // ... and from a section to itself, another section, a group and a node...
-    expected_puts.send_and_expect(&data, auth_g0, auth_g0, nodes, min_section_size);
-    expected_puts.send_and_expect(&data, auth_g0, auth_g1, nodes, min_section_size);
-    expected_puts.send_and_expect(&data, auth_g0, auth_s0, nodes, min_section_size);
-    expected_puts.send_and_expect(&data, auth_g0, auth_n0, nodes, min_section_size);
+    expected_puts.send_and_expect(
+        &data,
+        auth_g0.clone(),
+        auth_g0.clone(),
+        nodes,
+        min_section_size,
+    );
+    expected_puts.send_and_expect(
+        &data,
+        auth_g0.clone(),
+        auth_g1.clone(),
+        nodes,
+        min_section_size,
+    );
+    expected_puts.send_and_expect(
+        &data,
+        auth_g0.clone(),
+        auth_s0.clone(),
+        nodes,
+        min_section_size,
+    );
+    expected_puts.send_and_expect(
+        &data,
+        auth_g0.clone(),
+        auth_n0.clone(),
+        nodes,
+        min_section_size,
+    );
     // ... and from a section to itself, another section, a group and a node...
-    expected_puts.send_and_expect(&data, auth_s0, auth_s0, nodes, min_section_size);
-    expected_puts.send_and_expect(&data, auth_s0, auth_s1, nodes, min_section_size);
-    expected_puts.send_and_expect(&data, auth_s0, auth_g0, nodes, min_section_size);
-    expected_puts.send_and_expect(&data, auth_s0, auth_n0, nodes, min_section_size);
+    expected_puts.send_and_expect(
+        &data,
+        auth_s0.clone(),
+        auth_s0.clone(),
+        nodes,
+        min_section_size,
+    );
+    expected_puts.send_and_expect(
+        &data,
+        auth_s0.clone(),
+        auth_s1.clone(),
+        nodes,
+        min_section_size,
+    );
+    expected_puts.send_and_expect(
+        &data,
+        auth_s0.clone(),
+        auth_g0.clone(),
+        nodes,
+        min_section_size,
+    );
+    expected_puts.send_and_expect(
+        &data,
+        auth_s0.clone(),
+        auth_n0.clone(),
+        nodes,
+        min_section_size,
+    );
 
     poll_and_resend(nodes, &mut []);
 
     expected_puts.verify(nodes, &mut [], None);
 }
 
-fn client_puts(network: &mut Network<PublicId>, nodes: &mut [TestNode], min_section_size: usize) {
+fn client_puts(network: &mut Network, nodes: &mut [TestNode], min_section_size: usize) {
     let mut clients = create_connected_clients(network, nodes, 1);
     let cl_auth = Authority::Client {
-        client_id: *clients[0].full_id.public_id(),
+        client_id: clients[0].full_id.public_id().clone(),
         proxy_node_name: nodes[0].name(),
     };
 
@@ -475,8 +551,8 @@ fn client_puts(network: &mut Network<PublicId>, nodes: &mut [TestNode], min_sect
 
     let mut expected_puts = ExpectedPuts::default();
     // Test messages from a client to a group and a section...
-    expected_puts.client_send_and_expect(&data, cl_auth, auth_g0, &mut clients[0], nodes);
-    expected_puts.client_send_and_expect(&data, cl_auth, auth_s0, &mut clients[0], nodes);
+    expected_puts.client_send_and_expect(&data, cl_auth.clone(), auth_g0, &mut clients[0], nodes);
+    expected_puts.client_send_and_expect(&data, cl_auth.clone(), auth_s0, &mut clients[0], nodes);
     // ... and from group to the client
     expected_puts.send_and_expect(&data, auth_g1, cl_auth, nodes, min_section_size);
 
@@ -634,7 +710,7 @@ fn messages_during_churn() {
     let mut nodes = create_connected_nodes(&network, 20);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
     let cl_auth = Authority::Client {
-        client_id: *clients[0].full_id.public_id(),
+        client_id: clients[0].full_id.public_id().clone(),
         proxy_node_name: nodes[0].name(),
     };
 
@@ -659,28 +735,94 @@ fn messages_during_churn() {
         let mut expected_puts = ExpectedPuts::default();
 
         // Test messages from a node to itself, another node, a group and a section...
-        expected_puts.send_and_expect(&data, auth_n0, auth_n0, &mut nodes, min_section_size);
-        expected_puts.send_and_expect(&data, auth_n0, auth_n1, &mut nodes, min_section_size);
-        expected_puts.send_and_expect(&data, auth_n0, auth_g0, &mut nodes, min_section_size);
-        expected_puts.send_and_expect(&data, auth_n0, auth_s0, &mut nodes, min_section_size);
+        expected_puts.send_and_expect(
+            &data,
+            auth_n0.clone(),
+            auth_n0.clone(),
+            &mut nodes,
+            min_section_size,
+        );
+        expected_puts.send_and_expect(
+            &data,
+            auth_n0.clone(),
+            auth_n1.clone(),
+            &mut nodes,
+            min_section_size,
+        );
+        expected_puts.send_and_expect(
+            &data,
+            auth_n0.clone(),
+            auth_g0.clone(),
+            &mut nodes,
+            min_section_size,
+        );
+        expected_puts.send_and_expect(
+            &data,
+            auth_n0.clone(),
+            auth_s0.clone(),
+            &mut nodes,
+            min_section_size,
+        );
         // ... and from a group to itself, another group, a section and a node...
-        expected_puts.send_and_expect(&data, auth_g0, auth_g0, &mut nodes, min_section_size);
-        expected_puts.send_and_expect(&data, auth_g0, auth_g1, &mut nodes, min_section_size);
-        expected_puts.send_and_expect(&data, auth_g0, auth_s0, &mut nodes, min_section_size);
-        expected_puts.send_and_expect(&data, auth_g0, auth_n0, &mut nodes, min_section_size);
+        expected_puts.send_and_expect(
+            &data,
+            auth_g0.clone(),
+            auth_g0.clone(),
+            &mut nodes,
+            min_section_size,
+        );
+        expected_puts.send_and_expect(
+            &data,
+            auth_g0.clone(),
+            auth_g1.clone(),
+            &mut nodes,
+            min_section_size,
+        );
+        expected_puts.send_and_expect(
+            &data,
+            auth_g0.clone(),
+            auth_s0.clone(),
+            &mut nodes,
+            min_section_size,
+        );
+        expected_puts.send_and_expect(
+            &data,
+            auth_g0.clone(),
+            auth_n0.clone(),
+            &mut nodes,
+            min_section_size,
+        );
         // ... and from a section to itself, another section, a group and a node...
         // TODO: Enable these once MAID-1920 is fixed.
-        // expected_puts.send_and_expect(data.clone(), auth_s0, auth_s0, &nodes, min_section_size);
-        // expected_puts.send_and_expect(data.clone(), auth_s0, auth_s1, &nodes, min_section_size);
-        // expected_puts.send_and_expect(data.clone(), auth_s0, auth_g0, &nodes, min_section_size);
-        // expected_puts.send_and_expect(data.clone(), auth_s0, auth_n0, &nodes, min_section_size);
+        // expected_puts.send_and_expect(data.clone(), auth_s0.clone(), auth_s0.clone(), &nodes, min_section_size);
+        // expected_puts.send_and_expect(data.clone(), auth_s0.clone(), auth_s1.clone(), &nodes, min_section_size);
+        // expected_puts.send_and_expect(data.clone(), auth_s0.clone(), auth_g0.clone(), &nodes, min_section_size);
+        // expected_puts.send_and_expect(data.clone(), auth_s0.clone(), auth_n0.clone(), &nodes, min_section_size);
 
         let data = ImmutableData::new(rng.gen_iter().take(100).collect());
         // Test messages from a client to a group and a section...
-        expected_puts.client_send_and_expect(&data, cl_auth, auth_g0, &mut clients[0], &mut nodes);
-        expected_puts.client_send_and_expect(&data, cl_auth, auth_s0, &mut clients[0], &mut nodes);
+        expected_puts.client_send_and_expect(
+            &data,
+            cl_auth.clone(),
+            auth_g0.clone(),
+            &mut clients[0],
+            &mut nodes,
+        );
+        expected_puts.client_send_and_expect(
+            &data,
+            cl_auth.clone(),
+            auth_s0.clone(),
+            &mut clients[0],
+            &mut nodes,
+        );
         // ... and from group to the client
-        expected_puts.send_and_expect(&data, auth_g1, cl_auth, &mut nodes, min_section_size);
+        expected_puts.send_and_expect(
+            &data,
+            auth_g1.clone(),
+            cl_auth.clone(),
+            &mut nodes,
+            min_section_size,
+        );
 
         poll_and_resend(&mut nodes, &mut clients);
 
