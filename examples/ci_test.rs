@@ -36,12 +36,12 @@ extern crate lru_time_cache;
 extern crate maidsafe_utilities;
 extern crate rand;
 extern crate routing;
-extern crate rust_sodium;
 extern crate term;
 #[macro_use]
 extern crate unwrap;
 #[macro_use]
 extern crate serde_derive;
+extern crate safe_crypto;
 
 mod utils;
 
@@ -62,7 +62,7 @@ mod unnamed {
     use rand::distributions::{IndependentSample, Range};
     use rand::{random, thread_rng, Rng, ThreadRng};
     use routing::{MutableData, Value, MIN_SECTION_SIZE};
-    use rust_sodium::crypto::sign;
+    use safe_crypto::PublicSignKey;
     use std::collections::BTreeMap;
     use std::io::Write;
     use std::iter;
@@ -234,7 +234,7 @@ mod unnamed {
         let mut stored_data = Vec::with_capacity(requests);
         let mut rng = SeededRng::new();
         for i in 0..requests {
-            let data = gen_mutable_data(&mut rng, *example_client.signing_public_key());
+            let data = gen_mutable_data(&mut rng, example_client.signing_public_key());
 
             print!("Putting Data: count #{} - Data {:?} - ", i, data.name());
             io::stdout().flush().expect("Could not flush stdout");
@@ -292,7 +292,7 @@ mod unnamed {
         assert!(test_success, "Failed to store and verify data.");
     }
 
-    fn gen_mutable_data<R: Rng>(rng: &mut R, owner: sign::PublicKey) -> MutableData {
+    fn gen_mutable_data<R: Rng>(rng: &mut R, owner: PublicSignKey) -> MutableData {
         let name = rng.gen();
         let tag = rng.gen_range(10_000, 20_000);
 

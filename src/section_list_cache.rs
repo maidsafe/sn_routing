@@ -6,16 +6,15 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::XorName;
 use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
-use id::PublicId;
 use itertools::Itertools;
 use messages::SectionList;
 use routing_table::Prefix;
-use rust_sodium::crypto::sign::Signature;
+use safe_crypto::{PublicKeys, Signature};
 use std::collections::HashMap;
+use xor_name::{PublicKeysExt, XorName};
 
-pub type Signatures = HashMap<PublicId, Signature>;
+pub type Signatures = HashMap<PublicKeys, Signature>;
 pub type PrefixMap<T> = HashMap<Prefix<XorName>, T>;
 
 #[derive(Default)]
@@ -23,7 +22,7 @@ pub struct SectionListCache {
     // all signatures for a section list for a given prefix
     signatures: PrefixMap<HashMap<SectionList, Signatures>>,
     // section lists signed by a given public id
-    signed_by: HashMap<PublicId, PrefixMap<SectionList>>,
+    signed_by: HashMap<PublicKeys, PrefixMap<SectionList>>,
     // the latest section list for each prefix with a quorum of signatures
     lists_cache: PrefixMap<(SectionList, Signatures)>,
 }
@@ -38,7 +37,7 @@ impl SectionListCache {
         let pub_id_opt = self
             .signed_by
             .keys()
-            .find(|pub_id| name == pub_id.name())
+            .find(|pub_id| name == &pub_id.xor_name())
             .cloned();
         if let Some(pub_id) = pub_id_opt {
             if let Some(lists) = self.signed_by.remove(&pub_id) {
@@ -57,17 +56,17 @@ impl SectionListCache {
     pub fn add_signature(
         &mut self,
         prefix: Prefix<XorName>,
-        pub_id: PublicId,
+        pub_id: PublicKeys,
         list: SectionList,
         sig: Signature,
         our_section_size: usize,
     ) {
         // remove all conflicting signatures
-        self.remove_signatures_for_prefix_by(prefix, pub_id);
+        self.remove_signatures_for_prefix_by(prefix, pub_id.clone());
         // remember that this public id signed this section list
         let _ = self
             .signed_by
-            .entry(pub_id)
+            .entry(pub_id.clone())
             .or_insert_with(HashMap::new)
             .insert(prefix, list.clone());
         // remember that this section list has a new signature
@@ -85,7 +84,7 @@ impl SectionListCache {
     pub fn get_signature_for(
         &self,
         prefix: &Prefix<XorName>,
-        pub_id: &PublicId,
+        pub_id: &PublicKeys,
         list: &SectionList,
     ) -> Option<&Signature> {
         self.signatures
@@ -129,7 +128,7 @@ impl SectionListCache {
             .signed_by
             .iter()
             .filter(|&(_, map)| map.is_empty())
-            .map(|(pub_id, _)| *pub_id)
+            .map(|(pub_id, _)| pub_id.clone())
             .collect_vec();
         // prune pub_ids signing nothing
         for pub_id in to_remove {
@@ -157,11 +156,15 @@ impl SectionListCache {
         }
     }
 
-    fn remove_signatures_for_prefix_by(&mut self, prefix: Prefix<XorName>, author: PublicId) {
+    fn remove_signatures_for_prefix_by(
+        &mut self,
+        prefix: Prefix<XorName>,
+        author_pub_id: PublicKeys,
+    ) {
         // vector of tuples (prefix, section list) to be removed
         let to_remove = self
             .signed_by
-            .get(&author)
+            .get(&author_pub_id)
             .into_iter()
             .flat_map(|map| map.iter())
             .filter(|&(p, _)| p.is_compatible(&prefix))
@@ -169,14 +172,14 @@ impl SectionListCache {
             .collect_vec();
         for (prefix, list) in to_remove {
             // remove the signatures from self.signatures
-            let _ = self
-                .signatures
-                .get_mut(&prefix)
-                .and_then(|map| map.get_mut(&list).and_then(|sigmap| sigmap.remove(&author)));
+            let _ = self.signatures.get_mut(&prefix).and_then(|map| {
+                map.get_mut(&list)
+                    .and_then(|sigmap| sigmap.remove(&author_pub_id))
+            });
             // remove those entries from self.signed_by
             let _ = self
                 .signed_by
-                .get_mut(&author)
+                .get_mut(&author_pub_id)
                 .and_then(|map| map.remove(&prefix));
         }
 

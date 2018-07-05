@@ -11,12 +11,12 @@ use action::Action;
 use event::Event;
 #[cfg(feature = "use-mock-crust")]
 use fake_clock::FakeClock as Instant;
-use id::PublicId;
 use itertools::Itertools;
 use maidsafe_utilities::thread;
 use messages::{DirectMessage, MAX_PART_LEN};
 use outbox::EventBox;
 use resource_proof::ResourceProof;
+use safe_crypto::PublicKeys;
 use signature_accumulator::ACCUMULATION_TIMEOUT_SECS;
 use state_machine::Transition;
 use std::collections::HashMap;
@@ -52,9 +52,9 @@ pub struct ResourceProver {
     /// Number of expected resource proof challengers.
     challenger_count: usize,
     /// Map of ResourceProofResponse parts.
-    response_parts: HashMap<PublicId, Vec<DirectMessage>>,
+    response_parts: HashMap<PublicKeys, Vec<DirectMessage>>,
     /// Map of workers
-    workers: HashMap<PublicId, (Arc<AtomicBool>, thread::Joiner)>,
+    workers: HashMap<PublicKeys, (Arc<AtomicBool>, thread::Joiner)>,
     timer: Timer,
 }
 
@@ -92,7 +92,7 @@ impl ResourceProver {
     /// Start generating a resource proof in a background thread
     pub fn handle_request(
         &mut self,
-        pub_id: PublicId,
+        pub_id: PublicKeys,
         seed: Vec<u8>,
         target_size: usize,
         difficulty: u8,
@@ -109,6 +109,7 @@ impl ResourceProver {
         let atomic_cancel = Arc::new(AtomicBool::new(false));
         let atomic_cancel_clone = Arc::clone(&atomic_cancel);
         let action_sender = self.action_sender.clone();
+        let pub_id_0 = pub_id.clone();
         let joiner = thread::named("resource_prover", move || {
             let start = Instant::now();
             let rp_object = ResourceProof::new(target_size, difficulty);
@@ -166,7 +167,7 @@ impl ResourceProver {
                 seed
             );
 
-            let action = Action::ResourceProofResult(pub_id, messages);
+            let action = Action::ResourceProofResult(pub_id_0, messages);
             if action_sender.send(action).is_err() {
                 // In theory this means the receiver disconnected, so the main thread stopped/reset
                 error!(
@@ -193,7 +194,7 @@ impl ResourceProver {
     /// This function returns the first message to send.
     pub fn handle_action_res_proof(
         &mut self,
-        pub_id: PublicId,
+        pub_id: PublicKeys,
         mut messages: Vec<DirectMessage>,
     ) -> DirectMessage {
         // Thread signalled it was complete; implicit join on Joiner thus shouldn't hang.
@@ -205,7 +206,7 @@ impl ResourceProver {
     }
 
     /// Get the next part of the proof to be sent, if any.
-    pub fn handle_receipt(&mut self, pub_id: PublicId) -> Option<DirectMessage> {
+    pub fn handle_receipt(&mut self, pub_id: PublicKeys) -> Option<DirectMessage> {
         self.response_parts.get_mut(&pub_id).and_then(Vec::pop)
     }
 

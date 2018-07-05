@@ -16,9 +16,10 @@ use rand::Rng;
 use routing::mock_crust::Network;
 use routing::rate_limiter_consts::{MAX_PARTS, SOFT_CAPACITY};
 use routing::{
-    Authority, BootstrapConfig, Event, EventStream, FullId, ImmutableData, MessageId, Request,
+    Authority, BootstrapConfig, Event, EventStream, ImmutableData, MessageId, Request,
     MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
 };
+use safe_crypto::SecretKeys;
 use std::time::Duration;
 
 /// Connect a client to the network then send an invalid message.
@@ -89,7 +90,7 @@ fn reconnect_disconnected_client() {
     let config = Some(BootstrapConfig::with_contacts(&[nodes[1]
         .handle
         .endpoint()]));
-    let full_id = FullId::new();
+    let full_id = SecretKeys::new();
 
     // Client will get rejected as network not having enough nodes.
     let mut clients = vec![TestClient::new_with_full_id(

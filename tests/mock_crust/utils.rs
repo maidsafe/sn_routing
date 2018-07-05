@@ -16,9 +16,10 @@ use routing::mock_crust::{self, Endpoint, Network, ServiceHandle};
 use routing::test_consts::{ACK_TIMEOUT_SECS, CONNECTING_PEER_TIMEOUT_SECS};
 use routing::{
     verify_network_invariant, Authority, BootstrapConfig, Cache, Client, Config, DevConfig, Event,
-    EventStream, FullId, ImmutableData, Node, NullCache, Prefix, PublicId, Request, Response,
-    RoutingTable, XorName, Xorable,
+    EventStream, ImmutableData, Node, NullCache, Prefix, PublicKeys, PublicKeysExt, Request,
+    Response, RoutingTable, XorName, Xorable,
 };
+use safe_crypto::SecretKeys;
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap};
 use std::net::IpAddr;
@@ -59,7 +60,7 @@ pub fn gen_range_except<T: Rng>(
     x
 }
 
-fn create_config(network: &Network<PublicId>) -> Config {
+fn create_config(network: &Network) -> Config {
     Config {
         dev: Some(DevConfig {
             min_section_size: Some(network.min_section_size()),
@@ -118,12 +119,12 @@ impl EventStream for TestNode {
 }
 
 pub struct TestNode {
-    pub handle: ServiceHandle<PublicId>,
+    pub handle: ServiceHandle,
     pub inner: Node,
 }
 
 impl TestNode {
-    pub fn builder(network: &Network<PublicId>) -> TestNodeBuilder {
+    pub fn builder(network: &Network) -> TestNodeBuilder {
         TestNodeBuilder {
             network: network,
             first_node: false,
@@ -134,7 +135,7 @@ impl TestNode {
     }
 
     pub fn new(
-        network: &Network<PublicId>,
+        network: &Network,
         first_node: bool,
         bootstrap_config: Option<BootstrapConfig>,
         endpoint: Option<Endpoint>,
@@ -158,12 +159,12 @@ impl TestNode {
         }
     }
 
-    pub fn id(&self) -> PublicId {
+    pub fn id(&self) -> PublicKeys {
         unwrap!(self.inner.id())
     }
 
     pub fn name(&self) -> XorName {
-        *self.id().name()
+        self.id().xor_name()
     }
 
     pub fn close_names(&self) -> BTreeSet<XorName> {
@@ -183,7 +184,7 @@ impl TestNode {
 }
 
 pub struct TestNodeBuilder<'a> {
-    network: &'a Network<PublicId>,
+    network: &'a Network,
     first_node: bool,
     bootstrap_config: Option<BootstrapConfig>,
     endpoint: Option<Endpoint>,
@@ -230,46 +231,46 @@ impl<'a> TestNodeBuilder<'a> {
 // -----  TestClient  -----
 
 pub struct TestClient {
-    pub handle: ServiceHandle<PublicId>,
+    pub handle: ServiceHandle,
     pub inner: Client,
-    pub full_id: FullId,
+    pub full_id: SecretKeys,
 }
 
 impl TestClient {
     pub fn new(
-        network: &Network<PublicId>,
+        network: &Network,
         bootstrap_config: Option<BootstrapConfig>,
         endpoint: Option<Endpoint>,
     ) -> Self {
-        let full_id = FullId::new();
+        let full_id = SecretKeys::new();
         Self::new_with_full_id(network, bootstrap_config, endpoint, full_id)
     }
 
     pub fn new_with_full_id(
-        network: &Network<PublicId>,
+        network: &Network,
         bootstrap_config: Option<BootstrapConfig>,
         endpoint: Option<Endpoint>,
-        full_id: FullId,
+        full_id: SecretKeys,
     ) -> Self {
         let duration = Duration::from_secs(CLIENT_MSG_EXPIRY_DUR_SECS);
         Self::new_impl(network, bootstrap_config, endpoint, full_id, duration)
     }
 
     pub fn new_with_expire_duration(
-        network: &Network<PublicId>,
+        network: &Network,
         bootstrap_config: Option<BootstrapConfig>,
         endpoint: Option<Endpoint>,
         duration: Duration,
     ) -> Self {
-        let full_id = FullId::new();
+        let full_id = SecretKeys::new();
         Self::new_impl(network, bootstrap_config, endpoint, full_id, duration)
     }
 
     fn new_impl(
-        network: &Network<PublicId>,
+        network: &Network,
         bootstrap_config: Option<BootstrapConfig>,
         endpoint: Option<Endpoint>,
-        full_id: FullId,
+        full_id: SecretKeys,
         duration: Duration,
     ) -> Self {
         let handle = network.new_service_handle(bootstrap_config.clone(), endpoint);
@@ -290,7 +291,7 @@ impl TestClient {
     }
 
     pub fn name(&self) -> XorName {
-        *unwrap!(self.inner.id()).name()
+        unwrap!(self.inner.id()).xor_name()
     }
 
     pub fn ip(&self) -> IpAddr {
@@ -396,15 +397,11 @@ pub fn remove_nodes_which_failed_to_connect(nodes: &mut Vec<TestNode>, count: us
     failed_to_join.len()
 }
 
-pub fn create_connected_nodes(network: &Network<PublicId>, size: usize) -> Nodes {
+pub fn create_connected_nodes(network: &Network, size: usize) -> Nodes {
     create_connected_nodes_with_cache(network, size, false)
 }
 
-pub fn create_connected_nodes_with_cache(
-    network: &Network<PublicId>,
-    size: usize,
-    use_cache: bool,
-) -> Nodes {
+pub fn create_connected_nodes_with_cache(network: &Network, size: usize, use_cache: bool) -> Nodes {
     let mut nodes = Vec::new();
 
     // Create the seed node.
@@ -461,7 +458,7 @@ pub fn create_connected_nodes_with_cache(
 }
 
 pub fn create_connected_nodes_until_split(
-    network: &Network<PublicId>,
+    network: &Network,
     prefix_lengths: Vec<usize>,
     use_cache: bool,
 ) -> Nodes {
@@ -489,7 +486,7 @@ pub fn create_connected_nodes_until_split(
 // The array is sanity checked (e.g. it would be an error to pass [1, 1, 1]), must comprise at
 // least two elements, and every element must be no more than `8`.
 pub fn add_connected_nodes_until_split(
-    network: &Network<PublicId>,
+    network: &Network,
     nodes: &mut Vec<TestNode>,
     mut prefix_lengths: Vec<usize>,
     use_cache: bool,
@@ -602,7 +599,7 @@ pub fn add_connected_nodes_until_split(
 
 // Create `size` clients, all of whom are connected to `nodes[0]`.
 pub fn create_connected_clients(
-    network: &Network<PublicId>,
+    network: &Network,
     nodes: &mut [TestNode],
     size: usize,
 ) -> Vec<TestClient> {
@@ -700,7 +697,7 @@ fn prefixes<T: Rng>(prefix_lengths: &[usize], rng: &mut T) -> Vec<Prefix<XorName
 }
 
 fn add_node_to_section<T: Rng>(
-    network: &Network<PublicId>,
+    network: &Network,
     nodes: &mut Vec<TestNode>,
     prefix: &Prefix<XorName>,
     rng: &mut T,

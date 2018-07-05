@@ -14,8 +14,3 @@ pub use self::mutable_data::{
     Action, EntryAction, EntryActions, MutableData, PermissionSet, User, Value,
     MAX_MUTABLE_DATA_ENTRIES, MAX_MUTABLE_DATA_SIZE_IN_BYTES,
 };
-use rust_sodium::crypto::sign::{self, PublicKey};
-
-/// A signing key with no matching private key. Passing ownership to it will make a chunk
-/// effectively immutable.
-pub const NO_OWNER_PUB_KEY: PublicKey = PublicKey([0; sign::PUBLICKEYBYTES]);

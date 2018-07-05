@@ -6,42 +6,42 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use id::{FullId, PublicId};
 use maidsafe_utilities::serialisation;
 use messages::Message;
 use outbox::EventBox;
 use routing_table::Authority;
+use safe_crypto::{PublicKeys, SecretKeys};
 use state_machine::Transition;
 use stats::Stats;
 use std::fmt::Debug;
-use xor_name::XorName;
+use xor_name::{PublicKeysExt, XorName};
 use Service;
 
 // Trait for all states.
 pub trait Base: Debug {
     fn crust_service(&self) -> &Service;
-    fn full_id(&self) -> &FullId;
+    fn full_id(&self) -> &SecretKeys;
     fn stats(&mut self) -> &mut Stats;
     fn in_authority(&self, auth: &Authority<XorName>) -> bool;
     fn min_section_size(&self) -> usize;
 
-    fn handle_lost_peer(&mut self, _pub_id: PublicId, _outbox: &mut EventBox) -> Transition {
+    fn handle_lost_peer(&mut self, _pub_id: PublicKeys, _outbox: &mut EventBox) -> Transition {
         Transition::Stay
     }
 
-    fn id(&self) -> &PublicId {
-        self.full_id().public_id()
+    fn id(&self) -> &PublicKeys {
+        self.full_id().public_keys()
     }
 
-    fn name(&self) -> &XorName {
-        self.full_id().public_id().name()
+    fn name(&self) -> XorName {
+        self.full_id().public_keys().xor_name()
     }
 
     fn close_group(&self, _name: XorName, _count: usize) -> Option<Vec<XorName>> {
         None
     }
 
-    fn send_message(&mut self, pub_id: &PublicId, message: Message) {
+    fn send_message(&mut self, pub_id: &PublicKeys, message: Message) {
         let priority = message.priority();
 
         match serialisation::serialise(&message) {
@@ -60,9 +60,9 @@ pub trait Base: Debug {
         };
     }
 
-    // Sends the given `bytes` to the peer with the given Crust `PublicId`. If that results in an
+    // Sends the given `bytes` to the peer with the given Crust `PublicKeys`. If that results in an
     // error, it disconnects from the peer.
-    fn send_or_drop(&mut self, pub_id: &PublicId, bytes: Vec<u8>, priority: u8) {
+    fn send_or_drop(&mut self, pub_id: &PublicKeys, bytes: Vec<u8>, priority: u8) {
         self.stats().count_bytes(bytes.len());
 
         if let Err(err) = self.crust_service().send(pub_id, bytes, priority) {

@@ -8,11 +8,10 @@
 
 #[cfg(feature = "use-mock-crust")]
 use fake_clock::FakeClock as Instant;
-use id::PublicId;
 use itertools::Itertools;
 use maidsafe_utilities::serialisation;
 use messages::SignedMessage;
-use rust_sodium::crypto::sign;
+use safe_crypto::{PublicKeys, Signature};
 use sha3::Digest256;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
@@ -26,7 +25,7 @@ pub const ACCUMULATION_TIMEOUT_SECS: u64 = 30;
 
 #[derive(Default)]
 pub struct SignatureAccumulator {
-    sigs: HashMap<Digest256, (Vec<(PublicId, sign::Signature)>, Instant)>,
+    sigs: HashMap<Digest256, (Vec<(PublicKeys, Signature)>, Instant)>,
     msgs: HashMap<Digest256, (SignedMessage, u8, Instant)>,
 }
 
@@ -37,8 +36,8 @@ impl SignatureAccumulator {
         &mut self,
         min_section_size: usize,
         hash: Digest256,
-        sig: sign::Signature,
-        pub_id: PublicId,
+        sig: Signature,
+        pub_id: PublicKeys,
     ) -> Option<(SignedMessage, u8)> {
         self.remove_expired();
         if let Some(&mut (ref mut msg, _, _)) = self.msgs.get_mut(&hash) {
@@ -129,13 +128,14 @@ impl SignatureAccumulator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use id::{FullId, PublicId};
     use itertools::Itertools;
     use messages::{DirectMessage, MessageContent, RoutingMessage, SectionList, SignedMessage};
     use rand;
     use routing_table::Authority;
     use routing_table::Prefix;
+    use safe_crypto::{PublicKeys, SecretKeys};
     use std::collections::BTreeSet;
+    use xor_name::PublicKeysExt;
 
     struct MessageAndSignatures {
         signed_msg: SignedMessage,
@@ -144,12 +144,12 @@ mod tests {
 
     impl MessageAndSignatures {
         fn new<'a, I>(
-            msg_sender_id: &FullId,
+            msg_sender_id: &SecretKeys,
             other_ids: I,
-            all_ids: BTreeSet<PublicId>,
+            all_ids: BTreeSet<PublicKeys>,
         ) -> MessageAndSignatures
         where
-            I: Iterator<Item = &'a FullId>,
+            I: Iterator<Item = &'a SecretKeys>,
         {
             let routing_msg = RoutingMessage {
                 src: Authority::ClientManager(rand::random()),
@@ -159,17 +159,11 @@ mod tests {
                     rand::random(),
                 ),
             };
-            let prefix = Prefix::new(0, *unwrap!(all_ids.iter().next()).name());
+            let prefix = Prefix::new(0, unwrap!(all_ids.iter().next()).xor_name());
             let lists = vec![SectionList::new(prefix, all_ids)];
             let signed_msg = unwrap!(SignedMessage::new(routing_msg, msg_sender_id, lists));
             let signature_msgs = other_ids
-                .map(|id| {
-                    unwrap!(
-                        signed_msg
-                            .routing_message()
-                            .to_signature(id.signing_private_key(),)
-                    )
-                })
+                .map(|id| unwrap!(signed_msg.routing_message().to_signature(id)))
                 .collect();
             MessageAndSignatures {
                 signed_msg,
@@ -179,31 +173,35 @@ mod tests {
     }
 
     struct Env {
-        _msg_sender_id: FullId,
-        other_ids: Vec<FullId>,
-        senders: BTreeSet<PublicId>,
+        _msg_sender_full_id: SecretKeys,
+        other_ids: Vec<SecretKeys>,
+        senders: BTreeSet<PublicKeys>,
         msgs_and_sigs: Vec<MessageAndSignatures>,
     }
 
     impl Env {
         fn new() -> Env {
-            let msg_sender_id = FullId::new();
-            let mut pub_ids = vec![*msg_sender_id.public_id()]
+            let msg_sender_full_id = SecretKeys::new();
+            let mut pub_ids = vec![msg_sender_full_id.public_keys().clone()]
                 .into_iter()
                 .collect::<BTreeSet<_>>();
             let mut other_ids = vec![];
             for _ in 0..8 {
-                let full_id = FullId::new();
-                let _ = pub_ids.insert(*full_id.public_id());
+                let full_id = SecretKeys::new();
+                let _ = pub_ids.insert(full_id.public_keys().clone());
                 other_ids.push(full_id);
             }
             let msgs_and_sigs = (0..5)
                 .map(|_| {
-                    MessageAndSignatures::new(&msg_sender_id, other_ids.iter(), pub_ids.clone())
+                    MessageAndSignatures::new(
+                        &msg_sender_full_id,
+                        other_ids.iter(),
+                        pub_ids.clone(),
+                    )
                 })
                 .collect();
             Env {
-                _msg_sender_id: msg_sender_id,
+                _msg_sender_full_id: msg_sender_full_id,
                 other_ids,
                 senders: pub_ids,
                 msgs_and_sigs,
@@ -231,8 +229,8 @@ mod tests {
                         let result = sig_accumulator.add_signature(
                             env.num_nodes(),
                             *hash,
-                            *sig,
-                            *full_id.public_id(),
+                            sig.clone(),
+                            full_id.public_keys().clone(),
                         );
                         assert!(result.is_none());
                     }
@@ -300,8 +298,13 @@ mod tests {
                     .zip(env.other_ids.iter())
                     .foreach(|(signature_msg, full_id)| {
                         let result = match *signature_msg {
-                            DirectMessage::MessageSignature(hash, sig) => sig_accumulator
-                                .add_signature(env.num_nodes(), hash, sig, *full_id.public_id()),
+                            DirectMessage::MessageSignature(hash, ref sig) => sig_accumulator
+                                .add_signature(
+                                    env.num_nodes(),
+                                    hash,
+                                    sig.clone(),
+                                    full_id.public_keys().clone(),
+                                ),
                             ref unexpected_msg => {
                                 panic!("Unexpected message: {:?}", unexpected_msg)
                             }

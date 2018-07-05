@@ -29,7 +29,7 @@ fn successful_put_request() {
     assert!(
         clients[0]
             .inner
-            .put_idata(dst, data.clone(), message_id)
+            .put_idata(dst.clone(), data.clone(), message_id)
             .is_ok()
     );
 
@@ -77,7 +77,7 @@ fn successful_get_request() {
     assert!(
         clients[0]
             .inner
-            .get_idata(dst, *data.name(), message_id)
+            .get_idata(dst.clone(), *data.name(), message_id)
             .is_ok()
     );
 
@@ -94,14 +94,14 @@ fn successful_get_request() {
                             name: ref req_name,
                             msg_id: req_message_id,
                         },
-                    src,
-                    dst,
+                    ref src,
+                    ref dst,
                 }) => {
                     request_received_count += 1;
                     if data.name() == req_name && message_id == req_message_id {
                         if let Err(err) = node.inner.send_get_idata_response(
-                            dst,
-                            src,
+                            dst.clone(),
+                            src.clone(),
                             Ok(data.clone()),
                             req_message_id,
                         ) {
@@ -163,7 +163,7 @@ fn failed_get_request() {
     assert!(
         clients[0]
             .inner
-            .get_idata(dst, *data.name(), message_id)
+            .get_idata(dst.clone(), *data.name(), message_id)
             .is_ok()
     );
 
@@ -180,14 +180,14 @@ fn failed_get_request() {
                             name: ref req_name,
                             msg_id: ref req_message_id,
                         },
-                    src,
-                    dst,
+                    ref src,
+                    ref dst,
                 }) => {
                     request_received_count += 1;
                     if data.name() == req_name && message_id == *req_message_id {
                         if let Err(err) = node.inner.send_get_idata_response(
-                            dst,
-                            src,
+                            dst.clone(),
+                            src.clone(),
                             Err(ClientError::NoSuchData),
                             *req_message_id,
                         ) {
@@ -249,7 +249,7 @@ fn disconnect_on_get_request() {
     assert!(
         clients[0]
             .inner
-            .get_idata(dst, *data.name(), message_id)
+            .get_idata(dst.clone(), *data.name(), message_id)
             .is_ok()
     );
 
@@ -266,14 +266,14 @@ fn disconnect_on_get_request() {
                             name: ref req_name,
                             msg_id: ref req_message_id,
                         },
-                    src,
-                    dst,
+                    ref src,
+                    ref dst,
                 }) => {
                     request_received_count += 1;
                     if data.name() == req_name && message_id == *req_message_id {
                         if let Err(err) = node.inner.send_get_idata_response(
-                            dst,
-                            src,
+                            dst.clone(),
+                            src.clone(),
                             Ok(data.clone()),
                             *req_message_id,
                         ) {
@@ -291,16 +291,16 @@ fn disconnect_on_get_request() {
     // TODO: Assert a quorum here.
     assert!(2 * request_received_count > min_section_size);
 
-    let _ = clients[0]
-        .handle
-        .0
-        .borrow_mut()
-        .disconnect(&unwrap!(nodes[0].handle.0.borrow().uid));
-    let _ = nodes[0]
-        .handle
-        .0
-        .borrow_mut()
-        .disconnect(&unwrap!(clients[0].handle.0.borrow().uid));
+    let _ = clients[0].handle.0.borrow_mut().disconnect(
+        &unwrap!(nodes[0].handle.0.borrow().full_id.as_ref())
+            .public_keys()
+            .clone(),
+    );
+    let _ = nodes[0].handle.0.borrow_mut().disconnect(
+        &unwrap!(clients[0].handle.0.borrow().full_id.as_ref())
+            .public_keys()
+            .clone(),
+    );
 
     let _ = poll_all(&mut nodes, &mut clients);
 
