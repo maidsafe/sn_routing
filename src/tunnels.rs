@@ -6,9 +6,9 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use id::PublicId;
 use itertools::Itertools;
 use message_filter::MessageFilter;
+use safe_crypto::PublicId;
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeSet, HashMap};
 use std::time::Duration;
@@ -60,7 +60,7 @@ impl Tunnels {
         } else {
             (dst_id, src_id)
         };
-        let _ = self.new_clients.insert(&(id0, id1));
+        let _ = self.new_clients.insert(&(id0.clone(), id1.clone()));
         Some((id0, id1))
     }
 
@@ -151,7 +151,7 @@ impl Tunnels {
             .tunnels
             .iter()
             .filter(|&(_, id)| id == tunnel_id)
-            .map(|(&dst_id, _)| dst_id)
+            .map(|(dst_id, _)| dst_id.clone())
             .collect_vec();
         for dst_id in &dst_ids {
             let _ = self.tunnels.remove(dst_id);
@@ -188,20 +188,20 @@ impl Default for Tunnels {
 #[cfg(all(test, feature = "use-mock-crust"))]
 mod tests {
     use super::*;
-    use id::FullId;
     use itertools::Itertools;
+    use safe_crypto::SecretId;
 
     #[test]
     fn tunnel_nodes_test() {
-        let our_id = *FullId::new().public_id();
-        let their_id = *FullId::new().public_id();
+        let our_id = SecretId::new().public_id().clone();
+        let their_id = SecretId::new().public_id().clone();
         let mut tunnels: Tunnels = Default::default();
         assert_eq!(None, tunnels.tunnel_for(&our_id));
         // Peer 1 is acting as a tunnel for peer 0.
-        let _ = tunnels.add(our_id, their_id);
+        let _ = tunnels.add(our_id.clone(), their_id.clone());
         assert_eq!(Some(&their_id), tunnels.tunnel_for(&our_id));
         assert_eq!(None, tunnels.tunnel_for(&their_id));
-        let _ = tunnels.remove(our_id, their_id);
+        let _ = tunnels.remove(our_id.clone(), their_id);
         assert_eq!(None, tunnels.tunnel_for(&our_id));
     }
 
@@ -209,17 +209,20 @@ mod tests {
     fn remove_tunnel_test() {
         let mut sorted_ids = vec![];
         for _ in 0..5 {
-            sorted_ids.push(*FullId::new().public_id());
+            sorted_ids.push(SecretId::new().public_id().clone());
         }
         sorted_ids.sort();
 
         let mut tunnels: Tunnels = Default::default();
         // Peer 0 is acting as a tunnel for 1 and 2, but not 3.
-        let _ = tunnels.add(sorted_ids[1], sorted_ids[0]);
-        let _ = tunnels.add(sorted_ids[2], sorted_ids[0]);
-        let _ = tunnels.add(sorted_ids[3], sorted_ids[4]);
+        let _ = tunnels.add(sorted_ids[1].clone(), sorted_ids[0].clone());
+        let _ = tunnels.add(sorted_ids[2].clone(), sorted_ids[0].clone());
+        let _ = tunnels.add(sorted_ids[3].clone(), sorted_ids[4].clone());
         let removed_peers = tunnels.remove_tunnel(&sorted_ids[0]).into_iter().sorted();
-        assert_eq!(&[sorted_ids[1], sorted_ids[2]], &*removed_peers);
+        assert_eq!(
+            &[sorted_ids[1].clone(), sorted_ids[2].clone()],
+            &*removed_peers
+        );
         assert_eq!(None, tunnels.tunnel_for(&sorted_ids[1]));
         assert_eq!(None, tunnels.tunnel_for(&sorted_ids[2]));
         assert_eq!(Some(&sorted_ids[4]), tunnels.tunnel_for(&sorted_ids[3]));
@@ -229,29 +232,32 @@ mod tests {
     fn clients_test() {
         let mut sorted_ids = vec![];
         for _ in 0..6 {
-            sorted_ids.push(*FullId::new().public_id());
+            sorted_ids.push(SecretId::new().public_id().clone());
         }
         sorted_ids.sort();
 
         let mut tunnels: Tunnels = Default::default();
         // We are directly connected to 1, but not 0.
-        let _ = tunnels.add(sorted_ids[0], sorted_ids[1]);
+        let _ = tunnels.add(sorted_ids[0].clone(), sorted_ids[1].clone());
         // consider_clients has not been called yet.
-        assert!(!tunnels.accept_clients(sorted_ids[1], sorted_ids[2]));
-        assert!(!tunnels.accept_clients(sorted_ids[3], sorted_ids[4]));
+        assert!(!tunnels.accept_clients(sorted_ids[1].clone(), sorted_ids[2].clone()));
+        assert!(!tunnels.accept_clients(sorted_ids[3].clone(), sorted_ids[4].clone()));
         // Reject 0 as client, as we are not directly connected to them.
-        assert_eq!(None, tunnels.consider_clients(sorted_ids[5], sorted_ids[0]));
         assert_eq!(
-            Some((sorted_ids[1], sorted_ids[2])),
-            tunnels.consider_clients(sorted_ids[1], sorted_ids[2])
+            None,
+            tunnels.consider_clients(sorted_ids[5].clone(), sorted_ids[0].clone())
         );
         assert_eq!(
-            Some((sorted_ids[3], sorted_ids[4])),
-            tunnels.consider_clients(sorted_ids[4], sorted_ids[3])
+            Some((sorted_ids[1].clone(), sorted_ids[2].clone())),
+            tunnels.consider_clients(sorted_ids[1].clone(), sorted_ids[2].clone())
         );
-        assert!(tunnels.accept_clients(sorted_ids[1], sorted_ids[2]));
-        assert!(tunnels.accept_clients(sorted_ids[3], sorted_ids[4]));
-        assert!(tunnels.has_clients(sorted_ids[2], sorted_ids[1]));
-        assert!(tunnels.has_clients(sorted_ids[3], sorted_ids[4]));
+        assert_eq!(
+            Some((sorted_ids[3].clone(), sorted_ids[4].clone())),
+            tunnels.consider_clients(sorted_ids[4].clone(), sorted_ids[3].clone())
+        );
+        assert!(tunnels.accept_clients(sorted_ids[1].clone(), sorted_ids[2].clone()));
+        assert!(tunnels.accept_clients(sorted_ids[3].clone(), sorted_ids[4].clone()));
+        assert!(tunnels.has_clients(sorted_ids[2].clone(), sorted_ids[1].clone()));
+        assert!(tunnels.has_clients(sorted_ids[3].clone(), sorted_ids[4].clone()));
     }
 }

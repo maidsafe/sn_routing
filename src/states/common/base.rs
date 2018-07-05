@@ -6,21 +6,21 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use id::{FullId, PublicId};
 use maidsafe_utilities::serialisation;
 use messages::Message;
 use outbox::EventBox;
 use routing_table::Authority;
+use safe_crypto::{PublicId, SecretId};
 use state_machine::Transition;
 use stats::Stats;
 use std::fmt::Debug;
-use xor_name::XorName;
+use xor_name::{PublicIdExt, XorName};
 use Service;
 
 // Trait for all states.
 pub trait Base: Debug {
     fn crust_service(&self) -> &Service;
-    fn full_id(&self) -> &FullId;
+    fn full_id(&self) -> &SecretId;
     fn stats(&mut self) -> &mut Stats;
     fn in_authority(&self, auth: &Authority<XorName>) -> bool;
     fn min_section_size(&self) -> usize;
@@ -33,8 +33,8 @@ pub trait Base: Debug {
         self.full_id().public_id()
     }
 
-    fn name(&self) -> &XorName {
-        self.full_id().public_id().name()
+    fn name(&self) -> XorName {
+        self.full_id().public_id().xor_name()
     }
 
     fn close_group(&self, _name: XorName, _count: usize) -> Option<Vec<XorName>> {

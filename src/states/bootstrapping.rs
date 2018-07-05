@@ -10,20 +10,18 @@ use super::common::Base;
 use super::{Client, JoiningNode, Node};
 use action::Action;
 use cache::Cache;
-use crust::CrustUser;
+use crust::{CrustUser, PaAddr};
 use error::RoutingError;
 use event::Event;
-use id::{FullId, PublicId};
 use maidsafe_utilities::serialisation;
 use messages::{DirectMessage, Message};
 use outbox::EventBox;
 use routing_table::{Authority, Prefix};
-use rust_sodium::crypto::sign;
+use safe_crypto::{PublicId, SecretId};
 use state_machine::{State, Transition};
 use stats::Stats;
 use std::collections::{BTreeSet, HashSet};
 use std::fmt::{self, Debug, Formatter};
-use std::net::SocketAddr;
 use std::time::Duration;
 use timer::Timer;
 use types::RoutingActionSender;
@@ -42,7 +40,7 @@ pub enum TargetState {
     },
     JoiningNode,
     Node {
-        old_full_id: FullId,
+        old_full_id: SecretId,
         our_section: (Prefix<XorName>, BTreeSet<PublicId>),
     },
 }
@@ -50,12 +48,12 @@ pub enum TargetState {
 // State of Client, JoiningNode or Node while bootstrapping.
 pub struct Bootstrapping {
     action_sender: RoutingActionSender,
-    bootstrap_blacklist: HashSet<SocketAddr>,
+    bootstrap_blacklist: HashSet<PaAddr>,
     bootstrap_connection: Option<(PublicId, u64)>,
     cache: Box<Cache>,
     target_state: TargetState,
     crust_service: Service,
-    full_id: FullId,
+    full_id: SecretId,
     min_section_size: usize,
     stats: Stats,
     timer: Timer,
@@ -66,8 +64,8 @@ impl Bootstrapping {
         action_sender: RoutingActionSender,
         cache: Box<Cache>,
         target_state: TargetState,
-        mut crust_service: Service,
-        full_id: FullId,
+        crust_service: Service,
+        full_id: SecretId,
         min_section_size: usize,
         timer: Timer,
     ) -> Option<Self> {
@@ -76,7 +74,7 @@ impl Bootstrapping {
                 let _ = crust_service.start_bootstrap(HashSet::new(), CrustUser::Client);
             }
             TargetState::JoiningNode | TargetState::Node { .. } => {
-                if let Err(error) = crust_service.start_listening_tcp() {
+                if let Err(error) = crust_service.start_listening() {
                     error!("Failed to start listening: {:?}", error);
                     return None;
                 }
@@ -106,7 +104,7 @@ impl Bootstrapping {
                 let _ = result_tx.send(Ok(()));
             }
             Action::Id { result_tx } => {
-                let _ = result_tx.send(*self.id());
+                let _ = result_tx.send(self.id().clone());
             }
             Action::Timeout(token) => self.handle_timeout(token),
             Action::ResourceProofResult(..) => {
@@ -121,7 +119,7 @@ impl Bootstrapping {
 
     pub fn handle_crust_event(
         &mut self,
-        crust_event: CrustEvent<PublicId>,
+        crust_event: CrustEvent,
         outbox: &mut EventBox,
     ) -> Transition {
         match crust_event {
@@ -227,23 +225,22 @@ impl Bootstrapping {
     }
 
     fn handle_timeout(&mut self, token: u64) {
-        if let Some((bootstrap_id, bootstrap_token)) = self.bootstrap_connection {
+        if let Some((ref bootstrap_id, bootstrap_token)) = self.bootstrap_connection {
             if bootstrap_token == token {
                 debug!(
                     "{:?} Timeout when trying to bootstrap against {:?}.",
                     self, bootstrap_id
                 );
-
-                self.rebootstrap();
+            } else {
+                return;
             }
+        } else {
+            return;
         }
+        self.rebootstrap();
     }
 
-    fn handle_bootstrap_connect(
-        &mut self,
-        pub_id: PublicId,
-        socket_addr: SocketAddr,
-    ) -> Transition {
+    fn handle_bootstrap_connect(&mut self, pub_id: PublicId, socket_addr: PaAddr) -> Transition {
         match self.bootstrap_connection {
             None => {
                 debug!("{:?} Received BootstrapConnect from {}.", self, pub_id);
@@ -251,7 +248,7 @@ impl Bootstrapping {
                 self.send_bootstrap_request(pub_id);
                 let _ = self.bootstrap_blacklist.insert(socket_addr);
             }
-            Some((bootstrap_id, _)) if bootstrap_id == pub_id => {
+            Some((ref bootstrap_id, _)) if bootstrap_id == &pub_id => {
                 warn!(
                     "{:?} Got more than one BootstrapConnect for peer {}.",
                     self, pub_id
@@ -317,7 +314,7 @@ impl Bootstrapping {
         let token = self
             .timer
             .schedule(Duration::from_secs(BOOTSTRAP_TIMEOUT_SECS));
-        self.bootstrap_connection = Some((pub_id, token));
+        self.bootstrap_connection = Some((pub_id.clone(), token));
 
         let serialised_public_id = match serialisation::serialise(self.full_id.public_id()) {
             Ok(rslt) => rslt,
@@ -326,8 +323,7 @@ impl Bootstrapping {
                 return;
             }
         };
-        let signature =
-            sign::sign_detached(&serialised_public_id, self.full_id.signing_private_key());
+        let signature = self.full_id.sign_detached(&serialised_public_id);
         let direct_message = DirectMessage::BootstrapRequest(signature);
 
         self.stats().count_direct_message(&direct_message);
@@ -366,7 +362,7 @@ impl Base for Bootstrapping {
         &self.crust_service
     }
 
-    fn full_id(&self) -> &FullId {
+    fn full_id(&self) -> &SecretId {
         &self.full_id
     }
 
@@ -393,11 +389,12 @@ impl Debug for Bootstrapping {
 mod tests {
     use super::*;
     use cache::NullCache;
-    use id::FullId;
     use maidsafe_utilities::event_sender::{MaidSafeEventCategory, MaidSafeObserver};
-    use mock_crust::crust::{Config, Service};
+    use mock_crust::crust::compat::Service;
+    use mock_crust::crust::ConfigFile;
     use mock_crust::{self, Network};
     use outbox::EventBuf;
+    use safe_crypto::SecretId;
     use state_machine::StateMachine;
     use std::sync::mpsc;
     use CrustEvent;
@@ -416,15 +413,15 @@ mod tests {
         let event_sender =
             MaidSafeObserver::new(event_tx, MaidSafeEventCategory::Crust, category_tx);
         let handle0 = network.new_service_handle(None, None);
-        let config = Config::with_contacts(&[handle0.endpoint()]);
-        let mut crust_service = unwrap!(Service::with_handle(
+        let config = ConfigFile::with_contacts(&[handle0.endpoint()]);
+        let crust_service = unwrap!(Service::with_handle(
             &handle0,
             event_sender,
-            *FullId::new().public_id(),
+            SecretId::new(),
         ));
 
-        unwrap!(crust_service.start_listening_tcp());
-        if let CrustEvent::ListenerStarted::<_>(_) = unwrap!(event_rx.try_recv()) {
+        unwrap!(crust_service.start_listening());
+        if let CrustEvent::ListenerStarted(_) = unwrap!(event_rx.try_recv()) {
         } else {
             panic!("Should have received `ListenerStarted` event.");
         }
@@ -435,8 +432,8 @@ mod tests {
         let handle1 = network.new_service_handle(Some(config.clone()), None);
         let mut outbox = EventBuf::new();
         let mut state_machine = mock_crust::make_current(&handle1, || {
-            let full_id = FullId::new();
-            let pub_id = *full_id.public_id();
+            let full_id_0 = SecretId::new();
+            let full_id_1 = full_id_0.clone();
             StateMachine::new(
                 move |action_sender, crust_service, timer, _outbox2| {
                     Bootstrapping::new(
@@ -446,12 +443,12 @@ mod tests {
                             msg_expiry_dur: Duration::from_secs(60),
                         },
                         crust_service,
-                        full_id,
+                        full_id_0,
                         min_section_size,
                         timer,
                     ).map_or(State::Terminated, State::Bootstrapping)
                 },
-                pub_id,
+                full_id_1,
                 Some(config),
                 &mut outbox,
             ).1
@@ -459,8 +456,7 @@ mod tests {
 
         // Check the Crust service received the `BootstrapAccept`.
         network.deliver_messages();
-        if let CrustEvent::BootstrapAccept::<_>(_, CrustUser::Client) = unwrap!(event_rx.try_recv())
-        {
+        if let CrustEvent::BootstrapAccept(_, CrustUser::Client) = unwrap!(event_rx.try_recv()) {
         } else {
             panic!("Should have received `BootstrapAccept` event.");
         }
@@ -483,7 +479,7 @@ mod tests {
         // Check the Crust service received the `BootstrapRequest`, then drop the service to trigger
         // `LostPeer` event in the state machine.
         network.deliver_messages();
-        if let CrustEvent::NewMessage::<_>(_, _, serialised_msg) = unwrap!(event_rx.try_recv()) {
+        if let CrustEvent::NewMessage(_, _, serialised_msg) = unwrap!(event_rx.try_recv()) {
             match unwrap!(serialisation::deserialise(&serialised_msg)) {
                 Message::Direct(DirectMessage::BootstrapRequest(_)) => (),
                 _ => panic!("Should have received a `BootstrapRequest`."),

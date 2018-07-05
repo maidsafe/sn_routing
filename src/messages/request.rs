@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use data::{EntryAction, ImmutableData, MutableData, PermissionSet, User};
-use rust_sodium::crypto::sign;
+use safe_crypto::PublicId;
 use std::collections::{BTreeMap, BTreeSet};
 use types::MessageId as MsgId;
 use xor_name::XorName;
@@ -56,7 +56,7 @@ pub enum Request {
         /// Unique message identifier
         msg_id: MsgId,
         /// Requester public key
-        requester: sign::PublicKey,
+        requester: PublicId,
     },
     /// Fetches a latest version number.
     GetMDataVersion {
@@ -131,7 +131,7 @@ pub enum Request {
         /// Unique message identifier
         msg_id: MsgId,
         /// Requester public key
-        requester: sign::PublicKey,
+        requester: PublicId,
     },
 
     // Permission Actions
@@ -170,7 +170,7 @@ pub enum Request {
         /// Unique message identifier
         msg_id: MsgId,
         /// Requester public key
-        requester: sign::PublicKey,
+        requester: PublicId,
     },
     /// Deletes a list of permissions for a particular User in the given MutableData.
     DelMDataUserPermissions {
@@ -185,7 +185,7 @@ pub enum Request {
         /// Unique message identifier
         msg_id: MsgId,
         /// Requester public key
-        requester: sign::PublicKey,
+        requester: PublicId,
     },
 
     // Ownership Actions
@@ -196,7 +196,7 @@ pub enum Request {
         /// Type tag
         tag: u64,
         /// A list of new owners
-        new_owners: BTreeSet<sign::PublicKey>,
+        new_owners: BTreeSet<PublicId>,
         /// Incremented version of MutableData
         version: u64,
         /// Unique message identifier
@@ -210,7 +210,7 @@ pub enum Request {
     /// Inserts an autorised key (for an app, user, etc.) to MaidManager.
     InsAuthKey {
         /// Authorised key to be inserted
-        key: sign::PublicKey,
+        key: PublicId,
         /// Incremented version
         version: u64,
         /// Unique message identifier
@@ -219,7 +219,7 @@ pub enum Request {
     /// Deletes an authorised key from MaidManager.
     DelAuthKey {
         /// Authorised key to be deleted
-        key: sign::PublicKey,
+        key: PublicId,
         /// Incremented version
         version: u64,
         /// Unique message identifier

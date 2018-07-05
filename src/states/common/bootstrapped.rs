@@ -11,11 +11,11 @@ use ack_manager::{Ack, AckManager, UnacknowledgedMessage, ACK_TIMEOUT_SECS};
 use error::RoutingError;
 #[cfg(feature = "use-mock-crust")]
 use fake_clock::FakeClock as Instant;
-use id::PublicId;
 use maidsafe_utilities::serialisation;
 use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage};
 use routing_message_filter::RoutingMessageFilter;
 use routing_table::Authority;
+use safe_crypto::PublicId;
 use std::collections::BTreeSet;
 use std::time::Duration;
 #[cfg(not(feature = "use-mock-crust"))]
@@ -143,7 +143,7 @@ pub trait Bootstrapped: Base {
     }
 
     fn send_ack(&mut self, routing_msg: &RoutingMessage, route: u8) {
-        self.send_ack_from(routing_msg, route, routing_msg.dst);
+        self.send_ack_from(routing_msg, route, routing_msg.dst.clone());
     }
 
     fn send_ack_from(&mut self, routing_msg: &RoutingMessage, route: u8, src: Authority<XorName>) {
@@ -172,12 +172,7 @@ pub trait Bootstrapped: Base {
         route: u8,
         sent_to: BTreeSet<XorName>,
     ) -> Result<Vec<u8>, RoutingError> {
-        let hop_msg = HopMessage::new(
-            signed_msg,
-            route,
-            sent_to,
-            self.full_id().signing_private_key(),
-        )?;
+        let hop_msg = HopMessage::new(signed_msg, route, sent_to, self.full_id())?;
         let message = Message::Hop(hop_msg);
         Ok(serialisation::serialise(&message)?)
     }

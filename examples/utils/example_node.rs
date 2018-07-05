@@ -10,7 +10,7 @@ use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use routing::{
     Authority, ClientError, Event, EventStream, ImmutableData, MessageId, MutableData, Node,
-    Prefix, Request, Response, XorName,
+    Prefix, PublicIdExt, Request, Response, XorName,
 };
 use std::collections::HashMap;
 use std::time::Duration;
@@ -85,7 +85,8 @@ impl ExampleNode {
                         self.get_debug_name(),
                         prefix
                     );
-                    let pfx = Prefix::new(prefix.bit_count() + 1, *unwrap!(self.node.id()).name());
+                    let pfx =
+                        Prefix::new(prefix.bit_count() + 1, unwrap!(self.node.id()).xor_name());
                     self.send_refresh(MessageId::from_lost_node(pfx.lower_bound()));
                 }
                 event => {
@@ -203,7 +204,11 @@ impl ExampleNode {
                     data.name(),
                     data
                 );
-                if self.request_cache.insert(msg_id, (dst, src)).is_none() {
+                if self
+                    .request_cache
+                    .insert(msg_id, (dst.clone(), src.clone()))
+                    .is_none()
+                {
                     let src = dst;
                     let dst = Authority::NaeManager(*data.name());
                     unwrap!(self.node.send_put_idata_request(src, dst, data, msg_id));
@@ -359,21 +364,30 @@ impl ExampleNode {
             };
             let content = unwrap!(serialise(&content));
             let auth = Authority::ClientManager(*client_name);
-            unwrap!(self.node.send_refresh_request(auth, auth, content, msg_id));
+            unwrap!(
+                self.node
+                    .send_refresh_request(auth.clone(), auth, content, msg_id)
+            );
         }
 
         for data in self.idata_store.values() {
             let refresh_content = RefreshContent::ImmutableData(data.clone());
             let content = unwrap!(serialise(&refresh_content));
             let auth = Authority::NaeManager(*data.name());
-            unwrap!(self.node.send_refresh_request(auth, auth, content, msg_id));
+            unwrap!(
+                self.node
+                    .send_refresh_request(auth.clone(), auth, content, msg_id)
+            );
         }
 
         for data in self.mdata_store.values() {
             let content = RefreshContent::MutableData(data.clone());
             let content = unwrap!(serialise(&content));
             let auth = Authority::NaeManager(*data.name());
-            unwrap!(self.node.send_refresh_request(auth, auth, content, msg_id));
+            unwrap!(
+                self.node
+                    .send_refresh_request(auth.clone(), auth, content, msg_id)
+            );
         }
     }
 
@@ -411,7 +425,7 @@ impl ExampleNode {
 
     fn get_debug_name(&self) -> String {
         match self.node.id() {
-            Ok(id) => format!("Node({:?})", id.name()),
+            Ok(id) => format!("Node({:?})", id.xor_name()),
             Err(err) => {
                 error!("Could not get node name - {:?}", err);
                 "Node(unknown)".to_owned()
