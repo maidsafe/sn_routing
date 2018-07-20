@@ -50,4 +50,4 @@ serde_json = "~1.0.13"
 
 [features]
 use-mock-crust = ["lru_time_cache/fake_clock"]
-use-mock-crypto = ["use-mock-crust"]
+use-mock-crypto = ["safe_crypto/mock"]
