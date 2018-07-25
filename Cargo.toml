@@ -9,9 +9,16 @@ readme = "README.md"
 repository = "https://github.com/maidsafe/routing"
 version = "0.36.0"
 
+[[example]]
+bench = false
+name = "key_value_store"
+
+[[example]]
+bench = false
+name = "ci_test"
+
 [dependencies]
 config_file_handler = "~0.10.0"
-crust = { git = "https://github.com/maidsafe/crust", rev = "104be6a79" }
 fake_clock = "~0.2.0"
 hex = "~0.3.1"
 itertools = "~0.7.8"
@@ -27,20 +34,19 @@ serde_derive = "~1.0.37"
 term = "~0.4.6"
 tiny-keccak = "~1.4.2"
 unwrap = "~1.1.0"
-safe_crypto = { git = "https://github.com/maidsafe/safe_crypto", rev = "f214410" }
+
+[dependencies.crust]
+git = "https://github.com/maidsafe/crust"
+rev = "104be6a79"
+
+[dependencies.safe_crypto]
+git = "https://github.com/maidsafe/safe_crypto"
+rev = "f214410"
 
 [dev-dependencies]
 docopt = "~0.8.3"
 libc = "~0.2.40"
 serde_json = "~1.0.13"
-
-[[example]]
-bench = false
-name = "key_value_store"
-
-[[example]]
-bench = false
-name = "ci_test"
 
 [features]
 use-mock-crust = ["lru_time_cache/fake_clock"]
