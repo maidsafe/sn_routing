@@ -38,12 +38,12 @@ extern crate maidsafe_utilities;
 #[macro_use]
 extern crate unwrap;
 extern crate docopt;
-extern crate rust_sodium;
 #[macro_use]
 extern crate serde_derive;
 
 extern crate lru_time_cache;
 extern crate routing;
+extern crate safe_crypto;
 
 mod utils;
 
@@ -61,7 +61,7 @@ mod unnamed {
     use maidsafe_utilities::serialisation::{deserialise, serialise};
     use maidsafe_utilities::thread::{self, Joiner};
     use routing::{MutableData, Value, XorName};
-    use rust_sodium::crypto;
+    use safe_crypto as crypto;
     use std::io::{self, Write};
     use std::iter;
     use std::sync::mpsc;
@@ -211,7 +211,7 @@ Options:
                 entry_version: 0,
             };
             let entries = iter::once((KEY.to_vec(), value)).collect();
-            let owners = iter::once(*self.example_client.signing_public_key()).collect();
+            let owners = iter::once(self.example_client.signing_public_key()).collect();
 
             let data = unwrap!(MutableData::new(
                 name,
@@ -226,7 +226,7 @@ Options:
         }
 
         fn calculate_key_name(key: &str) -> XorName {
-            XorName(crypto::hash::sha256::hash(key.as_bytes()).0)
+            XorName(crypto::hash(key.as_bytes()))
         }
     }
 

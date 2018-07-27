@@ -11,9 +11,9 @@ use action::Action;
 use config_file_handler::Error as ConfigFileHandlerError;
 use crust::CrustError;
 use event::Event;
-use id::PublicId;
 use maidsafe_utilities::event_sender::{EventSenderError, MaidSafeEventCategory};
 use maidsafe_utilities::serialisation;
+use safe_crypto::{self, PublicKeys};
 use sha3::Digest256;
 use std::sync::mpsc::{RecvError, SendError};
 
@@ -94,9 +94,9 @@ pub enum RoutingError {
     /// Serialisation Error
     SerialisationError(serialisation::SerialisationError),
     /// Asymmetric Decryption Failure
-    AsymmetricDecryptionFailure,
+    AsymmetricDecryptionFailure(safe_crypto::Error),
     /// Unknown Connection
-    UnknownConnection(PublicId),
+    UnknownConnection(PublicKeys),
     /// Invalid Destination
     InvalidDestination,
     /// Connection to proxy node does not exist in proxy map
@@ -175,6 +175,12 @@ impl From<serialisation::SerialisationError> for RoutingError {
 impl From<ConfigFileHandlerError> for RoutingError {
     fn from(error: ConfigFileHandlerError) -> RoutingError {
         RoutingError::ConfigError(error)
+    }
+}
+
+impl From<safe_crypto::Error> for RoutingError {
+    fn from(error: safe_crypto::Error) -> RoutingError {
+        RoutingError::AsymmetricDecryptionFailure(error)
     }
 }
 

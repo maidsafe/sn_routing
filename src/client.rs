@@ -10,21 +10,18 @@ use action::Action;
 use cache::NullCache;
 use config_handler::{self, Config};
 #[cfg(not(feature = "use-mock-crust"))]
-use crust::read_config_file as read_bootstrap_config_file;
+use crust;
 use data::{EntryAction, ImmutableData, MutableData, PermissionSet, User};
 use error::{InterfaceError, RoutingError};
 use event::Event;
 #[cfg(feature = "use-mock-crust")]
 use event_stream::{EventStepper, EventStream};
-use id::{FullId, PublicId};
 #[cfg(not(feature = "use-mock-crust"))]
 use maidsafe_utilities::thread::{self, Joiner};
 use messages::{Request, CLIENT_GET_PRIORITY, DEFAULT_PRIORITY};
 use outbox::{EventBox, EventBuf};
 use routing_table::Authority;
-#[cfg(not(feature = "use-mock-crust"))]
-use rust_sodium;
-use rust_sodium::crypto::sign;
+use safe_crypto::{PublicKeys, PublicSignKey, SecretKeys};
 use state_machine::{State, StateMachine};
 use states::{Bootstrapping, BootstrappingTargetState};
 use std::collections::{BTreeMap, BTreeSet};
@@ -58,14 +55,14 @@ pub struct Client {
 
 impl Client {
     fn make_state_machine(
-        keys: Option<FullId>,
+        keys: Option<SecretKeys>,
         outbox: &mut EventBox,
         bootstrap_config: Option<BootstrapConfig>,
         config: Option<Config>,
         msg_expiry_dur: Duration,
     ) -> (RoutingActionSender, StateMachine) {
-        let full_id = keys.unwrap_or_else(FullId::new);
-        let pub_id = *full_id.public_id();
+        let full_id_0 = keys.unwrap_or_else(SecretKeys::new);
+        let full_id_1 = full_id_0.clone();
         let config = config.unwrap_or_else(config_handler::get_config);
         let dev_config = config.dev.unwrap_or_default();
         let min_section_size = dev_config.min_section_size.unwrap_or(MIN_SECTION_SIZE);
@@ -77,12 +74,12 @@ impl Client {
                     Box::new(NullCache),
                     BootstrappingTargetState::Client { msg_expiry_dur },
                     crust_service,
-                    full_id,
+                    full_id_0,
                     min_section_size,
                     timer,
                 ).map_or(State::Terminated, State::Bootstrapping)
             },
-            pub_id,
+            full_id_1,
             bootstrap_config,
             outbox,
         )
@@ -228,7 +225,7 @@ impl Client {
         dst: Authority<XorName>,
         data: MutableData,
         msg_id: MessageId,
-        requester: sign::PublicKey,
+        requester: PublicSignKey,
     ) -> Result<(), InterfaceError> {
         let request = Request::PutMData {
             data,
@@ -247,7 +244,7 @@ impl Client {
         tag: u64,
         actions: BTreeMap<Vec<u8>, EntryAction>,
         msg_id: MessageId,
-        requester: sign::PublicKey,
+        requester: PublicSignKey,
     ) -> Result<(), InterfaceError> {
         let request = Request::MutateMDataEntries {
             name,
@@ -303,7 +300,7 @@ impl Client {
         permissions: PermissionSet,
         version: u64,
         msg_id: MessageId,
-        requester: sign::PublicKey,
+        requester: PublicSignKey,
     ) -> Result<(), InterfaceError> {
         let request = Request::SetMDataUserPermissions {
             name,
@@ -328,7 +325,7 @@ impl Client {
         user: User,
         version: u64,
         msg_id: MessageId,
-        requester: sign::PublicKey,
+        requester: PublicSignKey,
     ) -> Result<(), InterfaceError> {
         let request = Request::DelMDataUserPermissions {
             name,
@@ -348,7 +345,7 @@ impl Client {
         dst: Authority<XorName>,
         name: XorName,
         tag: u64,
-        new_owners: BTreeSet<sign::PublicKey>,
+        new_owners: BTreeSet<PublicSignKey>,
         version: u64,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
@@ -377,7 +374,7 @@ impl Client {
     pub fn ins_auth_key(
         &mut self,
         dst: Authority<XorName>,
-        key: sign::PublicKey,
+        key: PublicSignKey,
         version: u64,
         message_id: MessageId,
     ) -> Result<(), InterfaceError> {
@@ -394,7 +391,7 @@ impl Client {
     pub fn del_auth_key(
         &mut self,
         dst: Authority<XorName>,
-        key: sign::PublicKey,
+        key: PublicSignKey,
         version: u64,
         message_id: MessageId,
     ) -> Result<(), InterfaceError> {
@@ -413,7 +410,7 @@ impl Client {
     /// Create a new `Client`.
     ///
     /// It will automatically connect to the network, but not attempt to achieve full routing node
-    /// status. The name of the client will be the name of the `PublicId` of the `keys` and must
+    /// status. The name of the client will be the name of the `PublicKeys` of the `keys` and must
     /// equal the SHA512 hash of its public signing key, otherwise the client will be instantly
     /// terminated.
     ///
@@ -422,12 +419,10 @@ impl Client {
     /// exists to ensure that the client cannot choose its `ClientAuthority`.
     pub fn new(
         event_sender: Sender<Event>,
-        keys: Option<FullId>,
+        keys: Option<SecretKeys>,
         bootstrap_config: Option<BootstrapConfig>,
         msg_expiry_dur: Duration,
     ) -> Result<Client, RoutingError> {
-        let _ = rust_sodium::init(); // enable shared global (i.e. safe to multithread now)
-
         let (tx, rx) = channel();
         let (get_action_sender_tx, get_action_sender_rx) = channel();
 
@@ -473,8 +468,8 @@ impl Client {
         })
     }
 
-    /// Returns the `PublicId` of this client.
-    pub fn id(&self) -> Result<PublicId, InterfaceError> {
+    /// Returns the `PublicKeys` of this client.
+    pub fn id(&self) -> Result<PublicKeys, InterfaceError> {
         let (result_tx, result_rx) = channel();
         self.action_sender.send(Action::Id { result_tx })?;
         Ok(result_rx.recv()?)
@@ -482,7 +477,7 @@ impl Client {
 
     /// Returns the bootstrap config that this client was created with.
     pub fn bootstrap_config() -> Result<BootstrapConfig, RoutingError> {
-        Ok(read_bootstrap_config_file()?)
+        Ok(crust::ConfigFile::open_default()?)
     }
 
     fn send_request(
@@ -507,7 +502,7 @@ impl Client {
 impl Client {
     /// Create a new `Client` for testing with mock crust.
     pub fn new(
-        keys: Option<FullId>,
+        keys: Option<SecretKeys>,
         bootstrap_config: Option<BootstrapConfig>,
         config: Config,
         msg_expiry_dur: Duration,
@@ -532,7 +527,7 @@ impl Client {
     }
 
     /// Returns the name of this client.
-    pub fn id(&self) -> Result<PublicId, RoutingError> {
+    pub fn id(&self) -> Result<PublicKeys, RoutingError> {
         self.machine.id().ok_or(RoutingError::Terminated)
     }
 

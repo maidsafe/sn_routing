@@ -39,6 +39,7 @@ extern crate rand;
 extern crate routing;
 #[macro_use]
 extern crate unwrap;
+extern crate safe_crypto;
 
 // This module is a driver and defines macros. See `mock_crust` modules for
 // tests.

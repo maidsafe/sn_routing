@@ -51,10 +51,10 @@
 //! ```no_run
 //! # #![allow(unused)]
 //! use std::sync::mpsc;
-//! use routing::{Client, Event, FullId};
+//! use routing::{Client, Event, SecretKeys};
 //!
 //! let (sender, receiver) = mpsc::channel::<Event>();
-//! let full_id = FullId::new(); // Generate new keys.
+//! let full_id = SecretKeys::new(); // Generate new keys.
 //! # #[cfg(not(feature = "use-mock-crust"))]
 //! let client = Client::new(sender, Some(full_id), None).unwrap();
 //! ```
@@ -140,11 +140,10 @@ extern crate lru_time_cache;
 extern crate num_bigint;
 extern crate rand;
 extern crate resource_proof;
-#[cfg(not(feature = "use-mock-crypto"))]
-extern crate rust_sodium;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
+extern crate safe_crypto;
 #[cfg(test)]
 extern crate serde_json;
 extern crate tiny_keccak;
@@ -165,7 +164,6 @@ mod data;
 mod error;
 mod event;
 mod event_stream;
-mod id;
 mod message_filter;
 mod messages;
 mod node;
@@ -189,11 +187,8 @@ mod xor_name;
 #[cfg(feature = "use-mock-crypto")]
 pub mod mock_crypto;
 
-#[cfg(feature = "use-mock-crypto")]
-use mock_crypto::rust_sodium;
-
-/// Reexports `crust::Config`
-pub type BootstrapConfig = crust::Config;
+/// Reexports `crust::ConfigFile`
+pub type BootstrapConfig = crust::ConfigFile;
 
 /// Mock crust
 #[cfg(feature = "use-mock-crust")]
@@ -229,12 +224,10 @@ pub use config_handler::{Config, DevConfig};
 pub use data::{
     Action, EntryAction, EntryActions, ImmutableData, MutableData, PermissionSet, User, Value,
     MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_MUTABLE_DATA_ENTRIES, MAX_MUTABLE_DATA_SIZE_IN_BYTES,
-    NO_OWNER_PUB_KEY,
 };
 pub use error::{InterfaceError, RoutingError};
 pub use event::Event;
 pub use event_stream::EventStream;
-pub use id::{FullId, PublicId};
 pub use messages::{AccountInfo, Request, Response};
 #[cfg(feature = "use-mock-crust")]
 pub use mock_crust::crust;
@@ -247,14 +240,14 @@ pub use rate_limiter::rate_limiter_consts;
 pub use routing_table::verify_network_invariant;
 pub use routing_table::Error as RoutingTableError;
 pub use routing_table::{Authority, Prefix, RoutingTable, Xorable};
+pub use safe_crypto::{PublicKeys, SecretKeys};
 pub use types::MessageId;
-pub use xor_name::{XorName, XorNameFromHexError, XOR_NAME_BITS, XOR_NAME_LEN};
+pub use xor_name::{PublicKeysExt, XorName, XorNameFromHexError, XOR_NAME_BITS, XOR_NAME_LEN};
 
-type Service = crust::Service<PublicId>;
-use crust::Event as CrustEvent;
-type CrustEventSender = crust::CrustEventSender<PublicId>;
-type PrivConnectionInfo = crust::PrivConnectionInfo<PublicId>;
-type PubConnectionInfo = crust::PubConnectionInfo<PublicId>;
+type Service = crust::compat::Service;
+use crust::compat::Event as CrustEvent;
+type CrustEventSender = crust::compat::CrustEventSender;
+type PubConnectionInfo = crust::PubConnectionInfo;
 
 #[cfg(test)]
 mod tests {

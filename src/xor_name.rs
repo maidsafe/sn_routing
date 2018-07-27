@@ -10,6 +10,7 @@ use hex::{self, FromHex, FromHexError};
 use num_bigint::BigUint;
 use rand;
 use routing_table::Xorable;
+use safe_crypto::{PublicKeys, SecretKeys};
 use std::cmp::Ordering;
 use std::{fmt, ops};
 
@@ -251,6 +252,33 @@ impl<'a> ops::Div<&'a u32> for &'a XorName {
     type Output = XorName;
     fn div(self, rhs: &u32) -> Self::Output {
         XorName::from_big_uint(BigUint::from_bytes_be(&self.0) / BigUint::new(vec![*rhs]))
+    }
+}
+
+/// Extension trait for `safe_crypto::PublicKeys`
+pub trait PublicKeysExt {
+    /// Get the network `XorName` corresponding to this id.
+    fn xor_name(&self) -> XorName;
+}
+
+impl PublicKeysExt for PublicKeys {
+    fn xor_name(&self) -> XorName {
+        XorName(self.public_sign_key())
+    }
+}
+
+pub trait SecretKeysExt {
+    fn within_range(low: XorName, high: XorName) -> SecretKeys;
+}
+
+impl SecretKeysExt for SecretKeys {
+    fn within_range(low: XorName, high: XorName) -> SecretKeys {
+        loop {
+            let sec_id = SecretKeys::new();
+            if sec_id.public_keys().xor_name() >= low && sec_id.public_keys().xor_name() <= high {
+                return sec_id;
+            }
+        }
     }
 }
 

@@ -62,7 +62,7 @@ fn response_caching() {
 
     // No node has the data cached yet, so this request should reach the nodes
     // in the NAE manager section of the data.
-    unwrap!(clients[0].inner.get_idata(dst, data_id, message_id));
+    unwrap!(clients[0].inner.get_idata(dst.clone(), data_id, message_id));
 
     let _ = poll_all(&mut nodes, &mut clients);
 

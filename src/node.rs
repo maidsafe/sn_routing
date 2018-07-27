@@ -14,7 +14,6 @@ use data::{EntryAction, ImmutableData, MutableData, PermissionSet, User, Value};
 use error::{InterfaceError, RoutingError};
 use event::Event;
 use event_stream::{EventStepper, EventStream};
-use id::{FullId, PublicId};
 use messages::{
     AccountInfo, Request, Response, UserMessage, CLIENT_GET_PRIORITY, DEFAULT_PRIORITY,
     RELOCATE_PRIORITY,
@@ -24,8 +23,10 @@ use outbox::{EventBox, EventBuf};
 use routing_table::Prefix;
 use routing_table::{Authority, RoutingTable};
 #[cfg(not(feature = "use-mock-crust"))]
-use rust_sodium;
-use rust_sodium::crypto::sign;
+use safe_crypto;
+#[cfg(feature = "use-mock-crust")]
+use safe_crypto::Signature;
+use safe_crypto::{PublicKeys, PublicSignKey, SecretKeys};
 use state_machine::{State, StateMachine};
 use states::{self, Bootstrapping, BootstrappingTargetState};
 use std::collections::{BTreeMap, BTreeSet};
@@ -116,7 +117,7 @@ impl NodeBuilder {
         // If we're not in a test environment where we might want to manually seed the crypto RNG
         // then seed randomly.
         #[cfg(not(feature = "use-mock-crust"))]
-        let _ = rust_sodium::init();
+        let _ = safe_crypto::init();
 
         let mut ev_buffer = EventBuf::new();
 
@@ -133,8 +134,8 @@ impl NodeBuilder {
     }
 
     fn make_state_machine(self, outbox: &mut EventBox) -> (RoutingActionSender, StateMachine) {
-        let full_id = FullId::new();
-        let pub_id = *full_id.public_id();
+        let full_id_0 = SecretKeys::new();
+        let full_id_1 = full_id_0.clone();
         let config = self.config.unwrap_or_else(config_handler::get_config);
         let dev_config = config.dev.unwrap_or_default();
         let min_section_size = dev_config.min_section_size.unwrap_or(MIN_SECTION_SIZE);
@@ -146,7 +147,7 @@ impl NodeBuilder {
                         action_sender,
                         self.cache,
                         crust_service,
-                        full_id,
+                        full_id_0,
                         min_section_size,
                         timer,
                     ) {
@@ -166,13 +167,13 @@ impl NodeBuilder {
                         self.cache,
                         BootstrappingTargetState::JoiningNode,
                         crust_service,
-                        full_id,
+                        full_id_0,
                         min_section_size,
                         timer,
                     ).map_or(State::Terminated, State::Bootstrapping)
                 }
             },
-            pub_id,
+            full_id_1,
             None,
             outbox,
         )
@@ -241,7 +242,7 @@ impl Node {
         PutMData {
             data: MutableData,
             msg_id: MessageId,
-            requester: sign::PublicKey,
+            requester: PublicSignKey,
         },
         DEFAULT_PRIORITY
     );
@@ -253,7 +254,7 @@ impl Node {
                       tag: u64,
                       actions: BTreeMap<Vec<u8>, EntryAction>,
                       msg_id: MessageId,
-                      requester: sign::PublicKey,
+                      requester: PublicSignKey,
                   },
                   DEFAULT_PRIORITY);
 
@@ -288,7 +289,7 @@ impl Node {
             permissions: PermissionSet,
             version: u64,
             msg_id: MessageId,
-            requester: sign::PublicKey,
+            requester: PublicSignKey,
         },
         DEFAULT_PRIORITY
     );
@@ -302,7 +303,7 @@ impl Node {
             user: User,
             version: u64,
             msg_id: MessageId,
-            requester: sign::PublicKey,
+            requester: PublicSignKey,
         },
         DEFAULT_PRIORITY
     );
@@ -312,7 +313,7 @@ impl Node {
                   ChangeMDataOwner {
                       name: XorName,
                       tag: u64,
-                      new_owners: BTreeSet<sign::PublicKey>,
+                      new_owners: BTreeSet<PublicSignKey>,
                       version: u64,
                       msg_id: MessageId,
                   }, DEFAULT_PRIORITY);
@@ -469,7 +470,7 @@ impl Node {
     impl_response!(
         send_list_auth_keys_and_version_response,
         ListAuthKeysAndVersion,
-        (BTreeSet<sign::PublicKey>, u64),
+        (BTreeSet<PublicSignKey>, u64),
         CLIENT_GET_PRIORITY
     );
 
@@ -501,8 +502,8 @@ impl Node {
         self.machine.close_group(name, count)
     }
 
-    /// Returns the `PublicId` of this node.
-    pub fn id(&self) -> Result<PublicId, RoutingError> {
+    /// Returns the `PublicKeys` of this node.
+    pub fn id(&self) -> Result<PublicKeys, RoutingError> {
         self.machine.id().ok_or(RoutingError::Terminated)
     }
 
@@ -567,11 +568,16 @@ impl Node {
         self.machine.current_mut().purge_invalid_rt_entry()
     }
 
-    /// Check whether this node acts as a tunnel node between `client_1` and `client_2`.
-    pub fn has_tunnel_clients(&self, client_1: PublicId, client_2: PublicId) -> bool {
+    /// Check whether this node acts as a tunnel node between `client_1_pub_id` and
+    /// `client_2_pub_id`.
+    pub fn has_tunnel_clients(
+        &self,
+        client_1_pub_id: PublicKeys,
+        client_2_pub_id: PublicKeys,
+    ) -> bool {
         self.machine
             .current()
-            .has_tunnel_clients(client_1, client_2)
+            .has_tunnel_clients(client_1_pub_id, client_2_pub_id)
     }
 
     /// Returns a quorum of signatures for the neighbouring section's list or `None` if we don't
@@ -579,7 +585,7 @@ impl Node {
     pub fn section_list_signatures(
         &self,
         prefix: Prefix<XorName>,
-    ) -> Option<BTreeMap<PublicId, sign::Signature>> {
+    ) -> Option<BTreeMap<PublicKeys, Signature>> {
         self.machine.current().section_list_signatures(prefix)
     }
 

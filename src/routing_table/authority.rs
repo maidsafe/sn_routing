@@ -7,8 +7,9 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{Prefix, Xorable};
-use id::PublicId;
+use safe_crypto::PublicKeys;
 use std::fmt::{self, Binary, Debug, Display, Formatter};
+use xor_name::PublicKeysExt;
 
 /// An entity that can act as a source or destination of a message.
 ///
@@ -18,7 +19,7 @@ use std::fmt::{self, Binary, Debug, Display, Formatter};
 /// require quorum agreement from the group of nodes closest to the source, while `Section` and
 /// `PrefixSection` use _section_ verification: the set from which a quorum is required is all
 /// members of the section (`Section`) or of all sections matching the prefix (`PrefixSection`).
-#[derive(Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Hash)]
+#[derive(Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord, Clone, Hash)]
 pub enum Authority<N: Xorable + Clone + Copy + Binary + Default> {
     /// Manager of a Client.  XorName is the hash of the Client's `client_key`.
     ClientManager(N),
@@ -38,7 +39,7 @@ pub enum Authority<N: Xorable + Clone + Copy + Binary + Default> {
     /// A Client.
     Client {
         /// The Public ID of the client.
-        client_id: PublicId,
+        client_pub_id: PublicKeys,
         /// The name of the single ManagedNode which the Client connects to and proxies all messages
         /// through.
         proxy_node_name: N,
@@ -111,11 +112,11 @@ impl<N: Xorable + Clone + Copy + Binary + Default + Display> Debug for Authority
             Authority::ManagedNode(ref name) => write!(formatter, "ManagedNode(name: {})", name),
             Authority::Client {
                 ref proxy_node_name,
-                ref client_id,
+                ref client_pub_id,
             } => write!(
                 formatter,
                 "Client {{ client_name: {}, proxy_node_name: {} }}",
-                client_id.name(),
+                client_pub_id.xor_name(),
                 proxy_node_name
             ),
         }
