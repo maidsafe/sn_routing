@@ -129,7 +129,7 @@ impl PermissionSet {
     }
 
     /// Is the given action allowed according to this permission set?
-    pub fn is_allowed(&self, action: Action) -> Option<bool> {
+    pub fn is_allowed(self, action: Action) -> Option<bool> {
         match action {
             Action::Insert => self.insert,
             Action::Update => self.update,

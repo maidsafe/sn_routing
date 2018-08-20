@@ -364,7 +364,7 @@ impl<UID: Uid> ServiceImpl<UID> {
         let mut pending_bootstraps = 0;
 
         for endpoint in &self.config.hard_coded_contacts {
-            if *endpoint != self.endpoint && !blacklist.contains(&to_socket_addr(endpoint)) {
+            if *endpoint != self.endpoint && !blacklist.contains(&to_socket_addr(*endpoint)) {
                 self.send_packet(*endpoint, Packet::BootstrapRequest(unwrap!(self.uid), kind));
                 pending_bootstraps += 1;
             }
@@ -381,7 +381,7 @@ impl<UID: Uid> ServiceImpl<UID> {
 
     pub fn get_peer_ip_addr(&self, uid: &UID) -> Option<IpAddr> {
         if let Some(endpoint) = self.find_endpoint_by_uid(uid) {
-            Some(to_socket_addr(&endpoint).ip())
+            Some(to_socket_addr(endpoint).ip())
         } else {
             None
         }
@@ -464,7 +464,7 @@ impl<UID: Uid> ServiceImpl<UID> {
         let _ = self.add_connection(uid, peer_endpoint, CrustUser::Node);
         self.send_event(CrustEvent::BootstrapConnect(
             uid,
-            to_socket_addr(&peer_endpoint),
+            to_socket_addr(peer_endpoint),
         ));
         self.decrement_pending_bootstraps();
     }
@@ -474,7 +474,7 @@ impl<UID: Uid> ServiceImpl<UID> {
     }
 
     fn handle_connect_request(&mut self, peer_endpoint: Endpoint, their_id: UID) {
-        if self.is_connected(&peer_endpoint, &their_id) {
+        if self.is_connected(peer_endpoint, &their_id) {
             return;
         }
 
@@ -494,7 +494,7 @@ impl<UID: Uid> ServiceImpl<UID> {
     }
 
     fn handle_message(&self, peer_endpoint: Endpoint, data: Vec<u8>) {
-        if let Some((uid, kind)) = self.find_uid_and_kind_by_endpoint(&peer_endpoint) {
+        if let Some((uid, kind)) = self.find_uid_and_kind_by_endpoint(peer_endpoint) {
             self.send_event(CrustEvent::NewMessage(uid, kind, data));
         } else {
             debug!("Received message from non-connected {:?}", peer_endpoint);
@@ -574,17 +574,17 @@ impl<UID: Uid> ServiceImpl<UID> {
             .map(|&(_, ep, _)| ep)
     }
 
-    fn find_uid_and_kind_by_endpoint(&self, endpoint: &Endpoint) -> Option<(UID, CrustUser)> {
+    fn find_uid_and_kind_by_endpoint(&self, endpoint: Endpoint) -> Option<(UID, CrustUser)> {
         self.connections
             .iter()
-            .find(|&&(_, ep, _)| ep == *endpoint)
+            .find(|&&(_, ep, _)| ep == endpoint)
             .map(|&(id, _, user)| (id, user))
     }
 
-    fn is_connected(&self, endpoint: &Endpoint, uid: &UID) -> bool {
+    fn is_connected(&self, endpoint: Endpoint, uid: &UID) -> bool {
         self.connections
             .iter()
-            .any(|&conn| conn.0 == *uid && conn.1 == *endpoint)
+            .any(|&conn| conn.0 == *uid && conn.1 == endpoint)
     }
 
     pub fn disconnect(&mut self, uid: &UID) -> bool {
@@ -625,7 +625,7 @@ impl<UID: Uid> Drop for ServiceImpl<UID> {
 
 /// Creates a `SocketAddr` with the endpoint as its port, so that endpoints and addresses can be
 /// easily mapped to each other during testing.
-pub fn to_socket_addr(endpoint: &Endpoint) -> SocketAddr {
+pub fn to_socket_addr(endpoint: Endpoint) -> SocketAddr {
     SocketAddr::new(
         IpAddr::from([127, 0, (endpoint.0 >> 8) as u8, endpoint.0 as u8]),
         endpoint.0 as u16,

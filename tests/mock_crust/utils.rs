@@ -294,7 +294,7 @@ impl TestClient {
     }
 
     pub fn ip(&self) -> IpAddr {
-        mock_crust::to_socket_addr(&self.handle.endpoint()).ip()
+        mock_crust::to_socket_addr(self.handle.endpoint()).ip()
     }
 }
 
