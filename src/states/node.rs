@@ -1011,7 +1011,8 @@ impl Node {
 
         // TODO(MAID-1677): Remove this once messages are fully validated.
         // Expect group/section messages to be sent by at least a quorum of `min_section_size`.
-        if self.our_prefix().bit_count() > 0 && signed_msg.routing_message().src.is_multiple()
+        if self.our_prefix().bit_count() > 0
+            && signed_msg.routing_message().src.is_multiple()
             && signed_msg.src_size() * QUORUM_DENOMINATOR
                 <= self.min_section_size() * QUORUM_NUMERATOR
         {
@@ -1361,8 +1362,7 @@ impl Node {
                 let names: BTreeSet<XorName> =
                     section.iter().map(|pub_id| *pub_id.name()).collect();
                 (*ver_pfx.prefix(), names)
-            })
-            .collect();
+            }).collect();
         if let Err(error) = self
             .routing_table()
             .check_node_approval_msg(mapped_sections)
@@ -1540,10 +1540,11 @@ impl Node {
                     ref payload,
                     ..
                 },
-            ) if *part_count <= MAX_PARTS
-                && part_index < part_count
-                && *priority >= DEFAULT_PRIORITY
-                && payload.len() <= MAX_PART_LEN =>
+            )
+                if *part_count <= MAX_PARTS
+                    && part_index < part_count
+                    && *priority >= DEFAULT_PRIORITY
+                    && payload.len() <= MAX_PART_LEN =>
             {
                 self.clients_rate_limiter.add_message(
                     ip,
@@ -1941,11 +1942,10 @@ impl Node {
         dst_prefix: Option<Prefix<XorName>>,
         allow_small_sections: bool,
     ) {
-        if dst_prefix.is_none()
-            && self
-                .routing_table()
-                .check_invariant(allow_small_sections, false)
-                .is_err()
+        if dst_prefix.is_none() && self
+            .routing_table()
+            .check_invariant(allow_small_sections, false)
+            .is_err()
         {
             warn!(
                 "{:?} Not sending section update since RT invariant not held.",
@@ -2283,7 +2283,8 @@ impl Node {
         if self
             .peer_mgr
             .get_peer(&tunnel_id)
-            .map_or(false, can_tunnel_for) && self.tunnels.add(dst_id, tunnel_id)
+            .map_or(false, can_tunnel_for)
+            && self.tunnels.add(dst_id, tunnel_id)
             && self.peer_mgr.tunnelling_to(&dst_id)
         {
             debug!(
@@ -2605,8 +2606,7 @@ impl Node {
                 self.peer_mgr
                     .get_peer(id)
                     .map_or(true, |peer| !peer.valid())
-            })
-            .collect_vec();
+            }).collect_vec();
 
         let own_name = *self.name();
         for pub_id in members {
@@ -3292,8 +3292,7 @@ impl Node {
                             Some(&PeerState::Routing(RoutingConnection::Tunnel)) => false,
                             _ => true,
                         }
-                    }))
-                    .chain(iter::once(self.name()))
+                    })).chain(iter::once(self.name()))
                     .cloned()
                     .collect()
             } else {
@@ -3680,8 +3679,7 @@ impl Node {
                 self.peer_mgr
                     .get_peer(&dst_id)
                     .map(|peer| (dst_id, peer.valid()))
-            })
-            .collect_vec();
+            }).collect_vec();
         for (dst_id, valid) in peers {
             let _ = self.dropped_peer(&dst_id, outbox, false);
             debug!(
@@ -3898,8 +3896,7 @@ impl Bootstrapped for Node {
                     } else {
                         None
                     }
-                })
-                .collect(),
+                }).collect(),
             Client { .. } => vec![],
         };
 

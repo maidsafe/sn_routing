@@ -384,8 +384,7 @@ impl SignedMessage {
                 } else {
                     Some(*pub_id)
                 }
-            })
-            .collect_vec();
+            }).collect_vec();
         if !invalid.is_empty() {
             debug!("{:?}: invalid signatures: {:?}", self, invalid);
         }
@@ -882,8 +881,7 @@ impl UserMessage {
                 cacheable: self.is_cacheable(),
                 payload: payload[(i * len / part_count)..((i + 1) * len / part_count)].to_vec(),
                 priority,
-            })
-            .collect())
+            }).collect())
     }
 
     /// Puts the given parts of a serialised message together and verifies that it matches the
@@ -1186,8 +1184,7 @@ mod tests {
                     payload
                 }
                 msg => panic!("Unexpected message {:?}", msg),
-            })
-            .collect();
+            }).collect();
         let deserialised_user_msg = unwrap!(UserMessage::from_parts(msg_hash, payloads.iter()));
         assert_eq!(user_msg, deserialised_user_msg);
     }

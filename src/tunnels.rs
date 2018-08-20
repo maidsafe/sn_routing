@@ -96,8 +96,7 @@ impl Tunnels {
                 } else {
                     pair.0
                 }
-            })
-            .collect()
+            }).collect()
     }
 
     /// Removes the pair matching `src_id` and `dst_id` from our tunnel clients

@@ -107,8 +107,7 @@ pub fn calculate_relocation_interval(
             let diff1 = y1 - x1;
             let diff2 = y2 - x2;
             diff1.cmp(&diff2)
-        })
-        .unwrap_or((&lower_bound, &upper_bound));
+        }).unwrap_or((&lower_bound, &upper_bound));
 
     let third_of_distance = (*end - *start) / 3;
     let new_end = *end - third_of_distance;

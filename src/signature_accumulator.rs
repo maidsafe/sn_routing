@@ -169,8 +169,7 @@ mod tests {
                             .routing_message()
                             .to_signature(id.signing_private_key(),)
                     )
-                })
-                .collect();
+                }).collect();
             MessageAndSignatures {
                 signed_msg,
                 signature_msgs,
@@ -200,8 +199,7 @@ mod tests {
             let msgs_and_sigs = (0..5)
                 .map(|_| {
                     MessageAndSignatures::new(&msg_sender_id, other_ids.iter(), pub_ids.clone())
-                })
-                .collect();
+                }).collect();
             Env {
                 _msg_sender_id: msg_sender_id,
                 other_ids,

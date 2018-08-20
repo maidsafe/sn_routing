@@ -232,8 +232,7 @@ impl<UID: Uid> Network<UID> {
                     .keys()
                     .filter(|&&(ref s, ref r)| {
                         !network_impl.delayed_connections.contains(&(*s, *r))
-                    })
-                    .cloned()
+                    }).cloned()
                     .collect()
             }
         };

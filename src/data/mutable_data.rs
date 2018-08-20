@@ -74,8 +74,9 @@ pub enum Action {
 }
 
 /// Set of user permissions.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord, Serialize, Deserialize,
-         Default)]
+#[derive(
+    Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord, Serialize, Deserialize, Default,
+)]
 pub struct PermissionSet {
     insert: Option<bool>,
     update: Option<bool>,

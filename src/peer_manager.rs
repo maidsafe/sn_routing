@@ -524,7 +524,8 @@ impl PeerManager {
                 ref mut passed_our_challenge,
                 ref res_proof_start,
                 ..
-            } if new_pub_id == pub_id =>
+            }
+                if new_pub_id == pub_id =>
             {
                 (challenge, passed_our_challenge, res_proof_start)
             }
@@ -609,7 +610,8 @@ impl PeerManager {
         match mem::replace(&mut self.candidate, Candidate::None) {
             Candidate::ResourceProof {
                 new_pub_id: pub_id, ..
-            } if pub_id == *new_pub_id =>
+            }
+                if pub_id == *new_pub_id =>
             {
                 ()
             }
@@ -665,7 +667,8 @@ impl PeerManager {
                 old_pub_id: old_id,
                 res_proof_start,
                 target_interval,
-            } if old_id == *old_pub_id =>
+            }
+                if old_id == *old_pub_id =>
             {
                 (res_proof_start, target_interval)
             }
@@ -970,8 +973,7 @@ impl PeerManager {
             .find(|peer| match peer.state {
                 PeerState::Proxy | PeerState::Routing(RoutingConnection::Proxy(_)) => true,
                 _ => false,
-            })
-            .map(Peer::name)
+            }).map(Peer::name)
     }
 
     pub fn remove_expired_peers(&mut self) -> Vec<PublicId> {
@@ -999,8 +1001,7 @@ impl PeerManager {
                     false
                 }
                 _ => peer.is_expired(),
-            })
-            .map(Peer::pub_id)
+            }).map(Peer::pub_id)
             .cloned()
             .chain(remove_candidate)
             .collect_vec();
@@ -1150,8 +1151,7 @@ impl PeerManager {
                 } else {
                     self.get_pub_id(name)
                 }
-            })
-            .cloned()
+            }).cloned()
             .collect()
     }
 
@@ -1269,7 +1269,8 @@ impl PeerManager {
     /// `client_name`'s section. If those sections are the same, `tunnel_name` is also allowed to
     /// match our sibling prefix instead.
     pub fn is_potential_tunnel_node(&self, tunnel_name: &XorName, client_name: &XorName) -> bool {
-        if self.our_public_id.name() == tunnel_name || self.our_public_id.name() == client_name
+        if self.our_public_id.name() == tunnel_name
+            || self.our_public_id.name() == client_name
             || !self
                 .get_peer_by_name(tunnel_name)
                 .map(Peer::state)
@@ -1553,8 +1554,7 @@ impl PeerManager {
             .filter_map(|peer| match peer.state {
                 PeerState::SearchingForTunnel => Some(peer.pub_id),
                 _ => None,
-            })
-            .collect()
+            }).collect()
     }
 
     /// Returns `Ok(())` if the given peer is not yet in the routing table but is allowed to
@@ -1658,8 +1658,7 @@ impl PeerManager {
                     }
                     Peer { pub_id, .. } => Some(pub_id),
                 }
-            })
-            .collect()
+            }).collect()
     }
 
     /// Returns the public IDs of all routing table entries connected or not that we see as valid
@@ -1710,8 +1709,7 @@ impl PeerManager {
                 } else {
                     false
                 }
-            })
-            .cloned()
+            }).cloned()
             .collect();
         !(&unnormalised_routing_conns - excludes).is_empty()
     }

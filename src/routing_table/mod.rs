@@ -313,17 +313,17 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     pub fn len(&self) -> usize {
         self.all_sections_iter()
             .map(|(_, (_, section))| section.len())
-            .sum::<usize>() - 1
+            .sum::<usize>()
+            - 1
     }
 
     /// Is the table empty? (Returns `true` if no nodes besides our own are known;
     /// empty sections are ignored.)
     pub fn is_empty(&self) -> bool {
-        self.our_section.len() == 1
-            && self
-                .sections
-                .values()
-                .all(|&(_, ref section)| section.is_empty())
+        self.our_section.len() == 1 && self
+            .sections
+            .values()
+            .all(|&(_, ref section)| section.is_empty())
     }
 
     /// Returns the minimum section size.
@@ -509,8 +509,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                 section
                     .iter()
                     .sorted_by(|name0, name1| name.cmp_distance(name0, name1))
-            })
-            .take(count)
+            }).take(count)
             .collect_vec()
     }
 
@@ -642,11 +641,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             .chain(mem::replace(
                 &mut self.our_section,
                 iter::once(self.our_name).collect(),
-            ))
-            .filter(|name| {
+            )).filter(|name| {
                 *name != self.our_name && self.add(*name) == Err(Error::PeerNameUnsuitable)
-            })
-            .collect()
+            }).collect()
     }
 
     /// Removes a contact from the routing table.
@@ -878,8 +875,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                                 self.our_section
                                     .iter()
                                     .filter(|name| **name != self.our_name),
-                            )
-                            .cloned()
+                            ).cloned()
                             .collect());
                     } else {
                         return Err(Error::CannotRoute);
@@ -889,8 +885,12 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             }
         };
         Ok(
-            iter::once(self.get_routeth_node(&closest_section, dst.name(), Some(exclude), route)?)
-                .collect(),
+            iter::once(self.get_routeth_node(
+                &closest_section,
+                dst.name(),
+                Some(exclude),
+                route,
+            )?).collect(),
         )
     }
 

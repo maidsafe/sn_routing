@@ -387,8 +387,7 @@ pub fn remove_nodes_which_failed_to_connect(nodes: &mut Vec<TestNode>, count: us
                 }
             }
             Some(index)
-        })
-        .collect_vec();
+        }).collect_vec();
     for index in &failed_to_join {
         let _ = nodes.remove(*index);
     }
