@@ -328,8 +328,7 @@ impl ExpectedPuts {
                 let count = cmp::min(section.len(), new_section.len());
                 section.extend(new_section);
                 (*dst, count)
-            })
-            .collect();
+            }).collect();
         let mut section_msgs_received = HashMap::new(); // The count of received section messages.
         for node in nodes {
             while let Ok(event) = node.try_next_ev() {

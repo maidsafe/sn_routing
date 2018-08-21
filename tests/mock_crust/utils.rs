@@ -294,7 +294,7 @@ impl TestClient {
     }
 
     pub fn ip(&self) -> IpAddr {
-        mock_crust::to_socket_addr(&self.handle.endpoint()).ip()
+        mock_crust::to_socket_addr(self.handle.endpoint()).ip()
     }
 }
 
@@ -387,8 +387,7 @@ pub fn remove_nodes_which_failed_to_connect(nodes: &mut Vec<TestNode>, count: us
                 }
             }
             Some(index)
-        })
-        .collect_vec();
+        }).collect_vec();
     for index in &failed_to_join {
         let _ = nodes.remove(*index);
     }

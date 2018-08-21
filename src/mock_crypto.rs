@@ -48,8 +48,9 @@ pub mod rust_sodium {
             pub const SIGNATUREBYTES: usize = 32;
 
             /// Mock signing public key.
-            #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd,
-                     Serialize)]
+            #[derive(
+                Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize,
+            )]
             pub struct PublicKey(pub [u8; PUBLICKEYBYTES]);
 
             impl Index<RangeFull> for PublicKey {
@@ -64,8 +65,9 @@ pub mod rust_sodium {
             pub struct SecretKey(pub [u8; SECRETKEYBYTES]);
 
             /// Mock signature.
-            #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, Serialize, PartialEq,
-                     PartialOrd)]
+            #[derive(
+                Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, Serialize, PartialEq, PartialOrd,
+            )]
             pub struct Signature(pub [u8; SIGNATUREBYTES]);
 
             impl AsRef<[u8]> for Signature {
@@ -115,8 +117,9 @@ pub mod rust_sodium {
             pub const NONCEBYTES: usize = 4;
 
             /// Mock public key for asymmetric encryption/decryption.
-            #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd,
-                     Serialize)]
+            #[derive(
+                Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize,
+            )]
             pub struct PublicKey(pub [u8; PUBLICKEYBYTES]);
 
             /// Mock secret key for asymmetric encryption/decryption.

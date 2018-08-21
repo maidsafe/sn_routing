@@ -85,8 +85,7 @@ fn remove_nodes_from_section_till_merge(
             } else {
                 None
             }
-        })
-        .collect();
+        }).collect();
     section_indexes
         .iter()
         .take(section_indexes.len() - min_section_size + 1)
@@ -148,8 +147,7 @@ fn locate_tunnel_node(nodes: &[TestNode], client_1: PublicId, client_2: PublicId
             } else {
                 None
             }
-        })
-        .collect();
+        }).collect();
     // There shall be only one tunnel_node for a pair of tunnel_clients across the network
     // Or None if they are directly connected or one of them are no longer in the network
     assert!(tunnel_node_indexes.len() <= 1);

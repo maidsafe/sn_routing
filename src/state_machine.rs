@@ -484,8 +484,7 @@ impl StateMachine {
                 } else {
                     events.pop()
                 }
-            })
-            .collect_vec();
+            }).collect_vec();
         interleaved.reverse();
         self.events.extend(interleaved);
 

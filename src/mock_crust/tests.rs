@@ -286,11 +286,11 @@ fn gen_endpoint_with_ip() {
     for _ in 0..258 {
         let handle0 = network.new_service_handle(None, None);
         let endpoint0 = handle0.endpoint();
-        let ip0 = to_socket_addr(&endpoint0).ip();
+        let ip0 = to_socket_addr(endpoint0).ip();
         for _ in 0..10 {
             let endpoint1 = network.gen_endpoint_with_ip(&ip0);
             let handle1 = network.new_service_handle(None, Some(endpoint1));
-            assert_eq!(to_socket_addr(&handle1.endpoint()).ip(), ip0);
+            assert_eq!(to_socket_addr(handle1.endpoint()).ip(), ip0);
         }
     }
 }

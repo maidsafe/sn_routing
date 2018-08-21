@@ -15,8 +15,9 @@ use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 
 /// A prefix with section version.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash, Deserialize,
-         Serialize)]
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash, Deserialize, Serialize,
+)]
 pub struct VersionedPrefix<T: Clone + Copy + Default + Binary + Xorable> {
     prefix: Prefix<T>,
     version: u64,
