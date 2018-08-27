@@ -1,7 +1,5 @@
 # Routing
 
-**Maintainer:** Spandan Sharma (spandan.sharma@maidsafe.net)
-
 Routing - a specialised storage DHT
 
 |Crate|Documentation|Linux/OS X|Windows|Issues|
