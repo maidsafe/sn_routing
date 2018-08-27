@@ -715,7 +715,7 @@ mod tests {
 
         // Actions requested by owner should always be allowed
         assert!(md.mutate_entries(del.into(), owner).is_ok());
-        assert_eq!(md.get(&k1).unwrap().content, Vec::<u8>::new());
+        assert_eq!(unwrap!(md.get(&k1)).content, Vec::<u8>::new());
     }
 
     #[test]
