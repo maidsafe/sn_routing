@@ -66,7 +66,7 @@ extern crate lru_time_cache;
 extern crate maidsafe_utilities;
 extern crate rand;
 extern crate routing;
-extern crate rust_sodium;
+extern crate safe_crypto;
 extern crate term;
 #[macro_use]
 extern crate unwrap;
@@ -92,7 +92,7 @@ mod unnamed {
     use rand::distributions::{IndependentSample, Range};
     use rand::{random, thread_rng, Rng, ThreadRng};
     use routing::{MutableData, Value, MIN_SECTION_SIZE};
-    use rust_sodium::crypto::sign;
+    use safe_crypto::PublicSignKey;
     use std::collections::BTreeMap;
     use std::io::Write;
     use std::iter;
@@ -321,7 +321,7 @@ mod unnamed {
         assert!(test_success, "Failed to store and verify data.");
     }
 
-    fn gen_mutable_data<R: Rng>(rng: &mut R, owner: sign::PublicKey) -> MutableData {
+    fn gen_mutable_data<R: Rng>(rng: &mut R, owner: PublicSignKey) -> MutableData {
         let name = rng.gen();
         let tag = rng.gen_range(10_000, 20_000);
 

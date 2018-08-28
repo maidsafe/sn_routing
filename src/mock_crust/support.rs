@@ -13,7 +13,7 @@ use super::crust::{
 use id::PublicId;
 use maidsafe_utilities::SeededRng;
 use rand::Rng;
-use rust_sodium;
+use safe_crypto;
 use std::cell::RefCell;
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
@@ -43,7 +43,7 @@ impl<UID: Uid> Network<UID> {
         } else {
             SeededRng::new()
         };
-        unwrap!(rust_sodium::init_with_rng(&mut rng));
+        unwrap!(safe_crypto::init_with_rng(&mut rng));
         Network(Rc::new(RefCell::new(NetworkImpl {
             services: HashMap::new(),
             min_section_size,
@@ -52,7 +52,7 @@ impl<UID: Uid> Network<UID> {
             delayed_connections: HashSet::new(),
             // Use `SeededRng::new()` here rather than passing in `rng`
             // so that a fresh one is used in every test, i.e. it will
-            // not have been affected by initialising rust_sodium.
+            // not have been affected by initialising safe_crypto.
             rng: SeededRng::new(),
             message_sent: false,
         })))

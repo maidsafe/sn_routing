@@ -12,7 +12,7 @@ use id::PublicId;
 use itertools::Itertools;
 use messages::SectionList;
 use routing_table::Prefix;
-use rust_sodium::crypto::sign::Signature;
+use safe_crypto::Signature;
 use std::collections::HashMap;
 
 pub type Signatures = HashMap<PublicId, Signature>;

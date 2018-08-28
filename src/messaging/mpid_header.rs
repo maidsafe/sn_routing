@@ -13,7 +13,7 @@ pub const MAX_HEADER_METADATA_SIZE: usize = 128; // bytes
 use super::{Error, GUID_SIZE};
 use maidsafe_utilities::serialisation::serialise;
 use rand::{self, Rng};
-use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
+use safe_crypto::{PublicSignKey, SecretSignKey, Signature};
 use std::fmt::{self, Debug, Formatter};
 use tiny_keccak::sha3_256;
 use utils;
@@ -52,7 +52,7 @@ impl MpidHeader {
     pub fn new(
         sender: XorName,
         metadata: Vec<u8>,
-        secret_key: &SecretKey,
+        secret_key: &SecretSignKey,
     ) -> Result<MpidHeader, Error> {
         if metadata.len() > MAX_HEADER_METADATA_SIZE {
             return Err(Error::MetadataTooLarge);
@@ -66,10 +66,8 @@ impl MpidHeader {
         rand::thread_rng().fill_bytes(&mut detail.guid);
 
         let encoded = serialise(&detail)?;
-        Ok(MpidHeader {
-            detail,
-            signature: sign::sign_detached(&encoded, secret_key),
-        })
+        let signature = secret_key.sign_detached(&encoded);
+        Ok(MpidHeader { detail, signature })
     }
 
     /// The name of the original creator of the message.
@@ -99,10 +97,10 @@ impl MpidHeader {
         Ok(XorName(sha3_256(&encoded[..])))
     }
 
-    /// Validates the header's signature against the provided `PublicKey`.
-    pub fn verify(&self, public_key: &PublicKey) -> bool {
+    /// Validates the header's signature against the provided `PublicSignKey`.
+    pub fn verify(&self, public_key: PublicSignKey) -> bool {
         match serialise(&self.detail) {
-            Ok(encoded) => sign::verify_detached(&self.signature, &encoded, public_key),
+            Ok(encoded) => public_key.verify_detached(&self.signature, &encoded),
             Err(_) => false,
         }
     }
@@ -116,7 +114,7 @@ impl Debug for MpidHeader {
             self.detail.sender,
             utils::format_binary_array(&self.detail.guid),
             utils::format_binary_array(&self.detail.metadata),
-            utils::format_binary_array(&self.signature)
+            utils::format_binary_array(&self.signature.into_bytes()[..])
         )
     }
 }
@@ -126,12 +124,12 @@ mod tests {
     use super::*;
     use messaging;
     use rand;
-    use rust_sodium::crypto::sign;
+    use safe_crypto::gen_sign_keypair;
     use xor_name::XorName;
 
     #[test]
     fn full() {
-        let (mut public_key, secret_key) = sign::gen_keypair();
+        let (public_key, secret_key) = gen_sign_keypair();
         let sender: XorName = rand::random();
 
         // Check with metadata which is empty, then at size limit, then just above limit.
@@ -147,13 +145,9 @@ mod tests {
         let _ = metadata.pop();
 
         // Check verify function with a valid and invalid key
-        assert!(header.verify(&public_key));
-        if public_key.0[0] != 255 {
-            public_key.0[0] += 1;
-        } else {
-            public_key.0[0] = 0;
-        }
-        assert!(!header.verify(&public_key));
+        assert!(header.verify(public_key));
+        let (rand_public_key, _) = gen_sign_keypair();
+        assert!(!header.verify(rand_public_key));
 
         // Check that identically-constructed headers retain identical sender and metadata, but have
         // different GUIDs and signatures.

@@ -169,12 +169,13 @@ extern crate unwrap;
 #[cfg(not(feature = "use-mock-crust"))]
 extern crate crust;
 extern crate itertools;
+#[macro_use]
+extern crate lazy_static;
 extern crate lru_time_cache;
 extern crate num_bigint;
 extern crate rand;
 extern crate resource_proof;
-#[cfg(not(feature = "use-mock-crypto"))]
-extern crate rust_sodium;
+extern crate safe_crypto;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
@@ -218,12 +219,6 @@ mod tunnels;
 mod types;
 mod utils;
 mod xor_name;
-
-#[cfg(feature = "use-mock-crypto")]
-pub mod mock_crypto;
-
-#[cfg(feature = "use-mock-crypto")]
-use mock_crypto::rust_sodium;
 
 /// Reexports `crust::Config`
 pub type BootstrapConfig = crust::Config;

@@ -63,7 +63,7 @@ extern crate libc;
 extern crate maidsafe_utilities;
 extern crate rand;
 extern crate routing;
-extern crate rust_sodium;
+extern crate safe_crypto;
 #[macro_use]
 extern crate unwrap;
 
@@ -75,7 +75,7 @@ use routing::{
     Authority, Client, ClientError, Event, EventStream, FullId, MessageId, MutableData, Node,
     Request, Response, Value, XorName, Xorable, MIN_SECTION_SIZE,
 };
-use rust_sodium::crypto;
+use safe_crypto::{gen_encrypt_keypair, gen_sign_keypair};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 #[cfg(target_os = "macos")]
 use std::io;
@@ -154,8 +154,8 @@ impl TestClient {
         let thread_name = format!("TestClient {} event sender", index);
         let (sender, joiner) = spawn_select_thread(index, main_sender, thread_name);
 
-        let sign_keys = crypto::sign::gen_keypair();
-        let encrypt_keys = crypto::box_::gen_keypair();
+        let sign_keys = gen_sign_keypair();
+        let encrypt_keys = gen_encrypt_keypair();
         let full_id = FullId::with_keys(encrypt_keys, sign_keys);
 
         TestClient {

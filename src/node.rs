@@ -24,8 +24,10 @@ use outbox::{EventBox, EventBuf};
 use routing_table::Prefix;
 use routing_table::{Authority, RoutingTable};
 #[cfg(not(feature = "use-mock-crust"))]
-use rust_sodium;
-use rust_sodium::crypto::sign;
+use safe_crypto;
+use safe_crypto::PublicSignKey;
+#[cfg(feature = "use-mock-crust")]
+use safe_crypto::Signature;
 use state_machine::{State, StateMachine};
 use states::{self, Bootstrapping, BootstrappingTargetState};
 use std::collections::{BTreeMap, BTreeSet};
@@ -116,7 +118,7 @@ impl NodeBuilder {
         // If we're not in a test environment where we might want to manually seed the crypto RNG
         // then seed randomly.
         #[cfg(not(feature = "use-mock-crust"))]
-        let _ = rust_sodium::init();
+        safe_crypto::init()?;
 
         let mut ev_buffer = EventBuf::new();
 
@@ -241,7 +243,7 @@ impl Node {
         PutMData {
             data: MutableData,
             msg_id: MessageId,
-            requester: sign::PublicKey,
+            requester: PublicSignKey,
         },
         DEFAULT_PRIORITY
     );
@@ -253,7 +255,7 @@ impl Node {
                       tag: u64,
                       actions: BTreeMap<Vec<u8>, EntryAction>,
                       msg_id: MessageId,
-                      requester: sign::PublicKey,
+                      requester: PublicSignKey,
                   },
                   DEFAULT_PRIORITY);
 
@@ -288,7 +290,7 @@ impl Node {
             permissions: PermissionSet,
             version: u64,
             msg_id: MessageId,
-            requester: sign::PublicKey,
+            requester: PublicSignKey,
         },
         DEFAULT_PRIORITY
     );
@@ -302,7 +304,7 @@ impl Node {
             user: User,
             version: u64,
             msg_id: MessageId,
-            requester: sign::PublicKey,
+            requester: PublicSignKey,
         },
         DEFAULT_PRIORITY
     );
@@ -312,7 +314,7 @@ impl Node {
                   ChangeMDataOwner {
                       name: XorName,
                       tag: u64,
-                      new_owners: BTreeSet<sign::PublicKey>,
+                      new_owners: BTreeSet<PublicSignKey>,
                       version: u64,
                       msg_id: MessageId,
                   }, DEFAULT_PRIORITY);
@@ -469,7 +471,7 @@ impl Node {
     impl_response!(
         send_list_auth_keys_and_version_response,
         ListAuthKeysAndVersion,
-        (BTreeSet<sign::PublicKey>, u64),
+        (BTreeSet<PublicSignKey>, u64),
         CLIENT_GET_PRIORITY
     );
 
@@ -579,7 +581,7 @@ impl Node {
     pub fn section_list_signatures(
         &self,
         prefix: Prefix<XorName>,
-    ) -> Option<BTreeMap<PublicId, sign::Signature>> {
+    ) -> Option<BTreeMap<PublicId, Signature>> {
         self.machine.current().section_list_signatures(prefix)
     }
 

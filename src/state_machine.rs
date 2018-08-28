@@ -15,7 +15,7 @@ use mock_crust;
 use outbox::EventBox;
 use routing_table::{Prefix, RoutingTable};
 #[cfg(feature = "use-mock-crust")]
-use rust_sodium::crypto::sign;
+use safe_crypto::Signature;
 use states::common::Base;
 use states::{Bootstrapping, Client, JoiningNode, Node};
 #[cfg(feature = "use-mock-crust")]
@@ -167,7 +167,7 @@ impl State {
     pub fn section_list_signatures(
         &self,
         prefix: Prefix<XorName>,
-    ) -> Option<BTreeMap<PublicId, sign::Signature>> {
+    ) -> Option<BTreeMap<PublicId, Signature>> {
         match *self {
             State::Node(ref state) => state.section_list_signatures(prefix).ok(),
             _ => None,

@@ -23,7 +23,7 @@ use maidsafe_utilities::serialisation::{deserialise, serialise};
 use peer_manager::SectionMap;
 use routing_table::Authority;
 use routing_table::{Prefix, VersionedPrefix, Xorable};
-use rust_sodium::crypto::{box_, sign};
+use safe_crypto::{PublicSignKey, SecretSignKey, Signature};
 use sha3::Digest256;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::{self, Debug, Formatter};
@@ -100,12 +100,12 @@ impl Message {
 pub enum DirectMessage {
     /// Sent from members of a section or group message's source authority to the first hop. The
     /// message will only be relayed once enough signatures have been accumulated.
-    MessageSignature(Digest256, sign::Signature),
+    MessageSignature(Digest256, Signature),
     /// A signature for the current `BTreeSet` of section's node names
-    SectionListSignature(SectionList, sign::Signature),
+    SectionListSignature(SectionList, Signature),
     /// Sent from a newly connected client to the bootstrap node to prove that it is the owner of
     /// the client's claimed public ID.
-    BootstrapRequest(sign::Signature),
+    BootstrapRequest(Signature),
     /// Sent from the bootstrap node to a client in response to `BootstrapRequest`. If `true`,
     /// bootstrapping is successful; if `false` the sender is not available as a bootstrap node.
     BootstrapResponse(Result<(), BootstrapResponseError>),
@@ -117,10 +117,10 @@ pub enum DirectMessage {
         /// `PublicId` from after relocation.
         new_public_id: PublicId,
         /// Signature of concatenated `PublicId`s using the pre-relocation key.
-        signature_using_old: sign::Signature,
+        signature_using_old: Signature,
         /// Signature of concatenated `PublicId`s and `signature_using_old` using the
         /// post-relocation key.
-        signature_using_new: sign::Signature,
+        signature_using_new: Signature,
         /// Client authority from after relocation.
         new_client_auth: Authority<XorName>,
     },
@@ -190,7 +190,7 @@ pub struct HopMessage {
     /// Every node this has already been sent to.
     pub sent_to: BTreeSet<XorName>,
     /// Signature to be validated against the neighbouring sender's public key.
-    signature: sign::Signature,
+    signature: Signature,
 }
 
 impl HopMessage {
@@ -199,14 +199,14 @@ impl HopMessage {
         content: SignedMessage,
         route: u8,
         sent_to: BTreeSet<XorName>,
-        signing_key: &sign::SecretKey,
+        signing_key: &SecretSignKey,
     ) -> Result<HopMessage, RoutingError> {
         let bytes_to_sign = serialise(&content)?;
         Ok(HopMessage {
             content,
             route,
             sent_to,
-            signature: sign::sign_detached(&bytes_to_sign, signing_key),
+            signature: signing_key.sign_detached(&bytes_to_sign),
         })
     }
 
@@ -214,9 +214,9 @@ impl HopMessage {
     ///
     /// This does not imply that the message came from a known node. That requires a check against
     /// the routing table to identify the name associated with the `verification_key`.
-    pub fn verify(&self, verification_key: &sign::PublicKey) -> Result<(), RoutingError> {
+    pub fn verify(&self, verification_key: PublicSignKey) -> Result<(), RoutingError> {
         let signed_bytes = serialise(&self.content)?;
-        if sign::verify_detached(&self.signature, &signed_bytes, verification_key) {
+        if verification_key.verify_detached(&self.signature, &signed_bytes) {
             Ok(())
         } else {
             Err(RoutingError::FailedSignature)
@@ -228,7 +228,7 @@ impl HopMessage {
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize, Debug)]
 pub struct SectionList {
     pub prefix: Prefix<XorName>,
-    // TODO(MAID-1677): pub signatures: BTreeSet<(PublicId, sign::Signature)>,
+    // TODO(MAID-1677): pub signatures: BTreeSet<(PublicId, Signature)>,
     pub_ids: BTreeSet<PublicId>,
 }
 
@@ -254,7 +254,7 @@ pub struct SignedMessage {
     /// The lists of the sections involved in routing this message, in chronological order.
     // TODO: implement (MAID-1677): sec_lists: Vec<SectionList>,
     /// The IDs and signatures of the source authority's members.
-    signatures: BTreeMap<PublicId, sign::Signature>,
+    signatures: BTreeMap<PublicId, Signature>,
 }
 
 impl SignedMessage {
@@ -267,7 +267,9 @@ impl SignedMessage {
         mut src_sections: Vec<SectionList>,
     ) -> Result<SignedMessage, RoutingError> {
         src_sections.sort_by_key(|list| list.prefix);
-        let sig = sign::sign_detached(&serialise(&content)?, full_id.signing_private_key());
+        let sig = full_id
+            .signing_private_key()
+            .sign_detached(&serialise(&content)?);
         Ok(SignedMessage {
             content,
             src_sections,
@@ -301,7 +303,7 @@ impl SignedMessage {
     /// Adds the given signature if it is new, without validating it. If the collection of section
     /// lists isn't empty, the signature is only added if `pub_id` is a member of the first section
     /// list.
-    pub fn add_signature(&mut self, pub_id: PublicId, sig: sign::Signature) {
+    pub fn add_signature(&mut self, pub_id: PublicId, sig: Signature) {
         if self.content.src.is_multiple() && self.is_sender(&pub_id) {
             let _ = self.signatures.insert(pub_id, sig);
         }
@@ -373,11 +375,13 @@ impl SignedMessage {
             .filter_map(|(pub_id, sig)| {
                 // Remove if not in sending nodes or signature is invalid:
                 let is_valid = if let Authority::Client { ref client_id, .. } = self.content.src {
-                    client_id == pub_id
-                        && sign::verify_detached(sig, &signed_bytes, client_id.signing_public_key())
+                    client_id == pub_id && client_id
+                        .signing_public_key()
+                        .verify_detached(sig, &signed_bytes)
                 } else {
-                    self.is_sender(pub_id)
-                        && sign::verify_detached(sig, &signed_bytes, pub_id.signing_public_key())
+                    self.is_sender(pub_id) && pub_id
+                        .signing_public_key()
+                        .verify_detached(sig, &signed_bytes)
                 };
                 if is_valid {
                     None
@@ -469,13 +473,10 @@ impl RoutingMessage {
     }
 
     /// Returns a `DirectMessage::MessageSignature` for this message.
-    pub fn to_signature(
-        &self,
-        signing_key: &sign::SecretKey,
-    ) -> Result<DirectMessage, RoutingError> {
+    pub fn to_signature(&self, signing_key: &SecretSignKey) -> Result<DirectMessage, RoutingError> {
         let serialised_msg = serialise(self)?;
         let hash = sha3_256(&serialised_msg);
-        let sig = sign::sign_detached(&serialised_msg, signing_key);
+        let sig = signing_key.sign_detached(&serialised_msg);
         Ok(DirectMessage::MessageSignature(hash, sig))
     }
 }
@@ -565,8 +566,6 @@ pub enum MessageContent {
     ConnectionInfoRequest {
         /// Encrypted Crust connection info.
         encrypted_conn_info: Vec<u8>,
-        /// Nonce used to provide a salt in the encrypted message.
-        nonce: [u8; box_::NONCEBYTES],
         /// The sender's public ID.
         pub_id: PublicId,
         /// The message's unique identifier.
@@ -577,8 +576,6 @@ pub enum MessageContent {
     ConnectionInfoResponse {
         /// Encrypted Crust connection info.
         encrypted_conn_info: Vec<u8>,
-        /// Nonce used to provide a salt in the encrypted message.
-        nonce: [u8; box_::NONCEBYTES],
         /// The sender's public ID.
         pub_id: PublicId,
         /// The message's unique identifier.
@@ -982,7 +979,7 @@ mod tests {
     use maidsafe_utilities::serialisation::serialise;
     use rand;
     use routing_table::{Authority, Prefix};
-    use rust_sodium::crypto::sign;
+    use safe_crypto::{self, gen_sign_keypair};
     use std::collections::BTreeSet;
     use std::iter;
     use tiny_keccak::sha3_256;
@@ -1018,7 +1015,8 @@ mod tests {
 
         let full_id = FullId::new();
         let bytes_to_sign = unwrap!(serialise(&(&routing_message, full_id.public_id())));
-        let signature = sign::sign_detached(&bytes_to_sign, full_id.signing_private_key());
+        let sign_id = full_id.signing_private_key();
+        let signature = sign_id.sign_detached(&bytes_to_sign);
 
         signed_message.signatures = iter::once((*full_id.public_id(), signature)).collect();
 
@@ -1101,7 +1099,7 @@ mod tests {
             }
             msg => panic!("Unexpected message: {:?}", msg),
         }
-        let bad_sig = sign::Signature([0; sign::SIGNATUREBYTES]);
+        let bad_sig = Signature::from_bytes([0; safe_crypto::SIGNATURE_BYTES]);
         signed_msg.add_signature(*full_id_2.public_id(), bad_sig);
         assert_eq!(signed_msg.signatures.len(), 3);
         assert!(signed_msg.check_fully_signed(min_section_size));
@@ -1133,7 +1131,7 @@ mod tests {
         let signed_message_result = SignedMessage::new(routing_message.clone(), &full_id, senders);
         let signed_message = unwrap!(signed_message_result);
 
-        let (public_signing_key, secret_signing_key) = sign::gen_keypair();
+        let (public_signing_key, secret_signing_key) = gen_sign_keypair();
         let hop_message_result = HopMessage::new(
             signed_message.clone(),
             0,
@@ -1145,10 +1143,10 @@ mod tests {
 
         assert_eq!(signed_message, hop_message.content);
 
-        assert!(hop_message.verify(&public_signing_key).is_ok());
+        assert!(hop_message.verify(public_signing_key).is_ok());
 
-        let (public_signing_key, _) = sign::gen_keypair();
-        assert!(hop_message.verify(&public_signing_key).is_err());
+        let (public_signing_key, _) = gen_sign_keypair();
+        assert!(hop_message.verify(public_signing_key).is_err());
     }
 
     #[test]

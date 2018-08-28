@@ -12,7 +12,7 @@ use id::PublicId;
 use itertools::Itertools;
 use maidsafe_utilities::serialisation;
 use messages::SignedMessage;
-use rust_sodium::crypto::sign;
+use safe_crypto::Signature;
 use sha3::Digest256;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
@@ -26,7 +26,7 @@ pub const ACCUMULATION_TIMEOUT_SECS: u64 = 30;
 
 #[derive(Default)]
 pub struct SignatureAccumulator {
-    sigs: HashMap<Digest256, (Vec<(PublicId, sign::Signature)>, Instant)>,
+    sigs: HashMap<Digest256, (Vec<(PublicId, Signature)>, Instant)>,
     msgs: HashMap<Digest256, (SignedMessage, u8, Instant)>,
 }
 
@@ -37,7 +37,7 @@ impl SignatureAccumulator {
         &mut self,
         min_section_size: usize,
         hash: Digest256,
-        sig: sign::Signature,
+        sig: Signature,
         pub_id: PublicId,
     ) -> Option<(SignedMessage, u8)> {
         self.remove_expired();

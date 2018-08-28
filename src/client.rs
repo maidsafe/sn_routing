@@ -23,8 +23,8 @@ use messages::{Request, CLIENT_GET_PRIORITY, DEFAULT_PRIORITY};
 use outbox::{EventBox, EventBuf};
 use routing_table::Authority;
 #[cfg(not(feature = "use-mock-crust"))]
-use rust_sodium;
-use rust_sodium::crypto::sign;
+use safe_crypto;
+use safe_crypto::PublicSignKey;
 use state_machine::{State, StateMachine};
 use states::{Bootstrapping, BootstrappingTargetState};
 use std::collections::{BTreeMap, BTreeSet};
@@ -228,7 +228,7 @@ impl Client {
         dst: Authority<XorName>,
         data: MutableData,
         msg_id: MessageId,
-        requester: sign::PublicKey,
+        requester: PublicSignKey,
     ) -> Result<(), InterfaceError> {
         let request = Request::PutMData {
             data,
@@ -247,7 +247,7 @@ impl Client {
         tag: u64,
         actions: BTreeMap<Vec<u8>, EntryAction>,
         msg_id: MessageId,
-        requester: sign::PublicKey,
+        requester: PublicSignKey,
     ) -> Result<(), InterfaceError> {
         let request = Request::MutateMDataEntries {
             name,
@@ -303,7 +303,7 @@ impl Client {
         permissions: PermissionSet,
         version: u64,
         msg_id: MessageId,
-        requester: sign::PublicKey,
+        requester: PublicSignKey,
     ) -> Result<(), InterfaceError> {
         let request = Request::SetMDataUserPermissions {
             name,
@@ -328,7 +328,7 @@ impl Client {
         user: User,
         version: u64,
         msg_id: MessageId,
-        requester: sign::PublicKey,
+        requester: PublicSignKey,
     ) -> Result<(), InterfaceError> {
         let request = Request::DelMDataUserPermissions {
             name,
@@ -348,7 +348,7 @@ impl Client {
         dst: Authority<XorName>,
         name: XorName,
         tag: u64,
-        new_owners: BTreeSet<sign::PublicKey>,
+        new_owners: BTreeSet<PublicSignKey>,
         version: u64,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
@@ -377,7 +377,7 @@ impl Client {
     pub fn ins_auth_key(
         &mut self,
         dst: Authority<XorName>,
-        key: sign::PublicKey,
+        key: PublicSignKey,
         version: u64,
         message_id: MessageId,
     ) -> Result<(), InterfaceError> {
@@ -394,7 +394,7 @@ impl Client {
     pub fn del_auth_key(
         &mut self,
         dst: Authority<XorName>,
-        key: sign::PublicKey,
+        key: PublicSignKey,
         version: u64,
         message_id: MessageId,
     ) -> Result<(), InterfaceError> {
@@ -426,7 +426,8 @@ impl Client {
         bootstrap_config: Option<BootstrapConfig>,
         msg_expiry_dur: Duration,
     ) -> Result<Client, RoutingError> {
-        let _ = rust_sodium::init(); // enable shared global (i.e. safe to multithread now)
+        // enable shared global (i.e. safe to multithread now)
+        safe_crypto::init()?;
 
         let (tx, rx) = channel();
         let (get_action_sender_tx, get_action_sender_rx) = channel();

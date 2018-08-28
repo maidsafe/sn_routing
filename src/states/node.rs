@@ -39,7 +39,7 @@ use routing_table::Error as RoutingTableError;
 use routing_table::{
     Authority, OwnMergeState, Prefix, RemovalDetails, RoutingTable, VersionedPrefix, Xorable,
 };
-use rust_sodium::crypto::{box_, sign};
+use safe_crypto::{SharedSecretKey, Signature};
 use section_list_cache::SectionListCache;
 use sha3::Digest256;
 use signature_accumulator::SignatureAccumulator;
@@ -695,8 +695,8 @@ impl Node {
                 self.handle_candidate_info(
                     old_public_id,
                     &pub_id,
-                    signature_using_old,
-                    signature_using_new,
+                    *signature_using_old,
+                    *signature_using_new,
                     new_client_auth,
                     outbox,
                 );
@@ -775,7 +775,7 @@ impl Node {
     fn handle_message_signature(
         &mut self,
         digest: Digest256,
-        sig: sign::Signature,
+        sig: Signature,
         pub_id: PublicId,
     ) -> Result<(), RoutingError> {
         if !self.peer_mgr.is_routing_peer(&pub_id) {
@@ -854,7 +854,10 @@ impl Node {
                     return;
                 }
             };
-            let sig = sign::sign_detached(&serialised, self.full_id.signing_private_key());
+            let sig = self
+                .full_id
+                .signing_private_key()
+                .sign_detached(&serialised);
 
             let section_len = self.routing_table().our_section().len();
             let our_id = *self.full_id.public_id();
@@ -891,14 +894,17 @@ impl Node {
         &mut self,
         pub_id: PublicId,
         section_list: SectionList,
-        sig: sign::Signature,
+        sig: Signature,
     ) -> Result<(), RoutingError> {
         if !self.peer_mgr.is_routing_peer(&pub_id) {
             return Err(RoutingError::InvalidSource);
         }
 
         let serialised = serialisation::serialise(&section_list)?;
-        if sign::verify_detached(&sig, &serialised, pub_id.signing_public_key()) {
+        if pub_id
+            .signing_public_key()
+            .verify_detached(&sig, &serialised)
+        {
             let section_len = self.routing_table().our_section().len();
             self.section_list_sigs.add_signature(
                 section_list.prefix,
@@ -918,7 +924,7 @@ impl Node {
         hop_msg: HopMessage,
         pub_id: PublicId,
     ) -> Result<(), RoutingError> {
-        hop_msg.verify(pub_id.signing_public_key())?;
+        hop_msg.verify(*pub_id.signing_public_key())?;
         let mut client_ip = None;
         let mut hop_name_result = match self.peer_mgr.get_peer(&pub_id).map(Peer::state) {
             Some(&PeerState::Bootstrapper { .. }) => {
@@ -1156,7 +1162,6 @@ impl Node {
             (
                 ConnectionInfoRequest {
                     encrypted_conn_info,
-                    nonce,
                     pub_id,
                     msg_id,
                 },
@@ -1166,7 +1171,6 @@ impl Node {
             | (
                 ConnectionInfoRequest {
                     encrypted_conn_info,
-                    nonce,
                     pub_id,
                     msg_id,
                 },
@@ -1174,7 +1178,6 @@ impl Node {
                 dst @ ManagedNode(_),
             ) => self.handle_connection_info_request(
                 encrypted_conn_info,
-                nonce,
                 pub_id,
                 msg_id,
                 src,
@@ -1184,7 +1187,6 @@ impl Node {
             (
                 ConnectionInfoResponse {
                     encrypted_conn_info,
-                    nonce,
                     pub_id,
                     msg_id,
                 },
@@ -1194,7 +1196,6 @@ impl Node {
             | (
                 ConnectionInfoResponse {
                     encrypted_conn_info,
-                    nonce,
                     pub_id,
                     msg_id,
                 },
@@ -1202,7 +1203,6 @@ impl Node {
                 dst @ ManagedNode(_),
             ) => self.handle_connection_info_response(
                 encrypted_conn_info,
-                nonce,
                 pub_id,
                 msg_id,
                 src_name,
@@ -1635,7 +1635,7 @@ impl Node {
     fn handle_bootstrap_request(
         &mut self,
         pub_id: PublicId,
-        signature: sign::Signature,
+        signature: Signature,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError> {
         self.remove_expired_peers(outbox);
@@ -1679,7 +1679,10 @@ impl Node {
         }
 
         let ser_pub_id = serialisation::serialise(&pub_id)?;
-        if !sign::verify_detached(&signature, &ser_pub_id, pub_id.signing_public_key()) {
+        if !pub_id
+            .signing_public_key()
+            .verify_detached(&signature, &ser_pub_id)
+        {
             return Err(RoutingError::FailedSignature);
         }
 
@@ -1720,13 +1723,12 @@ impl Node {
         Ok(())
     }
 
-    #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
     fn handle_candidate_info(
         &mut self,
         old_pub_id: &PublicId,
         new_pub_id: &PublicId,
-        signature_using_old: &sign::Signature,
-        signature_using_new: &sign::Signature,
+        signature_using_old: Signature,
+        signature_using_new: Signature,
         new_client_auth: &Authority<XorName>,
         outbox: &mut EventBox,
     ) {
@@ -1821,8 +1823,8 @@ impl Node {
         &self,
         old_pub_id: &PublicId,
         new_pub_id: &PublicId,
-        signature_using_old: &sign::Signature,
-        signature_using_new: &sign::Signature,
+        signature_using_old: Signature,
+        signature_using_new: Signature,
     ) -> bool {
         let old_and_new_pub_ids = (old_pub_id, new_pub_id);
         let mut signed_data = match serialisation::serialise(&old_and_new_pub_ids) {
@@ -1832,23 +1834,21 @@ impl Node {
                 return false;
             }
         };
-        if !sign::verify_detached(
-            signature_using_old,
-            &signed_data,
-            old_pub_id.signing_public_key(),
-        ) {
+        if !old_pub_id
+            .signing_public_key()
+            .verify_detached(&signature_using_old, &signed_data)
+        {
             debug!(
                 "{:?} CandidateInfo from {}->{} has invalid old signature.",
                 self, old_pub_id, new_pub_id
             );
             return false;
         }
-        signed_data.extend_from_slice(&signature_using_old.0);
-        if !sign::verify_detached(
-            signature_using_new,
-            &signed_data,
-            new_pub_id.signing_public_key(),
-        ) {
+        signed_data.extend_from_slice(&signature_using_old.into_bytes());
+        if !new_pub_id
+            .signing_public_key()
+            .verify_detached(&signature_using_new, &signed_data)
+        {
             debug!(
                 "{:?} CandidateInfo from {}->{} has invalid new signature.",
                 self, old_pub_id, new_pub_id
@@ -1998,8 +1998,12 @@ impl Node {
         dst: Authority<XorName>,
         msg_id: Option<MessageId>,
     ) {
-        let encoded_connection_info = match serialisation::serialise(&our_pub_info) {
-            Ok(encoded_connection_info) => encoded_connection_info,
+        let shared_secret = self
+            .full_id
+            .encrypting_private_key()
+            .shared_secret(&their_pub_id.encrypting_public_key());
+        let encrypted_conn_info = match shared_secret.encrypt(&our_pub_info) {
+            Ok(encrypted_conn_info) => encrypted_conn_info,
             Err(err) => {
                 debug!(
                     "{:?} Failed to serialise connection info for {:?}: {:?}.",
@@ -2008,24 +2012,15 @@ impl Node {
                 return;
             }
         };
-        let nonce = box_::gen_nonce();
-        let encrypted_conn_info = box_::seal(
-            &encoded_connection_info,
-            &nonce,
-            their_pub_id.encrypting_public_key(),
-            self.full_id.encrypting_private_key(),
-        );
         let msg_content = if let Some(msg_id) = msg_id {
             MessageContent::ConnectionInfoResponse {
                 encrypted_conn_info,
-                nonce: nonce.0,
                 pub_id: *self.full_id.public_id(),
                 msg_id,
             }
         } else {
             MessageContent::ConnectionInfoRequest {
                 encrypted_conn_info,
-                nonce: nonce.0,
                 pub_id: *self.full_id.public_id(),
                 msg_id: MessageId::new(),
             }
@@ -2106,11 +2101,9 @@ impl Node {
         }
     }
 
-    #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
     fn handle_connection_info_request(
         &mut self,
         encrypted_connection_info: Vec<u8>,
-        nonce_bytes: [u8; box_::NONCEBYTES],
         pub_id: PublicId,
         message_id: MessageId,
         src: Authority<XorName>,
@@ -2118,11 +2111,12 @@ impl Node {
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError> {
         self.peer_mgr.allow_connect(pub_id.name())?;
-        let their_connection_info = self.decrypt_connection_info(
-            &encrypted_connection_info,
-            &box_::Nonce(nonce_bytes),
-            &pub_id,
-        )?;
+        let shared_secret = self
+            .full_id
+            .encrypting_private_key()
+            .shared_secret(&pub_id.encrypting_public_key());
+        let their_connection_info =
+            self.decrypt_connection_info(&encrypted_connection_info, &shared_secret)?;
         if pub_id != their_connection_info.id() {
             debug!(
                 "{:?} PublicId of the sender {} does not match the id mentioned in the message \
@@ -2184,7 +2178,6 @@ impl Node {
     fn handle_connection_info_response(
         &mut self,
         encrypted_connection_info: Vec<u8>,
-        nonce_bytes: [u8; box_::NONCEBYTES],
         public_id: PublicId,
         message_id: MessageId,
         src: XorName,
@@ -2195,11 +2188,12 @@ impl Node {
             return Err(RoutingError::InvalidDestination);
         }
 
-        let their_connection_info = self.decrypt_connection_info(
-            &encrypted_connection_info,
-            &box_::Nonce(nonce_bytes),
-            &public_id,
-        )?;
+        let shared_secret = self
+            .full_id
+            .encrypting_private_key()
+            .shared_secret(&public_id.encrypting_public_key());
+        let their_connection_info =
+            self.decrypt_connection_info(&encrypted_connection_info, &shared_secret)?;
         if public_id != their_connection_info.id() {
             debug!(
                 "{:?} PublicId of the sender {} does not match the id mentioned in the message \
@@ -3060,19 +3054,11 @@ impl Node {
     fn decrypt_connection_info(
         &self,
         encrypted_connection_info: &[u8],
-        nonce: &box_::Nonce,
-        public_id: &PublicId,
+        shared_secret: &SharedSecretKey,
     ) -> Result<PubConnectionInfo, RoutingError> {
-        let decipher_result = box_::open(
-            encrypted_connection_info,
-            nonce,
-            public_id.encrypting_public_key(),
-            self.full_id.encrypting_private_key(),
-        );
-
-        let serialised_connection_info =
-            decipher_result.map_err(|()| RoutingError::AsymmetricDecryptionFailure)?;
-        Ok(serialisation::deserialise(&serialised_connection_info)?)
+        shared_secret
+            .decrypt(encrypted_connection_info)
+            .map_err(RoutingError::Crypto)
     }
 
     fn reset_su_timer(&mut self) {
@@ -3384,12 +3370,13 @@ impl Node {
                     return;
                 }
             };
-            let signature_using_old =
-                sign::sign_detached(&to_sign, self.old_full_id.signing_private_key());
+            let signature_using_old = self
+                .old_full_id
+                .signing_private_key()
+                .sign_detached(&to_sign);
             // Append this signature onto the serialised IDs and sign that using the new key.
-            to_sign.extend_from_slice(&signature_using_old.0);
-            let signature_using_new =
-                sign::sign_detached(&to_sign, self.full_id.signing_private_key());
+            to_sign.extend_from_slice(&signature_using_old.into_bytes());
+            let signature_using_new = self.full_id.signing_private_key().sign_detached(&to_sign);
             let proxy_node_name = if let Some(proxy_node_name) = self.peer_mgr.get_proxy_name() {
                 *proxy_node_name
             } else {
@@ -3799,7 +3786,7 @@ impl Node {
     pub fn section_list_signatures(
         &self,
         prefix: Prefix<XorName>,
-    ) -> Result<BTreeMap<PublicId, sign::Signature>, RoutingError> {
+    ) -> Result<BTreeMap<PublicId, Signature>, RoutingError> {
         if let Some(&(_, ref signatures)) = self.section_list_sigs.get_signatures(prefix) {
             Ok(signatures
                 .iter()

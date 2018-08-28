@@ -211,7 +211,7 @@ impl Client {
         outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
         if self.proxy_pub_id == pub_id {
-            hop_msg.verify(self.proxy_pub_id.signing_public_key())?;
+            hop_msg.verify(*self.proxy_pub_id.signing_public_key())?;
         } else {
             return Err(RoutingError::UnknownConnection(pub_id));
         }

@@ -14,6 +14,7 @@ use event::Event;
 use id::PublicId;
 use maidsafe_utilities::event_sender::{EventSenderError, MaidSafeEventCategory};
 use maidsafe_utilities::serialisation;
+use safe_crypto;
 use sha3::Digest256;
 use std::sync::mpsc::{RecvError, SendError};
 
@@ -93,8 +94,6 @@ pub enum RoutingError {
     InvalidStateForOperation,
     /// Serialisation Error
     SerialisationError(serialisation::SerialisationError),
-    /// Asymmetric Decryption Failure
-    AsymmetricDecryptionFailure,
     /// Unknown Connection
     UnknownConnection(PublicId),
     /// Invalid Destination
@@ -128,6 +127,8 @@ pub enum RoutingError {
     ExceedsRateLimit(Digest256),
     /// Invalid configuration
     ConfigError(ConfigFileHandlerError),
+    /// Crypto related error.
+    Crypto(safe_crypto::Error),
 }
 
 impl From<RoutingTableError> for RoutingError {
@@ -175,6 +176,12 @@ impl From<serialisation::SerialisationError> for RoutingError {
 impl From<ConfigFileHandlerError> for RoutingError {
     fn from(error: ConfigFileHandlerError) -> RoutingError {
         RoutingError::ConfigError(error)
+    }
+}
+
+impl From<safe_crypto::Error> for RoutingError {
+    fn from(error: safe_crypto::Error) -> RoutingError {
+        RoutingError::Crypto(error)
     }
 }
 

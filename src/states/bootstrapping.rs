@@ -18,7 +18,6 @@ use maidsafe_utilities::serialisation;
 use messages::{DirectMessage, Message};
 use outbox::EventBox;
 use routing_table::{Authority, Prefix};
-use rust_sodium::crypto::sign;
 use state_machine::{State, Transition};
 use stats::Stats;
 use std::collections::{BTreeSet, HashSet};
@@ -326,8 +325,10 @@ impl Bootstrapping {
                 return;
             }
         };
-        let signature =
-            sign::sign_detached(&serialised_public_id, self.full_id.signing_private_key());
+        let signature = self
+            .full_id
+            .signing_private_key()
+            .sign_detached(&serialised_public_id);
         let direct_message = DirectMessage::BootstrapRequest(signature);
 
         self.stats().count_direct_message(&direct_message);
