@@ -7,9 +7,9 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use maidsafe_utilities::serialisation;
+use safe_crypto;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt::{self, Debug, Formatter};
-use tiny_keccak::sha3_256;
 use xor_name::XorName;
 
 /// Maximum allowed size for a serialised Immutable Data (ID) to grow to
@@ -29,8 +29,8 @@ impl ImmutableData {
     /// Creates a new instance of `ImmutableData`
     pub fn new(value: Vec<u8>) -> ImmutableData {
         ImmutableData {
-            name: XorName(sha3_256(&value)),
-            value,
+            name: XorName(safe_crypto::hash(&value)),
+            value: value,
         }
     }
 
@@ -82,15 +82,17 @@ impl Debug for ImmutableData {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hex::encode;
+    #[cfg(not(feature = "mock"))]
+    use hex::ToHex;
     use maidsafe_utilities::{serialisation, SeededRng};
     use rand::Rng;
 
+    #[cfg(not(feature = "mock"))]
     #[test]
     fn deterministic_test() {
         let value = "immutable data value".to_owned().into_bytes();
         let immutable_data = ImmutableData::new(value);
-        let immutable_data_name = encode(immutable_data.name().0.as_ref());
+        let immutable_data_name = immutable_data.name().0.as_ref().to_hex();
         let expected_name = "fac2869677ee06277633c37ac7e8e5c655f3d652f707c7a79fab930d584a3016";
 
         assert_eq!(&expected_name, &immutable_data_name);

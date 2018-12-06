@@ -9,27 +9,27 @@
 use action::Action;
 use cache::NullCache;
 use config_handler::{self, Config};
-#[cfg(not(feature = "use-mock-crust"))]
+#[cfg(not(feature = "mock"))]
 use crust::read_config_file as read_bootstrap_config_file;
 use data::{EntryAction, ImmutableData, MutableData, PermissionSet, User};
 use error::{InterfaceError, RoutingError};
 use event::Event;
-#[cfg(feature = "use-mock-crust")]
+#[cfg(feature = "mock")]
 use event_stream::{EventStepper, EventStream};
 use id::{FullId, PublicId};
-#[cfg(not(feature = "use-mock-crust"))]
+#[cfg(not(feature = "mock"))]
 use maidsafe_utilities::thread::{self, Joiner};
 use messages::{Request, CLIENT_GET_PRIORITY, DEFAULT_PRIORITY};
 use outbox::{EventBox, EventBuf};
 use routing_table::Authority;
-#[cfg(not(feature = "use-mock-crust"))]
-use rust_sodium;
-use rust_sodium::crypto::sign;
+#[cfg(not(feature = "mock"))]
+use safe_crypto;
+use safe_crypto::PublicSignKey;
 use state_machine::{State, StateMachine};
 use states::{Bootstrapping, BootstrappingTargetState};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::mpsc::{channel, Receiver, Sender};
-#[cfg(feature = "use-mock-crust")]
+#[cfg(feature = "mock")]
 use std::sync::mpsc::{RecvError, TryRecvError};
 use std::time::Duration;
 use types::{MessageId, RoutingActionSender};
@@ -45,14 +45,14 @@ pub struct Client {
     interface_result_tx: Sender<Result<(), InterfaceError>>,
     interface_result_rx: Receiver<Result<(), InterfaceError>>,
 
-    #[cfg(not(feature = "use-mock-crust"))]
+    #[cfg(not(feature = "mock"))]
     action_sender: RoutingActionSender,
-    #[cfg(not(feature = "use-mock-crust"))]
+    #[cfg(not(feature = "mock"))]
     _joiner: Joiner,
 
-    #[cfg(feature = "use-mock-crust")]
+    #[cfg(feature = "mock")]
     machine: StateMachine,
-    #[cfg(feature = "use-mock-crust")]
+    #[cfg(feature = "mock")]
     event_buffer: EventBuf,
 }
 
@@ -105,7 +105,10 @@ impl Client {
         data: ImmutableData,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
-        let request = Request::PutIData { data, msg_id };
+        let request = Request::PutIData {
+            data: data,
+            msg_id: msg_id,
+        };
 
         self.send_request(dst, request, DEFAULT_PRIORITY)
     }
@@ -117,7 +120,10 @@ impl Client {
         name: XorName,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
-        let request = Request::GetIData { name, msg_id };
+        let request = Request::GetIData {
+            name: name,
+            msg_id: msg_id,
+        };
 
         self.send_request(dst, request, CLIENT_GET_PRIORITY)
     }
@@ -130,7 +136,11 @@ impl Client {
         tag: u64,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
-        let request = Request::GetMDataVersion { name, tag, msg_id };
+        let request = Request::GetMDataVersion {
+            name: name,
+            tag: tag,
+            msg_id: msg_id,
+        };
 
         self.send_request(dst, request, CLIENT_GET_PRIORITY)
     }
@@ -143,7 +153,11 @@ impl Client {
         tag: u64,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
-        let request = Request::GetMDataShell { name, tag, msg_id };
+        let request = Request::GetMDataShell {
+            name: name,
+            tag: tag,
+            msg_id: msg_id,
+        };
 
         self.send_request(dst, request, CLIENT_GET_PRIORITY)
     }
@@ -156,7 +170,11 @@ impl Client {
         tag: u64,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
-        let request = Request::GetMData { name, tag, msg_id };
+        let request = Request::GetMData {
+            name: name,
+            tag: tag,
+            msg_id: msg_id,
+        };
 
         self.send_request(dst, request, CLIENT_GET_PRIORITY)
     }
@@ -170,7 +188,11 @@ impl Client {
         tag: u64,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
-        let request = Request::ListMDataEntries { name, tag, msg_id };
+        let request = Request::ListMDataEntries {
+            name: name,
+            tag: tag,
+            msg_id: msg_id,
+        };
 
         self.send_request(dst, request, CLIENT_GET_PRIORITY)
     }
@@ -184,7 +206,11 @@ impl Client {
         tag: u64,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
-        let request = Request::ListMDataKeys { name, tag, msg_id };
+        let request = Request::ListMDataKeys {
+            name: name,
+            tag: tag,
+            msg_id: msg_id,
+        };
 
         self.send_request(dst, request, CLIENT_GET_PRIORITY)
     }
@@ -198,7 +224,11 @@ impl Client {
         tag: u64,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
-        let request = Request::ListMDataValues { name, tag, msg_id };
+        let request = Request::ListMDataValues {
+            name: name,
+            tag: tag,
+            msg_id: msg_id,
+        };
 
         self.send_request(dst, request, CLIENT_GET_PRIORITY)
     }
@@ -213,10 +243,10 @@ impl Client {
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
         let request = Request::GetMDataValue {
-            name,
-            tag,
-            key,
-            msg_id,
+            name: name,
+            tag: tag,
+            key: key,
+            msg_id: msg_id,
         };
 
         self.send_request(dst, request, CLIENT_GET_PRIORITY)
@@ -228,12 +258,12 @@ impl Client {
         dst: Authority<XorName>,
         data: MutableData,
         msg_id: MessageId,
-        requester: sign::PublicKey,
+        requester: PublicSignKey,
     ) -> Result<(), InterfaceError> {
         let request = Request::PutMData {
-            data,
-            msg_id,
-            requester,
+            data: data,
+            msg_id: msg_id,
+            requester: requester,
         };
 
         self.send_request(dst, request, DEFAULT_PRIORITY)
@@ -247,14 +277,14 @@ impl Client {
         tag: u64,
         actions: BTreeMap<Vec<u8>, EntryAction>,
         msg_id: MessageId,
-        requester: sign::PublicKey,
+        requester: PublicSignKey,
     ) -> Result<(), InterfaceError> {
         let request = Request::MutateMDataEntries {
-            name,
-            tag,
-            actions,
-            msg_id,
-            requester,
+            name: name,
+            tag: tag,
+            actions: actions,
+            msg_id: msg_id,
+            requester: requester,
         };
 
         self.send_request(dst, request, DEFAULT_PRIORITY)
@@ -268,7 +298,11 @@ impl Client {
         tag: u64,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
-        let request = Request::ListMDataPermissions { name, tag, msg_id };
+        let request = Request::ListMDataPermissions {
+            name: name,
+            tag: tag,
+            msg_id: msg_id,
+        };
 
         self.send_request(dst, request, CLIENT_GET_PRIORITY)
     }
@@ -283,10 +317,10 @@ impl Client {
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
         let request = Request::ListMDataUserPermissions {
-            name,
-            tag,
-            user,
-            msg_id,
+            name: name,
+            tag: tag,
+            user: user,
+            msg_id: msg_id,
         };
 
         self.send_request(dst, request, CLIENT_GET_PRIORITY)
@@ -303,16 +337,16 @@ impl Client {
         permissions: PermissionSet,
         version: u64,
         msg_id: MessageId,
-        requester: sign::PublicKey,
+        requester: PublicSignKey,
     ) -> Result<(), InterfaceError> {
         let request = Request::SetMDataUserPermissions {
-            name,
-            tag,
-            user,
-            permissions,
-            version,
-            msg_id,
-            requester,
+            name: name,
+            tag: tag,
+            user: user,
+            permissions: permissions,
+            version: version,
+            msg_id: msg_id,
+            requester: requester,
         };
 
         self.send_request(dst, request, DEFAULT_PRIORITY)
@@ -328,15 +362,15 @@ impl Client {
         user: User,
         version: u64,
         msg_id: MessageId,
-        requester: sign::PublicKey,
+        requester: PublicSignKey,
     ) -> Result<(), InterfaceError> {
         let request = Request::DelMDataUserPermissions {
-            name,
-            tag,
-            user,
-            version,
-            msg_id,
-            requester,
+            name: name,
+            tag: tag,
+            user: user,
+            version: version,
+            msg_id: msg_id,
+            requester: requester,
         };
 
         self.send_request(dst, request, DEFAULT_PRIORITY)
@@ -348,16 +382,16 @@ impl Client {
         dst: Authority<XorName>,
         name: XorName,
         tag: u64,
-        new_owners: BTreeSet<sign::PublicKey>,
+        new_owners: BTreeSet<PublicSignKey>,
         version: u64,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
         let request = Request::ChangeMDataOwner {
-            name,
-            tag,
-            new_owners,
-            version,
-            msg_id,
+            name: name,
+            tag: tag,
+            new_owners: new_owners,
+            version: version,
+            msg_id: msg_id,
         };
 
         self.send_request(dst, request, DEFAULT_PRIORITY)
@@ -377,13 +411,13 @@ impl Client {
     pub fn ins_auth_key(
         &mut self,
         dst: Authority<XorName>,
-        key: sign::PublicKey,
+        key: PublicSignKey,
         version: u64,
         message_id: MessageId,
     ) -> Result<(), InterfaceError> {
         let request = Request::InsAuthKey {
-            key,
-            version,
+            key: key,
+            version: version,
             msg_id: message_id,
         };
 
@@ -394,13 +428,13 @@ impl Client {
     pub fn del_auth_key(
         &mut self,
         dst: Authority<XorName>,
-        key: sign::PublicKey,
+        key: PublicSignKey,
         version: u64,
         message_id: MessageId,
     ) -> Result<(), InterfaceError> {
         let request = Request::DelAuthKey {
-            key,
-            version,
+            key: key,
+            version: version,
             msg_id: message_id,
         };
 
@@ -408,7 +442,7 @@ impl Client {
     }
 }
 
-#[cfg(not(feature = "use-mock-crust"))]
+#[cfg(not(feature = "mock"))]
 impl Client {
     /// Create a new `Client`.
     ///
@@ -426,7 +460,7 @@ impl Client {
         bootstrap_config: Option<BootstrapConfig>,
         msg_expiry_dur: Duration,
     ) -> Result<Client, RoutingError> {
-        let _ = rust_sodium::init(); // enable shared global (i.e. safe to multithread now)
+        safe_crypto::init()?; // enable shared global (i.e. safe to multithread now)
 
         let (tx, rx) = channel();
         let (get_action_sender_tx, get_action_sender_rx) = channel();
@@ -468,7 +502,7 @@ impl Client {
         Ok(Client {
             interface_result_tx: tx,
             interface_result_rx: rx,
-            action_sender,
+            action_sender: action_sender,
             _joiner: joiner,
         })
     }
@@ -476,7 +510,9 @@ impl Client {
     /// Returns the `PublicId` of this client.
     pub fn id(&self) -> Result<PublicId, InterfaceError> {
         let (result_tx, result_rx) = channel();
-        self.action_sender.send(Action::Id { result_tx })?;
+        self.action_sender.send(Action::Id {
+            result_tx: result_tx,
+        })?;
         Ok(result_rx.recv()?)
     }
 
@@ -493,8 +529,8 @@ impl Client {
     ) -> Result<(), InterfaceError> {
         let action = Action::ClientSendRequest {
             content: request,
-            dst,
-            priority,
+            dst: dst,
+            priority: priority,
             result_tx: self.interface_result_tx.clone(),
         };
 
@@ -503,7 +539,7 @@ impl Client {
     }
 }
 
-#[cfg(feature = "use-mock-crust")]
+#[cfg(feature = "mock")]
 impl Client {
     /// Create a new `Client` for testing with mock crust.
     pub fn new(
@@ -526,8 +562,8 @@ impl Client {
         Ok(Client {
             interface_result_tx: tx,
             interface_result_rx: rx,
-            machine,
-            event_buffer,
+            machine: machine,
+            event_buffer: event_buffer,
         })
     }
 
@@ -548,8 +584,8 @@ impl Client {
 
         let action = Action::ClientSendRequest {
             content: request,
-            dst,
-            priority,
+            dst: dst,
+            priority: priority,
             result_tx: self.interface_result_tx.clone(),
         };
 
@@ -562,13 +598,13 @@ impl Client {
         self.interface_result_rx.recv()?
     }
 
-    /// Returns the number of received and sent user message parts.
-    pub fn get_user_msg_parts_count(&self) -> u64 {
-        self.machine.current().get_user_msg_parts_count()
+    /// Checks whether there is un-acked messages.
+    pub fn has_unacked_msg(&self) -> bool {
+        self.machine.current().has_unacked_msg()
     }
 }
 
-#[cfg(feature = "use-mock-crust")]
+#[cfg(feature = "mock")]
 impl EventStepper for Client {
     type Item = Event;
 
@@ -585,7 +621,7 @@ impl EventStepper for Client {
     }
 }
 
-#[cfg(not(feature = "use-mock-crust"))]
+#[cfg(not(feature = "mock"))]
 impl Drop for Client {
     fn drop(&mut self) {
         if let Err(err) = self.action_sender.send(Action::Terminate) {
@@ -594,7 +630,7 @@ impl Drop for Client {
     }
 }
 
-#[cfg(feature = "use-mock-crust")]
+#[cfg(feature = "mock")]
 impl Drop for Client {
     fn drop(&mut self) {
         let _ = self.poll();

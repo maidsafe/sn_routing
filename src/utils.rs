@@ -8,11 +8,11 @@
 
 use itertools::Itertools;
 use routing_table::Xorable;
+use safe_crypto;
 use std::collections::BTreeSet;
-use std::fmt::{self, Display, Write};
+use std::fmt::{self, Display};
 use std::iter;
 use std::time::Duration;
-use tiny_keccak::sha3_256;
 use xor_name::XorName;
 use Prefix;
 
@@ -43,30 +43,6 @@ impl Display for DisplayDurObj {
     }
 }
 
-/// Format a vector of bytes as a hexadecimal number, ellipsising all but the first and last three.
-///
-/// For three bytes with values 1, 2, 3, the output will be "010203".  For more than six bytes, e.g.
-/// for fifteen bytes with values 1, 2, ..., 15, the output will be "010203..0d0e0f".
-pub fn format_binary_array<V: AsRef<[u8]>>(input: V) -> String {
-    let input_ref = input.as_ref();
-    if input_ref.len() <= 6 {
-        let mut ret = String::new();
-        for byte in input_ref.iter() {
-            unwrap!(write!(ret, "{:02x}", byte));
-        }
-        return ret;
-    }
-    format!(
-        "{:02x}{:02x}{:02x}..{:02x}{:02x}{:02x}",
-        input_ref[0],
-        input_ref[1],
-        input_ref[2],
-        input_ref[input_ref.len() - 3],
-        input_ref[input_ref.len() - 2],
-        input_ref[input_ref.len() - 1]
-    )
-}
-
 /// Compute the target destination for a joining node with the given name.
 ///
 /// This is used by each member of a joining node's section to choose a location for the node to
@@ -89,7 +65,7 @@ pub fn calculate_relocation_dst(mut close_nodes: Vec<XorName>, current_name: &Xo
         .flat_map(|close_node| close_node.0.into_iter())
         .cloned()
         .collect();
-    XorName(sha3_256(&combined))
+    XorName(safe_crypto::hash(&combined))
 }
 
 /// Calculate the interval for a node joining our section to generate a key for.
@@ -114,13 +90,27 @@ pub fn calculate_relocation_interval(
     (new_end - third_of_distance, new_end)
 }
 
+#[cfg(any(test, feature = "mock"))]
+pub fn rand_index(exclusive_max: usize) -> usize {
+    use maidsafe_utilities::SeededRng;
+    use rand::Rng;
+
+    let mut rng = SeededRng::thread_rng();
+    rng.gen::<usize>() % exclusive_max
+}
+
+#[cfg(all(not(test), not(feature = "mock")))]
+pub fn rand_index(exclusive_max: usize) -> usize {
+    ::rand::random::<usize>() % exclusive_max
+}
+
 #[cfg(test)]
 mod tests {
     use super::DisplayDuration;
     use rand;
     use routing_table::Xorable;
+    use safe_crypto;
     use std::time::Duration;
-    use tiny_keccak::sha3_256;
     use xor_name::XorName;
 
     #[test]
@@ -141,7 +131,6 @@ mod tests {
 
     #[test]
     fn calculate_relocation_dst() {
-        let min_section_size = 8;
         let original_name: XorName = rand::random();
 
         // one entry
@@ -162,17 +151,16 @@ mod tests {
             }
         }
 
-        let expected_relocated_name_one_node = XorName(sha3_256(&combined_one_node));
+        let expected_relocated_name_one_node = XorName(safe_crypto::hash(&combined_one_node));
 
         assert_eq!(
             actual_relocated_name_one_entry,
             expected_relocated_name_one_node
         );
 
-        // TODO: we're not using fixed sizes any more: this code should possibly change!
         // populated closed nodes
         let mut close_nodes: Vec<XorName> = Vec::new();
-        for _ in 0..min_section_size {
+        for _ in 0..5 {
             close_nodes.push(rand::random());
         }
         let actual_relocated_name =
@@ -193,7 +181,7 @@ mod tests {
             combined.push(*i);
         }
 
-        let expected_relocated_name = XorName(sha3_256(&combined));
+        let expected_relocated_name = XorName(safe_crypto::hash(&combined));
         assert_eq!(expected_relocated_name, actual_relocated_name);
 
         let mut invalid_combined: Vec<u8> = Vec::new();
@@ -206,7 +194,7 @@ mod tests {
         for i in &original_name.0 {
             invalid_combined.push(*i);
         }
-        let invalid_relocated_name = XorName(sha3_256(&invalid_combined));
+        let invalid_relocated_name = XorName(safe_crypto::hash(&invalid_combined));
         assert_ne!(invalid_relocated_name, actual_relocated_name);
     }
 }

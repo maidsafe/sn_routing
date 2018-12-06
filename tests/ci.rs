@@ -54,8 +54,9 @@
     missing_copy_implementations,
     missing_debug_implementations
 )]
-#![cfg(not(feature = "use-mock-crust"))]
-#![cfg(not(feature = "use-mock-crypto"))]
+#![cfg(not(feature = "mock"))]
+// FIXME: Re-enable `redundant_field_names`.
+#![cfg_attr(feature = "cargo-clippy", allow(redundant_field_names))]
 
 extern crate itertools;
 #[cfg(target_os = "macos")]
@@ -63,9 +64,9 @@ extern crate libc;
 extern crate maidsafe_utilities;
 extern crate rand;
 extern crate routing;
-extern crate rust_sodium;
 #[macro_use]
 extern crate unwrap;
+extern crate safe_crypto;
 
 use itertools::Itertools;
 use maidsafe_utilities::thread::{self, Joiner};
@@ -75,7 +76,7 @@ use routing::{
     Authority, Client, ClientError, Event, EventStream, FullId, MessageId, MutableData, Node,
     Request, Response, Value, XorName, Xorable, MIN_SECTION_SIZE,
 };
-use rust_sodium::crypto;
+use safe_crypto::{gen_encrypt_keypair, gen_sign_keypair};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 #[cfg(target_os = "macos")]
 use std::io;
@@ -154,8 +155,8 @@ impl TestClient {
         let thread_name = format!("TestClient {} event sender", index);
         let (sender, joiner) = spawn_select_thread(index, main_sender, thread_name);
 
-        let sign_keys = crypto::sign::gen_keypair();
-        let encrypt_keys = crypto::box_::gen_keypair();
+        let sign_keys = gen_sign_keypair();
+        let encrypt_keys = gen_encrypt_keypair();
         let full_id = FullId::with_keys(encrypt_keys, sign_keys);
 
         TestClient {

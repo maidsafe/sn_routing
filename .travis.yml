@@ -2,47 +2,31 @@ env:
   global:
     - RUST_BACKTRACE=1
     - PATH=$PATH:$HOME/.cargo/bin
-    - TEST_FEATURES="use-mock-crust use-mock-crypto"
-    - RUST_STABLE=1.28.0
-    - RUST_NIGHTLY=nightly-2018-07-07
-    - RUST_RUSTFMT=0.99.2
-    - RUST_CLIPPY=0.0.212
 os:
   - linux
   - osx
+branches:
+  except:
+  - fleming
 language: rust
 rust:
-  - 1.28.0
-  - nightly-2018-07-07
+  - 1.29.2
 sudo: false
 cache:
   cargo: true
 before_script:
   - curl -sSL https://github.com/maidsafe/QA/raw/master/travis/cargo_install.sh > cargo_install.sh
   - bash cargo_install.sh cargo-prune;
-  - if [ "$TRAVIS_RUST_VERSION" = "$RUST_NIGHTLY" ] && [ "$TRAVIS_OS_NAME" = linux ]; then
-      bash cargo_install.sh rustfmt-nightly "$RUST_RUSTFMT";
-      bash cargo_install.sh clippy "$RUST_CLIPPY";
-    fi
+  - rustup component add rustfmt-preview clippy-preview
 script:
   - export RUSTFLAGS="-C opt-level=2 -C codegen-units=8"
-  - if [ "${TRAVIS_RUST_VERSION}" = "$RUST_STABLE" ]; then
-      (
-        set -x;
-        cargo check --verbose --lib --tests &&
-        cargo check --verbose --example ci_test &&
-        cargo check --verbose --example key_value_store &&
-        cargo test --release --verbose --features "$TEST_FEATURES"
-      );
-    elif [ "${TRAVIS_OS_NAME}" = linux ]; then
-      (
-        set -x;
-        cargo fmt -- --check &&
-        cargo clippy &&
-        cargo clippy --features="$TEST_FEATURES" &&
-        cargo clippy --profile=test &&
-        cargo clippy --profile=test --features="$TEST_FEATURES"
-      );
-    fi
+  - set -x;
+    cargo fmt -- --check &&
+    cargo check --verbose --lib --tests &&
+    cargo check --verbose --example ci_test &&
+    cargo check --verbose --example key_value_store &&
+    cargo test --verbose --release --features=mock &&
+    cargo clippy --verbose --all-targets &&
+    cargo clippy --verbose --all-targets --features=mock
 before_cache:
   - cargo prune

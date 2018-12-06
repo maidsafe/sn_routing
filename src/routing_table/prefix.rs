@@ -13,6 +13,8 @@ use std::fmt::{Binary, Debug, Formatter};
 use std::hash::{Hash, Hasher};
 #[cfg(test)]
 use std::str::FromStr;
+#[cfg(test)]
+use XorName;
 
 /// A prefix with section version.
 #[derive(
@@ -64,7 +66,7 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
     pub fn with_version(self, version: u64) -> VersionedPrefix<T> {
         VersionedPrefix {
             prefix: self,
-            version,
+            version: version,
         }
     }
 
@@ -91,6 +93,11 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
     /// Returns the number of bits in the prefix.
     pub fn bit_count(&self) -> usize {
         self.bit_count as usize
+    }
+
+    /// Returns `true` if this is the empty prefix, with no bits.
+    pub fn is_empty(&self) -> bool {
+        self.bit_count == 0
     }
 
     /// Returns `true` if `self` is a prefix of `other` or vice versa.
@@ -281,43 +288,82 @@ impl FromStr for Prefix<u8> {
 }
 
 #[cfg(test)]
+impl FromStr for Prefix<XorName> {
+    type Err = String;
+    fn from_str(bits: &str) -> Result<Prefix<XorName>, String> {
+        let mut name = [0; 32];
+        for (i, bit) in bits.chars().enumerate() {
+            if bit == '1' {
+                let byte = i / 8;
+                name[byte] |= 1 << (7 - i);
+            } else if bit != '0' {
+                return Err(format!(
+                    "'{}' not allowed - the string must represent a binary number.",
+                    bit
+                ));
+            }
+        }
+        Ok(Prefix::new(bits.len(), XorName(name)))
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn prefix() {
         assert_eq!(
-            unwrap!(Prefix::from_str("101")).pushed(true),
-            unwrap!(Prefix::from_str("1011"))
+            unwrap!(Prefix::<u8>::from_str("101")).pushed(true),
+            unwrap!(Prefix::<u8>::from_str("1011"))
         );
         assert_eq!(
-            unwrap!(Prefix::from_str("101")).pushed(false),
-            unwrap!(Prefix::from_str("1010"))
+            unwrap!(Prefix::<u8>::from_str("101")).pushed(false),
+            unwrap!(Prefix::<u8>::from_str("1010"))
         );
         assert_eq!(
-            unwrap!(Prefix::from_str("1011")).popped(),
-            unwrap!(Prefix::from_str("101"))
-        );
-        assert!(unwrap!(Prefix::from_str("101")).is_compatible(&unwrap!(Prefix::from_str("1010"))));
-        assert!(unwrap!(Prefix::from_str("1010")).is_compatible(&unwrap!(Prefix::from_str("101"))));
-        assert!(
-            !unwrap!(Prefix::from_str("1010")).is_compatible(&unwrap!(Prefix::from_str("1011")))
-        );
-        assert!(unwrap!(Prefix::from_str("101")).is_neighbour(&unwrap!(Prefix::from_str("1111"))));
-        assert!(
-            !unwrap!(Prefix::from_str("1010")).is_neighbour(&unwrap!(Prefix::from_str("1111")))
+            unwrap!(Prefix::<u8>::from_str("1011")).popped(),
+            unwrap!(Prefix::<u8>::from_str("101"))
         );
         assert!(
-            unwrap!(Prefix::from_str("1010")).is_neighbour(&unwrap!(Prefix::from_str("10111")))
+            unwrap!(Prefix::<u8>::from_str("101"))
+                .is_compatible(&unwrap!(Prefix::<u8>::from_str("1010")))
         );
         assert!(
-            !unwrap!(Prefix::from_str("101")).is_neighbour(&unwrap!(Prefix::from_str("10111")))
+            unwrap!(Prefix::<u8>::from_str("1010"))
+                .is_compatible(&unwrap!(Prefix::<u8>::from_str("101")))
         );
-        assert!(unwrap!(Prefix::from_str("101")).matches(&0b1010_1100));
-        assert!(!unwrap!(Prefix::from_str("1011")).matches(&0b1010_1100));
+        assert!(
+            !unwrap!(Prefix::<u8>::from_str("1010"))
+                .is_compatible(&unwrap!(Prefix::<u8>::from_str("1011")))
+        );
+        assert!(
+            unwrap!(Prefix::<u8>::from_str("101"))
+                .is_neighbour(&unwrap!(Prefix::<u8>::from_str("1111")))
+        );
+        assert!(
+            !unwrap!(Prefix::<u8>::from_str("1010"))
+                .is_neighbour(&unwrap!(Prefix::<u8>::from_str("1111")))
+        );
+        assert!(
+            unwrap!(Prefix::<u8>::from_str("1010"))
+                .is_neighbour(&unwrap!(Prefix::<u8>::from_str("10111")))
+        );
+        assert!(
+            !unwrap!(Prefix::<u8>::from_str("101"))
+                .is_neighbour(&unwrap!(Prefix::<u8>::from_str("10111")))
+        );
+        assert!(unwrap!(Prefix::<u8>::from_str("101")).matches(&0b1010_1100));
+        assert!(!unwrap!(Prefix::<u8>::from_str("1011")).matches(&0b1010_1100));
 
-        assert_eq!(unwrap!(Prefix::from_str("0101")).lower_bound(), 0b0101_0000);
-        assert_eq!(unwrap!(Prefix::from_str("0101")).upper_bound(), 0b0101_1111);
+        assert_eq!(
+            unwrap!(Prefix::<u8>::from_str("0101")).lower_bound(),
+            0b0101_0000
+        );
+        assert_eq!(
+            unwrap!(Prefix::<u8>::from_str("0101")).upper_bound(),
+            0b0101_1111
+        );
 
         // Check we handle passing an excessive `bit_count` to `new()`.
         assert_eq!(Prefix::<u64>::new(64, 0).bit_count(), 64);

@@ -138,7 +138,7 @@ mod tests {
         }
 
         let err_get = ClientError::from("Get");
-        let err_mutation = unwrap_err!(mutate());
+        let err_mutation = mutate().unwrap_err();
         match (err_get, err_mutation) {
             (ClientError::NetworkOther(val0), ClientError::NetworkOther(val1)) => {
                 assert_eq!(&val0, "Get");

@@ -6,9 +6,9 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-// This is used two ways: inline tests, and integration tests (with use-mock-crust).
+// This is used two ways: inline tests, and integration tests (with mock).
 // There's no point configuring each item which is only used in one of these.
-#![cfg(any(test, feature = "use-mock-crust"))]
+#![cfg(any(test, feature = "mock"))]
 #![allow(dead_code, missing_docs)]
 
 use super::authority::Authority;
@@ -37,7 +37,7 @@ impl Network {
     /// generator.
     fn new(min_section_size: usize, optional_seed: Option<[u32; 4]>) -> Network {
         Network {
-            min_section_size,
+            min_section_size: min_section_size,
             rng: optional_seed.map_or_else(SeededRng::new, SeededRng::from_seed),
             nodes: BTreeMap::new(),
         }
@@ -121,7 +121,6 @@ impl Network {
         let name = *unwrap!(self.rng.choose(&keys));
         let _ = self.nodes.remove(&name);
         let mut merge_own_info: BTreeMap<Prefix<u64>, Sections<u64>> = BTreeMap::new();
-        // TODO: needs to verify how to broadcasting such info
         for node in self.nodes.values_mut() {
             if node.iter().any(|&name_in_table| name_in_table == name) {
                 let removed_node_is_in_our_section = node.is_in_our_section(&name);
@@ -392,6 +391,7 @@ where
 }
 
 #[test]
+#[ignore]
 fn sections_have_identical_routing_tables() {
     let mut network = Network::new(8, None);
     for _ in 0..100 {
@@ -401,6 +401,7 @@ fn sections_have_identical_routing_tables() {
 }
 
 #[test]
+#[ignore]
 fn merging_sections() {
     let mut network = Network::new(8, None);
     for _ in 0..100 {

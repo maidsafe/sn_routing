@@ -11,18 +11,16 @@ use super::{Client, JoiningNode, Node};
 use action::Action;
 use cache::Cache;
 use crust::CrustUser;
-use error::RoutingError;
+use error::Result;
 use event::Event;
 use id::{FullId, PublicId};
 use maidsafe_utilities::serialisation;
 use messages::{DirectMessage, Message};
 use outbox::EventBox;
 use routing_table::{Authority, Prefix};
-use rust_sodium::crypto::sign;
 use state_machine::{State, Transition};
-use stats::Stats;
 use std::collections::{BTreeSet, HashSet};
-use std::fmt::{self, Debug, Formatter};
+use std::fmt::{self, Display, Formatter};
 use std::net::SocketAddr;
 use std::time::Duration;
 use timer::Timer;
@@ -57,7 +55,6 @@ pub struct Bootstrapping {
     crust_service: Service,
     full_id: FullId,
     min_section_size: usize,
-    stats: Stats,
     timer: Timer,
 }
 
@@ -83,16 +80,15 @@ impl Bootstrapping {
             }
         }
         Some(Bootstrapping {
-            action_sender,
+            action_sender: action_sender,
             bootstrap_blacklist: HashSet::new(),
             bootstrap_connection: None,
-            cache,
-            target_state,
-            crust_service,
-            full_id,
-            min_section_size,
-            stats: Stats::new(),
-            timer,
+            cache: cache,
+            target_state: target_state,
+            crust_service: crust_service,
+            full_id: full_id,
+            min_section_size: min_section_size,
+            timer: timer,
         })
     }
 
@@ -100,7 +96,7 @@ impl Bootstrapping {
         match action {
             Action::ClientSendRequest { ref result_tx, .. }
             | Action::NodeSendMessage { ref result_tx, .. } => {
-                warn!("{:?} Cannot handle {:?} - not bootstrapped.", self, action);
+                warn!("{} Cannot handle {:?} - not bootstrapped.", self, action);
                 // TODO: return Err here eventually. Returning Ok for now to
                 // preserve the pre-refactor behaviour.
                 let _ = result_tx.send(Ok(()));
@@ -110,7 +106,7 @@ impl Bootstrapping {
             }
             Action::Timeout(token) => self.handle_timeout(token),
             Action::ResourceProofResult(..) => {
-                warn!("{:?} Cannot handle {:?} - not bootstrapped.", self, action);
+                warn!("{} Cannot handle {:?} - not bootstrapped.", self, action);
             }
             Action::Terminate => {
                 return Transition::Terminate;
@@ -130,7 +126,7 @@ impl Bootstrapping {
             }
             CrustEvent::BootstrapFailed => self.handle_bootstrap_failed(outbox),
             CrustEvent::LostPeer(pub_id) => {
-                info!("{:?} Lost connection to proxy {:?}.", self, pub_id);
+                info!("{} Lost connection to proxy {:?}.", self, pub_id);
                 self.rebootstrap();
                 Transition::Stay
             }
@@ -138,18 +134,18 @@ impl Bootstrapping {
                 match self.handle_new_message(pub_id, bytes) {
                     Ok(transition) => transition,
                     Err(error) => {
-                        debug!("{:?} {:?}", self, error);
+                        debug!("{} {:?}", self, error);
                         Transition::Stay
                     }
                 }
             }
             CrustEvent::ListenerStarted(port) => {
                 if self.client_restriction() {
-                    error!("{:?} A client must not run a crust listener.", self);
+                    error!("{} A client must not run a crust listener.", self);
                     outbox.send_event(Event::Terminate);
                     return Transition::Terminate;
                 }
-                trace!("{:?} Listener started on port {}.", self, port);
+                trace!("{} Listener started on port {}.", self, port);
                 let _ = self
                     .crust_service
                     .start_bootstrap(HashSet::new(), CrustUser::Node);
@@ -157,15 +153,15 @@ impl Bootstrapping {
             }
             CrustEvent::ListenerFailed => {
                 if self.client_restriction() {
-                    error!("{:?} A client must not run a crust listener.", self);
+                    error!("{} A client must not run a crust listener.", self);
                 } else {
-                    error!("{:?} Failed to start listening.", self);
+                    error!("{} Failed to start listening.", self);
                 }
                 outbox.send_event(Event::Terminate);
                 Transition::Terminate
             }
             _ => {
-                debug!("{:?} Unhandled crust event {:?}", self, crust_event);
+                debug!("{} Unhandled crust event {:?}", self, crust_event);
                 Transition::Stay
             }
         }
@@ -178,7 +174,6 @@ impl Bootstrapping {
                 self.full_id,
                 self.min_section_size,
                 proxy_public_id,
-                self.stats,
                 self.timer,
                 msg_expiry_dur,
                 outbox,
@@ -191,7 +186,6 @@ impl Bootstrapping {
                     self.full_id,
                     self.min_section_size,
                     proxy_public_id,
-                    self.stats,
                     self.timer,
                 ) {
                     State::JoiningNode(joining_node)
@@ -213,7 +207,6 @@ impl Bootstrapping {
                 self.full_id,
                 self.min_section_size,
                 proxy_public_id,
-                self.stats,
                 self.timer,
             )),
         }
@@ -230,7 +223,7 @@ impl Bootstrapping {
         if let Some((bootstrap_id, bootstrap_token)) = self.bootstrap_connection {
             if bootstrap_token == token {
                 debug!(
-                    "{:?} Timeout when trying to bootstrap against {:?}.",
+                    "{} Timeout when trying to bootstrap against {:?}.",
                     self, bootstrap_id
                 );
 
@@ -246,14 +239,14 @@ impl Bootstrapping {
     ) -> Transition {
         match self.bootstrap_connection {
             None => {
-                debug!("{:?} Received BootstrapConnect from {}.", self, pub_id);
+                debug!("{} Received BootstrapConnect from {}.", self, pub_id);
                 // Established connection. Pending Validity checks
                 self.send_bootstrap_request(pub_id);
                 let _ = self.bootstrap_blacklist.insert(socket_addr);
             }
             Some((bootstrap_id, _)) if bootstrap_id == pub_id => {
                 warn!(
-                    "{:?} Got more than one BootstrapConnect for peer {}.",
+                    "{} Got more than one BootstrapConnect for peer {}.",
                     self, pub_id
                 );
             }
@@ -266,20 +259,16 @@ impl Bootstrapping {
     }
 
     fn handle_bootstrap_failed(&mut self, outbox: &mut EventBox) -> Transition {
-        info!("{:?} Failed to bootstrap. Terminating.", self);
+        info!("{} Failed to bootstrap. Terminating.", self);
         outbox.send_event(Event::Terminate);
         Transition::Terminate
     }
 
-    fn handle_new_message(
-        &mut self,
-        pub_id: PublicId,
-        bytes: Vec<u8>,
-    ) -> Result<Transition, RoutingError> {
+    fn handle_new_message(&mut self, pub_id: PublicId, bytes: Vec<u8>) -> Result<Transition> {
         match serialisation::deserialise(&bytes) {
             Ok(Message::Direct(direct_msg)) => Ok(self.handle_direct_message(direct_msg, pub_id)),
             Ok(message) => {
-                debug!("{:?} Unhandled new message: {:?}", self, message);
+                debug!("{} Unhandled new message: {:?}", self, message);
                 Ok(Transition::Stay)
             }
             Err(error) => Err(From::from(error)),
@@ -297,22 +286,19 @@ impl Bootstrapping {
                 proxy_public_id: pub_id,
             },
             BootstrapResponse(Err(error)) => {
-                info!("{:?} Connection failed: {}", self, error);
+                info!("{} Connection failed: {}", self, error);
                 self.rebootstrap();
                 Transition::Stay
             }
             _ => {
-                debug!(
-                    "{:?} - Unhandled direct message: {:?}",
-                    self, direct_message
-                );
+                debug!("{} - Unhandled direct message: {:?}", self, direct_message);
                 Transition::Stay
             }
         }
     }
 
     fn send_bootstrap_request(&mut self, pub_id: PublicId) {
-        debug!("{:?} Sending BootstrapRequest to {}.", self, pub_id);
+        debug!("{} Sending BootstrapRequest to {}.", self, pub_id);
 
         let token = self
             .timer
@@ -326,17 +312,18 @@ impl Bootstrapping {
                 return;
             }
         };
-        let signature =
-            sign::sign_detached(&serialised_public_id, self.full_id.signing_private_key());
+        let signature = self
+            .full_id
+            .signing_private_key()
+            .sign_detached(&serialised_public_id);
         let direct_message = DirectMessage::BootstrapRequest(signature);
 
-        self.stats().count_direct_message(&direct_message);
         self.send_message(&pub_id, Message::Direct(direct_message));
     }
 
     fn disconnect_peer(&mut self, pub_id: &PublicId) {
         debug!(
-            "{:?} Disconnecting {}. Calling crust::Service::disconnect.",
+            "{} Disconnecting {}. Calling crust::Service::disconnect.",
             self, pub_id
         );
         let _ = self.crust_service.disconnect(pub_id);
@@ -345,7 +332,7 @@ impl Bootstrapping {
     fn rebootstrap(&mut self) {
         if let Some((bootstrap_id, _)) = self.bootstrap_connection.take() {
             debug!(
-                "{:?} Dropping bootstrap node {:?} and retrying.",
+                "{} Dropping bootstrap node {:?} and retrying.",
                 self, bootstrap_id
             );
             let _ = self.crust_service.disconnect(&bootstrap_id);
@@ -370,10 +357,6 @@ impl Base for Bootstrapping {
         &self.full_id
     }
 
-    fn stats(&mut self) -> &mut Stats {
-        &mut self.stats
-    }
-
     fn in_authority(&self, _: &Authority<XorName>) -> bool {
         false
     }
@@ -383,13 +366,13 @@ impl Base for Bootstrapping {
     }
 }
 
-impl Debug for Bootstrapping {
+impl Display for Bootstrapping {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter, "Bootstrapping({})", self.name())
     }
 }
 
-#[cfg(all(test, feature = "use-mock-crust"))]
+#[cfg(all(test, feature = "mock"))]
 mod tests {
     use super::*;
     use cache::NullCache;

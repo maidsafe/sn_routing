@@ -20,22 +20,22 @@ use messages::{
     RELOCATE_PRIORITY,
 };
 use outbox::{EventBox, EventBuf};
-#[cfg(feature = "use-mock-crust")]
-use routing_table::Prefix;
 use routing_table::{Authority, RoutingTable};
-#[cfg(not(feature = "use-mock-crust"))]
-use rust_sodium;
-use rust_sodium::crypto::sign;
+#[cfg(not(feature = "mock"))]
+use safe_crypto;
+use safe_crypto::PublicSignKey;
 use state_machine::{State, StateMachine};
 use states::{self, Bootstrapping, BootstrappingTargetState};
 use std::collections::{BTreeMap, BTreeSet};
-#[cfg(feature = "use-mock-crust")]
-use std::fmt::{self, Debug, Formatter};
-#[cfg(feature = "use-mock-crust")]
+#[cfg(feature = "mock")]
+use std::fmt::{self, Display, Formatter};
+#[cfg(feature = "mock")]
 use std::net::IpAddr;
 use std::sync::mpsc::{channel, Receiver, RecvError, Sender, TryRecvError};
 use types::{MessageId, RoutingActionSender};
 use xor_name::XorName;
+#[cfg(feature = "mock")]
+use Chain;
 use MIN_SECTION_SIZE;
 
 // Helper macro to implement request sending methods.
@@ -115,8 +115,8 @@ impl NodeBuilder {
     pub fn create(self) -> Result<Node, RoutingError> {
         // If we're not in a test environment where we might want to manually seed the crypto RNG
         // then seed randomly.
-        #[cfg(not(feature = "use-mock-crust"))]
-        let _ = rust_sodium::init();
+        #[cfg(not(feature = "mock"))]
+        safe_crypto::init()?;
 
         let mut ev_buffer = EventBuf::new();
 
@@ -127,7 +127,7 @@ impl NodeBuilder {
         Ok(Node {
             interface_result_tx: tx,
             interface_result_rx: rx,
-            machine,
+            machine: machine,
             event_buffer: ev_buffer,
         })
     }
@@ -241,7 +241,7 @@ impl Node {
         PutMData {
             data: MutableData,
             msg_id: MessageId,
-            requester: sign::PublicKey,
+            requester: PublicSignKey,
         },
         DEFAULT_PRIORITY
     );
@@ -253,7 +253,7 @@ impl Node {
                       tag: u64,
                       actions: BTreeMap<Vec<u8>, EntryAction>,
                       msg_id: MessageId,
-                      requester: sign::PublicKey,
+                      requester: PublicSignKey,
                   },
                   DEFAULT_PRIORITY);
 
@@ -288,7 +288,7 @@ impl Node {
             permissions: PermissionSet,
             version: u64,
             msg_id: MessageId,
-            requester: sign::PublicKey,
+            requester: PublicSignKey,
         },
         DEFAULT_PRIORITY
     );
@@ -302,7 +302,7 @@ impl Node {
             user: User,
             version: u64,
             msg_id: MessageId,
-            requester: sign::PublicKey,
+            requester: PublicSignKey,
         },
         DEFAULT_PRIORITY
     );
@@ -312,7 +312,7 @@ impl Node {
                   ChangeMDataOwner {
                       name: XorName,
                       tag: u64,
-                      new_owners: BTreeSet<sign::PublicKey>,
+                      new_owners: BTreeSet<PublicSignKey>,
                       version: u64,
                       msg_id: MessageId,
                   }, DEFAULT_PRIORITY);
@@ -345,7 +345,10 @@ impl Node {
         res: Result<ImmutableData, ClientError>,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
-        let msg = UserMessage::Response(Response::GetIData { res, msg_id });
+        let msg = UserMessage::Response(Response::GetIData {
+            res: res,
+            msg_id: msg_id,
+        });
 
         let priority = relocate_priority(&dst);
         self.send_action(src, dst, msg, priority)
@@ -363,7 +366,10 @@ impl Node {
         res: Result<MutableData, ClientError>,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
-        let msg = UserMessage::Response(Response::GetMData { res, msg_id });
+        let msg = UserMessage::Response(Response::GetMData {
+            res: res,
+            msg_id: msg_id,
+        });
 
         let priority = relocate_priority(&dst);
         self.send_action(src, dst, msg, priority)
@@ -388,7 +394,10 @@ impl Node {
         res: Result<MutableData, ClientError>,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
-        let msg = UserMessage::Response(Response::GetMDataShell { res, msg_id });
+        let msg = UserMessage::Response(Response::GetMDataShell {
+            res: res,
+            msg_id: msg_id,
+        });
 
         let priority = relocate_priority(&dst);
         self.send_action(src, dst, msg, priority)
@@ -429,7 +438,10 @@ impl Node {
         res: Result<Value, ClientError>,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
-        let msg = UserMessage::Response(Response::GetMDataValue { res, msg_id });
+        let msg = UserMessage::Response(Response::GetMDataValue {
+            res: res,
+            msg_id: msg_id,
+        });
 
         let priority = relocate_priority(&dst);
         self.send_action(src, dst, msg, priority)
@@ -469,7 +481,7 @@ impl Node {
     impl_response!(
         send_list_auth_keys_and_version_response,
         ListAuthKeysAndVersion,
-        (BTreeSet<sign::PublicKey>, u64),
+        (BTreeSet<PublicSignKey>, u64),
         CLIENT_GET_PRIORITY
     );
 
@@ -511,6 +523,12 @@ impl Node {
         self.machine.routing_table().ok_or(RoutingError::Terminated)
     }
 
+    /// Returns the chain for this node.
+    #[cfg(feature = "mock")]
+    pub fn chain(&self) -> Result<&Chain, RoutingError> {
+        self.machine.chain().ok_or(RoutingError::Terminated)
+    }
+
     /// Returns the minimum section size this vault is using.
     pub fn min_section_size(&self) -> usize {
         self.machine.min_section_size()
@@ -527,10 +545,10 @@ impl Node {
         let _ = self.poll();
 
         let action = Action::NodeSendMessage {
-            src,
-            dst,
+            src: src,
+            dst: dst,
             content: user_msg,
-            priority,
+            priority: priority,
             result_tx: self.interface_result_tx.clone(),
         };
 
@@ -560,27 +578,11 @@ impl EventStepper for Node {
     }
 }
 
-#[cfg(feature = "use-mock-crust")]
+#[cfg(feature = "mock")]
 impl Node {
     /// Purge invalid routing entries.
     pub fn purge_invalid_rt_entry(&mut self) {
         self.machine.current_mut().purge_invalid_rt_entry()
-    }
-
-    /// Check whether this node acts as a tunnel node between `client_1` and `client_2`.
-    pub fn has_tunnel_clients(&self, client_1: PublicId, client_2: PublicId) -> bool {
-        self.machine
-            .current()
-            .has_tunnel_clients(client_1, client_2)
-    }
-
-    /// Returns a quorum of signatures for the neighbouring section's list or `None` if we don't
-    /// have one
-    pub fn section_list_signatures(
-        &self,
-        prefix: Prefix<XorName>,
-    ) -> Option<BTreeMap<PublicId, sign::Signature>> {
-        self.machine.current().section_list_signatures(prefix)
     }
 
     /// Returns the list of banned clients' IPs held by this node.
@@ -598,23 +600,15 @@ impl Node {
     }
 
     /// Sets a name to be used when the next node relocation request is received by this node.
-    pub fn set_next_relocation_dst(&mut self, dst: XorName) {
-        self.machine
-            .current_mut()
-            .set_next_relocation_dst(Some(dst))
+    pub fn set_next_relocation_dst(&mut self, dst: Option<XorName>) {
+        self.machine.current_mut().set_next_relocation_dst(dst)
     }
 
     /// Sets an interval to be used when a node is required to generate a new name.
-    pub fn set_next_relocation_interval(&mut self, interval: (XorName, XorName)) {
+    pub fn set_next_relocation_interval(&mut self, interval: Option<(XorName, XorName)>) {
         self.machine
             .current_mut()
             .set_next_relocation_interval(interval)
-    }
-
-    /// Clears the name to be used when the next node relocation request is received by this node so
-    /// the normal process is followed to calculate the relocated name.
-    pub fn clear_next_relocation_dst(&mut self) {
-        self.machine.current_mut().set_next_relocation_dst(None)
     }
 
     /// Normalisation of routing connection means converting the
@@ -628,19 +622,29 @@ impl Node {
             .has_unnormalised_routing_conn(excludes)
     }
 
-    /// Returns the number of received and sent user message parts.
-    pub fn get_user_msg_parts_count(&self) -> u64 {
-        self.machine.current().get_user_msg_parts_count()
-    }
-
     /// Get the rate limiter's bandwidth usage map.
     pub fn get_clients_usage(&self) -> BTreeMap<IpAddr, u64> {
         unwrap!(self.machine.current().get_clients_usage())
     }
+
+    /// Indicates if there are any pending observations in the parsec object
+    pub fn has_unconsensused_observations(&self) -> bool {
+        self.machine.current().has_unconsensused_observations()
+    }
+
+    /// Indicates if a given `PublicId` is in the peer manager as a routing peer
+    pub fn is_routing_peer(&self, pub_id: &PublicId) -> bool {
+        self.machine.current().is_routing_peer(pub_id)
+    }
+
+    /// Checks whether there is un-acked messages.
+    pub fn has_unacked_msg(&self) -> bool {
+        self.machine.current().has_unacked_msg()
+    }
 }
 
-#[cfg(feature = "use-mock-crust")]
-impl Debug for Node {
+#[cfg(feature = "mock")]
+impl Display for Node {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         self.machine.fmt(formatter)
     }

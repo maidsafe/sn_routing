@@ -11,9 +11,12 @@ use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::serialise;
 use message_filter::MessageFilter;
 use messages::RoutingMessage;
-use sha3;
+use safe_crypto;
+use serde::Serialize;
+use std::fmt::Debug;
 use std::time::Duration;
-use tiny_keccak::sha3_256;
+
+type Digest = [u8; 32];
 
 const INCOMING_EXPIRY_DURATION_SECS: u64 = 60 * 20;
 const OUTGOING_EXPIRY_DURATION_SECS: u64 = 60 * 10;
@@ -31,9 +34,9 @@ pub enum FilteringResult {
 
 // Structure to filter (throttle) incoming and outgoing `RoutingMessages`.
 pub struct RoutingMessageFilter {
-    incoming: MessageFilter<RoutingMessage>,
-    incoming_route: MessageFilter<(RoutingMessage, u8)>,
-    outgoing: LruCache<(sha3::Digest256, PublicId, u8), ()>,
+    incoming: MessageFilter<Digest>,
+    incoming_route: MessageFilter<(Digest, u8)>,
+    outgoing: LruCache<(Digest, PublicId, u8), ()>,
 }
 
 impl RoutingMessageFilter {
@@ -50,10 +53,13 @@ impl RoutingMessageFilter {
 
     // Filter incoming `RoutingMessage`. Return the number of times this specific message has been
     // seen, including this time.
-    // TODO - refactor to avoid cloning `msg` as `MessageFilter` only holds the hash of the tuple.
     pub fn filter_incoming(&mut self, msg: &RoutingMessage, route: u8) -> FilteringResult {
-        let known_msg = self.incoming.insert(msg) > 1;
-        let known_msg_rt = self.incoming_route.insert(&(msg.clone(), route)) > 1;
+        let hash = match hash(msg) {
+            Some(hash) => hash,
+            None => return FilteringResult::NewMessage,
+        };
+        let known_msg = self.incoming.insert(&hash) > 1;
+        let known_msg_rt = self.incoming_route.insert(&(hash, route)) > 1;
         match (known_msg, known_msg_rt) {
             (false, false) => FilteringResult::NewMessage,
             (true, false) => FilteringResult::KnownMessage,
@@ -66,13 +72,9 @@ impl RoutingMessageFilter {
     //
     // Return `false` if serialisation of the message fails - that can be handled elsewhere.
     pub fn filter_outgoing(&mut self, msg: &RoutingMessage, pub_id: &PublicId, route: u8) -> bool {
-        if let Ok(msg_bytes) = serialise(msg) {
-            let hash = sha3_256(&msg_bytes);
+        hash(msg).map_or(false, |hash| {
             self.outgoing.insert((hash, *pub_id, route), ()).is_some()
-        } else {
-            trace!("Tried to filter oversized routing message: {:?}", msg);
-            false
-        }
+        })
     }
 
     // Removes the given message from the outgoing filter if it exists.
@@ -82,9 +84,17 @@ impl RoutingMessageFilter {
         pub_id: &PublicId,
         route: u8,
     ) {
-        if let Ok(msg_bytes) = serialise(msg) {
-            let hash = sha3_256(&msg_bytes);
+        if let Some(hash) = hash(msg) {
             let _ = self.outgoing.remove(&(hash, *pub_id, route));
         }
+    }
+}
+
+fn hash<T: Serialize + Debug>(msg: &T) -> Option<Digest> {
+    if let Ok(msg_bytes) = serialise(msg) {
+        Some(safe_crypto::hash(&msg_bytes))
+    } else {
+        trace!("Tried to filter oversized routing message: {:?}", msg);
+        None
     }
 }

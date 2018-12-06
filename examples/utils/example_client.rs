@@ -10,7 +10,7 @@ use routing::{
     Authority, Client, ClientError, Event, FullId, ImmutableData, MessageId, MutableData, Response,
     Value, XorName,
 };
-use rust_sodium::crypto;
+use safe_crypto::{gen_encrypt_keypair, gen_sign_keypair, PublicSignKey};
 use std::collections::BTreeMap;
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
@@ -80,8 +80,8 @@ impl ExampleClient {
         // Generate new key pairs. The client's name will be computed from them. This is a
         // requirement for clients: If the name does not match the keys, it will be rejected by the
         // network.
-        let sign_keys = crypto::sign::gen_keypair();
-        let encrypt_keys = crypto::box_::gen_keypair();
+        let sign_keys = gen_sign_keypair();
+        let encrypt_keys = gen_encrypt_keypair();
         let full_id = FullId::with_keys(encrypt_keys.clone(), sign_keys.clone());
         let mut client;
 
@@ -112,9 +112,9 @@ impl ExampleClient {
         }
 
         ExampleClient {
-            client: client,
-            receiver: receiver,
-            full_id: full_id,
+            client,
+            receiver,
+            full_id,
         }
     }
 
@@ -219,7 +219,7 @@ impl ExampleClient {
     }
 
     /// Returns the signing public key of this client.
-    pub fn signing_public_key(&self) -> &crypto::sign::PublicKey {
+    pub fn signing_public_key(&self) -> &PublicSignKey {
         self.full_id.public_id().signing_public_key()
     }
 }

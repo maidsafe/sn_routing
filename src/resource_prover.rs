@@ -9,7 +9,7 @@
 use ack_manager::ACK_TIMEOUT_SECS;
 use action::Action;
 use event::Event;
-#[cfg(feature = "use-mock-crust")]
+#[cfg(feature = "mock")]
 use fake_clock::FakeClock as Instant;
 use id::PublicId;
 use itertools::Itertools;
@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-#[cfg(not(feature = "use-mock-crust"))]
+#[cfg(not(feature = "mock"))]
 use std::time::Instant;
 use timer::Timer;
 use types::RoutingActionSender;
@@ -62,15 +62,15 @@ impl ResourceProver {
     /// Create an instance.
     pub fn new(action_sender: RoutingActionSender, timer: Timer, challenger_count: usize) -> Self {
         ResourceProver {
-            action_sender,
+            action_sender: action_sender,
             get_approval_timer_token: None,
             approval_progress_timer_token: None,
             approval_expiry_time: Instant::now(),
             approval_timeout_secs: APPROVAL_TIMEOUT_SECS,
-            challenger_count,
+            challenger_count: challenger_count,
             response_parts: Default::default(),
             workers: Default::default(),
-            timer,
+            timer: timer,
         }
     }
 
@@ -78,7 +78,8 @@ impl ResourceProver {
     pub fn start(&mut self, resource_proof_disabled: bool) {
         // Reduced waiting time when resource proof is disabled.
         if resource_proof_disabled {
-            self.approval_timeout_secs = 30;
+            // TODO: Bring this number down with better gossip
+            self.approval_timeout_secs = 180;
         }
         let duration = Duration::from_secs(self.approval_timeout_secs);
         self.approval_expiry_time = Instant::now() + duration;
@@ -141,17 +142,17 @@ impl ResourceProver {
                 .enumerate()
                 .rev()
                 .map(|(part_index, part)| DirectMessage::ResourceProofResponse {
-                    part_index,
-                    part_count,
+                    part_index: part_index,
+                    part_count: part_count,
                     proof: part,
-                    leading_zero_bytes,
+                    leading_zero_bytes: leading_zero_bytes,
                 }).collect_vec();
             if messages.is_empty() {
                 messages.push(DirectMessage::ResourceProofResponse {
                     part_index: 0,
                     part_count: 1,
                     proof: vec![],
-                    leading_zero_bytes,
+                    leading_zero_bytes: leading_zero_bytes,
                 });
             }
 
@@ -175,7 +176,7 @@ impl ResourceProver {
             }
         });
         // If using mock_crust we want the joiner to drop and join immediately
-        if cfg!(feature = "use-mock-crust") {
+        if cfg!(feature = "mock") {
             let _ = joiner;
         } else {
             let old = self.workers.insert(pub_id, (atomic_cancel, joiner));

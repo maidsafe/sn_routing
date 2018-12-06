@@ -8,7 +8,7 @@
 
 use client_error::ClientError;
 use data::{ImmutableData, MutableData, PermissionSet, User, Value};
-use rust_sodium::crypto::sign;
+use safe_crypto::PublicSignKey;
 use std::collections::{BTreeMap, BTreeSet};
 use types::MessageId as MsgId;
 
@@ -156,7 +156,7 @@ pub enum Response {
     /// Returns a list of authorised keys from MaidManager and the account version.
     ListAuthKeysAndVersion {
         /// Result of getting a list of authorised keys and version
-        res: Result<(BTreeSet<sign::PublicKey>, u64), ClientError>,
+        res: Result<(BTreeSet<PublicSignKey>, u64), ClientError>,
         /// Unique message identifier
         msg_id: MsgId,
     },

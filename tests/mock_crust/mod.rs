@@ -13,13 +13,13 @@ mod client_restrictions;
 mod drop;
 mod merge;
 mod requests;
-mod tunnel;
 mod utils;
 
 pub use self::utils::{
-    add_connected_nodes_until_split, create_connected_clients, create_connected_nodes,
-    create_connected_nodes_until_split, gen_bytes, gen_immutable_data, gen_range, gen_range_except,
-    poll_all, poll_and_resend, remove_nodes_which_failed_to_connect, sort_nodes_by_distance_to,
+    add_connected_nodes_until_split, count_sections, create_connected_clients,
+    create_connected_nodes, create_connected_nodes_until_split, current_sections, gen_bytes,
+    gen_immutable_data, gen_range, gen_range_except, poll_all, poll_and_resend,
+    remove_nodes_which_failed_to_connect, sort_nodes_by_distance_to,
     verify_invariant_for_all_nodes, Nodes, TestClient, TestNode,
 };
 use fake_clock::FakeClock;
@@ -28,7 +28,7 @@ use routing::test_consts::JOINING_NODE_TIMEOUT_SECS;
 use routing::{BootstrapConfig, Event, EventStream, Prefix, XorName, XOR_NAME_LEN};
 use std::collections::BTreeSet;
 
-pub const MIN_SECTION_SIZE: usize = 8;
+pub const MIN_SECTION_SIZE: usize = 3;
 
 // -----  Miscellaneous tests below  -----
 
@@ -58,8 +58,16 @@ fn disconnect_on_rebootstrap() {
 }
 
 #[test]
+fn single_section() {
+    let sec_size = 10;
+    let network = Network::new(sec_size, None);
+    let mut nodes = create_connected_nodes(&network, sec_size);
+    verify_invariant_for_all_nodes(&mut nodes);
+}
+
+#[test]
 fn less_than_section_size_nodes() {
-    test_nodes(38)
+    test_nodes(80)
 }
 
 #[test]
@@ -90,8 +98,7 @@ fn node_joins_in_front() {
             .bootstrap_config(bootstrap_config)
             .create(),
     );
-
-    let _ = poll_all(&mut nodes, &mut []);
+    poll_and_resend(&mut nodes, &mut []);
 
     verify_invariant_for_all_nodes(&mut nodes);
 }
@@ -117,18 +124,25 @@ fn multiple_joining_nodes() {
         }
 
         poll_and_resend(&mut nodes, &mut []);
-        let _ = remove_nodes_which_failed_to_connect(&mut nodes, count);
+        let removed_count = remove_nodes_which_failed_to_connect(&mut nodes, count);
+        let nodes_added: Vec<_> = nodes
+            .iter()
+            .rev()
+            .take(count - removed_count)
+            .map(|node| node.name())
+            .collect();
+        info!("Added Nodes: {:?}", nodes_added);
         verify_invariant_for_all_nodes(&mut nodes);
     }
 }
 
-// TODO - The original intent of this test was to ensure two nodes could join two separate sections
-//        simultaneously. That can fail if one section has four members which add the new node from
-//        the other section to their RTs and four members which don't, while still waiting to
-//        approve their own candidate. In that case, their candidate doesn't receive its
-//        `NodeApproval` and the invariant check fails. This is true regardless of whether we send
-//        a snapshot of the RT taken when sending `CandidateApproval` in the `NodeApproval`, or send
-//        a current version of the RT: only the window for failure shifts in these scenarios.
+#[test]
+fn multi_split() {
+    let network = Network::new(MIN_SECTION_SIZE, None);
+    let mut nodes = create_connected_nodes_until_split(&network, vec![2, 2, 2, 2], false);
+    verify_invariant_for_all_nodes(&mut nodes);
+}
+
 #[test]
 fn simultaneous_joining_nodes() {
     // Create a network with two sections:
@@ -146,9 +160,9 @@ fn simultaneous_joining_nodes() {
 
     for node in &mut *nodes {
         if prefix0.matches(&node.name()) {
-            node.inner.set_next_relocation_dst(name0);
+            node.inner.set_next_relocation_dst(Some(name0));
         } else {
-            node.inner.set_next_relocation_dst(name1);
+            node.inner.set_next_relocation_dst(Some(name1));
         }
     }
 
@@ -168,7 +182,6 @@ fn simultaneous_joining_nodes() {
     }
 
     poll_and_resend(&mut nodes, &mut []);
-    assert!(remove_nodes_which_failed_to_connect(&mut nodes, 2) < 2);
     verify_invariant_for_all_nodes(&mut nodes);
 }
 

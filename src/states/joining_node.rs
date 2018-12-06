@@ -11,11 +11,12 @@ use super::{Bootstrapping, BootstrappingTargetState};
 use ack_manager::{Ack, AckManager};
 use action::Action;
 use cache::Cache;
-use error::{InterfaceError, RoutingError};
+use error::{InterfaceError, Result, RoutingError};
 use event::Event;
-#[cfg(feature = "use-mock-crust")]
+#[cfg(feature = "mock")]
 use fake_clock::FakeClock as Instant;
 use id::{FullId, PublicId};
+use log::LogLevel;
 use maidsafe_utilities::serialisation;
 use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage};
 use outbox::EventBox;
@@ -23,13 +24,12 @@ use resource_prover::RESOURCE_PROOF_DURATION_SECS;
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use routing_table::{Authority, Prefix};
 use state_machine::{State, Transition};
-use stats::Stats;
 use std::collections::BTreeSet;
 use std::fmt;
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Display, Formatter};
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
-#[cfg(not(feature = "use-mock-crust"))]
+#[cfg(not(feature = "mock"))]
 use std::time::Instant;
 use timer::Timer;
 use types::{MessageId, RoutingActionSender};
@@ -51,7 +51,6 @@ pub struct JoiningNode {
     /// The queue of routing messages addressed to us. These do not themselves need forwarding,
     /// although they may wrap a message which needs forwarding.
     routing_msg_filter: RoutingMessageFilter,
-    stats: Stats,
     relocation_timer_token: u64,
     timer: Timer,
 }
@@ -65,29 +64,27 @@ impl JoiningNode {
         full_id: FullId,
         min_section_size: usize,
         proxy_pub_id: PublicId,
-        stats: Stats,
         timer: Timer,
     ) -> Option<Self> {
         let duration = Duration::from_secs(RELOCATE_TIMEOUT_SECS);
         let relocation_timer_token = timer.schedule(duration);
         let mut joining_node = JoiningNode {
-            action_sender,
+            action_sender: action_sender,
             ack_mgr: AckManager::new(),
-            crust_service,
-            full_id,
-            cache,
-            min_section_size,
-            proxy_pub_id,
+            crust_service: crust_service,
+            full_id: full_id,
+            cache: cache,
+            min_section_size: min_section_size,
+            proxy_pub_id: proxy_pub_id,
             routing_msg_filter: RoutingMessageFilter::new(),
-            stats,
-            relocation_timer_token,
-            timer,
+            relocation_timer_token: relocation_timer_token,
+            timer: timer,
         };
         if let Err(error) = joining_node.relocate() {
-            error!("{:?} Failed to start relocation: {:?}", joining_node, error);
+            error!("{} Failed to start relocation: {:?}", joining_node, error);
             None
         } else {
-            debug!("{:?} State changed to joining node.", joining_node);
+            debug!("{} State changed to joining node.", joining_node);
             Some(joining_node)
         }
     }
@@ -96,7 +93,7 @@ impl JoiningNode {
         match action {
             Action::ClientSendRequest { ref result_tx, .. }
             | Action::NodeSendMessage { ref result_tx, .. } => {
-                warn!("{:?} Cannot handle {:?} - not joined.", self, action);
+                warn!("{} Cannot handle {:?} - not joined.", self, action);
                 let _ = result_tx.send(Err(InterfaceError::InvalidState));
             }
             Action::Id { result_tx } => {
@@ -108,7 +105,7 @@ impl JoiningNode {
                 }
             }
             Action::ResourceProofResult(..) => {
-                warn!("{:?} Cannot handle {:?} - not joined.", self, action);
+                warn!("{} Cannot handle {:?} - not joined.", self, action);
             }
             Action::Terminate => {
                 return Transition::Terminate;
@@ -126,7 +123,7 @@ impl JoiningNode {
             CrustEvent::LostPeer(pub_id) => self.handle_lost_peer(pub_id, outbox),
             CrustEvent::NewMessage(pub_id, _, bytes) => self.handle_new_message(pub_id, bytes),
             _ => {
-                debug!("{:?} - Unhandled crust event: {:?}", self, crust_event);
+                debug!("{} - Unhandled crust event: {:?}", self, crust_event);
                 Transition::Stay
             }
         }
@@ -148,7 +145,7 @@ impl JoiningNode {
         );
         let target_state = BootstrappingTargetState::Node {
             old_full_id: self.full_id,
-            our_section,
+            our_section: our_section,
         };
         if let Some(bootstrapping) = Bootstrapping::new(
             self.action_sender,
@@ -166,7 +163,7 @@ impl JoiningNode {
         }
     }
 
-    #[cfg(not(feature = "use-mock-crust"))]
+    #[cfg(not(feature = "mock"))]
     fn start_new_crust_service(
         old_crust_service: Service,
         pub_id: PublicId,
@@ -185,7 +182,7 @@ impl JoiningNode {
         crust_service
     }
 
-    #[cfg(feature = "use-mock-crust")]
+    #[cfg(feature = "mock")]
     fn start_new_crust_service(
         old_crust_service: Service,
         pub_id: PublicId,
@@ -200,7 +197,7 @@ impl JoiningNode {
         let transition = match serialisation::deserialise(&bytes) {
             Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, pub_id),
             Ok(message) => {
-                debug!("{:?} - Unhandled new message: {:?}", self, message);
+                debug!("{} - Unhandled new message: {:?}", self, message);
                 Ok(Transition::Stay)
             }
             Err(error) => Err(RoutingError::SerialisationError(error)),
@@ -210,17 +207,13 @@ impl JoiningNode {
             Ok(transition) => transition,
             Err(RoutingError::FilterCheckFailed) => Transition::Stay,
             Err(error) => {
-                debug!("{:?} - {:?}", self, error);
+                debug!("{} - {:?}", self, error);
                 Transition::Stay
             }
         }
     }
 
-    fn handle_hop_message(
-        &mut self,
-        hop_msg: HopMessage,
-        pub_id: PublicId,
-    ) -> Result<Transition, RoutingError> {
+    fn handle_hop_message(&mut self, hop_msg: HopMessage, pub_id: PublicId) -> Result<Transition> {
         if self.proxy_pub_id == pub_id {
             hop_msg.verify(self.proxy_pub_id.signing_public_key())?;
         } else {
@@ -261,16 +254,14 @@ impl JoiningNode {
             | ExpectCandidate { .. }
             | ConnectionInfoRequest { .. }
             | ConnectionInfoResponse { .. }
-            | SectionUpdate { .. }
-            | SectionSplit(..)
-            | OwnSectionMerge(..)
-            | OtherSectionMerge(..)
+            | NeighbourInfo(..)
+            | NeighbourConfirm(..)
+            | Merge(..)
             | UserMessagePart { .. }
             | AcceptAsCandidate { .. }
-            | CandidateApproval { .. }
             | NodeApproval { .. } => {
                 warn!(
-                    "{:?} Not joined yet. Not handling {:?} from {:?} to {:?}",
+                    "{} Not joined yet. Not handling {:?} from {:?} to {:?}",
                     self, routing_msg.content, routing_msg.src, routing_msg.dst
                 );
             }
@@ -286,7 +277,7 @@ impl JoiningNode {
         Transition::Stay
     }
 
-    fn relocate(&mut self) -> Result<(), RoutingError> {
+    fn relocate(&mut self) -> Result<()> {
         let request_content = MessageContent::Relocate {
             message_id: MessageId::new(),
         };
@@ -297,7 +288,7 @@ impl JoiningNode {
         let dst = Authority::Section(*self.name());
 
         info!(
-            "{:?} Requesting a relocated name from the network. This can take a while.",
+            "{} Requesting a relocated name from the network. This can take a while.",
             self
         );
 
@@ -310,8 +301,17 @@ impl JoiningNode {
         section: (Prefix<XorName>, BTreeSet<PublicId>),
     ) -> Transition {
         let new_id = FullId::within_range(&target_interval.0, &target_interval.1);
+        if !section.0.matches(new_id.public_id().name()) {
+            log_or_panic!(
+                LogLevel::Error,
+                "{} Invalid name chosen for {:?}. Range provided: {:?}",
+                self,
+                section.0,
+                target_interval
+            );
+        }
         Transition::IntoBootstrapping {
-            new_id,
+            new_id: new_id,
             our_section: section,
         }
     }
@@ -323,7 +323,7 @@ impl JoiningNode {
     fn handle_timeout(&mut self, token: u64, outbox: &mut EventBox) -> Transition {
         if self.relocation_timer_token == token {
             info!(
-                "{:?} Failed to get relocated name from the network, so restarting.",
+                "{} Failed to get relocated name from the network, so restarting.",
                 self
             );
             outbox.send_event(Event::RestartRequired);
@@ -333,7 +333,7 @@ impl JoiningNode {
         Transition::Stay
     }
 
-    #[cfg(feature = "use-mock-crust")]
+    #[cfg(feature = "mock")]
     pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
         self.timer.get_timed_out_tokens()
     }
@@ -357,19 +357,15 @@ impl Base for JoiningNode {
     }
 
     fn handle_lost_peer(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
-        debug!("{:?} Received LostPeer - {}", self, pub_id);
+        debug!("{} Received LostPeer - {}", self, pub_id);
 
         if self.proxy_pub_id == pub_id {
-            debug!("{:?} Lost bootstrap connection to {}.", self, pub_id);
+            debug!("{} Lost bootstrap connection to {}.", self, pub_id);
             outbox.send_event(Event::Terminate);
             Transition::Terminate
         } else {
             Transition::Stay
         }
-    }
-
-    fn stats(&mut self) -> &mut Stats {
-        &mut self.stats
     }
 
     fn min_section_size(&self) -> usize {
@@ -394,9 +390,7 @@ impl Bootstrapped for JoiningNode {
         routing_msg: RoutingMessage,
         route: u8,
         expires_at: Option<Instant>,
-    ) -> Result<(), RoutingError> {
-        self.stats.count_route(route);
-
+    ) -> Result<()> {
         if routing_msg.dst.is_client() && self.in_authority(&routing_msg.dst) {
             return Ok(()); // Message is for us.
         }
@@ -409,22 +403,19 @@ impl Bootstrapped for JoiningNode {
             } => {
                 if *self.proxy_pub_id.name() != *proxy_node_name {
                     error!(
-                        "{:?} Unable to find connection to proxy node in proxy map",
+                        "{} Unable to find connection to proxy node in proxy map",
                         self
                     );
                     return Err(RoutingError::ProxyConnectionNotFound);
                 }
             }
             _ => {
-                error!(
-                    "{:?} Source should be client if our state is a Client",
-                    self
-                );
+                error!("{} Source should be client if our state is a Client", self);
                 return Err(RoutingError::InvalidSource);
             }
         };
 
-        let signed_msg = SignedMessage::new(routing_msg, self.full_id(), vec![])?;
+        let signed_msg = SignedMessage::new(routing_msg, self.full_id(), None)?;
 
         let proxy_pub_id = self.proxy_pub_id;
         if self.add_to_pending_acks(signed_msg.routing_message(), route, expires_at)
@@ -446,7 +437,7 @@ impl Bootstrapped for JoiningNode {
     }
 }
 
-impl Debug for JoiningNode {
+impl Display for JoiningNode {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter, "JoiningNode({}())", self.name())
     }

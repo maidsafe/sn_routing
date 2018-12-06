@@ -14,8 +14,12 @@ use event::Event;
 use id::PublicId;
 use maidsafe_utilities::event_sender::{EventSenderError, MaidSafeEventCategory};
 use maidsafe_utilities::serialisation;
+use safe_crypto;
 use sha3::Digest256;
 use std::sync::mpsc::{RecvError, SendError};
+
+/// The type returned by the routing message handling methods.
+pub type Result<T> = ::std::result::Result<T, RoutingError>;
 
 /// The type of errors that can occur if routing is unable to handle a send request.
 #[derive(Debug)]
@@ -93,8 +97,6 @@ pub enum RoutingError {
     InvalidStateForOperation,
     /// Serialisation Error
     SerialisationError(serialisation::SerialisationError),
-    /// Asymmetric Decryption Failure
-    AsymmetricDecryptionFailure,
     /// Unknown Connection
     UnknownConnection(PublicId),
     /// Invalid Destination
@@ -105,8 +107,6 @@ pub enum RoutingError {
     ClientConnectionNotFound,
     /// Invalid Source
     InvalidSource,
-    /// Attempted to use a node as a tunnel that is not directly connected
-    CannotTunnelThroughTunnel,
     /// Decoded a user message with an unexpected hash.
     HashMismatch,
     /// Version check has failed
@@ -117,8 +117,6 @@ pub enum RoutingError {
     TimedOut,
     /// Failed validation of resource proof
     FailedResourceProofValidation,
-    /// Candidate is connected via a tunnel
-    CandidateIsTunnelling,
     /// Content of a received message is inconsistent.
     InvalidMessage,
     /// Invalid Peer
@@ -128,6 +126,14 @@ pub enum RoutingError {
     ExceedsRateLimit(Digest256),
     /// Invalid configuration
     ConfigError(ConfigFileHandlerError),
+    /// Invalid chain
+    Chain,
+    /// We received a signed message with a previous hop's section info that we don't know.
+    UnknownPrevHop,
+    /// A signed message's chain of proving sections is invalid.
+    InvalidProvingSection,
+    /// Crypto related error.
+    Crypto(safe_crypto::Error),
 }
 
 impl From<RoutingTableError> for RoutingError {
@@ -175,6 +181,12 @@ impl From<serialisation::SerialisationError> for RoutingError {
 impl From<ConfigFileHandlerError> for RoutingError {
     fn from(error: ConfigFileHandlerError) -> RoutingError {
         RoutingError::ConfigError(error)
+    }
+}
+
+impl From<safe_crypto::Error> for RoutingError {
+    fn from(error: safe_crypto::Error) -> RoutingError {
+        RoutingError::Crypto(error)
     }
 }
 

@@ -55,7 +55,7 @@
 //!
 //! let (sender, receiver) = mpsc::channel::<Event>();
 //! let full_id = FullId::new(); // Generate new keys.
-//! # #[cfg(not(feature = "use-mock-crust"))]
+//! # #[cfg(not(feature = "mock"))]
 //! let client = Client::new(sender, Some(full_id), None).unwrap();
 //! ```
 //!
@@ -88,7 +88,6 @@
 //!
 //! - [Bootstrapping](bootstrap.png)
 //! - [Churn (`NewNode`)](new-node.png)
-//! - [Tunnel](tunnel.png)
 
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png",
@@ -106,7 +105,6 @@
 )]
 #![deny(
     bad_style,
-    deprecated,
     improper_ctypes,
     missing_docs,
     non_shorthand_field_patterns,
@@ -134,15 +132,14 @@
     unused_qualifications,
     unused_results
 )]
-// TODO: Remove `renamed_and_removed_lints` once
-// https://github.com/rust-lang-nursery/error-chain/pull/246 has been fixed.
+// FIXME: move `deprecated` to `deny` section above
 #![allow(
     box_pointers,
+    deprecated,
     missing_copy_implementations,
     missing_debug_implementations,
     variant_size_differences,
-    non_camel_case_types,
-    renamed_and_removed_lints
+    non_camel_case_types
 )]
 #![cfg_attr(
     feature = "cargo-clippy",
@@ -153,34 +150,40 @@
     )
 )]
 // FIXME: allow `needless_pass_by_value` until it's OK to change the public API
-#![cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
+// FIXME: Re-enable `redundant_field_names`.
+#![cfg_attr(
+    feature = "cargo-clippy",
+    allow(needless_pass_by_value, redundant_field_names)
+)]
 
 extern crate config_file_handler;
 extern crate hex;
+extern crate parsec;
 #[macro_use]
 extern crate log;
-#[cfg(feature = "use-mock-crust")]
+#[cfg(feature = "mock")]
 extern crate fake_clock;
 extern crate maidsafe_utilities;
 #[macro_use]
 extern crate quick_error;
 #[macro_use]
 extern crate unwrap;
-#[cfg(not(feature = "use-mock-crust"))]
+#[cfg(not(feature = "mock"))]
 extern crate crust;
+extern crate hex_fmt;
 extern crate itertools;
+#[macro_use]
+extern crate lazy_static;
 extern crate lru_time_cache;
 extern crate num_bigint;
 extern crate rand;
 extern crate resource_proof;
-#[cfg(not(feature = "use-mock-crypto"))]
-extern crate rust_sodium;
+extern crate safe_crypto;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 #[cfg(test)]
 extern crate serde_json;
-extern crate tiny_keccak;
 
 // Needs to be before all other modules to make the macros available to them.
 #[macro_use]
@@ -189,11 +192,11 @@ mod macros;
 mod ack_manager;
 mod action;
 mod cache;
+mod chain;
 mod client;
 mod client_error;
 mod common_types;
 mod config_handler;
-mod cumulative_own_section_merge;
 mod data;
 mod error;
 mod event;
@@ -208,28 +211,19 @@ mod rate_limiter;
 mod resource_prover;
 mod routing_message_filter;
 mod routing_table;
-mod section_list_cache;
 mod signature_accumulator;
 mod state_machine;
 mod states;
-mod stats;
 mod timer;
-mod tunnels;
 mod types;
 mod utils;
 mod xor_name;
-
-#[cfg(feature = "use-mock-crypto")]
-pub mod mock_crypto;
-
-#[cfg(feature = "use-mock-crypto")]
-use mock_crypto::rust_sodium;
 
 /// Reexports `crust::Config`
 pub type BootstrapConfig = crust::Config;
 
 /// Mock crust
-#[cfg(feature = "use-mock-crust")]
+#[cfg(feature = "mock")]
 pub mod mock_crust;
 
 /// SHA-3 type alias.
@@ -250,11 +244,14 @@ pub const QUORUM_NUMERATOR: usize = 1;
 pub const QUORUM_DENOMINATOR: usize = 2;
 
 /// Default minimal section size.
-pub const MIN_SECTION_SIZE: usize = 8;
+pub const MIN_SECTION_SIZE: usize = 3;
 /// Key of an account data in the account packet
 pub const ACC_LOGIN_ENTRY_KEY: &[u8] = b"Login";
 
 pub use cache::{Cache, NullCache};
+#[cfg(feature = "mock")]
+pub use chain::verify_chain_invariant;
+pub use chain::Chain;
 pub use client::Client;
 pub use client_error::{ClientError, EntryError};
 pub use common_types::AccountPacket;
@@ -269,17 +266,17 @@ pub use event::Event;
 pub use event_stream::EventStream;
 pub use id::{FullId, PublicId};
 pub use messages::{AccountInfo, Request, Response};
-#[cfg(feature = "use-mock-crust")]
+#[cfg(feature = "mock")]
 pub use mock_crust::crust;
 pub use node::{Node, NodeBuilder};
-#[cfg(feature = "use-mock-crust")]
+#[cfg(feature = "mock")]
 pub use peer_manager::test_consts;
-#[cfg(feature = "use-mock-crust")]
+#[cfg(feature = "mock")]
 pub use rate_limiter::rate_limiter_consts;
-#[cfg(any(test, feature = "use-mock-crust"))]
+#[cfg(any(test, feature = "mock"))]
 pub use routing_table::verify_network_invariant;
 pub use routing_table::Error as RoutingTableError;
-pub use routing_table::{Authority, Prefix, RoutingTable, Xorable};
+pub use routing_table::{Authority, Prefix, RoutingTable, VersionedPrefix, Xorable};
 pub use types::MessageId;
 pub use xor_name::{XorName, XorNameFromHexError, XOR_NAME_BITS, XOR_NAME_LEN};
 

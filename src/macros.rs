@@ -6,15 +6,15 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-/// This macro will panic with the given message if compiled with "use-mock-crust", otherwise it
+/// This macro will panic with the given message if compiled with "mock", otherwise it
 /// will simply log the message at the requested level.
 ///
 /// Example usage:
-/// `log_or_panic!(Level::Warn, "{:?} Bad value: {}", self, value);`
+/// `log_or_panic!(LogLevel::Warn, "{:?} Bad value: {}", self, value);`
 #[macro_export]
 macro_rules! log_or_panic {
     ($log_level:expr, $($arg:tt)*) => {
-        if cfg!(feature = "use-mock-crust") && !::std::thread::panicking() {
+        if cfg!(feature = "mock") && !::std::thread::panicking() {
             panic!($($arg)*);
         } else {
             log!($log_level, $($arg)*);

@@ -7,159 +7,140 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    create_connected_clients, create_connected_nodes, gen_range, gen_range_except, poll_and_resend,
-    verify_invariant_for_all_nodes, TestClient, TestNode,
+    count_sections, create_connected_clients, create_connected_nodes,
+    create_connected_nodes_until_split, current_sections, gen_range, gen_range_except,
+    poll_and_resend, verify_invariant_for_all_nodes, TestClient, TestNode,
 };
-use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
 use routing::mock_crust::Network;
-use routing::test_consts::{
-    ACCUMULATION_TIMEOUT_SECS, CANDIDATE_ACCEPT_TIMEOUT_SECS, JOINING_NODE_TIMEOUT_SECS,
-    RESOURCE_PROOF_DURATION_SECS,
-};
 use routing::{
     Authority, BootstrapConfig, Event, EventStream, ImmutableData, MessageId, PublicId, Request,
     Response, XorName, QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
 };
 use std::cmp;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::iter;
 
-// Randomly removes some nodes.
-//
-// Note: it's necessary to call `poll_all` afterwards, as this function doesn't call it itself.
+/// Randomly removes some nodes, but <1/3 from each section and never node 0.
+/// max_per_pfx: limits dropping to the specified count per pfx. It would also
+/// skip prefixes randomly allowing sections to split if this is executed in the same
+/// iteration as `add_nodes_and_poll`.
+///
+/// Note: it's necessary to call `poll_all` afterwards, as this function doesn't call it itself.
 fn drop_random_nodes<R: Rng>(
     rng: &mut R,
     nodes: &mut Vec<TestNode>,
-    min_section_size: usize,
+    max_per_pfx: Option<usize>,
 ) -> BTreeSet<XorName> {
     let mut dropped_nodes = BTreeSet::new();
-    let len = nodes.len();
-    // Nodes needed for quorum with minimum section size. Round up.
-    let min_quorum = 1 + (min_section_size * QUORUM_NUMERATOR) / QUORUM_DENOMINATOR;
-    if rng.gen_weighted_bool(3) {
-        // Pick a section then remove as many nodes as possible from it without breaking quorum.
-        let i = gen_range(rng, 0, len);
-        let prefix = *nodes[i].routing_table().our_prefix();
-
-        // Any network must allow at least one node to be lost:
-        let num_excess = cmp::max(
-            1,
-            nodes[i].routing_table().our_section().len() - min_section_size,
-        );
-        assert!(num_excess > 0);
-
-        let mut removed = 0;
-        // Remove nodes from the chosen section
-        while removed < num_excess {
-            let i = gen_range(rng, 0, nodes.len());
-            if *nodes[i].routing_table().our_prefix() != prefix {
-                continue;
-            }
-            let _ = dropped_nodes.insert(nodes[i].name());
-            let _ = nodes.remove(i);
-            removed += 1;
+    let node_section_size = |node: &TestNode| node.routing_table().our_section().len();
+    let sections: BTreeMap<_, _> = nodes
+        .iter()
+        .map(|node| (*node.our_prefix(), node_section_size(node)))
+        .collect();
+    let mut drop_count: BTreeMap<_, _> = sections.keys().map(|pfx| (*pfx, 0)).collect();
+    loop {
+        let i = gen_range(rng, 1, nodes.len());
+        let pfx = *nodes[i].our_prefix();
+        if drop_count.is_empty() {
+            break;
+        } else if drop_count.get(&pfx).is_none() {
+            continue;
         }
-    } else {
-        // It should always be safe to remove min_section_size - min_quorum_size nodes (if we
-        // ensured they did not all come from the same section we could remove more):
-        let num_excess = cmp::min(min_section_size - min_quorum, len - min_section_size);
-        let mut removed = 0;
-        while num_excess - removed > 0 {
-            let index = gen_range(rng, 0, len - removed);
-            let _ = dropped_nodes.insert(nodes[index].name());
-            let _ = nodes.remove(index);
-            removed += 1;
+
+        let early_terminate = max_per_pfx.map_or(false, |n| {
+            drop_count[&pfx] >= n || rng.gen_weighted_bool(drop_count.keys().len() as u32)
+        });
+        let normal_terminate = (drop_count[&pfx] + 1) * 3 >= sections[&pfx];
+        if early_terminate || normal_terminate {
+            let _ = drop_count.remove(&pfx);
+            continue;
         }
+
+        *unwrap!(drop_count.get_mut(&pfx)) += 1;
+        let dropped = nodes.remove(i);
+        assert!(dropped_nodes.insert(dropped.name()));
     }
     dropped_nodes
 }
 
-// Randomly adds a node. Returns new node index if successfully added.
-//
-// Note: This fn will call `poll_and_resend` itself
-fn add_node_and_poll<R: Rng>(
+/// Adds node per existing prefix. Returns new node indexes if successfully added.
+/// allow_add_failure: Allows nodes to fail getting accepted. It would also
+/// skip adding to prefixes randomly to allowing sections to merge when this is executed
+/// in the same iteration as `drop_random_nodes`.
+///
+/// Note: This fn will call `poll_and_resend` itself
+fn add_nodes_and_poll<R: Rng>(
     rng: &mut R,
     network: &Network<PublicId>,
     mut nodes: &mut Vec<TestNode>,
-    min_section_size: usize,
-    mut dropped_nodes: BTreeSet<XorName>,
-) -> Option<usize> {
+    allow_add_failure: bool,
+) -> BTreeSet<XorName> {
     let len = nodes.len();
-    // A non-first node without min_section_size nodes in routing table cannot be proxy
-    let (proxy, index) = if len <= min_section_size {
-        (0, gen_range(rng, 1, len + 1))
-    } else {
-        (gen_range(rng, 0, len), gen_range(rng, 0, len + 1))
-    };
-    let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[proxy].handle.endpoint()]);
-
-    nodes.insert(
-        index,
-        TestNode::builder(network)
-            .bootstrap_config(bootstrap_config)
-            .create(),
-    );
-    let (new_node, proxy) = if index <= proxy {
-        (index, proxy + 1)
-    } else {
-        (index, proxy)
-    };
-
-    if len > (2 * min_section_size) {
-        let exclude = vec![new_node, proxy].into_iter().collect();
-        let block_peer = gen_range_except(rng, 1, nodes.len(), &exclude);
-
-        // Status to the proxy of the new node doesn't matter.
-        let _ = dropped_nodes.insert(nodes[proxy].name());
-        if nodes[block_peer]
-            .inner
-            .has_unnormalised_routing_conn(&dropped_nodes)
-        {
-            FakeClock::advance_time(JOINING_NODE_TIMEOUT_SECS * 1000);
+    // TODO: If `nodes.len() >= min_section_size`, allow bootstrapping from other nodes.
+    let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
+    let mut prefixes: BTreeSet<_> = nodes
+        .iter_mut()
+        .map(|node| {
+            let pfx = *node.our_prefix();
+            node.inner.set_next_relocation_dst(Some(pfx.lower_bound()));
+            node.inner
+                .set_next_relocation_interval(Some((pfx.lower_bound(), pfx.upper_bound())));
+            pfx
+        }).collect();
+    while !prefixes.is_empty() {
+        let node = TestNode::builder(&network)
+            .bootstrap_config(bootstrap_config.clone())
+            .create();
+        if let Some(&pfx) = prefixes.iter().find(|pfx| pfx.matches(&node.name())) {
+            assert!(prefixes.remove(&pfx));
+            if allow_add_failure && !rng.gen_weighted_bool(prefixes.len() as u32) {
+                continue;
+            }
+            nodes.push(node);
         }
-        debug!(
-            "Connection between {} and {} blocked.",
-            nodes[new_node].name(),
-            nodes[block_peer].name()
-        );
-        network.block_connection(
-            nodes[new_node].handle.endpoint(),
-            nodes[block_peer].handle.endpoint(),
-        );
-        network.block_connection(
-            nodes[block_peer].handle.endpoint(),
-            nodes[new_node].handle.endpoint(),
-        );
     }
 
-    // new_node might be rejected here due to the current network state with ongoing merge or
-    // lack of accumulation for Candidate/Node Approval due to blocked connections.
     poll_and_resend(&mut nodes, &mut []);
 
-    // Check if the new node failed to join. If it failed we need to further cleanup existing nodes
-    // as the call from poll_and_resend to clear_state would not remove this failed node from
-    // existing nodes who have added it to their RT and will later attempt to re-connect.
-    // This can occur due to NodeApproval not being sent out in some cases but nodes adding
-    // joining nodes to their RT and expecting the joining node to eventually terminate itself
-    match nodes[new_node].inner.try_next_ev() {
-        Err(_) | Ok(Event::Terminate) => (),
-        Ok(_) => return Some(new_node),
-    };
+    let mut added = BTreeSet::new();
+    let mut failed = Vec::new();
+    for (index, node) in nodes.iter_mut().enumerate().skip(len) {
+        loop {
+            match node.inner.try_next_ev() {
+                Err(_) => {
+                    failed.push(index);
+                    break;
+                }
+                Ok(Event::Connected) => {
+                    assert!(added.insert(node.name()));
+                    break;
+                }
+                _ => (),
+            }
+        }
+    }
+
+    if !allow_add_failure && !failed.is_empty() {
+        panic!("Unable to add new node. {} failed.", failed.len());
+    }
 
     // Drop failed node and poll remaining nodes so any node which may have added failed node
     // to their RT will now purge this entry as part of poll_and_resend -> clear_state.
-    let failed_node = nodes.remove(new_node);
-    drop(failed_node);
-    poll_and_resend(&mut nodes, &mut []);
-    let duration_ms = cmp::max(
-        RESOURCE_PROOF_DURATION_SECS + ACCUMULATION_TIMEOUT_SECS,
-        CANDIDATE_ACCEPT_TIMEOUT_SECS,
-    ) * 1000;
+    for index in failed.into_iter().rev() {
+        drop(nodes.remove(index));
+    }
 
-    FakeClock::advance_time(duration_ms);
-    None
+    // Clear relocation overrides
+    for node in nodes.iter_mut() {
+        node.inner.set_next_relocation_dst(None);
+        node.inner.set_next_relocation_interval(None);
+    }
+
+    poll_and_resend(&mut nodes, &mut []);
+    rng.shuffle(&mut nodes[1..]);
+    added
 }
 
 // Randomly adds or removes some nodes, causing churn.
@@ -171,63 +152,32 @@ fn random_churn<R: Rng>(
     nodes: &mut Vec<TestNode>,
 ) -> Option<usize> {
     let len = nodes.len();
-
-    if count_sections(nodes) > 1 && rng.gen_weighted_bool(3) {
-        let _ = nodes.remove(gen_range(rng, 1, len));
-        let _ = nodes.remove(gen_range(rng, 1, len - 1));
-        let _ = nodes.remove(gen_range(rng, 1, len - 2));
-
-        None
-    } else {
-        let mut proxy = gen_range(rng, 0, len);
-        let index = gen_range(rng, 1, len + 1);
-
-        if nodes.len() > 2 * network.min_section_size() {
-            let peer_1 = gen_range(rng, 1, len);
-            let peer_2 = gen_range_except(rng, 1, len, &iter::once(peer_1).collect());
-            debug!(
-                "Lost connection between {} and {}",
-                nodes[peer_1].name(),
-                nodes[peer_2].name()
-            );
-            network.lost_connection(
-                nodes[peer_1].handle.endpoint(),
-                nodes[peer_2].handle.endpoint(),
-            );
-        }
-
-        let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[proxy].handle.endpoint()]);
-        nodes.insert(
-            index,
-            TestNode::builder(network)
-                .bootstrap_config(bootstrap_config)
-                .create(),
+    let section_count = count_sections(nodes);
+    if section_count > 1 && !rng.gen_weighted_bool(section_count as u32) {
+        // Only drop less than GRP_SIZE quorum to prevent collapsing any grp in the network.
+        let max_drop = cmp::max(
+            (nodes[0].chain().min_sec_size() * QUORUM_NUMERATOR / QUORUM_DENOMINATOR) - 1,
+            1,
         );
-
-        if nodes.len() > 2 * network.min_section_size() {
-            if index <= proxy {
-                // When new node sits before the proxy node, proxy index increases by 1
-                proxy += 1;
-            }
-            let exclude = vec![index, proxy].into_iter().collect();
-            let block_peer = gen_range_except(rng, 1, nodes.len(), &exclude);
-            debug!(
-                "Connection between {} and {} blocked.",
-                nodes[index].name(),
-                nodes[block_peer].name()
-            );
-            network.block_connection(
-                nodes[index].handle.endpoint(),
-                nodes[block_peer].handle.endpoint(),
-            );
-            network.block_connection(
-                nodes[block_peer].handle.endpoint(),
-                nodes[index].handle.endpoint(),
-            );
-        }
-
-        Some(index)
+        let dropped_nodes = drop_random_nodes(rng, nodes, Some(max_drop));
+        warn!("Dropping nodes: {:?}", dropped_nodes);
+        return None;
     }
+
+    let proxy = gen_range(rng, 0, len);
+    let index = gen_range(rng, 1, len + 1);
+
+    let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[proxy].handle.endpoint()]);
+    nodes.insert(
+        index,
+        TestNode::builder(network)
+            .bootstrap_config(bootstrap_config)
+            .create(),
+    );
+
+    warn!("Adding {}", nodes[index].name());
+
+    Some(index)
 }
 
 /// The entries of a Put request: the data ID, message ID, source and destination authority.
@@ -270,7 +220,12 @@ impl ExpectedPuts {
             sent_count += 1;
         }
         if src.is_multiple() {
-            assert!(sent_count * QUORUM_DENOMINATOR > min_section_size * QUORUM_NUMERATOR);
+            assert!(
+                sent_count * QUORUM_DENOMINATOR > min_section_size * QUORUM_NUMERATOR,
+                "sent_count: {}. min_section_size: {}",
+                sent_count,
+                min_section_size
+            );
         } else {
             assert_eq!(sent_count, 1);
         }
@@ -343,9 +298,6 @@ impl ExpectedPuts {
                     if dst.is_multiple() {
                         let checker = |entry: &HashSet<XorName>| entry.contains(&node.name());
                         if !self.sections.get(&key.3).map_or(false, checker) {
-                            // TODO: depends on the affected tunnels due to the dropped nodes, there
-                            // will be unexpected receiver for group (only used NaeManager in this
-                            // test). This shall no longer happen once routing refactored.
                             if let Authority::NaeManager(_) = dst {
                                 trace!(
                                     "Unexpected request for node {}: {:?} / {:?}",
@@ -483,47 +435,11 @@ fn client_puts(network: &mut Network<PublicId>, nodes: &mut [TestNode], min_sect
     expected_puts.verify(nodes, &mut clients, None);
 }
 
-fn count_sections(nodes: &[TestNode]) -> usize {
-    let mut prefixes = HashSet::new();
-    for node in nodes {
-        let _ = prefixes.insert(*node.routing_table().our_prefix());
-    }
-    prefixes.len()
-}
-
-fn verify_section_list_signatures(nodes: &[TestNode]) {
-    for node in nodes {
-        let rt = node.routing_table();
-        let section_size = rt.our_section().len();
-        for prefix in rt.prefixes() {
-            if prefix != *rt.our_prefix() {
-                let sigs = unwrap!(
-                    node.inner.section_list_signatures(prefix),
-                    "{:?} Tried to unwrap None returned from \
-                     section_list_signatures({:?})",
-                    node.name(),
-                    prefix
-                );
-                assert!(
-                    sigs.len() * QUORUM_DENOMINATOR > section_size * QUORUM_NUMERATOR,
-                    "{:?} Not enough signatures for prefix {:?} - {}/{}\n\tSignatures from: \
-                     {:?}",
-                    node.name(),
-                    prefix,
-                    sigs.len(),
-                    section_size,
-                    sigs.keys().collect_vec()
-                );
-            }
-        }
-    }
-}
-
 #[test]
 fn aggressive_churn() {
-    let min_section_size = 5;
+    let min_section_size = 4;
     let target_section_num = 5;
-    let target_network_size = 50;
+    let target_network_size = 35;
     let mut network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
 
@@ -531,94 +447,66 @@ fn aggressive_churn() {
     // decrease back to min_section_size, then increase to again.
     let mut nodes = create_connected_nodes(&network, min_section_size);
 
-    info!(
+    warn!(
         "Churn [{} nodes, {} sections]: adding nodes",
         nodes.len(),
         count_sections(&nodes)
     );
-    while count_sections(&nodes) <= target_section_num || nodes.len() < target_network_size {
-        if nodes.len() > (2 * min_section_size) {
-            let peer_1 = gen_range(&mut rng, 0, nodes.len());
-            let peer_2 = gen_range_except(&mut rng, 0, nodes.len(), &iter::once(peer_1).collect());
-            debug!(
-                "Lost connection between {} and {}",
-                nodes[peer_1].name(),
-                nodes[peer_2].name()
-            );
-            network.lost_connection(
-                nodes[peer_1].handle.endpoint(),
-                nodes[peer_2].handle.endpoint(),
-            );
-        }
 
-        // A candidate could be blocked if some nodes of the section it connected to has lost node
-        // due to loss of tunnel. In that case, a restart of candidate shall be carried out.
-        if let Some(added_index) = add_node_and_poll(
-            &mut rng,
-            &network,
-            &mut nodes,
-            min_section_size,
-            BTreeSet::new(),
-        ) {
-            debug!("Added {}", nodes[added_index].name());
+    // Add nodes to trigger splits.
+    while count_sections(&nodes) < target_section_num || nodes.len() < target_network_size {
+        let added = add_nodes_and_poll(&mut rng, &network, &mut nodes, false);
+        if !added.is_empty() {
+            warn!("Added {:?}. Total: {}", added, nodes.len());
         } else {
-            debug!("Unable to add new node.");
+            warn!("Unable to add new node.");
         }
 
         verify_invariant_for_all_nodes(&mut nodes);
-        verify_section_list_signatures(&nodes);
         send_and_receive(&mut rng, &mut nodes, min_section_size);
     }
 
-    info!(
+    // Simultaneous Add/Drop nodes in the same iteration.
+    warn!(
         "Churn [{} nodes, {} sections]: simultaneous adding and dropping nodes",
         nodes.len(),
         count_sections(&nodes)
     );
-    while nodes.len() > target_network_size / 2 {
-        let dropped_nodes = drop_random_nodes(&mut rng, &mut nodes, min_section_size);
+    let mut count = 0;
+    while nodes.len() > target_network_size / 2 && count < 15 {
+        count += 1;
 
-        // A candidate could be blocked if it connected to a pre-merge minority section.
-        // Or be rejected when the proxy node's RT is not large enough due to a lost tunnel.
-        // In that case, a restart of candidate shall be carried out.
-        if let Some(added_index) = add_node_and_poll(
-            &mut rng,
-            &network,
-            &mut nodes,
-            min_section_size,
-            dropped_nodes,
-        ) {
-            debug!("Simultaneous added {}", nodes[added_index].name());
-        } else {
-            debug!("Unable to add new node.");
-        }
+        // Only max drop a node per pfx as the node added in this iteration could split a pfx
+        // making the 1/3rd calculation in drop_random_nodes incorrect for the split pfx when we poll.
+        let max_drop = 1;
+        let dropped = drop_random_nodes(&mut rng, &mut nodes, Some(max_drop));
+        let added = add_nodes_and_poll(&mut rng, &network, &mut nodes, true);
+        warn!("Simultaneously added {:?} and dropped {:?}", added, dropped);
 
         verify_invariant_for_all_nodes(&mut nodes);
-        verify_section_list_signatures(&nodes);
 
         send_and_receive(&mut rng, &mut nodes, min_section_size);
         client_puts(&mut network, &mut nodes, min_section_size);
+        warn!("Remaining Prefixes: {:?}", current_sections(&nodes));
     }
 
-    info!(
+    // Drop nodes to trigger merges.
+    warn!(
         "Churn [{} nodes, {} sections]: dropping nodes",
         nodes.len(),
         count_sections(&nodes)
     );
     while count_sections(&nodes) > 1 && nodes.len() > min_section_size {
-        debug!(
-            "Dropping random nodes.  Current node count: {}",
-            nodes.len()
-        );
-        let _ = drop_random_nodes(&mut rng, &mut nodes, min_section_size);
+        let dropped_nodes = drop_random_nodes(&mut rng, &mut nodes, None);
+        warn!("Dropping random nodes. Dropped: {:?}", dropped_nodes);
         poll_and_resend(&mut nodes, &mut []);
         verify_invariant_for_all_nodes(&mut nodes);
-        verify_section_list_signatures(&nodes);
         send_and_receive(&mut rng, &mut nodes, min_section_size);
         client_puts(&mut network, &mut nodes, min_section_size);
+        warn!("Remaining Prefixes: {:?}", current_sections(&nodes));
     }
 
-    info!(
+    warn!(
         "Churn [{} nodes, {} sections]: done",
         nodes.len(),
         count_sections(&nodes)
@@ -627,20 +515,26 @@ fn aggressive_churn() {
 
 #[test]
 fn messages_during_churn() {
-    let min_section_size = 8;
+    // keep min_sec_size at 5 or above to allow a merging pfx which has nodes dropped
+    // from each sibling to retain a quorum(3) for groups at edges of pre-merge pfx.
+    let min_section_size = 5;
     let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes(&network, 20);
+    let mut nodes = create_connected_nodes_until_split(&network, vec![2, 2, 2, 3, 3], false);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
     let cl_auth = Authority::Client {
         client_id: *clients[0].full_id.public_id(),
         proxy_node_name: nodes[0].name(),
     };
 
-    for i in 0..100 {
-        trace!("Iteration {}", i);
-        let added_index = random_churn(&mut rng, &network, &mut nodes);
+    for i in 0..50 {
+        warn!("Iteration {}. Prefixes: {:?}", i, current_sections(&nodes));
 
+        let added_index = if !rng.gen_weighted_bool(3) {
+            random_churn(&mut rng, &network, &mut nodes)
+        } else {
+            None
+        };
         // Create random data and pick random sending and receiving nodes.
         let data = ImmutableData::new(rng.gen_iter().take(100).collect());
         let exclude = added_index.map_or(BTreeSet::new(), |index| iter::once(index).collect());
@@ -653,7 +547,7 @@ fn messages_during_churn() {
         let section_name: XorName = rng.gen();
         let auth_s0 = Authority::Section(section_name);
         // this makes sure we have two different sections if there exists more than one
-        // let auth_s1 = Authority::Section(!section_name);
+        let auth_s1 = Authority::Section(!section_name);
 
         let mut expected_puts = ExpectedPuts::default();
 
@@ -668,11 +562,10 @@ fn messages_during_churn() {
         expected_puts.send_and_expect(&data, auth_g0, auth_s0, &mut nodes, min_section_size);
         expected_puts.send_and_expect(&data, auth_g0, auth_n0, &mut nodes, min_section_size);
         // ... and from a section to itself, another section, a group and a node...
-        // TODO: Enable these once MAID-1920 is fixed.
-        // expected_puts.send_and_expect(data.clone(), auth_s0, auth_s0, &nodes, min_section_size);
-        // expected_puts.send_and_expect(data.clone(), auth_s0, auth_s1, &nodes, min_section_size);
-        // expected_puts.send_and_expect(data.clone(), auth_s0, auth_g0, &nodes, min_section_size);
-        // expected_puts.send_and_expect(data.clone(), auth_s0, auth_n0, &nodes, min_section_size);
+        expected_puts.send_and_expect(&data, auth_s0, auth_s0, &mut nodes, min_section_size);
+        expected_puts.send_and_expect(&data, auth_s0, auth_s1, &mut nodes, min_section_size);
+        expected_puts.send_and_expect(&data, auth_s0, auth_g0, &mut nodes, min_section_size);
+        expected_puts.send_and_expect(&data, auth_s0, auth_n0, &mut nodes, min_section_size);
 
         let data = ImmutableData::new(rng.gen_iter().take(100).collect());
         // Test messages from a client to a group and a section...
@@ -682,11 +575,8 @@ fn messages_during_churn() {
         expected_puts.send_and_expect(&data, auth_g1, cl_auth, &mut nodes, min_section_size);
 
         poll_and_resend(&mut nodes, &mut clients);
-
         let new_node_name = added_index.map(|index| nodes[index].name());
         expected_puts.verify(&mut nodes, &mut clients, new_node_name);
-
         verify_invariant_for_all_nodes(&mut nodes);
-        verify_section_list_signatures(&nodes);
     }
 }

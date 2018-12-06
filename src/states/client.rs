@@ -9,9 +9,9 @@
 use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 use ack_manager::{Ack, AckManager, UnacknowledgedMessage};
 use action::Action;
-use error::{InterfaceError, RoutingError};
+use error::{InterfaceError, Result, RoutingError};
 use event::Event;
-#[cfg(feature = "use-mock-crust")]
+#[cfg(feature = "mock")]
 use fake_clock::FakeClock as Instant;
 use id::{FullId, PublicId};
 use maidsafe_utilities::serialisation;
@@ -23,11 +23,10 @@ use outbox::EventBox;
 use routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use routing_table::Authority;
 use state_machine::Transition;
-use stats::Stats;
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::{self, Debug, Formatter};
+use std::fmt::{self, Display, Formatter};
 use std::time::Duration;
-#[cfg(not(feature = "use-mock-crust"))]
+#[cfg(not(feature = "mock"))]
 use std::time::Instant;
 use timer::Timer;
 use xor_name::XorName;
@@ -46,7 +45,6 @@ pub struct Client {
     min_section_size: usize,
     proxy_pub_id: PublicId,
     routing_msg_filter: RoutingMessageFilter,
-    stats: Stats,
     timer: Timer,
     user_msg_cache: UserMessageCache,
     resend_buf: BTreeMap<u64, UnacknowledgedMessage>,
@@ -60,28 +58,26 @@ impl Client {
         full_id: FullId,
         min_section_size: usize,
         proxy_pub_id: PublicId,
-        stats: Stats,
         timer: Timer,
         msg_expiry_dur: Duration,
         outbox: &mut EventBox,
     ) -> Self {
         let client = Client {
             ack_mgr: AckManager::new(),
-            crust_service,
-            full_id,
-            min_section_size,
-            proxy_pub_id,
+            crust_service: crust_service,
+            full_id: full_id,
+            min_section_size: min_section_size,
+            proxy_pub_id: proxy_pub_id,
             routing_msg_filter: RoutingMessageFilter::new(),
-            stats,
-            timer,
+            timer: timer,
             user_msg_cache: UserMessageCache::with_expiry_duration(Duration::from_secs(
                 USER_MSG_CACHE_EXPIRY_DURATION_SECS,
             )),
             resend_buf: Default::default(),
-            msg_expiry_dur,
+            msg_expiry_dur: msg_expiry_dur,
         };
 
-        debug!("{:?} State changed to client.", client);
+        debug!("{} State changed to client.", client);
 
         outbox.send_event(Event::Connected);
         client
@@ -137,7 +133,7 @@ impl Client {
                 self.handle_new_message(pub_id, bytes, outbox)
             }
             _ => {
-                debug!("{:?} Unhandled crust event {:?}", self, crust_event);
+                debug!("{} Unhandled crust event {:?}", self, crust_event);
                 Transition::Stay
             }
         }
@@ -167,9 +163,7 @@ impl Client {
                 unacked_msg.route,
                 unacked_msg.expires_at,
             ) {
-                debug!("{:?} Failed to send message: {:?}", self, error);
-            } else {
-                self.stats.increase_user_msg_part();
+                debug!("{} Failed to send message: {:?}", self, error);
             }
             return;
         }
@@ -187,10 +181,6 @@ impl Client {
         let transition = match serialisation::deserialise(&bytes) {
             Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, pub_id, outbox),
             Ok(Message::Direct(direct_msg)) => self.handle_direct_message(direct_msg),
-            Ok(message) => {
-                debug!("{:?} Unhandled new message: {:?}", self, message);
-                Ok(Transition::Stay)
-            }
             Err(error) => Err(RoutingError::SerialisationError(error)),
         };
 
@@ -198,7 +188,7 @@ impl Client {
             Ok(transition) => transition,
             Err(RoutingError::FilterCheckFailed) => Transition::Stay,
             Err(error) => {
-                debug!("{:?} {:?}", self, error);
+                debug!("{} {:?}", self, error);
                 Transition::Stay
             }
         }
@@ -209,7 +199,7 @@ impl Client {
         hop_msg: HopMessage,
         pub_id: PublicId,
         outbox: &mut EventBox,
-    ) -> Result<Transition, RoutingError> {
+    ) -> Result<Transition> {
         if self.proxy_pub_id == pub_id {
             hop_msg.verify(self.proxy_pub_id.signing_public_key())?;
         } else {
@@ -240,10 +230,7 @@ impl Client {
         Ok(self.dispatch_routing_message(routing_msg, outbox))
     }
 
-    fn handle_direct_message(
-        &mut self,
-        direct_msg: DirectMessage,
-    ) -> Result<Transition, RoutingError> {
+    fn handle_direct_message(&mut self, direct_msg: DirectMessage) -> Result<Transition> {
         if let DirectMessage::ProxyRateLimitExceeded { ack } = direct_msg {
             if let Some(unack_msg) = self.ack_mgr.remove(&ack) {
                 let token = self
@@ -252,12 +239,12 @@ impl Client {
                 let _ = self.resend_buf.insert(token, unack_msg);
             } else {
                 debug!(
-                    "{:?} Got ProxyRateLimitExceeded, but no corresponding request found",
+                    "{} Got ProxyRateLimitExceeded, but no corresponding request found",
                     self
                 );
             }
         } else {
-            debug!("{:?} Unhandled direct message: {:?}", self, direct_msg);
+            debug!("{} Unhandled direct message: {:?}", self, direct_msg);
         }
         Ok(Transition::Stay)
     }
@@ -277,7 +264,7 @@ impl Client {
                 ..
             } => {
                 trace!(
-                    "{:?} Got UserMessagePart {:02x}{:02x}{:02x}.., {}/{} from {:?} to {:?}.",
+                    "{} Got UserMessagePart {:02x}{:02x}{:02x}.., {}/{} from {:?} to {:?}.",
                     self,
                     hash[0],
                     hash[1],
@@ -287,19 +274,17 @@ impl Client {
                     routing_msg.src,
                     routing_msg.dst
                 );
-                self.stats.increase_user_msg_part();
                 if let Some(msg) = self
                     .user_msg_cache
                     .add(hash, part_count, part_index, payload)
                 {
-                    self.stats().count_user_message(&msg);
                     outbox.send_event(msg.into_event(routing_msg.src, routing_msg.dst));
                 }
                 Transition::Stay
             }
             content => {
                 debug!(
-                    "{:?} Unhandled routing message: {:?} from {:?} to {:?}",
+                    "{} Unhandled routing message: {:?} from {:?} to {:?}",
                     self, content, routing_msg.src, routing_msg.dst
                 );
                 Transition::Stay
@@ -314,8 +299,7 @@ impl Client {
         dst: Authority<XorName>,
         user_msg: UserMessage,
         priority: u8,
-    ) -> Result<(), RoutingError> {
-        self.stats.count_user_message(&user_msg);
+    ) -> Result<()> {
         let parts = user_msg.to_parts(priority)?;
         let msg_expiry_dur = self.msg_expiry_dur;
         for part in parts {
@@ -325,7 +309,6 @@ impl Client {
                 part,
                 Some(Instant::now() + msg_expiry_dur),
             )?;
-            self.stats.increase_user_msg_part();
         }
         Ok(())
     }
@@ -350,19 +333,15 @@ impl Base for Client {
     }
 
     fn handle_lost_peer(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
-        debug!("{:?} Received LostPeer - {:?}", self, pub_id);
+        debug!("{} Received LostPeer - {:?}", self, pub_id);
 
         if self.proxy_pub_id == pub_id {
-            debug!("{:?} Lost bootstrap connection to {}.", self, pub_id);
+            debug!("{} Lost bootstrap connection to {}.", self, pub_id);
             outbox.send_event(Event::Terminate);
             Transition::Terminate
         } else {
             Transition::Stay
         }
-    }
-
-    fn stats(&mut self) -> &mut Stats {
-        &mut self.stats
     }
 
     fn min_section_size(&self) -> usize {
@@ -382,7 +361,7 @@ impl Bootstrapped for Client {
     fn resend_unacknowledged_timed_out_msgs(&mut self, token: u64) {
         if let Some((unacked_msg, ack)) = self.ack_mgr.find_timed_out(token) {
             trace!(
-                "{:?} Timed out waiting for {:?}: {:?}",
+                "{} Timed out waiting for {:?}: {:?}",
                 self,
                 ack,
                 unacked_msg
@@ -391,18 +370,16 @@ impl Bootstrapped for Client {
             let msg_expired = unacked_msg.expires_at.map_or(false, |i| i < Instant::now());
             if msg_expired || unacked_msg.route as usize == self.min_section_size {
                 debug!(
-                    "{:?} Message unable to be acknowledged - giving up. {:?}",
+                    "{} Message unable to be acknowledged - giving up. {:?}",
                     self, unacked_msg
                 );
-                self.stats.count_unacked();
             } else if let Err(error) = self.send_routing_message_via_route(
                 unacked_msg.routing_msg,
                 unacked_msg.route,
                 unacked_msg.expires_at,
             ) {
-                debug!("{:?} Failed to send message: {:?}", self, error);
+                debug!("{} Failed to send message: {:?}", self, error);
             }
-            // Resend a msg part on ack time out doesn't count in stats.
         }
     }
 
@@ -411,9 +388,7 @@ impl Bootstrapped for Client {
         routing_msg: RoutingMessage,
         route: u8,
         expires_at: Option<Instant>,
-    ) -> Result<(), RoutingError> {
-        self.stats.count_route(route);
-
+    ) -> Result<()> {
         if routing_msg.dst.is_client() && self.in_authority(&routing_msg.dst) {
             return Ok(()); // Message is for us.
         }
@@ -426,22 +401,19 @@ impl Bootstrapped for Client {
             } => {
                 if *self.proxy_pub_id.name() != *proxy_node_name {
                     error!(
-                        "{:?} Unable to find connection to proxy node in proxy map",
+                        "{} Unable to find connection to proxy node in proxy map",
                         self
                     );
                     return Err(RoutingError::ProxyConnectionNotFound);
                 }
             }
             _ => {
-                error!(
-                    "{:?} Source should be client if our state is a Client",
-                    self
-                );
+                error!("{} Source should be client if our state is a Client", self);
                 return Err(RoutingError::InvalidSource);
             }
         };
 
-        let signed_msg = SignedMessage::new(routing_msg, self.full_id(), vec![])?;
+        let signed_msg = SignedMessage::new(routing_msg, self.full_id(), None)?;
 
         let proxy_pub_id = self.proxy_pub_id;
         if self.add_to_pending_acks(signed_msg.routing_message(), route, expires_at)
@@ -463,18 +435,14 @@ impl Bootstrapped for Client {
     }
 }
 
-#[cfg(feature = "use-mock-crust")]
+#[cfg(feature = "mock")]
 impl Client {
     pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
         self.timer.get_timed_out_tokens()
     }
-
-    pub fn get_user_msg_parts_count(&self) -> u64 {
-        self.stats.msg_user_parts
-    }
 }
 
-impl Debug for Client {
+impl Display for Client {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter, "Client({})", self.name())
     }

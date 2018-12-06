@@ -7,18 +7,16 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    create_connected_nodes_until_split, poll_all, poll_and_resend, verify_invariant_for_all_nodes,
+    count_sections, create_connected_nodes_until_split, current_sections, poll_and_resend,
+    verify_invariant_for_all_nodes, TestNode,
 };
-use fake_clock::FakeClock;
 use rand::Rng;
 use routing::mock_crust::Network;
-use routing::test_consts::ACK_TIMEOUT_SECS;
 use routing::{Event, EventStream, Prefix, XorName, XOR_NAME_LEN};
-use std::collections::{BTreeMap, BTreeSet};
 
 // See docs for `create_connected_nodes_with_cache_until_split` for details on `prefix_lengths`.
 fn merge(prefix_lengths: Vec<usize>) {
-    let min_section_size = 8;
+    let min_section_size = 4;
     let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split(&network, prefix_lengths, false);
@@ -26,12 +24,13 @@ fn merge(prefix_lengths: Vec<usize>) {
 
     // Drop nodes from a section with the shortest prefix until we get a merge event for the empty
     // prefix.
-    let mut min_prefix = *nodes[0].routing_table().our_prefix();
+    let mut min_prefix = *nodes[0].our_prefix();
     loop {
+        warn!("Current Prefixes: {:?}", current_sections(&nodes));
         rng.shuffle(&mut nodes);
         let mut index = nodes.len();
         for (i, node) in nodes.iter().enumerate() {
-            let this_prefix = *node.routing_table().our_prefix();
+            let this_prefix = *node.our_prefix();
             if this_prefix.bit_count() < min_prefix.bit_count() {
                 min_prefix = this_prefix;
                 index = i;
@@ -42,6 +41,11 @@ fn merge(prefix_lengths: Vec<usize>) {
         }
 
         let removed = nodes.remove(index);
+        warn!(
+            "Dropped: {}. Current Prefixes: {:?}",
+            removed.name(),
+            current_sections(&nodes)
+        );
         drop(removed);
         poll_and_resend(&mut nodes, &mut []);
         let mut merge_events_missing = nodes.len();
@@ -50,7 +54,7 @@ fn merge(prefix_lengths: Vec<usize>) {
                 match event {
                     Event::NodeAdded(..) | Event::NodeLost(..) | Event::Tick => (),
                     Event::SectionMerge(prefix) => {
-                        if prefix.bit_count() == 0 {
+                        if prefix.is_empty() {
                             merge_events_missing -= 1;
                         }
                     }
@@ -87,7 +91,7 @@ fn merge_five_sections_into_one() {
 
 #[test]
 fn concurrent_merge() {
-    let min_section_size = 5;
+    let min_section_size = 4;
     let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split(&network, vec![2, 2, 2, 2], false);
@@ -97,44 +101,42 @@ fn concurrent_merge() {
     // Choose two sections to drop nodes from, one of `00`/`01` and the other one of `10`/`11`.
     let prefix_0_to_drop_from = Prefix::new(1, XorName([0; XOR_NAME_LEN])).pushed(rng.gen());
     let prefix_1_to_drop_from = Prefix::new(1, XorName([255; XOR_NAME_LEN])).pushed(rng.gen());
+    let prefixes_to_drop_from = vec![prefix_0_to_drop_from, prefix_1_to_drop_from];
 
-    // Create a map with <section, number of members> as key/value for these two sections.
-    let mut section_map = BTreeMap::new();
-    for node in nodes.iter() {
-        let prefix = *node.routing_table().our_prefix();
-        if prefix == prefix_0_to_drop_from || prefix == prefix_1_to_drop_from {
-            *section_map.entry(prefix).or_insert(0) += 1;
+    // Shrink the two sections to exactly `min_section_size`.
+    for pfx in &prefixes_to_drop_from {
+        let len = nodes.iter().filter(|node| node.our_prefix() == pfx).count();
+        for _ in min_section_size..len {
+            let index = unwrap!(nodes.iter().position(|node| node.our_prefix() == pfx));
+            drop(nodes.remove(index));
+            poll_and_resend(&mut nodes, &mut []);
         }
     }
 
-    // Drop enough nodes (without polling) from each of the two sections to take them just below
+    // No sections should have merged yet.
+    assert_eq!(count_sections(&nodes), 4);
+
+    // Drop one more node (without polling) from each of the two sections to take them just below
     // `min_section_size`.
-    for (prefix, len) in &mut section_map {
-        while *len >= min_section_size {
-            let index = unwrap!(
-                nodes
-                    .iter()
-                    .position(|node| node.routing_table().our_prefix() == prefix)
-            );
-            let removed = nodes.remove(index);
-            drop(removed);
-            *len -= 1;
-        }
+    for pfx in &prefixes_to_drop_from {
+        let index = unwrap!(nodes.iter().position(|node| node.our_prefix() == pfx));
+        drop(nodes.remove(index));
     }
 
     // Poll the nodes, check the invariant and ensure the network has merged to `0` and `1`.
     poll_and_resend(&mut nodes, &mut []);
     verify_invariant_for_all_nodes(&mut nodes);
-    let mut prefixes = BTreeSet::new();
-    for node in nodes.iter() {
-        let _ = prefixes.insert(*node.routing_table().our_prefix());
-    }
-    assert_eq!(prefixes.len(), 2);
+    assert_eq!(count_sections(&nodes), 2);
 }
 
 #[test]
-fn merge_exclude_reconnecting_peers() {
-    let min_section_size = 3;
+fn merge_drop_multiple_nodes() {
+    let min_section_size = 7;
+    let nodes_to_drop = (min_section_size - 1) / 3;
+    assert!(
+        nodes_to_drop > 1,
+        "min_section_size needs to be large enough to drop multiple nodes"
+    );
     let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1], false);
@@ -143,35 +145,26 @@ fn merge_exclude_reconnecting_peers() {
 
     // Choose one section to drop nodes from.
     let prefix_to_drop_from = Prefix::new(1, XorName([0; XOR_NAME_LEN]));
+    let matches_prefix = |node: &TestNode| *node.our_prefix() == prefix_to_drop_from;
 
-    let mut nodes_count = nodes
-        .iter()
-        .filter(|node| node.routing_table().our_prefix() == &prefix_to_drop_from)
-        .count();
-
-    // Drop enough nodes (without polling) from that section to just below `min_section_size`.
-    while nodes_count >= min_section_size {
-        let index = unwrap!(
-            nodes
-                .iter()
-                .position(|node| node.routing_table().our_prefix() == &prefix_to_drop_from)
-        );
-        let removed = nodes.remove(index);
-        drop(removed);
-        nodes_count -= 1;
+    // Bring down the section size to exactly `min_section_size`.
+    let len = nodes.iter().filter(|n| matches_prefix(n)).count();
+    for _ in min_section_size..len {
+        let index = unwrap!(nodes.iter().position(matches_prefix));
+        drop(nodes.remove(index));
+        poll_and_resend(&mut nodes, &mut []);
     }
 
-    // Poll the nodes, check the invariant and ensure the network has merged to `()`.
-    for _ in 0..min_section_size {
-        let _ = poll_all(&mut nodes, &mut []);
-        FakeClock::advance_time(ACK_TIMEOUT_SECS * 1000 + 1);
-    }
-    let _ = poll_all(&mut nodes, &mut []);
+    // The sections shouldn't have merged yet.
+    assert_eq!(count_sections(&nodes), 2);
 
+    // Drop multiple nodes (without polling) from that section to trigger the merge.
+    for _ in 0..nodes_to_drop {
+        let index = unwrap!(nodes.iter().position(matches_prefix));
+        drop(nodes.remove(index));
+    }
+
+    poll_and_resend(&mut nodes, &mut []);
     verify_invariant_for_all_nodes(&mut nodes);
-    let mut prefixes = BTreeSet::new();
-    for node in nodes.iter() {
-        let _ = prefixes.insert(*node.routing_table().our_prefix());
-    }
-    assert_eq!(prefixes.len(), 1, "prefixes: {:?}", prefixes);
+    assert_eq!(count_sections(&nodes), 1);
 }

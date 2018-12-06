@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use config_file_handler::{self, FileHandler};
-use RoutingError;
+use error::Result;
 
 /// Configuration for routing
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
@@ -37,7 +37,7 @@ pub fn get_config() -> Config {
     })
 }
 
-fn read_config_file() -> Result<Config, RoutingError> {
+fn read_config_file() -> Result<Config> {
     let mut name = config_file_handler::exe_file_stem()?;
     name.push(".routing.config");
     // if the config file is not present, a default one will be generated

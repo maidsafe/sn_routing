@@ -6,26 +6,24 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-// Various utilities. Since this is all internal stuff we're a bit lax about the doc.
-#![allow(missing_docs)]
-
 use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
 use routing::mock_crust::{self, Endpoint, Network, ServiceHandle};
-use routing::test_consts::{ACK_TIMEOUT_SECS, CONNECTING_PEER_TIMEOUT_SECS};
+use routing::test_consts::CONNECTING_PEER_TIMEOUT_SECS;
+use routing::{verify_chain_invariant, Chain};
 use routing::{
     verify_network_invariant, Authority, BootstrapConfig, Cache, Client, Config, DevConfig, Event,
     EventStream, FullId, ImmutableData, Node, NullCache, Prefix, PublicId, Request, Response,
     RoutingTable, XorName, Xorable,
 };
 use std::cell::RefCell;
+use std::cmp;
 use std::collections::{BTreeSet, HashMap};
 use std::net::IpAddr;
 use std::ops::{Deref, DerefMut};
 use std::sync::mpsc::{RecvError, TryRecvError};
 use std::time::Duration;
-use std::{cmp, thread};
 
 // Poll one event per node. Otherwise, all events in a single node are polled before moving on.
 const BALANCED_POLLING: bool = true;
@@ -71,19 +69,6 @@ fn create_config(network: &Network<PublicId>) -> Config {
 /// Wraps a `Vec<TestNode>`s and prints the nodes' routing tables when dropped in a panicking
 /// thread.
 pub struct Nodes(pub Vec<TestNode>);
-
-impl Drop for Nodes {
-    fn drop(&mut self) {
-        if thread::panicking() {
-            trace!("---------- Routing tables at time of error ----------");
-            trace!("");
-            for node in &self.0 {
-                trace!("----- Node {:?} -----", node.name());
-                trace!("{:?}", node.routing_table());
-            }
-        }
-    }
-}
 
 impl Deref for Nodes {
     type Target = Vec<TestNode>;
@@ -174,12 +159,36 @@ impl TestNode {
         unwrap!(self.inner.routing_table())
     }
 
+    pub fn our_prefix(&self) -> &Prefix<XorName> {
+        self.routing_table().our_prefix()
+    }
+
+    pub fn chain(&self) -> &Chain {
+        unwrap!(self.inner.chain())
+    }
+
     pub fn is_recipient(&self, dst: &Authority<XorName>) -> bool {
         self.inner
             .routing_table()
             .ok()
             .map_or(false, |rt| rt.in_authority(dst))
     }
+}
+
+pub fn count_sections(nodes: &[TestNode]) -> usize {
+    nodes
+        .iter()
+        .filter_map(|n| n.inner.routing_table().ok().map(RoutingTable::our_prefix))
+        .unique()
+        .count()
+}
+
+pub fn current_sections(nodes: &[TestNode]) -> BTreeSet<Prefix<XorName>> {
+    nodes
+        .iter()
+        .filter_map(|n| n.inner.chain().ok())
+        .flat_map(|chain| chain.prefixes())
+        .collect()
 }
 
 pub struct TestNodeBuilder<'a> {
@@ -294,7 +303,7 @@ impl TestClient {
     }
 
     pub fn ip(&self) -> IpAddr {
-        mock_crust::to_socket_addr(self.handle.endpoint()).ip()
+        mock_crust::to_socket_addr(&self.handle.endpoint()).ip()
     }
 }
 
@@ -341,26 +350,38 @@ pub fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
             // handle all current messages for each node in turn, then repeat (via outer loop):
             nodes
                 .iter_mut()
-                .foreach(|node| handled_message = node.poll() || handled_message);
+                .for_each(|node| handled_message = node.poll() || handled_message);
         } else {
             handled_message = nodes.iter_mut().any(TestNode::poll);
         }
         handled_message = clients.iter_mut().any(|c| c.inner.poll()) || handled_message;
-        if !handled_message && !nodes[0].handle.reset_message_sent() {
+
+        // check if there were any outgoing messages which could be due to timeouts
+        // that were handled via cur iter poll.
+        let any_outgoing_messages = nodes[0].handle.reset_message_sent();
+        if !handled_message && !any_outgoing_messages {
             return result;
         }
+
         result = true;
     }
-    panic!("Polling has been called {} times.", MAX_POLL_CALLS);
+    panic!("poll_all has been called {} times.", MAX_POLL_CALLS);
 }
 
 /// Polls and processes all events, until there are no unacknowledged messages left.
 pub fn poll_and_resend(nodes: &mut [TestNode], clients: &mut [TestClient]) {
     let mut fired_connecting_peer_timeout = false;
     for _ in 0..MAX_POLL_CALLS {
-        if poll_all(nodes, clients) {
-            // Once each route is polled, advance time to trigger the following route.
-            FakeClock::advance_time(ACK_TIMEOUT_SECS * 1000 + 1);
+        let node_busy = |node: &TestNode| {
+            node.inner.has_unconsensused_observations() || node.inner.has_unacked_msg()
+        };
+        let client_busy = |client: &TestClient| client.inner.has_unacked_msg();
+        if poll_all(nodes, clients)
+            || nodes.iter().any(node_busy)
+            || clients.iter().any(client_busy)
+        {
+            // Advance time for next route/gossip iter.
+            FakeClock::advance_time(1001);
         } else if !fired_connecting_peer_timeout {
             // When all routes are polled, advance time to purge any pending re-connecting peers.
             FakeClock::advance_time(CONNECTING_PEER_TIMEOUT_SECS * 1000 + 1);
@@ -369,13 +390,13 @@ pub fn poll_and_resend(nodes: &mut [TestNode], clients: &mut [TestClient]) {
             return;
         }
     }
-    panic!("Polling has been called {} times.", MAX_POLL_CALLS);
+    panic!("poll_and_resend has been called {} times.", MAX_POLL_CALLS);
 }
 
 /// Checks each of the last `count` members of `nodes` for a `Connected` event, and removes those
 /// which don't fire one. Returns the number of removed nodes.
 pub fn remove_nodes_which_failed_to_connect(nodes: &mut Vec<TestNode>, count: usize) -> usize {
-    let failed_to_join = nodes
+    let failed_to_join: Vec<_> = nodes
         .iter_mut()
         .enumerate()
         .rev()
@@ -387,7 +408,7 @@ pub fn remove_nodes_which_failed_to_connect(nodes: &mut Vec<TestNode>, count: us
                 }
             }
             Some(index)
-        }).collect_vec();
+        }).collect();
     for index in &failed_to_join {
         let _ = nodes.remove(*index);
     }
@@ -415,6 +436,7 @@ pub fn create_connected_nodes_with_cache(
             .create(),
     );
     let _ = nodes[0].poll();
+    println!("Seed node: {}", nodes[0].inner);
 
     let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
 
@@ -579,7 +601,7 @@ pub fn add_connected_nodes_until_split(
         prefixes
             .iter()
             .map(|prefix| prefix.bit_count())
-            .collect_vec()
+            .collect::<Vec<_>>()
     );
 
     // Clear all event queues and clear the `next_relocation_dst` values.
@@ -593,7 +615,8 @@ pub fn add_connected_nodes_until_split(
                 event => panic!("Got unexpected event: {:?}", event),
             }
         }
-        node.inner.clear_next_relocation_dst();
+        node.inner.set_next_relocation_dst(None);
+        node.inner.set_next_relocation_interval(None);
     }
 
     trace!("Created testnet comprising {:?}", prefixes);
@@ -634,8 +657,32 @@ pub fn sort_nodes_by_distance_to(nodes: &mut [TestNode], name: &XorName) {
 }
 
 pub fn verify_invariant_for_all_nodes(nodes: &mut [TestNode]) {
+    // Validate Chain and RT Prefixes are in sync.
+    for node in nodes.iter() {
+        assert_eq!(
+            node.routing_table().prefixes(),
+            node.chain().prefixes(),
+            "Node {} has prefixes not in sync between RT and Chain.",
+            node.name()
+        );
+    }
+
+    // Verify RT and Chain invariants
     verify_network_invariant(nodes.iter().map(|n| n.routing_table()));
+    let min_section_size = nodes[0].handle.0.borrow().network.min_section_size();
+    verify_chain_invariant(nodes.iter().map(|n| n.chain()), min_section_size);
+
     for node in nodes.iter_mut() {
+        // Confirm valid peers from chain are connected according to PeerMgr
+        for pub_id in node
+            .chain()
+            .valid_peers()
+            .iter()
+            .filter(|id| **id != node.chain().our_id())
+        {
+            assert_eq!(true, node.inner.is_routing_peer(pub_id));
+        }
+
         node.inner.purge_invalid_rt_entry();
     }
 }
@@ -706,10 +753,10 @@ fn add_node_to_section<T: Rng>(
     use_cache: bool,
 ) {
     let relocation_name = prefix.substituted_in(rng.gen());
-    nodes.iter_mut().foreach(|node| {
-        node.inner.set_next_relocation_dst(relocation_name);
+    nodes.iter_mut().for_each(|node| {
+        node.inner.set_next_relocation_dst(Some(relocation_name));
         node.inner
-            .set_next_relocation_interval((prefix.lower_bound(), prefix.upper_bound()));
+            .set_next_relocation_interval(Some((prefix.lower_bound(), prefix.upper_bound())));
     });
 
     let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);

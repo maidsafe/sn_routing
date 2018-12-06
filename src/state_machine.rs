@@ -8,28 +8,30 @@
 
 use action::Action;
 use id::{FullId, PublicId};
-use log::Level;
+use log::LogLevel;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
-#[cfg(feature = "use-mock-crust")]
+#[cfg(feature = "mock")]
 use mock_crust;
 use outbox::EventBox;
 use routing_table::{Prefix, RoutingTable};
-#[cfg(feature = "use-mock-crust")]
-use rust_sodium::crypto::sign;
 use states::common::Base;
+#[cfg(feature = "mock")]
+use states::common::Bootstrapped;
 use states::{Bootstrapping, Client, JoiningNode, Node};
-#[cfg(feature = "use-mock-crust")]
+#[cfg(feature = "mock")]
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use std::fmt::{self, Debug, Formatter};
+use std::fmt::{self, Debug, Display, Formatter};
 use std::mem;
-#[cfg(feature = "use-mock-crust")]
+#[cfg(feature = "mock")]
 use std::net::IpAddr;
 use std::sync::mpsc::{self, Receiver, RecvError, Sender, TryRecvError};
 use timer::Timer;
 use types::RoutingActionSender;
 use xor_name::XorName;
 use BootstrapConfig;
+#[cfg(feature = "mock")]
+use Chain;
 use {CrustEvent, CrustEventSender, Service, MIN_SECTION_SIZE};
 
 /// Holds the current state and handles state transitions.
@@ -41,7 +43,7 @@ pub struct StateMachine {
     crust_tx: Sender<CrustEvent<PublicId>>,
     action_rx: Receiver<Action>,
     is_running: bool,
-    #[cfg(feature = "use-mock-crust")]
+    #[cfg(feature = "mock")]
     events: Vec<EventType>,
 }
 
@@ -55,13 +57,15 @@ pub enum State {
     Terminated,
 }
 
-#[cfg(feature = "use-mock-crust")]
+#[cfg(feature = "mock")]
 enum EventType {
     CrustEvent(CrustEvent<PublicId>),
     Action(Box<Action>),
 }
 
-#[cfg(feature = "use-mock-crust")]
+#[cfg(feature = "mock")]
+// TODO: remove this
+#[allow(unused)]
 impl EventType {
     fn is_not_a_timeout(&self) -> bool {
         use std::borrow::Borrow;
@@ -111,6 +115,14 @@ impl State {
         }
     }
 
+    #[cfg(feature = "mock")]
+    fn chain(&self) -> Option<&Chain> {
+        match *self {
+            State::Node(ref state) => Some(state.chain()),
+            _ => None,
+        }
+    }
+
     fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
         self.base_state()
             .and_then(|state| state.close_group(name, count))
@@ -119,7 +131,10 @@ impl State {
     fn min_section_size(&self) -> usize {
         self.base_state().map_or_else(
             || {
-                log_or_panic!(Level::Error, "Can't get min_section_size when Terminated.");
+                log_or_panic!(
+                    LogLevel::Error,
+                    "Can't get min_section_size when Terminated."
+                );
                 MIN_SECTION_SIZE
             },
             Base::min_section_size,
@@ -140,37 +155,20 @@ impl State {
 impl Debug for State {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            State::Bootstrapping(ref inner) => write!(formatter, "State::{:?}", inner),
-            State::Client(ref inner) => write!(formatter, "State::{:?}", inner),
-            State::JoiningNode(ref inner) => write!(formatter, "State::{:?}", inner),
-            State::Node(ref inner) => write!(formatter, "State::{:?}", inner),
+            State::Bootstrapping(ref inner) => write!(formatter, "State::{}", inner),
+            State::Client(ref inner) => write!(formatter, "State::{}", inner),
+            State::JoiningNode(ref inner) => write!(formatter, "State::{}", inner),
+            State::Node(ref inner) => write!(formatter, "State::{}", inner),
             State::Terminated => write!(formatter, "State::Terminated"),
         }
     }
 }
 
-#[cfg(feature = "use-mock-crust")]
+#[cfg(feature = "mock")]
 impl State {
     pub fn purge_invalid_rt_entry(&mut self) {
         if let State::Node(ref mut state) = *self {
             state.purge_invalid_rt_entry();
-        }
-    }
-
-    pub fn has_tunnel_clients(&self, client_1: PublicId, client_2: PublicId) -> bool {
-        match *self {
-            State::Node(ref state) => state.has_tunnel_clients(client_1, client_2),
-            _ => false,
-        }
-    }
-
-    pub fn section_list_signatures(
-        &self,
-        prefix: Prefix<XorName>,
-    ) -> Option<BTreeMap<PublicId, sign::Signature>> {
-        match *self {
-            State::Node(ref state) => state.section_list_signatures(prefix).ok(),
-            _ => None,
         }
     }
 
@@ -187,7 +185,7 @@ impl State {
         }
     }
 
-    pub fn set_next_relocation_interval(&mut self, interval: (XorName, XorName)) {
+    pub fn set_next_relocation_interval(&mut self, interval: Option<(XorName, XorName)>) {
         if let State::Node(ref mut node) = *self {
             node.set_next_relocation_interval(interval);
         }
@@ -209,18 +207,33 @@ impl State {
         }
     }
 
-    pub fn get_user_msg_parts_count(&self) -> u64 {
-        match *self {
-            State::Node(ref state) => state.get_user_msg_parts_count(),
-            State::Client(ref state) => state.get_user_msg_parts_count(),
-            _ => 0,
-        }
-    }
-
     pub fn get_clients_usage(&self) -> Option<BTreeMap<IpAddr, u64>> {
         match *self {
             State::Node(ref state) => Some(state.get_clients_usage()),
             _ => None,
+        }
+    }
+
+    pub fn has_unconsensused_observations(&self) -> bool {
+        match *self {
+            State::Node(ref state) => state.has_unconsensused_observations(),
+            _ => false,
+        }
+    }
+
+    pub fn is_routing_peer(&self, pub_id: &PublicId) -> bool {
+        match *self {
+            State::Node(ref state) => state.is_routing_peer(pub_id),
+            _ => false,
+        }
+    }
+
+    pub fn has_unacked_msg(&self) -> bool {
+        match *self {
+            State::Node(ref state) => state.ack_mgr().has_unacked_msg(),
+            State::Client(ref state) => state.ack_mgr().has_unacked_msg(),
+            State::JoiningNode(ref state) => state.ack_mgr().has_unacked_msg(),
+            _ => false,
         }
     }
 }
@@ -270,13 +283,13 @@ impl StateMachine {
         );
 
         let res = match bootstrap_config {
-            #[cfg(feature = "use-mock-crust")]
+            #[cfg(feature = "mock")]
             Some(c) => Service::with_config(mock_crust::take_current(), crust_sender, c, pub_id),
-            #[cfg(not(feature = "use-mock-crust"))]
+            #[cfg(not(feature = "mock"))]
             Some(c) => Service::with_config(crust_sender, c, pub_id),
-            #[cfg(feature = "use-mock-crust")]
+            #[cfg(feature = "mock")]
             None => Service::new(mock_crust::take_current(), crust_sender, pub_id),
-            #[cfg(not(feature = "use-mock-crust"))]
+            #[cfg(not(feature = "mock"))]
             None => Service::new(crust_sender, pub_id),
         };
 
@@ -291,26 +304,26 @@ impl StateMachine {
             State::Terminated => false,
             _ => true,
         };
-        #[cfg(feature = "use-mock-crust")]
+        #[cfg(feature = "mock")]
         let machine = StateMachine {
-            category_rx,
-            category_tx,
-            crust_rx,
-            crust_tx,
-            action_rx,
-            state,
-            is_running,
+            category_rx: category_rx,
+            category_tx: category_tx,
+            crust_rx: crust_rx,
+            crust_tx: crust_tx,
+            action_rx: action_rx,
+            state: state,
+            is_running: is_running,
             events: Vec::new(),
         };
-        #[cfg(not(feature = "use-mock-crust"))]
+        #[cfg(not(feature = "mock"))]
         let machine = StateMachine {
-            category_rx,
-            category_tx,
-            crust_rx,
-            crust_tx,
-            action_rx,
-            state,
-            is_running,
+            category_rx: category_rx,
+            category_tx: category_tx,
+            crust_rx: crust_rx,
+            crust_tx: crust_tx,
+            action_rx: action_rx,
+            state: state,
+            is_running: is_running,
         };
 
         (action_sender, machine)
@@ -345,7 +358,7 @@ impl StateMachine {
     }
 
     // Handle an event from the list and send any events produced for higher layers.
-    #[cfg(feature = "use-mock-crust")]
+    #[cfg(feature = "mock")]
     fn handle_event_from_list(&mut self, outbox: &mut EventBox) {
         assert!(!self.events.is_empty());
         let event = self.events.remove(0);
@@ -400,7 +413,7 @@ impl StateMachine {
     }
 
     fn terminate(&mut self) {
-        debug!("{:?} Terminating state machine", self);
+        debug!("{} Terminating state machine", self);
         self.is_running = false;
     }
 
@@ -419,7 +432,7 @@ impl StateMachine {
     }
 
     /// Query for a result, or yield: Err(NothingAvailable), Err(Disconnected) or Err(Terminated).
-    #[cfg(not(feature = "use-mock-crust"))]
+    #[cfg(not(feature = "mock"))]
     pub fn try_step(&mut self, outbox: &mut EventBox) -> Result<(), TryRecvError> {
         if self.is_running {
             let category = self.category_rx.try_recv()?;
@@ -431,7 +444,7 @@ impl StateMachine {
     }
 
     /// Query for a result, or yield: Err(NothingAvailable), Err(Disconnected).
-    #[cfg(feature = "use-mock-crust")]
+    #[cfg(feature = "mock")]
     pub fn try_step(&mut self, outbox: &mut EventBox) -> Result<(), TryRecvError> {
         use itertools::Itertools;
         use maidsafe_utilities::SeededRng;
@@ -488,6 +501,16 @@ impl StateMachine {
         interleaved.reverse();
         self.events.extend(interleaved);
 
+        // TODO (adam): why don't we do this:
+        /*
+        if !self.events.is_empty() {
+            self.handle_event_from_list(outbox);
+            Ok(())
+        } else {
+            Err(TryRecvError::Empty)
+        }
+        */
+
         if self.events.iter().any(EventType::is_not_a_timeout) {
             self.handle_event_from_list(outbox);
             return Ok(());
@@ -506,6 +529,11 @@ impl StateMachine {
         self.state.routing_table()
     }
 
+    #[cfg(feature = "mock")]
+    pub fn chain(&self) -> Option<&Chain> {
+        self.state.chain()
+    }
+
     pub fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
         self.state.close_group(name, count)
     }
@@ -514,7 +542,7 @@ impl StateMachine {
         self.state.min_section_size()
     }
 
-    #[cfg(feature = "use-mock-crust")]
+    #[cfg(feature = "mock")]
     /// Get reference to the current state.
     pub fn current(&self) -> &State {
         &self.state
@@ -526,7 +554,7 @@ impl StateMachine {
     }
 }
 
-impl Debug for StateMachine {
+impl Display for StateMachine {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         self.state.fmt(formatter)
     }

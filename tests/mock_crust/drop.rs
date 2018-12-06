@@ -6,7 +6,9 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{create_connected_nodes, poll_all, verify_invariant_for_all_nodes, TestNode};
+use super::{
+    create_connected_nodes, poll_all, poll_and_resend, verify_invariant_for_all_nodes, TestNode,
+};
 use routing::mock_crust::Network;
 use routing::{Event, EventStream};
 
@@ -37,6 +39,7 @@ fn node_drops() {
     let network = Network::new(min_section_size, None);
     let mut nodes = create_connected_nodes(&network, min_section_size + 2);
     drop_node(&mut nodes, 0);
+    poll_and_resend(&mut nodes, &mut []);
 
     verify_invariant_for_all_nodes(&mut nodes);
 }

@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-#![cfg(feature = "use-mock-crust")]
+#![cfg(feature = "mock")]
 // For explanation of lint checks, run `rustc -W help` or see
 // https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
 #![forbid(
@@ -52,6 +52,8 @@
     missing_debug_implementations,
     variant_size_differences
 )]
+// FIXME: Re-enable `redundant_field_names`.
+#![cfg_attr(feature = "cargo-clippy", allow(redundant_field_names))]
 
 extern crate fake_clock;
 extern crate itertools;

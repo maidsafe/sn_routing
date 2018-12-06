@@ -55,7 +55,7 @@
     non_camel_case_types
 )]
 #![cfg_attr(
-    feature = "use-mock-crust",
+    feature = "mock",
     allow(unused_extern_crates, unused_imports)
 )]
 
@@ -66,23 +66,24 @@ extern crate lru_time_cache;
 extern crate maidsafe_utilities;
 extern crate rand;
 extern crate routing;
-extern crate rust_sodium;
 extern crate term;
 #[macro_use]
 extern crate unwrap;
 #[macro_use]
 extern crate serde_derive;
+#[cfg(not(feature = "mock"))]
+extern crate safe_crypto;
 
 mod utils;
 
-#[cfg(feature = "use-mock-crust")]
+#[cfg(feature = "mock")]
 fn main() {
-    println!("This example should be built without `--features=use-mock-crust`.");
+    println!("This example should be built without `--features=mock`.");
     // Return Linux sysexit code for "configuration error"
     ::std::process::exit(78);
 }
 
-#[cfg(not(feature = "use-mock-crust"))]
+#[cfg(not(feature = "mock"))]
 mod unnamed {
     use docopt::Docopt;
     use maidsafe_utilities::log;
@@ -92,7 +93,7 @@ mod unnamed {
     use rand::distributions::{IndependentSample, Range};
     use rand::{random, thread_rng, Rng, ThreadRng};
     use routing::{MutableData, Value, MIN_SECTION_SIZE};
-    use rust_sodium::crypto::sign;
+    use safe_crypto::PublicSignKey;
     use std::collections::BTreeMap;
     use std::io::Write;
     use std::iter;
@@ -321,7 +322,7 @@ mod unnamed {
         assert!(test_success, "Failed to store and verify data.");
     }
 
-    fn gen_mutable_data<R: Rng>(rng: &mut R, owner: sign::PublicKey) -> MutableData {
+    fn gen_mutable_data<R: Rng>(rng: &mut R, owner: PublicSignKey) -> MutableData {
         let name = rng.gen();
         let tag = rng.gen_range(10_000, 20_000);
 
@@ -334,7 +335,7 @@ mod unnamed {
             let _ = entries.insert(
                 key,
                 Value {
-                    content: content,
+                    content,
                     entry_version: 0,
                 },
             );
@@ -441,7 +442,7 @@ Options:
     }
 }
 
-#[cfg(not(feature = "use-mock-crust"))]
+#[cfg(not(feature = "mock"))]
 fn main() {
     unnamed::run_main()
 }

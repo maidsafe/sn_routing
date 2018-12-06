@@ -13,6 +13,8 @@ use routing::{
     Prefix, Request, Response, XorName,
 };
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::Write;
 use std::time::Duration;
 
 /// A simple example node implementation for a network based on the Routing library.
@@ -23,6 +25,7 @@ pub struct ExampleNode {
     mdata_store: HashMap<(XorName, u64), MutableData>,
     client_accounts: HashMap<XorName, u64>,
     request_cache: LruCache<MessageId, (Authority<XorName>, Authority<XorName>)>,
+    file: Option<File>,
 }
 
 impl ExampleNode {
@@ -31,11 +34,12 @@ impl ExampleNode {
         let node = unwrap!(Node::builder().first(first).create());
 
         ExampleNode {
-            node: node,
+            node,
             idata_store: HashMap::new(),
             mdata_store: HashMap::new(),
             client_accounts: HashMap::new(),
             request_cache: LruCache::with_expiry_duration(Duration::from_secs(60 * 10)),
+            file: None,
         }
     }
 
@@ -62,6 +66,11 @@ impl ExampleNode {
                 }
                 Event::Connected => {
                     trace!("{} Received connected event", self.get_debug_name());
+                    println!("{} Received connected event", self.get_debug_name());
+                    self.file = Some(
+                        File::create(format!("{:?}", self.node.id().unwrap().name()))
+                            .expect("Could not create file"),
+                    );
                 }
                 Event::Terminate => {
                     info!("{} Received Terminate event", self.get_debug_name());
@@ -146,6 +155,15 @@ impl ExampleNode {
             (Response::PutMData { res, msg_id }, Authority::ClientManager(_)) => {
                 if let Some((src, dst)) = self.request_cache.remove(&msg_id) {
                     unwrap!(self.node.send_put_mdata_response(src, dst, res, msg_id));
+                }
+            }
+            (Response::GetMDataValue { res: Ok(value), .. }, ..) => {
+                if let Some(ref mut f) = self.file {
+                    let val = ::std::str::from_utf8(&value.content).unwrap();
+                    let _ = writeln!(f, "{}", val);
+                    println!("{}", val);
+                    f.sync_all().expect("Could not sync file");
+                    f.flush().expect("Could not flush file");
                 }
             }
             _ => unreachable!(),

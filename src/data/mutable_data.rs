@@ -9,7 +9,7 @@
 use client_error::{ClientError, EntryError};
 use maidsafe_utilities::serialisation;
 use rand::{Rand, Rng};
-use rust_sodium::crypto::sign::PublicKey;
+use safe_crypto::PublicSignKey;
 use std::collections::btree_map::{BTreeMap, Entry};
 use std::collections::BTreeSet;
 use std::fmt::{self, Debug, Formatter};
@@ -39,7 +39,7 @@ pub struct MutableData {
     version: u64,
     /// Contains a set of owners which are allowed to mutate permissions.
     /// Currently limited to one owner to disallow multisig.
-    owners: BTreeSet<PublicKey>,
+    owners: BTreeSet<PublicSignKey>,
 }
 
 /// A value in `MutableData`
@@ -57,7 +57,7 @@ pub enum User {
     /// Permissions apply to anyone.
     Anyone,
     /// Permissions apply to a single public key.
-    Key(PublicKey),
+    Key(PublicSignKey),
 }
 
 /// Action a permission applies to
@@ -179,7 +179,7 @@ impl EntryActions {
             key,
             EntryAction::Ins(Value {
                 entry_version: version,
-                content,
+                content: content,
             }),
         );
         self
@@ -191,7 +191,7 @@ impl EntryActions {
             key,
             EntryAction::Update(Value {
                 entry_version: version,
-                content,
+                content: content,
             }),
         );
         self
@@ -217,15 +217,15 @@ impl MutableData {
         tag: u64,
         permissions: BTreeMap<User, PermissionSet>,
         data: BTreeMap<Vec<u8>, Value>,
-        owners: BTreeSet<PublicKey>,
+        owners: BTreeSet<PublicSignKey>,
     ) -> Result<MutableData, ClientError> {
         let md = MutableData {
-            name,
-            tag,
-            data,
-            permissions,
+            name: name,
+            tag: tag,
+            data: data,
+            permissions: permissions,
             version: 0,
-            owners,
+            owners: owners,
         };
 
         md.validate()?;
@@ -277,7 +277,7 @@ impl MutableData {
     }
 
     /// Returns the owner keys
-    pub fn owners(&self) -> &BTreeSet<PublicKey> {
+    pub fn owners(&self) -> &BTreeSet<PublicSignKey> {
         &self.owners
     }
 
@@ -310,7 +310,7 @@ impl MutableData {
     pub fn mutate_entries(
         &mut self,
         actions: BTreeMap<Vec<u8>, EntryAction>,
-        requester: PublicKey,
+        requester: PublicSignKey,
     ) -> Result<(), ClientError> {
         // Deconstruct actions into inserts, updates, and deletes
         let (insert, update, delete) = actions.into_iter().fold(
@@ -489,7 +489,7 @@ impl MutableData {
         user: User,
         permissions: PermissionSet,
         version: u64,
-        requester: PublicKey,
+        requester: PublicSignKey,
     ) -> Result<(), ClientError> {
         if !self.is_action_allowed(requester, Action::ManagePermissions) {
             return Err(ClientError::AccessDenied);
@@ -531,7 +531,7 @@ impl MutableData {
         &mut self,
         user: &User,
         version: u64,
-        requester: PublicKey,
+        requester: PublicSignKey,
     ) -> Result<(), ClientError> {
         if !self.is_action_allowed(requester, Action::ManagePermissions) {
             return Err(ClientError::AccessDenied);
@@ -559,7 +559,11 @@ impl MutableData {
     }
 
     /// Change owner of the mutable data.
-    pub fn change_owner(&mut self, new_owner: PublicKey, version: u64) -> Result<(), ClientError> {
+    pub fn change_owner(
+        &mut self,
+        new_owner: PublicSignKey,
+        version: u64,
+    ) -> Result<(), ClientError> {
         if version != self.version + 1 {
             return Err(ClientError::InvalidSuccessor(self.version));
         }
@@ -570,7 +574,11 @@ impl MutableData {
     }
 
     /// Change the owner without performing any validation.
-    pub fn change_owner_without_validation(&mut self, new_owner: PublicKey, version: u64) -> bool {
+    pub fn change_owner_without_validation(
+        &mut self,
+        new_owner: PublicSignKey,
+        version: u64,
+    ) -> bool {
         if version <= self.version {
             return false;
         }
@@ -598,7 +606,7 @@ impl MutableData {
         }
     }
 
-    fn is_action_allowed(&self, requester: PublicKey, action: Action) -> bool {
+    fn is_action_allowed(&self, requester: PublicSignKey, action: Action) -> bool {
         if self.owners.contains(&requester) {
             return true;
         }
@@ -630,7 +638,7 @@ mod tests {
     use super::*;
     use client_error::ClientError;
     use rand;
-    use rust_sodium::crypto::sign;
+    use safe_crypto::gen_sign_keypair;
     use std::collections::{BTreeMap, BTreeSet};
     use std::iter;
 
@@ -646,9 +654,9 @@ mod tests {
 
     #[test]
     fn mutable_data_permissions() {
-        let (owner, _) = sign::gen_keypair();
-        let (pk1, _) = sign::gen_keypair();
-        let (pk2, _) = sign::gen_keypair();
+        let (owner, _) = gen_sign_keypair();
+        let (pk1, _) = gen_sign_keypair();
+        let (pk2, _) = gen_sign_keypair();
 
         let mut perms = BTreeMap::new();
 
@@ -715,7 +723,7 @@ mod tests {
 
         // Actions requested by owner should always be allowed
         assert!(md.mutate_entries(del.into(), owner).is_ok());
-        assert_eq!(unwrap!(md.get(&k1)).content, Vec::<u8>::new());
+        assert_eq!(md.get(&k1).unwrap().content, Vec::<u8>::new());
     }
 
     #[test]
@@ -751,7 +759,7 @@ mod tests {
 
         // It must not be possible to create MutableData whose number of entries exceeds the limit.
         let mut data = BTreeMap::new();
-        for i in 0..MAX_MUTABLE_DATA_ENTRIES + 1 {
+        for i in 0..=MAX_MUTABLE_DATA_ENTRIES {
             assert!(data.insert(to_vec_of_u8(i), val.clone()).is_none());
         }
         assert_err!(
@@ -764,7 +772,7 @@ mod tests {
             assert!(data.insert(to_vec_of_u8(i), val.clone()).is_none());
         }
 
-        let (owner, _) = sign::gen_keypair();
+        let (owner, _) = gen_sign_keypair();
         let owners = iter::once(owner).collect();
         let mut md = unwrap!(MutableData::new(
             rand::random(),
@@ -824,7 +832,7 @@ mod tests {
         let mut data = BTreeMap::new();
         let _ = data.insert(vec![0], big_val.clone());
 
-        let (owner, _) = sign::gen_keypair();
+        let (owner, _) = gen_sign_keypair();
         let owners = iter::once(owner).collect();
         let mut md = unwrap!(MutableData::new(
             rand::random(),
@@ -849,8 +857,8 @@ mod tests {
 
     #[test]
     fn transfer_ownership() {
-        let (owner, _) = sign::gen_keypair();
-        let (pk1, _) = sign::gen_keypair();
+        let (owner, _) = gen_sign_keypair();
+        let (pk1, _) = gen_sign_keypair();
 
         let mut owners = BTreeSet::new();
         let _ = owners.insert(owner);
@@ -870,7 +878,7 @@ mod tests {
 
     #[test]
     fn versions_succession() {
-        let (owner, _) = sign::gen_keypair();
+        let (owner, _) = gen_sign_keypair();
 
         let mut owners = BTreeSet::new();
         let _ = owners.insert(owner);
@@ -957,8 +965,8 @@ mod tests {
 
     #[test]
     fn changing_permissions() {
-        let (owner, _) = sign::gen_keypair();
-        let (pk1, _) = sign::gen_keypair();
+        let (owner, _) = gen_sign_keypair();
+        let (pk1, _) = gen_sign_keypair();
 
         let mut owners = BTreeSet::new();
         let _ = owners.insert(owner);

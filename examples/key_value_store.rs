@@ -58,7 +58,7 @@
     non_camel_case_types
 )]
 #![cfg_attr(
-    feature = "use-mock-crust",
+    feature = "mock",
     allow(unused_extern_crates, unused_imports)
 )]
 
@@ -68,30 +68,31 @@ extern crate maidsafe_utilities;
 #[macro_use]
 extern crate unwrap;
 extern crate docopt;
-extern crate rust_sodium;
 #[macro_use]
 extern crate serde_derive;
+#[cfg(not(feature = "mock"))]
+extern crate safe_crypto;
 
 extern crate lru_time_cache;
 extern crate routing;
 
 mod utils;
 
-#[cfg(feature = "use-mock-crust")]
+#[cfg(feature = "mock")]
 fn main() {
-    println!("This example should be built without `--features=use-mock-crust`.");
+    println!("This example should be built without `--features=mock`.");
     // Return Linux sysexit code for "configuration error"
     ::std::process::exit(78);
 }
 
-#[cfg(not(feature = "use-mock-crust"))]
+#[cfg(not(feature = "mock"))]
 mod unnamed {
     use docopt::Docopt;
     use maidsafe_utilities::log;
     use maidsafe_utilities::serialisation::{deserialise, serialise};
     use maidsafe_utilities::thread::{self, Joiner};
     use routing::{MutableData, Value, XorName};
-    use rust_sodium::crypto;
+    use safe_crypto;
     use std::io::{self, Write};
     use std::iter;
     use std::sync::mpsc;
@@ -181,8 +182,8 @@ Options:
             let example_client = ExampleClient::new();
             let (command_sender, command_receiver) = mpsc::channel::<UserCommand>();
             KeyValueStore {
-                example_client: example_client,
-                command_receiver: command_receiver,
+                example_client,
+                command_receiver,
                 exit: false,
                 _joiner: thread::named("Command reader", move || {
                     read_user_commands(&command_sender)
@@ -256,7 +257,7 @@ Options:
         }
 
         fn calculate_key_name(key: &str) -> XorName {
-            XorName(crypto::hash::sha256::hash(key.as_bytes()).0)
+            XorName(safe_crypto::hash(key.as_bytes()))
         }
     }
 
@@ -283,7 +284,7 @@ Options:
     }
 }
 
-#[cfg(not(feature = "use-mock-crust"))]
+#[cfg(not(feature = "mock"))]
 fn main() {
     unnamed::run_main()
 }

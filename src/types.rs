@@ -7,11 +7,11 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use maidsafe_utilities::event_sender::MaidSafeObserver;
-#[cfg(any(test, feature = "use-mock-crust"))]
+#[cfg(any(test, feature = "mock"))]
 use maidsafe_utilities::SeededRng;
-#[cfg(all(not(test), not(feature = "use-mock-crust")))]
+#[cfg(all(not(test), not(feature = "mock")))]
 use rand;
-#[cfg(any(test, feature = "use-mock-crust"))]
+#[cfg(any(test, feature = "mock"))]
 use rand::Rng;
 use xor_name::XorName;
 
@@ -27,14 +27,14 @@ pub struct MessageId(XorName);
 
 impl MessageId {
     /// Generate a new `MessageId` with random content.
-    #[cfg(any(test, feature = "use-mock-crust"))]
+    #[cfg(any(test, feature = "mock"))]
     pub fn new() -> MessageId {
         let mut rng = SeededRng::thread_rng();
         MessageId(rng.gen())
     }
 
     /// Generate a new `MessageId` with random content.
-    #[cfg(all(not(test), not(feature = "use-mock-crust")))]
+    #[cfg(all(not(test), not(feature = "mock")))]
     pub fn new() -> MessageId {
         MessageId(rand::random())
     }

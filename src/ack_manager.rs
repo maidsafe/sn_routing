@@ -7,18 +7,18 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use error::RoutingError;
-#[cfg(feature = "use-mock-crust")]
+#[cfg(feature = "mock")]
 use fake_clock::FakeClock as Instant;
 use maidsafe_utilities::serialisation;
 use message_filter::MessageFilter;
 use messages::RoutingMessage;
+use safe_crypto;
 use sha3;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::time::Duration;
-#[cfg(not(feature = "use-mock-crust"))]
+#[cfg(not(feature = "mock"))]
 use std::time::Instant;
-use tiny_keccak::sha3_256;
 
 /// Time (in seconds) after which a message is resent due to being unacknowledged by recipient.
 pub const ACK_TIMEOUT_SECS: u64 = 20;
@@ -60,7 +60,6 @@ impl AckManager {
     /// pending ones, and remembers that we have received this ack).
     pub fn receive(&mut self, ack: Ack) {
         let _ack = self.pending.remove(&ack);
-        // TODO - Should this insert an ack we were not expecting ??
         let _ = self.received.insert(&ack);
     }
 
@@ -104,6 +103,11 @@ impl AckManager {
     pub fn remove(&mut self, ack: &Ack) -> Option<UnacknowledgedMessage> {
         self.pending.remove(ack)
     }
+
+    #[cfg(feature = "mock")]
+    pub fn has_unacked_msg(&self) -> bool {
+        !self.pending.is_empty()
+    }
 }
 
 impl Ack {
@@ -111,7 +115,7 @@ impl Ack {
     pub fn compute(routing_msg: &RoutingMessage) -> Result<Ack, RoutingError> {
         let hash_msg = serialisation::serialise(routing_msg)?;
         Ok(Ack {
-            m_hash: sha3_256(&hash_msg),
+            m_hash: safe_crypto::hash(&hash_msg),
         })
     }
 }

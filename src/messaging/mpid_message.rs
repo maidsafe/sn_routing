@@ -11,10 +11,10 @@
 pub const MAX_BODY_SIZE: usize = 102_400 - 512 - super::MAX_HEADER_METADATA_SIZE;
 
 use super::{Error, MpidHeader};
+use hex_fmt::HexFmt;
 use maidsafe_utilities::serialisation::serialise;
-use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
+use safe_crypto::{PublicSignKey, SecretSignKey, Signature};
 use std::fmt::{self, Debug, Formatter};
-use utils;
 use xor_name::XorName;
 
 #[derive(PartialEq, Eq, Hash, Clone, Deserialize, Serialize)]
@@ -51,7 +51,7 @@ impl MpidMessage {
         metadata: Vec<u8>,
         recipient: XorName,
         body: Vec<u8>,
-        secret_key: &SecretKey,
+        secret_key: &SecretSignKey,
     ) -> Result<MpidMessage, Error> {
         if body.len() > MAX_BODY_SIZE {
             return Err(Error::BodyTooLarge);
@@ -59,13 +59,16 @@ impl MpidMessage {
 
         let header = MpidHeader::new(sender, metadata, secret_key)?;
 
-        let detail = Detail { recipient, body };
+        let detail = Detail {
+            recipient: recipient,
+            body: body,
+        };
 
         let recipient_and_body = serialise(&detail)?;
         Ok(MpidMessage {
-            header,
-            detail,
-            signature: sign::sign_detached(&recipient_and_body, secret_key),
+            header: header,
+            detail: detail,
+            signature: secret_key.sign_detached(&recipient_and_body),
         })
     }
 
@@ -91,11 +94,11 @@ impl MpidMessage {
         self.header.name()
     }
 
-    /// Validates the message and header signatures against the provided `PublicKey`.
-    pub fn verify(&self, public_key: &PublicKey) -> bool {
+    /// Validates the message and header signatures against the provided `PublicSignKey`.
+    pub fn verify(&self, public_key: &PublicSignKey) -> bool {
         match serialise(&self.detail) {
             Ok(recipient_and_body) => {
-                sign::verify_detached(&self.signature, &recipient_and_body, public_key)
+                public_key.verify_detached(&self.signature, &recipient_and_body)
                     && self.header.verify(public_key)
             }
             Err(_) => false,
@@ -107,11 +110,11 @@ impl Debug for MpidMessage {
     fn fmt(&self, formatter: &mut Formatter) -> Result<(), fmt::Error> {
         write!(
             formatter,
-            "MpidMessage {{ header: {:?}, recipient: {:?}, body: {}, signature: {} }}",
+            "MpidMessage {{ header: {:?}, recipient: {:?}, body: {:.14}, signature: {:.14} }}",
             self.header,
             self.detail.recipient,
-            utils::format_binary_array(&self.detail.body),
-            utils::format_binary_array(&self.signature)
+            HexFmt(&self.detail.body),
+            HexFmt(&self.signature.into_bytes()[..])
         )
     }
 }
@@ -121,12 +124,12 @@ mod tests {
     use super::*;
     use messaging;
     use rand;
-    use rust_sodium::crypto::sign;
+    use safe_crypto::gen_sign_keypair;
     use xor_name::XorName;
 
     #[test]
     fn full() {
-        let (mut public_key, secret_key) = sign::gen_keypair();
+        let (public_key, secret_key) = gen_sign_keypair();
         let sender: XorName = rand::random();
         let metadata = messaging::generate_random_bytes(messaging::MAX_HEADER_METADATA_SIZE);
         let recipient: XorName = rand::random();
@@ -165,11 +168,7 @@ mod tests {
 
         // Check verify function with a valid and invalid key
         assert!(message.verify(&public_key));
-        if public_key.0[0] != 255 {
-            public_key.0[0] += 1;
-        } else {
-            public_key.0[0] = 0;
-        }
-        assert!(!message.verify(&public_key));
+        let (rand_public_key, _) = gen_sign_keypair();
+        assert!(!message.verify(&rand_public_key));
     }
 }

@@ -12,16 +12,14 @@ use messages::Message;
 use outbox::EventBox;
 use routing_table::Authority;
 use state_machine::Transition;
-use stats::Stats;
-use std::fmt::Debug;
+use std::fmt::Display;
 use xor_name::XorName;
 use Service;
 
 // Trait for all states.
-pub trait Base: Debug {
+pub trait Base: Display {
     fn crust_service(&self) -> &Service;
     fn full_id(&self) -> &FullId;
-    fn stats(&mut self) -> &mut Stats;
     fn in_authority(&self, auth: &Authority<XorName>) -> bool;
     fn min_section_size(&self) -> usize;
 
@@ -50,7 +48,7 @@ pub trait Base: Debug {
             }
             Err(error) => {
                 error!(
-                    "{:?} Failed to serialise message {:?}: {:?}",
+                    "{} Failed to serialise message {:?}: {:?}",
                     self, message, error
                 );
                 // The caller can't do much to handle this except log more messages, so just stop
@@ -63,10 +61,8 @@ pub trait Base: Debug {
     // Sends the given `bytes` to the peer with the given Crust `PublicId`. If that results in an
     // error, it disconnects from the peer.
     fn send_or_drop(&mut self, pub_id: &PublicId, bytes: Vec<u8>, priority: u8) {
-        self.stats().count_bytes(bytes.len());
-
         if let Err(err) = self.crust_service().send(pub_id, bytes, priority) {
-            info!("{:?} Connection to {} failed: {:?}", self, pub_id, err);
+            info!("{} Connection to {} failed: {:?}", self, pub_id, err);
             // TODO: Handle lost peer, but avoid a cascade of sending messages and handling more
             //       lost peers: https://maidsafe.atlassian.net/browse/MAID-1924
             // self.crust_service().disconnect(*pub_id);

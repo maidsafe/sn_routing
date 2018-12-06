@@ -7,8 +7,8 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use data::{MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_MUTABLE_DATA_SIZE_IN_BYTES};
-use error::RoutingError;
-#[cfg(feature = "use-mock-crust")]
+use error::{Result, RoutingError};
+#[cfg(feature = "mock")]
 use fake_clock::FakeClock as Instant;
 use itertools::Itertools;
 use lru_time_cache::LruCache;
@@ -20,7 +20,7 @@ use std::collections::BTreeMap;
 use std::mem;
 use std::net::IpAddr;
 use std::time::Duration;
-#[cfg(not(feature = "use-mock-crust"))]
+#[cfg(not(feature = "mock"))]
 use std::time::Instant;
 use types::MessageId;
 
@@ -36,16 +36,16 @@ const MIN_CLIENT_CAPACITY: u64 = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES + 10_240;
 /// it can be exceeded if there are enough client entries: each client will be allowed a
 /// hard-minimum of `MIN_CLIENT_CAPACITY` even if this means the `RateLimiter`'s total capacity
 /// exceeds the `SOFT_CAPACITY`.
-#[cfg(not(feature = "use-mock-crust"))]
+#[cfg(not(feature = "mock"))]
 const SOFT_CAPACITY: u64 = 8 * 1024 * 1024;
 /// For the mock-crust tests, we want a small `SOFT_CAPACITY` in order to trigger more rate-limited
 /// rejections. This must be at least `2 * MIN_CLIENT_CAPACITY` for the multi-client tests to work.
-#[cfg(feature = "use-mock-crust")]
+#[cfg(feature = "mock")]
 const SOFT_CAPACITY: u64 = 2 * MIN_CLIENT_CAPACITY;
 /// Duration for which entries are kept in the `overcharged` cache, in seconds.
 const OVERCHARGED_TIMEOUT_SECS: u64 = 300;
 
-#[cfg(feature = "use-mock-crust")]
+#[cfg(feature = "mock")]
 #[doc(hidden)]
 pub mod rate_limiter_consts {
     pub const SOFT_CAPACITY: u64 = super::SOFT_CAPACITY;
@@ -78,7 +78,7 @@ impl RateLimiter {
                 OVERCHARGED_TIMEOUT_SECS,
             )),
             last_updated: Instant::now(),
-            disabled,
+            disabled: disabled,
         }
     }
 
@@ -96,7 +96,7 @@ impl RateLimiter {
         part_count: u32,
         part_index: u32,
         payload: &[u8],
-    ) -> Result<u64, RoutingError> {
+    ) -> Result<u64> {
         let (bytes_to_add, overcharged) = if part_index == 0 {
             use self::UserMessage::*;
             use Request::*;
@@ -278,13 +278,13 @@ impl RateLimiter {
         }
     }
 
-    #[cfg(feature = "use-mock-crust")]
+    #[cfg(feature = "mock")]
     pub fn usage_map(&self) -> &BTreeMap<IpAddr, u64> {
         &self.used
     }
 }
 
-#[cfg(all(test, feature = "use-mock-crust"))]
+#[cfg(all(test, feature = "mock"))]
 mod tests {
     use super::*;
     use data::ImmutableData;
@@ -292,8 +292,8 @@ mod tests {
     use maidsafe_utilities::SeededRng;
     use messages::{MessageContent, Request, Response};
     use rand::Rng;
+    use safe_crypto;
     use std::collections::BTreeMap;
-    use tiny_keccak::sha3_256;
     use types::MessageId;
     use xor_name::{XorName, XOR_NAME_LEN};
 
@@ -346,7 +346,7 @@ mod tests {
         payload: &[u8],
         should_succeed: bool,
     ) -> bool {
-        let hash = sha3_256(payload);
+        let hash = safe_crypto::hash(payload);
         let msg_id = MessageId::new();
         match rate_limiter.add_message(client, &hash, &msg_id, 2, 1, payload) {
             Err(RoutingError::ExceedsRateLimit(returned_hash)) => {
@@ -374,7 +374,7 @@ mod tests {
         rate_limiter: &mut RateLimiter,
         client: &IpAddr,
         msg: &MessageContent,
-    ) -> Result<u64, RoutingError> {
+    ) -> Result<u64> {
         if let MessageContent::UserMessagePart {
             ref hash,
             ref msg_id,
@@ -759,14 +759,28 @@ mod tests {
         // Parses with `SerialisationError::DeserialiseExtraBytes` error.
         let mut msg_id = MessageId::new();
         let mut payload = vec![0; MAX_IMMUTABLE_DATA_SIZE_IN_BYTES as usize];
-        match rate_limiter.add_message(&client, &sha3_256(&payload), &msg_id, 1, 0, &payload) {
+        match rate_limiter.add_message(
+            &client,
+            &safe_crypto::hash(&payload),
+            &msg_id,
+            1,
+            0,
+            &payload,
+        ) {
             Err(RoutingError::InvalidMessage) => {}
             _ => panic!("unexpected result"),
         }
 
         // Parses with other serialisation error and part count is 1.
         payload = vec![0];
-        match rate_limiter.add_message(&client, &sha3_256(&payload), &msg_id, 1, 0, &payload) {
+        match rate_limiter.add_message(
+            &client,
+            &safe_crypto::hash(&payload),
+            &msg_id,
+            1,
+            0,
+            &payload,
+        ) {
             Err(RoutingError::InvalidMessage) => {}
             _ => panic!("unexpected result"),
         }
@@ -777,7 +791,14 @@ mod tests {
             msg_id: MessageId::new(),
         });
         payload = unwrap!(serialisation::serialise(&msg));
-        match rate_limiter.add_message(&client, &sha3_256(&payload), &msg_id, 2, 0, &payload) {
+        match rate_limiter.add_message(
+            &client,
+            &safe_crypto::hash(&payload),
+            &msg_id,
+            2,
+            0,
+            &payload,
+        ) {
             Err(RoutingError::InvalidMessage) => {}
             _ => panic!("unexpected result"),
         }
@@ -786,7 +807,14 @@ mod tests {
         msg = UserMessage::Request(Request::Refresh(vec![0], MessageId::new()));
         msg_id = *msg.message_id();
         payload = unwrap!(serialisation::serialise(&msg));
-        match rate_limiter.add_message(&client, &sha3_256(&payload), &msg_id, 1, 0, &payload) {
+        match rate_limiter.add_message(
+            &client,
+            &safe_crypto::hash(&payload),
+            &msg_id,
+            1,
+            0,
+            &payload,
+        ) {
             Err(RoutingError::InvalidMessage) => {}
             _ => panic!("unexpected result"),
         }
@@ -798,7 +826,14 @@ mod tests {
         });
         msg_id = *msg.message_id();
         payload = unwrap!(serialisation::serialise(&msg));
-        match rate_limiter.add_message(&client, &sha3_256(&payload), &msg_id, 1, 0, &payload) {
+        match rate_limiter.add_message(
+            &client,
+            &safe_crypto::hash(&payload),
+            &msg_id,
+            1,
+            0,
+            &payload,
+        ) {
             Err(RoutingError::InvalidMessage) => {}
             _ => panic!("unexpected result"),
         }

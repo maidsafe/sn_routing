@@ -6,14 +6,14 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-#[cfg(feature = "use-mock-crust")]
+#[cfg(feature = "mock")]
 use fake_clock::FakeClock as Instant;
 use std::collections::hash_map::{DefaultHasher, Entry};
 use std::collections::{HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::time::Duration;
-#[cfg(not(feature = "use-mock-crust"))]
+#[cfg(not(feature = "mock"))]
 use std::time::Instant;
 
 fn hash<T: Hash>(t: &T) -> u64 {
@@ -40,7 +40,7 @@ impl<Message: Hash> MessageFilter<Message> {
         MessageFilter {
             count: HashMap::new(),
             timeout_queue: VecDeque::new(),
-            time_to_live,
+            time_to_live: time_to_live,
             phantom: PhantomData,
         }
     }
@@ -83,11 +83,6 @@ impl<Message: Hash> MessageFilter<Message> {
         self.count.contains_key(&hash(message))
     }
 
-    /// Remove the entry for `message`, regardless of how many times it was previously inserted.
-    pub fn remove(&mut self, message: &Message) {
-        let _old_val = self.count.remove(&hash(message));
-    }
-
     fn remove_expired(&mut self) {
         let now = Instant::now();
         while self
@@ -108,16 +103,16 @@ impl<Message: Hash> MessageFilter<Message> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::{self, seq, Rng};
+    use rand::{self, Rng};
     use std::time::Duration;
 
-    #[cfg(feature = "use-mock-crust")]
+    #[cfg(feature = "mock")]
     fn sleep(time: u64) {
         use fake_clock::FakeClock;
         FakeClock::advance_time(time);
     }
 
-    #[cfg(not(feature = "use-mock-crust"))]
+    #[cfg(not(feature = "mock"))]
     fn sleep(time: u64) {
         use std::thread;
         thread::sleep(Duration::from_millis(time));
@@ -164,7 +159,7 @@ mod tests {
             fn default() -> Temp {
                 let mut rng = rand::thread_rng();
                 Temp {
-                    id: unwrap!(seq::sample_iter(&mut rng, 0u8..255, 64)),
+                    id: rand::sample(&mut rng, 0u8..255, 64),
                 }
             }
         }

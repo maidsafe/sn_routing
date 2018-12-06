@@ -99,8 +99,8 @@ pub mod rust_sodium {
             }
 
             fn hash256(data: &[u8]) -> [u8; 32] {
-                use tiny_keccak::sha3_256;
-                sha3_256(data)
+                use safe_crypto;
+                safe_crypto::hash(data)
             }
         }
 
@@ -198,8 +198,8 @@ mod tests {
 
     #[test]
     fn keypair_generation() {
-        let (sign_pk0, sign_sk0) = sign::gen_keypair();
-        let (sign_pk1, sign_sk1) = sign::gen_keypair();
+        let (sign_pk0, sign_sk0) = gen_sign_keypair();
+        let (sign_pk1, sign_sk1) = gen_sign_keypair();
         assert_ne!(sign_pk0, sign_pk1);
         assert_ne!(sign_sk0, sign_sk1);
 
@@ -211,13 +211,13 @@ mod tests {
 
     #[test]
     fn sign_and_verify() {
-        let (pk0, sk0) = sign::gen_keypair();
+        let (pk0, sk0) = gen_sign_keypair();
         let message: Vec<_> = rand::thread_rng().gen_iter().take(10).collect();
 
         let signature = sign::sign_detached(&message, &sk0);
         assert!(sign::verify_detached(&signature, &message, &pk0));
 
-        let (pk1, _) = sign::gen_keypair();
+        let (pk1, _) = gen_sign_keypair();
         assert!(!sign::verify_detached(&signature, &message, &pk1));
     }
 

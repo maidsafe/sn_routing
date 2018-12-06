@@ -6,19 +6,18 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-#[cfg(feature = "use-mock-crust")]
+use chain::Proof;
+#[cfg(feature = "mock")]
 use fake_clock::FakeClock as Instant;
-use id::PublicId;
 use itertools::Itertools;
 use maidsafe_utilities::serialisation;
 use messages::SignedMessage;
-use rust_sodium::crypto::sign;
+use safe_crypto;
 use sha3::Digest256;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-#[cfg(not(feature = "use-mock-crust"))]
+#[cfg(not(feature = "mock"))]
 use std::time::Instant;
-use tiny_keccak::sha3_256;
 
 /// Time (in seconds) within which a message and a quorum of signatures need to arrive to
 /// accumulate.
@@ -26,31 +25,30 @@ pub const ACCUMULATION_TIMEOUT_SECS: u64 = 30;
 
 #[derive(Default)]
 pub struct SignatureAccumulator {
-    sigs: HashMap<Digest256, (Vec<(PublicId, sign::Signature)>, Instant)>,
+    proofs: HashMap<Digest256, (Vec<Proof>, Instant)>,
     msgs: HashMap<Digest256, (SignedMessage, u8, Instant)>,
 }
 
 impl SignatureAccumulator {
     /// Adds the given signature to the list of pending signatures or to the appropriate
     /// `SignedMessage`. Returns the message, if it has enough signatures now.
-    pub fn add_signature(
+    pub fn add_proof(
         &mut self,
         min_section_size: usize,
         hash: Digest256,
-        sig: sign::Signature,
-        pub_id: PublicId,
+        proof: Proof,
     ) -> Option<(SignedMessage, u8)> {
         self.remove_expired();
         if let Some(&mut (ref mut msg, _, _)) = self.msgs.get_mut(&hash) {
-            msg.add_signature(pub_id, sig);
+            msg.add_proof(proof);
         } else {
             // FIXME: rustc stable requires this to be non-mutable?
             #[allow(unused)]
-            let mut sigs_vec = self
-                .sigs
+            let (ref mut sigs_vec, _) = self
+                .proofs
                 .entry(hash)
                 .or_insert_with(|| (vec![], Instant::now()));
-            sigs_vec.0.push((pub_id, sig));
+            sigs_vec.push(proof);
             return None;
         }
         self.remove_if_complete(min_section_size, &hash)
@@ -66,7 +64,7 @@ impl SignatureAccumulator {
     ) -> Option<(SignedMessage, u8)> {
         self.remove_expired();
         let hash = match serialisation::serialise(msg.routing_message()) {
-            Ok(serialised_msg) => sha3_256(&serialised_msg),
+            Ok(serialised_msg) => safe_crypto::hash(&serialised_msg),
             Err(err) => {
                 error!("Failed to serialise {:?}: {:?}.", msg, err);
                 return None;
@@ -79,8 +77,13 @@ impl SignatureAccumulator {
                 entry.get_mut().0.add_signatures(msg);
             }
             Entry::Vacant(entry) => {
-                for (pub_id, sig) in self.sigs.remove(&hash).into_iter().flat_map(|(vec, _)| vec) {
-                    msg.add_signature(pub_id, sig);
+                for proof in self
+                    .proofs
+                    .remove(&hash)
+                    .into_iter()
+                    .flat_map(|(vec, _)| vec)
+                {
+                    msg.add_proof(proof);
                 }
                 let _ = entry.insert((msg, route, Instant::now()));
             }
@@ -90,13 +93,13 @@ impl SignatureAccumulator {
 
     fn remove_expired(&mut self) {
         let expired_sigs = self
-            .sigs
+            .proofs
             .iter()
             .filter(|&(_, &(_, ref time))| time.elapsed().as_secs() > ACCUMULATION_TIMEOUT_SECS)
             .map(|(hash, _)| *hash)
             .collect_vec();
         for hash in expired_sigs {
-            let _ = self.sigs.remove(&hash);
+            let _ = self.proofs.remove(&hash);
         }
         let expired_msgs = self
             .msgs
@@ -129,13 +132,15 @@ impl SignatureAccumulator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chain::SectionInfo;
     use id::{FullId, PublicId};
     use itertools::Itertools;
-    use messages::{DirectMessage, MessageContent, RoutingMessage, SectionList, SignedMessage};
+    use messages::{DirectMessage, MessageContent, RoutingMessage, SignedMessage};
     use rand;
     use routing_table::Authority;
     use routing_table::Prefix;
     use std::collections::BTreeSet;
+    use types::MessageId;
 
     struct MessageAndSignatures {
         signed_msg: SignedMessage,
@@ -154,14 +159,13 @@ mod tests {
             let routing_msg = RoutingMessage {
                 src: Authority::ClientManager(rand::random()),
                 dst: Authority::ClientManager(rand::random()),
-                content: MessageContent::SectionSplit(
-                    Prefix::new(0, rand::random()).with_version(0),
-                    rand::random(),
-                ),
+                content: MessageContent::Relocate {
+                    message_id: MessageId::new(),
+                },
             };
             let prefix = Prefix::new(0, *unwrap!(all_ids.iter().next()).name());
-            let lists = vec![SectionList::new(prefix, all_ids)];
-            let signed_msg = unwrap!(SignedMessage::new(routing_msg, msg_sender_id, lists));
+            let sec_info = unwrap!(SectionInfo::new(all_ids, prefix, None));
+            let signed_msg = unwrap!(SignedMessage::new(routing_msg, msg_sender_id, sec_info));
             let signature_msgs = other_ids
                 .map(|id| {
                     unwrap!(
@@ -171,8 +175,8 @@ mod tests {
                     )
                 }).collect();
             MessageAndSignatures {
-                signed_msg,
-                signature_msgs,
+                signed_msg: signed_msg,
+                signature_msgs: signature_msgs,
             }
         }
     }
@@ -202,9 +206,9 @@ mod tests {
                 }).collect();
             Env {
                 _msg_sender_id: msg_sender_id,
-                other_ids,
+                other_ids: other_ids,
                 senders: pub_ids,
-                msgs_and_sigs,
+                msgs_and_sigs: msgs_and_sigs,
             }
         }
 
@@ -225,12 +229,14 @@ mod tests {
                 .iter()
                 .zip(env.other_ids.iter())
                 .foreach(|(signature_msg, full_id)| match *signature_msg {
-                    DirectMessage::MessageSignature(ref hash, ref sig) => {
-                        let result = sig_accumulator.add_signature(
+                    DirectMessage::MessageSignature(hash, sig) => {
+                        let result = sig_accumulator.add_proof(
                             env.num_nodes(),
-                            *hash,
-                            *sig,
-                            *full_id.public_id(),
+                            hash,
+                            Proof {
+                                sig,
+                                pub_id: *full_id.public_id(),
+                            },
                         );
                         assert!(result.is_none());
                     }
@@ -239,9 +245,9 @@ mod tests {
         });
 
         assert!(sig_accumulator.msgs.is_empty());
-        assert_eq!(sig_accumulator.sigs.len(), env.msgs_and_sigs.len());
+        assert_eq!(sig_accumulator.proofs.len(), env.msgs_and_sigs.len());
         sig_accumulator
-            .sigs
+            .proofs
             .values()
             .foreach(|&(ref pub_ids_and_sigs, _)| {
                 assert_eq!(pub_ids_and_sigs.len(), env.other_ids.len())
@@ -249,7 +255,7 @@ mod tests {
 
         // Add each message with the section list added - each should accumulate.
         let mut expected_sigs_count = env.msgs_and_sigs.len();
-        assert_eq!(sig_accumulator.sigs.len(), expected_sigs_count);
+        assert_eq!(sig_accumulator.proofs.len(), expected_sigs_count);
         assert!(sig_accumulator.msgs.is_empty());
         env.msgs_and_sigs.iter().foreach(|msg_and_sigs| {
             expected_sigs_count -= 1;
@@ -257,7 +263,7 @@ mod tests {
             let route = rand::random();
             let (mut returned_msg, returned_route) =
                 unwrap!(sig_accumulator.add_message(signed_msg.clone(), env.num_nodes(), route,));
-            assert_eq!(sig_accumulator.sigs.len(), expected_sigs_count);
+            assert_eq!(sig_accumulator.proofs.len(), expected_sigs_count);
             assert!(sig_accumulator.msgs.is_empty());
             assert_eq!(route, returned_route);
             assert_eq!(signed_msg.routing_message(), returned_msg.routing_message());
@@ -285,7 +291,7 @@ mod tests {
             });
         let mut expected_msgs_count = env.msgs_and_sigs.len();
         assert_eq!(sig_accumulator.msgs.len(), expected_msgs_count);
-        assert!(sig_accumulator.sigs.is_empty());
+        assert!(sig_accumulator.proofs.is_empty());
 
         // Add each message's signatures - each should accumulate once quorum has been reached.
         env.msgs_and_sigs
@@ -299,7 +305,14 @@ mod tests {
                     .foreach(|(signature_msg, full_id)| {
                         let result = match *signature_msg {
                             DirectMessage::MessageSignature(hash, sig) => sig_accumulator
-                                .add_signature(env.num_nodes(), hash, sig, *full_id.public_id()),
+                                .add_proof(
+                                    env.num_nodes(),
+                                    hash,
+                                    Proof {
+                                        sig,
+                                        pub_id: *full_id.public_id(),
+                                    },
+                                ),
                             ref unexpected_msg => {
                                 panic!("Unexpected message: {:?}", unexpected_msg)
                             }
