@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 // TODO: Consider changing the mock Crust API to fix this Clippy lint.
-#![cfg_attr(feature = "cargo-clippy", allow(trivially_copy_pass_by_ref))]
+#![allow(clippy::trivially_copy_pass_by_ref)]
 
 use super::crust::{
     ConnectionInfoResult, CrustEventSender, CrustUser, Event, PrivConnectionInfo,
@@ -249,7 +249,8 @@ impl<UID: Uid> Network<UID> {
                     .keys()
                     .filter(|&&(ref s, ref r)| {
                         !network_impl.delayed_connections.contains(&(*s, *r))
-                    }).cloned()
+                    })
+                    .cloned()
                     .collect()
             }
         };

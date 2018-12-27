@@ -146,7 +146,8 @@ impl ResourceProver {
                     part_count: part_count,
                     proof: part,
                     leading_zero_bytes: leading_zero_bytes,
-                }).collect_vec();
+                })
+                .collect_vec();
             if messages.is_empty() {
                 messages.push(DirectMessage::ResourceProofResponse {
                     part_index: 0,

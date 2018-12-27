@@ -41,8 +41,7 @@ use MIN_SECTION_SIZE;
 // Helper macro to implement request sending methods.
 macro_rules! impl_request {
     ($method:ident, $message:ident { $($pname:ident : $ptype:ty),*, }, $priority:expr) => {
-        #[allow(missing_docs)]
-        #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
+        #[allow(missing_docs, clippy::too_many_arguments)]
         pub fn $method(&mut self,
                        src: Authority<XorName>,
                        dst: Authority<XorName>,
@@ -169,7 +168,8 @@ impl NodeBuilder {
                         full_id,
                         min_section_size,
                         timer,
-                    ).map_or(State::Terminated, State::Bootstrapping)
+                    )
+                    .map_or(State::Terminated, State::Bootstrapping)
                 }
             },
             pub_id,

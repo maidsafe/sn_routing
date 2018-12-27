@@ -80,7 +80,8 @@ impl Client {
                     full_id,
                     min_section_size,
                     timer,
-                ).map_or(State::Terminated, State::Bootstrapping)
+                )
+                .map_or(State::Terminated, State::Bootstrapping)
             },
             pub_id,
             bootstrap_config,
@@ -327,7 +328,7 @@ impl Client {
     }
 
     /// Updates or inserts a permission set for a given user
-    #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
+    #[allow(clippy::too_many_arguments)]
     pub fn set_mdata_user_permissions(
         &mut self,
         dst: Authority<XorName>,
@@ -353,7 +354,7 @@ impl Client {
     }
 
     /// Deletes a permission set for a given user
-    #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
+    #[allow(clippy::too_many_arguments)]
     pub fn del_mdata_user_permissions(
         &mut self,
         dst: Authority<XorName>,
@@ -542,6 +543,7 @@ impl Client {
 #[cfg(feature = "mock")]
 impl Client {
     /// Create a new `Client` for testing with mock crust.
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(
         keys: Option<FullId>,
         bootstrap_config: Option<BootstrapConfig>,

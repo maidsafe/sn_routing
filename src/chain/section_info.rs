@@ -71,6 +71,7 @@ impl<'de> Deserialize<'de> for SectionInfo {
 
 impl SectionInfo {
     /// Creates a `SectionInfo` with the given members, prefix and predecessors.
+    #[allow(clippy::new_ret_no_self)]
     pub fn new<'a, I: IntoIterator<Item = &'a SectionInfo>>(
         members: BTreeSet<PublicId>,
         prefix: Prefix<XorName>,

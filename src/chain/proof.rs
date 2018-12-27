@@ -44,6 +44,7 @@ impl Proof {
     }
 
     /// Create a new proof for `payload`
+    #[allow(clippy::new_ret_no_self)]
     pub fn new<S: Serialize>(pub_id: PublicId, key: &SecretSignKey, payload: &S) -> Result<Self> {
         let signature = key.sign_detached(&serialisation::serialise(&payload)?[..]);
         Ok(Proof {

@@ -64,15 +64,13 @@ impl Network {
         {
             let close_node = self.close_node(name);
             let close_peer = &self.nodes[&close_node];
-            unwrap!(
-                new_table.add_prefixes(
-                    close_peer
-                        .all_sections()
-                        .into_iter()
-                        .map(|(pfx, (version, _))| pfx.with_version(version))
-                        .collect(),
-                )
-            );
+            unwrap!(new_table.add_prefixes(
+                close_peer
+                    .all_sections()
+                    .into_iter()
+                    .map(|(pfx, (version, _))| pfx.with_version(version))
+                    .collect(),
+            ));
         }
 
         let mut split_prefixes = BTreeSet::new();
@@ -114,7 +112,7 @@ impl Network {
     }
 
     // TODO: remove this when https://github.com/Manishearth/rust-clippy/issues/1279 is resolved
-    #[cfg_attr(feature = "cargo-clippy", allow(for_kv_map))]
+    #[allow(clippy::for_kv_map)]
     /// Drops a node and, if necessary, merges sections to restore the section requirement.
     fn drop_node(&mut self) {
         let keys = self.keys();
@@ -274,12 +272,11 @@ impl Network {
     /// node is found.
     fn close_node(&self, address: u64) -> u64 {
         let target = Authority::Section(address);
-        unwrap!(
-            self.nodes
-                .iter()
-                .find(|&(_, table)| table.in_authority(&target))
-                .map(|(&peer, _)| peer)
-        )
+        unwrap!(self
+            .nodes
+            .iter()
+            .find(|&(_, table)| table.in_authority(&target))
+            .map(|(&peer, _)| peer))
     }
 
     /// Returns all node names.
@@ -408,30 +405,26 @@ fn merging_sections() {
         network.add_node();
         verify_invariant(&network);
     }
-    assert!(
-        network
-            .nodes
-            .iter()
-            .all(|(_, table)| if table.num_of_sections() < 2 {
-                trace!("{:?}", table);
-                false
-            } else {
-                true
-            },)
-    );
+    assert!(network
+        .nodes
+        .iter()
+        .all(|(_, table)| if table.num_of_sections() < 2 {
+            trace!("{:?}", table);
+            false
+        } else {
+            true
+        },));
     for _ in 0..95 {
         network.drop_node();
         verify_invariant(&network);
     }
-    assert!(
-        network
-            .nodes
-            .iter()
-            .all(|(_, table)| if table.num_of_sections() > 0 {
-                trace!("{:?}", table);
-                false
-            } else {
-                true
-            },)
-    );
+    assert!(network
+        .nodes
+        .iter()
+        .all(|(_, table)| if table.num_of_sections() > 0 {
+            trace!("{:?}", table);
+            false
+        } else {
+            true
+        },));
 }

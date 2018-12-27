@@ -56,7 +56,7 @@ pub struct JoiningNode {
 }
 
 impl JoiningNode {
-    #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
+    #[allow(clippy::too_many_arguments)]
     pub fn from_bootstrapping(
         action_sender: RoutingActionSender,
         cache: Box<Cache>,

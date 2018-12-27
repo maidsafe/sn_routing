@@ -24,7 +24,7 @@ pub type Result<T> = ::std::result::Result<T, RoutingError>;
 /// The type of errors that can occur if routing is unable to handle a send request.
 #[derive(Debug)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
+#[allow(clippy::large_enum_variant)]
 pub enum InterfaceError {
     /// We are not connected to the network.
     NotConnected,
@@ -51,7 +51,7 @@ impl From<RecvError> for InterfaceError {
 /// The type of errors that can occur during handling of routing events.
 #[derive(Debug)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
+#[allow(clippy::large_enum_variant)]
 pub enum RoutingError {
     /// The node/client has not bootstrapped yet
     NotBootstrapped,

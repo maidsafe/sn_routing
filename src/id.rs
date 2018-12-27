@@ -140,11 +140,8 @@ impl Serialize for PublicId {
 
 impl<'de> Deserialize<'de> for PublicId {
     fn deserialize<D: Deserializer<'de>>(deserialiser: D) -> Result<Self, D::Error> {
-        let (age, public_sign_key, public_encrypt_key): (
-            u8,
-            PublicSignKey,
-            PublicEncryptKey,
-        ) = Deserialize::deserialize(deserialiser)?;
+        let (age, public_sign_key, public_encrypt_key): (u8, PublicSignKey, PublicEncryptKey) =
+            Deserialize::deserialize(deserialiser)?;
         Ok(PublicId::new(age, public_encrypt_key, public_sign_key))
     }
 }

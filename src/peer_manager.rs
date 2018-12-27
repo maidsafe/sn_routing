@@ -100,7 +100,7 @@ pub enum RoutingConnection {
 /// Our relationship status with a known peer.
 #[derive(Debug)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
+#[allow(clippy::large_enum_variant)]
 pub enum PeerState {
     /// The peer has bootstrapped to us with the indicated `CrustUser` type (i.e. client or node).
     Bootstrapper {
@@ -145,7 +145,7 @@ pub enum PeerState {
 
 /// The result of adding a peer's `PubConnectionInfo`.
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum ConnectionInfoReceivedResult {
     /// Our own connection info has already been prepared: The peer was switched to
@@ -299,7 +299,7 @@ impl Peer {
 }
 
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Eq, PartialEq)]
 enum Candidate {
     None,
@@ -336,9 +336,10 @@ impl Candidate {
             } => {
                 // TODO: need better fix. Using a larger timeout to allow Online to accumulate via gossip
                 // than the prev timeout for grp-msg accumulation.
-                res_proof_start.elapsed() > Duration::from_secs(
-                    RESOURCE_PROOF_DURATION_SECS + (ACCUMULATION_TIMEOUT_SECS * 3),
-                )
+                res_proof_start.elapsed()
+                    > Duration::from_secs(
+                        RESOURCE_PROOF_DURATION_SECS + (ACCUMULATION_TIMEOUT_SECS * 3),
+                    )
             }
         }
     }
@@ -461,11 +462,7 @@ impl PeerManager {
                 ref mut passed_our_challenge,
                 ref res_proof_start,
                 ..
-            }
-                if new_pub_id == pub_id =>
-            {
-                (challenge, passed_our_challenge, res_proof_start)
-            }
+            } if new_pub_id == pub_id => (challenge, passed_our_challenge, res_proof_start),
             _ => return Err(RoutingError::UnknownCandidate),
         };
 
@@ -534,11 +531,7 @@ impl PeerManager {
         match mem::replace(&mut self.candidate, Candidate::None) {
             Candidate::ResourceProof {
                 new_pub_id: pub_id, ..
-            }
-                if pub_id == *new_pub_id =>
-            {
-                ()
-            }
+            } if pub_id == *new_pub_id => (),
             _ => return Err(RoutingError::UnknownCandidate),
         }
 
@@ -567,7 +560,7 @@ impl PeerManager {
     /// * Ok(true)                      if the peer is an unapproved candidate
     /// * Ok(false)                     if the peer has already been approved
     /// * Err(UnknownCandidate)         if the peer is not in the candidate list
-    #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
+    #[allow(clippy::too_many_arguments)]
     pub fn handle_candidate_info(
         &mut self,
         old_pub_id: &PublicId,
@@ -589,11 +582,7 @@ impl PeerManager {
                 old_pub_id: old_id,
                 res_proof_start,
                 target_interval,
-            }
-                if old_id == *old_pub_id =>
-            {
-                (res_proof_start, target_interval)
-            }
+            } if old_id == *old_pub_id => (res_proof_start, target_interval),
             candidate => {
                 self.candidate = candidate;
                 return Ok(false);
@@ -807,7 +796,8 @@ impl PeerManager {
             .find(|peer| match peer.state {
                 PeerState::Proxy | PeerState::Routing(RoutingConnection::Proxy(_)) => true,
                 _ => false,
-            }).map(Peer::name)
+            })
+            .map(Peer::name)
     }
 
     /// Remove and return `PublicId`s of expired peers.
@@ -841,7 +831,8 @@ impl PeerManager {
                     false
                 }
                 _ => peer.is_expired(),
-            }).map(Peer::pub_id)
+            })
+            .map(Peer::pub_id)
             .cloned()
             .chain(remove_candidate)
             .collect_vec();
@@ -885,10 +876,11 @@ impl PeerManager {
 
     /// Checks whether we can accept more clients.
     pub fn can_accept_client(&self, client_ip: IpAddr) -> bool {
-        self.disable_client_rate_limiter || !self.peers.values().any(|peer| match *peer.state() {
-            PeerState::Client { ip, .. } => client_ip == ip,
-            _ => false,
-        })
+        self.disable_client_rate_limiter
+            || !self.peers.values().any(|peer| match *peer.state() {
+                PeerState::Client { ip, .. } => client_ip == ip,
+                _ => false,
+            })
     }
 
     /// Marks the given peer as direct-connected.
@@ -937,7 +929,8 @@ impl PeerManager {
                 } else {
                     self.get_pub_id(name)
                 }
-            }).cloned()
+            })
+            .cloned()
             .collect()
     }
 
@@ -1309,7 +1302,8 @@ impl PeerManager {
                     }
                     Peer { pub_id, .. } => Some(pub_id),
                 }
-            }).collect()
+            })
+            .collect()
     }
 
     #[cfg(feature = "mock")]
@@ -1330,7 +1324,8 @@ impl PeerManager {
                 } else {
                     false
                 }
-            }).cloned()
+            })
+            .cloned()
             .collect();
         !(&unnormalised_routing_conns - excludes).is_empty()
     }

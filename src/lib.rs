@@ -110,8 +110,6 @@
     non_shorthand_field_patterns,
     overflowing_literals,
     plugin_as_library,
-    private_no_mangle_fns,
-    private_no_mangle_statics,
     stable_features,
     unconditional_recursion,
     unknown_lints,
@@ -122,7 +120,10 @@
     unused_comparisons,
     unused_features,
     unused_parens,
-    while_true
+    while_true,
+    clippy::unicode_not_nfc,
+    clippy::wrong_pub_self_convention,
+    clippy::option_unwrap_used
 )]
 #![warn(
     trivial_casts,
@@ -139,21 +140,11 @@
     missing_copy_implementations,
     missing_debug_implementations,
     variant_size_differences,
-    non_camel_case_types
-)]
-#![cfg_attr(
-    feature = "cargo-clippy",
-    deny(
-        unicode_not_nfc,
-        wrong_pub_self_convention,
-        option_unwrap_used
-    )
-)]
-// FIXME: allow `needless_pass_by_value` until it's OK to change the public API
-// FIXME: Re-enable `redundant_field_names`.
-#![cfg_attr(
-    feature = "cargo-clippy",
-    allow(needless_pass_by_value, redundant_field_names)
+    non_camel_case_types,
+    // FIXME: allow `needless_pass_by_value` until it's OK to change the public API
+    // FIXME: Re-enable `redundant_field_names`.
+    clippy::needless_pass_by_value,
+    clippy::redundant_field_names
 )]
 
 extern crate config_file_handler;
@@ -291,7 +282,7 @@ mod tests {
     use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
 
     #[test]
-    #[cfg_attr(feature = "cargo-clippy", allow(eq_op))]
+    #[allow(clippy::eq_op)]
     fn quorum_check() {
         assert!(
             QUORUM_NUMERATOR < QUORUM_DENOMINATOR,

@@ -48,7 +48,7 @@ pub struct StateMachine {
 }
 
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
+#[allow(clippy::large_enum_variant)]
 pub enum State {
     Bootstrapping(Bootstrapping),
     Client(Client),
@@ -240,7 +240,7 @@ impl State {
 
 /// Enum returned from many message handlers
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
+#[allow(clippy::large_enum_variant)]
 pub enum Transition {
     Stay,
     // `Bootstrapping` state transitioning to `Client`, `JoiningNode`, or `Node`.
@@ -257,6 +257,7 @@ pub enum Transition {
 
 impl StateMachine {
     // Construct a new StateMachine by passing a function returning the initial state.
+    #[allow(clippy::new_ret_no_self)]
     pub fn new<F>(
         init_state: F,
         pub_id: PublicId,
@@ -497,7 +498,8 @@ impl StateMachine {
                 } else {
                     events.pop()
                 }
-            }).collect_vec();
+            })
+            .collect_vec();
         interleaved.reverse();
         self.events.extend(interleaved);
 

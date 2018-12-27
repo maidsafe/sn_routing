@@ -24,7 +24,7 @@ use {Authority, RoutingError, XorName};
 
 /// Routing Network events
 // TODO: Box `SectionInfo`?
-#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
+#[allow(clippy::large_enum_variant)]
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Debug)]
 pub enum NetworkEvent {
     Online(PublicId, Authority<XorName>),

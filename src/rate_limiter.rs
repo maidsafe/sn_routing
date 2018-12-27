@@ -520,38 +520,34 @@ mod tests {
         let get_response_parts = unwrap!(get_response.to_parts(0));
 
         // Put request hits the rate limiter first.
-        assert!(
-            add_user_msg_part(
-                &mut rate_limiter,
-                &client,
-                unwrap!(put_request_parts.first()),
-            ).is_ok()
-        );
+        assert!(add_user_msg_part(
+            &mut rate_limiter,
+            &client,
+            unwrap!(put_request_parts.first()),
+        )
+        .is_ok());
         // Then the get request.
-        assert!(
-            add_user_msg_part(
-                &mut rate_limiter,
-                &client,
-                unwrap!(get_request_parts.first()),
-            ).is_ok()
-        );
+        assert!(add_user_msg_part(
+            &mut rate_limiter,
+            &client,
+            unwrap!(get_request_parts.first()),
+        )
+        .is_ok());
         // Now if the put response comes back, the proxy *should not* apply a refund for it,
         // even though it has the same message ID as the get that we just overcharged for.
-        assert!(
-            refund_user_msg_part(
-                &mut rate_limiter,
-                &client,
-                unwrap!(put_response_parts.first()),
-            ).is_none()
-        );
+        assert!(refund_user_msg_part(
+            &mut rate_limiter,
+            &client,
+            unwrap!(put_response_parts.first()),
+        )
+        .is_none());
         // The refund should still correctly be applied for the get response.
-        assert!(
-            refund_user_msg_part(
-                &mut rate_limiter,
-                &client,
-                unwrap!(get_response_parts.first()),
-            ).is_some()
-        );
+        assert!(refund_user_msg_part(
+            &mut rate_limiter,
+            &client,
+            unwrap!(get_response_parts.first()),
+        )
+        .is_some());
     }
 
     // Check that a duplicate get request is allowed but only receives a single refund.

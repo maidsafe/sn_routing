@@ -28,8 +28,6 @@
     non_shorthand_field_patterns,
     overflowing_literals,
     plugin_as_library,
-    private_no_mangle_fns,
-    private_no_mangle_statics,
     stable_features,
     unconditional_recursion,
     unknown_lints,
@@ -57,10 +55,7 @@
     variant_size_differences,
     non_camel_case_types
 )]
-#![cfg_attr(
-    feature = "mock",
-    allow(unused_extern_crates, unused_imports)
-)]
+#![cfg_attr(feature = "mock", allow(unused_extern_crates, unused_imports))]
 
 #[macro_use]
 extern crate log;

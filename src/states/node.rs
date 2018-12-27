@@ -161,7 +161,7 @@ impl Node {
         }
     }
 
-    #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
+    #[allow(clippy::too_many_arguments)]
     pub fn from_bootstrapping(
         our_section: (Prefix<XorName>, BTreeSet<PublicId>),
         action_sender: RoutingActionSender,
@@ -191,7 +191,7 @@ impl Node {
         node
     }
 
-    #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
+    #[allow(clippy::too_many_arguments)]
     fn new(
         action_sender: RoutingActionSender,
         cache: Box<Cache>,
@@ -878,9 +878,10 @@ impl Node {
         proving_secs: Vec<ProvingSection>,
         sec_info: SectionInfo,
     ) -> Result<(), RoutingError> {
-        if !self.chain.is_new_neighbour(&sec_info) && !proving_secs
-            .iter()
-            .any(|ps| self.chain.is_new_neighbour(&ps.sec_info))
+        if !self.chain.is_new_neighbour(&sec_info)
+            && !proving_secs
+                .iter()
+                .any(|ps| self.chain.is_new_neighbour(&ps.sec_info))
         {
             return Ok(()); // Nothing new to learn here.
         }
@@ -948,7 +949,8 @@ impl Node {
                 } else {
                     None
                 }
-            }).collect();
+            })
+            .collect();
         for pub_id in peers_to_connect {
             debug!("{} Sending connection info to {:?}.", self, pub_id);
             let src = Authority::ManagedNode(*self.name());
@@ -1017,7 +1019,8 @@ impl Node {
                 NetworkEvent::SectionInfo(ref sec_info) => our_pfx.is_neighbour(sec_info.prefix()),
                 NetworkEvent::OurMerge => false,
                 _ => true,
-            }).for_each(|event| {
+            })
+            .for_each(|event| {
                 self.vote_for_event(event.clone());
             });
 
@@ -1597,10 +1600,11 @@ impl Node {
             .add_prefix(genesis_info.our_info.prefix().with_version(0));
 
         // consider ourself established if we're the second node
-        if !self.is_first_node && genesis_info
-            .our_info
-            .members()
-            .contains(self.full_id.public_id())
+        if !self.is_first_node
+            && genesis_info
+                .our_info
+                .members()
+                .contains(self.full_id.public_id())
         {
             self.node_established(outbox);
         }
@@ -1722,11 +1726,10 @@ impl Node {
                     ref payload,
                     ..
                 },
-            )
-                if *part_count <= MAX_PARTS
-                    && part_index < part_count
-                    && *priority >= DEFAULT_PRIORITY
-                    && payload.len() <= MAX_PART_LEN =>
+            ) if *part_count <= MAX_PARTS
+                && part_index < part_count
+                && *priority >= DEFAULT_PRIORITY
+                && payload.len() <= MAX_PART_LEN =>
             {
                 self.clients_rate_limiter.add_message(
                     ip,
@@ -1904,7 +1907,7 @@ impl Node {
         Ok(())
     }
 
-    #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
+    #[allow(clippy::too_many_arguments)]
     fn handle_candidate_info(
         &mut self,
         old_pub_id: &PublicId,
@@ -2182,7 +2185,7 @@ impl Node {
         }
     }
 
-    #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
+    #[allow(clippy::too_many_arguments)]
     fn handle_connection_info_request(
         &mut self,
         encrypted_connection_info: Vec<u8>,
@@ -2588,7 +2591,8 @@ impl Node {
                     Some(sec_info)
                 }
                 _ => None,
-            }).any(is_proof))
+            })
+            .any(is_proof))
     }
 
     fn handle_neighbour_confirm(
