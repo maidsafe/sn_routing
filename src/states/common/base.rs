@@ -6,16 +6,16 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use id::{FullId, PublicId};
+use crate::id::{FullId, PublicId};
+use crate::messages::Message;
+use crate::outbox::EventBox;
+use crate::routing_table::Authority;
+use crate::state_machine::Transition;
+use crate::stats::Stats;
+use crate::xor_name::XorName;
+use crate::Service;
 use maidsafe_utilities::serialisation;
-use messages::Message;
-use outbox::EventBox;
-use routing_table::Authority;
-use state_machine::Transition;
-use stats::Stats;
 use std::fmt::Debug;
-use xor_name::XorName;
-use Service;
 
 // Trait for all states.
 pub trait Base: Debug {

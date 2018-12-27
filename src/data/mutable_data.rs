@@ -6,15 +6,15 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use client_error::{ClientError, EntryError};
+use crate::client_error::{ClientError, EntryError};
+use crate::rust_sodium::crypto::sign::PublicKey;
+use crate::xor_name::XorName;
 use maidsafe_utilities::serialisation;
 use rand::{Rand, Rng};
-use rust_sodium::crypto::sign::PublicKey;
 use std::collections::btree_map::{BTreeMap, Entry};
 use std::collections::BTreeSet;
 use std::fmt::{self, Debug, Formatter};
 use std::mem;
-use xor_name::XorName;
 
 /// Maximum allowed size for `MutableData` (1 MiB)
 pub const MAX_MUTABLE_DATA_SIZE_IN_BYTES: u64 = 1024 * 1024;
@@ -629,9 +629,9 @@ impl Debug for MutableData {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use client_error::ClientError;
+    use crate::client_error::ClientError;
+    use crate::rust_sodium::crypto::sign;
     use rand;
-    use rust_sodium::crypto::sign;
     use std::collections::{BTreeMap, BTreeSet};
     use std::iter;
 

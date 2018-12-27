@@ -6,11 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use data::{EntryAction, ImmutableData, MutableData, PermissionSet, User};
-use rust_sodium::crypto::sign;
+use crate::data::{EntryAction, ImmutableData, MutableData, PermissionSet, User};
+use crate::rust_sodium::crypto::sign;
+use crate::types::MessageId as MsgId;
+use crate::xor_name::XorName;
 use std::collections::{BTreeMap, BTreeSet};
-use types::MessageId as MsgId;
-use xor_name::XorName;
 
 /// Request message types
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -230,7 +230,7 @@ pub enum Request {
 impl Request {
     /// Message ID getter.
     pub fn message_id(&self) -> &MsgId {
-        use Request::*;
+        use crate::Request::*;
         match *self {
             Refresh(_, ref msg_id)
             | GetAccountInfo(ref msg_id)

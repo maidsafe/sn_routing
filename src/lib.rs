@@ -149,32 +149,22 @@
 // FIXME: allow `needless_pass_by_value` until it's OK to change the public API
 #![cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 
-extern crate config_file_handler;
-extern crate hex;
+use hex;
 #[macro_use]
 extern crate log;
-#[cfg(feature = "use-mock-crust")]
-extern crate fake_clock;
-extern crate maidsafe_utilities;
 #[macro_use]
 extern crate quick_error;
 #[macro_use]
 extern crate unwrap;
 #[cfg(not(feature = "use-mock-crust"))]
 extern crate crust;
-extern crate itertools;
-extern crate lru_time_cache;
-extern crate num_bigint;
-extern crate rand;
-extern crate resource_proof;
+use rand;
 #[cfg(not(feature = "use-mock-crypto"))]
 extern crate rust_sodium;
-extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 #[cfg(test)]
 extern crate serde_json;
-extern crate tiny_keccak;
 
 // Needs to be before all other modules to make the macros available to them.
 #[macro_use]
@@ -217,7 +207,7 @@ mod xor_name;
 pub mod mock_crypto;
 
 #[cfg(feature = "use-mock-crypto")]
-use mock_crypto::rust_sodium;
+use crate::mock_crypto::rust_sodium;
 
 /// Reexports `crust::Config`
 pub type BootstrapConfig = crust::Config;
@@ -248,37 +238,37 @@ pub const MIN_SECTION_SIZE: usize = 8;
 /// Key of an account data in the account packet
 pub const ACC_LOGIN_ENTRY_KEY: &[u8] = b"Login";
 
-pub use cache::{Cache, NullCache};
-pub use client::Client;
-pub use client_error::{ClientError, EntryError};
-pub use common_types::AccountPacket;
-pub use config_handler::{Config, DevConfig};
-pub use data::{
+pub use crate::cache::{Cache, NullCache};
+pub use crate::client::Client;
+pub use crate::client_error::{ClientError, EntryError};
+pub use crate::common_types::AccountPacket;
+pub use crate::config_handler::{Config, DevConfig};
+pub use crate::data::{
     Action, EntryAction, EntryActions, ImmutableData, MutableData, PermissionSet, User, Value,
     MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_MUTABLE_DATA_ENTRIES, MAX_MUTABLE_DATA_SIZE_IN_BYTES,
     NO_OWNER_PUB_KEY,
 };
-pub use error::{InterfaceError, RoutingError};
-pub use event::Event;
-pub use event_stream::EventStream;
-pub use id::{FullId, PublicId};
-pub use messages::{AccountInfo, Request, Response};
+pub use crate::error::{InterfaceError, RoutingError};
+pub use crate::event::Event;
+pub use crate::event_stream::EventStream;
+pub use crate::id::{FullId, PublicId};
+pub use crate::messages::{AccountInfo, Request, Response};
 #[cfg(feature = "use-mock-crust")]
-pub use mock_crust::crust;
-pub use node::{Node, NodeBuilder};
+pub use crate::mock_crust::crust;
+pub use crate::node::{Node, NodeBuilder};
 #[cfg(feature = "use-mock-crust")]
-pub use peer_manager::test_consts;
+pub use crate::peer_manager::test_consts;
 #[cfg(feature = "use-mock-crust")]
-pub use rate_limiter::rate_limiter_consts;
+pub use crate::rate_limiter::rate_limiter_consts;
 #[cfg(any(test, feature = "use-mock-crust"))]
-pub use routing_table::verify_network_invariant;
-pub use routing_table::Error as RoutingTableError;
-pub use routing_table::{Authority, Prefix, RoutingTable, Xorable};
-pub use types::MessageId;
-pub use xor_name::{XorName, XorNameFromHexError, XOR_NAME_BITS, XOR_NAME_LEN};
+pub use crate::routing_table::verify_network_invariant;
+pub use crate::routing_table::Error as RoutingTableError;
+pub use crate::routing_table::{Authority, Prefix, RoutingTable, Xorable};
+pub use crate::types::MessageId;
+pub use crate::xor_name::{XorName, XorNameFromHexError, XOR_NAME_BITS, XOR_NAME_LEN};
 
 type Service = crust::Service<PublicId>;
-use crust::Event as CrustEvent;
+use crate::crust::Event as CrustEvent;
 type CrustEventSender = crust::CrustEventSender<PublicId>;
 type PrivConnectionInfo = crust::PrivConnectionInfo<PublicId>;
 type PubConnectionInfo = crust::PubConnectionInfo<PublicId>;

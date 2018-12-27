@@ -6,15 +6,16 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use data::{MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_MUTABLE_DATA_SIZE_IN_BYTES};
-use error::RoutingError;
+use crate::data::{MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_MUTABLE_DATA_SIZE_IN_BYTES};
+use crate::error::RoutingError;
+use crate::messages::{UserMessage, MAX_PART_LEN};
+use crate::sha3::Digest256;
+use crate::types::MessageId;
 #[cfg(feature = "use-mock-crust")]
 use fake_clock::FakeClock as Instant;
 use itertools::Itertools;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::{self, SerialisationError};
-use messages::{UserMessage, MAX_PART_LEN};
-use sha3::Digest256;
 use std::cmp;
 use std::collections::BTreeMap;
 use std::mem;
@@ -22,7 +23,6 @@ use std::net::IpAddr;
 use std::time::Duration;
 #[cfg(not(feature = "use-mock-crust"))]
 use std::time::Instant;
-use types::MessageId;
 
 /// The number of bytes per second the `RateLimiter` will "leak".
 const RATE: f64 = 8.0 * 1024.0 * 1024.0;
@@ -49,8 +49,8 @@ const OVERCHARGED_TIMEOUT_SECS: u64 = 300;
 #[doc(hidden)]
 pub mod rate_limiter_consts {
     pub const SOFT_CAPACITY: u64 = super::SOFT_CAPACITY;
-    pub const MAX_PARTS: u32 = ::messages::MAX_PARTS;
-    pub const MAX_PART_LEN: usize = ::messages::MAX_PART_LEN;
+    pub const MAX_PARTS: u32 = crate::messages::MAX_PARTS;
+    pub const MAX_PART_LEN: usize = crate::messages::MAX_PART_LEN;
     pub const MIN_CLIENT_CAPACITY: u64 = super::MIN_CLIENT_CAPACITY;
     pub const RATE: f64 = super::RATE;
 }
@@ -99,7 +99,7 @@ impl RateLimiter {
     ) -> Result<u64, RoutingError> {
         let (bytes_to_add, overcharged) = if part_index == 0 {
             use self::UserMessage::*;
-            use Request::*;
+            use crate::Request::*;
             match serialisation::deserialise::<UserMessage>(payload) {
                 Ok(Request(request)) => {
                     if part_count > 1 {
@@ -191,7 +191,7 @@ impl RateLimiter {
         part_index: u32,
         payload: &[u8],
     ) -> Option<u64> {
-        use Response::*;
+        use crate::Response::*;
 
         // Check that this is a message ID we overcharged for.
         if !self.overcharged.contains_key(msg_id) {
@@ -287,15 +287,15 @@ impl RateLimiter {
 #[cfg(all(test, feature = "use-mock-crust"))]
 mod tests {
     use super::*;
-    use data::ImmutableData;
+    use crate::data::ImmutableData;
+    use crate::messages::{MessageContent, Request, Response};
+    use crate::types::MessageId;
+    use crate::xor_name::{XorName, XOR_NAME_LEN};
     use fake_clock::FakeClock;
     use maidsafe_utilities::SeededRng;
-    use messages::{MessageContent, Request, Response};
     use rand::Rng;
     use std::collections::BTreeMap;
     use tiny_keccak::sha3_256;
-    use types::MessageId;
-    use xor_name::{XorName, XOR_NAME_LEN};
 
     fn huge_message_can_be_added(rate_limiter: &mut RateLimiter, client: &IpAddr) -> bool {
         sized_message_can_be_added(SOFT_CAPACITY, rate_limiter, client)

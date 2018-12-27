@@ -7,14 +7,14 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::routing_table::Error as RoutingTableError;
-use action::Action;
+use crate::action::Action;
+use crate::crust::CrustError;
+use crate::event::Event;
+use crate::id::PublicId;
+use crate::sha3::Digest256;
 use config_file_handler::Error as ConfigFileHandlerError;
-use crust::CrustError;
-use event::Event;
-use id::PublicId;
 use maidsafe_utilities::event_sender::{EventSenderError, MaidSafeEventCategory};
 use maidsafe_utilities::serialisation;
-use sha3::Digest256;
 use std::sync::mpsc::{RecvError, SendError};
 
 /// The type of errors that can occur if routing is unable to handle a send request.

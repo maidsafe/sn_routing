@@ -55,15 +55,12 @@
 #![cfg(not(feature = "use-mock-crust"))]
 #![cfg(not(feature = "use-mock-crypto"))]
 
-extern crate itertools;
-#[cfg(target_os = "macos")]
-extern crate libc;
-extern crate maidsafe_utilities;
-extern crate rand;
-extern crate routing;
-extern crate rust_sodium;
 #[macro_use]
 extern crate unwrap;
+
+#[cfg(target_os = "macos")]
+use libc;
+use maidsafe_utilities;
 
 use itertools::Itertools;
 use maidsafe_utilities::thread::{self, Joiner};

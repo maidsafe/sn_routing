@@ -6,13 +6,13 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crust::Uid;
-use rust_sodium::crypto::{box_, sign};
+use crate::crust::Uid;
+use crate::rust_sodium::crypto::{box_, sign};
+use crate::xor_name::XorName;
 use serde::de::Deserialize;
 use serde::{Deserializer, Serialize, Serializer};
 use std::fmt::{self, Debug, Display, Formatter};
 use tiny_keccak::sha3_256;
-use xor_name::XorName;
 
 /// Network identity component containing name, and public and private keys.
 #[derive(Clone)]
@@ -160,8 +160,8 @@ impl PublicId {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rust_sodium;
     use maidsafe_utilities::{serialisation, SeededRng};
-    use rust_sodium;
 
     /// Confirm `PublicId` `Ord` trait favours name over sign or encryption keys.
     #[test]

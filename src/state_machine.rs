@@ -6,18 +6,23 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use action::Action;
-use id::{FullId, PublicId};
+use crate::action::Action;
+use crate::id::{FullId, PublicId};
+#[cfg(feature = "use-mock-crust")]
+use crate::mock_crust;
+use crate::outbox::EventBox;
+use crate::routing_table::{Prefix, RoutingTable};
+#[cfg(feature = "use-mock-crust")]
+use crate::rust_sodium::crypto::sign;
+use crate::states::common::Base;
+use crate::states::{Bootstrapping, Client, JoiningNode, Node};
+use crate::timer::Timer;
+use crate::types::RoutingActionSender;
+use crate::xor_name::XorName;
+use crate::BootstrapConfig;
+use crate::{CrustEvent, CrustEventSender, Service, MIN_SECTION_SIZE};
 use log::Level;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
-#[cfg(feature = "use-mock-crust")]
-use mock_crust;
-use outbox::EventBox;
-use routing_table::{Prefix, RoutingTable};
-#[cfg(feature = "use-mock-crust")]
-use rust_sodium::crypto::sign;
-use states::common::Base;
-use states::{Bootstrapping, Client, JoiningNode, Node};
 #[cfg(feature = "use-mock-crust")]
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
@@ -26,11 +31,6 @@ use std::mem;
 #[cfg(feature = "use-mock-crust")]
 use std::net::IpAddr;
 use std::sync::mpsc::{self, Receiver, RecvError, Sender, TryRecvError};
-use timer::Timer;
-use types::RoutingActionSender;
-use xor_name::XorName;
-use BootstrapConfig;
-use {CrustEvent, CrustEventSender, Service, MIN_SECTION_SIZE};
 
 /// Holds the current state and handles state transitions.
 pub struct StateMachine {

@@ -6,31 +6,31 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crust::CrustUser;
-use error::RoutingError;
-#[cfg(feature = "use-mock-crust")]
-use fake_clock::FakeClock as Instant;
-use id::PublicId;
-use itertools::Itertools;
-use log::Level;
-use messages::MessageContent;
-use rand;
-use resource_proof::ResourceProof;
-use resource_prover::RESOURCE_PROOF_DURATION_SECS;
-use routing_table::Error as RoutingTableError;
-use routing_table::{
+use crate::crust::CrustUser;
+use crate::error::RoutingError;
+use crate::id::PublicId;
+use crate::messages::MessageContent;
+use crate::resource_prover::RESOURCE_PROOF_DURATION_SECS;
+use crate::routing_table::Error as RoutingTableError;
+use crate::routing_table::{
     Authority, OwnMergeState, Prefix, RemovalDetails, RoutingTable, VersionedPrefix,
 };
-use signature_accumulator::ACCUMULATION_TIMEOUT_SECS;
+use crate::signature_accumulator::ACCUMULATION_TIMEOUT_SECS;
+use crate::types::MessageId;
+use crate::xor_name::XorName;
+use crate::{PrivConnectionInfo, PubConnectionInfo};
+#[cfg(feature = "use-mock-crust")]
+use fake_clock::FakeClock as Instant;
+use itertools::Itertools;
+use log::Level;
+use rand;
+use resource_proof::ResourceProof;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::net::IpAddr;
 use std::time::Duration;
 #[cfg(not(feature = "use-mock-crust"))]
 use std::time::Instant;
 use std::{error, fmt, iter, mem};
-use types::MessageId;
-use xor_name::XorName;
-use {PrivConnectionInfo, PubConnectionInfo};
 
 /// Time (in seconds) after which a joining node will get dropped from the map of joining nodes.
 const JOINING_NODE_TIMEOUT_SECS: u64 = 900;
@@ -46,13 +46,13 @@ const CANDIDATE_ACCEPT_TIMEOUT_SECS: u64 = 60;
 #[doc(hidden)]
 pub mod test_consts {
     pub const ACCUMULATION_TIMEOUT_SECS: u64 = super::ACCUMULATION_TIMEOUT_SECS;
-    pub const ACK_TIMEOUT_SECS: u64 = ::ack_manager::ACK_TIMEOUT_SECS;
+    pub const ACK_TIMEOUT_SECS: u64 = crate::ack_manager::ACK_TIMEOUT_SECS;
     pub const CANDIDATE_ACCEPT_TIMEOUT_SECS: u64 = super::CANDIDATE_ACCEPT_TIMEOUT_SECS;
     pub const RESOURCE_PROOF_DURATION_SECS: u64 = super::RESOURCE_PROOF_DURATION_SECS;
     pub const CONNECTING_PEER_TIMEOUT_SECS: u64 = super::CONNECTING_PEER_TIMEOUT_SECS;
     pub const CONNECTED_PEER_TIMEOUT_SECS: u64 = super::CONNECTED_PEER_TIMEOUT_SECS;
     pub const JOINING_NODE_TIMEOUT_SECS: u64 = super::JOINING_NODE_TIMEOUT_SECS;
-    pub const RATE_EXCEED_RETRY_MS: u64 = ::states::RATE_EXCEED_RETRY_MS;
+    pub const RATE_EXCEED_RETRY_MS: u64 = crate::states::RATE_EXCEED_RETRY_MS;
 }
 
 pub type SectionMap = BTreeMap<VersionedPrefix<XorName>, BTreeSet<PublicId>>;
@@ -1724,12 +1724,12 @@ impl fmt::Debug for PeerManager {
 #[cfg(all(test, feature = "use-mock-crust"))]
 mod tests {
     use super::*;
-    use id::FullId;
-    use mock_crust::crust::{PrivConnectionInfo, PubConnectionInfo};
-    use mock_crust::Endpoint;
-    use routing_table::Authority;
-    use types::MessageId;
-    use xor_name::{XorName, XOR_NAME_LEN};
+    use crate::id::FullId;
+    use crate::mock_crust::crust::{PrivConnectionInfo, PubConnectionInfo};
+    use crate::mock_crust::Endpoint;
+    use crate::routing_table::Authority;
+    use crate::types::MessageId;
+    use crate::xor_name::{XorName, XOR_NAME_LEN};
 
     fn node_auth(byte: u8) -> Authority<XorName> {
         Authority::ManagedNode(XorName([byte; XOR_NAME_LEN]))

@@ -6,9 +6,9 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use id::PublicId;
+use crate::id::PublicId;
+use crate::message_filter::MessageFilter;
 use itertools::Itertools;
-use message_filter::MessageFilter;
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeSet, HashMap};
 use std::time::Duration;
@@ -188,7 +188,7 @@ impl Default for Tunnels {
 #[cfg(all(test, feature = "use-mock-crust"))]
 mod tests {
     use super::*;
-    use id::FullId;
+    use crate::id::FullId;
     use itertools::Itertools;
 
     #[test]

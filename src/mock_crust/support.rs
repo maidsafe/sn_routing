@@ -10,16 +10,16 @@ use super::crust::{
     ConnectionInfoResult, CrustEventSender, CrustUser, Event, PrivConnectionInfo,
     PubConnectionInfo, Uid,
 };
-use id::PublicId;
+use crate::id::PublicId;
+use crate::rust_sodium;
+use crate::CrustEvent;
 use maidsafe_utilities::SeededRng;
 use rand::Rng;
-use rust_sodium;
 use std::cell::RefCell;
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::net::{IpAddr, SocketAddr};
 use std::rc::{Rc, Weak};
-use CrustEvent;
 
 /// Mock network. Create one before testing with mocks. Use it to create `ServiceHandle`s.
 #[derive(Clone)]

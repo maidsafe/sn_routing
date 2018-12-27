@@ -6,7 +6,9 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use messages::{DirectMessage, MessageContent, Request, Response, RoutingMessage, UserMessage};
+use crate::messages::{
+    DirectMessage, MessageContent, Request, Response, RoutingMessage, UserMessage,
+};
 use std::fmt::{self, Display, Formatter};
 
 /// The number of messages after which the message statistics should be printed.
@@ -225,7 +227,7 @@ impl Stats {
 
     /// Increments the counter for the given direct message type.
     pub fn count_direct_message(&mut self, msg: &DirectMessage) {
-        use messages::DirectMessage::*;
+        use crate::messages::DirectMessage::*;
         match *msg {
             CandidateInfo { .. } => self.msg_direct_candidate_info += 1,
             MessageSignature(..) => self.msg_direct_sig += 1,

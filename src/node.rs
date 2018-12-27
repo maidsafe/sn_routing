@@ -6,37 +6,37 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use action::Action;
-use cache::{Cache, NullCache};
-use client_error::ClientError;
-use config_handler::{self, Config};
-use data::{EntryAction, ImmutableData, MutableData, PermissionSet, User, Value};
-use error::{InterfaceError, RoutingError};
-use event::Event;
-use event_stream::{EventStepper, EventStream};
-use id::{FullId, PublicId};
-use messages::{
+use crate::action::Action;
+use crate::cache::{Cache, NullCache};
+use crate::client_error::ClientError;
+use crate::config_handler::{self, Config};
+use crate::data::{EntryAction, ImmutableData, MutableData, PermissionSet, User, Value};
+use crate::error::{InterfaceError, RoutingError};
+use crate::event::Event;
+use crate::event_stream::{EventStepper, EventStream};
+use crate::id::{FullId, PublicId};
+use crate::messages::{
     AccountInfo, Request, Response, UserMessage, CLIENT_GET_PRIORITY, DEFAULT_PRIORITY,
     RELOCATE_PRIORITY,
 };
-use outbox::{EventBox, EventBuf};
+use crate::outbox::{EventBox, EventBuf};
 #[cfg(feature = "use-mock-crust")]
-use routing_table::Prefix;
-use routing_table::{Authority, RoutingTable};
+use crate::routing_table::Prefix;
+use crate::routing_table::{Authority, RoutingTable};
+use crate::rust_sodium::crypto::sign;
+use crate::state_machine::{State, StateMachine};
+use crate::states::{self, Bootstrapping, BootstrappingTargetState};
+use crate::types::{MessageId, RoutingActionSender};
+use crate::xor_name::XorName;
+use crate::MIN_SECTION_SIZE;
 #[cfg(not(feature = "use-mock-crust"))]
 use rust_sodium;
-use rust_sodium::crypto::sign;
-use state_machine::{State, StateMachine};
-use states::{self, Bootstrapping, BootstrappingTargetState};
 use std::collections::{BTreeMap, BTreeSet};
 #[cfg(feature = "use-mock-crust")]
 use std::fmt::{self, Debug, Formatter};
 #[cfg(feature = "use-mock-crust")]
 use std::net::IpAddr;
 use std::sync::mpsc::{channel, Receiver, RecvError, Sender, TryRecvError};
-use types::{MessageId, RoutingActionSender};
-use xor_name::XorName;
-use MIN_SECTION_SIZE;
 
 // Helper macro to implement request sending methods.
 macro_rules! impl_request {

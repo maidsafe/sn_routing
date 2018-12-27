@@ -51,15 +51,11 @@
     variant_size_differences
 )]
 
-extern crate fake_clock;
-extern crate itertools;
 #[macro_use]
 extern crate log;
 #[cfg_attr(feature = "cargo-clippy", allow(useless_attribute))]
 #[allow(unused_extern_crates)]
 extern crate maidsafe_utilities;
-extern crate rand;
-extern crate routing;
 #[macro_use]
 extern crate unwrap;
 

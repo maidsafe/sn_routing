@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use messages::{Request, Response};
+use crate::messages::{Request, Response};
 
 /// A cache that stores `Response`s keyed by `Requests`. Should be implemented
 /// by layers above routing.

@@ -7,44 +7,53 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
-use ack_manager::{Ack, AckManager};
-use action::Action;
-use cache::Cache;
-use config_handler;
-use crust::{ConnectionInfoResult, CrustError, CrustUser};
-use cumulative_own_section_merge::CumulativeOwnSectionMerge;
-use error::{BootstrapResponseError, InterfaceError, RoutingError};
-use event::Event;
+use crate::ack_manager::{Ack, AckManager};
+use crate::action::Action;
+use crate::cache::Cache;
+use crate::config_handler;
+use crate::crust::{ConnectionInfoResult, CrustError, CrustUser};
+use crate::cumulative_own_section_merge::CumulativeOwnSectionMerge;
+use crate::error::{BootstrapResponseError, InterfaceError, RoutingError};
+use crate::event::Event;
+use crate::id::{FullId, PublicId};
+use crate::messages::{
+    DirectMessage, HopMessage, Message, MessageContent, RoutingMessage, SectionList, SignedMessage,
+    UserMessage, UserMessageCache, DEFAULT_PRIORITY, MAX_PARTS, MAX_PART_LEN,
+};
+use crate::outbox::{EventBox, EventBuf};
+use crate::peer_manager::{
+    ConnectionInfoPreparedResult, Peer, PeerManager, PeerState, ReconnectingPeer,
+    RoutingConnection, SectionMap,
+};
+use crate::rate_limiter::RateLimiter;
+use crate::resource_prover::{ResourceProver, RESOURCE_PROOF_DURATION_SECS};
+use crate::routing_message_filter::{FilteringResult, RoutingMessageFilter};
+use crate::routing_table::Error as RoutingTableError;
+use crate::routing_table::{
+    Authority, OwnMergeState, Prefix, RemovalDetails, RoutingTable, VersionedPrefix, Xorable,
+};
+use crate::rust_sodium::crypto::{box_, sign};
+use crate::section_list_cache::SectionListCache;
+use crate::sha3::Digest256;
+use crate::signature_accumulator::SignatureAccumulator;
+use crate::state_machine::Transition;
+use crate::stats::Stats;
+use crate::timer::Timer;
+use crate::tunnels::Tunnels;
+use crate::types::{MessageId, RoutingActionSender};
+use crate::utils::{self, DisplayDuration};
+use crate::xor_name::XorName;
+use crate::{
+    CrustEvent, PrivConnectionInfo, PubConnectionInfo, Service, QUORUM_DENOMINATOR,
+    QUORUM_NUMERATOR,
+};
 #[cfg(feature = "use-mock-crust")]
 use fake_clock::FakeClock as Instant;
-use id::{FullId, PublicId};
 use itertools::Itertools;
 use log::Level;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation;
-use messages::{
-    DirectMessage, HopMessage, Message, MessageContent, RoutingMessage, SectionList, SignedMessage,
-    UserMessage, UserMessageCache, DEFAULT_PRIORITY, MAX_PARTS, MAX_PART_LEN,
-};
-use outbox::{EventBox, EventBuf};
-use peer_manager::{
-    ConnectionInfoPreparedResult, Peer, PeerManager, PeerState, ReconnectingPeer,
-    RoutingConnection, SectionMap,
-};
 use rand::{self, Rng};
-use rate_limiter::RateLimiter;
-use resource_prover::{ResourceProver, RESOURCE_PROOF_DURATION_SECS};
-use routing_message_filter::{FilteringResult, RoutingMessageFilter};
-use routing_table::Error as RoutingTableError;
-use routing_table::{
-    Authority, OwnMergeState, Prefix, RemovalDetails, RoutingTable, VersionedPrefix, Xorable,
-};
-use rust_sodium::crypto::{box_, sign};
-use section_list_cache::SectionListCache;
-use sha3::Digest256;
-use signature_accumulator::SignatureAccumulator;
-use state_machine::Transition;
-use stats::Stats;
 #[cfg(feature = "use-mock-crust")]
 use std::collections::BTreeMap;
 use std::collections::{BTreeSet, VecDeque};
@@ -54,15 +63,6 @@ use std::time::Duration;
 #[cfg(not(feature = "use-mock-crust"))]
 use std::time::Instant;
 use std::{cmp, fmt, iter, mem};
-use timer::Timer;
-use tunnels::Tunnels;
-use types::{MessageId, RoutingActionSender};
-use utils::{self, DisplayDuration};
-use xor_name::XorName;
-use {
-    CrustEvent, PrivConnectionInfo, PubConnectionInfo, Service, QUORUM_DENOMINATOR,
-    QUORUM_NUMERATOR,
-};
 
 /// Time (in seconds) after which a `Tick` event is sent.
 const TICK_TIMEOUT_SECS: u64 = 60;
@@ -654,7 +654,7 @@ impl Node {
         pub_id: PublicId,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError> {
-        use messages::DirectMessage::*;
+        use crate::messages::DirectMessage::*;
         if let Err(error) = self.check_direct_message_sender(&direct_message, &pub_id) {
             match error {
                 RoutingError::ClientConnectionNotFound => (),
@@ -1063,8 +1063,8 @@ impl Node {
         routing_msg: RoutingMessage,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError> {
-        use messages::MessageContent::*;
-        use Authority::{Client, ManagedNode, PrefixSection, Section};
+        use crate::messages::MessageContent::*;
+        use crate::Authority::{Client, ManagedNode, PrefixSection, Section};
 
         if !self.is_approved {
             match routing_msg.content {
@@ -2135,7 +2135,7 @@ impl Node {
             return Err(RoutingError::InvalidPeer);
         }
 
-        use peer_manager::ConnectionInfoReceivedResult::*;
+        use crate::peer_manager::ConnectionInfoReceivedResult::*;
         match self.peer_mgr.connection_info_received(
             src,
             dst,
@@ -2212,7 +2212,7 @@ impl Node {
             return Err(RoutingError::InvalidPeer);
         }
 
-        use peer_manager::ConnectionInfoReceivedResult::*;
+        use crate::peer_manager::ConnectionInfoReceivedResult::*;
         match self.peer_mgr.connection_info_received(
             Authority::ManagedNode(src),
             dst,
@@ -3230,7 +3230,7 @@ impl Node {
     /// Returns the peer that is responsible for collecting signatures to verify a message; this
     /// may be us or another node. If our signature is not required, this returns `None`.
     fn get_signature_target(&self, src: &Authority<XorName>, route: u8) -> Option<XorName> {
-        use Authority::*;
+        use crate::Authority::*;
         let list: Vec<&XorName> = match *src {
             ClientManager(_) | NaeManager(_) | NodeManager(_) => {
                 let mut v = self
@@ -3875,7 +3875,7 @@ impl Bootstrapped for Node {
             );
             return Ok(());
         }
-        use routing_table::Authority::*;
+        use crate::routing_table::Authority::*;
         let sending_names = match routing_msg.src {
             ClientManager(_) | NaeManager(_) | NodeManager(_) | ManagedNode(_) => {
                 let section = self

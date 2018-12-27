@@ -8,11 +8,11 @@
 
 use super::XorName;
 use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
-use id::PublicId;
+use crate::id::PublicId;
+use crate::messages::SectionList;
+use crate::routing_table::Prefix;
+use crate::rust_sodium::crypto::sign::Signature;
 use itertools::Itertools;
-use messages::SectionList;
-use routing_table::Prefix;
-use rust_sodium::crypto::sign::Signature;
 use std::collections::HashMap;
 
 pub type Signatures = HashMap<PublicId, Signature>;

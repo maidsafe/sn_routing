@@ -7,31 +7,31 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
-use ack_manager::{Ack, AckManager, UnacknowledgedMessage};
-use action::Action;
-use error::{InterfaceError, RoutingError};
-use event::Event;
-#[cfg(feature = "use-mock-crust")]
-use fake_clock::FakeClock as Instant;
-use id::{FullId, PublicId};
-use maidsafe_utilities::serialisation;
-use messages::{
+use crate::ack_manager::{Ack, AckManager, UnacknowledgedMessage};
+use crate::action::Action;
+use crate::error::{InterfaceError, RoutingError};
+use crate::event::Event;
+use crate::id::{FullId, PublicId};
+use crate::messages::{
     DirectMessage, HopMessage, Message, MessageContent, RoutingMessage, SignedMessage, UserMessage,
     UserMessageCache,
 };
-use outbox::EventBox;
-use routing_message_filter::{FilteringResult, RoutingMessageFilter};
-use routing_table::Authority;
-use state_machine::Transition;
-use stats::Stats;
+use crate::outbox::EventBox;
+use crate::routing_message_filter::{FilteringResult, RoutingMessageFilter};
+use crate::routing_table::Authority;
+use crate::state_machine::Transition;
+use crate::stats::Stats;
+use crate::timer::Timer;
+use crate::xor_name::XorName;
+use crate::{CrustEvent, Service};
+#[cfg(feature = "use-mock-crust")]
+use fake_clock::FakeClock as Instant;
+use maidsafe_utilities::serialisation;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
 use std::time::Duration;
 #[cfg(not(feature = "use-mock-crust"))]
 use std::time::Instant;
-use timer::Timer;
-use xor_name::XorName;
-use {CrustEvent, Service};
 
 /// Duration to wait before sending rate limit exceeded messages.
 pub const RATE_EXCEED_RETRY_MS: u64 = 800;

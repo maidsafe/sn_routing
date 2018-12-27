@@ -14,10 +14,10 @@
 use super::authority::Authority;
 use super::prefix::Prefix;
 use super::{Error, RoutingTable};
+use crate::routing_table::xorable::Xorable;
+use crate::routing_table::{OwnMergeState, Sections};
 use maidsafe_utilities::SeededRng;
 use rand::Rng;
-use routing_table::xorable::Xorable;
-use routing_table::{OwnMergeState, Sections};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{Binary, Debug};
 use std::hash::Hash;
