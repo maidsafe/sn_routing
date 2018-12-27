@@ -62,6 +62,7 @@ pub struct Bootstrapping {
 }
 
 impl Bootstrapping {
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(
         action_sender: RoutingActionSender,
         cache: Box<Cache>,
@@ -449,12 +450,14 @@ mod tests {
                         full_id,
                         min_section_size,
                         timer,
-                    ).map_or(State::Terminated, State::Bootstrapping)
+                    )
+                    .map_or(State::Terminated, State::Bootstrapping)
                 },
                 pub_id,
                 Some(config),
                 &mut outbox,
-            ).1
+            )
+            .1
         });
 
         // Check the Crust service received the `BootstrapAccept`.

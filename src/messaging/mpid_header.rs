@@ -49,6 +49,7 @@ impl MpidHeader {
     ///
     /// An error will be returned if `metadata` exceeds `MAX_HEADER_METADATA_SIZE` or if
     /// serialisation during the signing process fails.
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(
         sender: XorName,
         metadata: Vec<u8>,

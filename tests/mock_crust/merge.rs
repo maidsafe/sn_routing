@@ -111,11 +111,9 @@ fn concurrent_merge() {
     // `min_section_size`.
     for (prefix, len) in &mut section_map {
         while *len >= min_section_size {
-            let index = unwrap!(
-                nodes
-                    .iter()
-                    .position(|node| node.routing_table().our_prefix() == prefix)
-            );
+            let index = unwrap!(nodes
+                .iter()
+                .position(|node| node.routing_table().our_prefix() == prefix));
             let removed = nodes.remove(index);
             drop(removed);
             *len -= 1;
@@ -151,11 +149,9 @@ fn merge_exclude_reconnecting_peers() {
 
     // Drop enough nodes (without polling) from that section to just below `min_section_size`.
     while nodes_count >= min_section_size {
-        let index = unwrap!(
-            nodes
-                .iter()
-                .position(|node| node.routing_table().our_prefix() == &prefix_to_drop_from)
-        );
+        let index = unwrap!(nodes
+            .iter()
+            .position(|node| node.routing_table().our_prefix() == &prefix_to_drop_from));
         let removed = nodes.remove(index);
         drop(removed);
         nodes_count -= 1;

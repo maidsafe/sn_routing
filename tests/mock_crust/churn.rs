@@ -257,15 +257,13 @@ impl ExpectedPuts {
         let mut sent_count = 0;
         for node in nodes.iter_mut().filter(|node| node.is_recipient(&src)) {
             if dst.is_client() {
-                unwrap!(
-                    node.inner
-                        .send_get_idata_response(src, dst, Ok(data.clone()), msg_id,)
-                );
+                unwrap!(node
+                    .inner
+                    .send_get_idata_response(src, dst, Ok(data.clone()), msg_id,));
             } else {
-                unwrap!(
-                    node.inner
-                        .send_put_idata_request(src, dst, data.clone(), msg_id,)
-                );
+                unwrap!(node
+                    .inner
+                    .send_put_idata_request(src, dst, data.clone(), msg_id,));
             }
             sent_count += 1;
         }
@@ -328,7 +326,8 @@ impl ExpectedPuts {
                 let count = cmp::min(section.len(), new_section.len());
                 section.extend(new_section);
                 (*dst, count)
-            }).collect();
+            })
+            .collect();
         let mut section_msgs_received = HashMap::new(); // The count of received section messages.
         for node in nodes {
             while let Ok(event) = node.try_next_ev() {

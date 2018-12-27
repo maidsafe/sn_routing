@@ -32,6 +32,7 @@ pub struct Service<UID: Uid>(Rc<RefCell<ServiceImpl<UID>>>, Network<UID>);
 impl<UID: Uid> Service<UID> {
     /// Create new mock `Service` using the make_current/get_current mechanism to get the associated
     /// `ServiceHandle`.
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(
         handle: ServiceHandle<UID>,
         event_sender: CrustEventSender<UID>,

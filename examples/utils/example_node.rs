@@ -242,10 +242,9 @@ impl ExampleNode {
                     Err(ClientError::NoSuchData)
                 };
 
-                unwrap!(
-                    self.node
-                        .send_get_mdata_shell_response(dst, src, res, msg_id,)
-                )
+                unwrap!(self
+                    .node
+                    .send_get_mdata_shell_response(dst, src, res, msg_id,))
             }
             (src, dst) => unreachable!("Wrong Src and Dest Authority {:?} - {:?}", src, dst),
         }
@@ -272,10 +271,9 @@ impl ExampleNode {
                     Err(ClientError::NoSuchData)
                 };
 
-                unwrap!(
-                    self.node
-                        .send_list_mdata_entries_response(dst, src, res, msg_id,)
-                )
+                unwrap!(self
+                    .node
+                    .send_list_mdata_entries_response(dst, src, res, msg_id,))
             }
             (src, dst) => unreachable!("Wrong Src and Dest Authority {:?} - {:?}", src, dst),
         }
@@ -306,10 +304,9 @@ impl ExampleNode {
                         error
                     });
 
-                unwrap!(
-                    self.node
-                        .send_get_mdata_value_response(dst, src, res, msg_id,)
-                )
+                unwrap!(self
+                    .node
+                    .send_get_mdata_value_response(dst, src, res, msg_id,))
             }
             (src, dst) => unreachable!("Wrong Src and Dest Authority {:?} - {:?}", src, dst),
         }

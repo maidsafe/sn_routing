@@ -304,15 +304,9 @@ mod tests {
             !unwrap!(Prefix::from_str("1010")).is_compatible(&unwrap!(Prefix::from_str("1011")))
         );
         assert!(unwrap!(Prefix::from_str("101")).is_neighbour(&unwrap!(Prefix::from_str("1111"))));
-        assert!(
-            !unwrap!(Prefix::from_str("1010")).is_neighbour(&unwrap!(Prefix::from_str("1111")))
-        );
-        assert!(
-            unwrap!(Prefix::from_str("1010")).is_neighbour(&unwrap!(Prefix::from_str("10111")))
-        );
-        assert!(
-            !unwrap!(Prefix::from_str("101")).is_neighbour(&unwrap!(Prefix::from_str("10111")))
-        );
+        assert!(!unwrap!(Prefix::from_str("1010")).is_neighbour(&unwrap!(Prefix::from_str("1111"))));
+        assert!(unwrap!(Prefix::from_str("1010")).is_neighbour(&unwrap!(Prefix::from_str("10111"))));
+        assert!(!unwrap!(Prefix::from_str("101")).is_neighbour(&unwrap!(Prefix::from_str("10111"))));
         assert!(unwrap!(Prefix::from_str("101")).matches(&0b1010_1100));
         assert!(!unwrap!(Prefix::from_str("1011")).matches(&0b1010_1100));
 

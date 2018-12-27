@@ -80,7 +80,8 @@ impl Client {
                     full_id,
                     min_section_size,
                     timer,
-                ).map_or(State::Terminated, State::Bootstrapping)
+                )
+                .map_or(State::Terminated, State::Bootstrapping)
             },
             pub_id,
             bootstrap_config,
@@ -420,6 +421,7 @@ impl Client {
     /// Keys will be exchanged with the `ClientAuthority` so that communication with the network is
     /// cryptographically secure and uses section consensus. The restriction for the client name
     /// exists to ensure that the client cannot choose its `ClientAuthority`.
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(
         event_sender: Sender<Event>,
         keys: Option<FullId>,
@@ -506,6 +508,7 @@ impl Client {
 #[cfg(feature = "use-mock-crust")]
 impl Client {
     /// Create a new `Client` for testing with mock crust.
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(
         keys: Option<FullId>,
         bootstrap_config: Option<BootstrapConfig>,

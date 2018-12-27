@@ -169,7 +169,8 @@ impl NodeBuilder {
                         full_id,
                         min_section_size,
                         timer,
-                    ).map_or(State::Terminated, State::Bootstrapping)
+                    )
+                    .map_or(State::Terminated, State::Bootstrapping)
                 }
             },
             pub_id,

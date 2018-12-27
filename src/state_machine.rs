@@ -244,6 +244,7 @@ pub enum Transition {
 
 impl StateMachine {
     // Construct a new StateMachine by passing a function returning the initial state.
+    #[allow(clippy::new_ret_no_self)]
     pub fn new<F>(
         init_state: F,
         pub_id: PublicId,
@@ -484,7 +485,8 @@ impl StateMachine {
                 } else {
                     events.pop()
                 }
-            }).collect_vec();
+            })
+            .collect_vec();
         interleaved.reverse();
         self.events.extend(interleaved);
 

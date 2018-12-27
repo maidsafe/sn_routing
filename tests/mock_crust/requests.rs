@@ -26,12 +26,10 @@ fn successful_put_request() {
     let data = gen_immutable_data(&mut rng, 1024);
     let message_id = MessageId::new();
 
-    assert!(
-        clients[0]
-            .inner
-            .put_idata(dst, data.clone(), message_id)
-            .is_ok()
-    );
+    assert!(clients[0]
+        .inner
+        .put_idata(dst, data.clone(), message_id)
+        .is_ok());
 
     let _ = poll_all(&mut nodes, &mut clients);
 
@@ -74,12 +72,10 @@ fn successful_get_request() {
     let dst = Authority::NaeManager(*data.name());
     let message_id = MessageId::new();
 
-    assert!(
-        clients[0]
-            .inner
-            .get_idata(dst, *data.name(), message_id)
-            .is_ok()
-    );
+    assert!(clients[0]
+        .inner
+        .get_idata(dst, *data.name(), message_id)
+        .is_ok());
 
     let _ = poll_all(&mut nodes, &mut clients);
 
@@ -160,12 +156,10 @@ fn failed_get_request() {
     let dst = Authority::NaeManager(*data.name());
     let message_id = MessageId::new();
 
-    assert!(
-        clients[0]
-            .inner
-            .get_idata(dst, *data.name(), message_id)
-            .is_ok()
-    );
+    assert!(clients[0]
+        .inner
+        .get_idata(dst, *data.name(), message_id)
+        .is_ok());
 
     let _ = poll_all(&mut nodes, &mut clients);
 
@@ -246,12 +240,10 @@ fn disconnect_on_get_request() {
     let dst = Authority::NaeManager(*data.name());
     let message_id = MessageId::new();
 
-    assert!(
-        clients[0]
-            .inner
-            .get_idata(dst, *data.name(), message_id)
-            .is_ok()
-    );
+    assert!(clients[0]
+        .inner
+        .get_idata(dst, *data.name(), message_id)
+        .is_ok());
 
     let _ = poll_all(&mut nodes, &mut clients);
 

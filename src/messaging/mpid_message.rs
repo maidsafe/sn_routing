@@ -46,6 +46,7 @@ impl MpidMessage {
     /// An error will be returned if `body` exceeds `MAX_BODY_SIZE`, if
     /// [MpidHeader::new()](struct.MpidHeader.html#method.new) fails or if
     /// serialisation during the signing process fails.
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(
         sender: XorName,
         metadata: Vec<u8>,
@@ -152,15 +153,14 @@ mod tests {
         ));
         assert_eq!(*message.body(), body);
         body.push(0);
-        assert!(
-            MpidMessage::new(
-                sender,
-                metadata.clone(),
-                recipient,
-                body.clone(),
-                &secret_key,
-            ).is_err()
-        );
+        assert!(MpidMessage::new(
+            sender,
+            metadata.clone(),
+            recipient,
+            body.clone(),
+            &secret_key,
+        )
+        .is_err());
         let _ = body.pop();
 
         // Check verify function with a valid and invalid key
