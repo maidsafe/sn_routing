@@ -6,28 +6,28 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use ack_manager::ACK_TIMEOUT_SECS;
-use action::Action;
-use event::Event;
+use crate::ack_manager::ACK_TIMEOUT_SECS;
+use crate::action::Action;
+use crate::event::Event;
+use crate::id::PublicId;
+use crate::messages::{DirectMessage, MAX_PART_LEN};
+use crate::outbox::EventBox;
+use crate::signature_accumulator::ACCUMULATION_TIMEOUT_SECS;
+use crate::state_machine::Transition;
+use crate::timer::Timer;
+use crate::types::RoutingActionSender;
+use crate::utils::DisplayDuration;
 #[cfg(feature = "mock")]
 use fake_clock::FakeClock as Instant;
-use id::PublicId;
 use itertools::Itertools;
 use maidsafe_utilities::thread;
-use messages::{DirectMessage, MAX_PART_LEN};
-use outbox::EventBox;
 use resource_proof::ResourceProof;
-use signature_accumulator::ACCUMULATION_TIMEOUT_SECS;
-use state_machine::Transition;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 #[cfg(not(feature = "mock"))]
 use std::time::Instant;
-use timer::Timer;
-use types::RoutingActionSender;
-use utils::DisplayDuration;
 
 /// Time (in seconds) between accepting a new candidate (i.e. receiving an `AcceptAsCandidate` from
 /// our section) and sending a `CandidateApproval` for this candidate. If the candidate cannot

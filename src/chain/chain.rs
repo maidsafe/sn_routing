@@ -19,17 +19,17 @@ use super::{
     ChainState, GenesisPfxInfo, NeighbourSigs, NetworkEvent, Proof, ProofSet, ProvingSection,
     SectionInfo,
 };
-use error::RoutingError;
-use id::{FullId, PublicId};
+use crate::error::RoutingError;
+use crate::id::{FullId, PublicId};
+use crate::messages::SignedMessage;
+use crate::sha3::Digest256;
+use crate::{Prefix, XorName, Xorable};
 use itertools::Itertools;
 use log::LogLevel;
-use messages::SignedMessage;
-use sha3::Digest256;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Display, Formatter};
 use std::iter;
 use std::mem;
-use {Prefix, XorName, Xorable};
 
 /// Amount added to `min_section_size` when deciding whether a bucket split can happen. This helps
 /// protect against rapid splitting and merging in the face of moderate churn.
@@ -1044,12 +1044,12 @@ impl Chain {
 mod tests {
     use super::super::{GenesisPfxInfo, Proof, ProofSet, SectionInfo};
     use super::Chain;
-    use id::{FullId, PublicId};
+    use crate::id::{FullId, PublicId};
+    use crate::{Prefix, XorName, MIN_SECTION_SIZE};
     use rand::{thread_rng, Rng};
     use serde::Serialize;
     use std::collections::{BTreeSet, HashMap};
     use std::str::FromStr;
-    use {Prefix, XorName, MIN_SECTION_SIZE};
 
     enum SecInfoGen<'a> {
         New(Prefix<XorName>, usize),

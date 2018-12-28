@@ -6,14 +6,14 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use chain::Proof;
+use crate::chain::Proof;
+use crate::messages::SignedMessage;
+use crate::sha3::Digest256;
 #[cfg(feature = "mock")]
 use fake_clock::FakeClock as Instant;
 use itertools::Itertools;
 use maidsafe_utilities::serialisation;
-use messages::SignedMessage;
 use safe_crypto;
-use sha3::Digest256;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 #[cfg(not(feature = "mock"))]
@@ -132,15 +132,15 @@ impl SignatureAccumulator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chain::SectionInfo;
-    use id::{FullId, PublicId};
+    use crate::chain::SectionInfo;
+    use crate::id::{FullId, PublicId};
+    use crate::messages::{DirectMessage, MessageContent, RoutingMessage, SignedMessage};
+    use crate::routing_table::Authority;
+    use crate::routing_table::Prefix;
+    use crate::types::MessageId;
     use itertools::Itertools;
-    use messages::{DirectMessage, MessageContent, RoutingMessage, SignedMessage};
     use rand;
-    use routing_table::Authority;
-    use routing_table::Prefix;
     use std::collections::BTreeSet;
-    use types::MessageId;
 
     struct MessageAndSignatures {
         signed_msg: SignedMessage,

@@ -6,35 +6,35 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use action::Action;
-use cache::NullCache;
-use config_handler::{self, Config};
+use crate::action::Action;
+use crate::cache::NullCache;
+use crate::config_handler::{self, Config};
+use crate::data::{EntryAction, ImmutableData, MutableData, PermissionSet, User};
+use crate::error::{InterfaceError, RoutingError};
+use crate::event::Event;
+#[cfg(feature = "mock")]
+use crate::event_stream::{EventStepper, EventStream};
+use crate::id::{FullId, PublicId};
+use crate::messages::{Request, CLIENT_GET_PRIORITY, DEFAULT_PRIORITY};
+use crate::outbox::{EventBox, EventBuf};
+use crate::routing_table::Authority;
+use crate::state_machine::{State, StateMachine};
+use crate::states::{Bootstrapping, BootstrappingTargetState};
+use crate::types::{MessageId, RoutingActionSender};
+use crate::xor_name::XorName;
+use crate::{BootstrapConfig, MIN_SECTION_SIZE};
 #[cfg(not(feature = "mock"))]
 use crust::read_config_file as read_bootstrap_config_file;
-use data::{EntryAction, ImmutableData, MutableData, PermissionSet, User};
-use error::{InterfaceError, RoutingError};
-use event::Event;
-#[cfg(feature = "mock")]
-use event_stream::{EventStepper, EventStream};
-use id::{FullId, PublicId};
 #[cfg(not(feature = "mock"))]
 use maidsafe_utilities::thread::{self, Joiner};
-use messages::{Request, CLIENT_GET_PRIORITY, DEFAULT_PRIORITY};
-use outbox::{EventBox, EventBuf};
-use routing_table::Authority;
 #[cfg(not(feature = "mock"))]
 use safe_crypto;
 use safe_crypto::PublicSignKey;
-use state_machine::{State, StateMachine};
-use states::{Bootstrapping, BootstrappingTargetState};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::mpsc::{channel, Receiver, Sender};
 #[cfg(feature = "mock")]
 use std::sync::mpsc::{RecvError, TryRecvError};
 use std::time::Duration;
-use types::{MessageId, RoutingActionSender};
-use xor_name::XorName;
-use {BootstrapConfig, MIN_SECTION_SIZE};
 
 /// Interface for sending and receiving messages to and from a network of nodes in the role of a
 /// client.

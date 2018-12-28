@@ -8,22 +8,26 @@
 
 use super::common::{Base, Bootstrapped};
 use super::{Bootstrapping, BootstrappingTargetState};
-use ack_manager::{Ack, AckManager};
-use action::Action;
-use cache::Cache;
-use error::{InterfaceError, Result, RoutingError};
-use event::Event;
+use crate::ack_manager::{Ack, AckManager};
+use crate::action::Action;
+use crate::cache::Cache;
+use crate::error::{InterfaceError, Result, RoutingError};
+use crate::event::Event;
+use crate::id::{FullId, PublicId};
+use crate::messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage};
+use crate::outbox::EventBox;
+use crate::resource_prover::RESOURCE_PROOF_DURATION_SECS;
+use crate::routing_message_filter::{FilteringResult, RoutingMessageFilter};
+use crate::routing_table::{Authority, Prefix};
+use crate::state_machine::{State, Transition};
+use crate::timer::Timer;
+use crate::types::{MessageId, RoutingActionSender};
+use crate::xor_name::XorName;
+use crate::{CrustEvent, CrustEventSender, Service};
 #[cfg(feature = "mock")]
 use fake_clock::FakeClock as Instant;
-use id::{FullId, PublicId};
 use log::LogLevel;
 use maidsafe_utilities::serialisation;
-use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage};
-use outbox::EventBox;
-use resource_prover::RESOURCE_PROOF_DURATION_SECS;
-use routing_message_filter::{FilteringResult, RoutingMessageFilter};
-use routing_table::{Authority, Prefix};
-use state_machine::{State, Transition};
 use std::collections::BTreeSet;
 use std::fmt;
 use std::fmt::{Display, Formatter};
@@ -31,10 +35,6 @@ use std::sync::mpsc::Receiver;
 use std::time::Duration;
 #[cfg(not(feature = "mock"))]
 use std::time::Instant;
-use timer::Timer;
-use types::{MessageId, RoutingActionSender};
-use xor_name::XorName;
-use {CrustEvent, CrustEventSender, Service};
 
 /// Total time (in seconds) to wait for `RelocateResponse`.
 const RELOCATE_TIMEOUT_SECS: u64 = 60 + RESOURCE_PROOF_DURATION_SECS;
@@ -248,7 +248,7 @@ impl JoiningNode {
     }
 
     fn dispatch_routing_message(&mut self, routing_msg: RoutingMessage) -> Transition {
-        use messages::MessageContent::*;
+        use crate::messages::MessageContent::*;
         match routing_msg.content {
             Relocate { .. }
             | ExpectCandidate { .. }

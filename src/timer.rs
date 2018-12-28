@@ -10,7 +10,8 @@ pub use self::implementation::Timer;
 
 #[cfg(not(feature = "mock"))]
 mod implementation {
-    use action::Action;
+    use crate::action::Action;
+    use crate::types::RoutingActionSender;
     use itertools::Itertools;
     use maidsafe_utilities::thread::{self, Joiner};
     use std::cell::RefCell;
@@ -18,7 +19,6 @@ mod implementation {
     use std::rc::Rc;
     use std::sync::mpsc::{self, Receiver, RecvError, RecvTimeoutError, SyncSender};
     use std::time::{Duration, Instant};
-    use types::RoutingActionSender;
 
     struct Detail {
         expiry: Instant,
@@ -121,12 +121,12 @@ mod implementation {
     #[cfg(test)]
     mod tests {
         use super::*;
-        use action::Action;
+        use crate::action::Action;
+        use crate::types::RoutingActionSender;
         use maidsafe_utilities::event_sender::MaidSafeEventCategory;
         use std::sync::mpsc;
         use std::thread;
         use std::time::{Duration, Instant};
-        use types::RoutingActionSender;
 
         #[test]
         fn schedule() {
@@ -229,13 +229,13 @@ mod implementation {
 
 #[cfg(feature = "mock")]
 mod implementation {
+    use crate::types::RoutingActionSender;
     use fake_clock::FakeClock as Instant;
     use itertools::Itertools;
     use std::cell::RefCell;
     use std::collections::BTreeMap;
     use std::rc::Rc;
     use std::time::Duration;
-    use types::RoutingActionSender;
 
     struct Inner {
         next_token: u64,

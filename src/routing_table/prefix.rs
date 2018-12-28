@@ -7,14 +7,14 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::xorable::Xorable;
+#[cfg(test)]
+use crate::XorName;
 use std::cmp::{self, Ordering};
 use std::fmt::Result as FmtResult;
 use std::fmt::{Binary, Debug, Formatter};
 use std::hash::{Hash, Hasher};
 #[cfg(test)]
 use std::str::FromStr;
-#[cfg(test)]
-use XorName;
 
 /// A prefix with section version.
 #[derive(

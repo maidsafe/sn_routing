@@ -56,18 +56,11 @@
 
 #[macro_use]
 extern crate log;
-extern crate docopt;
-extern crate lru_time_cache;
-extern crate maidsafe_utilities;
-extern crate rand;
-extern crate routing;
-extern crate term;
+use term;
 #[macro_use]
 extern crate unwrap;
 #[macro_use]
 extern crate serde_derive;
-#[cfg(not(feature = "mock"))]
-extern crate safe_crypto;
 
 mod utils;
 
@@ -80,6 +73,7 @@ fn main() {
 
 #[cfg(not(feature = "mock"))]
 mod unnamed {
+    use crate::utils::{ExampleClient, ExampleNode};
     use docopt::Docopt;
     use maidsafe_utilities::log;
     use maidsafe_utilities::thread::named as thread_named;
@@ -98,7 +92,6 @@ mod unnamed {
     use std::time::Duration;
     use std::{env, io, thread};
     use term::{self, color};
-    use utils::{ExampleClient, ExampleNode};
 
     const CHURN_MIN_WAIT_SEC: u64 = 20;
     const CHURN_MAX_WAIT_SEC: u64 = 30;

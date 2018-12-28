@@ -56,15 +56,11 @@
 // FIXME: Re-enable `redundant_field_names`.
 #![cfg_attr(feature = "cargo-clippy", allow(redundant_field_names))]
 
-extern crate itertools;
 #[cfg(target_os = "macos")]
 extern crate libc;
-extern crate maidsafe_utilities;
-extern crate rand;
-extern crate routing;
+use maidsafe_utilities;
 #[macro_use]
 extern crate unwrap;
-extern crate safe_crypto;
 
 use itertools::Itertools;
 use maidsafe_utilities::thread::{self, Joiner};

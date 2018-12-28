@@ -1,7 +1,7 @@
 use super::{Chain, ChainState, SectionInfo};
+use crate::{Prefix, XorName};
 use std::collections::{BTreeMap, BTreeSet};
 use std::iter;
-use {Prefix, XorName};
 
 fn verify_single_chain(chain: &Chain, min_section_size: usize) {
     assert!(

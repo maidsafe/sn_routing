@@ -6,14 +6,14 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use error::InterfaceError;
-use id::PublicId;
-use messages::DirectMessage;
-use messages::{Request, UserMessage};
-use routing_table::Authority;
+use crate::error::InterfaceError;
+use crate::id::PublicId;
+use crate::messages::DirectMessage;
+use crate::messages::{Request, UserMessage};
+use crate::routing_table::Authority;
+use crate::xor_name::XorName;
 use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::Sender;
-use xor_name::XorName;
 
 /// An Action initiates a message flow < A | B > where we are (a part of) A.
 ///    1. `Action::SendMessage` hands a fully formed `SignedMessage` over to `Core`

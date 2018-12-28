@@ -11,11 +11,11 @@
 pub const MAX_BODY_SIZE: usize = 102_400 - 512 - super::MAX_HEADER_METADATA_SIZE;
 
 use super::{Error, MpidHeader};
+use crate::xor_name::XorName;
 use hex_fmt::HexFmt;
 use maidsafe_utilities::serialisation::serialise;
 use safe_crypto::{PublicSignKey, SecretSignKey, Signature};
 use std::fmt::{self, Debug, Formatter};
-use xor_name::XorName;
 
 #[derive(PartialEq, Eq, Hash, Clone, Deserialize, Serialize)]
 struct Detail {
@@ -123,10 +123,10 @@ impl Debug for MpidMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use messaging;
+    use crate::messaging;
+    use crate::xor_name::XorName;
     use rand;
     use safe_crypto::gen_sign_keypair;
-    use xor_name::XorName;
 
     #[test]
     fn full() {

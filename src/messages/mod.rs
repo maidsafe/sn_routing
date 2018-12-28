@@ -12,28 +12,28 @@ mod response;
 pub use self::request::Request;
 pub use self::response::{AccountInfo, Response};
 use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
-use ack_manager::Ack;
-use chain::{GenesisPfxInfo, NetworkEvent, Proof, ProofSet, ProvingSection, SectionInfo};
-use data::MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
-use error::{BootstrapResponseError, Result, RoutingError};
-use event::Event;
+use crate::ack_manager::Ack;
+use crate::chain::{GenesisPfxInfo, NetworkEvent, Proof, ProofSet, ProvingSection, SectionInfo};
+use crate::data::MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
+use crate::error::{BootstrapResponseError, Result, RoutingError};
+use crate::event::Event;
+use crate::id::{FullId, PublicId};
+use crate::routing_table::Authority;
+use crate::routing_table::{Prefix, Xorable};
+use crate::sha3::Digest256;
+use crate::types::MessageId;
+use crate::xor_name::XorName;
 use hex_fmt::HexFmt;
-use id::{FullId, PublicId};
 use itertools::Itertools;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use parsec;
-use routing_table::Authority;
-use routing_table::{Prefix, Xorable};
 use safe_crypto;
 use safe_crypto::{PublicSignKey, SecretSignKey, Signature};
-use sha3::Digest256;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::{self, Debug, Formatter};
 use std::result::Result as StdResult;
 use std::time::Duration;
-use types::MessageId;
-use xor_name::XorName;
 
 /// The maximal length of a user message part, in bytes.
 pub const MAX_PART_LEN: usize = 20 * 1024;
@@ -415,7 +415,7 @@ impl SignedMessage {
     // Returns true if there are enough signatures (note that this method does not verify the
     // signatures, it only counts them; it also does not verify `self.src_section`).
     fn has_enough_sigs(&self, min_section_size: usize) -> bool {
-        use Authority::*;
+        use crate::Authority::*;
         match self.content.src {
             ClientManager(_) | NaeManager(_) | NodeManager(_) => {
                 // Note: there should be exactly one source section, but we use safe code:
@@ -941,17 +941,17 @@ impl UserMessageCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use data::ImmutableData;
-    use id::FullId;
+    use crate::data::ImmutableData;
+    use crate::id::FullId;
+    use crate::routing_table::{Authority, Prefix};
+    use crate::types::MessageId;
+    use crate::xor_name::XorName;
     use maidsafe_utilities::serialisation::serialise;
     use rand;
-    use routing_table::{Authority, Prefix};
     use safe_crypto;
     use safe_crypto::{gen_sign_keypair, SIGNATURE_BYTES};
     use std::collections::BTreeSet;
     use std::iter;
-    use types::MessageId;
-    use xor_name::XorName;
 
     #[test]
     fn signed_message_check_integrity() {

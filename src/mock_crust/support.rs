@@ -13,9 +13,10 @@ use super::crust::{
     ConnectionInfoResult, CrustEventSender, CrustUser, Event, PrivConnectionInfo,
     PubConnectionInfo, Uid,
 };
-use id::PublicId;
+use crate::id::PublicId;
+use crate::messages::{DirectMessage, Message};
+use crate::CrustEvent;
 use maidsafe_utilities::{serialisation, SeededRng};
-use messages::{DirectMessage, Message};
 use rand::Rng;
 use safe_crypto;
 use std::cell::RefCell;
@@ -23,7 +24,6 @@ use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::net::{IpAddr, SocketAddr};
 use std::rc::{Rc, Weak};
-use CrustEvent;
 
 /// Mock network. Create one before testing with mocks. Use it to create `ServiceHandle`s.
 #[derive(Clone)]

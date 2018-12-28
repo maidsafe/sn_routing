@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{Prefix, Xorable};
-use id::PublicId;
+use crate::id::PublicId;
 use std::fmt::{self, Binary, Debug, Display, Formatter};
 
 /// An entity that can act as a source or destination of a message.

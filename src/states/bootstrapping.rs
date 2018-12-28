@@ -8,25 +8,25 @@
 
 use super::common::Base;
 use super::{Client, JoiningNode, Node};
-use action::Action;
-use cache::Cache;
-use crust::CrustUser;
-use error::Result;
-use event::Event;
-use id::{FullId, PublicId};
+use crate::action::Action;
+use crate::cache::Cache;
+use crate::crust::CrustUser;
+use crate::error::Result;
+use crate::event::Event;
+use crate::id::{FullId, PublicId};
+use crate::messages::{DirectMessage, Message};
+use crate::outbox::EventBox;
+use crate::routing_table::{Authority, Prefix};
+use crate::state_machine::{State, Transition};
+use crate::timer::Timer;
+use crate::types::RoutingActionSender;
+use crate::xor_name::XorName;
+use crate::{CrustEvent, Service};
 use maidsafe_utilities::serialisation;
-use messages::{DirectMessage, Message};
-use outbox::EventBox;
-use routing_table::{Authority, Prefix};
-use state_machine::{State, Transition};
 use std::collections::{BTreeSet, HashSet};
 use std::fmt::{self, Display, Formatter};
 use std::net::SocketAddr;
 use std::time::Duration;
-use timer::Timer;
-use types::RoutingActionSender;
-use xor_name::XorName;
-use {CrustEvent, Service};
 
 // Time (in seconds) after which bootstrap is cancelled (and possibly retried).
 const BOOTSTRAP_TIMEOUT_SECS: u64 = 20;
@@ -376,15 +376,15 @@ impl Display for Bootstrapping {
 #[cfg(all(test, feature = "mock"))]
 mod tests {
     use super::*;
-    use cache::NullCache;
-    use id::FullId;
+    use crate::cache::NullCache;
+    use crate::id::FullId;
+    use crate::mock_crust::crust::{Config, Service};
+    use crate::mock_crust::{self, Network};
+    use crate::outbox::EventBuf;
+    use crate::state_machine::StateMachine;
+    use crate::CrustEvent;
     use maidsafe_utilities::event_sender::{MaidSafeEventCategory, MaidSafeObserver};
-    use mock_crust::crust::{Config, Service};
-    use mock_crust::{self, Network};
-    use outbox::EventBuf;
-    use state_machine::StateMachine;
     use std::sync::mpsc;
-    use CrustEvent;
 
     #[test]
     // Check that losing our proxy connection while in the `Bootstrapping` state doesn't stall and

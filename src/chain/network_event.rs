@@ -16,11 +16,11 @@
 // relating to use of the SAFE Network Software.
 
 use super::{ProofSet, ProvingSection, SectionInfo};
-use id::PublicId;
+use crate::id::PublicId;
+use crate::sha3::Digest256;
+use crate::{Authority, RoutingError, XorName};
 use maidsafe_utilities::serialisation::serialise;
 use parsec;
-use sha3::Digest256;
-use {Authority, RoutingError, XorName};
 
 /// Routing Network events
 // TODO: Box `SectionInfo`?

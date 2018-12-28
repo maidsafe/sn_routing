@@ -6,11 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use id::PublicId;
+use crate::id::PublicId;
+use crate::message_filter::MessageFilter;
+use crate::messages::RoutingMessage;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::serialise;
-use message_filter::MessageFilter;
-use messages::RoutingMessage;
 use safe_crypto;
 use serde::Serialize;
 use std::fmt::Debug;
