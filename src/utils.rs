@@ -6,15 +6,15 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use crate::routing_table::Xorable;
+use crate::xor_name::XorName;
+use crate::Prefix;
 use itertools::Itertools;
-use routing_table::Xorable;
 use std::collections::BTreeSet;
 use std::fmt::{self, Display, Write};
 use std::iter;
 use std::time::Duration;
 use tiny_keccak::sha3_256;
-use xor_name::XorName;
-use Prefix;
 
 /// Display a "number" to the given number of decimal places
 pub trait DisplayDuration {
@@ -107,7 +107,8 @@ pub fn calculate_relocation_interval(
             let diff1 = y1 - x1;
             let diff2 = y2 - x2;
             diff1.cmp(&diff2)
-        }).unwrap_or((&lower_bound, &upper_bound));
+        })
+        .unwrap_or((&lower_bound, &upper_bound));
 
     let third_of_distance = (*end - *start) / 3;
     let new_end = *end - third_of_distance;
@@ -117,11 +118,11 @@ pub fn calculate_relocation_interval(
 #[cfg(test)]
 mod tests {
     use super::DisplayDuration;
+    use crate::routing_table::Xorable;
+    use crate::xor_name::XorName;
     use rand;
-    use routing_table::Xorable;
     use std::time::Duration;
     use tiny_keccak::sha3_256;
-    use xor_name::XorName;
 
     #[test]
     fn duration_formatting() {

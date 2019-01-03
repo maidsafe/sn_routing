@@ -12,27 +12,27 @@ mod response;
 pub use self::request::Request;
 pub use self::response::{AccountInfo, Response};
 use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
-use ack_manager::Ack;
-use data::MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
-use error::{BootstrapResponseError, RoutingError};
-use event::Event;
-use id::{FullId, PublicId};
+use crate::ack_manager::Ack;
+use crate::data::MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
+use crate::error::{BootstrapResponseError, RoutingError};
+use crate::event::Event;
+use crate::id::{FullId, PublicId};
+use crate::peer_manager::SectionMap;
+use crate::routing_table::Authority;
+use crate::routing_table::{Prefix, VersionedPrefix, Xorable};
+use crate::rust_sodium::crypto::{box_, sign};
+use crate::sha3::Digest256;
+use crate::types::MessageId;
+use crate::utils;
+use crate::xor_name::XorName;
 use itertools::Itertools;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-use peer_manager::SectionMap;
-use routing_table::Authority;
-use routing_table::{Prefix, VersionedPrefix, Xorable};
-use rust_sodium::crypto::{box_, sign};
-use sha3::Digest256;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::{self, Debug, Formatter};
 use std::iter;
 use std::time::Duration;
 use tiny_keccak::sha3_256;
-use types::MessageId;
-use utils;
-use xor_name::XorName;
 
 /// The maximal length of a user message part, in bytes.
 pub const MAX_PART_LEN: usize = 20 * 1024;
@@ -195,6 +195,7 @@ pub struct HopMessage {
 
 impl HopMessage {
     /// Wrap `content` for transmission to the next hop and sign it.
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(
         content: SignedMessage,
         route: u8,
@@ -261,6 +262,7 @@ impl SignedMessage {
     /// Creates a `SignedMessage` with the given `content` and signed by the given `full_id`.
     ///
     /// Requires the list `src_sections` of nodes who should sign this message.
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(
         content: RoutingMessage,
         full_id: &FullId,
@@ -384,7 +386,8 @@ impl SignedMessage {
                 } else {
                     Some(*pub_id)
                 }
-            }).collect_vec();
+            })
+            .collect_vec();
         if !invalid.is_empty() {
             debug!("{:?}: invalid signatures: {:?}", self, invalid);
         }
@@ -394,7 +397,7 @@ impl SignedMessage {
     // Returns true if there are enough signatures (note that this method does not verify the
     // signatures, it only counts them; it also does not verify `self.src_sections`).
     fn has_enough_sigs(&self, min_section_size: usize) -> bool {
-        use Authority::*;
+        use crate::Authority::*;
         match self.content.src {
             ClientManager(_) | NaeManager(_) | NodeManager(_) => {
                 // Note: there should be exactly one source section, but we use safe code:
@@ -881,7 +884,8 @@ impl UserMessage {
                 cacheable: self.is_cacheable(),
                 payload: payload[(i * len / part_count)..((i + 1) * len / part_count)].to_vec(),
                 priority,
-            }).collect())
+            })
+            .collect())
     }
 
     /// Puts the given parts of a serialised message together and verifies that it matches the
@@ -977,17 +981,17 @@ impl UserMessageCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use data::ImmutableData;
-    use id::FullId;
+    use crate::data::ImmutableData;
+    use crate::id::FullId;
+    use crate::routing_table::{Authority, Prefix};
+    use crate::rust_sodium::crypto::sign;
+    use crate::types::MessageId;
+    use crate::xor_name::XorName;
     use maidsafe_utilities::serialisation::serialise;
     use rand;
-    use routing_table::{Authority, Prefix};
-    use rust_sodium::crypto::sign;
     use std::collections::BTreeSet;
     use std::iter;
     use tiny_keccak::sha3_256;
-    use types::MessageId;
-    use xor_name::XorName;
 
     #[test]
     fn signed_message_check_integrity() {
@@ -1069,11 +1073,10 @@ mod tests {
         assert_eq!(signed_msg.signatures.len(), 1);
 
         // Try to add a signature which will not correspond to an ID from the sending nodes.
-        let irrelevant_sig = match unwrap!(
-            signed_msg
-                .routing_message()
-                .to_signature(irrelevant_full_id.signing_private_key(),)
-        ) {
+        let irrelevant_sig = match unwrap!(signed_msg
+            .routing_message()
+            .to_signature(irrelevant_full_id.signing_private_key(),))
+        {
             DirectMessage::MessageSignature(_, sig) => {
                 signed_msg.add_signature(*irrelevant_full_id.public_id(), sig);
                 sig
@@ -1081,19 +1084,16 @@ mod tests {
             msg => panic!("Unexpected message: {:?}", msg),
         };
         assert_eq!(signed_msg.signatures.len(), 1);
-        assert!(
-            !signed_msg
-                .signatures
-                .contains_key(irrelevant_full_id.public_id(),)
-        );
+        assert!(!signed_msg
+            .signatures
+            .contains_key(irrelevant_full_id.public_id(),));
         assert!(!signed_msg.check_fully_signed(min_section_size));
 
         // Add a valid signature for ID 1 and an invalid one for ID 2
-        match unwrap!(
-            signed_msg
-                .routing_message()
-                .to_signature(full_id_1.signing_private_key(),)
-        ) {
+        match unwrap!(signed_msg
+            .routing_message()
+            .to_signature(full_id_1.signing_private_key(),))
+        {
             DirectMessage::MessageSignature(hash, sig) => {
                 let serialised_msg = unwrap!(serialise(signed_msg.routing_message()));
                 assert_eq!(hash, sha3_256(&serialised_msg));
@@ -1113,11 +1113,9 @@ mod tests {
         // Check an irrelevant signature can't be added.
         signed_msg.add_signature(*irrelevant_full_id.public_id(), irrelevant_sig);
         assert_eq!(signed_msg.signatures.len(), 2);
-        assert!(
-            !signed_msg
-                .signatures
-                .contains_key(irrelevant_full_id.public_id(),)
-        );
+        assert!(!signed_msg
+            .signatures
+            .contains_key(irrelevant_full_id.public_id(),));
     }
 
     #[test]
@@ -1184,7 +1182,8 @@ mod tests {
                     payload
                 }
                 msg => panic!("Unexpected message {:?}", msg),
-            }).collect();
+            })
+            .collect();
         let deserialised_user_msg = unwrap!(UserMessage::from_parts(msg_hash, payloads.iter()));
         assert_eq!(user_msg, deserialised_user_msg);
     }

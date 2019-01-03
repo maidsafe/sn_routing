@@ -6,31 +6,31 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crust::CrustUser;
-use error::RoutingError;
-#[cfg(feature = "use-mock-crust")]
-use fake_clock::FakeClock as Instant;
-use id::PublicId;
-use itertools::Itertools;
-use log::Level;
-use messages::MessageContent;
-use rand;
-use resource_proof::ResourceProof;
-use resource_prover::RESOURCE_PROOF_DURATION_SECS;
-use routing_table::Error as RoutingTableError;
-use routing_table::{
+use crate::crust::CrustUser;
+use crate::error::RoutingError;
+use crate::id::PublicId;
+use crate::messages::MessageContent;
+use crate::resource_prover::RESOURCE_PROOF_DURATION_SECS;
+use crate::routing_table::Error as RoutingTableError;
+use crate::routing_table::{
     Authority, OwnMergeState, Prefix, RemovalDetails, RoutingTable, VersionedPrefix,
 };
-use signature_accumulator::ACCUMULATION_TIMEOUT_SECS;
+use crate::signature_accumulator::ACCUMULATION_TIMEOUT_SECS;
+use crate::types::MessageId;
+use crate::xor_name::XorName;
+use crate::{PrivConnectionInfo, PubConnectionInfo};
+#[cfg(feature = "use-mock-crust")]
+use fake_clock::FakeClock as Instant;
+use itertools::Itertools;
+use log::Level;
+use rand;
+use resource_proof::ResourceProof;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::net::IpAddr;
 use std::time::Duration;
 #[cfg(not(feature = "use-mock-crust"))]
 use std::time::Instant;
 use std::{error, fmt, iter, mem};
-use types::MessageId;
-use xor_name::XorName;
-use {PrivConnectionInfo, PubConnectionInfo};
 
 /// Time (in seconds) after which a joining node will get dropped from the map of joining nodes.
 const JOINING_NODE_TIMEOUT_SECS: u64 = 900;
@@ -46,13 +46,13 @@ const CANDIDATE_ACCEPT_TIMEOUT_SECS: u64 = 60;
 #[doc(hidden)]
 pub mod test_consts {
     pub const ACCUMULATION_TIMEOUT_SECS: u64 = super::ACCUMULATION_TIMEOUT_SECS;
-    pub const ACK_TIMEOUT_SECS: u64 = ::ack_manager::ACK_TIMEOUT_SECS;
+    pub const ACK_TIMEOUT_SECS: u64 = crate::ack_manager::ACK_TIMEOUT_SECS;
     pub const CANDIDATE_ACCEPT_TIMEOUT_SECS: u64 = super::CANDIDATE_ACCEPT_TIMEOUT_SECS;
     pub const RESOURCE_PROOF_DURATION_SECS: u64 = super::RESOURCE_PROOF_DURATION_SECS;
     pub const CONNECTING_PEER_TIMEOUT_SECS: u64 = super::CONNECTING_PEER_TIMEOUT_SECS;
     pub const CONNECTED_PEER_TIMEOUT_SECS: u64 = super::CONNECTED_PEER_TIMEOUT_SECS;
     pub const JOINING_NODE_TIMEOUT_SECS: u64 = super::JOINING_NODE_TIMEOUT_SECS;
-    pub const RATE_EXCEED_RETRY_MS: u64 = ::states::RATE_EXCEED_RETRY_MS;
+    pub const RATE_EXCEED_RETRY_MS: u64 = crate::states::RATE_EXCEED_RETRY_MS;
 }
 
 pub type SectionMap = BTreeMap<VersionedPrefix<XorName>, BTreeSet<PublicId>>;
@@ -524,11 +524,7 @@ impl PeerManager {
                 ref mut passed_our_challenge,
                 ref res_proof_start,
                 ..
-            }
-                if new_pub_id == pub_id =>
-            {
-                (challenge, passed_our_challenge, res_proof_start)
-            }
+            } if new_pub_id == pub_id => (challenge, passed_our_challenge, res_proof_start),
             _ => return Err(RoutingError::UnknownCandidate),
         };
 
@@ -610,11 +606,7 @@ impl PeerManager {
         match mem::replace(&mut self.candidate, Candidate::None) {
             Candidate::ResourceProof {
                 new_pub_id: pub_id, ..
-            }
-                if pub_id == *new_pub_id =>
-            {
-                ()
-            }
+            } if pub_id == *new_pub_id => (),
             _ => return Err(RoutingError::UnknownCandidate),
         }
 
@@ -667,11 +659,7 @@ impl PeerManager {
                 old_pub_id: old_id,
                 res_proof_start,
                 target_interval,
-            }
-                if old_id == *old_pub_id =>
-            {
-                (res_proof_start, target_interval)
-            }
+            } if old_id == *old_pub_id => (res_proof_start, target_interval),
             candidate => {
                 self.candidate = candidate;
                 return if self.peers.get(new_pub_id).map_or(false, Peer::valid) {
@@ -973,7 +961,8 @@ impl PeerManager {
             .find(|peer| match peer.state {
                 PeerState::Proxy | PeerState::Routing(RoutingConnection::Proxy(_)) => true,
                 _ => false,
-            }).map(Peer::name)
+            })
+            .map(Peer::name)
     }
 
     pub fn remove_expired_peers(&mut self) -> Vec<PublicId> {
@@ -1001,7 +990,8 @@ impl PeerManager {
                     false
                 }
                 _ => peer.is_expired(),
-            }).map(Peer::pub_id)
+            })
+            .map(Peer::pub_id)
             .cloned()
             .chain(remove_candidate)
             .collect_vec();
@@ -1051,10 +1041,11 @@ impl PeerManager {
 
     /// Checks whether we can accept more clients.
     pub fn can_accept_client(&self, client_ip: IpAddr) -> bool {
-        self.disable_client_rate_limiter || !self.peers.values().any(|peer| match *peer.state() {
-            PeerState::Client { ip, .. } => client_ip == ip,
-            _ => false,
-        })
+        self.disable_client_rate_limiter
+            || !self.peers.values().any(|peer| match *peer.state() {
+                PeerState::Client { ip, .. } => client_ip == ip,
+                _ => false,
+            })
     }
 
     /// Marks the given peer as direct-connected.
@@ -1151,7 +1142,8 @@ impl PeerManager {
                 } else {
                     self.get_pub_id(name)
                 }
-            }).cloned()
+            })
+            .cloned()
             .collect()
     }
 
@@ -1554,7 +1546,8 @@ impl PeerManager {
             .filter_map(|peer| match peer.state {
                 PeerState::SearchingForTunnel => Some(peer.pub_id),
                 _ => None,
-            }).collect()
+            })
+            .collect()
     }
 
     /// Returns `Ok(())` if the given peer is not yet in the routing table but is allowed to
@@ -1658,7 +1651,8 @@ impl PeerManager {
                     }
                     Peer { pub_id, .. } => Some(pub_id),
                 }
-            }).collect()
+            })
+            .collect()
     }
 
     /// Returns the public IDs of all routing table entries connected or not that we see as valid
@@ -1709,7 +1703,8 @@ impl PeerManager {
                 } else {
                     false
                 }
-            }).cloned()
+            })
+            .cloned()
             .collect();
         !(&unnormalised_routing_conns - excludes).is_empty()
     }
@@ -1729,12 +1724,12 @@ impl fmt::Debug for PeerManager {
 #[cfg(all(test, feature = "use-mock-crust"))]
 mod tests {
     use super::*;
-    use id::FullId;
-    use mock_crust::crust::{PrivConnectionInfo, PubConnectionInfo};
-    use mock_crust::Endpoint;
-    use routing_table::Authority;
-    use types::MessageId;
-    use xor_name::{XorName, XOR_NAME_LEN};
+    use crate::id::FullId;
+    use crate::mock_crust::crust::{PrivConnectionInfo, PubConnectionInfo};
+    use crate::mock_crust::Endpoint;
+    use crate::routing_table::Authority;
+    use crate::types::MessageId;
+    use crate::xor_name::{XorName, XOR_NAME_LEN};
 
     fn node_auth(byte: u8) -> Authority<XorName> {
         Authority::ManagedNode(XorName([byte; XOR_NAME_LEN]))

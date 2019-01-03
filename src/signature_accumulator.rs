@@ -6,14 +6,14 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use crate::id::PublicId;
+use crate::messages::SignedMessage;
+use crate::rust_sodium::crypto::sign;
+use crate::sha3::Digest256;
 #[cfg(feature = "use-mock-crust")]
 use fake_clock::FakeClock as Instant;
-use id::PublicId;
 use itertools::Itertools;
 use maidsafe_utilities::serialisation;
-use messages::SignedMessage;
-use rust_sodium::crypto::sign;
-use sha3::Digest256;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 #[cfg(not(feature = "use-mock-crust"))]
@@ -129,12 +129,14 @@ impl SignatureAccumulator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use id::{FullId, PublicId};
+    use crate::id::{FullId, PublicId};
+    use crate::messages::{
+        DirectMessage, MessageContent, RoutingMessage, SectionList, SignedMessage,
+    };
+    use crate::routing_table::Authority;
+    use crate::routing_table::Prefix;
     use itertools::Itertools;
-    use messages::{DirectMessage, MessageContent, RoutingMessage, SectionList, SignedMessage};
     use rand;
-    use routing_table::Authority;
-    use routing_table::Prefix;
     use std::collections::BTreeSet;
 
     struct MessageAndSignatures {
@@ -164,12 +166,11 @@ mod tests {
             let signed_msg = unwrap!(SignedMessage::new(routing_msg, msg_sender_id, lists));
             let signature_msgs = other_ids
                 .map(|id| {
-                    unwrap!(
-                        signed_msg
-                            .routing_message()
-                            .to_signature(id.signing_private_key(),)
-                    )
-                }).collect();
+                    unwrap!(signed_msg
+                        .routing_message()
+                        .to_signature(id.signing_private_key(),))
+                })
+                .collect();
             MessageAndSignatures {
                 signed_msg,
                 signature_msgs,
@@ -199,7 +200,8 @@ mod tests {
             let msgs_and_sigs = (0..5)
                 .map(|_| {
                     MessageAndSignatures::new(&msg_sender_id, other_ids.iter(), pub_ids.clone())
-                }).collect();
+                })
+                .collect();
             Env {
                 _msg_sender_id: msg_sender_id,
                 other_ids,

@@ -6,11 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use peer_manager::SectionMap;
-use routing_table::Prefix;
+use crate::peer_manager::SectionMap;
+use crate::routing_table::Prefix;
+use crate::xor_name::XorName;
 use std::cmp;
 use std::collections::BTreeSet;
-use xor_name::XorName;
 
 #[derive(Default)]
 pub struct CumulativeOwnSectionMerge {

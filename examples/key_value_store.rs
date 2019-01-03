@@ -28,8 +28,6 @@
     non_shorthand_field_patterns,
     overflowing_literals,
     plugin_as_library,
-    private_no_mangle_fns,
-    private_no_mangle_statics,
     stable_features,
     unconditional_recursion,
     unknown_lints,
@@ -64,16 +62,10 @@
 
 #[macro_use]
 extern crate log;
-extern crate maidsafe_utilities;
 #[macro_use]
 extern crate unwrap;
-extern crate docopt;
-extern crate rust_sodium;
 #[macro_use]
 extern crate serde_derive;
-
-extern crate lru_time_cache;
-extern crate routing;
 
 mod utils;
 
@@ -86,6 +78,7 @@ fn main() {
 
 #[cfg(not(feature = "use-mock-crust"))]
 mod unnamed {
+    use crate::utils::{ExampleClient, ExampleNode};
     use docopt::Docopt;
     use maidsafe_utilities::log;
     use maidsafe_utilities::serialisation::{deserialise, serialise};
@@ -98,7 +91,6 @@ mod unnamed {
     use std::sync::mpsc::{Receiver, Sender};
     use std::thread as std_thread;
     use std::time::Duration;
-    use utils::{ExampleClient, ExampleNode};
 
     // ==========================   Program Options   =================================
     #[cfg_attr(rustfmt, rustfmt_skip)]

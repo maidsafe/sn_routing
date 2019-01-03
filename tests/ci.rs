@@ -26,8 +26,6 @@
     non_shorthand_field_patterns,
     overflowing_literals,
     plugin_as_library,
-    private_no_mangle_fns,
-    private_no_mangle_statics,
     stable_features,
     unconditional_recursion,
     unknown_lints,
@@ -57,15 +55,12 @@
 #![cfg(not(feature = "use-mock-crust"))]
 #![cfg(not(feature = "use-mock-crypto"))]
 
-extern crate itertools;
-#[cfg(target_os = "macos")]
-extern crate libc;
-extern crate maidsafe_utilities;
-extern crate rand;
-extern crate routing;
-extern crate rust_sodium;
 #[macro_use]
 extern crate unwrap;
+
+#[cfg(target_os = "macos")]
+use libc;
+use maidsafe_utilities;
 
 use itertools::Itertools;
 use maidsafe_utilities::thread::{self, Joiner};
@@ -312,7 +307,8 @@ fn gen_mutable_data<R: Rng>(full_id: &FullId, rng: &mut R) -> MutableData {
                     entry_version: 0,
                 },
             )
-        }).collect();
+        })
+        .collect();
 
     let owner_pubkey = *full_id.public_id().signing_public_key();
     let mut owners = BTreeSet::new();
@@ -382,9 +378,7 @@ fn core() {
                                 },
                             ..
                         },
-                    )
-                        if index == client.index =>
-                    {
+                    ) if index == client.index => {
                         // The client received response to its request. We are done.
                         assert_eq!(message_id, res_message_id);
                         break;
@@ -416,12 +410,10 @@ fn core() {
                 match test_event {
                     TestEvent(index, Event::Connected) if index == client.index => {
                         let dst = Authority::ClientManager(*client.name());
-                        assert!(
-                            client
-                                .client
-                                .put_mdata(dst, data.clone(), MessageId::new(), client_key)
-                                .is_ok()
-                        );
+                        assert!(client
+                            .client
+                            .put_mdata(dst, data.clone(), MessageId::new(), client_key)
+                            .is_ok());
                     }
                     TestEvent(
                         index,
@@ -464,12 +456,10 @@ fn core() {
                 match test_event {
                     TestEvent(index, Event::Connected) if index == client.index => {
                         let dst = Authority::ClientManager(*client.name());
-                        assert!(
-                            client
-                                .client
-                                .put_mdata(dst, data.clone(), MessageId::new(), client_key)
-                                .is_ok()
-                        );
+                        assert!(client
+                            .client
+                            .put_mdata(dst, data.clone(), MessageId::new(), client_key)
+                            .is_ok());
                     }
                     TestEvent(
                         index,
@@ -607,12 +597,10 @@ fn core() {
             match test_event {
                 TestEvent(index, Event::Connected) if index == client.index => {
                     let dst = Authority::ClientManager(*client.name());
-                    assert!(
-                        client
-                            .client
-                            .put_mdata(dst, data.clone(), MessageId::new(), client_key)
-                            .is_ok()
-                    );
+                    assert!(client
+                        .client
+                        .put_mdata(dst, data.clone(), MessageId::new(), client_key)
+                        .is_ok());
                 }
                 TestEvent(
                     index,
@@ -712,9 +700,7 @@ fn core() {
                                 },
                             ..
                         },
-                    )
-                        if index == client.index =>
-                    {
+                    ) if index == client.index => {
                         // TODO: assert!(received_ids.insert(id));
                         let _ = received_ids.insert(msg_id);
                     }

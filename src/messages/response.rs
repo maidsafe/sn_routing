@@ -6,11 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use client_error::ClientError;
-use data::{ImmutableData, MutableData, PermissionSet, User, Value};
-use rust_sodium::crypto::sign;
+use crate::client_error::ClientError;
+use crate::data::{ImmutableData, MutableData, PermissionSet, User, Value};
+use crate::rust_sodium::crypto::sign;
+use crate::types::MessageId as MsgId;
 use std::collections::{BTreeMap, BTreeSet};
-use types::MessageId as MsgId;
 
 /// Response message types
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -189,7 +189,7 @@ impl Response {
 
     /// Message ID getter.
     pub fn message_id(&self) -> &MsgId {
-        use Response::*;
+        use crate::Response::*;
         match *self {
             GetAccountInfo { ref msg_id, .. }
             | PutIData { ref msg_id, .. }

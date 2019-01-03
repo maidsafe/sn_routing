@@ -24,8 +24,6 @@
     non_shorthand_field_patterns,
     overflowing_literals,
     plugin_as_library,
-    private_no_mangle_fns,
-    private_no_mangle_statics,
     stable_features,
     unconditional_recursion,
     unknown_lints,
@@ -53,15 +51,11 @@
     variant_size_differences
 )]
 
-extern crate fake_clock;
-extern crate itertools;
 #[macro_use]
 extern crate log;
 #[cfg_attr(feature = "cargo-clippy", allow(useless_attribute))]
 #[allow(unused_extern_crates)]
 extern crate maidsafe_utilities;
-extern crate rand;
-extern crate routing;
 #[macro_use]
 extern crate unwrap;
 

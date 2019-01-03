@@ -6,11 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use crate::xor_name::XorName;
 use maidsafe_utilities::serialisation;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt::{self, Debug, Formatter};
 use tiny_keccak::sha3_256;
-use xor_name::XorName;
 
 /// Maximum allowed size for a serialised Immutable Data (ID) to grow to
 pub const MAX_IMMUTABLE_DATA_SIZE_IN_BYTES: u64 = 1024 * 1024 + 10 * 1024;

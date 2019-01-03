@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{MpidHeader, MpidMessage};
-use xor_name::XorName;
+use crate::xor_name::XorName;
 
 /// A serialisable wrapper to allow multiplexing all MPID message types and actions via a single
 /// type.

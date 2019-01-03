@@ -25,8 +25,6 @@
     non_shorthand_field_patterns,
     overflowing_literals,
     plugin_as_library,
-    private_no_mangle_fns,
-    private_no_mangle_statics,
     stable_features,
     unconditional_recursion,
     unknown_lints,
@@ -61,17 +59,12 @@
 
 #[macro_use]
 extern crate log;
-extern crate docopt;
-extern crate lru_time_cache;
-extern crate maidsafe_utilities;
-extern crate rand;
-extern crate routing;
-extern crate rust_sodium;
-extern crate term;
 #[macro_use]
 extern crate unwrap;
 #[macro_use]
 extern crate serde_derive;
+
+use term;
 
 mod utils;
 
@@ -84,6 +77,7 @@ fn main() {
 
 #[cfg(not(feature = "use-mock-crust"))]
 mod unnamed {
+    use crate::utils::{ExampleClient, ExampleNode};
     use docopt::Docopt;
     use maidsafe_utilities::log;
     use maidsafe_utilities::thread::named as thread_named;
@@ -102,7 +96,6 @@ mod unnamed {
     use std::time::Duration;
     use std::{env, io, thread};
     use term::{self, color};
-    use utils::{ExampleClient, ExampleNode};
 
     const CHURN_MIN_WAIT_SEC: u64 = 20;
     const CHURN_MAX_WAIT_SEC: u64 = 30;
@@ -152,7 +145,8 @@ mod unnamed {
                 println!("Started Node #{} with Process ID {}", i, node.0.id());
                 thread::sleep(Duration::from_secs(5));
                 node
-            }).collect();
+            })
+            .collect();
         thread::sleep(Duration::from_secs(10));
         nodes
     }
@@ -177,9 +171,9 @@ mod unnamed {
                     let wait_for = wait_range.ind_sample(&mut rng);
 
                     while !*stop_condition && !wait_timed_out {
-                        let wake_up_result = unwrap!(
-                            condvar.wait_timeout(stop_condition, Duration::from_secs(wait_for),)
-                        );
+                        let wake_up_result =
+                            unwrap!(condvar
+                                .wait_timeout(stop_condition, Duration::from_secs(wait_for),));
                         stop_condition = wake_up_result.0;
                         wait_timed_out = wake_up_result.1.timed_out();
                     }

@@ -320,10 +320,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// Is the table empty? (Returns `true` if no nodes besides our own are known;
     /// empty sections are ignored.)
     pub fn is_empty(&self) -> bool {
-        self.our_section.len() == 1 && self
-            .sections
-            .values()
-            .all(|&(_, ref section)| section.is_empty())
+        self.our_section.len() == 1
+            && self
+                .sections
+                .values()
+                .all(|&(_, ref section)| section.is_empty())
     }
 
     /// Returns the minimum section size.
@@ -509,7 +510,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                 section
                     .iter()
                     .sorted_by(|name0, name1| name.cmp_distance(name0, name1))
-            }).take(count)
+            })
+            .take(count)
             .collect_vec()
     }
 
@@ -641,9 +643,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             .chain(mem::replace(
                 &mut self.our_section,
                 iter::once(self.our_name).collect(),
-            )).filter(|name| {
+            ))
+            .filter(|name| {
                 *name != self.our_name && self.add(*name) == Err(Error::PeerNameUnsuitable)
-            }).collect()
+            })
+            .collect()
     }
 
     /// Removes a contact from the routing table.
@@ -875,7 +879,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                                 self.our_section
                                     .iter()
                                     .filter(|name| **name != self.our_name),
-                            ).cloned()
+                            )
+                            .cloned()
                             .collect());
                     } else {
                         return Err(Error::CannotRoute);
@@ -890,7 +895,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                 dst.name(),
                 Some(exclude),
                 route,
-            )?).collect(),
+            )?)
+            .collect(),
         )
     }
 
@@ -1284,6 +1290,7 @@ mod tests {
     // Test explicitly covers `close_names()`, `other_close_names()`, `is_in_our_section()` and
     // `need_to_add()` while also implicitly testing `add()` and `split()`.
     #[test]
+    #[allow(clippy::cyclomatic_complexity)]
     fn test_routing_sections() {
         assert!(
             SPLIT_BUFFER < 3818,

@@ -10,8 +10,8 @@ use super::{
     create_connected_clients, create_connected_nodes, poll_all, poll_and_resend, TestClient,
     TestNode, MIN_SECTION_SIZE,
 };
+use crate::mock_crust::utils::gen_immutable_data;
 use maidsafe_utilities::SeededRng;
-use mock_crust::utils::gen_immutable_data;
 use rand::Rng;
 use routing::mock_crust::Network;
 use routing::rate_limiter_consts::{MAX_PARTS, SOFT_CAPACITY};

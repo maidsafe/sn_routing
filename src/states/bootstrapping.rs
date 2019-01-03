@@ -8,27 +8,27 @@
 
 use super::common::Base;
 use super::{Client, JoiningNode, Node};
-use action::Action;
-use cache::Cache;
-use crust::CrustUser;
-use error::RoutingError;
-use event::Event;
-use id::{FullId, PublicId};
+use crate::action::Action;
+use crate::cache::Cache;
+use crate::crust::CrustUser;
+use crate::error::RoutingError;
+use crate::event::Event;
+use crate::id::{FullId, PublicId};
+use crate::messages::{DirectMessage, Message};
+use crate::outbox::EventBox;
+use crate::routing_table::{Authority, Prefix};
+use crate::rust_sodium::crypto::sign;
+use crate::state_machine::{State, Transition};
+use crate::stats::Stats;
+use crate::timer::Timer;
+use crate::types::RoutingActionSender;
+use crate::xor_name::XorName;
+use crate::{CrustEvent, Service};
 use maidsafe_utilities::serialisation;
-use messages::{DirectMessage, Message};
-use outbox::EventBox;
-use routing_table::{Authority, Prefix};
-use rust_sodium::crypto::sign;
-use state_machine::{State, Transition};
-use stats::Stats;
 use std::collections::{BTreeSet, HashSet};
 use std::fmt::{self, Debug, Formatter};
 use std::net::SocketAddr;
 use std::time::Duration;
-use timer::Timer;
-use types::RoutingActionSender;
-use xor_name::XorName;
-use {CrustEvent, Service};
 
 // Time (in seconds) after which bootstrap is cancelled (and possibly retried).
 const BOOTSTRAP_TIMEOUT_SECS: u64 = 20;
@@ -62,6 +62,7 @@ pub struct Bootstrapping {
 }
 
 impl Bootstrapping {
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(
         action_sender: RoutingActionSender,
         cache: Box<Cache>,
@@ -392,15 +393,15 @@ impl Debug for Bootstrapping {
 #[cfg(all(test, feature = "use-mock-crust"))]
 mod tests {
     use super::*;
-    use cache::NullCache;
-    use id::FullId;
+    use crate::cache::NullCache;
+    use crate::id::FullId;
+    use crate::mock_crust::crust::{Config, Service};
+    use crate::mock_crust::{self, Network};
+    use crate::outbox::EventBuf;
+    use crate::state_machine::StateMachine;
+    use crate::CrustEvent;
     use maidsafe_utilities::event_sender::{MaidSafeEventCategory, MaidSafeObserver};
-    use mock_crust::crust::{Config, Service};
-    use mock_crust::{self, Network};
-    use outbox::EventBuf;
-    use state_machine::StateMachine;
     use std::sync::mpsc;
-    use CrustEvent;
 
     #[test]
     // Check that losing our proxy connection while in the `Bootstrapping` state doesn't stall and
@@ -449,12 +450,14 @@ mod tests {
                         full_id,
                         min_section_size,
                         timer,
-                    ).map_or(State::Terminated, State::Bootstrapping)
+                    )
+                    .map_or(State::Terminated, State::Bootstrapping)
                 },
                 pub_id,
                 Some(config),
                 &mut outbox,
-            ).1
+            )
+            .1
         });
 
         // Check the Crust service received the `BootstrapAccept`.
