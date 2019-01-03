@@ -6,7 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crust::Uid;
+use crate::crust::Uid;
+use crate::xor_name::XorName;
 use parsec;
 use safe_crypto;
 use safe_crypto::{
@@ -16,7 +17,6 @@ use safe_crypto::{
 use serde::de::Deserialize;
 use serde::{Deserializer, Serialize, Serializer};
 use std::fmt::{self, Debug, Display, Formatter};
-use xor_name::XorName;
 
 /// Network identity component containing name, and public and private keys.
 // FIXME Remove the Clone-ability
@@ -140,11 +140,8 @@ impl Serialize for PublicId {
 
 impl<'de> Deserialize<'de> for PublicId {
     fn deserialize<D: Deserializer<'de>>(deserialiser: D) -> Result<Self, D::Error> {
-        let (age, public_sign_key, public_encrypt_key): (
-            u8,
-            PublicSignKey,
-            PublicEncryptKey,
-        ) = Deserialize::deserialize(deserialiser)?;
+        let (age, public_sign_key, public_encrypt_key): (u8, PublicSignKey, PublicEncryptKey) =
+            Deserialize::deserialize(deserialiser)?;
         Ok(PublicId::new(age, public_encrypt_key, public_sign_key))
     }
 }

@@ -11,7 +11,7 @@
 //! The design allows the separate traits to handle dispatching of each type of message to an
 //! object handling the appropriate types of message.
 
-use event::Event;
+use crate::event::Event;
 use std::collections::VecDeque;
 use std::default::Default;
 use std::mem;

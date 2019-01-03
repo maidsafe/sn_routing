@@ -11,13 +11,13 @@
 pub const MAX_HEADER_METADATA_SIZE: usize = 128; // bytes
 
 use super::{Error, GUID_SIZE};
+use crate::xor_name::XorName;
 use hex_fmt::HexFmt;
 use maidsafe_utilities::serialisation::serialise;
 use rand::{self, Rng};
 use safe_crypto;
 use safe_crypto::{PublicSignKey, SecretSignKey, Signature};
 use std::fmt::{self, Debug, Formatter};
-use xor_name::XorName;
 
 #[derive(PartialEq, Eq, Hash, Clone, Deserialize, Serialize)]
 struct Detail {
@@ -49,6 +49,7 @@ impl MpidHeader {
     ///
     /// An error will be returned if `metadata` exceeds `MAX_HEADER_METADATA_SIZE` or if
     /// serialisation during the signing process fails.
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(
         sender: XorName,
         metadata: Vec<u8>,
@@ -124,10 +125,10 @@ impl Debug for MpidHeader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use messaging;
+    use crate::messaging;
+    use crate::xor_name::XorName;
     use rand;
     use safe_crypto::gen_sign_keypair;
-    use xor_name::XorName;
 
     #[test]
     fn full() {

@@ -6,6 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use crate::xor_name::XorName;
 use maidsafe_utilities::event_sender::MaidSafeObserver;
 #[cfg(any(test, feature = "mock"))]
 use maidsafe_utilities::SeededRng;
@@ -13,9 +14,8 @@ use maidsafe_utilities::SeededRng;
 use rand;
 #[cfg(any(test, feature = "mock"))]
 use rand::Rng;
-use xor_name::XorName;
 
-pub type RoutingActionSender = MaidSafeObserver<::action::Action>;
+pub type RoutingActionSender = MaidSafeObserver<crate::action::Action>;
 
 /// Unique ID for messages
 ///
@@ -86,10 +86,10 @@ impl Default for MessageId {
 }
 
 #[cfg(test)]
-#[cfg_attr(feature = "cargo-clippy", allow(indexing_slicing))]
+#[allow(clippy::indexing_slicing)]
 mod tests {
     use super::MessageId;
-    use xor_name::{XorName, XOR_NAME_LEN};
+    use crate::xor_name::{XorName, XOR_NAME_LEN};
 
     #[test]
     fn increment() {

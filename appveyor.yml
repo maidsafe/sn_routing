@@ -2,7 +2,7 @@ environment:
   global:
     RUST_BACKTRACE: 1
   matrix:
-    - RUST_TOOLCHAIN: 1.29.2
+    - RUST_TOOLCHAIN: stable
 
 cache:
   - '%USERPROFILE%\.cargo'

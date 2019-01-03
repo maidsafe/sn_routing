@@ -11,11 +11,11 @@
 pub const MAX_BODY_SIZE: usize = 102_400 - 512 - super::MAX_HEADER_METADATA_SIZE;
 
 use super::{Error, MpidHeader};
+use crate::xor_name::XorName;
 use hex_fmt::HexFmt;
 use maidsafe_utilities::serialisation::serialise;
 use safe_crypto::{PublicSignKey, SecretSignKey, Signature};
 use std::fmt::{self, Debug, Formatter};
-use xor_name::XorName;
 
 #[derive(PartialEq, Eq, Hash, Clone, Deserialize, Serialize)]
 struct Detail {
@@ -46,6 +46,7 @@ impl MpidMessage {
     /// An error will be returned if `body` exceeds `MAX_BODY_SIZE`, if
     /// [MpidHeader::new()](struct.MpidHeader.html#method.new) fails or if
     /// serialisation during the signing process fails.
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(
         sender: XorName,
         metadata: Vec<u8>,
@@ -122,10 +123,10 @@ impl Debug for MpidMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use messaging;
+    use crate::messaging;
+    use crate::xor_name::XorName;
     use rand;
     use safe_crypto::gen_sign_keypair;
-    use xor_name::XorName;
 
     #[test]
     fn full() {
@@ -155,15 +156,14 @@ mod tests {
         ));
         assert_eq!(*message.body(), body);
         body.push(0);
-        assert!(
-            MpidMessage::new(
-                sender,
-                metadata.clone(),
-                recipient,
-                body.clone(),
-                &secret_key,
-            ).is_err()
-        );
+        assert!(MpidMessage::new(
+            sender,
+            metadata.clone(),
+            recipient,
+            body.clone(),
+            &secret_key,
+        )
+        .is_err());
         let _ = body.pop();
 
         // Check verify function with a valid and invalid key

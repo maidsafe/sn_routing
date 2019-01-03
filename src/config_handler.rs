@@ -6,8 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use crate::error::Result;
 use config_file_handler::{self, FileHandler};
-use error::Result;
 
 /// Configuration for routing
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]

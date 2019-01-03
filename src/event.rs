@@ -6,11 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use messages::{Request, Response};
-use routing_table::Authority;
-use routing_table::{Prefix, RoutingTable};
+use crate::messages::{Request, Response};
+use crate::routing_table::Authority;
+use crate::routing_table::{Prefix, RoutingTable};
+use crate::xor_name::XorName;
 use std::fmt::{self, Debug, Formatter};
-use xor_name::XorName;
 
 /// An Event raised by a `Node` or `Client` via its event sender.
 ///
@@ -21,7 +21,7 @@ use xor_name::XorName;
 /// been reached, i.e. enough members of the section have sent the same message.
 #[derive(Clone, Eq, PartialEq)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
+#[allow(clippy::large_enum_variant)]
 pub enum Event {
     /// Received a request message.
     Request {

@@ -6,14 +6,14 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use error::RoutingError;
+use crate::error::RoutingError;
+use crate::message_filter::MessageFilter;
+use crate::messages::RoutingMessage;
+use crate::sha3;
 #[cfg(feature = "mock")]
 use fake_clock::FakeClock as Instant;
 use maidsafe_utilities::serialisation;
-use message_filter::MessageFilter;
-use messages::RoutingMessage;
 use safe_crypto;
-use sha3;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::time::Duration;

@@ -7,15 +7,15 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::routing_table::Error as RoutingTableError;
-use action::Action;
+use crate::action::Action;
+use crate::crust::CrustError;
+use crate::event::Event;
+use crate::id::PublicId;
+use crate::sha3::Digest256;
 use config_file_handler::Error as ConfigFileHandlerError;
-use crust::CrustError;
-use event::Event;
-use id::PublicId;
 use maidsafe_utilities::event_sender::{EventSenderError, MaidSafeEventCategory};
 use maidsafe_utilities::serialisation;
 use safe_crypto;
-use sha3::Digest256;
 use std::sync::mpsc::{RecvError, SendError};
 
 /// The type returned by the routing message handling methods.
@@ -24,7 +24,7 @@ pub type Result<T> = ::std::result::Result<T, RoutingError>;
 /// The type of errors that can occur if routing is unable to handle a send request.
 #[derive(Debug)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
+#[allow(clippy::large_enum_variant)]
 pub enum InterfaceError {
     /// We are not connected to the network.
     NotConnected,
@@ -51,7 +51,7 @@ impl From<RecvError> for InterfaceError {
 /// The type of errors that can occur during handling of routing events.
 #[derive(Debug)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
+#[allow(clippy::large_enum_variant)]
 pub enum RoutingError {
     /// The node/client has not bootstrapped yet
     NotBootstrapped,

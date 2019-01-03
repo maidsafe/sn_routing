@@ -6,10 +6,10 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use crate::routing_table::Xorable;
 use hex::{FromHex, FromHexError, ToHex};
 use num_bigint::BigUint;
 use rand;
-use routing_table::Xorable;
 use std::cmp::Ordering;
 use std::{fmt, ops};
 
@@ -255,9 +255,9 @@ impl<'a> ops::Div<&'a u32> for &'a XorName {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::routing_table::Xorable;
     use maidsafe_utilities::serialisation::{deserialise, serialise};
     use rand;
-    use routing_table::Xorable;
     use std::cmp::Ordering;
 
     #[test]
@@ -270,7 +270,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(feature = "cargo-clippy", allow(eq_op))]
+    #[allow(clippy::eq_op)]
     fn xor_name_ord() {
         let type1: XorName = XorName([1u8; XOR_NAME_LEN]);
         let type2: XorName = XorName([2u8; XOR_NAME_LEN]);

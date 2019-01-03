@@ -16,8 +16,8 @@
 // relating to use of the SAFE Network Software.
 
 use super::SectionInfo;
-use error::Result;
-use id::PublicId;
+use crate::error::Result;
+use crate::id::PublicId;
 use itertools::Itertools;
 use maidsafe_utilities::serialisation;
 use safe_crypto::{SecretSignKey, Signature};
@@ -44,6 +44,7 @@ impl Proof {
     }
 
     /// Create a new proof for `payload`
+    #[allow(clippy::new_ret_no_self)]
     pub fn new<S: Serialize>(pub_id: PublicId, key: &SecretSignKey, payload: &S) -> Result<Self> {
         let signature = key.sign_detached(&serialisation::serialise(&payload)?[..]);
         Ok(Proof {
@@ -186,7 +187,7 @@ impl ProvingSection {
 mod tests {
     use super::super::NetworkEvent;
     use super::Proof;
-    use id::FullId;
+    use crate::id::FullId;
     use safe_crypto;
 
     #[test]

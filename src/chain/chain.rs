@@ -19,17 +19,17 @@ use super::{
     ChainState, GenesisPfxInfo, NeighbourSigs, NetworkEvent, Proof, ProofSet, ProvingSection,
     SectionInfo,
 };
-use error::RoutingError;
-use id::{FullId, PublicId};
+use crate::error::RoutingError;
+use crate::id::{FullId, PublicId};
+use crate::messages::SignedMessage;
+use crate::sha3::Digest256;
+use crate::{Prefix, XorName, Xorable};
 use itertools::Itertools;
 use log::LogLevel;
-use messages::SignedMessage;
-use sha3::Digest256;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Display, Formatter};
 use std::iter;
 use std::mem;
-use {Prefix, XorName, Xorable};
 
 /// Amount added to `min_section_size` when deciding whether a bucket split can happen. This helps
 /// protect against rapid splitting and merging in the face of moderate churn.
@@ -421,7 +421,8 @@ impl Chain {
                 .into_iter()
                 .filter(|&(ref event, ref proofs)| {
                     !completed_events.contains(event) && proofs.contains_id(&self.our_id)
-                }).map(|(event, _)| event)
+                })
+                .map(|(event, _)| event)
                 .chain(event_cache)
                 .chain(merges)
                 .collect(),
@@ -497,7 +498,8 @@ impl Chain {
                     .last()
                     .iter()
                     .flat_map(|&&(ref si, _)| si.members()),
-            ).chain(self.new_info.members())
+            )
+            .chain(self.new_info.members())
             .collect()
     }
 
@@ -653,7 +655,8 @@ impl Chain {
                 .tuple_windows()
                 .map(|(&(_, ref proofs), &(ref sec_info, _))| {
                     ProvingSection::signatures(sec_info, proofs)
-                }).collect()
+                })
+                .collect()
         }
     }
 
@@ -860,7 +863,8 @@ impl Chain {
                     *psigs.sec_info().version() < new_nsigs_version
                         && self.our_prefix().is_neighbour(&spfx)
                         && !self.neighbour_infos.contains_key(&spfx)
-                }).cloned()
+                })
+                .cloned()
             {
                 let _ = self.neighbour_infos.insert(spfx, ssigs);
             }
@@ -879,7 +883,8 @@ impl Chain {
             .iter()
             .filter(|id| {
                 self.our_id.name().common_prefix(id.name()) > self.our_prefix().bit_count()
-            }).count();
+            })
+            .count();
         let min_split_size = self.min_split_size();
         // If either of the two new sections will not contain enough entries, return `false`.
         Ok(new_size >= min_split_size && members.len() >= min_split_size + new_size)
@@ -952,7 +957,8 @@ impl Chain {
                     return Some(*pfx);
                 }
                 None
-            }).collect();
+            })
+            .collect();
         for pfx in to_remove {
             let _ = self.neighbour_infos.remove(&pfx);
         }
@@ -1038,12 +1044,12 @@ impl Chain {
 mod tests {
     use super::super::{GenesisPfxInfo, Proof, ProofSet, SectionInfo};
     use super::Chain;
-    use id::{FullId, PublicId};
+    use crate::id::{FullId, PublicId};
+    use crate::{Prefix, XorName, MIN_SECTION_SIZE};
     use rand::{thread_rng, Rng};
     use serde::Serialize;
     use std::collections::{BTreeSet, HashMap};
     use std::str::FromStr;
-    use {Prefix, XorName, MIN_SECTION_SIZE};
 
     enum SecInfoGen<'a> {
         New(Prefix<XorName>, usize),
@@ -1156,13 +1162,11 @@ mod tests {
                 (Prefix::from_str("10").unwrap(), 8),
             ],
         );
-        assert!(
-            !chain
-                .get_section(&Prefix::from_str("00").unwrap())
-                .expect("No section 00 found!")
-                .members()
-                .is_empty()
-        );
+        assert!(!chain
+            .get_section(&Prefix::from_str("00").unwrap())
+            .expect("No section 00 found!")
+            .members()
+            .is_empty());
         assert!(chain.get_section(&Prefix::from_str("").unwrap()).is_none());
     }
 

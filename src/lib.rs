@@ -110,8 +110,6 @@
     non_shorthand_field_patterns,
     overflowing_literals,
     plugin_as_library,
-    private_no_mangle_fns,
-    private_no_mangle_statics,
     stable_features,
     unconditional_recursion,
     unknown_lints,
@@ -122,7 +120,10 @@
     unused_comparisons,
     unused_features,
     unused_parens,
-    while_true
+    while_true,
+    clippy::unicode_not_nfc,
+    clippy::wrong_pub_self_convention,
+    clippy::option_unwrap_used
 )]
 #![warn(
     trivial_casts,
@@ -139,47 +140,27 @@
     missing_copy_implementations,
     missing_debug_implementations,
     variant_size_differences,
-    non_camel_case_types
-)]
-#![cfg_attr(
-    feature = "cargo-clippy",
-    deny(
-        unicode_not_nfc,
-        wrong_pub_self_convention,
-        option_unwrap_used
-    )
-)]
-// FIXME: allow `needless_pass_by_value` until it's OK to change the public API
-// FIXME: Re-enable `redundant_field_names`.
-#![cfg_attr(
-    feature = "cargo-clippy",
-    allow(needless_pass_by_value, redundant_field_names)
+    non_camel_case_types,
+    // FIXME: allow `needless_pass_by_value` until it's OK to change the public API
+    // FIXME: Re-enable `redundant_field_names`.
+    clippy::needless_pass_by_value,
+    clippy::redundant_field_names
 )]
 
-extern crate config_file_handler;
-extern crate hex;
-extern crate parsec;
+use config_file_handler;
+use parsec;
 #[macro_use]
 extern crate log;
-#[cfg(feature = "mock")]
-extern crate fake_clock;
-extern crate maidsafe_utilities;
 #[macro_use]
 extern crate quick_error;
 #[macro_use]
 extern crate unwrap;
 #[cfg(not(feature = "mock"))]
 extern crate crust;
-extern crate hex_fmt;
-extern crate itertools;
 #[macro_use]
 extern crate lazy_static;
-extern crate lru_time_cache;
-extern crate num_bigint;
-extern crate rand;
-extern crate resource_proof;
-extern crate safe_crypto;
-extern crate serde;
+use rand;
+use safe_crypto;
 #[macro_use]
 extern crate serde_derive;
 #[cfg(test)]
@@ -248,40 +229,40 @@ pub const MIN_SECTION_SIZE: usize = 3;
 /// Key of an account data in the account packet
 pub const ACC_LOGIN_ENTRY_KEY: &[u8] = b"Login";
 
-pub use cache::{Cache, NullCache};
+pub use crate::cache::{Cache, NullCache};
 #[cfg(feature = "mock")]
-pub use chain::verify_chain_invariant;
-pub use chain::Chain;
-pub use client::Client;
-pub use client_error::{ClientError, EntryError};
-pub use common_types::AccountPacket;
-pub use config_handler::{Config, DevConfig};
-pub use data::{
+pub use crate::chain::verify_chain_invariant;
+pub use crate::chain::Chain;
+pub use crate::client::Client;
+pub use crate::client_error::{ClientError, EntryError};
+pub use crate::common_types::AccountPacket;
+pub use crate::config_handler::{Config, DevConfig};
+pub use crate::data::{
     Action, EntryAction, EntryActions, ImmutableData, MutableData, PermissionSet, User, Value,
     MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_MUTABLE_DATA_ENTRIES, MAX_MUTABLE_DATA_SIZE_IN_BYTES,
     NO_OWNER_PUB_KEY,
 };
-pub use error::{InterfaceError, RoutingError};
-pub use event::Event;
-pub use event_stream::EventStream;
-pub use id::{FullId, PublicId};
-pub use messages::{AccountInfo, Request, Response};
+pub use crate::error::{InterfaceError, RoutingError};
+pub use crate::event::Event;
+pub use crate::event_stream::EventStream;
+pub use crate::id::{FullId, PublicId};
+pub use crate::messages::{AccountInfo, Request, Response};
 #[cfg(feature = "mock")]
-pub use mock_crust::crust;
-pub use node::{Node, NodeBuilder};
+pub use crate::mock_crust::crust;
+pub use crate::node::{Node, NodeBuilder};
 #[cfg(feature = "mock")]
-pub use peer_manager::test_consts;
+pub use crate::peer_manager::test_consts;
 #[cfg(feature = "mock")]
-pub use rate_limiter::rate_limiter_consts;
+pub use crate::rate_limiter::rate_limiter_consts;
 #[cfg(any(test, feature = "mock"))]
-pub use routing_table::verify_network_invariant;
-pub use routing_table::Error as RoutingTableError;
-pub use routing_table::{Authority, Prefix, RoutingTable, VersionedPrefix, Xorable};
-pub use types::MessageId;
-pub use xor_name::{XorName, XorNameFromHexError, XOR_NAME_BITS, XOR_NAME_LEN};
+pub use crate::routing_table::verify_network_invariant;
+pub use crate::routing_table::Error as RoutingTableError;
+pub use crate::routing_table::{Authority, Prefix, RoutingTable, VersionedPrefix, Xorable};
+pub use crate::types::MessageId;
+pub use crate::xor_name::{XorName, XorNameFromHexError, XOR_NAME_BITS, XOR_NAME_LEN};
 
 type Service = crust::Service<PublicId>;
-use crust::Event as CrustEvent;
+use crate::crust::Event as CrustEvent;
 type CrustEventSender = crust::CrustEventSender<PublicId>;
 type PrivConnectionInfo = crust::PrivConnectionInfo<PublicId>;
 type PubConnectionInfo = crust::PubConnectionInfo<PublicId>;
@@ -291,7 +272,7 @@ mod tests {
     use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
 
     #[test]
-    #[cfg_attr(feature = "cargo-clippy", allow(eq_op))]
+    #[allow(clippy::eq_op)]
     fn quorum_check() {
         assert!(
             QUORUM_NUMERATOR < QUORUM_DENOMINATOR,

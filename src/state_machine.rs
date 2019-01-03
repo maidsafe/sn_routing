@@ -6,18 +6,25 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use action::Action;
-use id::{FullId, PublicId};
+use crate::action::Action;
+use crate::id::{FullId, PublicId};
+#[cfg(feature = "mock")]
+use crate::mock_crust;
+use crate::outbox::EventBox;
+use crate::routing_table::{Prefix, RoutingTable};
+use crate::states::common::Base;
+#[cfg(feature = "mock")]
+use crate::states::common::Bootstrapped;
+use crate::states::{Bootstrapping, Client, JoiningNode, Node};
+use crate::timer::Timer;
+use crate::types::RoutingActionSender;
+use crate::xor_name::XorName;
+use crate::BootstrapConfig;
+#[cfg(feature = "mock")]
+use crate::Chain;
+use crate::{CrustEvent, CrustEventSender, Service, MIN_SECTION_SIZE};
 use log::LogLevel;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
-#[cfg(feature = "mock")]
-use mock_crust;
-use outbox::EventBox;
-use routing_table::{Prefix, RoutingTable};
-use states::common::Base;
-#[cfg(feature = "mock")]
-use states::common::Bootstrapped;
-use states::{Bootstrapping, Client, JoiningNode, Node};
 #[cfg(feature = "mock")]
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
@@ -26,13 +33,6 @@ use std::mem;
 #[cfg(feature = "mock")]
 use std::net::IpAddr;
 use std::sync::mpsc::{self, Receiver, RecvError, Sender, TryRecvError};
-use timer::Timer;
-use types::RoutingActionSender;
-use xor_name::XorName;
-use BootstrapConfig;
-#[cfg(feature = "mock")]
-use Chain;
-use {CrustEvent, CrustEventSender, Service, MIN_SECTION_SIZE};
 
 /// Holds the current state and handles state transitions.
 pub struct StateMachine {
@@ -48,7 +48,7 @@ pub struct StateMachine {
 }
 
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
+#[allow(clippy::large_enum_variant)]
 pub enum State {
     Bootstrapping(Bootstrapping),
     Client(Client),
@@ -240,7 +240,7 @@ impl State {
 
 /// Enum returned from many message handlers
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
+#[allow(clippy::large_enum_variant)]
 pub enum Transition {
     Stay,
     // `Bootstrapping` state transitioning to `Client`, `JoiningNode`, or `Node`.
@@ -257,6 +257,7 @@ pub enum Transition {
 
 impl StateMachine {
     // Construct a new StateMachine by passing a function returning the initial state.
+    #[allow(clippy::new_ret_no_self)]
     pub fn new<F>(
         init_state: F,
         pub_id: PublicId,
@@ -497,7 +498,8 @@ impl StateMachine {
                 } else {
                     events.pop()
                 }
-            }).collect_vec();
+            })
+            .collect_vec();
         interleaved.reverse();
         self.events.extend(interleaved);
 

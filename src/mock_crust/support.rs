@@ -7,15 +7,16 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 // TODO: Consider changing the mock Crust API to fix this Clippy lint.
-#![cfg_attr(feature = "cargo-clippy", allow(trivially_copy_pass_by_ref))]
+#![allow(clippy::trivially_copy_pass_by_ref)]
 
 use super::crust::{
     ConnectionInfoResult, CrustEventSender, CrustUser, Event, PrivConnectionInfo,
     PubConnectionInfo, Uid,
 };
-use id::PublicId;
+use crate::id::PublicId;
+use crate::messages::{DirectMessage, Message};
+use crate::CrustEvent;
 use maidsafe_utilities::{serialisation, SeededRng};
-use messages::{DirectMessage, Message};
 use rand::Rng;
 use safe_crypto;
 use std::cell::RefCell;
@@ -23,7 +24,6 @@ use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::net::{IpAddr, SocketAddr};
 use std::rc::{Rc, Weak};
-use CrustEvent;
 
 /// Mock network. Create one before testing with mocks. Use it to create `ServiceHandle`s.
 #[derive(Clone)]
@@ -249,7 +249,8 @@ impl<UID: Uid> Network<UID> {
                     .keys()
                     .filter(|&&(ref s, ref r)| {
                         !network_impl.delayed_connections.contains(&(*s, *r))
-                    }).cloned()
+                    })
+                    .cloned()
                     .collect()
             }
         };

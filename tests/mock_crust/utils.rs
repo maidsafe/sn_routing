@@ -128,13 +128,11 @@ impl TestNode {
         let handle = network.new_service_handle(bootstrap_config, endpoint);
         let config = create_config(network);
         let node = mock_crust::make_current(&handle, || {
-            unwrap!(
-                Node::builder()
-                    .cache(cache)
-                    .first(first_node)
-                    .config(config)
-                    .create()
-            )
+            unwrap!(Node::builder()
+                .cache(cache)
+                .first(first_node)
+                .config(config)
+                .create())
         });
 
         TestNode {
@@ -408,7 +406,8 @@ pub fn remove_nodes_which_failed_to_connect(nodes: &mut Vec<TestNode>, count: us
                 }
             }
             Some(index)
-        }).collect();
+        })
+        .collect();
     for index in &failed_to_join {
         let _ = nodes.remove(*index);
     }
@@ -487,13 +486,11 @@ pub fn create_connected_nodes_until_split(
     use_cache: bool,
 ) -> Nodes {
     // Start first node.
-    let mut nodes = vec![
-        TestNode::builder(network)
-            .first()
-            .endpoint(Endpoint(0))
-            .cache(use_cache)
-            .create(),
-    ];
+    let mut nodes = vec![TestNode::builder(network)
+        .first()
+        .endpoint(Endpoint(0))
+        .cache(use_cache)
+        .create()];
     let _ = nodes[0].poll();
     add_connected_nodes_until_split(network, &mut nodes, prefix_lengths, use_cache);
     Nodes(nodes)

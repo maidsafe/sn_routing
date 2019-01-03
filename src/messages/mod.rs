@@ -12,28 +12,28 @@ mod response;
 pub use self::request::Request;
 pub use self::response::{AccountInfo, Response};
 use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
-use ack_manager::Ack;
-use chain::{GenesisPfxInfo, NetworkEvent, Proof, ProofSet, ProvingSection, SectionInfo};
-use data::MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
-use error::{BootstrapResponseError, Result, RoutingError};
-use event::Event;
+use crate::ack_manager::Ack;
+use crate::chain::{GenesisPfxInfo, NetworkEvent, Proof, ProofSet, ProvingSection, SectionInfo};
+use crate::data::MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
+use crate::error::{BootstrapResponseError, Result, RoutingError};
+use crate::event::Event;
+use crate::id::{FullId, PublicId};
+use crate::routing_table::Authority;
+use crate::routing_table::{Prefix, Xorable};
+use crate::sha3::Digest256;
+use crate::types::MessageId;
+use crate::xor_name::XorName;
 use hex_fmt::HexFmt;
-use id::{FullId, PublicId};
 use itertools::Itertools;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use parsec;
-use routing_table::Authority;
-use routing_table::{Prefix, Xorable};
 use safe_crypto;
 use safe_crypto::{PublicSignKey, SecretSignKey, Signature};
-use sha3::Digest256;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::{self, Debug, Formatter};
 use std::result::Result as StdResult;
 use std::time::Duration;
-use types::MessageId;
-use xor_name::XorName;
 
 /// The maximal length of a user message part, in bytes.
 pub const MAX_PART_LEN: usize = 20 * 1024;
@@ -53,7 +53,7 @@ pub const CLIENT_GET_PRIORITY: u8 = 3;
 /// This is the only type allowed to be sent / received on the network.
 #[derive(Debug, Serialize, Deserialize)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
+#[allow(clippy::large_enum_variant)]
 pub enum Message {
     /// A message sent between two nodes directly
     Direct(DirectMessage),
@@ -75,7 +75,7 @@ impl Message {
 /// Allows routing to directly send specific messages between nodes.
 #[derive(Serialize, Deserialize)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
+#[allow(clippy::large_enum_variant)]
 pub enum DirectMessage {
     /// Sent from members of a section or group message's source authority to the first hop. The
     /// message will only be relayed once enough signatures have been accumulated.
@@ -166,6 +166,7 @@ pub struct HopMessage {
 
 impl HopMessage {
     /// Wrap `content` for transmission to the next hop and sign it.
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(
         content: SignedMessage,
         route: u8,
@@ -214,6 +215,7 @@ impl SignedMessage {
     /// Creates a `SignedMessage` with the given `content` and signed by the given `full_id`.
     ///
     /// Requires the list `src_section` of nodes who should sign this message.
+    #[allow(clippy::new_ret_no_self)]
     pub fn new<T: Into<Option<SectionInfo>>>(
         content: RoutingMessage,
         full_id: &FullId,
@@ -387,20 +389,23 @@ impl SignedMessage {
             .filter_map(|(pub_id, sig)| {
                 // Remove if not in sending nodes or signature is invalid:
                 let is_valid = if let Authority::Client { ref client_id, .. } = self.content.src {
-                    client_id == pub_id && client_id
-                        .signing_public_key()
-                        .verify_detached(sig, &signed_bytes)
+                    client_id == pub_id
+                        && client_id
+                            .signing_public_key()
+                            .verify_detached(sig, &signed_bytes)
                 } else {
-                    self.is_sender(pub_id) && pub_id
-                        .signing_public_key()
-                        .verify_detached(sig, &signed_bytes)
+                    self.is_sender(pub_id)
+                        && pub_id
+                            .signing_public_key()
+                            .verify_detached(sig, &signed_bytes)
                 };
                 if is_valid {
                     None
                 } else {
                     Some(*pub_id)
                 }
-            }).collect_vec();
+            })
+            .collect_vec();
         if !invalid.is_empty() {
             debug!("{:?}: invalid signatures: {:?}", self, invalid);
         }
@@ -410,7 +415,7 @@ impl SignedMessage {
     // Returns true if there are enough signatures (note that this method does not verify the
     // signatures, it only counts them; it also does not verify `self.src_section`).
     fn has_enough_sigs(&self, min_section_size: usize) -> bool {
-        use Authority::*;
+        use crate::Authority::*;
         match self.content.src {
             ClientManager(_) | NaeManager(_) | NodeManager(_) => {
                 // Note: there should be exactly one source section, but we use safe code:
@@ -545,7 +550,7 @@ impl RoutingMessage {
 ///
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
+#[allow(clippy::large_enum_variant)]
 pub enum MessageContent {
     // ---------- Internal ------------
     /// Ask the network to relocate you.
@@ -831,7 +836,8 @@ impl UserMessage {
                 cacheable: self.is_cacheable(),
                 payload: payload[(i * len / part_count)..((i + 1) * len / part_count)].to_vec(),
                 priority,
-            }).collect())
+            })
+            .collect())
     }
 
     /// Puts the given parts of a serialised message together and verifies that it matches the
@@ -935,17 +941,17 @@ impl UserMessageCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use data::ImmutableData;
-    use id::FullId;
+    use crate::data::ImmutableData;
+    use crate::id::FullId;
+    use crate::routing_table::{Authority, Prefix};
+    use crate::types::MessageId;
+    use crate::xor_name::XorName;
     use maidsafe_utilities::serialisation::serialise;
     use rand;
-    use routing_table::{Authority, Prefix};
     use safe_crypto;
     use safe_crypto::{gen_sign_keypair, SIGNATURE_BYTES};
     use std::collections::BTreeSet;
     use std::iter;
-    use types::MessageId;
-    use xor_name::XorName;
 
     #[test]
     fn signed_message_check_integrity() {
@@ -1014,7 +1020,8 @@ mod tests {
                 *full_id_0.public_id(),
                 *full_id_1.public_id(),
                 *full_id_2.public_id(),
-            ].into_iter()
+            ]
+            .into_iter()
             .collect(),
             prefix,
             None,
@@ -1023,11 +1030,10 @@ mod tests {
         assert_eq!(signed_msg.signatures.len(), 1);
 
         // Try to add a signature which will not correspond to an ID from the sending nodes.
-        let irrelevant_sig = match unwrap!(
-            signed_msg
-                .routing_message()
-                .to_signature(irrelevant_full_id.signing_private_key())
-        ) {
+        let irrelevant_sig = match unwrap!(signed_msg
+            .routing_message()
+            .to_signature(irrelevant_full_id.signing_private_key()))
+        {
             DirectMessage::MessageSignature(_, sig) => {
                 signed_msg.add_signature(*irrelevant_full_id.public_id(), sig);
                 sig
@@ -1035,19 +1041,16 @@ mod tests {
             msg => panic!("Unexpected message: {:?}", msg),
         };
         assert_eq!(signed_msg.signatures.len(), 1);
-        assert!(
-            !signed_msg
-                .signatures
-                .contains_id(irrelevant_full_id.public_id())
-        );
+        assert!(!signed_msg
+            .signatures
+            .contains_id(irrelevant_full_id.public_id()));
         assert!(!signed_msg.check_fully_signed(min_section_size));
 
         // Add a valid signature for ID 1 and an invalid one for ID 2
-        match unwrap!(
-            signed_msg
-                .routing_message()
-                .to_signature(full_id_1.signing_private_key(),)
-        ) {
+        match unwrap!(signed_msg
+            .routing_message()
+            .to_signature(full_id_1.signing_private_key(),))
+        {
             DirectMessage::MessageSignature(hash, sig) => {
                 let serialised_msg = unwrap!(serialise(signed_msg.routing_message()));
                 assert_eq!(hash, safe_crypto::hash(&serialised_msg));
@@ -1067,11 +1070,9 @@ mod tests {
         // Check an irrelevant signature can't be added.
         signed_msg.add_signature(*irrelevant_full_id.public_id(), irrelevant_sig);
         assert_eq!(signed_msg.signatures.len(), 2);
-        assert!(
-            !signed_msg
-                .signatures
-                .contains_id(irrelevant_full_id.public_id(),)
-        );
+        assert!(!signed_msg
+            .signatures
+            .contains_id(irrelevant_full_id.public_id(),));
     }
 
     #[test]
@@ -1139,7 +1140,8 @@ mod tests {
                     payload
                 }
                 msg => panic!("Unexpected message {:?}", msg),
-            }).collect();
+            })
+            .collect();
         let deserialised_user_msg = unwrap!(UserMessage::from_parts(msg_hash, payloads.iter()));
         assert_eq!(user_msg, deserialised_user_msg);
     }

@@ -6,7 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use client_error::{ClientError, EntryError};
+use crate::client_error::{ClientError, EntryError};
+use crate::xor_name::XorName;
 use maidsafe_utilities::serialisation;
 use rand::{Rand, Rng};
 use safe_crypto::PublicSignKey;
@@ -14,7 +15,6 @@ use std::collections::btree_map::{BTreeMap, Entry};
 use std::collections::BTreeSet;
 use std::fmt::{self, Debug, Formatter};
 use std::mem;
-use xor_name::XorName;
 
 /// Maximum allowed size for `MutableData` (1 MiB)
 pub const MAX_MUTABLE_DATA_SIZE_IN_BYTES: u64 = 1024 * 1024;
@@ -212,6 +212,7 @@ impl Into<BTreeMap<Vec<u8>, EntryAction>> for EntryActions {
 
 impl MutableData {
     /// Creates a new MutableData
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(
         name: XorName,
         tag: u64,
@@ -636,7 +637,7 @@ impl Debug for MutableData {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use client_error::ClientError;
+    use crate::client_error::ClientError;
     use rand;
     use safe_crypto::gen_sign_keypair;
     use std::collections::{BTreeMap, BTreeSet};
@@ -682,14 +683,14 @@ mod tests {
         ));
 
         // Check insert permissions
-        assert!(
-            md.mutate_entries(
+        assert!(md
+            .mutate_entries(
                 EntryActions::new()
                     .ins(k1.clone(), b"abc".to_vec(), 0)
                     .into(),
                 pk1
-            ).is_ok()
-        );
+            )
+            .is_ok());
 
         assert_err!(
             md.mutate_entries(
@@ -786,7 +787,8 @@ mod tests {
         let actions = iter::once((
             to_vec_of_u8(MAX_MUTABLE_DATA_ENTRIES - 1),
             EntryAction::Ins(val.clone()),
-        )).collect();
+        ))
+        .collect();
         unwrap!(md.mutate_entries(actions, owner));
 
         assert_eq!(md.keys().len(), MAX_MUTABLE_DATA_ENTRIES as usize);
@@ -797,7 +799,8 @@ mod tests {
         let actions = iter::once((
             to_vec_of_u8(MAX_MUTABLE_DATA_ENTRIES),
             EntryAction::Ins(val.clone()),
-        )).collect();
+        ))
+        .collect();
         assert_err!(
             md.mutate_entries(actions, owner),
             ClientError::TooManyEntries
@@ -997,10 +1000,9 @@ mod tests {
         let ps1 = PermissionSet::new()
             .allow(Action::Insert)
             .allow(Action::ManagePermissions);
-        assert!(
-            md.set_user_permissions(User::Key(pk1), ps1, 1, owner)
-                .is_ok()
-        );
+        assert!(md
+            .set_user_permissions(User::Key(pk1), ps1, 1, owner)
+            .is_ok());
 
         assert!(md.mutate_entries(v1, pk1).is_ok());
 

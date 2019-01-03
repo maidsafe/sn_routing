@@ -7,41 +7,48 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
-use ack_manager::{Ack, AckManager};
-use action::Action;
-use cache::Cache;
-use chain::{
+use crate::ack_manager::{Ack, AckManager};
+use crate::action::Action;
+use crate::cache::Cache;
+use crate::chain::{
     Chain, GenesisPfxInfo, NetworkEvent, PrefixChangeOutcome, Proof, ProofSet, ProvingSection,
     SectionInfo,
 };
-use config_handler;
-use crust::{ConnectionInfoResult, CrustError, CrustUser};
-use error::{BootstrapResponseError, InterfaceError, RoutingError};
-use event::Event;
+use crate::config_handler;
+use crate::crust::{ConnectionInfoResult, CrustError, CrustUser};
+use crate::error::{BootstrapResponseError, InterfaceError, RoutingError};
+use crate::event::Event;
+use crate::id::{FullId, PublicId};
+use crate::messages::{
+    DirectMessage, HopMessage, Message, MessageContent, RoutingMessage, SignedMessage, UserMessage,
+    UserMessageCache, DEFAULT_PRIORITY, MAX_PARTS, MAX_PART_LEN,
+};
+use crate::outbox::{EventBox, EventBuf};
+use crate::peer_manager::{ConnectionInfoPreparedResult, Peer, PeerManager, PeerState};
+use crate::rate_limiter::RateLimiter;
+use crate::resource_prover::{ResourceProver, RESOURCE_PROOF_DURATION_SECS};
+use crate::routing_message_filter::{FilteringResult, RoutingMessageFilter};
+use crate::routing_table::Error as RoutingTableError;
+use crate::routing_table::{
+    Authority, Prefix, RemovalDetails, RoutingTable, VersionedPrefix, Xorable,
+};
+use crate::sha3::Digest256;
+use crate::signature_accumulator::SignatureAccumulator;
+use crate::state_machine::Transition;
+use crate::timer::Timer;
+use crate::types::{MessageId, RoutingActionSender};
+use crate::utils::{self, DisplayDuration};
+use crate::xor_name::XorName;
+use crate::{CrustEvent, PrivConnectionInfo, PubConnectionInfo, Service};
 #[cfg(feature = "mock")]
 use fake_clock::FakeClock as Instant;
-use id::{FullId, PublicId};
 use itertools::Itertools;
 use log::LogLevel;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation;
-use messages::{
-    DirectMessage, HopMessage, Message, MessageContent, RoutingMessage, SignedMessage, UserMessage,
-    UserMessageCache, DEFAULT_PRIORITY, MAX_PARTS, MAX_PART_LEN,
-};
-use outbox::{EventBox, EventBuf};
 use parsec::{self, Parsec};
-use peer_manager::{ConnectionInfoPreparedResult, Peer, PeerManager, PeerState};
 use rand::{self, Rng};
-use rate_limiter::RateLimiter;
-use resource_prover::{ResourceProver, RESOURCE_PROOF_DURATION_SECS};
-use routing_message_filter::{FilteringResult, RoutingMessageFilter};
-use routing_table::Error as RoutingTableError;
-use routing_table::{Authority, Prefix, RemovalDetails, RoutingTable, VersionedPrefix, Xorable};
 use safe_crypto::{SharedSecretKey, Signature};
-use sha3::Digest256;
-use signature_accumulator::SignatureAccumulator;
-use state_machine::Transition;
 use std::collections::BTreeMap;
 use std::collections::{BTreeSet, VecDeque};
 use std::fmt::{Display, Formatter};
@@ -50,11 +57,6 @@ use std::time::Duration;
 #[cfg(not(feature = "mock"))]
 use std::time::Instant;
 use std::{cmp, fmt, iter, mem};
-use timer::Timer;
-use types::{MessageId, RoutingActionSender};
-use utils::{self, DisplayDuration};
-use xor_name::XorName;
-use {CrustEvent, PrivConnectionInfo, PubConnectionInfo, Service};
 
 /// Time (in seconds) after which a `Tick` event is sent.
 const TICK_TIMEOUT_SECS: u64 = 15;
@@ -161,7 +163,7 @@ impl Node {
         }
     }
 
-    #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
+    #[allow(clippy::too_many_arguments)]
     pub fn from_bootstrapping(
         our_section: (Prefix<XorName>, BTreeSet<PublicId>),
         action_sender: RoutingActionSender,
@@ -191,7 +193,7 @@ impl Node {
         node
     }
 
-    #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
+    #[allow(clippy::too_many_arguments)]
     fn new(
         action_sender: RoutingActionSender,
         cache: Box<Cache>,
@@ -525,7 +527,7 @@ impl Node {
         pub_id: PublicId,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError> {
-        use messages::DirectMessage::*;
+        use crate::messages::DirectMessage::*;
         if let Err(error) = self.check_direct_message_sender(&direct_message, &pub_id) {
             match error {
                 RoutingError::ClientConnectionNotFound => (),
@@ -878,9 +880,10 @@ impl Node {
         proving_secs: Vec<ProvingSection>,
         sec_info: SectionInfo,
     ) -> Result<(), RoutingError> {
-        if !self.chain.is_new_neighbour(&sec_info) && !proving_secs
-            .iter()
-            .any(|ps| self.chain.is_new_neighbour(&ps.sec_info))
+        if !self.chain.is_new_neighbour(&sec_info)
+            && !proving_secs
+                .iter()
+                .any(|ps| self.chain.is_new_neighbour(&ps.sec_info))
         {
             return Ok(()); // Nothing new to learn here.
         }
@@ -948,7 +951,8 @@ impl Node {
                 } else {
                     None
                 }
-            }).collect();
+            })
+            .collect();
         for pub_id in peers_to_connect {
             debug!("{} Sending connection info to {:?}.", self, pub_id);
             let src = Authority::ManagedNode(*self.name());
@@ -1017,7 +1021,8 @@ impl Node {
                 NetworkEvent::SectionInfo(ref sec_info) => our_pfx.is_neighbour(sec_info.prefix()),
                 NetworkEvent::OurMerge => false,
                 _ => true,
-            }).for_each(|event| {
+            })
+            .for_each(|event| {
                 self.vote_for_event(event.clone());
             });
 
@@ -1265,8 +1270,8 @@ impl Node {
         routing_msg: RoutingMessage,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError> {
-        use messages::MessageContent::*;
-        use Authority::{Client, ManagedNode, PrefixSection, Section};
+        use crate::messages::MessageContent::*;
+        use crate::Authority::{Client, ManagedNode, PrefixSection, Section};
 
         if !self.chain.is_member() && !self.is_first_node {
             match routing_msg.content {
@@ -1597,10 +1602,11 @@ impl Node {
             .add_prefix(genesis_info.our_info.prefix().with_version(0));
 
         // consider ourself established if we're the second node
-        if !self.is_first_node && genesis_info
-            .our_info
-            .members()
-            .contains(self.full_id.public_id())
+        if !self.is_first_node
+            && genesis_info
+                .our_info
+                .members()
+                .contains(self.full_id.public_id())
         {
             self.node_established(outbox);
         }
@@ -1722,11 +1728,10 @@ impl Node {
                     ref payload,
                     ..
                 },
-            )
-                if *part_count <= MAX_PARTS
-                    && part_index < part_count
-                    && *priority >= DEFAULT_PRIORITY
-                    && payload.len() <= MAX_PART_LEN =>
+            ) if *part_count <= MAX_PARTS
+                && part_index < part_count
+                && *priority >= DEFAULT_PRIORITY
+                && payload.len() <= MAX_PART_LEN =>
             {
                 self.clients_rate_limiter.add_message(
                     ip,
@@ -1904,7 +1909,7 @@ impl Node {
         Ok(())
     }
 
-    #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
+    #[allow(clippy::too_many_arguments)]
     fn handle_candidate_info(
         &mut self,
         old_pub_id: &PublicId,
@@ -2182,7 +2187,7 @@ impl Node {
         }
     }
 
-    #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
+    #[allow(clippy::too_many_arguments)]
     fn handle_connection_info_request(
         &mut self,
         encrypted_connection_info: Vec<u8>,
@@ -2209,7 +2214,7 @@ impl Node {
             return Err(RoutingError::InvalidPeer);
         }
 
-        use peer_manager::ConnectionInfoReceivedResult::*;
+        use crate::peer_manager::ConnectionInfoReceivedResult::*;
         match self.peer_mgr.connection_info_received(
             src,
             dst,
@@ -2285,7 +2290,7 @@ impl Node {
             return Err(RoutingError::InvalidPeer);
         }
 
-        use peer_manager::ConnectionInfoReceivedResult::*;
+        use crate::peer_manager::ConnectionInfoReceivedResult::*;
         match self.peer_mgr.connection_info_received(
             Authority::ManagedNode(src),
             dst,
@@ -2588,7 +2593,8 @@ impl Node {
                     Some(sec_info)
                 }
                 _ => None,
-            }).any(is_proof))
+            })
+            .any(is_proof))
     }
 
     fn handle_neighbour_confirm(
@@ -2949,7 +2955,7 @@ impl Node {
     /// Returns the peer that is responsible for collecting signatures to verify a message; this
     /// may be us or another node. If our signature is not required, this returns `None`.
     fn get_signature_target(&self, src: &Authority<XorName>, route: u8) -> Option<XorName> {
-        use Authority::*;
+        use crate::Authority::*;
         let list: Vec<&XorName> = match *src {
             ClientManager(_) | NaeManager(_) | NodeManager(_) => {
                 let mut v = self
@@ -3441,7 +3447,7 @@ impl Bootstrapped for Node {
             );
             return Ok(());
         }
-        use routing_table::Authority::*;
+        use crate::routing_table::Authority::*;
         let sending_sec = match routing_msg.src {
             ClientManager(_) | NaeManager(_) | NodeManager(_) | ManagedNode(_) | Section(_)
             | PrefixSection(_)
