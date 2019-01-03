@@ -111,8 +111,6 @@ impl Network {
         let _ = merge_info.insert(prefix, new_info);
     }
 
-    // TODO: remove this when https://github.com/Manishearth/rust-clippy/issues/1279 is resolved
-    #[allow(clippy::for_kv_map)]
     /// Drops a node and, if necessary, merges sections to restore the section requirement.
     fn drop_node(&mut self) {
         let keys = self.keys();
@@ -152,7 +150,7 @@ impl Network {
                 for node in &nodes {
                     let target_node = unwrap!(self.nodes.get_mut(node));
                     let node_expected = expected_peers.entry(*node).or_insert_with(BTreeSet::new);
-                    for (_, &(_, ref section)) in &sections {
+                    for &(_, ref section) in sections.values() {
                         node_expected.extend(section.iter().filter(|name| !target_node.has(name)));
                     }
                     let merge_pfx = sender_pfx.popped();
