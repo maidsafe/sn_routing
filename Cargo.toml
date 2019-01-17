@@ -13,7 +13,7 @@ edition = "2018"
 [dependencies]
 config_file_handler = "~0.11.0"
 crust = "~0.31.0"
-fake_clock = "~0.2.0"
+fake_clock = "~0.3.0"
 hex = "~0.3.1"
 itertools = "~0.7.8"
 log = "~0.4.1"
