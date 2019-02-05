@@ -149,7 +149,6 @@
 // FIXME: allow `needless_pass_by_value` until it's OK to change the public API
 #![cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 
-use hex;
 #[macro_use]
 extern crate log;
 #[macro_use]
@@ -158,7 +157,6 @@ extern crate quick_error;
 extern crate unwrap;
 #[cfg(not(feature = "use-mock-crust"))]
 extern crate crust;
-use rand;
 #[cfg(not(feature = "use-mock-crypto"))]
 extern crate rust_sodium;
 #[macro_use]

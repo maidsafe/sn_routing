@@ -39,7 +39,7 @@ impl CumulativeOwnSectionMerge {
         for (ver_pfx, peers) in sections {
             if ver_pfx.prefix().is_extension_of(&merge_prefix) {
                 version = cmp::max(version, ver_pfx.version() + 1);
-                our_merged_section.extend(peers.into_iter().map(|peer| *peer.name()));
+                our_merged_section.extend(peers.iter().map(|peer| *peer.name()));
             }
         }
 
