@@ -218,7 +218,7 @@ impl Client {
             .filter_incoming(&routing_msg, hop_msg.route)
         {
             FilteringResult::KnownMessage | FilteringResult::KnownMessageAndRoute => {
-                return Err(RoutingError::FilterCheckFailed)
+                return Err(RoutingError::FilterCheckFailed);
             }
             FilteringResult::NewMessage => (),
         }
