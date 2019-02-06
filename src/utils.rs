@@ -86,7 +86,7 @@ pub fn calculate_relocation_dst(mut close_nodes: Vec<XorName>, current_name: &Xo
     close_nodes.sort_by(|a, b| current_name.cmp_distance(a, b));
     let combined: Vec<u8> = iter::once(current_name)
         .chain(close_nodes.iter().take(2))
-        .flat_map(|close_node| close_node.0.into_iter())
+        .flat_map(|close_node| close_node.0.iter())
         .cloned()
         .collect();
     XorName(sha3_256(&combined))

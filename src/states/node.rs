@@ -874,7 +874,7 @@ impl Node {
         } else {
             self.routing_table()
                 .our_section()
-                .into_iter()
+                .iter()
                 .filter(|&x| *x != *self.name())    // we don't want to send to ourselves
                 .filter_map(|x| self.peer_mgr.get_pub_id(x))
                 .cloned()
@@ -2726,7 +2726,7 @@ impl Node {
             for (ver_pfx, peers) in our_sections.iter().chain(&their_sections) {
                 if ver_pfx.prefix().is_extension_of(&merge_prefix) {
                     version = cmp::max(version, ver_pfx.version() + 1);
-                    our_merged_section.extend(peers.into_iter().map(|peer| *peer.name()));
+                    our_merged_section.extend(peers.iter().map(|peer| *peer.name()));
                 }
             }
 

@@ -64,8 +64,6 @@ extern crate unwrap;
 #[macro_use]
 extern crate serde_derive;
 
-use term;
-
 mod utils;
 
 #[cfg(feature = "use-mock-crust")]

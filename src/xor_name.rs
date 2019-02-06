@@ -66,10 +66,10 @@ impl XorName {
         let data: Vec<u8> = match FromHex::from_hex(&s) {
             Ok(v) => v,
             Err(FromHexError::InvalidHexCharacter { c, index }) => {
-                return Err(XorNameFromHexError::InvalidCharacter(c, index))
+                return Err(XorNameFromHexError::InvalidCharacter(c, index));
             }
             Err(FromHexError::InvalidStringLength) | Err(FromHexError::OddLength) => {
-                return Err(XorNameFromHexError::WrongLength)
+                return Err(XorNameFromHexError::WrongLength);
             }
         };
         if data.len() != XOR_NAME_LEN {
