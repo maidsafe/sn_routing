@@ -147,8 +147,6 @@
     clippy::redundant_field_names
 )]
 
-use config_file_handler;
-use parsec;
 #[macro_use]
 extern crate log;
 #[macro_use]
@@ -159,8 +157,6 @@ extern crate unwrap;
 extern crate crust;
 #[macro_use]
 extern crate lazy_static;
-use rand;
-use safe_crypto;
 #[macro_use]
 extern crate serde_derive;
 #[cfg(test)]
