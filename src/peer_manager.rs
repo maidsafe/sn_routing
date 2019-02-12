@@ -238,7 +238,7 @@ impl Peer {
             PeerState::JoiningNode | PeerState::Proxy => JOINING_NODE_TIMEOUT_SECS,
             PeerState::Bootstrapper { .. } | PeerState::Connected => CONNECTED_PEER_TIMEOUT_SECS,
             PeerState::Candidate(_) | PeerState::Client { .. } | PeerState::Routing(_) => {
-                return false
+                return false;
             }
         };
 
