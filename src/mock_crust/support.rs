@@ -666,7 +666,7 @@ impl Config {
     /// Create `Config` with the given hardcoded contacts.
     pub fn with_contacts(contacts: &[Endpoint]) -> Self {
         Config {
-            hard_coded_contacts: contacts.into_iter().cloned().collect(),
+            hard_coded_contacts: contacts.to_vec(),
         }
     }
 }

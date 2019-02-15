@@ -53,8 +53,6 @@
     missing_debug_implementations
 )]
 #![cfg(not(feature = "mock"))]
-// FIXME: Re-enable `redundant_field_names`.
-#![cfg_attr(feature = "cargo-clippy", allow(redundant_field_names))]
 
 #[cfg(target_os = "macos")]
 extern crate libc;
@@ -154,7 +152,7 @@ impl TestClient {
         let full_id = FullId::with_keys(encrypt_keys, sign_keys);
 
         TestClient {
-            index: index,
+            index,
             full_id: full_id.clone(),
             client: unwrap!(Client::new(
                 sender,
@@ -303,7 +301,7 @@ fn gen_mutable_data<R: Rng>(full_id: &FullId, rng: &mut R) -> MutableData {
             (
                 key,
                 Value {
-                    content: content,
+                    content,
                     entry_version: 0,
                 },
             )
@@ -329,7 +327,7 @@ fn closest_nodes(node_names: &[XorName], target: &XorName) -> Vec<XorName> {
 }
 
 // TODO: Extract the individual tests into their own functions.
-#[cfg_attr(feature = "cargo-clippy", allow(cyclomatic_complexity))]
+#[allow(clippy::cyclomatic_complexity)]
 fn core() {
     let (event_sender, event_receiver) = mpsc::channel();
     let mut nodes = create_connected_nodes(MIN_SECTION_SIZE + 1, &event_sender, &event_receiver);
