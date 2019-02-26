@@ -2,9 +2,9 @@
 
 Routing - a specialised storage DHT
 
-|Crate|Documentation|Linux/OS X|Windows|Issues|
+|Crate|Documentation|Linux/macOS|Windows|Issues|
 |:---:|:-----------:|:--------:|:-----:|:----:|
-|[![](http://meritbadge.herokuapp.com/routing)](https://crates.io/crates/routing)|[![Documentation](https://docs.rs/routing/badge.svg)](https://docs.rs/routing)|[![Build Status](https://travis-ci.org/maidsafe/routing.svg?branch=master)](https://travis-ci.org/maidsafe/routing)|[![Build status](https://ci.appveyor.com/api/projects/status/2w1joqd2h64o4xrh/branch/master?svg=true)](https://ci.appveyor.com/project/MaidSafe-QA/routing/branch/master)|[![Stories in Ready](https://badge.waffle.io/maidsafe/routing.png?label=ready&title=Ready)](https://waffle.io/maidsafe/routing)|
+|[![](http://meritbadge.herokuapp.com/routing)](https://crates.io/crates/routing)|[![Documentation](https://docs.rs/routing/badge.svg)](https://docs.rs/routing)|[![Build Status](https://travis-ci.com/maidsafe/routing.svg?branch=master)](https://travis-ci.com/maidsafe/routing)|[![Build status](https://ci.appveyor.com/api/projects/status/2w1joqd2h64o4xrh/branch/master?svg=true)](https://ci.appveyor.com/project/MaidSafe-QA/routing/branch/master)|[![Stories in Ready](https://badge.waffle.io/maidsafe/routing.png?label=ready&title=Ready)](https://waffle.io/maidsafe/routing)|
 
 | [MaidSafe website](https://maidsafe.net) | [SAFE Dev Forum](https://forum.safedev.org) | [SAFE Network Forum](https://safenetforum.org) |
 |:----------------------------------------:|:-------------------------------------------:|:----------------------------------------------:|
@@ -45,4 +45,4 @@ Licensed under the General Public License (GPL), version 3 ([LICENSE](LICENSE) h
 
 Routing is licensed under GPLv3 with linking exception. This means you can link to and use the library from any program, proprietary or open source; paid or gratis. However, if you modify Routing, you must distribute the source to your modified version under the terms of the GPLv3.
 
-See the LICENSE file for more details.
+See the LICENSE file for more details. 
