@@ -24,6 +24,7 @@ use crate::messages::{
     UserMessageCache, DEFAULT_PRIORITY, MAX_PARTS, MAX_PART_LEN,
 };
 use crate::outbox::{EventBox, EventBuf};
+use crate::parsec::{self, Parsec};
 use crate::peer_manager::{ConnectionInfoPreparedResult, Peer, PeerManager, PeerState};
 use crate::rate_limiter::RateLimiter;
 use crate::resource_prover::{ResourceProver, RESOURCE_PROOF_DURATION_SECS};
@@ -46,7 +47,6 @@ use itertools::Itertools;
 use log::LogLevel;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation;
-use parsec::{self, Parsec};
 use rand::{self, Rng};
 use safe_crypto::{SharedSecretKey, Signature};
 use std::collections::BTreeMap;
@@ -730,6 +730,7 @@ impl Node {
         let mut our_pfx = *self.chain.our_prefix();
         while let Some(event) = self.chain.poll()? {
             trace!("{} Handle accumulated event: {:?}", self, event);
+
             match event {
                 NetworkEvent::Online(pub_id, client_auth) => {
                     self.handle_online_event(pub_id, client_auth, outbox)?;
@@ -2730,8 +2731,8 @@ impl Node {
 
         let par_req = self
             .parsec_map
-            .get(&version)
-            .and_then(|par| par.create_gossip(Some(&gossip_target)).ok());
+            .get_mut(&version)
+            .and_then(|par| par.create_gossip(&gossip_target).ok());
         if let Some(par_req) = par_req {
             self.send_message(
                 &gossip_target,

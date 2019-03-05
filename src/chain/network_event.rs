@@ -17,10 +17,10 @@
 
 use super::{ProofSet, ProvingSection, SectionInfo};
 use crate::id::PublicId;
+use crate::parsec;
 use crate::sha3::Digest256;
 use crate::{Authority, RoutingError, XorName};
 use maidsafe_utilities::serialisation::serialise;
-use parsec;
 
 /// Routing Network events
 // TODO: Box `SectionInfo`?

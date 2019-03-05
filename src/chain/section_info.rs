@@ -18,12 +18,12 @@
 use super::{NetworkEvent, ProofSet};
 use crate::error::RoutingError;
 use crate::id::PublicId;
+use crate::parsec;
 use crate::routing_table::Prefix;
 use crate::sha3::Digest256;
 use crate::XorName;
 use crate::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
 use maidsafe_utilities::serialisation;
-use parsec;
 use safe_crypto;
 use serde::de::Error as SerdeDeError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};

@@ -181,6 +181,8 @@ mod event_stream;
 mod id;
 mod message_filter;
 mod messages;
+#[cfg(feature = "mock")]
+mod mock_parsec;
 mod node;
 mod outbox;
 mod peer_manager;
@@ -245,6 +247,8 @@ pub use crate::id::{FullId, PublicId};
 pub use crate::messages::{AccountInfo, Request, Response};
 #[cfg(feature = "mock")]
 pub use crate::mock_crust::crust;
+#[cfg(feature = "mock")]
+pub(crate) use crate::mock_parsec as parsec;
 pub use crate::node::{Node, NodeBuilder};
 #[cfg(feature = "mock")]
 pub use crate::peer_manager::test_consts;
@@ -256,6 +260,8 @@ pub use crate::routing_table::Error as RoutingTableError;
 pub use crate::routing_table::{Authority, Prefix, RoutingTable, VersionedPrefix, Xorable};
 pub use crate::types::MessageId;
 pub use crate::xor_name::{XorName, XorNameFromHexError, XOR_NAME_BITS, XOR_NAME_LEN};
+#[cfg(not(feature = "mock"))]
+pub(crate) use parsec;
 
 type Service = crust::Service<PublicId>;
 use crate::crust::Event as CrustEvent;
