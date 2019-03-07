@@ -2,12 +2,6 @@ env:
   global:
     - RUST_BACKTRACE=1
     - PATH=$PATH:$HOME/.cargo/bin
-os:
-  - linux
-  - osx
-branches:
-  except:
-  - fleming
 language: rust
 rust:
   - stable
@@ -18,15 +12,19 @@ before_script:
   - curl -sSL https://github.com/maidsafe/QA/raw/master/travis/cargo_install.sh > cargo_install.sh
   - bash cargo_install.sh cargo-prune;
   - rustup component add rustfmt clippy
-script:
-  - export RUSTFLAGS="-C opt-level=2 -C codegen-units=8"
-  - set -x;
-    cargo fmt -- --check &&
-    cargo check --verbose --lib --tests &&
-    cargo check --verbose --example ci_test &&
-    cargo check --verbose --example key_value_store &&
-    cargo clippy --verbose --all-targets &&
-    cargo clippy --verbose --all-targets --features=mock &&
-    cargo test --verbose --release --features=mock
+jobs:
+  include:
+    - script: scripts/clippy
+      os: linux
+      env: CACHE_NAME=clippy_linux
+    - script: scripts/clippy
+      os: osx
+      env: CACHE_NAME=clippy_osx
+    - script: scripts/tests
+      os: linux
+      env: CACHE_NAME=tests_linux
+    - script: scripts/tests
+      os: osx
+      env: CACHE_NAME=tests_osx
 before_cache:
   - cargo prune

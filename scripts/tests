@@ -1,0 +1,8 @@
+#!/bin/bash
+
+set -x -e
+export RUSTFLAGS="-C opt-level=2 -C codegen-units=8"
+
+cargo test --release --features=mock -- \
+    --skip mock_crust::churn::aggressive_churn \
+    --skip mock_crust::churn::messages_during_churn
