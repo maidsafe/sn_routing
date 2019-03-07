@@ -2,8 +2,6 @@ env:
   global:
     - RUST_BACKTRACE=1
     - PATH=$PATH:$HOME/.cargo/bin
-branches:
-  only: ci_test_run_refactor
 language: rust
 rust:
   - stable
