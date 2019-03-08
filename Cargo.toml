@@ -31,6 +31,7 @@ term = "0.4.6"
 unwrap = "1.2.1"
 # Parsec master branch.
 parsec = { git = "https://github.com/maidsafe/parsec", rev = "f447952c70b068f0cfec783245d38a65fbddef56" }
+fxhash = { version = "0.2.1", optional = true }
 
 [dependencies.crust]
 git = "https://github.com/maidsafe/crust"
@@ -42,7 +43,7 @@ libc = "0.2.29"
 serde_json = "1.0.8"
 
 [features]
-mock = ["lru_time_cache/fake_clock", "safe_crypto/mock"]
+mock = ["lru_time_cache/fake_clock", "safe_crypto/mock", "fxhash"]
 
 [[example]]
 bench = false

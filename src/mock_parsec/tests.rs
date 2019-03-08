@@ -60,14 +60,14 @@ fn smoke() {
     bob.handle_response(&bob_id, response_0).unwrap();
 
     let alice_blocks = collect_block_payloads(&mut alice);
-    let carol_blocks = collect_block_payloads(&mut bob);
+    let bob_blocks = collect_block_payloads(&mut bob);
 
     assert_eq!(alice_blocks.len(), 3); // Genesis + Payload(1) + Payload(0)
-    assert_eq!(alice_blocks, carol_blocks);
+    assert_eq!(alice_blocks, bob_blocks);
 }
 
 #[test]
-fn add_peer() {
+fn add_new_leader() {
     let alice_id = PeerId(0);
     let bob_id = PeerId(1);
     let carol_id = PeerId(2);
@@ -126,6 +126,67 @@ fn add_peer() {
 
     assert_eq!(alice_blocks.len(), 3);
     assert_eq!(alice_blocks, bob_blocks);
+    assert_eq!(bob_blocks, carol_blocks);
+}
+
+#[test]
+fn remove_leader() {
+    let alice_id = PeerId(0);
+    let bob_id = PeerId(1);
+    let carol_id = PeerId(2);
+
+    let mut genesis_group = BTreeSet::new();
+    let _ = genesis_group.insert(alice_id.clone());
+    let _ = genesis_group.insert(bob_id.clone());
+    let _ = genesis_group.insert(carol_id.clone());
+
+    let mut alice = Parsec::from_genesis(
+        alice_id.clone(),
+        &genesis_group,
+        ConsensusMode::Supermajority,
+    );
+    let mut bob =
+        Parsec::from_genesis(bob_id.clone(), &genesis_group, ConsensusMode::Supermajority);
+    let mut carol = Parsec::from_genesis(
+        carol_id.clone(),
+        &genesis_group,
+        ConsensusMode::Supermajority,
+    );
+
+    // Everybody cast a vote...
+    let opaque = Observation::OpaquePayload(Payload(0));
+    alice.vote_for(opaque.clone()).unwrap();
+    bob.vote_for(opaque.clone()).unwrap();
+    carol.vote_for(opaque).unwrap();
+
+    // ...but Bob, who is not the leader, is the only one who gets all of them.
+    exchange_gossip(&mut alice, &mut bob);
+    exchange_gossip(&mut carol, &mut bob);
+
+    assert!(collect_block_payloads(&mut alice).is_empty());
+    assert!(collect_block_payloads(&mut bob).is_empty());
+    assert!(collect_block_payloads(&mut carol).is_empty());
+
+    // Now vote to remove Alice, who is the current leader. Again, only Bob gets
+    // all the votes.
+    let remove_alice = Observation::Remove {
+        peer_id: alice_id,
+        related_info: vec![],
+    };
+    alice.vote_for(remove_alice.clone()).unwrap();
+    bob.vote_for(remove_alice.clone()).unwrap();
+    carol.vote_for(remove_alice).unwrap();
+
+    exchange_gossip(&mut alice, &mut bob);
+    exchange_gossip(&mut carol, &mut bob);
+
+    // Bob is the leader for the purpose of deciding Alice's removal. After Alice is removed, he
+    // becomes the new leader and should also decide all past votes not decided by the previous
+    // leader.
+    let bob_blocks = collect_block_payloads(&mut bob);
+    let carol_blocks = collect_block_payloads(&mut carol);
+
+    assert_eq!(bob_blocks.len(), 3); // Genesis + Payload(0) + Remove(Alice)
     assert_eq!(bob_blocks, carol_blocks);
 }
 

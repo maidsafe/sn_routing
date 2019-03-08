@@ -7,12 +7,10 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{serialise, NetworkEvent, Proof, PublicId, SecretId};
+use fxhash::{FxHashMap, FxHashSet};
 pub use parsec::{ConsensusMode, Observation};
 use std::{
-    collections::{
-        btree_map::{BTreeMap, Entry},
-        BTreeSet,
-    },
+    collections::{btree_map::BTreeMap, hash_map::Entry},
     ops::Deref,
 };
 
@@ -61,14 +59,14 @@ impl<T: NetworkEvent, P: PublicId> Deref for ObservationHolder<T, P> {
 #[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(bound = "")]
 pub(super) struct ObservationInfo<P: PublicId> {
-    votes: BTreeMap<P, VoteInfo<P>>,
+    votes: FxHashMap<P, VoteInfo<P>>,
     consensus: Option<ConsensusInfo<P>>,
 }
 
 impl<P: PublicId> ObservationInfo<P> {
     pub fn new() -> Self {
         Self {
-            votes: BTreeMap::new(),
+            votes: FxHashMap::default(),
             consensus: None,
         }
     }
@@ -80,7 +78,7 @@ impl<P: PublicId> ObservationInfo<P> {
     ) {
         let proof = our_secret_id.create_proof(&serialise(observation));
 
-        let mut knowledge = BTreeSet::new();
+        let mut knowledge = FxHashSet::default();
         let _ = knowledge.insert(our_secret_id.public_id().clone());
 
         let _ = self.votes.insert(
@@ -106,7 +104,7 @@ impl<P: PublicId> ObservationInfo<P> {
         if let Some(new_consensus) = gossip.consensus {
             let consensus = self.consensus.get_or_insert(ConsensusInfo {
                 index: new_consensus.index,
-                knowledge: BTreeSet::new(),
+                knowledge: FxHashSet::default(),
             });
 
             consensus.knowledge.extend(new_consensus.knowledge);
@@ -114,7 +112,7 @@ impl<P: PublicId> ObservationInfo<P> {
     }
 
     pub fn create_gossip(&self, dst: &P) -> Option<Self> {
-        let votes: BTreeMap<_, _> = self
+        let votes: FxHashMap<_, _> = self
             .votes
             .iter()
             .filter(|(_, vote)| !vote.knowledge.contains(dst))
@@ -162,7 +160,7 @@ impl<P: PublicId> ObservationInfo<P> {
     }
 
     pub fn decide_consensus(&mut self, our_id: &P, index: usize) {
-        let mut knowledge = BTreeSet::new();
+        let mut knowledge = FxHashSet::default();
         let _ = knowledge.insert(our_id.clone());
 
         self.consensus = Some(ConsensusInfo { index, knowledge });
@@ -173,14 +171,14 @@ impl<P: PublicId> ObservationInfo<P> {
 #[serde(bound = "")]
 struct VoteInfo<P: PublicId> {
     proof: Proof<P>,
-    knowledge: BTreeSet<P>,
+    knowledge: FxHashSet<P>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(bound = "")]
 struct ConsensusInfo<P: PublicId> {
     index: usize,
-    knowledge: BTreeSet<P>,
+    knowledge: FxHashSet<P>,
 }
 
 pub(super) type ObservationMap<T, P> = BTreeMap<ObservationHolder<T, P>, ObservationInfo<P>>;

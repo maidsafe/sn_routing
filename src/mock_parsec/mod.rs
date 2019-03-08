@@ -20,16 +20,20 @@ pub use self::{
 pub use parsec::{NetworkEvent, Proof, PublicId, SecretId};
 
 use self::observation::{ObservationHolder, ObservationInfo, ObservationMap};
+use fxhash::FxHashMap;
 use maidsafe_utilities::serialisation;
 use serde::Serialize;
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::{
+    collections::{BTreeMap, BTreeSet, VecDeque},
+    mem,
+};
 
 pub struct Parsec<T: NetworkEvent, S: SecretId> {
     our_id: S,
     peer_list: BTreeSet<S::PublicId>,
     consensus_mode: ConsensusMode,
     observations: ObservationMap<T, S::PublicId>,
-    pending_blocks: BTreeMap<usize, Block<T, S::PublicId>>,
+    pending_blocks: FxHashMap<usize, Block<T, S::PublicId>>,
     consensused_blocks: VecDeque<Block<T, S::PublicId>>,
     next_block_index: usize,
 }
@@ -55,7 +59,7 @@ impl<T: NetworkEvent, S: SecretId> Parsec<T, S> {
             peer_list: genesis_group.clone(),
             consensus_mode,
             observations,
-            pending_blocks: BTreeMap::new(),
+            pending_blocks: FxHashMap::default(),
             consensused_blocks: VecDeque::new(),
             next_block_index: 0,
         }
@@ -72,7 +76,7 @@ impl<T: NetworkEvent, S: SecretId> Parsec<T, S> {
             peer_list: genesis_group.clone(),
             consensus_mode,
             observations: BTreeMap::new(),
-            pending_blocks: BTreeMap::new(),
+            pending_blocks: FxHashMap::default(),
             consensused_blocks: VecDeque::new(),
             next_block_index: 0,
         }
@@ -139,7 +143,7 @@ impl<T: NetworkEvent, S: SecretId> Parsec<T, S> {
         src: &S::PublicId,
         req: Request<T, S::PublicId>,
     ) -> Result<Response<T, S::PublicId>, Error> {
-        self.handle_gossip(req.observations)?;
+        self.handle_gossip(req.observations);
         Ok(Response {
             observations: self.observations_to_gossip(src),
         })
@@ -150,7 +154,8 @@ impl<T: NetworkEvent, S: SecretId> Parsec<T, S> {
         _src: &S::PublicId,
         resp: Response<T, S::PublicId>,
     ) -> Result<(), Error> {
-        self.handle_gossip(resp.observations)
+        self.handle_gossip(resp.observations);
+        Ok(())
     }
 
     pub fn poll(&mut self) -> Option<Block<T, S::PublicId>> {
@@ -187,7 +192,7 @@ impl<T: NetworkEvent, S: SecretId> Parsec<T, S> {
             .map(|(observation, _)| &**observation)
     }
 
-    fn handle_gossip(&mut self, observations: ObservationMap<T, S::PublicId>) -> Result<(), Error> {
+    fn handle_gossip(&mut self, observations: ObservationMap<T, S::PublicId>) {
         for (holder, gossiped_info) in observations {
             let info = self
                 .observations
@@ -207,8 +212,6 @@ impl<T: NetworkEvent, S: SecretId> Parsec<T, S> {
                 self.add_block(index, block);
             }
         }
-
-        Ok(())
     }
 
     fn observations_to_gossip(&self, dst: &S::PublicId) -> ObservationMap<T, S::PublicId> {
@@ -220,27 +223,47 @@ impl<T: NetworkEvent, S: SecretId> Parsec<T, S> {
 
     fn add_block(&mut self, index: usize, block: Block<T, S::PublicId>) {
         let _ = self.pending_blocks.insert(index, block);
+        let first_index = self.consensused_blocks.len();
 
         while let Some(block) = self.pending_blocks.remove(&self.next_block_index) {
-            self.handle_consensus(block.payload());
-
             self.consensused_blocks.push_back(block);
             self.next_block_index += 1;
         }
+
+        let last_index = self.consensused_blocks.len();
+        for index in first_index..last_index {
+            self.handle_consensus(index);
+        }
     }
 
-    fn handle_consensus(&mut self, observation: &Observation<T, S::PublicId>) {
-        match *observation {
+    fn handle_consensus(&mut self, block_index: usize) {
+        let remove = match self.consensused_blocks[block_index].payload() {
             Observation::Add { ref peer_id, .. } => {
                 let _ = self.peer_list.insert(peer_id.clone());
+                None
             }
-            Observation::Remove { ref peer_id, .. } => {
-                let _ = self.peer_list.remove(peer_id);
-            }
-            Observation::Accusation { ref offender, .. } => {
-                let _ = self.peer_list.remove(offender);
-            }
-            _ => (),
+            Observation::Remove { ref peer_id, .. } => Some(peer_id.clone()),
+            Observation::Accusation { ref offender, .. } => Some(offender.clone()),
+            _ => None,
+        };
+
+        if let Some(peer_id) = remove {
+            self.handle_remove_peer(&peer_id)
+        }
+    }
+
+    fn handle_remove_peer(&mut self, peer_id: &S::PublicId) {
+        // If the removed peer is the current leader and we are going to become the next leader, we
+        // need to check all existing observations that have enough votes to be consensused, but
+        // haven't been yet.
+
+        let was_leader = self.peer_list.iter().nth(0) == Some(peer_id);
+
+        let _ = self.peer_list.remove(peer_id);
+
+        if was_leader && self.peer_list.iter().nth(0) == Some(self.our_id.public_id()) {
+            let observations = mem::replace(&mut self.observations, BTreeMap::new());
+            self.handle_gossip(observations);
         }
     }
 }
