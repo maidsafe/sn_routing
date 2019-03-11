@@ -130,6 +130,8 @@ pub enum DirectMessage {
     ResourceProofResponseReceipt,
     /// Sent from a proxy node to its client to indicate that the client exceeded its rate limit.
     ProxyRateLimitExceeded { ack: Ack },
+    /// Poke a node to send us the first gossip request
+    ParsecPoke(u64),
     /// Parsec request message
     ParsecRequest(u64, parsec::Request<NetworkEvent, PublicId>),
     /// Parsec response message
@@ -696,6 +698,7 @@ impl Debug for DirectMessage {
             }
             ParsecRequest(ref v, _) => write!(formatter, "ParsecRequest({}, _)", v),
             ParsecResponse(ref v, _) => write!(formatter, "ParsecResponse({}, _)", v),
+            ParsecPoke(ref v) => write!(formatter, "ParsecPoke({})", v),
         }
     }
 }
