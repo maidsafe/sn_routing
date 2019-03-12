@@ -6,10 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{
-    observation::{Observation, ObservationInfo},
-    NetworkEvent, Proof, PublicId,
-};
+use super::{observation::Observation, NetworkEvent, Proof, PublicId};
 use std::collections::BTreeSet;
 
 #[serde(bound = "")]
@@ -20,26 +17,22 @@ pub struct Block<T: NetworkEvent, P: PublicId> {
 }
 
 impl<T: NetworkEvent, P: PublicId> Block<T, P> {
+    pub(super) fn new<'a, I>(observation: Observation<T, P>, proofs: I) -> Self
+    where
+        I: IntoIterator<Item = &'a Proof<P>>,
+        P: 'a,
+    {
+        Self {
+            payload: observation,
+            proofs: proofs.into_iter().cloned().collect(),
+        }
+    }
+
     pub fn payload(&self) -> &Observation<T, P> {
         &self.payload
     }
 
     pub fn proofs(&self) -> &BTreeSet<Proof<P>> {
         &self.proofs
-    }
-}
-
-pub(super) fn create<T: NetworkEvent, P: PublicId>(
-    observation: Observation<T, P>,
-    observation_info: &ObservationInfo<P>,
-) -> Block<T, P> {
-    let proofs = observation_info
-        .votes()
-        .map(|(_, proof)| proof.clone())
-        .collect();
-
-    Block {
-        payload: observation,
-        proofs,
     }
 }

@@ -1550,22 +1550,41 @@ impl Node {
             let genesis_ver = *genesis_info.our_info.version();
             let consensus_mode = parsec::ConsensusMode::Single;
 
-            if genesis_info.our_info.members().contains(self.id()) {
-                let _ = self.parsec_map.insert(
-                    genesis_ver,
-                    Parsec::from_genesis(full_id, &genesis_info.our_info.members(), consensus_mode),
-                );
+            #[cfg(not(feature = "mock"))]
+            let parsec = if genesis_info.our_info.members().contains(self.id()) {
+                Parsec::from_genesis(full_id, &genesis_info.our_info.members(), consensus_mode)
             } else {
-                let _ = self.parsec_map.insert(
-                    genesis_ver,
+                Parsec::from_existing(
+                    full_id,
+                    &genesis_info.our_info.members(),
+                    &genesis_info.latest_info.members(),
+                    consensus_mode,
+                )
+            };
+
+            #[cfg(feature = "mock")]
+            let parsec = {
+                let section_info = genesis_info.our_info.prefix().with_version(genesis_ver);
+
+                if genesis_info.our_info.members().contains(self.id()) {
+                    Parsec::from_genesis(
+                        section_info,
+                        full_id,
+                        &genesis_info.our_info.members(),
+                        consensus_mode,
+                    )
+                } else {
                     Parsec::from_existing(
+                        section_info,
                         full_id,
                         &genesis_info.our_info.members(),
                         &genesis_info.latest_info.members(),
                         consensus_mode,
-                    ),
-                );
-            }
+                    )
+                }
+            };
+
+            let _ = self.parsec_map.insert(genesis_ver, parsec);
 
             return Ok(true);
         }

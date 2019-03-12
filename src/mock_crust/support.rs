@@ -15,6 +15,7 @@ use super::crust::{
 };
 use crate::id::PublicId;
 use crate::messages::{DirectMessage, Message};
+use crate::parsec;
 use crate::CrustEvent;
 use maidsafe_utilities::{serialisation, SeededRng};
 use rand::Rng;
@@ -47,7 +48,10 @@ impl<UID: Uid> Network<UID> {
         } else {
             SeededRng::new()
         };
+
         unwrap!(safe_crypto::init_with_rng(&mut rng));
+        parsec::init();
+
         Network(Rc::new(RefCell::new(NetworkImpl {
             services: HashMap::new(),
             min_section_size: min_section_size,

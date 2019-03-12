@@ -6,17 +6,16 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{serialise, NetworkEvent, Proof, PublicId, SecretId};
-use fxhash::{FxHashMap, FxHashSet};
 pub use parsec::{ConsensusMode, Observation};
-use std::{
-    collections::{btree_map::BTreeMap, hash_map::Entry},
-    ops::Deref,
-};
+
+use super::{Block, NetworkEvent, Proof, PublicId, SecretId};
+use fxhash::FxHashSet;
+use maidsafe_utilities::serialisation;
+use serde::Serialize;
+use std::ops::Deref;
 
 /// Wrapper for `Observation` and optionally its creator, depending on the consensus mode.
-#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Debug)]
-#[serde(bound = "")]
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
 pub(super) enum ObservationHolder<T: NetworkEvent, P: PublicId> {
     Single {
         observation: Observation<T, P>,
@@ -35,13 +34,6 @@ impl<T: NetworkEvent, P: PublicId> ObservationHolder<T, P> {
             _ => ObservationHolder::Supermajority(observation),
         }
     }
-
-    pub fn into_observation(self) -> Observation<T, P> {
-        match self {
-            ObservationHolder::Single { observation, .. } => observation,
-            ObservationHolder::Supermajority(observation) => observation,
-        }
-    }
 }
 
 impl<T: NetworkEvent, P: PublicId> Deref for ObservationHolder<T, P> {
@@ -56,129 +48,79 @@ impl<T: NetworkEvent, P: PublicId> Deref for ObservationHolder<T, P> {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
-#[serde(bound = "")]
-pub(super) struct ObservationInfo<P: PublicId> {
-    votes: FxHashMap<P, VoteInfo<P>>,
-    consensus: Option<ConsensusInfo<P>>,
+#[derive(Clone, Debug)]
+pub(super) struct ObservationState<P: PublicId> {
+    votes: FxHashSet<Proof<P>>,
+    consensused: bool,
 }
 
-impl<P: PublicId> ObservationInfo<P> {
+impl<P: PublicId> ObservationState<P> {
     pub fn new() -> Self {
         Self {
-            votes: FxHashMap::default(),
-            consensus: None,
+            votes: FxHashSet::default(),
+            consensused: false,
         }
     }
 
     pub fn vote<T: NetworkEvent, S: SecretId<PublicId = P>>(
         &mut self,
         our_secret_id: &S,
-        observation: &Observation<T, P>,
-    ) {
-        let proof = our_secret_id.create_proof(&serialise(observation));
-
-        let mut knowledge = FxHashSet::default();
-        let _ = knowledge.insert(our_secret_id.public_id().clone());
-
-        let _ = self.votes.insert(
-            our_secret_id.public_id().clone(),
-            VoteInfo { proof, knowledge },
-        );
-    }
-
-    pub fn handle_gossip(&mut self, our_id: &P, gossip: ObservationInfo<P>) {
-        for (peer_id, new_vote) in gossip.votes {
-            match self.votes.entry(peer_id) {
-                Entry::Vacant(entry) => {
-                    let vote = entry.insert(new_vote);
-                    let _ = vote.knowledge.insert(our_id.clone());
-                }
-                Entry::Occupied(mut entry) => {
-                    let vote = entry.get_mut();
-                    vote.knowledge.extend(new_vote.knowledge);
-                }
-            }
-        }
-
-        if let Some(new_consensus) = gossip.consensus {
-            let consensus = self.consensus.get_or_insert(ConsensusInfo {
-                index: new_consensus.index,
-                knowledge: FxHashSet::default(),
-            });
-
-            consensus.knowledge.extend(new_consensus.knowledge);
-        }
-    }
-
-    pub fn create_gossip(&self, dst: &P) -> Option<Self> {
-        let votes: FxHashMap<_, _> = self
-            .votes
-            .iter()
-            .filter(|(_, vote)| !vote.knowledge.contains(dst))
-            .map(|(peer_id, vote)| (peer_id.clone(), vote.clone()))
-            .collect();
-
-        let consensus = self
-            .consensus
-            .as_ref()
-            .filter(|consensus| !consensus.knowledge.contains(dst))
-            .cloned();
-
-        if !votes.is_empty() || consensus.is_some() {
-            Some(Self { votes, consensus })
+        peers: &FxHashSet<P>,
+        consensus_mode: ConsensusMode,
+        observation: Observation<T, P>,
+    ) -> Option<Block<T, P>> {
+        let proof = our_secret_id.create_proof(&serialise(&observation));
+        if self.votes.insert(proof) {
+            self.compute_consensus(peers, consensus_mode, observation)
         } else {
             None
         }
     }
 
-    pub fn voted_for_by(&self, peer_id: &P) -> bool {
-        self.votes.contains_key(peer_id)
+    pub fn consensused(&self) -> bool {
+        self.consensused
     }
 
-    pub fn votes<'a>(&'a self) -> impl Iterator<Item = (&'a P, &'a Proof<P>)> {
-        self.votes
+    fn compute_consensus<T: NetworkEvent>(
+        &mut self,
+        peers: &FxHashSet<P>,
+        consensus_mode: ConsensusMode,
+        observation: Observation<T, P>,
+    ) -> Option<Block<T, P>> {
+        if self.consensused {
+            return None;
+        }
+
+        let num_valid_voters = self
+            .votes
             .iter()
-            .map(|(peer_id, vote)| (peer_id, &vote.proof))
-    }
+            .map(|proof| proof.public_id())
+            .filter(|peer_id| peers.contains(peer_id))
+            .count();
 
-    pub fn consensus_index(&self) -> Option<usize> {
-        self.consensus.as_ref().map(|consensus| consensus.index)
-    }
+        let consensused = match (&observation, consensus_mode) {
+            (&Observation::OpaquePayload(_), ConsensusMode::Single) => num_valid_voters > 0,
+            _ => is_more_than_two_thirds(num_valid_voters, peers.len()),
+        };
 
-    pub fn knows_consensus(&self, peer_id: &P) -> bool {
-        self.consensus
-            .as_ref()
-            .map(|consensus| consensus.knowledge.contains(peer_id))
-            .unwrap_or(false)
-    }
-
-    pub fn acknowledge_consensus(&mut self, peer_id: &P) {
-        if let Some(consensus) = self.consensus.as_mut() {
-            let _ = consensus.knowledge.insert(peer_id.clone());
+        if consensused {
+            self.consensused = true;
+            Some(Block::new(observation, &self.votes))
+        } else {
+            None
         }
     }
+}
 
-    pub fn decide_consensus(&mut self, our_id: &P, index: usize) {
-        let mut knowledge = FxHashSet::default();
-        let _ = knowledge.insert(our_id.clone());
+// Returns whether `small` is more than two thirds of `large`.
+fn is_more_than_two_thirds(small: usize, large: usize) -> bool {
+    3 * small > 2 * large
+}
 
-        self.consensus = Some(ConsensusInfo { index, knowledge });
+fn serialise<T: Serialize>(data: &T) -> Vec<u8> {
+    if let Ok(serialised) = serialisation::serialise(data) {
+        serialised
+    } else {
+        vec![]
     }
 }
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-#[serde(bound = "")]
-struct VoteInfo<P: PublicId> {
-    proof: Proof<P>,
-    knowledge: FxHashSet<P>,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-#[serde(bound = "")]
-struct ConsensusInfo<P: PublicId> {
-    index: usize,
-    knowledge: FxHashSet<P>,
-}
-
-pub(super) type ObservationMap<T, P> = BTreeMap<ObservationHolder<T, P>, ObservationInfo<P>>;

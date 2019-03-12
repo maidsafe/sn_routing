@@ -7,7 +7,8 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    ConsensusMode, NetworkEvent, Observation, Parsec, PublicId, Request, Response, SecretId,
+    init, Block, ConsensusMode, NetworkEvent, Observation, Parsec, PublicId, Request, Response,
+    SecretId,
 };
 use maidsafe_utilities::SeededRng;
 use rand::Rng;
@@ -20,6 +21,8 @@ use std::{
 
 #[test]
 fn smoke() {
+    init();
+
     let alice_id = PeerId(0);
     let bob_id = PeerId(1);
 
@@ -28,13 +31,18 @@ fn smoke() {
     let _ = genesis_group.insert(bob_id.clone());
 
     let mut alice = Parsec::from_genesis(
+        Default::default(),
         alice_id.clone(),
         &genesis_group,
         ConsensusMode::Supermajority,
     );
 
-    let mut bob =
-        Parsec::from_genesis(bob_id.clone(), &genesis_group, ConsensusMode::Supermajority);
+    let mut bob = Parsec::from_genesis(
+        Default::default(),
+        bob_id.clone(),
+        &genesis_group,
+        ConsensusMode::Supermajority,
+    );
 
     alice
         .vote_for(Observation::OpaquePayload(Payload(1)))
@@ -59,15 +67,17 @@ fn smoke() {
     bob.handle_response(&bob_id, response_1).unwrap();
     bob.handle_response(&bob_id, response_0).unwrap();
 
-    let alice_blocks = collect_block_payloads(&mut alice);
-    let bob_blocks = collect_block_payloads(&mut bob);
+    let alice_blocks: Vec<_> = poll_all(&mut alice).collect();
+    let bob_blocks: Vec<_> = poll_all(&mut bob).collect();
 
     assert_eq!(alice_blocks.len(), 3); // Genesis + Payload(1) + Payload(0)
     assert_eq!(alice_blocks, bob_blocks);
 }
 
 #[test]
-fn add_new_leader() {
+fn add_peer() {
+    init();
+
     let alice_id = PeerId(0);
     let bob_id = PeerId(1);
     let carol_id = PeerId(2);
@@ -76,20 +86,30 @@ fn add_new_leader() {
     let _ = genesis_group.insert(bob_id.clone());
     let _ = genesis_group.insert(carol_id.clone());
 
-    let mut bob =
-        Parsec::from_genesis(bob_id.clone(), &genesis_group, ConsensusMode::Supermajority);
+    let mut bob = Parsec::from_genesis(
+        Default::default(),
+        bob_id.clone(),
+        &genesis_group,
+        ConsensusMode::Supermajority,
+    );
     let mut carol = Parsec::from_genesis(
+        Default::default(),
         carol_id.clone(),
         &genesis_group,
         ConsensusMode::Supermajority,
     );
 
     let mut alice = Parsec::from_existing(
+        Default::default(),
         alice_id.clone(),
         &genesis_group,
         &genesis_group,
         ConsensusMode::Supermajority,
     );
+
+    let mut alice_blocks = vec![];
+    let mut bob_blocks = vec![];
+    let mut carol_blocks = vec![];
 
     assert!(!is_gossip_recipient(&bob, &alice_id));
     assert!(!is_gossip_recipient(&carol, &alice_id));
@@ -105,7 +125,9 @@ fn add_new_leader() {
     carol.vote_for(add_alice.clone()).unwrap();
 
     exchange_gossip(&mut bob, &mut carol);
-    exchange_gossip(&mut bob, &mut carol);
+
+    bob_blocks.extend(poll_all(&mut bob));
+    carol_blocks.extend(poll_all(&mut carol));
 
     assert!(is_gossip_recipient(&bob, &alice_id));
     assert!(is_gossip_recipient(&carol, &alice_id));
@@ -120,9 +142,9 @@ fn add_new_leader() {
     exchange_gossip(&mut carol, &mut alice);
     exchange_gossip(&mut carol, &mut bob);
 
-    let alice_blocks = collect_block_payloads(&mut alice);
-    let bob_blocks = collect_block_payloads(&mut bob);
-    let carol_blocks = collect_block_payloads(&mut carol);
+    alice_blocks.extend(poll_all(&mut alice));
+    bob_blocks.extend(poll_all(&mut bob));
+    carol_blocks.extend(poll_all(&mut carol));
 
     assert_eq!(alice_blocks.len(), 3);
     assert_eq!(alice_blocks, bob_blocks);
@@ -130,77 +152,28 @@ fn add_new_leader() {
 }
 
 #[test]
-fn remove_leader() {
+fn consensus_mode_single() {
+    init();
+
     let alice_id = PeerId(0);
     let bob_id = PeerId(1);
-    let carol_id = PeerId(2);
 
     let mut genesis_group = BTreeSet::new();
     let _ = genesis_group.insert(alice_id.clone());
     let _ = genesis_group.insert(bob_id.clone());
-    let _ = genesis_group.insert(carol_id.clone());
 
     let mut alice = Parsec::from_genesis(
+        Default::default(),
         alice_id.clone(),
         &genesis_group,
-        ConsensusMode::Supermajority,
+        ConsensusMode::Single,
     );
-    let mut bob =
-        Parsec::from_genesis(bob_id.clone(), &genesis_group, ConsensusMode::Supermajority);
-    let mut carol = Parsec::from_genesis(
-        carol_id.clone(),
+    let mut bob = Parsec::from_genesis(
+        Default::default(),
+        bob_id.clone(),
         &genesis_group,
-        ConsensusMode::Supermajority,
+        ConsensusMode::Single,
     );
-
-    // Everybody cast a vote...
-    let opaque = Observation::OpaquePayload(Payload(0));
-    alice.vote_for(opaque.clone()).unwrap();
-    bob.vote_for(opaque.clone()).unwrap();
-    carol.vote_for(opaque).unwrap();
-
-    // ...but Bob, who is not the leader, is the only one who gets all of them.
-    exchange_gossip(&mut alice, &mut bob);
-    exchange_gossip(&mut carol, &mut bob);
-
-    assert!(collect_block_payloads(&mut alice).is_empty());
-    assert!(collect_block_payloads(&mut bob).is_empty());
-    assert!(collect_block_payloads(&mut carol).is_empty());
-
-    // Now vote to remove Alice, who is the current leader. Again, only Bob gets
-    // all the votes.
-    let remove_alice = Observation::Remove {
-        peer_id: alice_id,
-        related_info: vec![],
-    };
-    alice.vote_for(remove_alice.clone()).unwrap();
-    bob.vote_for(remove_alice.clone()).unwrap();
-    carol.vote_for(remove_alice).unwrap();
-
-    exchange_gossip(&mut alice, &mut bob);
-    exchange_gossip(&mut carol, &mut bob);
-
-    // Bob is the leader for the purpose of deciding Alice's removal. After Alice is removed, he
-    // becomes the new leader and should also decide all past votes not decided by the previous
-    // leader.
-    let bob_blocks = collect_block_payloads(&mut bob);
-    let carol_blocks = collect_block_payloads(&mut carol);
-
-    assert_eq!(bob_blocks.len(), 3); // Genesis + Payload(0) + Remove(Alice)
-    assert_eq!(bob_blocks, carol_blocks);
-}
-
-#[test]
-fn consensus_mode_single() {
-    let alice_id = PeerId(0);
-    let bob_id = PeerId(1);
-
-    let mut genesis_group = BTreeSet::new();
-    let _ = genesis_group.insert(alice_id.clone());
-    let _ = genesis_group.insert(bob_id.clone());
-
-    let mut alice = Parsec::from_genesis(alice_id.clone(), &genesis_group, ConsensusMode::Single);
-    let mut bob = Parsec::from_genesis(bob_id.clone(), &genesis_group, ConsensusMode::Single);
 
     // First cast votes with different payloads. They should all get consensused.
     alice
@@ -211,8 +184,8 @@ fn consensus_mode_single() {
 
     exchange_gossip(&mut bob, &mut alice);
 
-    let alice_blocks = collect_block_payloads(&mut alice);
-    let bob_blocks = collect_block_payloads(&mut bob);
+    let alice_blocks: Vec<_> = poll_all(&mut alice).collect();
+    let bob_blocks: Vec<_> = poll_all(&mut bob).collect();
     assert_eq!(alice_blocks.len(), 3); // Genesis + Payload(0) + Payload(1)
     assert_eq!(alice_blocks, bob_blocks);
 
@@ -225,14 +198,16 @@ fn consensus_mode_single() {
 
     exchange_gossip(&mut bob, &mut alice);
 
-    let alice_blocks = collect_block_payloads(&mut alice);
-    let bob_blocks = collect_block_payloads(&mut bob);
+    let alice_blocks: Vec<_> = poll_all(&mut alice).collect();
+    let bob_blocks: Vec<_> = poll_all(&mut bob).collect();
     assert_eq!(alice_blocks.len(), 2); // Alice's Payload(2) + Bob's Payload(2)
     assert_eq!(alice_blocks, bob_blocks);
 }
 
 #[test]
 fn randomized_static_network() {
+    init();
+
     let num_peers = 10;
     let num_votes = 10;
     let gossip_prob = 0.1;
@@ -246,6 +221,7 @@ fn randomized_static_network() {
         .iter()
         .map(|peer_id| {
             let peer = Peer::from(Parsec::from_genesis(
+                Default::default(),
                 peer_id.clone(),
                 &peer_ids,
                 ConsensusMode::Supermajority,
@@ -369,12 +345,12 @@ struct Payload(usize);
 
 impl NetworkEvent for Payload {}
 
-struct Peer<T: NetworkEvent, S: SecretId> {
-    parsec: Parsec<T, S>,
-    blocks: Vec<Observation<T, S::PublicId>>,
+struct Peer {
+    parsec: Parsec<Payload, PeerId>,
+    blocks: Vec<Observation<Payload, PeerId>>,
 }
 
-impl<T: NetworkEvent, S: SecretId> Peer<T, S> {
+impl Peer {
     fn poll(&mut self) {
         while let Some(block) = self.parsec.poll() {
             self.blocks.push(block.payload().clone());
@@ -382,8 +358,8 @@ impl<T: NetworkEvent, S: SecretId> Peer<T, S> {
     }
 }
 
-impl<T: NetworkEvent, S: SecretId> From<Parsec<T, S>> for Peer<T, S> {
-    fn from(parsec: Parsec<T, S>) -> Self {
+impl From<Parsec<Payload, PeerId>> for Peer {
+    fn from(parsec: Parsec<Payload, PeerId>) -> Self {
         Peer {
             parsec,
             blocks: vec![],
@@ -391,51 +367,34 @@ impl<T: NetworkEvent, S: SecretId> From<Parsec<T, S>> for Peer<T, S> {
     }
 }
 
-impl<T: NetworkEvent, S: SecretId> Deref for Peer<T, S> {
-    type Target = Parsec<T, S>;
+impl Deref for Peer {
+    type Target = Parsec<Payload, PeerId>;
     fn deref(&self) -> &Self::Target {
         &self.parsec
     }
 }
 
-impl<T: NetworkEvent, S: SecretId> DerefMut for Peer<T, S> {
+impl DerefMut for Peer {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.parsec
     }
 }
 
-fn collect_block_payloads<T: NetworkEvent, S: SecretId>(
-    parsec: &mut Parsec<T, S>,
-) -> Vec<Observation<T, S::PublicId>> {
-    let mut blocks = Vec::new();
-    while let Some(block) = parsec.poll() {
-        blocks.push(block.payload().clone());
-    }
-
-    blocks
-}
-
-fn pick_gossip_recipient<'a, R: Rng, T: NetworkEvent, S: SecretId>(
+fn pick_gossip_recipient<'a, R: Rng>(
     rng: &mut R,
-    src: &'a Parsec<T, S>,
-) -> Option<&'a S::PublicId> {
+    src: &'a Parsec<Payload, PeerId>,
+) -> Option<&'a PeerId> {
     let recipients: Vec<_> = src.gossip_recipients().collect();
     rng.choose(&recipients[..]).cloned()
 }
 
-fn is_gossip_recipient<T: NetworkEvent, S: SecretId>(
-    parsec: &Parsec<T, S>,
-    peer_id: &S::PublicId,
-) -> bool {
+fn is_gossip_recipient(parsec: &Parsec<Payload, PeerId>, peer_id: &PeerId) -> bool {
     parsec
         .gossip_recipients()
         .any(|recipient_id| recipient_id == peer_id)
 }
 
-fn check_consensus<T: NetworkEvent, S: SecretId>(
-    peers: &BTreeMap<S::PublicId, Peer<T, S>>,
-    expected_votes: usize,
-) -> bool {
+fn check_consensus(peers: &BTreeMap<PeerId, Peer>, expected_votes: usize) -> bool {
     let mut iter = peers.values();
     let first = iter.next().unwrap();
 
@@ -448,19 +407,33 @@ fn check_consensus<T: NetworkEvent, S: SecretId>(
         .values()
         .all(|peer| peer.blocks.len() == expected_votes)
 }
-fn exchange_gossip<T: NetworkEvent, S: SecretId>(src: &mut Parsec<T, S>, dst: &mut Parsec<T, S>) {
+
+fn exchange_gossip(src: &mut Parsec<Payload, PeerId>, dst: &mut Parsec<Payload, PeerId>) {
     let request = src.create_gossip(dst.our_pub_id()).unwrap();
     let response = dst.handle_request(src.our_pub_id(), request).unwrap();
     src.handle_response(dst.our_pub_id(), response).unwrap();
 }
 
-enum MessageContent<T: NetworkEvent, P: PublicId> {
-    Request(Request<T, P>),
-    Response(Response<T, P>),
+enum MessageContent {
+    Request(Request<Payload, PeerId>),
+    Response(Response<Payload, PeerId>),
 }
 
-struct Message<T: NetworkEvent, P: PublicId> {
-    src: P,
-    dst: P,
-    content: MessageContent<T, P>,
+struct Message {
+    src: PeerId,
+    dst: PeerId,
+    content: MessageContent,
+}
+
+struct PollAll<'a>(&'a mut Parsec<Payload, PeerId>);
+
+impl<'a> Iterator for PollAll<'a> {
+    type Item = Block<Payload, PeerId>;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.poll()
+    }
+}
+
+fn poll_all(parsec: &mut Parsec<Payload, PeerId>) -> PollAll {
+    PollAll(parsec)
 }
