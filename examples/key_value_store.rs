@@ -143,7 +143,7 @@ Options:
             let _ = stdin.read_line(&mut command);
 
             let parts = command
-                .trim_right_matches(|c| c == '\r' || c == '\n')
+                .trim_end_matches(|c| c == '\r' || c == '\n')
                 .split(' ')
                 .collect::<Vec<_>>();
 
