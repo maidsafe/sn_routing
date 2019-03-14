@@ -60,7 +60,7 @@ use std::{cmp, fmt, iter, mem};
 
 /// Time (in seconds) after which a `Tick` event is sent.
 const TICK_TIMEOUT_SECS: u64 = 15;
-const POKE_TIMEOUT_SECS: u64 = 30;
+const POKE_TIMEOUT_SECS: u64 = 60;
 const GOSSIP_TIMEOUT_SECS: u64 = 2;
 const RECONNECT_PEER_TIMEOUT_SECS: u64 = 20;
 //const MAX_IDLE_ROUNDS: u64 = 100;
