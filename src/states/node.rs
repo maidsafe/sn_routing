@@ -2751,7 +2751,7 @@ impl Node {
         let par_req = self
             .parsec_map
             .get_mut(&version)
-            .and_then(|par| par.create_gossip(&gossip_target).ok());
+            .and_then(|par| par.create_gossip(Some(&gossip_target)).ok());
         if let Some(par_req) = par_req {
             self.send_message(
                 &gossip_target,

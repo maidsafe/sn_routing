@@ -9,10 +9,12 @@
 pub use parsec::{ConsensusMode, Observation};
 
 use super::{Block, NetworkEvent, Proof, PublicId, SecretId};
-use fxhash::FxHashSet;
 use maidsafe_utilities::serialisation;
 use serde::Serialize;
-use std::ops::Deref;
+use std::{
+    collections::{BTreeSet, HashSet},
+    ops::Deref,
+};
 
 /// Wrapper for `Observation` and optionally its creator, depending on the consensus mode.
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
@@ -50,14 +52,14 @@ impl<T: NetworkEvent, P: PublicId> Deref for ObservationHolder<T, P> {
 
 #[derive(Clone, Debug)]
 pub(super) struct ObservationState<P: PublicId> {
-    votes: FxHashSet<Proof<P>>,
+    votes: HashSet<Proof<P>>,
     consensused: bool,
 }
 
 impl<P: PublicId> ObservationState<P> {
     pub fn new() -> Self {
         Self {
-            votes: FxHashSet::default(),
+            votes: HashSet::default(),
             consensused: false,
         }
     }
@@ -65,7 +67,7 @@ impl<P: PublicId> ObservationState<P> {
     pub fn vote<T: NetworkEvent, S: SecretId<PublicId = P>>(
         &mut self,
         our_secret_id: &S,
-        peers: &FxHashSet<P>,
+        peers: &BTreeSet<P>,
         consensus_mode: ConsensusMode,
         observation: Observation<T, P>,
     ) -> Option<Block<T, P>> {
@@ -83,7 +85,7 @@ impl<P: PublicId> ObservationState<P> {
 
     fn compute_consensus<T: NetworkEvent>(
         &mut self,
-        peers: &FxHashSet<P>,
+        peers: &BTreeSet<P>,
         consensus_mode: ConsensusMode,
         observation: Observation<T, P>,
     ) -> Option<Block<T, P>> {

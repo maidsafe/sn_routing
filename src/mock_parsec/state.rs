@@ -13,8 +13,11 @@ use super::{
     Block, NetworkEvent, PublicId,
 };
 use crate::{VersionedPrefix, XorName};
-use fxhash::FxHashMap;
-use std::{any::Any, cell::RefCell, collections::BTreeMap};
+use std::{
+    any::Any,
+    cell::RefCell,
+    collections::{BTreeMap, HashMap},
+};
 
 pub(super) struct SectionState<T: NetworkEvent, P: PublicId> {
     pub observations: BTreeMap<ObservationHolder<T, P>, ObservationState<P>>,
@@ -30,7 +33,7 @@ impl<T: NetworkEvent, P: PublicId> SectionState<T, P> {
     }
 }
 
-type NetworkState<T, P> = FxHashMap<VersionedPrefix<XorName>, SectionState<T, P>>;
+type NetworkState<T, P> = HashMap<VersionedPrefix<XorName>, SectionState<T, P>>;
 
 thread_local! {
     static STATE: RefCell<Option<Box<dyn Any>>> = RefCell::new(None);
@@ -55,7 +58,7 @@ where
                 let mut section_state = SectionState::new();
                 let result = f(&mut section_state);
 
-                let mut network_state = FxHashMap::default();
+                let mut network_state = HashMap::new();
                 let _ = network_state.insert(section_info, section_state);
                 *opt_network_state = Some(Box::new(network_state));
 
@@ -63,7 +66,7 @@ where
             }
             Some(dyn_network_state) => {
                 let network_state: &mut NetworkState<T, P> =
-                    dyn_network_state.downcast_mut().unwrap();
+                    unwrap!(dyn_network_state.downcast_mut());
                 let section_state = network_state
                     .entry(section_info)
                     .or_insert_with(SectionState::new);

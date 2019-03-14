@@ -436,7 +436,6 @@ fn client_puts(network: &mut Network<PublicId>, nodes: &mut [TestNode], min_sect
 }
 
 #[test]
-#[ignore]
 fn aggressive_churn() {
     let min_section_size = 4;
     let target_section_num = 5;

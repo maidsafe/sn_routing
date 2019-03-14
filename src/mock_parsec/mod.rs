@@ -22,7 +22,6 @@ pub use parsec::{NetworkEvent, Proof, PublicId, SecretId};
 
 use self::observation::{ObservationHolder, ObservationState};
 use crate::{VersionedPrefix, XorName};
-use fxhash::FxHashSet;
 use std::{
     collections::{BTreeMap, BTreeSet},
     marker::PhantomData,
@@ -37,7 +36,7 @@ pub fn init() {
 pub struct Parsec<T: NetworkEvent, S: SecretId> {
     section_info: VersionedPrefix<XorName>,
     our_id: S,
-    peer_list: FxHashSet<S::PublicId>,
+    peer_list: BTreeSet<S::PublicId>,
     consensus_mode: ConsensusMode,
     first_unconsensused: usize,
     first_unpolled: usize,
@@ -120,7 +119,7 @@ where
 
         self.observations
             .entry(holder)
-            .or_insert(ObservationInfo::new())
+            .or_insert_with(ObservationInfo::new)
             .our = true;
         self.update_blocks();
 
@@ -142,8 +141,8 @@ where
     }
 
     pub fn create_gossip(
-        &mut self,
-        _peer_id: &S::PublicId,
+        &self,
+        _peer_id: Option<&S::PublicId>,
     ) -> Result<Request<T, S::PublicId>, Error> {
         Ok(Request::new())
     }
@@ -172,7 +171,7 @@ where
                 self.first_unpolled += 1;
                 self.observations
                     .entry(holder.clone())
-                    .or_insert(ObservationInfo::new())
+                    .or_insert_with(ObservationInfo::new)
                     .state = ConsensusState::Polled;
 
                 Some(block.clone())
@@ -219,7 +218,7 @@ where
                 self.first_unconsensused += 1;
                 self.observations
                     .entry(holder.clone())
-                    .or_insert(ObservationInfo::new())
+                    .or_insert_with(ObservationInfo::new)
                     .set_consensused();
             }
         })

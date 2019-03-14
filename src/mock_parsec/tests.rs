@@ -51,7 +51,7 @@ fn smoke() {
     bob.vote_for(Observation::OpaquePayload(Payload(1)))
         .unwrap();
 
-    let request = bob.create_gossip(&alice_id).unwrap();
+    let request = bob.create_gossip(Some(&alice_id)).unwrap();
     let response_0 = alice.handle_request(&bob_id, request).unwrap();
 
     alice
@@ -60,7 +60,7 @@ fn smoke() {
     bob.vote_for(Observation::OpaquePayload(Payload(0)))
         .unwrap();
 
-    let request = bob.create_gossip(&alice_id).unwrap();
+    let request = bob.create_gossip(Some(&alice_id)).unwrap();
     let response_1 = alice.handle_request(&bob_id, request).unwrap();
 
     // Deliver the responses in reverse order.
@@ -215,7 +215,7 @@ fn randomized_static_network() {
 
     let mut rng = SeededRng::new();
 
-    let peer_ids: BTreeSet<_> = (0..num_peers).map(|num| PeerId(num)).collect();
+    let peer_ids: BTreeSet<_> = (0..num_peers).map(PeerId).collect();
 
     let mut peers: BTreeMap<_, _> = peer_ids
         .iter()
@@ -255,7 +255,7 @@ fn randomized_static_network() {
                     continue;
                 };
 
-                let request = peer.create_gossip(&dst).unwrap();
+                let request = peer.create_gossip(Some(&dst)).unwrap();
 
                 messages.push(Message {
                     src: peer_id.clone(),
@@ -313,9 +313,7 @@ impl SecretId for PeerId {
         self
     }
 
-    fn sign_detached(&self, _: &[u8]) -> <Self::PublicId as PublicId>::Signature {
-        ()
-    }
+    fn sign_detached(&self, _: &[u8]) -> <Self::PublicId as PublicId>::Signature {}
 }
 
 impl PublicId for PeerId {
@@ -396,7 +394,7 @@ fn is_gossip_recipient(parsec: &Parsec<Payload, PeerId>, peer_id: &PeerId) -> bo
 
 fn check_consensus(peers: &BTreeMap<PeerId, Peer>, expected_votes: usize) -> bool {
     let mut iter = peers.values();
-    let first = iter.next().unwrap();
+    let first = unwrap!(iter.next());
 
     for other in iter {
         let len = cmp::min(first.blocks.len(), other.blocks.len());
@@ -409,7 +407,7 @@ fn check_consensus(peers: &BTreeMap<PeerId, Peer>, expected_votes: usize) -> boo
 }
 
 fn exchange_gossip(src: &mut Parsec<Payload, PeerId>, dst: &mut Parsec<Payload, PeerId>) {
-    let request = src.create_gossip(dst.our_pub_id()).unwrap();
+    let request = src.create_gossip(Some(dst.our_pub_id())).unwrap();
     let response = dst.handle_request(src.our_pub_id(), request).unwrap();
     src.handle_response(dst.our_pub_id(), response).unwrap();
 }
