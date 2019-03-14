@@ -1564,18 +1564,18 @@ impl Node {
 
             #[cfg(feature = "mock")]
             let parsec = {
-                let section_info = genesis_info.our_info.prefix().with_version(genesis_ver);
+                let section_hash = *genesis_info.our_info.hash();
 
                 if genesis_info.our_info.members().contains(self.id()) {
                     Parsec::from_genesis(
-                        section_info,
+                        section_hash,
                         full_id,
                         &genesis_info.our_info.members(),
                         consensus_mode,
                     )
                 } else {
                     Parsec::from_existing(
-                        section_info,
+                        section_hash,
                         full_id,
                         &genesis_info.our_info.members(),
                         &genesis_info.latest_info.members(),

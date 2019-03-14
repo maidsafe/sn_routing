@@ -21,7 +21,7 @@ pub use self::{
 pub use parsec::{NetworkEvent, Proof, PublicId, SecretId};
 
 use self::observation::{ObservationHolder, ObservationState};
-use crate::{VersionedPrefix, XorName};
+use crate::sha3::Digest256;
 use std::{
     collections::{BTreeMap, BTreeSet},
     marker::PhantomData,
@@ -34,7 +34,7 @@ pub fn init() {
 }
 
 pub struct Parsec<T: NetworkEvent, S: SecretId> {
-    section_info: VersionedPrefix<XorName>,
+    section_hash: Digest256,
     our_id: S,
     peer_list: BTreeSet<S::PublicId>,
     consensus_mode: ConsensusMode,
@@ -50,13 +50,13 @@ where
     S::PublicId: 'static,
 {
     pub fn from_genesis(
-        section_info: VersionedPrefix<XorName>,
+        section_hash: Digest256,
         our_id: S,
         genesis_group: &BTreeSet<S::PublicId>,
         consensus_mode: ConsensusMode,
     ) -> Self {
         let mut parsec = Self {
-            section_info,
+            section_hash,
             our_id,
             peer_list: genesis_group.iter().cloned().collect(),
             consensus_mode,
@@ -72,14 +72,14 @@ where
     }
 
     pub fn from_existing(
-        section_info: VersionedPrefix<XorName>,
+        section_hash: Digest256,
         our_id: S,
         genesis_group: &BTreeSet<S::PublicId>,
         _section: &BTreeSet<S::PublicId>,
         consensus_mode: ConsensusMode,
     ) -> Self {
         Self {
-            section_info,
+            section_hash,
             our_id,
             peer_list: genesis_group.iter().cloned().collect(),
             consensus_mode,
@@ -101,7 +101,7 @@ where
             self.consensus_mode,
         );
 
-        state::with(self.section_info, |state| {
+        state::with(self.section_hash, |state| {
             if let Some(block) = state
                 .observations
                 .entry(holder.clone())
@@ -166,7 +166,7 @@ where
     }
 
     pub fn poll(&mut self) -> Option<Block<T, S::PublicId>> {
-        state::with(self.section_info, |state| {
+        state::with(self.section_hash, |state| {
             if let Some((block, holder)) = state.blocks.get(self.first_unpolled) {
                 self.first_unpolled += 1;
                 self.observations
@@ -192,7 +192,7 @@ where
     }
 
     pub fn has_unconsensused_observations(&self) -> bool {
-        state::with::<T, S::PublicId, _, _>(self.section_info, |section_state| {
+        state::with::<T, S::PublicId, _, _>(self.section_hash, |section_state| {
             section_state.observations.iter().any(|(holder, state)| {
                 !state.consensused()
                     || self
@@ -212,7 +212,7 @@ where
     }
 
     fn update_blocks(&mut self) {
-        state::with(self.section_info, |state| {
+        state::with(self.section_hash, |state| {
             while let Some((block, holder)) = state.blocks.get(self.first_unconsensused) {
                 self.handle_consensus(block.payload());
                 self.first_unconsensused += 1;

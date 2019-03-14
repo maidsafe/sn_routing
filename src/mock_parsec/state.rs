@@ -12,7 +12,7 @@ use super::{
     observation::{ObservationHolder, ObservationState},
     Block, NetworkEvent, PublicId,
 };
-use crate::{VersionedPrefix, XorName};
+use crate::sha3::Digest256;
 use std::{
     any::Any,
     cell::RefCell,
@@ -33,7 +33,7 @@ impl<T: NetworkEvent, P: PublicId> SectionState<T, P> {
     }
 }
 
-type NetworkState<T, P> = HashMap<VersionedPrefix<XorName>, SectionState<T, P>>;
+type NetworkState<T, P> = HashMap<Digest256, SectionState<T, P>>;
 
 thread_local! {
     static STATE: RefCell<Option<Box<dyn Any>>> = RefCell::new(None);
@@ -45,7 +45,7 @@ pub(super) fn reset() {
     })
 }
 
-pub(super) fn with<T, P, F, R>(section_info: VersionedPrefix<XorName>, f: F) -> R
+pub(super) fn with<T, P, F, R>(section_hash: Digest256, f: F) -> R
 where
     T: NetworkEvent + 'static,
     P: PublicId + 'static,
@@ -59,7 +59,7 @@ where
                 let result = f(&mut section_state);
 
                 let mut network_state = HashMap::new();
-                let _ = network_state.insert(section_info, section_state);
+                let _ = network_state.insert(section_hash, section_state);
                 *opt_network_state = Some(Box::new(network_state));
 
                 result
@@ -68,7 +68,7 @@ where
                 let network_state: &mut NetworkState<T, P> =
                     unwrap!(dyn_network_state.downcast_mut());
                 let section_state = network_state
-                    .entry(section_info)
+                    .entry(section_hash)
                     .or_insert_with(SectionState::new);
                 f(section_state)
             }
