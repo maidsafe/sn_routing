@@ -1001,6 +1001,7 @@ mod tests {
         let prefix = Prefix::new(0, *full_id_0.public_id().name());
         let full_id_1 = FullId::new();
         let full_id_2 = FullId::new();
+        let full_id_3 = FullId::new();
         let irrelevant_full_id = FullId::new();
         let data_bytes: Vec<u8> = (0..10).collect();
         let data = ImmutableData::new(data_bytes);
@@ -1023,6 +1024,7 @@ mod tests {
                 *full_id_0.public_id(),
                 *full_id_1.public_id(),
                 *full_id_2.public_id(),
+                *full_id_3.public_id(),
             ]
             .into_iter()
             .collect(),
@@ -1049,30 +1051,33 @@ mod tests {
             .contains_id(irrelevant_full_id.public_id()));
         assert!(!signed_msg.check_fully_signed(min_section_size));
 
-        // Add a valid signature for ID 1 and an invalid one for ID 2
-        match unwrap!(signed_msg
-            .routing_message()
-            .to_signature(full_id_1.signing_private_key(),))
-        {
-            DirectMessage::MessageSignature(hash, sig) => {
-                let serialised_msg = unwrap!(serialise(signed_msg.routing_message()));
-                assert_eq!(hash, safe_crypto::hash(&serialised_msg));
-                signed_msg.add_signature(*full_id_1.public_id(), sig);
+        // Add a valid signature for IDs 1 and 2 and an invalid one for ID 3
+        for full_id in &[full_id_1, full_id_2] {
+            match unwrap!(signed_msg
+                .routing_message()
+                .to_signature(full_id.signing_private_key()))
+            {
+                DirectMessage::MessageSignature(hash, sig) => {
+                    let serialised_msg = unwrap!(serialise(signed_msg.routing_message()));
+                    assert_eq!(hash, safe_crypto::hash(&serialised_msg));
+                    signed_msg.add_signature(*full_id.public_id(), sig);
+                }
+                msg => panic!("Unexpected message: {:?}", msg),
             }
-            msg => panic!("Unexpected message: {:?}", msg),
         }
+
         let bad_sig = Signature::from_bytes([0; SIGNATURE_BYTES]);
-        signed_msg.add_signature(*full_id_2.public_id(), bad_sig);
-        assert_eq!(signed_msg.signatures.len(), 3);
+        signed_msg.add_signature(*full_id_3.public_id(), bad_sig);
+        assert_eq!(signed_msg.signatures.len(), 4);
         assert!(signed_msg.check_fully_signed(min_section_size));
 
         // Check the bad signature got removed (by check_fully_signed) properly.
-        assert_eq!(signed_msg.signatures.len(), 2);
-        assert!(!signed_msg.signatures.contains_id(full_id_2.public_id()));
+        assert_eq!(signed_msg.signatures.len(), 3);
+        assert!(!signed_msg.signatures.contains_id(full_id_3.public_id()));
 
         // Check an irrelevant signature can't be added.
         signed_msg.add_signature(*irrelevant_full_id.public_id(), irrelevant_sig);
-        assert_eq!(signed_msg.signatures.len(), 2);
+        assert_eq!(signed_msg.signatures.len(), 3);
         assert!(!signed_msg
             .signatures
             .contains_id(irrelevant_full_id.public_id(),));

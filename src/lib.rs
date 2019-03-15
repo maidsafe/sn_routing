@@ -218,9 +218,9 @@ pub const TYPE_TAG_DNS_PACKET: u64 = 5;
 /// Quorum is defined as having strictly greater than `QUORUM_NUMERATOR / QUORUM_DENOMINATOR`
 /// agreement; using only integer arithmetic a quorum can be checked with
 /// `votes * QUORUM_DENOMINATOR > voters * QUORUM_NUMERATOR`.
-pub const QUORUM_NUMERATOR: usize = 1;
+pub const QUORUM_NUMERATOR: usize = 2;
 /// See `QUORUM_NUMERATOR`.
-pub const QUORUM_DENOMINATOR: usize = 2;
+pub const QUORUM_DENOMINATOR: usize = 3;
 
 /// Default minimal section size.
 pub const MIN_SECTION_SIZE: usize = 3;
