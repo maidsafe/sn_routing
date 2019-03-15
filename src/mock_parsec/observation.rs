@@ -120,9 +120,5 @@ fn is_more_than_two_thirds(small: usize, large: usize) -> bool {
 }
 
 fn serialise<T: Serialize>(data: &T) -> Vec<u8> {
-    if let Ok(serialised) = serialisation::serialise(data) {
-        serialised
-    } else {
-        vec![]
-    }
+    unwrap!(serialisation::serialise(data))
 }

@@ -192,15 +192,18 @@ where
     }
 
     pub fn has_unconsensused_observations(&self) -> bool {
-        state::with::<T, S::PublicId, _, _>(self.section_hash, |section_state| {
-            section_state.observations.iter().any(|(holder, state)| {
-                !state.consensused()
-                    || self
-                        .observations
-                        .get(&*holder)
-                        .map(|info| info.state == ConsensusState::Unconsensused)
-                        .unwrap_or(true)
-            })
+        state::with::<T, S::PublicId, _, _>(self.section_hash, |state| {
+            state
+                .observations
+                .iter()
+                .any(|(holder, observation_state)| {
+                    !observation_state.consensused()
+                        || self
+                            .observations
+                            .get(&*holder)
+                            .map(|info| info.state == ConsensusState::Unconsensused)
+                            .unwrap_or(true)
+                })
         })
     }
 
@@ -241,7 +244,6 @@ where
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
-#[serde(bound = "")]
 pub struct Request<T: NetworkEvent, P: PublicId>(PhantomData<(T, P)>);
 
 impl<T: NetworkEvent, P: PublicId> Request<T, P> {
@@ -251,7 +253,6 @@ impl<T: NetworkEvent, P: PublicId> Request<T, P> {
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
-#[serde(bound = "")]
 pub struct Response<T: NetworkEvent, P: PublicId>(PhantomData<(T, P)>);
 
 impl<T: NetworkEvent, P: PublicId> Response<T, P> {
