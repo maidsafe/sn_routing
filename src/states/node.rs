@@ -24,6 +24,7 @@ use crate::messages::{
     UserMessageCache, DEFAULT_PRIORITY, MAX_PARTS, MAX_PART_LEN,
 };
 use crate::outbox::{EventBox, EventBuf};
+use crate::parsec::{self, Parsec};
 use crate::peer_manager::{ConnectionInfoPreparedResult, Peer, PeerManager, PeerState};
 use crate::rate_limiter::RateLimiter;
 use crate::resource_prover::{ResourceProver, RESOURCE_PROOF_DURATION_SECS};
@@ -46,7 +47,6 @@ use itertools::Itertools;
 use log::LogLevel;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation;
-use parsec::{self, Parsec};
 use rand::{self, Rng};
 use safe_crypto::{SharedSecretKey, Signature};
 use std::collections::BTreeMap;
@@ -60,6 +60,7 @@ use std::{cmp, fmt, iter, mem};
 
 /// Time (in seconds) after which a `Tick` event is sent.
 const TICK_TIMEOUT_SECS: u64 = 15;
+const POKE_TIMEOUT_SECS: u64 = 60;
 const GOSSIP_TIMEOUT_SECS: u64 = 2;
 const RECONNECT_PEER_TIMEOUT_SECS: u64 = 20;
 //const MAX_IDLE_ROUNDS: u64 = 100;
@@ -122,6 +123,7 @@ pub struct Node {
     disable_resource_proof: bool,
     parsec_map: BTreeMap<u64, Parsec<NetworkEvent, FullId>>,
     gen_pfx_info: Option<GenesisPfxInfo>,
+    poke_timer_token: Option<u64>,
     gossip_timer_token: Option<u64>,
     chain: Chain,
     // Peers we want to try reconnecting to
@@ -251,6 +253,7 @@ impl Node {
             disable_resource_proof: dev_config.disable_resource_proof,
             parsec_map: Default::default(),
             gen_pfx_info: None,
+            poke_timer_token: None,
             gossip_timer_token,
             chain: Chain::with_min_sec_size(min_section_size),
             reconnect_peers: Default::default(),
@@ -608,6 +611,7 @@ impl Node {
             msg @ BootstrapResponse(_) | msg @ ProxyRateLimitExceeded { .. } => {
                 debug!("{} Unhandled direct message: {:?}", self, msg);
             }
+            ParsecPoke(version) => self.handle_parsec_poke(version, pub_id),
             ParsecRequest(version, par_request) => {
                 self.handle_parsec_request(version, par_request, pub_id, outbox)?;
             }
@@ -616,6 +620,10 @@ impl Node {
             }
         }
         Ok(())
+    }
+
+    fn handle_parsec_poke(&mut self, msg_version: u64, pub_id: PublicId) {
+        self.send_parsec_gossip(Some((msg_version, pub_id)))
     }
 
     fn handle_parsec_request(
@@ -722,6 +730,7 @@ impl Node {
         let mut our_pfx = *self.chain.our_prefix();
         while let Some(event) = self.chain.poll()? {
             trace!("{} Handle accumulated event: {:?}", self, event);
+
             match event {
                 NetworkEvent::Online(pub_id, client_auth) => {
                     self.handle_online_event(pub_id, client_auth, outbox)?;
@@ -1405,7 +1414,7 @@ impl Node {
                 src_name,
                 dst,
             ),
-            (NodeApproval(gen_info), Section(_), Client { .. }) => {
+            (NodeApproval(gen_info), PrefixSection(_), Client { .. }) => {
                 self.handle_node_approval(gen_info, outbox)
             }
             (NeighbourInfo(_digest), ManagedNode(_), PrefixSection(_)) => Ok(()),
@@ -1482,7 +1491,7 @@ impl Node {
             new_pub_id
         );
 
-        let src = Authority::Section(*new_pub_id.name());
+        let mut src = Authority::PrefixSection(Default::default());
         if self.gen_pfx_info.is_none() && self.is_first_node {
             let our_members = vec![*self.full_id.public_id(), new_pub_id]
                 .iter()
@@ -1505,6 +1514,9 @@ impl Node {
                     Default::default()
                 },
             };
+            if self.chain.is_member() {
+                src = Authority::PrefixSection(*trimmed_info.our_info.prefix());
+            }
             let content = MessageContent::NodeApproval(trimmed_info);
             if let Err(error) = self.send_routing_message(src, new_client_auth, content) {
                 debug!(
@@ -1541,22 +1553,41 @@ impl Node {
             let genesis_ver = *genesis_info.our_info.version();
             let consensus_mode = parsec::ConsensusMode::Single;
 
-            if genesis_info.our_info.members().contains(self.id()) {
-                let _ = self.parsec_map.insert(
-                    genesis_ver,
-                    Parsec::from_genesis(full_id, &genesis_info.our_info.members(), consensus_mode),
-                );
+            #[cfg(not(feature = "mock"))]
+            let parsec = if genesis_info.our_info.members().contains(self.id()) {
+                Parsec::from_genesis(full_id, &genesis_info.our_info.members(), consensus_mode)
             } else {
-                let _ = self.parsec_map.insert(
-                    genesis_ver,
+                Parsec::from_existing(
+                    full_id,
+                    &genesis_info.our_info.members(),
+                    &genesis_info.latest_info.members(),
+                    consensus_mode,
+                )
+            };
+
+            #[cfg(feature = "mock")]
+            let parsec = {
+                let section_hash = *genesis_info.our_info.hash();
+
+                if genesis_info.our_info.members().contains(self.id()) {
+                    Parsec::from_genesis(
+                        section_hash,
+                        full_id,
+                        &genesis_info.our_info.members(),
+                        consensus_mode,
+                    )
+                } else {
                     Parsec::from_existing(
+                        section_hash,
                         full_id,
                         &genesis_info.our_info.members(),
                         &genesis_info.latest_info.members(),
                         consensus_mode,
-                    ),
-                );
-            }
+                    )
+                }
+            };
+
+            let _ = self.parsec_map.insert(genesis_ver, parsec);
 
             return Ok(true);
         }
@@ -1601,14 +1632,18 @@ impl Node {
             .peer_mgr
             .add_prefix(genesis_info.our_info.prefix().with_version(0));
 
-        // consider ourself established if we're the second node
-        if !self.is_first_node
-            && genesis_info
+        if !self.is_first_node {
+            // consider ourself established if we're the second node
+            if genesis_info
                 .our_info
                 .members()
                 .contains(self.full_id.public_id())
-        {
-            self.node_established(outbox);
+            {
+                self.node_established(outbox);
+            } else {
+                self.poke_timer_token =
+                    Some(self.timer.schedule(Duration::from_secs(POKE_TIMEOUT_SECS)));
+            }
         }
 
         Ok(())
@@ -2670,6 +2705,12 @@ impl Node {
                 .timer
                 .schedule(Duration::from_secs(RECONNECT_PEER_TIMEOUT_SECS));
             self.reconnect_peers(outbox);
+        } else if self.poke_timer_token == Some(token) {
+            if !self.peer_mgr.is_established() {
+                self.send_parsec_poke();
+                self.poke_timer_token =
+                    Some(self.timer.schedule(Duration::from_secs(POKE_TIMEOUT_SECS)));
+            }
         } else if self.gossip_timer_token == Some(token) {
             self.gossip_timer_token = Some(
                 self.timer
@@ -2712,7 +2753,7 @@ impl Node {
 
         let par_req = self
             .parsec_map
-            .get(&version)
+            .get_mut(&version)
             .and_then(|par| par.create_gossip(Some(&gossip_target)).ok());
         if let Some(par_req) = par_req {
             self.send_message(
@@ -2720,6 +2761,26 @@ impl Node {
                 Message::Direct(DirectMessage::ParsecRequest(version, par_req)),
             );
         }
+    }
+
+    fn send_parsec_poke(&mut self) {
+        let (version, recipient) = if let Some(gen_pfx_info) = self.gen_pfx_info.as_ref() {
+            let recipients = gen_pfx_info.latest_info.members().iter().collect_vec();
+            let index = utils::rand_index(recipients.len());
+            (*gen_pfx_info.our_info.version(), *recipients[index])
+        } else {
+            log_or_panic!(
+                LogLevel::Error,
+                "{} can't send ParsecPoke: not approved yet.",
+                self
+            );
+            return;
+        };
+
+        self.send_message(
+            &recipient,
+            Message::Direct(DirectMessage::ParsecPoke(version)),
+        )
     }
 
     // Drop peers to which we think we have a connection, but where Crust reports
@@ -3450,13 +3511,32 @@ impl Bootstrapped for Node {
         use crate::routing_table::Authority::*;
         let sending_sec = match routing_msg.src {
             ClientManager(_) | NaeManager(_) | NodeManager(_) | ManagedNode(_) | Section(_)
-            | PrefixSection(_)
                 if self.chain.is_member() =>
             {
                 Some(self.chain.our_info().clone())
             }
+            PrefixSection(ref pfx) if self.chain.is_member() => {
+                let src_section = match self.chain.our_info_for_prefix(pfx) {
+                    Some(a) => a.clone(),
+                    None => {
+                        // Can no longer represent sending Pfx.
+                        return Ok(());
+                    }
+                };
+                Some(src_section)
+            }
             _ => None,
         };
+
+        if route > 0 {
+            trace!(
+                "{} Resending Msg: {:?} via route: {} and src_section: {:?}",
+                self,
+                routing_msg,
+                route,
+                sending_sec
+            );
+        }
 
         let signed_msg = SignedMessage::new(routing_msg, &self.full_id, sending_sec)?;
 

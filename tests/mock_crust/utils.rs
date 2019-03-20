@@ -448,6 +448,7 @@ pub fn create_connected_nodes_with_cache(
                 .cache(use_cache)
                 .create(),
         );
+
         poll_and_resend(&mut nodes, &mut []);
         verify_invariant_for_all_nodes(&mut nodes);
     }

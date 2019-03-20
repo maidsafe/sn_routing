@@ -699,6 +699,7 @@ mod tests {
 
     /// Checks that many clients can all add messages at the same rate.
     #[test]
+    #[ignore]
     fn many_clients() {
         let mut rate_limiter = RateLimiter::new(false);
         let num_clients = 100;

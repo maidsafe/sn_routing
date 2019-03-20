@@ -7,8 +7,8 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::crust::Uid;
+use crate::parsec;
 use crate::xor_name::XorName;
-use parsec;
 use safe_crypto;
 use safe_crypto::{
     gen_encrypt_keypair, gen_sign_keypair, PublicEncryptKey, PublicSignKey, SecretEncryptKey,
