@@ -1414,7 +1414,7 @@ impl Node {
                 src_name,
                 dst,
             ),
-            (NodeApproval(gen_info), Section(_), Client { .. }) => {
+            (NodeApproval(gen_info), PrefixSection(_), Client { .. }) => {
                 self.handle_node_approval(gen_info, outbox)
             }
             (NeighbourInfo(_digest), ManagedNode(_), PrefixSection(_)) => Ok(()),
@@ -1491,7 +1491,7 @@ impl Node {
             new_pub_id
         );
 
-        let src = Authority::Section(*new_pub_id.name());
+        let mut src = Authority::PrefixSection(Default::default());
         if self.gen_pfx_info.is_none() && self.is_first_node {
             let our_members = vec![*self.full_id.public_id(), new_pub_id]
                 .iter()
@@ -1514,6 +1514,9 @@ impl Node {
                     Default::default()
                 },
             };
+            if self.chain.is_member() {
+                src = Authority::PrefixSection(*trimmed_info.our_info.prefix());
+            }
             let content = MessageContent::NodeApproval(trimmed_info);
             if let Err(error) = self.send_routing_message(src, new_client_auth, content) {
                 debug!(
@@ -3508,13 +3511,32 @@ impl Bootstrapped for Node {
         use crate::routing_table::Authority::*;
         let sending_sec = match routing_msg.src {
             ClientManager(_) | NaeManager(_) | NodeManager(_) | ManagedNode(_) | Section(_)
-            | PrefixSection(_)
                 if self.chain.is_member() =>
             {
                 Some(self.chain.our_info().clone())
             }
+            PrefixSection(ref pfx) if self.chain.is_member() => {
+                let src_section = match self.chain.our_info_for_prefix(pfx) {
+                    Some(a) => a.clone(),
+                    None => {
+                        // Can no longer represent sending Pfx.
+                        return Ok(());
+                    }
+                };
+                Some(src_section)
+            }
             _ => None,
         };
+
+        if route > 0 {
+            trace!(
+                "{} Resending Msg: {:?} via route: {} and src_section: {:?}",
+                self,
+                routing_msg,
+                route,
+                sending_sec
+            );
+        }
 
         let signed_msg = SignedMessage::new(routing_msg, &self.full_id, sending_sec)?;
 

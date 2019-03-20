@@ -442,6 +442,15 @@ impl Chain {
         &unwrap!(self.our_infos.last()).0
     }
 
+    /// Returns our latest `SectionInfo` for the given prefix if found.
+    pub fn our_info_for_prefix(&self, prefix: &Prefix<XorName>) -> Option<&SectionInfo> {
+        self.our_infos
+            .iter()
+            .rev()
+            .find(|(sec_info, _)| sec_info.prefix() == prefix)
+            .map(|(sec_info, _)| sec_info)
+    }
+
     /// Returns our own current section's prefix.
     pub fn our_prefix(&self) -> &Prefix<XorName> {
         self.our_info().prefix()
@@ -995,6 +1004,7 @@ impl Debug for Chain {
         )?;
         writeln!(formatter, "\tis_member: {},", self.is_member)?;
         writeln!(formatter, "\tnew_info: {}", self.new_info)?;
+        writeln!(formatter, "\tmerging: {:?}", self.merging)?;
 
         writeln!(formatter, "\tour_infos: len {}", self.our_infos.len())?;
         for (sec_info, _) in &self.our_infos {
@@ -1011,6 +1021,16 @@ impl Debug for Chain {
             )?;
             writeln!(formatter, "\t {}", nsigs.sec_info())?;
         }
+
+        writeln!(
+            formatter,
+            "\ttheir_knowledge: len {}",
+            self.their_knowledge.len()
+        )?;
+        for (pfx, version) in &self.their_knowledge {
+            writeln!(formatter, "\t{:?} knows our_version: {}", pfx, version)?;
+        }
+
         writeln!(formatter, "}}")
     }
 }
