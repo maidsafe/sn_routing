@@ -1,0 +1,9 @@
+[package]
+name = "routing_model"
+version = "0.1.0"
+authors = ["Jean-Philippe DUFRAIGNE <jean.dufraigne@maidsafe.net>"]
+edition = "2018"
+
+[dependencies]
+lazy_static = "~1.0.1"
+unwrap = "~1.2.1"
