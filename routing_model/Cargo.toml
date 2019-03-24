@@ -7,3 +7,4 @@ edition = "2018"
 [dependencies]
 lazy_static = "~1.0.1"
 unwrap = "~1.2.1"
+itertools = "~0.8.0"
