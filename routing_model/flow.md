@@ -287,12 +287,11 @@ graph TB
     VoteSwapNewElder["Vote Remove relocated node<br/>Vote Add oldest Adult<br/>Vote for new section"]
     WaitFor(("Wait for 1:"))
     MarkAsRelocating --> CheckElderChange
-    CheckElderChange -- No --> RemoveNode
+    CheckElderChange -- No --> EndRoutine
     CheckElderChange -- Yes --> VoteSwapNewElder
     VoteSwapNewElder --> LoopStart
     LoopStart --> WaitFor
 
     WaitFor--"one of the event<br/>consensused in Parsec"--> LoopStart
-    WaitFor--"the 3 events <br/>consensused in Parsec"-->RemoveNode
-    RemoveNode --> EndRoutine
+    WaitFor--"the 3 events <br/>consensused in Parsec"-->EndRoutine
 ```
