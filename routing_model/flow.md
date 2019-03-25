@@ -80,11 +80,11 @@ graph TB
 
     AcceptAsCandidate["AcceptAsCandidate<br/>Sub Routine<br/>(shared state)"]
     style AcceptAsCandidate fill:#f9f,stroke:#333,stroke-width:4px
-    AcceptAsCandidate --> ProcessCandidateConsensus
+    AcceptAsCandidate --> CheckAndProcessElderChange
 
-    ProcessCandidateConsensus["ProcessCandidateConsensus<br/>Sub Routine<br/>(shared state)"]
-    style ProcessCandidateConsensus fill:#f9f,stroke:#333,stroke-width:4px
-    ProcessCandidateConsensus--> SetCandidateNo
+    CheckAndProcessElderChange["CheckAndProcessElderChange<br/>Sub Routine<br/>(shared state)"]
+    style CheckAndProcessElderChange fill:#f9f,stroke:#333,stroke-width:4px
+    CheckAndProcessElderChange--> SetCandidateNo
 
     SetCandidateNo["ProcessingCandidate=no<br/>(shared state)"]
     SetCandidateNo-->LoopEnd
@@ -102,7 +102,7 @@ graph TB
 
     AcceptAsCandidate --> SendRelocateResponse
 
-    SendRelocateResponse["Send RelocateResponse to source section<br/>Start TimeoutAccept"]
+    SendRelocateResponse["Add Node State=ResourceProof<br/>Send RelocateResponse to source section<br/>Start TimeoutAccept"]
     WaitFor(("Wait for 1:<br/><br/>Only current<br/>candidate<br/>events"))
     VoteParsecPurgeCandidate[Vote for<br/>ParsecPurgeCandidate]
     VoteParsecOnline["Vote for<br/>NetworkEvent<br/>::Online<br/><br/>VotedOnline=yes"]
@@ -113,7 +113,14 @@ graph TB
     LoopStart-->WaitFor
 
 
-    WaitFor -- Consensus any<br/><br/>ParsecOnline<br/>ParsecPurgeCandidate--> EndRoutine
+    WaitFor -- Consensus--> Consensus
+    Consensus((Consensus))
+    Consensus -- ParsecPurgeCandidate<br/>consensused --> RemoveNode
+    Consensus -- ParsecOnline<br/>consensused --> MakeOnline
+    MakeOnline["Node=OnlineState"]
+    RemoveNode["Purge Candidate Node"]
+    RemoveNode --> EndRoutine
+    MakeOnline --> EndRoutine
 
     WaitFor -- ResourceProofResponse<br/><br/>GotCandidateInfo=yes<br/>VotedOnline=no --> ProofResponse((Proof))
     ProofResponse -- Valid Part --> SendProofReceit
@@ -134,33 +141,29 @@ graph TB
 ```
 
 
-## ProcessCandidateConsensus Sub-routine
+## CheckAndProcessElderChange Sub-routine
 
 ```mermaid
 graph TB
-    ProcessCandidateConsensus["ProcessCandidateConsensus<br/>Sub Routine<br/>(shared state)"]
-    EndRoutine["End of ProcessCandidateConsensus<br/>(shared state)"]
-    style ProcessCandidateConsensus fill:#f9f,stroke:#333,stroke-width:4px
+    CheckAndProcessElderChange["CheckAndProcessElderChange<br/>Sub Routine<br/>(shared state)"]
+    EndRoutine["End of CheckAndProcessElderChange<br/>(shared state)"]
+    style CheckAndProcessElderChange fill:#f9f,stroke:#333,stroke-width:4px
     style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
 
-    ProcessCandidateConsensus --> Consensus
 
-    Consensus((Consensus))
-    CheckElderChange((Elder<br/>need<br/>Change?))
-    VoteSwapNewElder["Vote Add new node<br/>Vote Remove yougest elder<br/>Vote for new section"]
+    MarkAndVoteSwapNewElder["Mark new Elder/Adults<br/><br/>Vote Add new nodes<br/>Vote Remove yougest elders<br/>Vote for new section"]
+
+    CheckAndProcessElderChange -->  CheckElderChange
+
+    CheckElderChange(("Check<br/>Elder<br/>change"))
     WaitFor(("Wait for 1:"))
-    Consensus -- ParsecPurgeCandidate<br/>consensused --> EndRoutine
-    Consensus -- ParsecOnline<br/>consensused --> AddNode
-    AddNode --> CheckElderChange
-    CheckElderChange -- No --> EndRoutine
-    CheckElderChange -- Yes --> VoteSwapNewElder
-    VoteSwapNewElder --> LoopStart
+    CheckElderChange -- "No changes" --> EndRoutine
+    CheckElderChange -- "Has elder changes: elder first ordered by:<br/>State=Online then age then name." --> MarkAndVoteSwapNewElder
+    MarkAndVoteSwapNewElder --> LoopStart
     LoopStart --> WaitFor
 
     WaitFor--"one of the event<br/>consensused in Parsec"--> LoopStart
     WaitFor--"the 3 events <br/>consensused in Parsec"-->EndRoutine
-
-
 ```
 
 
@@ -203,16 +206,19 @@ graph TB
     Bug
     DiscardParsec --> LoopEnd
 
-    SetRelocating["Relocating=Some(Candidate)<br/>RelocatingState is best<br/>(shared state)"]
-    SetRelocating --> Concurrent0
+    SetRelocating["Relocating=Some(Best Node)<br/>(Best if Node=RelocatingState)<br/>(shared state)"]
+    SetRelocating --> SetRelocatingNodeState
+
+    SetRelocatingNodeState["if not RelocatingState<br/>Relocating Node=RelocatingState"]
+    SetRelocatingNodeState --> Concurrent0
 
     Concurrent0{"Concurrent<br/>paths"}
-    Concurrent0 --> ProcessRelocationConsensus
+    Concurrent0 --> CheckAndProcessElderChange
     Concurrent0 --> LoopEnd
 
-    ProcessRelocationConsensus["ProcessRelocationConsensus<br/>Sub Routine<br/>(shared state)"]
-    style ProcessRelocationConsensus fill:#f9f,stroke:#333,stroke-width:4px
-    ProcessRelocationConsensus --> TryRelocating
+    CheckAndProcessElderChange["CheckAndProcessElderChange<br/>Sub Routine<br/>(shared state)"]
+    style CheckAndProcessElderChange fill:#f9f,stroke:#333,stroke-width:4px
+    CheckAndProcessElderChange --> TryRelocating
 
     TryRelocating["TryRelocating<br/>Sub Routine<br/>(shared state)"]
     style TryRelocating fill:#f9f,stroke:#333,stroke-width:4px
@@ -262,36 +268,4 @@ graph TB
     VoteParsecRelocateResponse[Vote for<br/>ParsecRelocateResponse<br/>to handle the RPC consistently]
     VoteParsecRelocateResponse --> LoopEnd
 
-```
-
-
-
-
-## ProcessRelocationConsensus Sub-routine
-
-```mermaid
-graph TB
-    ProcessRelocationConsensus["ProcessRelocationConsensus<br/>Sub Routine<br/>(shared state)"]
-    EndRoutine["End of ProcessRelocationConsensus<br/>(shared state)"]
-    style ProcessRelocationConsensus fill:#f9f,stroke:#333,stroke-width:4px
-    style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
-
-    ProcessRelocationConsensus --> CheckCandidate
-
-    CheckCandidate((Check<br/>Candidate?))
-    CheckCandidate-- Node=RelocatingState --> EndRoutine
-    CheckCandidate-- Not Node=RelocatingState --> MarkAsRelocating
-
-    MarkAsRelocating["Node=RelocatingState"]
-    CheckElderChange((Elder<br/>need<br/>Change?))
-    VoteSwapNewElder["Vote Remove relocated node<br/>Vote Add oldest Adult<br/>Vote for new section"]
-    WaitFor(("Wait for 1:"))
-    MarkAsRelocating --> CheckElderChange
-    CheckElderChange -- No --> EndRoutine
-    CheckElderChange -- Yes --> VoteSwapNewElder
-    VoteSwapNewElder --> LoopStart
-    LoopStart --> WaitFor
-
-    WaitFor--"one of the event<br/>consensused in Parsec"--> LoopStart
-    WaitFor--"the 3 events <br/>consensused in Parsec"-->EndRoutine
 ```
