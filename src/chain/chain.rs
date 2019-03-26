@@ -22,6 +22,7 @@ use super::{
 use crate::error::RoutingError;
 use crate::id::{FullId, PublicId};
 use crate::messages::SignedMessage;
+use crate::routing_table::Sections;
 use crate::sha3::Digest256;
 use crate::{Prefix, XorName, Xorable};
 use itertools::Itertools;
@@ -973,6 +974,17 @@ impl Chain {
             .filter(move |(_, proofs)| proofs.contains_id(&self.our_id))
             .map(|(event, _)| event)
     }
+
+    /// Convert from collection of SectionInfo to Sections type. All neighbouring sections and our
+    /// own.
+    fn all_sections(&self) -> Sections<XorName> {
+        self.neighbour_infos
+            .iter()
+            .map(|(pfx, sec_sigs)| (*pfx, (0, sec_sigs.sec_info().member_names())))
+            .chain(iter::once((*self.our_prefix(), (0, self.our_info().member_names()))))
+            .collect::<BTreeMap<_,_>>()
+    }
+
 }
 
 /// The outcome of a prefix change.
