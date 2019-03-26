@@ -22,7 +22,7 @@ use super::{
 use crate::error::RoutingError;
 use crate::id::{FullId, PublicId};
 use crate::messages::SignedMessage;
-use crate::routing_table::{Authority, Error, Sections};
+use crate::routing_table::{Authority, Error};
 use crate::sha3::Digest256;
 use crate::{Prefix, XorName, Xorable};
 use itertools::Itertools;
@@ -999,13 +999,13 @@ impl Chain {
 
     /// Convert from collection of SectionInfo to Sections type. All neighbouring sections and our
     /// own.
-    fn all_sections(&self) -> Sections<XorName> {
+    fn all_sections(&self) -> BTreeMap<Prefix<XorName>, BTreeSet<XorName>> {
         self.neighbour_infos
             .iter()
-            .map(|(pfx, sec_sigs)| (*pfx, (0, sec_sigs.sec_info().member_names())))
+            .map(|(pfx, sec_sigs)| (*pfx, sec_sigs.sec_info().member_names()))
             .chain(iter::once((
                 *self.our_prefix(),
-                (0, self.our_info().member_names()),
+                self.our_info().member_names(),
             )))
             .collect::<BTreeMap<_, _>>()
     }
@@ -1016,7 +1016,7 @@ impl Chain {
             .into_iter()
             .sorted_by(|&(pfx0, _), &(pfx1, _)| pfx0.cmp_distance(&pfx1, name))
             .into_iter()
-            .flat_map(|(_, (_, section))| {
+            .flat_map(|(_, section)| {
                 section
                     .into_iter()
                     .sorted_by(|name0, name1| name.cmp_distance(name0, name1))
@@ -1050,10 +1050,7 @@ impl Chain {
             return Some(self.our_info().member_names());
         }
         if let Some(prefix) = self.find_section_prefix(name) {
-            return self
-                .all_sections()
-                .get(&prefix)
-                .map(|(_, section)| section.clone());
+            return self.all_sections().get(&prefix).cloned();
         }
         None
     }
@@ -1105,7 +1102,7 @@ impl Chain {
     /// belongs in that section or not, and the section itself.
     fn closest_section(&self, name: &XorName) -> (Prefix<XorName>, BTreeSet<XorName>) {
         let mut result = (*self.our_prefix(), self.our_info().member_names());
-        for (prefix, (_, section)) in self.all_sections() {
+        for (prefix, section) in self.all_sections() {
             if !section.is_empty() && result.0.cmp_distance(&prefix, name) == Ordering::Greater {
                 result = (prefix, section)
             }
@@ -1223,7 +1220,7 @@ impl Chain {
                     // this is to prevent spamming the network by sending messages with
                     // intentionally short prefixes
                     if prefix.is_covered_by(self.prefixes().iter()) {
-                        let is_compatible = |(pfx, &(_, ref section))| {
+                        let is_compatible = |(pfx, section)| {
                             if prefix.is_compatible(pfx) {
                                 Some(section)
                             } else {
@@ -1289,7 +1286,7 @@ impl Chain {
     pub fn len(&self) -> usize {
         self.all_sections()
             .into_iter()
-            .map(|(_, (_, section))| section.len())
+            .map(|(_, section)| section.len())
             .sum::<usize>()
             - 1
     }
