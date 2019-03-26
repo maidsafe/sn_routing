@@ -5,39 +5,102 @@
 </head>
 <body>
   <h1>Top Flow</h1>
+
+  <h2>Top Node Flow</h2>
   <div class="mermaid">
-      graph TB
+    graph TB
 
-      Start --> ConcurentStartElder
+    Start --> LoopStart
+    style Start fill:#f9f,stroke:#333,stroke-width:4px
 
-      style Start fill:#f9f,stroke:#333,stroke-width:4px
-      style End fill:#f9f,stroke:#333,stroke-width:4px
+    LoopStart --> IsMember
+    IsMember((Section<br/>Member))
 
-      ConcurentStartElder{"Concurrent<br/>start elder"}
-      ConcurentStartElder --> StartTopLevelDst
-      style StartTopLevelDst fill:#f9f,stroke:#333,stroke-width:4px
-      StartTopLevelDst --> End
+    IsMember --No--> BoostStrapAndRelocate
+    BoostStrapAndRelocate["BoostStrapAndRelocate:<br/>Get RelocateInfo"]
+    BoostStrapAndRelocate --> JoiningRelocateCandidate
 
-      ConcurentStartElder --> StartTopLevelSrc
-      style StartTopLevelSrc fill:#f9f,stroke:#333,stroke-width:4px
-      StartTopLevelSrc --> End
+    IsMember --Yes--> StartTopMember
+    StartTopMember["StartTopMember<br/>Sub Routine<br/>"]
+    style StartTopMember fill:#f9f,stroke:#333,stroke-width:4px
+    StartTopMember --> JoiningRelocateCandidate
+
+    JoiningRelocateCandidate["JoiningRelocateCandidate<br/>Sub Routine<br/><br/>(Take RelocatedInfo)"]
+    style JoiningRelocateCandidate fill:#f9f,stroke:#333,stroke-width:4px
+
+    JoiningRelocateCandidate --> LoopEnd
+    LoopEnd --> LoopStart
+</div>
+
+
+  <h2>Top Member Flow</h2>
+  <div class="mermaid">
+    graph TB
+
+    StartTopMember --> LoopStart
+
+    style StartTopMember fill:#f9f,stroke:#333,stroke-width:4px
+    style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
+
+    LoopStart --> WaitFor
+    WaitFor(("Wait for 6:"))
+
+    Rpc((RPC))
+    WaitFor --> Rpc
+    Rpc -- "RelocatedInfo RPC"-->  EndRoutine
+
+    Rpc -- BecomeElder RPC -->  ConcurentStartElder
+    ConcurentStartElder{"Concurrent<br/>start elder"}
+    ConcurentStartElder --> StartTopLevelElder
+    style StartTopLevelElder fill:#f9f,stroke:#333,stroke-width:4px
+    StartTopLevelElder --> LoopEnd
+
+    ConcurentStartElder --> LoopEnd
+
+    LoopEnd --> LoopStart
+
+
+    EndRoutine["EndRoutine: Kill all sub routines"]
   </div>
+
+
+  <h2>Top Elder Flow</h2>
+  <div class="mermaid">
+    graph TB
+    style StartTopLevelElder fill:#f9f,stroke:#333,stroke-width:4px
+    style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
+    StartTopLevelElder --> ConcurentStartElder
+
+    ConcurentStartElder{"Concurrent<br/>start elder"}
+    ConcurentStartElder --> StartTopLevelDst
+    style StartTopLevelDst fill:#f9f,stroke:#333,stroke-width:4px
+
+    ConcurentStartElder --> StartTopLevelSrc
+    style StartTopLevelSrc fill:#f9f,stroke:#333,stroke-width:4px
+
+    ConcurentStartElder --> WaitFor
+
+    WaitFor(("Wait for 0:"))
+    Event((Event))
+    WaitFor --Event--> Event
+    Event --StopElder Trigger--> EndRoutine
+    EndRoutine["EndRoutine: Kill all sub routines"]
+</div>
 
   <h1>Destination Section Flow</h1>
   <h2>Top Level Flow</h2>
   <div class="mermaid">
       graph TB
 
+      Start["Start: No exit - Need Killed"]
+      style Start fill:#f9f,stroke:#333,stroke-width:4px
       Start --> LoopStart
       LoopEnd --> LoopStart
 
-      style Start fill:#f9f,stroke:#333,stroke-width:4px
-      style End fill:#f9f,stroke:#333,stroke-width:4px
 
       LoopStart --> WaitFor
 
       WaitFor((Wait for 1:))
-      WaitFor --Exit--> End
       WaitFor --RPC--> RPC
       WaitFor --Parsec<br/>consensus--> ParsecConsensus
 
@@ -85,6 +148,7 @@
 
       SetCandidateNo["ProcessingCandidate=no<br/>(shared state)"]
       SetCandidateNo-->LoopEnd
+
   </div>
 
   <h2>AcceptAsCandidate Sub-routine</h2>
@@ -138,16 +202,15 @@
   <div class="mermaid">
       graph TB
 
+
+      Start["Start: No exit - Need Killed"]
+      style Start fill:#f9f,stroke:#333,stroke-width:4px
       Start --> LoopStart
       LoopEnd --> LoopStart
-
-      style Start fill:#f9f,stroke:#333,stroke-width:4px
-      style End fill:#f9f,stroke:#333,stroke-width:4px
 
       LoopStart --> WaitFor
 
       WaitFor((Wait for 3:))
-      WaitFor --Exit--> End
       WaitFor --Event--> Event
       WaitFor --RPC--> RPC
       WaitFor --Parsec<br/>consensus--> ParsecConsensus
@@ -215,8 +278,10 @@
 
       Consensus((Consensus))
       Consensus --"ParsecRefuseCandidate"--> EndRoutine
-      Consensus --"ParsecRelocateResponse"--> PurgeNodeInfos
+      Consensus --"ParsecRelocateResponse"--> SendPovableRelocateInfo
 
+      SendPovableRelocateInfo["Send RelocatedInfo RPC to node<br/><br/>Includes RelocationResponse<br/>content and consensus<br/>Node may be already gone"]
+      SendPovableRelocateInfo-->PurgeNodeInfos
       PurgeNodeInfos["Purge Candidate Node info"]
       PurgeNodeInfos--> EndRoutine
 
@@ -231,6 +296,40 @@
       VoteParsecRelocateResponse --> LoopEnd
   </div>
 
+  <h1>Common Elder Flow</h1>
+  <h2>CheckAndProcessElderChange Sub-routine</h2>
+  <div class="mermaid">
+      graph TB
+      CheckAndProcessElderChange["CheckAndProcessElderChange<br/>Sub Routine<br/>(shared state)"]
+      EndRoutine["End of CheckAndProcessElderChange<br/>(shared state)"]
+      style CheckAndProcessElderChange fill:#f9f,stroke:#333,stroke-width:4px
+      style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
+
+
+      MarkAndVoteSwapNewElder["Mark new Elder/Adults<br/><br/>Vote Add new nodes<br/>Vote Remove yougest elders<br/>Vote for new section"]
+
+      CheckAndProcessElderChange -->  CheckElderChange
+
+      CheckElderChange(("Check<br/>Elder<br/>change"))
+      WaitFor(("Wait for 5:"))
+      CheckElderChange -- "No changes" --> EndRoutine
+      CheckElderChange -- "Has elder changes: elder first ordered by:<br/>State=Online then age then name." --> MarkAndVoteSwapNewElder
+      MarkAndVoteSwapNewElder --> LoopStart
+      LoopStart --> WaitFor
+
+      WaitFor--"the 3 events <br/>consensused in Parsec"-->CheckNoLongerElder
+
+      CheckNoLongerElder((Check<br/>no longer<br/>elder))
+      CheckNoLongerElder -- Still elder --> EndRoutine
+      CheckNoLongerElder -- No longer elder --> TriggerStopElder
+      TriggerStopElder["Trigger StopElder<br/><br/>Do not exit sub routine<br/>Let it be killed by StopElder"]
+      TriggerStopElder --> LoopEnd
+
+      WaitFor--"one of the event<br/>consensused in Parsec"--> LoopEnd
+      LoopEnd --> LoopStart
+  </div>
+
+  <h1>Non Elder Flow</h1>
   <h2>Joining Relocate Candidate Flow</h2>
   <div class="mermaid">
     graph TB
@@ -275,30 +374,6 @@
   </div>
 
 
-  <h1>Common Flow</h1>
-  <h2>CheckAndProcessElderChange Sub-routine</h2>
-  <div class="mermaid">
-      graph TB
-      CheckAndProcessElderChange["CheckAndProcessElderChange<br/>Sub Routine<br/>(shared state)"]
-      EndRoutine["End of CheckAndProcessElderChange<br/>(shared state)"]
-      style CheckAndProcessElderChange fill:#f9f,stroke:#333,stroke-width:4px
-      style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
-
-
-      MarkAndVoteSwapNewElder["Mark new Elder/Adults<br/><br/>Vote Add new nodes<br/>Vote Remove yougest elders<br/>Vote for new section"]
-
-      CheckAndProcessElderChange -->  CheckElderChange
-
-      CheckElderChange(("Check<br/>Elder<br/>change"))
-      WaitFor(("Wait for 5:"))
-      CheckElderChange -- "No changes" --> EndRoutine
-      CheckElderChange -- "Has elder changes: elder first ordered by:<br/>State=Online then age then name." --> MarkAndVoteSwapNewElder
-      MarkAndVoteSwapNewElder --> LoopStart
-      LoopStart --> WaitFor
-
-      WaitFor--"one of the event<br/>consensused in Parsec"--> LoopStart
-      WaitFor--"the 3 events <br/>consensused in Parsec"-->EndRoutine
-  </div>
 
   <script src="https://unpkg.com/mermaid@8.0.0/dist/mermaid.min.js"></script>
   <script>mermaid.initialize({startOnLoad:true});</script>
