@@ -4,6 +4,25 @@
   <meta charset="utf-8">
 </head>
 <body>
+  <h1>Top Flow</h1>
+  <div class="mermaid">
+      graph TB
+
+      Start --> ConcurentStartElder
+
+      style Start fill:#f9f,stroke:#333,stroke-width:4px
+      style End fill:#f9f,stroke:#333,stroke-width:4px
+
+      ConcurentStartElder{"Concurrent<br/>start elder"}
+      ConcurentStartElder --> StartTopLevelDst
+      style StartTopLevelDst fill:#f9f,stroke:#333,stroke-width:4px
+      StartTopLevelDst --> End
+
+      ConcurentStartElder --> StartTopLevelSrc
+      style StartTopLevelSrc fill:#f9f,stroke:#333,stroke-width:4px
+      StartTopLevelSrc --> End
+  </div>
+
   <h1>Destination Section Flow</h1>
   <h2>Top Level Flow</h2>
   <div class="mermaid">
@@ -17,7 +36,7 @@
 
       LoopStart --> WaitFor
 
-      WaitFor((Wait for 0:))
+      WaitFor((Wait for 1:))
       WaitFor --Exit--> End
       WaitFor --RPC--> RPC
       WaitFor --Parsec<br/>consensus--> ParsecConsensus
@@ -79,7 +98,7 @@
       AcceptAsCandidate --> SendRelocateResponse
 
       SendRelocateResponse["Add Node State=ResourceProof<br/>Send RelocateResponse to source section<br/>Start TimeoutAccept"]
-      WaitFor(("Wait for 1:<br/><br/>Only current<br/>candidate<br/>events"))
+      WaitFor(("Wait for 2:<br/><br/>Only current<br/>candidate<br/>events"))
       VoteParsecPurgeCandidate[Vote for<br/>ParsecPurgeCandidate]
       VoteParsecOnline["Vote for<br/>NetworkEvent<br/>::Online<br/><br/>VotedOnline=yes"]
       RequestRP["Send ResourceProof<br/>RPC to candidate<br/><br/>GotCandidateInfo=yes"]
@@ -93,7 +112,7 @@
       Consensus((Consensus))
       Consensus -- ParsecPurgeCandidate<br/>consensused --> RemoveNode
       Consensus -- ParsecOnline<br/>consensused --> MakeOnline
-      MakeOnline["Node=OnlineState"]
+      MakeOnline["Node=OnlineState<br/><br/>Send NodeApproval RPC"]
       RemoveNode["Purge Candidate Node"]
       RemoveNode --> EndRoutine
       MakeOnline --> EndRoutine
@@ -114,33 +133,6 @@
       LoopEnd --> LoopStart
   </div>
 
-
-  <h2>CheckAndProcessElderChange Sub-routine</h2>
-  <div class="mermaid">
-      graph TB
-      CheckAndProcessElderChange["CheckAndProcessElderChange<br/>Sub Routine<br/>(shared state)"]
-      EndRoutine["End of CheckAndProcessElderChange<br/>(shared state)"]
-      style CheckAndProcessElderChange fill:#f9f,stroke:#333,stroke-width:4px
-      style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
-
-
-      MarkAndVoteSwapNewElder["Mark new Elder/Adults<br/><br/>Vote Add new nodes<br/>Vote Remove yougest elders<br/>Vote for new section"]
-
-      CheckAndProcessElderChange -->  CheckElderChange
-
-      CheckElderChange(("Check<br/>Elder<br/>change"))
-      WaitFor(("Wait for 1:"))
-      CheckElderChange -- "No changes" --> EndRoutine
-      CheckElderChange -- "Has elder changes: elder first ordered by:<br/>State=Online then age then name." --> MarkAndVoteSwapNewElder
-      MarkAndVoteSwapNewElder --> LoopStart
-      LoopStart --> WaitFor
-
-      WaitFor--"one of the event<br/>consensused in Parsec"--> LoopStart
-      WaitFor--"the 3 events <br/>consensused in Parsec"-->EndRoutine
-  </div>
-
-
-
   <h1>Source Section Flow</h1>
   <h2>Top Level Flow</h2>
   <div class="mermaid">
@@ -154,7 +146,7 @@
 
       LoopStart --> WaitFor
 
-      WaitFor((Wait for 0:))
+      WaitFor((Wait for 3:))
       WaitFor --Exit--> End
       WaitFor --Event--> Event
       WaitFor --RPC--> RPC
@@ -217,7 +209,7 @@
       LoopStart --> WaitFor
       LoopEnd --> LoopStart
 
-      WaitFor((Wait for 1:<br/><br/>Only current<br/>candidate<br/>events))
+      WaitFor((Wait for 4:<br/><br/>Only current<br/>candidate<br/>events))
       WaitFor --RPC--> RPC
       WaitFor --Parsec consensus<br/><br/>ParsecRefuseCandidate<br/>ParsecRelocateResponse--> Consensus
 
@@ -237,6 +229,75 @@
 
       VoteParsecRelocateResponse[Vote for<br/>ParsecRelocateResponse<br/>to handle the RPC consistently]
       VoteParsecRelocateResponse --> LoopEnd
+  </div>
+
+  <h2>Joining Relocate Candidate Flow</h2>
+  <div class="mermaid">
+    graph TB
+    JoiningRelocateCandidate -->  InitialConnectAndSendCandidateInfo
+    JoiningRelocateCandidate["JoiningRelocateCandidate<br/>Sub Routine"]
+    style JoiningRelocateCandidate fill:#f9f,stroke:#333,stroke-width:4px
+    EndRoutine["End of JoiningRelocateCandidate<br/>"]
+    style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
+
+    InitialConnectAndSendCandidateInfo["Connect and send CandidateInfo<br/>to all section members<br/><br/>Start TimeoutResendInfo<br/>Start TimeoutRefused"]
+    InitialConnectAndSendCandidateInfo-->LoopStart
+
+    LoopStart --> WaitFor
+    WaitFor(("Wait for 6:"))
+    LocalEvent((Local<br/>Event))
+    WaitFor --> LocalEvent
+
+    LocalEvent -- ComputeResourceProofForElder -->  SendFirstResourceProofPartForElder
+    SendFirstResourceProofPartForElder["Send first<br/>ResourceProofResponse<br/>part for elder"]
+    SendFirstResourceProofPartForElder --> LoopEnd
+
+    LocalEvent--"TimeoutResendInfo triggered<br/> Some section have not responsed<br/>with ResourceProof"--> ConnectAndSendCandidateInfo
+    ConnectAndSendCandidateInfo["Connect and send CandidateInfo<br/>section members<br/>without ResourceProof<br/><br/>Restart TimeoutResendInfo"]
+    ConnectAndSendCandidateInfo --> LoopEnd
+
+    LocalEvent--"TimeoutRefused<br/>triggered"--> EndRoutine
+
+    Rpc((RPC))
+    WaitFor --> Rpc
+    Rpc -- NodeApproval -->  EndRoutine
+
+    Rpc -- ResourceProofReceipt -->  SendNextResourceProofPartForElder
+    SendNextResourceProofPartForElder["Send next<br/>ResourceProofResponse<br/>part for elder"]
+    SendNextResourceProofPartForElder --> LoopEnd
+
+    Rpc -- ResourceProof -->  StartComputeResourceProofForElder
+    StartComputeResourceProofForElder["Start compute<br/>ResourceProof<br/>for elder"]
+    StartComputeResourceProofForElder --> LoopEnd
+
+    LoopEnd --> LoopStart
+
+  </div>
+
+
+  <h1>Common Flow</h1>
+  <h2>CheckAndProcessElderChange Sub-routine</h2>
+  <div class="mermaid">
+      graph TB
+      CheckAndProcessElderChange["CheckAndProcessElderChange<br/>Sub Routine<br/>(shared state)"]
+      EndRoutine["End of CheckAndProcessElderChange<br/>(shared state)"]
+      style CheckAndProcessElderChange fill:#f9f,stroke:#333,stroke-width:4px
+      style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
+
+
+      MarkAndVoteSwapNewElder["Mark new Elder/Adults<br/><br/>Vote Add new nodes<br/>Vote Remove yougest elders<br/>Vote for new section"]
+
+      CheckAndProcessElderChange -->  CheckElderChange
+
+      CheckElderChange(("Check<br/>Elder<br/>change"))
+      WaitFor(("Wait for 5:"))
+      CheckElderChange -- "No changes" --> EndRoutine
+      CheckElderChange -- "Has elder changes: elder first ordered by:<br/>State=Online then age then name." --> MarkAndVoteSwapNewElder
+      MarkAndVoteSwapNewElder --> LoopStart
+      LoopStart --> WaitFor
+
+      WaitFor--"one of the event<br/>consensused in Parsec"--> LoopStart
+      WaitFor--"the 3 events <br/>consensused in Parsec"-->EndRoutine
   </div>
 
   <script src="https://unpkg.com/mermaid@8.0.0/dist/mermaid.min.js"></script>

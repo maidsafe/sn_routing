@@ -236,6 +236,7 @@ impl AcceptAsCandidate {
 
     fn make_node_online(&self) -> Self {
         self.0.action.set_candidate_online_state(self.candidate());
+        self.0.action.send_rpc(Rpc::NodeApproval(self.candidate()));
         self.exit_event_loop()
     }
 
@@ -647,6 +648,8 @@ enum Rpc {
 
     ResourceProof(Candidate),
     ResourceProofReceipt(Candidate),
+    NodeApproval(Candidate),
+
     ResourceProofResponse { candidate: Candidate, proof: Proof },
     CandidateInfo { candidate: Candidate, valid: bool },
 }
@@ -664,6 +667,7 @@ impl Rpc {
             | Rpc::ResendExpectCandidate(_, candidate)
             | Rpc::ResourceProof(candidate)
             | Rpc::ResourceProofReceipt(candidate)
+            | Rpc::NodeApproval(candidate)
             | Rpc::ResourceProofResponse { candidate, .. }
             | Rpc::CandidateInfo { candidate, .. } => Some(*candidate),
         }
@@ -1664,6 +1668,7 @@ mod tests {
             &initial_state,
             &[ParsecVote::Online(CANDIDATE_1).to_event()],
             &AssertState {
+                action_our_rpcs: vec![Rpc::NodeApproval(CANDIDATE_1)],
                 action_our_nodes: vec![SET_ONLINE_NODE_1],
                 ..AssertState::default()
             },
@@ -1682,6 +1687,7 @@ mod tests {
             &initial_state,
             &vec![ParsecVote::Online(CANDIDATE_1).to_event()],
             &AssertState {
+                action_our_rpcs: vec![Rpc::NodeApproval(CANDIDATE_1)],
                 action_our_votes: PARSEC_VOTES_SWAP_ELDER_109_NODE_1_SECTION_INFO_1.clone(),
                 action_our_nodes: vec![SET_ONLINE_NODE_1],
                 dst_routine: DstRoutineState {
