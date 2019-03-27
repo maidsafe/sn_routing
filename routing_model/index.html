@@ -30,46 +30,15 @@
 
     JoiningRelocateCandidate --> LoopEnd
     LoopEnd --> LoopStart
-</div>
+  </div>
 
 
   <h2>Top Member Flow</h2>
   <div class="mermaid">
     graph TB
-
-    StartTopMember --> LoopStart
-
     style StartTopMember fill:#f9f,stroke:#333,stroke-width:4px
     style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
-
-    LoopStart --> WaitFor
-    WaitFor(("Wait for 6:"))
-
-    Rpc((RPC))
-    WaitFor --> Rpc
-    Rpc -- "RelocatedInfo RPC"-->  EndRoutine
-
-    Rpc -- BecomeElder RPC -->  ConcurentStartElder
-    ConcurentStartElder{"Concurrent<br/>start elder"}
-    ConcurentStartElder --> StartTopLevelElder
-    style StartTopLevelElder fill:#f9f,stroke:#333,stroke-width:4px
-    StartTopLevelElder --> LoopEnd
-
-    ConcurentStartElder --> LoopEnd
-
-    LoopEnd --> LoopStart
-
-
-    EndRoutine["EndRoutine: Kill all sub routines"]
-  </div>
-
-
-  <h2>Top Elder Flow</h2>
-  <div class="mermaid">
-    graph TB
-    style StartTopLevelElder fill:#f9f,stroke:#333,stroke-width:4px
-    style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
-    StartTopLevelElder --> ConcurentStartElder
+    StartTopMember --> ConcurentStartElder
 
     ConcurentStartElder{"Concurrent<br/>start elder"}
     ConcurentStartElder --> StartTopLevelDst
@@ -78,12 +47,17 @@
     ConcurentStartElder --> StartTopLevelSrc
     style StartTopLevelSrc fill:#f9f,stroke:#333,stroke-width:4px
 
+    ConcurentStartElder --> StartCheckAndProcessElderChange
+    style StartCheckAndProcessElderChange fill:#f9f,stroke:#333,stroke-width:4px
+
+
     ConcurentStartElder --> WaitFor
 
     WaitFor(("Wait for 0:"))
-    Event((Event))
-    WaitFor --Event--> Event
-    Event --StopElder Trigger--> EndRoutine
+
+    Rpc((RPC))
+    WaitFor --> Rpc
+    Rpc -- "RelocatedInfo RPC"-->  EndRoutine
     EndRoutine["EndRoutine: Kill all sub routines"]
 </div>
 
@@ -92,7 +66,7 @@
   <div class="mermaid">
       graph TB
 
-      Start["Start: No exit - Need Killed"]
+      Start["StartTopLevelDst:<br/>No exit - Need Killed"]
       style Start fill:#f9f,stroke:#333,stroke-width:4px
       Start --> LoopStart
       LoopEnd --> LoopStart
@@ -140,11 +114,7 @@
 
       AcceptAsCandidate["AcceptAsCandidate<br/>Sub Routine<br/>(shared state)"]
       style AcceptAsCandidate fill:#f9f,stroke:#333,stroke-width:4px
-      AcceptAsCandidate --> CheckAndProcessElderChange
-
-      CheckAndProcessElderChange["CheckAndProcessElderChange<br/>Sub Routine<br/>(shared state)"]
-      style CheckAndProcessElderChange fill:#f9f,stroke:#333,stroke-width:4px
-      CheckAndProcessElderChange--> SetCandidateNo
+      AcceptAsCandidate --> SetCandidateNo
 
       SetCandidateNo["ProcessingCandidate=no<br/>(shared state)"]
       SetCandidateNo-->LoopEnd
@@ -203,7 +173,7 @@
       graph TB
 
 
-      Start["Start: No exit - Need Killed"]
+      Start["StartTopLevelSrc:<br/>No exit - Need Killed"]
       style Start fill:#f9f,stroke:#333,stroke-width:4px
       Start --> LoopStart
       LoopEnd --> LoopStart
@@ -221,8 +191,13 @@
       VoteParsecRelocationTrigger --> LoopEnd
 
       RPC((RPC))
-      RPC --RefuseCandidate<br/>RelocateResponse--> DiscardRPC
-      DiscardRPC --> LoopEnd
+      RPC --RefuseCandidate--> VoteParsecRefuseCandidate
+      RPC --RelocateResponse--> VoteParsecRelocateResponse
+      VoteParsecRefuseCandidate[Vote for<br/>ParsecRefuseCandidate<br/>to handle the RPC consistently]
+      VoteParsecRefuseCandidate --> LoopEnd
+      VoteParsecRelocateResponse[Vote for<br/>ParsecRelocateResponse<br/>to handle the RPC consistently]
+      VoteParsecRelocateResponse --> LoopEnd
+
 
       ParsecConsensus((Parsec<br/>consensus))
       DiscardParsec["Discard<br/>Parsec<br/>event"]
@@ -238,15 +213,15 @@
       SetRelocating --> SetRelocatingNodeState
 
       SetRelocatingNodeState["if not RelocatingState<br/>Relocating Node=RelocatingState"]
-      SetRelocatingNodeState --> Concurrent0
+      SetRelocatingNodeState --> isRelocatingElder
+
+      isRelocatingElder((is<br/>Relocating<br/>Elder))
+      isRelocatingElder--Yes-->ResetRelocating
+      isRelocatingElder--No-->Concurrent0
 
       Concurrent0{"Concurrent<br/>paths"}
-      Concurrent0 --> CheckAndProcessElderChange
+      Concurrent0 --> TryRelocating
       Concurrent0 --> LoopEnd
-
-      CheckAndProcessElderChange["CheckAndProcessElderChange<br/>Sub Routine<br/>(shared state)"]
-      style CheckAndProcessElderChange fill:#f9f,stroke:#333,stroke-width:4px
-      CheckAndProcessElderChange --> TryRelocating
 
       TryRelocating["TryRelocating<br/>Sub Routine<br/>(shared state)"]
       style TryRelocating fill:#f9f,stroke:#333,stroke-width:4px
@@ -268,12 +243,9 @@
       TryRelocating --> SendExpectCandidate
 
       SendExpectCandidate["Send RPC <br/>ExpectCandidate"]
-      SendExpectCandidate --> LoopStart
-      LoopStart --> WaitFor
-      LoopEnd --> LoopStart
+      SendExpectCandidate --> WaitFor
 
       WaitFor((Wait for 4:<br/><br/>Only current<br/>candidate<br/>events))
-      WaitFor --RPC--> RPC
       WaitFor --Parsec consensus<br/><br/>ParsecRefuseCandidate<br/>ParsecRelocateResponse--> Consensus
 
       Consensus((Consensus))
@@ -284,48 +256,46 @@
       SendPovableRelocateInfo-->PurgeNodeInfos
       PurgeNodeInfos["Purge Candidate Node info"]
       PurgeNodeInfos--> EndRoutine
-
-      RPC((RPC))
-      RPC --RefuseCandidate--> VoteParsecRefuseCandidate
-      RPC --RelocateResponse--> VoteParsecRelocateResponse
-
-      VoteParsecRefuseCandidate[Vote for<br/>ParsecRefuseCandidate<br/>to handle the RPC consistently]
-      VoteParsecRefuseCandidate --> LoopEnd
-
-      VoteParsecRelocateResponse[Vote for<br/>ParsecRelocateResponse<br/>to handle the RPC consistently]
-      VoteParsecRelocateResponse --> LoopEnd
   </div>
 
   <h1>Common Elder Flow</h1>
   <h2>CheckAndProcessElderChange Sub-routine</h2>
   <div class="mermaid">
       graph TB
-      CheckAndProcessElderChange["CheckAndProcessElderChange<br/>Sub Routine<br/>(shared state)"]
-      EndRoutine["End of CheckAndProcessElderChange<br/>(shared state)"]
+      CheckAndProcessElderChange["StartCheckAndProcessElderChange:<br/>No exit - Need Killed"]
       style CheckAndProcessElderChange fill:#f9f,stroke:#333,stroke-width:4px
-      style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
+
+      CheckAndProcessElderChange -->  StartCheckElderTimeout
+      StartCheckElderTimeout[Start<br/>CheckElderTimeout]
+      StartCheckElderTimeout -->  LoopStart
 
 
-      MarkAndVoteSwapNewElder["Mark new Elder/Adults<br/><br/>Vote Add new nodes<br/>Vote Remove yougest elders<br/>Vote for new section"]
-
-      CheckAndProcessElderChange -->  CheckElderChange
-
-      CheckElderChange(("Check<br/>Elder<br/>change"))
       WaitFor(("Wait for 5:"))
-      CheckElderChange -- "No changes" --> EndRoutine
+       LoopStart --> WaitFor
+
+      WaitFor -- Event --> Event
+      Event((Event))
+      Event-- CheckElder<br/>Timeout--> VoteCheckElderTimeout
+      VoteCheckElderTimeout["Vote for<br/>ParsecCheckElderTimeout"]
+      VoteCheckElderTimeout--> LoopEnd
+
+      Consensus((Consensus))
+      WaitFor-- Consensus --> Consensus
+      Consensus--"one of the<br/>waited<br/>event"--> LoopEnd
+      Consensus--"ParsecCheckElderTimeout"-->CheckElderChange
+      CheckElderChange(("Check<br/>Elder<br/>change"))
       CheckElderChange -- "Has elder changes: elder first ordered by:<br/>State=Online then age then name." --> MarkAndVoteSwapNewElder
-      MarkAndVoteSwapNewElder --> LoopStart
-      LoopStart --> WaitFor
+      MarkAndVoteSwapNewElder["Vote Add new nodes<br/>Vote Remove yougest elders<br/>Vote for new section"]
+      MarkAndVoteSwapNewElder -->LoopEnd
 
-      WaitFor--"the 3 events <br/>consensused in Parsec"-->CheckNoLongerElder
 
-      CheckNoLongerElder((Check<br/>no longer<br/>elder))
-      CheckNoLongerElder -- Still elder --> EndRoutine
-      CheckNoLongerElder -- No longer elder --> TriggerStopElder
-      TriggerStopElder["Trigger StopElder<br/><br/>Do not exit sub routine<br/>Let it be killed by StopElder"]
-      TriggerStopElder --> LoopEnd
+      CheckElderChange -- "No<br/>changes" --> RestartTimeout
+      Consensus--"Final<br/>waited<br/>event"-->MarkNewElderAdults
+      MarkNewElderAdults["Mark new<br/>Elder/Adults State"]
+      MarkNewElderAdults--> RestartTimeout
+      RestartTimeout[Restart<br/>CheckElderTimeout]
+      RestartTimeout-->LoopEnd
 
-      WaitFor--"one of the event<br/>consensused in Parsec"--> LoopEnd
       LoopEnd --> LoopStart
   </div>
 
@@ -368,6 +338,9 @@
     Rpc -- ResourceProof -->  StartComputeResourceProofForElder
     StartComputeResourceProofForElder["Start compute<br/>ResourceProof<br/>for elder"]
     StartComputeResourceProofForElder --> LoopEnd
+
+    Rpc -- "ExpectCandidate<br/>RefuseCandidate<br/>RelocateResponse<br/>..." --> VoteParsecRPC
+    VoteParsecRPC --> LoopEnd
 
     LoopEnd --> LoopStart
 
