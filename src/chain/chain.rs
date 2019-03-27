@@ -508,12 +508,13 @@ impl Chain {
     /// Checks if given `PublicId` is a valid peer by checking if we have them as a member of self
     /// section or neighbours.
     pub fn is_peer_valid(&self, pub_id: &PublicId) -> bool {
-        self.valid_peers().iter().any(|id| *id == pub_id)
+        self.valid_peers(true).contains(pub_id)
     }
 
     /// Returns a set of valid peers we should be connected to.
-    pub fn valid_peers(&self) -> BTreeSet<&PublicId> {
-        self.neighbour_infos()
+    pub fn valid_peers(&self, include_new_info: bool) -> BTreeSet<&PublicId> {
+        let mut peers = self
+            .neighbour_infos()
             .flat_map(SectionInfo::members)
             .chain(
                 self.our_infos
@@ -521,8 +522,13 @@ impl Chain {
                     .iter()
                     .flat_map(|&&(ref si, _)| si.members()),
             )
-            .chain(self.new_info.members())
-            .collect()
+            .collect::<BTreeSet<_>>();
+        if include_new_info {
+            for member in self.new_info.members() {
+                let _ = peers.insert(member);
+            }
+        }
+        peers
     }
 
     /// Returns `true` if we know the section `sec_info`.
