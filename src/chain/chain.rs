@@ -1273,7 +1273,11 @@ impl Chain {
 
     /// Returns our own section, including our own name.
     pub fn our_section(&self) -> BTreeSet<XorName> {
-        self.our_info().member_names()
+        if self.our_infos.is_empty() {
+            Default::default()
+        } else {
+            self.our_info().member_names()
+        }
     }
 
     /// Are we among the `count` closest nodes to `name`?
@@ -1282,18 +1286,28 @@ impl Chain {
     }
 
     /// Returns whether we are a part of the given authority.
-    pub fn in_authority(&self, auth: &Authority<XorName>, connected_peers: &[&XorName]) -> bool {
+    pub fn in_authority(
+        &self,
+        auth: &Authority<XorName>,
+        connected_peers: &[&XorName],
+        our_name: &XorName,
+    ) -> bool {
+        let our_pfx = if self.our_infos.is_empty() {
+            Default::default()
+        } else {
+            *self.our_prefix()
+        };
         match *auth {
             // clients have no routing tables
             Authority::Client { .. } => false,
-            Authority::ManagedNode(ref name) => self.our_id().name() == name,
+            Authority::ManagedNode(ref name) => our_name == name,
             Authority::ClientManager(ref name)
             | Authority::NaeManager(ref name)
             | Authority::NodeManager(ref name) => {
                 self.is_closest(name, self.min_sec_size, connected_peers)
             }
-            Authority::Section(ref name) => self.our_prefix().matches(name),
-            Authority::PrefixSection(ref prefix) => self.our_prefix().is_compatible(prefix),
+            Authority::Section(ref name) => our_pfx.matches(name),
+            Authority::PrefixSection(ref prefix) => our_pfx.is_compatible(prefix),
         }
     }
 

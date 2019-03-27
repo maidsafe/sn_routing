@@ -1497,8 +1497,7 @@ impl Node {
                 .iter()
                 .cloned()
                 .collect();
-            let first_info =
-                SectionInfo::new(our_members, *self.routing_table().our_prefix(), None)?;
+            let first_info = SectionInfo::new(our_members, Default::default(), None)?;
             self.gen_pfx_info = Some(GenesisPfxInfo {
                 our_info: first_info,
                 latest_info: Default::default(),
@@ -3421,7 +3420,7 @@ impl Base for Node {
                 .map(Peer::name)
                 .collect_vec();
             (self.is_first_node || self.chain.is_member())
-                && self.chain().in_authority(auth, &conn_peers)
+                && self.chain().in_authority(auth, &conn_peers, self.name())
         }
     }
 
