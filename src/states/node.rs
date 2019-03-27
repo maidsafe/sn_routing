@@ -3087,10 +3087,14 @@ impl Node {
         };
 
         if (self.is_first_node || self.chain.is_member()) && !force_via_proxy {
+            // TODO: even if having chain reply based on connected_state,
+            // we remove self in targets info and can do same by not
+            // chaining us to conn_peer list here?
             let conn_peers = self
                 .peer_mgr
                 .connected_peers()
                 .map(Peer::name)
+                .chain(iter::once(self.name()))
                 .collect_vec();
             let targets: BTreeSet<_> = self
                 .chain()
@@ -3424,6 +3428,7 @@ impl Base for Node {
                 .peer_mgr
                 .connected_peers()
                 .map(Peer::name)
+                .chain(iter::once(self.name()))
                 .collect_vec();
             (self.is_first_node || self.chain.is_member())
                 && self.chain().in_authority(auth, &conn_peers, self.name())
