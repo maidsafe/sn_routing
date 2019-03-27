@@ -1236,6 +1236,13 @@ impl Chain {
                     // Exclude our name since we don't need to send to ourself
                     let mut section = section.clone();
                     let _ = section.remove(&self.our_id().name());
+
+                    // FIXME: only doing this for now to match RT.
+                    // should confirm if needed esp after msg_relay changes.
+                    section = section
+                        .into_iter()
+                        .filter(|n| connected_peers.contains(&n))
+                        .collect();
                     return Ok(section);
                 }
                 candidates(target_name)
@@ -1253,19 +1260,23 @@ impl Chain {
                                 None
                             }
                         };
-                        return Ok(self
+
+                        let mut targets = self
                             .all_sections()
                             .iter()
                             .filter_map(is_compatible)
                             .flat_map(BTreeSet::iter)
-                            .chain(
-                                self.our_info()
-                                    .member_names()
-                                    .iter()
-                                    .filter(|name| *name != self.our_id().name()),
-                            )
                             .cloned()
-                            .collect());
+                            .collect::<BTreeSet<_>>();
+                        let _ = targets.remove(&self.our_id().name());
+
+                        // FIXME: only doing this for now to match RT.
+                        // should confirm if needed esp after msg_relay changes.
+                        targets = targets
+                            .into_iter()
+                            .filter(|n| connected_peers.contains(&n))
+                            .collect();
+                        return Ok(targets);
                     } else {
                         return Err(Error::CannotRoute);
                     }
