@@ -3071,9 +3071,14 @@ impl Node {
         };
 
         if (self.is_first_node || self.chain.is_member()) && !force_via_proxy {
+            let conn_peers = self
+                .peer_mgr
+                .connected_peers()
+                .map(Peer::name)
+                .collect_vec();
             let targets: BTreeSet<_> = self
                 .chain()
-                .targets(&routing_msg.dst, *exclude, route as usize)?
+                .targets(&routing_msg.dst, *exclude, route as usize, &conn_peers)?
                 .into_iter()
                 .filter(|target| !sent_to.contains(target))
                 .collect();
@@ -3399,12 +3404,24 @@ impl Base for Node {
         if let Authority::Client { ref client_id, .. } = *auth {
             client_id == self.full_id.public_id()
         } else {
-            (self.is_first_node || self.chain.is_member()) && self.chain().in_authority(auth)
+            let conn_peers = self
+                .peer_mgr
+                .connected_peers()
+                .map(Peer::name)
+                .collect_vec();
+            (self.is_first_node || self.chain.is_member())
+                && self.chain().in_authority(auth, &conn_peers)
         }
     }
 
     fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
-        self.chain().closest_names(&name, count)
+        let conn_peers = self
+            .peer_mgr
+            .connected_peers()
+            .map(Peer::name)
+            .chain(iter::once(self.name()))
+            .collect_vec();
+        self.chain().closest_names(&name, count, &conn_peers)
     }
 
     fn handle_lost_peer(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {

@@ -1011,7 +1011,12 @@ impl Chain {
     }
 
     /// Finds the `count` names closest to `name` in the whole routing table.
-    fn closest_known_names(&self, name: &XorName, count: usize) -> Vec<XorName> {
+    fn closest_known_names(
+        &self,
+        name: &XorName,
+        count: usize,
+        connected_peers: &[&XorName],
+    ) -> Vec<XorName> {
         self.all_sections()
             .into_iter()
             .sorted_by(|&(pfx0, _), &(pfx1, _)| pfx0.cmp_distance(&pfx1, name))
@@ -1021,6 +1026,7 @@ impl Chain {
                     .into_iter()
                     .sorted_by(|name0, name1| name.cmp_distance(name0, name1))
             })
+            .filter(|name| connected_peers.contains(&name))
             .take(count)
             .collect_vec()
     }
@@ -1079,8 +1085,13 @@ impl Chain {
 
     /// Returns the `count` closest entries to `name` in the routing table, including our own name,
     /// sorted by ascending distance to `name`. If we are not close, returns `None`.
-    pub fn closest_names(&self, name: &XorName, count: usize) -> Option<Vec<XorName>> {
-        let result = self.closest_known_names(name, count);
+    pub fn closest_names(
+        &self,
+        name: &XorName,
+        count: usize,
+        connected_peers: &[&XorName],
+    ) -> Option<Vec<XorName>> {
+        let result = self.closest_known_names(name, count, connected_peers);
         if result.contains(&&self.our_id().name()) {
             Some(result)
         } else {
@@ -1091,11 +1102,17 @@ impl Chain {
     /// Returns the `count-1` closest entries to `name` in the routing table, excluding
     /// our own name, sorted by ascending distance to `name` -  or `None`, if our name
     /// isn't among `count` names closest to `name`.
-    fn other_closest_names(&self, name: &XorName, count: usize) -> Option<Vec<XorName>> {
-        self.closest_names(name, count).map(|mut result| {
-            result.retain(|name| name != self.our_id().name());
-            result
-        })
+    fn other_closest_names(
+        &self,
+        name: &XorName,
+        count: usize,
+        connected_peers: &[&XorName],
+    ) -> Option<Vec<XorName>> {
+        self.closest_names(name, count, connected_peers)
+            .map(|mut result| {
+                result.retain(|name| name != self.our_id().name());
+                result
+            })
     }
 
     /// Returns the prefix of the closest non-empty section to `name`, regardless of whether `name`
@@ -1174,9 +1191,10 @@ impl Chain {
         dst: &Authority<XorName>,
         exclude: XorName,
         route: usize,
+        connected_peers: &[&XorName],
     ) -> Result<BTreeSet<XorName>, Error> {
         let candidates = |target_name: &XorName| {
-            self.closest_known_names(target_name, self.min_sec_size)
+            self.closest_known_names(target_name, self.min_sec_size, &connected_peers)
                 .into_iter()
                 .filter(|name| name != self.our_id().name())
                 .collect::<BTreeSet<XorName>>()
@@ -1191,7 +1209,7 @@ impl Chain {
                 if target_name == self.our_id().name() {
                     return Ok(BTreeSet::new());
                 }
-                if self.has(target_name) {
+                if self.has(target_name) && connected_peers.contains(&target_name) {
                     return Ok(iter::once(*target_name).collect());
                 }
                 candidates(target_name)
@@ -1199,7 +1217,9 @@ impl Chain {
             Authority::ClientManager(ref target_name)
             | Authority::NaeManager(ref target_name)
             | Authority::NodeManager(ref target_name) => {
-                if let Some(group) = self.other_closest_names(target_name, self.min_sec_size) {
+                if let Some(group) =
+                    self.other_closest_names(target_name, self.min_sec_size, &connected_peers)
+                {
                     return Ok(group.into_iter().collect());
                 }
                 candidates(target_name)
@@ -1264,19 +1284,21 @@ impl Chain {
     }
 
     /// Are we among the `count` closest nodes to `name`?
-    fn is_closest(&self, name: &XorName, count: usize) -> bool {
-        self.closest_names(name, count).is_some()
+    fn is_closest(&self, name: &XorName, count: usize, connected_peers: &[&XorName]) -> bool {
+        self.closest_names(name, count, connected_peers).is_some()
     }
 
     /// Returns whether we are a part of the given authority.
-    pub fn in_authority(&self, auth: &Authority<XorName>) -> bool {
+    pub fn in_authority(&self, auth: &Authority<XorName>, connected_peers: &[&XorName]) -> bool {
         match *auth {
             // clients have no routing tables
             Authority::Client { .. } => false,
             Authority::ManagedNode(ref name) => self.our_id().name() == name,
             Authority::ClientManager(ref name)
             | Authority::NaeManager(ref name)
-            | Authority::NodeManager(ref name) => self.is_closest(name, self.min_sec_size),
+            | Authority::NodeManager(ref name) => {
+                self.is_closest(name, self.min_sec_size, connected_peers)
+            }
             Authority::Section(ref name) => self.our_prefix().matches(name),
             Authority::PrefixSection(ref prefix) => self.our_prefix().is_compatible(prefix),
         }
