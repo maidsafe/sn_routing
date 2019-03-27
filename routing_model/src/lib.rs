@@ -70,14 +70,6 @@ impl TopLevelDst {
     }
 
     fn transition_exit_accept_as_candidate(&self) -> Self {
-        self.0
-            .as_check_and_process_elder_change(&CheckAndProcessElderChangeCaller::TopLevelDst)
-            .start_event_loop()
-            .0
-            .as_top_level_dst()
-    }
-
-    fn transition_exit_check_and_process_elder_change(&self) -> Self {
         self.set_is_processing_candidate(false)
     }
 
@@ -270,38 +262,30 @@ impl AcceptAsCandidate {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-struct CheckAndProcessElderChange(State, CheckAndProcessElderChangeCaller);
+struct CheckAndProcessElderChange(State);
 
 // CheckAndProcessElderChange Sub Routine
 impl CheckAndProcessElderChange {
     fn start_event_loop(&self) -> Self {
-        self.0
-            .with_sub_routine_check_and_process_elder_change(
-                &self.1,
-                Some(CheckAndProcessElderChangeState {
-                    wait_votes: Default::default(),
-                }),
-            )
-            .as_check_and_process_elder_change(&self.1)
-            .check_elder()
-    }
-
-    fn exit_event_loop(&self) -> Self {
-        self.0
-            .with_sub_routine_check_and_process_elder_change(&self.1, None)
-            .transition_exit_check_and_process_elder_change(&self.1)
-            .as_check_and_process_elder_change(&self.1)
+        self.start_check_elder_timeout()
     }
 
     fn try_next(&self, event: Event) -> Option<State> {
         match event {
-            Event::ParsecConsensus(vote) => self.try_consensus_elder(&vote),
+            Event::ParsecConsensus(vote) => self.try_consensus(&vote),
+            Event::LocalEvent(LocalEvent::TimeoutCheckElder) => {
+                Some(self.vote_parsec_check_elder())
+            }
             _ => None,
         }
         .map(|state| state.0)
     }
 
-    fn try_consensus_elder(&self, vote: &ParsecVote) -> Option<Self> {
+    fn try_consensus(&self, vote: &ParsecVote) -> Option<Self> {
+        if ParsecVote::CheckElder == *vote {
+            return Some(self.check_elder());
+        }
+
         if !self.routine_state().wait_votes.contains(&vote) {
             return None;
         }
@@ -310,47 +294,59 @@ impl CheckAndProcessElderChange {
         let wait_votes = &mut state.mut_routine_state().wait_votes;
         wait_votes.retain(|wait_vote| wait_vote != vote);
 
-        Some(match wait_votes.is_empty() {
-            true => state.exit_event_loop(),
-            false => state,
-        })
+        if wait_votes.is_empty() {
+            Some(state.mark_elder_change().start_check_elder_timeout())
+        } else {
+            Some(state)
+        }
     }
 
     fn routine_state(&self) -> &CheckAndProcessElderChangeState {
-        match self
-            .0
-            .sub_routine_check_and_process_elder_change(&self.1)
-        {
-            Some(state) => state,
-            _ => panic!("Expect CheckAndProcessElderChange {:?}", &self),
-        }
+        &self.0.check_and_process_elder_change_routine
     }
 
     fn mut_routine_state(&mut self) -> &mut CheckAndProcessElderChangeState {
-        let clone = self.clone();
-        match self
-            .0
-            .mut_sub_routine_check_and_process_elder_change(&self.1)
-        {
-            Some(state) => state,
-            _ => panic!("Expect CheckAndProcessElderChange {:?}", &clone),
-        }
+        &mut self.0.check_and_process_elder_change_routine
     }
 
     fn check_elder(&self) -> Self {
         match self.0.action.check_elder() {
-            Some(change_elder) => self.mark_and_vote_elder_change(change_elder),
-            None => self.exit_event_loop(),
+            Some(change_elder) => self.start_vote_elder_change(change_elder),
+            None => self.start_check_elder_timeout(),
         }
     }
 
-    fn mark_and_vote_elder_change(&self, change_elder: ChangeElder) -> Self {
+    fn start_vote_elder_change(&self, change_elder: ChangeElder) -> Self {
         let mut state = self.clone();
 
-        let votes = state.0.action.mark_and_vote_elder_change(change_elder);
-        state.mut_routine_state().wait_votes.extend(votes.iter());
+        let votes = state.0.action.get_elder_change_votes(&change_elder);
+        state.mut_routine_state().change_elder = Some(change_elder);
+        state.mut_routine_state().wait_votes = votes;
+
+        for vote in &state.routine_state().wait_votes {
+            state.0.action.vote_parsec(*vote);
+        }
 
         state
+    }
+
+    fn mark_elder_change(&self) -> Self {
+        let mut state = self.clone();
+
+        let change_elder = state.mut_routine_state().change_elder.take().unwrap();
+        state.0.action.mark_elder_change(change_elder);
+
+        state
+    }
+
+    fn vote_parsec_check_elder(&self) -> Self {
+        self.0.action.vote_parsec(ParsecVote::CheckElder);
+        self.clone()
+    }
+
+    fn start_check_elder_timeout(&self) -> Self {
+        self.0.action.schedule_event(LocalEvent::TimeoutCheckElder);
+        self.clone()
     }
 }
 
@@ -373,7 +369,10 @@ impl TopLevelSrc {
 
     fn try_rpc(&self, rpc: Rpc) -> Option<Self> {
         match rpc {
-            Rpc::RefuseCandidate(_) | Rpc::RelocateResponse(_) => Some(self.discard()),
+            Rpc::RefuseCandidate(candidate) => Some(self.vote_parsec_refuse_candidate(candidate)),
+            Rpc::RelocateResponse(candidate) => {
+                Some(self.vote_parsec_relocation_response(candidate))
+            }
             _ => None,
         }
     }
@@ -397,21 +396,27 @@ impl TopLevelSrc {
     fn try_consensused_relocation_trigger(&self) -> Option<Self> {
         match self.0.src_routine.relocating_candidate {
             Some(_) => Some(self.discard()),
-            None => Some(self.concurrent_transition_to_check_and_process_elder_change()),
+            None => Some(
+                self.set_relocating_candidate(Some(self.0.action.get_relocating_candidate()))
+                    .set_candidate_relocating_state_if_needed()
+                    .check_if_relocating_elder(),
+            ),
         }
     }
 
-    fn concurrent_transition_to_check_and_process_elder_change(&self) -> Self {
-        self.set_relocating_candidate(Some(self.0.action.get_relocating_candidate()))
-            .set_candidate_relocating_state_if_needed()
+    fn check_if_relocating_elder(&self) -> Self {
+        if self
             .0
-            .as_check_and_process_elder_change(&CheckAndProcessElderChangeCaller::TopLevelSrc)
-            .start_event_loop()
-            .0
-            .as_top_level_src()
+            .action
+            .is_elder_state(self.0.src_routine.relocating_candidate.unwrap())
+        {
+            self.set_relocating_candidate(None)
+        } else {
+            self.concurrent_transition_to_try_relocating()
+        }
     }
 
-    fn transition_exit_check_and_process_elder_change(&self) -> Self {
+    fn concurrent_transition_to_try_relocating(&self) -> Self {
         self.0
             .as_try_relocating()
             .start_event_loop(self.0.src_routine.relocating_candidate.unwrap())
@@ -445,6 +450,20 @@ impl TopLevelSrc {
         }
         self.clone()
     }
+
+    fn vote_parsec_refuse_candidate(&self, candiddate: Candidate) -> Self {
+        self.0
+            .action
+            .vote_parsec(ParsecVote::RefuseCandidate(candiddate));
+        self.clone()
+    }
+
+    fn vote_parsec_relocation_response(&self, candiddate: Candidate) -> Self {
+        self.0
+            .action
+            .vote_parsec(ParsecVote::RelocateResponse(candiddate));
+        self.clone()
+    }
 }
 
 #[derive(Debug, PartialEq, Default, Clone)]
@@ -470,24 +489,10 @@ impl TryRelocating {
 
     fn try_next(&self, event: Event) -> Option<State> {
         match event {
-            Event::Rpc(rpc) => self.try_rpc(rpc),
             Event::ParsecConsensus(vote) => self.try_consensus(vote),
-
             _ => None,
         }
         .map(|state| state.0)
-    }
-
-    fn try_rpc(&self, rpc: Rpc) -> Option<Self> {
-        if rpc.candidate() != Some(self.candidate()) {
-            return None;
-        }
-
-        match rpc {
-            Rpc::RefuseCandidate(_) => Some(self.vote_parsec_refuse_candidate()),
-            Rpc::RelocateResponse(_) => Some(self.vote_parsec_relocation_response()),
-            _ => None,
-        }
     }
 
     fn try_consensus(&self, vote: ParsecVote) -> Option<Self> {
@@ -516,20 +521,6 @@ impl TryRelocating {
             Some(state) => state,
             _ => panic!("Expect AcceptAsCandidate {:?}", &clone),
         }
-    }
-
-    fn vote_parsec_refuse_candidate(&self) -> Self {
-        self.0
-            .action
-            .vote_parsec(ParsecVote::RefuseCandidate(self.candidate()));
-        self.clone()
-    }
-
-    fn vote_parsec_relocation_response(&self) -> Self {
-        self.0
-            .action
-            .vote_parsec(ParsecVote::RelocateResponse(self.candidate()));
-        self.clone()
     }
 
     fn send_expect_candidate_rpc(&self) -> Self {
@@ -577,6 +568,7 @@ enum NodeChange {
     Online(Node),
     Relocating(Node),
     Remove(Node),
+    Elder(Node, bool),
 }
 
 impl NodeChange {
@@ -585,7 +577,8 @@ impl NodeChange {
             NodeChange::AddResourceProofing(node)
             | NodeChange::Online(node)
             | NodeChange::Relocating(node)
-            | NodeChange::Remove(node) => *node,
+            | NodeChange::Remove(node)
+            | NodeChange::Elder(node, _) => *node,
         }
     }
 
@@ -686,6 +679,8 @@ enum ParsecVote {
     RelocationTrigger,
     RefuseCandidate(Candidate),
     RelocateResponse(Candidate),
+
+    CheckElder,
 }
 
 impl ParsecVote {
@@ -704,7 +699,8 @@ impl ParsecVote {
             ParsecVote::AddElderNode(_)
             | ParsecVote::RemoveElderNode(_)
             | ParsecVote::NewSectionInfo(_)
-            | ParsecVote::RelocationTrigger => None,
+            | ParsecVote::RelocationTrigger
+            | ParsecVote::CheckElder => None,
         }
     }
 }
@@ -713,6 +709,7 @@ impl ParsecVote {
 enum LocalEvent {
     TimeoutAccept,
     RelocationTrigger,
+    TimeoutCheckElder,
 }
 
 impl LocalEvent {
@@ -727,6 +724,7 @@ struct InnerAction {
 
     our_votes: Vec<ParsecVote>,
     our_rpc: Vec<Rpc>,
+    our_events: Vec<LocalEvent>,
     our_nodes: Vec<NodeChange>,
 
     shortest_prefix: Option<Section>,
@@ -779,6 +777,13 @@ impl InnerAction {
         node.is_resource_proofing = false;
         self.our_nodes.push(NodeChange::Online(node.node));
     }
+
+    fn set_elder_state(&mut self, name: &Name, value: bool) {
+        let node = &mut self.our_current_nodes.get_mut(name).unwrap();
+
+        node.is_elder = value;
+        self.our_nodes.push(NodeChange::Elder(node.node, value));
+    }
 }
 
 #[derive(Clone)]
@@ -795,7 +800,6 @@ impl Action {
 
     fn remove_processed_state(&self) {
         let inner = &mut self.0.borrow_mut();
-        let our_nodes_len = inner.our_nodes.len();
 
         inner.our_votes.clear();
         inner.our_rpc.clear();
@@ -808,6 +812,10 @@ impl Action {
 
     fn send_rpc(&self, rpc: Rpc) {
         self.0.borrow_mut().our_rpc.push(rpc);
+    }
+
+    fn schedule_event(&self, event: LocalEvent) {
+        self.0.borrow_mut().our_events.push(event);
     }
 
     fn add_node_ressource_proofing(&self, candidate: Candidate) {
@@ -879,31 +887,24 @@ impl Action {
         }
     }
 
-    fn mark_and_vote_elder_change(&self, change_elder: ChangeElder) -> Vec<ParsecVote> {
-        let votes = {
-            let inner = &mut self.0.borrow_mut();
-            let our_current_nodes = &mut inner.our_current_nodes;
+    fn get_elder_change_votes(&self, change_elder: &ChangeElder) -> Vec<ParsecVote> {
+        change_elder
+            .0
+            .iter()
+            .map(|(node, new_is_elder)| match new_is_elder {
+                true => ParsecVote::AddElderNode(*node),
+                false => ParsecVote::RemoveElderNode(*node),
+            })
+            .chain(std::iter::once(ParsecVote::NewSectionInfo(SectionInfo(1))))
+            .collect_vec()
+    }
 
-            for (node, new_is_elder) in &change_elder.0 {
-                let node_state = our_current_nodes.get_mut(&Name(node.0.name)).unwrap();
-                node_state.is_elder = *new_is_elder;
-            }
-
-            change_elder
-                .0
-                .iter()
-                .map(|(node, new_is_elder)| match new_is_elder {
-                    true => ParsecVote::AddElderNode(*node),
-                    false => ParsecVote::RemoveElderNode(*node),
-                })
-                .chain(std::iter::once(ParsecVote::NewSectionInfo(SectionInfo(1))))
-                .collect_vec()
-        };
-
-        for vote in &votes {
-            self.vote_parsec(*vote);
+    fn mark_elder_change(&self, change_elder: ChangeElder) {
+        for (node, new_is_elder) in &change_elder.0 {
+            self.0
+                .borrow_mut()
+                .set_elder_state(&Name(node.0.name), *new_is_elder);
         }
-        votes
     }
 
     fn get_relocating_candidate(&self) -> Candidate {
@@ -921,6 +922,15 @@ impl Action {
             Some(Node(val)) => Candidate(*val),
             None => panic!("node_to_relocate not setup"),
         }
+    }
+
+    fn is_elder_state(&self, candidate: Candidate) -> bool {
+        self.0
+            .borrow()
+            .our_current_nodes
+            .get(&Name(candidate.0.name))
+            .unwrap()
+            .is_elder
     }
 
     fn is_candidate_relocating_state(&self, candidate: Candidate) -> bool {
@@ -957,15 +967,10 @@ impl PartialEq for Action {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
-enum CheckAndProcessElderChangeCaller {
-    TopLevelDst,
-    TopLevelSrc,
-}
-
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Default, Clone)]
 struct CheckAndProcessElderChangeState {
     wait_votes: Vec<ParsecVote>,
+    change_elder: Option<ChangeElder>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -994,13 +999,11 @@ struct TryRelocatingState {
 struct DstRoutineState {
     is_processing_candidate: bool,
     sub_routine_accept_as_candidate: Option<AcceptAsCandidateState>,
-    sub_routine_check_and_process_elder_change: Option<CheckAndProcessElderChangeState>,
 }
 
 #[derive(Debug, PartialEq, Default, Clone)]
 struct SrcRoutineState {
     relocating_candidate: Option<Candidate>,
-    sub_routine_check_and_process_elder_change: Option<CheckAndProcessElderChangeState>,
     sub_routine_try_relocating: Option<TryRelocatingState>,
 }
 
@@ -1011,6 +1014,7 @@ struct State {
     failure: Option<Event>,
     dst_routine: DstRoutineState,
     src_routine: SrcRoutineState,
+    check_and_process_elder_change_routine: CheckAndProcessElderChangeState,
 }
 
 impl State {
@@ -1018,31 +1022,8 @@ impl State {
         let dst = &self.dst_routine;
         let src = &self.src_routine;
 
-        if dst.sub_routine_accept_as_candidate.is_some() {
-            if let Some(next) = self.as_accept_as_candidate().try_next(event) {
-                return Some(next);
-            }
-        }
-        if dst.sub_routine_check_and_process_elder_change.is_some() {
-            if let Some(next) = self
-                .as_check_and_process_elder_change(&CheckAndProcessElderChangeCaller::TopLevelDst)
-                .try_next(event)
-            {
-                return Some(next);
-            }
-        }
-
-        if let Some(next) = self.as_top_level_dst().try_next(event) {
+        if let Some(next) = self.as_check_and_process_elder_change().try_next(event) {
             return Some(next);
-        }
-
-        if src.sub_routine_check_and_process_elder_change.is_some() {
-            if let Some(next) = self
-                .as_check_and_process_elder_change(&CheckAndProcessElderChangeCaller::TopLevelSrc)
-                .try_next(event)
-            {
-                return Some(next);
-            }
         }
 
         if src.sub_routine_try_relocating.is_some() {
@@ -1054,6 +1035,17 @@ impl State {
         if let Some(next) = self.as_top_level_src().try_next(event) {
             return Some(next);
         }
+
+        if dst.sub_routine_accept_as_candidate.is_some() {
+            if let Some(next) = self.as_accept_as_candidate().try_next(event) {
+                return Some(next);
+            }
+        }
+
+        if let Some(next) = self.as_top_level_dst().try_next(event) {
+            return Some(next);
+        }
+
 
         match event {
             // These should only happen if a routine started them, so it should have
@@ -1075,11 +1067,8 @@ impl State {
         AcceptAsCandidate(self.clone())
     }
 
-    fn as_check_and_process_elder_change(
-        &self,
-        caller: &CheckAndProcessElderChangeCaller,
-    ) -> CheckAndProcessElderChange {
-        CheckAndProcessElderChange(self.clone(), *caller)
+    fn as_check_and_process_elder_change(&self) -> CheckAndProcessElderChange {
+        CheckAndProcessElderChange(self.clone())
     }
 
     fn as_top_level_src(&self) -> TopLevelSrc {
@@ -1120,58 +1109,6 @@ impl State {
                 ..self.src_routine.clone()
             },
             ..self.clone()
-        }
-    }
-
-    fn sub_routine_check_and_process_elder_change(
-        &self,
-        caller: &CheckAndProcessElderChangeCaller
-    ) -> &Option<CheckAndProcessElderChangeState> {
-        match caller {
-            CheckAndProcessElderChangeCaller::TopLevelDst =>
-                &self.dst_routine.sub_routine_check_and_process_elder_change,
-            CheckAndProcessElderChangeCaller::TopLevelSrc =>
-                &self.src_routine.sub_routine_check_and_process_elder_change,
-        }
-    }
-
-    fn mut_sub_routine_check_and_process_elder_change(
-        &mut self,
-        caller: &CheckAndProcessElderChangeCaller,
-    ) -> &mut Option<CheckAndProcessElderChangeState> {
-        match caller {
-            CheckAndProcessElderChangeCaller::TopLevelDst =>
-                &mut self.dst_routine.sub_routine_check_and_process_elder_change,
-            CheckAndProcessElderChangeCaller::TopLevelSrc =>
-                &mut self.src_routine.sub_routine_check_and_process_elder_change,
-        }
-    }
-
-    fn with_sub_routine_check_and_process_elder_change(
-        &self,
-        caller: &CheckAndProcessElderChangeCaller,
-        sub_routine_check_and_process_elder_change: Option<CheckAndProcessElderChangeState>,
-    ) -> Self {
-        let mut state = self.clone();
-        *state.mut_sub_routine_check_and_process_elder_change(caller) = sub_routine_check_and_process_elder_change;
-        state
-    }
-
-    fn transition_exit_check_and_process_elder_change(
-        &self,
-        caller: &CheckAndProcessElderChangeCaller,
-    ) -> State {
-        match caller {
-            CheckAndProcessElderChangeCaller::TopLevelDst => {
-                self.as_top_level_dst()
-                    .transition_exit_check_and_process_elder_change()
-                    .0
-            }
-            CheckAndProcessElderChangeCaller::TopLevelSrc => {
-                self.as_top_level_src()
-                    .transition_exit_check_and_process_elder_change()
-                    .0
-            }
         }
     }
 }
@@ -1229,16 +1166,32 @@ mod tests {
                 &[NODE_ELDER_130, NODE_ELDER_131, NODE_ELDER_132]
             )
             .extend_current_nodes_with(&NodeState::default(), &[YOUNG_ADULT_205]);
-        static ref PARSEC_VOTES_SWAP_ELDER_109_NODE_1_SECTION_INFO_1: Vec<ParsecVote> = vec![
-            ParsecVote::AddElderNode(NODE_1),
-            ParsecVote::RemoveElderNode(NODE_ELDER_109),
-            ParsecVote::NewSectionInfo(SECTION_INFO_1),
-        ];
-        static ref PARSEC_VOTES_SWAP_ELDER_130_YOUNG_205_SECTION_INFO_1: Vec<ParsecVote> = vec![
-            ParsecVote::AddElderNode(YOUNG_ADULT_205),
-            ParsecVote::RemoveElderNode(NODE_ELDER_130),
-            ParsecVote::NewSectionInfo(SECTION_INFO_1),
-        ];
+        static ref INNER_ACTION_YOUNG_ELDERS_WITH_WAITING_ELDER: InnerAction =
+            InnerAction::default()
+                .extend_current_nodes_with(
+                    &NodeState {
+                        is_elder: true,
+                        ..NodeState::default()
+                    },
+                    &[NODE_ELDER_109, NODE_ELDER_110, NODE_ELDER_111]
+                )
+                .extend_current_nodes_with(&NodeState::default(), &[NODE_ELDER_130]);
+        static ref SWAP_ELDER_109_NODE_1_SECTION_INFO_1: (ChangeElder, Vec<ParsecVote>) = (
+            ChangeElder(vec![(NODE_1, true), (NODE_ELDER_109, false),]),
+            vec![
+                ParsecVote::AddElderNode(NODE_1),
+                ParsecVote::RemoveElderNode(NODE_ELDER_109),
+                ParsecVote::NewSectionInfo(SECTION_INFO_1),
+            ]
+        );
+        static ref SWAP_ELDER_130_YOUNG_205_SECTION_INFO_1: (ChangeElder, Vec<ParsecVote>) = (
+            ChangeElder(vec![(YOUNG_ADULT_205, true), (NODE_ELDER_130, false),]),
+            vec![
+                ParsecVote::AddElderNode(YOUNG_ADULT_205),
+                ParsecVote::RemoveElderNode(NODE_ELDER_130),
+                ParsecVote::NewSectionInfo(SECTION_INFO_1),
+            ]
+        );
     }
 
     #[derive(Debug, PartialEq, Default, Clone)]
@@ -1248,6 +1201,7 @@ mod tests {
         action_our_nodes: Vec<NodeChange>,
         dst_routine: DstRoutineState,
         src_routine: SrcRoutineState,
+        check_and_process_elder_change_routine: CheckAndProcessElderChangeState,
     }
 
     fn process_events(mut state: State, events: &[Event]) -> State {
@@ -1281,6 +1235,8 @@ mod tests {
                 action_our_nodes: action.our_nodes,
                 dst_routine: final_state.dst_routine,
                 src_routine: final_state.src_routine,
+                check_and_process_elder_change_routine: final_state
+                    .check_and_process_elder_change_routine,
             },
             final_state.failure,
         );
@@ -1685,19 +1641,17 @@ mod tests {
         run_test(
             "Get Parsec ExpectCandidate then Online (Elder Change)",
             &initial_state,
-            &vec![ParsecVote::Online(CANDIDATE_1).to_event()],
+            &vec![
+                ParsecVote::Online(CANDIDATE_1).to_event(),
+                ParsecVote::CheckElder.to_event(),
+            ],
             &AssertState {
                 action_our_rpcs: vec![Rpc::NodeApproval(CANDIDATE_1)],
-                action_our_votes: PARSEC_VOTES_SWAP_ELDER_109_NODE_1_SECTION_INFO_1.clone(),
+                action_our_votes: SWAP_ELDER_109_NODE_1_SECTION_INFO_1.1.clone(),
                 action_our_nodes: vec![SET_ONLINE_NODE_1],
-                dst_routine: DstRoutineState {
-                    is_processing_candidate: true,
-                    sub_routine_check_and_process_elder_change: Some(
-                        CheckAndProcessElderChangeState {
-                            wait_votes: PARSEC_VOTES_SWAP_ELDER_109_NODE_1_SECTION_INFO_1.clone(),
-                        },
-                    ),
-                    ..Default::default()
+                check_and_process_elder_change_routine: CheckAndProcessElderChangeState {
+                    change_elder: Some(SWAP_ELDER_109_NODE_1_SECTION_INFO_1.0.clone()),
+                    wait_votes: SWAP_ELDER_109_NODE_1_SECTION_INFO_1.1.clone(),
                 },
                 ..AssertState::default()
             },
@@ -1711,6 +1665,7 @@ mod tests {
             &[
                 ParsecVote::ExpectCandidate(CANDIDATE_1).to_event(),
                 ParsecVote::Online(CANDIDATE_1).to_event(),
+                ParsecVote::CheckElder.to_event(),
             ],
         );
 
@@ -1724,14 +1679,9 @@ mod tests {
                 ParsecVote::NewSectionInfo(SECTION_INFO_2).to_event(),
             ],
             &AssertState {
-                dst_routine: DstRoutineState {
-                    is_processing_candidate: true,
-                    sub_routine_check_and_process_elder_change: Some(
-                        CheckAndProcessElderChangeState {
-                            wait_votes: PARSEC_VOTES_SWAP_ELDER_109_NODE_1_SECTION_INFO_1.clone(),
-                        },
-                    ),
-            ..Default::default()
+                check_and_process_elder_change_routine: CheckAndProcessElderChangeState {
+                    change_elder: Some(SWAP_ELDER_109_NODE_1_SECTION_INFO_1.0.clone()),
+                    wait_votes: SWAP_ELDER_109_NODE_1_SECTION_INFO_1.1.clone(),
                 },
                 ..AssertState::default()
             },
@@ -1745,6 +1695,7 @@ mod tests {
             &[
                 ParsecVote::ExpectCandidate(CANDIDATE_1).to_event(),
                 ParsecVote::Online(CANDIDATE_1).to_event(),
+                ParsecVote::CheckElder.to_event(),
             ],
         );
 
@@ -1753,17 +1704,12 @@ mod tests {
             &initial_state,
             &vec![ParsecVote::RemoveElderNode(NODE_ELDER_109).to_event()],
             &AssertState {
-                dst_routine: DstRoutineState {
-                    is_processing_candidate: true,
-                    sub_routine_check_and_process_elder_change: Some(
-                        CheckAndProcessElderChangeState {
-                            wait_votes: vec![
-                                ParsecVote::AddElderNode(NODE_1),
-                                ParsecVote::NewSectionInfo(SECTION_INFO_1),
-                            ],
-                        },
-                    ),
-                    ..Default::default()
+                check_and_process_elder_change_routine: CheckAndProcessElderChangeState {
+                    change_elder: Some(SWAP_ELDER_109_NODE_1_SECTION_INFO_1.0.clone()),
+                    wait_votes: vec![
+                        ParsecVote::AddElderNode(NODE_1),
+                        ParsecVote::NewSectionInfo(SECTION_INFO_1),
+                    ],
                 },
                 ..AssertState::default()
             },
@@ -1980,19 +1926,16 @@ mod tests {
         run_test(
             "Get Parsec ExpectCandidate then Online (Elder Change)",
             &initial_state,
-            &vec![ParsecVote::RelocationTrigger.to_event()],
+            &vec![
+                ParsecVote::RelocationTrigger.to_event(),
+                ParsecVote::CheckElder.to_event(),
+            ],
             &AssertState {
                 action_our_nodes: vec![NodeChange::Relocating(NODE_ELDER_130.clone())],
-                action_our_votes: PARSEC_VOTES_SWAP_ELDER_130_YOUNG_205_SECTION_INFO_1.clone(),
-                src_routine: SrcRoutineState {
-                    relocating_candidate: Some(CANDIDATE_130.clone()),
-                    sub_routine_check_and_process_elder_change: Some(
-                        CheckAndProcessElderChangeState {
-                            wait_votes: PARSEC_VOTES_SWAP_ELDER_130_YOUNG_205_SECTION_INFO_1
-                                .clone(),
-                        },
-                    ),
-                    ..Default::default()
+                action_our_votes: SWAP_ELDER_130_YOUNG_205_SECTION_INFO_1.1.clone(),
+                check_and_process_elder_change_routine: CheckAndProcessElderChangeState {
+                    change_elder: Some(SWAP_ELDER_130_YOUNG_205_SECTION_INFO_1.0.clone()),
+                    wait_votes: SWAP_ELDER_130_YOUNG_205_SECTION_INFO_1.1.clone(),
                 },
                 ..AssertState::default()
             },
@@ -2009,7 +1952,10 @@ mod tests {
                 }),
                 ..State::default()
             },
-            &[ParsecVote::RelocationTrigger.to_event()],
+            &[
+                ParsecVote::RelocationTrigger.to_event(),
+                ParsecVote::CheckElder.to_event(),
+            ],
         );
 
         run_test(
@@ -2019,9 +1965,13 @@ mod tests {
                 ParsecVote::RemoveElderNode(NODE_ELDER_130).to_event(),
                 ParsecVote::AddElderNode(YOUNG_ADULT_205).to_event(),
                 ParsecVote::NewSectionInfo(SECTION_INFO_1).to_event(),
+                ParsecVote::RelocationTrigger.to_event(),
             ],
             &AssertState {
-                //action_our_nodes: vec![ADD_PROOFING_NODE_1],
+                action_our_nodes: vec![
+                    NodeChange::Elder(YOUNG_ADULT_205, true),
+                    NodeChange::Elder(NODE_ELDER_130, false),
+                ],
                 action_our_rpcs: vec![Rpc::ExpectCandidate(CANDIDATE_130.clone())],
                 src_routine: SrcRoutineState {
                     relocating_candidate: Some(Candidate(NODE_ELDER_130.0)),
@@ -2188,9 +2138,11 @@ mod tests {
             },
             &[
                 ParsecVote::RelocationTrigger.to_event(),
+                ParsecVote::CheckElder.to_event(),
                 ParsecVote::RemoveElderNode(NODE_ELDER_130).to_event(),
                 ParsecVote::AddElderNode(YOUNG_ADULT_205).to_event(),
                 ParsecVote::NewSectionInfo(SECTION_INFO_1).to_event(),
+                ParsecVote::RelocationTrigger.to_event(),
                 ParsecVote::RefuseCandidate(CANDIDATE_130).to_event(),
             ],
         );
@@ -2219,7 +2171,10 @@ mod tests {
             "Get RPC ExpectCandidate",
             &intial_state_old_elders(),
             &[Rpc::RefuseCandidate(CANDIDATE_205.clone()).to_event()],
-            &AssertState::default(),
+            &AssertState {
+                action_our_votes: vec![ParsecVote::RefuseCandidate(CANDIDATE_205.clone())],
+                ..AssertState::default()
+            },
         );
     }
 
@@ -2228,8 +2183,11 @@ mod tests {
         run_test(
             "Get RPC ExpectCandidate",
             &intial_state_old_elders(),
-            &[Rpc::RefuseCandidate(CANDIDATE_205.clone()).to_event()],
-            &AssertState::default(),
+            &[Rpc::RelocateResponse(CANDIDATE_205.clone()).to_event()],
+            &AssertState {
+                action_our_votes: vec![ParsecVote::RelocateResponse(CANDIDATE_205.clone())],
+                ..AssertState::default()
+            },
         );
     }
 }
