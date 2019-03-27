@@ -301,7 +301,7 @@ impl Node {
             let status_str = format!(
                 "{} - Routing Table size: {:3}",
                 self,
-                self.chain.valid_peers().len()
+                self.chain.valid_peers(true).len()
             );
             let network_estimate = match self.chain().network_size_estimate() {
                 (n, true) => format!("Exact network size: {}", n),
@@ -952,7 +952,7 @@ impl Node {
 
         let peers_to_connect: BTreeSet<PublicId> = self
             .chain
-            .valid_peers()
+            .valid_peers(true)
             .iter()
             .filter_map(|pub_id| {
                 if self.peer_mgr.get_peer(pub_id).is_none() && *pub_id != self.full_id.public_id() {
@@ -3029,24 +3029,30 @@ impl Node {
     /// may be us or another node. If our signature is not required, this returns `None`.
     fn get_signature_target(&self, src: &Authority<XorName>, route: u8) -> Option<XorName> {
         use crate::Authority::*;
+        let (our_section, valid_peers) = if self.chain().is_member() {
+            // FIXME: we're passing false here to valid peers to not include
+            // recently accepted peers which would affect quorum calculation.
+            // This even when going via RT would have only allowed route-0
+            // to succeed as by ack-failure, the new node would have been
+            // accepted to the RT. Need a better network startup separation.
+            (self.chain().our_section(), self.chain().valid_peers(false))
+        } else {
+            let our_section: BTreeSet<XorName> = iter::once(self.name()).cloned().collect();
+            let valid_peers: BTreeSet<&PublicId> = iter::once(self.id()).collect();
+            (our_section, valid_peers)
+        };
         let list: Vec<XorName> = match *src {
             ClientManager(_) | NaeManager(_) | NodeManager(_) => {
-                let mut v = self
-                    .chain()
-                    .our_section()
+                let mut v = our_section
                     .into_iter()
                     .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs));
                 v.truncate(self.min_section_size());
                 v
             }
-            Section(_) => self
-                .chain()
-                .our_section()
+            Section(_) => our_section
                 .into_iter()
                 .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs)),
-            PrefixSection(_) => self
-                .chain()
-                .valid_peers()
+            PrefixSection(_) => valid_peers
                 .iter()
                 .map(|id| id.name())
                 .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs))

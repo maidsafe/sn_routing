@@ -674,7 +674,7 @@ pub fn verify_invariant_for_all_nodes(nodes: &mut [TestNode]) {
         // Confirm valid peers from chain are connected according to PeerMgr
         for pub_id in node
             .chain()
-            .valid_peers()
+            .valid_peers(true)
             .iter()
             .filter(|id| **id != node.chain().our_id())
         {
