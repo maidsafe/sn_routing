@@ -91,7 +91,7 @@ impl Chain {
     pub fn prefixes(&self) -> BTreeSet<Prefix<XorName>> {
         self.other_prefixes()
             .iter()
-            .chain(iter::once(self.our_info().prefix()))
+            .chain(self.our_infos.last().map(|(si, _)| si.prefix()))
             .cloned()
             .collect()
     }
