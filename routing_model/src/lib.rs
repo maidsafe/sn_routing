@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+#![allow(unused_imports)]
+
 use itertools::Itertools;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -127,12 +130,12 @@ impl AcceptAsCandidate {
 
     fn try_next(&self, event: Event) -> Option<State> {
         match event {
-            Event::Rpc(Rpc::CandidateInfo { candidate, valid }) => {
-                self.try_rpc_info(candidate, valid)
-            }
-            Event::Rpc(Rpc::ResourceProofResponse { candidate, proof }) => {
-                self.try_rpc_proof(candidate, proof)
-            }
+            Event::Rpc(Rpc::CandidateInfo {
+                candidate, valid, ..
+            }) => self.try_rpc_info(candidate, valid),
+            Event::Rpc(Rpc::ResourceProofResponse {
+                candidate, proof, ..
+            }) => self.try_rpc_proof(candidate, proof),
             Event::ParsecConsensus(vote) => self.try_consensus(vote),
             Event::LocalEvent(LocalEvent::TimeoutAccept) => {
                 Some(self.vote_parsec_purge_candidate())
@@ -228,7 +231,7 @@ impl AcceptAsCandidate {
 
     fn make_node_online(&self) -> Self {
         self.0.action.set_candidate_online_state(self.candidate());
-        self.0.action.send_rpc(Rpc::NodeApproval(self.candidate()));
+        self.0.action.send_node_approval_rpc(self.candidate());
         self.exit_event_loop()
     }
 
@@ -238,21 +241,17 @@ impl AcceptAsCandidate {
     }
 
     fn send_relocate_response_rpc(&self) -> Self {
-        self.0
-            .action
-            .send_rpc(Rpc::RelocateResponse(self.candidate()));
+        self.0.action.send_relocate_response_rpc(self.candidate());
         self.clone()
     }
 
     fn send_resource_proof_rpc(&self) -> Self {
-        self.0.action.send_rpc(Rpc::ResourceProof(self.candidate()));
+        self.0.action.send_candidate_proof_request(self.candidate());
         self.clone()
     }
 
     fn send_resource_proof_receipt_rpc(&self) -> Self {
-        self.0
-            .action
-            .send_rpc(Rpc::ResourceProofReceipt(self.candidate()));
+        self.0.action.send_candidate_proof_receipt(self.candidate());
         self.clone()
     }
 
@@ -370,8 +369,8 @@ impl TopLevelSrc {
     fn try_rpc(&self, rpc: Rpc) -> Option<Self> {
         match rpc {
             Rpc::RefuseCandidate(candidate) => Some(self.vote_parsec_refuse_candidate(candidate)),
-            Rpc::RelocateResponse(candidate) => {
-                Some(self.vote_parsec_relocation_response(candidate))
+            Rpc::RelocateResponse(candidate, section) => {
+                Some(self.vote_parsec_relocation_response(candidate, section))
             }
             _ => None,
         }
@@ -458,10 +457,10 @@ impl TopLevelSrc {
         self.clone()
     }
 
-    fn vote_parsec_relocation_response(&self, candiddate: Candidate) -> Self {
+    fn vote_parsec_relocation_response(&self, candiddate: Candidate, section: SectionInfo) -> Self {
         self.0
             .action
-            .vote_parsec(ParsecVote::RelocateResponse(candiddate));
+            .vote_parsec(ParsecVote::RelocateResponse(candiddate, section));
         self.clone()
     }
 }
@@ -502,7 +501,7 @@ impl TryRelocating {
 
         match vote {
             ParsecVote::RefuseCandidate(_) => Some(self.exit_event_loop()),
-            ParsecVote::RelocateResponse(_) => Some(self.remove_node()),
+            ParsecVote::RelocateResponse(_, section) => Some(self.remove_node(section)),
             // Delegate to other event loops
             _ => None,
         }
@@ -530,13 +529,190 @@ impl TryRelocating {
         self.clone()
     }
 
-    fn remove_node(&self) -> Self {
+    fn remove_node(&self, section: SectionInfo) -> Self {
+        self.0
+            .action
+            .send_candidate_relocated_info(self.candidate(), section);
         self.0.action.remove_node(self.candidate());
         self.exit_event_loop()
     }
 
     fn candidate(&self) -> Candidate {
         self.routine_state().candidate
+    }
+}
+
+//////////////////
+/// Joining Single Node
+//////////////////
+
+#[derive(Debug, PartialEq, Default, Clone)]
+struct JoiningRelocateCandidate(JoiningState);
+
+impl JoiningRelocateCandidate {
+    fn start_event_loop(&self, new_section: &SectionInfo) -> Self {
+        self.store_destination_members(new_section)
+            .send_connection_info_requests()
+            .start_resend_info_timeout()
+            .start_refused_timeout()
+    }
+
+    fn try_next(&self, event: Event) -> Option<JoiningState> {
+        match event {
+            Event::Rpc(rpc) => self.try_rpc(rpc),
+            Event::LocalEvent(local_event) => self.try_local_event(local_event),
+            _ => None,
+        }
+        .or_else(|| Some(self.discard()))
+        .map(|state| state.0)
+    }
+
+    fn try_rpc(&self, rpc: Rpc) -> Option<Self> {
+        if let Rpc::NodeApproval(candidate, info) = &rpc {
+            if self.0.action.is_our_name(Name(candidate.0.name)) {
+                return Some(self.exit(*info));
+            } else {
+                return None;
+            }
+        }
+
+        if !rpc
+            .destination()
+            .map(|name| self.0.action.is_our_name(name))
+            .unwrap_or(false)
+        {
+            return None;
+        }
+
+        match rpc {
+            Rpc::ConnectionInfoResponse {
+                source,
+                connection_info,
+                ..
+            } => Some(self.connect_and_send_candidate_info(source, connection_info)),
+            Rpc::ResourceProof { proof, source, .. } => {
+                Some(self.start_compute_resource_proof(source, proof))
+            }
+            Rpc::ResourceProofReceipt { source, .. } => Some(self.send_next_proof_response(source)),
+            _ => None,
+        }
+    }
+
+    fn try_local_event(&self, local_event: LocalEvent) -> Option<Self> {
+        match local_event {
+            LocalEvent::ComputeResourceProofForElder(source, proof) => {
+                Some(self.send_first_proof_response(source, proof))
+            }
+            LocalEvent::JoiningTimeoutResendCandidateInfo => Some(
+                self.send_connection_info_requests()
+                    .start_resend_info_timeout(),
+            ),
+            _ => None,
+        }
+    }
+
+    fn exit(&self, info: GenesisPfxInfo) -> Self {
+        let mut state = self.clone();
+        state.0.join_routine.has_resource_proofs.clear();
+        state.0.join_routine.routine_complete = Some(info);
+        state
+    }
+
+    fn discard(&self) -> Self {
+        self.clone()
+    }
+
+    fn store_destination_members(&self, section: &SectionInfo) -> Self {
+        let mut state = self.clone();
+
+        let members = state.0.action.get_section_members(section);
+        state.0.join_routine.has_resource_proofs = members
+            .iter()
+            .map(|node| (Name(node.0.name), (false, None)))
+            .collect();
+        state
+    }
+
+    fn send_connection_info_requests(&self) -> Self {
+        let has_resource_proofs = &self.0.join_routine.has_resource_proofs;
+        for (name, _) in has_resource_proofs.iter().filter(|(_, value)| !value.0) {
+            self.0.action.send_connection_info_request(*name);
+        }
+
+        self.clone()
+    }
+
+    fn send_first_proof_response(&self, source: Name, mut proof_source: ProofSource) -> Self {
+        let mut state = self.clone();
+        let proof = state
+            .0
+            .join_routine
+            .has_resource_proofs
+            .get_mut(&source)
+            .unwrap();
+
+        let next_part = proof_source.next_part();
+        proof.1 = Some(proof_source);
+
+        state
+            .0
+            .action
+            .send_resource_proof_response(source, next_part);
+        state
+    }
+
+    fn send_next_proof_response(&self, source: Name) -> Self {
+        let mut state = self.clone();
+        let proof_source = &mut state
+            .0
+            .join_routine
+            .has_resource_proofs
+            .get_mut(&source)
+            .unwrap()
+            .1
+            .as_mut()
+            .unwrap();
+
+        let next_part = proof_source.next_part();
+        state
+            .0
+            .action
+            .send_resource_proof_response(source, next_part);
+        state
+    }
+
+    fn connect_and_send_candidate_info(&self, source: Name, connect_info: i32) -> Self {
+        self.0.action.send_candidate_info(source);
+        self.clone()
+    }
+
+    fn start_resend_info_timeout(&self) -> Self {
+        self.0
+            .action
+            .schedule_event(LocalEvent::JoiningTimeoutResendCandidateInfo);
+        self.clone()
+    }
+
+    fn start_refused_timeout(&self) -> Self {
+        self.0
+            .action
+            .schedule_event(LocalEvent::JoiningTimeoutRefused);
+        self.clone()
+    }
+
+    fn start_compute_resource_proof(&self, source: Name, proof: ProofRequest) -> Self {
+        let mut state = self.clone();
+        state.0.action.start_compute_resource_proof(source, proof);
+        let proof = state
+            .0
+            .join_routine
+            .has_resource_proofs
+            .get_mut(&source)
+            .unwrap();
+        if !proof.0 {
+            *proof = (true, None);
+        }
+        state
     }
 }
 
@@ -599,14 +775,25 @@ struct NodeState {
     is_resource_proofing: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, PartialOrd, Ord, Eq)]
 struct Section(i32);
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct SectionInfo(i32);
+#[derive(Debug, Clone, Copy, Default, PartialEq, PartialOrd, Ord, Eq)]
+struct SectionInfo(Section, i32 /*contain full membership */);
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, PartialOrd, Ord, Eq)]
+struct GenesisPfxInfo(SectionInfo);
 
 #[derive(Debug, Clone, PartialEq)]
-struct ChangeElder(Vec<(Node, bool)>);
+struct ChangeElder {
+    changes: Vec<(Node, bool)>,
+    new_section: SectionInfo,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ProofRequest {
+    value: i32,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Proof {
@@ -624,6 +811,29 @@ impl Proof {
     }
 }
 
+#[derive(Debug, PartialEq, Default, Copy, Clone)]
+struct ProofSource(i32);
+
+impl ProofSource {
+    fn next_part(&mut self) -> Proof {
+        if self.0 > -1 {
+            self.0 -= 1;
+        }
+
+        self.resend()
+    }
+
+    fn resend(&self) -> Proof {
+        if self.0 > 0 {
+            Proof::ValidPart
+        } else if self.0 == 0 {
+            Proof::ValidEnd
+        } else {
+            Proof::Invalid
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Event {
     Rpc(Rpc),
@@ -634,17 +844,44 @@ enum Event {
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Rpc {
     RefuseCandidate(Candidate),
-    RelocateResponse(Candidate),
+    RelocateResponse(Candidate, SectionInfo),
+    RelocatedInfo(Candidate, SectionInfo),
 
     ExpectCandidate(Candidate),
     ResendExpectCandidate(Section, Candidate),
 
-    ResourceProof(Candidate),
-    ResourceProofReceipt(Candidate),
-    NodeApproval(Candidate),
+    ResourceProof {
+        candidate: Candidate,
+        source: Name,
+        proof: ProofRequest,
+    },
+    ResourceProofReceipt {
+        candidate: Candidate,
+        source: Name,
+    },
+    NodeApproval(Candidate, GenesisPfxInfo),
 
-    ResourceProofResponse { candidate: Candidate, proof: Proof },
-    CandidateInfo { candidate: Candidate, valid: bool },
+    ResourceProofResponse {
+        candidate: Candidate,
+        destination: Name,
+        proof: Proof,
+    },
+    CandidateInfo {
+        candidate: Candidate,
+        destination: Name,
+        valid: bool,
+    },
+
+    ConnectionInfoRequest {
+        source: Name,
+        destination: Name,
+        connection_info: i32,
+    },
+    ConnectionInfoResponse {
+        source: Name,
+        destination: Name,
+        connection_info: i32,
+    },
 }
 
 impl Rpc {
@@ -655,14 +892,37 @@ impl Rpc {
     fn candidate(&self) -> Option<Candidate> {
         match self {
             Rpc::RefuseCandidate(candidate)
-            | Rpc::RelocateResponse(candidate)
+            | Rpc::RelocateResponse(candidate, _)
+            | Rpc::RelocatedInfo(candidate, _)
             | Rpc::ExpectCandidate(candidate)
             | Rpc::ResendExpectCandidate(_, candidate)
-            | Rpc::ResourceProof(candidate)
-            | Rpc::ResourceProofReceipt(candidate)
-            | Rpc::NodeApproval(candidate)
+            | Rpc::ResourceProof { candidate, .. }
+            | Rpc::ResourceProofReceipt { candidate, .. }
+            | Rpc::NodeApproval(candidate, _)
             | Rpc::ResourceProofResponse { candidate, .. }
             | Rpc::CandidateInfo { candidate, .. } => Some(*candidate),
+
+            Rpc::ConnectionInfoRequest { .. } | Rpc::ConnectionInfoResponse { .. } => None,
+        }
+    }
+
+    fn destination(&self) -> Option<Name> {
+        match self {
+            Rpc::RefuseCandidate(_)
+            | Rpc::RelocateResponse(_, _)
+            | Rpc::RelocatedInfo(_, _)
+            | Rpc::ExpectCandidate(_)
+            | Rpc::ResendExpectCandidate(_, _)
+            | Rpc::NodeApproval(_, _) => None,
+
+            Rpc::ResourceProof { candidate, .. } | Rpc::ResourceProofReceipt { candidate, .. } => {
+                Some(Name(candidate.0.name))
+            }
+
+            Rpc::ResourceProofResponse { destination, .. }
+            | Rpc::CandidateInfo { destination, .. }
+            | Rpc::ConnectionInfoRequest { destination, .. }
+            | Rpc::ConnectionInfoResponse { destination, .. } => Some(*destination),
         }
     }
 }
@@ -678,7 +938,7 @@ enum ParsecVote {
 
     RelocationTrigger,
     RefuseCandidate(Candidate),
-    RelocateResponse(Candidate),
+    RelocateResponse(Candidate, SectionInfo),
 
     CheckElder,
 }
@@ -694,7 +954,7 @@ impl ParsecVote {
             | ParsecVote::Online(candidate)
             | ParsecVote::PurgeCandidate(candidate)
             | ParsecVote::RefuseCandidate(candidate)
-            | ParsecVote::RelocateResponse(candidate) => Some(*candidate),
+            | ParsecVote::RelocateResponse(candidate, _) => Some(*candidate),
 
             ParsecVote::AddElderNode(_)
             | ParsecVote::RemoveElderNode(_)
@@ -710,6 +970,9 @@ enum LocalEvent {
     TimeoutAccept,
     RelocationTrigger,
     TimeoutCheckElder,
+    JoiningTimeoutResendCandidateInfo,
+    JoiningTimeoutRefused,
+    ComputeResourceProofForElder(Name, ProofSource),
 }
 
 impl LocalEvent {
@@ -718,8 +981,10 @@ impl LocalEvent {
     }
 }
 
-#[derive(Debug, PartialEq, Default, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 struct InnerAction {
+    our_attributes: Attributes,
+    our_section: SectionInfo,
     our_current_nodes: BTreeMap<Name, NodeState>,
 
     our_votes: Vec<ParsecVote>,
@@ -729,9 +994,27 @@ struct InnerAction {
 
     shortest_prefix: Option<Section>,
     node_to_relocate: Option<Node>,
+    section_members: BTreeMap<SectionInfo, Vec<Node>>,
 }
 
 impl InnerAction {
+    fn new_with_our_attributes(name: Attributes) -> Self {
+        Self {
+            our_attributes: name,
+            our_section: Default::default(),
+            our_current_nodes: Default::default(),
+
+            our_votes: Default::default(),
+            our_rpc: Default::default(),
+            our_events: Default::default(),
+            our_nodes: Default::default(),
+
+            shortest_prefix: Default::default(),
+            node_to_relocate: Default::default(),
+            section_members: Default::default(),
+        }
+    }
+
     fn extend_current_nodes(mut self, nodes: &[NodeState]) -> Self {
         self.our_current_nodes.extend(
             nodes
@@ -741,7 +1024,7 @@ impl InnerAction {
         self
     }
 
-    fn extend_current_nodes_with(mut self, value: &NodeState, nodes: &[Node]) -> Self {
+    fn extend_current_nodes_with(self, value: &NodeState, nodes: &[Node]) -> Self {
         let node_states = nodes
             .iter()
             .map(|node| NodeState {
@@ -750,6 +1033,12 @@ impl InnerAction {
             })
             .collect_vec();
         self.extend_current_nodes(&node_states)
+    }
+
+    fn with_section_members(mut self, section: &SectionInfo, nodes: &[Node]) -> Self {
+        self.section_members
+            .insert(*section, nodes.iter().cloned().collect());
+        self
     }
 
     fn add_node(&mut self, node_state: NodeState) {
@@ -784,6 +1073,10 @@ impl InnerAction {
         node.is_elder = value;
         self.our_nodes.push(NodeChange::Elder(node.node, value));
     }
+
+    fn set_section_info(&mut self, section: SectionInfo) {
+        self.our_section = section;
+    }
 }
 
 #[derive(Clone)]
@@ -804,6 +1097,7 @@ impl Action {
         inner.our_votes.clear();
         inner.our_rpc.clear();
         inner.our_nodes.clear();
+        inner.our_events.clear();
     }
 
     fn vote_parsec(&self, vote: ParsecVote) {
@@ -845,7 +1139,7 @@ impl Action {
         let inner = &self.0.borrow();
         let our_current_nodes = &inner.our_current_nodes;
 
-        let (new_elders, ex_elders, elders) = {
+        let (new_elders, ex_elders, _elders) = {
             let mut sorted_values = our_current_nodes
                 .values()
                 .cloned()
@@ -883,28 +1177,36 @@ impl Action {
         if changes.is_empty() {
             None
         } else {
-            Some(ChangeElder(changes))
+            Some(ChangeElder {
+                changes,
+                new_section: SectionInfo(inner.our_section.0, inner.our_section.1 + 1),
+            })
         }
     }
 
     fn get_elder_change_votes(&self, change_elder: &ChangeElder) -> Vec<ParsecVote> {
         change_elder
-            .0
+            .changes
             .iter()
             .map(|(node, new_is_elder)| match new_is_elder {
                 true => ParsecVote::AddElderNode(*node),
                 false => ParsecVote::RemoveElderNode(*node),
             })
-            .chain(std::iter::once(ParsecVote::NewSectionInfo(SectionInfo(1))))
+            .chain(std::iter::once(ParsecVote::NewSectionInfo(
+                change_elder.new_section,
+            )))
             .collect_vec()
     }
 
     fn mark_elder_change(&self, change_elder: ChangeElder) {
-        for (node, new_is_elder) in &change_elder.0 {
+        for (node, new_is_elder) in &change_elder.changes {
             self.0
                 .borrow_mut()
                 .set_elder_state(&Name(node.0.name), *new_is_elder);
         }
+        self.0
+            .borrow_mut()
+            .set_section_info(change_elder.new_section);
     }
 
     fn get_relocating_candidate(&self) -> Candidate {
@@ -942,16 +1244,96 @@ impl Action {
             .is_relocating
     }
 
+    fn is_our_name(&self, name: Name) -> bool {
+        self.our_name() == name
+    }
+
+    fn our_name(&self) -> Name {
+        Name(self.0.borrow().our_attributes.name)
+    }
+
+    fn send_node_approval_rpc(&self, candidate: Candidate) {
+        let section = GenesisPfxInfo(self.0.borrow().our_section);
+        self.send_rpc(Rpc::NodeApproval(candidate, section));
+    }
+
     fn set_candidate_relocating_state(&self, candidate: Candidate) {
         self.0
             .borrow_mut()
             .set_relocating_state(&Name(candidate.0.name));
     }
+
+    fn send_relocate_response_rpc(&self, candidate: Candidate) {
+        let section = self.0.borrow().our_section;
+        self.send_rpc(Rpc::RelocateResponse(candidate, section));
+    }
+
+    fn send_candidate_relocated_info(&self, candidate: Candidate, section: SectionInfo) {
+        self.send_rpc(Rpc::RelocatedInfo(candidate, section));
+    }
+
+    fn send_candidate_proof_request(&self, candidate: Candidate) {
+        let source = self.our_name();
+        let proof = ProofRequest { value: source.0 };
+        self.send_rpc(Rpc::ResourceProof {
+            candidate,
+            proof,
+            source,
+        });
+    }
+
+    fn send_candidate_proof_receipt(&self, candidate: Candidate) {
+        let source = self.our_name();
+        self.send_rpc(Rpc::ResourceProofReceipt { candidate, source });
+    }
+
+    fn start_compute_resource_proof(&self, source: Name, proof: ProofRequest) {
+        self.schedule_event(LocalEvent::ComputeResourceProofForElder(
+            source,
+            ProofSource(2),
+        ));
+    }
+
+    fn get_section_members(&self, section_info: &SectionInfo) -> Vec<Node> {
+        self.0
+            .borrow()
+            .section_members
+            .get(section_info)
+            .unwrap()
+            .clone()
+    }
+
+    fn send_connection_info_request(&self, destination: Name) {
+        let source = self.our_name();
+        self.send_rpc(Rpc::ConnectionInfoRequest {
+            source,
+            destination,
+            connection_info: source.0,
+        });
+    }
+
+    fn send_candidate_info(&self, destination: Name) {
+        let candidate = Candidate(self.0.borrow().our_attributes);
+        self.send_rpc(Rpc::CandidateInfo {
+            candidate,
+            destination,
+            valid: true,
+        });
+    }
+
+    fn send_resource_proof_response(&self, destination: Name, proof: Proof) {
+        let candidate = Candidate(self.0.borrow().our_attributes);
+        self.send_rpc(Rpc::ResourceProofResponse {
+            candidate,
+            destination,
+            proof,
+        });
+    }
 }
 
 impl Default for Action {
     fn default() -> Action {
-        Action::new(InnerAction::default())
+        Action::new(InnerAction::new_with_our_attributes(Attributes::default()))
     }
 }
 
@@ -1046,7 +1428,6 @@ impl State {
             return Some(next);
         }
 
-
         match event {
             // These should only happen if a routine started them, so it should have
             // handled them too, but other routine are not there yet and we want to test
@@ -1113,15 +1494,67 @@ impl State {
     }
 }
 
+#[derive(Debug, PartialEq, Default, Clone)]
+struct JoiningRelocateCandidateState {
+    has_resource_proofs: BTreeMap<Name, (bool, Option<ProofSource>)>,
+    routine_complete: Option<GenesisPfxInfo /*output*/>,
+}
+
+// The very top level event loop deciding how the sub event loops are processed
+#[derive(Debug, PartialEq, Default, Clone)]
+struct JoiningState {
+    action: Action,
+    failure: Option<Event>,
+    join_routine: JoiningRelocateCandidateState,
+}
+
+impl JoiningState {
+    fn start(&self, new_section: &SectionInfo) -> Self {
+        self.as_joining_relocate_candidate()
+            .start_event_loop(new_section)
+            .0
+    }
+
+    fn try_next(&self, event: Event) -> Option<Self> {
+        if let Some(next) = self.as_joining_relocate_candidate().try_next(event) {
+            return Some(next);
+        }
+
+        None
+    }
+
+    fn as_joining_relocate_candidate(&self) -> JoiningRelocateCandidate {
+        JoiningRelocateCandidate(self.clone())
+    }
+
+    fn failure_event(&self, event: Event) -> Self {
+        Self {
+            failure: Some(event),
+            ..self.clone()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    macro_rules! to_collect {
+    ($($item:expr),*) => {{
+        let mut val = Vec::new();
+        $(
+            let _ = val.push($item.clone());
+        )*
+        val.into_iter().collect()
+    }}
+}
 
     const CANDIDATE_1: Candidate = Candidate(Attributes { name: 1, age: 10 });
     const CANDIDATE_2: Candidate = Candidate(Attributes { name: 2, age: 10 });
     const CANDIDATE_130: Candidate = Candidate(Attributes { name: 130, age: 30 });
     const CANDIDATE_205: Candidate = Candidate(Attributes { name: 205, age: 5 });
-    const SECTION_1: Section = Section(1);
+    const OTHER_SECTION_1: Section = Section(1);
+    const DST_SECTION_200: Section = Section(200);
 
     const NODE_1: Node = Node(Attributes { name: 1, age: 10 });
     const ADD_PROOFING_NODE_1: NodeChange =
@@ -1138,26 +1571,43 @@ mod tests {
     const NODE_ELDER_130: Node = Node(Attributes { name: 130, age: 30 });
     const NODE_ELDER_131: Node = Node(Attributes { name: 131, age: 31 });
     const NODE_ELDER_132: Node = Node(Attributes { name: 132, age: 32 });
+
+    const NAME_109: Name = Name(NODE_ELDER_109.0.name);
+    const NAME_110: Name = Name(NODE_ELDER_110.0.name);
+    const NAME_111: Name = Name(NODE_ELDER_111.0.name);
+
     const YOUNG_ADULT_205: Node = Node(Attributes { name: 205, age: 5 });
-    const SECTION_INFO_1: SectionInfo = SectionInfo(1);
-    const SECTION_INFO_2: SectionInfo = SectionInfo(2);
+    const SECTION_INFO_1: SectionInfo = SectionInfo(OUR_SECTION, 1);
+    const SECTION_INFO_2: SectionInfo = SectionInfo(OUR_SECTION, 2);
+    const DST_SECTION_INFO_200: SectionInfo = SectionInfo(DST_SECTION_200, 0);
 
     const CANDIDATE_INFO_VALID_RPC_1: Rpc = Rpc::CandidateInfo {
         candidate: CANDIDATE_1,
+        destination: OUR_NAME,
         valid: true,
     };
+    const OUR_SECTION: Section = Section(0);
+    const OUR_NODE: Node = NODE_ELDER_132;
+    const OUR_NAME: Name = Name(OUR_NODE.0.name);
+    const OUR_NODE_CANDIDATE: Candidate = Candidate(NODE_ELDER_132.0);
+    const OUR_PROOF_REQUEST: ProofRequest = ProofRequest { value: OUR_NAME.0 };
+    const OUR_INITIAL_SECTION_INFO: SectionInfo = SectionInfo(OUR_SECTION, 0);
+    const OUR_GENESIS_INFO: GenesisPfxInfo = GenesisPfxInfo(OUR_INITIAL_SECTION_INFO);
 
     lazy_static! {
-        static ref INNER_ACTION_YOUNG_ELDERS: InnerAction = InnerAction::default()
+        static ref INNER_ACTION_132: InnerAction = InnerAction::new_with_our_attributes(OUR_NODE.0);
+        static ref INNER_ACTION_YOUNG_ELDERS: InnerAction = INNER_ACTION_132
+            .clone()
             .extend_current_nodes_with(
                 &NodeState {
                     is_elder: true,
                     ..NodeState::default()
                 },
-                &[NODE_ELDER_109, NODE_ELDER_110, NODE_ELDER_111]
+                &[NODE_ELDER_109, NODE_ELDER_110, NODE_ELDER_132]
             )
             .extend_current_nodes_with(&NodeState::default(), &[YOUNG_ADULT_205]);
-        static ref INNER_ACTION_OLD_ELDERS: InnerAction = InnerAction::default()
+        static ref INNER_ACTION_OLD_ELDERS: InnerAction = INNER_ACTION_132
+            .clone()
             .extend_current_nodes_with(
                 &NodeState {
                     is_elder: true,
@@ -1166,18 +1616,26 @@ mod tests {
                 &[NODE_ELDER_130, NODE_ELDER_131, NODE_ELDER_132]
             )
             .extend_current_nodes_with(&NodeState::default(), &[YOUNG_ADULT_205]);
-        static ref INNER_ACTION_YOUNG_ELDERS_WITH_WAITING_ELDER: InnerAction =
-            InnerAction::default()
-                .extend_current_nodes_with(
-                    &NodeState {
-                        is_elder: true,
-                        ..NodeState::default()
-                    },
-                    &[NODE_ELDER_109, NODE_ELDER_110, NODE_ELDER_111]
-                )
-                .extend_current_nodes_with(&NodeState::default(), &[NODE_ELDER_130]);
+        static ref INNER_ACTION_YOUNG_ELDERS_WITH_WAITING_ELDER: InnerAction = INNER_ACTION_132
+            .clone()
+            .extend_current_nodes_with(
+                &NodeState {
+                    is_elder: true,
+                    ..NodeState::default()
+                },
+                &[NODE_ELDER_109, NODE_ELDER_110, NODE_ELDER_111]
+            )
+            .extend_current_nodes_with(&NodeState::default(), &[NODE_ELDER_130]);
+        static ref INNER_ACTION_WITH_DST_SECTION_200: InnerAction =
+            INNER_ACTION_132.clone().with_section_members(
+                &DST_SECTION_INFO_200,
+                &[NODE_ELDER_109, NODE_ELDER_110, NODE_ELDER_111]
+            );
         static ref SWAP_ELDER_109_NODE_1_SECTION_INFO_1: (ChangeElder, Vec<ParsecVote>) = (
-            ChangeElder(vec![(NODE_1, true), (NODE_ELDER_109, false),]),
+            ChangeElder {
+                changes: vec![(NODE_1, true), (NODE_ELDER_109, false),],
+                new_section: SECTION_INFO_1,
+            },
             vec![
                 ParsecVote::AddElderNode(NODE_1),
                 ParsecVote::RemoveElderNode(NODE_ELDER_109),
@@ -1185,7 +1643,10 @@ mod tests {
             ]
         );
         static ref SWAP_ELDER_130_YOUNG_205_SECTION_INFO_1: (ChangeElder, Vec<ParsecVote>) = (
-            ChangeElder(vec![(YOUNG_ADULT_205, true), (NODE_ELDER_130, false),]),
+            ChangeElder {
+                changes: vec![(YOUNG_ADULT_205, true), (NODE_ELDER_130, false),],
+                new_section: SECTION_INFO_1,
+            },
             vec![
                 ParsecVote::AddElderNode(YOUNG_ADULT_205),
                 ParsecVote::RemoveElderNode(NODE_ELDER_130),
@@ -1199,12 +1660,39 @@ mod tests {
         action_our_votes: Vec<ParsecVote>,
         action_our_rpcs: Vec<Rpc>,
         action_our_nodes: Vec<NodeChange>,
+        action_our_events: Vec<LocalEvent>,
+        action_our_section: SectionInfo,
         dst_routine: DstRoutineState,
         src_routine: SrcRoutineState,
         check_and_process_elder_change_routine: CheckAndProcessElderChangeState,
     }
 
+    #[derive(Debug, PartialEq, Default, Clone)]
+    struct AssertJoiningState {
+        action_our_votes: Vec<ParsecVote>,
+        action_our_rpcs: Vec<Rpc>,
+        action_our_nodes: Vec<NodeChange>,
+        action_our_events: Vec<LocalEvent>,
+        action_our_section: SectionInfo,
+        join_routine: JoiningRelocateCandidateState,
+    }
+
     fn process_events(mut state: State, events: &[Event]) -> State {
+        for event in events.iter().cloned() {
+            state = match state.try_next(event) {
+                Some(next_state) => next_state,
+                None => state.failure_event(event),
+            };
+
+            if state.failure.is_some() {
+                break;
+            }
+        }
+
+        state
+    }
+
+    fn process_joining_events(mut state: JoiningState, events: &[Event]) -> JoiningState {
         for event in events.iter().cloned() {
             state = match state.try_next(event) {
                 Some(next_state) => next_state,
@@ -1233,10 +1721,37 @@ mod tests {
                 action_our_rpcs: action.our_rpc,
                 action_our_votes: action.our_votes,
                 action_our_nodes: action.our_nodes,
+                action_our_events: action.our_events,
+                action_our_section: action.our_section,
                 dst_routine: final_state.dst_routine,
                 src_routine: final_state.src_routine,
                 check_and_process_elder_change_routine: final_state
                     .check_and_process_elder_change_routine,
+            },
+            final_state.failure,
+        );
+        let expected_state = (expected_state.clone(), None);
+
+        assert_eq!(expected_state, final_state, "{}", test_name);
+    }
+
+    fn run_joining_test(
+        test_name: &str,
+        start_state: &JoiningState,
+        events: &[Event],
+        expected_state: &AssertJoiningState,
+    ) {
+        let final_state = process_joining_events(start_state.clone(), &events);
+        let action = final_state.action.inner();
+
+        let final_state = (
+            AssertJoiningState {
+                action_our_rpcs: action.our_rpc,
+                action_our_votes: action.our_votes,
+                action_our_nodes: action.our_nodes,
+                action_our_events: action.our_events,
+                action_our_section: action.our_section,
+                join_routine: final_state.join_routine,
             },
             final_state.failure,
         );
@@ -1251,17 +1766,30 @@ mod tests {
         state
     }
 
+    fn arrange_initial_joining_state(state: &JoiningState, events: &[Event]) -> JoiningState {
+        let state = process_joining_events(state.clone(), events);
+        state.action.remove_processed_state();
+        state
+    }
+
     fn intial_state_young_elders() -> State {
         State {
             action: Action::new(INNER_ACTION_YOUNG_ELDERS.clone()),
-            ..State::default()
+            ..Default::default()
         }
     }
 
     fn intial_state_old_elders() -> State {
         State {
             action: Action::new(INNER_ACTION_OLD_ELDERS.clone()),
-            ..State::default()
+            ..Default::default()
+        }
+    }
+
+    fn intial_joining_state_with_dst_200() -> JoiningState {
+        JoiningState {
+            action: Action::new(INNER_ACTION_WITH_DST_SECTION_200.clone()),
+            ..Default::default()
         }
     }
 
@@ -1300,7 +1828,7 @@ mod tests {
             &[ParsecVote::ExpectCandidate(CANDIDATE_1).to_event()],
             &AssertState {
                 action_our_nodes: vec![ADD_PROOFING_NODE_1],
-                action_our_rpcs: vec![Rpc::RelocateResponse(CANDIDATE_1)],
+                action_our_rpcs: vec![Rpc::RelocateResponse(CANDIDATE_1, OUR_INITIAL_SECTION_INFO)],
                 dst_routine: routine_state_accept_as_candidate(AcceptAsCandidateState {
                     candidate: CANDIDATE_1,
                     got_candidate_info: false,
@@ -1323,7 +1851,11 @@ mod tests {
             &initial_state,
             &vec![CANDIDATE_INFO_VALID_RPC_1.to_event()],
             &AssertState {
-                action_our_rpcs: vec![Rpc::ResourceProof(CANDIDATE_1)],
+                action_our_rpcs: vec![Rpc::ResourceProof {
+                    candidate: CANDIDATE_1,
+                    source: OUR_NAME,
+                    proof: OUR_PROOF_REQUEST,
+                }],
                 dst_routine: routine_state_accept_as_candidate(AcceptAsCandidateState {
                     candidate: CANDIDATE_1,
                     got_candidate_info: true,
@@ -1371,6 +1903,7 @@ mod tests {
             &initial_state,
             &vec![Rpc::CandidateInfo {
                 candidate: CANDIDATE_1,
+                destination: OUR_NAME,
                 valid: false,
             }
             .to_event()],
@@ -1421,6 +1954,7 @@ mod tests {
             &initial_state,
             &vec![Rpc::CandidateInfo {
                 candidate: CANDIDATE_2,
+                destination: OUR_NAME,
                 valid: true,
             }
             .to_event()],
@@ -1450,11 +1984,15 @@ mod tests {
             &initial_state,
             &[Rpc::ResourceProofResponse {
                 candidate: CANDIDATE_1,
+                destination: OUR_NAME,
                 proof: Proof::ValidPart,
             }
             .to_event()],
             &AssertState {
-                action_our_rpcs: vec![Rpc::ResourceProofReceipt(CANDIDATE_1)],
+                action_our_rpcs: vec![Rpc::ResourceProofReceipt {
+                    candidate: CANDIDATE_1,
+                    source: OUR_NAME,
+                }],
                 dst_routine: routine_state_accept_as_candidate(AcceptAsCandidateState {
                     candidate: CANDIDATE_1,
                     got_candidate_info: true,
@@ -1480,6 +2018,7 @@ mod tests {
             &initial_state,
             &[Rpc::ResourceProofResponse {
                 candidate: CANDIDATE_1,
+                destination: OUR_NAME,
                 proof: Proof::ValidEnd,
             }
             .to_event()],
@@ -1504,6 +2043,7 @@ mod tests {
                 CANDIDATE_INFO_VALID_RPC_1.to_event(),
                 Rpc::ResourceProofResponse {
                     candidate: CANDIDATE_1,
+                    destination: OUR_NAME,
                     proof: Proof::ValidEnd,
                 }
                 .to_event(),
@@ -1515,6 +2055,7 @@ mod tests {
             &initial_state,
             &[Rpc::ResourceProofResponse {
                 candidate: CANDIDATE_1,
+                destination: OUR_NAME,
                 proof: Proof::ValidEnd,
             }
             .to_event()],
@@ -1544,6 +2085,7 @@ mod tests {
             &initial_state,
             &[Rpc::ResourceProofResponse {
                 candidate: CANDIDATE_1,
+                destination: OUR_NAME,
                 proof: Proof::Invalid,
             }
             .to_event()],
@@ -1573,6 +2115,7 @@ mod tests {
             &initial_state,
             &[Rpc::ResourceProofResponse {
                 candidate: CANDIDATE_2,
+                destination: OUR_NAME,
                 proof: Proof::ValidEnd,
             }
             .to_event()],
@@ -1624,7 +2167,7 @@ mod tests {
             &initial_state,
             &[ParsecVote::Online(CANDIDATE_1).to_event()],
             &AssertState {
-                action_our_rpcs: vec![Rpc::NodeApproval(CANDIDATE_1)],
+                action_our_rpcs: vec![Rpc::NodeApproval(CANDIDATE_1, OUR_GENESIS_INFO)],
                 action_our_nodes: vec![SET_ONLINE_NODE_1],
                 ..AssertState::default()
             },
@@ -1646,7 +2189,7 @@ mod tests {
                 ParsecVote::CheckElder.to_event(),
             ],
             &AssertState {
-                action_our_rpcs: vec![Rpc::NodeApproval(CANDIDATE_1)],
+                action_our_rpcs: vec![Rpc::NodeApproval(CANDIDATE_1, OUR_GENESIS_INFO)],
                 action_our_votes: SWAP_ELDER_109_NODE_1_SECTION_INFO_1.1.clone(),
                 action_our_nodes: vec![SET_ONLINE_NODE_1],
                 check_and_process_elder_change_routine: CheckAndProcessElderChangeState {
@@ -1759,7 +2302,7 @@ mod tests {
             &[ParsecVote::ExpectCandidate(CANDIDATE_2).to_event()],
             &&AssertState {
                 action_our_nodes: vec![ADD_PROOFING_NODE_2],
-                action_our_rpcs: vec![Rpc::RelocateResponse(CANDIDATE_2)],
+                action_our_rpcs: vec![Rpc::RelocateResponse(CANDIDATE_2, OUR_INITIAL_SECTION_INFO)],
                 dst_routine: routine_state_accept_as_candidate(AcceptAsCandidateState {
                     candidate: CANDIDATE_2,
                     got_candidate_info: false,
@@ -1815,7 +2358,7 @@ mod tests {
     fn test_parsec_expect_candidate_with_shorter_known_section() {
         let initial_state = State {
             action: Action::new(InnerAction {
-                shortest_prefix: Some(SECTION_1),
+                shortest_prefix: Some(OTHER_SECTION_1),
                 ..INNER_ACTION_OLD_ELDERS.clone()
             }),
             ..State::default()
@@ -1826,7 +2369,7 @@ mod tests {
             &initial_state,
             &vec![ParsecVote::ExpectCandidate(CANDIDATE_1).to_event()],
             &AssertState {
-                action_our_rpcs: vec![Rpc::ResendExpectCandidate(SECTION_1, CANDIDATE_1)],
+                action_our_rpcs: vec![Rpc::ResendExpectCandidate(OTHER_SECTION_1, CANDIDATE_1)],
                 ..AssertState::default()
             },
         );
@@ -1855,11 +2398,13 @@ mod tests {
             &[
                 Rpc::CandidateInfo {
                     candidate: CANDIDATE_1,
+                    destination: OUR_NAME,
                     valid: true,
                 }
                 .to_event(),
                 Rpc::ResourceProofResponse {
                     candidate: CANDIDATE_1,
+                    destination: OUR_NAME,
                     proof: Proof::ValidEnd,
                 }
                 .to_event(),
@@ -1968,11 +2513,13 @@ mod tests {
                 ParsecVote::RelocationTrigger.to_event(),
             ],
             &AssertState {
+                action_our_section: SECTION_INFO_1,
                 action_our_nodes: vec![
                     NodeChange::Elder(YOUNG_ADULT_205, true),
                     NodeChange::Elder(NODE_ELDER_130, false),
                 ],
                 action_our_rpcs: vec![Rpc::ExpectCandidate(CANDIDATE_130.clone())],
+                action_our_events: vec![LocalEvent::TimeoutCheckElder],
                 src_routine: SrcRoutineState {
                     relocating_candidate: Some(Candidate(NODE_ELDER_130.0)),
                     sub_routine_try_relocating: Some(TryRelocatingState {
@@ -2032,9 +2579,12 @@ mod tests {
         run_test(
             "Get Parsec ExpectCandidate",
             &initial_state,
-            &[Rpc::RelocateResponse(CANDIDATE_205).to_event()],
+            &[Rpc::RelocateResponse(CANDIDATE_205, DST_SECTION_INFO_200).to_event()],
             &AssertState {
-                action_our_votes: vec![ParsecVote::RelocateResponse(CANDIDATE_205.clone())],
+                action_our_votes: vec![ParsecVote::RelocateResponse(
+                    CANDIDATE_205.clone(),
+                    DST_SECTION_INFO_200,
+                )],
                 src_routine: SrcRoutineState {
                     relocating_candidate: Some(CANDIDATE_205.clone()),
                     sub_routine_try_relocating: Some(TryRelocatingState {
@@ -2063,8 +2613,12 @@ mod tests {
         run_test(
             "Get Parsec ExpectCandidate",
             &initial_state,
-            &[ParsecVote::RelocateResponse(CANDIDATE_205).to_event()],
+            &[ParsecVote::RelocateResponse(CANDIDATE_205, DST_SECTION_INFO_200).to_event()],
             &AssertState {
+                action_our_rpcs: vec![Rpc::RelocatedInfo(
+                    Candidate(YOUNG_ADULT_205.0.clone()),
+                    DST_SECTION_INFO_200,
+                )],
                 action_our_nodes: vec![NodeChange::Remove(YOUNG_ADULT_205.clone())],
                 ..AssertState::default()
             },
@@ -2152,6 +2706,7 @@ mod tests {
             &initial_state,
             &[ParsecVote::RelocationTrigger.to_event()],
             &AssertState {
+                action_our_section: SECTION_INFO_1,
                 action_our_rpcs: vec![Rpc::ExpectCandidate(CANDIDATE_130.clone())],
                 src_routine: SrcRoutineState {
                     relocating_candidate: Some(CANDIDATE_130.clone()),
@@ -2183,10 +2738,327 @@ mod tests {
         run_test(
             "Get RPC ExpectCandidate",
             &intial_state_old_elders(),
-            &[Rpc::RelocateResponse(CANDIDATE_205.clone()).to_event()],
+            &[Rpc::RelocateResponse(CANDIDATE_205.clone(), DST_SECTION_INFO_200).to_event()],
             &AssertState {
-                action_our_votes: vec![ParsecVote::RelocateResponse(CANDIDATE_205.clone())],
+                action_our_votes: vec![ParsecVote::RelocateResponse(
+                    CANDIDATE_205.clone(),
+                    DST_SECTION_INFO_200,
+                )],
                 ..AssertState::default()
+            },
+        );
+    }
+
+    //////////////////
+    /// Joining Relocate Node
+    //////////////////
+
+    #[test]
+    fn test_joining_start() {
+        run_joining_test(
+            "",
+            &intial_joining_state_with_dst_200().start(&DST_SECTION_INFO_200),
+            &[],
+            &AssertJoiningState {
+                action_our_rpcs: vec![
+                    Rpc::ConnectionInfoRequest {
+                        source: OUR_NAME,
+                        destination: NAME_109,
+                        connection_info: OUR_NAME.0,
+                    },
+                    Rpc::ConnectionInfoRequest {
+                        source: OUR_NAME,
+                        destination: NAME_110,
+                        connection_info: OUR_NAME.0,
+                    },
+                    Rpc::ConnectionInfoRequest {
+                        source: OUR_NAME,
+                        destination: NAME_111,
+                        connection_info: OUR_NAME.0,
+                    },
+                ],
+                action_our_events: vec![
+                    LocalEvent::JoiningTimeoutResendCandidateInfo,
+                    LocalEvent::JoiningTimeoutRefused,
+                ],
+                join_routine: JoiningRelocateCandidateState {
+                    has_resource_proofs: to_collect![
+                        (NAME_109, (false, None)),
+                        (NAME_110, (false, None)),
+                        (NAME_111, (false, None))
+                    ],
+                    ..JoiningRelocateCandidateState::default()
+                },
+                ..AssertJoiningState::default()
+            },
+        );
+    }
+
+    #[test]
+    fn test_joining_receive_two_connection_info() {
+        let initial_state = arrange_initial_joining_state(
+            &intial_joining_state_with_dst_200().start(&DST_SECTION_INFO_200),
+            &[],
+        );
+
+        run_joining_test(
+            "",
+            &initial_state,
+            &[
+                Rpc::ConnectionInfoResponse {
+                    source: NAME_110,
+                    destination: OUR_NAME,
+                    connection_info: NAME_110.0,
+                }
+                .to_event(),
+                Rpc::ConnectionInfoResponse {
+                    source: NAME_111,
+                    destination: OUR_NAME,
+                    connection_info: NAME_111.0,
+                }
+                .to_event(),
+            ],
+            &AssertJoiningState {
+                action_our_rpcs: vec![
+                    Rpc::CandidateInfo {
+                        candidate: OUR_NODE_CANDIDATE,
+                        destination: NAME_110,
+                        valid: true,
+                    },
+                    Rpc::CandidateInfo {
+                        candidate: OUR_NODE_CANDIDATE,
+                        destination: NAME_111,
+                        valid: true,
+                    },
+                ],
+                join_routine: JoiningRelocateCandidateState {
+                    has_resource_proofs: to_collect![
+                        (NAME_109, (false, None)),
+                        (NAME_110, (false, None)),
+                        (NAME_111, (false, None))
+                    ],
+                    ..JoiningRelocateCandidateState::default()
+                },
+                ..AssertJoiningState::default()
+            },
+        );
+    }
+
+    #[test]
+    fn test_joining_receive_one_resource_proof() {
+        let initial_state = arrange_initial_joining_state(
+            &intial_joining_state_with_dst_200().start(&DST_SECTION_INFO_200),
+            &[
+                Rpc::ConnectionInfoResponse {
+                    source: NAME_110,
+                    destination: OUR_NAME,
+                    connection_info: NAME_110.0,
+                }
+                .to_event(),
+                Rpc::ConnectionInfoResponse {
+                    source: NAME_111,
+                    destination: OUR_NAME,
+                    connection_info: NAME_111.0,
+                }
+                .to_event(),
+            ],
+        );
+
+        run_joining_test(
+            "",
+            &initial_state,
+            &[Rpc::ResourceProof {
+                candidate: OUR_NODE_CANDIDATE,
+                source: NAME_111,
+                proof: ProofRequest { value: NAME_111.0 },
+            }
+            .to_event()],
+            &AssertJoiningState {
+                action_our_events: vec![LocalEvent::ComputeResourceProofForElder(
+                    NAME_111,
+                    ProofSource(2),
+                )],
+                join_routine: JoiningRelocateCandidateState {
+                    has_resource_proofs: to_collect![
+                        (NAME_109, (false, None)),
+                        (NAME_110, (false, None)),
+                        (NAME_111, (true, None))
+                    ],
+                    ..JoiningRelocateCandidateState::default()
+                },
+                ..AssertJoiningState::default()
+            },
+        );
+    }
+
+    #[test]
+    fn test_joining_computed_one_proof_one_proof() {
+        let initial_state = arrange_initial_joining_state(
+            &intial_joining_state_with_dst_200().start(&DST_SECTION_INFO_200),
+            &[
+                Rpc::ConnectionInfoResponse {
+                    source: NAME_111,
+                    destination: OUR_NAME,
+                    connection_info: NAME_111.0,
+                }
+                .to_event(),
+                Rpc::ResourceProof {
+                    candidate: OUR_NODE_CANDIDATE,
+                    source: NAME_111,
+                    proof: ProofRequest { value: NAME_111.0 },
+                }
+                .to_event(),
+            ],
+        );
+
+        run_joining_test(
+            "",
+            &initial_state,
+            &[LocalEvent::ComputeResourceProofForElder(NAME_111, ProofSource(2)).to_event()],
+            &AssertJoiningState {
+                action_our_rpcs: vec![Rpc::ResourceProofResponse {
+                    candidate: OUR_NODE_CANDIDATE,
+                    destination: NAME_111,
+                    proof: Proof::ValidPart,
+                }],
+                join_routine: JoiningRelocateCandidateState {
+                    has_resource_proofs: to_collect![
+                        (NAME_109, (false, None)),
+                        (NAME_110, (false, None)),
+                        (NAME_111, (true, Some(ProofSource(1))))
+                    ],
+                    ..JoiningRelocateCandidateState::default()
+                },
+                ..AssertJoiningState::default()
+            },
+        );
+    }
+
+    #[test]
+    fn test_joining_got_one_proof_receipt() {
+        let initial_state = arrange_initial_joining_state(
+            &intial_joining_state_with_dst_200().start(&DST_SECTION_INFO_200),
+            &[
+                Rpc::ConnectionInfoResponse {
+                    source: NAME_111,
+                    destination: OUR_NAME,
+                    connection_info: NAME_111.0,
+                }
+                .to_event(),
+                Rpc::ResourceProof {
+                    candidate: OUR_NODE_CANDIDATE,
+                    source: NAME_111,
+                    proof: ProofRequest { value: NAME_111.0 },
+                }
+                .to_event(),
+                LocalEvent::ComputeResourceProofForElder(NAME_111, ProofSource(2)).to_event(),
+            ],
+        );
+
+        run_joining_test(
+            "",
+            &initial_state,
+            &[Rpc::ResourceProofReceipt {
+                candidate: OUR_NODE_CANDIDATE,
+                source: NAME_111,
+            }
+            .to_event()],
+            &AssertJoiningState {
+                action_our_rpcs: vec![Rpc::ResourceProofResponse {
+                    candidate: OUR_NODE_CANDIDATE,
+                    destination: NAME_111,
+                    proof: Proof::ValidEnd,
+                }],
+                join_routine: JoiningRelocateCandidateState {
+                    has_resource_proofs: to_collect![
+                        (NAME_109, (false, None)),
+                        (NAME_110, (false, None)),
+                        (NAME_111, (true, Some(ProofSource(0))))
+                    ],
+                    ..JoiningRelocateCandidateState::default()
+                },
+                ..AssertJoiningState::default()
+            },
+        );
+    }
+
+    #[test]
+    fn test_joining_resend_timeout_after_one_proof() {
+        let initial_state = arrange_initial_joining_state(
+            &intial_joining_state_with_dst_200().start(&DST_SECTION_INFO_200),
+            &[
+                Rpc::ConnectionInfoResponse {
+                    source: NAME_110,
+                    destination: OUR_NAME,
+                    connection_info: NAME_110.0,
+                }
+                .to_event(),
+                Rpc::ConnectionInfoResponse {
+                    source: NAME_111,
+                    destination: OUR_NAME,
+                    connection_info: NAME_111.0,
+                }
+                .to_event(),
+                Rpc::ResourceProof {
+                    candidate: OUR_NODE_CANDIDATE,
+                    source: NAME_111,
+                    proof: ProofRequest { value: NAME_111.0 },
+                }
+                .to_event(),
+            ],
+        );
+
+        run_joining_test(
+            "",
+            &initial_state,
+            &[LocalEvent::JoiningTimeoutResendCandidateInfo.to_event()],
+            &AssertJoiningState {
+                action_our_rpcs: vec![
+                    Rpc::ConnectionInfoRequest {
+                        source: OUR_NAME,
+                        destination: NAME_109,
+                        connection_info: OUR_NAME.0,
+                    },
+                    Rpc::ConnectionInfoRequest {
+                        source: OUR_NAME,
+                        destination: NAME_110,
+                        connection_info: OUR_NAME.0,
+                    },
+                ],
+                action_our_events: vec![LocalEvent::JoiningTimeoutResendCandidateInfo],
+                join_routine: JoiningRelocateCandidateState {
+                    has_resource_proofs: to_collect![
+                        (NAME_109, (false, None)),
+                        (NAME_110, (false, None)),
+                        (NAME_111, (true, None))
+                    ],
+                    ..JoiningRelocateCandidateState::default()
+                },
+                ..AssertJoiningState::default()
+            },
+        );
+    }
+
+    #[test]
+    fn test_joining_approved() {
+        let initial_state = arrange_initial_joining_state(
+            &intial_joining_state_with_dst_200().start(&DST_SECTION_INFO_200),
+            &[],
+        );
+
+        run_joining_test(
+            "",
+            &initial_state,
+            &[
+                Rpc::NodeApproval(OUR_NODE_CANDIDATE, GenesisPfxInfo(DST_SECTION_INFO_200))
+                    .to_event(),
+            ],
+            &AssertJoiningState {
+                join_routine: JoiningRelocateCandidateState {
+                    routine_complete: Some(GenesisPfxInfo(DST_SECTION_INFO_200)),
+                    ..JoiningRelocateCandidateState::default()
+                },
+                ..AssertJoiningState::default()
             },
         );
     }
