@@ -1545,9 +1545,10 @@ impl Elder {
         result
     }
 
-    /// Returns the peer that is responsible for collecting signatures to verify a message; this
-    /// may be us or another node. If our signature is not required, this returns `None`.
-    fn get_signature_target(&self, src: &Authority<XorName>, route: u8) -> Option<XorName> {
+    /// Returns the set of peers that are responsible for collecting signatures to verify a message;
+    /// this may contain us or only other nodes. If our signature is not required, this returns
+    /// `None`.
+    fn get_signature_targets(&self, src: &Authority<XorName>) -> Option<BTreeSet<XorName>> {
         use crate::Authority::*;
 
         let list: Vec<XorName> = match *src {
@@ -1573,13 +1574,18 @@ impl Elder {
                 Iterator::flatten(self.chain.all_sections().map(|(_, si)| si.member_names()))
                     .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs))
             }
-            ManagedNode(_) | Client { .. } => return Some(*self.name()),
+            ManagedNode(_) | Client { .. } => {
+                let mut result = BTreeSet::new();
+                let _ = result.insert(*self.name());
+                return Some(result);
+            }
         };
 
         if !list.contains(&self.name()) {
             None
         } else {
-            Some(list[route as usize % list.len()])
+            let len = list.len();
+            Some(list.into_iter().take((len + 2) / 3).collect())
         }
     }
 
@@ -2145,34 +2151,34 @@ impl Bootstrapped for Elder {
 
         let signed_msg = SignedRoutingMessage::new(routing_msg, &self.full_id, sending_sec)?;
 
-        match self.get_signature_target(&signed_msg.routing_message().src, route) {
-            None => Ok(()),
-            Some(our_name) if our_name == *self.name() => {
+        for target in Iterator::flatten(
+            self.get_signature_targets(&signed_msg.routing_message().src)
+                .into_iter(),
+        ) {
+            if target == *self.name() {
                 let min_section_size = self.min_section_size();
                 if let Some((mut msg, route)) =
                     self.sig_accumulator
-                        .add_message(signed_msg, min_section_size, route)
+                        .add_message(signed_msg.clone(), min_section_size, route)
                 {
                     if self.in_authority(&msg.routing_message().dst) {
-                        self.handle_signed_message(msg, route, our_name, &BTreeSet::new())?;
+                        self.handle_signed_message(msg, route, target, &BTreeSet::new())?;
                     } else {
-                        self.send_signed_message(&mut msg, route, &our_name, &BTreeSet::new())?;
+                        self.send_signed_message(&mut msg, route, &target, &BTreeSet::new())?;
                     }
                 }
-                Ok(())
-            }
-            Some(target_name) => {
-                if let Some(&pub_id) = self.peer_mgr.get_pub_id(&target_name) {
+            } else {
+                if let Some(&pub_id) = self.peer_mgr.get_pub_id(&target) {
                     let direct_msg = signed_msg
                         .routing_message()
                         .to_signature(self.full_id.signing_private_key())?;
                     self.send_direct_message(&pub_id, direct_msg);
-                    Ok(())
                 } else {
-                    Err(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer))
+                    return Err(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer));
                 }
             }
         }
+        Ok(())
     }
 
     fn routing_msg_filter(&mut self) -> &mut RoutingMessageFilter {
