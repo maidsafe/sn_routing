@@ -13,17 +13,21 @@
     Start --> LoopStart
     style Start fill:#f9f,stroke:#333,stroke-width:4px
 
-    LoopStart --> IsMember
-    IsMember((Section<br/>Member))
+    LoopStart --> HasSection
+    HasSection(("Has Section<br/>NodeApproval"))
 
-    IsMember --No--> BoostStrapAndRelocate
+    HasSection --No--> BoostStrapAndRelocate
     BoostStrapAndRelocate["BoostStrapAndRelocate:<br/>Get RelocateInfo"]
-    BoostStrapAndRelocate --> JoiningRelocateCandidate
+    BoostStrapAndRelocate --> ReBootstrapWithNewIdentity
 
-    IsMember --Yes--> StartTopMember
+    HasSection --Yes--> StartTopMember
     StartTopMember["StartTopMember<br/>Sub Routine<br/>"]
     style StartTopMember fill:#f9f,stroke:#333,stroke-width:4px
-    StartTopMember --> JoiningRelocateCandidate
+    StartTopMember --> ReBootstrapWithNewIdentity
+
+    ReBootstrapWithNewIdentity["Re-bootstrap with new relocated identity"]
+    style ReBootstrapWithNewIdentity fill:#f9f,stroke:#333,stroke-width:4px
+    ReBootstrapWithNewIdentity --> JoiningRelocateCandidate
 
     JoiningRelocateCandidate["JoiningRelocateCandidate<br/>Sub Routine<br/><br/>(Take RelocatedInfo)"]
     style JoiningRelocateCandidate fill:#f9f,stroke:#333,stroke-width:4px
@@ -38,7 +42,9 @@
     graph TB
     style StartTopMember fill:#f9f,stroke:#333,stroke-width:4px
     style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
-    StartTopMember --> ConcurentStartElder
+    StartTopMember --> InitializeNodeInternalState
+    InitializeNodeInternalState["intialise_node_internal_state()<br/><br/>(Parsed, Routing table...)"]
+    InitializeNodeInternalState --> ConcurentStartElder
 
     ConcurentStartElder{"Concurrent<br/>start elder"}
     ConcurentStartElder --> StartTopLevelDst
@@ -62,6 +68,7 @@
 </div>
 
   <h1>Destination Section Flow</h1>
+  Receiving a node that is being relocated.
   <h2>Top Level Flow</h2>
   <div class="mermaid">
       graph TB
@@ -90,21 +97,21 @@
       ParsecConsensus --ParsecOnline<br/>ParsecPurgeCandidate<br/>--> DiscardParsec
       DiscardParsec --> LoopEnd
 
-      VoteParsecExpectCandidate[Vote for<br/>ParsecExpectCandidate<br/>to handle the RPC consistently]
+      VoteParsecExpectCandidate["vote_for(<br/>ParsecExpectCandidate)<br/>to handle the RPC consistently"]
       VoteParsecExpectCandidate --> LoopEnd
 
-      Balanced(("Check Candidate?<br/>(shared state)"))
-      Balanced -- Not shortest prefix --> Resend
-      Balanced -- "Shortest prefix<br/>ProcessingCandidate=yes" --> SendRefuse
-      Balanced -- "Shortest prefix<br/>ProcessingCandidate=No" --> SetCandidateYes
+      Balanced(("Check state?<br/>(shared state)"))
+      Balanced -- "shorter_prefix_section(<br/>).is_some()" --> Resend
+      Balanced -- "shorter_prefix_section().is_none()<br/>PROCESSING_CANDIDATE==yes" --> SendRefuse
+      Balanced -- "shorter_prefix_section().is_none()<br/>PROCESSING_CANDIDATE==No" --> SetCandidateYes
 
-      Resend["Resend RPC <br/>ExpectCandidate<br/>to a shorter prefix section"]
+      Resend["send_rpc(<br/>ExpectCandidate)<br/>to shorter_prefix_section()"]
       Resend --> LoopEnd
 
-      SendRefuse["Send RPC<br/>RefuseCandidate<br/>to source section"]
+      SendRefuse["send_rpc(<br/>RefuseCandidate)<br/>to source section"]
       SendRefuse --> LoopEnd
 
-      SetCandidateYes["ProcessingCandidate=yes<br/>(shared state)"]
+      SetCandidateYes["PROCESSING_CANDIDATE=yes<br/>(shared state)"]
       SetCandidateYes-->Concurrent0
 
       Concurrent0{"Concurrent<br/>paths"}
@@ -116,7 +123,7 @@
       style AcceptAsCandidate fill:#f9f,stroke:#333,stroke-width:4px
       AcceptAsCandidate --> SetCandidateNo
 
-      SetCandidateNo["ProcessingCandidate=no<br/>(shared state)"]
+      SetCandidateNo["PROCESSING_CANDIDATE=no<br/>(shared state)"]
       SetCandidateNo-->LoopEnd
 
   </div>
@@ -131,12 +138,12 @@
 
       AcceptAsCandidate --> SendRelocateResponse
 
-      SendRelocateResponse["Add Node State=ResourceProof<br/>Send RelocateResponse to source section<br/>Start TimeoutAccept"]
+      SendRelocateResponse["add_node(NodeState=ResourceProof)<br/><br/>send_rpc(RelocateResponse)<br/>to source section<br/><br/>Start TimeoutAccept"]
       WaitFor(("Wait for 2:<br/><br/>Only current<br/>candidate<br/>events"))
-      VoteParsecPurgeCandidate[Vote for<br/>ParsecPurgeCandidate]
-      VoteParsecOnline["Vote for<br/>NetworkEvent<br/>::Online<br/><br/>VotedOnline=yes"]
-      RequestRP["Send ResourceProof<br/>RPC to candidate<br/><br/>GotCandidateInfo=yes"]
-      SendProofReceit["Send receipt<br/>for proof"]
+      VoteParsecPurgeCandidate["vote_for(<br/>ParsecPurgeCandidate)"]
+      VoteParsecOnline["vote_for(<br/>NetworkEvent::Online)<br/><br/>VOTED_ONLINE=yes"]
+      RequestRP["send_rpc(<br/>ResourceProof)<br/>to candidate<br/><br/>GOT_CANDIDATE_INFO=yes"]
+      SendProofReceit["send_rpc(<br/>ResourceProofReceipt)<br/>for proof"]
 
       SendRelocateResponse --> LoopStart
       LoopStart-->WaitFor
@@ -146,16 +153,16 @@
       Consensus((Consensus))
       Consensus -- ParsecPurgeCandidate<br/>consensused --> RemoveNode
       Consensus -- ParsecOnline<br/>consensused --> MakeOnline
-      MakeOnline["Node=OnlineState<br/><br/>Send NodeApproval RPC"]
-      RemoveNode["Purge Candidate Node"]
+      MakeOnline["set_node_state(<br/>Candidate,<br/>OnlineState)<br/><br/>send_rpc(<br/>NodeApproval)"]
+      RemoveNode["purge_node_info(<br/>candidate node)"]
       RemoveNode --> EndRoutine
       MakeOnline --> EndRoutine
 
-      WaitFor -- ResourceProofResponse<br/><br/>GotCandidateInfo=yes<br/>VotedOnline=no --> ProofResponse((Proof))
+      WaitFor -- ResourceProofResponse<br/><br/>GOT_CANDIDATE_INFO==yes<br/>VOTED_ONLINE==no --> ProofResponse((Proof))
       ProofResponse -- Valid Part --> SendProofReceit
       ProofResponse -- Valid End --> VoteParsecOnline
 
-      WaitFor -- CandidateInfo<br/><br/>GotCandidateInfo=no --> Info((Info))
+      WaitFor -- CandidateInfo<br/><br/>GOT_CANDIDATE_INFO==no --> Info((Info))
       Info -- Valid<br/>CandidateInfo --> RequestRP
       Info -- Invalid<br/>CandidateInfo --> VoteParsecPurgeCandidate
       WaitFor -- TimeoutAccept<br/>expire --> VoteParsecPurgeCandidate
@@ -175,7 +182,10 @@
 
       Start["StartTopLevelSrc:<br/>No exit - Need Killed"]
       style Start fill:#f9f,stroke:#333,stroke-width:4px
-      Start --> LoopStart
+      Start --> StartWorkUnitTimeOut
+
+      StartWorkUnitTimeOut["Start WorkUnitTimeOut"]
+      StartWorkUnitTimeOut --> LoopStart
       LoopEnd --> LoopStart
 
       LoopStart --> WaitFor
@@ -186,38 +196,44 @@
       WaitFor --Parsec<br/>consensus--> ParsecConsensus
 
       Event((Event))
-      Event -- Detect<br/>Relocation<br/>Trigger --> VoteParsecRelocationTrigger
-      VoteParsecRelocationTrigger["Vote for<br/>ParsecRelocationTrigger"]
+      Event -- WorkUnitTimeOut<br/>Trigger --> VoteParsecRelocationTrigger
+      VoteParsecRelocationTrigger["vote_for(WorkUnitIncrement)<br/>Restart WorkUnitTimeOut"]
       VoteParsecRelocationTrigger --> LoopEnd
 
       RPC((RPC))
       RPC --RefuseCandidate--> VoteParsecRefuseCandidate
       RPC --RelocateResponse--> VoteParsecRelocateResponse
-      VoteParsecRefuseCandidate[Vote for<br/>ParsecRefuseCandidate<br/>to handle the RPC consistently]
+      VoteParsecRefuseCandidate["vote_for(<br/>ParsecRefuseCandidate)<br/>to handle the RPC consistently"]
       VoteParsecRefuseCandidate --> LoopEnd
-      VoteParsecRelocateResponse[Vote for<br/>ParsecRelocateResponse<br/>to handle the RPC consistently]
+      VoteParsecRelocateResponse["vote_for(<br/>ParsecRelocateResponse)<br/>to handle the RPC consistently"]
       VoteParsecRelocateResponse --> LoopEnd
 
 
       ParsecConsensus((Parsec<br/>consensus))
       DiscardParsec["Discard<br/>Parsec<br/>event"]
-      Bug["BUG:<br/><br/>Section can only send either<br/>one of these RPC, and only for<br/>the candidate we are Relocating"]
+      Bug["BUG: assert fail:<br/><br/>Section can only send either<br/>one of these RPC, and only for<br/>the candidate we are relocating"]
 
-      ParsecConsensus --"ParsecRelocationTrigger<br/>Relocating.is_none()"--> SetRelocating
-      ParsecConsensus --"ParsecRelocationTrigger<br/>Relocating.is_some()"--> DiscardParsec
+      ParsecConsensus -- WorkUnitIncrement consensused --> IncrementWorkUnit
+      IncrementWorkUnit["increment_nodes_work_units()"]
+      IncrementWorkUnit-->AlreadyRelocating
+      AlreadyRelocating(("Already<br/>Relocating?"))
+
+
+      AlreadyRelocating --"RELOCATING.is_none()"--> SetRelocating
+      AlreadyRelocating --"RELOCATING.is_some()"--> DiscardParsec
       ParsecConsensus --"Any:<br/><br/>ParsecRefuseCandidate<br/><br/>ParsecRelocateResponse"--> Bug
       Bug
       DiscardParsec --> LoopEnd
 
-      SetRelocating["Relocating=Some(Best Node)<br/>(Best if Node=RelocatingState)<br/>(shared state)"]
+      SetRelocating["RELOCATING=Some(get_node_to_relocate())<br/>(First with NodeState==RelocatingState)<br/>(shared state)"]
       SetRelocating --> SetRelocatingNodeState
 
-      SetRelocatingNodeState["if not RelocatingState<br/>Relocating Node=RelocatingState"]
+      SetRelocatingNodeState["set_node_state(RELOCATING, RelocatingState)"]
       SetRelocatingNodeState --> isRelocatingElder
 
-      isRelocatingElder((is<br/>Relocating<br/>Elder))
-      isRelocatingElder--Yes-->ResetRelocating
-      isRelocatingElder--No-->Concurrent0
+      isRelocatingElder(("Relocating<br/>elder?"))
+      isRelocatingElder--"is_elder(RELOCATING)"-->ResetRelocating
+      isRelocatingElder--"!is_elder(RELOCATING)"-->Concurrent0
 
       Concurrent0{"Concurrent<br/>paths"}
       Concurrent0 --> TryRelocating
@@ -227,7 +243,7 @@
       style TryRelocating fill:#f9f,stroke:#333,stroke-width:4px
       TryRelocating-->ResetRelocating
 
-      ResetRelocating["Relocating=None<br/>(shared state)"]
+      ResetRelocating["RELOCATING=None<br/>(shared state)"]
       ResetRelocating --> LoopEnd
   </div>
 
@@ -242,19 +258,19 @@
 
       TryRelocating --> SendExpectCandidate
 
-      SendExpectCandidate["Send RPC <br/>ExpectCandidate"]
+      SendExpectCandidate["send_rpc(<br/>ExpectCandidate)"]
       SendExpectCandidate --> WaitFor
 
       WaitFor((Wait for 4:<br/><br/>Only current<br/>candidate<br/>events))
-      WaitFor --Parsec consensus<br/><br/>ParsecRefuseCandidate<br/>ParsecRelocateResponse--> Consensus
+      WaitFor --Parsec<br/>consensus--> Consensus
 
       Consensus((Consensus))
       Consensus --"ParsecRefuseCandidate"--> EndRoutine
       Consensus --"ParsecRelocateResponse"--> SendPovableRelocateInfo
 
-      SendPovableRelocateInfo["Send RelocatedInfo RPC to node<br/><br/>Includes RelocationResponse<br/>content and consensus<br/>Node may be already gone"]
+      SendPovableRelocateInfo["send_rpc(RelocatedInfo)<br/>to node<br/><br/>Includes RelocationResponse<br/>content and consensus<br/>Node may be already gone"]
       SendPovableRelocateInfo-->PurgeNodeInfos
-      PurgeNodeInfos["Purge Candidate Node info"]
+      PurgeNodeInfos["purge_node_info(<br/>node)"]
       PurgeNodeInfos--> EndRoutine
   </div>
 
@@ -276,31 +292,45 @@
       WaitFor -- Event --> Event
       Event((Event))
       Event-- CheckElder<br/>Timeout--> VoteCheckElderTimeout
-      VoteCheckElderTimeout["Vote for<br/>ParsecCheckElderTimeout"]
+      VoteCheckElderTimeout["vote_for(<br/>ParsecCheckElderTimeout)"]
       VoteCheckElderTimeout--> LoopEnd
 
       Consensus((Consensus))
-      WaitFor-- Consensus --> Consensus
-      Consensus--"one of the<br/>waited<br/>event"--> LoopEnd
+      WaitFor-- Parsec<br/>consensus --> Consensus
       Consensus--"ParsecCheckElderTimeout"-->CheckElderChange
-      CheckElderChange(("Check<br/>Elder<br/>change"))
+      CheckElderChange(("check_elder_change()"))
       CheckElderChange -- "Has elder changes: elder first ordered by:<br/>State=Online then age then name." --> MarkAndVoteSwapNewElder
-      MarkAndVoteSwapNewElder["Vote Add new nodes<br/>Vote Remove yougest elders<br/>Vote for new section"]
+      MarkAndVoteSwapNewElder["vote_for(Add) for new elders<br/>vote_for(Remove) for now adults nodes<br/>vote_for(NewSectionInfo)<br/><br/>WAITED_VOTES.insert(all votes)"]
       MarkAndVoteSwapNewElder -->LoopEnd
 
 
       CheckElderChange -- "No<br/>changes" --> RestartTimeout
-      Consensus--"Final<br/>waited<br/>event"-->MarkNewElderAdults
-      MarkNewElderAdults["Mark new<br/>Elder/Adults State"]
+
+      Consensus -- "WAITED_VOTES.contains(vote)" --> OneVoteConsensused
+      OneVoteConsensused["WAITED_VOTES.remove(vote)"]
+
+      OneVoteConsensused --> WaitComplete
+      WaitComplete(("Wait<br/>is<br/>complete?"))
+      WaitComplete--"WAITED_VOTES.is_empty()<br/>(complete)"-->MarkNewElderAdults
+      MarkNewElderAdults["For all nodes:<br/>set_elder_status(node, is_elder)"]
       MarkNewElderAdults--> RestartTimeout
       RestartTimeout[Restart<br/>CheckElderTimeout]
       RestartTimeout-->LoopEnd
+      WaitComplete--"!WAITED_VOTES.is_empty()<br/>(Not complete)"--> LoopEnd
 
       LoopEnd --> LoopStart
   </div>
 
   <h1>Non Elder Flow</h1>
+
+  <h2>Re-bootstrap with new relocated identity</h2>
+  First Create new identity with public key-pair<br/>
+  The node connect to a proxy with the new identity to use for joining the new section as a full node.
+
   <h2>Joining Relocate Candidate Flow</h2>
+  This is from the point of view of a node trying to join a section as a full member.<br/>
+  This node is going to perform the resource proof until it receive a NodeApproval RPC to complete this stage successfully.<br/>
+  If the node is not accepted, after time out, it will try another section.
   <div class="mermaid">
     graph TB
     JoiningRelocateCandidate -->  InitialSendConnectionInfoRequest
@@ -309,7 +339,7 @@
     EndRoutine["End of JoiningRelocateCandidate<br/>"]
     style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
 
-    InitialSendConnectionInfoRequest["For all nodes in destination section:<br/>MembersProofRequest(node) = None<br/>and Send ConnectionInfoRequest<br/><br/>Start TimeoutResendInfo<br/>Start TimeoutRefused"]
+    InitialSendConnectionInfoRequest["For all nodes in destination section:<br/>MembersProofRequest(node) = None<br/>and send_rpc(ConnectionInfoRequest)<br/><br/>Start TimeoutResendInfo<br/>Start TimeoutRefused"]
     InitialSendConnectionInfoRequest-->LoopStart
 
     LoopStart --> WaitFor
@@ -317,12 +347,12 @@
     LocalEvent((Local<br/>Event))
     WaitFor --> LocalEvent
 
-    LocalEvent -- ComputeResourceProofForElder -->  SendFirstResourceProofPartForElder
-    SendFirstResourceProofPartForElder["Send first<br/>ResourceProofResponse<br/>part for elder"]
+    LocalEvent -- ResourceProofForElderReady -->  SendFirstResourceProofPartForElder
+    SendFirstResourceProofPartForElder["send_rpc(<br/>ResourceProofResponse)<br/>with first part for elder"]
     SendFirstResourceProofPartForElder --> LoopEnd
 
-    LocalEvent--"TimeoutResendInfo triggered<br/> Some section have not responsed<br/>with ResourceProof"--> ResendConnectionInfoRequest
-    ResendConnectionInfoRequest["For all nodes with<br/>MembersProofRequest(node).is_none():<br/>Send ConnectionInfoRequest<br/><br/>Restart TimeoutResendInfo"]
+    LocalEvent--"TimeoutResendInfo triggered<br/> Some elders have not responsed<br/>with ResourceProof"--> ResendConnectionInfoRequest
+    ResendConnectionInfoRequest["For all nodes with<br/>MembersProofRequest(node).is_none():<br/>send_rpc(ConnectionInfoRequest)<br/><br/>Restart TimeoutResendInfo"]
     ResendConnectionInfoRequest --> LoopEnd
 
     LocalEvent--"TimeoutRefused<br/>triggered"--> EndRoutine
@@ -336,14 +366,15 @@
     ConnectAndSendCandidateInfo-->LoopEnd
 
     Rpc -- ResourceProofReceipt -->  SendNextResourceProofPartForElder
-    SendNextResourceProofPartForElder["Send next<br/>ResourceProofResponse<br/>part for elder"]
+    SendNextResourceProofPartForElder["send_rpc(<br/>ResourceProofResponse)<br/>part for elder"]
     SendNextResourceProofPartForElder --> LoopEnd
 
     Rpc -- ResourceProof -->  StartComputeResourceProofForElder
-    StartComputeResourceProofForElder["Start compute<br/>ResourceProof<br/>for elder"]
+    StartComputeResourceProofForElder["start_compute_resource_proof(source elder)"]
     StartComputeResourceProofForElder --> LoopEnd
 
     Rpc -- "ExpectCandidate<br/>RefuseCandidate<br/>RelocateResponse<br/>..." --> VoteParsecRPC
+    VoteParsecRPC["vote_for(the parsec rpc)<br/>(cache for later)"]
     VoteParsecRPC --> LoopEnd
 
     LoopEnd --> LoopStart
