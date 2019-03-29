@@ -418,6 +418,12 @@ impl SignedMessage {
     // signatures, it only counts them; it also does not verify `self.src_section`).
     fn has_enough_sigs(&self, min_section_size: usize) -> bool {
         use crate::Authority::*;
+
+        // Only Clients are allowed to omit the src_section
+        if !self.content.src.is_client() && self.src_section.is_none() {
+            return false;
+        }
+
         match self.content.src {
             ClientManager(_) | NaeManager(_) | NodeManager(_) => {
                 // Note: there should be exactly one source section, but we use safe code:
@@ -429,9 +435,6 @@ impl SignedMessage {
                     .into_iter()
                     .take(min_section_size)
                     .collect();
-                if valid_names.is_empty() {
-                    return true; // TODO
-                }
                 let valid_sigs = self
                     .signatures
                     .sigs
@@ -445,12 +448,8 @@ impl SignedMessage {
                 valid_sigs * QUORUM_DENOMINATOR > valid_names.len() * QUORUM_NUMERATOR
             }
             Section(_) | PrefixSection(_) => {
-                let num_sending = self.src_size();
-                if num_sending == 0 {
-                    return true; // TODO
-                }
                 let valid_sigs = self.signatures.len();
-                valid_sigs * QUORUM_DENOMINATOR > num_sending * QUORUM_NUMERATOR
+                valid_sigs * QUORUM_DENOMINATOR > self.src_size() * QUORUM_NUMERATOR
             }
             ManagedNode(_) | Client { .. } => self.signatures.len() == 1,
         }

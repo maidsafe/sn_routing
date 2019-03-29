@@ -3525,7 +3525,16 @@ impl Bootstrapped for Node {
                 };
                 Some(src_section)
             }
-            _ => None,
+            Client { .. } => None,
+            _ if self.is_first_node => {
+                // TODO: Remove this special case when PARSEC supports single-node networks.
+                let members = iter::once(*self.full_id.public_id()).collect();
+                Some(SectionInfo::new(members, Default::default(), None)?)
+            }
+            _ => {
+                // Cannot send routing msgs as a Node until established.
+                return Ok(());
+            }
         };
 
         if route > 0 {
