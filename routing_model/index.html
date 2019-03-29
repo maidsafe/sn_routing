@@ -303,14 +303,14 @@
   <h2>Joining Relocate Candidate Flow</h2>
   <div class="mermaid">
     graph TB
-    JoiningRelocateCandidate -->  InitialConnectAndSendCandidateInfo
-    JoiningRelocateCandidate["JoiningRelocateCandidate<br/>Sub Routine"]
+    JoiningRelocateCandidate -->  InitialSendConnectionInfoRequest
+    JoiningRelocateCandidate["JoiningRelocateCandidate<br/>Sub Routine<br/>(Take destination section nodes)"]
     style JoiningRelocateCandidate fill:#f9f,stroke:#333,stroke-width:4px
     EndRoutine["End of JoiningRelocateCandidate<br/>"]
     style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
 
-    InitialConnectAndSendCandidateInfo["Connect and send CandidateInfo<br/>to all section members<br/><br/>Start TimeoutResendInfo<br/>Start TimeoutRefused"]
-    InitialConnectAndSendCandidateInfo-->LoopStart
+    InitialSendConnectionInfoRequest["For all nodes in destination section:<br/>MembersProofRequest(node) = None<br/>and Send ConnectionInfoRequest<br/><br/>Start TimeoutResendInfo<br/>Start TimeoutRefused"]
+    InitialSendConnectionInfoRequest-->LoopStart
 
     LoopStart --> WaitFor
     WaitFor(("Wait for 6:"))
@@ -321,15 +321,19 @@
     SendFirstResourceProofPartForElder["Send first<br/>ResourceProofResponse<br/>part for elder"]
     SendFirstResourceProofPartForElder --> LoopEnd
 
-    LocalEvent--"TimeoutResendInfo triggered<br/> Some section have not responsed<br/>with ResourceProof"--> ConnectAndSendCandidateInfo
-    ConnectAndSendCandidateInfo["Connect and send CandidateInfo<br/>section members<br/>without ResourceProof<br/><br/>Restart TimeoutResendInfo"]
-    ConnectAndSendCandidateInfo --> LoopEnd
+    LocalEvent--"TimeoutResendInfo triggered<br/> Some section have not responsed<br/>with ResourceProof"--> ResendConnectionInfoRequest
+    ResendConnectionInfoRequest["For all nodes with<br/>MembersProofRequest(node).is_none():<br/>Send ConnectionInfoRequest<br/><br/>Restart TimeoutResendInfo"]
+    ResendConnectionInfoRequest --> LoopEnd
 
     LocalEvent--"TimeoutRefused<br/>triggered"--> EndRoutine
 
     Rpc((RPC))
     WaitFor --> Rpc
     Rpc -- NodeApproval -->  EndRoutine
+
+    Rpc -- ConnectionInfoResponse --> ConnectAndSendCandidateInfo
+    ConnectAndSendCandidateInfo["Connect and send<br/>CandidateInfo"]
+    ConnectAndSendCandidateInfo-->LoopEnd
 
     Rpc -- ResourceProofReceipt -->  SendNextResourceProofPartForElder
     SendNextResourceProofPartForElder["Send next<br/>ResourceProofResponse<br/>part for elder"]
