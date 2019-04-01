@@ -36,17 +36,38 @@
   </p>
   <button class="collapsible">OWN_SECTION</button>
   <div class="content">
-	  <p> OWN_SECTION refers to this node's own section.<br>
-	  It is an Option&ltPrefix&gt.<br>
-	  While a node is being rellocated, the value will be none. Once they get accepted into a section, it becomes Some(that_section_s_prefix)
+      <p> OWN_SECTION refers to this node's own section.<br>
+      It is an Option&ltPrefix&gt.<br>
+      While a node is being rellocated, the value will be none. Once they get accepted into a section, it becomes Some(that_section_s_prefix)
   </p>
   </div>
   <button class="collapsible">BootstrapAndRelocate</button>
   <div class="content">
-	  <p>This function gets called when a node just joined the Network.<br>
-	  At this stage, we are connected to a proxy node and they indicate to us which section we should join.
-  </p>
+      <p>This function gets called when a node just joined the Network.<br>
+      At this stage, we are connected to a proxy node and they indicate to us which section we should join.
+      </p>
   </div>
+  <button class="collapsible">StartTopMember</button>
+  <div class="content">
+      <p>Once a node has joined a section (indicated by OWN_SECTION.is_some()), they will be able to perform as a member of that section until they are rellocated away from it.<br>
+      See StartTopMember graph for details.
+      </p>
+  </div>
+  <button class="collapsible">Rebootstrap</button>
+  <div class="content">
+      <p>First Create new identity with public key-pair<br/>
+      The node connects to a proxy with the new identity to use for joining the new section as a full node.
+      </p>
+  </div>
+  <button class="collapsible">JoiningRelocateCandidate</button>
+  <div class="content">
+      <p>Once a node knows where to be relocated, they will follow this flow to become a full member of the section.<br>
+      This covers resource proof from the point of view of the node being resource-proofed.<br>
+      The output of this function is an Option. If we fail resource proof, it is none, which means we will have to bootstrap again. If it is Some, it contains the RelocateInfo we need to join this section.<br>
+    See JoiningRelocateCandidate graph for details.
+      </p>
+  </div>
+
   <div class="mermaid">
     graph TB
 
@@ -65,14 +86,14 @@
     style StartTopMember fill:#f9f,stroke:#333,stroke-width:4px
     StartTopMember --> ReBootstrapWithNewIdentity
 
-    ReBootstrapWithNewIdentity["Re-bootstrap with new relocated identity"]
+    ReBootstrapWithNewIdentity["Rebootstrap<br/>with new relocated identity<br/>output: RelocateInfo"]
     style ReBootstrapWithNewIdentity fill:#f9f,stroke:#333,stroke-width:4px
     ReBootstrapWithNewIdentity --> JoiningRelocateCandidate
 
-    JoiningRelocateCandidate["JoiningRelocateCandidate<br/>(Take RelocatedInfo)"]
+    JoiningRelocateCandidate["JoiningRelocateCandidate(RelocateInfo)<br/>output: JoiningApproved"]
     style JoiningRelocateCandidate fill:#f9f,stroke:#333,stroke-width:4px
 
-    SetNodeApproaval["OWN_SECTION=JoiningRelocateCandidateNodeApproval"]
+    SetNodeApproaval["OWN_SECTION=JoiningApproved"]
     JoiningRelocateCandidate --> SetNodeApproaval
 
     SetNodeApproaval --> LoopEnd
@@ -365,10 +386,6 @@
   </div>
 
   <h1>Elders and adults</h1>
-
-  <h2>Re-bootstrap with new relocated identity</h2>
-  First Create new identity with public key-pair<br/>
-  The node connect to a proxy with the new identity to use for joining the new section as a full node.
 
   <h2>Becoming a full member of a section</h2>
   This is from the point of view of a node trying to join a section as a full member.<br/>
