@@ -26,17 +26,14 @@ const OUTGOING_EXPIRY_DURATION_SECS: u64 = 60 * 10;
 pub enum FilteringResult {
     /// We don't have the message in the filter yet
     NewMessage,
-    /// We have the message in the filter, but it was sent on a different route
+    /// We have the message in the filter
     KnownMessage,
-    /// We have already seen this message on this route
-    KnownMessageAndRoute,
 }
 
 // Structure to filter (throttle) incoming and outgoing `RoutingMessages`.
 pub struct RoutingMessageFilter {
     incoming: MessageFilter<Digest>,
-    incoming_route: MessageFilter<(Digest, u8)>,
-    outgoing: LruCache<(Digest, PublicId, u8), ()>,
+    outgoing: LruCache<(Digest, PublicId), ()>,
 }
 
 impl RoutingMessageFilter {
@@ -46,24 +43,21 @@ impl RoutingMessageFilter {
 
         RoutingMessageFilter {
             incoming: MessageFilter::with_expiry_duration(incoming_duration),
-            incoming_route: MessageFilter::with_expiry_duration(incoming_duration),
             outgoing: LruCache::with_expiry_duration(outgoing_duration),
         }
     }
 
     // Filter incoming `RoutingMessage`. Return the number of times this specific message has been
     // seen, including this time.
-    pub fn filter_incoming(&mut self, msg: &RoutingMessage, route: u8) -> FilteringResult {
+    pub fn filter_incoming(&mut self, msg: &RoutingMessage) -> FilteringResult {
         let hash = match hash(msg) {
             Some(hash) => hash,
             None => return FilteringResult::NewMessage,
         };
-        let known_msg = self.incoming.insert(&hash) > 1;
-        let known_msg_rt = self.incoming_route.insert(&(hash, route)) > 1;
-        match (known_msg, known_msg_rt) {
-            (false, false) => FilteringResult::NewMessage,
-            (true, false) => FilteringResult::KnownMessage,
-            (_, true) => FilteringResult::KnownMessageAndRoute,
+        if self.incoming.insert(&hash) > 1 {
+            FilteringResult::KnownMessage
+        } else {
+            FilteringResult::NewMessage
         }
     }
 
@@ -71,9 +65,9 @@ impl RoutingMessageFilter {
     // (and thus should not be sent, due to deduplication).
     //
     // Return `false` if serialisation of the message fails - that can be handled elsewhere.
-    pub fn filter_outgoing(&mut self, msg: &RoutingMessage, pub_id: &PublicId, route: u8) -> bool {
+    pub fn filter_outgoing(&mut self, msg: &RoutingMessage, pub_id: &PublicId) -> bool {
         hash(msg).map_or(false, |hash| {
-            self.outgoing.insert((hash, *pub_id, route), ()).is_some()
+            self.outgoing.insert((hash, *pub_id), ()).is_some()
         })
     }
 }

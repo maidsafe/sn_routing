@@ -32,14 +32,8 @@ pub trait Bootstrapped: Base {
 
     /// Adds the outgoing signed message to the statistics and returns `true`
     /// if it should be blocked due to deduplication.
-    fn filter_outgoing_routing_msg(
-        &mut self,
-        msg: &RoutingMessage,
-        pub_id: &PublicId,
-        route: u8,
-    ) -> bool {
-        self.routing_msg_filter()
-            .filter_outgoing(msg, pub_id, route)
+    fn filter_outgoing_routing_msg(&mut self, msg: &RoutingMessage, pub_id: &PublicId) -> bool {
+        self.routing_msg_filter().filter_outgoing(msg, pub_id)
     }
 
     fn send_routing_message_with_expiry(

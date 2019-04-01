@@ -333,10 +333,9 @@ pub trait Base: Display {
     fn to_hop_message(
         &self,
         signed_msg: SignedRoutingMessage,
-        route: u8,
         sent_to: BTreeSet<XorName>,
     ) -> Result<Message, RoutingError> {
-        let hop_msg = HopMessage::new(signed_msg, route, sent_to)?;
+        let hop_msg = HopMessage::new(signed_msg, sent_to)?;
         Ok(Message::Hop(hop_msg))
     }
 

@@ -30,11 +30,8 @@ pub trait BootstrappedNotEstablished: Bootstrapped {
         let in_authority = self.in_authority(&routing_msg.dst);
 
         // Prevents us repeatedly handling identical messages sent by a malicious peer.
-        match self
-            .routing_msg_filter()
-            .filter_incoming(&routing_msg, hop_msg.route)
-        {
-            FilteringResult::KnownMessage | FilteringResult::KnownMessageAndRoute => {
+        match self.routing_msg_filter().filter_incoming(&routing_msg) {
+            FilteringResult::KnownMessage => {
                 return Err(RoutingError::FilterCheckFailed);
             }
             FilteringResult::NewMessage => (),
@@ -76,8 +73,8 @@ pub trait BootstrappedNotEstablished: Bootstrapped {
 
         let signed_msg = SignedRoutingMessage::new(routing_msg, self.full_id(), None)?;
 
-        if !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_pub_id, 0) {
-            let message = self.to_hop_message(signed_msg.clone(), 0, BTreeSet::new())?;
+        if !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_pub_id) {
+            let message = self.to_hop_message(signed_msg.clone(), BTreeSet::new())?;
             self.send_message(&proxy_pub_id, message);
         }
 

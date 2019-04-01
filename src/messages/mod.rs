@@ -78,23 +78,15 @@ pub enum Message {
 pub struct HopMessage {
     /// Wrapped signed message.
     pub content: SignedRoutingMessage,
-    /// Route number; corresponds to the index of the peer in the section of target peers being
-    /// considered for the next hop.
-    pub route: u8,
     /// Every node this has already been sent to.
     pub sent_to: BTreeSet<XorName>,
 }
 
 impl HopMessage {
     /// Wrap `content` for transmission to the next hop and sign it.
-    pub fn new(
-        content: SignedRoutingMessage,
-        route: u8,
-        sent_to: BTreeSet<XorName>,
-    ) -> Result<HopMessage> {
+    pub fn new(content: SignedRoutingMessage, sent_to: BTreeSet<XorName>) -> Result<HopMessage> {
         Ok(HopMessage {
             content: content,
-            route: route,
             sent_to: sent_to,
         })
     }
@@ -527,8 +519,8 @@ impl Debug for HopMessage {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
             formatter,
-            "HopMessage {{ content: {:?}, route: {}, sent_to: .., signature: .. }}",
-            self.content, self.route
+            "HopMessage {{ content: {:?}, sent_to: .., signature: .. }}",
+            self.content
         )
     }
 }

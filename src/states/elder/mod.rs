@@ -562,10 +562,7 @@ impl Elder {
 
         let filter_res = self
             .routing_msg_filter
-            .filter_incoming(signed_msg.routing_message(), route);
-        if filter_res == FilteringResult::KnownMessageAndRoute {
-            return Ok(());
-        };
+            .filter_incoming(signed_msg.routing_message());
 
         if self.in_authority(&signed_msg.routing_message().dst) {
             // The message is addressed to our section. Verify its integrity.
@@ -1476,14 +1473,14 @@ impl Elder {
         &mut self,
         signed_msg: SignedRoutingMessage,
         dst_id: &PublicId,
-        route: u8,
+        _route: u8,
         sent_to: BTreeSet<XorName>,
     ) -> Result<(), RoutingError> {
-        if self.filter_outgoing_routing_msg(signed_msg.routing_message(), dst_id, route) {
+        if self.filter_outgoing_routing_msg(signed_msg.routing_message(), dst_id) {
             return Ok(());
         }
 
-        let message = self.to_hop_message(signed_msg, route, sent_to)?;
+        let message = self.to_hop_message(signed_msg, sent_to)?;
         self.send_message(dst_id, message);
         Ok(())
     }
@@ -1505,11 +1502,11 @@ impl Elder {
                 let _ = self.correct_rate_limits(&ip, signed_msg.routing_message());
             }
 
-            if self.filter_outgoing_routing_msg(signed_msg.routing_message(), pub_id, 0) {
+            if self.filter_outgoing_routing_msg(signed_msg.routing_message(), pub_id) {
                 return Ok(());
             }
 
-            let message = self.to_hop_message(signed_msg.clone(), 0, BTreeSet::new())?;
+            let message = self.to_hop_message(signed_msg.clone(), BTreeSet::new())?;
             self.send_message(pub_id, message);
             Ok(())
         } else {
@@ -1994,12 +1991,9 @@ impl Base for Elder {
         match hop_name_result {
             Ok(hop_name) => {
                 let HopMessage {
-                    content,
-                    route,
-                    sent_to,
-                    ..
+                    content, sent_to, ..
                 } = msg;
-                self.handle_signed_message(content, route, hop_name, &sent_to)
+                self.handle_signed_message(content, 0, hop_name, &sent_to)
                     .map(|()| Transition::Stay)
             }
             Err(RoutingError::ExceedsRateLimit(hash)) => {
