@@ -26,9 +26,9 @@
   </style>
 </head>
 <body>
-  <h1>Top Flow</h1>
+  <h1>Node in the Network</h1>
 
-  <h2>Top Node Flow</h2>
+  <h2>Node's entire lifetime</h2>
   <p>This section describes the flow a node will follow during its entire lifetime, starting as an adult and continuing as an elder.</p>
   <button class="collapsible">OWN_SECTION</button>
   <div class="content">
@@ -76,7 +76,7 @@
   </div>
 
 
-  <h2>Top Member Flow</h2>
+  <h2>Node as a member of a section</h2>
   <div class="mermaid">
     graph TB
     style StartTopMember fill:#f9f,stroke:#333,stroke-width:4px
@@ -106,9 +106,9 @@
     EndRoutine["EndRoutine: Kill all sub routines"]
 </div>
 
-  <h1>Destination Section Flow</h1>
+  <h1>Destination section</h1>
   Receiving a node that is being relocated.
-  <h2>Top Level Flow</h2>
+  <h2>Processing a candidate trying to join our section</h2>
   <div class="mermaid">
       graph TB
 
@@ -167,7 +167,7 @@
 
   </div>
 
-  <h2>AcceptAsCandidate</h2>
+  <h2>Resource proof from a destination's point of view</h2>
   <div class="mermaid">
       graph TB
       AcceptAsCandidate["Accept As Candidate<br/> Shared state all peers proceed"]
@@ -213,8 +213,8 @@
       LoopEnd --> LoopStart
   </div>
 
-  <h1>Source Section Flow</h1>
-  <h2>Top Level Flow</h2>
+  <h1>Source section</h1>
+  <h2>Deciding that a member of our section should be rellocated away</h2>
   <div class="mermaid">
       graph TB
 
@@ -286,7 +286,7 @@
       ResetRelocating --> LoopEnd
   </div>
 
-  <h2>TryRelocating</h2>
+  <h2>Relocating a member of our section away from it</h2>
   <div class="mermaid">
       graph TB
 
@@ -313,8 +313,8 @@
       PurgeNodeInfos--> EndRoutine
   </div>
 
-  <h1>Common Elder Flow</h1>
-  <h2>CheckAndProcessElderChange</h2>
+  <h1>Elder-only</h1>
+  <h2>Process for Adult/Elder promotion and demotion</h2>
   <div class="mermaid">
       graph TB
       CheckAndProcessElderChange["StartCheckAndProcessElderChange:<br/>No exit - Need Killed"]
@@ -360,13 +360,13 @@
       LoopEnd --> LoopStart
   </div>
 
-  <h1>Non Elder Flow</h1>
+  <h1>Elders and adults</h1>
 
   <h2>Re-bootstrap with new relocated identity</h2>
   First Create new identity with public key-pair<br/>
   The node connect to a proxy with the new identity to use for joining the new section as a full node.
 
-  <h2>Joining Relocate Candidate Flow</h2>
+  <h2>Becoming a full member of a section</h2>
   This is from the point of view of a node trying to join a section as a full member.<br/>
   This node is going to perform the resource proof until it receive a NodeApproval RPC to complete this stage successfully.<br/>
   If the node is not accepted, after time out, it will try another section.
