@@ -14,13 +14,13 @@
     style Start fill:#f9f,stroke:#333,stroke-width:4px
 
     LoopStart --> HasSection
-    HasSection(("Has Section<br/>NodeApproval"))
+    HasSection(("Check"))
 
-    HasSection --No--> BoostStrapAndRelocate
+    HasSection --"OWN_SECTION.is_none()"--> BoostStrapAndRelocate
     BoostStrapAndRelocate["BoostStrapAndRelocate:<br/>Get RelocateInfo"]
     BoostStrapAndRelocate --> ReBootstrapWithNewIdentity
 
-    HasSection --Yes--> StartTopMember
+    HasSection --"OWN_SECTION.is_some()"--> StartTopMember
     StartTopMember["StartTopMember<br/>Sub Routine<br/>"]
     style StartTopMember fill:#f9f,stroke:#333,stroke-width:4px
     StartTopMember --> ReBootstrapWithNewIdentity
@@ -32,7 +32,10 @@
     JoiningRelocateCandidate["JoiningRelocateCandidate<br/>Sub Routine<br/><br/>(Take RelocatedInfo)"]
     style JoiningRelocateCandidate fill:#f9f,stroke:#333,stroke-width:4px
 
-    JoiningRelocateCandidate --> LoopEnd
+    SetNodeApproaval["OWN_SECTION=JoiningRelocateCandidateNodeApproval"]
+    JoiningRelocateCandidate --> SetNodeApproaval
+
+    SetNodeApproaval --> LoopEnd
     LoopEnd --> LoopStart
   </div>
 
@@ -100,7 +103,7 @@
       VoteParsecExpectCandidate["vote_for(<br/>ParsecExpectCandidate)<br/>to handle the RPC consistently"]
       VoteParsecExpectCandidate --> LoopEnd
 
-      Balanced(("Check state?<br/>(shared state)"))
+      Balanced(("Check?<br/>(shared state)"))
       Balanced -- "shorter_prefix_section(<br/>).is_some()" --> Resend
       Balanced -- "shorter_prefix_section().is_none()<br/>PROCESSING_CANDIDATE==yes" --> SendRefuse
       Balanced -- "shorter_prefix_section().is_none()<br/>PROCESSING_CANDIDATE==No" --> SetCandidateYes
@@ -138,7 +141,7 @@
 
       AcceptAsCandidate --> SendRelocateResponse
 
-      SendRelocateResponse["add_node(NodeState=ResourceProof)<br/><br/>send_rpc(RelocateResponse)<br/>to source section<br/><br/>Start TimeoutAccept"]
+      SendRelocateResponse["add_node(NodeState=ResourceProof)<br/><br/>send_rpc(RelocateResponse)<br/>to source section<br/><br/>schedule(TimeoutAccept)"]
       WaitFor(("Wait for 2:<br/><br/>Only current<br/>candidate<br/>events"))
       VoteParsecPurgeCandidate["vote_for(<br/>ParsecPurgeCandidate)"]
       VoteParsecOnline["vote_for(<br/>NetworkEvent::Online)<br/><br/>VOTED_ONLINE=yes"]
@@ -184,7 +187,7 @@
       style Start fill:#f9f,stroke:#333,stroke-width:4px
       Start --> StartWorkUnitTimeOut
 
-      StartWorkUnitTimeOut["Start WorkUnitTimeOut"]
+      StartWorkUnitTimeOut["schedule(WorkUnitTimeOut)"]
       StartWorkUnitTimeOut --> LoopStart
       LoopEnd --> LoopStart
 
@@ -197,7 +200,7 @@
 
       Event((Event))
       Event -- WorkUnitTimeOut<br/>Trigger --> VoteParsecRelocationTrigger
-      VoteParsecRelocationTrigger["vote_for(WorkUnitIncrement)<br/>Restart WorkUnitTimeOut"]
+      VoteParsecRelocationTrigger["vote_for(WorkUnitIncrement)<br/>schedule(WorkUnitTimeOut)"]
       VoteParsecRelocationTrigger --> LoopEnd
 
       RPC((RPC))
@@ -216,7 +219,7 @@
       ParsecConsensus -- WorkUnitIncrement consensused --> IncrementWorkUnit
       IncrementWorkUnit["increment_nodes_work_units()"]
       IncrementWorkUnit-->AlreadyRelocating
-      AlreadyRelocating(("Already<br/>Relocating?"))
+      AlreadyRelocating(("Check?"))
 
 
       AlreadyRelocating --"RELOCATING.is_none()"--> SetRelocating
@@ -231,7 +234,7 @@
       SetRelocatingNodeState["set_node_state(RELOCATING, RelocatingState)"]
       SetRelocatingNodeState --> isRelocatingElder
 
-      isRelocatingElder(("Relocating<br/>elder?"))
+      isRelocatingElder(("Check?"))
       isRelocatingElder--"is_elder(RELOCATING)"-->ResetRelocating
       isRelocatingElder--"!is_elder(RELOCATING)"-->Concurrent0
 
@@ -282,7 +285,7 @@
       style CheckAndProcessElderChange fill:#f9f,stroke:#333,stroke-width:4px
 
       CheckAndProcessElderChange -->  StartCheckElderTimeout
-      StartCheckElderTimeout[Start<br/>CheckElderTimeout]
+      StartCheckElderTimeout["schedule(<br/>CheckElderTimeout)"]
       StartCheckElderTimeout -->  LoopStart
 
 
@@ -310,13 +313,13 @@
       OneVoteConsensused["WAITED_VOTES.remove(vote)"]
 
       OneVoteConsensused --> WaitComplete
-      WaitComplete(("Wait<br/>is<br/>complete?"))
-      WaitComplete--"WAITED_VOTES.is_empty()<br/>(complete)"-->MarkNewElderAdults
+      WaitComplete(("Check?"))
+      WaitComplete--"WAITED_VOTES.is_empty()<br/>(Wait complete)"-->MarkNewElderAdults
       MarkNewElderAdults["For all nodes:<br/>set_elder_status(node, is_elder)"]
       MarkNewElderAdults--> RestartTimeout
-      RestartTimeout[Restart<br/>CheckElderTimeout]
+      RestartTimeout["schedule(<br/>CheckElderTimeout)"]
       RestartTimeout-->LoopEnd
-      WaitComplete--"!WAITED_VOTES.is_empty()<br/>(Not complete)"--> LoopEnd
+      WaitComplete--"!WAITED_VOTES.is_empty()<br/>(Wait not complete)"--> LoopEnd
 
       LoopEnd --> LoopStart
   </div>
@@ -339,7 +342,7 @@
     EndRoutine["End of JoiningRelocateCandidate<br/>"]
     style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
 
-    InitialSendConnectionInfoRequest["For all nodes in destination section:<br/>MembersProofRequest(node) = None<br/>and send_rpc(ConnectionInfoRequest)<br/><br/>Start TimeoutResendInfo<br/>Start TimeoutRefused"]
+    InitialSendConnectionInfoRequest["For all nodes in destination section:<br/>MembersProofRequest(node) = None<br/>and send_rpc(ConnectionInfoRequest)<br/><br/>schedule(TimeoutResendInfo)<br/>schedule(TimeoutRefused)"]
     InitialSendConnectionInfoRequest-->LoopStart
 
     LoopStart --> WaitFor
@@ -352,7 +355,7 @@
     SendFirstResourceProofPartForElder --> LoopEnd
 
     LocalEvent--"TimeoutResendInfo triggered<br/> Some elders have not responsed<br/>with ResourceProof"--> ResendConnectionInfoRequest
-    ResendConnectionInfoRequest["For all nodes with<br/>MembersProofRequest(node).is_none():<br/>send_rpc(ConnectionInfoRequest)<br/><br/>Restart TimeoutResendInfo"]
+    ResendConnectionInfoRequest["For all nodes with<br/>MembersProofRequest(node).is_none():<br/>send_rpc(ConnectionInfoRequest)<br/><br/>schedule(TimeoutResendInfo)"]
     ResendConnectionInfoRequest --> LoopEnd
 
     LocalEvent--"TimeoutRefused<br/>triggered"--> EndRoutine
