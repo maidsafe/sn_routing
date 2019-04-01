@@ -2418,10 +2418,15 @@ impl Node {
             return Err(RoutingError::InvalidDestination);
         }
 
-        let close_section = match self.chain().close_names(&dst_name) {
-            Some(close_section) => close_section.into_iter().collect(),
-            None => return Err(RoutingError::InvalidDestination),
+        let close_section = if self.is_first_node && !self.chain.is_member() {
+            iter::once(self.name()).cloned().collect_vec()
+        } else {
+            match self.chain().close_names(&dst_name) {
+                Some(close_section) => close_section.into_iter().collect(),
+                None => return Err(RoutingError::InvalidDestination),
+            }
         };
+
         let relocation_dst = self
             .next_relocation_dst
             .unwrap_or_else(|| utils::calculate_relocation_dst(close_section, &dst_name));
