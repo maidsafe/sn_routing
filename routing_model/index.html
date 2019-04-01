@@ -29,7 +29,11 @@
   <h1>Node in the Network</h1>
 
   <h2>Node's entire lifetime</h2>
-  <p>This section describes the flow a node will follow during its entire lifetime, starting as an adult and continuing as an elder.</p>
+  <p>This section describes the flow a node will follow during its entire lifetime.<br>
+  When they join the network, they won't yet be a member of any section.<br>
+  First,they will have to bootstrap with their proxy node, receive a RelocateInfo and attempt to join the section that this RelocateInfo is pointing to.<br>
+  Once they have a full section, they will be able to operate as a full section member.
+  </p>
   <button class="collapsible">OWN_SECTION</button>
   <div class="content">
 	  <p> OWN_SECTION refers to this node's own section.<br>
