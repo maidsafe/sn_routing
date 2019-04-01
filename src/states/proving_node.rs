@@ -13,7 +13,6 @@ use super::{
     },
 };
 use crate::{
-    ack_manager::AckManager,
     action::Action,
     cache::Cache,
     chain::GenesisPfxInfo,
@@ -60,7 +59,6 @@ pub struct ProvingNodeDetails {
 }
 
 pub struct ProvingNode {
-    ack_mgr: AckManager,
     cache: Box<Cache>,
     network_service: NetworkService,
     /// Whether resource proof is disabled.
@@ -101,7 +99,6 @@ impl ProvingNode {
         );
 
         let mut node = Self {
-            ack_mgr: AckManager::new(),
             cache: details.cache,
             network_service: details.network_service,
             event_backlog: Vec::new(),
@@ -164,7 +161,6 @@ impl ProvingNode {
         outbox: &mut EventBox,
     ) -> Result<State, RoutingError> {
         let details = AdultDetails {
-            ack_mgr: self.ack_mgr,
             cache: self.cache,
             network_service: self.network_service,
             event_backlog: self.event_backlog,
@@ -332,7 +328,6 @@ impl Base for ProvingNode {
         {
             transition
         } else {
-            self.resend_unacknowledged_timed_out_msgs(token);
             Transition::Stay
         }
     }
@@ -422,14 +417,6 @@ impl Base for ProvingNode {
 }
 
 impl Bootstrapped for ProvingNode {
-    fn ack_mgr(&self) -> &AckManager {
-        &self.ack_mgr
-    }
-
-    fn ack_mgr_mut(&mut self) -> &mut AckManager {
-        &mut self.ack_mgr
-    }
-
     fn routing_msg_filter(&mut self) -> &mut RoutingMessageFilter {
         &mut self.routing_msg_filter
     }

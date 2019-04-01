@@ -249,11 +249,11 @@ impl Inner {
 // The 4-byte tags of `Message::Direct` and `DirectMessage::ParsecRequest`.
 // A serialised Parsec request message starts with these bytes.
 #[cfg(not(feature = "mock_serialise"))]
-static PARSEC_REQ_MSG_TAGS: &[u8] = &[0, 0, 0, 0, 10, 0, 0, 0];
+static PARSEC_REQ_MSG_TAGS: &[u8] = &[0, 0, 0, 0, 9, 0, 0, 0];
 // The 4-byte tags of `Message::Direct` and `DirectMessage::ParsecResponse`.
 // A serialised Parsec response message starts with these bytes.
 #[cfg(not(feature = "mock_serialise"))]
-static PARSEC_RSP_MSG_TAGS: &[u8] = &[0, 0, 0, 0, 11, 0, 0, 0];
+static PARSEC_RSP_MSG_TAGS: &[u8] = &[0, 0, 0, 0, 10, 0, 0, 0];
 
 #[derive(Debug)]
 pub(super) enum Packet {

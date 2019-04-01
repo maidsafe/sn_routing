@@ -7,7 +7,6 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    ack_manager::Ack,
     error::{BootstrapResponseError, RoutingError},
     id::{FullId, PublicId},
     parsec,
@@ -79,8 +78,6 @@ pub enum DirectMessage {
     },
     /// Receipt of a part of a ResourceProofResponse
     ResourceProofResponseReceipt,
-    /// Sent from a proxy node to its client to indicate that the client exceeded its rate limit.
-    ProxyRateLimitExceeded { ack: Ack },
     /// Poke a node to send us the first gossip request
     ParsecPoke(u64),
     /// Parsec request message
@@ -124,9 +121,6 @@ impl Debug for DirectMessage {
                 leading_zero_bytes
             ),
             ResourceProofResponseReceipt => write!(formatter, "ResourceProofResponseReceipt"),
-            ProxyRateLimitExceeded { ref ack } => {
-                write!(formatter, "ProxyRateLimitExceeded({:?})", ack)
-            }
             ParsecRequest(ref v, _) => write!(formatter, "ParsecRequest({}, _)", v),
             ParsecResponse(ref v, _) => write!(formatter, "ParsecResponse({}, _)", v),
             ParsecPoke(ref v) => write!(formatter, "ParsecPoke({})", v),
@@ -181,7 +175,6 @@ impl Hash for DirectMessage {
                 proof.hash(state);
                 leading_zero_bytes.hash(state);
             }
-            ProxyRateLimitExceeded { ref ack } => ack.hash(state),
             ParsecPoke(version) => version.hash(state),
             ParsecRequest(version, ref request) => {
                 version.hash(state);

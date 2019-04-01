@@ -11,7 +11,6 @@ mod tests;
 
 use super::common::{Approved, Base, Bootstrapped, Relocated, USER_MSG_CACHE_EXPIRY_DURATION};
 use crate::{
-    ack_manager::{Ack, AckManager},
     cache::Cache,
     chain::{
         Chain, ExpectCandidatePayload, GenesisPfxInfo, NetworkEvent, OnlinePayload, PrefixChange,
@@ -76,7 +75,6 @@ const DROPPED_CLIENT_TIMEOUT: Duration = Duration::from_secs(2 * 60 * 60);
 const PROVING_SECTION_CACHE_SIZE: usize = 100;
 
 pub struct ElderDetails {
-    pub ack_mgr: AckManager,
     pub cache: Box<Cache>,
     pub chain: Chain,
     pub network_service: NetworkService,
@@ -92,7 +90,6 @@ pub struct ElderDetails {
 }
 
 pub struct Elder {
-    ack_mgr: AckManager,
     cacheable_user_msg_cache: UserMessageCache,
     network_service: NetworkService,
     full_id: FullId,
@@ -163,7 +160,6 @@ impl Elder {
         let peer_mgr = PeerManager::new(public_id, dev_config.disable_client_rate_limiter);
 
         let details = ElderDetails {
-            ack_mgr: AckManager::new(),
             cache,
             chain,
             network_service,
@@ -209,7 +205,6 @@ impl Elder {
         let candidate_status_token = timer.schedule(CANDIDATE_STATUS_INTERVAL);
 
         Self {
-            ack_mgr: details.ack_mgr,
             cacheable_user_msg_cache: UserMessageCache::with_expiry_duration(
                 USER_MSG_CACHE_EXPIRY_DURATION,
             ),
@@ -638,7 +633,7 @@ impl Elder {
         use crate::Authority::{Client, ManagedNode, PrefixSection, Section};
 
         match routing_msg.content {
-            Ack(..) | UserMessagePart { .. } => (),
+            UserMessagePart { .. } => (),
             _ => trace!("{} Got routing message {:?}.", self, routing_msg),
         }
 
@@ -695,10 +690,6 @@ impl Elder {
             }
             (Merge(digest), PrefixSection(_), PrefixSection(_)) => {
                 self.handle_merge(digest)?;
-                Ok(Transition::Stay)
-            }
-            (Ack(ack, _), _, _) => {
-                self.handle_ack_response(ack);
                 Ok(Transition::Stay)
             }
             (
@@ -1848,10 +1839,6 @@ impl Base for Elder {
             }
 
             self.send_parsec_gossip(None);
-        } else {
-            // Each token has only one purpose, so we only need to call this if none of the above
-            // matched:
-            self.resend_unacknowledged_timed_out_msgs(token);
         }
 
         Transition::Stay
@@ -1953,13 +1940,11 @@ impl Base for Elder {
             }
             BootstrapResponse(_)
             | ConnectionResponse
-            | ProxyRateLimitExceeded { .. }
             | ResourceProof { .. }
             | ResourceProofResponseReceipt => {
                 debug!("{} Unhandled direct message: {:?}", self, msg);
             }
         }
-
         Ok(Transition::Stay)
     }
 
@@ -1970,14 +1955,14 @@ impl Base for Elder {
         _: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
         let mut client_ip = None;
-        let hop_name = match self.peer_mgr.get_peer(&pub_id).map(Peer::state) {
+        let mut hop_name_result = match self.peer_mgr.get_peer(&pub_id).map(Peer::state) {
             Some(PeerState::Client { ip, .. }) => {
                 client_ip = Some(*ip);
-                *self.name()
+                Ok(*self.name())
             }
-            Some(PeerState::JoiningNode) => *self.name(),
+            Some(PeerState::JoiningNode) => Ok(*self.name()),
             Some(PeerState::Candidate) | Some(PeerState::Proxy) | Some(PeerState::Node { .. }) => {
-                *pub_id.name()
+                Ok(*pub_id.name())
             }
             Some(PeerState::Connected) | Some(PeerState::Connecting) | None => {
                 if self.dropped_clients.contains_key(&pub_id) {
@@ -1987,7 +1972,7 @@ impl Base for Elder {
                     );
                     return Ok(Transition::Stay);
                 } else {
-                    *self.name()
+                    Ok(*self.name())
                     // FIXME - confirm we can return with an error here by running soak tests
                     // debug!("{} Invalid sender {} of {:?}", self, pub_id, hop_msg);
                     // return Err(RoutingError::InvalidSource);
@@ -2002,35 +1987,34 @@ impl Base for Elder {
                     self.peer_mgr
                         .add_client_traffic(&pub_id, added_bytes, &self.log_ident());
                 }
-                Err(RoutingError::ExceedsRateLimit(hash)) => {
-                    trace!(
-                        "{} Temporarily can't proxy messages from client {:?} (rate-limit hit).",
-                        self,
-                        pub_id
-                    );
-                    self.send_direct_message(
-                        &pub_id,
-                        DirectMessage::ProxyRateLimitExceeded {
-                            ack: Ack::compute(msg.content.routing_message())?,
-                        },
-                    );
-                    return Err(RoutingError::ExceedsRateLimit(hash));
-                }
-                Err(error) => {
-                    self.ban_and_disconnect_peer(&pub_id);
-                    return Err(error);
-                }
+                Err(e) => hop_name_result = Err(e),
             }
         }
 
-        let HopMessage {
-            content,
-            route,
-            sent_to,
-            ..
-        } = msg;
-        self.handle_signed_message(content, route, hop_name, &sent_to)
-            .map(|()| Transition::Stay)
+        match hop_name_result {
+            Ok(hop_name) => {
+                let HopMessage {
+                    content,
+                    route,
+                    sent_to,
+                    ..
+                } = msg;
+                self.handle_signed_message(content, route, hop_name, &sent_to)
+                    .map(|()| Transition::Stay)
+            }
+            Err(RoutingError::ExceedsRateLimit(hash)) => {
+                trace!(
+                    "{} Temporarily can't proxy messages from client {:?} (rate-limit hit).",
+                    self,
+                    pub_id
+                );
+                Err(RoutingError::ExceedsRateLimit(hash))
+            }
+            Err(error) => {
+                self.ban_and_disconnect_peer(&pub_id);
+                Err(error)
+            }
+        }
     }
 }
 
@@ -2077,14 +2061,6 @@ impl Elder {
 }
 
 impl Bootstrapped for Elder {
-    fn ack_mgr(&self) -> &AckManager {
-        &self.ack_mgr
-    }
-
-    fn ack_mgr_mut(&mut self) -> &mut AckManager {
-        &mut self.ack_mgr
-    }
-
     // Constructs a signed message, finds the nodes responsible for accumulation, and either sends
     // these nodes a signature or tries to accumulate signatures for this message (on success, the
     // accumulator handles or forwards the message).

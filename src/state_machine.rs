@@ -20,7 +20,7 @@ use crate::{
     NetworkConfig, NetworkEvent, NetworkService, MIN_SECTION_SIZE,
 };
 #[cfg(feature = "mock_base")]
-use crate::{routing_table::Authority, states::common::Bootstrapped, Chain};
+use crate::{routing_table::Authority, Chain};
 use crossbeam_channel as mpmc;
 use log::LogLevel;
 use std::{
@@ -231,17 +231,6 @@ impl State {
             ref state => state.in_authority(auth),
             Terminated => false
         )
-    }
-
-    pub fn has_unacked_msg(&self) -> bool {
-        match *self {
-            State::Terminated | State::BootstrappingPeer(_) => false,
-            State::Client(ref state) => state.ack_mgr().has_unacked_msg(),
-            State::RelocatingNode(ref state) => state.ack_mgr().has_unacked_msg(),
-            State::ProvingNode(ref state) => state.ack_mgr().has_unacked_msg(),
-            State::Adult(ref state) => state.ack_mgr().has_unacked_msg(),
-            State::Elder(ref state) => state.ack_mgr().has_unacked_msg(),
-        }
     }
 }
 

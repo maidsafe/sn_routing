@@ -17,7 +17,6 @@ pub use self::{
 };
 use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
 use crate::{
-    ack_manager::Ack,
     chain::{GenesisPfxInfo, Proof, ProofSet, ProvingSection, SectionInfo},
     data::MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
     error::{Result, RoutingError},
@@ -371,15 +370,6 @@ pub struct RoutingMessage {
 }
 
 impl RoutingMessage {
-    /// Create ack for the given message
-    pub fn ack_from(msg: &RoutingMessage, src: Authority<XorName>) -> Result<Self> {
-        Ok(RoutingMessage {
-            src: src,
-            dst: msg.src,
-            content: MessageContent::Ack(Ack::compute(msg)?, msg.priority()),
-        })
-    }
-
     /// Returns the priority Crust should send this message with.
     pub fn priority(&self) -> u8 {
         self.content.priority()
@@ -500,8 +490,6 @@ pub enum MessageContent {
     /// Inform neighbours that we need to merge, and that the successor of the section info with
     /// the given hash will be the merged section.
     Merge(Digest256),
-    /// Sent to all connected peers when our own section splits
-    Ack(Ack, u8),
     /// Part of a user-facing message
     UserMessagePart {
         /// The hash of this user message.
@@ -529,9 +517,7 @@ impl MessageContent {
     /// The priority Crust should send this message with.
     pub fn priority(&self) -> u8 {
         match *self {
-            MessageContent::Ack(_, priority) | MessageContent::UserMessagePart { priority, .. } => {
-                priority
-            }
+            MessageContent::UserMessagePart { priority, .. } => priority,
             _ => 0,
         }
     }
@@ -601,7 +587,6 @@ impl Debug for MessageContent {
                 neighbour_sec_infos.len(),
             ),
             Merge(ref digest) => write!(formatter, "Merge({:.14?})", HexFmt(digest)),
-            Ack(ack, priority) => write!(formatter, "Ack({:?}, {})", ack, priority),
             UserMessagePart {
                 hash,
                 part_count,

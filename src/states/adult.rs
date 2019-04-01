@@ -14,7 +14,6 @@ use super::{
     elder::{Elder, ElderDetails},
 };
 use crate::{
-    ack_manager::AckManager,
     cache::Cache,
     chain::{
         Chain, ExpectCandidatePayload, GenesisPfxInfo, OnlinePayload, ProvingSection, SectionInfo,
@@ -41,7 +40,6 @@ use std::fmt::{self, Display, Formatter};
 const POKE_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub struct AdultDetails {
-    pub ack_mgr: AckManager,
     pub cache: Box<Cache>,
     pub network_service: NetworkService,
     pub event_backlog: Vec<Event>,
@@ -56,7 +54,6 @@ pub struct AdultDetails {
 }
 
 pub struct Adult {
-    ack_mgr: AckManager,
     cache: Box<Cache>,
     chain: Chain,
     network_service: NetworkService,
@@ -89,7 +86,6 @@ impl Adult {
         );
 
         let mut node = Self {
-            ack_mgr: details.ack_mgr,
             cache: details.cache,
             chain,
             network_service: details.network_service,
@@ -126,7 +122,6 @@ impl Adult {
         outbox: &mut EventBox,
     ) -> Result<State, RoutingError> {
         let details = ElderDetails {
-            ack_mgr: self.ack_mgr,
             cache: self.cache,
             chain: self.chain,
             network_service: self.network_service,
@@ -226,8 +221,6 @@ impl Base for Adult {
         if self.poke_timer_token == token {
             self.send_parsec_poke();
             self.poke_timer_token = self.timer.schedule(POKE_TIMEOUT);
-        } else {
-            self.resend_unacknowledged_timed_out_msgs(token);
         }
 
         Transition::Stay
@@ -293,14 +286,6 @@ impl Base for Adult {
 }
 
 impl Bootstrapped for Adult {
-    fn ack_mgr(&self) -> &AckManager {
-        &self.ack_mgr
-    }
-
-    fn ack_mgr_mut(&mut self) -> &mut AckManager {
-        &mut self.ack_mgr
-    }
-
     fn routing_msg_filter(&mut self) -> &mut RoutingMessageFilter {
         &mut self.routing_msg_filter
     }

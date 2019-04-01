@@ -597,11 +597,6 @@ impl Client {
             .apply_transition(transition, &mut self.event_buffer);
         self.interface_result_rx.recv()?
     }
-
-    /// Checks whether there is un-acked messages.
-    pub fn has_unacked_msg(&self) -> bool {
-        self.machine.current().has_unacked_msg()
-    }
 }
 
 #[cfg(feature = "mock_base")]

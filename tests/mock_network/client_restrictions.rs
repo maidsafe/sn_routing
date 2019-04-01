@@ -14,7 +14,7 @@ use crate::mock_network::utils::gen_immutable_data;
 use maidsafe_utilities::SeededRng;
 use rand::Rng;
 use routing::{
-    mock::Network, rate_limiter_consts::SOFT_CAPACITY, Authority, Event, EventStream, FullId,
+    mock::Network, rate_limiter::SOFT_CAPACITY, Authority, Event, EventStream, FullId,
     ImmutableData, MessageId, NetworkConfig, Request, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
 };
 use std::{iter, time::Duration};

@@ -654,11 +654,6 @@ impl Node {
             .unwrap_or(false)
     }
 
-    /// Checks whether there is un-acked messages.
-    pub fn has_unacked_msg(&self) -> bool {
-        self.machine.current().has_unacked_msg()
-    }
-
     /// Checks whether the given authority represents self.
     pub fn in_authority(&self, auth: &Authority<XorName>) -> bool {
         self.machine.current().in_authority(auth)

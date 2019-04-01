@@ -10,7 +10,6 @@ use super::common::{
     proxied, Base, Bootstrapped, BootstrappedNotEstablished, USER_MSG_CACHE_EXPIRY_DURATION,
 };
 use crate::{
-    ack_manager::{Ack, AckManager, UnacknowledgedMessage},
     error::{InterfaceError, RoutingError},
     event::Event,
     id::{FullId, PublicId},
@@ -28,13 +27,7 @@ use crate::{
     xor_name::XorName,
     NetworkService,
 };
-use std::{
-    collections::BTreeMap,
-    fmt::{self, Display, Formatter},
-};
-
-/// Duration to wait before sending rate limit exceeded messages.
-pub const RATE_EXCEED_RETRY: Duration = Duration::from_millis(800);
+use std::fmt::{self, Display, Formatter};
 
 pub struct ClientDetails {
     pub network_service: NetworkService,
@@ -50,7 +43,6 @@ pub struct ClientDetails {
 ///
 /// Each client has a _proxy_: a node through which all requests are routed.
 pub struct Client {
-    ack_mgr: AckManager,
     network_service: NetworkService,
     full_id: FullId,
     min_section_size: usize,
@@ -59,14 +51,12 @@ pub struct Client {
     routing_msg_filter: RoutingMessageFilter,
     timer: Timer,
     user_msg_cache: UserMessageCache,
-    resend_buf: BTreeMap<u64, UnacknowledgedMessage>,
     msg_expiry_dur: Duration,
 }
 
 impl Client {
     pub fn from_bootstrapping(details: ClientDetails, outbox: &mut EventBox) -> Self {
         let client = Client {
-            ack_mgr: AckManager::new(),
             network_service: details.network_service,
             full_id: details.full_id,
             min_section_size: details.min_section_size,
@@ -75,7 +65,6 @@ impl Client {
             routing_msg_filter: RoutingMessageFilter::new(),
             timer: details.timer,
             user_msg_cache: UserMessageCache::with_expiry_duration(USER_MSG_CACHE_EXPIRY_DURATION),
-            resend_buf: Default::default(),
             msg_expiry_dur: details.msg_expiry_dur,
         };
 
@@ -85,18 +74,12 @@ impl Client {
         client
     }
 
-    fn handle_ack_response(&mut self, ack: Ack) -> Transition {
-        self.ack_mgr.receive(ack);
-        Transition::Stay
-    }
-
     fn dispatch_routing_message(
         &mut self,
         routing_msg: RoutingMessage,
         outbox: &mut EventBox,
     ) -> Transition {
         match routing_msg.content {
-            MessageContent::Ack(ack, _) => self.handle_ack_response(ack),
             MessageContent::UserMessagePart {
                 hash,
                 part_count,
@@ -229,19 +212,7 @@ impl Base for Client {
         _: PublicId,
         _: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
-        if let DirectMessage::ProxyRateLimitExceeded { ack } = msg {
-            if let Some(unack_msg) = self.ack_mgr.remove(&ack) {
-                let token = self.timer().schedule(RATE_EXCEED_RETRY);
-                let _ = self.resend_buf.insert(token, unack_msg);
-            } else {
-                debug!(
-                    "{} Got ProxyRateLimitExceeded, but no corresponding request found",
-                    self
-                );
-            }
-        } else {
-            debug!("{} Unhandled direct message: {:?}", self, msg);
-        }
+        debug!("{} Unhandled direct message: {:?}", self, msg);
         Ok(Transition::Stay)
     }
 
@@ -264,37 +235,6 @@ impl Base for Client {
 }
 
 impl Bootstrapped for Client {
-    fn ack_mgr(&self) -> &AckManager {
-        &self.ack_mgr
-    }
-
-    fn ack_mgr_mut(&mut self) -> &mut AckManager {
-        &mut self.ack_mgr
-    }
-
-    fn resend_unacknowledged_timed_out_msgs(&mut self, token: u64) {
-        if let Some((unacked_msg, ack)) = self.ack_mgr.find_timed_out(token) {
-            trace!(
-                "{} Timed out waiting for {:?}: {:?}",
-                self,
-                ack,
-                unacked_msg
-            );
-
-            let msg_expired = unacked_msg.expires_at.map_or(false, |i| i < Instant::now());
-            if msg_expired || unacked_msg.route as usize == self.min_section_size {
-                debug!(
-                    "{} Message unable to be acknowledged - giving up. {:?}",
-                    self, unacked_msg
-                );
-            } else if let Err(error) =
-                self.send_routing_message_impl(unacked_msg.routing_msg, unacked_msg.expires_at)
-            {
-                debug!("{} Failed to send message: {:?}", self, error);
-            }
-        }
-    }
-
     fn send_routing_message_impl(
         &mut self,
         routing_msg: RoutingMessage,

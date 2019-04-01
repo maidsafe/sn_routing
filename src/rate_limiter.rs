@@ -21,7 +21,7 @@ use std::mem;
 use std::net::IpAddr;
 
 /// The number of bytes per second the `RateLimiter` will "leak".
-const RATE: f64 = 8.0 * 1024.0 * 1024.0;
+pub const RATE: f64 = 8.0 * 1024.0 * 1024.0;
 /// The minimum allowance (in bytes) for a single client at any given moment in the `RateLimiter`.
 /// This is slightly larger than `MAX_IMMUTABLE_DATA_SIZE_IN_BYTES` to allow for the extra bytes
 /// created by wrapping the chunk in a `UserMessage`, splitting it into parts and wrapping those in
@@ -33,23 +33,13 @@ const MIN_CLIENT_CAPACITY: u64 = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES + 10_240;
 /// hard-minimum of `MIN_CLIENT_CAPACITY` even if this means the `RateLimiter`'s total capacity
 /// exceeds the `SOFT_CAPACITY`.
 #[cfg(not(feature = "mock_base"))]
-const SOFT_CAPACITY: u64 = 8 * 1024 * 1024;
+pub const SOFT_CAPACITY: u64 = 8 * 1024 * 1024;
 /// For the mock-network tests, we want a small `SOFT_CAPACITY` in order to trigger more rate-limited
 /// rejections. This must be at least `2 * MIN_CLIENT_CAPACITY` for the multi-client tests to work.
 #[cfg(feature = "mock_base")]
-const SOFT_CAPACITY: u64 = 2 * MIN_CLIENT_CAPACITY;
+pub const SOFT_CAPACITY: u64 = 2 * MIN_CLIENT_CAPACITY;
 /// Duration for which entries are kept in the `overcharged` cache, in seconds.
 const OVERCHARGED_TIMEOUT_SECS: u64 = 300;
-
-#[cfg(feature = "mock_base")]
-#[doc(hidden)]
-pub mod rate_limiter_consts {
-    pub const SOFT_CAPACITY: u64 = super::SOFT_CAPACITY;
-    pub const MAX_PARTS: u32 = crate::messages::MAX_PARTS;
-    pub const MAX_PART_LEN: usize = crate::messages::MAX_PART_LEN;
-    pub const MIN_CLIENT_CAPACITY: u64 = super::MIN_CLIENT_CAPACITY;
-    pub const RATE: f64 = super::RATE;
-}
 
 /// Used to throttle the rate at which clients can send messages via this node. It works on a "leaky
 /// bucket" principle: there is a set rate at which bytes will leak out of the bucket, there is a
@@ -67,6 +57,7 @@ pub struct RateLimiter {
 }
 
 impl RateLimiter {
+    /// Creates a new rate limiter
     pub fn new(disabled: bool) -> Self {
         RateLimiter {
             used: BTreeMap::new(),

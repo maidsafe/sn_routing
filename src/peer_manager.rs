@@ -39,12 +39,10 @@ const CONNECTED_PEER_TIMEOUT_SECS: u64 = 120;
 #[cfg(feature = "mock_base")]
 #[doc(hidden)]
 pub mod test_consts {
-    pub const ACK_TIMEOUT_SECS: u64 = crate::ack_manager::ACK_TIMEOUT.as_secs();
     pub const CANDIDATE_EXPIRED_TIMEOUT_SECS: u64 = super::CANDIDATE_EXPIRED_TIMEOUT.as_secs();
     pub const CONNECTING_PEER_TIMEOUT_SECS: u64 = super::CONNECTING_PEER_TIMEOUT_SECS;
     pub const CONNECTED_PEER_TIMEOUT_SECS: u64 = super::CONNECTED_PEER_TIMEOUT_SECS;
     pub const JOINING_NODE_TIMEOUT_SECS: u64 = super::JOINING_NODE_TIMEOUT_SECS;
-    pub const RATE_EXCEED_RETRY_MS: u64 = crate::states::RATE_EXCEED_RETRY.as_millis() as u64;
 }
 
 /// Our relationship status with a known peer.
