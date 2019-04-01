@@ -2,11 +2,47 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <style>
+  .collapsible {
+  background-color: #777;
+  color: white;
+  cursor: pointer;
+  padding: 5px;
+  border: none;
+  text-align: left;
+  outline: none;
+  }
+
+  .active, .collapsible:hover {
+  background-color: #555;
+  }
+
+  .content {
+  padding: 0 18px;
+  display: none;
+  overflow: hidden;
+  background-color: #f1f1f1;
+  }
+  </style>
 </head>
 <body>
   <h1>Top Flow</h1>
 
   <h2>Top Node Flow</h2>
+  <p>This section describes the flow a node will follow during its entire lifetime, starting as an adult and continuing as an elder.</p>
+  <button class="collapsible">OWN_SECTION</button>
+  <div class="content">
+	  <p> OWN_SECTION refers to this node's own section.<br>
+	  It is an Option&ltPrefix&gt.<br>
+	  While a node is being rellocated, the value will be none. Once they get accepted into a section, it becomes Some(that_section_s_prefix)
+  </p>
+  </div>
+  <button class="collapsible">BootstrapAndRelocate</button>
+  <div class="content">
+	  <p>This function gets called when a node just joined the Network.<br>
+	  At this stage, we are connected to a proxy node and they indicate to us which section we should join.
+  </p>
+  </div>
   <div class="mermaid">
     graph TB
 
@@ -388,5 +424,21 @@
 
   <script src="mermaid.min.js"></script>
   <script>mermaid.initialize({startOnLoad:true});</script>
+  <script>
+var coll = document.getElementsByClassName("collapsible");
+var i;
+
+for (i = 0; i < coll.length; i++) {
+  coll[i].addEventListener("click", function() {
+    this.classList.toggle("active");
+    var content = this.nextElementSibling;
+    if (content.style.display === "block") {
+      content.style.display = "none";
+    } else {
+      content.style.display = "block";
+    }
+  });
+}
+</script>
 </body>
 </html>
