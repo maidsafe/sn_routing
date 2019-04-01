@@ -467,6 +467,91 @@
       LoopEnd --> LoopStart
   </div>
 
+
+
+  <h2>Merge Sub-routine</h2>
+  <div class="mermaid">
+      graph TB
+      Merge["Merge:<br/>No exit - Need Killed"]
+      style Merge fill:#f9f,stroke:#333,stroke-width:4px
+
+      Merge -->  LoopStart
+
+      WaitFor(("Wait for 5:"))
+      LoopStart --> WaitFor
+
+      RPC((RPC))
+      WaitFor -- RPC --> RPC
+      RPC --Merge--> VoteParsecNeighbourMerge
+      VoteParsecNeighbourMerge["vote_for(<br/>ParsecNeighbourMerge)"]
+      VoteParsecNeighbourMerge --> LoopEnd
+
+      LocalEvent((Local<br/>Event))
+      WaitFor --event--> LocalEvent
+      LocalEvent --"OUR_MERGE==None<br/>NeedMerge detected<br/>(shared state)"--> VoteOurMerge
+      VoteOurMerge["vote_for(<br/>ParsecOurMerge)<br/>OUR_MERGE=Voted"]
+      VoteOurMerge --> LoopEnd
+
+      Consensus((Consensus))
+      WaitFor-- Parsec<br/>consensus --> Consensus
+      Consensus -- "ParsecNeighbourMerge" --> SetNeighbourMerge
+      SetNeighbourMerge["THEIR_MERGE=true"]
+      SetNeighbourMerge --> CheckOurMerge
+
+      CheckOurMerge((Check))
+      CheckOurMerge -- "OUR_MERGE==None" --> VoteOurMerge
+      CheckOurMerge -- "OUR_MERGE==Voted" --> LoopEnd
+      CheckOurMerge -- "OUR_MERGE<br/>==Consensused" --> StartMerge
+      StartMerge["start merge"]
+      StartMerge --> LoopEnd
+
+      Consensus--"ParsecOurMerge"-->SendMergeRpc
+      SendMergeRpc["OUR_MERGE=Consensused<br/>send_rpc(Merge)"]
+      SendMergeRpc -->CheckNeighbourMerge
+
+      CheckNeighbourMerge((Check))
+      CheckNeighbourMerge --THEIR_MERGE-->StartMerge
+      CheckNeighbourMerge --!THEIR_MERGE-->LoopEnd
+
+
+      LoopEnd --> LoopStart
+  </div>
+
+  <h2>CheckOnlineOffline Sub-routine</h2>
+  <div class="mermaid">
+      graph TB
+      CheckOnlineOffline["CheckOnlineOffline:<br/>No exit - Need Killed"]
+      style CheckOnlineOffline fill:#f9f,stroke:#333,stroke-width:4px
+
+      CheckOnlineOffline -->  LoopStart
+
+      WaitFor(("Wait for 5:"))
+      LoopStart --> WaitFor
+
+      LocalEvent((Local<br/>Event))
+      WaitFor --event--> LocalEvent
+
+      LocalEvent -- Node detected offline --> VoteNodeOffline
+      VoteNodeOffline["vote_for(<br/>ParsecOffline)"]
+      VoteNodeOffline --> LoopEnd
+
+      LocalEvent -- Node detected back online --> VoteNodeBackOnline
+      VoteNodeBackOnline["vote_for(<br/>ParsecBackOnline)"]
+      VoteNodeBackOnline --> LoopEnd
+
+      Consensus((Consensus))
+      WaitFor-- Parsec<br/>consensus --> Consensus
+      Consensus--"ParsecOffline"-->SetOfflineState
+      SetOfflineState["set_node_state(<br/>node,<br/>OfflineState)"]
+      SetOfflineState -->LoopEnd
+
+      Consensus -- "ParsecBackOnline" --> SetRelocating
+      SetRelocating["set_node_state(<br/>node,<br/>RelocatingState)"]
+
+      SetRelocating --> LoopEnd
+      LoopEnd --> LoopStart
+  </div>
+
   <h1>Elders and adults</h1>
 
   <h2>Becoming a full member of a section</h2>
