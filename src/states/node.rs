@@ -2763,11 +2763,21 @@ impl Node {
         }
     }
 
+    // Sends a `ParsecPoke` message to trigger a gossip request from current section members to us.
+    //
+    // TODO: Should restrict targets to few(counter churn-threshold)/single.
+    // Currently this can result in incoming spam of gossip history from everyone.
+    // Can also just be a single target once node-ageing makes Offline votes Opaque which should
+    // remove invalid test failures for unaccumulated parsec::Remove blocks.
     fn send_parsec_poke(&mut self) {
-        let (version, recipient) = if let Some(gen_pfx_info) = self.gen_pfx_info.as_ref() {
-            let recipients = gen_pfx_info.latest_info.members().iter().collect_vec();
-            let index = utils::rand_index(recipients.len());
-            (*gen_pfx_info.our_info.version(), *recipients[index])
+        let (version, recipients) = if let Some(gen_pfx_info) = self.gen_pfx_info.as_ref() {
+            let recipients = gen_pfx_info
+                .latest_info
+                .members()
+                .iter()
+                .cloned()
+                .collect_vec();
+            (*gen_pfx_info.our_info.version(), recipients)
         } else {
             log_or_panic!(
                 LogLevel::Error,
@@ -2776,11 +2786,12 @@ impl Node {
             );
             return;
         };
-
-        self.send_message(
-            &recipient,
-            Message::Direct(DirectMessage::ParsecPoke(version)),
-        )
+        for recipient in recipients {
+            self.send_message(
+                &recipient,
+                Message::Direct(DirectMessage::ParsecPoke(version)),
+            );
+        }
     }
 
     // Drop peers to which we think we have a connection, but where Crust reports

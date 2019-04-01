@@ -948,23 +948,16 @@ impl Chain {
                     return Some(*pfx);
                 }
 
-                let is_newer =
-                    |other: &NeighbourSigs| other.sec_info().version() > nsigs.sec_info().version();
+                // Remove older compatible neighbour prefixes.
+                let is_newer = |(other_pfx, other_sigs): (&Prefix<XorName>, &NeighbourSigs)| {
+                    other_pfx.is_compatible(pfx)
+                        && other_sigs.sec_info().version() > nsigs.sec_info().version()
+                };
 
-                // Check if we have a newer version of parent pfx.
-                let ppfx = pfx.popped();
-                if self.neighbour_infos.get(&ppfx).map_or(false, &is_newer) {
+                if self.neighbour_infos.iter().any(is_newer) {
                     return Some(*pfx);
                 }
 
-                // Check if we have a newer version of either child pfx.
-                let pfx0 = pfx.pushed(false);
-                let pfx1 = pfx.pushed(true);
-                if self.neighbour_infos.get(&pfx0).map_or(false, &is_newer)
-                    || self.neighbour_infos.get(&pfx1).map_or(false, &is_newer)
-                {
-                    return Some(*pfx);
-                }
                 None
             })
             .collect();
