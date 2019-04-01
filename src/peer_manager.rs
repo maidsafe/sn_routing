@@ -158,15 +158,6 @@ impl Peer {
         self.state == PeerState::Proxy
     }
 
-    /// Returns whether the peer is our client.
-    fn is_client(&self) -> bool {
-        if let PeerState::Client { .. } = self.state {
-            true
-        } else {
-            false
-        }
-    }
-
     // If the peer is a client, return its IP, otherwise returns `None`.
     fn client_ip(&self) -> Option<&IpAddr> {
         if let PeerState::Client { ref ip, .. } = self.state {
@@ -496,11 +487,6 @@ impl PeerManager {
     /// Returns if the given peer is our proxy node.
     pub fn is_proxy(&self, pub_id: &PublicId) -> bool {
         self.peers.get(pub_id).map_or(false, Peer::is_proxy)
-    }
-
-    /// Returns if the given peer is our client.
-    pub fn is_client(&self, pub_id: &PublicId) -> bool {
-        self.peers.get(pub_id).map_or(false, Peer::is_client)
     }
 
     /// Returns if the given peer is or was a joining node.

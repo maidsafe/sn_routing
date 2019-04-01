@@ -309,14 +309,12 @@ impl Bootstrapped for Adult {
         &mut self.timer
     }
 
-    fn send_routing_message_via_route(
+    fn send_routing_message_impl(
         &mut self,
         routing_msg: RoutingMessage,
-        src_section: Option<SectionInfo>,
-        route: u8,
         expires_at: Option<Instant>,
     ) -> Result<(), RoutingError> {
-        self.send_routing_message_via_proxy(routing_msg, src_section, route, expires_at)
+        self.send_routing_message_via_proxy(routing_msg, expires_at)
     }
 }
 
@@ -349,8 +347,6 @@ impl Relocated for Adult {
 }
 
 impl BootstrappedNotEstablished for Adult {
-    const SEND_ACK: bool = true;
-
     fn get_proxy_public_id(&self, proxy_name: &XorName) -> Result<&PublicId, RoutingError> {
         proxied::find_proxy_public_id(self, &self.peer_mgr, proxy_name)
     }

@@ -16,7 +16,7 @@ use crate::{
     ack_manager::AckManager,
     action::Action,
     cache::Cache,
-    chain::{GenesisPfxInfo, SectionInfo},
+    chain::GenesisPfxInfo,
     config_handler,
     error::RoutingError,
     event::Event,
@@ -438,14 +438,12 @@ impl Bootstrapped for ProvingNode {
         &mut self.timer
     }
 
-    fn send_routing_message_via_route(
+    fn send_routing_message_impl(
         &mut self,
         routing_msg: RoutingMessage,
-        src_section: Option<SectionInfo>,
-        route: u8,
         expires_at: Option<Instant>,
     ) -> Result<(), RoutingError> {
-        self.send_routing_message_via_proxy(routing_msg, src_section, route, expires_at)
+        self.send_routing_message_via_proxy(routing_msg, expires_at)
     }
 }
 
@@ -478,8 +476,6 @@ impl Relocated for ProvingNode {
 }
 
 impl BootstrappedNotEstablished for ProvingNode {
-    const SEND_ACK: bool = true;
-
     fn get_proxy_public_id(&self, proxy_name: &XorName) -> Result<&PublicId, RoutingError> {
         proxied::find_proxy_public_id(self, &self.peer_mgr, proxy_name)
     }

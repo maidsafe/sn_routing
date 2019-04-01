@@ -11,7 +11,6 @@ use super::common::{
 };
 use crate::{
     ack_manager::{Ack, AckManager, UnacknowledgedMessage},
-    chain::SectionInfo,
     error::{InterfaceError, RoutingError},
     event::Event,
     id::{FullId, PublicId},
@@ -208,34 +207,7 @@ impl Base for Client {
         }
     }
 
-    fn handle_timeout(&mut self, token: u64, _: &mut EventBox) -> Transition {
-        let proxy_pub_id = self.proxy_pub_id;
-
-        // Check if token corresponds to a rate limit exceeded msg.
-        if let Some(unacked_msg) = self.resend_buf.remove(&token) {
-            if unacked_msg.expires_at.map_or(false, |i| i < Instant::now()) {
-                return Transition::Stay;
-            }
-
-            self.routing_msg_filter().remove_from_outgoing_filter(
-                &unacked_msg.routing_msg,
-                &proxy_pub_id,
-                unacked_msg.route,
-            );
-            if let Err(error) = self.send_routing_message_via_route(
-                unacked_msg.routing_msg,
-                unacked_msg.src_section,
-                unacked_msg.route,
-                unacked_msg.expires_at,
-            ) {
-                debug!("{} Failed to send message: {:?}", self, error);
-            }
-
-            return Transition::Stay;
-        }
-
-        // Check if token corresponds to an unacknowledged msg.
-        self.resend_unacknowledged_timed_out_msgs(token);
+    fn handle_timeout(&mut self, _token: u64, _: &mut EventBox) -> Transition {
         Transition::Stay
     }
 
@@ -315,25 +287,20 @@ impl Bootstrapped for Client {
                     "{} Message unable to be acknowledged - giving up. {:?}",
                     self, unacked_msg
                 );
-            } else if let Err(error) = self.send_routing_message_via_route(
-                unacked_msg.routing_msg,
-                unacked_msg.src_section,
-                unacked_msg.route,
-                unacked_msg.expires_at,
-            ) {
+            } else if let Err(error) =
+                self.send_routing_message_impl(unacked_msg.routing_msg, unacked_msg.expires_at)
+            {
                 debug!("{} Failed to send message: {:?}", self, error);
             }
         }
     }
 
-    fn send_routing_message_via_route(
+    fn send_routing_message_impl(
         &mut self,
         routing_msg: RoutingMessage,
-        src_section: Option<SectionInfo>,
-        route: u8,
         expires_at: Option<Instant>,
     ) -> Result<(), RoutingError> {
-        self.send_routing_message_via_proxy(routing_msg, src_section, route, expires_at)
+        self.send_routing_message_via_proxy(routing_msg, expires_at)
     }
 
     fn routing_msg_filter(&mut self) -> &mut RoutingMessageFilter {
@@ -346,8 +313,6 @@ impl Bootstrapped for Client {
 }
 
 impl BootstrappedNotEstablished for Client {
-    const SEND_ACK: bool = false;
-
     fn get_proxy_public_id(&self, proxy_name: &XorName) -> Result<&PublicId, RoutingError> {
         proxied::get_proxy_public_id(self, &self.proxy_pub_id, proxy_name)
     }

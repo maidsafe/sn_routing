@@ -14,7 +14,6 @@ use crate::{
     ack_manager::{Ack, AckManager},
     action::Action,
     cache::Cache,
-    chain::SectionInfo,
     error::RoutingError,
     event::Event,
     id::{FullId, PublicId},
@@ -300,14 +299,12 @@ impl Bootstrapped for RelocatingNode {
     // Constructs a signed message, finds the node responsible for accumulation, and either sends
     // this node a signature or tries to accumulate signatures for this message (on success, the
     // accumulator handles or forwards the message).
-    fn send_routing_message_via_route(
+    fn send_routing_message_impl(
         &mut self,
         routing_msg: RoutingMessage,
-        src_section: Option<SectionInfo>,
-        route: u8,
         expires_at: Option<Instant>,
     ) -> Result<(), RoutingError> {
-        self.send_routing_message_via_proxy(routing_msg, src_section, route, expires_at)
+        self.send_routing_message_via_proxy(routing_msg, expires_at)
     }
 
     fn routing_msg_filter(&mut self) -> &mut RoutingMessageFilter {
@@ -320,8 +317,6 @@ impl Bootstrapped for RelocatingNode {
 }
 
 impl BootstrappedNotEstablished for RelocatingNode {
-    const SEND_ACK: bool = true;
-
     fn get_proxy_public_id(&self, proxy_name: &XorName) -> Result<&PublicId, RoutingError> {
         proxied::get_proxy_public_id(self, &self.proxy_pub_id, proxy_name)
     }

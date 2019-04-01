@@ -576,7 +576,6 @@ impl Elder {
             // The message is addressed to our section. Verify its integrity.
             signed_msg.check_integrity(self.min_section_size())?;
 
-            self.send_ack(signed_msg.routing_message(), route);
             if signed_msg.routing_message().dst.is_multiple() {
                 // Broadcast to the rest of the section.
                 if let Err(error) =
@@ -592,7 +591,7 @@ impl Elder {
             return Ok(());
         }
 
-        if self.respond_from_cache(signed_msg.routing_message(), route)? {
+        if self.respond_from_cache(signed_msg.routing_message())? {
             return Ok(());
         }
 
@@ -893,11 +892,7 @@ impl Elder {
         }
     }
 
-    fn respond_from_cache(
-        &mut self,
-        routing_msg: &RoutingMessage,
-        route: u8,
-    ) -> Result<bool, RoutingError> {
+    fn respond_from_cache(&mut self, routing_msg: &RoutingMessage) -> Result<bool, RoutingError> {
         if let MessageContent::UserMessagePart {
             hash,
             part_count,
@@ -924,7 +919,6 @@ impl Elder {
                         let dst = routing_msg.src;
                         let msg = UserMessage::Response(response);
 
-                        self.send_ack_from(routing_msg, route, src);
                         self.send_user_message(src, dst, msg, priority)?;
 
                         return Ok(true);
@@ -1511,7 +1505,6 @@ impl Elder {
         signed_msg: &SignedRoutingMessage,
         pub_id: &PublicId,
     ) -> Result<(), RoutingError> {
-        let is_client = self.peer_mgr.is_client(pub_id);
         let result = if self.peer_mgr.is_connected(pub_id) {
             // If the message being relayed is a data response, update the client's
             // rate limit balance to account for the initial over-counting.
@@ -1535,12 +1528,6 @@ impl Elder {
             );
             Err(RoutingError::ClientConnectionNotFound)
         };
-
-        // Acknowledge the message so that the sender doesn't retry.
-        if is_client || result.is_err() {
-            let hop = *self.name();
-            self.send_ack_from(signed_msg.routing_message(), 0, Authority::ManagedNode(hop));
-        }
 
         result
     }
@@ -2098,56 +2085,30 @@ impl Bootstrapped for Elder {
         &mut self.ack_mgr
     }
 
-    // Constructs a signed message, finds the node responsible for accumulation, and either sends
-    // this node a signature or tries to accumulate signatures for this message (on success, the
+    // Constructs a signed message, finds the nodes responsible for accumulation, and either sends
+    // these nodes a signature or tries to accumulate signatures for this message (on success, the
     // accumulator handles or forwards the message).
-    fn send_routing_message_via_route(
+    fn send_routing_message_impl(
         &mut self,
         routing_msg: RoutingMessage,
-        src_section: Option<SectionInfo>,
-        route: u8,
-        expires_at: Option<Instant>,
+        _expires_at: Option<Instant>,
     ) -> Result<(), RoutingError> {
         if !self.in_authority(&routing_msg.src) {
-            if route == 0 {
-                log_or_panic!(
-                    LogLevel::Error,
-                    "{} Not part of the source authority. Not sending message {:?}.",
-                    self,
-                    routing_msg
-                );
-            }
+            log_or_panic!(
+                LogLevel::Error,
+                "{} Not part of the source authority. Not sending message {:?}.",
+                self,
+                routing_msg
+            );
             return Ok(());
         }
 
         use crate::routing_table::Authority::*;
-        let sending_sec = if route == 0 {
-            match routing_msg.src {
-                ClientManager(_) | NaeManager(_) | NodeManager(_) | ManagedNode(_) | Section(_)
-                | PrefixSection(_) => Some(self.chain.our_info().clone()),
-                Client { .. } => None,
-            }
-        } else {
-            src_section
+        let sending_sec = match routing_msg.src {
+            ClientManager(_) | NaeManager(_) | NodeManager(_) | ManagedNode(_) | Section(_)
+            | PrefixSection(_) => Some(self.chain.our_info().clone()),
+            Client { .. } => None,
         };
-
-        if !self.add_to_pending_acks(&routing_msg, sending_sec.clone(), route, expires_at) {
-            debug!(
-                "{} already received an ack for {:?} - so not resending it.",
-                self, routing_msg
-            );
-            return Ok(());
-        }
-
-        if route > 0 {
-            trace!(
-                "{} Resending Msg: {:?} via route: {} and src_section: {:?}",
-                self,
-                routing_msg,
-                route,
-                sending_sec
-            );
-        }
 
         let signed_msg = SignedRoutingMessage::new(routing_msg, &self.full_id, sending_sec)?;
 
@@ -2159,7 +2120,7 @@ impl Bootstrapped for Elder {
                 let min_section_size = self.min_section_size();
                 if let Some((mut msg, route)) =
                     self.sig_accumulator
-                        .add_message(signed_msg.clone(), min_section_size, route)
+                        .add_message(signed_msg.clone(), min_section_size, 0)
                 {
                     if self.in_authority(&msg.routing_message().dst) {
                         self.handle_signed_message(msg, route, target, &BTreeSet::new())?;

@@ -9,7 +9,6 @@
 use super::Base;
 use crate::{
     ack_manager::{Ack, AckManager, UnacknowledgedMessage, ACK_TIMEOUT},
-    chain::SectionInfo,
     error::Result,
     id::PublicId,
     messages::{MessageContent, RoutingMessage},
@@ -26,11 +25,9 @@ pub trait Bootstrapped: Base {
     fn ack_mgr(&self) -> &AckManager;
     fn ack_mgr_mut(&mut self) -> &mut AckManager;
 
-    fn send_routing_message_via_route(
+    fn send_routing_message_impl(
         &mut self,
         routing_msg: RoutingMessage,
-        src_section: Option<SectionInfo>,
-        route: u8,
         expires_at: Option<Instant>,
     ) -> Result<()>;
 
@@ -45,7 +42,6 @@ pub trait Bootstrapped: Base {
     fn add_to_pending_acks(
         &mut self,
         routing_msg: &RoutingMessage,
-        src_section: Option<SectionInfo>,
         route: u8,
         expires_at: Option<Instant>,
     ) -> bool {
@@ -69,7 +65,6 @@ pub trait Bootstrapped: Base {
         let token = self.timer().schedule(ACK_TIMEOUT);
         let unacked_msg = UnacknowledgedMessage {
             routing_msg: routing_msg.clone(),
-            src_section,
             route,
             timer_token: token,
             expires_at,
@@ -101,12 +96,9 @@ pub trait Bootstrapped: Base {
                     "{} Message unable to be acknowledged - giving up. {:?}",
                     self, unacked_msg
                 );
-            } else if let Err(error) = self.send_routing_message_via_route(
-                unacked_msg.routing_msg,
-                unacked_msg.src_section,
-                unacked_msg.route,
-                unacked_msg.expires_at,
-            ) {
+            } else if let Err(error) =
+                self.send_routing_message_impl(unacked_msg.routing_msg, unacked_msg.expires_at)
+            {
                 debug!("{} Failed to send message: {:?}", self, error);
             }
         }
@@ -124,7 +116,7 @@ pub trait Bootstrapped: Base {
             dst: dst,
             content: content,
         };
-        self.send_routing_message_via_route(routing_msg, None, 0, expires_at)
+        self.send_routing_message_impl(routing_msg, expires_at)
     }
 
     fn send_routing_message(
@@ -134,28 +126,5 @@ pub trait Bootstrapped: Base {
         content: MessageContent,
     ) -> Result<()> {
         self.send_routing_message_with_expiry(src, dst, content, None)
-    }
-
-    fn send_ack(&mut self, routing_msg: &RoutingMessage, route: u8) {
-        self.send_ack_from(routing_msg, route, routing_msg.dst);
-    }
-
-    fn send_ack_from(&mut self, routing_msg: &RoutingMessage, route: u8, src: Authority<XorName>) {
-        if let MessageContent::Ack(..) = routing_msg.content {
-            return;
-        }
-
-        let response = match RoutingMessage::ack_from(routing_msg, src) {
-            Ok(response) => response,
-            Err(error) => {
-                error!("{} Failed to create ack: {:?}", self, error);
-                return;
-            }
-        };
-
-        // expires_at is set to None as we will not wait for an Ack for an Ack.
-        if let Err(error) = self.send_routing_message_via_route(response, None, route, None) {
-            debug!("{} Failed to send ack: {:?}", self, error);
-        }
     }
 }

@@ -76,18 +76,6 @@ impl RoutingMessageFilter {
             self.outgoing.insert((hash, *pub_id, route), ()).is_some()
         })
     }
-
-    // Removes the given message from the outgoing filter if it exists.
-    pub fn remove_from_outgoing_filter(
-        &mut self,
-        msg: &RoutingMessage,
-        pub_id: &PublicId,
-        route: u8,
-    ) {
-        if let Some(hash) = hash(msg) {
-            let _ = self.outgoing.remove(&(hash, *pub_id, route));
-        }
-    }
 }
 
 impl Default for RoutingMessageFilter {
