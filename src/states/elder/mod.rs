@@ -511,13 +511,13 @@ impl Elder {
 
         let min_section_size = self.min_section_size();
         let proof = Proof { sig, pub_id };
-        if let Some((signed_msg, route)) =
+        if let Some((signed_msg, _)) =
             self.sig_accumulator
                 .add_proof(min_section_size, digest, proof)
         {
             // we accumulated the message, so now we act as the last hop
             let hop = *self.name();
-            self.handle_signed_message(signed_msg, route, hop, &BTreeSet::new())?;
+            self.handle_signed_message(signed_msg, hop, &BTreeSet::new())?;
         }
         Ok(())
     }
@@ -527,7 +527,6 @@ impl Elder {
     fn handle_signed_message(
         &mut self,
         mut signed_msg: SignedRoutingMessage,
-        route: u8,
         hop_name: XorName,
         sent_to: &BTreeSet<XorName>,
     ) -> Result<(), RoutingError> {
@@ -570,9 +569,7 @@ impl Elder {
 
             if signed_msg.routing_message().dst.is_multiple() {
                 // Broadcast to the rest of the section.
-                if let Err(error) =
-                    self.send_signed_message(&mut signed_msg, route, &hop_name, sent_to)
-                {
+                if let Err(error) = self.send_signed_message(&mut signed_msg, &hop_name, sent_to) {
                     debug!("{} Failed to send {:?}: {:?}", self, signed_msg, error);
                 }
             }
@@ -587,7 +584,7 @@ impl Elder {
             return Ok(());
         }
 
-        if let Err(error) = self.send_signed_message(&mut signed_msg, route, &hop_name, sent_to) {
+        if let Err(error) = self.send_signed_message(&mut signed_msg, &hop_name, sent_to) {
             debug!("{} Failed to send {:?}: {:?}", self, signed_msg, error);
         }
 
@@ -1434,7 +1431,6 @@ impl Elder {
     fn send_signed_message(
         &mut self,
         signed_msg: &mut SignedRoutingMessage,
-        route: u8,
         hop_name: &XorName,
         sent_to: &BTreeSet<XorName>,
     ) -> Result<(), RoutingError> {
@@ -1456,13 +1452,12 @@ impl Elder {
         }
 
         let (new_sent_to, target_pub_ids) =
-            self.get_targets(signed_msg.routing_message(), route, hop_name, sent_to)?;
+            self.get_targets(signed_msg.routing_message(), hop_name, sent_to)?;
 
         for target_pub_id in target_pub_ids {
             self.send_signed_message_to_peer(
                 signed_msg.clone(),
                 &target_pub_id,
-                route,
                 new_sent_to.clone(),
             )?;
         }
@@ -1473,7 +1468,6 @@ impl Elder {
         &mut self,
         signed_msg: SignedRoutingMessage,
         dst_id: &PublicId,
-        _route: u8,
         sent_to: BTreeSet<XorName>,
     ) -> Result<(), RoutingError> {
         if self.filter_outgoing_routing_msg(signed_msg.routing_message(), dst_id) {
@@ -1569,7 +1563,6 @@ impl Elder {
     fn get_targets(
         &self,
         routing_msg: &RoutingMessage,
-        route: u8,
         exclude: &XorName,
         sent_to: &BTreeSet<XorName>,
     ) -> Result<(BTreeSet<XorName>, Vec<PublicId>), RoutingError> {
@@ -1587,7 +1580,7 @@ impl Elder {
             let conn_peers = self.connected_peers();
             let targets: BTreeSet<_> = self
                 .chain
-                .targets(&routing_msg.dst, *exclude, route as usize, &conn_peers)?
+                .targets(&routing_msg.dst, *exclude, 0, &conn_peers)?
                 .into_iter()
                 .filter(|target| !sent_to.contains(target))
                 .collect();
@@ -1993,7 +1986,7 @@ impl Base for Elder {
                 let HopMessage {
                     content, sent_to, ..
                 } = msg;
-                self.handle_signed_message(content, 0, hop_name, &sent_to)
+                self.handle_signed_message(content, hop_name, &sent_to)
                     .map(|()| Transition::Stay)
             }
             Err(RoutingError::ExceedsRateLimit(hash)) => {
@@ -2088,14 +2081,14 @@ impl Bootstrapped for Elder {
         ) {
             if target == *self.name() {
                 let min_section_size = self.min_section_size();
-                if let Some((mut msg, route)) =
+                if let Some((mut msg, _)) =
                     self.sig_accumulator
                         .add_message(signed_msg.clone(), min_section_size, 0)
                 {
                     if self.in_authority(&msg.routing_message().dst) {
-                        self.handle_signed_message(msg, route, target, &BTreeSet::new())?;
+                        self.handle_signed_message(msg, target, &BTreeSet::new())?;
                     } else {
-                        self.send_signed_message(&mut msg, route, &target, &BTreeSet::new())?;
+                        self.send_signed_message(&mut msg, &target, &BTreeSet::new())?;
                     }
                 }
             } else {
