@@ -253,6 +253,28 @@
   </div>
 
   <h2>Resource proof from a destination's point of view</h2>
+  <p>In the previous diagram, we ensured an incoming candidate would only be processed for resource_proof if we are the best fit we know and we are not currently processing another node.<br>
+  This leads us here: to the resource proof.<br>
+  We will first add this node to our peer_list with the sate ResourceProof and send a RelocateResponse to the source section.<br>
+  This will let them know we are ready to process them.<br>
+  They will then send their CandidateInfo to everyone in our section.<br>
+  On receiving a valid CandidateInfo, I will send them a ResourceProof RPC. This gives them the "problem to solve". As they solve it, they will send me ResourceProofResponses. These will be parts of the proof. On receiving valid parts, I must send a ResourceProofReceipt. Once they finally send me the last valid part, they passed their resource proof and I vote for ParsecOnline (essentially accepting them as a member of my section).<br>
+  At any time during this process, they may timeout, in which case I will decided to reject them and vote for ParsecPurgeCandidate.<br>
+  This process ends once I reach consensus on either accepting or the candidate (ParsecOnline) or refusing them (ParsecPurgeCandidate).<br>
+  These payloads are Opaque, which means that consensus may be reached without a quorum on either of these. For that reason, it is possible that both reach consensus, in which case the second one will be discarded in the flow above. It won't cause issues as consistency is the only property that matters here: if we accept someone who then went Offline, we will be able to detect they are Offline later with the standard Offline detection mechanism.
+  </p>
+  <button class="collapsible">GOT_CANDIDATE_INFO</button>
+  <div class="content">
+    <p>We only want to receive CandidateInfo once and we can't verify a ResourceProofResponse without knowing the CandidateInfo.<br>
+    The local variable: GOT_CANDIDATE_INFO helps us stay on top of this.
+    </p>
+  </div>
+  <button class="collapsible">VOTED_ONLINE</button>
+  <div class="content">
+    <p>Once we've voted a node online, we don't care to handle further ResourceProofResponses from them.<br>
+    This local variable helps us with this.
+    </p>
+  </div>
   <div class="mermaid">
       graph TB
       AcceptAsCandidate["Accept As Candidate<br/> Shared state all peers proceed"]
