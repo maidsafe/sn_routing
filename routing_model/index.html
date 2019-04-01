@@ -8,7 +8,7 @@
   color: white;
   cursor: pointer;
   padding: 5px;
-  border: none;
+  border: 2px solid white;
   text-align: left;
   outline: none;
   }
@@ -38,7 +38,7 @@
   <div class="content">
       <p> OWN_SECTION refers to this node's own section.<br>
       It is an Option&ltPrefix&gt.<br>
-      While a node is being rellocated, the value will be none. Once they get accepted into a section, it becomes Some(that_section_s_prefix)
+      While a node is being relocated, the value will be none. Once they get accepted into a section, it becomes Some(that_section_s_prefix)
   </p>
   </div>
   <button class="collapsible">BootstrapAndRelocate</button>
@@ -49,7 +49,7 @@
   </div>
   <button class="collapsible">StartTopMember</button>
   <div class="content">
-      <p>Once a node has joined a section (indicated by OWN_SECTION.is_some()), they will be able to perform as a member of that section until they are rellocated away from it.<br>
+      <p>Once a node has joined a section (indicated by OWN_SECTION.is_some()), they will be able to perform as a member of that section until they are relocated away from it.<br>
       See StartTopMember graph for details.
       </p>
   </div>
@@ -104,12 +104,12 @@
   <h2>Node as a member of a section</h2>
   <p>Once a node has joined a section, they need to be ready to take on multiple roles simultaneously:<br>
   <ul>
-    <li> Deal with rellocation:<br>
-         The section as a whole will sometimes act as the source and sometimes as the destination of rellocations. This means nodes will sometimes rellocate away from this section and sometimes rellocate to this section. Nodes in this section will need to perform the right flow to deal with both of these situations.
+    <li> Deal with relocation:<br>
+         The section as a whole will sometimes act as the source and sometimes as the destination of relocations. This means nodes will sometimes relocate away from this section and sometimes relocate to this section. Nodes in this section will need to perform the right flow to deal with both of these situations.
     <li> Decide who's an elder or a plain old adult
   </ul>
-  All of these flows are happening simultaneously, but really, only one flow is active at anytime and all others must be in a "wait" state.<br>
-  If our section decides to rellocates us, we will have to stop functioning as a member of our section and go back to the previous flow where we will "Rebootstrap" so we can become a member of a different section.
+  All of these flows are happening simultaneously, but they share a common event loop. At any time, either all flows or all but one flows  must be in a "wait" state.<br>
+  If our section decides to relocates us, we will have to stop functioning as a member of our section and go back to the previous flow where we will "Rebootstrap" so we can become a member of a different section.
   </p>
   <div class="mermaid">
     graph TB
@@ -141,8 +141,59 @@
 </div>
 
   <h1>Destination section</h1>
-  Receiving a node that is being relocated.
-  <h2>Processing a candidate trying to join our section</h2>
+  <p>As a member of a section, our section will sometimes receive a node that is being relocated. These  diagrams are from the point of view of one of the nodes in the section, doing its part to handle the node that is trying to relocate to this section.
+  </p>
+  <h2>Deciding when to accept an incoming relocation</h2>
+  <p>This flow represents what we do when a section contacts us to relocate one of their nodes to our section.<br>
+  The process starts as we receive an ExpectCandidate RPC from this node.<br>
+  We vote for it in PARSEC to be sure all members of the section process it in the same order.<br>
+  Once it reaches consensus, we are ready to process that candidate by letting them perform the resource_proof (see AcceptAsCandidate).<br>
+  There are some subtleties, such as the fact that we only want to process one candidate at a time, but this is the general idea.
+  </p>
+  <button class="collapsible">RPC: ExpectCandidate</button>
+  <div class="content">
+    <p>We receive this RPC from a section that wants to relocate a node to our section.<br>
+    The node is not communicating with us yet, only once we sent RelocateResponse RPC to the originating section.<br>
+    On receiving it, we vote for ParsecExpectCandidate to process it in the same order as other members of our section.<br>
+    It kickstarts the entire chain of events in this diagram.<br>
+    Note that we could also see consensus on ParsecExpectCandidate before we ourselves voted for it in PARSEC, as long as enough members of our section did.
+    </p>
+  </div>
+  <button class="collapsible">RPC: ResourceProofResponse/<br>CandidateInfo</button>
+  <div class="content">
+  <p>These RPCs should generally be handled during resource proof, in AcceptAsCandidate.<br>
+  It could be that they reach us before we are ready to receive them. For instance, because although enough other nodes got consensus on ParsecExpectCandidate, I'm still a bit behind.<br>
+  It's OK to discard the RPC in this case as the node who aims to be relocated here will perceive this as a timeout from our end and resend later.
+  </p>
+  </div>
+  <button class="collapsible">ParsecOnline<br>ParsecPurgeCandidate</button>
+  <div class=content>
+    <p>These consensus outputs were voted for in AcceptAsCandidate.<br>
+    The same node could be accepted by some nodes who would vote ParsecOnline, but also time out for some other nodes who would vote for ParsecPurgeCandidate.<br>
+    If it's the case, we only want to process the first of these two events and discard the other one.<br>
+    Because the "Wait for 2" loop in AcceptAsCandidate has higher precendence than the "Wait for 1" loop in this one, this is exactly what will happen.
+    </p>
+  </div>
+  <button class="collapsible">shorter_prefix_section</button>
+  <div class="content">
+    <p>If we know of a section that has a shorter prefix than ours, we prefer for them to receive this incoming node rather than ourselves as it will help keep the Network's sections tree balanced.<br>
+    This shorter_prefix_section is a function that will return None if we are the shortest of any section we know, Some if there is a better candidate.<br>
+    If it is Some, we will relay the RPC to them instead of accepting the rellocation to our own section.
+    </p>
+  </div>
+  <button class="collapsible">PROCESSING_CANDIDATE</button>
+  <div class="content">
+    <p>We want to accept at most one incoming relocation at a time into our section.<br>
+    The local variable: PROCESSING_CANDIDATE indicates whether someone is already passing the resource proof process, so we can't accept anyone else for now.<br>
+    When PROCESSING_CANDIDATE is true and we reach consensus on ParsecExpectCandidate, we send a RefuseCandidate RPC to the would-be-incoming-node so they can try another section or try again later.
+    </p>
+  </div>
+  <button class="collapsible">AcceptAsCandidate</button>
+  <div class="content">
+    <p>If we are ready to accept an incoming node and we reach consensus on ParsecExpectCandidate, we will execute this flow to make them pass resource proof.<br>
+    See AcceptAsCandidate diagram for details.
+    </p>
+  </div>
   <div class="mermaid">
       graph TB
 
@@ -248,7 +299,7 @@
   </div>
 
   <h1>Source section</h1>
-  <h2>Deciding that a member of our section should be rellocated away</h2>
+  <h2>Deciding that a member of our section should be relocated away</h2>
   <div class="mermaid">
       graph TB
 
