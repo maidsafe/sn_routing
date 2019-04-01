@@ -57,7 +57,7 @@
     BootstrapAndRelocate --> ReBootstrapWithNewIdentity
 
     HasSection --"OWN_SECTION.is_some()"--> StartTopMember
-    StartTopMember["StartTopMember<br/>Sub Routine<br/>"]
+    StartTopMember["StartTopMember<br/>"]
     style StartTopMember fill:#f9f,stroke:#333,stroke-width:4px
     StartTopMember --> ReBootstrapWithNewIdentity
 
@@ -65,7 +65,7 @@
     style ReBootstrapWithNewIdentity fill:#f9f,stroke:#333,stroke-width:4px
     ReBootstrapWithNewIdentity --> JoiningRelocateCandidate
 
-    JoiningRelocateCandidate["JoiningRelocateCandidate<br/>Sub Routine<br/><br/>(Take RelocatedInfo)"]
+    JoiningRelocateCandidate["JoiningRelocateCandidate<br/>(Take RelocatedInfo)"]
     style JoiningRelocateCandidate fill:#f9f,stroke:#333,stroke-width:4px
 
     SetNodeApproaval["OWN_SECTION=JoiningRelocateCandidateNodeApproval"]
@@ -158,7 +158,7 @@
       Concurrent0 --> LoopEnd
 
 
-      AcceptAsCandidate["AcceptAsCandidate<br/>Sub Routine<br/>(shared state)"]
+      AcceptAsCandidate["AcceptAsCandidate<br/>(shared state)"]
       style AcceptAsCandidate fill:#f9f,stroke:#333,stroke-width:4px
       AcceptAsCandidate --> SetCandidateNo
 
@@ -167,7 +167,7 @@
 
   </div>
 
-  <h2>AcceptAsCandidate Sub-routine</h2>
+  <h2>AcceptAsCandidate</h2>
   <div class="mermaid">
       graph TB
       AcceptAsCandidate["Accept As Candidate<br/> Shared state all peers proceed"]
@@ -278,7 +278,7 @@
       Concurrent0 --> TryRelocating
       Concurrent0 --> LoopEnd
 
-      TryRelocating["TryRelocating<br/>Sub Routine<br/>(shared state)"]
+      TryRelocating["TryRelocating<br/>(shared state)"]
       style TryRelocating fill:#f9f,stroke:#333,stroke-width:4px
       TryRelocating-->ResetRelocating
 
@@ -286,7 +286,7 @@
       ResetRelocating --> LoopEnd
   </div>
 
-  <h2>TryRelocating sub-routine</h2>
+  <h2>TryRelocating</h2>
   <div class="mermaid">
       graph TB
 
@@ -314,7 +314,7 @@
   </div>
 
   <h1>Common Elder Flow</h1>
-  <h2>CheckAndProcessElderChange Sub-routine</h2>
+  <h2>CheckAndProcessElderChange</h2>
   <div class="mermaid">
       graph TB
       CheckAndProcessElderChange["StartCheckAndProcessElderChange:<br/>No exit - Need Killed"]
@@ -373,7 +373,7 @@
   <div class="mermaid">
     graph TB
     JoiningRelocateCandidate -->  InitialSendConnectionInfoRequest
-    JoiningRelocateCandidate["JoiningRelocateCandidate<br/>Sub Routine<br/>(Take destination section nodes)"]
+    JoiningRelocateCandidate["JoiningRelocateCandidate<br/>(Take destination section nodes)"]
     style JoiningRelocateCandidate fill:#f9f,stroke:#333,stroke-width:4px
     EndRoutine["End of JoiningRelocateCandidate<br/>"]
     style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
