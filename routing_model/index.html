@@ -421,10 +421,16 @@
   </div>
 
   <h1>Elder-only</h1>
-  <h2>Process for Adult/Elder promotion and demotion</h2>
+  <h2>Process for Adult/Elder promotion and demotion including merge</h2>
+  <p>This flow updates the elder status of our section nodes if needed.<br/>
+     Because it is interlinked, it also handles merging section: When merging, no elder change can happen.<br/>
+     However other flows continue, so relocating to and from the section is uninterupted:<br/>
+     We have to be careful that the section follows up on relocation once merged, so we may want to avoid active relocation when merging.
+  </p>
+
   <div class="mermaid">
       graph TB
-      CheckAndProcessElderChange["StartCheckAndProcessElderChange:<br/>No exit - Need Killed"]
+      CheckAndProcessElderChange["StartCheckAndProcessElderMergeChange:<br/>No exit - Need Killed"]
       style CheckAndProcessElderChange fill:#f9f,stroke:#333,stroke-width:4px
 
       CheckAndProcessElderChange -->  StartCheckElderTimeout
@@ -433,7 +439,7 @@
 
 
       WaitFor(("Wait for 5:"))
-       LoopStart --> WaitFor
+      LoopStart --> WaitFor
 
       WaitFor -- Event --> Event
       Event((Event))
@@ -441,78 +447,137 @@
       VoteCheckElderTimeout["vote_for(<br/>ParsecCheckElderTimeout)"]
       VoteCheckElderTimeout--> LoopEnd
 
-      Consensus((Consensus))
-      WaitFor-- Parsec<br/>consensus --> Consensus
-      Consensus--"ParsecCheckElderTimeout"-->CheckElderChange
-      CheckElderChange(("check_elder_change()"))
-      CheckElderChange -- "Has elder changes: elder first ordered by:<br/>State=Online then age then name." --> MarkAndVoteSwapNewElder
-      MarkAndVoteSwapNewElder["vote_for(Add) for new elders<br/>vote_for(Remove) for now adults nodes<br/>vote_for(NewSectionInfo)<br/><br/>WAITED_VOTES.insert(all votes)"]
-      MarkAndVoteSwapNewElder -->LoopEnd
-
-
-      CheckElderChange -- "No<br/>changes" --> RestartTimeout
-
-      Consensus -- "WAITED_VOTES.contains(vote)" --> OneVoteConsensused
-      OneVoteConsensused["WAITED_VOTES.remove(vote)"]
-
-      OneVoteConsensused --> WaitComplete
-      WaitComplete(("Check?"))
-      WaitComplete--"WAITED_VOTES.is_empty()<br/>(Wait complete)"-->MarkNewElderAdults
-      MarkNewElderAdults["For all nodes:<br/>set_elder_status(node, is_elder)"]
-      MarkNewElderAdults--> RestartTimeout
-      RestartTimeout["schedule(<br/>CheckElderTimeout)"]
-      RestartTimeout-->LoopEnd
-      WaitComplete--"!WAITED_VOTES.is_empty()<br/>(Wait not complete)"--> LoopEnd
-
-      LoopEnd --> LoopStart
-  </div>
-
-
-
-  <h2>Merge Sub-routine</h2>
-  <div class="mermaid">
-      graph TB
-      Merge["Merge:<br/>No exit - Need Killed"]
-      style Merge fill:#f9f,stroke:#333,stroke-width:4px
-
-      Merge -->  LoopStart
-
-      WaitFor(("Wait for 5:"))
-      LoopStart --> WaitFor
-
       RPC((RPC))
       WaitFor -- RPC --> RPC
       RPC --Merge--> VoteParsecNeighbourMerge
       VoteParsecNeighbourMerge["vote_for(<br/>ParsecNeighbourMerge)"]
       VoteParsecNeighbourMerge --> LoopEnd
 
-      LocalEvent((Local<br/>Event))
-      WaitFor --event--> LocalEvent
-      LocalEvent --"OUR_MERGE==None<br/>NeedMerge detected<br/>(shared state)"--> VoteOurMerge
-      VoteOurMerge["vote_for(<br/>ParsecOurMerge)<br/>OUR_MERGE=Voted"]
-      VoteOurMerge --> LoopEnd
+      Consensus((Consensus))
+      WaitFor-- Parsec<br/>consensus --> Consensus
+
+      Consensus -- "ParsecNeighbourMerge" --> SetNeighbourMerge
+      SetNeighbourMerge["store_merge_infos(ParsecNeighbourMerge info)"]
+      SetNeighbourMerge-->LoopEnd
+
+      Consensus--"ParsecCheckElderTimeout"-->CheckMergeNeeded
+      CheckMergeNeeded(("Check"))
+
+      CheckMergeNeeded--"!merge_needed()<br/> and<br/>!has_merge_infos()"-->CheckElderChange
+      CheckElderChange(("Check"))
+
+
+      CheckElderChange --"check_elder_change()<br/><br/>Has elder changes: elder first ordered by:<br/>State=Online then age then name."--> Concurrent0
+
+      Concurrent0{"Concurrent<br/>paths"}
+      Concurrent0 --> ProcessElderChange
+      Concurrent0 --> LoopEnd
+
+      ProcessElderChange["ProcessElderChange(changes)"]
+      style ProcessElderChange fill:#f9f,stroke:#333,stroke-width:4px
+      ProcessElderChange -->RestartTimeout
+
+      CheckElderChange -- "No<br/>changes" --> RestartTimeout
+
+      RestartTimeout["schedule(<br/>CheckElderTimeout)"]
+      RestartTimeout-->LoopEnd
+
+      CheckMergeNeeded --"merge_needed()<br/>or<br/>has_merge_infos()"-->Concurrent1
+
+
+      Concurrent1{"Concurrent<br/>paths"}
+      Concurrent1 --> ProcessMerge
+      Concurrent1 --> LoopEnd
+
+      ProcessMerge["ProcessMerge"]
+      style ProcessMerge fill:#f9f,stroke:#333,stroke-width:4px
+      ProcessMerge --> RestartTimeout
+
+      LoopEnd --> LoopStart
+  </div>
+
+  <h2>Process Adult/Elder promotion and demotion needed from last check</h2>
+  <p>Vote for Add for new elders, Remove for no longer elders and NewSectionInfo<br/>
+     This handles any change, it does not care whether one or all elders are changed, this is decided by the calling function.
+ </p>
+  <div class="mermaid">
+      graph TB
+      ProcessElderChange["ProcessElderChange<br/>(Take elder changes)"]
+      style ProcessElderChange fill:#f9f,stroke:#333,stroke-width:4px
+
+      EndRoutine["End of ProcessElderChange<br/>(shared state)"]
+      style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
+
+      ProcessElderChange -->  MarkAndVoteSwapNewElder
+      MarkAndVoteSwapNewElder["vote_for(Add) for new elders<br/>vote_for(Remove) for now adults nodes<br/>vote_for(NewSectionInfo)<br/><br/>WAITED_VOTES.insert(all votes)"]
+      MarkAndVoteSwapNewElder --> LoopStart
+
+      WaitFor(("Wait for 5:"))
+      LoopStart --> WaitFor
 
       Consensus((Consensus))
       WaitFor-- Parsec<br/>consensus --> Consensus
-      Consensus -- "ParsecNeighbourMerge" --> SetNeighbourMerge
-      SetNeighbourMerge["THEIR_MERGE=true"]
-      SetNeighbourMerge --> CheckOurMerge
 
-      CheckOurMerge((Check))
-      CheckOurMerge -- "OUR_MERGE==None" --> VoteOurMerge
-      CheckOurMerge -- "OUR_MERGE==Voted" --> LoopEnd
-      CheckOurMerge -- "OUR_MERGE<br/>==Consensused" --> StartMerge
-      StartMerge["start merge"]
-      StartMerge --> LoopEnd
+      Consensus -- "WAITED_VOTES.contains(vote)" --> OneVoteConsensused
+      OneVoteConsensused["WAITED_VOTES.remove(vote)"]
+
+      OneVoteConsensused --> WaitComplete
+      WaitComplete(("Check?"))
+      WaitComplete--"WAITED_VOTES<br/>.is_empty()<br/>(Wait complete)"-->MarkNewElderAdults
+      MarkNewElderAdults["For all nodes:<br/>set_elder_status(node, is_elder)"]
+      MarkNewElderAdults--> EndRoutine
+      WaitComplete--"!WAITED_VOTES<br/>.is_empty()<br/>(Wait not complete)"--> LoopEnd
+
+      LoopEnd --> LoopStart
+  </div>
+
+  <h2>ProcessMerge Sub-routine</h2>
+  <p>Vote for ParsecOurMerge, and take over handling any ParsecNeighbourMerge.<br/>
+     Complete when one merge has completed, and a NewSectionInfo is consensused.<br/>
+     If Multi stage merges are required, they will require calling this function again<br/>
+     <br/>
+     store_merge_infos: Store the neighbour's merge info, may not be sibling in case of multi merge<br/>
+     has_sibling_merge_info: Did we store the neighbour's merge info for our sibling<br/>
+     merge_sibling_info_to_new_section: Remove the stored sibling's merge info and return the NewSectionInfo.<br/>
+  </p>
+  <div class="mermaid">
+      graph TB
+      ProcessMerge["ProcessMerge<br/>"]
+      EndRoutine["End of ProcessMerge<br/>(shared state)"]
+      style ProcessMerge fill:#f9f,stroke:#333,stroke-width:4px
+      style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
+
+      ProcessMerge -->  VoteOurMerge
+      VoteOurMerge["vote_for(<br/>ParsecOurMerge)"]
+      VoteOurMerge --> LoopStart
+
+      WaitFor(("Wait for 5:"))
+      LoopStart --> WaitFor
+
+      Consensus((Consensus))
+      WaitFor-- Parsec<br/>consensus --> Consensus
+      Consensus -- "NewSectionInfo" --> CompleteMerge
+      CompleteMerge["Complete_merge()<br/>(Start parsec with new genesis...)"]
+      CompleteMerge --> MarkNewElderAdults
+
+      MarkNewElderAdults["For all nodes:<br/>set_elder_status(node, is_elder)<br/>based on new section info"]
+      MarkNewElderAdults--> EndRoutine
+
+      Consensus -- "ParsecNeighbourMerge" --> SetNeighbourMerge
+      SetNeighbourMerge["store_merge_infos(ParsecNeighbourMerge info)"]
+      SetNeighbourMerge --> CheckMerge
+
+      CheckMerge((Check))
+      CheckMerge -- "OUR_MERGE<br/>and<br/>has_sibling_merge_info()" --> VotForNewSectionInfo
+      VotForNewSectionInfo["OUR_MERGE=false<br/>merge_sibling_info_to_new_section()<br/>vote_for(<br/>NewSectionInfo)"]
+      VotForNewSectionInfo--> LoopEnd
+
+
+      CheckMerge -- "!OUR_MERGE<br/>or<br/>!has_sibling_merge_info()" --> LoopEnd
 
       Consensus--"ParsecOurMerge"-->SendMergeRpc
-      SendMergeRpc["OUR_MERGE=Consensused<br/>send_rpc(Merge)"]
-      SendMergeRpc -->CheckNeighbourMerge
-
-      CheckNeighbourMerge((Check))
-      CheckNeighbourMerge --THEIR_MERGE-->StartMerge
-      CheckNeighbourMerge --!THEIR_MERGE-->LoopEnd
-
+      SendMergeRpc["OUR_MERGE=true<br/>send_rpc(Merge)"]
+      SendMergeRpc -->CheckMerge
 
       LoopEnd --> LoopStart
   </div>
