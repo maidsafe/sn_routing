@@ -469,6 +469,13 @@
   </div>
 
   <h2>Relocating a member of our section away from it</h2>
+  <p>At this stage, we have decided that one of our section members should be relocated. The process is quite simple: we send an ExpectCandidate RPC to the destination section. That section will eventually either pass the node to a section with a shorter prefix, send us a RefuseCandidate RPC or eventually send us a RelocateResponse RPC. If the destination picked another section with a shorter prefix, that section will send us one of these RPCs (or suggest another section with a shorter prefix, but this recursion will end at some point).<br>
+  All in all, we have the certainty that eventually, exactly one of these two RPCs will make it to our section.<br>
+  When it does, it will be voted in PARSEC, regardless of the order of operations (see previous diagram), so it will eventually make it through PARSEC.<br>
+  If they refused our candidate, our job ends there: the candidate will simply be a candidate for relocation again later, so we will try to relocate it then.<br>
+  If they accepted the node and sent us a RelocateResponse RPC, so the ParsecRelocateResponse event reached consensus, we will send to the node that is being relocated the RelocatedInfo the will need.<br>
+  At this point, we may purge their information since this node isn't a member of our section anymore.
+  </p>
   <div class="mermaid">
       graph TB
 
