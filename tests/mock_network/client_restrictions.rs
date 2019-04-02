@@ -10,14 +10,10 @@ use super::{
     create_connected_clients, create_connected_nodes, poll_all, poll_and_resend, TestClient,
     TestNode, MIN_SECTION_SIZE,
 };
-use crate::mock_network::utils::gen_immutable_data;
-use maidsafe_utilities::SeededRng;
 use rand::Rng;
 use routing::{
-    mock::Network, rate_limiter::SOFT_CAPACITY, Authority, Event, EventStream, FullId,
-    ImmutableData, MessageId, NetworkConfig, Request, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
+    mock::Network, Authority, Event, EventStream, FullId, MessageId, NetworkConfig, Request,
 };
-use std::{iter, time::Duration};
 
 /// Connect a client to the network then send an invalid message.
 /// Expect the client will be disconnected and banned;
@@ -30,11 +26,11 @@ fn ban_malicious_client() {
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
     let mut rng = network.new_rng();
 
-    // Send a `Refresh` request from the client; should cause it to get banned.
+    // Send a request with priority 1 from the client; should cause it to get banned.
     let _ = clients[0].inner.send_request(
         Authority::NaeManager(rng.gen()),
         Request::Refresh(vec![], MessageId::new()),
-        2,
+        1,
     );
     let _ = poll_all(&mut nodes, &mut clients);
     expect_next_event!(unwrap!(clients.last_mut()), Event::Terminated);
@@ -114,109 +110,4 @@ fn reconnect_disconnected_client() {
     ));
     poll_and_resend(&mut nodes, &mut clients);
     expect_next_event!(unwrap!(clients.last_mut()), Event::Connected);
-}
-
-fn immutable_data_vec(rng: &mut SeededRng, count: u64) -> Vec<ImmutableData> {
-    (0..count)
-        .map(|_| gen_immutable_data(rng, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES as usize))
-        .collect()
-}
-
-/// Confirming the number of user message parts being sent in case of exceeding limit.
-#[test]
-fn resend_parts_on_exceeding_limit() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
-    let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE);
-    let mut clients = create_connected_clients(&network, &mut nodes, 1);
-
-    let num_immutable_data =
-        (SOFT_CAPACITY as f64 / MAX_IMMUTABLE_DATA_SIZE_IN_BYTES as f64).ceil() as u64 + 1;
-
-    let data_vec = immutable_data_vec(&mut rng, num_immutable_data);
-
-    for data in data_vec {
-        let msg_id = MessageId::new();
-        let dst = Authority::NaeManager(*data.name());
-        unwrap!(clients[0].inner.put_idata(dst, data, msg_id));
-    }
-    poll_and_resend(&mut nodes, &mut clients);
-
-    // TODO(sec_msg_relay): Re-enable this check
-    // let total_data_parts = num_immutable_data * u64::from(MAX_PARTS);
-    // // NOTE: this calculation is approximate and relies on some hardcoded knowledge about
-    // // the size of serialised user messages.
-    // let user_msg_header = 48;
-    // let part_size =
-    //     (MAX_IMMUTABLE_DATA_SIZE_IN_BYTES + user_msg_header) as f64 / f64::from(MAX_PARTS);
-    // let parts_allowed_first_time = (SOFT_CAPACITY as f64 / part_size) as u64;
-    // let parts_retried = total_data_parts - parts_allowed_first_time;
-
-    // let expect_sent_parts = total_data_parts + parts_retried;
-    // assert_eq!(
-    //     clients[0].inner.get_user_msg_parts_count(),
-    //     expect_sent_parts
-    // );
-
-    // // Node shall not receive any duplicated parts.
-    // let expect_rcv_parts = total_data_parts;
-    // for node in nodes.iter() {
-    //     assert_eq!(node.inner.get_user_msg_parts_count(), expect_rcv_parts);
-    // }
-}
-
-/// User message expired.
-#[test]
-fn resend_over_load() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
-    let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE);
-
-    let config = NetworkConfig::client().with_hard_coded_contacts(iter::once(nodes[0].endpoint()));
-    let mut clients = vec![TestClient::new_with_expire_duration(
-        &network,
-        Some(config),
-        None,
-        Duration::from_secs(10),
-    )];
-    poll_and_resend(&mut nodes, &mut clients);
-    expect_next_event!(unwrap!(clients.last_mut()), Event::Connected);
-
-    let num_immutable_data =
-        (SOFT_CAPACITY as f64 / MAX_IMMUTABLE_DATA_SIZE_IN_BYTES as f64).ceil() as u64 + 1;
-
-    let data_vec = immutable_data_vec(&mut rng, num_immutable_data);
-
-    for data in data_vec {
-        let msg_id = MessageId::new();
-        let dst = Authority::NaeManager(*data.name());
-        unwrap!(clients[0].inner.put_idata(dst, data, msg_id));
-    }
-    poll_and_resend(&mut nodes, &mut clients);
-
-    // TODO(sec_msg_relay): Re-enable this check
-    // let total_data_parts = num_immutable_data * u64::from(MAX_PARTS);
-    // NOTE: this calculation is approximate and relies on some hardcoded knowledge about
-    // the size of serialised user messages.
-    // let user_msg_header = 48;
-    // let part_size =
-    //     (MAX_IMMUTABLE_DATA_SIZE_IN_BYTES + user_msg_header) as f64 / f64::from(MAX_PARTS);
-    // let parts_allowed_through = (SOFT_CAPACITY as f64 / part_size) as u64;
-
-    // `poll_and_resend` advance clock by 20 seconds (`ACK_TIME_OUT`), hence the message is expired
-    // when handling the timeout for re-sending parts.
-    // let expect_sent_parts = total_data_parts;
-    // assert_eq!(
-    //     clients[0].inner.get_user_msg_parts_count(),
-    //     expect_sent_parts
-    // );
-
-    // Node shall not receive any re-sent parts.
-    // let expect_rcv_parts = parts_allowed_through;
-    // for node in nodes.iter() {
-    //     assert_eq!(node.inner.get_user_msg_parts_count(), expect_rcv_parts);
-    // }
-
-    // Routing client will not send any notification regarding this expiration.
-    assert!(clients[0].inner.try_next_ev().is_err());
 }

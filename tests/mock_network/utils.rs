@@ -275,16 +275,6 @@ impl TestClient {
         Self::new_impl(network, network_config, endpoint, full_id, duration)
     }
 
-    pub fn new_with_expire_duration(
-        network: &Network,
-        network_config: Option<NetworkConfig>,
-        endpoint: Option<SocketAddr>,
-        duration: Duration,
-    ) -> Self {
-        let full_id = FullId::new();
-        Self::new_impl(network, network_config, endpoint, full_id, duration)
-    }
-
     fn new_impl(
         network: &Network,
         network_config: Option<NetworkConfig>,

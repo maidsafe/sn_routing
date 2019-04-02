@@ -29,7 +29,6 @@ use crate::{
     peer_manager::{Peer, PeerManager, PeerState},
     peer_map::PeerMap,
     quic_p2p::NodeInfo,
-    rate_limiter::RateLimiter,
     routing_message_filter::{FilteringResult, RoutingMessageFilter},
     routing_table::Error as RoutingTableError,
     routing_table::{Authority, Prefix, Xorable, DEFAULT_PREFIX},
@@ -112,9 +111,6 @@ pub struct Elder {
     next_relocation_interval: Option<XorTargetInterval>,
     /// The timer token for displaying the current candidate status.
     candidate_status_token: u64,
-    /// Limits the rate at which clients can pass messages through this node when it acts as their
-    /// proxy.
-    clients_rate_limiter: RateLimiter,
     /// IPs of clients which have been temporarily blocked from bootstrapping off this node.
     banned_client_ips: LruCache<IpAddr, ()>,
     /// Recently-disconnected clients.  Clients are added to this when we disconnect from them so we
@@ -223,7 +219,6 @@ impl Elder {
             next_relocation_dst: None,
             next_relocation_interval: None,
             candidate_status_token,
-            clients_rate_limiter: RateLimiter::new(dev_config.disable_client_rate_limiter),
             banned_client_ips: LruCache::with_expiry_duration(CLIENT_BAN_DURATION),
             dropped_clients: LruCache::with_expiry_duration(DROPPED_CLIENT_TIMEOUT),
             proxy_load_amount: 0,
@@ -819,18 +814,12 @@ impl Elder {
         }
     }
 
-    /// Returns `Ok` with rate_limiter charged size if client is allowed to send the given message.
-    fn check_valid_client_message(
-        &mut self,
-        ip: &IpAddr,
-        msg: &RoutingMessage,
-    ) -> Result<u64, RoutingError> {
+    /// Returns `Ok` if client is allowed to send the given message.
+    fn check_valid_client_message(&mut self, msg: &RoutingMessage) -> Result<(), RoutingError> {
         match (&msg.src, &msg.content) {
             (
                 &Authority::Client { .. },
                 &MessageContent::UserMessagePart {
-                    ref hash,
-                    ref msg_id,
                     ref part_count,
                     ref part_index,
                     ref priority,
@@ -842,14 +831,7 @@ impl Elder {
                 && *priority >= DEFAULT_PRIORITY
                 && payload.len() <= MAX_PART_LEN =>
             {
-                self.clients_rate_limiter.add_message(
-                    ip,
-                    hash,
-                    msg_id,
-                    *part_count,
-                    *part_index,
-                    payload,
-                )
+                Ok(())
             }
             _ => {
                 debug!(
@@ -858,22 +840,6 @@ impl Elder {
                 );
                 Err(RoutingError::RejectedClientMessage)
             }
-        }
-    }
-
-    fn correct_rate_limits(&mut self, ip: &IpAddr, msg: &RoutingMessage) -> Option<u64> {
-        if let MessageContent::UserMessagePart {
-            ref msg_id,
-            part_count,
-            part_index,
-            ref payload,
-            ..
-        } = msg.content
-        {
-            self.clients_rate_limiter
-                .apply_refund_for_response(ip, msg_id, part_count, part_index, payload)
-        } else {
-            None
         }
     }
 
@@ -1488,14 +1454,6 @@ impl Elder {
         pub_id: &PublicId,
     ) -> Result<(), RoutingError> {
         let result = if self.peer_mgr.is_connected(pub_id) {
-            // If the message being relayed is a data response, update the client's
-            // rate limit balance to account for the initial over-counting.
-            if let Some(&PeerState::Client { ip, .. }) =
-                self.peer_mgr.get_peer(pub_id).map(Peer::state)
-            {
-                let _ = self.correct_rate_limits(&ip, signed_msg.routing_message());
-            }
-
             if self.filter_outgoing_routing_msg(signed_msg.routing_message(), pub_id) {
                 return Ok(());
             }
@@ -1970,14 +1928,9 @@ impl Base for Elder {
             }
         };
 
-        if let Some(ip) = client_ip {
-            match self.check_valid_client_message(&ip, msg.content.routing_message()) {
-                Ok(added_bytes) => {
-                    self.proxy_load_amount += added_bytes;
-                    self.peer_mgr
-                        .add_client_traffic(&pub_id, added_bytes, &self.log_ident());
-                }
-                Err(e) => hop_name_result = Err(e),
+        if client_ip.is_some() {
+            if let Err(e) = self.check_valid_client_message(msg.content.routing_message()) {
+                hop_name_result = Err(e);
             }
         }
 

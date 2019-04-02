@@ -528,34 +528,6 @@ impl PeerManager {
         expired_peers
     }
 
-    /// Updates the given clients total traffic amount.
-    pub fn add_client_traffic(
-        &mut self,
-        pub_id: &PublicId,
-        added_bytes: u64,
-        log_ident: &LogIdent,
-    ) {
-        let _ = self.peers.get_mut(pub_id).map(|peer| {
-            if let PeerState::Client {
-                ip,
-                traffic: old_traffic,
-            } = *peer.state()
-            {
-                let new_traffic = old_traffic.wrapping_add(added_bytes);
-                if new_traffic % (100 * 1024 * 1024) < added_bytes {
-                    info!(
-                        "{} Stats - Client current session traffic from {:?} - {:?}",
-                        log_ident, ip, new_traffic
-                    );
-                }
-                peer.state = PeerState::Client {
-                    ip,
-                    traffic: new_traffic,
-                };
-            }
-        });
-    }
-
     /// Check whether the given peer exceeds the client limit.
     pub fn exceeds_client_limit(&mut self, pub_id: &PublicId) -> bool {
         if self.disable_client_rate_limiter {
