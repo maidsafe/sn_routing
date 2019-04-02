@@ -13,6 +13,7 @@ use routing::{
     mock::Network, Authority, Event, EventStream, MessageId, Response, XorName, QUORUM_DENOMINATOR,
     QUORUM_NUMERATOR,
 };
+use std::cmp::min;
 
 #[test]
 fn messages_accumulate_with_quorum() {
@@ -55,10 +56,14 @@ fn messages_accumulate_with_quorum() {
     expect_no_event!(nodes[0]);
 
     // If there are `quorum` senders but they all only sent hashes, nothing can accumulate.
-    // Only after `nodes[0]`, which is closest to `src.name()`, has sent the full message, it
-    // accumulates.
+    // Only after one of the first three nodes, which are closest to `src.name()`, has sent the full
+    // message, it accumulates.
     let message_id = MessageId::new();
-    for node in nodes.iter_mut().skip(1).take(quorum) {
+    for node in nodes
+        .iter_mut()
+        .skip(3)
+        .take(min(quorum, min_section_size - 3))
+    {
         send(node, &dst, message_id);
     }
     let _ = poll_all(&mut nodes, &mut []);
@@ -67,7 +72,7 @@ fn messages_accumulate_with_quorum() {
     let _ = poll_all(&mut nodes, &mut []);
     expect_next_event!(nodes[0],
         Event::ResponseReceived { response: Response::GetIData { res: Ok(_), .. }, .. });
-    send(&mut nodes[quorum + 1], &dst, message_id);
+    send(&mut nodes[1], &dst, message_id);
     let _ = poll_all(&mut nodes, &mut []);
     expect_no_event!(nodes[0]);
 
@@ -99,7 +104,11 @@ fn messages_accumulate_with_quorum() {
     // Only after `nodes[0]`, which is closest to `src.name()`, has sent the full message, it
     // accumulates.
     let message_id = MessageId::new();
-    for node in nodes.iter_mut().skip(1).take(quorum) {
+    for node in nodes
+        .iter_mut()
+        .skip(3)
+        .take(min(quorum, min_section_size - 3))
+    {
         send(node, &dst_grp, message_id);
     }
     let _ = poll_all(&mut nodes, &mut []);
@@ -112,7 +121,7 @@ fn messages_accumulate_with_quorum() {
         expect_next_event!(node,
             Event::ResponseReceived { response: Response::GetIData { res: Ok(_), .. }, .. });
     }
-    send(&mut nodes[quorum + 1], &dst_grp, message_id);
+    send(&mut nodes[1], &dst_grp, message_id);
     let _ = poll_all(&mut nodes, &mut []);
     for node in &mut *nodes {
         expect_no_event!(node);
