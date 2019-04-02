@@ -8,6 +8,10 @@ cache:
   - '%USERPROFILE%\.cargo'
   - '%APPVEYOR_BUILD_FOLDER%\target'
 
+branches:
+  except:
+  - fleming_design_model
+
 clone_depth: 1
 
 install:
