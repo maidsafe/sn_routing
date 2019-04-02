@@ -24,11 +24,9 @@
   text-align: left;
   outline: none;
   }
-
   .active, .collapsible:hover {
   background-color: #333;
   }
-
   .content {
   padding: 0 18px;
   display: none;
@@ -333,7 +331,72 @@
   </div>
 
   <h1>Source section</h1>
+  <p>As members of a section, each node must keep track of how many "work units" other nodes have performed.<br>
+      Once a node has done accumulated enough work units to gain age, the section must work together to relocate that node to a new section where they can become 1 age unit older.<br>
+      These diagrams detail how this happens.
+  </p>
   <h2>Deciding that a member of our section should be relocated away</h2>
+  <p>In these diagrams, we are modeling the simple version of node ageing that we decided to implement for Fleming:<br>
+  Work units are incremented for all nodes in the section every time a timeout reaches consenus. Because a quorum of elders must have voted for this timeout, the malicious nodes can't arbitrarily speed up the ageing of their nodes.<br>
+  Once a node has accumulated enough work units to be relocated, if they're a non-elder adult node, we will enter TryRelocating to attempt relocating them away from our section. If they are an elder node, we will first wait for the Adult/Elder promotion/demotion flow to kick in and demote them to an adult. This will happen because we changed their state from Online to Relocating, which means that they will get demoted.<br>
+  Also of note: we will only be actively relocating at most one node away from our section at a time.
+  </p>
+  <button class="collapsible">WorkUnitTimeout</button>
+  <div class="content">
+    <p>In the context of Fleming, nodes (especially adults) aren't doing meaningful work such as handling data.<br>
+    As a proxy, we use a time based metric to estimate how much work nodes have done (i.e: how long they remained Online and responsive).<br>
+    A local timeout wouldn't do here as it would allow malicious nodes to artificially age nodes in their sections faster. However, by reaching quorum on the fact a timeout happened, we ensure that at least one honest node has voted for the timeout.<br>
+    All nodes start the WorkUnitTimeout. On expiry, they vote for a WorkUnitIncrement in PARSEC and restart the timer.
+    </p>
+  </div>
+  <button class="collapsible">increment_nodes_work_units</button>
+  <div class="content">
+    <p>This function increments the number of work units for all members of my peer_list (remember that n_work_units is a member of the PeerState struct).<br>
+    </p>
+  </div>
+  <button class="collapsible">RELOCATING</button>
+  <div class="content">
+    <p>RELOCATING is an Option&ltPublicId&gt. It represents the node that we decided to relocate next, if any. It could be an elder, but if it is, we will only change the state of that node rather than immediately relocate it.<br>
+    If we reach consensus on a WorkUnitIncrement while RELOCATING.is_some() - or in other words, while we are already relocating a node away from this section - we simply discard the PARSEC event. It will be dealt with later, after at least one more WorkUnitTimeout.
+    </p>
+  </div>
+  <button class="collapsible">get_node_to_relocate</button>
+  <div class="content">
+    <p>This function will return the best candidate for relocation, if any.<br>
+    First, if any member of our peer_list has the state: RelocatingState, Some(them) will be returned.<br>
+    This helps ensure we aren't relocating multiple nodes at the same time if we have to wait for an elder to be demoted.<br>
+    If none of the nodes in our peer_list have that state, it can return for instance the node with the largest number of work units for which the number of work units is greater than 2^age.
+    </p>
+  </div>
+  <button class="collapsible">set_node_state</button>
+  <div class="content">
+    <p>This function mutates our peer_list to set the state: RelocatingState for the node: RELOCATING.<br>
+    inputs:<br>
+    - RELOCATING<br>
+    - state<br>
+    side-effect:<br>
+    - mutates peer_list
+    </p>
+  </div>
+  <button class="collapsible">TryRelocating</button>
+  <div class="content">
+    <p>The flow a section follow to relocate one of its adult nodes away from itself.<br>
+    See next diagram for details.
+    </p>
+  </div>
+  <button class="collapsible">RefuseCandidate/<br>RelocateResponse</button>
+  <div class="content">
+    <p>Exactly one of these RPCs will be sent to us from the destination section as a response to our section's ExpectCandidate RPC (see TryRelocating for more context).<br>
+    These must be handled here as it is possible that one of the nodes sees this event reach consensus before they were aware that an ExpectCandidate RPC was sent from our section to the destination.<br>
+    When this happens, we will immediately vote for it in PARSEC as we need to act in the same order as anyone else in our section.
+    </p>
+  </div>
+  <button class="collapsible">ParsecRefuseCandidate/<br>ParsecRelocateResponse</button>
+  <div class="content">
+    <p>Exactly one of these events should reach consensus, and it must be handled in TryRelocating as the "Wait" in there has a higher priority than the one in this flow.<br>
+    If we ever see consensus for one of these here, we know there is a bug; so we can panic.
+    </p>
+  </div>
   <div class="mermaid">
       graph TB
 
@@ -383,7 +446,7 @@
       Bug
       DiscardParsec --> LoopEnd
 
-      SetRelocating["RELOCATING=Some(get_node_to_relocate())<br/>(First with NodeState==RelocatingState)<br/>(shared state)"]
+      SetRelocating["RELOCATING=Some(get_node_to_relocate())"]
       SetRelocating --> SetRelocatingNodeState
 
       SetRelocatingNodeState["set_node_state(RELOCATING, RelocatingState)"]
