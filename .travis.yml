@@ -2,6 +2,9 @@ env:
   global:
     - RUST_BACKTRACE=1
     - PATH=$PATH:$HOME/.cargo/bin
+branches:
+  except:
+  - fleming_design_model
 language: rust
 rust:
   - stable
