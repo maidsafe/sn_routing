@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <style>
+  .collapsible {
+  background-color: #777;
+  color: white;
+  cursor: pointer;
+  padding: 5px;
+  border: 2px solid white;
+  text-align: left;
+  outline: none;
+  }
+
+  .active, .collapsible:hover {
+  background-color: #555;
+  }
+
+  .content {
+  padding: 0 18px;
+  display: none;
+  overflow: hidden;
+  background-color: #f1f1f1;
+  }
+  </style>
+</head>
+<body>
+  <h1>Node in the Network</h1>
+
+  <h2>Node's entire lifetime</h2>
+  <p>This section describes the flow a node will follow during its entire lifetime.<br>
+  When they join the network, they won't yet be a member of any section.<br>
+  First,they will have to bootstrap with their proxy node, receive a RelocateInfo and attempt to join the section that this RelocateInfo is pointing to.<br>
+  Once they have a full section, they will be able to operate as a full section member.
+  </p>
+  <button class="collapsible">OWN_SECTION</button>
+  <div class="content">
+      <p> OWN_SECTION refers to this node's own section.<br>
+      It is an Option&ltPrefix&gt.<br>
+      While a node is being relocated, the value will be none. Once they get accepted into a section, it becomes Some(that_section_s_prefix)
+  </p>
+  </div>
+  <button class="collapsible">BootstrapAndRelocate</button>
+  <div class="content">
+      <p>This function gets called when a node just joined the Network.<br>
+      At this stage, we are connected to a proxy node and they indicate to us which section we should join.
+      </p>
+  </div>
+  <button class="collapsible">StartTopMember</button>
+  <div class="content">
+      <p>Once a node has joined a section (indicated by OWN_SECTION.is_some()), they will be able to perform as a member of that section until they are relocated away from it.<br>
+      See StartTopMember graph for details.
+      </p>
+  </div>
+  <button class="collapsible">Rebootstrap</button>
+  <div class="content">
+      <p>First Create new identity with public key-pair<br/>
+      The node connects to a proxy with the new identity to use for joining the new section as a full node.
+      </p>
+  </div>
+  <button class="collapsible">JoiningRelocateCandidate</button>
+  <div class="content">
+      <p>Once a node knows where to be relocated, they will follow this flow to become a full member of the section.<br>
+      This covers resource proof from the point of view of the node being resource-proofed.<br>
+      The output of this function is an Option. If we fail resource proof, it is none, which means we will have to bootstrap again. If it is Some, it contains the RelocateInfo we need to join this section.<br>
+    See JoiningRelocateCandidate graph for details.
+      </p>
+  </div>
+
+  <div class="mermaid">
+    graph TB
+
+    Start --> LoopStart
+    style Start fill:#f9f,stroke:#333,stroke-width:4px
+
+    LoopStart --> HasSection
+    HasSection(("Check?"))
+
+    HasSection --"OWN_SECTION.is_none()"--> BootstrapAndRelocate
+    BootstrapAndRelocate["BootstrapAndRelocate:<br/>Get RelocateInfo"]
+    BootstrapAndRelocate --> ReBootstrapWithNewIdentity
+
+    HasSection --"OWN_SECTION.is_some()"--> StartTopMember
+    StartTopMember["StartTopMember<br/>"]
+    style StartTopMember fill:#f9f,stroke:#333,stroke-width:4px
+    StartTopMember --> ReBootstrapWithNewIdentity
+
+    ReBootstrapWithNewIdentity["Rebootstrap<br/>with new relocated identity<br/>output: RelocateInfo"]
+    style ReBootstrapWithNewIdentity fill:#f9f,stroke:#333,stroke-width:4px
+    ReBootstrapWithNewIdentity --> JoiningRelocateCandidate
+
+    JoiningRelocateCandidate["JoiningRelocateCandidate(RelocateInfo)<br/>output: JoiningApproved"]
+    style JoiningRelocateCandidate fill:#f9f,stroke:#333,stroke-width:4px
+
+    SetNodeApproaval["OWN_SECTION=JoiningApproved"]
+    JoiningRelocateCandidate --> SetNodeApproaval
+
+    SetNodeApproaval --> LoopEnd
+    LoopEnd --> LoopStart
+  </div>
+
+
+  <h2>Node as a member of a section</h2>
+  <p>Once a node has joined a section, they need to be ready to take on multiple roles simultaneously:<br>
+  <ul>
+    <li> Deal with relocation:<br>
+         The section as a whole will sometimes act as the source and sometimes as the destination of relocations. This means nodes will sometimes relocate away from this section and sometimes relocate to this section. Nodes in this section will need to perform the right flow to deal with both of these situations.
+    <li> Decide who's an elder or a plain old adult
+  </ul>
+  All of these flows are happening simultaneously, but they share a common event loop. At any time, either all flows or all but one flows  must be in a "wait" state.<br>
+  If our section decides to relocates us, we will have to stop functioning as a member of our section and go back to the previous flow where we will "Rebootstrap" so we can become a member of a different section.
+  </p>
+  <div class="mermaid">
+    graph TB
+    style StartTopMember fill:#f9f,stroke:#333,stroke-width:4px
+    style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
+    StartTopMember --> InitializeNodeInternalState
+    InitializeNodeInternalState["intialise_node_internal_state()<br/><br/>(Parsed, Routing table...)"]
+    InitializeNodeInternalState --> ConcurentStartElder
+
+    ConcurentStartElder{"Concurrent<br/>start elder"}
+    ConcurentStartElder --> StartTopLevelDst
+    style StartTopLevelDst fill:#f9f,stroke:#333,stroke-width:4px
+
+    ConcurentStartElder --> StartTopLevelSrc
+    style StartTopLevelSrc fill:#f9f,stroke:#333,stroke-width:4px
+
+    ConcurentStartElder --> StartCheckAndProcessElderChange
+    style StartCheckAndProcessElderChange fill:#f9f,stroke:#333,stroke-width:4px
+
+
+    ConcurentStartElder --> WaitFor
+
+    WaitFor(("Wait for 0:"))
+
+    Rpc((RPC))
+    WaitFor --> Rpc
+    Rpc -- "RelocatedInfo RPC"-->  EndRoutine
+    EndRoutine["EndRoutine: Kill all sub routines"]
+</div>
+
+  <h1>Destination section</h1>
+  <p>As a member of a section, our section will sometimes receive a node that is being relocated. These  diagrams are from the point of view of one of the nodes in the section, doing its part to handle the node that is trying to relocate to this section.
+  </p>
+  <h2>Deciding when to accept an incoming relocation</h2>
+  <p>This flow represents what we do when a section contacts us to relocate one of their nodes to our section.<br>
+  The process starts as we receive an ExpectCandidate RPC from this node.<br>
+  We vote for it in PARSEC to be sure all members of the section process it in the same order.<br>
+  Once it reaches consensus, we are ready to process that candidate by letting them perform the resource_proof (see AcceptAsCandidate).<br>
+  There are some subtleties, such as the fact that we only want to process one candidate at a time, but this is the general idea.
+  </p>
+  <button class="collapsible">RPC: ExpectCandidate</button>
+  <div class="content">
+    <p>We receive this RPC from a section that wants to relocate a node to our section.<br>
+    The node is not communicating with us yet, only once we sent RelocateResponse RPC to the originating section.<br>
+    On receiving it, we vote for ParsecExpectCandidate to process it in the same order as other members of our section.<br>
+    It kickstarts the entire chain of events in this diagram.<br>
+    Note that we could also see consensus on ParsecExpectCandidate before we ourselves voted for it in PARSEC, as long as enough members of our section did.
+    </p>
+  </div>
+  <button class="collapsible">RPC: ResourceProofResponse/<br>CandidateInfo</button>
+  <div class="content">
+  <p>These RPCs should generally be handled during resource proof, in AcceptAsCandidate.<br>
+  It could be that they reach us before we are ready to receive them. For instance, because although enough other nodes got consensus on ParsecExpectCandidate, I'm still a bit behind.<br>
+  It's OK to discard the RPC in this case as the node who aims to be relocated here will perceive this as a timeout from our end and resend later.
+  </p>
+  </div>
+  <button class="collapsible">ParsecOnline<br>ParsecPurgeCandidate</button>
+  <div class=content>
+    <p>These consensus outputs were voted for in AcceptAsCandidate.<br>
+    The same node could be accepted by some nodes who would vote ParsecOnline, but also time out for some other nodes who would vote for ParsecPurgeCandidate.<br>
+    If it's the case, we only want to process the first of these two events and discard the other one.<br>
+    Because the "Wait for 2" loop in AcceptAsCandidate has higher precendence than the "Wait for 1" loop in this one, this is exactly what will happen.
+    </p>
+  </div>
+  <button class="collapsible">shorter_prefix_section</button>
+  <div class="content">
+    <p>If we know of a section that has a shorter prefix than ours, we prefer for them to receive this incoming node rather than ourselves as it will help keep the Network's sections tree balanced.<br>
+    This shorter_prefix_section is a function that will return None if we are the shortest of any section we know, Some if there is a better candidate.<br>
+    If it is Some, we will relay the RPC to them instead of accepting the rellocation to our own section.
+    </p>
+  </div>
+  <button class="collapsible">PROCESSING_CANDIDATE</button>
+  <div class="content">
+    <p>We want to accept at most one incoming relocation at a time into our section.<br>
+    The local variable: PROCESSING_CANDIDATE indicates whether someone is already passing the resource proof process, so we can't accept anyone else for now.<br>
+    When PROCESSING_CANDIDATE is true and we reach consensus on ParsecExpectCandidate, we send a RefuseCandidate RPC to the would-be-incoming-node so they can try another section or try again later.
+    </p>
+  </div>
+  <button class="collapsible">AcceptAsCandidate</button>
+  <div class="content">
+    <p>If we are ready to accept an incoming node and we reach consensus on ParsecExpectCandidate, we will execute this flow to make them pass resource proof.<br>
+    See AcceptAsCandidate diagram for details.
+    </p>
+  </div>
+  <div class="mermaid">
+      graph TB
+
+      Start["StartTopLevelDst:<br/>No exit - Need Killed"]
+      style Start fill:#f9f,stroke:#333,stroke-width:4px
+      Start --> LoopStart
+      LoopEnd --> LoopStart
+
+
+      LoopStart --> WaitFor
+
+      WaitFor((Wait for 1:))
+      WaitFor --RPC--> RPC
+      WaitFor --Parsec<br/>consensus--> ParsecConsensus
+
+      RPC((RPC))
+      DiscardRPC[Discard RPC]
+      RPC --ExpectCandidate--> VoteParsecExpectCandidate
+      RPC --ResourceProofResponse<br/>CandidateInfo--> DiscardRPC
+      DiscardRPC --> LoopEnd
+
+      ParsecConsensus((Parsec<br/>consensus))
+      DiscardParsec["Discard<br/>Parsec<br/>event"]
+      ParsecConsensus --ParsecExpectCandidate--> Balanced
+      ParsecConsensus --ParsecOnline<br/>ParsecPurgeCandidate<br/>--> DiscardParsec
+      DiscardParsec --> LoopEnd
+
+      VoteParsecExpectCandidate["vote_for(<br/>ParsecExpectCandidate)<br/>to handle the RPC consistently"]
+      VoteParsecExpectCandidate --> LoopEnd
+
+      Balanced(("Check?<br/>(shared state)"))
+      Balanced -- "shorter_prefix_section(<br/>).is_some()" --> Resend
+      Balanced -- "shorter_prefix_section().is_none()<br/>PROCESSING_CANDIDATE==yes" --> SendRefuse
+      Balanced -- "shorter_prefix_section().is_none()<br/>PROCESSING_CANDIDATE==No" --> SetCandidateYes
+
+      Resend["send_rpc(<br/>ExpectCandidate)<br/>to shorter_prefix_section()"]
+      Resend --> LoopEnd
+
+      SendRefuse["send_rpc(<br/>RefuseCandidate)<br/>to source section"]
+      SendRefuse --> LoopEnd
+
+      SetCandidateYes["PROCESSING_CANDIDATE=yes<br/>(shared state)"]
+      SetCandidateYes-->Concurrent0
+
+      Concurrent0{"Concurrent<br/>paths"}
+      Concurrent0 --> AcceptAsCandidate
+      Concurrent0 --> LoopEnd
+
+
+      AcceptAsCandidate["AcceptAsCandidate<br/>(shared state)"]
+      style AcceptAsCandidate fill:#f9f,stroke:#333,stroke-width:4px
+      AcceptAsCandidate --> SetCandidateNo
+
+      SetCandidateNo["PROCESSING_CANDIDATE=no<br/>(shared state)"]
+      SetCandidateNo-->LoopEnd
+
+  </div>
+
+  <h2>Resource proof from a destination's point of view</h2>
+  <p>In the previous diagram, we ensured an incoming candidate would only be processed for resource_proof if we are the best fit we know and we are not currently processing another node.<br>
+  This leads us here: to the resource proof.<br>
+  We will first add this node to our peer_list with the sate ResourceProof and send a RelocateResponse to the source section.<br>
+  This will let them know we are ready to process them.<br>
+  They will then send their CandidateInfo to everyone in our section.<br>
+  On receiving a valid CandidateInfo, I will send them a ResourceProof RPC. This gives them the "problem to solve". As they solve it, they will send me ResourceProofResponses. These will be parts of the proof. On receiving valid parts, I must send a ResourceProofReceipt. Once they finally send me the last valid part, they passed their resource proof and I vote for ParsecOnline (essentially accepting them as a member of my section).<br>
+  At any time during this process, they may timeout, in which case I will decided to reject them and vote for ParsecPurgeCandidate.<br>
+  This process ends once I reach consensus on either accepting or the candidate (ParsecOnline) or refusing them (ParsecPurgeCandidate).<br>
+  These payloads are Opaque, which means that consensus may be reached without a quorum on either of these. For that reason, it is possible that both reach consensus, in which case the second one will be discarded in the flow above. It won't cause issues as consistency is the only property that matters here: if we accept someone who then went Offline, we will be able to detect they are Offline later with the standard Offline detection mechanism.
+  </p>
+  <button class="collapsible">GOT_CANDIDATE_INFO</button>
+  <div class="content">
+    <p>We only want to receive CandidateInfo once and we can't verify a ResourceProofResponse without knowing the CandidateInfo.<br>
+    The local variable: GOT_CANDIDATE_INFO helps us stay on top of this.
+    </p>
+  </div>
+  <button class="collapsible">VOTED_ONLINE</button>
+  <div class="content">
+    <p>Once we've voted a node online, we don't care to handle further ResourceProofResponses from them.<br>
+    This local variable helps us with this.
+    </p>
+  </div>
+  <div class="mermaid">
+      graph TB
+      AcceptAsCandidate["Accept As Candidate<br/> Shared state all peers proceed"]
+      EndRoutine["End of AcceptAsCandidate<br/>(shared state)"]
+      style AcceptAsCandidate fill:#f9f,stroke:#333,stroke-width:4px
+      style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
+
+      AcceptAsCandidate --> SendRelocateResponse
+
+      SendRelocateResponse["add_node(NodeState=ResourceProof)<br/><br/>send_rpc(RelocateResponse)<br/>to source section<br/><br/>schedule(TimeoutAccept)"]
+      WaitFor(("Wait for 2:<br/><br/>Only current<br/>candidate<br/>events"))
+      VoteParsecPurgeCandidate["vote_for(<br/>ParsecPurgeCandidate)"]
+      VoteParsecOnline["vote_for(<br/>NetworkEvent::Online)<br/><br/>VOTED_ONLINE=yes"]
+      RequestRP["send_rpc(<br/>ResourceProof)<br/>to candidate<br/><br/>GOT_CANDIDATE_INFO=yes"]
+      SendProofReceit["send_rpc(<br/>ResourceProofReceipt)<br/>for proof"]
+
+      SendRelocateResponse --> LoopStart
+      LoopStart-->WaitFor
+
+
+      WaitFor -- Consensus--> Consensus
+      Consensus((Consensus))
+      Consensus -- ParsecPurgeCandidate<br/>consensused --> RemoveNode
+      Consensus -- ParsecOnline<br/>consensused --> MakeOnline
+      MakeOnline["set_node_state(<br/>Candidate,<br/>OnlineState)<br/><br/>send_rpc(<br/>NodeApproval)"]
+      RemoveNode["purge_node_info(<br/>candidate node)"]
+      RemoveNode --> EndRoutine
+      MakeOnline --> EndRoutine
+
+      WaitFor -- ResourceProofResponse<br/><br/>GOT_CANDIDATE_INFO==yes<br/>VOTED_ONLINE==no --> ProofResponse((Proof))
+      ProofResponse -- Valid Part --> SendProofReceit
+      ProofResponse -- Valid End --> VoteParsecOnline
+
+      WaitFor -- CandidateInfo<br/><br/>GOT_CANDIDATE_INFO==no --> Info((Info))
+      Info -- Valid<br/>CandidateInfo --> RequestRP
+      Info -- Invalid<br/>CandidateInfo --> VoteParsecPurgeCandidate
+      WaitFor -- TimeoutAccept<br/>expire --> VoteParsecPurgeCandidate
+
+      RequestRP --> LoopEnd
+      SendProofReceit-->LoopEnd
+      VoteParsecOnline --> LoopEnd
+      VoteParsecPurgeCandidate --> LoopEnd
+      LoopEnd --> LoopStart
+  </div>
+
+  <h1>Source section</h1>
+  <h2>Deciding that a member of our section should be relocated away</h2>
+  <div class="mermaid">
+      graph TB
+
+
+      Start["StartTopLevelSrc:<br/>No exit - Need Killed"]
+      style Start fill:#f9f,stroke:#333,stroke-width:4px
+      Start --> StartWorkUnitTimeOut
+
+      StartWorkUnitTimeOut["schedule(WorkUnitTimeOut)"]
+      StartWorkUnitTimeOut --> LoopStart
+      LoopEnd --> LoopStart
+
+      LoopStart --> WaitFor
+
+      WaitFor((Wait for 3:))
+      WaitFor --Event--> Event
+      WaitFor --RPC--> RPC
+      WaitFor --Parsec<br/>consensus--> ParsecConsensus
+
+      Event((Event))
+      Event -- WorkUnitTimeOut<br/>Trigger --> VoteParsecRelocationTrigger
+      VoteParsecRelocationTrigger["vote_for(WorkUnitIncrement)<br/>schedule(WorkUnitTimeOut)"]
+      VoteParsecRelocationTrigger --> LoopEnd
+
+      RPC((RPC))
+      RPC --RefuseCandidate--> VoteParsecRefuseCandidate
+      RPC --RelocateResponse--> VoteParsecRelocateResponse
+      VoteParsecRefuseCandidate["vote_for(<br/>ParsecRefuseCandidate)<br/>to handle the RPC consistently"]
+      VoteParsecRefuseCandidate --> LoopEnd
+      VoteParsecRelocateResponse["vote_for(<br/>ParsecRelocateResponse)<br/>to handle the RPC consistently"]
+      VoteParsecRelocateResponse --> LoopEnd
+
+
+      ParsecConsensus((Parsec<br/>consensus))
+      DiscardParsec["Discard<br/>Parsec<br/>event"]
+      Bug["BUG: assert fail:<br/><br/>Section can only send either<br/>one of these RPC, and only for<br/>the candidate we are relocating"]
+
+      ParsecConsensus -- WorkUnitIncrement consensused --> IncrementWorkUnit
+      IncrementWorkUnit["increment_nodes_work_units()"]
+      IncrementWorkUnit-->AlreadyRelocating
+      AlreadyRelocating(("Check?"))
+
+
+      AlreadyRelocating --"RELOCATING.is_none()"--> SetRelocating
+      AlreadyRelocating --"RELOCATING.is_some()"--> DiscardParsec
+      ParsecConsensus --"Any:<br/><br/>ParsecRefuseCandidate<br/><br/>ParsecRelocateResponse"--> Bug
+      Bug
+      DiscardParsec --> LoopEnd
+
+      SetRelocating["RELOCATING=Some(get_node_to_relocate())<br/>(First with NodeState==RelocatingState)<br/>(shared state)"]
+      SetRelocating --> SetRelocatingNodeState
+
+      SetRelocatingNodeState["set_node_state(RELOCATING, RelocatingState)"]
+      SetRelocatingNodeState --> isRelocatingElder
+
+      isRelocatingElder(("Check?"))
+      isRelocatingElder--"is_elder(RELOCATING)"-->ResetRelocating
+      isRelocatingElder--"!is_elder(RELOCATING)"-->Concurrent0
+
+      Concurrent0{"Concurrent<br/>paths"}
+      Concurrent0 --> TryRelocating
+      Concurrent0 --> LoopEnd
+
+      TryRelocating["TryRelocating<br/>(shared state)"]
+      style TryRelocating fill:#f9f,stroke:#333,stroke-width:4px
+      TryRelocating-->ResetRelocating
+
+      ResetRelocating["RELOCATING=None<br/>(shared state)"]
+      ResetRelocating --> LoopEnd
+  </div>
+
+  <h2>Relocating a member of our section away from it</h2>
+  <div class="mermaid">
+      graph TB
+
+      TryRelocating["TryRelocating<br/> Shared state all peers proceed"]
+      EndRoutine["End of TryRelocating<br/>(shared state)"]
+      style TryRelocating fill:#f9f,stroke:#333,stroke-width:4px
+      style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
+
+      TryRelocating --> SendExpectCandidate
+
+      SendExpectCandidate["send_rpc(<br/>ExpectCandidate)"]
+      SendExpectCandidate --> WaitFor
+
+      WaitFor((Wait for 4:<br/><br/>Only current<br/>candidate<br/>events))
+      WaitFor --Parsec<br/>consensus--> Consensus
+
+      Consensus((Consensus))
+      Consensus --"ParsecRefuseCandidate"--> EndRoutine
+      Consensus --"ParsecRelocateResponse"--> SendPovableRelocateInfo
+
+      SendPovableRelocateInfo["send_rpc(RelocatedInfo)<br/>to node<br/><br/>Includes RelocationResponse<br/>content and consensus<br/>Node may be already gone"]
+      SendPovableRelocateInfo-->PurgeNodeInfos
+      PurgeNodeInfos["purge_node_info(<br/>node)"]
+      PurgeNodeInfos--> EndRoutine
+  </div>
+
+  <h1>Elder-only</h1>
+  <h2>Process for Adult/Elder promotion and demotion</h2>
+  <div class="mermaid">
+      graph TB
+      CheckAndProcessElderChange["StartCheckAndProcessElderChange:<br/>No exit - Need Killed"]
+      style CheckAndProcessElderChange fill:#f9f,stroke:#333,stroke-width:4px
+
+      CheckAndProcessElderChange -->  StartCheckElderTimeout
+      StartCheckElderTimeout["schedule(<br/>CheckElderTimeout)"]
+      StartCheckElderTimeout -->  LoopStart
+
+
+      WaitFor(("Wait for 5:"))
+       LoopStart --> WaitFor
+
+      WaitFor -- Event --> Event
+      Event((Event))
+      Event-- CheckElder<br/>Timeout--> VoteCheckElderTimeout
+      VoteCheckElderTimeout["vote_for(<br/>ParsecCheckElderTimeout)"]
+      VoteCheckElderTimeout--> LoopEnd
+
+      Consensus((Consensus))
+      WaitFor-- Parsec<br/>consensus --> Consensus
+      Consensus--"ParsecCheckElderTimeout"-->CheckElderChange
+      CheckElderChange(("check_elder_change()"))
+      CheckElderChange -- "Has elder changes: elder first ordered by:<br/>State=Online then age then name." --> MarkAndVoteSwapNewElder
+      MarkAndVoteSwapNewElder["vote_for(Add) for new elders<br/>vote_for(Remove) for now adults nodes<br/>vote_for(NewSectionInfo)<br/><br/>WAITED_VOTES.insert(all votes)"]
+      MarkAndVoteSwapNewElder -->LoopEnd
+
+
+      CheckElderChange -- "No<br/>changes" --> RestartTimeout
+
+      Consensus -- "WAITED_VOTES.contains(vote)" --> OneVoteConsensused
+      OneVoteConsensused["WAITED_VOTES.remove(vote)"]
+
+      OneVoteConsensused --> WaitComplete
+      WaitComplete(("Check?"))
+      WaitComplete--"WAITED_VOTES.is_empty()<br/>(Wait complete)"-->MarkNewElderAdults
+      MarkNewElderAdults["For all nodes:<br/>set_elder_status(node, is_elder)"]
+      MarkNewElderAdults--> RestartTimeout
+      RestartTimeout["schedule(<br/>CheckElderTimeout)"]
+      RestartTimeout-->LoopEnd
+      WaitComplete--"!WAITED_VOTES.is_empty()<br/>(Wait not complete)"--> LoopEnd
+
+      LoopEnd --> LoopStart
+  </div>
+
+  <h1>Elders and adults</h1>
+
+  <h2>Becoming a full member of a section</h2>
+  This is from the point of view of a node trying to join a section as a full member.<br/>
+  This node is going to perform the resource proof until it receive a NodeApproval RPC to complete this stage successfully.<br/>
+  If the node is not accepted, after time out, it will try another section.
+  <div class="mermaid">
+    graph TB
+    JoiningRelocateCandidate -->  InitialSendConnectionInfoRequest
+    JoiningRelocateCandidate["JoiningRelocateCandidate<br/>(Take destination section nodes)"]
+    style JoiningRelocateCandidate fill:#f9f,stroke:#333,stroke-width:4px
+    EndRoutine["End of JoiningRelocateCandidate<br/>"]
+    style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
+
+    InitialSendConnectionInfoRequest["For all nodes in destination section:<br/>MembersProofRequest(node) = None<br/>and send_rpc(ConnectionInfoRequest)<br/><br/>schedule(TimeoutResendInfo)<br/>schedule(TimeoutRefused)"]
+    InitialSendConnectionInfoRequest-->LoopStart
+
+    LoopStart --> WaitFor
+    WaitFor(("Wait for 6:"))
+    LocalEvent((Local<br/>Event))
+    WaitFor --> LocalEvent
+
+    LocalEvent -- ResourceProofForElderReady -->  SendFirstResourceProofPartForElder
+    SendFirstResourceProofPartForElder["send_rpc(<br/>ResourceProofResponse)<br/>with first part for elder"]
+    SendFirstResourceProofPartForElder --> LoopEnd
+
+    LocalEvent--"TimeoutResendInfo triggered<br/> Some elders have not responsed<br/>with ResourceProof"--> ResendConnectionInfoRequest
+    ResendConnectionInfoRequest["For all nodes with<br/>MembersProofRequest(node).is_none():<br/>send_rpc(ConnectionInfoRequest)<br/><br/>schedule(TimeoutResendInfo)"]
+    ResendConnectionInfoRequest --> LoopEnd
+
+    LocalEvent--"TimeoutRefused<br/>triggered"--> EndRoutine
+
+    Rpc((RPC))
+    WaitFor --> Rpc
+    Rpc -- NodeApproval -->  EndRoutine
+
+    Rpc -- ConnectionInfoResponse --> ConnectAndSendCandidateInfo
+    ConnectAndSendCandidateInfo["Connect and send<br/>CandidateInfo"]
+    ConnectAndSendCandidateInfo-->LoopEnd
+
+    Rpc -- ResourceProofReceipt -->  SendNextResourceProofPartForElder
+    SendNextResourceProofPartForElder["send_rpc(<br/>ResourceProofResponse)<br/>part for elder"]
+    SendNextResourceProofPartForElder --> LoopEnd
+
+    Rpc -- ResourceProof -->  StartComputeResourceProofForElder
+    StartComputeResourceProofForElder["start_compute_resource_proof(source elder)"]
+    StartComputeResourceProofForElder --> LoopEnd
+
+    Rpc -- "ExpectCandidate<br/>RefuseCandidate<br/>RelocateResponse<br/>..." --> VoteParsecRPC
+    VoteParsecRPC["vote_for(the parsec rpc)<br/>(cache for later)"]
+    VoteParsecRPC --> LoopEnd
+
+    LoopEnd --> LoopStart
+
+  </div>
+
+
+
+  <script src="mermaid.min.js"></script>
+  <script>mermaid.initialize({startOnLoad:true});</script>
+  <script>
+var coll = document.getElementsByClassName("collapsible");
+var i;
+
+for (i = 0; i < coll.length; i++) {
+  coll[i].addEventListener("click", function() {
+    this.classList.toggle("active");
+    var content = this.nextElementSibling;
+    if (content.style.display === "block") {
+      content.style.display = "none";
+    } else {
+      content.style.display = "block";
+    }
+  });
+}
+</script>
+</body>
+</html>
