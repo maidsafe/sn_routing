@@ -51,7 +51,7 @@ fn smoke() {
     bob.vote_for(Observation::OpaquePayload(Payload(1)))
         .unwrap();
 
-    let request = bob.create_gossip(Some(&alice_id)).unwrap();
+    let request = bob.create_gossip(&alice_id).unwrap();
     let response_0 = alice.handle_request(&bob_id, request).unwrap();
 
     alice
@@ -60,7 +60,7 @@ fn smoke() {
     bob.vote_for(Observation::OpaquePayload(Payload(0)))
         .unwrap();
 
-    let request = bob.create_gossip(Some(&alice_id)).unwrap();
+    let request = bob.create_gossip(&alice_id).unwrap();
     let response_1 = alice.handle_request(&bob_id, request).unwrap();
 
     // Deliver the responses in reverse order.
@@ -255,7 +255,7 @@ fn randomized_static_network() {
                     continue;
                 };
 
-                let request = peer.create_gossip(Some(&dst)).unwrap();
+                let request = peer.create_gossip(&dst).unwrap();
 
                 messages.push(Message {
                     src: peer_id.clone(),
@@ -350,8 +350,9 @@ struct Peer {
 
 impl Peer {
     fn poll(&mut self) {
-        while let Some(block) = self.parsec.poll() {
-            self.blocks.push(block.payload().clone());
+        while let Some(blocks) = self.parsec.poll() {
+            self.blocks
+                .extend(blocks.into_iter().map(|block| block.payload().clone()));
         }
     }
 }
@@ -407,7 +408,7 @@ fn check_consensus(peers: &BTreeMap<PeerId, Peer>, expected_votes: usize) -> boo
 }
 
 fn exchange_gossip(src: &mut Parsec<Payload, PeerId>, dst: &mut Parsec<Payload, PeerId>) {
-    let request = src.create_gossip(Some(dst.our_pub_id())).unwrap();
+    let request = src.create_gossip(dst.our_pub_id()).unwrap();
     let response = dst.handle_request(src.our_pub_id(), request).unwrap();
     src.handle_response(dst.our_pub_id(), response).unwrap();
 }
@@ -423,15 +424,27 @@ struct Message {
     content: MessageContent,
 }
 
-struct PollAll<'a>(&'a mut Parsec<Payload, PeerId>);
+struct PollAll<'a> {
+    parsec: &'a mut Parsec<Payload, PeerId>,
+    blocks: Vec<Block<Payload, PeerId>>,
+}
 
 impl<'a> Iterator for PollAll<'a> {
     type Item = Block<Payload, PeerId>;
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.poll()
+        if let Some(block) = self.blocks.pop() {
+            Some(block)
+        } else {
+            self.blocks.extend(self.parsec.poll().into_iter().flatten());
+            self.blocks.reverse();
+            self.blocks.pop()
+        }
     }
 }
 
 fn poll_all(parsec: &mut Parsec<Payload, PeerId>) -> PollAll {
-    PollAll(parsec)
+    PollAll {
+        parsec,
+        blocks: Vec::new(),
+    }
 }
