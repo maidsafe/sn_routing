@@ -5,15 +5,20 @@
   <style>
   body {
   margin:40px auto;
-  max-width:800px;
   line-height:1.6;
   font-size:18px;
   color:#333;
   background:#f1f1f1;
   padding:0 10px
   }
+  .description, h1, h2, h3 {
+  max-width:800px;
+  }
   h1,h2,h3 {
   line-height: 1.2
+  }
+  .mermaid {
+  max-width: 1500px;
   }
   .collapsible {
   background-color: #777;
@@ -39,6 +44,7 @@
   <h1>Node in the Network</h1>
 
   <h2>Node's entire lifetime</h2>
+  <div class=description>
   <p>This section describes the flow a node will follow during its entire lifetime.<br>
   When they join the network, they won't yet be a member of any section.<br>
   First,they will have to bootstrap with their proxy node, receive a RelocateInfo and attempt to join the section that this RelocateInfo is pointing to.<br>
@@ -77,7 +83,7 @@
     See JoiningRelocateCandidate graph for details.
       </p>
   </div>
-
+  </div>
   <div class="mermaid">
     graph TB
 
@@ -112,6 +118,7 @@
 
 
   <h2>Node as a member of a section</h2>
+  <div class=description>
   <p>Once a node has joined a section, they need to be ready to take on multiple roles simultaneously:<br>
   <ul>
     <li> Deal with relocation:<br>
@@ -121,6 +128,7 @@
   All of these flows are happening simultaneously, but they share a common event loop. At any time, either all flows or all but one flows  must be in a "wait" state.<br>
   If our section decides to relocates us, we will have to stop functioning as a member of our section and go back to the previous flow where we will "Rebootstrap" so we can become a member of a different section.
   </p>
+  </div>
   <div class="mermaid">
     graph TB
     style StartTopMember fill:#f9f,stroke:#333,stroke-width:4px
@@ -151,9 +159,12 @@
 </div>
 
   <h1>Destination section</h1>
+  <div class=description>
   <p>As a member of a section, our section will sometimes receive a node that is being relocated. These  diagrams are from the point of view of one of the nodes in the section, doing its part to handle the node that is trying to relocate to this section.
   </p>
+  </div>
   <h2>Deciding when to accept an incoming relocation</h2>
+  <div class=description>
   <p>This flow represents what we do when a section contacts us to relocate one of their nodes to our section.<br>
   The process starts as we receive an ExpectCandidate RPC from this node.<br>
   We vote for it in PARSEC to be sure all members of the section process it in the same order.<br>
@@ -203,6 +214,7 @@
     <p>If we are ready to accept an incoming node and we reach consensus on ParsecExpectCandidate, we will execute this flow to make them pass resource proof.<br>
     See AcceptAsCandidate diagram for details.
     </p>
+  </div>
   </div>
   <div class="mermaid">
       graph TB
@@ -263,6 +275,7 @@
   </div>
 
   <h2>Resource proof from a destination's point of view</h2>
+  <div class=description>
   <p>In the previous diagram, we ensured an incoming candidate would only be processed for resource_proof if we are the best fit we know and we are not currently processing another node.<br>
   This leads us here: to the resource proof.<br>
   We will first add this node to our peer_list with the sate ResourceProof and send a RelocateResponse to the source section.<br>
@@ -284,6 +297,7 @@
     <p>Once we've voted a node online, we don't care to handle further ResourceProofResponses from them.<br>
     This local variable helps us with this.
     </p>
+  </div>
   </div>
   <div class="mermaid">
       graph TB
@@ -331,11 +345,14 @@
   </div>
 
   <h1>Source section</h1>
+  <div class=description>
   <p>As members of a section, each node must keep track of how many "work units" other nodes have performed.<br>
       Once a node has done accumulated enough work units to gain age, the section must work together to relocate that node to a new section where they can become 1 age unit older.<br>
       These diagrams detail how this happens.
   </p>
+  </div>
   <h2>Deciding that a member of our section should be relocated away</h2>
+  <div class=description>
   <p>In these diagrams, we are modeling the simple version of node ageing that we decided to implement for Fleming:<br>
   Work units are incremented for all nodes in the section every time a timeout reaches consenus. Because a quorum of elders must have voted for this timeout, the malicious nodes can't arbitrarily speed up the ageing of their nodes.<br>
   Once a node has accumulated enough work units to be relocated, if they're a non-elder adult node, we will enter TryRelocating to attempt relocating them away from our section. If they are an elder node, we will first wait for the Adult/Elder promotion/demotion flow to kick in and demote them to an adult. This will happen because we changed their state from Online to Relocating, which means that they will get demoted.<br>
@@ -396,6 +413,7 @@
     <p>Exactly one of these events should reach consensus, and it must be handled in TryRelocating as the "Wait" in there has a higher priority than the one in this flow.<br>
     If we ever see consensus for one of these here, we know there is a bug; so we can panic.
     </p>
+  </div>
   </div>
   <div class="mermaid">
       graph TB
@@ -469,6 +487,7 @@
   </div>
 
   <h2>Relocating a member of our section away from it</h2>
+  <div class=description>
   <p>At this stage, we have decided that one of our section members should be relocated. The process is quite simple: we send an ExpectCandidate RPC to the destination section. That section will eventually either pass the node to a section with a shorter prefix, send us a RefuseCandidate RPC or eventually send us a RelocateResponse RPC. If the destination picked another section with a shorter prefix, that section will send us one of these RPCs (or suggest another section with a shorter prefix, but this recursion will end at some point).<br>
   All in all, we have the certainty that eventually, exactly one of these two RPCs will make it to our section.<br>
   When it does, it will be voted in PARSEC, regardless of the order of operations (see previous diagram), so it will eventually make it through PARSEC.<br>
@@ -476,6 +495,7 @@
   If they accepted the node and sent us a RelocateResponse RPC, so the ParsecRelocateResponse event reached consensus, we will send to the node that is being relocated the RelocatedInfo the will need.<br>
   At this point, we may purge their information since this node isn't a member of our section anymore.
   </p>
+  </div>
   <div class="mermaid">
       graph TB
 
@@ -504,12 +524,14 @@
 
   <h1>Elder-only</h1>
   <h2>Process for Adult/Elder promotion and demotion including merge</h2>
+  <div class=description>
   <p>This flow updates the elder status of our section nodes if needed.<br/>
      Because it is interlinked, it also handles merging section: When merging, no elder change can happen.<br/>
      However other flows continue, so relocating to and from the section is uninterupted:<br/>
      We have to be careful that the section follows up on relocation once merged, so we may want to avoid active relocation when merging.
   </p>
 
+  </div>
   <div class="mermaid">
       graph TB
       CheckAndProcessElderChange["StartCheckAndProcessElderMergeChange:<br/>No exit - Need Killed"]
@@ -579,9 +601,11 @@
   </div>
 
   <h2>Process Adult/Elder promotion and demotion needed from last check</h2>
+  <div class=description>
   <p>Vote for Add for new elders, Remove for no longer elders and NewSectionInfo<br/>
      This handles any change, it does not care whether one or all elders are changed, this is decided by the calling function.
  </p>
+  </div>
   <div class="mermaid">
       graph TB
       ProcessElderChange["ProcessElderChange<br/>(Take elder changes)"]
@@ -614,6 +638,7 @@
   </div>
 
   <h2>ProcessMerge Sub-routine</h2>
+  <div class=description>
   <p>Vote for ParsecOurMerge, and take over handling any ParsecNeighbourMerge.<br/>
      Complete when one merge has completed, and a NewSectionInfo is consensused.<br/>
      If Multi stage merges are required, they will require calling this function again<br/>
@@ -622,6 +647,7 @@
      has_sibling_merge_info: Did we store the neighbour's merge info for our sibling<br/>
      merge_sibling_info_to_new_section: Remove the stored sibling's merge info and return the NewSectionInfo.<br/>
   </p>
+  </div>
   <div class="mermaid">
       graph TB
       ProcessMerge["ProcessMerge<br/>"]
@@ -665,6 +691,8 @@
   </div>
 
   <h2>CheckOnlineOffline Sub-routine</h2>
+  <div class=description>
+  </div>
   <div class="mermaid">
       graph TB
       CheckOnlineOffline["CheckOnlineOffline:<br/>No exit - Need Killed"]
@@ -702,9 +730,11 @@
   <h1>Elders and adults</h1>
 
   <h2>Becoming a full member of a section</h2>
+  <div class=description>
   This is from the point of view of a node trying to join a section as a full member.<br/>
   This node is going to perform the resource proof until it receive a NodeApproval RPC to complete this stage successfully.<br/>
   If the node is not accepted, after time out, it will try another section.
+  </div>
   <div class="mermaid">
     graph TB
     JoiningRelocateCandidate -->  InitialSendConnectionInfoRequest
