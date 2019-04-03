@@ -14,7 +14,7 @@ use crate::{
     cache::Cache,
     chain::{
         Chain, ExpectCandidatePayload, GenesisPfxInfo, NetworkEvent, OnlinePayload, PrefixChange,
-        PrefixChangeOutcome, Proof, ProofSet, ProvingSection, SectionInfo,
+        PrefixChangeOutcome, ProofSet, ProvingSection, SectionInfo,
     },
     config_handler,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
@@ -492,8 +492,7 @@ impl Elder {
     /// message, handles it.
     fn handle_message_signature(
         &mut self,
-        digest: Digest256,
-        sig: Signature,
+        msg: SignedRoutingMessage,
         pub_id: PublicId,
     ) -> Result<(), RoutingError> {
         if !self.peer_mgr.get_peer(&pub_id).map_or(false, Peer::is_node) {
@@ -505,10 +504,9 @@ impl Elder {
         }
 
         let min_section_size = self.min_section_size();
-        let proof = Proof { sig, pub_id };
-        if let Some((signed_msg, _)) =
-            self.sig_accumulator
-                .add_proof(min_section_size, digest, proof)
+        if let Some(signed_msg) = self
+            .sig_accumulator
+            .add_proof(min_section_size, msg.clone())
         {
             // we accumulated the message, so now we act as the last hop
             let hop = *self.name();
@@ -1817,7 +1815,7 @@ impl Base for Elder {
 
         use crate::messages::DirectMessage::*;
         match msg {
-            MessageSignature(digest, sig) => self.handle_message_signature(digest, sig, pub_id)?,
+            MessageSignature(msg) => self.handle_message_signature(msg, pub_id)?,
             BootstrapRequest => {
                 if let Err(error) = self.handle_bootstrap_request(pub_id) {
                     warn!(
@@ -2007,9 +2005,9 @@ impl Bootstrapped for Elder {
         ) {
             if target == *self.name() {
                 let min_section_size = self.min_section_size();
-                if let Some((mut msg, _)) =
-                    self.sig_accumulator
-                        .add_message(signed_msg.clone(), min_section_size, 0)
+                if let Some(mut msg) = self
+                    .sig_accumulator
+                    .add_proof(min_section_size, signed_msg.clone())
                 {
                     if self.in_authority(&msg.routing_message().dst) {
                         self.handle_signed_message(msg, target)?;
@@ -2019,10 +2017,10 @@ impl Bootstrapped for Elder {
                 }
             } else {
                 if let Some(&pub_id) = self.peer_mgr.get_pub_id(&target) {
-                    let direct_msg = signed_msg
-                        .routing_message()
-                        .to_signature(self.full_id.signing_private_key())?;
-                    self.send_direct_message(&pub_id, direct_msg);
+                    self.send_direct_message(
+                        &pub_id,
+                        DirectMessage::MessageSignature(signed_msg.clone()),
+                    );
                 } else {
                     return Err(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer));
                 }

@@ -32,9 +32,7 @@ use hex_fmt::HexFmt;
 use itertools::Itertools;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-#[cfg(test)]
-use safe_crypto::Signature;
-use safe_crypto::{self, SecretSignKey};
+use safe_crypto::{self, SecretSignKey, Signature};
 use std::{
     collections::{BTreeMap, BTreeSet, HashSet},
     fmt::{self, Debug, Formatter},
@@ -362,12 +360,17 @@ impl RoutingMessage {
         self.content.priority()
     }
 
-    /// Returns a `DirectMessage::MessageSignature` for this message.
-    pub fn to_signature(&self, signing_key: &SecretSignKey) -> Result<DirectMessage> {
+    /// Returns the message hash
+    pub fn hash(&self) -> Result<Digest256> {
         let serialised_msg = serialise(self)?;
-        let hash = safe_crypto::hash(&serialised_msg);
+        Ok(safe_crypto::hash(&serialised_msg))
+    }
+
+    /// Returns a signature for this message.
+    pub fn to_signature(&self, signing_key: &SecretSignKey) -> Result<Signature> {
+        let serialised_msg = serialise(self)?;
         let sig = signing_key.sign_detached(&serialised_msg);
-        Ok(DirectMessage::MessageSignature(hash, sig))
+        Ok(sig)
     }
 }
 
@@ -819,15 +822,15 @@ mod tests {
         assert_eq!(signed_msg.signatures.len(), 1);
 
         // Try to add a signature which will not correspond to an ID from the sending nodes.
-        let irrelevant_sig = match unwrap!(signed_msg
+        let irrelevant_sig = match signed_msg
             .routing_message()
-            .to_signature(irrelevant_full_id.signing_private_key()))
+            .to_signature(irrelevant_full_id.signing_private_key())
         {
-            DirectMessage::MessageSignature(_, sig) => {
+            Ok(sig) => {
                 signed_msg.add_signature(*irrelevant_full_id.public_id(), sig);
                 sig
             }
-            msg => panic!("Unexpected message: {:?}", msg),
+            err => panic!("Unexpected error: {:?}", err),
         };
         assert_eq!(signed_msg.signatures.len(), 1);
         assert!(!signed_msg
@@ -837,16 +840,14 @@ mod tests {
 
         // Add a valid signature for IDs 1 and 2 and an invalid one for ID 3
         for full_id in &[full_id_1, full_id_2] {
-            match unwrap!(signed_msg
+            match signed_msg
                 .routing_message()
-                .to_signature(full_id.signing_private_key()))
+                .to_signature(full_id.signing_private_key())
             {
-                DirectMessage::MessageSignature(hash, sig) => {
-                    let serialised_msg = unwrap!(serialise(signed_msg.routing_message()));
-                    assert_eq!(hash, safe_crypto::hash(&serialised_msg));
+                Ok(sig) => {
                     signed_msg.add_signature(*full_id.public_id(), sig);
                 }
-                msg => panic!("Unexpected message: {:?}", msg),
+                err => panic!("Unexpected error: {:?}", err),
             }
         }
 
