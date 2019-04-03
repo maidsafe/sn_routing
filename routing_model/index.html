@@ -45,27 +45,27 @@
 
   <h2>Node's entire lifetime</h2>
   <div class=description>
-  <p>This section describes the flow a node will follow during its entire lifetime.<br>
-  When they join the network, they won't yet be a member of any section.<br>
-  First,they will have to bootstrap with their proxy node, receive a RelocateInfo and attempt to join the section that this RelocateInfo is pointing to.<br>
+  <p>This section describes the flow a node will follow during its entire lifetime.<br/>
+  When they join the network, they won't yet be a member of any section.<br/>
+  First,they will have to bootstrap with their proxy node, receive a RelocateInfo and attempt to join the section that this RelocateInfo is pointing to.<br/>
   Once they have a full section, they will be able to operate as a full section member.
   </p>
   <button class="collapsible">OWN_SECTION</button>
   <div class="content">
-      <p> OWN_SECTION refers to this node's own section.<br>
-      It is an Option&ltPrefix&gt.<br>
+      <p> OWN_SECTION refers to this node's own section.<br/>
+      It is an Option&ltPrefix&gt.<br/>
       While a node is being relocated, the value will be none. Once they get accepted into a section, it becomes Some(that_section_s_prefix)
   </p>
   </div>
   <button class="collapsible">BootstrapAndRelocate</button>
   <div class="content">
-      <p>This function gets called when a node just joined the Network.<br>
+      <p>This function gets called when a node just joined the Network.<br/>
       At this stage, we are connected to a proxy node and they indicate to us which section we should join.
       </p>
   </div>
   <button class="collapsible">StartTopMember</button>
   <div class="content">
-      <p>Once a node has joined a section (indicated by OWN_SECTION.is_some()), they will be able to perform as a member of that section until they are relocated away from it.<br>
+      <p>Once a node has joined a section (indicated by OWN_SECTION.is_some()), they will be able to perform as a member of that section until they are relocated away from it.<br/>
       See StartTopMember graph for details.
       </p>
   </div>
@@ -77,9 +77,9 @@
   </div>
   <button class="collapsible">JoiningRelocateCandidate</button>
   <div class="content">
-      <p>Once a node knows where to be relocated, they will follow this flow to become a full member of the section.<br>
-      This covers resource proof from the point of view of the node being resource-proofed.<br>
-      The output of this function is an Option. If we fail resource proof, it is none, which means we will have to bootstrap again. If it is Some, it contains the RelocateInfo we need to join this section.<br>
+      <p>Once a node knows where to be relocated, they will follow this flow to become a full member of the section.<br/>
+      This covers resource proof from the point of view of the node being resource-proofed.<br/>
+      The output of this function is an Option. If we fail resource proof, it is none, which means we will have to bootstrap again. If it is Some, it contains the RelocateInfo we need to join this section.<br/>
     See JoiningRelocateCandidate graph for details.
       </p>
   </div>
@@ -119,13 +119,13 @@
 
   <h2>Node as a member of a section</h2>
   <div class=description>
-  <p>Once a node has joined a section, they need to be ready to take on multiple roles simultaneously:<br>
+  <p>Once a node has joined a section, they need to be ready to take on multiple roles simultaneously:<br/>
   <ul>
-    <li> Deal with relocation:<br>
+    <li> Deal with relocation:<br/>
          The section as a whole will sometimes act as the source and sometimes as the destination of relocations. This means nodes will sometimes relocate away from this section and sometimes relocate to this section. Nodes in this section will need to perform the right flow to deal with both of these situations.
     <li> Decide who's an elder or a plain old adult
   </ul>
-  All of these flows are happening simultaneously, but they share a common event loop. At any time, either all flows or all but one flows  must be in a "wait" state.<br>
+  All of these flows are happening simultaneously, but they share a common event loop. At any time, either all flows or all but one flows  must be in a "wait" state.<br/>
   If our section decides to relocates us, we will have to stop functioning as a member of our section and go back to the previous flow where we will "Rebootstrap" so we can become a member of a different section.
   </p>
   </div>
@@ -165,53 +165,53 @@
   </div>
   <h2>Deciding when to accept an incoming relocation</h2>
   <div class=description>
-  <p>This flow represents what we do when a section contacts us to relocate one of their nodes to our section.<br>
-  The process starts as we receive an ExpectCandidate RPC from this node.<br>
-  We vote for it in PARSEC to be sure all members of the section process it in the same order.<br>
-  Once it reaches consensus, we are ready to process that candidate by letting them perform the resource_proof (see AcceptAsCandidate).<br>
+  <p>This flow represents what we do when a section contacts us to relocate one of their nodes to our section.<br/>
+  The process starts as we receive an ExpectCandidate RPC from this node.<br/>
+  We vote for it in PARSEC to be sure all members of the section process it in the same order.<br/>
+  Once it reaches consensus, we are ready to process that candidate by letting them perform the resource_proof (see AcceptAsCandidate).<br/>
   There are some subtleties, such as the fact that we only want to process one candidate at a time, but this is the general idea.
   </p>
   <button class="collapsible">RPC: ExpectCandidate</button>
   <div class="content">
-    <p>We receive this RPC from a section that wants to relocate a node to our section.<br>
-    The node is not communicating with us yet, only once we sent RelocateResponse RPC to the originating section.<br>
-    On receiving it, we vote for ParsecExpectCandidate to process it in the same order as other members of our section.<br>
-    It kickstarts the entire chain of events in this diagram.<br>
+    <p>We receive this RPC from a section that wants to relocate a node to our section.<br/>
+    The node is not communicating with us yet, only once we sent RelocateResponse RPC to the originating section.<br/>
+    On receiving it, we vote for ParsecExpectCandidate to process it in the same order as other members of our section.<br/>
+    It kickstarts the entire chain of events in this diagram.<br/>
     Note that we could also see consensus on ParsecExpectCandidate before we ourselves voted for it in PARSEC, as long as enough members of our section did.
     </p>
   </div>
-  <button class="collapsible">RPC: ResourceProofResponse/<br>CandidateInfo</button>
+  <button class="collapsible">RPC: ResourceProofResponse/<br/>CandidateInfo</button>
   <div class="content">
-  <p>These RPCs should generally be handled during resource proof, in AcceptAsCandidate.<br>
-  It could be that they reach us before we are ready to receive them. For instance, because although enough other nodes got consensus on ParsecExpectCandidate, I'm still a bit behind.<br>
+  <p>These RPCs should generally be handled during resource proof, in AcceptAsCandidate.<br/>
+  It could be that they reach us before we are ready to receive them. For instance, because although enough other nodes got consensus on ParsecExpectCandidate, I'm still a bit behind.<br/>
   It's OK to discard the RPC in this case as the node who aims to be relocated here will perceive this as a timeout from our end and resend later.
   </p>
   </div>
-  <button class="collapsible">ParsecOnline<br>ParsecPurgeCandidate</button>
+  <button class="collapsible">ParsecOnline<br/>ParsecPurgeCandidate</button>
   <div class=content>
-    <p>These consensus outputs were voted for in AcceptAsCandidate.<br>
-    The same node could be accepted by some nodes who would vote ParsecOnline, but also time out for some other nodes who would vote for ParsecPurgeCandidate.<br>
-    If it's the case, we only want to process the first of these two events and discard the other one.<br>
+    <p>These consensus outputs were voted for in AcceptAsCandidate.<br/>
+    The same node could be accepted by some nodes who would vote ParsecOnline, but also time out for some other nodes who would vote for ParsecPurgeCandidate.<br/>
+    If it's the case, we only want to process the first of these two events and discard the other one.<br/>
     Because the "Wait for 2" loop in AcceptAsCandidate has higher precendence than the "Wait for 1" loop in this one, this is exactly what will happen.
     </p>
   </div>
   <button class="collapsible">shorter_prefix_section</button>
   <div class="content">
-    <p>If we know of a section that has a shorter prefix than ours, we prefer for them to receive this incoming node rather than ourselves as it will help keep the Network's sections tree balanced.<br>
-    This shorter_prefix_section is a function that will return None if we are the shortest of any section we know, Some if there is a better candidate.<br>
+    <p>If we know of a section that has a shorter prefix than ours, we prefer for them to receive this incoming node rather than ourselves as it will help keep the Network's sections tree balanced.<br/>
+    This shorter_prefix_section is a function that will return None if we are the shortest of any section we know, Some if there is a better candidate.<br/>
     If it is Some, we will relay the RPC to them instead of accepting the rellocation to our own section.
     </p>
   </div>
   <button class="collapsible">PROCESSING_CANDIDATE</button>
   <div class="content">
-    <p>We want to accept at most one incoming relocation at a time into our section.<br>
-    The local variable: PROCESSING_CANDIDATE indicates whether someone is already passing the resource proof process, so we can't accept anyone else for now.<br>
+    <p>We want to accept at most one incoming relocation at a time into our section.<br/>
+    The local variable: PROCESSING_CANDIDATE indicates whether someone is already passing the resource proof process, so we can't accept anyone else for now.<br/>
     When PROCESSING_CANDIDATE is true and we reach consensus on ParsecExpectCandidate, we send a RefuseCandidate RPC to the would-be-incoming-node so they can try another section or try again later.
     </p>
   </div>
   <button class="collapsible">AcceptAsCandidate</button>
   <div class="content">
-    <p>If we are ready to accept an incoming node and we reach consensus on ParsecExpectCandidate, we will execute this flow to make them pass resource proof.<br>
+    <p>If we are ready to accept an incoming node and we reach consensus on ParsecExpectCandidate, we will execute this flow to make them pass resource proof.<br/>
     See AcceptAsCandidate diagram for details.
     </p>
   </div>
@@ -276,25 +276,25 @@
 
   <h2>Resource proof from a destination's point of view</h2>
   <div class=description>
-  <p>In the previous diagram, we ensured an incoming candidate would only be processed for resource_proof if we are the best fit we know and we are not currently processing another node.<br>
-  This leads us here: to the resource proof.<br>
-  We will first add this node to our peer_list with the sate ResourceProof and send a RelocateResponse to the source section.<br>
-  This will let them know we are ready to process them.<br>
-  They will then send their CandidateInfo to everyone in our section.<br>
-  On receiving a valid CandidateInfo, I will send them a ResourceProof RPC. This gives them the "problem to solve". As they solve it, they will send me ResourceProofResponses. These will be parts of the proof. On receiving valid parts, I must send a ResourceProofReceipt. Once they finally send me the last valid part, they passed their resource proof and I vote for ParsecOnline (essentially accepting them as a member of my section).<br>
-  At any time during this process, they may timeout, in which case I will decided to reject them and vote for ParsecPurgeCandidate.<br>
-  This process ends once I reach consensus on either accepting or the candidate (ParsecOnline) or refusing them (ParsecPurgeCandidate).<br>
+  <p>In the previous diagram, we ensured an incoming candidate would only be processed for resource_proof if we are the best fit we know and we are not currently processing another node.<br/>
+  This leads us here: to the resource proof.<br/>
+  We will first add this node to our peer_list with the sate ResourceProof and send a RelocateResponse to the source section.<br/>
+  This will let them know we are ready to process them.<br/>
+  They will then send their CandidateInfo to everyone in our section.<br/>
+  On receiving a valid CandidateInfo, I will send them a ResourceProof RPC. This gives them the "problem to solve". As they solve it, they will send me ResourceProofResponses. These will be parts of the proof. On receiving valid parts, I must send a ResourceProofReceipt. Once they finally send me the last valid part, they passed their resource proof and I vote for ParsecOnline (essentially accepting them as a member of my section).<br/>
+  At any time during this process, they may timeout, in which case I will decided to reject them and vote for ParsecPurgeCandidate.<br/>
+  This process ends once I reach consensus on either accepting or the candidate (ParsecOnline) or refusing them (ParsecPurgeCandidate).<br/>
   These payloads are Opaque, which means that consensus may be reached without a quorum on either of these. For that reason, it is possible that both reach consensus, in which case the second one will be discarded in the flow above. It won't cause issues as consistency is the only property that matters here: if we accept someone who then went Offline, we will be able to detect they are Offline later with the standard Offline detection mechanism.
   </p>
   <button class="collapsible">GOT_CANDIDATE_INFO</button>
   <div class="content">
-    <p>We only want to receive CandidateInfo once and we can't verify a ResourceProofResponse without knowing the CandidateInfo.<br>
+    <p>We only want to receive CandidateInfo once and we can't verify a ResourceProofResponse without knowing the CandidateInfo.<br/>
     The local variable: GOT_CANDIDATE_INFO helps us stay on top of this.
     </p>
   </div>
   <button class="collapsible">VOTED_ONLINE</button>
   <div class="content">
-    <p>Once we've voted a node online, we don't care to handle further ResourceProofResponses from them.<br>
+    <p>Once we've voted a node online, we don't care to handle further ResourceProofResponses from them.<br/>
     This local variable helps us with this.
     </p>
   </div>
@@ -346,71 +346,71 @@
 
   <h1>Source section</h1>
   <div class=description>
-  <p>As members of a section, each node must keep track of how many "work units" other nodes have performed.<br>
-      Once a node has done accumulated enough work units to gain age, the section must work together to relocate that node to a new section where they can become 1 age unit older.<br>
+  <p>As members of a section, each node must keep track of how many "work units" other nodes have performed.<br/>
+      Once a node has done accumulated enough work units to gain age, the section must work together to relocate that node to a new section where they can become 1 age unit older.<br/>
       These diagrams detail how this happens.
   </p>
   </div>
   <h2>Deciding that a member of our section should be relocated away</h2>
   <div class=description>
-  <p>In these diagrams, we are modeling the simple version of node ageing that we decided to implement for Fleming:<br>
-  Work units are incremented for all nodes in the section every time a timeout reaches consenus. Because a quorum of elders must have voted for this timeout, the malicious nodes can't arbitrarily speed up the ageing of their nodes.<br>
-  Once a node has accumulated enough work units to be relocated, if they're a non-elder adult node, we will enter TryRelocating to attempt relocating them away from our section. If they are an elder node, we will first wait for the Adult/Elder promotion/demotion flow to kick in and demote them to an adult. This will happen because we changed their state from Online to Relocating, which means that they will get demoted.<br>
+  <p>In these diagrams, we are modeling the simple version of node ageing that we decided to implement for Fleming:<br/>
+  Work units are incremented for all nodes in the section every time a timeout reaches consenus. Because a quorum of elders must have voted for this timeout, the malicious nodes can't arbitrarily speed up the ageing of their nodes.<br/>
+  Once a node has accumulated enough work units to be relocated, if they're a non-elder adult node, we will enter TryRelocating to attempt relocating them away from our section. If they are an elder node, we will first wait for the Adult/Elder promotion/demotion flow to kick in and demote them to an adult. This will happen because we changed their state from Online to Relocating, which means that they will get demoted.<br/>
   Also of note: we will only be actively relocating at most one node away from our section at a time.
   </p>
   <button class="collapsible">WorkUnitTimeout</button>
   <div class="content">
-    <p>In the context of Fleming, nodes (especially adults) aren't doing meaningful work such as handling data.<br>
-    As a proxy, we use a time based metric to estimate how much work nodes have done (i.e: how long they remained Online and responsive).<br>
-    A local timeout wouldn't do here as it would allow malicious nodes to artificially age nodes in their sections faster. However, by reaching quorum on the fact a timeout happened, we ensure that at least one honest node has voted for the timeout.<br>
+    <p>In the context of Fleming, nodes (especially adults) aren't doing meaningful work such as handling data.<br/>
+    As a proxy, we use a time based metric to estimate how much work nodes have done (i.e: how long they remained Online and responsive).<br/>
+    A local timeout wouldn't do here as it would allow malicious nodes to artificially age nodes in their sections faster. However, by reaching quorum on the fact a timeout happened, we ensure that at least one honest node has voted for the timeout.<br/>
     All nodes start the WorkUnitTimeout. On expiry, they vote for a WorkUnitIncrement in PARSEC and restart the timer.
     </p>
   </div>
   <button class="collapsible">increment_nodes_work_units</button>
   <div class="content">
-    <p>This function increments the number of work units for all members of my peer_list (remember that n_work_units is a member of the PeerState struct).<br>
+    <p>This function increments the number of work units for all members of my peer_list (remember that n_work_units is a member of the PeerState struct).<br/>
     </p>
   </div>
   <button class="collapsible">RELOCATING</button>
   <div class="content">
-    <p>RELOCATING is an Option&ltPublicId&gt. It represents the node that we decided to relocate next, if any. It could be an elder, but if it is, we will only change the state of that node rather than immediately relocate it.<br>
+    <p>RELOCATING is an Option&ltPublicId&gt. It represents the node that we decided to relocate next, if any. It could be an elder, but if it is, we will only change the state of that node rather than immediately relocate it.<br/>
     If we reach consensus on a WorkUnitIncrement while RELOCATING.is_some() - or in other words, while we are already relocating a node away from this section - we simply discard the PARSEC event. It will be dealt with later, after at least one more WorkUnitTimeout.
     </p>
   </div>
   <button class="collapsible">get_node_to_relocate</button>
   <div class="content">
-    <p>This function will return the best candidate for relocation, if any.<br>
-    First, if any member of our peer_list has the state: RelocatingState, Some(them) will be returned.<br>
-    This helps ensure we aren't relocating multiple nodes at the same time if we have to wait for an elder to be demoted.<br>
+    <p>This function will return the best candidate for relocation, if any.<br/>
+    First, if any member of our peer_list has the state: RelocatingState, Some(them) will be returned.<br/>
+    This helps ensure we aren't relocating multiple nodes at the same time if we have to wait for an elder to be demoted.<br/>
     If none of the nodes in our peer_list have that state, it can return for instance the node with the largest number of work units for which the number of work units is greater than 2^age.
     </p>
   </div>
   <button class="collapsible">set_node_state</button>
   <div class="content">
-    <p>This function mutates our peer_list to set the state: RelocatingState for the node: RELOCATING.<br>
-    inputs:<br>
-    - RELOCATING<br>
-    - state<br>
-    side-effect:<br>
+    <p>This function mutates our peer_list to set the state: RelocatingState for the node: RELOCATING.<br/>
+    inputs:<br/>
+    - RELOCATING<br/>
+    - state<br/>
+    side-effect:<br/>
     - mutates peer_list
     </p>
   </div>
   <button class="collapsible">TryRelocating</button>
   <div class="content">
-    <p>The flow a section follow to relocate one of its adult nodes away from itself.<br>
+    <p>The flow a section follow to relocate one of its adult nodes away from itself.<br/>
     See next diagram for details.
     </p>
   </div>
-  <button class="collapsible">RefuseCandidate/<br>RelocateResponse</button>
+  <button class="collapsible">RefuseCandidate/<br/>RelocateResponse</button>
   <div class="content">
-    <p>Exactly one of these RPCs will be sent to us from the destination section as a response to our section's ExpectCandidate RPC (see TryRelocating for more context).<br>
-    These must be handled here as it is possible that one of the nodes sees this event reach consensus before they were aware that an ExpectCandidate RPC was sent from our section to the destination.<br>
+    <p>Exactly one of these RPCs will be sent to us from the destination section as a response to our section's ExpectCandidate RPC (see TryRelocating for more context).<br/>
+    These must be handled here as it is possible that one of the nodes sees this event reach consensus before they were aware that an ExpectCandidate RPC was sent from our section to the destination.<br/>
     When this happens, we will immediately vote for it in PARSEC as we need to act in the same order as anyone else in our section.
     </p>
   </div>
-  <button class="collapsible">ParsecRefuseCandidate/<br>ParsecRelocateResponse</button>
+  <button class="collapsible">ParsecRefuseCandidate/<br/>ParsecRelocateResponse</button>
   <div class="content">
-    <p>Exactly one of these events should reach consensus, and it must be handled in TryRelocating as the "Wait" in there has a higher priority than the one in this flow.<br>
+    <p>Exactly one of these events should reach consensus, and it must be handled in TryRelocating as the "Wait" in there has a higher priority than the one in this flow.<br/>
     If we ever see consensus for one of these here, we know there is a bug; so we can panic.
     </p>
   </div>
@@ -488,11 +488,11 @@
 
   <h2>Relocating a member of our section away from it</h2>
   <div class=description>
-  <p>At this stage, we have decided that one of our section members should be relocated. The process is quite simple: we send an ExpectCandidate RPC to the destination section. That section will eventually either pass the node to a section with a shorter prefix, send us a RefuseCandidate RPC or eventually send us a RelocateResponse RPC. If the destination picked another section with a shorter prefix, that section will send us one of these RPCs (or suggest another section with a shorter prefix, but this recursion will end at some point).<br>
-  All in all, we have the certainty that eventually, exactly one of these two RPCs will make it to our section.<br>
-  When it does, it will be voted in PARSEC, regardless of the order of operations (see previous diagram), so it will eventually make it through PARSEC.<br>
-  If they refused our candidate, our job ends there: the candidate will simply be a candidate for relocation again later, so we will try to relocate it then.<br>
-  If they accepted the node and sent us a RelocateResponse RPC, so the ParsecRelocateResponse event reached consensus, we will send to the node that is being relocated the RelocatedInfo the will need.<br>
+  <p>At this stage, we have decided that one of our section members should be relocated. The process is quite simple: we send an ExpectCandidate RPC to the destination section. That section will eventually either pass the node to a section with a shorter prefix, send us a RefuseCandidate RPC or eventually send us a RelocateResponse RPC. If the destination picked another section with a shorter prefix, that section will send us one of these RPCs (or suggest another section with a shorter prefix, but this recursion will end at some point).<br/>
+  All in all, we have the certainty that eventually, exactly one of these two RPCs will make it to our section.<br/>
+  When it does, it will be voted in PARSEC, regardless of the order of operations (see previous diagram), so it will eventually make it through PARSEC.<br/>
+  If they refused our candidate, our job ends there: the candidate will simply be a candidate for relocation again later, so we will try to relocate it then.<br/>
+  If they accepted the node and sent us a RelocateResponse RPC, so the ParsecRelocateResponse event reached consensus, we will send to the node that is being relocated the RelocatedInfo the will need.<br/>
   At this point, we may purge their information since this node isn't a member of our section anymore.
   </p>
   </div>
