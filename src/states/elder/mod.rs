@@ -1527,7 +1527,7 @@ impl Elder {
             let conn_peers = self.connected_peers();
             let targets: BTreeSet<_> = self
                 .chain
-                .targets(&routing_msg.dst, *exclude, 0, &conn_peers)?
+                .targets(&routing_msg.dst, *exclude, &conn_peers)?
                 .into_iter()
                 .collect();
             Ok(self.peer_mgr.get_pub_ids(&targets).into_iter().collect())

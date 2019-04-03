@@ -240,13 +240,13 @@ impl Network {
 
     /// Verifies that a message sent from node `src` would arrive at destination `dst` via the
     /// given `route`.
-    fn send_message(&self, src: u64, dst: Authority<u64>, route: usize) {
+    fn send_message(&self, src: u64, dst: Authority<u64>) {
         let mut received = Vec::new(); // These nodes have received but not handled the message.
         let mut handled = BTreeSet::new(); // These nodes have received and handled the message.
         received.push(src);
         while let Some(node) = received.pop() {
             let _ = handled.insert(node); // `node` is now handling the message and relaying it.
-            for target in unwrap!(self.nodes[&node].targets(&dst, src, route)) {
+            for target in unwrap!(self.nodes[&node].targets(&dst, src)) {
                 if !handled.contains(&target) && !received.contains(&target) {
                     received.push(target);
                 }
@@ -294,9 +294,7 @@ fn node_to_node_message() {
     for _ in 0..20 {
         let src = *unwrap!(network.rng.choose(&keys));
         let dst = *unwrap!(network.rng.choose(&keys));
-        for route in 0..network.min_section_size {
-            network.send_message(src, Authority::ManagedNode(dst), route);
-        }
+        network.send_message(src, Authority::ManagedNode(dst));
     }
 }
 
@@ -310,9 +308,7 @@ fn node_to_section_message() {
     for _ in 0..20 {
         let src = *unwrap!(network.rng.choose(&keys));
         let dst = network.rng.gen();
-        for route in 0..network.min_section_size {
-            network.send_message(src, Authority::Section(dst), route);
-        }
+        network.send_message(src, Authority::Section(dst));
     }
 }
 

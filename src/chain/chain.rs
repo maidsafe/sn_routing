@@ -1039,39 +1039,6 @@ impl Chain {
         (best_pfx, best_si.member_names())
     }
 
-    /// Gets the `route`-th name from a collection of names
-    fn get_routeth_name<'a, U: IntoIterator<Item = &'a XorName>>(
-        names: U,
-        dst_name: &XorName,
-        route: usize,
-    ) -> &'a XorName {
-        let sorted_names = names
-            .into_iter()
-            .sorted_by(|&lhs, &rhs| dst_name.cmp_distance(lhs, rhs));
-        sorted_names[route % sorted_names.len()]
-    }
-
-    /// Returns the `route`-th node in the given section, sorted by distance to `target`
-    fn get_routeth_node(
-        &self,
-        section: &BTreeSet<XorName>,
-        target: XorName,
-        exclude: Option<XorName>,
-        route: usize,
-    ) -> Result<XorName, Error> {
-        let names = if let Some(exclude) = exclude {
-            section.iter().filter(|&x| *x != exclude).collect_vec()
-        } else {
-            section.iter().collect_vec()
-        };
-
-        if names.is_empty() {
-            return Err(Error::CannotRoute);
-        }
-
-        Ok(*Self::get_routeth_name(names, &target, route))
-    }
-
     /// Returns a collection of nodes to which a message for the given `Authority` should be sent
     /// onwards. In all non-error cases below, the returned collection will have the members of
     /// `exclude` removed, possibly resulting in an empty set being returned.
@@ -1079,30 +1046,29 @@ impl Chain {
     /// * If the destination is an `Authority::Section`:
     ///     - if our section is the closest on the network (i.e. our section's prefix is a prefix of
     ///       the destination), returns all other members of our section; otherwise
-    ///     - returns the `route`-th closest member of the RT to the target
+    ///     - returns the `N/3` closest members of the RT to the target
     ///
     /// * If the destination is an `Authority::PrefixSection`:
     ///     - if the prefix is compatible with our prefix and is fully-covered by prefixes in our
     ///       RT, returns all members in these prefixes except ourself; otherwise
     ///     - if the prefix is compatible with our prefix and is *not* fully-covered by prefixes in
     ///       our RT, returns `Err(Error::CannotRoute)`; otherwise
-    ///     - returns the `route`-th closest member of the RT to the lower bound of the target
+    ///     - returns the `N/3` closest members of the RT to the lower bound of the target
     ///       prefix
     ///
     /// * If the destination is a group (`ClientManager`, `NaeManager` or `NodeManager`):
     ///     - if our section is the closest on the network (i.e. our section's prefix is a prefix of
     ///       the destination), returns all other members of our section; otherwise
-    ///     - returns the `route`-th closest member of the RT to the target
+    ///     - returns the `N/3` closest members of the RT to the target
     ///
     /// * If the destination is an individual node (`ManagedNode` or `Client`):
     ///     - if our name *is* the destination, returns an empty set; otherwise
     ///     - if the destination name is an entry in the routing table, returns it; otherwise
-    ///     - returns the `route`-th closest member of the RT to the target
+    ///     - returns the `N/3` closest members of the RT to the target
     pub fn targets(
         &self,
         dst: &Authority<XorName>,
         exclude: XorName,
-        route: usize,
         connected_peers: &[&XorName],
     ) -> Result<BTreeSet<XorName>, Error> {
         let candidates = |target_name: &XorName| {
@@ -1184,8 +1150,12 @@ impl Chain {
                 candidates(&prefix.lower_bound())
             }
         };
-        let target = self.get_routeth_node(&closest_section, dst.name(), Some(exclude), route)?;
-        Ok(iter::once(target).collect())
+        let n = closest_section.len();
+        Ok(closest_section
+            .into_iter()
+            .filter(|&x| x != exclude)
+            .take((n + 2) / 3)
+            .collect())
     }
 
     /// Returns our own section, including our own name.
