@@ -78,17 +78,12 @@ pub enum Message {
 pub struct HopMessage {
     /// Wrapped signed message.
     pub content: SignedRoutingMessage,
-    /// Every node this has already been sent to.
-    pub sent_to: BTreeSet<XorName>,
 }
 
 impl HopMessage {
     /// Wrap `content` for transmission to the next hop and sign it.
-    pub fn new(content: SignedRoutingMessage, sent_to: BTreeSet<XorName>) -> Result<HopMessage> {
-        Ok(HopMessage {
-            content: content,
-            sent_to: sent_to,
-        })
+    pub fn new(content: SignedRoutingMessage) -> Result<HopMessage> {
+        Ok(HopMessage { content: content })
     }
 }
 
@@ -519,7 +514,7 @@ impl Debug for HopMessage {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
             formatter,
-            "HopMessage {{ content: {:?}, sent_to: .., signature: .. }}",
+            "HopMessage {{ content: {:?}, signature: .. }}",
             self.content
         )
     }

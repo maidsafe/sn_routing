@@ -16,7 +16,6 @@ use crate::{
     time::Instant,
     xor_name::XorName,
 };
-use std::collections::BTreeSet;
 
 pub trait BootstrappedNotEstablished: Bootstrapped {
     fn get_proxy_public_id(&self, proxy_name: &XorName) -> Result<&PublicId, RoutingError>;
@@ -74,7 +73,7 @@ pub trait BootstrappedNotEstablished: Bootstrapped {
         let signed_msg = SignedRoutingMessage::new(routing_msg, self.full_id(), None)?;
 
         if !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_pub_id) {
-            let message = self.to_hop_message(signed_msg.clone(), BTreeSet::new())?;
+            let message = self.to_hop_message(signed_msg.clone())?;
             self.send_message(&proxy_pub_id, message);
         }
 

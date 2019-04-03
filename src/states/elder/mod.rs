@@ -512,7 +512,7 @@ impl Elder {
         {
             // we accumulated the message, so now we act as the last hop
             let hop = *self.name();
-            self.handle_signed_message(signed_msg, hop, &BTreeSet::new())?;
+            self.handle_signed_message(signed_msg, hop)?;
         }
         Ok(())
     }
@@ -523,7 +523,6 @@ impl Elder {
         &mut self,
         mut signed_msg: SignedRoutingMessage,
         hop_name: XorName,
-        sent_to: &BTreeSet<XorName>,
     ) -> Result<(), RoutingError> {
         if signed_msg.routing_message().src.is_client() {
             if signed_msg.previous_hop().is_some() {
@@ -564,7 +563,7 @@ impl Elder {
 
             if signed_msg.routing_message().dst.is_multiple() {
                 // Broadcast to the rest of the section.
-                if let Err(error) = self.send_signed_message(&mut signed_msg, &hop_name, sent_to) {
+                if let Err(error) = self.send_signed_message(&mut signed_msg, &hop_name) {
                     debug!("{} Failed to send {:?}: {:?}", self, signed_msg, error);
                 }
             }
@@ -579,7 +578,7 @@ impl Elder {
             return Ok(());
         }
 
-        if let Err(error) = self.send_signed_message(&mut signed_msg, &hop_name, sent_to) {
+        if let Err(error) = self.send_signed_message(&mut signed_msg, &hop_name) {
             debug!("{} Failed to send {:?}: {:?}", self, signed_msg, error);
         }
 
@@ -1392,13 +1391,10 @@ impl Elder {
 
     // Send signed_msg on route. Hop is the name of the peer we received this from, or our name if
     // we are the first sender or the proxy for a client or joining node.
-    //
-    // Don't send to any nodes already sent_to.
     fn send_signed_message(
         &mut self,
         signed_msg: &mut SignedRoutingMessage,
         hop_name: &XorName,
-        sent_to: &BTreeSet<XorName>,
     ) -> Result<(), RoutingError> {
         let dst = signed_msg.routing_message().dst;
 
@@ -1417,15 +1413,10 @@ impl Elder {
             }
         }
 
-        let (new_sent_to, target_pub_ids) =
-            self.get_targets(signed_msg.routing_message(), hop_name, sent_to)?;
+        let target_pub_ids = self.get_targets(signed_msg.routing_message(), hop_name)?;
 
         for target_pub_id in target_pub_ids {
-            self.send_signed_message_to_peer(
-                signed_msg.clone(),
-                &target_pub_id,
-                new_sent_to.clone(),
-            )?;
+            self.send_signed_message_to_peer(signed_msg.clone(), &target_pub_id)?;
         }
         Ok(())
     }
@@ -1434,13 +1425,12 @@ impl Elder {
         &mut self,
         signed_msg: SignedRoutingMessage,
         dst_id: &PublicId,
-        sent_to: BTreeSet<XorName>,
     ) -> Result<(), RoutingError> {
         if self.filter_outgoing_routing_msg(signed_msg.routing_message(), dst_id) {
             return Ok(());
         }
 
-        let message = self.to_hop_message(signed_msg, sent_to)?;
+        let message = self.to_hop_message(signed_msg)?;
         self.send_message(dst_id, message);
         Ok(())
     }
@@ -1458,7 +1448,7 @@ impl Elder {
                 return Ok(());
             }
 
-            let message = self.to_hop_message(signed_msg.clone(), BTreeSet::new())?;
+            let message = self.to_hop_message(signed_msg.clone())?;
             self.send_message(pub_id, message);
             Ok(())
         } else {
@@ -1517,13 +1507,12 @@ impl Elder {
     }
 
     /// Returns a list of target IDs for a message sent via route.
-    /// Names in `sent_to` will be excluded from the result.
+    /// Name in exclude will be excluded from the result.
     fn get_targets(
         &self,
         routing_msg: &RoutingMessage,
         exclude: &XorName,
-        sent_to: &BTreeSet<XorName>,
-    ) -> Result<(BTreeSet<XorName>, Vec<PublicId>), RoutingError> {
+    ) -> Result<Vec<PublicId>, RoutingError> {
         let force_via_proxy = match routing_msg.content {
             MessageContent::ConnectionRequest { pub_id, .. } => {
                 routing_msg.src.is_client() && pub_id == *self.full_id.public_id()
@@ -1540,22 +1529,8 @@ impl Elder {
                 .chain
                 .targets(&routing_msg.dst, *exclude, 0, &conn_peers)?
                 .into_iter()
-                .filter(|target| !sent_to.contains(target))
                 .collect();
-            let new_sent_to = if self.in_authority(&routing_msg.dst) {
-                sent_to
-                    .iter()
-                    .chain(&targets)
-                    .chain(iter::once(self.name()))
-                    .cloned()
-                    .collect()
-            } else {
-                BTreeSet::new()
-            };
-            Ok((
-                new_sent_to,
-                self.peer_mgr.get_pub_ids(&targets).into_iter().collect(),
-            ))
+            Ok(self.peer_mgr.get_pub_ids(&targets).into_iter().collect())
         } else if let Authority::Client {
             ref proxy_node_name,
             ..
@@ -1567,7 +1542,7 @@ impl Elder {
                 .map(Peer::pub_id)
             {
                 if self.peer_mgr.is_connected(pub_id) {
-                    Ok((iter::once(*self.name()).collect(), vec![*pub_id]))
+                    Ok(vec![*pub_id])
                 } else {
                     error!(
                         "{} Unable to find connection to proxy in PeerManager.",
@@ -1936,10 +1911,8 @@ impl Base for Elder {
 
         match hop_name_result {
             Ok(hop_name) => {
-                let HopMessage {
-                    content, sent_to, ..
-                } = msg;
-                self.handle_signed_message(content, hop_name, &sent_to)
+                let HopMessage { content, .. } = msg;
+                self.handle_signed_message(content, hop_name)
                     .map(|()| Transition::Stay)
             }
             Err(RoutingError::ExceedsRateLimit(hash)) => {
@@ -2039,9 +2012,9 @@ impl Bootstrapped for Elder {
                         .add_message(signed_msg.clone(), min_section_size, 0)
                 {
                     if self.in_authority(&msg.routing_message().dst) {
-                        self.handle_signed_message(msg, target, &BTreeSet::new())?;
+                        self.handle_signed_message(msg, target)?;
                     } else {
-                        self.send_signed_message(&mut msg, &target, &BTreeSet::new())?;
+                        self.send_signed_message(&mut msg, &target)?;
                     }
                 }
             } else {

@@ -25,7 +25,7 @@ use crate::{
 };
 use log::LogLevel;
 use maidsafe_utilities::serialisation;
-use std::{collections::BTreeSet, fmt::Display, net::SocketAddr};
+use std::{fmt::Display, net::SocketAddr};
 
 // Trait for all states.
 pub trait Base: Display {
@@ -330,12 +330,8 @@ pub trait Base: Display {
     }
 
     // Create HopMessage containing the given signed message.
-    fn to_hop_message(
-        &self,
-        signed_msg: SignedRoutingMessage,
-        sent_to: BTreeSet<XorName>,
-    ) -> Result<Message, RoutingError> {
-        let hop_msg = HopMessage::new(signed_msg, sent_to)?;
+    fn to_hop_message(&self, signed_msg: SignedRoutingMessage) -> Result<Message, RoutingError> {
+        let hop_msg = HopMessage::new(signed_msg)?;
         Ok(Message::Hop(hop_msg))
     }
 
