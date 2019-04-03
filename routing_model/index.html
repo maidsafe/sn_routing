@@ -642,11 +642,22 @@
   <p>Vote for ParsecOurMerge, and take over handling any ParsecNeighbourMerge.<br/>
      Complete when one merge has completed, and a NewSectionInfo is consensused.<br/>
      If Multi stage merges are required, they will require calling this function again<br/>
-     <br/>
-     store_merge_infos: Store the neighbour's merge info, may not be sibling in case of multi merge<br/>
-     has_sibling_merge_info: Did we store the neighbour's merge info for our sibling<br/>
-     merge_sibling_info_to_new_section: Remove the stored sibling's merge info and return the NewSectionInfo.<br/>
   </p>
+  <button class="collapsible">store_merge_infos</button>
+  <div class="content">
+    <p>Store the neighbour's merge info, may not be sibling in case of multi merge<br/>
+    </p>
+  </div>
+  <button class="collapsible">has_sibling_merge_info</button>
+  <div class="content">
+    <p>Did we store the neighbour's merge info for our sibling<br/>
+    </p>
+  </div>
+  <button class="collapsible">merge_sibling_info_to_new_section</button>
+  <div class="content">
+    <p>Remove the stored sibling's merge info and return the NewSectionInfo.<br/>
+    </p>
+  </div>
   </div>
   <div class="mermaid">
       graph TB
