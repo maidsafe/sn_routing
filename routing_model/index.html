@@ -531,6 +531,60 @@
      We have to be careful that the section follows up on relocation once merged, so we may want to avoid active relocation when merging.
   </p>
 
+  <button class="collapsible">CheckElderTimeout</button>
+  <div class="content">
+    <p>As for incrementing work units, we want to update the eldership status of all nodes in a section on a syncrhonised, regular basis.<br/>
+    For this reason, it makes sense to have a timer going through Parsec.<br/>
+    Note that this timer has to be only as fast as needed so that it remains highly unlikely that 1/3 of the elders in any section would go offline within one timer's duration.
+    </p>
+  </div>
+  <button class="collapsible">Merge RPC</button>
+  <div class="content">
+    <p>A section sends a Merge RPC to their neighbour section when they are ready to merge at the given SectionInfo digest.<br/>
+    In this flow, we handle both situations:<br>
+    <ul>
+      <li> Our neighbour triggers the merge and we receive their Merge RPC.<br>
+           We then vote for ParsecNeighbourMerge.
+      <li> We trigger the merge ourselves (see ProcessMerge flow)
+    </ul>
+    </p>
+  </div>
+  <button class="collapsible">ParsecNeighbourMerge</button>
+  <div class="content">
+    <p>We vote for this Parsec event on receiving a Merge RPC from our neighbour section.<br>
+    It contains the information about them that we need for merging. When this PARSEC event reaches consensus in PARSEC, we store that information by calling store_merge_infos.
+    </p>
+  </div>
+  <button class="collapsible">store_merge_infos</button>
+  <div class="content">
+    <p>This function is used to store the merge information from a neighbour section locally.<br>
+    Once it has been stored, has_merge_infos will return true and we will be ready to enter the ProcessMerge flow.
+    </p>
+  </div>
+  <button class="collapsible">has_merge_infos</button>
+  <div class="content">
+    <p>This function indicates that we received sufficient information from our neighbour section needing a merge, and reached consensus on it.<br>
+    We are ready to start the merging process with them.
+    </p>
+  </div>
+  <button class="collapsible">merge_needed</button>
+  <div class="content">
+    <p>This function indicates that we need merging (as opposed to a merge triggered by our neighbour's needs).<br>
+    The details for the trigger are still in slight flux, but here are some possibilities:
+    <ul>
+      <li> The number of Online adults plus elders is below our min section size of 10 elder plus 90 Adults
+      <li> A certain proportion of the adults in this section are marked Offline
+    </ul>
+    </p>
+  </div>
+  <button class="collapsible">check_elder_change</button>
+  <div class="content">
+    <p>If any of our elders is not Online, they must be demoted to a plain old adult.<br/>
+    If this happens, the oldest adult must be promoted to the elder state as a replacement.<br/>
+    Alternatively, if any of our Online adult nodes is older than any of our elders, the youngest elder must be demoted and this adult must be promoted.<br/>
+    Note that elder changes are only processed when the section is not in the middle of handling a merge.
+    </p>
+  </div>
   </div>
   <div class="mermaid">
       graph TB
