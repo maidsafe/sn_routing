@@ -30,7 +30,7 @@ use crate::rate_limiter::RateLimiter;
 use crate::resource_prover::{ResourceProver, RESOURCE_PROOF_DURATION_SECS};
 use crate::routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use crate::routing_table::Error as RoutingTableError;
-use crate::routing_table::{Authority, Prefix, Xorable};
+use crate::routing_table::{Authority, Prefix, Xorable, DEFAULT_PREFIX};
 use crate::sha3::Digest256;
 use crate::signature_accumulator::SignatureAccumulator;
 use crate::state_machine::Transition;
@@ -153,7 +153,6 @@ impl Node {
             timer,
             0,
         );
-        node.peer_mgr.set_established();
 
         if let Err(error) = node.crust_service.start_listening_tcp() {
             error!("{} Failed to start listening: {:?}", node, error);
@@ -384,13 +383,11 @@ impl Node {
             }) => self.handle_connection_info_prepared(result_token, result),
             CrustEvent::ListenerStarted(port) => {
                 trace!("{} Listener started on port {}.", self, port);
-                // If first node, allow other peers to bootstrap via us
-                // else wait until NodeApproval.
                 if self.is_first_node {
-                    if let Err(err) = self.crust_service.set_accept_bootstrap(true) {
-                        warn!("{} Unable to accept bootstrap connections. {:?}", self, err);
+                    if self.init_first_node(outbox).is_err() {
+                        outbox.send_event(Event::Terminate);
+                        return Transition::Terminate;
                     }
-                    self.crust_service.set_service_discovery_listen(true);
                 }
                 return Transition::Stay;
             }
@@ -414,6 +411,31 @@ impl Node {
 
         self.handle_routing_messages(outbox);
         Transition::Stay
+    }
+
+    // Initialises the first node of the network
+    fn init_first_node(&mut self, outbox: &mut EventBox) -> Result<(), RoutingError> {
+        outbox.send_event(Event::Connected);
+
+        let first_info = SectionInfo::new(
+            iter::once(*self.full_id.public_id()).collect(),
+            *DEFAULT_PREFIX,
+            None,
+        )?;
+        self.gen_pfx_info = Some(GenesisPfxInfo {
+            our_info: first_info,
+            latest_info: Default::default(),
+        });
+
+        if self.init_parsec()? {
+            self.init_chain();
+        }
+        self.peer_mgr.set_established();
+
+        self.crust_service.set_accept_bootstrap(true)?;
+        self.crust_service.set_service_discovery_listen(true);
+
+        Ok(())
     }
 
     /// Routing table of this node.
@@ -597,7 +619,6 @@ impl Node {
                     part_count,
                     proof,
                     leading_zero_bytes,
-                    outbox,
                 );
             }
             msg @ BootstrapResponse(_) | msg @ ProxyRateLimitExceeded { .. } => {
@@ -1414,7 +1435,7 @@ impl Node {
                 dst,
             ),
             (NodeApproval(gen_info), PrefixSection(_), Client { .. }) => {
-                self.handle_node_approval(gen_info, outbox)
+                self.handle_node_approval(gen_info)
             }
             (NeighbourInfo(_digest), ManagedNode(_), PrefixSection(_)) => Ok(()),
             (
@@ -1490,34 +1511,13 @@ impl Node {
             new_pub_id
         );
 
-        let mut src = Authority::PrefixSection(Default::default());
-        if self.gen_pfx_info.is_none() && self.is_first_node {
-            let our_members = vec![*self.full_id.public_id(), new_pub_id]
-                .iter()
-                .cloned()
-                .collect();
-            let first_info = SectionInfo::new(our_members, Default::default(), None)?;
-            self.gen_pfx_info = Some(GenesisPfxInfo {
-                our_info: first_info,
-                latest_info: Default::default(),
-            });
-
-            // Maybe fire this right on startup for first node when its established.
-            outbox.send_event(Event::Connected);
-        }
-
         if let Some(gen_info) = self.gen_pfx_info.clone() {
             let trimmed_info = GenesisPfxInfo {
                 our_info: gen_info.our_info.clone(),
-                latest_info: if self.chain.is_member() {
-                    self.chain.our_info().clone()
-                } else {
-                    Default::default()
-                },
+                latest_info: self.chain.our_info().clone(),
             };
-            if self.chain.is_member() {
-                src = Authority::PrefixSection(*trimmed_info.our_info.prefix());
-            }
+
+            let src = Authority::PrefixSection(*trimmed_info.our_info.prefix());
             let content = MessageContent::NodeApproval(trimmed_info);
             if let Err(error) = self.send_routing_message(src, new_client_auth, content) {
                 debug!(
@@ -1528,9 +1528,6 @@ impl Node {
         }
 
         if is_connected {
-            if self.init_parsec()? {
-                self.init_chain();
-            }
             self.add_to_routing_table(&new_pub_id, outbox);
         }
         Ok(())
@@ -1605,11 +1602,7 @@ impl Node {
         }
     }
 
-    fn handle_node_approval(
-        &mut self,
-        genesis_info: GenesisPfxInfo,
-        outbox: &mut EventBox,
-    ) -> Result<(), RoutingError> {
+    fn handle_node_approval(&mut self, gen_info: GenesisPfxInfo) -> Result<(), RoutingError> {
         if self.gen_pfx_info.is_some() {
             log_or_panic!(LogLevel::Warn, "{} Received duplicate NodeApproval.", self);
             return Ok(());
@@ -1622,24 +1615,12 @@ impl Node {
             self
         );
 
-        self.gen_pfx_info = Some(genesis_info.clone());
+        self.gen_pfx_info = Some(gen_info.clone());
         if self.init_parsec()? {
             self.init_chain();
         }
 
-        if !self.is_first_node {
-            // consider ourself established if we're the second node
-            if genesis_info
-                .our_info
-                .members()
-                .contains(self.full_id.public_id())
-            {
-                self.node_established(outbox);
-            } else {
-                self.poke_timer_token =
-                    Some(self.timer.schedule(Duration::from_secs(POKE_TIMEOUT_SECS)));
-            }
-        }
+        self.poke_timer_token = Some(self.timer.schedule(Duration::from_secs(POKE_TIMEOUT_SECS)));
 
         Ok(())
     }
@@ -1647,7 +1628,6 @@ impl Node {
     // Completes a Node startup process and allows a node to behave as a `ManagedNode`.
     // A given node is considered "established" when it exists in `chain.our_info().members()`
     // first node: this method is skipped entirely as it behaves as a Node from startup.
-    // second node: occurs on receipt of `NodeApproval`.
     fn node_established(&mut self, outbox: &mut EventBox) {
         self.peer_mgr.set_established();
         outbox.send_event(Event::Connected);
@@ -1684,7 +1664,6 @@ impl Node {
         part_count: usize,
         proof: Vec<u8>,
         leading_zero_bytes: u64,
-        outbox: &mut EventBox,
     ) {
         if self.candidate_timer_token.is_none() {
             debug!(
@@ -1725,7 +1704,7 @@ impl Node {
                 // We set the timer token to None so we do not send another
                 // CandidateApproval when the token fires
                 self.candidate_timer_token = None;
-                self.send_candidate_approval(outbox);
+                self.send_candidate_approval();
             }
             Ok(Some((_, _, elapsed))) => {
                 info!(
@@ -2616,7 +2595,7 @@ impl Node {
 
         if self.candidate_timer_token == Some(token) {
             self.candidate_timer_token = None;
-            self.send_candidate_approval(outbox);
+            self.send_candidate_approval();
         } else if self.candidate_status_token == Some(token) {
             self.candidate_status_token = Some(
                 self.timer
@@ -2639,6 +2618,12 @@ impl Node {
                 self.timer
                     .schedule(Duration::from_secs(GOSSIP_TIMEOUT_SECS)),
             );
+
+            // If we're the only node then invoke parsec_poll directly
+            if self.is_first_node && self.chain().our_info().members().len() == 1 {
+                let _ = self.parsec_poll(outbox);
+            }
+
             if self.gen_pfx_info.is_some() {
                 self.send_parsec_gossip(None);
             }
@@ -2717,7 +2702,7 @@ impl Node {
         }
     }
 
-    fn send_candidate_approval(&mut self, outbox: &mut EventBox) {
+    fn send_candidate_approval(&mut self) {
         let (new_id, client_auth) = match self.peer_mgr.verified_candidate_info() {
             Err(_) => {
                 trace!("{} No candidate for which to send CandidateApproval.", self);
@@ -2732,21 +2717,16 @@ impl Node {
             new_id.name()
         );
 
-        if self.parsec_map.is_empty() {
-            let _ = self.handle_candidate_approval(new_id, client_auth, outbox);
-        } else {
-            let our_pfx = *self.chain.our_prefix();
-            if !our_pfx.matches(new_id.name()) {
-                log_or_panic!(
-                    LogLevel::Error,
-                    "{} About to vote for {} which does not match self pfx: {:?}",
-                    self,
-                    new_id.name(),
-                    our_pfx
-                );
-            }
-            self.vote_for_event(NetworkEvent::Online(new_id, client_auth));
+        if !self.our_prefix().matches(new_id.name()) {
+            log_or_panic!(
+                LogLevel::Error,
+                "{} About to vote for {} which does not match self pfx: {:?}",
+                self,
+                new_id.name(),
+                self.our_prefix()
+            );
         }
+        self.vote_for_event(NetworkEvent::Online(new_id, client_auth));
     }
 
     fn vote_for_event(&mut self, event: NetworkEvent) {
@@ -3412,11 +3392,6 @@ impl Bootstrapped for Node {
                 Some(src_section)
             }
             Client { .. } => None,
-            _ if self.is_first_node => {
-                // TODO: Remove this special case when PARSEC supports single-node networks.
-                let members = iter::once(*self.full_id.public_id()).collect();
-                Some(SectionInfo::new(members, Default::default(), None)?)
-            }
             _ => {
                 // Cannot send routing msgs as a Node until established.
                 return Ok(());

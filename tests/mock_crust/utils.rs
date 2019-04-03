@@ -486,6 +486,8 @@ pub fn create_connected_nodes_until_split(
         .cache(use_cache)
         .create()];
     let _ = nodes[0].poll();
+    expect_next_event!(nodes[0], Event::Connected);
+
     add_connected_nodes_until_split(network, &mut nodes, prefix_lengths, use_cache);
     Nodes(nodes)
 }
@@ -536,9 +538,6 @@ pub fn add_connected_nodes_until_split(
         let min_split_size = nodes[0].chain().min_split_size() - num_in_section;
         for _ in 0..min_split_size {
             add_node_to_section(network, nodes, prefix, &mut rng, use_cache);
-            if nodes.len() == 2 {
-                expect_next_event!(nodes[0], Event::Connected);
-            }
         }
     }
 
