@@ -160,7 +160,7 @@ pub trait Bootstrapped: Base {
 
         // expires_at is set to None as we will not wait for an Ack for an Ack.
         if let Err(error) = self.send_routing_message_via_route(response, route, None) {
-            error!("{} Failed to send ack: {:?}", self, error);
+            debug!("{} Failed to send ack: {:?}", self, error);
         }
     }
 

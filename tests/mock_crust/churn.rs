@@ -34,7 +34,7 @@ fn drop_random_nodes<R: Rng>(
     max_per_pfx: Option<usize>,
 ) -> BTreeSet<XorName> {
     let mut dropped_nodes = BTreeSet::new();
-    let node_section_size = |node: &TestNode| node.routing_table().our_section().len();
+    let node_section_size = |node: &TestNode| node.chain().our_info().members().len();
     let sections: BTreeMap<_, _> = nodes
         .iter()
         .map(|node| (*node.our_prefix(), node_section_size(node)))
@@ -42,7 +42,7 @@ fn drop_random_nodes<R: Rng>(
     let mut drop_count: BTreeMap<_, _> = sections.keys().map(|pfx| (*pfx, 0)).collect();
     loop {
         let i = gen_range(rng, 1, nodes.len());
-        let pfx = *nodes[i].our_prefix();
+        let pfx = nodes[i].our_prefix();
         if drop_count.is_empty() {
             break;
         } else if drop_count.get(&pfx).is_none() {

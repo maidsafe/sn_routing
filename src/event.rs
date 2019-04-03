@@ -8,7 +8,7 @@
 
 use crate::messages::{Request, Response};
 use crate::routing_table::Authority;
-use crate::routing_table::{Prefix, RoutingTable};
+use crate::routing_table::Prefix;
 use crate::xor_name::XorName;
 use std::fmt::{self, Debug, Formatter};
 
@@ -42,9 +42,9 @@ pub enum Event {
         dst: Authority<XorName>,
     },
     /// A node has connected to us.
-    NodeAdded(XorName, RoutingTable<XorName>),
+    NodeAdded(XorName),
     /// A node has disconnected from us.
-    NodeLost(XorName, RoutingTable<XorName>),
+    NodeLost(XorName),
     /// Our own section has been split, resulting in the included `Prefix` for our new section.
     SectionSplit(Prefix<XorName>),
     /// Our own section requires merged with others, resulting in the included `Prefix` for our new
@@ -82,14 +82,10 @@ impl Debug for Event {
                 "Event::Response {{ response: {:?}, src: {:?}, dst: {:?} }}",
                 response, src, dst
             ),
-            Event::NodeAdded(ref node_name, _) => write!(
-                formatter,
-                "Event::NodeAdded({:?}, routing_table)",
-                node_name
-            ),
-            Event::NodeLost(ref node_name, _) => {
-                write!(formatter, "Event::NodeLost({:?}, routing_table)", node_name)
+            Event::NodeAdded(ref node_name) => {
+                write!(formatter, "Event::NodeAdded({:?})", node_name)
             }
+            Event::NodeLost(ref node_name) => write!(formatter, "Event::NodeLost({:?})", node_name),
             Event::SectionSplit(ref prefix) => {
                 write!(formatter, "Event::SectionSplit({:?})", prefix)
             }

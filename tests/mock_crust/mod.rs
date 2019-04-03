@@ -22,11 +22,8 @@ pub use self::utils::{
     remove_nodes_which_failed_to_connect, sort_nodes_by_distance_to,
     verify_invariant_for_all_nodes, Nodes, TestClient, TestNode,
 };
-use fake_clock::FakeClock;
 use routing::mock_crust::{Endpoint, Network};
-use routing::test_consts::JOINING_NODE_TIMEOUT_SECS;
 use routing::{BootstrapConfig, Event, EventStream, Prefix, XorName, XOR_NAME_LEN};
-use std::collections::BTreeSet;
 
 pub const MIN_SECTION_SIZE: usize = 3;
 
@@ -192,20 +189,4 @@ fn check_close_names_for_min_section_size_nodes() {
         .iter()
         .all(|n| nodes.iter().all(|m| m.close_names().contains(&n.name())));
     assert!(close_sections_complete);
-}
-
-// The newly connected nodes are expected to have each other as `RoutingConnection::Proxy/Joining`.
-// After the `JOINING_NODE_TIMEOUT_SECS` expires, they shall normalise the connection type to direct
-// which is what that `has_unnormalised_routing_conn` checks.
-#[test]
-fn routing_conn_normalise() {
-    let mut nodes = create_connected_nodes(&Network::new(2, None), 2);
-    let has_unnormalised_conn =
-        |node: &TestNode| node.inner.has_unnormalised_routing_conn(&BTreeSet::new());
-    assert!(nodes.iter().all(has_unnormalised_conn));
-    FakeClock::advance_time(JOINING_NODE_TIMEOUT_SECS * 1000);
-    let _ = poll_all(&mut nodes, &mut []);
-    let no_unnormalised_conn =
-        |node: &TestNode| !node.inner.has_unnormalised_routing_conn(&BTreeSet::new());
-    assert!(nodes.iter().all(no_unnormalised_conn));
 }

@@ -11,7 +11,9 @@ use crate::id::{FullId, PublicId};
 #[cfg(feature = "mock")]
 use crate::mock_crust;
 use crate::outbox::EventBox;
-use crate::routing_table::{Prefix, RoutingTable};
+#[cfg(feature = "mock")]
+use crate::routing_table::Authority;
+use crate::routing_table::Prefix;
 use crate::states::common::Base;
 #[cfg(feature = "mock")]
 use crate::states::common::Bootstrapped;
@@ -108,13 +110,6 @@ impl State {
         self.base_state().map(|state| *state.id())
     }
 
-    fn routing_table(&self) -> Option<&RoutingTable<XorName>> {
-        match *self {
-            State::Node(ref state) => Some(state.routing_table()),
-            _ => None,
-        }
-    }
-
     #[cfg(feature = "mock")]
     fn chain(&self) -> Option<&Chain> {
         match *self {
@@ -166,12 +161,6 @@ impl Debug for State {
 
 #[cfg(feature = "mock")]
 impl State {
-    pub fn purge_invalid_rt_entry(&mut self) {
-        if let State::Node(ref mut state) = *self {
-            state.purge_invalid_rt_entry();
-        }
-    }
-
     pub fn get_banned_client_ips(&self) -> BTreeSet<IpAddr> {
         match *self {
             State::Node(ref state) => state.get_banned_client_ips(),
@@ -200,13 +189,6 @@ impl State {
         }
     }
 
-    pub fn has_unnormalised_routing_conn(&self, excludes: &BTreeSet<XorName>) -> bool {
-        match *self {
-            State::Node(ref state) => state.has_unnormalised_routing_conn(excludes),
-            _ => false,
-        }
-    }
-
     pub fn get_clients_usage(&self) -> Option<BTreeMap<IpAddr, u64>> {
         match *self {
             State::Node(ref state) => Some(state.get_clients_usage()),
@@ -224,6 +206,15 @@ impl State {
     pub fn is_routing_peer(&self, pub_id: &PublicId) -> bool {
         match *self {
             State::Node(ref state) => state.is_routing_peer(pub_id),
+            _ => false,
+        }
+    }
+
+    pub fn in_authority(&self, auth: &Authority<XorName>) -> bool {
+        match *self {
+            State::Node(ref state) => state.in_authority(auth),
+            State::Client(ref state) => state.in_authority(auth),
+            State::JoiningNode(ref state) => state.in_authority(auth),
             _ => false,
         }
     }
@@ -503,16 +494,6 @@ impl StateMachine {
         interleaved.reverse();
         self.events.extend(interleaved);
 
-        // TODO (adam): why don't we do this:
-        /*
-        if !self.events.is_empty() {
-            self.handle_event_from_list(outbox);
-            Ok(())
-        } else {
-            Err(TryRecvError::Empty)
-        }
-        */
-
         if self.events.iter().any(EventType::is_not_a_timeout) {
             self.handle_event_from_list(outbox);
             return Ok(());
@@ -525,10 +506,6 @@ impl StateMachine {
 
     pub fn id(&self) -> Option<PublicId> {
         self.state.id()
-    }
-
-    pub fn routing_table(&self) -> Option<&RoutingTable<XorName>> {
-        self.state.routing_table()
     }
 
     #[cfg(feature = "mock")]

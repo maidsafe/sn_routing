@@ -20,8 +20,9 @@ use super::{
     SectionInfo,
 };
 use crate::error::RoutingError;
-use crate::id::{FullId, PublicId};
+use crate::id::PublicId;
 use crate::messages::SignedMessage;
+use crate::routing_table::DEFAULT_PREFIX;
 use crate::routing_table::{Authority, Error};
 use crate::sha3::Digest256;
 use crate::{Prefix, XorName, Xorable};
@@ -102,8 +103,7 @@ impl Chain {
     // FIXME: This chain cannot be used. Ideally we should not be creating the chain without genesis
     // info
     /// Create a new chain given genesis information
-    pub fn with_min_sec_size(min_sec_size: usize) -> Self {
-        let our_id = *FullId::default().public_id();
+    pub fn with_id_and_min_sec_size(our_id: PublicId, min_sec_size: usize) -> Self {
         Self {
             min_sec_size,
             our_id,
@@ -456,16 +456,10 @@ impl Chain {
 
     /// Returns our own current section's prefix.
     pub fn our_prefix(&self) -> &Prefix<XorName> {
-        self.our_info().prefix()
-    }
-
-    /// Returns our own current section's prefix.
-    // FIXME: this is a ugly workaround for now.
-    pub fn our_prefix_copy(&self) -> Prefix<XorName> {
         if self.our_infos.is_empty() {
-            Default::default()
+            &DEFAULT_PREFIX
         } else {
-            *self.our_info().prefix()
+            self.our_info().prefix()
         }
     }
 
@@ -1303,28 +1297,18 @@ impl Chain {
     }
 
     /// Returns whether we are a part of the given authority.
-    pub fn in_authority(
-        &self,
-        auth: &Authority<XorName>,
-        connected_peers: &[&XorName],
-        our_name: &XorName,
-    ) -> bool {
-        let our_pfx = if self.our_infos.is_empty() {
-            Default::default()
-        } else {
-            *self.our_prefix()
-        };
+    pub fn in_authority(&self, auth: &Authority<XorName>, connected_peers: &[&XorName]) -> bool {
         match *auth {
             // clients have no routing tables
             Authority::Client { .. } => false,
-            Authority::ManagedNode(ref name) => our_name == name,
+            Authority::ManagedNode(ref name) => self.our_id().name() == name,
             Authority::ClientManager(ref name)
             | Authority::NaeManager(ref name)
             | Authority::NodeManager(ref name) => {
                 self.is_closest(name, self.min_sec_size, connected_peers)
             }
-            Authority::Section(ref name) => our_pfx.matches(name),
-            Authority::PrefixSection(ref prefix) => our_pfx.is_compatible(prefix),
+            Authority::Section(ref name) => self.our_prefix().matches(name),
+            Authority::PrefixSection(ref prefix) => self.our_prefix().is_compatible(prefix),
         }
     }
 
@@ -1353,7 +1337,7 @@ impl Chain {
             .sum();
 
         // Total size estimate = known_nodes / network_fraction
-        let network_size = (self.len() + 1) as f64 / network_fraction;
+        let network_size = self.valid_peers(true).len() as f64 / network_fraction;
 
         (network_size.ceil() as u64, is_exact)
     }

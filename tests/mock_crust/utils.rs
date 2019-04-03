@@ -13,9 +13,8 @@ use routing::mock_crust::{self, Endpoint, Network, ServiceHandle};
 use routing::test_consts::CONNECTING_PEER_TIMEOUT_SECS;
 use routing::{verify_chain_invariant, Chain};
 use routing::{
-    verify_network_invariant, Authority, BootstrapConfig, Cache, Client, Config, DevConfig, Event,
-    EventStream, FullId, ImmutableData, Node, NullCache, Prefix, PublicId, Request, Response,
-    RoutingTable, XorName, Xorable,
+    Authority, BootstrapConfig, Cache, Client, Config, DevConfig, Event, EventStream, FullId,
+    ImmutableData, Node, NullCache, Prefix, PublicId, Request, Response, XorName, Xorable,
 };
 use std::cell::RefCell;
 use std::cmp;
@@ -150,15 +149,11 @@ impl TestNode {
     }
 
     pub fn close_names(&self) -> BTreeSet<XorName> {
-        unwrap!(unwrap!(self.inner.routing_table()).close_names(&self.name()))
-    }
-
-    pub fn routing_table(&self) -> &RoutingTable<XorName> {
-        unwrap!(self.inner.routing_table())
+        unwrap!(unwrap!(self.inner.chain()).close_names(&self.name()))
     }
 
     pub fn our_prefix(&self) -> &Prefix<XorName> {
-        self.routing_table().our_prefix()
+        self.chain().our_prefix()
     }
 
     pub fn chain(&self) -> &Chain {
@@ -166,17 +161,15 @@ impl TestNode {
     }
 
     pub fn is_recipient(&self, dst: &Authority<XorName>) -> bool {
-        self.inner
-            .routing_table()
-            .ok()
-            .map_or(false, |rt| rt.in_authority(dst))
+        self.inner.in_authority(dst)
     }
 }
 
 pub fn count_sections(nodes: &[TestNode]) -> usize {
     nodes
         .iter()
-        .filter_map(|n| n.inner.routing_table().ok().map(RoutingTable::our_prefix))
+        .filter_map(|n| n.inner.chain().ok())
+        .flat_map(|chain| chain.prefixes())
         .unique()
         .count()
 }
@@ -533,14 +526,14 @@ pub fn add_connected_nodes_until_split(
         // To ensure you don't hit this assert, don't have more than `min_split_size()` entries in
         // `nodes` when calling this function.
         assert!(
-            num_in_section <= nodes[0].routing_table().min_split_size(),
+            num_in_section <= nodes[0].chain().min_split_size(),
             "The existing nodes' names disallow creation of the requested prefixes. There \
              are {} nodes which all belong in {:?} which exceeds the limit here of {}.",
             num_in_section,
             prefix,
-            nodes[0].routing_table().min_split_size()
+            nodes[0].chain().min_split_size()
         );
-        let min_split_size = nodes[0].routing_table().min_split_size() - num_in_section;
+        let min_split_size = nodes[0].chain().min_split_size() - num_in_section;
         for _ in 0..min_split_size {
             add_node_to_section(network, nodes, prefix, &mut rng, use_cache);
             if nodes.len() == 2 {
@@ -555,7 +548,7 @@ pub fn add_connected_nodes_until_split(
     loop {
         let mut found_prefix = None;
         for node in nodes.iter() {
-            if let Some(prefix_to_split) = unwrap!(node.inner.routing_table())
+            if let Some(prefix_to_split) = unwrap!(node.inner.chain())
                 .prefixes()
                 .iter()
                 .find(|&prefix| !prefixes.contains(prefix))
@@ -588,7 +581,7 @@ pub fn add_connected_nodes_until_split(
     // Gather all the actual prefixes and check they are as expected.
     let mut actual_prefixes = BTreeSet::<Prefix<XorName>>::new();
     for node in nodes.iter() {
-        actual_prefixes.append(&mut unwrap!(node.inner.routing_table()).prefixes());
+        actual_prefixes.append(&mut unwrap!(node.inner.chain()).prefixes());
     }
     assert_eq!(
         prefixes.iter().cloned().collect::<BTreeSet<_>>(),
@@ -655,18 +648,6 @@ pub fn sort_nodes_by_distance_to(nodes: &mut [TestNode], name: &XorName) {
 }
 
 pub fn verify_invariant_for_all_nodes(nodes: &mut [TestNode]) {
-    // Validate Chain and RT Prefixes are in sync.
-    for node in nodes.iter() {
-        assert_eq!(
-            node.routing_table().prefixes(),
-            node.chain().prefixes(),
-            "Node {} has prefixes not in sync between RT and Chain.",
-            node.name()
-        );
-    }
-
-    // Verify RT and Chain invariants
-    verify_network_invariant(nodes.iter().map(|n| n.routing_table()));
     let min_section_size = nodes[0].handle.0.borrow().network.min_section_size();
     verify_chain_invariant(nodes.iter().map(|n| n.chain()), min_section_size);
 
@@ -680,8 +661,6 @@ pub fn verify_invariant_for_all_nodes(nodes: &mut [TestNode]) {
         {
             assert_eq!(true, node.inner.is_routing_peer(pub_id));
         }
-
-        node.inner.purge_invalid_rt_entry();
     }
 }
 
@@ -768,7 +747,7 @@ fn add_node_to_section<T: Rng>(
     );
     poll_and_resend(nodes, &mut []);
     expect_any_event!(unwrap!(nodes.last_mut()), Event::Connected);
-    assert!(prefix.matches(nodes[nodes.len() - 1].routing_table().our_name(),));
+    assert!(prefix.matches(&nodes[nodes.len() - 1].name()));
 }
 
 mod tests {
