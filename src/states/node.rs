@@ -666,56 +666,68 @@ impl Node {
     }
 
     fn parsec_poll(&mut self, outbox: &mut EventBox) -> Result<(), RoutingError> {
-        while let Some(block) = self.parsec_map.values_mut().last().and_then(Parsec::poll) {
-            match block.payload() {
-                parsec::Observation::Accusation { .. } => {
-                    // FIXME: Handle properly
-                    unreachable!("...")
-                }
-                parsec::Observation::Genesis(_) => {
-                    // FIXME: Validate with Chain info.
-                    continue;
-                }
-                parsec::Observation::OpaquePayload(event) => {
-                    if let Some(proof) = block.proofs().iter().next().map(|p| Proof {
-                        pub_id: *p.public_id(),
-                        sig: *p.signature(),
-                    }) {
-                        trace!(
-                            "{} Parsec OpaquePayload: {} - {:?}",
-                            self,
-                            proof.pub_id(),
-                            event
-                        );
-                        self.chain.handle_opaque_event(event, proof)?;
-                    }
-                }
-                parsec::Observation::Add {
-                    peer_id,
-                    related_info,
-                } => {
-                    let event =
-                        NetworkEvent::Online(*peer_id, serialisation::deserialise(&related_info)?);
-                    let to_sig = |p: &parsec::Proof<_>| (*p.public_id(), *p.signature());
-                    let sigs = block.proofs().iter().map(to_sig).collect();
-                    let proof_set = ProofSet { sigs };
-                    trace!("{} Parsec Add: - {}", self, peer_id);
-                    self.chain.handle_churn_event(&event, proof_set)?;
-                }
-                parsec::Observation::Remove { peer_id, .. } => {
-                    let event = NetworkEvent::Offline(*peer_id);
-                    let to_sig = |p: &parsec::Proof<_>| (*p.public_id(), *p.signature());
-                    let sigs = block.proofs().iter().map(to_sig).collect();
-                    let proof_set = ProofSet { sigs };
-                    trace!("{} Parsec Remove: - {}", self, peer_id);
-                    self.chain.handle_churn_event(&event, proof_set)?;
+        while let Some(blocks) = self.parsec_map.values_mut().last().and_then(Parsec::poll) {
+            for block in blocks {
+                if let Err(err) = self.handle_parsec_block(block, outbox) {
+                    debug!("{} Parsec Block handling failed: {:?}", self, err);
                 }
             }
-
-            self.chain_poll(outbox)?;
         }
 
         Ok(())
+    }
+
+    fn handle_parsec_block(
+        &mut self,
+        block: parsec::Block<NetworkEvent, PublicId>,
+        outbox: &mut EventBox,
+    ) -> Result<(), RoutingError> {
+        match block.payload() {
+            parsec::Observation::Accusation { .. } => {
+                // FIXME: Handle properly
+                unreachable!("...")
+            }
+            parsec::Observation::Genesis(_) => {
+                // FIXME: Validate with Chain info.
+                return Ok(());
+            }
+            parsec::Observation::OpaquePayload(event) => {
+                if let Some(proof) = block.proofs().iter().next().map(|p| Proof {
+                    pub_id: *p.public_id(),
+                    sig: *p.signature(),
+                }) {
+                    trace!(
+                        "{} Parsec OpaquePayload: {} - {:?}",
+                        self,
+                        proof.pub_id(),
+                        event
+                    );
+                    self.chain.handle_opaque_event(event, proof)?;
+                }
+            }
+            parsec::Observation::Add {
+                peer_id,
+                related_info,
+            } => {
+                let event =
+                    NetworkEvent::Online(*peer_id, serialisation::deserialise(&related_info)?);
+                let to_sig = |p: &parsec::Proof<_>| (*p.public_id(), *p.signature());
+                let sigs = block.proofs().iter().map(to_sig).collect();
+                let proof_set = ProofSet { sigs };
+                trace!("{} Parsec Add: - {}", self, peer_id);
+                self.chain.handle_churn_event(&event, proof_set)?;
+            }
+            parsec::Observation::Remove { peer_id, .. } => {
+                let event = NetworkEvent::Offline(*peer_id);
+                let to_sig = |p: &parsec::Proof<_>| (*p.public_id(), *p.signature());
+                let sigs = block.proofs().iter().map(to_sig).collect();
+                let proof_set = ProofSet { sigs };
+                trace!("{} Parsec Remove: - {}", self, peer_id);
+                self.chain.handle_churn_event(&event, proof_set)?;
+            }
+        }
+
+        self.chain_poll(outbox)
     }
 
     fn chain_poll(&mut self, outbox: &mut EventBox) -> Result<(), RoutingError> {
@@ -2665,7 +2677,7 @@ impl Node {
         let par_req = self
             .parsec_map
             .get_mut(&version)
-            .and_then(|par| par.create_gossip(Some(&gossip_target)).ok());
+            .and_then(|par| par.create_gossip(&gossip_target).ok());
         if let Some(par_req) = par_req {
             self.send_message(
                 &gossip_target,

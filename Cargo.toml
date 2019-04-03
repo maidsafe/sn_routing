@@ -30,7 +30,7 @@ serde_derive = "1.0.25"
 term = "0.4.6"
 unwrap = "1.2.1"
 # Parsec master branch.
-parsec = { git = "https://github.com/maidsafe/parsec", rev = "29d4b48" }
+parsec = { git = "https://github.com/maidsafe/parsec", rev = "4242820" }
 
 [dependencies.crust]
 git = "https://github.com/maidsafe/crust"
