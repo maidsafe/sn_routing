@@ -79,10 +79,6 @@ impl<P: PublicId> ObservationState<P> {
         }
     }
 
-    pub fn consensused(&self) -> bool {
-        self.consensused
-    }
-
     fn compute_consensus<T: NetworkEvent>(
         &mut self,
         peers: &BTreeSet<P>,
