@@ -729,14 +729,18 @@
     The content of the NewSectionInfo parsec event that reached consensus.
     </p>
   </div>
-  <button class="collapsible">set_elder_status</button>
+  <button class="collapsible">update_elder_status</button>
   <div class="content">
-    <p>This function updates the chain to reflect the eldership status of a given node.<br>
+    <p>This function updates the eldership status of each node in the chain based on the new section info: the nodes with their public id in new_section_info are the exact set of current elders.<br>
     Input:
-    <lu>
-      <li> node: PublicId
-      <li> is_elder: bool
-    </lu>
+    <ul>
+      <li>new_section_info: Set&ltPublicId&gt<br>
+      The new section info that just reached consensus.
+    </ul>
+    Side-effect:
+    <ul>
+      <li>Mutates the chain.
+    </ul>
     </p>
   </div>
   </div>
@@ -764,7 +768,7 @@
       OneVoteConsensused --> WaitComplete
       WaitComplete(("Check?"))
       WaitComplete--"WAITED_VOTES<br/>.is_empty()<br/>(Wait complete)"-->MarkNewElderAdults
-      MarkNewElderAdults["for node in nodes {<br/>is_elder = new_section_info.contains(node)<br/>set_elder_status(node, is_elder)<br/>}"]
+      MarkNewElderAdults["update_elder_status(new_section_info)"]
       MarkNewElderAdults--> EndRoutine
       WaitComplete--"!WAITED_VOTES<br/>.is_empty()<br/>(Wait not complete)"--> LoopEnd
 
@@ -776,8 +780,8 @@
   <p>Vote for ParsecOurMerge, and take over handling any ParsecNeighbourMerge.<br/>
      Complete when one merge has completed, and a NewSectionInfo is consensused.<br/>
      If multi-stage merges are required, they will require calling this function again<br/>
-     While in this sanctuary, our SectionInfo shall not be disturbed by elder/adult changes.
-     This avoids troublesome situations where different nodes may send different SectionInfo's to the neighbour section and cause confusion.
+     While in this sanctuary, our SectionInfo shall not be disturbed by elder changes.
+     This stops us from changing our SectionInfo after indicating to our neighbour the last SectionInfo before merge.
   </p>
   <button class="collapsible">ParsecOurMerge</button>
   <div class="content">
@@ -846,7 +850,7 @@
       CompleteMerge["complete_merge()<br/>(Start parsec with new genesis...)"]
       CompleteMerge --> MarkNewElderAdults
 
-      MarkNewElderAdults["for node in nodes {<br/>is_elder = new_section_info.contains(node)<br/>set_elder_status(node, is_elder)<br/>}"]
+      MarkNewElderAdults["update_elder_status(new_section_info)"]
       MarkNewElderAdults--> EndRoutine
 
       Consensus -- "ParsecNeighbourMerge" --> SetNeighbourMerge
