@@ -116,6 +116,61 @@
     LoopEnd --> LoopStart
   </div>
 
+  <h2>Becoming a full member of a section</h2>
+  <div class=description>
+  This is from the point of view of a node trying to join a section as a full member.<br/>
+  This node is going to perform the resource proof until it receive a NodeApproval RPC to complete this stage successfully.<br/>
+  If the node is not accepted, after time out, it will try another section.
+  </div>
+  <div class="mermaid">
+    graph TB
+    JoiningRelocateCandidate -->  InitialSendConnectionInfoRequest
+    JoiningRelocateCandidate["JoiningRelocateCandidate<br/>(Take destination section nodes)"]
+    style JoiningRelocateCandidate fill:#f9f,stroke:#333,stroke-width:4px
+    EndRoutine["End of JoiningRelocateCandidate<br/>"]
+    style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
+
+    InitialSendConnectionInfoRequest["For all nodes in destination section:<br/>MembersProofRequest(node) = None<br/>and send_rpc(ConnectionInfoRequest)<br/><br/>schedule(TimeoutResendInfo)<br/>schedule(TimeoutRefused)"]
+    InitialSendConnectionInfoRequest-->LoopStart
+
+    LoopStart --> WaitFor
+    WaitFor(("Wait for 6:"))
+    LocalEvent((Local<br/>Event))
+    WaitFor --> LocalEvent
+
+    LocalEvent -- ResourceProofForElderReady -->  SendFirstResourceProofPartForElder
+    SendFirstResourceProofPartForElder["send_rpc(<br/>ResourceProofResponse)<br/>with first part for elder"]
+    SendFirstResourceProofPartForElder --> LoopEnd
+
+    LocalEvent--"TimeoutResendInfo triggered<br/> Some elders have not responsed<br/>with ResourceProof"--> ResendConnectionInfoRequest
+    ResendConnectionInfoRequest["For all nodes with<br/>MembersProofRequest(node).is_none():<br/>send_rpc(ConnectionInfoRequest)<br/><br/>schedule(TimeoutResendInfo)"]
+    ResendConnectionInfoRequest --> LoopEnd
+
+    LocalEvent--"TimeoutRefused<br/>triggered"--> EndRoutine
+
+    Rpc((RPC))
+    WaitFor --> Rpc
+    Rpc -- NodeApproval -->  EndRoutine
+
+    Rpc -- ConnectionInfoResponse --> ConnectAndSendCandidateInfo
+    ConnectAndSendCandidateInfo["Connect and send<br/>CandidateInfo"]
+    ConnectAndSendCandidateInfo-->LoopEnd
+
+    Rpc -- ResourceProofReceipt -->  SendNextResourceProofPartForElder
+    SendNextResourceProofPartForElder["send_rpc(<br/>ResourceProofResponse)<br/>part for elder"]
+    SendNextResourceProofPartForElder --> LoopEnd
+
+    Rpc -- ResourceProof -->  StartComputeResourceProofForElder
+    StartComputeResourceProofForElder["start_compute_resource_proof(source elder)"]
+    StartComputeResourceProofForElder --> LoopEnd
+
+    Rpc -- "ExpectCandidate<br/>RefuseCandidate<br/>RelocateResponse<br/>..." --> VoteParsecRPC
+    VoteParsecRPC["vote_for(the parsec rpc)<br/>(cache for later)"]
+    VoteParsecRPC --> LoopEnd
+
+    LoopEnd --> LoopStart
+
+  </div>
 
   <h2>Node as a member of a section</h2>
   <div class=description>
@@ -846,64 +901,6 @@
 
       SetRelocating --> LoopEnd
       LoopEnd --> LoopStart
-  </div>
-
-  <h1>Elders and adults</h1>
-
-  <h2>Becoming a full member of a section</h2>
-  <div class=description>
-  This is from the point of view of a node trying to join a section as a full member.<br/>
-  This node is going to perform the resource proof until it receive a NodeApproval RPC to complete this stage successfully.<br/>
-  If the node is not accepted, after time out, it will try another section.
-  </div>
-  <div class="mermaid">
-    graph TB
-    JoiningRelocateCandidate -->  InitialSendConnectionInfoRequest
-    JoiningRelocateCandidate["JoiningRelocateCandidate<br/>(Take destination section nodes)"]
-    style JoiningRelocateCandidate fill:#f9f,stroke:#333,stroke-width:4px
-    EndRoutine["End of JoiningRelocateCandidate<br/>"]
-    style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
-
-    InitialSendConnectionInfoRequest["For all nodes in destination section:<br/>MembersProofRequest(node) = None<br/>and send_rpc(ConnectionInfoRequest)<br/><br/>schedule(TimeoutResendInfo)<br/>schedule(TimeoutRefused)"]
-    InitialSendConnectionInfoRequest-->LoopStart
-
-    LoopStart --> WaitFor
-    WaitFor(("Wait for 6:"))
-    LocalEvent((Local<br/>Event))
-    WaitFor --> LocalEvent
-
-    LocalEvent -- ResourceProofForElderReady -->  SendFirstResourceProofPartForElder
-    SendFirstResourceProofPartForElder["send_rpc(<br/>ResourceProofResponse)<br/>with first part for elder"]
-    SendFirstResourceProofPartForElder --> LoopEnd
-
-    LocalEvent--"TimeoutResendInfo triggered<br/> Some elders have not responsed<br/>with ResourceProof"--> ResendConnectionInfoRequest
-    ResendConnectionInfoRequest["For all nodes with<br/>MembersProofRequest(node).is_none():<br/>send_rpc(ConnectionInfoRequest)<br/><br/>schedule(TimeoutResendInfo)"]
-    ResendConnectionInfoRequest --> LoopEnd
-
-    LocalEvent--"TimeoutRefused<br/>triggered"--> EndRoutine
-
-    Rpc((RPC))
-    WaitFor --> Rpc
-    Rpc -- NodeApproval -->  EndRoutine
-
-    Rpc -- ConnectionInfoResponse --> ConnectAndSendCandidateInfo
-    ConnectAndSendCandidateInfo["Connect and send<br/>CandidateInfo"]
-    ConnectAndSendCandidateInfo-->LoopEnd
-
-    Rpc -- ResourceProofReceipt -->  SendNextResourceProofPartForElder
-    SendNextResourceProofPartForElder["send_rpc(<br/>ResourceProofResponse)<br/>part for elder"]
-    SendNextResourceProofPartForElder --> LoopEnd
-
-    Rpc -- ResourceProof -->  StartComputeResourceProofForElder
-    StartComputeResourceProofForElder["start_compute_resource_proof(source elder)"]
-    StartComputeResourceProofForElder --> LoopEnd
-
-    Rpc -- "ExpectCandidate<br/>RefuseCandidate<br/>RelocateResponse<br/>..." --> VoteParsecRPC
-    VoteParsecRPC["vote_for(the parsec rpc)<br/>(cache for later)"]
-    VoteParsecRPC --> LoopEnd
-
-    LoopEnd --> LoopStart
-
   </div>
 
   <h1>Node relocation overview</h1>
