@@ -785,7 +785,22 @@
 
   </div>
 
+  <h1>Node relocation overview</h1>
 
+  <h2>Original flow</h2>
+  <div class="mermaid">
+    sequenceDiagram
+    Src->>Dst: ExpectCandidate
+    Dst->>Src: RelocateResponse
+    Src->>Node: RelocatedInfo
+    Node->>Dst: ConnectionInfoRequest
+    Dst->>Node: ConnectionInfoResponse
+    Src->>Dst: CandidateInfo
+    Dst->>Node: ResourceProof
+    Node->>Dst: ResourceProofResponse
+    Dst->>Node: ResourceProofReceipt
+    Dst->>Node: NodeApproval
+  </div>
 
   <script src="mermaid.min.js"></script>
   <script>mermaid.initialize({startOnLoad:true});</script>
