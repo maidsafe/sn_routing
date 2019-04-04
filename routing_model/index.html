@@ -659,6 +659,29 @@
   <p>Vote for Add for new elders, Remove for no longer elders and NewSectionInfo<br/>
      This handles any change, it does not care whether one or all elders are changed, this is decided by the calling function.
  </p>
+  <button class="collapsible">WAITED_VOTES</button>
+  <div class="content">
+    <p>At any time, there must be exactly NUM_ELDERS (say 10) elders per section.<br>
+    To maintain this invariant, we must handle multiple eldership changes atomically<br>
+    We accomplish this by voting for all the membership changes needed at once and waiting for all these votes to reach consensus before reflecting the status change in our chain.<br>
+    </p>
+  </div>
+  <button class="collapsible">new_section_info</button>
+  <div class="content">
+    <p>A list of PublicId.<br>
+    The content of the NewSectionInfo parsec event that reached consensus.
+    </p>
+  </div>
+  <button class="collapsible">set_elder_status</button>
+  <div class="content">
+    <p>This function updates the chain to reflect the eldership status of a given node.<br>
+    Input:
+    <lu>
+      <li> node: PublicId
+      <li> is_elder: bool
+    </lu>
+    </p>
+  </div>
   </div>
   <div class="mermaid">
       graph TB
@@ -684,7 +707,7 @@
       OneVoteConsensused --> WaitComplete
       WaitComplete(("Check?"))
       WaitComplete--"WAITED_VOTES<br/>.is_empty()<br/>(Wait complete)"-->MarkNewElderAdults
-      MarkNewElderAdults["For all nodes:<br/>set_elder_status(node, is_elder)"]
+      MarkNewElderAdults["for node in nodes {<br/>is_elder = new_section_info.contains(node)<br/>set_elder_status(node, is_elder)<br/>}"]
       MarkNewElderAdults--> EndRoutine
       WaitComplete--"!WAITED_VOTES<br/>.is_empty()<br/>(Wait not complete)"--> LoopEnd
 
@@ -733,7 +756,7 @@
       CompleteMerge["Complete_merge()<br/>(Start parsec with new genesis...)"]
       CompleteMerge --> MarkNewElderAdults
 
-      MarkNewElderAdults["For all nodes:<br/>set_elder_status(node, is_elder)<br/>based on new section info"]
+      MarkNewElderAdults["for node in nodes {<br/>is_elder = new_section_info.contains(node)<br/>set_elder_status(node, is_elder)<br/>}"]
       MarkNewElderAdults--> EndRoutine
 
       Consensus -- "ParsecNeighbourMerge" --> SetNeighbourMerge
