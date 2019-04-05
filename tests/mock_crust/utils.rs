@@ -148,7 +148,7 @@ impl TestNode {
         *self.id().name()
     }
 
-    pub fn close_names(&self) -> BTreeSet<XorName> {
+    pub fn close_names(&self) -> Vec<XorName> {
         unwrap!(unwrap!(self.inner.chain()).close_names(&self.name()))
     }
 
@@ -652,12 +652,9 @@ pub fn verify_invariant_for_all_nodes(nodes: &mut [TestNode]) {
 
     for node in nodes.iter_mut() {
         // Confirm valid peers from chain are connected according to PeerMgr
-        for pub_id in node
-            .chain()
-            .valid_peers(true)
-            .iter()
-            .filter(|id| **id != node.chain().our_id())
-        {
+        let mut peers = node.chain().valid_peers();
+        let _ = peers.remove(&node.chain().our_id());
+        for pub_id in peers {
             assert_eq!(true, node.inner.is_routing_peer(pub_id));
         }
     }

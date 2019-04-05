@@ -44,7 +44,7 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Into<(Prefix<T>, u64)> for Ve
 
 lazy_static! {
     /// An empty prefix
-    pub static ref DEFAULT_PREFIX: Prefix<XorName> = {Default::default()};
+    pub static ref DEFAULT_PREFIX: Prefix<XorName> = Default::default();
 }
 
 /// A section prefix, i.e. a sequence of bits specifying the part of the network's name space

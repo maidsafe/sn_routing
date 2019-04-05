@@ -438,11 +438,16 @@ impl Chain {
         &self.our_id
     }
 
+    /// Returns our own current section info, or `None`, if not available.
+    pub fn opt_our_info(&self) -> Option<&SectionInfo> {
+        self.our_infos.last().map(|&(ref si, _)| si)
+    }
+
     /// Returns our own current section info.
     pub fn our_info(&self) -> &SectionInfo {
         // TODO: Replace `our_infos` with a new `NonemptyVec` type that statically guarantees that
         // it's never empty.
-        &unwrap!(self.our_infos.last()).0
+        &unwrap!(self.opt_our_info())
     }
 
     /// Returns our latest `SectionInfo` for the given prefix if found.
@@ -456,11 +461,8 @@ impl Chain {
 
     /// Returns our own current section's prefix.
     pub fn our_prefix(&self) -> &Prefix<XorName> {
-        if self.our_infos.is_empty() {
-            &DEFAULT_PREFIX
-        } else {
-            self.our_info().prefix()
-        }
+        self.opt_our_info()
+            .map_or(&DEFAULT_PREFIX, SectionInfo::prefix)
     }
 
     /// Returns our current chain state.
@@ -502,27 +504,19 @@ impl Chain {
     /// Checks if given `PublicId` is a valid peer by checking if we have them as a member of self
     /// section or neighbours.
     pub fn is_peer_valid(&self, pub_id: &PublicId) -> bool {
-        self.valid_peers(true).contains(pub_id)
+        self.neighbour_infos()
+            .chain(self.opt_our_info())
+            .chain(iter::once(&self.new_info))
+            .any(|si| si.members().contains(pub_id))
     }
 
     /// Returns a set of valid peers we should be connected to.
-    pub fn valid_peers(&self, include_new_info: bool) -> BTreeSet<&PublicId> {
-        let mut peers = self
-            .neighbour_infos()
+    pub fn valid_peers(&self) -> BTreeSet<&PublicId> {
+        self.neighbour_infos()
+            .chain(self.opt_our_info())
             .flat_map(SectionInfo::members)
-            .chain(
-                self.our_infos
-                    .last()
-                    .iter()
-                    .flat_map(|&&(ref si, _)| si.members()),
-            )
-            .collect::<BTreeSet<_>>();
-        if include_new_info {
-            for member in self.new_info.members() {
-                let _ = peers.insert(member);
-            }
-        }
-        peers
+            .chain(self.new_info.members())
+            .collect()
     }
 
     /// Returns `true` if we know the section `sec_info`.
@@ -992,14 +986,14 @@ impl Chain {
 
     /// Convert from collection of SectionInfo to Sections type. All neighbouring sections and our
     /// own.
-    fn all_sections(&self) -> BTreeMap<Prefix<XorName>, BTreeSet<XorName>> {
+    pub fn all_sections(&self) -> BTreeMap<Prefix<XorName>, BTreeSet<XorName>> {
         self.neighbour_infos
             .iter()
             .map(|(pfx, sec_sigs)| (*pfx, sec_sigs.sec_info().member_names()))
-            .chain(iter::once((
-                *self.our_prefix(),
-                self.our_info().member_names(),
-            )))
+            .chain(
+                self.opt_our_info()
+                    .map(|si| (*si.prefix(), si.member_names())),
+            )
             .collect::<BTreeMap<_, _>>()
     }
 
@@ -1030,35 +1024,29 @@ impl Chain {
             .map_or(false, |section| section.contains(name))
     }
 
-    /// Returns the prefix of the section in which `name` belongs, or `None` if there is no such
-    /// section in the routing table.
-    fn find_section_prefix(&self, name: &XorName) -> Option<Prefix<XorName>> {
-        if self.our_prefix().matches(name) {
-            return Some(*self.our_prefix());
-        }
-        self.neighbour_infos
-            .keys()
-            .find(|&prefix| prefix.matches(name))
-            .cloned()
-    }
-
     /// Returns the section matching the given `name`, if present.
     /// Includes our own name in the case that our prefix matches `name`.
     fn get_section_legacy(&self, name: &XorName) -> Option<BTreeSet<XorName>> {
         if self.our_prefix().matches(name) {
             return Some(self.our_info().member_names());
         }
-        if let Some(prefix) = self.find_section_prefix(name) {
-            return self.all_sections().get(&prefix).cloned();
-        }
-        None
+        self.neighbour_infos
+            .iter()
+            .find(|&(ref pfx, _)| pfx.matches(name))
+            .map(|(_, ref ni)| ni.sec_info().member_names())
     }
 
     /// If our section is the closest one to `name`, returns all names in our section *including
     /// ours*, otherwise returns `None`.
-    pub fn close_names(&self, name: &XorName) -> Option<BTreeSet<XorName>> {
+    pub fn close_names(&self, name: &XorName) -> Option<Vec<XorName>> {
         if self.our_prefix().matches(name) {
-            Some(self.our_section().clone())
+            Some(
+                self.our_info()
+                    .members()
+                    .iter()
+                    .map(|id| *id.name())
+                    .collect(),
+            )
         } else {
             None
         }
@@ -1111,13 +1099,18 @@ impl Chain {
     /// Returns the prefix of the closest non-empty section to `name`, regardless of whether `name`
     /// belongs in that section or not, and the section itself.
     fn closest_section(&self, name: &XorName) -> (Prefix<XorName>, BTreeSet<XorName>) {
-        let mut result = (*self.our_prefix(), self.our_info().member_names());
-        for (prefix, section) in self.all_sections() {
-            if !section.is_empty() && result.0.cmp_distance(&prefix, name) == Ordering::Greater {
-                result = (prefix, section)
+        let mut best_pfx = *self.our_prefix();
+        let mut best_si = self.our_info();
+        for (pfx, ni) in &self.neighbour_infos {
+            // TODO: Remove the first check after verifying that section infos are never empty.
+            if !ni.sec_info().members().is_empty()
+                && best_pfx.cmp_distance(&pfx, name) == Ordering::Greater
+            {
+                best_pfx = *pfx;
+                best_si = ni.sec_info();
             }
         }
-        result
+        (best_pfx, best_si.member_names())
     }
 
     /// Gets the `route`-th name from a collection of names
@@ -1193,6 +1186,10 @@ impl Chain {
                 .collect::<BTreeSet<XorName>>()
         };
 
+        // FIXME: only filtering for now to match RT.
+        // should confirm if needed esp after msg_relay changes.
+        let is_connected = |target_name: &XorName| connected_peers.contains(&target_name);
+
         let closest_section = match *dst {
             Authority::ManagedNode(ref target_name)
             | Authority::Client {
@@ -1202,7 +1199,7 @@ impl Chain {
                 if target_name == self.our_id().name() {
                     return Ok(BTreeSet::new());
                 }
-                if self.has(target_name) && connected_peers.contains(&target_name) {
+                if self.has(target_name) && is_connected(&target_name) {
                     return Ok(iter::once(*target_name).collect());
                 }
                 candidates(target_name)
@@ -1226,10 +1223,7 @@ impl Chain {
 
                     // FIXME: only doing this for now to match RT.
                     // should confirm if needed esp after msg_relay changes.
-                    section = section
-                        .into_iter()
-                        .filter(|n| connected_peers.contains(&n))
-                        .collect();
+                    section = section.into_iter().filter(is_connected).collect();
                     return Ok(section);
                 }
                 candidates(target_name)
@@ -1239,56 +1233,37 @@ impl Chain {
                     // only route the message when we have all the targets in our routing table -
                     // this is to prevent spamming the network by sending messages with
                     // intentionally short prefixes
-                    if prefix.is_covered_by(self.prefixes().iter()) {
-                        let is_compatible = |(pfx, section)| {
-                            if prefix.is_compatible(pfx) {
-                                Some(section)
-                            } else {
-                                None
-                            }
-                        };
-
-                        let mut targets = self
-                            .all_sections()
-                            .iter()
-                            .filter_map(is_compatible)
-                            .flat_map(BTreeSet::iter)
-                            .cloned()
-                            .collect::<BTreeSet<_>>();
-                        let _ = targets.remove(&self.our_id().name());
-
-                        // FIXME: only doing this for now to match RT.
-                        // should confirm if needed esp after msg_relay changes.
-                        targets = targets
-                            .into_iter()
-                            .filter(|n| connected_peers.contains(&n))
-                            .collect();
-                        return Ok(targets);
-                    } else {
+                    if !prefix.is_covered_by(self.prefixes().iter()) {
                         return Err(Error::CannotRoute);
                     }
+
+                    let is_compatible = |(pfx, section)| {
+                        if prefix.is_compatible(pfx) {
+                            Some(section)
+                        } else {
+                            None
+                        }
+                    };
+
+                    let mut targets =
+                        Iterator::flatten(self.all_sections().iter().filter_map(is_compatible))
+                            .cloned()
+                            .filter(is_connected)
+                            .collect::<BTreeSet<_>>();
+                    let _ = targets.remove(&self.our_id().name());
+                    return Ok(targets);
                 }
                 candidates(&prefix.lower_bound())
             }
         };
-        Ok(
-            iter::once(self.get_routeth_node(
-                &closest_section,
-                dst.name(),
-                Some(exclude),
-                route,
-            )?)
-            .collect(),
-        )
+        let target = self.get_routeth_node(&closest_section, dst.name(), Some(exclude), route)?;
+        Ok(iter::once(target).collect())
     }
 
     /// Returns our own section, including our own name.
     pub fn our_section(&self) -> BTreeSet<XorName> {
-        if self.our_infos.is_empty() {
-            Default::default()
-        } else {
-            self.our_info().member_names()
-        }
+        self.opt_our_info()
+            .map_or_else(BTreeSet::new, SectionInfo::member_names)
     }
 
     /// Are we among the `count` closest nodes to `name`?
@@ -1314,11 +1289,11 @@ impl Chain {
 
     /// Returns the total number of entries in the routing table, excluding our own name.
     pub fn len(&self) -> usize {
-        self.all_sections()
-            .into_iter()
-            .map(|(_, section)| section.len())
+        self.neighbour_infos
+            .values()
+            .map(|ni| ni.sec_info().members().len())
             .sum::<usize>()
-            - 1
+            + self.opt_our_info().map_or(0, |si| si.members().len() - 1)
     }
 
     /// Compute an estimate of the size of the network from the size of our routing table.
@@ -1337,7 +1312,7 @@ impl Chain {
             .sum();
 
         // Total size estimate = known_nodes / network_fraction
-        let network_size = self.valid_peers(true).len() as f64 / network_fraction;
+        let network_size = self.valid_peers().len() as f64 / network_fraction;
 
         (network_size.ceil() as u64, is_exact)
     }

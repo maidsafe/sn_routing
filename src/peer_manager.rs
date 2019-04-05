@@ -680,13 +680,8 @@ impl PeerManager {
         let expired_peers = self
             .peers
             .values()
-            .filter_map(|peer| {
-                if peer.is_expired() {
-                    Some(*peer.pub_id())
-                } else {
-                    None
-                }
-            })
+            .filter(|peer| peer.is_expired())
+            .map(|peer| *peer.pub_id())
             .chain(remove_candidate)
             .collect_vec();
 

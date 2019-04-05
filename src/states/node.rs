@@ -297,7 +297,7 @@ impl Node {
             let status_str = format!(
                 "{} - Routing Table size: {:3}",
                 self,
-                self.chain.valid_peers(true).len()
+                self.chain.valid_peers().len()
             );
             let network_estimate = match self.chain().network_size_estimate() {
                 (n, true) => format!("Exact network size: {}", n),
@@ -383,7 +383,7 @@ impl Node {
             }) => self.handle_connection_info_prepared(result_token, result),
             CrustEvent::ListenerStarted(port) => {
                 trace!("{} Listener started on port {}.", self, port);
-                if self.is_first_node || self.init_first_node(outbox).is_err() {
+                if self.is_first_node && self.init_first_node(outbox).is_err() {
                     outbox.send_event(Event::Terminate);
                     return Transition::Terminate;
                 }
@@ -970,15 +970,12 @@ impl Node {
 
         let peers_to_connect: BTreeSet<PublicId> = self
             .chain
-            .valid_peers(true)
-            .iter()
-            .filter_map(|pub_id| {
-                if self.peer_mgr.get_peer(pub_id).is_none() && *pub_id != self.full_id.public_id() {
-                    Some(**pub_id)
-                } else {
-                    None
-                }
+            .valid_peers()
+            .into_iter()
+            .filter(|pub_id| {
+                self.peer_mgr.get_peer(pub_id).is_none() && *pub_id != self.full_id.public_id()
             })
+            .cloned()
             .collect();
         for pub_id in peers_to_connect {
             debug!("{} Sending connection info to {:?}.", self, pub_id);
@@ -2356,10 +2353,9 @@ impl Node {
         let close_section = if self.is_first_node && !self.chain.is_member() {
             vec![*self.name()]
         } else {
-            match self.chain().close_names(&dst_name) {
-                Some(close_section) => close_section.into_iter().collect(),
-                None => return Err(RoutingError::InvalidDestination),
-            }
+            self.chain()
+                .close_names(&dst_name)
+                .ok_or(RoutingError::InvalidDestination)?
         };
 
         let relocation_dst = self
@@ -2905,36 +2901,31 @@ impl Node {
     /// may be us or another node. If our signature is not required, this returns `None`.
     fn get_signature_target(&self, src: &Authority<XorName>, route: u8) -> Option<XorName> {
         use crate::Authority::*;
-        let (our_section, valid_peers) = if self.chain().is_member() {
-            // FIXME: we're passing false here to valid peers to not include
-            // recently accepted peers which would affect quorum calculation.
-            // This even when going via RT would have only allowed route-0
-            // to succeed as by ack-failure, the new node would have been
-            // accepted to the RT. Need a better network startup separation.
-            (self.chain().our_section(), self.chain().valid_peers(false))
-        } else {
-            let our_section: BTreeSet<XorName> = iter::once(self.name()).cloned().collect();
-            let valid_peers: BTreeSet<&PublicId> = iter::once(self.id()).collect();
-            (our_section, valid_peers)
-        };
+        if !self.chain().is_member() {
+            return Some(*self.name());
+        }
         let list: Vec<XorName> = match *src {
             ClientManager(_) | NaeManager(_) | NodeManager(_) => {
-                let mut v = our_section
+                let mut v = self
+                    .chain()
+                    .our_section()
                     .into_iter()
                     .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs));
                 v.truncate(self.min_section_size());
                 v
             }
-            Section(_) => our_section
+            Section(_) => self
+                .chain()
+                .our_section()
                 .into_iter()
                 .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs)),
-            PrefixSection(_) => valid_peers
-                .iter()
-                .map(|id| id.name())
-                .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs))
-                .into_iter()
+            // FIXME: This does not include recently accepted peers which would affect quorum
+            // calculation. This even when going via RT would have only allowed route-0 to succeed
+            // as by ack-failure, the new node would have been accepted to the RT.
+            // Need a better network startup separation.
+            PrefixSection(_) => Iterator::flatten(self.chain().all_sections().values())
                 .cloned()
-                .collect(),
+                .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs)),
             ManagedNode(_) | Client { .. } => return Some(*self.name()),
         };
 
@@ -2966,12 +2957,7 @@ impl Node {
             // TODO: even if having chain reply based on connected_state,
             // we remove self in targets info and can do same by not
             // chaining us to conn_peer list here?
-            let conn_peers = self
-                .peer_mgr
-                .connected_peers()
-                .map(Peer::name)
-                .chain(iter::once(self.name()))
-                .collect_vec();
+            let conn_peers = self.connected_peers();
             let targets: BTreeSet<_> = self
                 .chain()
                 .targets(&routing_msg.dst, *exclude, route as usize, &conn_peers)?
@@ -3022,6 +3008,18 @@ impl Node {
             );
             Err(RoutingError::InvalidSource)
         }
+    }
+
+    // TODO: Once `Chain::targets` uses the ideal state instead of the actually connected peers,
+    // this should be removed.
+    /// Returns all peers we are currently connected to, according to the peer manager, including
+    /// ourselves.
+    fn connected_peers(&self) -> Vec<&XorName> {
+        self.peer_mgr
+            .connected_peers()
+            .map(Peer::name)
+            .chain(iter::once(self.name()))
+            .collect()
     }
 
     /// Adds a newly connected peer to the routing table. Must only be called for connected peers.
@@ -3257,24 +3255,14 @@ impl Base for Node {
         if let Authority::Client { ref client_id, .. } = *auth {
             client_id == self.full_id.public_id()
         } else {
-            let conn_peers = self
-                .peer_mgr
-                .connected_peers()
-                .map(Peer::name)
-                .chain(iter::once(self.name()))
-                .collect_vec();
+            let conn_peers = self.connected_peers();
             (self.is_first_node || self.chain.is_member())
                 && self.chain().in_authority(auth, &conn_peers)
         }
     }
 
     fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
-        let conn_peers = self
-            .peer_mgr
-            .connected_peers()
-            .map(Peer::name)
-            .chain(iter::once(self.name()))
-            .collect_vec();
+        let conn_peers = self.connected_peers();
         self.chain().closest_names(&name, count, &conn_peers)
     }
 

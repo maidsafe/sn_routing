@@ -380,7 +380,7 @@ mod tests {
     fn division() {
         for _ in 0..100_000 {
             let x = rand::random();
-            let y = rand::random();
+            let y = rand::random::<u32>().saturating_add(1);
             assert_eq!(xor_from_int(x / u64::from(y)), xor_from_int(x) / y);
             assert_eq!(xor_from_int(1), xor_from_int(u64::from(y)) / y);
         }
