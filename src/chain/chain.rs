@@ -984,17 +984,13 @@ impl Chain {
     // Set of methods ported over from routing_table mostly as-is. The idea is to refactor and
     // restructure them after they've all been ported over.
 
-    /// Convert from collection of SectionInfo to Sections type. All neighbouring sections and our
-    /// own.
-    pub fn all_sections(&self) -> BTreeMap<Prefix<XorName>, BTreeSet<XorName>> {
+    /// Returns an iterator over all neighbouring sections and our own, together with their prefix
+    /// in the map.
+    pub fn all_sections(&self) -> impl Iterator<Item = (Prefix<XorName>, &SectionInfo)> {
         self.neighbour_infos
             .iter()
-            .map(|(pfx, sec_sigs)| (*pfx, sec_sigs.sec_info().member_names()))
-            .chain(
-                self.opt_our_info()
-                    .map(|si| (*si.prefix(), si.member_names())),
-            )
-            .collect::<BTreeMap<_, _>>()
+            .map(|(pfx, sec_sigs)| (*pfx, sec_sigs.sec_info()))
+            .chain(self.opt_our_info().map(|si| (*si.prefix(), si)))
     }
 
     /// Finds the `count` names closest to `name` in the whole routing table.
@@ -1005,11 +1001,10 @@ impl Chain {
         connected_peers: &[&XorName],
     ) -> Vec<XorName> {
         self.all_sections()
-            .into_iter()
             .sorted_by(|&(pfx0, _), &(pfx1, _)| pfx0.cmp_distance(&pfx1, name))
             .into_iter()
-            .flat_map(|(_, section)| {
-                section
+            .flat_map(|(_, si)| {
+                si.member_names()
                     .into_iter()
                     .sorted_by(|name0, name1| name.cmp_distance(name0, name1))
             })
@@ -1237,7 +1232,7 @@ impl Chain {
                         return Err(Error::CannotRoute);
                     }
 
-                    let is_compatible = |(pfx, section)| {
+                    let is_compatible = |(ref pfx, section)| {
                         if prefix.is_compatible(pfx) {
                             Some(section)
                         } else {
@@ -1245,11 +1240,13 @@ impl Chain {
                         }
                     };
 
-                    let mut targets =
-                        Iterator::flatten(self.all_sections().iter().filter_map(is_compatible))
-                            .cloned()
-                            .filter(is_connected)
-                            .collect::<BTreeSet<_>>();
+                    let mut targets = Iterator::flatten(
+                        self.all_sections()
+                            .filter_map(is_compatible)
+                            .map(SectionInfo::member_names),
+                    )
+                    .filter(is_connected)
+                    .collect::<BTreeSet<_>>();
                     let _ = targets.remove(&self.our_id().name());
                     return Ok(targets);
                 }
@@ -1323,7 +1320,7 @@ impl Chain {
             Default::default()
         } else {
             *iter::once(self.our_prefix())
-                .chain(self.all_sections().keys())
+                .chain(self.neighbour_infos.keys())
                 .min_by_key(|prefix| prefix.bit_count())
                 .unwrap_or(&self.our_prefix())
         }
