@@ -738,7 +738,7 @@ impl JoiningRelocateCandidate {
 }
 
 //////////////////
-/// Utilities
+/// States
 //////////////////
 
 #[derive(Debug, PartialEq, Default, Clone)]
