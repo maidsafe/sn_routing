@@ -189,7 +189,9 @@ where
     }
 
     pub fn has_unconsensused_observations(&self) -> bool {
-        self.observations.iter().any(|(_, obs)| obs.state != ConsensusState::Polled)
+        self.observations
+            .iter()
+            .any(|(_, obs)| obs.state != ConsensusState::Polled)
     }
 
     pub fn our_unpolled_observations(&self) -> impl Iterator<Item = &Observation<T, S::PublicId>> {
