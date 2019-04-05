@@ -16,8 +16,8 @@ use std::fmt::{self, Debug, Formatter};
 use std::rc::Rc;
 
 use crate::utilities::{
-    Attributes, LocalEvent, Name, Node, NodeChange, NodeState, ParsecVote, Rpc, Section,
-    SectionInfo, Candidate, ChangeElder, GenesisPfxInfo, ProofRequest, ProofSource, Proof,
+    Attributes, Candidate, ChangeElder, GenesisPfxInfo, LocalEvent, Name, Node, NodeChange,
+    NodeState, ParsecVote, Proof, ProofRequest, ProofSource, Rpc, Section, SectionInfo,
 };
 
 #[derive(Debug, PartialEq, Clone)]
@@ -326,7 +326,7 @@ impl Action {
         self.send_rpc(Rpc::ResourceProofReceipt { candidate, source });
     }
 
-    pub fn start_compute_resource_proof(&self, source: Name, proof: ProofRequest) {
+    pub fn start_compute_resource_proof(&self, source: Name, _proof: ProofRequest) {
         self.schedule_event(LocalEvent::ComputeResourceProofForElder(
             source,
             ProofSource(2),

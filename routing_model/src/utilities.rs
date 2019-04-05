@@ -269,4 +269,3 @@ impl LocalEvent {
         Event::LocalEvent(*self)
     }
 }
-
