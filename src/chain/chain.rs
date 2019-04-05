@@ -124,12 +124,12 @@ impl Chain {
     /// Create a new chain given genesis information
     pub fn with_gen_info(min_sec_size: usize, our_id: PublicId, gen_info: GenesisPfxInfo) -> Self {
         // TODO validate `gen_info` to contain adequate proofs
-        let is_member = gen_info.our_info.members().contains(&our_id);
+        let is_member = gen_info.first_info.members().contains(&our_id);
         Self {
             min_sec_size,
             our_id,
-            new_info: gen_info.our_info.clone(),
-            our_infos: vec![(gen_info.our_info, Default::default())],
+            new_info: gen_info.first_info.clone(),
+            our_infos: vec![(gen_info.first_info, Default::default())],
             is_member,
             neighbour_infos: Default::default(),
             their_knowledge: Default::default(),
@@ -417,7 +417,7 @@ impl Chain {
 
         Ok(PrefixChangeOutcome {
             gen_pfx_info: GenesisPfxInfo {
-                our_info: self.our_info().clone(),
+                first_info: self.our_info().clone(),
                 latest_info: Default::default(),
             },
             cached_events: chain_acc
@@ -1503,10 +1503,10 @@ mod tests {
         let our_id = unwrap!(our_id);
         let mut sections_iter = section_members.into_iter();
 
-        let our_info = sections_iter.next().expect("section members");
-        let our_members = our_info.members().clone();
+        let first_info = sections_iter.next().expect("section members");
+        let our_members = first_info.members().clone();
         let genesis_info = GenesisPfxInfo {
-            our_info,
+            first_info,
             latest_info: Default::default(),
         };
 

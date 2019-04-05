@@ -36,7 +36,7 @@ use std::fmt::{self, Debug, Formatter};
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct GenesisPfxInfo {
-    pub our_info: SectionInfo,
+    pub first_info: SectionInfo,
     pub latest_info: SectionInfo,
 }
 
@@ -45,8 +45,8 @@ impl Debug for GenesisPfxInfo {
         write!(
             formatter,
             "GenesisPfxInfo({:?}, gen_version: {}, latest_version: {})",
-            self.our_info.prefix(),
-            self.our_info.version(),
+            self.first_info.prefix(),
+            self.first_info.version(),
             self.latest_info.version(),
         )
     }

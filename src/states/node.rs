@@ -421,7 +421,7 @@ impl Node {
             None,
         )?;
         self.gen_pfx_info = Some(GenesisPfxInfo {
-            our_info: first_info,
+            first_info,
             latest_info: Default::default(),
         });
 
@@ -1508,11 +1508,11 @@ impl Node {
 
         if let Some(gen_info) = self.gen_pfx_info.clone() {
             let trimmed_info = GenesisPfxInfo {
-                our_info: gen_info.our_info.clone(),
+                first_info: gen_info.first_info.clone(),
                 latest_info: self.chain.our_info().clone(),
             };
 
-            let src = Authority::PrefixSection(*trimmed_info.our_info.prefix());
+            let src = Authority::PrefixSection(*trimmed_info.first_info.prefix());
             let content = MessageContent::NodeApproval(trimmed_info);
             if let Err(error) = self.send_routing_message(src, new_client_auth, content) {
                 debug!(
@@ -1537,22 +1537,22 @@ impl Node {
 
         if self
             .parsec_map
-            .get(genesis_info.our_info.version())
+            .get(genesis_info.first_info.version())
             .is_none()
         {
             info!("{}: Init new Parsec, genesis = {:?}", self, genesis_info);
 
             let full_id = self.full_id.clone();
-            let genesis_ver = *genesis_info.our_info.version();
+            let genesis_ver = *genesis_info.first_info.version();
             let consensus_mode = parsec::ConsensusMode::Single;
 
             #[cfg(not(feature = "mock"))]
-            let parsec = if genesis_info.our_info.members().contains(self.id()) {
-                Parsec::from_genesis(full_id, &genesis_info.our_info.members(), consensus_mode)
+            let parsec = if genesis_info.first_info.members().contains(self.id()) {
+                Parsec::from_genesis(full_id, &genesis_info.first_info.members(), consensus_mode)
             } else {
                 Parsec::from_existing(
                     full_id,
-                    &genesis_info.our_info.members(),
+                    &genesis_info.first_info.members(),
                     &genesis_info.latest_info.members(),
                     consensus_mode,
                 )
@@ -1560,20 +1560,20 @@ impl Node {
 
             #[cfg(feature = "mock")]
             let parsec = {
-                let section_hash = *genesis_info.our_info.hash();
+                let section_hash = *genesis_info.first_info.hash();
 
-                if genesis_info.our_info.members().contains(self.id()) {
+                if genesis_info.first_info.members().contains(self.id()) {
                     Parsec::from_genesis(
                         section_hash,
                         full_id,
-                        &genesis_info.our_info.members(),
+                        &genesis_info.first_info.members(),
                         consensus_mode,
                     )
                 } else {
                     Parsec::from_existing(
                         section_hash,
                         full_id,
-                        &genesis_info.our_info.members(),
+                        &genesis_info.first_info.members(),
                         &genesis_info.latest_info.members(),
                         consensus_mode,
                     )
@@ -2679,7 +2679,7 @@ impl Node {
                 .iter()
                 .cloned()
                 .collect_vec();
-            (*gen_pfx_info.our_info.version(), recipients)
+            (*gen_pfx_info.first_info.version(), recipients)
         } else {
             log_or_panic!(
                 LogLevel::Error,
