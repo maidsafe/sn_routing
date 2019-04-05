@@ -16,9 +16,11 @@ mod actions;
 mod flows_dst;
 mod flows_node;
 mod flows_src;
-mod scenario_tests;
 mod state;
 mod utilities;
+
+#[cfg(test)]
+mod scenario_tests;
 
 #[macro_use]
 extern crate lazy_static;
