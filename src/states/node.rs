@@ -383,11 +383,9 @@ impl Node {
             }) => self.handle_connection_info_prepared(result_token, result),
             CrustEvent::ListenerStarted(port) => {
                 trace!("{} Listener started on port {}.", self, port);
-                if self.is_first_node {
-                    if self.init_first_node(outbox).is_err() {
-                        outbox.send_event(Event::Terminate);
-                        return Transition::Terminate;
-                    }
+                if self.is_first_node || self.init_first_node(outbox).is_err() {
+                    outbox.send_event(Event::Terminate);
+                    return Transition::Terminate;
                 }
                 return Transition::Stay;
             }
@@ -2356,7 +2354,7 @@ impl Node {
         }
 
         let close_section = if self.is_first_node && !self.chain.is_member() {
-            iter::once(self.name()).cloned().collect_vec()
+            vec![*self.name()]
         } else {
             match self.chain().close_names(&dst_name) {
                 Some(close_section) => close_section.into_iter().collect(),
