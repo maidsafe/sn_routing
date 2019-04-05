@@ -609,7 +609,7 @@ impl Chain {
             }
 
             // Now insert our own proof of the neighbour section.
-            let our_info = self.our_info_by_version(ns.version()).ok_or_else(|| {
+            let our_info = self.our_info_by_version(ns.our_version()).ok_or_else(|| {
                 log_or_panic!(
                     LogLevel::Error,
                     "No matching own section info for signed neighbour section."
@@ -1365,7 +1365,7 @@ impl Debug for Chain {
                 formatter,
                 "\t {:?} signed by our_version: {}",
                 pfx,
-                nsigs.version()
+                nsigs.our_version()
             )?;
             writeln!(formatter, "\t {}", nsigs.sec_info())?;
         }
