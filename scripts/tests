@@ -2,5 +2,7 @@
 
 set -x -e
 export RUSTFLAGS="-C opt-level=2 -C codegen-units=8"
+DIR=`dirname "$0"`
 
-cargo test --release --features=mock_parsec
+cargo test --verbose --release --features=mock_parsec -- --skip aggressive_churn
+$DIR/travis_wait -l 1800 cargo test --verbose --release --features=mock_parsec aggressive_churn
