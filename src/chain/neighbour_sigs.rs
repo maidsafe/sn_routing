@@ -21,8 +21,11 @@ use std::fmt::{self, Debug, Formatter};
 /// A neighbour's section info, together with a quorum of signatures from a version of our section.
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct NeighbourSigs {
+    /// The neighbour's section info.
     sec_info: SectionInfo,
-    version: u64,
+    /// The version of our section that signed `sec_info`.
+    our_version: u64,
+    /// A set of signatures by members of `our_version` of our own section, signing `sec_info`.
     proofs: ProofSet,
 }
 
@@ -31,7 +34,7 @@ impl NeighbourSigs {
     pub fn new(sec_info: SectionInfo, proofs: ProofSet, our_info: &SectionInfo) -> NeighbourSigs {
         NeighbourSigs {
             sec_info: sec_info,
-            version: *our_info.version(),
+            our_version: *our_info.version(),
             proofs: proofs,
         }
     }
@@ -42,16 +45,16 @@ impl NeighbourSigs {
     }
 
     /// Returns the version of our own section that signed this neighbour's section info.
-    pub fn version(&self) -> u64 {
-        self.version
+    pub fn our_version(&self) -> u64 {
+        self.our_version
     }
 
     /// Checks if the given section info of our own section is newer than the one we already know
     /// about, and our proofs are a quorum with respect to it. If that is the case, returns `true`
     /// and updates the version.
     pub fn update_version(&mut self, our_info: &SectionInfo) -> bool {
-        if *our_info.version() > self.version && our_info.is_quorum(&self.proofs) {
-            self.version = *our_info.version();
+        if *our_info.version() > self.our_version && our_info.is_quorum(&self.proofs) {
+            self.our_version = *our_info.version();
             true
         } else {
             false

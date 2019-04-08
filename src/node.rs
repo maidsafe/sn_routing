@@ -20,7 +20,7 @@ use crate::messages::{
     RELOCATE_PRIORITY,
 };
 use crate::outbox::{EventBox, EventBuf};
-use crate::routing_table::{Authority, RoutingTable};
+use crate::routing_table::Authority;
 use crate::state_machine::{State, StateMachine};
 use crate::states::{self, Bootstrapping, BootstrappingTargetState};
 use crate::types::{MessageId, RoutingActionSender};
@@ -518,11 +518,6 @@ impl Node {
         self.machine.id().ok_or(RoutingError::Terminated)
     }
 
-    /// Returns the routing table of this node.
-    pub fn routing_table(&self) -> Result<&RoutingTable<XorName>, RoutingError> {
-        self.machine.routing_table().ok_or(RoutingError::Terminated)
-    }
-
     /// Returns the chain for this node.
     #[cfg(feature = "mock")]
     pub fn chain(&self) -> Result<&Chain, RoutingError> {
@@ -580,11 +575,6 @@ impl EventStepper for Node {
 
 #[cfg(feature = "mock")]
 impl Node {
-    /// Purge invalid routing entries.
-    pub fn purge_invalid_rt_entry(&mut self) {
-        self.machine.current_mut().purge_invalid_rt_entry()
-    }
-
     /// Returns the list of banned clients' IPs held by this node.
     pub fn get_banned_client_ips(&self) -> BTreeSet<IpAddr> {
         self.machine.current().get_banned_client_ips()
@@ -611,17 +601,6 @@ impl Node {
             .set_next_relocation_interval(interval)
     }
 
-    /// Normalisation of routing connection means converting the
-    /// `PeerState::Routing(RoutingConnnection::Proxy)` or
-    /// `PeerState::Routing(RoutingConnnection::JoiningNode)` to
-    /// `PeerState::Routing(RoutingConnection::Direct` after `JOINING_NODE_TIMEOUT_SECS` seconds
-    /// have elapsed for the peer with whom we have the connection.
-    pub fn has_unnormalised_routing_conn(&self, excludes: &BTreeSet<XorName>) -> bool {
-        self.machine
-            .current()
-            .has_unnormalised_routing_conn(excludes)
-    }
-
     /// Get the rate limiter's bandwidth usage map.
     pub fn get_clients_usage(&self) -> BTreeMap<IpAddr, u64> {
         unwrap!(self.machine.current().get_clients_usage())
@@ -640,6 +619,11 @@ impl Node {
     /// Checks whether there is un-acked messages.
     pub fn has_unacked_msg(&self) -> bool {
         self.machine.current().has_unacked_msg()
+    }
+
+    /// Checks whether the given authority represents self.
+    pub fn in_authority(&self, auth: &Authority<XorName>) -> bool {
+        self.machine.current().in_authority(auth)
     }
 }
 

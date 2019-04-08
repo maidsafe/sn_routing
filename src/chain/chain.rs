@@ -20,12 +20,15 @@ use super::{
     SectionInfo,
 };
 use crate::error::RoutingError;
-use crate::id::{FullId, PublicId};
+use crate::id::PublicId;
 use crate::messages::SignedMessage;
+use crate::routing_table::DEFAULT_PREFIX;
+use crate::routing_table::{Authority, Error};
 use crate::sha3::Digest256;
 use crate::{Prefix, XorName, Xorable};
 use itertools::Itertools;
 use log::LogLevel;
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Display, Formatter};
 use std::iter;
@@ -75,6 +78,7 @@ pub struct Chain {
     merging: BTreeSet<Digest256>,
 }
 
+#[allow(clippy::len_without_is_empty)]
 impl Chain {
     /// Returns the minimum section size.
     pub fn min_sec_size(&self) -> usize {
@@ -99,8 +103,7 @@ impl Chain {
     // FIXME: This chain cannot be used. Ideally we should not be creating the chain without genesis
     // info
     /// Create a new chain given genesis information
-    pub fn with_min_sec_size(min_sec_size: usize) -> Self {
-        let our_id = *FullId::default().public_id();
+    pub fn with_id_and_min_sec_size(our_id: PublicId, min_sec_size: usize) -> Self {
         Self {
             min_sec_size,
             our_id,
@@ -121,12 +124,12 @@ impl Chain {
     /// Create a new chain given genesis information
     pub fn with_gen_info(min_sec_size: usize, our_id: PublicId, gen_info: GenesisPfxInfo) -> Self {
         // TODO validate `gen_info` to contain adequate proofs
-        let is_member = gen_info.our_info.members().contains(&our_id);
+        let is_member = gen_info.first_info.members().contains(&our_id);
         Self {
             min_sec_size,
             our_id,
-            new_info: gen_info.our_info.clone(),
-            our_infos: vec![(gen_info.our_info, Default::default())],
+            new_info: gen_info.first_info.clone(),
+            our_infos: vec![(gen_info.first_info, Default::default())],
             is_member,
             neighbour_infos: Default::default(),
             their_knowledge: Default::default(),
@@ -414,7 +417,7 @@ impl Chain {
 
         Ok(PrefixChangeOutcome {
             gen_pfx_info: GenesisPfxInfo {
-                our_info: self.our_info().clone(),
+                first_info: self.our_info().clone(),
                 latest_info: Default::default(),
             },
             cached_events: chain_acc
@@ -435,11 +438,16 @@ impl Chain {
         &self.our_id
     }
 
+    /// Returns our own current section info, or `None`, if not available.
+    pub fn opt_our_info(&self) -> Option<&SectionInfo> {
+        self.our_infos.last().map(|&(ref si, _)| si)
+    }
+
     /// Returns our own current section info.
     pub fn our_info(&self) -> &SectionInfo {
         // TODO: Replace `our_infos` with a new `NonemptyVec` type that statically guarantees that
         // it's never empty.
-        &unwrap!(self.our_infos.last()).0
+        &unwrap!(self.opt_our_info())
     }
 
     /// Returns our latest `SectionInfo` for the given prefix if found.
@@ -453,7 +461,8 @@ impl Chain {
 
     /// Returns our own current section's prefix.
     pub fn our_prefix(&self) -> &Prefix<XorName> {
-        self.our_info().prefix()
+        self.opt_our_info()
+            .map_or(&DEFAULT_PREFIX, SectionInfo::prefix)
     }
 
     /// Returns our current chain state.
@@ -495,19 +504,17 @@ impl Chain {
     /// Checks if given `PublicId` is a valid peer by checking if we have them as a member of self
     /// section or neighbours.
     pub fn is_peer_valid(&self, pub_id: &PublicId) -> bool {
-        self.valid_peers().iter().any(|id| *id == pub_id)
+        self.neighbour_infos()
+            .chain(self.opt_our_info())
+            .chain(iter::once(&self.new_info))
+            .any(|si| si.members().contains(pub_id))
     }
 
     /// Returns a set of valid peers we should be connected to.
     pub fn valid_peers(&self) -> BTreeSet<&PublicId> {
         self.neighbour_infos()
+            .chain(self.opt_our_info())
             .flat_map(SectionInfo::members)
-            .chain(
-                self.our_infos
-                    .last()
-                    .iter()
-                    .flat_map(|&&(ref si, _)| si.members()),
-            )
             .chain(self.new_info.members())
             .collect()
     }
@@ -602,7 +609,7 @@ impl Chain {
             }
 
             // Now insert our own proof of the neighbour section.
-            let our_info = self.our_info_by_version(ns.version()).ok_or_else(|| {
+            let our_info = self.our_info_by_version(ns.our_version()).ok_or_else(|| {
                 log_or_panic!(
                     LogLevel::Error,
                     "No matching own section info for signed neighbour section."
@@ -973,6 +980,351 @@ impl Chain {
             .filter(move |(_, proofs)| proofs.contains_id(&self.our_id))
             .map(|(event, _)| event)
     }
+
+    // Set of methods ported over from routing_table mostly as-is. The idea is to refactor and
+    // restructure them after they've all been ported over.
+
+    /// Returns an iterator over all neighbouring sections and our own, together with their prefix
+    /// in the map.
+    pub fn all_sections(&self) -> impl Iterator<Item = (Prefix<XorName>, &SectionInfo)> {
+        self.neighbour_infos
+            .iter()
+            .map(|(pfx, sec_sigs)| (*pfx, sec_sigs.sec_info()))
+            .chain(self.opt_our_info().map(|si| (*si.prefix(), si)))
+    }
+
+    /// Finds the `count` names closest to `name` in the whole routing table.
+    fn closest_known_names(
+        &self,
+        name: &XorName,
+        count: usize,
+        connected_peers: &[&XorName],
+    ) -> Vec<XorName> {
+        self.all_sections()
+            .sorted_by(|&(pfx0, _), &(pfx1, _)| pfx0.cmp_distance(&pfx1, name))
+            .into_iter()
+            .flat_map(|(_, si)| {
+                si.member_names()
+                    .into_iter()
+                    .sorted_by(|name0, name1| name.cmp_distance(name0, name1))
+            })
+            .filter(|name| connected_peers.contains(&name))
+            .take(count)
+            .collect_vec()
+    }
+
+    /// Returns whether the table contains the given `name`.
+    fn has(&self, name: &XorName) -> bool {
+        self.get_section_legacy(name)
+            .map_or(false, |section| section.contains(name))
+    }
+
+    /// Returns the section matching the given `name`, if present.
+    /// Includes our own name in the case that our prefix matches `name`.
+    fn get_section_legacy(&self, name: &XorName) -> Option<BTreeSet<XorName>> {
+        if self.our_prefix().matches(name) {
+            return Some(self.our_info().member_names());
+        }
+        self.neighbour_infos
+            .iter()
+            .find(|&(ref pfx, _)| pfx.matches(name))
+            .map(|(_, ref ni)| ni.sec_info().member_names())
+    }
+
+    /// If our section is the closest one to `name`, returns all names in our section *including
+    /// ours*, otherwise returns `None`.
+    pub fn close_names(&self, name: &XorName) -> Option<Vec<XorName>> {
+        if self.our_prefix().matches(name) {
+            Some(
+                self.our_info()
+                    .members()
+                    .iter()
+                    .map(|id| *id.name())
+                    .collect(),
+            )
+        } else {
+            None
+        }
+    }
+
+    /// If our section is the closest one to `name`, returns all names in our section *excluding
+    /// ours*, otherwise returns `None`.
+    pub fn other_close_names(&self, name: &XorName) -> Option<BTreeSet<XorName>> {
+        if self.our_prefix().matches(name) {
+            let mut section = self.our_info().member_names();
+            let _ = section.remove(&self.our_id().name());
+            Some(section)
+        } else {
+            None
+        }
+    }
+
+    /// Returns the `count` closest entries to `name` in the routing table, including our own name,
+    /// sorted by ascending distance to `name`. If we are not close, returns `None`.
+    pub fn closest_names(
+        &self,
+        name: &XorName,
+        count: usize,
+        connected_peers: &[&XorName],
+    ) -> Option<Vec<XorName>> {
+        let result = self.closest_known_names(name, count, connected_peers);
+        if result.contains(&&self.our_id().name()) {
+            Some(result)
+        } else {
+            None
+        }
+    }
+
+    /// Returns the `count-1` closest entries to `name` in the routing table, excluding
+    /// our own name, sorted by ascending distance to `name` -  or `None`, if our name
+    /// isn't among `count` names closest to `name`.
+    fn other_closest_names(
+        &self,
+        name: &XorName,
+        count: usize,
+        connected_peers: &[&XorName],
+    ) -> Option<Vec<XorName>> {
+        self.closest_names(name, count, connected_peers)
+            .map(|mut result| {
+                result.retain(|name| name != self.our_id().name());
+                result
+            })
+    }
+
+    /// Returns the prefix of the closest non-empty section to `name`, regardless of whether `name`
+    /// belongs in that section or not, and the section itself.
+    fn closest_section(&self, name: &XorName) -> (Prefix<XorName>, BTreeSet<XorName>) {
+        let mut best_pfx = *self.our_prefix();
+        let mut best_si = self.our_info();
+        for (pfx, ni) in &self.neighbour_infos {
+            // TODO: Remove the first check after verifying that section infos are never empty.
+            if !ni.sec_info().members().is_empty()
+                && best_pfx.cmp_distance(&pfx, name) == Ordering::Greater
+            {
+                best_pfx = *pfx;
+                best_si = ni.sec_info();
+            }
+        }
+        (best_pfx, best_si.member_names())
+    }
+
+    /// Gets the `route`-th name from a collection of names
+    fn get_routeth_name<'a, U: IntoIterator<Item = &'a XorName>>(
+        names: U,
+        dst_name: &XorName,
+        route: usize,
+    ) -> &'a XorName {
+        let sorted_names = names
+            .into_iter()
+            .sorted_by(|&lhs, &rhs| dst_name.cmp_distance(lhs, rhs));
+        sorted_names[route % sorted_names.len()]
+    }
+
+    /// Returns the `route`-th node in the given section, sorted by distance to `target`
+    fn get_routeth_node(
+        &self,
+        section: &BTreeSet<XorName>,
+        target: XorName,
+        exclude: Option<XorName>,
+        route: usize,
+    ) -> Result<XorName, Error> {
+        let names = if let Some(exclude) = exclude {
+            section.iter().filter(|&x| *x != exclude).collect_vec()
+        } else {
+            section.iter().collect_vec()
+        };
+
+        if names.is_empty() {
+            return Err(Error::CannotRoute);
+        }
+
+        Ok(*Chain::get_routeth_name(names, &target, route))
+    }
+
+    /// Returns a collection of nodes to which a message for the given `Authority` should be sent
+    /// onwards. In all non-error cases below, the returned collection will have the members of
+    /// `exclude` removed, possibly resulting in an empty set being returned.
+    ///
+    /// * If the destination is an `Authority::Section`:
+    ///     - if our section is the closest on the network (i.e. our section's prefix is a prefix of
+    ///       the destination), returns all other members of our section; otherwise
+    ///     - returns the `route`-th closest member of the RT to the target
+    ///
+    /// * If the destination is an `Authority::PrefixSection`:
+    ///     - if the prefix is compatible with our prefix and is fully-covered by prefixes in our
+    ///       RT, returns all members in these prefixes except ourself; otherwise
+    ///     - if the prefix is compatible with our prefix and is *not* fully-covered by prefixes in
+    ///       our RT, returns `Err(Error::CannotRoute)`; otherwise
+    ///     - returns the `route`-th closest member of the RT to the lower bound of the target
+    ///       prefix
+    ///
+    /// * If the destination is a group (`ClientManager`, `NaeManager` or `NodeManager`):
+    ///     - if our section is the closest on the network (i.e. our section's prefix is a prefix of
+    ///       the destination), returns all other members of our section; otherwise
+    ///     - returns the `route`-th closest member of the RT to the target
+    ///
+    /// * If the destination is an individual node (`ManagedNode` or `Client`):
+    ///     - if our name *is* the destination, returns an empty set; otherwise
+    ///     - if the destination name is an entry in the routing table, returns it; otherwise
+    ///     - returns the `route`-th closest member of the RT to the target
+    pub fn targets(
+        &self,
+        dst: &Authority<XorName>,
+        exclude: XorName,
+        route: usize,
+        connected_peers: &[&XorName],
+    ) -> Result<BTreeSet<XorName>, Error> {
+        let candidates = |target_name: &XorName| {
+            self.closest_known_names(target_name, self.min_sec_size, &connected_peers)
+                .into_iter()
+                .filter(|name| name != self.our_id().name())
+                .collect::<BTreeSet<XorName>>()
+        };
+
+        // FIXME: only filtering for now to match RT.
+        // should confirm if needed esp after msg_relay changes.
+        let is_connected = |target_name: &XorName| connected_peers.contains(&target_name);
+
+        let closest_section = match *dst {
+            Authority::ManagedNode(ref target_name)
+            | Authority::Client {
+                proxy_node_name: ref target_name,
+                ..
+            } => {
+                if target_name == self.our_id().name() {
+                    return Ok(BTreeSet::new());
+                }
+                if self.has(target_name) && is_connected(&target_name) {
+                    return Ok(iter::once(*target_name).collect());
+                }
+                candidates(target_name)
+            }
+            Authority::ClientManager(ref target_name)
+            | Authority::NaeManager(ref target_name)
+            | Authority::NodeManager(ref target_name) => {
+                if let Some(group) =
+                    self.other_closest_names(target_name, self.min_sec_size, &connected_peers)
+                {
+                    return Ok(group.into_iter().collect());
+                }
+                candidates(target_name)
+            }
+            Authority::Section(ref target_name) => {
+                let (prefix, section) = self.closest_section(target_name);
+                if &prefix == self.our_prefix() {
+                    // Exclude our name since we don't need to send to ourself
+                    let mut section = section.clone();
+                    let _ = section.remove(&self.our_id().name());
+
+                    // FIXME: only doing this for now to match RT.
+                    // should confirm if needed esp after msg_relay changes.
+                    section = section.into_iter().filter(is_connected).collect();
+                    return Ok(section);
+                }
+                candidates(target_name)
+            }
+            Authority::PrefixSection(ref prefix) => {
+                if prefix.is_compatible(&self.our_prefix()) {
+                    // only route the message when we have all the targets in our routing table -
+                    // this is to prevent spamming the network by sending messages with
+                    // intentionally short prefixes
+                    if !prefix.is_covered_by(self.prefixes().iter()) {
+                        return Err(Error::CannotRoute);
+                    }
+
+                    let is_compatible = |(ref pfx, section)| {
+                        if prefix.is_compatible(pfx) {
+                            Some(section)
+                        } else {
+                            None
+                        }
+                    };
+
+                    let mut targets = Iterator::flatten(
+                        self.all_sections()
+                            .filter_map(is_compatible)
+                            .map(SectionInfo::member_names),
+                    )
+                    .filter(is_connected)
+                    .collect::<BTreeSet<_>>();
+                    let _ = targets.remove(&self.our_id().name());
+                    return Ok(targets);
+                }
+                candidates(&prefix.lower_bound())
+            }
+        };
+        let target = self.get_routeth_node(&closest_section, dst.name(), Some(exclude), route)?;
+        Ok(iter::once(target).collect())
+    }
+
+    /// Returns our own section, including our own name.
+    pub fn our_section(&self) -> BTreeSet<XorName> {
+        self.opt_our_info()
+            .map_or_else(BTreeSet::new, SectionInfo::member_names)
+    }
+
+    /// Are we among the `count` closest nodes to `name`?
+    fn is_closest(&self, name: &XorName, count: usize, connected_peers: &[&XorName]) -> bool {
+        self.closest_names(name, count, connected_peers).is_some()
+    }
+
+    /// Returns whether we are a part of the given authority.
+    pub fn in_authority(&self, auth: &Authority<XorName>, connected_peers: &[&XorName]) -> bool {
+        match *auth {
+            // clients have no routing tables
+            Authority::Client { .. } => false,
+            Authority::ManagedNode(ref name) => self.our_id().name() == name,
+            Authority::ClientManager(ref name)
+            | Authority::NaeManager(ref name)
+            | Authority::NodeManager(ref name) => {
+                self.is_closest(name, self.min_sec_size, connected_peers)
+            }
+            Authority::Section(ref name) => self.our_prefix().matches(name),
+            Authority::PrefixSection(ref prefix) => self.our_prefix().is_compatible(prefix),
+        }
+    }
+
+    /// Returns the total number of entries in the routing table, excluding our own name.
+    pub fn len(&self) -> usize {
+        self.neighbour_infos
+            .values()
+            .map(|ni| ni.sec_info().members().len())
+            .sum::<usize>()
+            + self.opt_our_info().map_or(0, |si| si.members().len() - 1)
+    }
+
+    /// Compute an estimate of the size of the network from the size of our routing table.
+    ///
+    /// Return (estimate, exact), with exact = true iff we have the whole network in our
+    /// routing table.
+    pub fn network_size_estimate(&self) -> (u64, bool) {
+        let known_prefixes = self.prefixes();
+        let is_exact = Prefix::default().is_covered_by(known_prefixes.iter());
+
+        // Estimated fraction of the network that we have in our RT.
+        // Computed as the sum of 1 / 2^(prefix.bit_count) for all known section prefixes.
+        let network_fraction: f64 = known_prefixes
+            .iter()
+            .map(|p| 1.0 / (p.bit_count() as f64).exp2())
+            .sum();
+
+        // Total size estimate = known_nodes / network_fraction
+        let network_size = self.valid_peers().len() as f64 / network_fraction;
+
+        (network_size.ceil() as u64, is_exact)
+    }
+
+    /// Return a minimum length prefix, favouring our prefix if it is one of the shortest.
+    pub fn min_len_prefix(&self) -> Prefix<XorName> {
+        if self.our_infos.is_empty() {
+            Default::default()
+        } else {
+            *iter::once(self.our_prefix())
+                .chain(self.neighbour_infos.keys())
+                .min_by_key(|prefix| prefix.bit_count())
+                .unwrap_or(&self.our_prefix())
+        }
+    }
 }
 
 /// The outcome of a prefix change.
@@ -1010,7 +1362,7 @@ impl Debug for Chain {
                 formatter,
                 "\t {:?} signed by our_version: {}",
                 pfx,
-                nsigs.version()
+                nsigs.our_version()
             )?;
             writeln!(formatter, "\t {}", nsigs.sec_info())?;
         }
@@ -1148,10 +1500,10 @@ mod tests {
         let our_id = unwrap!(our_id);
         let mut sections_iter = section_members.into_iter();
 
-        let our_info = sections_iter.next().expect("section members");
-        let our_members = our_info.members().clone();
+        let first_info = sections_iter.next().expect("section members");
+        let our_members = first_info.members().clone();
         let genesis_info = GenesisPfxInfo {
-            our_info,
+            first_info,
             latest_info: Default::default(),
         };
 

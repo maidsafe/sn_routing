@@ -96,6 +96,10 @@ impl SectionInfo {
         &self.members
     }
 
+    pub fn member_names(&self) -> BTreeSet<XorName> {
+        self.members.iter().map(PublicId::name).cloned().collect()
+    }
+
     pub fn version(&self) -> &u64 {
         &self.version
     }

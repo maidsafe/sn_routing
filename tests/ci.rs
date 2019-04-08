@@ -533,7 +533,7 @@ fn core() {
                 Duration::from_secs(20),
             ) {
                 match test_event {
-                    TestEvent(index, Event::NodeLost(lost_name, _))
+                    TestEvent(index, Event::NodeLost(lost_name))
                         if index < nodes.len() && lost_name == name =>
                     {
                         churns[index] = true;

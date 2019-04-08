@@ -107,7 +107,7 @@ pub use self::authority::Authority;
 pub use self::error::Error;
 #[cfg(any(test, feature = "mock"))]
 pub use self::network_tests::verify_network_invariant;
-pub use self::prefix::{Prefix, VersionedPrefix};
+pub use self::prefix::{Prefix, VersionedPrefix, DEFAULT_PREFIX};
 pub use self::xorable::Xorable;
 use itertools::Itertools;
 use log::LogLevel;

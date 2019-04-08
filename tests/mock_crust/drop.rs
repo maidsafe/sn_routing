@@ -25,7 +25,7 @@ fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
     for node in nodes.iter_mut().filter(|n| close_names.contains(&n.name())) {
         loop {
             match node.try_next_ev() {
-                Ok(Event::NodeLost(lost_name, _)) if lost_name == name => break,
+                Ok(Event::NodeLost(lost_name)) if lost_name == name => break,
                 Ok(_) => (),
                 _ => panic!("Event::NodeLost({:?}) not received", name),
             }
