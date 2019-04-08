@@ -1044,6 +1044,71 @@
   <h1>Node relocation overview</h1>
 
   <h2>Successfully relocate a node from source to destination section</h2>
+  <div class=description>
+  <button class="collapsible">RelocateResponse</button>
+  <div class="content">
+    <p>Sent by destination section when a candidate is accepted<br/>
+    Contains:<br/>
+      <ul>
+        <li>target_interval: (XorName, XorName) - The interval into which the joining node should join.<br>
+      </ul>
+    </p>
+  </div>
+  <button class="collapsible">RefuseCandidate</button>
+  <div class="content">
+    <p>Sent by destination section when a candidate is refused<br/>
+      Contains: Empty
+    </p>
+  </div>
+  <button class="collapsible">RelocatedInfo</button>
+  <div class="content">
+    <p>Sent by source section when a candidate is relocated to the relocated node<br/>
+      Contains:<br/>
+      <ul>
+        <li>target_interval: (XorName, XorName) - The interval into which the joining node should join.<br>
+      </ul>
+    </p>
+  </div>
+  <button class="collapsible">CandidateInfo</button>
+  <div class="content">
+    <p>Sent by the joining node to the target interval NaeManager to initiate the join<br/>
+      Contains:<br/>
+      <ul>
+        <li>old_public_id: PublicId - `PublicId` from before relocation.<br>
+        <li>new_public_id: PublicId - `PublicId` from after relocation.<br>
+        <li>signature_using_old: Signature - Signature of concatenated `PublicId`s using the pre-relocation key.<br>
+        <li>signature_using_new: Signature - Signature of concatenated `PublicId`s and `signature_using_old` using the post-relocation key<br>
+        <li>new_client_auth: Authority - Client authority from after relocation.<br>
+      </ul>
+    </p>
+  </div>
+  <button class="collapsible">ConnectionInfoRequest/ConnectionInfoResponse</button>
+  <div class="content">
+    <p>Sent to collect information needed to establish a direct connection: Unchanged
+      </p>
+  </div>
+  <button class="collapsible">NodeConnected</button>
+  <div class="content">
+    <p>Sent by the destination section to the joining node when connected<br/>
+      Contains:<br/>
+      <ul>
+        <li>current_info: GenesisPfxInfo - All the info needed when this node become an adult or elder.<br>
+      </ul>
+    </p>
+  </div>
+  <button class="collapsible">ResourceProof/ResourceProofResponse/ResourceProofResponseReceipt</button>
+  <div class="content">
+    <p>Sent to process resource proof: Unchanged<br/>
+      (Could avoid some malicious behaviour with nonce/counter/proofs that we started resource proof).
+    </p>
+  </div>
+  <button class="collapsible">NodeApproval</button>
+  <div class="content">
+    <p>Sent by destination section when a candidate becomes an adult / resource proof completed<br/>
+      Contains: Empty (Any information needed by an adult/elder should be sent to all connected members, and updated as it changes)
+    </p>
+  </div>
+  </div>
   <div class="mermaid">
     sequenceDiagram
     participant Src as Source Section
