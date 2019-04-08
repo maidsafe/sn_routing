@@ -1546,7 +1546,7 @@ impl Node {
             let genesis_ver = *genesis_info.first_info.version();
             let consensus_mode = parsec::ConsensusMode::Single;
 
-            #[cfg(not(feature = "mock"))]
+            #[cfg(not(feature = "mock_parsec"))]
             let parsec = if genesis_info.first_info.members().contains(self.id()) {
                 Parsec::from_genesis(full_id, &genesis_info.first_info.members(), consensus_mode)
             } else {
@@ -1558,7 +1558,7 @@ impl Node {
                 )
             };
 
-            #[cfg(feature = "mock")]
+            #[cfg(feature = "mock_parsec")]
             let parsec = {
                 let section_hash = *genesis_info.first_info.hash();
 
