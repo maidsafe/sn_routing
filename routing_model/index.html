@@ -746,7 +746,7 @@
   </div>
   <div class="mermaid">
       graph TB
-      ProcessElderChange["ProcessElderChange<br/>(Take elder changes)"]
+      ProcessElderChange["ProcessElderChange<br/>(Take elder changes)<br/>(shared state)"]
       style ProcessElderChange fill:#f9f,stroke:#333,stroke-width:4px
 
       EndRoutine["End of ProcessElderChange<br/>(shared state)"]
@@ -777,30 +777,23 @@
 
   <h2>Handling merges</h2>
   <div class=description>
-  <p>Vote for ParsecOurMerge, and take over handling any ParsecNeighbourMerge.<br/>
+  <p>Send Merge RPC, and take over handling any ParsecNeighbourMerge.<br/>
      Complete when one merge has completed, and a NewSectionInfo is consensused.<br/>
      If multi-stage merges are required, they will require calling this function again<br/>
      While in this sanctuary, our SectionInfo shall not be disturbed by elder changes.
      This stops us from changing our SectionInfo after indicating to our neighbour the last SectionInfo before merge.
   </p>
-  <button class="collapsible">ParsecOurMerge</button>
+  <button class="collapsible">Merge RPC</button>
   <div class="content">
-    <p>This Parsec event indicates to our section members that we are ready to start merging.<br>
-    We vote for it on entering ProcessMerge.<br>
-    Reaching consensus on it will lead us to send a Merge RPC to our neighbour section.<br>
-    We vote for ParsecOurMerge irrespective of whether we are the section that triggered the merge. This allows all sections involved in the merge to receive a Merge RPC, which is how ParsecNeighbourMerge gets voted for.
+    <p>We send it to our sibling section (or sections with longer prefix) on entering ProcessMerge.<br>
+    We send Merge irrespective of whether we are the section that triggered the merge. This allows all sections involved in the merge to receive a Merge RPC, which is how ParsecNeighbourMerge gets voted for.
     </p>
   </div>
   <button class="collapsible">ParsecNeighbourMerge</button>
   <div class="content">
     <p>This PARSEC event indicates that our neighbour section is ready to merge with us.<br>
     It is voted for in the StartCheckAndProcessElderMergeChange flow, on receipt of a Merge RPC.<br>
-    It contains their SectionInfo.<br>
-    </p>
-  </div>
-  <button class="collapsible">OUR_MERGE</button>
-  <div class="content">
-    <p>Indicates that we reached consensus on the ParsecOurMerge event.<br>
+    It contains their SectionInfo (or digest for it).<br>
     </p>
   </div>
   <button class="collapsible">store_merge_infos</button>
@@ -832,14 +825,14 @@
   </div>
   <div class="mermaid">
       graph TB
-      ProcessMerge["ProcessMerge<br/>"]
+      ProcessMerge["ProcessMerge<br/>(shared state)"]
       EndRoutine["End of ProcessMerge<br/>(shared state)"]
       style ProcessMerge fill:#f9f,stroke:#333,stroke-width:4px
       style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
 
-      ProcessMerge -->  VoteOurMerge
-      VoteOurMerge["vote_for(<br/>ParsecOurMerge)"]
-      VoteOurMerge --> LoopStart
+      ProcessMerge -->  SendMergeRpc
+      SendMergeRpc["send_rpc(Merge)"]
+      SendMergeRpc --> LoopStart
 
       WaitFor(("Wait for 5:"))
       LoopStart --> WaitFor
@@ -858,16 +851,11 @@
       SetNeighbourMerge --> CheckMerge
 
       CheckMerge((Check))
-      CheckMerge -- "OUR_MERGE<br/>and<br/>has_sibling_merge_info()" --> VotForNewSectionInfo
-      VotForNewSectionInfo["OUR_MERGE=false<br/>merge_sibling_info_to_new_section()<br/>vote_for(<br/>NewSectionInfo)"]
+      CheckMerge -- "has_sibling_merge_info()" --> VotForNewSectionInfo
+      VotForNewSectionInfo["merge_sibling_info_to_new_section()<br/>vote_for(NewSectionInfo)"]
       VotForNewSectionInfo--> LoopEnd
 
-
-      CheckMerge -- "!OUR_MERGE<br/>or<br/>!has_sibling_merge_info()" --> LoopEnd
-
-      Consensus--"ParsecOurMerge"-->SendMergeRpc
-      SendMergeRpc["OUR_MERGE=true<br/>send_rpc(Merge)"]
-      SendMergeRpc -->CheckMerge
+      CheckMerge -- "Otherwise" --> LoopEnd
 
       LoopEnd --> LoopStart
   </div>
