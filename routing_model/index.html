@@ -130,7 +130,7 @@
     EndRoutine["End of JoiningRelocateCandidate<br/>"]
     style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
 
-    InitialSendConnectionInfoRequest["For all nodes in destination section:<br/>MembersProofRequest(node) = None<br/>and send_rpc(ConnectionInfoRequest)<br/><br/>schedule(TimeoutResendInfo)<br/>schedule(TimeoutRefused)"]
+    InitialSendConnectionInfoRequest["send_rpc(CandidateInfo) to target NaeManger<br/><br/>schedule(TimeoutResendInfo)<br/>schedule(TimeoutRefused)"]
     InitialSendConnectionInfoRequest-->LoopStart
 
     LoopStart --> WaitFor
@@ -142,9 +142,9 @@
     SendFirstResourceProofPartForElder["send_rpc(<br/>ResourceProofResponse)<br/>with first part for elder"]
     SendFirstResourceProofPartForElder --> LoopEnd
 
-    LocalEvent--"TimeoutResendInfo triggered<br/> Some elders have not responsed<br/>with ResourceProof"--> ResendConnectionInfoRequest
-    ResendConnectionInfoRequest["For all nodes with<br/>MembersProofRequest(node).is_none():<br/>send_rpc(ConnectionInfoRequest)<br/><br/>schedule(TimeoutResendInfo)"]
-    ResendConnectionInfoRequest --> LoopEnd
+    LocalEvent--"TimeoutResendInfo triggered<br/>CONNECTED==false"--> ResendCandidateInfo
+    ResendCandidateInfo["send_rpc(CandidateInfo)<br/><br/>schedule(TimeoutResendInfo)"]
+    ResendCandidateInfo --> LoopEnd
 
     LocalEvent--"TimeoutRefused<br/>triggered"--> EndRoutine
 
@@ -152,16 +152,20 @@
     WaitFor --> Rpc
     Rpc -- NodeApproval -->  EndRoutine
 
-    Rpc -- ConnectionInfoResponse --> ConnectAndSendCandidateInfo
-    ConnectAndSendCandidateInfo["Connect and send<br/>CandidateInfo"]
-    ConnectAndSendCandidateInfo-->LoopEnd
+    Rpc -- NodeConnected --> NodeConnected
+    NodeConnected["CONNECTED=true<br/><br/>kill_scheduled(TimeoutRefused)"]
+    NodeConnected-->LoopEnd
+
+    Rpc -- ConnectionInfoRequest --> OnConnectionInfoRequest
+    OnConnectionInfoRequest["send_rpc(<br/>ConnectionInfoResponse)"]
+    OnConnectionInfoRequest-->LoopEnd
 
     Rpc -- ResourceProofReceipt -->  SendNextResourceProofPartForElder
     SendNextResourceProofPartForElder["send_rpc(<br/>ResourceProofResponse)<br/>part for elder"]
     SendNextResourceProofPartForElder --> LoopEnd
 
     Rpc -- ResourceProof -->  StartComputeResourceProofForElder
-    StartComputeResourceProofForElder["start_compute_resource_proof(source elder)"]
+    StartComputeResourceProofForElder["start_compute_resource_proof(source elder)<br/><br/>schedule(TimeoutRefused)"]
     StartComputeResourceProofForElder --> LoopEnd
 
     Rpc -- "ExpectCandidate<br/>RefuseCandidate<br/>RelocateResponse<br/>..." --> VoteParsecRPC
@@ -289,24 +293,18 @@
       WaitFor --Parsec<br/>consensus--> ParsecConsensus
 
       RPC((RPC))
-      DiscardRPC[Discard RPC]
       RPC --ExpectCandidate--> VoteParsecExpectCandidate
-      RPC --ResourceProofResponse<br/>CandidateInfo--> DiscardRPC
-      DiscardRPC --> LoopEnd
 
       ParsecConsensus((Parsec<br/>consensus))
-      DiscardParsec["Discard<br/>Parsec<br/>event"]
       ParsecConsensus --ParsecExpectCandidate--> Balanced
-      ParsecConsensus --ParsecOnline<br/>ParsecPurgeCandidate<br/>--> DiscardParsec
-      DiscardParsec --> LoopEnd
 
       VoteParsecExpectCandidate["vote_for(<br/>ParsecExpectCandidate)<br/>to handle the RPC consistently"]
       VoteParsecExpectCandidate --> LoopEnd
 
       Balanced(("Check?<br/>(shared state)"))
       Balanced -- "shorter_prefix_section(<br/>).is_some()" --> Resend
-      Balanced -- "shorter_prefix_section().is_none()<br/>PROCESSING_CANDIDATE==yes" --> SendRefuse
-      Balanced -- "shorter_prefix_section().is_none()<br/>PROCESSING_CANDIDATE==No" --> SetCandidateYes
+      Balanced -- "shorter_prefix_section().is_none()<br/>!waiting_proofing().is_empty()" --> SendRefuse
+      Balanced -- "shorter_prefix_section().is_none()<br/>waiting_proofing().is_empty()" --> SendRelocateResponse
 
       Resend["send_rpc(<br/>ExpectCandidate)<br/>to shorter_prefix_section()"]
       Resend --> LoopEnd
@@ -314,21 +312,88 @@
       SendRefuse["send_rpc(<br/>RefuseCandidate)<br/>to source section"]
       SendRefuse --> LoopEnd
 
-      SetCandidateYes["PROCESSING_CANDIDATE=yes<br/>(shared state)"]
-      SetCandidateYes-->Concurrent0
+      SendRelocateResponse["add_node(NodeState=WaitingCandidateInfo)<br/><br/>send_rpc(RelocateResponse)<br/>to source section"]
+      SendRelocateResponse --> LoopEnd
 
-      Concurrent0{"Concurrent<br/>paths"}
-      Concurrent0 --> AcceptAsCandidate
-      Concurrent0 --> LoopEnd
+  </div>
+
+  <h2>Relocated node connection</h2>
+  <div class=description>
+  <p>Manage node with NodeState=WaitingConnectionInfo and connection info request/response.<br/>
+    CandidateInfo is sent to NaeManager of the target interval<br/>
+    When we complete, we either stop responding to CandidateInfo RPCs, or we send NodeConnected RPC<br/>
+  </p>
+  </div>
+  <div class="mermaid">
+      graph TB
+      RelocatedNodeConnection["Start Relocated Node Connection"]
+      style RelocatedNodeConnection fill:#f9f,stroke:#333,stroke-width:4px
+
+      RelocatedNodeConnection --> StartCheckRelocatedNodeConnectionTimeout
+      StartCheckRelocatedNodeConnectionTimeout["schedule(<br/>CheckRelocatedNodeConnectionTimeout)"]
+      StartCheckRelocatedNodeConnectionTimeout --> LoopStart
+
+      WaitFor(("Wait for 2:"))
+
+      LoopStart-->WaitFor
+
+      WaitFor -- Consensus--> ParsecConsensus
+      ParsecConsensus((Consensus))
+
+      ParsecConsensus -- "ParsecCheckRelocatedNodeConnection" --> CleanCandidates
+      CleanCandidates["for candidate in both<br/>-waiting_node_connecting()<br/>-CANDIDATES:<br/><br/>purge_node_info(candidate)"]
+      CleanCandidates --> ReStartCheckRelocatedNodeConnectionTimeout
+      ReStartCheckRelocatedNodeConnectionTimeout["CANDIDATES=waiting_node_connecting()<br/><br/>schedule(<br/>CheckRelocatedNodeConnectionTimeout)"]
+      ReStartCheckRelocatedNodeConnectionTimeout --> LoopEnd
 
 
-      AcceptAsCandidate["AcceptAsCandidate<br/>(shared state)"]
-      style AcceptAsCandidate fill:#f9f,stroke:#333,stroke-width:4px
-      AcceptAsCandidate --> SetCandidateNo
+      ParsecConsensus -- "ParsecCandidateInfo<br/>and<br/>is_valid_waited_info(<br/>CandidateInfo)" --> SetCandidateInfo
+      SetCandidateInfo["update_node(<br/>CandidateInfo,<br/>NodeState=WaitingConnectionInfo)"]
+      SetCandidateInfo --> LoopEnd
 
-      SetCandidateNo["PROCESSING_CANDIDATE=no<br/>(shared state)"]
-      SetCandidateNo-->LoopEnd
+      ParsecConsensus -- "ParsecCandidateConnected<br/>and<br/>is_valid_waited_connection(<br/>message_src)" --> SetConnected
+      SetConnected["set_node_state(<br/>candidate,<br/>WaitingProofing)<br/><br/>send_rpc(<br/>NodeConnected)<br/><br/>(All communications now<br/>managed by elder like<br/>for other adults)"]
+      SetConnected --> LoopEnd
 
+      RPC((RPC))
+      WaitFor --"RPC"--> RPC
+      RPC -- "CandidateInfo<br/>and<br/>none of the other path" --> DiscardRPC
+      DiscardRPC[Discard RPC]
+      DiscardRPC --> LoopEnd
+
+      RPC -- "CandidateInfo<br/>and<br/>is_valid_waited_info(<br/>CandidateInfo)" --> VoteForCandidateInfo
+      VoteForCandidateInfo["vote_for(<br/>ParsecCandidateInfo)"]
+      VoteForCandidateInfo --> LoopEnd
+
+      RPC -- "CandidateInfo<br/>and<br/>is_valid_waited_connection(<br/>message_src)" --> SendConnectionInfoRequest
+      SendConnectionInfoRequest["send_rpc(<br/>ConnectionInfoRequest)"]
+      SendConnectionInfoRequest --> LoopEnd
+
+      RPC -- "ConnectionInfoResponse<br/>and<br/>is_valid_waited_connection(<br/>message_src)" --> ConnectCandidate
+      ConnectCandidate["connect_to_candidate(<br/>ConnectionInfoResponse info)<br/><br/>vote_for(<br/>ParsecCandidateConnected)"]
+      ConnectCandidate --> LoopEnd
+
+      WaitFor --Event--> Event
+      Event((Event))
+
+      VoteParsecCheckRelocatedNodeConnection["vote_for(<br/>ParsecCheckRelocatedNodeConnection)"]
+      Event -- CheckRelocatedNodeConnectionTimeout<br/>expire --> VoteParsecCheckRelocatedNodeConnection
+      VoteParsecCheckRelocatedNodeConnection --> LoopEnd
+      LoopEnd --> LoopStart
+
+  </div>
+  <div class="mermaid">
+    graph TB
+
+      Reset["RelocatedNodeConnection_Reset"]
+      style Reset fill:#19f,stroke:#333,stroke-width:4px
+
+      EndReset["End RelocatedNodeConnection_Reset"]
+      style EndReset fill:#19f,stroke:#333,stroke-width:4px
+
+      Reset --> ClearCandidates
+      ClearCandidates["CANDIDATES.clear()<br/><br/>(Give time for new elder to catch up)"]
+      ClearCandidates --> EndReset
   </div>
 
   <h2>Resource proof from a destination's point of view</h2>
@@ -343,10 +408,9 @@
   This process ends once I reach consensus on either accepting or the candidate (ParsecOnline) or refusing them (ParsecPurgeCandidate).<br/>
   These payloads are Opaque, which means that consensus may be reached without a quorum on either of these. For that reason, it is possible that both reach consensus, in which case the second one will be discarded in the flow above. It won't cause issues as consistency is the only property that matters here: if we accept someone who then went Offline, we will be able to detect they are Offline later with the standard Offline detection mechanism.
   </p>
-  <button class="collapsible">GOT_CANDIDATE_INFO</button>
+  <button class="collapsible">CANDIDATE</button>
   <div class="content">
-    <p>We only want to receive CandidateInfo once and we can't verify a ResourceProofResponse without knowing the CandidateInfo.<br/>
-    The local variable: GOT_CANDIDATE_INFO helps us stay on top of this.
+    <p>Option&lt(Candidate, Nonce)&gt we are currently ressource proofing.
     </p>
   </div>
   <button class="collapsible">VOTED_ONLINE</button>
@@ -358,47 +422,86 @@
   </div>
   <div class="mermaid">
       graph TB
-      AcceptAsCandidate["Accept As Candidate<br/> Shared state all peers proceed"]
-      EndRoutine["End of AcceptAsCandidate<br/>(shared state)"]
-      style AcceptAsCandidate fill:#f9f,stroke:#333,stroke-width:4px
-      style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
+      ResourceProof["Start Resource Proof"]
+      style ResourceProof fill:#f9f,stroke:#333,stroke-width:4px
 
-      AcceptAsCandidate --> SendRelocateResponse
+      ResourceProof --> StartCheckResourceProofTimeout
+      StartCheckResourceProofTimeout["schedule(<br/>CheckResourceProofTimeout)"]
+      StartCheckResourceProofTimeout --> LoopStart
 
-      SendRelocateResponse["add_node(NodeState=ResourceProof)<br/><br/>send_rpc(RelocateResponse)<br/>to source section<br/><br/>schedule(TimeoutAccept)"]
-      WaitFor(("Wait for 2:<br/><br/>Only current<br/>candidate<br/>events"))
-      VoteParsecPurgeCandidate["vote_for(<br/>ParsecPurgeCandidate)"]
-      VoteParsecOnline["vote_for(<br/>NetworkEvent::Online)<br/><br/>VOTED_ONLINE=yes"]
-      RequestRP["send_rpc(<br/>ResourceProof)<br/>to candidate<br/><br/>GOT_CANDIDATE_INFO=yes"]
-      SendProofReceit["send_rpc(<br/>ResourceProofReceipt)<br/>for proof"]
+      WaitFor(("Wait for 2:"))
 
-      SendRelocateResponse --> LoopStart
       LoopStart-->WaitFor
 
+      WaitFor -- Consensus--> ParsecConsensus
+      ParsecConsensus((Consensus))
+      DiscardParsec["Discard<br/>Parsec<br/>event"]
+      ParsecConsensus --ParsecOnline<br/>ParsecPurgeCandidate<br/>not for CANDIDATE--> DiscardParsec
+      DiscardParsec --> LoopEnd
 
-      WaitFor -- Consensus--> Consensus
-      Consensus((Consensus))
-      Consensus -- ParsecPurgeCandidate<br/>consensused --> RemoveNode
-      Consensus -- ParsecOnline<br/>consensused --> MakeOnline
+      ParsecConsensus -- ParsecPurgeCandidate<br/>for CANDIDATE --> RemoveNode
+      ParsecConsensus -- ParsecOnline<br/>for CANDIDATE --> MakeOnline
       MakeOnline["set_node_state(<br/>Candidate,<br/>OnlineState)<br/><br/>send_rpc(<br/>NodeApproval)"]
       RemoveNode["purge_node_info(<br/>candidate node)"]
-      RemoveNode --> EndRoutine
-      MakeOnline --> EndRoutine
+      RemoveNode --> ReStartCheckResourceProofTimeout
+      MakeOnline --> ReStartCheckResourceProofTimeout
 
-      WaitFor -- ResourceProofResponse<br/><br/>GOT_CANDIDATE_INFO==yes<br/>VOTED_ONLINE==no --> ProofResponse((Proof))
+      ParsecConsensus -- "ParsecCheckResourceProof" --> SetCandidate
+      SetCandidate["CANDIDATE=resource_proof_candidate()<br/><br/>(Best node with state=WaitingProofing)"]
+      SetCandidate -->CheckRequestRP
+
+      CheckRequestRP((Check))
+      CheckRequestRP --"CANDIDATE.is_none()" --> ReStartCheckResourceProofTimeout
+      ReStartCheckResourceProofTimeout["CANDIDATE=None<br/><br/>schedule(<br/>CheckResourceProofTimeout)"]
+      ReStartCheckResourceProofTimeout --> LoopEnd
+
+      CheckRequestRP --"CANDIDATE.is_some()"-->RequestRP
+      RequestRP["send_rpc(<br/>ResourceProof)<br/>to CANDIDATE<br/><br/>schedule(TimeoutAccept)"]
+      RequestRP --> LoopEnd
+
+
+      RPC((RPC))
+      WaitFor --RPC--> RPC
+      RPC -- ResourceProofResponse<br/>from CANDIDATE<br/><br/>VOTED_ONLINE==no --> ProofResponse((Proof))
+      ProofResponse((Check))
+      SendProofReceit["send_rpc(<br/>ResourceProofReceipt)<br/>for proof"]
       ProofResponse -- Valid Part --> SendProofReceit
+      VoteParsecOnline["vote_for(<br/>NetworkEvent::Online)<br/><br/>VOTED_ONLINE=yes"]
       ProofResponse -- Valid End --> VoteParsecOnline
 
-      WaitFor -- CandidateInfo<br/><br/>GOT_CANDIDATE_INFO==no --> Info((Info))
-      Info -- Valid<br/>CandidateInfo --> RequestRP
-      Info -- Invalid<br/>CandidateInfo --> VoteParsecPurgeCandidate
-      WaitFor -- TimeoutAccept<br/>expire --> VoteParsecPurgeCandidate
 
-      RequestRP --> LoopEnd
+      DiscardRPC[Discard RPC]
+      RPC -- ResourceProofResponse --> DiscardRPC
+      DiscardRPC --> LoopEnd
+
+      WaitFor --Event--> Event
+      Event((Event))
+      VoteParsecPurgeCandidate["vote_for(<br/>ParsecPurgeCandidate)"]
+      Event -- TimeoutAccept<br/>expire --> VoteParsecPurgeCandidate
+
+      VoteParsecCheckResourceProofTimeout["vote_for(ParsecCheckResourceProof)"]
+      Event -- CheckResourceProofTimeout<br/>expire --> VoteParsecCheckResourceProofTimeout
+      VoteParsecCheckResourceProofTimeout --> LoopEnd
+
+
       SendProofReceit-->LoopEnd
       VoteParsecOnline --> LoopEnd
       VoteParsecPurgeCandidate --> LoopEnd
       LoopEnd --> LoopStart
+
+  </div>
+  <div class="mermaid">
+    graph TB
+
+      Cancel["ResourceProof_Cancel"]
+      style Cancel fill:#19f,stroke:#333,stroke-width:4px
+
+      EndCancel["End ResourceProof_Cancel"]
+      style EndCancel fill:#19f,stroke:#333,stroke-width:4px
+
+      Cancel --> CancelCheckResourceProofTimeout
+      CancelCheckResourceProofTimeout["CANDIDATE=None<br/><br/>schedule(<br/>CheckResourceProofTimeout)"]
+      CancelCheckResourceProofTimeout --> EndCancel
   </div>
 
   <h1>Source section</h1>
@@ -681,6 +784,9 @@
       CheckMergeNeeded--"!merge_needed()<br/> and<br/>!has_merge_infos()"-->CheckElderChange
       CheckElderChange(("Check"))
 
+      CheckElderChange -- "No<br/>changes" --> RestartTimeout
+      RestartTimeout["schedule(<br/>CheckElderTimeout)"]
+      RestartTimeout-->LoopEnd
 
       CheckElderChange --"check_elder_change()<br/><br/>Has elder changes: elder first ordered by:<br/>State=Online then age then name."--> Concurrent0
 
@@ -690,12 +796,16 @@
 
       ProcessElderChange["ProcessElderChange(changes)"]
       style ProcessElderChange fill:#f9f,stroke:#333,stroke-width:4px
-      ProcessElderChange -->RestartTimeout
+      ProcessElderChange -->CancelResourceProof
 
-      CheckElderChange -- "No<br/>changes" --> RestartTimeout
 
-      RestartTimeout["schedule(<br/>CheckElderTimeout)"]
-      RestartTimeout-->LoopEnd
+      ResetRelocatedNodeConnection["ResourceProof_Cancel"]
+      style CancelResourceProof fill:#19f,stroke:#333,stroke-width:4px
+      CancelResourceProof --> ResetRelocatedNodeConnection
+
+      ResetRelocatedNodeConnection["RelocatedNodeConnection_Reset"]
+      style ResetRelocatedNodeConnection fill:#19f,stroke:#333,stroke-width:4px
+      ResetRelocatedNodeConnection --> RestartTimeout
 
       CheckMergeNeeded --"merge_needed()<br/>or<br/>has_merge_infos()"-->Concurrent1
 
@@ -706,7 +816,7 @@
 
       ProcessMerge["ProcessMerge"]
       style ProcessMerge fill:#f9f,stroke:#333,stroke-width:4px
-      ProcessMerge --> RestartTimeout
+      ProcessMerge --> CancelResourceProof
 
       LoopEnd --> LoopStart
   </div>
