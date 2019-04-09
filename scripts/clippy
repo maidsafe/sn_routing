@@ -9,3 +9,4 @@ cargo check --verbose --example ci_test
 cargo check --verbose --example key_value_store
 cargo clippy --verbose --all-targets
 cargo clippy --verbose --all-targets --features=mock
+cargo clippy --verbose --all-targets --features=mock_parsec

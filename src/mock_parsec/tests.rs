@@ -7,8 +7,8 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    init, Block, ConsensusMode, NetworkEvent, Observation, Parsec, PublicId, Request, Response,
-    SecretId,
+    init_mock, Block, ConsensusMode, NetworkEvent, Observation, Parsec, PublicId, Request,
+    Response, SecretId,
 };
 use maidsafe_utilities::SeededRng;
 use rand::Rng;
@@ -21,7 +21,7 @@ use std::{
 
 #[test]
 fn smoke() {
-    init();
+    init_mock();
 
     let alice_id = PeerId(0);
     let bob_id = PeerId(1);
@@ -76,7 +76,7 @@ fn smoke() {
 
 #[test]
 fn add_peer() {
-    init();
+    init_mock();
 
     let alice_id = PeerId(0);
     let bob_id = PeerId(1);
@@ -153,7 +153,7 @@ fn add_peer() {
 
 #[test]
 fn consensus_mode_single() {
-    init();
+    init_mock();
 
     let alice_id = PeerId(0);
     let bob_id = PeerId(1);
@@ -206,7 +206,7 @@ fn consensus_mode_single() {
 
 #[test]
 fn randomized_static_network() {
-    init();
+    init_mock();
 
     let num_peers = 10;
     let num_votes = 10;

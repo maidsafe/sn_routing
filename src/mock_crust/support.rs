@@ -15,6 +15,7 @@ use super::crust::{
 };
 use crate::id::PublicId;
 use crate::messages::{DirectMessage, Message};
+#[cfg(feature = "mock_parsec")]
 use crate::parsec;
 use crate::CrustEvent;
 use maidsafe_utilities::{serialisation, SeededRng};
@@ -50,7 +51,9 @@ impl<UID: Uid> Network<UID> {
         };
 
         unwrap!(safe_crypto::init_with_rng(&mut rng));
-        parsec::init();
+
+        #[cfg(feature = "mock_parsec")]
+        parsec::init_mock();
 
         Network(Rc::new(RefCell::new(NetworkImpl {
             services: HashMap::new(),

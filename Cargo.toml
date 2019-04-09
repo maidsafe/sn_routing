@@ -43,6 +43,7 @@ serde_json = "1.0.8"
 
 [features]
 mock = ["lru_time_cache/fake_clock", "safe_crypto/mock"]
+mock_parsec = ["mock"]
 
 [[example]]
 bench = false
