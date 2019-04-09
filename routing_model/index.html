@@ -281,7 +281,7 @@
   <div class="mermaid">
       graph TB
 
-      Start["StartTopLevelDst:<br/>No exit - Need Killed"]
+      Start["StartTopLevelDst:<br/>No exit - Needs killed"]
       style Start fill:#f9f,stroke:#333,stroke-width:4px
       Start --> LoopStart
       LoopEnd --> LoopStart
@@ -427,17 +427,18 @@
   This is maintained accross merge/split as for any adult node, so we are ready to resource proof any node in WaitingProofing state<br/>
   <br/>
   This leads us here: to the resource proof.<br/>
-  We only process one resource proof at a time (only schedule a new proofing when completing the current one).<br/>
+  We only process up to one resource proof at a time (i.e: we wait for the current resource proof to reach completion before scheduling a new one).<br/>
   When we periodicaly decide to resource proof a node, we check if any node is ready for it:  WaitingProofing state, and pick the best candidate (There may be mutliple after a merge).<br/>
   As an elder, I will send the candidate a ResourceProof RPC. This gives them the "problem to solve". As they solve it, they will send me ResourceProofResponses. These will be parts of the proof. On receiving valid parts, I must send a ResourceProofReceipt. Once they finally send me the last valid part, they passed their resource proof and I vote for ParsecOnline (essentially accepting them as a member of my section).<br/>
   At any time during this process, they may timeout (The whole process it taking longer than expected), in which case I will decided to reject them and vote for ParsecPurgeCandidate.<br/>
-  This process ends once I reach consensus on either accepting or the candidate (ParsecOnline) or refusing them (ParsecPurgeCandidate).<br/>
+  This process ends once I reach consensus on either accepting the candidate (ParsecOnline) or refusing them (ParsecPurgeCandidate).<br/>
   It is possible that both reach the quorum consensus, in which case the second one will be discarded in the flow above. It won't cause issues as consistency is the only property that matters here: if we accept someone who then went Offline, we will be able to detect they are Offline later with the standard Offline detection mechanism. But it is more likely that they took close to the time limit to complete their proof.
   </p>
   <button class="collapsible">CANDIDATE</button>
   <div class="content">
-    <p>Option&lt(Candidate, Nonce)&gt we are currently ressource proofing.<br/>
-      To handle re-doing resource proof after merge/split so we can fairly measure a node, we use the Nonce to differentiate the tries.
+    <p>Option&lt(Candidate, Nonce)&gt.<br/>
+	  The candidate we are currently ressource proofing, if any.<br/>
+      The nonce is used to distinguish new attempts of resource proofing the same candidate after a merge or a split.
     </p>
   </div>
   <button class="collapsible">VOTED_ONLINE</button>
@@ -446,10 +447,10 @@
     This local variable helps us with this.
     </p>
   </div>
-  <button class="collapsible">RPC: ResourceProofResponse/<br/>CandidateInfo</button>
+  <button class="collapsible">RPC: ResourceProofResponse</button>
   <div class="content">
-  <p>These RPCs may continue to be sent by a node we have not accepted, even if consensus was reached to add it.<br/>
-  It's OK to discard the RPC in this case as they are no longer relevant RPCs.
+  <p>This RPC may continue to be sent by a node we have not accepted, even if consensus was reached to add it.<br/>
+  It's OK to discard the RPC in this case as it is no longer relevant.
   </p>
   </div>
   <button class="collapsible">ParsecOnline<br/>ParsecPurgeCandidate</button>
@@ -460,7 +461,7 @@
   </div>
   <button class="collapsible">ResourceProof_Cancel</button>
   <div class="content">
-    <p>Provides and external entry point to cancel the currently processed nodes: Restart the resource proofing with all involved voters.<br/>
+    <p>Provides an external entry point to cancel the currently processed nodes: Restart the resource proofing with all involved voters.<br/>
        This will be called for example after merge/split as the new nodes would become voters.
     </p>
   </div>
@@ -497,7 +498,7 @@
 
       CheckRequestRP((Check))
       CheckRequestRP --"CANDIDATE.is_none()" --> ReStartCheckResourceProofTimeout
-      ReStartCheckResourceProofTimeout["CANDIDATE=None><br/>VOTED_ONLINE==no<br/><br/>schedule(<br/>CheckResourceProofTimeout)"]
+      ReStartCheckResourceProofTimeout["CANDIDATE=None<br/>VOTED_ONLINE==no<br/><br/>schedule(<br/>CheckResourceProofTimeout)"]
       ReStartCheckResourceProofTimeout --> LoopEnd
 
       CheckRequestRP --"CANDIDATE.is_some()"-->RequestRP
@@ -516,7 +517,7 @@
 
 
       DiscardRPC[Discard RPC]
-      RPC -- ResourceProofResponse --> DiscardRPC
+      RPC -- ResourceProofResponse<br/>from CANDIDATE<br/><br/>VOTED_ONLINE==yes --> DiscardRPC
       DiscardRPC --> LoopEnd
 
       WaitFor --Event--> Event
@@ -545,14 +546,14 @@
       style EndCancel fill:#19f,stroke:#333,stroke-width:4px
 
       Cancel --> CancelCheckResourceProofTimeout
-      CancelCheckResourceProofTimeout["CANDIDATE=None><br/>VOTED_ONLINE==no<br/><br/>schedule(<br/>CheckResourceProofTimeout)"]
+      CancelCheckResourceProofTimeout["CANDIDATE=None<br/>VOTED_ONLINE==no<br/><br/>schedule(<br/>CheckResourceProofTimeout)"]
       CancelCheckResourceProofTimeout --> EndCancel
   </div>
 
   <h1>Source section</h1>
   <div class=description>
   <p>As members of a section, each node must keep track of how many "work units" other nodes have performed.<br/>
-      Once a node has done accumulated enough work units to gain age, the section must work together to relocate that node to a new section where they can become 1 age unit older.<br/>
+      Once a node has accumulated enough work units to gain age, the section must work together to relocate that node to a new section where they can become 1 age unit older.<br/>
       These diagrams detail how this happens.
   </p>
   </div>
@@ -578,14 +579,14 @@
   <button class="collapsible">nodes_relocating</button>
   <div class="content">
     <p>The collection of nodes currently relocating: With node state RelocatingState or WaitRelocateResponseState.<br/>
-      It will most often be empty or has one element, unless a merge occurs in which case it can be bigger.
+      It will most often be empty or have one element, unless a merge occurs in which case it may contain more than one element.
     </p>
   </div>
   <button class="collapsible">get_node_to_relocate</button>
   <div class="content">
     <p>This function will return the best candidate for relocation, if any.<br/>
-    First, it will only consider members of our peer_list that has the state: OnlineState<br/>
-    We use the condition with nodes_relocating() to control how many OnlineState node we choose to relocate (i.e 1).<br/>
+    First, it will only consider members of our peer_list that have the state: OnlineState<br/>
+    We use the condition with nodes_relocating() to limit the number of OnlineState nodes to relocate to one (except possibly in case of a merge).<br/>
     It can return for instance the node with the largest number of work units for which the number of work units is greater than 2^age.
     </p>
   </div>
@@ -603,7 +604,7 @@
   <div class="mermaid">
       graph TB
 
-      Start["StartTopLevelSrc:<br/>No exit - Need Killed"]
+      Start["StartTopLevelSrc:<br/>No exit - Needs killed"]
       style Start fill:#f9f,stroke:#333,stroke-width:4px
       Start --> StartWorkUnitTimeOut
 
@@ -639,27 +640,27 @@
   <h2>Relocating a member of our section away from it</h2>
   <div class=description>
   <p>At this stage, we have decided that one of our section members should be relocated.<br/>
-  The process is quite simple: we send an ExpectCandidate RPC to the destination section. That section will eventually either pass the node to a section with a shorter prefix, send us a RefuseCandidate RPC or eventually send us a RelocateResponse RPC. If the destination picked another section with a shorter prefix, that section will send us one of these RPCs (or suggest another section with a shorter prefix, but this recursion will end at some point).<br/>
+  The process is quite simple: we send an ExpectCandidate RPC to the destination section. That section will either pass the node to a section with a shorter prefix, send us a RefuseCandidate RPC or eventually send us a RelocateResponse RPC. If the destination picked another section with a shorter prefix, that section will send us one of these RPCs (or suggest another section with a shorter prefix, but this recursion will end at some point).<br/>
   All in all, we have the certainty that eventually, exactly one of these two RPCs will make it to our section.<br/>
   When it does, it will be voted in PARSEC, regardless of the order of operations, so it will eventually make it through PARSEC.<br/>
   <br/>
   If a node in RelocatingState is a non-elder adult node, we can try to relocate it. If they are an elder node, we will first wait for the Adult/Elder promotion/demotion flow to kick in and demote them to an adult. This will happen because we changed their state from OnlineState to RelocatingState, which means that they will get demoted.<br/>
   <br/>
-  On sending ExpectCandidate RPC, we set the node state to WaitRelocateResponseState when so we know after split or merge that we are waiting for response.<br/>
+  On sending an ExpectCandidate RPC, we set the node state to WaitRelocateResponseState so we know after a split or a merge that we are waiting for a response.<br/>
   If they refused our candidate, our job ends there: We reset the state to RelocatingState and the candidate will simply be a candidate for relocation again later, so we will try to relocate it then.<br/>
-  If they accepted the node and sent us a RelocateResponse RPC, so the ParsecRelocateResponse event reached consensus, we will send to the node that is being relocated the RelocatedInfo the will need.<br/>
+  If they accepted the node and sent us a RelocateResponse RPC, so the ParsecRelocateResponse event reached consensus, we will send to the node that is being relocated the RelocatedInfo they will need.<br/>
   At this point, we will purge their information since this node isn't a member of our section anymore.
   <br/>
-  Also of note: While we are preventing OnlineState node from relocating when we are already relocating node, we may be actively relocating more nodes away from our section.<br/>
-  However, we will only do one at a time per CheckRelocateTimeOut event.
+  Also of note: while we are preventing nodes with OnlineState from relocating when we are already relocating node, we may still be actively relocating more than one node away from our section (for instance if two sections with a relocating node each merge).<br/>
+  However, we will only handle one at a time per CheckRelocateTimeOut event.
   </p>
   <button class="collapsible">get_best_relocating_node_and_target</button>
   <div class="content">
     <p>Returns the best node to relocate and the target address to send it to<br/>
     There may be mutliple nodes relocating, for example because of a merge. Take the best one (oldest), and choose a target address.<br/>
-    The target address is one managed by one of our neighbour. This could be random, or the current old_public_id with a single bit of the prefix flipped.<br/>
-    This would would help ensure that source and destination remain neighbours, even if the source split.<br/>
-    Using a target address instead of a section allow to ensure we deliver the message even if the destination splits or merge.
+    The target address is one managed by one of our neighbours. This could be random, or the current old_public_id with a single bit of the prefix flipped.<br/>
+    This would would help ensure that source and destination remain neighbours, even if the source splits.<br/>
+    Using a target address instead of a section ensures we deliver the message even if the destination splits or merges.
     </p>
   </div>
   <button class="collapsible">RefuseCandidate/<br/>RelocateResponse</button>
@@ -671,7 +672,7 @@
   </div>
   <div class="mermaid">
       graph TB
-      Start["StartRelocateSrc:<br/>No exit - Need Killed"]
+      Start["StartRelocateSrc:<br/>No exit - Needs killed"]
       style Start fill:#f9f,stroke:#333,stroke-width:4px
       Start --> StartCheckRelocateTimeOut
 
@@ -786,7 +787,7 @@
   </div>
   <div class="mermaid">
       graph TB
-      CheckAndProcessElderChange["StartCheckAndProcessElderMergeChange:<br/>No exit - Need Killed"]
+      CheckAndProcessElderChange["StartCheckAndProcessElderMergeChange:<br/>No exit - Needs killed"]
       style CheckAndProcessElderChange fill:#f9f,stroke:#333,stroke-width:4px
 
       CheckAndProcessElderChange -->  StartCheckElderTimeout
@@ -1013,7 +1014,7 @@
   </div>
   <div class="mermaid">
       graph TB
-      CheckOnlineOffline["CheckOnlineOffline:<br/>No exit - Need Killed"]
+      CheckOnlineOffline["CheckOnlineOffline:<br/>No exit - Needs killed"]
       style CheckOnlineOffline fill:#f9f,stroke:#333,stroke-width:4px
 
       CheckOnlineOffline -->  LoopStart
@@ -1051,7 +1052,7 @@
   <div class=description>
   <button class="collapsible">ExpectCandidate</button>
   <div class="content">
-    <p>Sent by the source section when a candidate need to relocate<br/>
+    <p>Sent by the source section when a candidate needs to relocate<br/>
     Contains:<br/>
       <ul>
         <li>old_public_id: PublicId - The joining node's current public ID.<br>
@@ -1087,13 +1088,13 @@
   </div>
   <button class="collapsible">CandidateInfo</button>
   <div class="content">
-    <p>Sent by the joining node to the target interval NaeManager to initiate the join<br/>
+    <p>Sent by the joining node to the target interval's NaeManager to initiate the joining process<br/>
       Contains:<br/>
       <ul>
-        <li>old_public_id: PublicId - `PublicId` from before relocation.<br>
-        <li>new_public_id: PublicId - `PublicId` from after relocation.<br>
-        <li>signature_using_old: Signature - Signature of concatenated `PublicId`s using the pre-relocation key.<br>
-        <li>signature_using_new: Signature - Signature of concatenated `PublicId`s and `signature_using_old` using the post-relocation key<br>
+        <li>old_public_id: PublicId - PublicId from before relocation.<br>
+        <li>new_public_id: PublicId - PublicId from after relocation.<br>
+        <li>signature_using_old: Signature - Signature of concatenated PublicIds using the pre-relocation key.<br>
+        <li>signature_using_new: Signature - Signature of concatenated PublicIds and signature_using_old using the post-relocation key.<br>
         <li>new_client_auth: Authority - Client authority from after relocation.<br>
       </ul>
     </p>
@@ -1108,11 +1109,11 @@
     <p>Sent by the destination section to the joining node when connected<br/>
       Contains:<br/>
       <ul>
-        <li>current_info: GenesisPfxInfo - All the info needed when this node become an adult or elder.<br>
+        <li>current_info: GenesisPfxInfo - All the info needed when this node becomes an adult or elder.<br>
       </ul>
     </p>
   </div>
-  <button class="collapsible">ResourceProof/ResourceProofResponse/ResourceProofResponseReceipt</button>
+  <button class="collapsible">ResourceProof/ResourceProofResponse/ResourceProofReceipt</button>
   <div class="content">
     <p>Sent to process resource proof: Unchanged<br/>
       (Could avoid some malicious behaviour with nonce/counter/proofs that we started resource proof).
@@ -1120,7 +1121,7 @@
   </div>
   <button class="collapsible">NodeApproval</button>
   <div class="content">
-    <p>Sent by destination section when a candidate becomes an adult / resource proof completed<br/>
+    <p>Sent by destination section when a candidate becomes an adult / resource proof is completed.<br/>
       Contains: Empty (Any information needed by an adult/elder should be sent to all connected members, and updated as it changes)
     </p>
   </div>
