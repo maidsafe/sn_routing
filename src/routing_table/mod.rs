@@ -798,11 +798,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     ///     - returns the `N/3` closest members of the RT to the target
     pub fn targets(&self, dst: &Authority<T>, exclude: T) -> Result<BTreeSet<T>, Error> {
         let candidates = |target_name: &T| {
-            self.closest_known_names(target_name, self.min_section_size)
+            self.closest_section(target_name)
+                .1
                 .into_iter()
-                .filter(|name| **name != self.our_name)
                 .cloned()
-                .collect::<BTreeSet<T>>()
+                .sorted_by(|lhs, rhs| target_name.cmp_distance(lhs, rhs))
         };
 
         let closest_section = match *dst {
@@ -872,7 +872,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         let n = closest_section.len();
         Ok(closest_section
             .into_iter()
-            .filter(|&x| x != exclude)
+            .filter(|&x| x != exclude && x != self.our_name)
             .take((n + 2) / 3)
             .collect())
     }

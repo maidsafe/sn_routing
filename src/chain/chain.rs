@@ -1071,16 +1071,17 @@ impl Chain {
         exclude: XorName,
         connected_peers: &[&XorName],
     ) -> Result<BTreeSet<XorName>, Error> {
-        let candidates = |target_name: &XorName| {
-            self.closest_known_names(target_name, self.min_sec_size, &connected_peers)
-                .into_iter()
-                .filter(|name| name != self.our_id().name())
-                .collect::<BTreeSet<XorName>>()
-        };
-
         // FIXME: only filtering for now to match RT.
         // should confirm if needed esp after msg_relay changes.
         let is_connected = |target_name: &XorName| connected_peers.contains(&target_name);
+
+        let candidates = |target_name: &XorName| {
+            self.closest_section(target_name)
+                .1
+                .into_iter()
+                .filter(is_connected)
+                .sorted_by(|lhs, rhs| target_name.cmp_distance(lhs, rhs))
+        };
 
         let closest_section = match *dst {
             Authority::ManagedNode(ref target_name)
@@ -1153,7 +1154,7 @@ impl Chain {
         let n = closest_section.len();
         Ok(closest_section
             .into_iter()
-            .filter(|&x| x != exclude)
+            .filter(|&x| x != exclude && x != *self.our_id().name())
             .take((n + 2) / 3)
             .collect())
     }
