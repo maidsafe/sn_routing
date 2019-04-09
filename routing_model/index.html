@@ -821,6 +821,15 @@
     </p>
   </div>
   </div>
+  <button class="collapsible">split_needed</button>
+  <div class="content">
+    <p>This function indicates that we need splitting.<br>
+    The details for the trigger are still in slight flux, but here are some possibilities:
+    <ul>
+      <li> The number of Online adults plus elders is above our min section size of 10 elder plus 90 Adults + buffer
+    </ul>
+    </p>
+  </div>
   <div class="mermaid">
       graph TB
       CheckAndProcessElderChange["StartCheckAndProcessElderMergeChange:<br/>No exit - Needs killed"]
@@ -856,15 +865,26 @@
       Consensus--"ParsecCheckElderTimeout"-->CheckMergeNeeded
       CheckMergeNeeded(("Check"))
 
-      CheckMergeNeeded--"!merge_needed()<br/> and<br/>!has_merge_infos()"-->CheckElderChange
+      CheckMergeNeeded--"Otherwise"-->CheckElderChange
       CheckElderChange(("Check"))
 
-      CheckElderChange -- "No<br/>changes" --> RestartTimeout
+      CheckElderChange -- "Otherwise" --> CheckNeedSplit
+
+      CheckNeedSplit(("Check"))
+      CheckNeedSplit --"Otherwise" --> RestartTimeout
       RestartTimeout["schedule(<br/>CheckElderTimeout)"]
       RestartTimeout-->LoopEnd
 
-      CheckElderChange --"check_elder_change()<br/><br/>Has elder changes: elder first ordered by:<br/>State=Online then age then name."--> Concurrent0
+      CheckNeedSplit --"split_needed()" --> Concurrent2
+      Concurrent2{"Concurrent<br/>paths"}
+      Concurrent2 --> ProcessSplit
+      Concurrent2 --> LoopEnd
 
+      ProcessSplit["ProcessSplit"]
+      style ProcessSplit fill:#f9f,stroke:#333,stroke-width:4px
+      ProcessSplit --> CancelResourceProof
+
+      CheckElderChange --"check_elder_change()<br/><br/>Has elder changes: elder first ordered by:<br/>State=Online then age then name."--> Concurrent0
       Concurrent0{"Concurrent<br/>paths"}
       Concurrent0 --> ProcessElderChange
       Concurrent0 --> LoopEnd
@@ -883,8 +903,6 @@
       ResetRelocatedNodeConnection --> RestartTimeout
 
       CheckMergeNeeded --"merge_needed()<br/>or<br/>has_merge_infos()"-->Concurrent1
-
-
       Concurrent1{"Concurrent<br/>paths"}
       Concurrent1 --> ProcessMerge
       Concurrent1 --> LoopEnd
@@ -1042,6 +1060,62 @@
 
       CheckMerge -- "Otherwise" --> LoopEnd
 
+      LoopEnd --> LoopStart
+  </div>
+
+  <h2>Handling splits</h2>
+  <div class=description>
+  <p>Vote for the two NewSectionInfo to gather required signatures<br/>
+ </p>
+  <button class="collapsible">WAITED_VOTES</button>
+  <div class="content">
+    <p>Wait for all these votes to reach consensus before reflecting the status change in our chain.<br>
+      Both section need to be consensused before we move on so we do not leave one behind with not enough voters.
+    </p>
+  </div>
+  <button class="collapsible">complete_split</button>
+  <div class="content">
+    <p>With the NewSectionInfo in hands, completing the split process consists on joining the correct newly formed section and leaving the old one behind.
+    </p>
+  </div>
+  <button class="collapsible">new_section_info</button>
+  <div class="content">
+    <p>A list of PublicId.<br>
+    The content of the NewSectionInfo parsec event that reached consensus that we are now a member of.
+    </p>
+  </div>
+  </div>
+  <div class="mermaid">
+      graph TB
+      ProcessElderChange["ProcessElderChange<br/>(Take elder changes)<br/>(shared state)"]
+      style ProcessElderChange fill:#f9f,stroke:#333,stroke-width:4px
+
+      EndRoutine["End of ProcessElderChange<br/>(shared state)"]
+      style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
+
+      ProcessElderChange -->  VoteNewSections
+      VoteNewSections["vote_for(NewSectionInfo) for the two new sections<br/><br/>WAITED_VOTES.insert(all votes)"]
+      VoteNewSections --> LoopStart
+
+      WaitFor(("Wait for 5:"))
+      LoopStart --> WaitFor
+
+      Consensus((Consensus))
+      WaitFor-- Parsec<br/>consensus --> Consensus
+
+      Consensus -- "WAITED_VOTES.contains(vote)" --> OneVoteConsensused
+      OneVoteConsensused["WAITED_VOTES.remove(vote)"]
+
+      OneVoteConsensused --> WaitComplete
+      WaitComplete(("Check?"))
+      WaitComplete--"WAITED_VOTES<br/>.is_empty()<br/>(Wait complete)"-->CompleteSplit
+      CompleteSplit["complete_split()<br/>(Start parsec with new genesis...)"]
+      CompleteSplit --> MarkNewElderAdults
+
+      MarkNewElderAdults["update_elder_status(new_section_info)"]
+      MarkNewElderAdults--> EndRoutine
+
+      WaitComplete--"!WAITED_VOTES<br/>.is_empty()<br/>(Wait not complete)"--> LoopEnd
       LoopEnd --> LoopStart
   </div>
 
