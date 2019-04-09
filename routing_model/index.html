@@ -119,8 +119,8 @@
   <h2>Becoming a full member of a section</h2>
   <div class=description>
   This is from the point of view of a node trying to join a section as a full member.<br/>
-  This node is going to try to be accepted as candidate until it receive a NodeConnected RPC to complete this stage successfully.<br/>
-  This node is going to perform the resource proof until it receive a NodeApproval RPC to complete this stage successfully.<br/>
+  This node is going to try to be accepted as candidate until it receives a NodeConnected RPC to complete this stage successfully.<br/>
+  This node is going to perform the resource proof until it receives a NodeApproval RPC to complete this stage successfully.<br/>
   If the node is not accepted, after time out, it will try another section.
   </div>
   <div class="mermaid">
@@ -217,11 +217,11 @@
     style StartTopLevelDst fill:#f9f,stroke:#333,stroke-width:4px
 
     ConcurentStartDst --> StartRelocatedNodeConnection
-    StartRelocatedNodeConnection[Start RelocatedNodeConnection]
+    StartRelocatedNodeConnection[StartRelocatedNodeConnection]
     style StartRelocatedNodeConnection fill:#f9f,stroke:#333,stroke-width:4px
 
     ConcurentStartDst --> StartResourceProof
-    StartResourceProof[Start ResourceProof]
+    StartResourceProof[StartResourceProof]
     style StartResourceProof fill:#f9f,stroke:#333,stroke-width:4px
 
     ConcurentStartElder --> StartCheckAndProcessElderMergeChange
@@ -250,7 +250,7 @@
   <p>This flow represents what we do when a section contacts us to relocate one of their nodes to our section.<br/>
   The process starts as we receive an ExpectCandidate RPC from this node.<br/>
   We vote for it in PARSEC to be sure all members of the section process it in the same order.<br/>
-  Once it reaches consensus, we are ready to process that candidate by letting them connect (see RelocatedNodeConnection) and then perform the resource_proof (see ResourceProof).<br/>
+  Once it reaches consensus, we are ready to process that candidate by letting them connect (see StartRelocatedNodeConnection) and then perform the resource_proof (see StartResourceProof).<br/>
   There are some subtleties, such as the fact that we only want to process one candidate at a time, but this is the general idea.
   </p>
   <button class="collapsible">RPC: ExpectCandidate</button>
@@ -273,8 +273,8 @@
   <button class="collapsible">waiting_proofing</button>
   <div class="content">
     <p>We want to accept at most one incoming relocation at a time into our section.<br/>
-    waiting_proofing function return the list of nodes that we have yet to resource proof, (States from WaitingCandidateInfo until it reach OnlineState).<br/>
-    When waiting_proofing() is not empty and we reach consensus on ParsecExpectCandidate, we send a RefuseCandidate RPC to the would-be-incoming-node so they can try another section or try again later.
+    The waiting_proofing function returns the list of nodes that we have yet to resource proof, (States from WaitingCandidateInfo until it reaches OnlineState).<br/>
+    When the output of this function is not empty and we reach consensus on ParsecExpectCandidate, we send a RefuseCandidate RPC to the would-be-incoming-node so they can try another section or try again later.
     </p>
   </div>
   </div>
@@ -321,21 +321,25 @@
   <h2>Relocated node connection</h2>
   <div class=description>
   <p>Manage node with NodeState=WaitingConnectionInfo and connection info request/response RPCs.<br/>
-    The candidate sends CandidateInfo to NaeManager of the target interval, so it will reach the managing section after split/merge.<br/>
-    This target interval address could be the middle address of the interval, but the full interval should not be overlapping two section after a split.<br/>
+    The candidate sends its CandidateInfo to the NaeManager of the target interval, so to ensure it reaches a section even in the event of a split or a merge.<br/>
+    This target interval address could be the middle address of the interval, and the interval should cover a range that will not be split if the section splits.<br/>
     When we complete, we either stop responding to CandidateInfo RPCs if it failed, or we send NodeConnected RPC on success,<br/>
-    (We could also omit this RPC, the node would continue sending CandidateInfo until ResourceProof or time out).<br/>
-    When the node reach WaitingProofing state, the section becomes responsible for managing communication with this node as it would any of its adults.
+    (We could also omit this RPC, the node would continue sending CandidateInfo until ResourceProof RPC or time out).<br/>
+    When the node reaches WaitingProofing state, the section becomes responsible for managing communication with this node as it would any of its adults.
   </p>
   <button class="collapsible">is_valid_waited_info</button>
   <div class="content">
-    <p>Return true if the given CandidateInfo is a valid CandidateInfo and match a one of our node and it is in WaitingCandidateInfo state<br/>
-       and the given message_src of the current RPC match the CandidateInfo new_public_id.
+    <p>Return true if
+        <ul>
+          <li> The given CandidateInfo is valid,
+          <li> It matches one of our nodes that is in the WaitingCandidateInfo state,
+          <li> The message_src (from the current RPC) is consistent with the CandidateInfo's new_public_id
+        </ul>
     </p>
   </div>
   <button class="collapsible">is_valid_waited_connection</button>
   <div class="content">
-    <p>Return true if the given message_src of the current RPC is a one of our node and is in WaitingConnectionInfo state.
+    <p>Return true if the given message_src of the current RPC is a one of our nodes and is in WaitingConnectionInfo state.
     </p>
   </div>
   <button class="collapsible">RelocatedNodeConnection_Reset</button>
@@ -347,7 +351,7 @@
   </div>
   <div class="mermaid">
       graph TB
-      RelocatedNodeConnection["Start RelocatedNodeConnection"]
+      RelocatedNodeConnection["StartRelocatedNodeConnection"]
       style RelocatedNodeConnection fill:#f9f,stroke:#333,stroke-width:4px
 
       RelocatedNodeConnection --> StartCheckRelocatedNodeConnectionTimeout
@@ -419,7 +423,7 @@
 
   <h2>Resource proof from a destination's point of view</h2>
   <div class=description>
-  <p>In the previous diagram, we ensured an incoming candidate is connected and in our peer_list with state WaitingProofing, and elders are ready to communicate with it.<br/>
+  <p>In the previous diagram, we ensured an incoming candidate would only reach the "WaitingProofing" state once it was connected to our section and able to communicate with its elders. At this stage, the node would be a member of our peer_list.<br/>
   This is maintained accross merge/split as for any adult node, so we are ready to resource proof any node in WaitingProofing state<br/>
   <br/>
   This leads us here: to the resource proof.<br/>
@@ -463,7 +467,7 @@
   </div>
   <div class="mermaid">
       graph TB
-      ResourceProof["Start ResourceProof"]
+      ResourceProof["StartResourceProof"]
       style ResourceProof fill:#f9f,stroke:#333,stroke-width:4px
 
       ResourceProof --> StartCheckResourceProofTimeout
