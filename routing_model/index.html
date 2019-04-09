@@ -263,13 +263,6 @@
     </p>
   </div>
   </div>
-  <button class="collapsible">shorter_prefix_section</button>
-  <div class="content">
-    <p>If we know of a section that has a shorter prefix than ours, we prefer for them to receive this incoming node rather than ourselves as it will help keep the Network's sections tree balanced.<br/>
-    This shorter_prefix_section is a function that will return None if we are the shortest of any section we know, Some if there is a better candidate.<br/>
-    If it is Some, we will relay the RPC to them instead of accepting the rellocation to our own section.
-    </p>
-  </div>
   <button class="collapsible">waiting_proofing</button>
   <div class="content">
     <p>We want to accept at most one incoming relocation at a time into our section.<br/>
@@ -303,18 +296,19 @@
       VoteParsecExpectCandidate --> LoopEnd
 
       Balanced(("Check?<br/>(shared state)"))
-      Balanced -- "shorter_prefix_section(<br/>).is_some()" --> Resend
-      Balanced -- "shorter_prefix_section().is_none()<br/>!waiting_proofing().is_empty()" --> SendRefuse
-      Balanced -- "shorter_prefix_section().is_none()<br/>waiting_proofing().is_empty()" --> SendRelocateResponse
+      Balanced -- "waiting_proofing().contains(candidate)" --> SendIdenticalRelocateResponse
+      Balanced -- "waiting_proofing().is_empty()" --> SendRelocateResponse
+      Balanced -- "Otherwise" --> SendRefuse
 
-      Resend["send_rpc(<br/>ExpectCandidate)<br/>to shorter_prefix_section()"]
-      Resend --> LoopEnd
+      SendIdenticalRelocateResponse["send_rpc(RelocateResponse)<br/>again to source section<br/>with original info"]
+      SendIdenticalRelocateResponse --> LoopEnd
+
+      SendRelocateResponse["add_node(NodeState=WaitingCandidateInfo)<br/><br/>send_rpc(RelocateResponse)<br/>to source section"]
+      SendRelocateResponse --> LoopEnd
 
       SendRefuse["send_rpc(<br/>RefuseCandidate)<br/>to source section"]
       SendRefuse --> LoopEnd
 
-      SendRelocateResponse["add_node(NodeState=WaitingCandidateInfo)<br/><br/>send_rpc(RelocateResponse)<br/>to source section"]
-      SendRelocateResponse --> LoopEnd
 
   </div>
 
@@ -668,10 +662,30 @@
     Note: It may be possible for a node to relocate to its sibling, and complete relocation after a merge occured.
     </p>
   </div>
+  <button class="collapsible">waiting_node_relocate_response</button>
+  <div class="content">
+    <p>Returns our node with state WaitRelocateResponseState.
+    </p>
+  </div>
+  <button class="collapsible">is_our_relocating_node</button>
+  <div class="content">
+    <p>Is it a valid node that is not yet relocated (i.e State is RelocatingState or WaitRelocateResponseState).
+    </p>
+  </div>
   <button class="collapsible">RefuseCandidate/<br/>RelocateResponse</button>
   <div class="content">
     <p>Exactly one of these RPCs will be sent to us from the destination section as a response to our section's ExpectCandidate RPC.<br/>
-    When this happens, we will immediately vote for it in PARSEC as we need to act in the same order as anyone else in our section.
+    When this happens, we will immediately vote for it in PARSEC as we need to act in the same order as anyone else in our section.<br/>
+    In case we re-sent the ExpectCandidate RPC, we may receive more than one RefuseCandidate and RelocateResponse. In this case we will pass on the first RelocateResponse to our Candidate.<br/>
+    </p>
+  </div>
+  <button class="collapsible">RelocatedInfo</button>
+  <div class="content">
+    <p>Trigger relocation: Candidate will disconnect on receiving that RPC<br/>
+    This RPC contains the RelocateResponse info, and the signatures prooving the source section received it and decided that particular response is the one to relocate to.<br/>
+    In case we re-sent the ExpectCandidate RPC, we may receive more than one RefuseCandidate and RelocateResponse.<br/>
+    In this case we must ensure that no single node could act on that other RelocateResponse and be accepted by the destination. this means the signatures must be provided only once the RelocateResponse is agreed.<br/>
+    RelocatedInfo will contain the RelocateResponse info and the quorum of signatures gathered from PARSEC vote on ParsecRelocatedInfo.
     </p>
   </div>
   </div>
@@ -694,7 +708,7 @@
 
       Event((Event))
       Event -- CheckRelocateTimeOut<br/>Trigger --> VoteParsecCheckRelocate
-      VoteParsecCheckRelocate["vote_for(ParsecCheckRelocate)<br/>schedule(CheckRelocateTimeOut)"]
+      VoteParsecCheckRelocate["vote_for(<br/>ParsecCheckRelocate)<br/>schedule(<br/>CheckRelocateTimeOut)"]
       VoteParsecCheckRelocate --> LoopEnd
 
       RPC((RPC))
@@ -707,21 +721,38 @@
 
       ParsecConsensus((Parsec<br/>consensus))
       ParsecConsensus -- ParsecCheckRelocate<br/>consensused --> CheckNeedRelocate
-
       CheckNeedRelocate((Check?))
-      CheckNeedRelocate--"Otherwise" -->LoopEnd
+      CheckNeedRelocate--"Otherwise" -->CheckNeedResend
 
       CheckNeedRelocate--"get_best_relocating_node_and_target().is_some()" --> SendExpectCandidate
       SendExpectCandidate["(node, target)=<br/>get_best_relocating_node_and_target()<br/><br/>send_rpc(<br/>ExpectCandidate(node))<br/>to target NaeManager<br/><br/>set_node_state(<br/>node,<br/>WaitRelocateResponseState)"]
-      SendExpectCandidate --> LoopEnd
+      SendExpectCandidate --> CheckNeedResend
 
-      ParsecConsensus --"ParsecRefuseCandidate<br/>for our node"--> RefusedCandidate
+      CheckNeedResend((Check?))
+      CheckNeedResend -- RESEND_TRIGGER>0 --> DecResendCount
+      DecResendCount["RESEND_TRIGGER--"]
+      DecResendCount --> LoopEnd
+
+      CheckNeedResend -- RESEND_TRIGGER==0 --> AllowResendCandidates
+      AllowResendCandidates["for node in both<br/>-waiting_node_relocate_response()<br/>-WAIT_RESPONSE:<br/><br/>set_node_state(<br/>node,<br/>RelocatingState)<br/><br/>--<br/>RESEND_TRIGGER=3<br/>WAIT_RESPONSE=<br/>waiting_node_relocate_response()"]
+      AllowResendCandidates --> LoopEnd
+
+
+      ParsecConsensus --"ParsecRefuseCandidate<br/>and<br/>is_our_relocating_node(node)"--> RefusedCandidate
       RefusedCandidate["set_node_state(<br/>node,<br/>RelocatingState)"]
       RefusedCandidate --> LoopEnd
 
-      ParsecConsensus --"ParsecRelocateResponse<br/>for our node"--> SendPovableRelocateInfo
-      SendPovableRelocateInfo["send_rpc(RelocatedInfo)<br/>to node<br/><br/>Includes RelocationResponse<br/>content and consensus<br/>Node may be already gone"]
-      SendPovableRelocateInfo-->PurgeNodeInfos
+      ParsecConsensus --"ParsecRelocateResponse<br/>and<br/>is_our_relocating_node(node)"--> VoteProvableRelocateInfo
+      VoteProvableRelocateInfo["set_node_state(<br/>node,<br/>RelocatedState(RelocateResponse Info)<br/>(Vote for same relocation if merge/split<br/>so only one valid proof exists)<br/><br/>vote_for(<br/>ParsecRelocatedInfo(RelocateResponse Info))"]
+      VoteProvableRelocateInfo --> LoopEnd
+
+      ParsecConsensus --"ParsecRefuseCandidate/<br/>ParsecRelocateResponse<br/>otherwise"--> DiscardVote
+      DiscardVote[Discard<br/>Vote]
+      DiscardVote --> LoopEnd
+
+      ParsecConsensus --"ParsecRelocatedInfo"--> SendProvableRelocateInfo
+      SendProvableRelocateInfo["send_rpc(RelocatedInfo)<br/>to node<br/><br/>ParsecRelocatedInfo proofs for CandidateInfo<br/>Node may be already gone"]
+      SendProvableRelocateInfo-->PurgeNodeInfos
       PurgeNodeInfos["purge_node_info(<br/>node)"]
       PurgeNodeInfos--> LoopEnd
   </div>
@@ -1073,6 +1104,7 @@
     Contains:<br/>
       <ul>
         <li>target_interval: (XorName, XorName) - The interval into which the joining node should join.<br>
+        <li>section_info: SectionInfo - The destination section that the joining node will trust.<br>
       </ul>
     </p>
   </div>
@@ -1088,6 +1120,8 @@
       Contains:<br/>
       <ul>
         <li>target_interval: (XorName, XorName) - The interval into which the joining node should join.<br>
+        <li>section_info: SectionInfo - The destination section that the joining node will trust.<br>
+        <li>proof: Signatures - Quorum of signature for the candidate to prove the source section relocated it with these infos.<br>
       </ul>
     </p>
   </div>
@@ -1101,6 +1135,8 @@
         <li>signature_using_old: Signature - Signature of concatenated PublicIds using the pre-relocation key.<br>
         <li>signature_using_new: Signature - Signature of concatenated PublicIds and signature_using_old using the post-relocation key.<br>
         <li>new_client_auth: Authority - Client authority from after relocation.<br>
+        <li>source_proof: Signatures - Quorum of signature from the source section proving the source approved that relocation.<br>
+            This will be checked against the stored information in the candidate node state.<br/>
       </ul>
     </p>
   </div>
@@ -1114,6 +1150,7 @@
     <p>Sent by the destination section to the joining node when connected<br/>
       Contains:<br/>
       <ul>
+        <li>section_info_proofs: Vec&lt(SectionInfo, ProofSet)&gt - Signed section infos with root starting with the stored SectionInfo in the candidate node state.<br>
         <li>current_info: GenesisPfxInfo - All the info needed when this node becomes an adult or elder.<br>
       </ul>
     </p>
@@ -1137,7 +1174,13 @@
     participant Node as Relocating Node
     participant Dst as Destination Section
 
-    Src->>+Dst: Routing RPC: ExpectCandidate
+
+    loop FindDestination
+      Src->>+Dst: Routing RPC: ExpectCandidate
+      opt Refuse
+        Dst-->>Src: Routing RPC: RefuseCandidate
+      end
+    end
     Dst-->>-Src: Routing RPC: RelocateResponse
     Src->>Node: Direct node-to-node RPC: RelocatedInfo
 
