@@ -1115,6 +1115,12 @@ impl Elder {
     ) -> Result<(), RoutingError> {
         // Validate relocating node has contacted the correct Section-X
         if *relocating_node_id.name() != dst_name {
+            error!(
+                "{} Invalid destination in a relocate request! Node name: {:?}, destination: {:?}",
+                self,
+                relocating_node_id.name(),
+                dst_name
+            );
             return Err(RoutingError::InvalidDestination);
         }
 
@@ -1399,7 +1405,12 @@ impl Elder {
         // TODO: Figure out when failure is expected, and in which cases we should still handle the
         // message anyway.
         if let Err(err) = self.chain.extend_proving_sections(signed_msg) {
-            debug!("{} Failed to add section infos: {:?}", self, err);
+            debug!(
+                "{} Failed to add section infos to message {:?}: {:?}",
+                self,
+                signed_msg.routing_message(),
+                err
+            );
         }
 
         if let Authority::Client { ref client_id, .. } = dst {
@@ -1412,6 +1423,13 @@ impl Elder {
         }
 
         let target_pub_ids = self.get_targets(signed_msg.routing_message(), hop_name)?;
+
+        debug!(
+            "{}: Sending message {:?} via targets {:?}",
+            self,
+            signed_msg.routing_message(),
+            target_pub_ids
+        );
 
         for target_pub_id in target_pub_ids {
             self.send_signed_message_to_peer(signed_msg.clone(), &target_pub_id)?;
@@ -2017,11 +2035,23 @@ impl Bootstrapped for Elder {
                 }
             } else {
                 if let Some(&pub_id) = self.peer_mgr.get_pub_id(&target) {
+                    trace!(
+                        "{} Sending a signature for message {:?} to {:?}",
+                        self,
+                        signed_msg.routing_message(),
+                        target
+                    );
                     self.send_direct_message(
                         &pub_id,
                         DirectMessage::MessageSignature(signed_msg.clone()),
                     );
                 } else {
+                    error!(
+                        "{} Failed to resolve signature target {:?} for message {:?}",
+                        self,
+                        target,
+                        signed_msg.routing_message()
+                    );
                     return Err(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer));
                 }
             }

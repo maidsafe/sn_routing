@@ -535,6 +535,12 @@ impl Chain {
             let opt_ns = self.neighbour_infos.values().find(proves_si);
             let ns = opt_ns.ok_or_else(|| {
                 // Should be unreachable if section info is known.
+                error!(
+                    "Our prefix: {:?}, all prefixes: {:?}, sec_info.prefix(): {:?}",
+                    self.our_prefix(),
+                    self.prefixes(),
+                    sec_info.prefix(),
+                );
                 log_or_panic!(LogLevel::Error, "Unknown previous section info.");
                 RoutingError::UnknownPrevHop
             })?;
