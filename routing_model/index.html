@@ -1055,6 +1055,9 @@
     Contains:<br/>
       <ul>
         <li>old_public_id: PublicId - The joining node's current public ID.<br>
+        <li>new_age: u8 - The joining node's new public id age. <br>
+            Decided by source section, could be +1 or /2 depending on why we relocate.<br>
+            (If we want to allow early relocate, we could also add carried over work units.)
       </ul>
     </p>
   </div>
