@@ -382,15 +382,18 @@
 
       RPC((RPC))
       WaitFor --"RPC"--> RPC
-      RPC -- "CandidateInfo<br/>and<br/>none of the other path" --> DiscardRPC
+      RPC -- "CandidateInfo" --> CheckCandidateInfo
+      CheckCandidateInfo((Check))
+
+      CheckCandidateInfo -- "Otherwise" --> DiscardRPC
       DiscardRPC[Discard RPC]
       DiscardRPC --> LoopEnd
 
-      RPC -- "CandidateInfo<br/>and<br/>is_valid_waited_info(<br/>CandidateInfo)" --> VoteForCandidateInfo
+      CheckCandidateInfo -- "is_valid_waited_info(<br/>CandidateInfo)" --> VoteForCandidateInfo
       VoteForCandidateInfo["vote_for(<br/>ParsecCandidateInfo)"]
       VoteForCandidateInfo --> LoopEnd
 
-      RPC -- "CandidateInfo<br/>and<br/>is_valid_waited_connection(<br/>message_src)" --> SendConnectionInfoRequest
+      CheckCandidateInfo -- "is_valid_waited_connection(<br/>message_src)" --> SendConnectionInfoRequest
       SendConnectionInfoRequest["send_rpc(<br/>ConnectionInfoRequest)"]
       SendConnectionInfoRequest --> LoopEnd
 
@@ -517,7 +520,7 @@
 
 
       DiscardRPC[Discard RPC]
-      RPC -- ResourceProofResponse<br/>from CANDIDATE<br/><br/>VOTED_ONLINE==yes --> DiscardRPC
+      RPC -- ResourceProofResponse<br/>otherwise --> DiscardRPC
       DiscardRPC --> LoopEnd
 
       WaitFor --Event--> Event
@@ -639,7 +642,7 @@
 
   <h2>Relocating a member of our section away from it</h2>
   <div class=description>
-  <p>At this stage, we have decided that one of our section members should be relocated.<br/>
+  <p>At this stage, we handle nodes that were marked for relocation.<br/>
   The process is quite simple: we send an ExpectCandidate RPC to the destination section. That section will either pass the node to a section with a shorter prefix, send us a RefuseCandidate RPC or eventually send us a RelocateResponse RPC. If the destination picked another section with a shorter prefix, that section will send us one of these RPCs (or suggest another section with a shorter prefix, but this recursion will end at some point).<br/>
   All in all, we have the certainty that eventually, exactly one of these two RPCs will make it to our section.<br/>
   When it does, it will be voted in PARSEC, regardless of the order of operations, so it will eventually make it through PARSEC.<br/>
@@ -660,12 +663,14 @@
     There may be mutliple nodes relocating, for example because of a merge. Take the best one (oldest), and choose a target address.<br/>
     The target address is one managed by one of our neighbours. This could be random, or the current old_public_id with a single bit of the prefix flipped.<br/>
     This would would help ensure that source and destination remain neighbours, even if the source splits.<br/>
-    Using a target address instead of a section ensures we deliver the message even if the destination splits or merges.
+    Using a target address instead of a section ensures we deliver the message even if the destination splits or merges.<br/>
+    <br/>
+    Note: It may be possible for a node to relocate to its sibling, and complete relocation after a merge occured.
     </p>
   </div>
   <button class="collapsible">RefuseCandidate/<br/>RelocateResponse</button>
   <div class="content">
-    <p>Exactly one of these RPCs will be sent to us from the destination section as a response to our section's ExpectCandidate RPC (see TryRelocating for more context).<br/>
+    <p>Exactly one of these RPCs will be sent to us from the destination section as a response to our section's ExpectCandidate RPC.<br/>
     When this happens, we will immediately vote for it in PARSEC as we need to act in the same order as anyone else in our section.
     </p>
   </div>
