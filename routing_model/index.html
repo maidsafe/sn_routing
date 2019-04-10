@@ -336,6 +336,13 @@
     <p>Return true if the given message_src of the current RPC is a one of our nodes and is in WaitingConnectionInfo state.
     </p>
   </div>
+  <button class="collapsible">shorter_prefix_section</button>
+  <div class="content">
+    <p>If we know of a section that has a shorter prefix than ours, we prefer for them to receive this incoming node rather than ourselves as it will help keep the Network's sections tree balanced.<br/>
+    This shorter_prefix_section is a function that will return None if we are the shortest of any section we know, Some if there is a better candidate.<br/>
+    If it is Some, we will relay the RPC to them instead of accepting the rellocation to our own section.
+    </p>
+  </div>
   <button class="collapsible">RelocatedNodeConnection_Reset</button>
   <div class="content">
     <p>Provides and external entry point to reset the currently processed nodes: Do not reject a node because it took longer than expected.<br/>
@@ -370,8 +377,17 @@
       SetCandidateInfo["update_node(<br/>CandidateInfo,<br/>NodeState=WaitingConnectionInfo)"]
       SetCandidateInfo --> LoopEnd
 
-      ParsecConsensus -- "ParsecCandidateConnected<br/>and<br/>is_valid_waited_connection(<br/>message_src)" --> SetConnected
-      SetConnected["set_node_state(<br/>candidate,<br/>WaitingProofing)<br/><br/>send_rpc(<br/>NodeConnected)<br/><br/>(All communications now<br/>managed by elder like<br/>for other adults)"]
+      ParsecConsensus -- "ParsecCandidateConnected<br/>and<br/>is_valid_waited_connection(<br/>message_src)" --> Balanced
+      Balanced(("Check"))
+      Balanced -- "shorter_prefix_section(<br/>).is_some()" --> RelocateToShorterPrefix
+      RelocateToShorterPrefix["set_node_state(<br/>candidate,<br/>RelocatingState)"]
+      RelocateToShorterPrefix --> SetConnected
+
+      Balanced -- "Otherwise" --> SetWaitingProof
+      SetWaitingProof["set_node_state(<br/>candidate,<br/>WaitingProofing)"]
+      SetWaitingProof --> SetConnected
+
+      SetConnected["send_rpc(<br/>NodeConnected)<br/><br/>(All communications now<br/>managed by elder like<br/>for other adults)"]
       SetConnected --> LoopEnd
 
       RPC((RPC))
