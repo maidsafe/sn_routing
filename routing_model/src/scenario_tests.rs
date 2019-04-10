@@ -825,6 +825,76 @@ mod dst_tests {
             &AssertState::default(),
         );
     }
+
+    #[test]
+    fn test_local_events_offline_online_again_for_different_nodes() {
+        run_test(
+            "Get local event node detected offline online again different nodes",
+            &intial_state_old_elders(),
+            &[
+                LocalEvent::NodeDetectedOffline(NODE_ELDER_130).to_event(),
+                LocalEvent::NodeDetectedBackOnline(NODE_ELDER_131).to_event(),
+            ],
+            &AssertState {
+                action_our_votes: vec![
+                    ParsecVote::Offline(NODE_ELDER_130),
+                    ParsecVote::BackOnline(NODE_ELDER_131),
+                ],
+                ..AssertState::default()
+            },
+        );
+    }
+
+    #[test]
+    fn test_parsec_offline() {
+        run_test(
+            "Get parsec consensus offline",
+            &intial_state_old_elders(),
+            &[ParsecVote::Offline(NODE_ELDER_130).to_event()],
+            &AssertState {
+                action_our_nodes: vec![NodeChange::Offline(NODE_ELDER_130)],
+                ..AssertState::default()
+            },
+        );
+    }
+
+    #[test]
+    fn test_parsec_offline_then_check_elder() {
+        let initial_state = arrange_initial_state(
+            &intial_state_old_elders(),
+            &[ParsecVote::Offline(NODE_ELDER_130).to_event()],
+        );
+        run_test(
+            "Get parsec consensus offline then check elder",
+            &initial_state,
+            &[ParsecVote::CheckElder.to_event()],
+            &AssertState {
+                action_our_votes: SWAP_ELDER_130_YOUNG_205_SECTION_INFO_1.1.clone(),
+                check_and_process_elder_change_routine: CheckAndProcessElderChangeState {
+                    change_elder: Some(SWAP_ELDER_130_YOUNG_205_SECTION_INFO_1.0.clone()),
+                    wait_votes: SWAP_ELDER_130_YOUNG_205_SECTION_INFO_1.1.clone(),
+                },
+                ..AssertState::default()
+            },
+        );
+    }
+
+    #[test]
+    fn test_parsec_offline_then_parsec_online() {
+        let initial_state = arrange_initial_state(
+            &intial_state_old_elders(),
+            &[ParsecVote::Offline(NODE_ELDER_130).to_event()],
+        );
+        run_test(
+            "Get parsec consensus offline then parsec online",
+            &initial_state,
+            &[ParsecVote::BackOnline(NODE_ELDER_130).to_event()],
+            &AssertState {
+                action_our_nodes: vec![NodeChange::Relocating(NODE_ELDER_130)],
+                ..AssertState::default()
+            },
+        );
+    }
 }
 
 mod src_tests {

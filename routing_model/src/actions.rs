@@ -106,6 +106,13 @@ impl InnerAction {
         self.our_nodes.push(NodeChange::Online(node.node));
     }
 
+    fn set_offline_state(&mut self, name: &Name) {
+        let node = &mut self.our_current_nodes.get_mut(name).unwrap();
+        node.is_offline = true;
+        // Note: for test validation only
+        self.our_nodes.push(NodeChange::Offline(node.node));
+    }
+
     fn set_elder_state(&mut self, name: &Name, value: bool) {
         let node = &mut self.our_current_nodes.get_mut(name).unwrap();
 
@@ -166,6 +173,14 @@ impl Action {
             .set_online_state(&Name(candidate.0.name));
     }
 
+    pub fn set_node_offline_state(&self, node: Node) {
+        self.0.borrow_mut().set_offline_state(&Name(node.0.name));
+    }
+
+    pub fn set_node_back_online_state(&self, node: Node) {
+        self.0.borrow_mut().set_relocating_state(&Name(node.0.name));
+    }
+
     pub fn remove_node(&self, candidate: Candidate) {
         self.0.borrow_mut().remove_node(Node(candidate.0));
     }
@@ -183,10 +198,12 @@ impl Action {
                 .values()
                 .cloned()
                 .sorted_by(|left, right| {
-                    left.is_relocating
-                        .cmp(&right.is_relocating)
-                        .then(left.node.0.age.cmp(&right.node.0.age).reverse())
-                        .then(left.node.0.name.cmp(&right.node.0.name))
+                    left.is_offline.cmp(&right.is_offline).then(
+                        left.is_relocating
+                            .cmp(&right.is_relocating)
+                            .then(left.node.0.age.cmp(&right.node.0.age).reverse())
+                            .then(left.node.0.name.cmp(&right.node.0.name)),
+                    )
                 })
                 .collect_vec();
             let elder_size = std::cmp::min(3, sorted_values.len());

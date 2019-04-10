@@ -11,7 +11,7 @@
 
 use crate::state::{AcceptAsCandidateState, CheckAndProcessElderChangeState, State};
 use crate::utilities::{
-    Candidate, ChangeElder, Event, LocalEvent, ParsecVote, Proof, Rpc, Section,
+    Candidate, ChangeElder, Event, LocalEvent, Node, ParsecVote, Proof, Rpc, Section,
 };
 
 #[derive(Debug, PartialEq, Default, Clone)]
@@ -343,6 +343,60 @@ impl CheckAndProcessElderChange {
 
     fn start_check_elder_timeout(&self) -> Self {
         self.0.action.schedule_event(LocalEvent::TimeoutCheckElder);
+        self.clone()
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct CheckOnlineOffline(pub State);
+
+impl CheckOnlineOffline {
+    pub fn try_next(&self, event: Event) -> Option<State> {
+        match event {
+            Event::ParsecConsensus(vote) => self.try_consensus(&vote),
+            Event::LocalEvent(local_event) => self.try_local_event(local_event),
+            // Delegate to other event loops
+            _ => None,
+        }
+        .map(|state: CheckOnlineOffline| state.0)
+    }
+
+    fn try_consensus(&self, vote: &ParsecVote) -> Option<Self> {
+        match vote {
+            ParsecVote::Offline(node) => Some(self.make_node_offline(*node)),
+            ParsecVote::BackOnline(node) => Some(self.make_node_back_online(*node)),
+            // Delegate to other event loops
+            _ => None,
+        }
+    }
+
+    fn try_local_event(&self, local_event: LocalEvent) -> Option<Self> {
+        match local_event {
+            LocalEvent::NodeDetectedOffline(node) => Some(self.vote_parsec_offline(node)),
+            LocalEvent::NodeDetectedBackOnline(node) => Some(self.vote_parsec_back_online(node)),
+            // Delegate to other event loops
+            _ => None,
+        }
+    }
+
+    fn vote_parsec_offline(&self, node: Node) -> Self {
+        self.0.action.vote_parsec(ParsecVote::Offline(node));
+        self.clone()
+    }
+
+    fn vote_parsec_back_online(&self, node: Node) -> Self {
+        self.0.action.vote_parsec(ParsecVote::BackOnline(node));
+        self.clone()
+    }
+
+    fn make_node_offline(&self, node: Node) -> Self {
+        self.0.action.set_node_offline_state(node);
+        self.clone()
+    }
+
+    /// A member of a section that was lost connection to became offline, but is now online again
+    fn make_node_back_online(&self, node: Node) -> Self {
+        self.0.action.set_node_back_online_state(node);
         self.clone()
     }
 }
