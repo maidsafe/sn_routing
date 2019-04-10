@@ -31,6 +31,7 @@ pub struct Node(pub Attributes);
 pub enum NodeChange {
     AddResourceProofing(Node),
     Online(Node),
+    Offline(Node),
     Relocating(Node),
     Remove(Node),
     Elder(Node, bool),
@@ -41,6 +42,7 @@ impl NodeChange {
         match &self {
             NodeChange::AddResourceProofing(node)
             | NodeChange::Online(node)
+            | NodeChange::Offline(node)
             | NodeChange::Relocating(node)
             | NodeChange::Remove(node)
             | NodeChange::Elder(node, _) => *node,
@@ -62,6 +64,8 @@ pub struct NodeState {
     pub is_relocating: bool,
     pub need_relocate: bool,
     pub is_resource_proofing: bool,
+    // When a node that was previous online lost connection
+    pub is_offline: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, PartialOrd, Ord, Eq)]
@@ -230,6 +234,9 @@ pub enum ParsecVote {
     RelocateResponse(Candidate, SectionInfo),
 
     CheckElder,
+
+    Offline(Node),
+    BackOnline(Node),
 }
 
 impl ParsecVote {
@@ -249,7 +256,9 @@ impl ParsecVote {
             | ParsecVote::RemoveElderNode(_)
             | ParsecVote::NewSectionInfo(_)
             | ParsecVote::RelocationTrigger
-            | ParsecVote::CheckElder => None,
+            | ParsecVote::CheckElder
+            | ParsecVote::Offline(_)
+            | ParsecVote::BackOnline(_) => None,
         }
     }
 }
@@ -262,6 +271,8 @@ pub enum LocalEvent {
     JoiningTimeoutResendCandidateInfo,
     JoiningTimeoutRefused,
     ComputeResourceProofForElder(Name, ProofSource),
+    NodeDetectedOffline(Node),
+    NodeDetectedBackOnline(Node),
 }
 
 impl LocalEvent {

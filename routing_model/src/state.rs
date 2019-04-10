@@ -76,6 +76,10 @@ impl State {
             return Some(next);
         }
 
+        if let Some(next) = self.as_check_online_offline().try_next(event) {
+            return Some(next);
+        }
+
         if src.sub_routine_try_relocating.is_some() {
             if let Some(next) = self.as_try_relocating().try_next(event) {
                 return Some(next);
@@ -118,6 +122,10 @@ impl State {
 
     pub fn as_check_and_process_elder_change(&self) -> CheckAndProcessElderChange {
         CheckAndProcessElderChange(self.clone())
+    }
+
+    pub fn as_check_online_offline(&self) -> CheckOnlineOffline {
+        CheckOnlineOffline(self.clone())
     }
 
     pub fn as_top_level_src(&self) -> TopLevelSrc {
