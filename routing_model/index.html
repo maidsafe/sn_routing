@@ -342,7 +342,7 @@
     If it is Some, we will relay the RPC to them instead of accepting the rellocation to our own section.
     </p>
   </div>
-  <button class="collapsible">RelocatingState(Hop)</button>
+  <button class="collapsible">RelocatingHopState</button>
   <div class="content">
     <p>A nodes state indicating that it is relocated without ageing further.<br/>
        Also returned as part of waiting_proofing_or_hop().
@@ -385,7 +385,7 @@
       ParsecConsensus -- "ParsecCandidateConnected<br/>and<br/>is_valid_waited_connection(<br/>message_src)" --> Balanced
       Balanced(("Check"))
       Balanced -- "shorter_prefix_section(<br/>).is_some()" --> RelocateToShorterPrefix
-      RelocateToShorterPrefix["set_node_state(<br/>candidate,<br/>RelocatingState(Hop))"]
+      RelocateToShorterPrefix["set_node_state(<br/>candidate,<br/>RelocatingHopState)"]
       RelocateToShorterPrefix --> SetConnected
 
       Balanced -- "Otherwise" --> SetWaitingProof
@@ -579,7 +579,7 @@
   <div class=description>
   <p>In these diagrams, we are modeling the simple version of node ageing that we decided to implement for Fleming:<br/>
   Work units are incremented for all nodes in the section every time a timeout reaches consenus. Because a quorum of elders must have voted for this timeout, the malicious nodes can't arbitrarily speed up the ageing of their nodes.<br/>
-  Once a node has accumulated enough work units to be relocated, if no other node is currently relocating we set its state to RelocatingState(AgeIncrease). This node will then be actually relocated in StartRelocateSrc (see StartRelocateSrc).
+  Once a node has accumulated enough work units to be relocated, if no other node is currently relocating we set its state to RelocatingAgeIncreaseState. This node will then be actually relocated in StartRelocateSrc (see StartRelocateSrc).
   </p>
   <button class="collapsible">WorkUnitTimeout</button>
   <div class="content">
@@ -596,7 +596,7 @@
   </div>
   <button class="collapsible">nodes_relocating</button>
   <div class="content">
-    <p>The collection of nodes currently relocating: With node state RelocatingState(AgeIncrease) only.<br/>
+    <p>The collection of nodes currently relocating: With node state RelocatingAgeIncreaseState only.<br/>
       It will most often be empty or have one element, unless a merge occurs in which case it may contain more than one element.
       Nodes coming back online, or needing an extra hop are not considered here.
     </p>
@@ -611,7 +611,7 @@
   </div>
   <button class="collapsible">set_node_state</button>
   <div class="content">
-    <p>This function mutates our peer_list to set the state (for example set RelocatingState(AgeIncrease) for the node).<br/>
+    <p>This function mutates our peer_list to set the state (for example set RelocatingAgeIncreaseState for the node).<br/>
     inputs:<br/>
     - node<br/>
     - state<br/>
@@ -652,7 +652,7 @@
       AlreadyRelocating --"nodes_relocating().is_empty()"--> SetRelocatingNodeState
       AlreadyRelocating --"Otherwise"--> LoopEnd
 
-      SetRelocatingNodeState["set_node_state(get_node_to_relocate(), RelocatingState(AgeIncrease))"]
+      SetRelocatingNodeState["set_node_state(get_node_to_relocate(), RelocatingAgeIncreaseState)"]
       SetRelocatingNodeState --> LoopEnd
   </div>
 
@@ -663,8 +663,8 @@
   All in all, we have the certainty that eventually, exactly one of these two RPCs will make it to our section.<br/>
   When it does, it will be voted in PARSEC, regardless of the order of operations, so it will eventually make it through PARSEC.<br/>
   <br/>
-  If a node in RelocatingState(AgeIncrease), is a non-elder adult node, we can try to relocate it. If they are an elder node, we will first wait for the Adult/Elder promotion/demotion flow to kick in and demote them to an adult. This will happen because we changed their state from OnlineState to RelocatingState, which means that they will get demoted.<br/>
-  Nodes in RelocatingState(Hop) and then RelocatingState(BackOnline) are relocated after RelocatingState(AgeIncrease). Neither are full adults.
+  If a node in RelocatingAgeIncreaseState, is a non-elder adult node, we can try to relocate it. If they are an elder node, we will first wait for the Adult/Elder promotion/demotion flow to kick in and demote them to an adult. This will happen because we changed their state from OnlineState to RelocatingAgeIncreaseState, which means that they will get demoted.<br/>
+  Nodes in RelocatingHopState and then RelocatingBackOnlineState are relocated after RelocatingAgeIncreaseState. Neither are full adults.
   <br/>
   If they refused our candidate, our job ends there: the candidate will simply be a candidate for relocation again later, so we will try to relocate it then.<br/>
   If they accepted the node and sent us a RelocateResponse RPC, so the ParsecRelocateResponse event reached consensus, we will send to the node that is being relocated the RelocatedInfo they will need.<br/>
@@ -682,8 +682,8 @@
     This would help ensure that source and destination remain neighbours, even if the source splits.<br/>
     Using a target address instead of a section ensures we deliver the message even if the destination splits or merges.<br/>
     <br/>
-    There are 3 states the node may be: RelocatingState(AgeIncrease), RelocatingState(Hop), and RelocatingState(BackOnline).<br/>
-    Nodes will be selected in this order: RelocatingState(AgeIncrease), RelocatingState(Hop) and then RelocatingState(BackOnline).<br/>
+    There are 3 states the node may be: RelocatingAgeIncreaseState, RelocatingHopState, and RelocatingBackOnlineState.<br/>
+    Nodes will be selected in this order: RelocatingAgeIncreaseState, RelocatingHopState and then RelocatingBackOnlineState.<br/>
     This ensures that we prioritize good node relocation.
     <br/>
     Note: It may be possible for a node to relocate to its sibling, and complete relocation after a merge occured.
@@ -697,7 +697,7 @@
   </div>
   <button class="collapsible">is_our_relocating_node</button>
   <div class="content">
-    <p>Is it a valid node that is not yet relocated (i.e State is RelocatingState(AgeIncrease), RelocatingState(Hop) or RelocatingState(BackOnline)).
+    <p>Is it a valid node that is not yet relocated (i.e State is RelocatingAgeIncreaseState, RelocatingHopState or RelocatingBackOnlineState).
     </p>
   </div>
   <button class="collapsible">RefuseCandidate/<br/>RelocateResponse</button>
@@ -1149,7 +1149,7 @@
 
   <h2>Handling members of our section going Online or Offline</h2>
   <div class=description>
-  <button class="collapsible">RelocatingState(BackOnline)</button>
+  <button class="collapsible">RelocatingBackOnlineState</button>
   <div class="content">
     <p>A nodes state indicating that it is relocated with age reduced as it went offline.<br/>
     </p>
@@ -1183,7 +1183,7 @@
       SetOfflineState -->LoopEnd
 
       Consensus -- "ParsecBackOnline" --> SetRelocating
-      SetRelocating["set_node_state(<br/>node,<br/>RelocatingState(BackOnline))"]
+      SetRelocating["set_node_state(<br/>node,<br/>RelocatingBackOnlineState)"]
 
       SetRelocating --> LoopEnd
       LoopEnd --> LoopStart
