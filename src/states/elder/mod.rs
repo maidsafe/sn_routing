@@ -555,6 +555,15 @@ impl Elder {
             .routing_msg_filter
             .filter_incoming(signed_msg.routing_message());
 
+        if filter_res == FilteringResult::KnownMessage {
+            debug!(
+                "{} Known message: {:?} - not handling further",
+                self,
+                signed_msg.routing_message()
+            );
+            return Ok(());
+        }
+
         if self.in_authority(&signed_msg.routing_message().dst) {
             // The message is addressed to our section. Verify its integrity.
             signed_msg.check_integrity(self.min_section_size())?;
