@@ -262,11 +262,10 @@
     Note that we could also see consensus on ParsecExpectCandidate before we ourselves voted for it in PARSEC, as long as enough members of our section did.
     </p>
   </div>
-  </div>
   <button class="collapsible">waiting_proofing_or_hop</button>
   <div class="content">
     <p>We want to accept at most one incoming relocation at a time into our section.<br/>
-    The waiting_proofing_or_hop function returns the list of nodes that we have yet to resource proof or relocated through a new hop, (States from WaitingCandidateInfo until it reaches OnlineState  or RelocatedState).<br/>
+    The waiting_proofing_or_hop function returns the list of nodes that we have yet to resource proof or relocate through a new hop, (States from WaitingCandidateInfo until it reaches OnlineState  or RelocatedState).<br/>
     When the output of this function is not empty and we reach consensus on ParsecExpectCandidate, we send a RefuseCandidate RPC to the would-be-incoming-node so they can try another section or try again later.
     </p>
   </div>
@@ -386,7 +385,7 @@
       ParsecConsensus -- "ParsecCandidateConnected<br/>and<br/>is_valid_waited_connection(<br/>message_src)" --> Balanced
       Balanced(("Check"))
       Balanced -- "shorter_prefix_section(<br/>).is_some()" --> RelocateToShorterPrefix
-      RelocateToShorterPrefix["set_node_state(<br/>candidate,<br/>RelocatingState(Hop)"]
+      RelocateToShorterPrefix["set_node_state(<br/>candidate,<br/>RelocatingState(Hop))"]
       RelocateToShorterPrefix --> SetConnected
 
       Balanced -- "Otherwise" --> SetWaitingProof
@@ -680,12 +679,12 @@
     Returns the best node to relocate and the target address to send it to<br/>
     There may be mutliple nodes relocating, for example because of a merge. Take the best one (oldest), and choose a target address.<br/>
     The target address is one managed by one of our neighbours. This could be random, or the current old_public_id with a single bit of the prefix flipped.<br/>
-    This would would help ensure that source and destination remain neighbours, even if the source splits.<br/>
+    This would help ensure that source and destination remain neighbours, even if the source splits.<br/>
     Using a target address instead of a section ensures we deliver the message even if the destination splits or merges.<br/>
     <br/>
     There are 3 states the node may be: RelocatingState(AgeIncrease), RelocatingState(Hop), and RelocatingState(BackOnline).<br/>
-    Node will be selected in this order: Relocating(AgeIncrease), RelocatingState(Hop) and then RelocatingState(BackOnline).<br/>
-    This ensures that we prioritizing good node relocation.
+    Nodes will be selected in this order: RelocatingState(AgeIncrease), RelocatingState(Hop) and then RelocatingState(BackOnline).<br/>
+    This ensures that we prioritize good node relocation.
     <br/>
     Note: It may be possible for a node to relocate to its sibling, and complete relocation after a merge occured.
     </p>
@@ -1099,7 +1098,7 @@
   <button class="collapsible">WAITED_VOTES</button>
   <div class="content">
     <p>Wait for all these votes to reach consensus before reflecting the status change in our chain.<br>
-      Both section need to be consensused before we move on so we do not leave one behind with not enough voters.
+      Both sections need to be consensused before we move on so we do not leave one behind with not enough voters.
     </p>
   </div>
   <button class="collapsible">complete_split</button>
