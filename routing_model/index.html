@@ -169,7 +169,7 @@
     StartComputeResourceProofForElder["start_compute_resource_proof(source elder)<br/><br/>schedule(TimeoutRefused)"]
     StartComputeResourceProofForElder --> LoopEnd
 
-    Rpc -- "ExpectCandidate<br/>RefuseCandidate<br/>RelocateResponse<br/>..." --> VoteParsecRPC
+    Rpc -- "ExpectCandidate<br/>ExpectCandidateRefuseResponse<br/>ExpectCandidateAcceptResponse<br/>..." --> VoteParsecRPC
     VoteParsecRPC["vote_for(the parsec rpc)<br/>(cache for later)"]
     VoteParsecRPC --> LoopEnd
 
@@ -256,7 +256,7 @@
   <button class="collapsible">RPC: ExpectCandidate</button>
   <div class="content">
     <p>We receive this RPC from a section that wants to relocate a node to our section.<br/>
-    The node is not communicating with us yet, only once we sent RelocateResponse RPC to the originating section.<br/>
+    The node is not communicating with us yet, only once we sent ExpectCandidateAcceptResponse RPC to the originating section.<br/>
     On receiving it, we vote for ParsecExpectCandidate to process it in the same order as other members of our section.<br/>
     It kickstarts the entire chain of events in this diagram.<br/>
     Note that we could also see consensus on ParsecExpectCandidate before we ourselves voted for it in PARSEC, as long as enough members of our section did.
@@ -266,7 +266,7 @@
   <div class="content">
     <p>We want to accept at most one incoming relocation at a time into our section.<br/>
     The waiting_proofing_or_hop function returns the list of nodes that we have yet to resource proof or relocate through a new hop, (States from WaitingCandidateInfo until it reaches OnlineState  or RelocatedState).<br/>
-    When the output of this function is not empty and we reach consensus on ParsecExpectCandidate, we send a RefuseCandidate RPC to the would-be-incoming-node so they can try another section or try again later.
+    When the output of this function is not empty and we reach consensus on ParsecExpectCandidate, we send a ExpectCandidateRefuseResponse RPC to the would-be-incoming-node so they can try another section or try again later.
     </p>
   </div>
   </div>
@@ -295,17 +295,17 @@
       VoteParsecExpectCandidate --> LoopEnd
 
       Balanced(("Check?<br/>(shared state)"))
-      Balanced -- "waiting_proofing_or_hop().contains(candidate)" --> SendIdenticalRelocateResponse
-      Balanced -- "waiting_proofing_or_hop().is_empty()" --> SendRelocateResponse
+      Balanced -- "waiting_proofing_or_hop()<br/>.contains(candidate)" --> SendIdenticalExpectCandidateAcceptResponse
+      Balanced -- "waiting_proofing_or_hop()<br/>.is_empty()" --> SendExpectCandidateAcceptResponse
       Balanced -- "Otherwise" --> SendRefuse
 
-      SendIdenticalRelocateResponse["send_rpc(RelocateResponse)<br/>again to source section<br/>with original info"]
-      SendIdenticalRelocateResponse --> LoopEnd
+      SendIdenticalExpectCandidateAcceptResponse["send_rpc(<br/>ExpectCandidateAcceptResponse)<br/>again to source section<br/>with original info"]
+      SendIdenticalExpectCandidateAcceptResponse --> LoopEnd
 
-      SendRelocateResponse["add_node(NodeState=WaitingCandidateInfo)<br/><br/>send_rpc(RelocateResponse)<br/>to source section"]
-      SendRelocateResponse --> LoopEnd
+      SendExpectCandidateAcceptResponse["add_node(<br/>NodeState=WaitingCandidateInfo)<br/><br/>send_rpc(<br/>ExpectCandidateAcceptResponse)<br/>to source section"]
+      SendExpectCandidateAcceptResponse --> LoopEnd
 
-      SendRefuse["send_rpc(<br/>RefuseCandidate)<br/>to source section"]
+      SendRefuse["send_rpc(<br/>ExpectCandidateRefuseResponse)<br/>to source section"]
       SendRefuse --> LoopEnd
 
 
@@ -659,7 +659,7 @@
   <h2>Relocating a member of our section away from it</h2>
   <div class=description>
   <p>At this stage, we handle nodes that were marked for relocation.<br/>
-  The process is quite simple: we send an ExpectCandidate RPC to the destination section. That section will either pass the node to a section with a shorter prefix, send us a RefuseCandidate RPC or eventually send us a RelocateResponse RPC. If the destination picked another section with a shorter prefix, that section will send us one of these RPCs (or suggest another section with a shorter prefix, but this recursion will end at some point).<br/>
+  The process is quite simple: we send an ExpectCandidate RPC to the destination section. That section will either pass the node to a section with a shorter prefix, send us a ExpectCandidateRefuseResponse RPC or eventually send us a ExpectCandidateAcceptResponse RPC. If the destination picked another section with a shorter prefix, that section will send us one of these RPCs (or suggest another section with a shorter prefix, but this recursion will end at some point).<br/>
   All in all, we have the certainty that eventually, exactly one of these two RPCs will make it to our section.<br/>
   When it does, it will be voted in PARSEC, regardless of the order of operations, so it will eventually make it through PARSEC.<br/>
   <br/>
@@ -667,7 +667,7 @@
   Nodes in RelocatingHopState and then RelocatingBackOnlineState are relocated after RelocatingAgeIncreaseState. Neither are full adults.
   <br/>
   If they refused our candidate, our job ends there: the candidate will simply be a candidate for relocation again later, so we will try to relocate it then.<br/>
-  If they accepted the node and sent us a RelocateResponse RPC, so the ParsecRelocateResponse event reached consensus, we will send to the node that is being relocated the RelocatedInfo they will need.<br/>
+  If they accepted the node and sent us a ExpectCandidateAcceptResponse RPC, so the ParsecExpectCandidateAcceptResponse event reached consensus, we will send to the node that is being relocated the RelocatedInfo they will need.<br/>
   At this point, we will purge their information since this node isn't a member of our section anymore.
   <br/>
   Also of note: while we are preventing nodes with OnlineState from relocating when we are already relocating one of our Adult. We may still be actively relocating more than one node away from our section (for instance if two sections with a relocating node each merge).<br/>
@@ -700,20 +700,20 @@
     <p>Is it a valid node that is not yet relocated (i.e State is RelocatingAgeIncreaseState, RelocatingHopState or RelocatingBackOnlineState).
     </p>
   </div>
-  <button class="collapsible">RefuseCandidate/<br/>RelocateResponse</button>
+  <button class="collapsible">ExpectCandidateRefuseResponse/ExpectCandidateAcceptResponse</button>
   <div class="content">
     <p>Exactly one of these RPCs will be sent to us from the destination section as a response to our section's ExpectCandidate RPC.<br/>
     When this happens, we will immediately vote for it in PARSEC as we need to act in the same order as anyone else in our section.<br/>
-    In case we re-sent the ExpectCandidate RPC, we may receive more than one RefuseCandidate and RelocateResponse. In this case we will pass on the first RelocateResponse to our Candidate.<br/>
+    In case we re-sent the ExpectCandidate RPC, we may receive more than one ExpectCandidateRefuseResponse and ExpectCandidateAcceptResponse. In this case we will pass on the first ExpectCandidateAcceptResponse to our Candidate.<br/>
     </p>
   </div>
   <button class="collapsible">RelocatedInfo</button>
   <div class="content">
     <p>Trigger relocation: Candidate will disconnect on receiving that RPC<br/>
-    This RPC contains the RelocateResponse info, and the signatures prooving the source section received it and decided that particular response is the one to relocate to.<br/>
-    In case we re-sent the ExpectCandidate RPC, we may receive more than one RefuseCandidate and RelocateResponse.<br/>
-    In this case we must ensure that no single node could act on that other RelocateResponse and be accepted by the destination. this means the signatures must be provided only once the RelocateResponse is agreed.<br/>
-    RelocatedInfo will contain the RelocateResponse info and the quorum of signatures gathered from PARSEC vote on ParsecRelocatedInfo.
+    This RPC contains the ExpectCandidateAcceptResponse info, and the signatures prooving the source section received it and decided that particular response is the one to relocate to.<br/>
+    In case we re-sent the ExpectCandidate RPC, we may receive more than one ExpectCandidateAcceptResponse.<br/>
+    In this case we must ensure that no single node could act on that other ExpectCandidateAcceptResponse and be accepted by the destination. this means the signatures must be provided only once the ExpectCandidateAcceptResponse is agreed.<br/>
+    RelocatedInfo will contain the ExpectCandidateAcceptResponse info and the quorum of signatures gathered from PARSEC vote on ParsecRelocatedInfo.
     </p>
   </div>
   </div>
@@ -740,12 +740,12 @@
       VoteParsecCheckRelocate --> LoopEnd
 
       RPC((RPC))
-      RPC --RefuseCandidate--> VoteParsecRefuseCandidate
-      RPC --RelocateResponse--> VoteParsecRelocateResponse
-      VoteParsecRefuseCandidate["vote_for(<br/>ParsecRefuseCandidate)"]
-      VoteParsecRefuseCandidate --> LoopEnd
-      VoteParsecRelocateResponse["vote_for(<br/>ParsecRelocateResponse)"]
-      VoteParsecRelocateResponse --> LoopEnd
+      RPC --ExpectCandidateAcceptResponse--> VoteParsecExpectCandidateAcceptResponse
+      RPC --ExpectCandidateRefuseResponse--> VoteParsecExpectCandidateRefuseResponse
+      VoteParsecExpectCandidateAcceptResponse["vote_for(<br/>ParsecExpectCandidateAcceptResponse)"]
+      VoteParsecExpectCandidateAcceptResponse --> LoopEnd
+      VoteParsecExpectCandidateRefuseResponse["vote_for(<br/>ParsecExpectCandidateRefuseResponse))"]
+      VoteParsecExpectCandidateRefuseResponse --> LoopEnd
 
       ParsecConsensus((Parsec<br/>consensus))
       ParsecConsensus -- ParsecCheckRelocate<br/>consensused --> CheckNeedRelocate
@@ -766,15 +766,20 @@
       AllowResendCandidates --> LoopEnd
 
 
-      ParsecConsensus --"ParsecRefuseCandidate<br/>and<br/>is_our_relocating_node(node)"--> RefusedCandidate
+      ParsecConsensus --"ParsecExpectCandidateAcceptResponse<br/>ParsecExpectCandidateRefuseResponse" --> CheckIsOurs
+      CheckIsOurs((Check))
+      CheckIsOurs -- "is_our_relocating_node(node)" --> CheckIsAccept
+      CheckIsAccept((Check))
+      CheckIsAccept -- ParsecExpectCandidateRefuseResponse -->  RefusedCandidate
       RefusedCandidate["ALREADY_RELOCATING<br/>.remove(node)"]
       RefusedCandidate --> LoopEnd
 
-      ParsecConsensus --"ParsecRelocateResponse<br/>and<br/>is_our_relocating_node(node)"--> VoteProvableRelocateInfo
-      VoteProvableRelocateInfo["set_node_state(<br/>node,<br/>RelocatedState(RelocateResponse Info)<br/>(Vote for same relocation if merge/split<br/>so only one valid proof exists)<br/><br/>vote_for(<br/>ParsecRelocatedInfo(RelocateResponse Info))"]
+      CheckIsAccept -- ParsecExpectCandidateAcceptResponse -->  VoteProvableRelocateInfo
+      VoteProvableRelocateInfo["set_node_state(<br/>node,<br/>RelocatedState{accept_info}<br/>(Vote for same relocation if merge/split<br/>so only one valid proof exists)<br/><br/>vote_for(<br/>ParsecRelocatedInfo{accept_info})"]
       VoteProvableRelocateInfo --> LoopEnd
 
-      ParsecConsensus --"ParsecRefuseCandidate/<br/>ParsecRelocateResponse<br/>otherwise"--> DiscardVote
+
+      CheckIsOurs -- Otherwise --> DiscardVote
       DiscardVote[Discard<br/>Vote]
       DiscardVote --> LoopEnd
 
@@ -1205,7 +1210,7 @@
       </ul>
     </p>
   </div>
-  <button class="collapsible">RelocateResponse</button>
+  <button class="collapsible">ExpectCandidateAcceptResponse</button>
   <div class="content">
     <p>Sent by destination section when a candidate is accepted<br/>
     Contains:<br/>
@@ -1215,7 +1220,7 @@
       </ul>
     </p>
   </div>
-  <button class="collapsible">RefuseCandidate</button>
+  <button class="collapsible">ExpectCandidateRefuseResponse</button>
   <div class="content">
     <p>Sent by destination section when a candidate is refused<br/>
       Contains: Empty
@@ -1285,10 +1290,10 @@
     loop FindDestination
       Src->>+Dst: Routing RPC: ExpectCandidate
       opt Refuse
-        Dst-->>Src: Routing RPC: RefuseCandidate
+        Dst-->>Src: Routing RPC: ExpectCandidateRefuseResponse
       end
     end
-    Dst-->>-Src: Routing RPC: RelocateResponse
+    Dst-->>-Src: Routing RPC: ExpectCandidateAcceptResponse
     Src->>Node: Direct node-to-node RPC: RelocatedInfo
 
     loop NodeConnection
