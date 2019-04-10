@@ -93,7 +93,7 @@ pub enum Proof {
 }
 
 impl Proof {
-    pub fn is_valid(&self) -> bool {
+    pub fn is_valid(self) -> bool {
         match self {
             Proof::ValidPart | Proof::ValidEnd => true,
             Proof::Invalid => false,
@@ -113,7 +113,7 @@ impl ProofSource {
         self.resend()
     }
 
-    fn resend(&self) -> Proof {
+    fn resend(self) -> Proof {
         if self.0 > 0 {
             Proof::ValidPart
         } else if self.0 == 0 {

@@ -182,7 +182,7 @@ pub struct JoiningState {
 }
 
 impl JoiningState {
-    pub fn start(&self, new_section: &SectionInfo) -> Self {
+    pub fn start(&self, new_section: SectionInfo) -> Self {
         self.as_joining_relocate_candidate()
             .start_event_loop(new_section)
             .0

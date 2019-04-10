@@ -15,7 +15,7 @@ use crate::utilities::{
 pub struct JoiningRelocateCandidate(pub JoiningState);
 
 impl JoiningRelocateCandidate {
-    pub fn start_event_loop(&self, new_section: &SectionInfo) -> Self {
+    pub fn start_event_loop(&self, new_section: SectionInfo) -> Self {
         self.store_destination_members(new_section)
             .send_connection_info_requests()
             .start_resend_info_timeout()
@@ -87,7 +87,7 @@ impl JoiningRelocateCandidate {
         self.clone()
     }
 
-    fn store_destination_members(&self, section: &SectionInfo) -> Self {
+    fn store_destination_members(&self, section: SectionInfo) -> Self {
         let mut state = self.clone();
 
         let members = state.0.action.get_section_members(section);

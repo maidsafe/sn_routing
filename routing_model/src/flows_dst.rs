@@ -146,9 +146,10 @@ impl AcceptAsCandidate {
             return None;
         }
 
-        Some(match valid {
-            true => self.set_got_candidate_info(true).send_resource_proof_rpc(),
-            false => self.vote_parsec_purge_candidate(),
+        Some(if valid {
+            self.set_got_candidate_info(true).send_resource_proof_rpc()
+        } else {
+            self.vote_parsec_purge_candidate()
         })
     }
 
