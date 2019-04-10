@@ -64,16 +64,15 @@ impl InnerAction {
         let node_states = nodes
             .iter()
             .map(|node| NodeState {
-                node: node.clone(),
+                node: *node,
                 ..value.clone()
             })
             .collect_vec();
         self.extend_current_nodes(&node_states)
     }
 
-    pub fn with_section_members(mut self, section: &SectionInfo, nodes: &[Node]) -> Self {
-        self.section_members
-            .insert(*section, nodes.iter().cloned().collect());
+    pub fn with_section_members(mut self, section: SectionInfo, nodes: &[Node]) -> Self {
+        self.section_members.insert(section, nodes.to_vec());
         self
     }
 
@@ -89,29 +88,29 @@ impl InnerAction {
         self.our_current_nodes.remove(&Name(node.0.name));
     }
 
-    fn set_relocating_state(&mut self, name: &Name) {
-        let node = &mut self.our_current_nodes.get_mut(name).unwrap();
+    fn set_relocating_state(&mut self, name: Name) {
+        let node = &mut self.our_current_nodes.get_mut(&name).unwrap();
 
         node.is_relocating = true;
         self.our_nodes.push(NodeChange::Relocating(node.node));
     }
 
-    fn set_online_state(&mut self, name: &Name) {
-        let node = &mut self.our_current_nodes.get_mut(name).unwrap();
+    fn set_online_state(&mut self, name: Name) {
+        let node = &mut self.our_current_nodes.get_mut(&name).unwrap();
 
         node.is_resource_proofing = false;
         self.our_nodes.push(NodeChange::Online(node.node));
     }
 
-    fn set_offline_state(&mut self, name: &Name) {
-        let node = &mut self.our_current_nodes.get_mut(name).unwrap();
+    fn set_offline_state(&mut self, name: Name) {
+        let node = &mut self.our_current_nodes.get_mut(&name).unwrap();
         node.is_offline = true;
         // Note: for test validation only
         self.our_nodes.push(NodeChange::Offline(node.node));
     }
 
-    fn set_elder_state(&mut self, name: &Name, value: bool) {
-        let node = &mut self.our_current_nodes.get_mut(name).unwrap();
+    fn set_elder_state(&mut self, name: Name, value: bool) {
+        let node = &mut self.our_current_nodes.get_mut(&name).unwrap();
 
         node.is_elder = value;
         self.our_nodes.push(NodeChange::Elder(node.node, value));
@@ -165,17 +164,15 @@ impl Action {
     }
 
     pub fn set_candidate_online_state(&self, candidate: Candidate) {
-        self.0
-            .borrow_mut()
-            .set_online_state(&Name(candidate.0.name));
+        self.0.borrow_mut().set_online_state(Name(candidate.0.name));
     }
 
     pub fn set_node_offline_state(&self, node: Node) {
-        self.0.borrow_mut().set_offline_state(&Name(node.0.name));
+        self.0.borrow_mut().set_offline_state(Name(node.0.name));
     }
 
     pub fn set_node_back_online_state(&self, node: Node) {
-        self.0.borrow_mut().set_relocating_state(&Name(node.0.name));
+        self.0.borrow_mut().set_relocating_state(Name(node.0.name));
     }
 
     pub fn remove_node(&self, candidate: Candidate) {
@@ -255,7 +252,7 @@ impl Action {
         for (node, new_is_elder) in &change_elder.changes {
             self.0
                 .borrow_mut()
-                .set_elder_state(&Name(node.0.name), *new_is_elder);
+                .set_elder_state(Name(node.0.name), *new_is_elder);
         }
         self.0
             .borrow_mut()
@@ -280,21 +277,11 @@ impl Action {
     }
 
     pub fn is_elder_state(&self, candidate: Candidate) -> bool {
-        self.0
-            .borrow()
-            .our_current_nodes
-            .get(&Name(candidate.0.name))
-            .unwrap()
-            .is_elder
+        self.0.borrow().our_current_nodes[&Name(candidate.0.name)].is_elder
     }
 
     pub fn is_candidate_relocating_state(&self, candidate: Candidate) -> bool {
-        self.0
-            .borrow()
-            .our_current_nodes
-            .get(&Name(candidate.0.name))
-            .unwrap()
-            .is_relocating
+        self.0.borrow().our_current_nodes[&Name(candidate.0.name)].is_relocating
     }
 
     pub fn is_our_name(&self, name: Name) -> bool {
@@ -313,7 +300,7 @@ impl Action {
     pub fn set_candidate_relocating_state(&self, candidate: Candidate) {
         self.0
             .borrow_mut()
-            .set_relocating_state(&Name(candidate.0.name));
+            .set_relocating_state(Name(candidate.0.name));
     }
 
     pub fn send_relocate_response_rpc(&self, candidate: Candidate) {
@@ -347,13 +334,8 @@ impl Action {
         ));
     }
 
-    pub fn get_section_members(&self, section_info: &SectionInfo) -> Vec<Node> {
-        self.0
-            .borrow()
-            .section_members
-            .get(section_info)
-            .unwrap()
-            .clone()
+    pub fn get_section_members(&self, section_info: SectionInfo) -> Vec<Node> {
+        self.0.borrow().section_members[&section_info].clone()
     }
 
     pub fn send_connection_info_request(&self, destination: Name) {
