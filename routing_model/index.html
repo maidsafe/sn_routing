@@ -262,18 +262,10 @@
     Note that we could also see consensus on ParsecExpectCandidate before we ourselves voted for it in PARSEC, as long as enough members of our section did.
     </p>
   </div>
-  </div>
-  <button class="collapsible">shorter_prefix_section</button>
-  <div class="content">
-    <p>If we know of a section that has a shorter prefix than ours, we prefer for them to receive this incoming node rather than ourselves as it will help keep the Network's sections tree balanced.<br/>
-    This shorter_prefix_section is a function that will return None if we are the shortest of any section we know, Some if there is a better candidate.<br/>
-    If it is Some, we will relay the RPC to them instead of accepting the rellocation to our own section.
-    </p>
-  </div>
-  <button class="collapsible">waiting_proofing</button>
+  <button class="collapsible">waiting_proofing_or_hop</button>
   <div class="content">
     <p>We want to accept at most one incoming relocation at a time into our section.<br/>
-    The waiting_proofing function returns the list of nodes that we have yet to resource proof, (States from WaitingCandidateInfo until it reaches OnlineState).<br/>
+    The waiting_proofing_or_hop function returns the list of nodes that we have yet to resource proof or relocate through a new hop, (States from WaitingCandidateInfo until it reaches OnlineState  or RelocatedState).<br/>
     When the output of this function is not empty and we reach consensus on ParsecExpectCandidate, we send a RefuseCandidate RPC to the would-be-incoming-node so they can try another section or try again later.
     </p>
   </div>
@@ -303,18 +295,19 @@
       VoteParsecExpectCandidate --> LoopEnd
 
       Balanced(("Check?<br/>(shared state)"))
-      Balanced -- "shorter_prefix_section(<br/>).is_some()" --> Resend
-      Balanced -- "shorter_prefix_section().is_none()<br/>!waiting_proofing().is_empty()" --> SendRefuse
-      Balanced -- "shorter_prefix_section().is_none()<br/>waiting_proofing().is_empty()" --> SendRelocateResponse
+      Balanced -- "waiting_proofing_or_hop().contains(candidate)" --> SendIdenticalRelocateResponse
+      Balanced -- "waiting_proofing_or_hop().is_empty()" --> SendRelocateResponse
+      Balanced -- "Otherwise" --> SendRefuse
 
-      Resend["send_rpc(<br/>ExpectCandidate)<br/>to shorter_prefix_section()"]
-      Resend --> LoopEnd
+      SendIdenticalRelocateResponse["send_rpc(RelocateResponse)<br/>again to source section<br/>with original info"]
+      SendIdenticalRelocateResponse --> LoopEnd
+
+      SendRelocateResponse["add_node(NodeState=WaitingCandidateInfo)<br/><br/>send_rpc(RelocateResponse)<br/>to source section"]
+      SendRelocateResponse --> LoopEnd
 
       SendRefuse["send_rpc(<br/>RefuseCandidate)<br/>to source section"]
       SendRefuse --> LoopEnd
 
-      SendRelocateResponse["add_node(NodeState=WaitingCandidateInfo)<br/><br/>send_rpc(RelocateResponse)<br/>to source section"]
-      SendRelocateResponse --> LoopEnd
 
   </div>
 
@@ -340,6 +333,19 @@
   <button class="collapsible">is_valid_waited_connection</button>
   <div class="content">
     <p>Return true if the given message_src of the current RPC is a one of our nodes and is in WaitingConnectionInfo state.
+    </p>
+  </div>
+  <button class="collapsible">shorter_prefix_section</button>
+  <div class="content">
+    <p>If we know of a section that has a shorter prefix than ours, we prefer for them to receive this incoming node rather than ourselves as it will help keep the Network's sections tree balanced.<br/>
+    This shorter_prefix_section is a function that will return None if we are the shortest of any section we know, Some if there is a better candidate.<br/>
+    If it is Some, we will relay the RPC to them instead of accepting the rellocation to our own section.
+    </p>
+  </div>
+  <button class="collapsible">RelocatingHopState</button>
+  <div class="content">
+    <p>A nodes state indicating that it is relocated without ageing further.<br/>
+       Also returned as part of waiting_proofing_or_hop().
     </p>
   </div>
   <button class="collapsible">RelocatedNodeConnection_Reset</button>
@@ -376,8 +382,17 @@
       SetCandidateInfo["update_node(<br/>CandidateInfo,<br/>NodeState=WaitingConnectionInfo)"]
       SetCandidateInfo --> LoopEnd
 
-      ParsecConsensus -- "ParsecCandidateConnected<br/>and<br/>is_valid_waited_connection(<br/>message_src)" --> SetConnected
-      SetConnected["set_node_state(<br/>candidate,<br/>WaitingProofing)<br/><br/>send_rpc(<br/>NodeConnected)<br/><br/>(All communications now<br/>managed by elder like<br/>for other adults)"]
+      ParsecConsensus -- "ParsecCandidateConnected<br/>and<br/>is_valid_waited_connection(<br/>message_src)" --> Balanced
+      Balanced(("Check"))
+      Balanced -- "shorter_prefix_section(<br/>).is_some()" --> RelocateToShorterPrefix
+      RelocateToShorterPrefix["set_node_state(<br/>candidate,<br/>RelocatingHopState)"]
+      RelocateToShorterPrefix --> SetConnected
+
+      Balanced -- "Otherwise" --> SetWaitingProof
+      SetWaitingProof["set_node_state(<br/>candidate,<br/>WaitingProofing)"]
+      SetWaitingProof --> SetConnected
+
+      SetConnected["send_rpc(<br/>NodeConnected)<br/><br/>(All communications now<br/>managed by elder like<br/>for other adults)"]
       SetConnected --> LoopEnd
 
       RPC((RPC))
@@ -564,7 +579,7 @@
   <div class=description>
   <p>In these diagrams, we are modeling the simple version of node ageing that we decided to implement for Fleming:<br/>
   Work units are incremented for all nodes in the section every time a timeout reaches consenus. Because a quorum of elders must have voted for this timeout, the malicious nodes can't arbitrarily speed up the ageing of their nodes.<br/>
-  Once a node has accumulated enough work units to be relocated, if no other node is currently relocating we set its state to RelocatingState. This node will then be actually relocated in StartRelocateSrc (see StartRelocateSrc).
+  Once a node has accumulated enough work units to be relocated, if no other node is currently relocating we set its state to RelocatingAgeIncreaseState. This node will then be actually relocated in StartRelocateSrc (see StartRelocateSrc).
   </p>
   <button class="collapsible">WorkUnitTimeout</button>
   <div class="content">
@@ -581,8 +596,9 @@
   </div>
   <button class="collapsible">nodes_relocating</button>
   <div class="content">
-    <p>The collection of nodes currently relocating: With node state RelocatingState or WaitRelocateResponseState.<br/>
+    <p>The collection of nodes currently relocating: With node state RelocatingAgeIncreaseState only.<br/>
       It will most often be empty or have one element, unless a merge occurs in which case it may contain more than one element.
+      Nodes coming back online, or needing an extra hop are not considered here.
     </p>
   </div>
   <button class="collapsible">get_node_to_relocate</button>
@@ -595,7 +611,7 @@
   </div>
   <button class="collapsible">set_node_state</button>
   <div class="content">
-    <p>This function mutates our peer_list to set the state (for example set RelocatingState for the node).<br/>
+    <p>This function mutates our peer_list to set the state (for example set RelocatingAgeIncreaseState for the node).<br/>
     inputs:<br/>
     - node<br/>
     - state<br/>
@@ -636,7 +652,7 @@
       AlreadyRelocating --"nodes_relocating().is_empty()"--> SetRelocatingNodeState
       AlreadyRelocating --"Otherwise"--> LoopEnd
 
-      SetRelocatingNodeState["set_node_state(get_node_to_relocate(), RelocatingState)"]
+      SetRelocatingNodeState["set_node_state(get_node_to_relocate(), RelocatingAgeIncreaseState)"]
       SetRelocatingNodeState --> LoopEnd
   </div>
 
@@ -647,31 +663,57 @@
   All in all, we have the certainty that eventually, exactly one of these two RPCs will make it to our section.<br/>
   When it does, it will be voted in PARSEC, regardless of the order of operations, so it will eventually make it through PARSEC.<br/>
   <br/>
-  If a node in RelocatingState is a non-elder adult node, we can try to relocate it. If they are an elder node, we will first wait for the Adult/Elder promotion/demotion flow to kick in and demote them to an adult. This will happen because we changed their state from OnlineState to RelocatingState, which means that they will get demoted.<br/>
+  If a node in RelocatingAgeIncreaseState, is a non-elder adult node, we can try to relocate it. If they are an elder node, we will first wait for the Adult/Elder promotion/demotion flow to kick in and demote them to an adult. This will happen because we changed their state from OnlineState to RelocatingAgeIncreaseState, which means that they will get demoted.<br/>
+  Nodes in RelocatingHopState and then RelocatingBackOnlineState are relocated after RelocatingAgeIncreaseState. Neither are full adults.
   <br/>
-  On sending an ExpectCandidate RPC, we set the node state to WaitRelocateResponseState so we know after a split or a merge that we are waiting for a response.<br/>
-  If they refused our candidate, our job ends there: We reset the state to RelocatingState and the candidate will simply be a candidate for relocation again later, so we will try to relocate it then.<br/>
+  If they refused our candidate, our job ends there: the candidate will simply be a candidate for relocation again later, so we will try to relocate it then.<br/>
   If they accepted the node and sent us a RelocateResponse RPC, so the ParsecRelocateResponse event reached consensus, we will send to the node that is being relocated the RelocatedInfo they will need.<br/>
   At this point, we will purge their information since this node isn't a member of our section anymore.
   <br/>
-  Also of note: while we are preventing nodes with OnlineState from relocating when we are already relocating node, we may still be actively relocating more than one node away from our section (for instance if two sections with a relocating node each merge).<br/>
+  Also of note: while we are preventing nodes with OnlineState from relocating when we are already relocating one of our Adult. We may still be actively relocating more than one node away from our section (for instance if two sections with a relocating node each merge).<br/>
   However, we will only handle one at a time per CheckRelocateTimeOut event.
   </p>
   <button class="collapsible">get_best_relocating_node_and_target</button>
   <div class="content">
-    <p>Returns the best node to relocate and the target address to send it to<br/>
+    <p>Takes ALREADY_RELOCATING for the nodes it will ignore.<br/>
+    Returns the best node to relocate and the target address to send it to<br/>
     There may be mutliple nodes relocating, for example because of a merge. Take the best one (oldest), and choose a target address.<br/>
     The target address is one managed by one of our neighbours. This could be random, or the current old_public_id with a single bit of the prefix flipped.<br/>
-    This would would help ensure that source and destination remain neighbours, even if the source splits.<br/>
+    This would help ensure that source and destination remain neighbours, even if the source splits.<br/>
     Using a target address instead of a section ensures we deliver the message even if the destination splits or merges.<br/>
     <br/>
+    There are 3 states the node may be: RelocatingAgeIncreaseState, RelocatingHopState, and RelocatingBackOnlineState.<br/>
+    Nodes will be selected in this order: RelocatingAgeIncreaseState, RelocatingHopState and then RelocatingBackOnlineState.<br/>
+    This ensures that we prioritize good node relocation.
+    <br/>
     Note: It may be possible for a node to relocate to its sibling, and complete relocation after a merge occured.
+    </p>
+  </div>
+  <button class="collapsible">ALREADY_RELOCATING</button>
+  <div class="content">
+    <p>The nodes we ignore when selecting a new node to send ExpectCandidate for.<br/>
+       Local states are not carried over on merge or split, so we will resend ExpectCandidate earlier than we would otherwise.
+    </p>
+  </div>
+  <button class="collapsible">is_our_relocating_node</button>
+  <div class="content">
+    <p>Is it a valid node that is not yet relocated (i.e State is RelocatingAgeIncreaseState, RelocatingHopState or RelocatingBackOnlineState).
     </p>
   </div>
   <button class="collapsible">RefuseCandidate/<br/>RelocateResponse</button>
   <div class="content">
     <p>Exactly one of these RPCs will be sent to us from the destination section as a response to our section's ExpectCandidate RPC.<br/>
-    When this happens, we will immediately vote for it in PARSEC as we need to act in the same order as anyone else in our section.
+    When this happens, we will immediately vote for it in PARSEC as we need to act in the same order as anyone else in our section.<br/>
+    In case we re-sent the ExpectCandidate RPC, we may receive more than one RefuseCandidate and RelocateResponse. In this case we will pass on the first RelocateResponse to our Candidate.<br/>
+    </p>
+  </div>
+  <button class="collapsible">RelocatedInfo</button>
+  <div class="content">
+    <p>Trigger relocation: Candidate will disconnect on receiving that RPC<br/>
+    This RPC contains the RelocateResponse info, and the signatures prooving the source section received it and decided that particular response is the one to relocate to.<br/>
+    In case we re-sent the ExpectCandidate RPC, we may receive more than one RefuseCandidate and RelocateResponse.<br/>
+    In this case we must ensure that no single node could act on that other RelocateResponse and be accepted by the destination. this means the signatures must be provided only once the RelocateResponse is agreed.<br/>
+    RelocatedInfo will contain the RelocateResponse info and the quorum of signatures gathered from PARSEC vote on ParsecRelocatedInfo.
     </p>
   </div>
   </div>
@@ -694,7 +736,7 @@
 
       Event((Event))
       Event -- CheckRelocateTimeOut<br/>Trigger --> VoteParsecCheckRelocate
-      VoteParsecCheckRelocate["vote_for(ParsecCheckRelocate)<br/>schedule(CheckRelocateTimeOut)"]
+      VoteParsecCheckRelocate["vote_for(<br/>ParsecCheckRelocate)<br/>schedule(<br/>CheckRelocateTimeOut)"]
       VoteParsecCheckRelocate --> LoopEnd
 
       RPC((RPC))
@@ -707,21 +749,38 @@
 
       ParsecConsensus((Parsec<br/>consensus))
       ParsecConsensus -- ParsecCheckRelocate<br/>consensused --> CheckNeedRelocate
-
       CheckNeedRelocate((Check?))
-      CheckNeedRelocate--"Otherwise" -->LoopEnd
+      CheckNeedRelocate--"Otherwise" -->CheckNeedResend
 
-      CheckNeedRelocate--"get_best_relocating_node_and_target().is_some()" --> SendExpectCandidate
-      SendExpectCandidate["(node, target)=<br/>get_best_relocating_node_and_target()<br/><br/>send_rpc(<br/>ExpectCandidate(node))<br/>to target NaeManager<br/><br/>set_node_state(<br/>node,<br/>WaitRelocateResponseState)"]
-      SendExpectCandidate --> LoopEnd
+      CheckNeedRelocate--"get_best_relocating_node_and_target(<br/>ALREADY_RELOCATING).is_some()" --> SendExpectCandidate
+      SendExpectCandidate["(node, target)=<br/>get_best_relocating_node_and_target(<br/>ALREADY_RELOCATING)<br/><br/>send_rpc(<br/>ExpectCandidate(node))<br/>to target NaeManager<br/><br/>ALREADY_RELOCATING<br/>.insert(node)"]
+      SendExpectCandidate --> CheckNeedResend
 
-      ParsecConsensus --"ParsecRefuseCandidate<br/>for our node"--> RefusedCandidate
-      RefusedCandidate["set_node_state(<br/>node,<br/>RelocatingState)"]
+      CheckNeedResend((Check?))
+      CheckNeedResend -- Otherwise --> DecResendCount
+      DecResendCount["RESEND_TRIGGER--"]
+      DecResendCount --> LoopEnd
+
+      CheckNeedResend -- "RESEND_TRIGGER==0<br/>or<br/>ALREADY_RELOCATING.is_empty()" --> AllowResendCandidates
+      AllowResendCandidates["ALREADY_RELOCATING.clear()<br/>RESEND_TRIGGER=3"]
+      AllowResendCandidates --> LoopEnd
+
+
+      ParsecConsensus --"ParsecRefuseCandidate<br/>and<br/>is_our_relocating_node(node)"--> RefusedCandidate
+      RefusedCandidate["ALREADY_RELOCATING<br/>.remove(node)"]
       RefusedCandidate --> LoopEnd
 
-      ParsecConsensus --"ParsecRelocateResponse<br/>for our node"--> SendPovableRelocateInfo
-      SendPovableRelocateInfo["send_rpc(RelocatedInfo)<br/>to node<br/><br/>Includes RelocationResponse<br/>content and consensus<br/>Node may be already gone"]
-      SendPovableRelocateInfo-->PurgeNodeInfos
+      ParsecConsensus --"ParsecRelocateResponse<br/>and<br/>is_our_relocating_node(node)"--> VoteProvableRelocateInfo
+      VoteProvableRelocateInfo["set_node_state(<br/>node,<br/>RelocatedState(RelocateResponse Info)<br/>(Vote for same relocation if merge/split<br/>so only one valid proof exists)<br/><br/>vote_for(<br/>ParsecRelocatedInfo(RelocateResponse Info))"]
+      VoteProvableRelocateInfo --> LoopEnd
+
+      ParsecConsensus --"ParsecRefuseCandidate/<br/>ParsecRelocateResponse<br/>otherwise"--> DiscardVote
+      DiscardVote[Discard<br/>Vote]
+      DiscardVote --> LoopEnd
+
+      ParsecConsensus --"ParsecRelocatedInfo"--> SendProvableRelocateInfo
+      SendProvableRelocateInfo["send_rpc(RelocatedInfo)<br/>to node<br/><br/>ParsecRelocatedInfo proofs for CandidateInfo<br/>Node may be already gone"]
+      SendProvableRelocateInfo-->PurgeNodeInfos
       PurgeNodeInfos["purge_node_info(<br/>node)"]
       PurgeNodeInfos--> LoopEnd
   </div>
@@ -790,6 +849,15 @@
     </p>
   </div>
   </div>
+  <button class="collapsible">split_needed</button>
+  <div class="content">
+    <p>This function indicates that we need splitting.<br>
+    The details for the trigger are still in slight flux, but here are some possibilities:
+    <ul>
+      <li> The number of Online adults plus elders is above our min section size of 10 elder plus 90 Adults + buffer
+    </ul>
+    </p>
+  </div>
   <div class="mermaid">
       graph TB
       CheckAndProcessElderChange["StartCheckAndProcessElderMergeChange:<br/>No exit - Needs killed"]
@@ -825,15 +893,26 @@
       Consensus--"ParsecCheckElderTimeout"-->CheckMergeNeeded
       CheckMergeNeeded(("Check"))
 
-      CheckMergeNeeded--"!merge_needed()<br/> and<br/>!has_merge_infos()"-->CheckElderChange
+      CheckMergeNeeded--"Otherwise"-->CheckElderChange
       CheckElderChange(("Check"))
 
-      CheckElderChange -- "No<br/>changes" --> RestartTimeout
+      CheckElderChange -- "Otherwise" --> CheckNeedSplit
+
+      CheckNeedSplit(("Check"))
+      CheckNeedSplit --"Otherwise" --> RestartTimeout
       RestartTimeout["schedule(<br/>CheckElderTimeout)"]
       RestartTimeout-->LoopEnd
 
-      CheckElderChange --"check_elder_change()<br/><br/>Has elder changes: elder first ordered by:<br/>State=Online then age then name."--> Concurrent0
+      CheckNeedSplit --"split_needed()" --> Concurrent2
+      Concurrent2{"Concurrent<br/>paths"}
+      Concurrent2 --> ProcessSplit
+      Concurrent2 --> LoopEnd
 
+      ProcessSplit["ProcessSplit"]
+      style ProcessSplit fill:#f9f,stroke:#333,stroke-width:4px
+      ProcessSplit --> CancelResourceProof
+
+      CheckElderChange --"check_elder_change()<br/><br/>Has elder changes: elder first ordered by:<br/>State=Online then age then name."--> Concurrent0
       Concurrent0{"Concurrent<br/>paths"}
       Concurrent0 --> ProcessElderChange
       Concurrent0 --> LoopEnd
@@ -852,8 +931,6 @@
       ResetRelocatedNodeConnection --> RestartTimeout
 
       CheckMergeNeeded --"merge_needed()<br/>or<br/>has_merge_infos()"-->Concurrent1
-
-
       Concurrent1{"Concurrent<br/>paths"}
       Concurrent1 --> ProcessMerge
       Concurrent1 --> LoopEnd
@@ -1014,8 +1091,69 @@
       LoopEnd --> LoopStart
   </div>
 
+  <h2>Handling splits</h2>
+  <div class=description>
+  <p>Vote for the two NewSectionInfo to gather required signatures<br/>
+ </p>
+  <button class="collapsible">WAITED_VOTES</button>
+  <div class="content">
+    <p>Wait for all these votes to reach consensus before reflecting the status change in our chain.<br>
+      Both sections need to be consensused before we move on so we do not leave one behind with not enough voters.
+    </p>
+  </div>
+  <button class="collapsible">complete_split</button>
+  <div class="content">
+    <p>With the NewSectionInfo in hands, completing the split process consists on joining the correct newly formed section and leaving the old one behind.
+    </p>
+  </div>
+  <button class="collapsible">new_section_info</button>
+  <div class="content">
+    <p>A list of PublicId.<br>
+    The content of the NewSectionInfo parsec event that reached consensus that we are now a member of.
+    </p>
+  </div>
+  </div>
+  <div class="mermaid">
+      graph TB
+      ProcessElderChange["ProcessElderChange<br/>(Take elder changes)<br/>(shared state)"]
+      style ProcessElderChange fill:#f9f,stroke:#333,stroke-width:4px
+
+      EndRoutine["End of ProcessElderChange<br/>(shared state)"]
+      style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
+
+      ProcessElderChange -->  VoteNewSections
+      VoteNewSections["vote_for(NewSectionInfo) for the two new sections<br/><br/>WAITED_VOTES.insert(all votes)"]
+      VoteNewSections --> LoopStart
+
+      WaitFor(("Wait for 5:"))
+      LoopStart --> WaitFor
+
+      Consensus((Consensus))
+      WaitFor-- Parsec<br/>consensus --> Consensus
+
+      Consensus -- "WAITED_VOTES.contains(vote)" --> OneVoteConsensused
+      OneVoteConsensused["WAITED_VOTES.remove(vote)"]
+
+      OneVoteConsensused --> WaitComplete
+      WaitComplete(("Check?"))
+      WaitComplete--"WAITED_VOTES<br/>.is_empty()<br/>(Wait complete)"-->CompleteSplit
+      CompleteSplit["complete_split()<br/>(Start parsec with new genesis...)"]
+      CompleteSplit --> MarkNewElderAdults
+
+      MarkNewElderAdults["update_elder_status(new_section_info)"]
+      MarkNewElderAdults--> EndRoutine
+
+      WaitComplete--"!WAITED_VOTES<br/>.is_empty()<br/>(Wait not complete)"--> LoopEnd
+      LoopEnd --> LoopStart
+  </div>
+
   <h2>Handling members of our section going Online or Offline</h2>
   <div class=description>
+  <button class="collapsible">RelocatingBackOnlineState</button>
+  <div class="content">
+    <p>A nodes state indicating that it is relocated with age reduced as it went offline.<br/>
+    </p>
+  </div>
   </div>
   <div class="mermaid">
       graph TB
@@ -1045,7 +1183,7 @@
       SetOfflineState -->LoopEnd
 
       Consensus -- "ParsecBackOnline" --> SetRelocating
-      SetRelocating["set_node_state(<br/>node,<br/>RelocatingState)"]
+      SetRelocating["set_node_state(<br/>node,<br/>RelocatingBackOnlineState)"]
 
       SetRelocating --> LoopEnd
       LoopEnd --> LoopStart
@@ -1073,6 +1211,7 @@
     Contains:<br/>
       <ul>
         <li>target_interval: (XorName, XorName) - The interval into which the joining node should join.<br>
+        <li>section_info: SectionInfo - The destination section that the joining node will trust.<br>
       </ul>
     </p>
   </div>
@@ -1088,6 +1227,8 @@
       Contains:<br/>
       <ul>
         <li>target_interval: (XorName, XorName) - The interval into which the joining node should join.<br>
+        <li>section_info: SectionInfo - The destination section that the joining node will trust.<br>
+        <li>proof: Signatures - Quorum of signature for the candidate to prove the source section relocated it with these infos.<br>
       </ul>
     </p>
   </div>
@@ -1101,6 +1242,8 @@
         <li>signature_using_old: Signature - Signature of concatenated PublicIds using the pre-relocation key.<br>
         <li>signature_using_new: Signature - Signature of concatenated PublicIds and signature_using_old using the post-relocation key.<br>
         <li>new_client_auth: Authority - Client authority from after relocation.<br>
+        <li>source_proof: Signatures - Quorum of signature from the source section proving the source approved that relocation.<br>
+            This will be checked against the stored information in the candidate node state.<br/>
       </ul>
     </p>
   </div>
@@ -1114,6 +1257,7 @@
     <p>Sent by the destination section to the joining node when connected<br/>
       Contains:<br/>
       <ul>
+        <li>section_info_proofs: Vec&lt(SectionInfo, ProofSet)&gt - Signed section infos with root starting with the stored SectionInfo in the candidate node state.<br>
         <li>current_info: GenesisPfxInfo - All the info needed when this node becomes an adult or elder.<br>
       </ul>
     </p>
@@ -1137,7 +1281,13 @@
     participant Node as Relocating Node
     participant Dst as Destination Section
 
-    Src->>+Dst: Routing RPC: ExpectCandidate
+
+    loop FindDestination
+      Src->>+Dst: Routing RPC: ExpectCandidate
+      opt Refuse
+        Dst-->>Src: Routing RPC: RefuseCandidate
+      end
+    end
     Dst-->>-Src: Routing RPC: RelocateResponse
     Src->>Node: Direct node-to-node RPC: RelocatedInfo
 
