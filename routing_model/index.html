@@ -653,7 +653,8 @@
   </p>
   <button class="collapsible">get_best_relocating_node_and_target</button>
   <div class="content">
-    <p>Returns the best node to relocate and the target address to send it to<br/>
+    <p>Takes ALREADY_RELOCATING for the nodes it will ignore.<br/>
+    Returns the best node to relocate and the target address to send it to<br/>
     There may be mutliple nodes relocating, for example because of a merge. Take the best one (oldest), and choose a target address.<br/>
     The target address is one managed by one of our neighbours. This could be random, or the current old_public_id with a single bit of the prefix flipped.<br/>
     This would would help ensure that source and destination remain neighbours, even if the source splits.<br/>
@@ -662,9 +663,10 @@
     Note: It may be possible for a node to relocate to its sibling, and complete relocation after a merge occured.
     </p>
   </div>
-  <button class="collapsible">waiting_node_relocate_response</button>
+  <button class="collapsible">ALREADY_RELOCATING</button>
   <div class="content">
-    <p>Returns our node with state WaitRelocateResponseState.
+    <p>The nodes we ignore when selecting a new node to send ExpectCandidate for.<br/>
+       Local states are not carried over on merge or split, so we will resend ExpectCandidate earlier than we would otherwise.
     </p>
   </div>
   <button class="collapsible">is_our_relocating_node</button>
@@ -724,22 +726,22 @@
       CheckNeedRelocate((Check?))
       CheckNeedRelocate--"Otherwise" -->CheckNeedResend
 
-      CheckNeedRelocate--"get_best_relocating_node_and_target().is_some()" --> SendExpectCandidate
-      SendExpectCandidate["(node, target)=<br/>get_best_relocating_node_and_target()<br/><br/>send_rpc(<br/>ExpectCandidate(node))<br/>to target NaeManager<br/><br/>set_node_state(<br/>node,<br/>WaitRelocateResponseState)"]
+      CheckNeedRelocate--"get_best_relocating_node_and_target(<br/>ALREADY_RELOCATING).is_some()" --> SendExpectCandidate
+      SendExpectCandidate["(node, target)=<br/>get_best_relocating_node_and_target(<br/>ALREADY_RELOCATING)<br/><br/>send_rpc(<br/>ExpectCandidate(node))<br/>to target NaeManager<br/><br/>ALREADY_RELOCATING<br/>.insert(node)"]
       SendExpectCandidate --> CheckNeedResend
 
       CheckNeedResend((Check?))
-      CheckNeedResend -- RESEND_TRIGGER>0 --> DecResendCount
+      CheckNeedResend -- Otherwise --> DecResendCount
       DecResendCount["RESEND_TRIGGER--"]
       DecResendCount --> LoopEnd
 
-      CheckNeedResend -- RESEND_TRIGGER==0 --> AllowResendCandidates
-      AllowResendCandidates["for node in both<br/>-waiting_node_relocate_response()<br/>-WAIT_RESPONSE:<br/><br/>set_node_state(<br/>node,<br/>RelocatingState)<br/><br/>--<br/>RESEND_TRIGGER=3<br/>WAIT_RESPONSE=<br/>waiting_node_relocate_response()"]
+      CheckNeedResend -- "RESEND_TRIGGER==0<br/>or<br/>ALREADY_RELOCATING.is_empty()" --> AllowResendCandidates
+      AllowResendCandidates["ALREADY_RELOCATING.clear()<br/>RESEND_TRIGGER=3"]
       AllowResendCandidates --> LoopEnd
 
 
       ParsecConsensus --"ParsecRefuseCandidate<br/>and<br/>is_our_relocating_node(node)"--> RefusedCandidate
-      RefusedCandidate["set_node_state(<br/>node,<br/>RelocatingState)"]
+      RefusedCandidate["ALREADY_RELOCATING<br/>.remove(node)"]
       RefusedCandidate --> LoopEnd
 
       ParsecConsensus --"ParsecRelocateResponse<br/>and<br/>is_our_relocating_node(node)"--> VoteProvableRelocateInfo
