@@ -263,10 +263,10 @@
     </p>
   </div>
   </div>
-  <button class="collapsible">waiting_proofing</button>
+  <button class="collapsible">waiting_proofing_or_hop</button>
   <div class="content">
     <p>We want to accept at most one incoming relocation at a time into our section.<br/>
-    The waiting_proofing function returns the list of nodes that we have yet to resource proof, (States from WaitingCandidateInfo until it reaches OnlineState).<br/>
+    The waiting_proofing_or_hop function returns the list of nodes that we have yet to resource proof or relocated through a new hop, (States from WaitingCandidateInfo until it reaches OnlineState  or RelocatedState).<br/>
     When the output of this function is not empty and we reach consensus on ParsecExpectCandidate, we send a RefuseCandidate RPC to the would-be-incoming-node so they can try another section or try again later.
     </p>
   </div>
@@ -296,8 +296,8 @@
       VoteParsecExpectCandidate --> LoopEnd
 
       Balanced(("Check?<br/>(shared state)"))
-      Balanced -- "waiting_proofing().contains(candidate)" --> SendIdenticalRelocateResponse
-      Balanced -- "waiting_proofing().is_empty()" --> SendRelocateResponse
+      Balanced -- "waiting_proofing_or_hop().contains(candidate)" --> SendIdenticalRelocateResponse
+      Balanced -- "waiting_proofing_or_hop().is_empty()" --> SendRelocateResponse
       Balanced -- "Otherwise" --> SendRefuse
 
       SendIdenticalRelocateResponse["send_rpc(RelocateResponse)<br/>again to source section<br/>with original info"]
@@ -343,6 +343,12 @@
     If it is Some, we will relay the RPC to them instead of accepting the rellocation to our own section.
     </p>
   </div>
+  <button class="collapsible">RelocatingState(Hop)</button>
+  <div class="content">
+    <p>A nodes state indicating that it is relocated without ageing further.<br/>
+       Also returned as part of waiting_proofing_or_hop().
+    </p>
+  </div>
   <button class="collapsible">RelocatedNodeConnection_Reset</button>
   <div class="content">
     <p>Provides and external entry point to reset the currently processed nodes: Do not reject a node because it took longer than expected.<br/>
@@ -380,7 +386,7 @@
       ParsecConsensus -- "ParsecCandidateConnected<br/>and<br/>is_valid_waited_connection(<br/>message_src)" --> Balanced
       Balanced(("Check"))
       Balanced -- "shorter_prefix_section(<br/>).is_some()" --> RelocateToShorterPrefix
-      RelocateToShorterPrefix["set_node_state(<br/>candidate,<br/>RelocatingState)"]
+      RelocateToShorterPrefix["set_node_state(<br/>candidate,<br/>RelocatingState(Hop)"]
       RelocateToShorterPrefix --> SetConnected
 
       Balanced -- "Otherwise" --> SetWaitingProof
@@ -574,7 +580,7 @@
   <div class=description>
   <p>In these diagrams, we are modeling the simple version of node ageing that we decided to implement for Fleming:<br/>
   Work units are incremented for all nodes in the section every time a timeout reaches consenus. Because a quorum of elders must have voted for this timeout, the malicious nodes can't arbitrarily speed up the ageing of their nodes.<br/>
-  Once a node has accumulated enough work units to be relocated, if no other node is currently relocating we set its state to RelocatingState. This node will then be actually relocated in StartRelocateSrc (see StartRelocateSrc).
+  Once a node has accumulated enough work units to be relocated, if no other node is currently relocating we set its state to RelocatingState(AgeIncrease). This node will then be actually relocated in StartRelocateSrc (see StartRelocateSrc).
   </p>
   <button class="collapsible">WorkUnitTimeout</button>
   <div class="content">
@@ -591,8 +597,9 @@
   </div>
   <button class="collapsible">nodes_relocating</button>
   <div class="content">
-    <p>The collection of nodes currently relocating: With node state RelocatingState or WaitRelocateResponseState.<br/>
+    <p>The collection of nodes currently relocating: With node state RelocatingState(AgeIncrease) only.<br/>
       It will most often be empty or have one element, unless a merge occurs in which case it may contain more than one element.
+      Nodes coming back online, or needing an extra hop are not considered here.
     </p>
   </div>
   <button class="collapsible">get_node_to_relocate</button>
@@ -605,7 +612,7 @@
   </div>
   <button class="collapsible">set_node_state</button>
   <div class="content">
-    <p>This function mutates our peer_list to set the state (for example set RelocatingState for the node).<br/>
+    <p>This function mutates our peer_list to set the state (for example set RelocatingState(AgeIncrease) for the node).<br/>
     inputs:<br/>
     - node<br/>
     - state<br/>
@@ -646,7 +653,7 @@
       AlreadyRelocating --"nodes_relocating().is_empty()"--> SetRelocatingNodeState
       AlreadyRelocating --"Otherwise"--> LoopEnd
 
-      SetRelocatingNodeState["set_node_state(get_node_to_relocate(), RelocatingState)"]
+      SetRelocatingNodeState["set_node_state(get_node_to_relocate(), RelocatingState(AgeIncrease))"]
       SetRelocatingNodeState --> LoopEnd
   </div>
 
@@ -657,14 +664,14 @@
   All in all, we have the certainty that eventually, exactly one of these two RPCs will make it to our section.<br/>
   When it does, it will be voted in PARSEC, regardless of the order of operations, so it will eventually make it through PARSEC.<br/>
   <br/>
-  If a node in RelocatingState is a non-elder adult node, we can try to relocate it. If they are an elder node, we will first wait for the Adult/Elder promotion/demotion flow to kick in and demote them to an adult. This will happen because we changed their state from OnlineState to RelocatingState, which means that they will get demoted.<br/>
+  If a node in RelocatingState(AgeIncrease), is a non-elder adult node, we can try to relocate it. If they are an elder node, we will first wait for the Adult/Elder promotion/demotion flow to kick in and demote them to an adult. This will happen because we changed their state from OnlineState to RelocatingState, which means that they will get demoted.<br/>
+  Nodes in RelocatingState(Hop) and then RelocatingState(BackOnline) are relocated after RelocatingState(AgeIncrease). Neither are full adults.
   <br/>
-  On sending an ExpectCandidate RPC, we set the node state to WaitRelocateResponseState so we know after a split or a merge that we are waiting for a response.<br/>
-  If they refused our candidate, our job ends there: We reset the state to RelocatingState and the candidate will simply be a candidate for relocation again later, so we will try to relocate it then.<br/>
+  If they refused our candidate, our job ends there: the candidate will simply be a candidate for relocation again later, so we will try to relocate it then.<br/>
   If they accepted the node and sent us a RelocateResponse RPC, so the ParsecRelocateResponse event reached consensus, we will send to the node that is being relocated the RelocatedInfo they will need.<br/>
   At this point, we will purge their information since this node isn't a member of our section anymore.
   <br/>
-  Also of note: while we are preventing nodes with OnlineState from relocating when we are already relocating node, we may still be actively relocating more than one node away from our section (for instance if two sections with a relocating node each merge).<br/>
+  Also of note: while we are preventing nodes with OnlineState from relocating when we are already relocating one of our Adult. We may still be actively relocating more than one node away from our section (for instance if two sections with a relocating node each merge).<br/>
   However, we will only handle one at a time per CheckRelocateTimeOut event.
   </p>
   <button class="collapsible">get_best_relocating_node_and_target</button>
@@ -675,6 +682,10 @@
     The target address is one managed by one of our neighbours. This could be random, or the current old_public_id with a single bit of the prefix flipped.<br/>
     This would would help ensure that source and destination remain neighbours, even if the source splits.<br/>
     Using a target address instead of a section ensures we deliver the message even if the destination splits or merges.<br/>
+    <br/>
+    There are 3 states the node may be: RelocatingState(AgeIncrease), RelocatingState(Hop), and RelocatingState(BackOnline).<br/>
+    Node will be selected in this order: Relocating(AgeIncrease), RelocatingState(Hop) and then RelocatingState(BackOnline).<br/>
+    This ensures that we prioritizing good node relocation.
     <br/>
     Note: It may be possible for a node to relocate to its sibling, and complete relocation after a merge occured.
     </p>
@@ -687,7 +698,7 @@
   </div>
   <button class="collapsible">is_our_relocating_node</button>
   <div class="content">
-    <p>Is it a valid node that is not yet relocated (i.e State is RelocatingState or WaitRelocateResponseState).
+    <p>Is it a valid node that is not yet relocated (i.e State is RelocatingState(AgeIncrease), RelocatingState(Hop) or RelocatingState(BackOnline)).
     </p>
   </div>
   <button class="collapsible">RefuseCandidate/<br/>RelocateResponse</button>
@@ -1139,6 +1150,11 @@
 
   <h2>Handling members of our section going Online or Offline</h2>
   <div class=description>
+  <button class="collapsible">RelocatingState(BackOnline)</button>
+  <div class="content">
+    <p>A nodes state indicating that it is relocated with age reduced as it went offline.<br/>
+    </p>
+  </div>
   </div>
   <div class="mermaid">
       graph TB
@@ -1168,7 +1184,7 @@
       SetOfflineState -->LoopEnd
 
       Consensus -- "ParsecBackOnline" --> SetRelocating
-      SetRelocating["set_node_state(<br/>node,<br/>RelocatingState)"]
+      SetRelocating["set_node_state(<br/>node,<br/>RelocatingState(BackOnline))"]
 
       SetRelocating --> LoopEnd
       LoopEnd --> LoopStart
