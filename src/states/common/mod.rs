@@ -8,6 +8,7 @@
 
 mod base;
 mod bootstrapped;
+pub mod client;
 
 pub use self::base::Base;
 pub use self::bootstrapped::Bootstrapped;

@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
+use super::common::{client, Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 use crate::ack_manager::{Ack, AckManager, UnacknowledgedMessage};
 use crate::action::Action;
 use crate::chain::SectionInfo;
@@ -14,7 +14,7 @@ use crate::error::{InterfaceError, Result, RoutingError};
 use crate::event::Event;
 use crate::id::{FullId, PublicId};
 use crate::messages::{
-    DirectMessage, HopMessage, Message, MessageContent, RoutingMessage, SignedMessage, UserMessage,
+    DirectMessage, HopMessage, Message, MessageContent, RoutingMessage, UserMessage,
     UserMessageCache,
 };
 use crate::outbox::EventBox;
@@ -27,7 +27,7 @@ use crate::{CrustEvent, Service};
 #[cfg(feature = "mock")]
 use fake_clock::FakeClock as Instant;
 use maidsafe_utilities::serialisation;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fmt::{self, Display, Formatter};
 use std::time::Duration;
 #[cfg(not(feature = "mock"))]
@@ -393,41 +393,15 @@ impl Bootstrapped for Client {
         route: u8,
         expires_at: Option<Instant>,
     ) -> Result<()> {
-        if routing_msg.dst.is_client() && self.in_authority(&routing_msg.dst) {
-            return Ok(()); // Message is for us.
-        }
-
-        // Get PublicId of the proxy node
-        match routing_msg.src {
-            Authority::Client {
-                ref proxy_node_name,
-                ..
-            } => {
-                if *self.proxy_pub_id.name() != *proxy_node_name {
-                    error!(
-                        "{} Unable to find connection to proxy node in proxy map",
-                        self
-                    );
-                    return Err(RoutingError::ProxyConnectionNotFound);
-                }
-            }
-            _ => {
-                error!("{} Source should be client if our state is a Client", self);
-                return Err(RoutingError::InvalidSource);
-            }
-        };
-
-        let signed_msg = SignedMessage::new(routing_msg, self.full_id(), None)?;
-
         let proxy_pub_id = self.proxy_pub_id;
-        if self.add_to_pending_acks(signed_msg.routing_message(), src_section, route, expires_at)
-            && !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_pub_id, route)
-        {
-            let bytes = self.to_hop_bytes(signed_msg.clone(), route, BTreeSet::new())?;
-            self.send_or_drop(&proxy_pub_id, bytes, signed_msg.priority());
-        }
-
-        Ok(())
+        client::send_routing_message_via_route(
+            self,
+            &proxy_pub_id,
+            routing_msg,
+            src_section,
+            route,
+            expires_at,
+        )
     }
 
     fn routing_msg_filter(&mut self) -> &mut RoutingMessageFilter {
