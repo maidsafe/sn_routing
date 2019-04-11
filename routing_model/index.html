@@ -466,7 +466,7 @@
   </div>
   <button class="collapsible">Rpc::ResourceProofResponse</button>
   <div class="content">
-  <p>The candidate send this RPC that contains part of a proof. It may continue to be sent by a node we have not accepted, even if consensus was reached to add it.<br/>
+  <p>The candidate sends this RPC that contains part of a proof. It may continue to be sent by a node we have not accepted, even if consensus was reached to add it.<br/>
   It may also still be sent by a candidate we have rejected. It's OK to discard the RPC in these cases as it is no longer relevant.
   </p>
   </div>
@@ -669,8 +669,8 @@
   The first Parsec::ExpectCandidateAcceptResponse consensused for a node will be the single valid relocation. We will sign the reolcation info through parsec and send to the node that is being relocated the RelocatedInfo they will need.<br/>
   At this point, we will purge their information since this node isn't a member of our section anymore.<br/>
   <br/>
-  Elders are not considered for relocation: Elder nodes in State::RelocatingAgeIncrease will eventually get demoted to adult (see StartMergeSplitAndChangeElders) at which point they may be relocated.<br/>
-  We prioritize relocating our Adults, then just relocated node that need another hop, then nodes comming back online.<br/>
+  Elders are not considered for relocation: Elder nodes in State::RelocatingAgeIncrease will eventually get demoted to adults (see StartMergeSplitAndChangeElders) at which point they may be relocated.<br/>
+  We prioritize relocating our Adults, then just relocated nodes that need another hop, then nodes comming back online.<br/>
   <br/>
   Also of note: We may be relocating multiple nodes (i.e because of merge, or node relocating to us or node comming back online), but we will only handle one at a time per CheckRelocateTimeOut event.<br/>
   Throtling is otherwise handled in flows setting the relocating states.
