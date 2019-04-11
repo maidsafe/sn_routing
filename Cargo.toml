@@ -12,6 +12,7 @@ edition = "2018"
 
 [dependencies]
 config_file_handler = "0.11.0"
+crust = { git = "https://github.com/maidsafe/crust", rev = "028de4ea8" }
 fake_clock = "0.3.0"
 hex = "0.2.0"
 hex_fmt = "0.1.0"
@@ -21,6 +22,7 @@ log = "0.3.8"
 lru_time_cache = "0.8.1"
 maidsafe_utilities = "0.16.0"
 num-bigint = "0.1.40"
+parsec = { git = "https://github.com/maidsafe/parsec", rev = "3910a2883" }
 quick-error = "1.2.0"
 rand = "0.3.16"
 resource_proof = "0.6.0"
@@ -29,12 +31,6 @@ serde = "1.0.25"
 serde_derive = "1.0.25"
 term = "0.4.6"
 unwrap = "1.2.1"
-# Parsec master branch.
-parsec = { git = "https://github.com/maidsafe/parsec", rev = "4242820" }
-
-[dependencies.crust]
-git = "https://github.com/maidsafe/crust"
-rev = "028de4ea8"
 
 [dev-dependencies]
 docopt = "0.8.1"
@@ -42,7 +38,7 @@ libc = "0.2.29"
 serde_json = "1.0.8"
 
 [features]
-mock = ["lru_time_cache/fake_clock", "safe_crypto/mock"]
+mock = ["lru_time_cache/fake_clock", "safe_crypto/mock", "parsec/mock", "parsec/malice-detection"]
 mock_parsec = ["mock"]
 
 [[example]]

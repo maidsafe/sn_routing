@@ -350,9 +350,8 @@ struct Peer {
 
 impl Peer {
     fn poll(&mut self) {
-        while let Some(blocks) = self.parsec.poll() {
-            self.blocks
-                .extend(blocks.into_iter().map(|block| block.payload().clone()));
+        while let Some(block) = self.parsec.poll() {
+            self.blocks.push(block.payload().clone());
         }
     }
 }
@@ -424,27 +423,15 @@ struct Message {
     content: MessageContent,
 }
 
-struct PollAll<'a> {
-    parsec: &'a mut Parsec<Payload, PeerId>,
-    blocks: Vec<Block<Payload, PeerId>>,
-}
+struct PollAll<'a>(&'a mut Parsec<Payload, PeerId>);
 
 impl<'a> Iterator for PollAll<'a> {
     type Item = Block<Payload, PeerId>;
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(block) = self.blocks.pop() {
-            Some(block)
-        } else {
-            self.blocks.extend(self.parsec.poll().into_iter().flatten());
-            self.blocks.reverse();
-            self.blocks.pop()
-        }
+        self.0.poll()
     }
 }
 
 fn poll_all(parsec: &mut Parsec<Payload, PeerId>) -> PollAll {
-    PollAll {
-        parsec,
-        blocks: Vec::new(),
-    }
+    PollAll(parsec)
 }
