@@ -6,9 +6,6 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-// This is used two ways: inline tests, and integration tests (with mock).
-// There's no point configuring each item which is only used in one of these.
-
 use crate::state::*;
 use crate::utilities::{
     Event, GenesisPfxInfo, LocalEvent, Name, ProofRequest, ProofSource, Rpc, SectionInfo,
@@ -18,7 +15,7 @@ use crate::utilities::{
 pub struct JoiningRelocateCandidate(pub JoiningState);
 
 impl JoiningRelocateCandidate {
-    pub fn start_event_loop(&self, new_section: &SectionInfo) -> Self {
+    pub fn start_event_loop(&self, new_section: SectionInfo) -> Self {
         self.store_destination_members(new_section)
             .send_connection_info_requests()
             .start_resend_info_timeout()
@@ -90,7 +87,7 @@ impl JoiningRelocateCandidate {
         self.clone()
     }
 
-    fn store_destination_members(&self, section: &SectionInfo) -> Self {
+    fn store_destination_members(&self, section: SectionInfo) -> Self {
         let mut state = self.clone();
 
         let members = state.0.action.get_section_members(section);

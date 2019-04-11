@@ -6,9 +6,6 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-// This is used two ways: inline tests, and integration tests (with mock).
-// There's no point configuring each item which is only used in one of these.
-
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord)]
 pub struct Name(pub i32);
 
@@ -96,7 +93,7 @@ pub enum Proof {
 }
 
 impl Proof {
-    pub fn is_valid(&self) -> bool {
+    pub fn is_valid(self) -> bool {
         match self {
             Proof::ValidPart | Proof::ValidEnd => true,
             Proof::Invalid => false,
@@ -116,7 +113,7 @@ impl ProofSource {
         self.resend()
     }
 
-    fn resend(&self) -> Proof {
+    fn resend(self) -> Proof {
         if self.0 > 0 {
             Proof::ValidPart
         } else if self.0 == 0 {

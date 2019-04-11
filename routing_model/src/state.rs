@@ -6,9 +6,6 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-// This is used two ways: inline tests, and integration tests (with mock).
-// There's no point configuring each item which is only used in one of these.
-
 use std::collections::BTreeMap;
 
 use crate::actions::*;
@@ -185,7 +182,7 @@ pub struct JoiningState {
 }
 
 impl JoiningState {
-    pub fn start(&self, new_section: &SectionInfo) -> Self {
+    pub fn start(&self, new_section: SectionInfo) -> Self {
         self.as_joining_relocate_candidate()
             .start_event_loop(new_section)
             .0

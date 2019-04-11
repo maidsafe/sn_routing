@@ -6,9 +6,6 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-// This is used two ways: inline tests, and integration tests (with mock).
-// There's no point configuring each item which is only used in one of these.
-
 use crate::state::{AcceptAsCandidateState, CheckAndProcessElderChangeState, State};
 use crate::utilities::{
     Candidate, ChangeElder, Event, LocalEvent, Node, ParsecVote, Proof, Rpc, Section,
@@ -149,9 +146,10 @@ impl AcceptAsCandidate {
             return None;
         }
 
-        Some(match valid {
-            true => self.set_got_candidate_info(true).send_resource_proof_rpc(),
-            false => self.vote_parsec_purge_candidate(),
+        Some(if valid {
+            self.set_got_candidate_info(true).send_resource_proof_rpc()
+        } else {
+            self.vote_parsec_purge_candidate()
         })
     }
 
