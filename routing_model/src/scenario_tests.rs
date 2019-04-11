@@ -912,10 +912,11 @@ mod src_tests {
     #[test]
     fn test_parsec_relocation_trigger() {
         let initial_state = State {
-            action: Action::new(InnerAction {
-                node_to_relocate: Some(YOUNG_ADULT_205),
-                ..INNER_ACTION_OLD_ELDERS.clone()
-            }),
+            action: Action::new(
+                INNER_ACTION_OLD_ELDERS
+                    .clone()
+                    .with_enough_work_to_relocate(&[YOUNG_ADULT_205]),
+            ),
             ..State::default()
         };
 
@@ -940,10 +941,11 @@ mod src_tests {
     #[test]
     fn test_parsec_relocate_trigger_elder_change() {
         let initial_state = State {
-            action: Action::new(InnerAction {
-                node_to_relocate: Some(NODE_ELDER_130),
-                ..INNER_ACTION_OLD_ELDERS.clone()
-            }),
+            action: Action::new(
+                INNER_ACTION_OLD_ELDERS
+                    .clone()
+                    .with_enough_work_to_relocate(&[NODE_ELDER_130]),
+            ),
             ..State::default()
         };
 
@@ -970,10 +972,11 @@ mod src_tests {
     fn test_parsec_relocate_trigger_elder_change_complete() {
         let initial_state = arrange_initial_state(
             &State {
-                action: Action::new(InnerAction {
-                    node_to_relocate: Some(NODE_ELDER_130),
-                    ..INNER_ACTION_OLD_ELDERS.clone()
-                }),
+                action: Action::new(
+                    INNER_ACTION_OLD_ELDERS
+                        .clone()
+                        .with_enough_work_to_relocate(&[NODE_ELDER_130]),
+                ),
                 ..State::default()
             },
             &[
@@ -1014,10 +1017,11 @@ mod src_tests {
     fn test_parsec_relocation_trigger_refuse_candidate_rpc() {
         let initial_state = arrange_initial_state(
             &State {
-                action: Action::new(InnerAction {
-                    node_to_relocate: Some(YOUNG_ADULT_205),
-                    ..INNER_ACTION_OLD_ELDERS.clone()
-                }),
+                action: Action::new(
+                    INNER_ACTION_OLD_ELDERS
+                        .clone()
+                        .with_enough_work_to_relocate(&[YOUNG_ADULT_205]),
+                ),
                 ..State::default()
             },
             &[ParsecVote::RelocationTrigger.to_event()],
@@ -1044,10 +1048,11 @@ mod src_tests {
     fn test_parsec_relocation_trigger_relocate_response_rpc() {
         let initial_state = arrange_initial_state(
             &State {
-                action: Action::new(InnerAction {
-                    node_to_relocate: Some(YOUNG_ADULT_205),
-                    ..INNER_ACTION_OLD_ELDERS.clone()
-                }),
+                action: Action::new(
+                    INNER_ACTION_OLD_ELDERS
+                        .clone()
+                        .with_enough_work_to_relocate(&[YOUNG_ADULT_205]),
+                ),
                 ..State::default()
             },
             &[ParsecVote::RelocationTrigger.to_event()],
@@ -1077,10 +1082,11 @@ mod src_tests {
     fn test_parsec_relocation_trigger_accept() {
         let initial_state = arrange_initial_state(
             &State {
-                action: Action::new(InnerAction {
-                    node_to_relocate: Some(YOUNG_ADULT_205),
-                    ..INNER_ACTION_OLD_ELDERS.clone()
-                }),
+                action: Action::new(
+                    INNER_ACTION_OLD_ELDERS
+                        .clone()
+                        .with_enough_work_to_relocate(&[YOUNG_ADULT_205]),
+                ),
                 ..State::default()
             },
             &[ParsecVote::RelocationTrigger.to_event()],
@@ -1105,10 +1111,11 @@ mod src_tests {
     fn test_parsec_relocation_trigger_refuse() {
         let initial_state = arrange_initial_state(
             &State {
-                action: Action::new(InnerAction {
-                    node_to_relocate: Some(YOUNG_ADULT_205),
-                    ..INNER_ACTION_OLD_ELDERS.clone()
-                }),
+                action: Action::new(
+                    INNER_ACTION_OLD_ELDERS
+                        .clone()
+                        .with_enough_work_to_relocate(&[YOUNG_ADULT_205]),
+                ),
                 ..State::default()
             },
             &[ParsecVote::RelocationTrigger.to_event()],
@@ -1126,10 +1133,11 @@ mod src_tests {
     fn test_parsec_relocation_trigger_refuse_trigger_again() {
         let initial_state = arrange_initial_state(
             &State {
-                action: Action::new(InnerAction {
-                    node_to_relocate: Some(YOUNG_ADULT_205),
-                    ..INNER_ACTION_OLD_ELDERS.clone()
-                }),
+                action: Action::new(
+                    INNER_ACTION_OLD_ELDERS
+                        .clone()
+                        .with_enough_work_to_relocate(&[YOUNG_ADULT_205]),
+                ),
                 ..State::default()
             },
             &[
@@ -1159,10 +1167,11 @@ mod src_tests {
     fn test_parsec_relocation_trigger_elder_change_refuse_trigger_again() {
         let initial_state = arrange_initial_state(
             &State {
-                action: Action::new(InnerAction {
-                    node_to_relocate: Some(NODE_ELDER_130),
-                    ..INNER_ACTION_OLD_ELDERS.clone()
-                }),
+                action: Action::new(
+                    INNER_ACTION_OLD_ELDERS
+                        .clone()
+                        .with_enough_work_to_relocate(&[NODE_ELDER_130]),
+                ),
                 ..State::default()
             },
             &[

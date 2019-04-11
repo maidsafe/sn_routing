@@ -57,6 +57,7 @@ impl NodeChange {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct NodeState {
     pub node: Node,
+    pub work_units_done: i32,
     pub is_elder: bool,
     pub is_relocating: bool,
     pub need_relocate: bool,
