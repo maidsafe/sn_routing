@@ -264,7 +264,7 @@
   <button class="collapsible">waiting_proofing_or_hop</button>
   <div class="content">
     <p>We want to accept at most one incoming relocation at a time into our section.<br/>
-    The waiting_proofing_or_hop function returns the list of nodes that we have yet to resource proof or relocate through a new hop, (States from WaitingCandidateInfo until it reaches OnlineState  or RelocatedState).<br/>
+    The waiting_proofing_or_hop function returns the list of nodes that we have yet to resource proof or relocate through a new hop, (States from State::WaitingCandidateInfo until it reaches State::Online  or State::Relocated).<br/>
     When the output of this function is not empty and we reach consensus on ParsecExpectCandidate, we send a ExpectCandidateRefuseResponse RPC to the would-be-incoming-node so they can try another section or try again later.
     </p>
   </div>
@@ -301,7 +301,7 @@
       SendIdenticalExpectCandidateAcceptResponse["send_rpc(<br/>ExpectCandidateAcceptResponse)<br/>again to source section<br/>with original info"]
       SendIdenticalExpectCandidateAcceptResponse --> LoopEnd
 
-      SendExpectCandidateAcceptResponse["add_node(<br/>NodeState=WaitingCandidateInfo)<br/><br/>send_rpc(<br/>ExpectCandidateAcceptResponse)<br/>to source section"]
+      SendExpectCandidateAcceptResponse["add_node(<br/>NodeState=State::WaitingCandidateInfo)<br/><br/>send_rpc(<br/>ExpectCandidateAcceptResponse)<br/>to source section"]
       SendExpectCandidateAcceptResponse --> LoopEnd
 
       SendRefuse["send_rpc(<br/>ExpectCandidateRefuseResponse)<br/>to source section"]
@@ -312,26 +312,26 @@
 
   <h2>Relocated node connection</h2>
   <div class=description>
-  <p>Manage node with NodeState=WaitingConnectionInfo and connection info request/response RPCs.<br/>
+  <p>Manage node with NodeState=State::WaitingConnectionInfo and connection info request/response RPCs.<br/>
     The candidate sends its CandidateInfo to the NaeManager of the target interval to ensure it reaches the section even in the event of a split or a merge.<br/>
     This target interval address could be the middle address of the interval, and the interval should cover a range that will not be split if the section splits.<br/>
     When we complete, we either stop responding to CandidateInfo RPCs if it failed, or we send NodeConnected RPC on success,<br/>
     (We could also omit NodeConnected RPC, the node would continue sending CandidateInfo until ResourceProof RPC or time out).<br/>
-    When the node reaches WaitingProofingState or RelocatingHopState state, the section becomes responsible for managing communication with this node as it would any of its adults.
+    When the node reaches State::WaitingProofing or State::RelocatingHop state, the section becomes responsible for managing communication with this node as it would any of its adults.
   </p>
   <button class="collapsible">is_valid_waited_info</button>
   <div class="content">
     <p>Return true if
         <ul>
           <li> The given CandidateInfo is valid,
-          <li> It matches one of our nodes that is in the WaitingCandidateInfo state,
+          <li> It matches one of our nodes that is in the State::WaitingCandidateInfo state,
           <li> The message_src (from the current RPC) is consistent with the CandidateInfo's new_public_id
         </ul>
     </p>
   </div>
   <button class="collapsible">is_valid_waited_connection</button>
   <div class="content">
-    <p>Return true if the given message_src of the current RPC is a one of our nodes and is in WaitingConnectionInfo state.
+    <p>Return true if the given message_src of the current RPC is a one of our nodes and is in State::WaitingConnectionInfo state.
     </p>
   </div>
   <button class="collapsible">shorter_prefix_section</button>
@@ -341,7 +341,7 @@
     If it is Some, we will relocate the new node to them instead of completing the rellocation to our own section.
     </p>
   </div>
-  <button class="collapsible">RelocatingHopState</button>
+  <button class="collapsible">State::RelocatingHop</button>
   <div class="content">
     <p>A nodes state indicating that it is relocated without ageing further.<br/>
        Also returned as part of waiting_proofing_or_hop().
@@ -378,17 +378,17 @@
 
 
       ParsecConsensus -- "ParsecCandidateInfo<br/>and<br/>is_valid_waited_info(<br/>CandidateInfo,<br/>message_src)" --> SetCandidateInfo
-      SetCandidateInfo["update_node(<br/>CandidateInfo,<br/>NodeState=WaitingConnectionInfo)"]
+      SetCandidateInfo["update_node(<br/>CandidateInfo,<br/>NodeState=State::WaitingConnectionInfo)"]
       SetCandidateInfo --> LoopEnd
 
       ParsecConsensus -- "ParsecCandidateConnected<br/>and<br/>is_valid_waited_connection(<br/>message_src)" --> Balanced
       Balanced(("Check"))
       Balanced -- "shorter_prefix_section(<br/>).is_some()" --> RelocateToShorterPrefix
-      RelocateToShorterPrefix["set_node_state(<br/>candidate,<br/>RelocatingHopState)"]
+      RelocateToShorterPrefix["set_node_state(<br/>candidate,<br/>State::RelocatingHop)"]
       RelocateToShorterPrefix --> SetConnected
 
       Balanced -- "Otherwise" --> SetWaitingProof
-      SetWaitingProof["set_node_state(<br/>candidate,<br/>WaitingProofingState)"]
+      SetWaitingProof["set_node_state(<br/>candidate,<br/>State::WaitingProofing)"]
       SetWaitingProof --> SetConnected
 
       SetConnected["send_rpc(<br/>NodeConnected)<br/><br/>(All communications now<br/>managed by elder like<br/>for other adults)"]
@@ -440,12 +440,12 @@
 
   <h2>Resource proof from a destination's point of view</h2>
   <div class=description>
-  <p>In the previous diagram, we ensured an incoming candidate would only reach the "WaitingProofingState" state once it was connected to our section and able to communicate with its elders. At this stage, the node would be a member of our peer_list.<br/>
-  This is maintained accross merge/split as for any adult node, so we are ready to resource proof any node in WaitingProofingState state<br/>
+  <p>In the previous diagram, we ensured an incoming candidate would only reach the "State::WaitingProofing" state once it was connected to our section and able to communicate with its elders. At this stage, the node would be a member of our peer_list.<br/>
+  This is maintained accross merge/split as for any adult node, so we are ready to resource proof any node in State::WaitingProofing state<br/>
   <br/>
   This leads us here: to the resource proof.<br/>
   We only process up to one resource proof at a time (i.e: we wait for the current resource proof to reach completion before scheduling a new one).<br/>
-  When we periodicaly decide to resource proof a node, we check if any node is ready for it:  WaitingProofingState state, and pick the best candidate (There may be mutliple after a merge).<br/>
+  When we periodicaly decide to resource proof a node, we check if any node is ready for it:  State::WaitingProofing state, and pick the best candidate (There may be mutliple after a merge).<br/>
   As an elder, I will send the candidate a ResourceProof RPC. This gives them the "problem to solve". As they solve it, they will send me ResourceProofResponses. These will be parts of the proof. On receiving valid parts, I must send a ResourceProofReceipt. Once they finally send me the last valid part, they passed their resource proof and I vote for ParsecOnline (essentially accepting them as a member of my section).<br/>
   At any time during this process, they may timeout (The whole process it taking longer than expected), in which case I will decided to reject them and vote for ParsecPurgeCandidate.<br/>
   This process ends once I reach consensus on either accepting the candidate (ParsecOnline) or refusing them (ParsecPurgeCandidate).<br/>
@@ -504,13 +504,13 @@
 
       ParsecConsensus -- ParsecPurgeCandidate<br/>for CANDIDATE --> RemoveNode
       ParsecConsensus -- ParsecOnline<br/>for CANDIDATE --> MakeOnline
-      MakeOnline["set_node_state(<br/>Candidate,<br/>OnlineState)<br/><br/>send_rpc(<br/>NodeApproval)"]
+      MakeOnline["set_node_state(<br/>Candidate,<br/>State::Online)<br/><br/>send_rpc(<br/>NodeApproval)"]
       RemoveNode["purge_node_info(<br/>candidate node)"]
       RemoveNode --> ReStartCheckResourceProofTimeout
       MakeOnline --> ReStartCheckResourceProofTimeout
 
       ParsecConsensus -- "ParsecCheckResourceProof" --> SetCandidate
-      SetCandidate["CANDIDATE=resource_proof_candidate()<br/><br/>(Best node with state=WaitingProofingState)"]
+      SetCandidate["CANDIDATE=resource_proof_candidate()<br/><br/>(Best node with NodeState=State::WaitingProofing)"]
       SetCandidate -->CheckRequestRP
 
       CheckRequestRP((Check))
@@ -578,13 +578,13 @@
   <div class=description>
   <p>In these diagrams, we are modeling the simple version of node ageing that we decided to implement for Fleming: Work units are incremented for all nodes in the section every time a timeout reaches consenus.<br/>
   Because a quorum of elders must have voted for this timeout, the malicious nodes can't arbitrarily speed up the ageing of their nodes.<br/>
-  Once a node has accumulated enough work units to be relocated, if no other node is currently in RelocatingAgeIncreaseState we set its state to RelocatingAgeIncreaseState. This node will then be actually relocated in StartRelocateSrc (see StartRelocateSrc).
+  Once a node has accumulated enough work units to be relocated, if no other node is currently in State::RelocatingAgeIncrease we set its state to State::RelocatingAgeIncrease. This node will then be actually relocated in StartRelocateSrc (see StartRelocateSrc).
   Because of this, we will generally only relocate one adult at a time (except in case of merge).
   </p>
   <button class="collapsible">WorkUnitTimeout</button>
   <div class="content">
     <p>In the context of Fleming, nodes (especially adults) aren't doing meaningful work such as handling data.<br/>
-    As a proxy, we use a time based metric to estimate how much work nodes have done (i.e: how long they remained in OnlineState and responsive).<br/>
+    As a proxy, we use a time based metric to estimate how much work nodes have done (i.e: how long they remained in State::Online and responsive).<br/>
     A local timeout wouldn't do here as it would allow malicious nodes to artificially age nodes in their sections faster. However, by reaching quorum on the fact a timeout happened, we ensure that at least one honest node has voted for the timeout.<br/>
     All nodes start the WorkUnitTimeout. On expiry, they vote for a WorkUnitIncrement in PARSEC and restart the timer.
     </p>
@@ -596,7 +596,7 @@
   </div>
   <button class="collapsible">nodes_relocating</button>
   <div class="content">
-    <p>The collection of nodes currently relocating: With node state RelocatingAgeIncreaseState only.<br/>
+    <p>The collection of nodes currently relocating: With node state State::RelocatingAgeIncrease only.<br/>
       It will most often be empty or have one element, unless a merge occurs in which case it may contain more than one element.
       Nodes coming back online, or needing an extra hop are not considered here.
     </p>
@@ -604,14 +604,14 @@
   <button class="collapsible">get_node_to_relocate</button>
   <div class="content">
     <p>This function will return the best candidate for relocation, if any.<br/>
-    First, it will only consider members of our peer_list that have the state: OnlineState<br/>
-    We use the condition with nodes_relocating() to limit the number of OnlineState nodes to relocate to one (except possibly in case of a merge).<br/>
+    First, it will only consider members of our peer_list that have the state: State::Online<br/>
+    We use the condition with nodes_relocating() to limit the number of State::Online nodes to relocate to one (except possibly in case of a merge).<br/>
     It can return for instance the node with the largest number of work units for which the number of work units is greater than 2^age.
     </p>
   </div>
   <button class="collapsible">set_node_state</button>
   <div class="content">
-    <p>This function mutates our peer_list to set the state (for example set RelocatingAgeIncreaseState for the node).<br/>
+    <p>This function mutates our peer_list to set the state (for example set State::RelocatingAgeIncrease for the node).<br/>
     inputs:<br/>
     - node<br/>
     - state<br/>
@@ -652,7 +652,7 @@
       AlreadyRelocating --"get_node_to_relocate().is_some()<br/>and<br/>nodes_relocating().is_empty()"--> SetRelocatingNodeState
       AlreadyRelocating --"Otherwise"--> LoopEnd
 
-      SetRelocatingNodeState["set_node_state(<br/>get_node_to_relocate(),<br/>RelocatingAgeIncreaseState)"]
+      SetRelocatingNodeState["set_node_state(<br/>get_node_to_relocate(),<br/>State::RelocatingAgeIncrease)"]
       SetRelocatingNodeState --> LoopEnd
   </div>
 
@@ -669,7 +669,7 @@
   The first ParsecExpectCandidateAcceptResponse consensused for a node will be the single valid relocation. We will sign the reolcation info through parsec and send to the node that is being relocated the RelocatedInfo they will need.<br/>
   At this point, we will purge their information since this node isn't a member of our section anymore.<br/>
   <br/>
-  Elders are not considered for relocation: Elder nodes in RelocatingAgeIncreaseState will eventually get demoted to adult (see StartMergeSplitAndChangeElders) at which point they may be relocated.<br/>
+  Elders are not considered for relocation: Elder nodes in State::RelocatingAgeIncrease will eventually get demoted to adult (see StartMergeSplitAndChangeElders) at which point they may be relocated.<br/>
   We prioritize relocating our Adults, then just relocated node that need another hop, then nodes comming back online.<br/>
   <br/>
   Also of note: We may be relocating multiple nodes (i.e because of merge, or node relocating to us or node comming back online), but we will only handle one at a time per CheckRelocateTimeOut event.<br/>
@@ -685,8 +685,8 @@
     This would help ensure that source and destination remain neighbours, even if the source splits.<br/>
     Using a target address instead of a section ensures we deliver the message even if the destination splits or merges.<br/>
     <br/>
-    There are 3 states the node may be: RelocatingAgeIncreaseState, RelocatingHopState, and RelocatingBackOnlineState.<br/>
-    Nodes will be selected in this order: RelocatingAgeIncreaseState, RelocatingHopState and then RelocatingBackOnlineState.<br/>
+    There are 3 states the node may be: State::RelocatingAgeIncrease, State::RelocatingHop, and State::RelocatingBackOnline.<br/>
+    Nodes will be selected in this order: State::RelocatingAgeIncrease, State::RelocatingHop and then State::RelocatingBackOnline.<br/>
     This ensures that we prioritize good node relocation.
     <br/>
     Note: It may be possible for a node to relocate to its sibling, and complete relocation after a merge occured.
@@ -700,7 +700,7 @@
   </div>
   <button class="collapsible">is_our_relocating_node</button>
   <div class="content">
-    <p>Is it a valid node that is not yet relocated (i.e State is RelocatingAgeIncreaseState, RelocatingHopState or RelocatingBackOnlineState).
+    <p>Is it a valid node that is not yet relocated (i.e State is State::RelocatingAgeIncrease, State::RelocatingHop or State::RelocatingBackOnline).
     </p>
   </div>
   <button class="collapsible">ExpectCandidateRefuseResponse/ExpectCandidateAcceptResponse</button>
@@ -778,7 +778,7 @@
       RefusedCandidate --> LoopEnd
 
       CheckIsAccept -- ParsecExpectCandidateAcceptResponse -->  VoteProvableRelocateInfo
-      VoteProvableRelocateInfo["set_node_state(<br/>node,<br/>RelocatedState{accept_info}<br/>(Vote for same relocation if merge/split<br/>so only one valid proof exists)<br/><br/>vote_for(<br/>ParsecRelocatedInfo{accept_info})"]
+      VoteProvableRelocateInfo["set_node_state(<br/>node,<br/>State::Relocated{accept_info}<br/>(Vote for same relocation if merge/split<br/>so only one valid proof exists)<br/><br/>vote_for(<br/>ParsecRelocatedInfo{accept_info})"]
       VoteProvableRelocateInfo --> LoopEnd
 
 
@@ -842,16 +842,16 @@
     <p>This function indicates that we need merging (as opposed to a merge triggered by our neighbour's needs).<br>
     The details for the trigger are still in slight flux, but here are some possibilities:
     <ul>
-      <li> The number of OnlineState adults plus elders is below our min section size of 10 elder plus 90 Adults
+      <li> The number of State::Online adults plus elders is below our min section size of 10 elder plus 90 Adults
       <li> A certain proportion of the adults in this section are marked Offline
     </ul>
     </p>
   </div>
   <button class="collapsible">check_elder_change</button>
   <div class="content">
-    <p>If any of our elders is not OnlineState, they must be demoted to a plain old adult.<br/>
+    <p>If any of our elders is not State::Online, they must be demoted to a plain old adult.<br/>
     If this happens, the oldest adult must be promoted to the elder state as a replacement.<br/>
-    Alternatively, if any of our OnlineState adult nodes is older than any of our elders, the youngest elder must be demoted and this adult must be promoted.<br/>
+    Alternatively, if any of our State::Online adult nodes is older than any of our elders, the youngest elder must be demoted and this adult must be promoted.<br/>
     Note that elder changes are only processed when the section is not in the middle of handling a merge.
     </p>
   </div>
@@ -861,7 +861,7 @@
     <p>This function indicates that we need splitting.<br>
     The details for the trigger are still in slight flux, but here are some possibilities:
     <ul>
-      <li> The number of OnlineState adults plus elders is above our min section size of 10 elder plus 90 Adults + buffer
+      <li> The number of State::Online adults plus elders is above our min section size of 10 elder plus 90 Adults + buffer
     </ul>
     </p>
   </div>
@@ -919,7 +919,7 @@
       style ProcessSplit fill:#f9f,stroke:#333,stroke-width:4px
       ProcessSplit --> CancelResourceProof
 
-      CheckElderChange --"check_elder_change()<br/><br/>Has elder changes: elder first ordered by:<br/>State==OnlineState then age then name."--> Concurrent0
+      CheckElderChange --"check_elder_change()<br/><br/>Has elder changes: elder first ordered by:<br/>NodeState==State::Online then age then name."--> Concurrent0
       Concurrent0{"Concurrent<br/>paths"}
       Concurrent0 --> ProcessElderChange
       Concurrent0 --> LoopEnd
@@ -1156,7 +1156,7 @@
 
   <h2>Handling members of our section going online or offline</h2>
   <div class=description>
-  <button class="collapsible">RelocatingBackOnlineState</button>
+  <button class="collapsible">State::RelocatingBackOnline</button>
   <div class="content">
     <p>A nodes state indicating that it is relocated with age reduced as it went offline.<br/>
     </p>
@@ -1186,11 +1186,11 @@
       Consensus((Consensus))
       WaitFor-- Parsec<br/>consensus --> Consensus
       Consensus--"ParsecOffline"-->SetOfflineState
-      SetOfflineState["set_node_state(<br/>node,<br/>OfflineState)"]
+      SetOfflineState["set_node_state(<br/>node,<br/>State::Offline)"]
       SetOfflineState -->LoopEnd
 
       Consensus -- "ParsecBackOnline" --> SetRelocating
-      SetRelocating["set_node_state(<br/>node,<br/>RelocatingBackOnlineState)"]
+      SetRelocating["set_node_state(<br/>node,<br/>State::RelocatingBackOnline)"]
 
       SetRelocating --> LoopEnd
       LoopEnd --> LoopStart
