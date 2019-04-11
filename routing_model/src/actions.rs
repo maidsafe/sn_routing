@@ -29,7 +29,6 @@ pub struct InnerAction {
     pub our_nodes: Vec<NodeChange>,
 
     pub shortest_prefix: Option<Section>,
-    pub node_to_relocate: Option<Node>,
     pub section_members: BTreeMap<SectionInfo, Vec<Node>>,
 }
 
@@ -46,7 +45,6 @@ impl InnerAction {
             our_nodes: Default::default(),
 
             shortest_prefix: Default::default(),
-            node_to_relocate: Default::default(),
             section_members: Default::default(),
         }
     }
@@ -69,6 +67,14 @@ impl InnerAction {
             })
             .collect_vec();
         self.extend_current_nodes(&node_states)
+    }
+
+    pub fn with_enough_work_to_relocate(mut self, nodes: &[Node]) -> Self {
+        self.our_current_nodes
+            .values_mut()
+            .filter(|state| nodes.contains(&state.node))
+            .for_each(|state| state.work_units_done = state.node.0.age);
+        self
     }
 
     pub fn with_section_members(mut self, section: SectionInfo, nodes: &[Node]) -> Self {
@@ -270,10 +276,15 @@ impl Action {
             return Candidate(relocating.node.0);
         }
 
-        match &inner.node_to_relocate {
-            Some(Node(val)) => Candidate(*val),
-            None => panic!("node_to_relocate not setup"),
+        if let Some(relocating) = inner
+            .our_current_nodes
+            .values()
+            .find(|state| state.work_units_done >= state.node.0.age)
+        {
+            return Candidate(relocating.node.0);
         }
+
+        panic!("work_units_done not setup for relocation")
     }
 
     pub fn is_elder_state(&self, candidate: Candidate) -> bool {
