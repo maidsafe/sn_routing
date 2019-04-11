@@ -256,16 +256,16 @@
   <div class="content">
     <p>We receive this RPC from a section that wants to relocate a node to our section.<br/>
     The node is not communicating with us yet, only once we sent ExpectCandidateAcceptResponse RPC to the originating section.<br/>
-    On receiving it, we vote for ParsecExpectCandidate to process it in the same order as other members of our section.<br/>
+    On receiving it, we vote for Parsec::ExpectCandidate to process it in the same order as other members of our section.<br/>
     It kickstarts the entire chain of events in this diagram.<br/>
-    Note that we could also see consensus on ParsecExpectCandidate before we ourselves voted for it in PARSEC, as long as enough members of our section did.
+    Note that we could also see consensus on Parsec::ExpectCandidate before we ourselves voted for it in PARSEC, as long as enough members of our section did.
     </p>
   </div>
   <button class="collapsible">waiting_proofing_or_hop</button>
   <div class="content">
     <p>We want to accept at most one incoming relocation at a time into our section.<br/>
     The waiting_proofing_or_hop function returns the list of nodes that we have yet to resource proof or relocate through a new hop, (States from State::WaitingCandidateInfo until it reaches State::Online  or State::Relocated).<br/>
-    When the output of this function is not empty and we reach consensus on ParsecExpectCandidate, we send a ExpectCandidateRefuseResponse RPC to the would-be-incoming-node so they can try another section or try again later.
+    When the output of this function is not empty and we reach consensus on Parsec::ExpectCandidate, we send a ExpectCandidateRefuseResponse RPC to the would-be-incoming-node so they can try another section or try again later.
     </p>
   </div>
   </div>
@@ -288,9 +288,9 @@
       RPC --ExpectCandidate--> VoteParsecExpectCandidate
 
       ParsecConsensus((Consensus))
-      ParsecConsensus --ParsecExpectCandidate--> Balanced
+      ParsecConsensus --Parsec::ExpectCandidate--> Balanced
 
-      VoteParsecExpectCandidate["vote_for(<br/>ParsecExpectCandidate)<br/>to handle the RPC consistently"]
+      VoteParsecExpectCandidate["vote_for(<br/>Parsec::ExpectCandidate)<br/>to handle the RPC consistently"]
       VoteParsecExpectCandidate --> LoopEnd
 
       Balanced(("Check"))
@@ -370,18 +370,18 @@
       WaitFor -- Parsec<br/>consensus--> ParsecConsensus
       ParsecConsensus((Consensus))
 
-      ParsecConsensus -- "ParsecCheckRelocatedNodeConnection" --> CleanCandidates
+      ParsecConsensus -- "Parsec::CheckRelocatedNodeConnection" --> CleanCandidates
       CleanCandidates["for candidate in both<br/>-waiting_node_connecting()<br/>-CANDIDATES:<br/><br/>purge_node_info(candidate)"]
       CleanCandidates --> ReStartCheckRelocatedNodeConnectionTimeout
       ReStartCheckRelocatedNodeConnectionTimeout["CANDIDATES=waiting_node_connecting()<br/><br/>schedule(<br/>CheckRelocatedNodeConnectionTimeout)"]
       ReStartCheckRelocatedNodeConnectionTimeout --> LoopEnd
 
 
-      ParsecConsensus -- "ParsecCandidateInfo<br/>and<br/>is_valid_waited_info(<br/>CandidateInfo,<br/>message_src)" --> SetCandidateInfo
+      ParsecConsensus -- "Parsec::CandidateInfo<br/>and<br/>is_valid_waited_info(<br/>CandidateInfo,<br/>message_src)" --> SetCandidateInfo
       SetCandidateInfo["update_node(<br/>CandidateInfo,<br/>NodeState=State::WaitingConnectionInfo)"]
       SetCandidateInfo --> LoopEnd
 
-      ParsecConsensus -- "ParsecCandidateConnected<br/>and<br/>is_valid_waited_connection(<br/>message_src)" --> Balanced
+      ParsecConsensus -- "Parsec::CandidateConnected<br/>and<br/>is_valid_waited_connection(<br/>message_src)" --> Balanced
       Balanced(("Check"))
       Balanced -- "shorter_prefix_section(<br/>).is_some()" --> RelocateToShorterPrefix
       RelocateToShorterPrefix["set_node_state(<br/>candidate,<br/>State::RelocatingHop)"]
@@ -404,7 +404,7 @@
       DiscardRPC --> LoopEnd
 
       CheckCandidateInfo -- "is_valid_waited_info(<br/>CandidateInfo)" --> VoteForCandidateInfo
-      VoteForCandidateInfo["vote_for(<br/>ParsecCandidateInfo)"]
+      VoteForCandidateInfo["vote_for(<br/>Parsec::CandidateInfo)"]
       VoteForCandidateInfo --> LoopEnd
 
       CheckCandidateInfo -- "is_valid_waited_connection(<br/>message_src)" --> SendConnectionInfoRequest
@@ -412,13 +412,13 @@
       SendConnectionInfoRequest --> LoopEnd
 
       RPC -- "ConnectionInfoResponse<br/>and<br/>is_valid_waited_connection(<br/>message_src)" --> ConnectCandidate
-      ConnectCandidate["connect_to_candidate(<br/>ConnectionInfoResponse info)<br/><br/>vote_for(<br/>ParsecCandidateConnected)"]
+      ConnectCandidate["connect_to_candidate(<br/>ConnectionInfoResponse info)<br/><br/>vote_for(<br/>Parsec::CandidateConnected)"]
       ConnectCandidate --> LoopEnd
 
       WaitFor --Event--> Event
       Event((Event))
 
-      VoteParsecCheckRelocatedNodeConnection["vote_for(<br/>ParsecCheckRelocatedNodeConnection)"]
+      VoteParsecCheckRelocatedNodeConnection["vote_for(<br/>Parsec::CheckRelocatedNodeConnection)"]
       Event -- CheckRelocatedNodeConnectionTimeout<br/>expire --> VoteParsecCheckRelocatedNodeConnection
       VoteParsecCheckRelocatedNodeConnection --> LoopEnd
       LoopEnd --> LoopStart
@@ -446,9 +446,9 @@
   This leads us here: to the resource proof.<br/>
   We only process up to one resource proof at a time (i.e: we wait for the current resource proof to reach completion before scheduling a new one).<br/>
   When we periodicaly decide to resource proof a node, we check if any node is ready for it:  State::WaitingProofing state, and pick the best candidate (There may be mutliple after a merge).<br/>
-  As an elder, I will send the candidate a ResourceProof RPC. This gives them the "problem to solve". As they solve it, they will send me ResourceProofResponses. These will be parts of the proof. On receiving valid parts, I must send a ResourceProofReceipt. Once they finally send me the last valid part, they passed their resource proof and I vote for ParsecOnline (essentially accepting them as a member of my section).<br/>
-  At any time during this process, they may timeout (The whole process it taking longer than expected), in which case I will decided to reject them and vote for ParsecPurgeCandidate.<br/>
-  This process ends once I reach consensus on either accepting the candidate (ParsecOnline) or refusing them (ParsecPurgeCandidate).<br/>
+  As an elder, I will send the candidate a ResourceProof RPC. This gives them the "problem to solve". As they solve it, they will send me ResourceProofResponses. These will be parts of the proof. On receiving valid parts, I must send a ResourceProofReceipt. Once they finally send me the last valid part, they passed their resource proof and I vote for Parsec::Online (essentially accepting them as a member of my section).<br/>
+  At any time during this process, they may timeout (The whole process it taking longer than expected), in which case I will decided to reject them and vote for Parsec::PurgeCandidate.<br/>
+  This process ends once I reach consensus on either accepting the candidate (Parsec::Online) or refusing them (Parsec::PurgeCandidate).<br/>
   It is possible that both reach the quorum consensus, in which case the second one will be discarded. It won't cause issues as consistency is the only property that matters here: if we accept someone who then went Offline, we will be able to detect they are Offline later with the standard Offline detection mechanism. But it is more likely that they took close to the time limit to complete their proof.
   </p>
   <button class="collapsible">CANDIDATE</button>
@@ -470,9 +470,9 @@
   It may also still be sent by a candidate we have rejected. It's OK to discard the RPC in these cases as it is no longer relevant.
   </p>
   </div>
-  <button class="collapsible">ParsecOnline<br/>ParsecPurgeCandidate</button>
+  <button class="collapsible">Parsec::Online<br/>Parsec::PurgeCandidate</button>
   <div class=content>
-    <p>The same node could be accepted by some nodes who would vote ParsecOnline, but also time out for some other nodes who would vote for ParsecPurgeCandidate.<br/>
+    <p>The same node could be accepted by some nodes who would vote Parsec::Online, but also time out for some other nodes who would vote for Parsec::PurgeCandidate.<br/>
     If it's the case, we only want to process the first of these two events and discard the other one.
     </p>
   </div>
@@ -498,18 +498,18 @@
 
       WaitFor -- Parsec<br/>consensus--> ParsecConsensus
       ParsecConsensus((Consensus))
-      ParsecConsensus --ParsecOnline<br/>ParsecPurgeCandidate<br/>otherwise--> DiscardParsec
+      ParsecConsensus --Parsec::Online<br/>Parsec::PurgeCandidate<br/>otherwise--> DiscardParsec
       DiscardParsec["Discard<br/>Parsec<br/>event"]
       DiscardParsec --> LoopEnd
 
-      ParsecConsensus -- ParsecPurgeCandidate<br/>for CANDIDATE --> RemoveNode
-      ParsecConsensus -- ParsecOnline<br/>for CANDIDATE --> MakeOnline
+      ParsecConsensus -- Parsec::PurgeCandidate<br/>for CANDIDATE --> RemoveNode
+      ParsecConsensus -- Parsec::Online<br/>for CANDIDATE --> MakeOnline
       MakeOnline["set_node_state(<br/>Candidate,<br/>State::Online)<br/><br/>send_rpc(<br/>NodeApproval)"]
       RemoveNode["purge_node_info(<br/>candidate node)"]
       RemoveNode --> ReStartCheckResourceProofTimeout
       MakeOnline --> ReStartCheckResourceProofTimeout
 
-      ParsecConsensus -- "ParsecCheckResourceProof" --> SetCandidate
+      ParsecConsensus -- "Parsec::CheckResourceProof" --> SetCandidate
       SetCandidate["CANDIDATE=resource_proof_candidate()<br/><br/>(Best node with NodeState=State::WaitingProofing)"]
       SetCandidate -->CheckRequestRP
 
@@ -529,7 +529,7 @@
       ProofResponse((Check))
       SendProofReceit["send_rpc(<br/>ResourceProofReceipt)<br/>for proof"]
       ProofResponse -- Valid Part --> SendProofReceit
-      VoteParsecOnline["vote_for(<br/>ParsecOnline)<br/><br/>VOTED_ONLINE=yes"]
+      VoteParsecOnline["vote_for(<br/>Parsec::Online)<br/><br/>VOTED_ONLINE=yes"]
       ProofResponse -- Valid End --> VoteParsecOnline
 
 
@@ -539,10 +539,10 @@
 
       WaitFor --Event--> Event
       Event((Event))
-      VoteParsecPurgeCandidate["vote_for(<br/>ParsecPurgeCandidate)"]
+      VoteParsecPurgeCandidate["vote_for(<br/>Parsec::PurgeCandidate)"]
       Event -- TimeoutAccept<br/>expire --> VoteParsecPurgeCandidate
 
-      VoteParsecCheckResourceProofTimeout["vote_for(<br/>ParsecCheckResourceProof)"]
+      VoteParsecCheckResourceProofTimeout["vote_for(<br/>Parsec::CheckResourceProof)"]
       Event -- CheckResourceProofTimeout<br/>expire --> VoteParsecCheckResourceProofTimeout
       VoteParsecCheckResourceProofTimeout --> LoopEnd
 
@@ -639,11 +639,11 @@
 
       Event((Event))
       Event -- WorkUnitTimeOut<br/>Trigger --> VoteParsecRelocationTrigger
-      VoteParsecRelocationTrigger["vote_for(WorkUnitIncrement)<br/>schedule(WorkUnitTimeOut)"]
+      VoteParsecRelocationTrigger["vote_for(Parsec::WorkUnitIncrement)<br/>schedule(WorkUnitTimeOut)"]
       VoteParsecRelocationTrigger --> LoopEnd
 
       ParsecConsensus((Consensus))
-      ParsecConsensus -- WorkUnitIncrement consensused --> IncrementWorkUnit
+      ParsecConsensus -- Parsec::WorkUnitIncrement --> IncrementWorkUnit
       IncrementWorkUnit["increment_nodes_work_units()"]
       IncrementWorkUnit-->AlreadyRelocating
       AlreadyRelocating(("Check?"))
@@ -666,7 +666,7 @@
   Or that RPC or the response is lost, then we will retry later.<br/>
   <br/>
   When we receive ExpectCandidateAcceptResponse or ExpectCandidateRefuseResponse RPC, we vote for it in PARSEC, regardless of the order of operations, so it will be consensused.<br/>
-  The first ParsecExpectCandidateAcceptResponse consensused for a node will be the single valid relocation. We will sign the reolcation info through parsec and send to the node that is being relocated the RelocatedInfo they will need.<br/>
+  The first Parsec::ExpectCandidateAcceptResponse consensused for a node will be the single valid relocation. We will sign the reolcation info through parsec and send to the node that is being relocated the RelocatedInfo they will need.<br/>
   At this point, we will purge their information since this node isn't a member of our section anymore.<br/>
   <br/>
   Elders are not considered for relocation: Elder nodes in State::RelocatingAgeIncrease will eventually get demoted to adult (see StartMergeSplitAndChangeElders) at which point they may be relocated.<br/>
@@ -716,7 +716,7 @@
     This RPC contains the ExpectCandidateAcceptResponse info, and the signatures prooving the source section received it and decided that particular response is the one to relocate to.<br/>
     In case we re-sent the ExpectCandidate RPC, we may receive more than one ExpectCandidateAcceptResponse.<br/>
     In this case we must ensure that no single node could act on that other ExpectCandidateAcceptResponse and be accepted by the destination. this means the signatures must be provided only once the ExpectCandidateAcceptResponse is agreed.<br/>
-    RelocatedInfo will contain the ExpectCandidateAcceptResponse info and the quorum of signatures gathered from PARSEC vote on ParsecRelocatedInfo.
+    RelocatedInfo will contain the ExpectCandidateAcceptResponse info and the quorum of signatures gathered from PARSEC vote on Parsec::RelocatedInfo.
     </p>
   </div>
   </div>
@@ -739,19 +739,19 @@
 
       Event((Event))
       Event -- CheckRelocateTimeOut<br/>Trigger --> VoteParsecCheckRelocate
-      VoteParsecCheckRelocate["vote_for(<br/>ParsecCheckRelocate)<br/>schedule(<br/>CheckRelocateTimeOut)"]
+      VoteParsecCheckRelocate["vote_for(<br/>Parsec::CheckRelocate)<br/>schedule(<br/>CheckRelocateTimeOut)"]
       VoteParsecCheckRelocate --> LoopEnd
 
       RPC((RPC))
       RPC --ExpectCandidateAcceptResponse--> VoteParsecExpectCandidateAcceptResponse
       RPC --ExpectCandidateRefuseResponse--> VoteParsecExpectCandidateRefuseResponse
-      VoteParsecExpectCandidateAcceptResponse["vote_for(<br/>ParsecExpectCandidateAcceptResponse)"]
+      VoteParsecExpectCandidateAcceptResponse["vote_for(<br/>Parsec::ExpectCandidateAcceptResponse)"]
       VoteParsecExpectCandidateAcceptResponse --> LoopEnd
-      VoteParsecExpectCandidateRefuseResponse["vote_for(<br/>ParsecExpectCandidateRefuseResponse))"]
+      VoteParsecExpectCandidateRefuseResponse["vote_for(<br/>Parsec::ExpectCandidateRefuseResponse))"]
       VoteParsecExpectCandidateRefuseResponse --> LoopEnd
 
       ParsecConsensus((Consensus))
-      ParsecConsensus -- ParsecCheckRelocate<br/>consensused --> CheckNeedRelocate
+      ParsecConsensus -- Parsec::CheckRelocate --> CheckNeedRelocate
       CheckNeedRelocate((Check?))
       CheckNeedRelocate--"Otherwise" -->CheckNeedResend
 
@@ -769,16 +769,16 @@
       AllowResendCandidates --> LoopEnd
 
 
-      ParsecConsensus --"ParsecExpectCandidateAcceptResponse<br/>ParsecExpectCandidateRefuseResponse" --> CheckIsOurs
+      ParsecConsensus --"Parsec::ExpectCandidateAcceptResponse<br/>Parsec::ExpectCandidateRefuseResponse" --> CheckIsOurs
       CheckIsOurs((Check))
       CheckIsOurs -- "is_our_relocating_node(node)" --> CheckIsAccept
       CheckIsAccept((Check))
-      CheckIsAccept -- ParsecExpectCandidateRefuseResponse -->  RefusedCandidate
+      CheckIsAccept -- Parsec::ExpectCandidateRefuseResponse -->  RefusedCandidate
       RefusedCandidate["ALREADY_RELOCATING<br/>.remove(node)"]
       RefusedCandidate --> LoopEnd
 
-      CheckIsAccept -- ParsecExpectCandidateAcceptResponse -->  VoteProvableRelocateInfo
-      VoteProvableRelocateInfo["set_node_state(<br/>node,<br/>State::Relocated{accept_info}<br/>(Vote for same relocation if merge/split<br/>so only one valid proof exists)<br/><br/>vote_for(<br/>ParsecRelocatedInfo{accept_info})"]
+      CheckIsAccept -- Parsec::ExpectCandidateAcceptResponse -->  VoteProvableRelocateInfo
+      VoteProvableRelocateInfo["set_node_state(<br/>node,<br/>State::Relocated{accept_info}<br/>(Vote for same relocation if merge/split<br/>so only one valid proof exists)<br/><br/>vote_for(<br/>Parsec::RelocatedInfo{accept_info})"]
       VoteProvableRelocateInfo --> LoopEnd
 
 
@@ -786,7 +786,7 @@
       DiscardVote[Discard<br/>Vote]
       DiscardVote --> LoopEnd
 
-      ParsecConsensus --"ParsecRelocatedInfo"--> SendProvableRelocateInfo
+      ParsecConsensus --"Parsec::RelocatedInfo"--> SendProvableRelocateInfo
       SendProvableRelocateInfo["send_rpc(RelocatedInfo)<br/>to node<br/><br/>Node may be already gone"]
       SendProvableRelocateInfo-->PurgeNodeInfos
       PurgeNodeInfos["purge_node_info(<br/>node)"]
@@ -814,12 +814,12 @@
     In this flow, we handle both situations:<br>
     <ul>
       <li> Our neighbour triggers the merge and we receive their Merge RPC.<br>
-           We then vote for ParsecNeighbourMerge.
+           We then vote for Parsec::NeighbourMerge.
       <li> We trigger the merge ourselves (see ProcessMerge flow)
     </ul>
     </p>
   </div>
-  <button class="collapsible">ParsecNeighbourMerge</button>
+  <button class="collapsible">Parsec::NeighbourMerge</button>
   <div class="content">
     <p>We vote for this Parsec event on receiving a Merge RPC from our neighbour section.<br>
     It contains the information about them that we need for merging. When this PARSEC event reaches consensus in PARSEC, we store that information by calling store_merge_infos.
@@ -881,23 +881,23 @@
       WaitFor -- Event --> Event
       Event((Event))
       Event-- CheckElder<br/>Timeout--> VoteCheckElderTimeout
-      VoteCheckElderTimeout["vote_for(<br/>ParsecCheckElderTimeout)"]
+      VoteCheckElderTimeout["vote_for(<br/>Parsec::CheckElderTimeout)"]
       VoteCheckElderTimeout--> LoopEnd
 
       RPC((RPC))
       WaitFor -- RPC --> RPC
       RPC --Merge--> VoteParsecNeighbourMerge
-      VoteParsecNeighbourMerge["vote_for(<br/>ParsecNeighbourMerge)"]
+      VoteParsecNeighbourMerge["vote_for(<br/>Parsec::NeighbourMerge)"]
       VoteParsecNeighbourMerge --> LoopEnd
 
       Consensus((Consensus))
       WaitFor-- Parsec<br/>consensus --> Consensus
 
-      Consensus -- "ParsecNeighbourMerge" --> SetNeighbourMerge
-      SetNeighbourMerge["store_merge_infos(<br/>ParsecNeighbourMerge info)"]
+      Consensus -- "Parsec::NeighbourMerge" --> SetNeighbourMerge
+      SetNeighbourMerge["store_merge_infos(<br/>Parsec::NeighbourMerge info)"]
       SetNeighbourMerge-->LoopEnd
 
-      Consensus--"ParsecCheckElderTimeout"-->CheckMergeNeeded
+      Consensus--"Parsec::CheckElderTimeout"-->CheckMergeNeeded
       CheckMergeNeeded(("Check"))
 
       CheckMergeNeeded--"Otherwise"-->CheckElderChange
@@ -951,7 +951,7 @@
 
   <h2>Process Adult/Elder promotion and demotion needed from last check</h2>
   <div class=description>
-  <p>Vote for Add for new elders, Remove for no longer elders and NewSectionInfo<br/>
+  <p>Vote for Parsec::Add for new elders,Parsec:: Remove for no longer elders and Parsec::NewSectionInfo<br/>
      This handles any change, it does not care whether one or all elders are changed, this is decided by the calling function.
  </p>
   <button class="collapsible">WAITED_VOTES</button>
@@ -991,7 +991,7 @@
       style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
 
       ProcessElderChange -->  MarkAndVoteSwapNewElder
-      MarkAndVoteSwapNewElder["vote_for(Add) for new elders<br/>vote_for(Remove) for now adults nodes<br/>vote_for(NewSectionInfo)<br/><br/>WAITED_VOTES.insert(all votes)"]
+      MarkAndVoteSwapNewElder["vote_for(Parsec::Add) for new elders<br/>vote_for(Parsec::Remove) for now adults nodes<br/>vote_for(Parsec::NewSectionInfo)<br/><br/>WAITED_VOTES.insert(all votes)"]
       MarkAndVoteSwapNewElder --> LoopStart
 
       WaitFor(("Wait for 7:"))
@@ -1015,7 +1015,7 @@
 
   <h2>Handling merges</h2>
   <div class=description>
-  <p>Send Merge RPC, and take over handling any ParsecNeighbourMerge.<br/>
+  <p>Send Merge RPC, and take over handling any Parsec::NeighbourMerge.<br/>
      Complete when one merge has completed, and a NewSectionInfo is consensused.<br/>
      If multi-stage merges are required, they will require calling this function again<br/>
      While in this sanctuary, our SectionInfo shall not be disturbed by elder changes.
@@ -1024,10 +1024,10 @@
   <button class="collapsible">Merge RPC</button>
   <div class="content">
     <p>We send it to our sibling section (or sections with longer prefix) on entering ProcessMerge.<br>
-    We send Merge irrespective of whether we are the section that triggered the merge. This allows all sections involved in the merge to receive a Merge RPC, which is how ParsecNeighbourMerge gets voted for.
+    We send Merge irrespective of whether we are the section that triggered the merge. This allows all sections involved in the merge to receive a Merge RPC, which is how Parsec::NeighbourMerge gets voted for.
     </p>
   </div>
-  <button class="collapsible">ParsecNeighbourMerge</button>
+  <button class="collapsible">Parsec::NeighbourMerge</button>
   <div class="content">
     <p>This PARSEC event indicates that our neighbour section is ready to merge with us.<br>
     It is voted for in the StartMergeSplitAndChangeElders flow, on receipt of a Merge RPC.<br>
@@ -1049,15 +1049,15 @@
     <p>Remove the stored sibling's merge info and return the NewSectionInfo.<br/>
     </p>
   </div>
-  <button class="collapsible">NewSectionInfo</button>
+  <button class="collapsible">Parsec::NewSectionInfo</button>
   <div class="content">
-    <p>Once we are ready to merge, have received our neighbour's SectionInfo through their Merge RPC, and subsequently reached consensus on the ParsecNeighbourInfo we voted for, we have all the information needed to decide on the membership of our post-merge section.<br>
-    This is the NewSectionInfo.
+    <p>Once we are ready to merge, have received our neighbour's SectionInfo through their Merge RPC, and subsequently reached consensus on the Parsec::NeighbourInfo we voted for, we have all the information needed to decide on the membership of our post-merge section.<br>
+    This is the Parsec::NewSectionInfo.
     </p>
   </div>
   <button class="collapsible">complete_merge</button>
   <div class="content">
-    <p>With the NewSectionInfo in hands, completing the merge process consists on joining the newly formed section and leaving the old one behind.
+    <p>With the Parsec::NewSectionInfo in hands, completing the merge process consists on joining the newly formed section and leaving the old one behind.
     </p>
   </div>
   </div>
@@ -1084,13 +1084,13 @@
       MarkNewElderAdults["update_elder_status(new_section_info)"]
       MarkNewElderAdults--> EndRoutine
 
-      Consensus -- "ParsecNeighbourMerge" --> SetNeighbourMerge
-      SetNeighbourMerge["store_merge_infos(ParsecNeighbourMerge info)"]
+      Consensus -- "Parsec::NeighbourMerge" --> SetNeighbourMerge
+      SetNeighbourMerge["store_merge_infos(Parsec::NeighbourMerge info)"]
       SetNeighbourMerge --> CheckMerge
 
       CheckMerge((Check))
       CheckMerge -- "has_sibling_merge_info()" --> VotForNewSectionInfo
-      VotForNewSectionInfo["merge_sibling_info_to_new_section()<br/>vote_for(NewSectionInfo)"]
+      VotForNewSectionInfo["merge_sibling_info_to_new_section()<br/>vote_for(Parsec::NewSectionInfo)"]
       VotForNewSectionInfo--> LoopEnd
 
       CheckMerge -- "Otherwise" --> LoopEnd
@@ -1100,7 +1100,7 @@
 
   <h2>Handling splits</h2>
   <div class=description>
-  <p>Vote for the two NewSectionInfo to gather required signatures<br/>
+  <p>Vote for the two Parsec::NewSectionInfo to gather required signatures<br/>
  </p>
   <button class="collapsible">WAITED_VOTES</button>
   <div class="content">
@@ -1129,7 +1129,7 @@
       style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
 
       ProcessElderChange -->  VoteNewSections
-      VoteNewSections["vote_for(NewSectionInfo) for the two new sections<br/><br/>WAITED_VOTES.insert(all votes)"]
+      VoteNewSections["vote_for(Parsec::NewSectionInfo) for the two new sections<br/><br/>WAITED_VOTES.insert(all votes)"]
       VoteNewSections --> LoopStart
 
       WaitFor(("Wait for 9:"))
@@ -1176,20 +1176,20 @@
       WaitFor --event--> LocalEvent
 
       LocalEvent -- Node detected offline --> VoteNodeOffline
-      VoteNodeOffline["vote_for(<br/>ParsecOffline)"]
+      VoteNodeOffline["vote_for(<br/>Parsec::Offline)"]
       VoteNodeOffline --> LoopEnd
 
       LocalEvent -- Node detected back online --> VoteNodeBackOnline
-      VoteNodeBackOnline["vote_for(<br/>ParsecBackOnline)"]
+      VoteNodeBackOnline["vote_for(<br/>Parsec::BackOnline)"]
       VoteNodeBackOnline --> LoopEnd
 
       Consensus((Consensus))
       WaitFor-- Parsec<br/>consensus --> Consensus
-      Consensus--"ParsecOffline"-->SetOfflineState
+      Consensus--"Parsec::Offline"-->SetOfflineState
       SetOfflineState["set_node_state(<br/>node,<br/>State::Offline)"]
       SetOfflineState -->LoopEnd
 
-      Consensus -- "ParsecBackOnline" --> SetRelocating
+      Consensus -- "Parsec::BackOnline" --> SetRelocating
       SetRelocating["set_node_state(<br/>node,<br/>State::RelocatingBackOnline)"]
 
       SetRelocating --> LoopEnd
