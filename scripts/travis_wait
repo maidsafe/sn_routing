@@ -272,10 +272,10 @@ main() {
   # http://mywiki.wooledge.org/ProcessManagement
   if [[ "${append}" -ne 1 ]]; then
     is_writeable_empty "${file_log}" || show_error "${file_log} is not writeable or not empty."
-    ${cmd_slowpoke} > "${file_log}" & pid_slowpoke=$!
+    ${cmd_slowpoke} > >(tee "${file_log}") 2>&1 & pid_slowpoke=$!
   else
     is_writeable "${file_log}" || show_error "${file_log} is not writeable."
-    ${cmd_slowpoke} >> "${file_log}" & pid_slowpoke=$!
+    ${cmd_slowpoke} > >(tee -a "${file_log}") 2>&1 & pid_slowpoke=$!
   fi
 
 
@@ -292,7 +292,7 @@ main() {
       "Used disk space: $(du -sh .)"
 
     # Output last line from $file_log
-    tail -1 "${file_log}"
+    # tail -1 "${file_log}"
 
     # $time_limit
     if [[ "${time_limit}" -ne 0 ]] && [[ "${time_passed}" -ge "${time_limit}" ]]; then
