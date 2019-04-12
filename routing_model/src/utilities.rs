@@ -18,18 +18,34 @@ pub struct Attributes {
     pub name: i32,
 }
 
+impl Attributes {
+    pub fn name(self) -> Name {
+        Name(self.name)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Candidate(pub Attributes);
+
+impl Candidate {
+    pub fn name(self) -> Name {
+        self.0.name()
+    }
+}
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Node(pub Attributes);
 
+impl Node {
+    pub fn name(self) -> Name {
+        self.0.name()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum NodeChange {
-    AddResourceProofing(Node),
-    Online(Node),
-    Offline(Node),
-    Relocating(Node),
+    AddWithState(Node, State),
+    State(Node, State),
     Remove(Node),
     Elder(Node, bool),
 }
@@ -37,10 +53,8 @@ pub enum NodeChange {
 impl NodeChange {
     fn node(&self) -> Node {
         match &self {
-            NodeChange::AddResourceProofing(node)
-            | NodeChange::Online(node)
-            | NodeChange::Offline(node)
-            | NodeChange::Relocating(node)
+            NodeChange::AddWithState(node, _)
+            | NodeChange::State(node, _)
             | NodeChange::Remove(node)
             | NodeChange::Elder(node, _) => *node,
         }
@@ -48,13 +62,13 @@ impl NodeChange {
 
     fn relocating(&self) -> bool {
         match &self {
-            NodeChange::Relocating(_) => true,
+            NodeChange::State(_, State::RelocatingAgeIncrease) => true,
             _ => false,
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord)]
 pub enum State {
     // Online ordered first Online node are choosen for elder
     Online,
@@ -67,16 +81,16 @@ pub enum State {
 }
 
 impl State {
-    pub fn is_relocating(&self) -> bool {
-        *self == State::RelocatingAgeIncrease
+    pub fn is_relocating(self) -> bool {
+        self == State::RelocatingAgeIncrease
     }
 
-    pub fn is_resource_proofing(&self) -> bool {
-        *self == State::WaitingProofing
+    pub fn is_resource_proofing(self) -> bool {
+        self == State::WaitingProofing
     }
 
-    pub fn is_offline(&self) -> bool {
-        *self == State::Offline
+    pub fn is_offline(self) -> bool {
+        self == State::Offline
     }
 }
 

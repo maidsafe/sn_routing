@@ -84,9 +84,9 @@ impl InnerAction {
 
     fn add_node(&mut self, node_state: NodeState) {
         self.our_nodes
-            .push(NodeChange::AddResourceProofing(node_state.node));
+            .push(NodeChange::AddWithState(node_state.node, node_state.state));
         self.our_current_nodes
-            .insert(Name(node_state.node.0.name), node_state);
+            .insert(node_state.node.name(), node_state);
     }
 
     fn remove_node(&mut self, node: Node) {
@@ -94,25 +94,11 @@ impl InnerAction {
         self.our_current_nodes.remove(&Name(node.0.name));
     }
 
-    fn set_relocating_state(&mut self, name: Name) {
+    fn set_node_state(&mut self, name: Name, state: State) {
         let node = &mut self.our_current_nodes.get_mut(&name).unwrap();
 
-        node.state = State::RelocatingAgeIncrease;
-        self.our_nodes.push(NodeChange::Relocating(node.node));
-    }
-
-    fn set_online_state(&mut self, name: Name) {
-        let node = &mut self.our_current_nodes.get_mut(&name).unwrap();
-
-        node.state = State::Online;
-        self.our_nodes.push(NodeChange::Online(node.node));
-    }
-
-    fn set_offline_state(&mut self, name: Name) {
-        let node = &mut self.our_current_nodes.get_mut(&name).unwrap();
-        node.state = State::Offline;
-        // Note: for test validation only
-        self.our_nodes.push(NodeChange::Offline(node.node));
+        node.state = state;
+        self.our_nodes.push(NodeChange::State(node.node, state));
     }
 
     fn set_elder_state(&mut self, name: Name, value: bool) {
@@ -170,15 +156,21 @@ impl Action {
     }
 
     pub fn set_candidate_online_state(&self, candidate: Candidate) {
-        self.0.borrow_mut().set_online_state(Name(candidate.0.name));
+        self.0
+            .borrow_mut()
+            .set_node_state(candidate.name(), State::Online);
     }
 
     pub fn set_node_offline_state(&self, node: Node) {
-        self.0.borrow_mut().set_offline_state(Name(node.0.name));
+        self.0
+            .borrow_mut()
+            .set_node_state(node.name(), State::Offline);
     }
 
     pub fn set_node_back_online_state(&self, node: Node) {
-        self.0.borrow_mut().set_relocating_state(Name(node.0.name));
+        self.0
+            .borrow_mut()
+            .set_node_state(node.name(), State::RelocatingAgeIncrease);
     }
 
     pub fn remove_node(&self, candidate: Candidate) {
@@ -311,7 +303,7 @@ impl Action {
     pub fn set_candidate_relocating_state(&self, candidate: Candidate) {
         self.0
             .borrow_mut()
-            .set_relocating_state(Name(candidate.0.name));
+            .set_node_state(candidate.name(), State::RelocatingAgeIncrease);
     }
 
     pub fn send_relocate_response_rpc(&self, candidate: Candidate) {
