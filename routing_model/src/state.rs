@@ -14,10 +14,15 @@ use crate::flows_node::*;
 use crate::flows_src::*;
 use crate::utilities::*;
 
+#[derive(Debug, PartialEq, Clone)]
+pub struct ProcessElderChangeState {
+    pub wait_votes: Vec<ParsecVote>,
+    pub change_elder: ChangeElder,
+}
+
 #[derive(Debug, PartialEq, Default, Clone)]
 pub struct CheckAndProcessElderChangeState {
-    pub wait_votes: Vec<ParsecVote>,
-    pub change_elder: Option<ChangeElder>,
+    pub sub_routine_process_elder_change: Option<ProcessElderChangeState>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -68,6 +73,16 @@ impl MemberState {
 
         if let Some(next) = self.as_check_and_process_elder_change().try_next(event) {
             return Some(next);
+        }
+
+        if self
+            .check_and_process_elder_change_routine
+            .sub_routine_process_elder_change
+            .is_some()
+        {
+            if let Some(next) = self.as_process_elder_change().try_next(event) {
+                return Some(next);
+            }
         }
 
         if let Some(next) = self.as_check_online_offline().try_next(event) {
@@ -128,6 +143,10 @@ impl MemberState {
         StartRelocateSrc(self.clone())
     }
 
+    pub fn as_process_elder_change(&self) -> ProcessElderChange {
+        ProcessElderChange(self.clone())
+    }
+
     pub fn failure_event(&self, event: Event) -> Self {
         Self {
             failure: Some(event),
@@ -143,6 +162,19 @@ impl MemberState {
             dst_routine: DstRoutineState {
                 sub_routine_accept_as_candidate,
                 ..self.dst_routine.clone()
+            },
+            ..self.clone()
+        }
+    }
+
+    pub fn with_check_and_process_elder_change_sub_routine_process_elder_change(
+        &self,
+        sub_routine_process_elder_change: Option<ProcessElderChangeState>,
+    ) -> Self {
+        Self {
+            check_and_process_elder_change_routine: CheckAndProcessElderChangeState {
+                sub_routine_process_elder_change,
+                ..self.check_and_process_elder_change_routine.clone()
             },
             ..self.clone()
         }
