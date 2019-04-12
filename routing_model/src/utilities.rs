@@ -69,11 +69,19 @@ impl NodeChange {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord)]
+pub struct RelocatedInfo {
+    pub candidate: Candidate,
+    pub section_info: SectionInfo,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord)]
 pub enum State {
     // Online ordered first Online node are choosen for elder
     Online,
     // Relcating
     RelocatingAnyReason,
+    // Complete relocation, only waiting for info to be processed
+    Relocated(RelocatedInfo),
     // Not a full adult: still wait proofing
     WaitingProofing,
     // When a node that was previous online lost connection
@@ -278,6 +286,7 @@ pub enum ParsecVote {
     CheckRelocate,
     RefuseCandidate(Candidate),
     RelocateResponse(Candidate, SectionInfo),
+    RelocatedInfo(RelocatedInfo),
 
     CheckElder,
 
@@ -303,6 +312,7 @@ impl ParsecVote {
             | ParsecVote::NewSectionInfo(_)
             | ParsecVote::WorkUnitIncrement
             | ParsecVote::CheckRelocate
+            | ParsecVote::RelocatedInfo(_)
             | ParsecVote::CheckElder
             | ParsecVote::Offline(_)
             | ParsecVote::BackOnline(_) => None,

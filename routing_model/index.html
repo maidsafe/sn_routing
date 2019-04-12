@@ -768,11 +768,11 @@
       CheckIsOurs -- "is_our_relocating_node(node)" --> CheckIsAccept
       CheckIsAccept((Check))
       CheckIsAccept -- Parsec::ExpectCandidateRefuseResponse -->  RefusedCandidate
-      RefusedCandidate["ALREADY_RELOCATING<br/>.remove(node)"]
+      RefusedCandidate["ALREADY_RELOCATING<br/>.remove(node)<br/><br/>(allow resend)"]
       RefusedCandidate --> LoopEnd
 
       CheckIsAccept -- Parsec::ExpectCandidateAcceptResponse -->  VoteProvableRelocateInfo
-      VoteProvableRelocateInfo["set_node_state(<br/>node,<br/>State::Relocated{accept_info}<br/>(Vote for same relocation if merge/split<br/>so only one valid proof exists)<br/><br/>vote_for(<br/>Parsec::RelocatedInfo{accept_info})"]
+      VoteProvableRelocateInfo["set_node_state(<br/>node,<br/>State::Relocated{accept_info}<br/>(Vote for same relocation if merge/split<br/>so only one valid proof exists)<br/><br/>vote_for(<br/>Parsec::RelocatedInfo{accept_info})<br/><br/>(set relocated and prepare info)"]
       VoteProvableRelocateInfo --> LoopEnd
 
 

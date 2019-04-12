@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::state::{MemberState, StartRelocateSrcState};
-use crate::utilities::{Candidate, Event, LocalEvent, ParsecVote, Rpc, SectionInfo};
+use crate::utilities::{Candidate, Event, LocalEvent, ParsecVote, RelocatedInfo, Rpc, SectionInfo};
 
 #[derive(Debug, PartialEq, Default, Clone)]
 pub struct TopLevelSrc(pub MemberState);
@@ -123,6 +123,10 @@ impl StartRelocateSrc {
             ParsecVote::RefuseCandidate(candidate) | ParsecVote::RelocateResponse(candidate, _) => {
                 Some(self.check_is_our_relocating_node(vote, candidate))
             }
+            ParsecVote::RelocatedInfo(info) => Some(
+                self.send_candidate_relocated_info(info)
+                    .purge_node_info(info.candidate),
+            ),
             // Delegate to other event loops
             _ => None,
         }
@@ -170,7 +174,7 @@ impl StartRelocateSrc {
             match vote {
                 ParsecVote::RefuseCandidate(candidate) => self.allow_resend(candidate),
                 ParsecVote::RelocateResponse(candidate, section) => {
-                    self.remove_node(candidate, section)
+                    self.set_relocated_and_prepare_info(candidate, section)
                 }
                 _ => panic!("Unepected vote"),
             }
@@ -188,7 +192,21 @@ impl StartRelocateSrc {
         state
     }
 
-    fn set_relocated(&self, _candidate: Candidate, _section: SectionInfo) -> Self {
+    fn set_relocated_and_prepare_info(
+        &self,
+        candidate: Candidate,
+        section_info: SectionInfo,
+    ) -> Self {
+        let relocated_info = RelocatedInfo {
+            candidate,
+            section_info,
+        };
+        self.0
+            .action
+            .set_candidate_relocated_state(candidate, relocated_info);
+        self.0
+            .action
+            .vote_parsec(ParsecVote::RelocatedInfo(relocated_info));
         self.clone()
     }
 
@@ -209,10 +227,14 @@ impl StartRelocateSrc {
         self.clone()
     }
 
-    fn remove_node(&self, candidate: Candidate, section: SectionInfo) -> Self {
+    fn send_candidate_relocated_info(&self, info: RelocatedInfo) -> Self {
         self.0
             .action
-            .send_candidate_relocated_info(candidate, section);
+            .send_candidate_relocated_info(info.candidate, info.section_info);
+        self.clone()
+    }
+
+    fn purge_node_info(&self, candidate: Candidate) -> Self {
         self.0.action.remove_node(candidate);
         self.clone()
     }
