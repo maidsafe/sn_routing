@@ -170,7 +170,7 @@ impl Action {
     pub fn set_node_back_online_state(&self, node: Node) {
         self.0
             .borrow_mut()
-            .set_node_state(node.name(), State::RelocatingAgeIncrease);
+            .set_node_state(node.name(), State::RelocatingAnyReason);
     }
 
     pub fn remove_node(&self, candidate: Candidate) {
@@ -303,7 +303,7 @@ impl Action {
     pub fn set_candidate_relocating_state(&self, candidate: Candidate) {
         self.0
             .borrow_mut()
-            .set_node_state(candidate.name(), State::RelocatingAgeIncrease);
+            .set_node_state(candidate.name(), State::RelocatingAnyReason);
     }
 
     pub fn send_relocate_response_rpc(&self, candidate: Candidate) {
