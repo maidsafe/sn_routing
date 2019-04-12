@@ -6,16 +6,16 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::state::{AcceptAsCandidateState, CheckAndProcessElderChangeState, State};
+use crate::state::{AcceptAsCandidateState, CheckAndProcessElderChangeState, MemberState};
 use crate::utilities::{
     Candidate, ChangeElder, Event, LocalEvent, Node, ParsecVote, Proof, Rpc, Section,
 };
 
 #[derive(Debug, PartialEq, Default, Clone)]
-pub struct TopLevelDst(pub State);
+pub struct TopLevelDst(pub MemberState);
 
 impl TopLevelDst {
-    pub fn try_next(&self, event: Event) -> Option<State> {
+    pub fn try_next(&self, event: Event) -> Option<MemberState> {
         match event {
             Event::Rpc(rpc) => self.try_rpc(rpc),
             Event::ParsecConsensus(vote) => self.try_consensus(vote),
@@ -102,7 +102,7 @@ impl TopLevelDst {
 }
 
 #[derive(Debug, PartialEq, Default, Clone)]
-pub struct AcceptAsCandidate(pub State);
+pub struct AcceptAsCandidate(pub MemberState);
 
 // AcceptAsCandidate Sub Routine
 impl AcceptAsCandidate {
@@ -123,7 +123,7 @@ impl AcceptAsCandidate {
             .as_accept_as_candidate()
     }
 
-    pub fn try_next(&self, event: Event) -> Option<State> {
+    pub fn try_next(&self, event: Event) -> Option<MemberState> {
         match event {
             Event::Rpc(Rpc::CandidateInfo {
                 candidate, valid, ..
@@ -257,7 +257,7 @@ impl AcceptAsCandidate {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct CheckAndProcessElderChange(pub State);
+pub struct CheckAndProcessElderChange(pub MemberState);
 
 // CheckAndProcessElderChange Sub Routine
 impl CheckAndProcessElderChange {
@@ -265,7 +265,7 @@ impl CheckAndProcessElderChange {
         self.start_check_elder_timeout()
     }
 
-    pub fn try_next(&self, event: Event) -> Option<State> {
+    pub fn try_next(&self, event: Event) -> Option<MemberState> {
         match event {
             Event::ParsecConsensus(vote) => self.try_consensus(&vote),
             Event::LocalEvent(LocalEvent::TimeoutCheckElder) => {
@@ -346,10 +346,10 @@ impl CheckAndProcessElderChange {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct CheckOnlineOffline(pub State);
+pub struct CheckOnlineOffline(pub MemberState);
 
 impl CheckOnlineOffline {
-    pub fn try_next(&self, event: Event) -> Option<State> {
+    pub fn try_next(&self, event: Event) -> Option<MemberState> {
         match event {
             Event::ParsecConsensus(vote) => self.try_consensus(&vote),
             Event::LocalEvent(local_event) => self.try_local_event(local_event),
