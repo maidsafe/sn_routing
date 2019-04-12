@@ -14,7 +14,7 @@ use std::rc::Rc;
 
 use crate::utilities::{
     Attributes, Candidate, ChangeElder, GenesisPfxInfo, LocalEvent, Name, Node, NodeChange,
-    NodeState, ParsecVote, Proof, ProofRequest, ProofSource, Rpc, Section, SectionInfo,
+    NodeState, ParsecVote, Proof, ProofRequest, ProofSource, Rpc, Section, SectionInfo, State,
 };
 
 #[derive(Debug, PartialEq, Clone)]
@@ -84,9 +84,9 @@ impl InnerAction {
 
     fn add_node(&mut self, node_state: NodeState) {
         self.our_nodes
-            .push(NodeChange::AddResourceProofing(node_state.node));
+            .push(NodeChange::AddWithState(node_state.node, node_state.state));
         self.our_current_nodes
-            .insert(Name(node_state.node.0.name), node_state);
+            .insert(node_state.node.name(), node_state);
     }
 
     fn remove_node(&mut self, node: Node) {
@@ -94,25 +94,11 @@ impl InnerAction {
         self.our_current_nodes.remove(&Name(node.0.name));
     }
 
-    fn set_relocating_state(&mut self, name: Name) {
+    fn set_node_state(&mut self, name: Name, state: State) {
         let node = &mut self.our_current_nodes.get_mut(&name).unwrap();
 
-        node.is_relocating = true;
-        self.our_nodes.push(NodeChange::Relocating(node.node));
-    }
-
-    fn set_online_state(&mut self, name: Name) {
-        let node = &mut self.our_current_nodes.get_mut(&name).unwrap();
-
-        node.is_resource_proofing = false;
-        self.our_nodes.push(NodeChange::Online(node.node));
-    }
-
-    fn set_offline_state(&mut self, name: Name) {
-        let node = &mut self.our_current_nodes.get_mut(&name).unwrap();
-        node.is_offline = true;
-        // Note: for test validation only
-        self.our_nodes.push(NodeChange::Offline(node.node));
+        node.state = state;
+        self.our_nodes.push(NodeChange::State(node.node, state));
     }
 
     fn set_elder_state(&mut self, name: Name, value: bool) {
@@ -163,22 +149,28 @@ impl Action {
     pub fn add_node_ressource_proofing(&self, candidate: Candidate) {
         let state = NodeState {
             node: Node(candidate.0),
-            is_resource_proofing: true,
+            state: State::WaitingProofing,
             ..NodeState::default()
         };
         self.0.borrow_mut().add_node(state);
     }
 
     pub fn set_candidate_online_state(&self, candidate: Candidate) {
-        self.0.borrow_mut().set_online_state(Name(candidate.0.name));
+        self.0
+            .borrow_mut()
+            .set_node_state(candidate.name(), State::Online);
     }
 
     pub fn set_node_offline_state(&self, node: Node) {
-        self.0.borrow_mut().set_offline_state(Name(node.0.name));
+        self.0
+            .borrow_mut()
+            .set_node_state(node.name(), State::Offline);
     }
 
     pub fn set_node_back_online_state(&self, node: Node) {
-        self.0.borrow_mut().set_relocating_state(Name(node.0.name));
+        self.0
+            .borrow_mut()
+            .set_node_state(node.name(), State::RelocatingAnyReason);
     }
 
     pub fn remove_node(&self, candidate: Candidate) {
@@ -198,12 +190,10 @@ impl Action {
                 .values()
                 .cloned()
                 .sorted_by(|left, right| {
-                    left.is_offline.cmp(&right.is_offline).then(
-                        left.is_relocating
-                            .cmp(&right.is_relocating)
-                            .then(left.node.0.age.cmp(&right.node.0.age).reverse())
-                            .then(left.node.0.name.cmp(&right.node.0.name)),
-                    )
+                    left.state
+                        .cmp(&right.state)
+                        .then(left.node.0.age.cmp(&right.node.0.age).reverse())
+                        .then(left.node.0.name.cmp(&right.node.0.name))
                 })
                 .collect_vec();
             let elder_size = std::cmp::min(3, sorted_values.len());
@@ -271,7 +261,7 @@ impl Action {
         if let Some(relocating) = inner
             .our_current_nodes
             .values()
-            .find(|state| state.is_relocating)
+            .find(|state| state.state.is_relocating())
         {
             return Candidate(relocating.node.0);
         }
@@ -292,7 +282,9 @@ impl Action {
     }
 
     pub fn is_candidate_relocating_state(&self, candidate: Candidate) -> bool {
-        self.0.borrow().our_current_nodes[&Name(candidate.0.name)].is_relocating
+        self.0.borrow().our_current_nodes[&Name(candidate.0.name)]
+            .state
+            .is_relocating()
     }
 
     pub fn is_our_name(&self, name: Name) -> bool {
@@ -311,7 +303,7 @@ impl Action {
     pub fn set_candidate_relocating_state(&self, candidate: Candidate) {
         self.0
             .borrow_mut()
-            .set_relocating_state(Name(candidate.0.name));
+            .set_node_state(candidate.name(), State::RelocatingAnyReason);
     }
 
     pub fn send_relocate_response_rpc(&self, candidate: Candidate) {

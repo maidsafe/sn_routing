@@ -6,14 +6,14 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::state::{State, TryRelocatingState};
+use crate::state::{MemberState, TryRelocatingState};
 use crate::utilities::{Candidate, Event, LocalEvent, ParsecVote, Rpc, SectionInfo};
 
 #[derive(Debug, PartialEq, Default, Clone)]
-pub struct TopLevelSrc(pub State);
+pub struct TopLevelSrc(pub MemberState);
 
 impl TopLevelSrc {
-    pub fn try_next(&self, event: Event) -> Option<State> {
+    pub fn try_next(&self, event: Event) -> Option<MemberState> {
         match event {
             Event::Rpc(rpc) => self.try_rpc(rpc),
             Event::ParsecConsensus(vote) => self.try_consensus(vote),
@@ -122,7 +122,7 @@ impl TopLevelSrc {
 }
 
 #[derive(Debug, PartialEq, Default, Clone)]
-pub struct TryRelocating(pub State);
+pub struct TryRelocating(pub MemberState);
 
 // TryRelocating Sub Routine
 impl TryRelocating {
@@ -142,7 +142,7 @@ impl TryRelocating {
             .as_try_relocating()
     }
 
-    pub fn try_next(&self, event: Event) -> Option<State> {
+    pub fn try_next(&self, event: Event) -> Option<MemberState> {
         match event {
             Event::ParsecConsensus(vote) => self.try_consensus(vote),
             _ => None,

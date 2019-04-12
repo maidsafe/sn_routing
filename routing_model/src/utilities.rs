@@ -18,18 +18,34 @@ pub struct Attributes {
     pub name: i32,
 }
 
+impl Attributes {
+    pub fn name(self) -> Name {
+        Name(self.name)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Candidate(pub Attributes);
+
+impl Candidate {
+    pub fn name(self) -> Name {
+        self.0.name()
+    }
+}
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Node(pub Attributes);
 
+impl Node {
+    pub fn name(self) -> Name {
+        self.0.name()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum NodeChange {
-    AddResourceProofing(Node),
-    Online(Node),
-    Offline(Node),
-    Relocating(Node),
+    AddWithState(Node, State),
+    State(Node, State),
     Remove(Node),
     Elder(Node, bool),
 }
@@ -37,10 +53,8 @@ pub enum NodeChange {
 impl NodeChange {
     fn node(&self) -> Node {
         match &self {
-            NodeChange::AddResourceProofing(node)
-            | NodeChange::Online(node)
-            | NodeChange::Offline(node)
-            | NodeChange::Relocating(node)
+            NodeChange::AddWithState(node, _)
+            | NodeChange::State(node, _)
             | NodeChange::Remove(node)
             | NodeChange::Elder(node, _) => *node,
         }
@@ -48,22 +62,55 @@ impl NodeChange {
 
     fn relocating(&self) -> bool {
         match &self {
-            NodeChange::Relocating(_) => true,
+            NodeChange::State(_, State::RelocatingAnyReason) => true,
             _ => false,
         }
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord)]
+pub enum State {
+    // Online ordered first Online node are choosen for elder
+    Online,
+    // Relcating
+    RelocatingAnyReason,
+    // Not a full adult: still wait proofing
+    WaitingProofing,
+    // When a node that was previous online lost connection
+    Offline,
+}
+
+impl State {
+    pub fn is_relocating(self) -> bool {
+        self == State::RelocatingAnyReason
+    }
+
+    pub fn is_resource_proofing(self) -> bool {
+        self == State::WaitingProofing
+    }
+
+    pub fn is_offline(self) -> bool {
+        self == State::Offline
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct NodeState {
     pub node: Node,
     pub work_units_done: i32,
     pub is_elder: bool,
-    pub is_relocating: bool,
-    pub need_relocate: bool,
-    pub is_resource_proofing: bool,
-    // When a node that was previous online lost connection
-    pub is_offline: bool,
+    pub state: State,
+}
+
+impl Default for NodeState {
+    fn default() -> NodeState {
+        NodeState {
+            node: Default::default(),
+            work_units_done: Default::default(),
+            is_elder: Default::default(),
+            state: State::Online,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, PartialOrd, Ord, Eq)]

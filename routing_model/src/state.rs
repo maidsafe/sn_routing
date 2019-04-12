@@ -56,7 +56,7 @@ pub struct SrcRoutineState {
 
 // The very top level event loop deciding how the sub event loops are processed
 #[derive(Debug, PartialEq, Default, Clone)]
-pub struct State {
+pub struct MemberState {
     pub action: Action,
     pub failure: Option<Event>,
     pub dst_routine: DstRoutineState,
@@ -64,7 +64,7 @@ pub struct State {
     pub check_and_process_elder_change_routine: CheckAndProcessElderChangeState,
 }
 
-impl State {
+impl MemberState {
     pub fn try_next(&self, event: Event) -> Option<Self> {
         let dst = &self.dst_routine;
         let src = &self.src_routine;

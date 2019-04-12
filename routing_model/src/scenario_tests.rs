@@ -11,7 +11,7 @@ use crate::state::*;
 
 use crate::utilities::{
     Attributes, Candidate, ChangeElder, Event, GenesisPfxInfo, LocalEvent, Name, Node, NodeChange,
-    NodeState, ParsecVote, Proof, ProofRequest, ProofSource, Rpc, Section, SectionInfo,
+    NodeState, ParsecVote, Proof, ProofRequest, ProofSource, Rpc, Section, SectionInfo, State,
 };
 
 macro_rules! to_collect {
@@ -32,13 +32,18 @@ const OTHER_SECTION_1: Section = Section(1);
 const DST_SECTION_200: Section = Section(200);
 
 const NODE_1: Node = Node(Attributes { name: 1, age: 10 });
-const ADD_PROOFING_NODE_1: NodeChange =
-    NodeChange::AddResourceProofing(Node(Attributes { name: 1, age: 10 }));
-const SET_ONLINE_NODE_1: NodeChange = NodeChange::Online(Node(Attributes { name: 1, age: 10 }));
+const ADD_PROOFING_NODE_1: NodeChange = NodeChange::AddWithState(
+    Node(Attributes { name: 1, age: 10 }),
+    State::WaitingProofing,
+);
+const SET_ONLINE_NODE_1: NodeChange =
+    NodeChange::State(Node(Attributes { name: 1, age: 10 }), State::Online);
 const REMOVE_NODE_1: NodeChange = NodeChange::Remove(Node(Attributes { name: 1, age: 10 }));
 
-const ADD_PROOFING_NODE_2: NodeChange =
-    NodeChange::AddResourceProofing(Node(Attributes { name: 2, age: 10 }));
+const ADD_PROOFING_NODE_2: NodeChange = NodeChange::AddWithState(
+    Node(Attributes { name: 2, age: 10 }),
+    State::WaitingProofing,
+);
 
 const NODE_ELDER_109: Node = Node(Attributes { name: 109, age: 9 });
 const NODE_ELDER_110: Node = Node(Attributes { name: 110, age: 10 });
@@ -142,7 +147,7 @@ struct AssertState {
     check_and_process_elder_change_routine: CheckAndProcessElderChangeState,
 }
 
-fn process_events(mut state: State, events: &[Event]) -> State {
+fn process_events(mut state: MemberState, events: &[Event]) -> MemberState {
     for event in events.iter().cloned() {
         state = match state.try_next(event) {
             Some(next_state) => next_state,
@@ -157,7 +162,12 @@ fn process_events(mut state: State, events: &[Event]) -> State {
     state
 }
 
-fn run_test(test_name: &str, start_state: &State, events: &[Event], expected_state: &AssertState) {
+fn run_test(
+    test_name: &str,
+    start_state: &MemberState,
+    events: &[Event],
+    expected_state: &AssertState,
+) {
     let final_state = process_events(start_state.clone(), &events);
     let action = final_state.action.inner();
 
@@ -180,21 +190,21 @@ fn run_test(test_name: &str, start_state: &State, events: &[Event], expected_sta
     assert_eq!(expected_state, final_state, "{}", test_name);
 }
 
-fn arrange_initial_state(state: &State, events: &[Event]) -> State {
+fn arrange_initial_state(state: &MemberState, events: &[Event]) -> MemberState {
     let state = process_events(state.clone(), events);
     state.action.remove_processed_state();
     state
 }
 
-fn initial_state_young_elders() -> State {
-    State {
+fn initial_state_young_elders() -> MemberState {
+    MemberState {
         action: Action::new(INNER_ACTION_YOUNG_ELDERS.clone()),
         ..Default::default()
     }
 }
 
-fn initial_state_old_elders() -> State {
-    State {
+fn initial_state_old_elders() -> MemberState {
+    MemberState {
         action: Action::new(INNER_ACTION_OLD_ELDERS.clone()),
         ..Default::default()
     }
@@ -765,12 +775,12 @@ mod dst_tests {
 
     #[test]
     fn test_parsec_expect_candidate_with_shorter_known_section() {
-        let initial_state = State {
+        let initial_state = MemberState {
             action: Action::new(InnerAction {
                 shortest_prefix: Some(OTHER_SECTION_1),
                 ..INNER_ACTION_OLD_ELDERS.clone()
             }),
-            ..State::default()
+            ..MemberState::default()
         };
 
         run_test(
@@ -848,7 +858,7 @@ mod dst_tests {
             &initial_state_old_elders(),
             &[ParsecVote::Offline(NODE_ELDER_130).to_event()],
             &AssertState {
-                action_our_nodes: vec![NodeChange::Offline(NODE_ELDER_130)],
+                action_our_nodes: vec![NodeChange::State(NODE_ELDER_130, State::Offline)],
                 ..AssertState::default()
             },
         );
@@ -886,7 +896,10 @@ mod dst_tests {
             &initial_state,
             &[ParsecVote::BackOnline(NODE_ELDER_130).to_event()],
             &AssertState {
-                action_our_nodes: vec![NodeChange::Relocating(NODE_ELDER_130)],
+                action_our_nodes: vec![NodeChange::State(
+                    NODE_ELDER_130,
+                    State::RelocatingAnyReason,
+                )],
                 ..AssertState::default()
             },
         );
@@ -911,13 +924,13 @@ mod src_tests {
 
     #[test]
     fn test_parsec_relocation_trigger() {
-        let initial_state = State {
+        let initial_state = MemberState {
             action: Action::new(
                 INNER_ACTION_OLD_ELDERS
                     .clone()
                     .with_enough_work_to_relocate(&[YOUNG_ADULT_205]),
             ),
-            ..State::default()
+            ..MemberState::default()
         };
 
         run_test(
@@ -926,7 +939,10 @@ mod src_tests {
             &[ParsecVote::RelocationTrigger.to_event()],
             &AssertState {
                 action_our_rpcs: vec![Rpc::ExpectCandidate(CANDIDATE_205)],
-                action_our_nodes: vec![NodeChange::Relocating(YOUNG_ADULT_205)],
+                action_our_nodes: vec![NodeChange::State(
+                    YOUNG_ADULT_205,
+                    State::RelocatingAnyReason,
+                )],
                 src_routine: SrcRoutineState {
                     relocating_candidate: Some(CANDIDATE_205),
                     sub_routine_try_relocating: Some(TryRelocatingState {
@@ -940,13 +956,13 @@ mod src_tests {
 
     #[test]
     fn test_parsec_relocate_trigger_elder_change() {
-        let initial_state = State {
+        let initial_state = MemberState {
             action: Action::new(
                 INNER_ACTION_OLD_ELDERS
                     .clone()
                     .with_enough_work_to_relocate(&[NODE_ELDER_130]),
             ),
-            ..State::default()
+            ..MemberState::default()
         };
 
         run_test(
@@ -957,7 +973,10 @@ mod src_tests {
                 ParsecVote::CheckElder.to_event(),
             ],
             &AssertState {
-                action_our_nodes: vec![NodeChange::Relocating(NODE_ELDER_130)],
+                action_our_nodes: vec![NodeChange::State(
+                    NODE_ELDER_130,
+                    State::RelocatingAnyReason,
+                )],
                 action_our_votes: SWAP_ELDER_130_YOUNG_205_SECTION_INFO_1.1.clone(),
                 check_and_process_elder_change_routine: CheckAndProcessElderChangeState {
                     change_elder: Some(SWAP_ELDER_130_YOUNG_205_SECTION_INFO_1.0.clone()),
@@ -971,13 +990,13 @@ mod src_tests {
     #[test]
     fn test_parsec_relocate_trigger_elder_change_complete() {
         let initial_state = arrange_initial_state(
-            &State {
+            &MemberState {
                 action: Action::new(
                     INNER_ACTION_OLD_ELDERS
                         .clone()
                         .with_enough_work_to_relocate(&[NODE_ELDER_130]),
                 ),
-                ..State::default()
+                ..MemberState::default()
             },
             &[
                 ParsecVote::RelocationTrigger.to_event(),
@@ -1016,13 +1035,13 @@ mod src_tests {
     #[test]
     fn test_parsec_relocation_trigger_refuse_candidate_rpc() {
         let initial_state = arrange_initial_state(
-            &State {
+            &MemberState {
                 action: Action::new(
                     INNER_ACTION_OLD_ELDERS
                         .clone()
                         .with_enough_work_to_relocate(&[YOUNG_ADULT_205]),
                 ),
-                ..State::default()
+                ..MemberState::default()
             },
             &[ParsecVote::RelocationTrigger.to_event()],
         );
@@ -1047,13 +1066,13 @@ mod src_tests {
     #[test]
     fn test_parsec_relocation_trigger_relocate_response_rpc() {
         let initial_state = arrange_initial_state(
-            &State {
+            &MemberState {
                 action: Action::new(
                     INNER_ACTION_OLD_ELDERS
                         .clone()
                         .with_enough_work_to_relocate(&[YOUNG_ADULT_205]),
                 ),
-                ..State::default()
+                ..MemberState::default()
             },
             &[ParsecVote::RelocationTrigger.to_event()],
         );
@@ -1081,13 +1100,13 @@ mod src_tests {
     #[test]
     fn test_parsec_relocation_trigger_accept() {
         let initial_state = arrange_initial_state(
-            &State {
+            &MemberState {
                 action: Action::new(
                     INNER_ACTION_OLD_ELDERS
                         .clone()
                         .with_enough_work_to_relocate(&[YOUNG_ADULT_205]),
                 ),
-                ..State::default()
+                ..MemberState::default()
             },
             &[ParsecVote::RelocationTrigger.to_event()],
         );
@@ -1110,13 +1129,13 @@ mod src_tests {
     #[test]
     fn test_parsec_relocation_trigger_refuse() {
         let initial_state = arrange_initial_state(
-            &State {
+            &MemberState {
                 action: Action::new(
                     INNER_ACTION_OLD_ELDERS
                         .clone()
                         .with_enough_work_to_relocate(&[YOUNG_ADULT_205]),
                 ),
-                ..State::default()
+                ..MemberState::default()
             },
             &[ParsecVote::RelocationTrigger.to_event()],
         );
@@ -1132,13 +1151,13 @@ mod src_tests {
     #[test]
     fn test_parsec_relocation_trigger_refuse_trigger_again() {
         let initial_state = arrange_initial_state(
-            &State {
+            &MemberState {
                 action: Action::new(
                     INNER_ACTION_OLD_ELDERS
                         .clone()
                         .with_enough_work_to_relocate(&[YOUNG_ADULT_205]),
                 ),
-                ..State::default()
+                ..MemberState::default()
             },
             &[
                 ParsecVote::RelocationTrigger.to_event(),
@@ -1166,13 +1185,13 @@ mod src_tests {
     #[test]
     fn test_parsec_relocation_trigger_elder_change_refuse_trigger_again() {
         let initial_state = arrange_initial_state(
-            &State {
+            &MemberState {
                 action: Action::new(
                     INNER_ACTION_OLD_ELDERS
                         .clone()
                         .with_enough_work_to_relocate(&[NODE_ELDER_130]),
                 ),
-                ..State::default()
+                ..MemberState::default()
             },
             &[
                 ParsecVote::RelocationTrigger.to_event(),
