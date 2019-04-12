@@ -8,7 +8,7 @@
 
 use itertools::Itertools;
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
 use std::rc::Rc;
 
@@ -264,11 +264,15 @@ impl Action {
             .map(|state| Candidate(state.node.0))
     }
 
-    pub fn get_best_relocating_node_and_target(&self) -> Option<(Candidate, Section)> {
+    pub fn get_best_relocating_node_and_target(
+        &self,
+        already_relocating: &BTreeMap<Candidate, i32>,
+    ) -> Option<(Candidate, Section)> {
         self.0
             .borrow()
             .our_current_nodes
             .values()
+            .filter(|state| !already_relocating.contains_key(&Candidate(state.node.0)))
             .find(|state| state.state.is_relocating() && !state.is_elder)
             .map(|state| (Candidate(state.node.0), Section::default()))
     }

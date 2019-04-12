@@ -753,19 +753,13 @@
       ParsecConsensus((Consensus))
       ParsecConsensus -- Parsec::CheckRelocate --> CheckNeedRelocate
       CheckNeedRelocate((Check?))
-      CheckNeedRelocate--"Otherwise" -->CheckNeedResend
+      CheckNeedRelocate--"Otherwise" -->AllowResendCandidates
 
       CheckNeedRelocate--"get_best_relocating_node_and_target(<br/>ALREADY_RELOCATING).is_some()" --> SendExpectCandidate
       SendExpectCandidate["(node, target)=<br/>get_best_relocating_node_and_target(<br/>ALREADY_RELOCATING)<br/><br/>send_rpc(<br/>Rpc::ExpectCandidate(node))<br/>to target NaeManager<br/><br/>ALREADY_RELOCATING<br/>.insert(node)"]
-      SendExpectCandidate --> CheckNeedResend
+      SendExpectCandidate --> AllowResendCandidates
 
-      CheckNeedResend((Check?))
-      CheckNeedResend -- Otherwise --> DecResendCount
-      DecResendCount["RESEND_TRIGGER--"]
-      DecResendCount --> LoopEnd
-
-      CheckNeedResend -- "RESEND_TRIGGER==0<br/>or<br/>ALREADY_RELOCATING.is_empty()" --> AllowResendCandidates
-      AllowResendCandidates["ALREADY_RELOCATING.clear()<br/>RESEND_TRIGGER=3"]
+      AllowResendCandidates["ALREADY_RELOCATING=<br/>ALREADY_RELOCATING<br/>.map(|(node, count| (node, count+1))<br/>.fiter(|(node,count|) count < 3)<br/><br/>(update wait and allow resend)"]
       AllowResendCandidates --> LoopEnd
 
 

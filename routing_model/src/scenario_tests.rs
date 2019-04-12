@@ -143,7 +143,6 @@ struct AssertState {
     action_our_events: Vec<LocalEvent>,
     action_our_section: SectionInfo,
     dst_routine: DstRoutineState,
-    src_routine: SrcRoutineState,
     check_and_process_elder_change_routine: CheckAndProcessElderChangeState,
 }
 
@@ -179,7 +178,6 @@ fn run_test(
             action_our_events: action.our_events,
             action_our_section: action.our_section,
             dst_routine: final_state.dst_routine,
-            src_routine: final_state.src_routine,
             check_and_process_elder_change_routine: final_state
                 .check_and_process_elder_change_routine,
         },
@@ -906,13 +904,17 @@ mod dst_tests {
     }
 }
 
+//////////////////
+/// Src
+//////////////////
+
 mod src_tests {
     use super::*;
 
     #[test]
-    fn test_local_event_relocation_trigger() {
+    fn test_local_event_time_out_work_unit() {
         run_test(
-            "Get RPC ExpectCandidate",
+            "",
             &initial_state_old_elders(),
             &[LocalEvent::TimeoutWorkUnit.to_event()],
             &AssertState {
@@ -924,7 +926,7 @@ mod src_tests {
     }
 
     #[test]
-    fn test_parsec_relocation_trigger() {
+    fn test_start_relocation() {
         let initial_state = MemberState {
             action: Action::new(
                 INNER_ACTION_OLD_ELDERS
@@ -935,7 +937,7 @@ mod src_tests {
         };
 
         run_test(
-            "Get Parsec ExpectCandidate",
+            "Trigger events to relocate node",
             &initial_state,
             &[
                 ParsecVote::WorkUnitIncrement.to_event(),
@@ -947,6 +949,64 @@ mod src_tests {
                     YOUNG_ADULT_205,
                     State::RelocatingAnyReason,
                 )],
+                ..AssertState::default()
+            },
+        );
+    }
+
+    #[test]
+    fn test_parsec_check_relocate_trigger_again_no_retry() {
+        let initial_state = arrange_initial_state(
+            &MemberState {
+                action: Action::new(
+                    INNER_ACTION_OLD_ELDERS
+                        .clone()
+                        .with_enough_work_to_relocate(&[YOUNG_ADULT_205]),
+                ),
+                ..MemberState::default()
+            },
+            &[
+                ParsecVote::WorkUnitIncrement.to_event(),
+                ParsecVote::CheckRelocate.to_event(),
+            ],
+        );
+
+        run_test(
+            "Additional CheckRelocate do not trigger a resend",
+            &initial_state,
+            &[
+                ParsecVote::CheckRelocate.to_event(),
+                ParsecVote::CheckRelocate.to_event(),
+            ],
+            &AssertState::default(),
+        );
+    }
+
+    #[test]
+    fn test_parsec_relocation_trigger_again_until_retry() {
+        let initial_state = arrange_initial_state(
+            &MemberState {
+                action: Action::new(
+                    INNER_ACTION_OLD_ELDERS
+                        .clone()
+                        .with_enough_work_to_relocate(&[YOUNG_ADULT_205]),
+                ),
+                ..MemberState::default()
+            },
+            &[
+                ParsecVote::WorkUnitIncrement.to_event(),
+                ParsecVote::CheckRelocate.to_event(),
+                ParsecVote::CheckRelocate.to_event(),
+                ParsecVote::CheckRelocate.to_event(),
+            ],
+        );
+
+        run_test(
+            "Enough additional CheckRelocate trigger a resend",
+            &initial_state,
+            &[ParsecVote::CheckRelocate.to_event()],
+            &AssertState {
+                action_our_rpcs: vec![Rpc::ExpectCandidate(CANDIDATE_205)],
                 ..AssertState::default()
             },
         );
