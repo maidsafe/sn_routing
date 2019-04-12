@@ -54,6 +54,10 @@ impl NodeChange {
     }
 }
 
+enum MemberState {
+
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct NodeState {
     pub node: Node,
