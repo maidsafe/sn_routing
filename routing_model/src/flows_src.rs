@@ -13,6 +13,78 @@ use crate::utilities::{Candidate, Event, LocalEvent, ParsecVote, Rpc, SectionInf
 pub struct TopLevelSrc(pub MemberState);
 
 impl TopLevelSrc {
+    fn start_event_loop(&self) -> Self {
+        self.start_work_unit_timeout()
+    }
+
+    pub fn try_next(&self, event: Event) -> Option<MemberState> {
+        match event {
+            Event::Rpc(_) => None,
+            Event::ParsecConsensus(vote) => self.try_consensus(vote),
+            Event::LocalEvent(local_event) => self.try_local_event(local_event),
+        }
+        .map(|state| state.0)
+    }
+
+    fn try_consensus(&self, vote: ParsecVote) -> Option<Self> {
+        match vote {
+            ParsecVote::WorkUnitIncrement => Some(
+                self.increment_nodes_work_units()
+                    .check_get_node_to_relocate(),
+            ),
+
+            // Delegate to other event loops
+            _ => None,
+        }
+    }
+
+    fn try_local_event(&self, local_event: LocalEvent) -> Option<Self> {
+        match local_event {
+            LocalEvent::TimeoutWorkUnit => Some(
+                self.vote_parsec_work_unit_increment()
+                    .start_work_unit_timeout(),
+            ),
+            _ => None,
+        }
+    }
+
+    fn increment_nodes_work_units(&self) -> Self {
+        self.0.action.increment_nodes_work_units();
+        self.clone()
+    }
+
+    fn check_get_node_to_relocate(&self) -> Self {
+        match (self.0.action.get_node_to_relocate(), false) {
+            (Some(candidate), false) => self.set_relocating_candidate(candidate),
+            _ => self.clone(),
+        }
+    }
+
+    fn set_relocating_candidate(&self, candidate: Candidate) -> Self {
+        self.0.action.set_candidate_relocating_state(candidate);
+        self.clone()
+    }
+
+    fn vote_parsec_work_unit_increment(&self) -> Self {
+        self.0.action.vote_parsec(ParsecVote::WorkUnitIncrement);
+        self.clone()
+    }
+
+    fn start_work_unit_timeout(&self) -> Self {
+        self.0.action.schedule_event(LocalEvent::TimeoutWorkUnit);
+        self.clone()
+    }
+}
+
+#[derive(Debug, PartialEq, Default, Clone)]
+pub struct StartRelocateSrc(pub MemberState);
+
+// StartRelocateSrc Sub Routine
+impl StartRelocateSrc {
+    fn start_event_loop(&self) -> Self {
+        self.start_check_relocate_timeout()
+    }
+
     pub fn try_next(&self, event: Event) -> Option<MemberState> {
         match event {
             Event::Rpc(rpc) => self.try_rpc(rpc),
@@ -20,6 +92,16 @@ impl TopLevelSrc {
             Event::LocalEvent(local_event) => self.try_local_event(local_event),
         }
         .map(|state| state.0)
+    }
+
+    fn try_local_event(&self, local_event: LocalEvent) -> Option<Self> {
+        match local_event {
+            LocalEvent::TimeoutCheckRelocate => Some(
+                self.vote_parsec_check_relocate()
+                    .start_check_relocate_timeout(),
+            ),
+            _ => None,
+        }
     }
 
     fn try_rpc(&self, rpc: Rpc) -> Option<Self> {
@@ -33,76 +115,60 @@ impl TopLevelSrc {
     }
 
     fn try_consensus(&self, vote: ParsecVote) -> Option<Self> {
-        match vote {
-            ParsecVote::RelocationTrigger => self.try_consensused_relocation_trigger(),
+        let is_our_relocating_node =
+            |candidate: Candidate| self.0.action.is_our_relocating_node(candidate);
 
+        match vote {
+            ParsecVote::CheckRelocate => Some(self.relocate_as_needed()),
+            ParsecVote::RefuseCandidate(candidate) if is_our_relocating_node(candidate) => {
+                Some(self.discard())
+            }
+            ParsecVote::RelocateResponse(candidate, section)
+                if is_our_relocating_node(candidate) =>
+            {
+                Some(self.remove_node(candidate, section))
+            }
+            ParsecVote::RefuseCandidate(_) | ParsecVote::RelocateResponse(_, _) => {
+                Some(self.discard())
+            }
             // Delegate to other event loops
             _ => None,
         }
     }
 
-    fn try_local_event(&self, local_event: LocalEvent) -> Option<Self> {
-        match local_event {
-            LocalEvent::RelocationTrigger => Some(self.vote_parsec_relocation_trigger()),
-            _ => None,
+    fn relocate_as_needed(&self) -> Self {
+        if let Some((candidate, _)) = self.0.action.get_best_relocating_node_and_target() {
+            self.send_expect_candidate_rpc(candidate);
         }
+        self.clone()
     }
 
-    fn try_consensused_relocation_trigger(&self) -> Option<Self> {
-        match self.0.src_routine.relocating_candidate {
-            Some(_) => Some(self.discard()),
-            None => Some(
-                self.set_relocating_candidate(Some(self.0.action.get_relocating_candidate()))
-                    .set_candidate_relocating_state_if_needed()
-                    .check_if_relocating_elder(),
-            ),
-        }
+    fn vote_parsec_check_relocate(&self) -> Self {
+        self.0.action.vote_parsec(ParsecVote::CheckRelocate);
+        self.clone()
     }
 
-    fn check_if_relocating_elder(&self) -> Self {
-        if self
-            .0
-            .action
-            .is_elder_state(self.0.src_routine.relocating_candidate.unwrap())
-        {
-            self.set_relocating_candidate(None)
-        } else {
-            self.concurrent_transition_to_try_relocating()
-        }
-    }
-
-    fn concurrent_transition_to_try_relocating(&self) -> Self {
+    fn start_check_relocate_timeout(&self) -> Self {
         self.0
-            .as_try_relocating()
-            .start_event_loop(self.0.src_routine.relocating_candidate.unwrap())
-            .0
-            .as_top_level_src()
+            .action
+            .schedule_event(LocalEvent::TimeoutCheckRelocate);
+        self.clone()
     }
 
-    fn transition_exit_try_relocating(&self) -> Self {
-        self.set_relocating_candidate(None)
+    fn send_expect_candidate_rpc(&self, candidate: Candidate) -> Self {
+        self.0.action.send_rpc(Rpc::ExpectCandidate(candidate));
+        self.clone()
+    }
+
+    fn remove_node(&self, candidate: Candidate, section: SectionInfo) -> Self {
+        self.0
+            .action
+            .send_candidate_relocated_info(candidate, section);
+        self.0.action.remove_node(candidate);
+        self.clone()
     }
 
     fn discard(&self) -> Self {
-        self.clone()
-    }
-
-    fn vote_parsec_relocation_trigger(&self) -> Self {
-        self.0.action.vote_parsec(ParsecVote::RelocationTrigger);
-        self.clone()
-    }
-
-    fn set_relocating_candidate(&self, candidate: Option<Candidate>) -> Self {
-        let mut state = self.clone();
-        state.0.src_routine.relocating_candidate = candidate;
-        state
-    }
-
-    fn set_candidate_relocating_state_if_needed(&self) -> Self {
-        let candidate = self.0.src_routine.relocating_candidate.unwrap();
-        if !self.0.action.is_candidate_relocating_state(candidate) {
-            self.0.action.set_candidate_relocating_state(candidate);
-        }
         self.clone()
     }
 
@@ -118,82 +184,5 @@ impl TopLevelSrc {
             .action
             .vote_parsec(ParsecVote::RelocateResponse(candiddate, section));
         self.clone()
-    }
-}
-
-#[derive(Debug, PartialEq, Default, Clone)]
-pub struct TryRelocating(pub MemberState);
-
-// TryRelocating Sub Routine
-impl TryRelocating {
-    fn start_event_loop(&self, candidate: Candidate) -> Self {
-        self.0
-            .with_src_sub_routine_try_relocating(Some(TryRelocatingState { candidate }))
-            .as_try_relocating()
-            .send_expect_candidate_rpc()
-    }
-
-    fn exit_event_loop(&self) -> Self {
-        self.0
-            .with_src_sub_routine_try_relocating(None)
-            .as_top_level_src()
-            .transition_exit_try_relocating()
-            .0
-            .as_try_relocating()
-    }
-
-    pub fn try_next(&self, event: Event) -> Option<MemberState> {
-        match event {
-            Event::ParsecConsensus(vote) => self.try_consensus(vote),
-            _ => None,
-        }
-        .map(|state| state.0)
-    }
-
-    fn try_consensus(&self, vote: ParsecVote) -> Option<Self> {
-        if vote.candidate() != Some(self.candidate()) {
-            return None;
-        }
-
-        match vote {
-            ParsecVote::RefuseCandidate(_) => Some(self.exit_event_loop()),
-            ParsecVote::RelocateResponse(_, section) => Some(self.remove_node(section)),
-            // Delegate to other event loops
-            _ => None,
-        }
-    }
-
-    fn routine_state(&self) -> &TryRelocatingState {
-        match &self.0.src_routine.sub_routine_try_relocating {
-            Some(state) => state,
-            _ => panic!("Expect AcceptAsCandidate {:?}", &self),
-        }
-    }
-
-    fn mut_routine_state(&mut self) -> &mut TryRelocatingState {
-        let clone = self.clone();
-        match &mut self.0.src_routine.sub_routine_try_relocating {
-            Some(state) => state,
-            _ => panic!("Expect AcceptAsCandidate {:?}", &clone),
-        }
-    }
-
-    fn send_expect_candidate_rpc(&self) -> Self {
-        self.0
-            .action
-            .send_rpc(Rpc::ExpectCandidate(self.candidate()));
-        self.clone()
-    }
-
-    fn remove_node(&self, section: SectionInfo) -> Self {
-        self.0
-            .action
-            .send_candidate_relocated_info(self.candidate(), section);
-        self.0.action.remove_node(self.candidate());
-        self.exit_event_loop()
-    }
-
-    fn candidate(&self) -> Candidate {
-        self.routine_state().candidate
     }
 }

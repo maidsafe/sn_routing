@@ -274,7 +274,8 @@ pub enum ParsecVote {
     RemoveElderNode(Node),
     NewSectionInfo(SectionInfo),
 
-    RelocationTrigger,
+    WorkUnitIncrement,
+    CheckRelocate,
     RefuseCandidate(Candidate),
     RelocateResponse(Candidate, SectionInfo),
 
@@ -300,7 +301,8 @@ impl ParsecVote {
             ParsecVote::AddElderNode(_)
             | ParsecVote::RemoveElderNode(_)
             | ParsecVote::NewSectionInfo(_)
-            | ParsecVote::RelocationTrigger
+            | ParsecVote::WorkUnitIncrement
+            | ParsecVote::CheckRelocate
             | ParsecVote::CheckElder
             | ParsecVote::Offline(_)
             | ParsecVote::BackOnline(_) => None,
@@ -311,7 +313,10 @@ impl ParsecVote {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LocalEvent {
     TimeoutAccept,
-    RelocationTrigger,
+
+    TimeoutWorkUnit,
+    TimeoutCheckRelocate,
+
     TimeoutCheckElder,
     JoiningTimeoutResendCandidateInfo,
     JoiningTimeoutRefused,

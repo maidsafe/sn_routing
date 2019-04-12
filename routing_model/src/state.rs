@@ -49,10 +49,7 @@ pub struct DstRoutineState {
 }
 
 #[derive(Debug, PartialEq, Default, Clone)]
-pub struct SrcRoutineState {
-    pub relocating_candidate: Option<Candidate>,
-    pub sub_routine_try_relocating: Option<TryRelocatingState>,
-}
+pub struct SrcRoutineState {}
 
 // The very top level event loop deciding how the sub event loops are processed
 #[derive(Debug, PartialEq, Default, Clone)]
@@ -67,7 +64,6 @@ pub struct MemberState {
 impl MemberState {
     pub fn try_next(&self, event: Event) -> Option<Self> {
         let dst = &self.dst_routine;
-        let src = &self.src_routine;
 
         if let Some(next) = self.as_check_and_process_elder_change().try_next(event) {
             return Some(next);
@@ -77,10 +73,8 @@ impl MemberState {
             return Some(next);
         }
 
-        if src.sub_routine_try_relocating.is_some() {
-            if let Some(next) = self.as_try_relocating().try_next(event) {
-                return Some(next);
-            }
+        if let Some(next) = self.as_start_relocate_src().try_next(event) {
+            return Some(next);
         }
 
         if let Some(next) = self.as_top_level_src().try_next(event) {
@@ -129,8 +123,8 @@ impl MemberState {
         TopLevelSrc(self.clone())
     }
 
-    pub fn as_try_relocating(&self) -> TryRelocating {
-        TryRelocating(self.clone())
+    pub fn as_start_relocate_src(&self) -> StartRelocateSrc {
+        StartRelocateSrc(self.clone())
     }
 
     pub fn failure_event(&self, event: Event) -> Self {
@@ -148,19 +142,6 @@ impl MemberState {
             dst_routine: DstRoutineState {
                 sub_routine_accept_as_candidate,
                 ..self.dst_routine.clone()
-            },
-            ..self.clone()
-        }
-    }
-
-    pub fn with_src_sub_routine_try_relocating(
-        &self,
-        sub_routine_try_relocating: Option<TryRelocatingState>,
-    ) -> Self {
-        Self {
-            src_routine: SrcRoutineState {
-                sub_routine_try_relocating,
-                ..self.src_routine.clone()
             },
             ..self.clone()
         }
