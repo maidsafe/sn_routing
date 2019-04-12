@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::actions::*;
 use crate::flows_dst::*;
@@ -37,9 +37,9 @@ impl AcceptAsCandidateState {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub struct TryRelocatingState {
-    pub candidate: Candidate,
+#[derive(Debug, PartialEq, Default, Clone)]
+pub struct StartRelocateSrcState {
+    pub already_relocating: BTreeMap<Candidate, i32>,
 }
 
 #[derive(Debug, PartialEq, Default, Clone)]
@@ -58,6 +58,7 @@ pub struct MemberState {
     pub failure: Option<Event>,
     pub dst_routine: DstRoutineState,
     pub src_routine: SrcRoutineState,
+    pub start_relocate_src: StartRelocateSrcState,
     pub check_and_process_elder_change_routine: CheckAndProcessElderChangeState,
 }
 

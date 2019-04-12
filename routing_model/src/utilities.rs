@@ -12,7 +12,7 @@ pub struct Name(pub i32);
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord)]
 pub struct Age(i32);
 
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, PartialOrd, Eq, Ord)]
 pub struct Attributes {
     pub age: i32,
     pub name: i32,
@@ -24,7 +24,7 @@ impl Attributes {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord)]
 pub struct Candidate(pub Attributes);
 
 impl Candidate {
