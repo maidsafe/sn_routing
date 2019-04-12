@@ -898,7 +898,7 @@ mod dst_tests {
             &AssertState {
                 action_our_nodes: vec![NodeChange::State(
                     NODE_ELDER_130,
-                    State::RelocatingAgeIncrease,
+                    State::RelocatingAnyReason,
                 )],
                 ..AssertState::default()
             },
@@ -941,7 +941,7 @@ mod src_tests {
                 action_our_rpcs: vec![Rpc::ExpectCandidate(CANDIDATE_205)],
                 action_our_nodes: vec![NodeChange::State(
                     YOUNG_ADULT_205,
-                    State::RelocatingAgeIncrease,
+                    State::RelocatingAnyReason,
                 )],
                 src_routine: SrcRoutineState {
                     relocating_candidate: Some(CANDIDATE_205),
@@ -975,7 +975,7 @@ mod src_tests {
             &AssertState {
                 action_our_nodes: vec![NodeChange::State(
                     NODE_ELDER_130,
-                    State::RelocatingAgeIncrease,
+                    State::RelocatingAnyReason,
                 )],
                 action_our_votes: SWAP_ELDER_130_YOUNG_205_SECTION_INFO_1.1.clone(),
                 check_and_process_elder_change_routine: CheckAndProcessElderChangeState {

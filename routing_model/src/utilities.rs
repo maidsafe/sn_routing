@@ -62,7 +62,7 @@ impl NodeChange {
 
     fn relocating(&self) -> bool {
         match &self {
-            NodeChange::State(_, State::RelocatingAgeIncrease) => true,
+            NodeChange::State(_, State::RelocatingAnyReason) => true,
             _ => false,
         }
     }
@@ -72,8 +72,8 @@ impl NodeChange {
 pub enum State {
     // Online ordered first Online node are choosen for elder
     Online,
-    // Relcating and increase the age
-    RelocatingAgeIncrease,
+    // Relcating
+    RelocatingAnyReason,
     // Not a full adult: still wait proofing
     WaitingProofing,
     // When a node that was previous online lost connection
@@ -82,7 +82,7 @@ pub enum State {
 
 impl State {
     pub fn is_relocating(self) -> bool {
-        self == State::RelocatingAgeIncrease
+        self == State::RelocatingAnyReason
     }
 
     pub fn is_resource_proofing(self) -> bool {
