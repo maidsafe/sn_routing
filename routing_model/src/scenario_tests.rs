@@ -11,7 +11,7 @@ use crate::state::*;
 
 use crate::utilities::{
     Attributes, Candidate, ChangeElder, Event, GenesisPfxInfo, LocalEvent, Name, Node, NodeChange,
-    NodeState, ParsecVote, Proof, ProofRequest, ProofSource, Rpc, Section, SectionInfo,
+    NodeState, ParsecVote, Proof, ProofRequest, ProofSource, Rpc, Section, SectionInfo, State,
 };
 
 macro_rules! to_collect {
@@ -32,13 +32,18 @@ const OTHER_SECTION_1: Section = Section(1);
 const DST_SECTION_200: Section = Section(200);
 
 const NODE_1: Node = Node(Attributes { name: 1, age: 10 });
-const ADD_PROOFING_NODE_1: NodeChange =
-    NodeChange::AddResourceProofing(Node(Attributes { name: 1, age: 10 }));
-const SET_ONLINE_NODE_1: NodeChange = NodeChange::Online(Node(Attributes { name: 1, age: 10 }));
+const ADD_PROOFING_NODE_1: NodeChange = NodeChange::AddWithState(
+    Node(Attributes { name: 1, age: 10 }),
+    State::WaitingProofing,
+);
+const SET_ONLINE_NODE_1: NodeChange =
+    NodeChange::State(Node(Attributes { name: 1, age: 10 }), State::Online);
 const REMOVE_NODE_1: NodeChange = NodeChange::Remove(Node(Attributes { name: 1, age: 10 }));
 
-const ADD_PROOFING_NODE_2: NodeChange =
-    NodeChange::AddResourceProofing(Node(Attributes { name: 2, age: 10 }));
+const ADD_PROOFING_NODE_2: NodeChange = NodeChange::AddWithState(
+    Node(Attributes { name: 2, age: 10 }),
+    State::WaitingProofing,
+);
 
 const NODE_ELDER_109: Node = Node(Attributes { name: 109, age: 9 });
 const NODE_ELDER_110: Node = Node(Attributes { name: 110, age: 10 });
@@ -853,7 +858,7 @@ mod dst_tests {
             &initial_state_old_elders(),
             &[ParsecVote::Offline(NODE_ELDER_130).to_event()],
             &AssertState {
-                action_our_nodes: vec![NodeChange::Offline(NODE_ELDER_130)],
+                action_our_nodes: vec![NodeChange::State(NODE_ELDER_130, State::Offline)],
                 ..AssertState::default()
             },
         );
@@ -891,7 +896,10 @@ mod dst_tests {
             &initial_state,
             &[ParsecVote::BackOnline(NODE_ELDER_130).to_event()],
             &AssertState {
-                action_our_nodes: vec![NodeChange::Relocating(NODE_ELDER_130)],
+                action_our_nodes: vec![NodeChange::State(
+                    NODE_ELDER_130,
+                    State::RelocatingAgeIncrease,
+                )],
                 ..AssertState::default()
             },
         );
@@ -931,7 +939,10 @@ mod src_tests {
             &[ParsecVote::RelocationTrigger.to_event()],
             &AssertState {
                 action_our_rpcs: vec![Rpc::ExpectCandidate(CANDIDATE_205)],
-                action_our_nodes: vec![NodeChange::Relocating(YOUNG_ADULT_205)],
+                action_our_nodes: vec![NodeChange::State(
+                    YOUNG_ADULT_205,
+                    State::RelocatingAgeIncrease,
+                )],
                 src_routine: SrcRoutineState {
                     relocating_candidate: Some(CANDIDATE_205),
                     sub_routine_try_relocating: Some(TryRelocatingState {
@@ -962,7 +973,10 @@ mod src_tests {
                 ParsecVote::CheckElder.to_event(),
             ],
             &AssertState {
-                action_our_nodes: vec![NodeChange::Relocating(NODE_ELDER_130)],
+                action_our_nodes: vec![NodeChange::State(
+                    NODE_ELDER_130,
+                    State::RelocatingAgeIncrease,
+                )],
                 action_our_votes: SWAP_ELDER_130_YOUNG_205_SECTION_INFO_1.1.clone(),
                 check_and_process_elder_change_routine: CheckAndProcessElderChangeState {
                     change_elder: Some(SWAP_ELDER_130_YOUNG_205_SECTION_INFO_1.0.clone()),
