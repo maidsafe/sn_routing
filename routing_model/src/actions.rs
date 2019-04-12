@@ -327,10 +327,6 @@ impl Action {
         self.send_rpc(Rpc::RelocateResponse(candidate, section));
     }
 
-    pub fn send_candidate_relocated_info(&self, candidate: Candidate, section: SectionInfo) {
-        self.send_rpc(Rpc::RelocatedInfo(candidate, section));
-    }
-
     pub fn send_candidate_proof_request(&self, candidate: Candidate) {
         let source = self.our_name();
         let proof = ProofRequest { value: source.0 };
