@@ -14,7 +14,8 @@ use std::rc::Rc;
 
 use crate::utilities::{
     Attributes, Candidate, ChangeElder, GenesisPfxInfo, LocalEvent, Name, Node, NodeChange,
-    NodeState, ParsecVote, Proof, ProofRequest, ProofSource, Rpc, Section, SectionInfo, State,
+    NodeState, ParsecVote, Proof, ProofRequest, ProofSource, RelocatedInfo, Rpc, Section,
+    SectionInfo, State,
 };
 
 #[derive(Debug, PartialEq, Clone)]
@@ -173,6 +174,18 @@ impl Action {
             .set_node_state(node.name(), State::RelocatingAnyReason);
     }
 
+    pub fn set_candidate_relocating_state(&self, candidate: Candidate) {
+        self.0
+            .borrow_mut()
+            .set_node_state(candidate.name(), State::RelocatingAnyReason);
+    }
+
+    pub fn set_candidate_relocated_state(&self, candidate: Candidate, info: RelocatedInfo) {
+        self.0
+            .borrow_mut()
+            .set_node_state(candidate.name(), State::Relocated(info));
+    }
+
     pub fn remove_node(&self, candidate: Candidate) {
         self.0.borrow_mut().remove_node(Node(candidate.0));
     }
@@ -307,12 +320,6 @@ impl Action {
     pub fn send_node_approval_rpc(&self, candidate: Candidate) {
         let section = GenesisPfxInfo(self.0.borrow().our_section);
         self.send_rpc(Rpc::NodeApproval(candidate, section));
-    }
-
-    pub fn set_candidate_relocating_state(&self, candidate: Candidate) {
-        self.0
-            .borrow_mut()
-            .set_node_state(candidate.name(), State::RelocatingAnyReason);
     }
 
     pub fn send_relocate_response_rpc(&self, candidate: Candidate) {

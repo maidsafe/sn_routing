@@ -11,7 +11,8 @@ use crate::state::*;
 
 use crate::utilities::{
     Attributes, Candidate, ChangeElder, Event, GenesisPfxInfo, LocalEvent, Name, Node, NodeChange,
-    NodeState, ParsecVote, Proof, ProofRequest, ProofSource, Rpc, Section, SectionInfo, State,
+    NodeState, ParsecVote, Proof, ProofRequest, ProofSource, RelocatedInfo, Rpc, Section,
+    SectionInfo, State,
 };
 
 macro_rules! to_collect {
@@ -1164,13 +1165,30 @@ mod src_tests {
         run_test(
             "Get Parsec ExpectCandidate",
             &initial_state,
-            &[ParsecVote::RelocateResponse(CANDIDATE_205, DST_SECTION_INFO_200).to_event()],
+            &[
+                ParsecVote::RelocateResponse(CANDIDATE_205, DST_SECTION_INFO_200).to_event(),
+                ParsecVote::RelocatedInfo(RelocatedInfo {
+                    candidate: CANDIDATE_205,
+                    section_info: DST_SECTION_INFO_200,
+                })
+                .to_event(),
+            ],
             &AssertState {
-                action_our_rpcs: vec![Rpc::RelocatedInfo(
-                    Candidate(YOUNG_ADULT_205.0),
-                    DST_SECTION_INFO_200,
-                )],
-                action_our_nodes: vec![NodeChange::Remove(YOUNG_ADULT_205)],
+                action_our_votes: vec![ParsecVote::RelocatedInfo(RelocatedInfo {
+                    candidate: CANDIDATE_205,
+                    section_info: DST_SECTION_INFO_200,
+                })],
+                action_our_rpcs: vec![Rpc::RelocatedInfo(CANDIDATE_205, DST_SECTION_INFO_200)],
+                action_our_nodes: vec![
+                    NodeChange::State(
+                        YOUNG_ADULT_205,
+                        State::Relocated(RelocatedInfo {
+                            candidate: CANDIDATE_205,
+                            section_info: DST_SECTION_INFO_200,
+                        }),
+                    ),
+                    NodeChange::Remove(YOUNG_ADULT_205),
+                ],
                 ..AssertState::default()
             },
         );
