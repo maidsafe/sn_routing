@@ -92,7 +92,7 @@ impl<P: PublicId> ObservationState<P> {
         let num_valid_voters = self
             .votes
             .iter()
-            .map(|proof| proof.public_id())
+            .map(Proof::public_id)
             .filter(|peer_id| peers.contains(peer_id))
             .count();
 

@@ -94,7 +94,7 @@ fn verify_single_chain(chain: &Chain, min_section_size: usize) {
         panic!(
             "Some sections in the chain aren't neighbours of our section: {:?}",
             iter::once(chain.our_info().prefix())
-                .chain(chain.neighbour_infos().map(|info| info.prefix()))
+                .chain(chain.neighbour_infos().map(SectionInfo::prefix))
                 .collect::<Vec<_>>()
         );
     }
@@ -102,7 +102,7 @@ fn verify_single_chain(chain: &Chain, min_section_size: usize) {
         panic!(
             "Some neighbours aren't fully covered by the chain: {:?}",
             iter::once(chain.our_info().prefix())
-                .chain(chain.neighbour_infos().map(|info| info.prefix()))
+                .chain(chain.neighbour_infos().map(SectionInfo::prefix))
                 .collect::<Vec<_>>()
         );
     }
@@ -119,7 +119,7 @@ where
     for chain in chains {
         verify_single_chain(chain, min_section_size);
         for prefix in iter::once(chain.our_info().prefix())
-            .chain(chain.neighbour_infos().map(|info| info.prefix()))
+            .chain(chain.neighbour_infos().map(SectionInfo::prefix))
         {
             let section_content = chain
                 .get_section(prefix)

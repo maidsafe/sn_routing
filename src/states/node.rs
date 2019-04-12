@@ -3303,13 +3303,13 @@ impl Node {
         self.parsec_map
             .values()
             .last()
-            .map_or(false, |par| par.has_unconsensused_observations())
+            .map_or(false, Parsec::has_unconsensused_observations)
     }
 
     pub fn is_routing_peer(&self, pub_id: &PublicId) -> bool {
         self.peer_mgr
             .get_peer(pub_id)
-            .map_or(false, |peer| peer.is_routing())
+            .map_or(false, Peer::is_routing)
     }
 }
 

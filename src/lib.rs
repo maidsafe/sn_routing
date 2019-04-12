@@ -274,7 +274,7 @@ mod tests {
     use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
 
     #[test]
-    #[allow(clippy::eq_op)]
+    #[allow(clippy::assertions_on_constants)]
     fn quorum_check() {
         assert!(
             QUORUM_NUMERATOR < QUORUM_DENOMINATOR,

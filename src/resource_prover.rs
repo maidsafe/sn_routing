@@ -23,6 +23,7 @@ use itertools::Itertools;
 use maidsafe_utilities::thread;
 use resource_proof::ResourceProof;
 use std::collections::HashMap;
+use std::iter::Iterator;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -133,7 +134,7 @@ impl ResourceProver {
                 .into_iter()
                 .chunks(MAX_PART_LEN)
                 .into_iter()
-                .map(|chunk| chunk.collect_vec())
+                .map(Iterator::collect)
                 .collect_vec();
 
             let part_count = parts.len();
