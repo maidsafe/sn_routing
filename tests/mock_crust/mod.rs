@@ -126,7 +126,7 @@ fn multiple_joining_nodes() {
             .iter()
             .rev()
             .take(count - removed_count)
-            .map(|node| node.name())
+            .map(TestNode::name)
             .collect();
         info!("Added Nodes: {:?}", nodes_added);
         verify_invariant_for_all_nodes(&mut nodes);

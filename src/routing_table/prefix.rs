@@ -173,7 +173,7 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
         let max_prefix_len = prefixes
             .clone()
             .into_iter()
-            .map(|x| x.bit_count())
+            .map(Prefix::bit_count)
             .max()
             .unwrap_or(0);
         self.is_covered_by_impl(prefixes, max_prefix_len)

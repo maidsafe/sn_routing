@@ -169,7 +169,7 @@ pub fn count_sections(nodes: &[TestNode]) -> usize {
     nodes
         .iter()
         .filter_map(|n| n.inner.chain().ok())
-        .flat_map(|chain| chain.prefixes())
+        .flat_map(Chain::prefixes)
         .unique()
         .count()
 }
@@ -178,7 +178,7 @@ pub fn current_sections(nodes: &[TestNode]) -> BTreeSet<Prefix<XorName>> {
     nodes
         .iter()
         .filter_map(|n| n.inner.chain().ok())
-        .flat_map(|chain| chain.prefixes())
+        .flat_map(Chain::prefixes)
         .collect()
 }
 
@@ -588,10 +588,7 @@ pub fn add_connected_nodes_until_split(
     );
     assert_eq!(
         prefix_lengths,
-        prefixes
-            .iter()
-            .map(|prefix| prefix.bit_count())
-            .collect::<Vec<_>>()
+        prefixes.iter().map(Prefix::bit_count).collect::<Vec<_>>()
     );
 
     // Clear all event queues and clear the `next_relocation_dst` values.
@@ -648,7 +645,7 @@ pub fn sort_nodes_by_distance_to(nodes: &mut [TestNode], name: &XorName) {
 
 pub fn verify_invariant_for_all_nodes(nodes: &mut [TestNode]) {
     let min_section_size = nodes[0].handle.0.borrow().network.min_section_size();
-    verify_chain_invariant(nodes.iter().map(|n| n.chain()), min_section_size);
+    verify_chain_invariant(nodes.iter().map(TestNode::chain), min_section_size);
 
     for node in nodes.iter_mut() {
         // Confirm valid peers from chain are connected according to PeerMgr

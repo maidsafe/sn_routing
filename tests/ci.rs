@@ -392,7 +392,7 @@ fn core() {
 
     {
         // request to group authority
-        let node_names = nodes.iter().map(|node| node.name()).collect_vec();
+        let node_names = nodes.iter().map(TestNode::name).collect_vec();
         let mut client = TestClient::new(nodes.len(), event_sender.clone());
         let client_key = *client.full_id().public_id().signing_public_key();
         let data = gen_mutable_data(client.full_id(), &mut rng);
@@ -438,7 +438,7 @@ fn core() {
 
     {
         // response from group authority
-        let node_names = nodes.iter().map(|node| node.name()).collect_vec();
+        let node_names = nodes.iter().map(TestNode::name).collect_vec();
         let mut client = TestClient::new(nodes.len(), event_sender.clone());
         let client_key = *client.full_id().public_id().signing_public_key();
         let data = gen_mutable_data(client.full_id(), &mut rng);

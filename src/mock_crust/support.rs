@@ -302,7 +302,7 @@ impl<UID: Uid> Network<UID> {
             .borrow()
             .services
             .get(&endpoint)
-            .and_then(|s| s.upgrade())
+            .and_then(Weak::upgrade)
     }
 }
 

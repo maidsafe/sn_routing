@@ -7,10 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{observation::Observation, NetworkEvent, Proof, PublicId};
-use std::{
-    collections::BTreeSet,
-    iter::{self, Once},
-};
+use std::collections::BTreeSet;
 
 #[serde(bound = "")]
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Debug)]
@@ -37,17 +34,5 @@ impl<T: NetworkEvent, P: PublicId> Block<T, P> {
 
     pub fn proofs(&self) -> &BTreeSet<Proof<P>> {
         &self.proofs
-    }
-}
-
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub struct BlockGroup<T: NetworkEvent, P: PublicId>(pub Block<T, P>);
-
-impl<T: NetworkEvent, P: PublicId> IntoIterator for BlockGroup<T, P> {
-    type Item = Block<T, P>;
-    type IntoIter = Once<Self::Item>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        iter::once(self.0)
     }
 }

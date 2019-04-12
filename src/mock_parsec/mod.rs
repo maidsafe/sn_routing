@@ -15,7 +15,7 @@ mod state;
 mod tests;
 
 pub use self::{
-    block::{Block, BlockGroup},
+    block::Block,
     observation::{ConsensusMode, Observation},
 };
 pub use parsec::{NetworkEvent, Proof, PublicId, SecretId};
@@ -162,7 +162,7 @@ where
         Ok(())
     }
 
-    pub fn poll(&mut self) -> Option<BlockGroup<T, S::PublicId>> {
+    pub fn poll(&mut self) -> Option<Block<T, S::PublicId>> {
         state::with(self.section_hash, |state| {
             if let Some((block, holder)) = state.blocks.get(self.first_unpolled) {
                 self.first_unpolled += 1;
@@ -171,7 +171,7 @@ where
                     .or_insert_with(ObservationInfo::new)
                     .state = ConsensusState::Polled;
 
-                Some(BlockGroup(block.clone()))
+                Some(block.clone())
             } else {
                 None
             }

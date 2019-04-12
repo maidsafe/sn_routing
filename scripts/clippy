@@ -4,9 +4,6 @@ set -x -e
 export RUSTFLAGS="-C opt-level=2 -C codegen-units=8"
 
 cargo fmt -- --check
-cargo check --verbose --lib --tests
-cargo check --verbose --example ci_test
-cargo check --verbose --example key_value_store
-cargo clippy --verbose --all-targets
-cargo clippy --verbose --all-targets --features=mock
-cargo clippy --verbose --all-targets --features=mock_parsec
+cargo clippy $@ --all-targets
+cargo clippy $@ --all-targets --features=mock
+cargo clippy $@ --all-targets --features=mock_parsec
