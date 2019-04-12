@@ -49,11 +49,6 @@ impl TopLevelSrc {
         }
     }
 
-    fn increment_nodes_work_units(&self) -> Self {
-        self.0.action.increment_nodes_work_units();
-        self.clone()
-    }
-
     fn check_get_node_to_relocate(&self) -> Self {
         match (self.0.action.get_node_to_relocate(), false) {
             (Some(candidate), false) => self.set_relocating_candidate(candidate),
@@ -61,18 +56,30 @@ impl TopLevelSrc {
         }
     }
 
+    //
+    // Actions
+    //
+    fn increment_nodes_work_units(&self) -> Self {
+        self.0.action.increment_nodes_work_units();
+        self.clone()
+    }
+
     fn set_relocating_candidate(&self, candidate: Candidate) -> Self {
         self.0.action.set_candidate_relocating_state(candidate);
         self.clone()
     }
 
-    fn vote_parsec_work_unit_increment(&self) -> Self {
-        self.0.action.vote_parsec(ParsecVote::WorkUnitIncrement);
+    fn start_work_unit_timeout(&self) -> Self {
+        self.0.action.schedule_event(LocalEvent::TimeoutWorkUnit);
         self.clone()
     }
 
-    fn start_work_unit_timeout(&self) -> Self {
-        self.0.action.schedule_event(LocalEvent::TimeoutWorkUnit);
+    //
+    // Votes
+    //
+
+    fn vote_parsec_work_unit_increment(&self) -> Self {
+        self.0.action.vote_parsec(ParsecVote::WorkUnitIncrement);
         self.clone()
     }
 }
@@ -124,20 +131,12 @@ impl StartRelocateSrc {
                 Some(self.check_is_our_relocating_node(vote, candidate))
             }
             ParsecVote::RelocatedInfo(info) => Some(
-                self.send_candidate_relocated_info(info)
+                self.send_candidate_relocated_info_rpc(info)
                     .purge_node_info(info.candidate),
             ),
             // Delegate to other event loops
             _ => None,
         }
-    }
-
-    fn routine_state(&self) -> &StartRelocateSrcState {
-        &self.0.start_relocate_src
-    }
-
-    fn mut_routine_state(&mut self) -> &mut StartRelocateSrcState {
-        &mut self.0.start_relocate_src
     }
 
     fn check_need_relocate(&self) -> Self {
@@ -210,27 +209,26 @@ impl StartRelocateSrc {
         self.clone()
     }
 
-    fn vote_parsec_check_relocate(&self) -> Self {
-        self.0.action.vote_parsec(ParsecVote::CheckRelocate);
-        self.clone()
+    //
+    // Routine state
+    //
+
+    fn routine_state(&self) -> &StartRelocateSrcState {
+        &self.0.start_relocate_src
     }
+
+    fn mut_routine_state(&mut self) -> &mut StartRelocateSrcState {
+        &mut self.0.start_relocate_src
+    }
+
+    //
+    // Actions
+    //
 
     fn start_check_relocate_timeout(&self) -> Self {
         self.0
             .action
             .schedule_event(LocalEvent::TimeoutCheckRelocate);
-        self.clone()
-    }
-
-    fn send_expect_candidate_rpc(&self, candidate: Candidate) -> Self {
-        self.0.action.send_rpc(Rpc::ExpectCandidate(candidate));
-        self.clone()
-    }
-
-    fn send_candidate_relocated_info(&self, info: RelocatedInfo) -> Self {
-        self.0
-            .action
-            .send_candidate_relocated_info(info.candidate, info.section_info);
         self.clone()
     }
 
@@ -240,6 +238,31 @@ impl StartRelocateSrc {
     }
 
     fn discard(&self) -> Self {
+        self.clone()
+    }
+
+    //
+    // RPCs
+    //
+
+    fn send_expect_candidate_rpc(&self, candidate: Candidate) -> Self {
+        self.0.action.send_rpc(Rpc::ExpectCandidate(candidate));
+        self.clone()
+    }
+
+    fn send_candidate_relocated_info_rpc(&self, info: RelocatedInfo) -> Self {
+        self.0
+            .action
+            .send_rpc(Rpc::RelocatedInfo(info.candidate, info.section_info));
+        self.clone()
+    }
+
+    //
+    // Votes
+    //
+
+    fn vote_parsec_check_relocate(&self) -> Self {
+        self.0.action.vote_parsec(ParsecVote::CheckRelocate);
         self.clone()
     }
 
