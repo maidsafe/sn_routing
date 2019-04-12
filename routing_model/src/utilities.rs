@@ -54,20 +54,49 @@ impl NodeChange {
     }
 }
 
-enum MemberState {
-
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord)]
+pub enum State {
+    // Online ordered first Online node are choosen for elder
+    Online,
+    // Relcating and increase the age
+    RelocatingAgeIncrease,
+    // Not a full adult: still wait proofing
+    WaitingProofing,
+    // When a node that was previous online lost connection
+    Offline,
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+impl State {
+    pub fn is_relocating(&self) -> bool {
+        *self == State::RelocatingAgeIncrease
+    }
+
+    pub fn is_resource_proofing(&self) -> bool {
+        *self == State::WaitingProofing
+    }
+
+    pub fn is_offline(&self) -> bool {
+        *self == State::Offline
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct NodeState {
     pub node: Node,
     pub work_units_done: i32,
     pub is_elder: bool,
-    pub is_relocating: bool,
-    pub need_relocate: bool,
-    pub is_resource_proofing: bool,
-    // When a node that was previous online lost connection
-    pub is_offline: bool,
+    pub state: State,
+}
+
+impl Default for NodeState {
+    fn default() -> NodeState {
+        NodeState {
+            node: Default::default(),
+            work_units_done: Default::default(),
+            is_elder: Default::default(),
+            state: State::Online,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, PartialOrd, Ord, Eq)]

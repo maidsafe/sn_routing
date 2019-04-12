@@ -157,7 +157,12 @@ fn process_events(mut state: MemberState, events: &[Event]) -> MemberState {
     state
 }
 
-fn run_test(test_name: &str, start_state: &MemberState, events: &[Event], expected_state: &AssertState) {
+fn run_test(
+    test_name: &str,
+    start_state: &MemberState,
+    events: &[Event],
+    expected_state: &AssertState,
+) {
     let final_state = process_events(start_state.clone(), &events);
     let action = final_state.action.inner();
 

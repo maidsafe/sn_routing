@@ -14,7 +14,7 @@ use std::rc::Rc;
 
 use crate::utilities::{
     Attributes, Candidate, ChangeElder, GenesisPfxInfo, LocalEvent, Name, Node, NodeChange,
-    NodeState, ParsecVote, Proof, ProofRequest, ProofSource, Rpc, Section, SectionInfo,
+    NodeState, ParsecVote, Proof, ProofRequest, ProofSource, Rpc, Section, SectionInfo, State,
 };
 
 #[derive(Debug, PartialEq, Clone)]
@@ -97,20 +97,20 @@ impl InnerAction {
     fn set_relocating_state(&mut self, name: Name) {
         let node = &mut self.our_current_nodes.get_mut(&name).unwrap();
 
-        node.is_relocating = true;
+        node.state = State::RelocatingAgeIncrease;
         self.our_nodes.push(NodeChange::Relocating(node.node));
     }
 
     fn set_online_state(&mut self, name: Name) {
         let node = &mut self.our_current_nodes.get_mut(&name).unwrap();
 
-        node.is_resource_proofing = false;
+        node.state = State::Online;
         self.our_nodes.push(NodeChange::Online(node.node));
     }
 
     fn set_offline_state(&mut self, name: Name) {
         let node = &mut self.our_current_nodes.get_mut(&name).unwrap();
-        node.is_offline = true;
+        node.state = State::Offline;
         // Note: for test validation only
         self.our_nodes.push(NodeChange::Offline(node.node));
     }
@@ -163,7 +163,7 @@ impl Action {
     pub fn add_node_ressource_proofing(&self, candidate: Candidate) {
         let state = NodeState {
             node: Node(candidate.0),
-            is_resource_proofing: true,
+            state: State::WaitingProofing,
             ..NodeState::default()
         };
         self.0.borrow_mut().add_node(state);
@@ -198,12 +198,10 @@ impl Action {
                 .values()
                 .cloned()
                 .sorted_by(|left, right| {
-                    left.is_offline.cmp(&right.is_offline).then(
-                        left.is_relocating
-                            .cmp(&right.is_relocating)
-                            .then(left.node.0.age.cmp(&right.node.0.age).reverse())
-                            .then(left.node.0.name.cmp(&right.node.0.name)),
-                    )
+                    left.state
+                        .cmp(&right.state)
+                        .then(left.node.0.age.cmp(&right.node.0.age).reverse())
+                        .then(left.node.0.name.cmp(&right.node.0.name))
                 })
                 .collect_vec();
             let elder_size = std::cmp::min(3, sorted_values.len());
@@ -271,7 +269,7 @@ impl Action {
         if let Some(relocating) = inner
             .our_current_nodes
             .values()
-            .find(|state| state.is_relocating)
+            .find(|state| state.state.is_relocating())
         {
             return Candidate(relocating.node.0);
         }
@@ -292,7 +290,9 @@ impl Action {
     }
 
     pub fn is_candidate_relocating_state(&self, candidate: Candidate) -> bool {
-        self.0.borrow().our_current_nodes[&Name(candidate.0.name)].is_relocating
+        self.0.borrow().our_current_nodes[&Name(candidate.0.name)]
+            .state
+            .is_relocating()
     }
 
     pub fn is_our_name(&self, name: Name) -> bool {
