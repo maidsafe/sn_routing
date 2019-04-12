@@ -255,26 +255,31 @@ impl Action {
             .set_section_info(change_elder.new_section);
     }
 
-    pub fn get_relocating_candidate(&self) -> Candidate {
-        let inner = &self.0.borrow();
-
-        if let Some(relocating) = inner
+    pub fn get_node_to_relocate(&self) -> Option<Candidate> {
+        self.0
+            .borrow()
             .our_current_nodes
             .values()
-            .find(|state| state.state.is_relocating())
-        {
-            return Candidate(relocating.node.0);
-        }
+            .find(|state| !state.state.is_relocating() && state.work_units_done >= state.node.0.age)
+            .map(|state| Candidate(state.node.0))
+    }
 
-        if let Some(relocating) = inner
+    pub fn get_best_relocating_node_and_target(&self) -> Option<(Candidate, Section)> {
+        self.0
+            .borrow()
             .our_current_nodes
             .values()
-            .find(|state| state.work_units_done >= state.node.0.age)
-        {
-            return Candidate(relocating.node.0);
-        }
+            .find(|state| state.state.is_relocating() && !state.is_elder)
+            .map(|state| (Candidate(state.node.0), Section::default()))
+    }
 
-        panic!("work_units_done not setup for relocation")
+    pub fn is_our_relocating_node(&self, candidate: Candidate) -> bool {
+        self.0
+            .borrow()
+            .our_current_nodes
+            .get(&Name(candidate.0.name))
+            .map(|state| state.state.is_relocating())
+            .unwrap_or(false)
     }
 
     pub fn is_elder_state(&self, candidate: Candidate) -> bool {
@@ -367,6 +372,8 @@ impl Action {
             proof,
         });
     }
+
+    pub fn increment_nodes_work_units(&self) {}
 }
 
 impl Default for Action {

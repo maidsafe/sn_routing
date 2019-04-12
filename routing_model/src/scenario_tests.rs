@@ -914,9 +914,10 @@ mod src_tests {
         run_test(
             "Get RPC ExpectCandidate",
             &initial_state_old_elders(),
-            &[LocalEvent::RelocationTrigger.to_event()],
+            &[LocalEvent::TimeoutWorkUnit.to_event()],
             &AssertState {
-                action_our_votes: vec![ParsecVote::RelocationTrigger],
+                action_our_events: vec![LocalEvent::TimeoutWorkUnit],
+                action_our_votes: vec![ParsecVote::WorkUnitIncrement],
                 ..AssertState::default()
             },
         );
@@ -936,19 +937,16 @@ mod src_tests {
         run_test(
             "Get Parsec ExpectCandidate",
             &initial_state,
-            &[ParsecVote::RelocationTrigger.to_event()],
+            &[
+                ParsecVote::WorkUnitIncrement.to_event(),
+                ParsecVote::CheckRelocate.to_event(),
+            ],
             &AssertState {
                 action_our_rpcs: vec![Rpc::ExpectCandidate(CANDIDATE_205)],
                 action_our_nodes: vec![NodeChange::State(
                     YOUNG_ADULT_205,
                     State::RelocatingAnyReason,
                 )],
-                src_routine: SrcRoutineState {
-                    relocating_candidate: Some(CANDIDATE_205),
-                    sub_routine_try_relocating: Some(TryRelocatingState {
-                        candidate: CANDIDATE_205,
-                    }),
-                },
                 ..AssertState::default()
             },
         );
@@ -969,7 +967,8 @@ mod src_tests {
             "Get Parsec ExpectCandidate then Online (Elder Change)",
             &initial_state,
             &[
-                ParsecVote::RelocationTrigger.to_event(),
+                ParsecVote::WorkUnitIncrement.to_event(),
+                ParsecVote::CheckRelocate.to_event(),
                 ParsecVote::CheckElder.to_event(),
             ],
             &AssertState {
@@ -999,7 +998,7 @@ mod src_tests {
                 ..MemberState::default()
             },
             &[
-                ParsecVote::RelocationTrigger.to_event(),
+                ParsecVote::WorkUnitIncrement.to_event(),
                 ParsecVote::CheckElder.to_event(),
             ],
         );
@@ -1011,7 +1010,7 @@ mod src_tests {
                 ParsecVote::RemoveElderNode(NODE_ELDER_130).to_event(),
                 ParsecVote::AddElderNode(YOUNG_ADULT_205).to_event(),
                 ParsecVote::NewSectionInfo(SECTION_INFO_1).to_event(),
-                ParsecVote::RelocationTrigger.to_event(),
+                ParsecVote::CheckRelocate.to_event(),
             ],
             &AssertState {
                 action_our_section: SECTION_INFO_1,
@@ -1021,12 +1020,6 @@ mod src_tests {
                 ],
                 action_our_rpcs: vec![Rpc::ExpectCandidate(CANDIDATE_130)],
                 action_our_events: vec![LocalEvent::TimeoutCheckElder],
-                src_routine: SrcRoutineState {
-                    relocating_candidate: Some(Candidate(NODE_ELDER_130.0)),
-                    sub_routine_try_relocating: Some(TryRelocatingState {
-                        candidate: CANDIDATE_130,
-                    }),
-                },
                 ..AssertState::default()
             },
         );
@@ -1043,7 +1036,10 @@ mod src_tests {
                 ),
                 ..MemberState::default()
             },
-            &[ParsecVote::RelocationTrigger.to_event()],
+            &[
+                ParsecVote::WorkUnitIncrement.to_event(),
+                ParsecVote::CheckRelocate.to_event(),
+            ],
         );
 
         run_test(
@@ -1052,12 +1048,6 @@ mod src_tests {
             &[Rpc::RefuseCandidate(CANDIDATE_205).to_event()],
             &AssertState {
                 action_our_votes: vec![ParsecVote::RefuseCandidate(CANDIDATE_205)],
-                src_routine: SrcRoutineState {
-                    relocating_candidate: Some(CANDIDATE_205),
-                    sub_routine_try_relocating: Some(TryRelocatingState {
-                        candidate: CANDIDATE_205,
-                    }),
-                },
                 ..AssertState::default()
             },
         );
@@ -1074,7 +1064,10 @@ mod src_tests {
                 ),
                 ..MemberState::default()
             },
-            &[ParsecVote::RelocationTrigger.to_event()],
+            &[
+                ParsecVote::WorkUnitIncrement.to_event(),
+                ParsecVote::CheckRelocate.to_event(),
+            ],
         );
 
         run_test(
@@ -1086,12 +1079,6 @@ mod src_tests {
                     CANDIDATE_205,
                     DST_SECTION_INFO_200,
                 )],
-                src_routine: SrcRoutineState {
-                    relocating_candidate: Some(CANDIDATE_205),
-                    sub_routine_try_relocating: Some(TryRelocatingState {
-                        candidate: CANDIDATE_205,
-                    }),
-                },
                 ..AssertState::default()
             },
         );
@@ -1108,7 +1095,10 @@ mod src_tests {
                 ),
                 ..MemberState::default()
             },
-            &[ParsecVote::RelocationTrigger.to_event()],
+            &[
+                ParsecVote::WorkUnitIncrement.to_event(),
+                ParsecVote::CheckRelocate.to_event(),
+            ],
         );
 
         run_test(
@@ -1137,7 +1127,10 @@ mod src_tests {
                 ),
                 ..MemberState::default()
             },
-            &[ParsecVote::RelocationTrigger.to_event()],
+            &[
+                ParsecVote::WorkUnitIncrement.to_event(),
+                ParsecVote::CheckRelocate.to_event(),
+            ],
         );
 
         run_test(
@@ -1160,7 +1153,8 @@ mod src_tests {
                 ..MemberState::default()
             },
             &[
-                ParsecVote::RelocationTrigger.to_event(),
+                ParsecVote::WorkUnitIncrement.to_event(),
+                ParsecVote::CheckRelocate.to_event(),
                 ParsecVote::RefuseCandidate(CANDIDATE_205).to_event(),
             ],
         );
@@ -1168,15 +1162,9 @@ mod src_tests {
         run_test(
             "Get Parsec ExpectCandidate",
             &initial_state,
-            &[ParsecVote::RelocationTrigger.to_event()],
+            &[ParsecVote::CheckRelocate.to_event()],
             &AssertState {
                 action_our_rpcs: vec![Rpc::ExpectCandidate(CANDIDATE_205)],
-                src_routine: SrcRoutineState {
-                    relocating_candidate: Some(CANDIDATE_205),
-                    sub_routine_try_relocating: Some(TryRelocatingState {
-                        candidate: CANDIDATE_205,
-                    }),
-                },
                 ..AssertState::default()
             },
         );
@@ -1194,12 +1182,12 @@ mod src_tests {
                 ..MemberState::default()
             },
             &[
-                ParsecVote::RelocationTrigger.to_event(),
+                ParsecVote::WorkUnitIncrement.to_event(),
                 ParsecVote::CheckElder.to_event(),
                 ParsecVote::RemoveElderNode(NODE_ELDER_130).to_event(),
                 ParsecVote::AddElderNode(YOUNG_ADULT_205).to_event(),
                 ParsecVote::NewSectionInfo(SECTION_INFO_1).to_event(),
-                ParsecVote::RelocationTrigger.to_event(),
+                ParsecVote::CheckRelocate.to_event(),
                 ParsecVote::RefuseCandidate(CANDIDATE_130).to_event(),
             ],
         );
@@ -1207,16 +1195,10 @@ mod src_tests {
         run_test(
             "Get Parsec ExpectCandidate",
             &initial_state,
-            &[ParsecVote::RelocationTrigger.to_event()],
+            &[ParsecVote::CheckRelocate.to_event()],
             &AssertState {
                 action_our_section: SECTION_INFO_1,
                 action_our_rpcs: vec![Rpc::ExpectCandidate(CANDIDATE_130)],
-                src_routine: SrcRoutineState {
-                    relocating_candidate: Some(CANDIDATE_130),
-                    sub_routine_try_relocating: Some(TryRelocatingState {
-                        candidate: CANDIDATE_130,
-                    }),
-                },
                 ..AssertState::default()
             },
         );
