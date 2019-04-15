@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::actions::*;
 use crate::flows_dst::*;
@@ -37,9 +37,9 @@ impl AcceptAsCandidateState {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub struct TryRelocatingState {
-    pub candidate: Candidate,
+#[derive(Debug, PartialEq, Default, Clone)]
+pub struct StartRelocateSrcState {
+    pub already_relocating: BTreeMap<Candidate, i32>,
 }
 
 #[derive(Debug, PartialEq, Default, Clone)]
@@ -49,10 +49,7 @@ pub struct DstRoutineState {
 }
 
 #[derive(Debug, PartialEq, Default, Clone)]
-pub struct SrcRoutineState {
-    pub relocating_candidate: Option<Candidate>,
-    pub sub_routine_try_relocating: Option<TryRelocatingState>,
-}
+pub struct SrcRoutineState {}
 
 // The very top level event loop deciding how the sub event loops are processed
 #[derive(Debug, PartialEq, Default, Clone)]
@@ -61,13 +58,13 @@ pub struct MemberState {
     pub failure: Option<Event>,
     pub dst_routine: DstRoutineState,
     pub src_routine: SrcRoutineState,
+    pub start_relocate_src: StartRelocateSrcState,
     pub check_and_process_elder_change_routine: CheckAndProcessElderChangeState,
 }
 
 impl MemberState {
     pub fn try_next(&self, event: Event) -> Option<Self> {
         let dst = &self.dst_routine;
-        let src = &self.src_routine;
 
         if let Some(next) = self.as_check_and_process_elder_change().try_next(event) {
             return Some(next);
@@ -77,10 +74,8 @@ impl MemberState {
             return Some(next);
         }
 
-        if src.sub_routine_try_relocating.is_some() {
-            if let Some(next) = self.as_try_relocating().try_next(event) {
-                return Some(next);
-            }
+        if let Some(next) = self.as_start_relocate_src().try_next(event) {
+            return Some(next);
         }
 
         if let Some(next) = self.as_top_level_src().try_next(event) {
@@ -129,8 +124,8 @@ impl MemberState {
         TopLevelSrc(self.clone())
     }
 
-    pub fn as_try_relocating(&self) -> TryRelocating {
-        TryRelocating(self.clone())
+    pub fn as_start_relocate_src(&self) -> StartRelocateSrc {
+        StartRelocateSrc(self.clone())
     }
 
     pub fn failure_event(&self, event: Event) -> Self {
@@ -148,19 +143,6 @@ impl MemberState {
             dst_routine: DstRoutineState {
                 sub_routine_accept_as_candidate,
                 ..self.dst_routine.clone()
-            },
-            ..self.clone()
-        }
-    }
-
-    pub fn with_src_sub_routine_try_relocating(
-        &self,
-        sub_routine_try_relocating: Option<TryRelocatingState>,
-    ) -> Self {
-        Self {
-            src_routine: SrcRoutineState {
-                sub_routine_try_relocating,
-                ..self.src_routine.clone()
             },
             ..self.clone()
         }

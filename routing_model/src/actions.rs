@@ -8,13 +8,14 @@
 
 use itertools::Itertools;
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
 use std::rc::Rc;
 
 use crate::utilities::{
     Attributes, Candidate, ChangeElder, GenesisPfxInfo, LocalEvent, Name, Node, NodeChange,
-    NodeState, ParsecVote, Proof, ProofRequest, ProofSource, Rpc, Section, SectionInfo, State,
+    NodeState, ParsecVote, Proof, ProofRequest, ProofSource, RelocatedInfo, Rpc, Section,
+    SectionInfo, State,
 };
 
 #[derive(Debug, PartialEq, Clone)]
@@ -173,6 +174,18 @@ impl Action {
             .set_node_state(node.name(), State::RelocatingAnyReason);
     }
 
+    pub fn set_candidate_relocating_state(&self, candidate: Candidate) {
+        self.0
+            .borrow_mut()
+            .set_node_state(candidate.name(), State::RelocatingAnyReason);
+    }
+
+    pub fn set_candidate_relocated_state(&self, candidate: Candidate, info: RelocatedInfo) {
+        self.0
+            .borrow_mut()
+            .set_node_state(candidate.name(), State::Relocated(info));
+    }
+
     pub fn remove_node(&self, candidate: Candidate) {
         self.0.borrow_mut().remove_node(Node(candidate.0));
     }
@@ -255,26 +268,35 @@ impl Action {
             .set_section_info(change_elder.new_section);
     }
 
-    pub fn get_relocating_candidate(&self) -> Candidate {
-        let inner = &self.0.borrow();
-
-        if let Some(relocating) = inner
+    pub fn get_node_to_relocate(&self) -> Option<Candidate> {
+        self.0
+            .borrow()
             .our_current_nodes
             .values()
-            .find(|state| state.state.is_relocating())
-        {
-            return Candidate(relocating.node.0);
-        }
+            .find(|state| !state.state.is_relocating() && state.work_units_done >= state.node.0.age)
+            .map(|state| Candidate(state.node.0))
+    }
 
-        if let Some(relocating) = inner
+    pub fn get_best_relocating_node_and_target(
+        &self,
+        already_relocating: &BTreeMap<Candidate, i32>,
+    ) -> Option<(Candidate, Section)> {
+        self.0
+            .borrow()
             .our_current_nodes
             .values()
-            .find(|state| state.work_units_done >= state.node.0.age)
-        {
-            return Candidate(relocating.node.0);
-        }
+            .filter(|state| !already_relocating.contains_key(&Candidate(state.node.0)))
+            .find(|state| state.state.is_relocating() && !state.is_elder)
+            .map(|state| (Candidate(state.node.0), Section::default()))
+    }
 
-        panic!("work_units_done not setup for relocation")
+    pub fn is_our_relocating_node(&self, candidate: Candidate) -> bool {
+        self.0
+            .borrow()
+            .our_current_nodes
+            .get(&Name(candidate.0.name))
+            .map(|state| state.state.is_relocating())
+            .unwrap_or(false)
     }
 
     pub fn is_elder_state(&self, candidate: Candidate) -> bool {
@@ -300,19 +322,9 @@ impl Action {
         self.send_rpc(Rpc::NodeApproval(candidate, section));
     }
 
-    pub fn set_candidate_relocating_state(&self, candidate: Candidate) {
-        self.0
-            .borrow_mut()
-            .set_node_state(candidate.name(), State::RelocatingAnyReason);
-    }
-
     pub fn send_relocate_response_rpc(&self, candidate: Candidate) {
         let section = self.0.borrow().our_section;
         self.send_rpc(Rpc::RelocateResponse(candidate, section));
-    }
-
-    pub fn send_candidate_relocated_info(&self, candidate: Candidate, section: SectionInfo) {
-        self.send_rpc(Rpc::RelocatedInfo(candidate, section));
     }
 
     pub fn send_candidate_proof_request(&self, candidate: Candidate) {
@@ -367,6 +379,8 @@ impl Action {
             proof,
         });
     }
+
+    pub fn increment_nodes_work_units(&self) {}
 }
 
 impl Default for Action {

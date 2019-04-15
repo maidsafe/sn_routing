@@ -22,3 +22,6 @@ mod scenario_tests;
 #[macro_use]
 extern crate lazy_static;
 extern crate unwrap;
+
+#[macro_use]
+extern crate pretty_assertions;

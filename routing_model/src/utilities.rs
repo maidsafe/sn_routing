@@ -12,7 +12,7 @@ pub struct Name(pub i32);
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord)]
 pub struct Age(i32);
 
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, PartialOrd, Eq, Ord)]
 pub struct Attributes {
     pub age: i32,
     pub name: i32,
@@ -24,7 +24,7 @@ impl Attributes {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord)]
 pub struct Candidate(pub Attributes);
 
 impl Candidate {
@@ -69,11 +69,19 @@ impl NodeChange {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord)]
+pub struct RelocatedInfo {
+    pub candidate: Candidate,
+    pub section_info: SectionInfo,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord)]
 pub enum State {
     // Online ordered first Online node are choosen for elder
     Online,
     // Relcating
     RelocatingAnyReason,
+    // Complete relocation, only waiting for info to be processed
+    Relocated(RelocatedInfo),
     // Not a full adult: still wait proofing
     WaitingProofing,
     // When a node that was previous online lost connection
@@ -274,9 +282,11 @@ pub enum ParsecVote {
     RemoveElderNode(Node),
     NewSectionInfo(SectionInfo),
 
-    RelocationTrigger,
+    WorkUnitIncrement,
+    CheckRelocate,
     RefuseCandidate(Candidate),
     RelocateResponse(Candidate, SectionInfo),
+    RelocatedInfo(RelocatedInfo),
 
     CheckElder,
 
@@ -300,7 +310,9 @@ impl ParsecVote {
             ParsecVote::AddElderNode(_)
             | ParsecVote::RemoveElderNode(_)
             | ParsecVote::NewSectionInfo(_)
-            | ParsecVote::RelocationTrigger
+            | ParsecVote::WorkUnitIncrement
+            | ParsecVote::CheckRelocate
+            | ParsecVote::RelocatedInfo(_)
             | ParsecVote::CheckElder
             | ParsecVote::Offline(_)
             | ParsecVote::BackOnline(_) => None,
@@ -311,7 +323,10 @@ impl ParsecVote {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LocalEvent {
     TimeoutAccept,
-    RelocationTrigger,
+
+    TimeoutWorkUnit,
+    TimeoutCheckRelocate,
+
     TimeoutCheckElder,
     JoiningTimeoutResendCandidateInfo,
     JoiningTimeoutRefused,
