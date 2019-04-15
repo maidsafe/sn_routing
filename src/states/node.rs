@@ -34,13 +34,12 @@ use crate::routing_table::{Authority, Prefix, Xorable, DEFAULT_PREFIX};
 use crate::sha3::Digest256;
 use crate::signature_accumulator::SignatureAccumulator;
 use crate::state_machine::Transition;
+use crate::time::{Duration, Instant};
 use crate::timer::Timer;
 use crate::types::{MessageId, RoutingActionSender};
 use crate::utils::{self, DisplayDuration};
 use crate::xor_name::XorName;
 use crate::{CrustEvent, PrivConnectionInfo, PubConnectionInfo, Service};
-#[cfg(feature = "mock")]
-use fake_clock::FakeClock as Instant;
 use itertools::Itertools;
 use log::LogLevel;
 use lru_time_cache::LruCache;
@@ -51,9 +50,6 @@ use std::collections::BTreeMap;
 use std::collections::{BTreeSet, VecDeque};
 use std::fmt::{Display, Formatter};
 use std::net::IpAddr;
-use std::time::Duration;
-#[cfg(not(feature = "mock"))]
-use std::time::Instant;
 use std::{cmp, fmt, iter, mem};
 
 /// Time (in seconds) after which a `Tick` event is sent.

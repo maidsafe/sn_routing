@@ -11,15 +11,11 @@ use crate::error::RoutingError;
 use crate::message_filter::MessageFilter;
 use crate::messages::RoutingMessage;
 use crate::sha3;
-#[cfg(feature = "mock")]
-use fake_clock::FakeClock as Instant;
+use crate::time::{Duration, Instant};
 use maidsafe_utilities::serialisation;
 use safe_crypto;
 use std::collections::BTreeMap;
 use std::fmt;
-use std::time::Duration;
-#[cfg(not(feature = "mock"))]
-use std::time::Instant;
 
 /// Time (in seconds) after which a message is resent due to being unacknowledged by recipient.
 pub const ACK_TIMEOUT_SECS: u64 = 20;

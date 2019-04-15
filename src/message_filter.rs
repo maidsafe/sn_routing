@@ -6,15 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-#[cfg(feature = "mock")]
-use fake_clock::FakeClock as Instant;
+use crate::time::{Duration, Instant};
 use std::collections::hash_map::{DefaultHasher, Entry};
 use std::collections::{HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
-use std::time::Duration;
-#[cfg(not(feature = "mock"))]
-use std::time::Instant;
 
 fn hash<T: Hash>(t: &T) -> u64 {
     let mut hasher = DefaultHasher::new();

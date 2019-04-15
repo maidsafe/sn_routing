@@ -193,6 +193,7 @@ mod routing_table;
 mod signature_accumulator;
 mod state_machine;
 mod states;
+mod time;
 mod timer;
 mod types;
 mod utils;

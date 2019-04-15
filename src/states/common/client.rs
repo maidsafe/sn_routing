@@ -13,12 +13,9 @@ use crate::{
     id::PublicId,
     messages::{RoutingMessage, SignedMessage},
     routing_table::Authority,
+    time::Instant,
 };
-#[cfg(feature = "mock")]
-use fake_clock::FakeClock as Instant;
 use std::collections::BTreeSet;
-#[cfg(not(feature = "mock"))]
-use std::time::Instant;
 
 pub fn send_routing_message_via_route<T>(
     client: &mut T,

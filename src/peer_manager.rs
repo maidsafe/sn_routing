@@ -12,20 +12,16 @@ use crate::id::PublicId;
 use crate::resource_prover::RESOURCE_PROOF_DURATION_SECS;
 use crate::routing_table::Authority;
 use crate::signature_accumulator::ACCUMULATION_TIMEOUT_SECS;
+use crate::time::{Duration, Instant};
 use crate::types::MessageId;
 use crate::xor_name::XorName;
 use crate::{PrivConnectionInfo, PubConnectionInfo};
-#[cfg(feature = "mock")]
-use fake_clock::FakeClock as Instant;
 use itertools::Itertools;
 use log::LogLevel;
 use rand;
 use resource_proof::ResourceProof;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::net::IpAddr;
-use std::time::Duration;
-#[cfg(not(feature = "mock"))]
-use std::time::Instant;
 use std::{error, fmt, mem};
 
 /// Time (in seconds) after which a joining node will get dropped from the map of joining nodes.

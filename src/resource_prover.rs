@@ -14,11 +14,10 @@ use crate::messages::{DirectMessage, MAX_PART_LEN};
 use crate::outbox::EventBox;
 use crate::signature_accumulator::ACCUMULATION_TIMEOUT_SECS;
 use crate::state_machine::Transition;
+use crate::time::{Duration, Instant};
 use crate::timer::Timer;
 use crate::types::RoutingActionSender;
 use crate::utils::DisplayDuration;
-#[cfg(feature = "mock")]
-use fake_clock::FakeClock as Instant;
 use itertools::Itertools;
 use maidsafe_utilities::thread;
 use resource_proof::ResourceProof;
@@ -26,9 +25,6 @@ use std::collections::HashMap;
 use std::iter::Iterator;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
-#[cfg(not(feature = "mock"))]
-use std::time::Instant;
 
 /// Time (in seconds) between accepting a new candidate (i.e. receiving an `AcceptAsCandidate` from
 /// our section) and sending a `CandidateApproval` for this candidate. If the candidate cannot

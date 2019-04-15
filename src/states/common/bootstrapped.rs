@@ -14,15 +14,11 @@ use crate::id::PublicId;
 use crate::messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage};
 use crate::routing_message_filter::RoutingMessageFilter;
 use crate::routing_table::Authority;
+use crate::time::{Duration, Instant};
 use crate::timer::Timer;
 use crate::xor_name::XorName;
-#[cfg(feature = "mock")]
-use fake_clock::FakeClock as Instant;
 use maidsafe_utilities::serialisation;
 use std::collections::BTreeSet;
-use std::time::Duration;
-#[cfg(not(feature = "mock"))]
-use std::time::Instant;
 
 // Common functionality for states that are bootstrapped (have established a crust
 // connection to at least one peer).

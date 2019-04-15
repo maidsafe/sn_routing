@@ -21,21 +21,17 @@ use crate::resource_prover::RESOURCE_PROOF_DURATION_SECS;
 use crate::routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use crate::routing_table::{Authority, Prefix};
 use crate::state_machine::{State, Transition};
+use crate::time::{Duration, Instant};
 use crate::timer::Timer;
 use crate::types::{MessageId, RoutingActionSender};
 use crate::xor_name::XorName;
 use crate::{CrustEvent, CrustEventSender, Service};
-#[cfg(feature = "mock")]
-use fake_clock::FakeClock as Instant;
 use log::LogLevel;
 use maidsafe_utilities::serialisation;
 use std::collections::BTreeSet;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::sync::mpsc::Receiver;
-use std::time::Duration;
-#[cfg(not(feature = "mock"))]
-use std::time::Instant;
 
 /// Total time (in seconds) to wait for `RelocateResponse`.
 const RELOCATE_TIMEOUT_SECS: u64 = 60 + RESOURCE_PROOF_DURATION_SECS;

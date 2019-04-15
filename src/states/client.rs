@@ -21,17 +21,13 @@ use crate::outbox::EventBox;
 use crate::routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use crate::routing_table::Authority;
 use crate::state_machine::Transition;
+use crate::time::{Duration, Instant};
 use crate::timer::Timer;
 use crate::xor_name::XorName;
 use crate::{CrustEvent, Service};
-#[cfg(feature = "mock")]
-use fake_clock::FakeClock as Instant;
 use maidsafe_utilities::serialisation;
 use std::collections::BTreeMap;
 use std::fmt::{self, Display, Formatter};
-use std::time::Duration;
-#[cfg(not(feature = "mock"))]
-use std::time::Instant;
 
 /// Duration to wait before sending rate limit exceeded messages.
 pub const RATE_EXCEED_RETRY_MS: u64 = 800;

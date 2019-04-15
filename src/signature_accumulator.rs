@@ -9,15 +9,12 @@
 use crate::chain::Proof;
 use crate::messages::SignedMessage;
 use crate::sha3::Digest256;
-#[cfg(feature = "mock")]
-use fake_clock::FakeClock as Instant;
+use crate::time::Instant;
 use itertools::Itertools;
 use maidsafe_utilities::serialisation;
 use safe_crypto;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-#[cfg(not(feature = "mock"))]
-use std::time::Instant;
 
 /// Time (in seconds) within which a message and a quorum of signatures need to arrive to
 /// accumulate.
