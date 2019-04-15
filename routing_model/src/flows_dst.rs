@@ -331,12 +331,12 @@ impl ProcessElderChange {
         self.0
             .with_check_and_process_elder_change_sub_routine_process_elder_change(Some(
                 ProcessElderChangeState {
-                    change_elder,
+                    change_elder: change_elder.clone(),
                     wait_votes: Vec::new(),
                 },
             ))
             .as_process_elder_change()
-            .vote_for_elder_change()
+            .vote_for_elder_change(change_elder)
     }
 
     fn exit_event_loop(&self) -> Self {
@@ -372,10 +372,8 @@ impl ProcessElderChange {
         }
     }
 
-    // WIP: in progress
-    fn vote_for_elder_change(&self) -> Self {
+    fn vote_for_elder_change(&self, change_elder: ChangeElder) -> Self {
         let mut state = self.clone();
-        let change_elder = self.change_elder();
 
         let votes = state.0.action.get_elder_change_votes(&change_elder);
         state.mut_routine_state().change_elder = change_elder;
@@ -411,17 +409,10 @@ impl ProcessElderChange {
         }
     }
 
-    fn change_elder(&self) -> ChangeElder {
-        self.routine_state().change_elder.clone()
-    }
-
     fn mark_elder_change(&self) -> Self {
-        let mut state = self.clone();
-
-        let change_elder = state.mut_routine_state().change_elder.clone();
-        state.0.action.mark_elder_change(change_elder);
-
-        state
+        let change_elder = self.routine_state().change_elder.clone();
+        self.0.action.mark_elder_change(change_elder);
+        self.clone()
     }
 
     fn start_check_elder_timeout(&self) -> Self {
