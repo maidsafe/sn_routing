@@ -1,11 +1,15 @@
 [package]
+authors = ["MaidSafe Developers <dev@maidsafe.net>"]
+description = "Documentation of the control and message flows in Routing, and tests for validating these."
+homepage = "https://maidsafe.net"
+license = "GPL-3.0"
 name = "routing_model"
+repository = "https://github.com/maidsafe/routing"
 version = "0.1.0"
-authors = ["Jean-Philippe DUFRAIGNE <jean.dufraigne@maidsafe.net>"]
 edition = "2018"
 
-[dependencies]
+[dev-dependencies]
 lazy_static = "~1.0.1"
 unwrap = "~1.2.1"
 itertools = "~0.8.0"
-pretty_assertions = "0.6.1"
+pretty_assertions = "~0.6.1"

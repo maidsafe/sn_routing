@@ -3,7 +3,7 @@
 set -x -e
 export RUSTFLAGS="-C opt-level=2 -C codegen-units=8"
 
-cargo fmt -- --check
-cargo clippy $@ --all-targets
+cargo fmt --all -- --check
+cargo clippy $@ --all-targets --all
 cargo clippy $@ --all-targets --features=mock
 cargo clippy $@ --all-targets --features=mock_parsec

@@ -6,12 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::state::{
-    AcceptAsCandidateState, CheckAndProcessElderChangeState, MemberState, ProcessElderChangeState,
+use crate::{
+    state::{AcceptAsCandidateState, MemberState, ProcessElderChangeState},
+    utilities::{Candidate, ChangeElder, Event, LocalEvent, Node, ParsecVote, Proof, Rpc, Section},
 };
-use crate::utilities::{
-    Candidate, ChangeElder, Event, LocalEvent, Node, ParsecVote, Proof, Rpc, Section,
-};
+use unwrap::unwrap;
 
 #[derive(Debug, PartialEq, Default, Clone)]
 pub struct TopLevelDst(pub MemberState);
@@ -263,6 +262,8 @@ pub struct CheckAndProcessElderChange(pub MemberState);
 
 // CheckAndProcessElderChange Sub Routine
 impl CheckAndProcessElderChange {
+    // TODO - remove the `allow` once we have a test for this method.
+    #[allow(dead_code)]
     fn start_event_loop(&self) -> Self {
         self.start_check_elder_timeout()
     }
@@ -283,14 +284,6 @@ impl CheckAndProcessElderChange {
             ParsecVote::CheckElder => Some(self.check_elder()),
             _ => None,
         }
-    }
-
-    fn routine_state(&self) -> &CheckAndProcessElderChangeState {
-        &self.0.check_and_process_elder_change_routine
-    }
-
-    fn mut_routine_state(&mut self) -> &mut CheckAndProcessElderChangeState {
-        &mut self.0.check_and_process_elder_change_routine
     }
 
     fn check_elder(&self) -> Self {
@@ -403,11 +396,6 @@ impl ProcessElderChange {
         let change_elder = unwrap!(state.mut_routine_state().change_elder.take());
         state.0.action.mark_elder_change(change_elder);
         state
-    }
-
-    fn start_check_elder_timeout(&self) -> Self {
-        self.0.action.schedule_event(LocalEvent::TimeoutCheckElder);
-        self.clone()
     }
 }
 

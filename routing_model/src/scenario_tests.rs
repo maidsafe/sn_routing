@@ -6,14 +6,16 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::actions::*;
-use crate::state::*;
-
-use crate::utilities::{
-    Attributes, Candidate, ChangeElder, Event, GenesisPfxInfo, LocalEvent, Name, Node, NodeChange,
-    NodeState, ParsecVote, Proof, ProofRequest, ProofSource, RelocatedInfo, Rpc, Section,
-    SectionInfo, State,
+use crate::{
+    actions::*,
+    state::*,
+    utilities::{
+        Attributes, Candidate, ChangeElder, Event, GenesisPfxInfo, LocalEvent, Name, Node,
+        NodeChange, NodeState, ParsecVote, Proof, ProofRequest, ProofSource, RelocatedInfo, Rpc,
+        Section, SectionInfo, State,
+    },
 };
+use lazy_static::lazy_static;
 
 macro_rules! to_collect {
     ($($item:expr),*) => {{
@@ -616,7 +618,6 @@ mod dst_tests {
                         change_elder: Some(SWAP_ELDER_109_NODE_1_SECTION_INFO_1.0.clone()),
                         wait_votes: SWAP_ELDER_109_NODE_1_SECTION_INFO_1.1.clone(),
                     },
-                    ..Default::default()
                 },
                 ..AssertState::default()
             },
@@ -650,7 +651,6 @@ mod dst_tests {
                         change_elder: Some(SWAP_ELDER_109_NODE_1_SECTION_INFO_1.0.clone()),
                         wait_votes: SWAP_ELDER_109_NODE_1_SECTION_INFO_1.1.clone(),
                     },
-                    ..Default::default()
                 },
                 ..AssertState::default()
             },
@@ -682,7 +682,6 @@ mod dst_tests {
                             ParsecVote::NewSectionInfo(SECTION_INFO_1),
                         ],
                     },
-                    ..Default::default()
                 },
                 ..AssertState::default()
             },
@@ -893,7 +892,6 @@ mod dst_tests {
                         change_elder: Some(SWAP_ELDER_130_YOUNG_205_SECTION_INFO_1.0.clone()),
                         wait_votes: SWAP_ELDER_130_YOUNG_205_SECTION_INFO_1.1.clone(),
                     },
-                    ..Default::default()
                 },
                 ..AssertState::default()
             },
@@ -1060,7 +1058,6 @@ mod src_tests {
                         change_elder: Some(SWAP_ELDER_130_YOUNG_205_SECTION_INFO_1.0.clone()),
                         wait_votes: SWAP_ELDER_130_YOUNG_205_SECTION_INFO_1.1.clone(),
                     },
-                    ..Default::default()
                 },
                 ..AssertState::default()
             },

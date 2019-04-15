@@ -41,6 +41,9 @@ serde_json = "1.0.8"
 mock = ["lru_time_cache/fake_clock", "safe_crypto/mock", "parsec/mock", "parsec/malice-detection"]
 mock_parsec = ["mock"]
 
+[workspace]
+members = ["routing_model"]
+
 [[example]]
 bench = false
 name = "key_value_store"

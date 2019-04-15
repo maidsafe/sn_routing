@@ -6,13 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use std::collections::{BTreeMap, BTreeSet};
-
-use crate::actions::*;
-use crate::flows_dst::*;
-use crate::flows_node::*;
-use crate::flows_src::*;
-use crate::utilities::*;
+use crate::{actions::*, flows_dst::*, flows_node::*, flows_src::*, utilities::*};
+use std::collections::BTreeMap;
 
 #[derive(Debug, PartialEq, Default, Clone)]
 pub struct ProcessElderChangeState {

@@ -6,10 +6,13 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::state::*;
-use crate::utilities::{
-    Event, GenesisPfxInfo, LocalEvent, Name, ProofRequest, ProofSource, Rpc, SectionInfo,
+use crate::{
+    state::*,
+    utilities::{
+        Event, GenesisPfxInfo, LocalEvent, Name, ProofRequest, ProofSource, Rpc, SectionInfo,
+    },
 };
+use unwrap::unwrap;
 
 #[derive(Debug, PartialEq, Default, Clone)]
 pub struct JoiningRelocateCandidate(pub JoiningState);
@@ -128,15 +131,14 @@ impl JoiningRelocateCandidate {
 
     fn send_next_proof_response(&self, source: Name) -> Self {
         let mut state = self.clone();
-        let proof_source = &mut state
+        let proof_source = &mut unwrap!(state
             .0
             .join_routine
             .has_resource_proofs
             .get_mut(&source)
             .unwrap()
             .1
-            .as_mut()
-            .unwrap();
+            .as_mut());
 
         let next_part = proof_source.next_part();
         state

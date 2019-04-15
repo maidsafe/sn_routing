@@ -6,13 +6,18 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::state::{MemberState, StartRelocateSrcState};
-use crate::utilities::{Candidate, Event, LocalEvent, ParsecVote, RelocatedInfo, Rpc, SectionInfo};
+use crate::{
+    state::{MemberState, StartRelocateSrcState},
+    utilities::{Candidate, Event, LocalEvent, ParsecVote, RelocatedInfo, Rpc, SectionInfo},
+};
+use unwrap::unwrap;
 
 #[derive(Debug, PartialEq, Default, Clone)]
 pub struct TopLevelSrc(pub MemberState);
 
 impl TopLevelSrc {
+    // TODO - remove the `allow` once we have a test for this method.
+    #[allow(dead_code)]
     fn start_event_loop(&self) -> Self {
         self.start_work_unit_timeout()
     }
@@ -89,6 +94,8 @@ pub struct StartRelocateSrc(pub MemberState);
 
 // StartRelocateSrc Sub Routine
 impl StartRelocateSrc {
+    // TODO - remove the `allow` once we have a test for this method.
+    #[allow(dead_code)]
     fn start_event_loop(&self) -> Self {
         self.start_check_relocate_timeout()
     }
@@ -147,10 +154,11 @@ impl StartRelocateSrc {
             .get_best_relocating_node_and_target(&state.routine_state().already_relocating)
         {
             state.0.action.send_rpc(Rpc::ExpectCandidate(candidate));
-            state
+            let inserted = state
                 .mut_routine_state()
                 .already_relocating
                 .insert(candidate, 0);
+            assert!(inserted.is_none());
         }
         state
     }
@@ -184,10 +192,10 @@ impl StartRelocateSrc {
 
     fn allow_resend(&self, candidate: Candidate) -> Self {
         let mut state = self.clone();
-        state
+        unwrap!(state
             .mut_routine_state()
             .already_relocating
-            .remove(&candidate);
+            .remove(&candidate));
         state
     }
 
@@ -244,11 +252,6 @@ impl StartRelocateSrc {
     //
     // RPCs
     //
-
-    fn send_expect_candidate_rpc(&self, candidate: Candidate) -> Self {
-        self.0.action.send_rpc(Rpc::ExpectCandidate(candidate));
-        self.clone()
-    }
 
     fn send_candidate_relocated_info_rpc(&self, info: RelocatedInfo) -> Self {
         self.0
