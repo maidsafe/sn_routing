@@ -418,7 +418,7 @@ impl ProcessElderChange {
     fn mark_elder_change(&self) -> Self {
         let mut state = self.clone();
 
-        let change_elder = state.mut_routine_state().change_elder.clone(); // TODO: take it?
+        let change_elder = state.mut_routine_state().change_elder.clone();
         state.0.action.mark_elder_change(change_elder);
 
         state
