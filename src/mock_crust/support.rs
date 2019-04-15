@@ -14,11 +14,10 @@ use super::crust::{
     PubConnectionInfo, Uid,
 };
 use crate::id::PublicId;
-use crate::messages::{DirectMessage, Message};
 #[cfg(feature = "mock_parsec")]
 use crate::parsec;
 use crate::CrustEvent;
-use maidsafe_utilities::{serialisation, SeededRng};
+use maidsafe_utilities::SeededRng;
 use rand::Rng;
 use safe_crypto;
 use std::cell::RefCell;
@@ -217,19 +216,9 @@ impl<UID: Uid> Network<UID> {
 
     fn send(&self, sender: Endpoint, receiver: Endpoint, packet: Packet<UID>) {
         let mut network_impl = self.0.borrow_mut();
-        let mut msg_sent = true;
-        if let Packet::Message(ref bytes) = packet {
-            if let Ok(Message::Direct(direct_msg)) = serialisation::deserialise(bytes) {
-                match direct_msg {
-                    DirectMessage::ParsecRequest(_, _) | DirectMessage::ParsecResponse(_, _) => {
-                        // Ignore gossip messages from being considered as a message that
-                        // requires further polling.
-                        msg_sent = false;
-                    }
-                    _ => (),
-                }
-            }
-        }
+        // Ignore gossip messages from being considered as a message that
+        // requires further polling.
+        let msg_sent = !packet.is_parsec_req_resp();
         network_impl.message_sent = network_impl.message_sent || msg_sent;
         network_impl
             .queue
@@ -703,6 +692,13 @@ enum Packet<UID: Uid> {
     Disconnect,
 }
 
+/// The 4-byte tags of `Message::Direct` and `DirectMessage::ParsecRequest`.
+/// A serialised Parsec request message starts with these bytes.
+static PARSEC_REQ_MSG_TAGS: &[u8] = &[0, 0, 0, 0, 9, 0, 0, 0];
+/// The 4-byte tags of `Message::Direct` and `DirectMessage::ParsecResponse`.
+/// A serialised Parsec response message starts with these bytes.
+static PARSEC_RSP_MSG_TAGS: &[u8] = &[0, 0, 0, 0, 10, 0, 0, 0];
+
 impl<UID: Uid> Packet<UID> {
     // Given a request packet, returns the corresponding failure packet.
     fn to_failure(&self) -> Option<Packet<UID>> {
@@ -712,6 +708,16 @@ impl<UID: Uid> Packet<UID> {
                 Some(Packet::ConnectFailure(their_id, our_id))
             }
             _ => None,
+        }
+    }
+
+    /// Returns `true` if this packet contains a Parsec request or response.
+    fn is_parsec_req_resp(&self) -> bool {
+        match self {
+            Packet::Message(bytes) if bytes.len() >= 8 => {
+                &bytes[..8] == PARSEC_REQ_MSG_TAGS || &bytes[..8] == PARSEC_RSP_MSG_TAGS
+            }
+            _ => false,
         }
     }
 }
@@ -757,4 +763,78 @@ where
             "Current ServiceHandle is not set."
         ))
     })
+}
+
+#[test]
+#[allow(clippy::let_unit_value)]
+fn test_is_parsec_req_resp() {
+    use crate::chain::NetworkEvent;
+    use crate::id::FullId;
+    use crate::messages::{
+        DirectMessage, HopMessage, Message, MessageContent, RoutingMessage, SignedMessage,
+    };
+    use crate::routing_table::Authority;
+    use crate::types::MessageId;
+    use maidsafe_utilities::serialisation;
+    use serde::Serialize;
+
+    fn ser<T: Serialize>(msg: &T) -> Vec<u8> {
+        serialisation::serialise(&msg).expect("failed to serialise message")
+    }
+
+    let full_id = FullId::new();
+    let id = *full_id.public_id();
+
+    // Parsec doesn't provide constructors for requests and responses, but they have the same
+    // representation as a `Vec`, or a `()` in mock Parsec.
+    let (req, rsp): (
+        parsec::Request<NetworkEvent, PublicId>,
+        parsec::Response<NetworkEvent, PublicId>,
+    ) = {
+        #[cfg(feature = "mock_parsec")]
+        let repr = ();
+        #[cfg(not(feature = "mock_parsec"))]
+        let repr = Vec::<u64>::new();
+        (
+            serialisation::deserialise(&ser(&repr)).expect("failed to deserialise Request"),
+            serialisation::deserialise(&ser(&repr)).expect("failed to deserialise Response"),
+        )
+    };
+
+    let msg = Message::Direct(DirectMessage::ParsecRequest(42, req));
+    assert!(Packet::<PublicId>::Message(ser(&msg)).is_parsec_req_resp());
+
+    let msg = Message::Direct(DirectMessage::ParsecResponse(1337, rsp));
+    assert!(Packet::<PublicId>::Message(ser(&msg)).is_parsec_req_resp());
+
+    // No other direct message types contain a Parsec request or response.
+    let msg = Message::Direct(DirectMessage::ParsecPoke(5));
+    assert!(!Packet::<PublicId>::Message(ser(&msg)).is_parsec_req_resp());
+    let msg = Message::Direct(DirectMessage::ResourceProofResponseReceipt);
+    assert!(!Packet::<PublicId>::Message(ser(&msg)).is_parsec_req_resp());
+
+    // A hop message never contains a Parsec message.
+    let rt_msg = RoutingMessage {
+        src: Authority::ClientManager(rand::random()),
+        dst: Authority::ClientManager(rand::random()),
+        content: MessageContent::Relocate {
+            message_id: MessageId::new(),
+        },
+    };
+    let sig_msg =
+        SignedMessage::new(rt_msg, &full_id, None).expect("failed to create signed message");
+    let key = full_id.signing_private_key();
+    let hop_msg =
+        HopMessage::new(sig_msg, 1, Default::default(), key).expect("failed to create hop message");
+    let msg = Message::Hop(hop_msg);
+    assert!(!Packet::<PublicId>::Message(ser(&msg)).is_parsec_req_resp());
+
+    // No packet types other than `Message` represent a Parsec request or response.
+    assert!(!Packet::<PublicId>::BootstrapRequest(id, CrustUser::Node).is_parsec_req_resp());
+    assert!(!Packet::<PublicId>::BootstrapSuccess(id).is_parsec_req_resp());
+    assert!(!Packet::<PublicId>::BootstrapFailure.is_parsec_req_resp());
+    assert!(!Packet::<PublicId>::ConnectRequest(id, id).is_parsec_req_resp());
+    assert!(!Packet::<PublicId>::ConnectSuccess(id, id).is_parsec_req_resp());
+    assert!(!Packet::<PublicId>::ConnectFailure(id, id).is_parsec_req_resp());
+    assert!(!Packet::<PublicId>::Disconnect.is_parsec_req_resp());
 }
