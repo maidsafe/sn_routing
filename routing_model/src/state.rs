@@ -14,15 +14,16 @@ use crate::flows_node::*;
 use crate::flows_src::*;
 use crate::utilities::*;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Default, Clone)]
 pub struct ProcessElderChangeState {
+    pub is_active: bool,
     pub wait_votes: Vec<ParsecVote>,
-    pub change_elder: ChangeElder,
+    pub change_elder: Option<ChangeElder>,
 }
 
 #[derive(Debug, PartialEq, Default, Clone)]
 pub struct CheckAndProcessElderChangeState {
-    pub sub_routine_process_elder_change: Option<ProcessElderChangeState>,
+    pub sub_routine_process_elder_change: ProcessElderChangeState,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -78,7 +79,7 @@ impl MemberState {
         if self
             .check_and_process_elder_change_routine
             .sub_routine_process_elder_change
-            .is_some()
+            .is_active
         {
             if let Some(next) = self.as_process_elder_change().try_next(event) {
                 return Some(next);
@@ -162,19 +163,6 @@ impl MemberState {
             dst_routine: DstRoutineState {
                 sub_routine_accept_as_candidate,
                 ..self.dst_routine.clone()
-            },
-            ..self.clone()
-        }
-    }
-
-    pub fn with_check_and_process_elder_change_sub_routine_process_elder_change(
-        &self,
-        sub_routine_process_elder_change: Option<ProcessElderChangeState>,
-    ) -> Self {
-        Self {
-            check_and_process_elder_change_routine: CheckAndProcessElderChangeState {
-                sub_routine_process_elder_change,
-                ..self.check_and_process_elder_change_routine.clone()
             },
             ..self.clone()
         }
