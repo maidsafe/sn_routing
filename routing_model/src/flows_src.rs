@@ -183,7 +183,7 @@ impl StartRelocateSrc {
                 ParsecVote::RelocateResponse(candidate, section) => {
                     self.set_relocated_and_prepare_info(candidate, section)
                 }
-                _ => panic!("Unepected vote"),
+                _ => panic!("Unexpected vote"),
             }
         } else {
             self.discard()
@@ -269,17 +269,17 @@ impl StartRelocateSrc {
         self.clone()
     }
 
-    fn vote_parsec_refuse_candidate(&self, candiddate: Candidate) -> Self {
+    fn vote_parsec_refuse_candidate(&self, candidate: Candidate) -> Self {
         self.0
             .action
-            .vote_parsec(ParsecVote::RefuseCandidate(candiddate));
+            .vote_parsec(ParsecVote::RefuseCandidate(candidate));
         self.clone()
     }
 
-    fn vote_parsec_relocation_response(&self, candiddate: Candidate, section: SectionInfo) -> Self {
+    fn vote_parsec_relocation_response(&self, candidate: Candidate, section: SectionInfo) -> Self {
         self.0
             .action
-            .vote_parsec(ParsecVote::RelocateResponse(candiddate, section));
+            .vote_parsec(ParsecVote::RelocateResponse(candidate, section));
         self.clone()
     }
 }

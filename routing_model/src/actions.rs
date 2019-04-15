@@ -152,7 +152,7 @@ impl Action {
         self.0.borrow_mut().our_events.push(event);
     }
 
-    pub fn add_node_ressource_proofing(&self, candidate: Candidate) {
+    pub fn add_node_resource_proofing(&self, candidate: Candidate) {
         let state = NodeState {
             node: Node(candidate.0),
             state: State::WaitingProofing,

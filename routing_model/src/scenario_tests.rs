@@ -228,7 +228,7 @@ mod dst_tests {
     use super::*;
 
     #[test]
-    fn test_rpc_expect_candidate() {
+    fn rpc_expect_candidate() {
         run_test(
             "Get RPC ExpectCandidate",
             &initial_state_old_elders(),
@@ -241,7 +241,7 @@ mod dst_tests {
     }
 
     #[test]
-    fn test_parsec_expect_candidate() {
+    fn parsec_expect_candidate() {
         run_test(
             "Get Parsec ExpectCandidate",
             &initial_state_old_elders(),
@@ -260,7 +260,7 @@ mod dst_tests {
     }
 
     #[test]
-    fn test_parsec_expect_candidate_then_candidate_info() {
+    fn parsec_expect_candidate_then_candidate_info() {
         let initial_state = arrange_initial_state(
             &initial_state_old_elders(),
             &[ParsecVote::ExpectCandidate(CANDIDATE_1).to_event()],
@@ -287,7 +287,7 @@ mod dst_tests {
     }
 
     #[test]
-    fn test_parsec_expect_candidate_then_candidate_info_twice() {
+    fn parsec_expect_candidate_then_candidate_info_twice() {
         let initial_state = arrange_initial_state(
             &initial_state_old_elders(),
             &[
@@ -312,7 +312,7 @@ mod dst_tests {
     }
 
     #[test]
-    fn test_parsec_expect_candidate_then_invalid_candidate_info() {
+    fn parsec_expect_candidate_then_invalid_candidate_info() {
         let initial_state = arrange_initial_state(
             &initial_state_old_elders(),
             &[ParsecVote::ExpectCandidate(CANDIDATE_1).to_event()],
@@ -340,7 +340,7 @@ mod dst_tests {
     }
 
     #[test]
-    fn test_parsec_expect_candidate_then_time_out() {
+    fn parsec_expect_candidate_then_time_out() {
         let initial_state = arrange_initial_state(
             &initial_state_old_elders(),
             &[ParsecVote::ExpectCandidate(CANDIDATE_1).to_event()],
@@ -363,7 +363,7 @@ mod dst_tests {
     }
 
     #[test]
-    fn test_parsec_expect_candidate_then_wrong_candidate_info() {
+    fn parsec_expect_candidate_then_wrong_candidate_info() {
         let initial_state = arrange_initial_state(
             &initial_state_old_elders(),
             &[ParsecVote::ExpectCandidate(CANDIDATE_1).to_event()],
@@ -390,7 +390,7 @@ mod dst_tests {
     }
 
     #[test]
-    fn test_parsec_expect_candidate_then_candidate_info_then_part_proof() {
+    fn parsec_expect_candidate_then_candidate_info_then_part_proof() {
         let initial_state = arrange_initial_state(
             &initial_state_old_elders(),
             &[
@@ -424,7 +424,7 @@ mod dst_tests {
     }
 
     #[test]
-    fn test_parsec_expect_candidate_then_candidate_info_then_end_proof() {
+    fn parsec_expect_candidate_then_candidate_info_then_end_proof() {
         let initial_state = arrange_initial_state(
             &initial_state_old_elders(),
             &[
@@ -455,7 +455,7 @@ mod dst_tests {
     }
 
     #[test]
-    fn test_parsec_expect_candidate_then_candidate_info_then_end_proof_twice() {
+    fn parsec_expect_candidate_then_candidate_info_then_end_proof_twice() {
         let initial_state = arrange_initial_state(
             &initial_state_old_elders(),
             &[
@@ -491,7 +491,7 @@ mod dst_tests {
     }
 
     #[test]
-    fn test_parsec_expect_candidate_then_candidate_info_then_invalid_proof() {
+    fn parsec_expect_candidate_then_candidate_info_then_invalid_proof() {
         let initial_state = arrange_initial_state(
             &initial_state_old_elders(),
             &[
@@ -521,7 +521,7 @@ mod dst_tests {
     }
 
     #[test]
-    fn test_parsec_expect_candidate_then_candidate_info_then_end_proof_wrong_candidate() {
+    fn parsec_expect_candidate_then_candidate_info_then_end_proof_wrong_candidate() {
         let initial_state = arrange_initial_state(
             &initial_state_old_elders(),
             &[
@@ -551,7 +551,7 @@ mod dst_tests {
     }
 
     #[test]
-    fn test_parsec_expect_candidate_then_purge_and_online_for_wrong_candidate() {
+    fn parsec_expect_candidate_then_purge_and_online_for_wrong_candidate() {
         let initial_state = arrange_initial_state(
             &initial_state_young_elders(),
             &[ParsecVote::ExpectCandidate(CANDIDATE_1).to_event()],
@@ -576,7 +576,7 @@ mod dst_tests {
     }
 
     #[test]
-    fn test_parsec_expect_candidate_then_online_no_elder_change() {
+    fn parsec_expect_candidate_then_online_no_elder_change() {
         let initial_state = arrange_initial_state(
             &initial_state_old_elders(),
             &[ParsecVote::ExpectCandidate(CANDIDATE_1).to_event()],
@@ -595,7 +595,7 @@ mod dst_tests {
     }
 
     #[test]
-    fn test_parsec_expect_candidate_then_online_elder_change() {
+    fn parsec_expect_candidate_then_online_elder_change() {
         let initial_state = arrange_initial_state(
             &initial_state_young_elders(),
             &[ParsecVote::ExpectCandidate(CANDIDATE_1).to_event()],
@@ -625,7 +625,7 @@ mod dst_tests {
     }
 
     #[test]
-    fn test_parsec_expect_candidate_then_online_elder_change_get_wrong_votes() {
+    fn parsec_expect_candidate_then_online_elder_change_get_wrong_votes() {
         let initial_state = arrange_initial_state(
             &initial_state_young_elders(),
             &[
@@ -658,7 +658,7 @@ mod dst_tests {
     }
 
     #[test]
-    fn test_parsec_expect_candidate_then_online_elder_change_remove_elder() {
+    fn parsec_expect_candidate_then_online_elder_change_remove_elder() {
         let initial_state = arrange_initial_state(
             &initial_state_young_elders(),
             &[
@@ -689,7 +689,7 @@ mod dst_tests {
     }
 
     #[test]
-    fn test_parsec_expect_candidate_then_online_elder_change_complete_elder() {
+    fn parsec_expect_candidate_then_online_elder_change_complete_elder() {
         let initial_state = arrange_initial_state(
             &initial_state_young_elders(),
             &[
@@ -712,7 +712,7 @@ mod dst_tests {
     }
 
     #[test]
-    fn test_parsec_expect_candidate_when_candidate_completed_with_elder_change() {
+    fn parsec_expect_candidate_when_candidate_completed_with_elder_change() {
         let initial_state = arrange_initial_state(
             &initial_state_young_elders(),
             &[
@@ -743,7 +743,7 @@ mod dst_tests {
     }
 
     #[test]
-    fn test_parsec_expect_candidate_then_purge() {
+    fn parsec_expect_candidate_then_purge() {
         let initial_state = arrange_initial_state(
             &initial_state_young_elders(),
             &[ParsecVote::ExpectCandidate(CANDIDATE_1).to_event()],
@@ -761,7 +761,7 @@ mod dst_tests {
     }
 
     #[test]
-    fn test_parsec_expect_candidate_twice() {
+    fn parsec_expect_candidate_twice() {
         let initial_state = arrange_initial_state(
             &initial_state_young_elders(),
             &[ParsecVote::ExpectCandidate(CANDIDATE_1).to_event()],
@@ -784,7 +784,7 @@ mod dst_tests {
     }
 
     #[test]
-    fn test_parsec_expect_candidate_with_shorter_known_section() {
+    fn parsec_expect_candidate_with_shorter_known_section() {
         let initial_state = MemberState {
             action: Action::new(InnerAction {
                 shortest_prefix: Some(OTHER_SECTION_1),
@@ -805,7 +805,7 @@ mod dst_tests {
     }
 
     #[test]
-    fn test_parsec_unexpected_purge_online() {
+    fn parsec_unexpected_purge_online() {
         run_test(
             "Get unexpected Parsec consensus Online and PurgeCandidate. \
              Candidate may have trigger both vote: only consider the first",
@@ -819,10 +819,10 @@ mod dst_tests {
     }
 
     #[test]
-    fn test_rpc_unexpected_candidate_info_resource_proof_response() {
+    fn rpc_unexpected_candidate_info_resource_proof_response() {
         run_test(
             "Get unexpected RPC CandidateInfo and ResourceProofResponse. \
-             Candidate RPC may arrive after candidate was pured or accepted",
+             Candidate RPC may arrive after candidate was purged or accepted",
             &initial_state_old_elders(),
             &[
                 Rpc::CandidateInfo {
@@ -843,7 +843,7 @@ mod dst_tests {
     }
 
     #[test]
-    fn test_local_events_offline_online_again_for_different_nodes() {
+    fn local_events_offline_online_again_for_different_nodes() {
         run_test(
             "Get local event node detected offline online again different nodes",
             &initial_state_old_elders(),
@@ -862,7 +862,7 @@ mod dst_tests {
     }
 
     #[test]
-    fn test_parsec_offline() {
+    fn parsec_offline() {
         run_test(
             "Get parsec consensus offline",
             &initial_state_old_elders(),
@@ -875,7 +875,7 @@ mod dst_tests {
     }
 
     #[test]
-    fn test_parsec_offline_then_check_elder() {
+    fn parsec_offline_then_check_elder() {
         let initial_state = arrange_initial_state(
             &initial_state_old_elders(),
             &[ParsecVote::Offline(NODE_ELDER_130).to_event()],
@@ -899,7 +899,7 @@ mod dst_tests {
     }
 
     #[test]
-    fn test_parsec_offline_then_parsec_online() {
+    fn parsec_offline_then_parsec_online() {
         let initial_state = arrange_initial_state(
             &initial_state_old_elders(),
             &[ParsecVote::Offline(NODE_ELDER_130).to_event()],
@@ -927,7 +927,7 @@ mod src_tests {
     use super::*;
 
     #[test]
-    fn test_local_event_time_out_work_unit() {
+    fn local_event_time_out_work_unit() {
         run_test(
             "",
             &initial_state_old_elders(),
@@ -941,7 +941,7 @@ mod src_tests {
     }
 
     #[test]
-    fn test_start_relocation() {
+    fn start_relocation() {
         let initial_state = MemberState {
             action: Action::new(
                 INNER_ACTION_OLD_ELDERS
@@ -970,7 +970,7 @@ mod src_tests {
     }
 
     #[test]
-    fn test_parsec_check_relocate_trigger_again_no_retry() {
+    fn parsec_check_relocate_trigger_again_no_retry() {
         let initial_state = arrange_initial_state(
             &MemberState {
                 action: Action::new(
@@ -998,7 +998,7 @@ mod src_tests {
     }
 
     #[test]
-    fn test_parsec_relocation_trigger_again_until_retry() {
+    fn parsec_relocation_trigger_again_until_retry() {
         let initial_state = arrange_initial_state(
             &MemberState {
                 action: Action::new(
@@ -1028,7 +1028,7 @@ mod src_tests {
     }
 
     #[test]
-    fn test_parsec_relocate_trigger_elder_change() {
+    fn parsec_relocate_trigger_elder_change() {
         let initial_state = MemberState {
             action: Action::new(
                 INNER_ACTION_OLD_ELDERS
@@ -1065,7 +1065,7 @@ mod src_tests {
     }
 
     #[test]
-    fn test_parsec_relocate_trigger_elder_change_complete() {
+    fn parsec_relocate_trigger_elder_change_complete() {
         let initial_state = arrange_initial_state(
             &MemberState {
                 action: Action::new(
@@ -1104,7 +1104,7 @@ mod src_tests {
     }
 
     #[test]
-    fn test_parsec_relocation_trigger_refuse_candidate_rpc() {
+    fn parsec_relocation_trigger_refuse_candidate_rpc() {
         let initial_state = arrange_initial_state(
             &MemberState {
                 action: Action::new(
@@ -1132,7 +1132,7 @@ mod src_tests {
     }
 
     #[test]
-    fn test_parsec_relocation_trigger_relocate_response_rpc() {
+    fn parsec_relocation_trigger_relocate_response_rpc() {
         let initial_state = arrange_initial_state(
             &MemberState {
                 action: Action::new(
@@ -1163,7 +1163,7 @@ mod src_tests {
     }
 
     #[test]
-    fn test_parsec_relocation_trigger_accept() {
+    fn parsec_relocation_trigger_accept() {
         let initial_state = arrange_initial_state(
             &MemberState {
                 action: Action::new(
@@ -1212,7 +1212,7 @@ mod src_tests {
     }
 
     #[test]
-    fn test_parsec_relocation_trigger_refuse() {
+    fn parsec_relocation_trigger_refuse() {
         let initial_state = arrange_initial_state(
             &MemberState {
                 action: Action::new(
@@ -1237,7 +1237,7 @@ mod src_tests {
     }
 
     #[test]
-    fn test_parsec_relocation_trigger_refuse_trigger_again() {
+    fn parsec_relocation_trigger_refuse_trigger_again() {
         let initial_state = arrange_initial_state(
             &MemberState {
                 action: Action::new(
@@ -1266,7 +1266,7 @@ mod src_tests {
     }
 
     #[test]
-    fn test_parsec_relocation_trigger_elder_change_refuse_trigger_again() {
+    fn parsec_relocation_trigger_elder_change_refuse_trigger_again() {
         let initial_state = arrange_initial_state(
             &MemberState {
                 action: Action::new(
@@ -1300,7 +1300,7 @@ mod src_tests {
     }
 
     #[test]
-    fn test_unexpected_refuse_candidate() {
+    fn unexpected_refuse_candidate() {
         run_test(
             "Get RPC ExpectCandidate",
             &initial_state_old_elders(),
@@ -1313,7 +1313,7 @@ mod src_tests {
     }
 
     #[test]
-    fn test_unexpected_relocate_response() {
+    fn unexpected_relocate_response() {
         run_test(
             "Get RPC ExpectCandidate",
             &initial_state_old_elders(),
@@ -1401,7 +1401,7 @@ mod node_tests {
     //////////////////
 
     #[test]
-    fn test_joining_start() {
+    fn joining_start() {
         run_joining_test(
             "",
             &initial_joining_state_with_dst_200().start(DST_SECTION_INFO_200),
@@ -1442,7 +1442,7 @@ mod node_tests {
     }
 
     #[test]
-    fn test_joining_receive_two_connection_info() {
+    fn joining_receive_two_connection_info() {
         let initial_state = arrange_initial_joining_state(
             &initial_joining_state_with_dst_200().start(DST_SECTION_INFO_200),
             &[],
@@ -1492,7 +1492,7 @@ mod node_tests {
     }
 
     #[test]
-    fn test_joining_receive_one_resource_proof() {
+    fn joining_receive_one_resource_proof() {
         let initial_state = arrange_initial_joining_state(
             &initial_joining_state_with_dst_200().start(DST_SECTION_INFO_200),
             &[
@@ -1539,7 +1539,7 @@ mod node_tests {
     }
 
     #[test]
-    fn test_joining_computed_one_proof_one_proof() {
+    fn joining_computed_one_proof_one_proof() {
         let initial_state = arrange_initial_joining_state(
             &initial_joining_state_with_dst_200().start(DST_SECTION_INFO_200),
             &[
@@ -1582,7 +1582,7 @@ mod node_tests {
     }
 
     #[test]
-    fn test_joining_got_one_proof_receipt() {
+    fn joining_got_one_proof_receipt() {
         let initial_state = arrange_initial_joining_state(
             &initial_joining_state_with_dst_200().start(DST_SECTION_INFO_200),
             &[
@@ -1630,7 +1630,7 @@ mod node_tests {
     }
 
     #[test]
-    fn test_joining_resend_timeout_after_one_proof() {
+    fn joining_resend_timeout_after_one_proof() {
         let initial_state = arrange_initial_joining_state(
             &initial_joining_state_with_dst_200().start(DST_SECTION_INFO_200),
             &[
@@ -1687,7 +1687,7 @@ mod node_tests {
     }
 
     #[test]
-    fn test_joining_approved() {
+    fn joining_approved() {
         let initial_state = arrange_initial_joining_state(
             &initial_joining_state_with_dst_200().start(DST_SECTION_INFO_200),
             &[],

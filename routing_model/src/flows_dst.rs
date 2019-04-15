@@ -111,7 +111,7 @@ impl AcceptAsCandidate {
         self.0
             .with_dst_sub_routine_accept_as_candidate(Some(AcceptAsCandidateState::new(candidate)))
             .as_accept_as_candidate()
-            .add_node_ressource_proofing()
+            .add_node_resource_proofing()
             .send_relocate_response_rpc()
     }
 
@@ -221,8 +221,8 @@ impl AcceptAsCandidate {
         self.clone()
     }
 
-    fn add_node_ressource_proofing(&self) -> Self {
-        self.0.action.add_node_ressource_proofing(self.candidate());
+    fn add_node_resource_proofing(&self) -> Self {
+        self.0.action.add_node_resource_proofing(self.candidate());
         self.clone()
     }
 
