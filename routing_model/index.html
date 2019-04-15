@@ -1057,17 +1057,12 @@
   </div>
   <div class="mermaid">
       graph TB
-      ProcessMerge["ProcessMerge<br/>(shared state)"]
       EndRoutine["End of ProcessMerge<br/>(shared state)"]
-      style ProcessMerge fill:#f9f,stroke:#333,stroke-width:4px
       style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
 
-      ProcessMerge -->  SendMergeRpc
-      SendMergeRpc["send_rpc(Rpc::Merge)"]
-      SendMergeRpc --> LoopStart
 
-      WaitFor(("Wait for 8:"))
       LoopStart --> WaitFor
+      WaitFor(("Wait for 8:"))
 
       Consensus((Consensus))
       WaitFor-- Parsec<br/>consensus --> Consensus
@@ -1081,6 +1076,12 @@
       Consensus -- "Parsec::NeighbourMerge" --> SetNeighbourMerge
       SetNeighbourMerge["store_merge_infos(Parsec::NeighbourMerge info)"]
       SetNeighbourMerge --> CheckMerge
+
+      ProcessMerge["ProcessMerge<br/>(shared state)"]
+      style ProcessMerge fill:#f9f,stroke:#333,stroke-width:4px
+      ProcessMerge -->  SendMergeRpc
+      SendMergeRpc["send_rpc(Rpc::Merge)"]
+      SendMergeRpc --> CheckMerge
 
       CheckMerge((Check))
       CheckMerge -- "has_sibling_merge_info()" --> VotForNewSectionInfo
