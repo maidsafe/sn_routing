@@ -611,8 +611,11 @@ mod dst_tests {
                 action_our_votes: SWAP_ELDER_109_NODE_1_SECTION_INFO_1.1.clone(),
                 action_our_nodes: vec![SET_ONLINE_NODE_1],
                 check_and_process_elder_change_routine: CheckAndProcessElderChangeState {
-                    change_elder: Some(SWAP_ELDER_109_NODE_1_SECTION_INFO_1.0.clone()),
-                    wait_votes: SWAP_ELDER_109_NODE_1_SECTION_INFO_1.1.clone(),
+                    sub_routine_process_elder_change: Some(ProcessElderChangeState {
+                        change_elder: SWAP_ELDER_109_NODE_1_SECTION_INFO_1.0.clone(),
+                        wait_votes: SWAP_ELDER_109_NODE_1_SECTION_INFO_1.1.clone(),
+                    }),
+                    ..Default::default()
                 },
                 ..AssertState::default()
             },
@@ -641,8 +644,11 @@ mod dst_tests {
             ],
             &AssertState {
                 check_and_process_elder_change_routine: CheckAndProcessElderChangeState {
-                    change_elder: Some(SWAP_ELDER_109_NODE_1_SECTION_INFO_1.0.clone()),
-                    wait_votes: SWAP_ELDER_109_NODE_1_SECTION_INFO_1.1.clone(),
+                    sub_routine_process_elder_change: Some(ProcessElderChangeState {
+                        change_elder: SWAP_ELDER_109_NODE_1_SECTION_INFO_1.0.clone(),
+                        wait_votes: SWAP_ELDER_109_NODE_1_SECTION_INFO_1.1.clone(),
+                    }),
+                    ..Default::default()
                 },
                 ..AssertState::default()
             },
@@ -666,11 +672,14 @@ mod dst_tests {
             &[ParsecVote::RemoveElderNode(NODE_ELDER_109).to_event()],
             &AssertState {
                 check_and_process_elder_change_routine: CheckAndProcessElderChangeState {
-                    change_elder: Some(SWAP_ELDER_109_NODE_1_SECTION_INFO_1.0.clone()),
-                    wait_votes: vec![
-                        ParsecVote::AddElderNode(NODE_1),
-                        ParsecVote::NewSectionInfo(SECTION_INFO_1),
-                    ],
+                    sub_routine_process_elder_change: Some(ProcessElderChangeState {
+                        change_elder: SWAP_ELDER_109_NODE_1_SECTION_INFO_1.0.clone(),
+                        wait_votes: vec![
+                            ParsecVote::AddElderNode(NODE_1),
+                            ParsecVote::NewSectionInfo(SECTION_INFO_1),
+                        ],
+                    }),
+                    ..Default::default()
                 },
                 ..AssertState::default()
             },
@@ -876,8 +885,11 @@ mod dst_tests {
             &AssertState {
                 action_our_votes: SWAP_ELDER_130_YOUNG_205_SECTION_INFO_1.1.clone(),
                 check_and_process_elder_change_routine: CheckAndProcessElderChangeState {
-                    change_elder: Some(SWAP_ELDER_130_YOUNG_205_SECTION_INFO_1.0.clone()),
-                    wait_votes: SWAP_ELDER_130_YOUNG_205_SECTION_INFO_1.1.clone(),
+                    sub_routine_process_elder_change: Some(ProcessElderChangeState {
+                        change_elder: SWAP_ELDER_130_YOUNG_205_SECTION_INFO_1.0.clone(),
+                        wait_votes: SWAP_ELDER_130_YOUNG_205_SECTION_INFO_1.1.clone(),
+                    }),
+                    ..Default::default()
                 },
                 ..AssertState::default()
             },
@@ -1039,8 +1051,11 @@ mod src_tests {
                 )],
                 action_our_votes: SWAP_ELDER_130_YOUNG_205_SECTION_INFO_1.1.clone(),
                 check_and_process_elder_change_routine: CheckAndProcessElderChangeState {
-                    change_elder: Some(SWAP_ELDER_130_YOUNG_205_SECTION_INFO_1.0.clone()),
-                    wait_votes: SWAP_ELDER_130_YOUNG_205_SECTION_INFO_1.1.clone(),
+                    sub_routine_process_elder_change: Some(ProcessElderChangeState {
+                        change_elder: SWAP_ELDER_130_YOUNG_205_SECTION_INFO_1.0.clone(),
+                        wait_votes: SWAP_ELDER_130_YOUNG_205_SECTION_INFO_1.1.clone(),
+                    }),
+                    ..Default::default()
                 },
                 ..AssertState::default()
             },

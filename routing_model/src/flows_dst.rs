@@ -6,7 +6,9 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::state::{AcceptAsCandidateState, CheckAndProcessElderChangeState, MemberState};
+use crate::state::{
+    AcceptAsCandidateState, CheckAndProcessElderChangeState, MemberState, ProcessElderChangeState,
+};
 use crate::utilities::{
     Candidate, ChangeElder, Event, LocalEvent, Node, ParsecVote, Proof, Rpc, Section,
 };
@@ -277,22 +279,9 @@ impl CheckAndProcessElderChange {
     }
 
     fn try_consensus(&self, vote: &ParsecVote) -> Option<Self> {
-        if ParsecVote::CheckElder == *vote {
-            return Some(self.check_elder());
-        }
-
-        if !self.routine_state().wait_votes.contains(&vote) {
-            return None;
-        }
-
-        let mut state = self.clone();
-        let wait_votes = &mut state.mut_routine_state().wait_votes;
-        wait_votes.retain(|wait_vote| wait_vote != vote);
-
-        if wait_votes.is_empty() {
-            Some(state.mark_elder_change().start_check_elder_timeout())
-        } else {
-            Some(state)
+        match vote {
+            ParsecVote::CheckElder => Some(self.check_elder()),
+            _ => None,
         }
     }
 
@@ -306,16 +295,88 @@ impl CheckAndProcessElderChange {
 
     fn check_elder(&self) -> Self {
         match self.0.action.check_elder() {
-            Some(change_elder) => self.start_vote_elder_change(change_elder),
+            Some(change_elder) => self.concurrent_transition_to_process_elder_change(change_elder),
             None => self.start_check_elder_timeout(),
         }
     }
 
-    fn start_vote_elder_change(&self, change_elder: ChangeElder) -> Self {
+    fn concurrent_transition_to_process_elder_change(&self, change_elder: ChangeElder) -> Self {
+        self.0
+            .as_process_elder_change()
+            .start_event_loop(change_elder)
+            .0
+            .as_check_and_process_elder_change()
+    }
+
+    fn transition_exit_process_elder_change(&self) -> Self {
+        self.start_check_elder_timeout()
+    }
+
+    fn vote_parsec_check_elder(&self) -> Self {
+        self.0.action.vote_parsec(ParsecVote::CheckElder);
+        self.clone()
+    }
+
+    fn start_check_elder_timeout(&self) -> Self {
+        self.0.action.schedule_event(LocalEvent::TimeoutCheckElder);
+        self.clone()
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct ProcessElderChange(pub MemberState);
+
+impl ProcessElderChange {
+    pub fn start_event_loop(&self, change_elder: ChangeElder) -> Self {
+        self.0
+            .with_check_and_process_elder_change_sub_routine_process_elder_change(Some(
+                ProcessElderChangeState {
+                    change_elder: change_elder.clone(),
+                    wait_votes: Vec::new(),
+                },
+            ))
+            .as_process_elder_change()
+            .vote_for_elder_change(change_elder)
+    }
+
+    fn exit_event_loop(&self) -> Self {
+        self.0
+            .with_check_and_process_elder_change_sub_routine_process_elder_change(None)
+            .as_check_and_process_elder_change()
+            .transition_exit_process_elder_change()
+            .0
+            .as_process_elder_change()
+    }
+
+    pub fn try_next(&self, event: Event) -> Option<MemberState> {
+        match event {
+            Event::ParsecConsensus(vote) => self.try_consensus(&vote),
+            _ => None,
+        }
+        .map(|state| state.0)
+    }
+
+    fn try_consensus(&self, vote: &ParsecVote) -> Option<Self> {
+        if !self.routine_state().wait_votes.contains(&vote) {
+            return None;
+        }
+
+        let mut state = self.clone();
+        let wait_votes = &mut state.mut_routine_state().wait_votes;
+        wait_votes.retain(|wait_vote| wait_vote != vote);
+
+        if wait_votes.is_empty() {
+            Some(state.mark_elder_change().exit_event_loop())
+        } else {
+            Some(state)
+        }
+    }
+
+    fn vote_for_elder_change(&self, change_elder: ChangeElder) -> Self {
         let mut state = self.clone();
 
         let votes = state.0.action.get_elder_change_votes(&change_elder);
-        state.mut_routine_state().change_elder = Some(change_elder);
+        state.mut_routine_state().change_elder = change_elder;
         state.mut_routine_state().wait_votes = votes;
 
         for vote in &state.routine_state().wait_votes {
@@ -325,17 +386,32 @@ impl CheckAndProcessElderChange {
         state
     }
 
-    fn mark_elder_change(&self) -> Self {
-        let mut state = self.clone();
-
-        let change_elder = state.mut_routine_state().change_elder.take().unwrap();
-        state.0.action.mark_elder_change(change_elder);
-
-        state
+    fn routine_state(&self) -> &ProcessElderChangeState {
+        match &self
+            .0
+            .check_and_process_elder_change_routine
+            .sub_routine_process_elder_change
+        {
+            Some(state) => state,
+            _ => panic!("Expect ProcessElderChange {:?}", &self),
+        }
     }
 
-    fn vote_parsec_check_elder(&self) -> Self {
-        self.0.action.vote_parsec(ParsecVote::CheckElder);
+    fn mut_routine_state(&mut self) -> &mut ProcessElderChangeState {
+        let clone = self.clone();
+        match &mut self
+            .0
+            .check_and_process_elder_change_routine
+            .sub_routine_process_elder_change
+        {
+            Some(state) => state,
+            _ => panic!("Expect ProcessElderChange {:?}", &clone),
+        }
+    }
+
+    fn mark_elder_change(&self) -> Self {
+        let change_elder = self.routine_state().change_elder.clone();
+        self.0.action.mark_elder_change(change_elder);
         self.clone()
     }
 
