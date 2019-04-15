@@ -58,9 +58,9 @@ pub struct RelocatedInfo {
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord)]
 pub enum State {
-    // Online ordered first Online node are choosen for elder
+    // Online ordered first Online node are chosen for elder
     Online,
-    // Relcating
+    // Relocating
     RelocatingAnyReason,
     // Complete relocation, only waiting for info to be processed
     Relocated(RelocatedInfo),
