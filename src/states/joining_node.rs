@@ -77,6 +77,7 @@ impl JoiningNode {
             relocation_timer_token: relocation_timer_token,
             timer: timer,
         };
+
         if let Err(error) = joining_node.relocate() {
             error!("{} Failed to start relocation: {:?}", joining_node, error);
             None
@@ -140,7 +141,7 @@ impl JoiningNode {
             crust_rx,
             crust_sender,
         );
-        let target_state = BootstrappingTargetState::Node {
+        let target_state = BootstrappingTargetState::ProvingNode {
             old_full_id: self.full_id,
             our_section: our_section,
         };

@@ -142,7 +142,6 @@ impl NodeBuilder {
             move |action_sender, crust_service, timer, outbox2| {
                 if self.first {
                     if let Some(state) = states::Node::first(
-                        action_sender,
                         self.cache,
                         crust_service,
                         full_id,

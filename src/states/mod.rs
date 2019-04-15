@@ -11,9 +11,12 @@ mod client;
 pub mod common;
 mod joining_node;
 mod node;
+mod proving_node;
 
-pub use self::bootstrapping::Bootstrapping;
-pub use self::bootstrapping::TargetState as BootstrappingTargetState;
-pub use self::client::{Client, RATE_EXCEED_RETRY_MS};
-pub use self::joining_node::JoiningNode;
-pub use self::node::Node;
+pub use self::{
+    bootstrapping::{Bootstrapping, TargetState as BootstrappingTargetState},
+    client::{Client, RATE_EXCEED_RETRY_MS},
+    joining_node::JoiningNode,
+    node::Node,
+    proving_node::ProvingNode,
+};

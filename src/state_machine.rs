@@ -7,6 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::action::Action;
+use crate::chain::GenesisPfxInfo;
 use crate::id::{FullId, PublicId};
 #[cfg(feature = "mock")]
 use crate::mock_crust;
@@ -17,7 +18,7 @@ use crate::routing_table::Prefix;
 use crate::states::common::Base;
 #[cfg(feature = "mock")]
 use crate::states::common::Bootstrapped;
-use crate::states::{Bootstrapping, Client, JoiningNode, Node};
+use crate::states::{Bootstrapping, Client, JoiningNode, Node, ProvingNode};
 use crate::timer::Timer;
 use crate::types::RoutingActionSender;
 use crate::xor_name::XorName;
@@ -55,6 +56,9 @@ pub enum State {
     Bootstrapping(Bootstrapping),
     Client(Client),
     JoiningNode(JoiningNode),
+    // TODO: remove
+    #[allow(dead_code)]
+    ProvingNode(ProvingNode),
     Node(Node),
     Terminated,
 }
@@ -87,6 +91,7 @@ impl State {
             State::Bootstrapping(ref mut state) => state.handle_action(action),
             State::Client(ref mut state) => state.handle_action(action),
             State::JoiningNode(ref mut state) => state.handle_action(action, outbox),
+            State::ProvingNode(ref mut state) => state.handle_action(action, outbox),
             State::Node(ref mut state) => state.handle_action(action, outbox),
             State::Terminated => Transition::Terminate,
         }
@@ -101,6 +106,7 @@ impl State {
             State::Bootstrapping(ref mut state) => state.handle_crust_event(event, outbox),
             State::Client(ref mut state) => state.handle_crust_event(event, outbox),
             State::JoiningNode(ref mut state) => state.handle_crust_event(event, outbox),
+            State::ProvingNode(ref mut state) => state.handle_crust_event(event, outbox),
             State::Node(ref mut state) => state.handle_crust_event(event, outbox),
             State::Terminated => Transition::Terminate,
         }
@@ -141,6 +147,7 @@ impl State {
             State::Bootstrapping(ref bootstrapping) => Some(bootstrapping),
             State::Client(ref client) => Some(client),
             State::JoiningNode(ref joining_node) => Some(joining_node),
+            State::ProvingNode(ref proving_node) => Some(proving_node),
             State::Node(ref node) => Some(node),
             State::Terminated => None,
         }
@@ -153,6 +160,7 @@ impl Debug for State {
             State::Bootstrapping(ref inner) => write!(formatter, "State::{}", inner),
             State::Client(ref inner) => write!(formatter, "State::{}", inner),
             State::JoiningNode(ref inner) => write!(formatter, "State::{}", inner),
+            State::ProvingNode(ref inner) => write!(formatter, "State::{}", inner),
             State::Node(ref inner) => write!(formatter, "State::{}", inner),
             State::Terminated => write!(formatter, "State::Terminated"),
         }
@@ -234,7 +242,7 @@ impl State {
 #[allow(clippy::large_enum_variant)]
 pub enum Transition {
     Stay,
-    // `Bootstrapping` state transitioning to `Client`, `JoiningNode`, or `Node`.
+    // `Bootstrapping` state transitioning to `Client`, `JoiningNode`, or `ProvingNode`.
     IntoBootstrapped {
         proxy_public_id: PublicId,
     },
@@ -242,6 +250,10 @@ pub enum Transition {
     IntoBootstrapping {
         new_id: FullId,
         our_section: (Prefix<XorName>, BTreeSet<PublicId>),
+    },
+    // `ProvingNode` state transitioning to `Node`.
+    IntoNode {
+        gen_pfx_info: GenesisPfxInfo,
     },
     Terminate,
 }
@@ -399,6 +411,13 @@ impl StateMachine {
                     _ => unreachable!(),
                 };
                 self.state = new_state;
+            }
+            IntoNode { gen_pfx_info } => {
+                let new_state = match mem::replace(&mut self.state, State::Terminated) {
+                    State::ProvingNode(proving_node) => proving_node.into_node(gen_pfx_info),
+                    _ => unreachable!(),
+                };
+                self.state = new_state
             }
             Terminate => self.terminate(),
         }

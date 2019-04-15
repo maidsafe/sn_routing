@@ -90,14 +90,8 @@ pub trait Bootstrapped: Base {
         pub_id: &PublicId,
         route: u8,
     ) -> bool {
-        if self
-            .routing_msg_filter()
+        self.routing_msg_filter()
             .filter_outgoing(msg, pub_id, route)
-        {
-            return true;
-        }
-
-        false
     }
 
     fn resend_unacknowledged_timed_out_msgs(&mut self, token: u64) {

@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::id::{FullId, PublicId};
-use crate::messages::Message;
+use crate::messages::{DirectMessage, Message};
 use crate::outbox::EventBox;
 use crate::routing_table::Authority;
 use crate::state_machine::Transition;
@@ -39,12 +39,16 @@ pub trait Base: Display {
         None
     }
 
-    fn send_message(&mut self, pub_id: &PublicId, message: Message) {
+    fn send_direct_message(&mut self, dst_id: PublicId, message: DirectMessage) {
+        self.send_message(&dst_id, Message::Direct(message));
+    }
+
+    fn send_message(&mut self, dst_id: &PublicId, message: Message) {
         let priority = message.priority();
 
         match serialisation::serialise(&message) {
             Ok(bytes) => {
-                self.send_or_drop(pub_id, bytes, priority);
+                self.send_or_drop(dst_id, bytes, priority);
             }
             Err(error) => {
                 error!(
@@ -58,11 +62,11 @@ pub trait Base: Display {
         };
     }
 
-    // Sends the given `bytes` to the peer with the given Crust `PublicId`. If that results in an
+    // Sends the given `bytes` to the peer with the given `dst_id`. If that results in an
     // error, it disconnects from the peer.
-    fn send_or_drop(&mut self, pub_id: &PublicId, bytes: Vec<u8>, priority: u8) {
-        if let Err(err) = self.crust_service().send(pub_id, bytes, priority) {
-            info!("{} Connection to {} failed: {:?}", self, pub_id, err);
+    fn send_or_drop(&mut self, dst_id: &PublicId, bytes: Vec<u8>, priority: u8) {
+        if let Err(err) = self.crust_service().send(dst_id, bytes, priority) {
+            info!("{} Connection to {} failed: {:?}", self, dst_id, err);
             // TODO: Handle lost peer, but avoid a cascade of sending messages and handling more
             //       lost peers: https://maidsafe.atlassian.net/browse/MAID-1924
             // self.crust_service().disconnect(*pub_id);

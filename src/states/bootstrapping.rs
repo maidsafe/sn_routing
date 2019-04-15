@@ -6,8 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::common::Base;
-use super::{Client, JoiningNode, Node};
+use super::{common::Base, Client, JoiningNode, ProvingNode};
 use crate::action::Action;
 use crate::cache::Cache;
 use crate::crust::CrustUser;
@@ -39,7 +38,7 @@ pub enum TargetState {
         msg_expiry_dur: Duration,
     },
     JoiningNode,
-    Node {
+    ProvingNode {
         old_full_id: FullId,
         our_section: (Prefix<XorName>, BTreeSet<PublicId>),
     },
@@ -73,7 +72,7 @@ impl Bootstrapping {
             TargetState::Client { .. } => {
                 let _ = crust_service.start_bootstrap(HashSet::new(), CrustUser::Client);
             }
-            TargetState::JoiningNode | TargetState::Node { .. } => {
+            TargetState::JoiningNode | TargetState::ProvingNode { .. } => {
                 if let Err(error) = crust_service.start_listening_tcp() {
                     error!("Failed to start listening: {:?}", error);
                     return None;
@@ -195,11 +194,11 @@ impl Bootstrapping {
                     State::Terminated
                 }
             }
-            TargetState::Node {
+            TargetState::ProvingNode {
                 old_full_id,
                 our_section,
                 ..
-            } => State::Node(Node::from_bootstrapping(
+            } => State::ProvingNode(ProvingNode::from_bootstrapping(
                 our_section,
                 self.action_sender,
                 self.cache,
@@ -216,7 +215,7 @@ impl Bootstrapping {
     fn client_restriction(&self) -> bool {
         match self.target_state {
             TargetState::Client { .. } => true,
-            TargetState::JoiningNode | TargetState::Node { .. } => false,
+            TargetState::JoiningNode | TargetState::ProvingNode { .. } => false,
         }
     }
 
