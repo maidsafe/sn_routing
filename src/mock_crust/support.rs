@@ -766,6 +766,7 @@ where
 }
 
 #[test]
+#[allow(clippy::let_unit_value)]
 fn test_is_parsec_req_resp() {
     use crate::chain::NetworkEvent;
     use crate::id::FullId;
