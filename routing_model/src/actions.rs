@@ -6,17 +6,19 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use itertools::Itertools;
-use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::{self, Debug, Formatter};
-use std::rc::Rc;
-
 use crate::utilities::{
     Attributes, Candidate, ChangeElder, GenesisPfxInfo, LocalEvent, Name, Node, NodeChange,
     NodeState, ParsecVote, Proof, ProofRequest, ProofSource, RelocatedInfo, Rpc, Section,
     SectionInfo, State,
 };
+use itertools::Itertools;
+use std::{
+    cell::RefCell,
+    collections::BTreeMap,
+    fmt::{self, Debug, Formatter},
+    rc::Rc,
+};
+use unwrap::unwrap;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct InnerAction {
@@ -79,20 +81,23 @@ impl InnerAction {
     }
 
     pub fn with_section_members(mut self, section: SectionInfo, nodes: &[Node]) -> Self {
-        self.section_members.insert(section, nodes.to_vec());
+        let inserted = self.section_members.insert(section, nodes.to_vec());
+        assert!(inserted.is_none());
         self
     }
 
     fn add_node(&mut self, node_state: NodeState) {
         self.our_nodes
             .push(NodeChange::AddWithState(node_state.node, node_state.state));
-        self.our_current_nodes
+        let inserted = self
+            .our_current_nodes
             .insert(node_state.node.name(), node_state);
+        assert!(inserted.is_none());
     }
 
     fn remove_node(&mut self, node: Node) {
         self.our_nodes.push(NodeChange::Remove(node));
-        self.our_current_nodes.remove(&Name(node.0.name));
+        unwrap!(self.our_current_nodes.remove(&Name(node.0.name)));
     }
 
     fn set_node_state(&mut self, name: Name, state: State) {
@@ -297,16 +302,6 @@ impl Action {
             .get(&Name(candidate.0.name))
             .map(|state| state.state.is_relocating())
             .unwrap_or(false)
-    }
-
-    pub fn is_elder_state(&self, candidate: Candidate) -> bool {
-        self.0.borrow().our_current_nodes[&Name(candidate.0.name)].is_elder
-    }
-
-    pub fn is_candidate_relocating_state(&self, candidate: Candidate) -> bool {
-        self.0.borrow().our_current_nodes[&Name(candidate.0.name)]
-            .state
-            .is_relocating()
     }
 
     pub fn is_our_name(&self, name: Name) -> bool {

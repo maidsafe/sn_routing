@@ -50,24 +50,6 @@ pub enum NodeChange {
     Elder(Node, bool),
 }
 
-impl NodeChange {
-    fn node(&self) -> Node {
-        match &self {
-            NodeChange::AddWithState(node, _)
-            | NodeChange::State(node, _)
-            | NodeChange::Remove(node)
-            | NodeChange::Elder(node, _) => *node,
-        }
-    }
-
-    fn relocating(&self) -> bool {
-        match &self {
-            NodeChange::State(_, State::RelocatingAnyReason) => true,
-            _ => false,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord)]
 pub struct RelocatedInfo {
     pub candidate: Candidate,
@@ -91,14 +73,6 @@ pub enum State {
 impl State {
     pub fn is_relocating(self) -> bool {
         self == State::RelocatingAnyReason
-    }
-
-    pub fn is_resource_proofing(self) -> bool {
-        self == State::WaitingProofing
-    }
-
-    pub fn is_offline(self) -> bool {
-        self == State::Offline
     }
 }
 
@@ -233,23 +207,6 @@ pub enum Rpc {
 impl Rpc {
     pub fn to_event(&self) -> Event {
         Event::Rpc(*self)
-    }
-
-    pub fn candidate(&self) -> Option<Candidate> {
-        match self {
-            Rpc::RefuseCandidate(candidate)
-            | Rpc::RelocateResponse(candidate, _)
-            | Rpc::RelocatedInfo(candidate, _)
-            | Rpc::ExpectCandidate(candidate)
-            | Rpc::ResendExpectCandidate(_, candidate)
-            | Rpc::ResourceProof { candidate, .. }
-            | Rpc::ResourceProofReceipt { candidate, .. }
-            | Rpc::NodeApproval(candidate, _)
-            | Rpc::ResourceProofResponse { candidate, .. }
-            | Rpc::CandidateInfo { candidate, .. } => Some(*candidate),
-
-            Rpc::ConnectionInfoRequest { .. } | Rpc::ConnectionInfoResponse { .. } => None,
-        }
     }
 
     pub fn destination(&self) -> Option<Name> {
