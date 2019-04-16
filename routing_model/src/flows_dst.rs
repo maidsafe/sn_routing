@@ -271,6 +271,7 @@ impl CheckAndProcessElderChange {
     pub fn try_next(&self, event: Event) -> Option<MemberState> {
         match event {
             Event::ParsecConsensus(vote) => self.try_consensus(&vote),
+            Event::Rpc(rpc) => self.try_rpc(rpc),
             Event::LocalEvent(LocalEvent::TimeoutCheckElder) => {
                 Some(self.vote_parsec_check_elder())
             }
@@ -282,6 +283,13 @@ impl CheckAndProcessElderChange {
     fn try_consensus(&self, vote: &ParsecVote) -> Option<Self> {
         match vote {
             ParsecVote::CheckElder => Some(self.check_elder()),
+            _ => None,
+        }
+    }
+
+    fn try_rpc(&self, rpc: Rpc) -> Option<Self> {
+        match rpc {
+            Rpc::Merge => Some(self.vote_parsec_neighbour_merge()),
             _ => None,
         }
     }
@@ -307,6 +315,11 @@ impl CheckAndProcessElderChange {
 
     fn vote_parsec_check_elder(&self) -> Self {
         self.0.action.vote_parsec(ParsecVote::CheckElder);
+        self.clone()
+    }
+
+    fn vote_parsec_neighbour_merge(&self) -> Self {
+        self.0.action.vote_parsec(ParsecVote::NeighbourMerge);
         self.clone()
     }
 

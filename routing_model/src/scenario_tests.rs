@@ -577,6 +577,19 @@ mod dst_tests {
     }
 
     #[test]
+    fn rpc_merge() {
+        run_test(
+            "Get RPC Merge",
+            &initial_state_old_elders(),
+            &[Rpc::Merge.to_event()],
+            &AssertState {
+                action_our_votes: vec![ParsecVote::NeighbourMerge],
+                ..AssertState::default()
+            },
+        );
+    }
+
+    #[test]
     fn parsec_expect_candidate_then_online_no_elder_change() {
         let initial_state = arrange_initial_state(
             &initial_state_old_elders(),

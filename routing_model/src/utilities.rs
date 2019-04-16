@@ -202,6 +202,8 @@ pub enum Rpc {
         destination: Name,
         connection_info: i32,
     },
+
+    Merge,
 }
 
 impl Rpc {
@@ -216,7 +218,8 @@ impl Rpc {
             | Rpc::RelocatedInfo(_, _)
             | Rpc::ExpectCandidate(_)
             | Rpc::ResendExpectCandidate(_, _)
-            | Rpc::NodeApproval(_, _) => None,
+            | Rpc::NodeApproval(_, _)
+            | Rpc::Merge => None,
 
             Rpc::ResourceProof { candidate, .. } | Rpc::ResourceProofReceipt { candidate, .. } => {
                 Some(Name(candidate.0.name))
@@ -249,6 +252,8 @@ pub enum ParsecVote {
 
     Offline(Node),
     BackOnline(Node),
+
+    NeighbourMerge,
 }
 
 impl ParsecVote {
@@ -272,7 +277,8 @@ impl ParsecVote {
             | ParsecVote::RelocatedInfo(_)
             | ParsecVote::CheckElder
             | ParsecVote::Offline(_)
-            | ParsecVote::BackOnline(_) => None,
+            | ParsecVote::BackOnline(_)
+            | ParsecVote::NeighbourMerge => None,
         }
     }
 }
