@@ -8,7 +8,9 @@
 
 use crate::{
     state::{AcceptAsCandidateState, MemberState, ProcessElderChangeState},
-    utilities::{Candidate, ChangeElder, Event, LocalEvent, Node, ParsecVote, Proof, Rpc, Section},
+    utilities::{
+        Candidate, ChangeElder, Event, LocalEvent, MergeInfo, Node, ParsecVote, Proof, Rpc, Section,
+    },
 };
 use unwrap::unwrap;
 
@@ -282,7 +284,8 @@ impl CheckAndProcessElderChange {
 
     fn try_consensus(&self, vote: &ParsecVote) -> Option<Self> {
         match vote {
-            ParsecVote::CheckElder => Some(self.check_elder()),
+            ParsecVote::NeighbourMerge(merge_info) => Some(self.store_merge_infos(*merge_info)),
+            ParsecVote::CheckElder => Some(self.check_merge()),
             _ => None,
         }
     }
@@ -291,6 +294,28 @@ impl CheckAndProcessElderChange {
         match rpc {
             Rpc::Merge => Some(self.vote_parsec_neighbour_merge()),
             _ => None,
+        }
+    }
+
+    fn store_merge_infos(&self, merge_info: MergeInfo) -> Self {
+        self.0.action.store_merge_infos(merge_info);
+        self.clone()
+    }
+
+    fn merge_needed(&self) -> bool {
+        // TODO: trigger for merge needed still in flux
+        false
+    }
+
+    fn has_merge_infos(&self) -> bool {
+        self.0.action.has_merge_infos()
+    }
+
+    fn check_merge(&self) -> Self {
+        if self.has_merge_infos() || self.merge_needed() {
+            self.clone() // TODO: -> Concurrent to ProcessMerge
+        } else {
+            self.check_elder()
         }
     }
 
@@ -319,7 +344,9 @@ impl CheckAndProcessElderChange {
     }
 
     fn vote_parsec_neighbour_merge(&self) -> Self {
-        self.0.action.vote_parsec(ParsecVote::NeighbourMerge);
+        self.0
+            .action
+            .vote_parsec(ParsecVote::NeighbourMerge(MergeInfo));
         self.clone()
     }
 

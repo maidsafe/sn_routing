@@ -7,9 +7,9 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::utilities::{
-    Attributes, Candidate, ChangeElder, GenesisPfxInfo, LocalEvent, Name, Node, NodeChange,
-    NodeState, ParsecVote, Proof, ProofRequest, ProofSource, RelocatedInfo, Rpc, Section,
-    SectionInfo, State,
+    Attributes, Candidate, ChangeElder, GenesisPfxInfo, LocalEvent, MergeInfo, Name, Node,
+    NodeChange, NodeState, ParsecVote, Proof, ProofRequest, ProofSource, RelocatedInfo, Rpc,
+    Section, SectionInfo, State,
 };
 use itertools::Itertools;
 use std::{
@@ -33,6 +33,8 @@ pub struct InnerAction {
 
     pub shortest_prefix: Option<Section>,
     pub section_members: BTreeMap<SectionInfo, Vec<Node>>,
+
+    pub merge_infos: Option<MergeInfo>,
 }
 
 impl InnerAction {
@@ -49,6 +51,8 @@ impl InnerAction {
 
             shortest_prefix: Default::default(),
             section_members: Default::default(),
+
+            merge_infos: Default::default(),
         }
     }
 
@@ -116,6 +120,10 @@ impl InnerAction {
 
     fn set_section_info(&mut self, section: SectionInfo) {
         self.our_section = section;
+    }
+
+    fn store_merge_infos(&mut self, merge_info: MergeInfo) {
+        self.merge_infos = Some(merge_info);
     }
 }
 
@@ -376,6 +384,14 @@ impl Action {
     }
 
     pub fn increment_nodes_work_units(&self) {}
+
+    pub fn store_merge_infos(&self, merge_info: MergeInfo) {
+        self.0.borrow_mut().store_merge_infos(merge_info);
+    }
+
+    pub fn has_merge_infos(&self) -> bool {
+        self.0.borrow().merge_infos.is_some()
+    }
 }
 
 impl Default for Action {

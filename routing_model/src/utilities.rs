@@ -104,6 +104,9 @@ pub struct SectionInfo(pub Section, pub i32 /*contain full membership */);
 #[derive(Debug, Clone, Copy, Default, PartialEq, PartialOrd, Ord, Eq)]
 pub struct GenesisPfxInfo(pub SectionInfo);
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, PartialOrd, Ord, Eq)]
+pub struct MergeInfo;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChangeElder {
     pub changes: Vec<(Node, bool)>,
@@ -253,7 +256,7 @@ pub enum ParsecVote {
     Offline(Node),
     BackOnline(Node),
 
-    NeighbourMerge,
+    NeighbourMerge(MergeInfo),
 }
 
 impl ParsecVote {
@@ -278,7 +281,7 @@ impl ParsecVote {
             | ParsecVote::CheckElder
             | ParsecVote::Offline(_)
             | ParsecVote::BackOnline(_)
-            | ParsecVote::NeighbourMerge => None,
+            | ParsecVote::NeighbourMerge(_) => None,
         }
     }
 }
