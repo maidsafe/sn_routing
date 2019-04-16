@@ -11,8 +11,8 @@ use crate::ack_manager::{Ack, AckManager};
 use crate::action::Action;
 use crate::cache::Cache;
 use crate::chain::{
-    Chain, GenesisPfxInfo, NetworkEvent, PrefixChangeOutcome, Proof, ProofSet, ProvingSection,
-    SectionInfo,
+    Chain, ChainState, GenesisPfxInfo, NetworkEvent, PrefixChangeOutcome, Proof, ProofSet,
+    ProvingSection, SectionInfo,
 };
 use crate::config_handler;
 use crate::crust::{ConnectionInfoResult, CrustError, CrustUser};
@@ -940,10 +940,7 @@ impl Node {
             let pub_id = peer.pub_id();
             if self.chain.is_peer_valid(pub_id) {
                 peers_to_add.push(*pub_id);
-            } else if peer.is_routing()
-                && !self.peer_mgr.is_proxy(pub_id)
-                && !self.peer_mgr.is_joining_node(pub_id)
-            {
+            } else if peer.is_routing() && self.chain.state() == &ChainState::Normal {
                 peers_to_remove.push(*peer.pub_id());
             }
         }
