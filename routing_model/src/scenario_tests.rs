@@ -16,6 +16,7 @@ use crate::{
     },
 };
 use lazy_static::lazy_static;
+use pretty_assertions::assert_eq;
 
 macro_rules! to_collect {
     ($($item:expr),*) => {{
@@ -1332,6 +1333,7 @@ mod src_tests {
 mod node_tests {
     use super::*;
     use crate::state::JoiningRelocateCandidateState;
+    use pretty_assertions::assert_eq;
 
     #[derive(Debug, PartialEq, Default, Clone)]
     struct AssertJoiningState {
