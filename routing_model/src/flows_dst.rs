@@ -328,20 +328,18 @@ pub struct ProcessElderChange(pub MemberState);
 
 impl ProcessElderChange {
     pub fn start_event_loop(&self, change_elder: ChangeElder) -> Self {
-        self.0
-            .with_check_and_process_elder_change_sub_routine_process_elder_change(Some(
-                ProcessElderChangeState {
-                    change_elder: change_elder.clone(),
-                    wait_votes: Vec::new(),
-                },
-            ))
-            .as_process_elder_change()
-            .vote_for_elder_change(change_elder)
+        let mut state = self.clone();
+        state.mut_routine_state().is_active = true;
+        state.mut_routine_state().change_elder = Some(change_elder.clone());
+        state.vote_for_elder_change(change_elder)
     }
 
     fn exit_event_loop(&self) -> Self {
-        self.0
-            .with_check_and_process_elder_change_sub_routine_process_elder_change(None)
+        let mut state = self.clone();
+        state.mut_routine_state().is_active = false;
+        state.mut_routine_state().change_elder = None;
+        state
+            .0
             .as_check_and_process_elder_change()
             .transition_exit_process_elder_change()
             .0
@@ -376,7 +374,7 @@ impl ProcessElderChange {
         let mut state = self.clone();
 
         let votes = state.0.action.get_elder_change_votes(&change_elder);
-        state.mut_routine_state().change_elder = change_elder;
+        state.mut_routine_state().change_elder = Some(change_elder);
         state.mut_routine_state().wait_votes = votes;
 
         for vote in &state.routine_state().wait_votes {
@@ -387,32 +385,24 @@ impl ProcessElderChange {
     }
 
     fn routine_state(&self) -> &ProcessElderChangeState {
-        match &self
+        &self
             .0
             .check_and_process_elder_change_routine
             .sub_routine_process_elder_change
-        {
-            Some(state) => state,
-            _ => panic!("Expect ProcessElderChange {:?}", &self),
-        }
     }
 
     fn mut_routine_state(&mut self) -> &mut ProcessElderChangeState {
-        let clone = self.clone();
-        match &mut self
+        &mut self
             .0
             .check_and_process_elder_change_routine
             .sub_routine_process_elder_change
-        {
-            Some(state) => state,
-            _ => panic!("Expect ProcessElderChange {:?}", &clone),
-        }
     }
 
     fn mark_elder_change(&self) -> Self {
-        let change_elder = self.routine_state().change_elder.clone();
-        self.0.action.mark_elder_change(change_elder);
-        self.clone()
+        let mut state = self.clone();
+        let change_elder = unwrap!(state.mut_routine_state().change_elder.take());
+        state.0.action.mark_elder_change(change_elder);
+        state
     }
 
     fn start_check_elder_timeout(&self) -> Self {
