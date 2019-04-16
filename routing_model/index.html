@@ -108,10 +108,10 @@
     JoiningRelocateCandidate["JoiningRelocateCandidate(RelocateInfo)<br/>output: JoiningApproved"]
     style JoiningRelocateCandidate fill:#f9f,stroke:#333,stroke-width:4px
 
-    SetNodeApproaval["OWN_SECTION=JoiningApproved"]
-    JoiningRelocateCandidate --> SetNodeApproaval
+    SetNodeApproval["OWN_SECTION=JoiningApproved"]
+    JoiningRelocateCandidate --> SetNodeApproval
 
-    SetNodeApproaval --> LoopEnd
+    SetNodeApproval --> LoopEnd
     LoopEnd --> LoopStart
   </div>
 
@@ -185,7 +185,7 @@
     <li> Decide who's an elder or a plain old adult as well as when to merge or split.
     <li> Decide who is online and offline.
   </ul>
-  All of these flows are happening simultaneously, but they share a common event loop. At any time, either all flows or all but one flows  must be in a "wait" state. (If an event is handled by mutliple active event loops, the one with the highest number handles it.)<br/>
+  All of these flows are happening simultaneously, but they share a common event loop. At any time, either all flows or all but one flows  must be in a "wait" state. (If an event is handled by multiple active event loops, the one with the highest number handles it.)<br/>
   If our section decides to relocates us, we will have to stop functioning as a member of our section and go back to the previous flow where we will "Rebootstrap" so we can become a member of a different section.
   </p>
   </div>
@@ -193,43 +193,43 @@
     graph TB
     style StartSectionMemberNode fill:#f9f,stroke:#333,stroke-width:4px
     style EndRoutine fill:#f9f,stroke:#333,stroke-width:4px
-    StartSectionMemberNode --> InitializeNodeInternalState
-    InitializeNodeInternalState["intialise_node_internal_state()<br/><br/>(Parsed, Routing table...)"]
-    InitializeNodeInternalState --> ConcurentStartElder
+    StartSectionMemberNode --> InitialiseNodeInternalState
+    InitialiseNodeInternalState["initialise_node_internal_state()<br/><br/>(Parsed, Routing table...)"]
+    InitialiseNodeInternalState --> ConcurrentStartElder
 
-    ConcurentStartElder{"Concurrent<br/>start elder"}
+    ConcurrentStartElder{"Concurrent<br/>start elder"}
 
-    ConcurentStartElder --> ConcurentStartSrc
-    ConcurentStartSrc{"Concurrent<br/>start src"}
+    ConcurrentStartElder --> ConcurrentStartSrc
+    ConcurrentStartSrc{"Concurrent<br/>start src"}
 
-    ConcurentStartSrc --> StartDecidesOnNodeToRelocate
+    ConcurrentStartSrc --> StartDecidesOnNodeToRelocate
     style StartDecidesOnNodeToRelocate fill:#f9f,stroke:#333,stroke-width:4px
 
-    ConcurentStartSrc --> StartRelocateSrc
+    ConcurrentStartSrc --> StartRelocateSrc
     style StartRelocateSrc fill:#f9f,stroke:#333,stroke-width:4px
 
 
-    ConcurentStartElder --> ConcurentStartDst
-    ConcurentStartDst{"Concurrent<br/>start dst"}
+    ConcurrentStartElder --> ConcurrentStartDst
+    ConcurrentStartDst{"Concurrent<br/>start dst"}
 
-    ConcurentStartDst --> StartRespondToRelocateRequests
+    ConcurrentStartDst --> StartRespondToRelocateRequests
     style StartRespondToRelocateRequests fill:#f9f,stroke:#333,stroke-width:4px
 
-    ConcurentStartDst --> StartRelocatedNodeConnection
+    ConcurrentStartDst --> StartRelocatedNodeConnection
     StartRelocatedNodeConnection[StartRelocatedNodeConnection]
     style StartRelocatedNodeConnection fill:#f9f,stroke:#333,stroke-width:4px
 
-    ConcurentStartDst --> StartResourceProof
+    ConcurrentStartDst --> StartResourceProof
     StartResourceProof[StartResourceProof]
     style StartResourceProof fill:#f9f,stroke:#333,stroke-width:4px
 
-    ConcurentStartElder --> StartMergeSplitAndChangeElders
+    ConcurrentStartElder --> StartMergeSplitAndChangeElders
     style StartMergeSplitAndChangeElders fill:#f9f,stroke:#333,stroke-width:4px
 
-    ConcurentStartElder --> CheckOnlineOffline
+    ConcurrentStartElder --> CheckOnlineOffline
     style CheckOnlineOffline fill:#f9f,stroke:#333,stroke-width:4px
 
-    ConcurentStartElder --> WaitFor
+    ConcurrentStartElder --> WaitFor
 
     WaitFor(("Wait for 0:"))
 
@@ -338,7 +338,7 @@
   <div class="content">
     <p>If we know of a section that has a shorter prefix than ours, we prefer for them to receive this incoming node rather than ourselves as it will help keep the Network's sections tree balanced.<br/>
     This shorter_prefix_section is a function that will return None if we are the shortest of any section we know, Some if there is a better candidate.<br/>
-    If it is Some, we will relocate the new node to them instead of completing the rellocation to our own section.
+    If it is Some, we will relocate the new node to them instead of completing the relocation to our own section.
     </p>
   </div>
   <button class="collapsible">State::RelocatingHop</button>
@@ -441,11 +441,11 @@
   <h2>Resource proof from a destination's point of view</h2>
   <div class=description>
   <p>In the previous diagram, we ensured an incoming candidate would only reach the "State::WaitingProofing" state once it was connected to our section and able to communicate with its elders. At this stage, the node would be a member of our peer_list.<br/>
-  This is maintained accross merge/split as for any adult node, so we are ready to resource proof any node in State::WaitingProofing state<br/>
+  This is maintained across merge/split as for any adult node, so we are ready to resource proof any node in State::WaitingProofing state<br/>
   <br/>
   This leads us here: to the resource proof.<br/>
   We only process up to one resource proof at a time (i.e: we wait for the current resource proof to reach completion before scheduling a new one).<br/>
-  When we periodicaly decide to resource proof a node, we check if any node is ready for it:  State::WaitingProofing state, and pick the best candidate (There may be mutliple after a merge).<br/>
+  When we periodically decide to resource proof a node, we check if any node is ready for it:  State::WaitingProofing state, and pick the best candidate (There may be multiple after a merge).<br/>
   As an elder, I will send the candidate a Rpc::ResourceProof. This gives them the "problem to solve". As they solve it, they will send me ResourceProofResponses. These will be parts of the proof. On receiving valid parts, I must send a ResourceProofReceipt. Once they finally send me the last valid part, they passed their resource proof and I vote for Parsec::Online (essentially accepting them as a member of my section).<br/>
   At any time during this process, they may timeout (The whole process it taking longer than expected), in which case I will decided to reject them and vote for Parsec::PurgeCandidate.<br/>
   This process ends once I reach consensus on either accepting the candidate (Parsec::Online) or refusing them (Parsec::PurgeCandidate).<br/>
@@ -454,7 +454,7 @@
   <button class="collapsible">CANDIDATE</button>
   <div class="content">
     <p>Option&lt(Candidate, Nonce)&gt.<br/>
-	  The candidate we are currently ressource proofing, if any.<br/>
+	  The candidate we are currently resource proofing, if any.<br/>
       The nonce is used to distinguish new attempts of resource proofing the same candidate after a merge or a split.
     </p>
   </div>
@@ -527,8 +527,8 @@
       WaitFor --RPC--> RPC
       RPC -- Rpc::ResourceProofResponse<br/>from CANDIDATE<br/><br/>VOTED_ONLINE==no --> ProofResponse((Proof))
       ProofResponse((Check))
-      SendProofReceit["send_rpc(<br/>Rpc::ResourceProofReceipt)<br/>for proof"]
-      ProofResponse -- Valid Part --> SendProofReceit
+      SendProofReceipt["send_rpc(<br/>Rpc::ResourceProofReceipt)<br/>for proof"]
+      ProofResponse -- Valid Part --> SendProofReceipt
       VoteParsecOnline["vote_for(<br/>Parsec::Online)<br/><br/>VOTED_ONLINE=yes"]
       ProofResponse -- Valid End --> VoteParsecOnline
 
@@ -547,7 +547,7 @@
       VoteParsecCheckResourceProofTimeout --> LoopEnd
 
 
-      SendProofReceit-->LoopEnd
+      SendProofReceipt-->LoopEnd
       VoteParsecOnline --> LoopEnd
       VoteParsecPurgeCandidate --> LoopEnd
       LoopEnd --> LoopStart
@@ -576,7 +576,7 @@
   </div>
   <h2>Deciding that a member of our section should be relocated away</h2>
   <div class=description>
-  <p>In these diagrams, we are modeling the simple version of node ageing that we decided to implement for Fleming: Work units are incremented for all nodes in the section every time a timeout reaches consenus.<br/>
+  <p>In these diagrams, we are modelling the simple version of node ageing that we decided to implement for Fleming: Work units are incremented for all nodes in the section every time a timeout reaches consensus.<br/>
   Because a quorum of elders must have voted for this timeout, the malicious nodes can't arbitrarily speed up the ageing of their nodes.<br/>
   Once a node has accumulated enough work units to be relocated, if no other node is currently in State::RelocatingAgeIncrease we set its state to State::RelocatingAgeIncrease. This node will then be actually relocated in StartRelocateSrc (see StartRelocateSrc).
   Because of this, we will generally only relocate one adult at a time (except in case of merge).
@@ -666,30 +666,30 @@
   Or that RPC or the response is lost, then we will retry later.<br/>
   <br/>
   When we receive Rpc::ExpectCandidateAcceptResponse or Rpc::ExpectCandidateRefuseResponse, we vote for it in PARSEC, regardless of the order of operations, so it will be consensused.<br/>
-  The first Parsec::ExpectCandidateAcceptResponse consensused for a node will be the single valid relocation. We will sign the reolcation info through parsec and send to the node that is being relocated the RelocatedInfo they will need.<br/>
-  At this point, we will purge their information since this node isn't a member of our section anymore.<br/>
+  The first Parsec::ExpectCandidateAcceptResponse consensused for a node will be the single valid relocation. We will sign the relocation info through parsec and send to the node that is being relocated the RelocatedInfo they will need.<br/>
+  At this point, we will purge their information since this node isn't a member of our section any more.<br/>
   <br/>
   Elders are not considered for relocation: Elder nodes in State::RelocatingAgeIncrease will eventually get demoted to adults (see StartMergeSplitAndChangeElders) at which point they may be relocated.<br/>
-  We prioritize relocating our Adults, then just relocated nodes that need another hop, then nodes comming back online.<br/>
+  We prioritise relocating our Adults, then just relocated nodes that need another hop, then nodes coming back online.<br/>
   <br/>
-  Also of note: We may be relocating multiple nodes (i.e because of merge, or node relocating to us or node comming back online), but we will only handle one at a time per CheckRelocateTimeOut event.<br/>
-  Throtling is otherwise handled in flows setting the relocating states.
+  Also of note: We may be relocating multiple nodes (i.e because of merge, or node relocating to us or node coming back online), but we will only handle one at a time per CheckRelocateTimeOut event.<br/>
+  Throttling is otherwise handled in flows setting the relocating states.
   </p>
   <button class="collapsible">get_best_relocating_node_and_target</button>
   <div class="content">
     <p>Takes ALREADY_RELOCATING for the nodes it will ignore.<br/>
     Returns the best node to relocate and the target address to send it to<br/>
     <br/>
-    There may be mutliple nodes relocating, for example because of a merge. Take the best one (oldest), and choose a target address.<br/>
+    There may be multiple nodes relocating, for example because of a merge. Take the best one (oldest), and choose a target address.<br/>
     The target address is one managed by one of our neighbours. This could be random, or the current old_public_id with a single bit of the prefix flipped.<br/>
     This would help ensure that source and destination remain neighbours, even if the source splits.<br/>
     Using a target address instead of a section ensures we deliver the message even if the destination splits or merges.<br/>
     <br/>
     There are 3 states the node may be: State::RelocatingAgeIncrease, State::RelocatingHop, and State::RelocatingBackOnline.<br/>
     Nodes will be selected in this order: State::RelocatingAgeIncrease, State::RelocatingHop and then State::RelocatingBackOnline.<br/>
-    This ensures that we prioritize good node relocation.
+    This ensures that we prioritise good node relocation.
     <br/>
-    Note: It may be possible for a node to relocate to its sibling, and complete relocation after a merge occured.
+    Note: It may be possible for a node to relocate to its sibling, and complete relocation after a merge occurred.
     </p>
   </div>
   <button class="collapsible">ALREADY_RELOCATING</button>
@@ -713,7 +713,7 @@
   <button class="collapsible">Rpc::RelocatedInfo</button>
   <div class="content">
     <p>Trigger relocation: Candidate will disconnect on receiving that RPC<br/>
-    This RPC contains the Rpc::ExpectCandidateAcceptResponse info, and the signatures prooving the source section received it and decided that particular response is the one to relocate to.<br/>
+    This RPC contains the Rpc::ExpectCandidateAcceptResponse info, and the signatures proving the source section received it and decided that particular response is the one to relocate to.<br/>
     In case we re-sent the Rpc::ExpectCandidate, we may receive more than one Rpc::ExpectCandidateAcceptResponse.<br/>
     In this case we must ensure that no single node could act on that other Rpc::ExpectCandidateAcceptResponse and be accepted by the destination. this means the signatures must be provided only once the Rpc::ExpectCandidateAcceptResponse is agreed.<br/>
     RelocatedInfo will contain the Rpc::ExpectCandidateAcceptResponse info and the quorum of signatures gathered from PARSEC vote on Parsec::RelocatedInfo.
@@ -759,7 +759,7 @@
       SendExpectCandidate["(node, target)=<br/>get_best_relocating_node_and_target(<br/>ALREADY_RELOCATING)<br/><br/>send_rpc(<br/>Rpc::ExpectCandidate(node))<br/>to target NaeManager<br/><br/>ALREADY_RELOCATING<br/>.insert(node)"]
       SendExpectCandidate --> AllowResendCandidates
 
-      AllowResendCandidates["ALREADY_RELOCATING=<br/>ALREADY_RELOCATING<br/>.map(|(node, count| (node, count+1))<br/>.fiter(|(node,count|) count < 3)<br/><br/>(update wait and allow resend)"]
+      AllowResendCandidates["ALREADY_RELOCATING=<br/>ALREADY_RELOCATING<br/>.map(|(node, count| (node, count+1))<br/>.filter(|(node,count|) count < 3)<br/><br/>(update wait and allow resend)"]
       AllowResendCandidates --> LoopEnd
 
 
@@ -792,12 +792,12 @@
   <div class=description>
   <p>This flow updates the elder status of our section nodes if needed.<br/>
      Because it is interlinked, it also handles merging and splitting section: When merging or splitting, no elder change can happen.<br/>
-     However other flows continue, so relocating to and from the section is uninterupted:<br/>
+     However other flows continue, so relocating to and from the section is uninterrupted:<br/>
   </p>
 
   <button class="collapsible">CheckElderTimeout</button>
   <div class="content">
-    <p>As for incrementing work units, we want to update the eldership status of all nodes in a section on a syncrhonised, regular basis.<br/>
+    <p>As for incrementing work units, we want to update the eldership status of all nodes in a section on a synchronised, regular basis.<br/>
     For this reason, it makes sense to have a timer going through Parsec.<br/>
     Note that this timer has to be only as fast as needed so that it remains highly unlikely that 1/3 of the elders in any section would go offline within one timer's duration.
     </p>

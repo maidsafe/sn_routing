@@ -3,9 +3,9 @@
 set -x -e
 export RUSTFLAGS="-C opt-level=2 -C codegen-units=8"
 
-cargo fmt -- --check
+cargo fmt --all -- --check
 cargo check --verbose --lib --tests
 cargo check --verbose --example ci_test
 cargo check --verbose --example key_value_store
-cargo clippy --verbose --all-targets
+cargo clippy --verbose --all-targets --all
 cargo clippy --verbose --all-targets --features=mock
