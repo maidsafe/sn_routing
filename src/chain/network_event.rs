@@ -11,12 +11,14 @@ use crate::id::PublicId;
 use crate::parsec;
 use crate::sha3::Digest256;
 use crate::{Authority, RoutingError, XorName};
+use hex_fmt::HexFmt;
 use maidsafe_utilities::serialisation::serialise;
+use std::fmt::{self, Debug, Formatter};
 
 /// Routing Network events
 // TODO: Box `SectionInfo`?
 #[allow(clippy::large_enum_variant)]
-#[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub enum NetworkEvent {
     Online(PublicId, Authority<XorName>),
     Offline(PublicId),
@@ -61,3 +63,22 @@ impl NetworkEvent {
 }
 
 impl parsec::NetworkEvent for NetworkEvent {}
+
+impl Debug for NetworkEvent {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        match self {
+            NetworkEvent::Online(ref id, _) => write!(formatter, "Online({}, _)", id),
+            NetworkEvent::Offline(ref id) => write!(formatter, "Offline({})", id),
+            NetworkEvent::OurMerge => write!(formatter, "OurMerge"),
+            NetworkEvent::NeighbourMerge(ref digest) => {
+                write!(formatter, "NeighbourMerge({:.14?})", HexFmt(digest))
+            }
+            NetworkEvent::SectionInfo(ref sec_info) => {
+                write!(formatter, "SectionInfo({:?})", sec_info)
+            }
+            NetworkEvent::ProvingSections(_, ref sec_info) => {
+                write!(formatter, "ProvingSections(_, {:?})", sec_info)
+            }
+        }
+    }
+}
