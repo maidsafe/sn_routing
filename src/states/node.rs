@@ -112,8 +112,8 @@ pub struct Node {
     disable_resource_proof: bool,
     parsec_map: BTreeMap<u64, Parsec<NetworkEvent, FullId>>,
     gen_pfx_info: GenesisPfxInfo,
-    poke_timer_token: Option<u64>,
-    gossip_timer_token: Option<u64>,
+    poke_timer_token: u64,
+    gossip_timer_token: u64,
     chain: Chain,
     // Peers we want to try reconnecting to
     reconnect_peers: Vec<PublicId>,
@@ -138,26 +138,101 @@ impl Node {
             latest_info: SectionInfo::default(),
         };
 
+        let mut node = Self::new(
+            AckManager::new(),
+            cache,
+            crust_service,
+            full_id,
+            gen_pfx_info,
+            true,
+            min_section_size,
+            Default::default(),
+            Default::default(),
+            PeerManager::new(public_id, dev_config.disable_client_rate_limiter),
+            RoutingMessageFilter::new(),
+            timer,
+        );
+
+        if let Err(error) = node.crust_service.start_listening_tcp() {
+            error!("{} Failed to start listening: {:?}", node, error);
+            None
+        } else {
+            debug!("{} State changed to node.", node);
+            info!("{} Started a new network as a seed node.", node);
+            Some(node)
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_proving_node(
+        ack_mgr: AckManager,
+        cache: Box<Cache>,
+        crust_service: Service,
+        full_id: FullId,
+        gen_pfx_info: GenesisPfxInfo,
+        min_section_size: usize,
+        msg_queue: VecDeque<RoutingMessage>,
+        notified_nodes: BTreeSet<PublicId>,
+        peer_mgr: PeerManager,
+        routing_msg_filter: RoutingMessageFilter,
+        timer: Timer,
+    ) -> Self {
+        Self::new(
+            ack_mgr,
+            cache,
+            crust_service,
+            full_id,
+            gen_pfx_info,
+            false,
+            min_section_size,
+            msg_queue,
+            notified_nodes,
+            peer_mgr,
+            routing_msg_filter,
+            timer,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        ack_mgr: AckManager,
+        cache: Box<Cache>,
+        crust_service: Service,
+        full_id: FullId,
+        gen_pfx_info: GenesisPfxInfo,
+        is_first_node: bool,
+        min_section_size: usize,
+        msg_queue: VecDeque<RoutingMessage>,
+        notified_nodes: BTreeSet<PublicId>,
+        peer_mgr: PeerManager,
+        routing_msg_filter: RoutingMessageFilter,
+        timer: Timer,
+    ) -> Self {
+        let dev_config = config_handler::get_config().dev.unwrap_or_default();
+
+        let public_id = *full_id.public_id();
+
         let tick_timer_token = timer.schedule(TICK_TIMEOUT);
-        let gossip_timer_token = Some(timer.schedule(GOSSIP_TIMEOUT));
+        let poke_timer_token = timer.schedule(POKE_TIMEOUT);
+        let gossip_timer_token = timer.schedule(GOSSIP_TIMEOUT);
         let reconnect_peers_token = timer.schedule(RECONNECT_PEER_TIMEOUT);
 
         let parsec = create_parsec(full_id.clone(), &gen_pfx_info);
         let mut parsec_map = BTreeMap::new();
         let _ = parsec_map.insert(*gen_pfx_info.first_info.version(), parsec);
 
-        let mut node = Self {
-            ack_mgr: AckManager::new(),
+        Self {
+            ack_mgr,
             cacheable_user_msg_cache: UserMessageCache::with_expiry_duration(
                 USER_MSG_CACHE_EXPIRY_DURATION,
             ),
             crust_service: crust_service,
             full_id: full_id,
-            is_first_node: true,
-            msg_queue: VecDeque::new(),
-            peer_mgr: PeerManager::new(public_id, dev_config.disable_client_rate_limiter),
+            is_first_node,
+            msg_queue,
+            peer_mgr,
             response_cache: cache,
-            routing_msg_filter: RoutingMessageFilter::new(),
+            routing_msg_filter,
             sig_accumulator: Default::default(),
             tick_timer_token: tick_timer_token,
             timer: timer,
@@ -174,80 +249,8 @@ impl Node {
             disable_resource_proof: dev_config.disable_resource_proof,
             parsec_map,
             gen_pfx_info: gen_pfx_info.clone(),
-            poke_timer_token: None,
+            poke_timer_token,
             gossip_timer_token,
-            chain: Chain::new(min_section_size, public_id, gen_pfx_info),
-            reconnect_peers: Default::default(),
-            reconnect_peers_token,
-            notified_nodes: Default::default(),
-        };
-
-        if let Err(error) = node.crust_service.start_listening_tcp() {
-            error!("{} Failed to start listening: {:?}", node, error);
-            None
-        } else {
-            debug!("{} State changed to node.", node);
-            info!("{} Started a new network as a seed node.", node);
-            Some(node)
-        }
-    }
-
-    pub fn from_proving_node(
-        ack_mgr: AckManager,
-        cache: Box<Cache>,
-        crust_service: Service,
-        full_id: FullId,
-        gen_pfx_info: GenesisPfxInfo,
-        min_section_size: usize,
-        msg_queue: VecDeque<RoutingMessage>,
-        notified_nodes: BTreeSet<PublicId>,
-        peer_mgr: PeerManager,
-        routing_msg_filter: RoutingMessageFilter,
-        timer: Timer,
-    ) -> Self {
-        let dev_config = config_handler::get_config().dev.unwrap_or_default();
-        let public_id = *full_id.public_id();
-
-        let tick_timer_token = timer.schedule(TICK_TIMEOUT);
-        let gossip_timer_token = timer.schedule(GOSSIP_TIMEOUT);
-        let poke_timer_token = timer.schedule(POKE_TIMEOUT);
-
-        let reconnect_peers_token = timer.schedule(RECONNECT_PEER_TIMEOUT);
-
-        let parsec = create_parsec(full_id.clone(), &gen_pfx_info);
-        let mut parsec_map = BTreeMap::new();
-        let _ = parsec_map.insert(*gen_pfx_info.first_info.version(), parsec);
-
-        Self {
-            ack_mgr,
-            cacheable_user_msg_cache: UserMessageCache::with_expiry_duration(
-                USER_MSG_CACHE_EXPIRY_DURATION,
-            ),
-            crust_service,
-            full_id,
-            is_first_node: false,
-            msg_queue,
-            peer_mgr,
-            response_cache: cache,
-            routing_msg_filter,
-            sig_accumulator: Default::default(),
-            tick_timer_token,
-            timer,
-            user_msg_cache: UserMessageCache::with_expiry_duration(USER_MSG_CACHE_EXPIRY_DURATION),
-            next_relocation_dst: None,
-            next_relocation_interval: None,
-            routing_msg_backlog: Default::default(),
-            candidate_timer_token: None,
-            candidate_status_token: None,
-            clients_rate_limiter: RateLimiter::new(dev_config.disable_client_rate_limiter),
-            banned_client_ips: LruCache::with_expiry_duration(CLIENT_BAN_DURATION),
-            dropped_clients: LruCache::with_expiry_duration(DROPPED_CLIENT_TIMEOUT),
-            proxy_load_amount: 0,
-            disable_resource_proof: dev_config.disable_resource_proof,
-            parsec_map,
-            gen_pfx_info: gen_pfx_info.clone(),
-            poke_timer_token: Some(poke_timer_token),
-            gossip_timer_token: Some(gossip_timer_token),
             chain: Chain::new(min_section_size, public_id, gen_pfx_info),
             reconnect_peers: Default::default(),
             reconnect_peers_token,
@@ -2113,13 +2116,13 @@ impl Node {
         } else if self.reconnect_peers_token == token {
             self.reconnect_peers_token = self.timer.schedule(RECONNECT_PEER_TIMEOUT);
             self.reconnect_peers(outbox);
-        } else if self.poke_timer_token == Some(token) {
+        } else if self.poke_timer_token == token {
             if !self.peer_mgr.is_established() {
                 self.send_parsec_poke();
-                self.poke_timer_token = Some(self.timer.schedule(POKE_TIMEOUT));
+                self.poke_timer_token = self.timer.schedule(POKE_TIMEOUT);
             }
-        } else if self.gossip_timer_token == Some(token) {
-            self.gossip_timer_token = Some(self.timer.schedule(GOSSIP_TIMEOUT));
+        } else if self.gossip_timer_token == token {
+            self.gossip_timer_token = self.timer.schedule(GOSSIP_TIMEOUT);
 
             // If we're the only node then invoke parsec_poll directly
             if self.chain.is_member() && self.chain.our_info().members().len() == 1 {

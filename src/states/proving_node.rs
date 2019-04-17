@@ -64,6 +64,7 @@ pub struct ProvingNode {
 }
 
 impl ProvingNode {
+    #[allow(clippy::too_many_arguments)]
     pub fn from_bootstrapping(
         our_section: (Prefix<XorName>, BTreeSet<PublicId>),
         action_sender: RoutingActionSender,
