@@ -24,7 +24,7 @@ use crate::messages::{
     UserMessageCache, DEFAULT_PRIORITY, MAX_PARTS, MAX_PART_LEN,
 };
 use crate::outbox::EventBox;
-use crate::parsec::{self, Parsec};
+use crate::parsec::{self, ConsensusMode, Parsec};
 use crate::peer_manager::{Peer, PeerManager, PeerState};
 use crate::rate_limiter::RateLimiter;
 use crate::resource_prover::RESOURCE_PROOF_DURATION_SECS;
@@ -46,8 +46,7 @@ use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation;
 use rand::{self, Rng};
 use safe_crypto::Signature;
-use std::collections::BTreeMap;
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, VecDeque};
 use std::fmt::{Display, Formatter};
 use std::net::IpAddr;
 use std::{cmp, fmt, iter, mem};
@@ -202,7 +201,7 @@ impl Node {
         peer_mgr: PeerManager,
         routing_msg_filter: RoutingMessageFilter,
         timer: Timer,
-    ) -> Result<Self, RoutingError> {
+    ) -> Self {
         let dev_config = config_handler::get_config().dev.unwrap_or_default();
         let public_id = *full_id.public_id();
         let user_msg_cache_duration = Duration::from_secs(USER_MSG_CACHE_EXPIRY_DURATION_SECS);
@@ -214,7 +213,11 @@ impl Node {
         let reconnect_peers_token =
             timer.schedule(Duration::from_secs(RECONNECT_PEER_TIMEOUT_SECS));
 
-        let mut node = Self {
+        let parsec = create_parsec(full_id.clone(), &gen_pfx_info);
+        let mut parsec_map = BTreeMap::new();
+        let _ = parsec_map.insert(*gen_pfx_info.first_info.version(), parsec);
+
+        Self {
             ack_mgr,
             cacheable_user_msg_cache: UserMessageCache::with_expiry_duration(
                 user_msg_cache_duration,
@@ -242,7 +245,7 @@ impl Node {
             )),
             proxy_load_amount: 0,
             disable_resource_proof: dev_config.disable_resource_proof,
-            parsec_map: Default::default(),
+            parsec_map,
             gen_pfx_info: Some(gen_pfx_info.clone()),
             poke_timer_token: Some(poke_timer_token),
             gossip_timer_token: Some(gossip_timer_token),
@@ -250,13 +253,7 @@ impl Node {
             reconnect_peers: Default::default(),
             reconnect_peers_token,
             notified_nodes,
-        };
-
-        if node.init_parsec()? {
-            node.init_chain();
         }
-
-        Ok(node)
     }
 
     fn print_rt_size(&self) {
@@ -390,7 +387,7 @@ impl Node {
             latest_info: Default::default(),
         });
 
-        if self.init_parsec()? {
+        if self.init_parsec() {
             self.init_chain();
         }
         self.peer_mgr.set_established();
@@ -908,7 +905,7 @@ impl Node {
             completed_events,
         } = self.chain.finalise_prefix_change()?;
         self.gen_pfx_info = Some(gen_pfx_info);
-        let _ = self.init_parsec()?; // We don't reset the chain on prefix change.
+        let _ = self.init_parsec(); // We don't reset the chain on prefix change.
 
         let neighbour_infos: Vec<_> = self.chain.neighbour_infos().cloned().collect();
         for ni in neighbour_infos {
@@ -1424,63 +1421,27 @@ impl Node {
         Ok(())
     }
 
-    fn init_parsec(&mut self) -> Result<bool, RoutingError> {
-        let genesis_info = if let Some(ref genesis_info) = self.gen_pfx_info {
-            genesis_info.clone()
+    fn init_parsec(&mut self) -> bool {
+        let gen_pfx_info = if let Some(ref gen_pfx_info) = self.gen_pfx_info {
+            gen_pfx_info.clone()
         } else {
-            return Ok(false);
+            return false;
         };
 
-        if self
-            .parsec_map
-            .get(genesis_info.first_info.version())
-            .is_none()
-        {
-            info!("{}: Init new Parsec, genesis = {:?}", self, genesis_info);
+        let new = match self.parsec_map.entry(*gen_pfx_info.first_info.version()) {
+            Entry::Occupied(_) => false,
+            Entry::Vacant(entry) => {
+                let _ = entry.insert(create_parsec(self.full_id.clone(), &gen_pfx_info));
+                true
+            }
+        };
 
-            let full_id = self.full_id.clone();
-            let genesis_ver = *genesis_info.first_info.version();
-            let consensus_mode = parsec::ConsensusMode::Single;
-
-            #[cfg(not(feature = "mock_parsec"))]
-            let parsec = if genesis_info.first_info.members().contains(self.id()) {
-                Parsec::from_genesis(full_id, &genesis_info.first_info.members(), consensus_mode)
-            } else {
-                Parsec::from_existing(
-                    full_id,
-                    &genesis_info.first_info.members(),
-                    &genesis_info.latest_info.members(),
-                    consensus_mode,
-                )
-            };
-
-            #[cfg(feature = "mock_parsec")]
-            let parsec = {
-                let section_hash = *genesis_info.first_info.hash();
-
-                if genesis_info.first_info.members().contains(self.id()) {
-                    Parsec::from_genesis(
-                        section_hash,
-                        full_id,
-                        &genesis_info.first_info.members(),
-                        consensus_mode,
-                    )
-                } else {
-                    Parsec::from_existing(
-                        section_hash,
-                        full_id,
-                        &genesis_info.first_info.members(),
-                        &genesis_info.latest_info.members(),
-                        consensus_mode,
-                    )
-                }
-            };
-
-            let _ = self.parsec_map.insert(genesis_ver, parsec);
-
-            return Ok(true);
+        if new {
+            info!("{}: Init new Parsec, genesis = {:?}", self, gen_pfx_info);
+            true
+        } else {
+            false
         }
-        Ok(false)
     }
 
     fn init_chain(&mut self) {
@@ -2975,5 +2936,54 @@ impl Relocated for Node {
 impl Display for Node {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter, "Node({}({:b}))", self.name(), self.our_prefix())
+    }
+}
+
+#[cfg(not(feature = "mock_parsec"))]
+fn create_parsec(full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Parsec<NetworkEvent, FullId> {
+    if gen_pfx_info
+        .first_info
+        .members()
+        .contains(full_id.public_id())
+    {
+        Parsec::from_genesis(
+            full_id,
+            &gen_pfx_info.first_info.members(),
+            ConsensusMode::Single,
+        )
+    } else {
+        Parsec::from_existing(
+            full_id,
+            &gen_pfx_info.first_info.members(),
+            &gen_pfx_info.latest_info.members(),
+            ConsensusMode::Single,
+        )
+    }
+}
+
+#[cfg(feature = "mock_parsec")]
+fn create_parsec(full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Parsec<NetworkEvent, FullId> {
+    let consensus_mode = parsec::ConsensusMode::Single;
+    let section_hash = *gen_pfx_info.first_info.hash();
+
+    if gen_pfx_info
+        .first_info
+        .members()
+        .contains(full_id.public_id())
+    {
+        Parsec::from_genesis(
+            section_hash,
+            full_id,
+            &gen_pfx_info.first_info.members(),
+            ConsensusMode::Single,
+        )
+    } else {
+        Parsec::from_existing(
+            section_hash,
+            full_id,
+            &gen_pfx_info.first_info.members(),
+            &gen_pfx_info.latest_info.members(),
+            ConsensusMode::Single,
+        )
     }
 }

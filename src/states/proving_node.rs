@@ -201,7 +201,6 @@ impl ProvingNode {
     }
 
     pub fn into_node(self, gen_pfx_info: GenesisPfxInfo) -> State {
-        let log_ident = format!("{}", self);
         let msg_queue = self.msg_queue.into_iter().chain(self.msg_backlog).collect();
 
         let node = Node::from_proving_node(
@@ -218,16 +217,7 @@ impl ProvingNode {
             self.timer,
         );
 
-        match node {
-            Ok(node) => State::Node(node),
-            Err(err) => {
-                error!(
-                    "{} - Failed to transition to Node state: {:?}",
-                    log_ident, err
-                );
-                State::Terminated
-            }
-        }
+        State::Node(node)
     }
 
     fn handle_new_message(
