@@ -166,7 +166,7 @@ impl ProvingNode {
             }
         }
 
-        self.handle_routing_messages(outbox)
+        Transition::Stay
     }
 
     pub fn handle_crust_event(
@@ -197,7 +197,7 @@ impl ProvingNode {
             }
         }
 
-        self.handle_routing_messages(outbox)
+        Transition::Stay
     }
 
     pub fn into_node(self, gen_pfx_info: GenesisPfxInfo) -> State {
@@ -317,22 +317,6 @@ impl ProvingNode {
         } else {
             Ok(Transition::Stay)
         }
-    }
-
-    fn handle_routing_messages(&mut self, outbox: &mut EventBox) -> Transition {
-        while let Some(msg) = self.msg_queue.pop_front() {
-            if self.in_authority(&msg.dst) {
-                match self.dispatch_routing_message(msg, outbox) {
-                    Ok(Transition::Stay) => (),
-                    Ok(transition) => return transition,
-                    Err(err) => {
-                        debug!("{} Routing message dispatch failed: {:?}", self, err);
-                    }
-                }
-            }
-        }
-
-        Transition::Stay
     }
 
     fn dispatch_routing_message(
