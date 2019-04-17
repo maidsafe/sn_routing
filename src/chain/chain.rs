@@ -91,29 +91,8 @@ impl Chain {
             .collect()
     }
 
-    // FIXME: This chain cannot be used. Ideally we should not be creating the chain without genesis
-    // info
     /// Create a new chain given genesis information
-    pub fn with_id_and_min_sec_size(our_id: PublicId, min_sec_size: usize) -> Self {
-        Self {
-            min_sec_size,
-            our_id,
-            new_info: Default::default(),
-            our_infos: Default::default(),
-            is_member: Default::default(),
-            neighbour_infos: Default::default(),
-            their_knowledge: Default::default(),
-            chain_accumulator: Default::default(),
-            completed_events: Default::default(),
-            event_cache: Default::default(),
-            state: ChainState::Normal,
-            split_cache: Default::default(),
-            merging: Default::default(),
-        }
-    }
-
-    /// Create a new chain given genesis information
-    pub fn with_gen_info(min_sec_size: usize, our_id: PublicId, gen_info: GenesisPfxInfo) -> Self {
+    pub fn new(min_sec_size: usize, our_id: PublicId, gen_info: GenesisPfxInfo) -> Self {
         // TODO validate `gen_info` to contain adequate proofs
         let is_member = gen_info.first_info.members().contains(&our_id);
         Self {
@@ -1489,7 +1468,7 @@ mod tests {
             latest_info: Default::default(),
         };
 
-        let mut chain = Chain::with_gen_info(min_sec_size, *our_id.public_id(), genesis_info);
+        let mut chain = Chain::new(min_sec_size, *our_id.public_id(), genesis_info);
 
         for neighbour_info in sections_iter {
             let proofs = gen_proofs(&full_ids, &our_members, &neighbour_info);

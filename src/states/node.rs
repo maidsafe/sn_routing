@@ -111,7 +111,7 @@ pub struct Node {
     /// Whether resource proof is disabled.
     disable_resource_proof: bool,
     parsec_map: BTreeMap<u64, Parsec<NetworkEvent, FullId>>,
-    gen_pfx_info: Option<GenesisPfxInfo>,
+    gen_pfx_info: GenesisPfxInfo,
     poke_timer_token: Option<u64>,
     gossip_timer_token: Option<u64>,
     chain: Chain,
@@ -133,10 +133,18 @@ impl Node {
         let dev_config = config_handler::get_config().dev.unwrap_or_default();
 
         let public_id = *full_id.public_id();
+        let gen_pfx_info = GenesisPfxInfo {
+            first_info: create_first_section_info(public_id).ok()?,
+            latest_info: SectionInfo::default(),
+        };
 
         let tick_timer_token = timer.schedule(TICK_TIMEOUT);
         let gossip_timer_token = Some(timer.schedule(GOSSIP_TIMEOUT));
         let reconnect_peers_token = timer.schedule(RECONNECT_PEER_TIMEOUT);
+
+        let parsec = create_parsec(full_id.clone(), &gen_pfx_info);
+        let mut parsec_map = BTreeMap::new();
+        let _ = parsec_map.insert(*gen_pfx_info.first_info.version(), parsec);
 
         let mut node = Self {
             ack_mgr: AckManager::new(),
@@ -164,11 +172,11 @@ impl Node {
             dropped_clients: LruCache::with_expiry_duration(DROPPED_CLIENT_TIMEOUT),
             proxy_load_amount: 0,
             disable_resource_proof: dev_config.disable_resource_proof,
-            parsec_map: Default::default(),
-            gen_pfx_info: None,
+            parsec_map,
+            gen_pfx_info: gen_pfx_info.clone(),
             poke_timer_token: None,
             gossip_timer_token,
-            chain: Chain::with_id_and_min_sec_size(public_id, min_section_size),
+            chain: Chain::new(min_section_size, public_id, gen_pfx_info),
             reconnect_peers: Default::default(),
             reconnect_peers_token,
             notified_nodes: Default::default(),
@@ -237,10 +245,10 @@ impl Node {
             proxy_load_amount: 0,
             disable_resource_proof: dev_config.disable_resource_proof,
             parsec_map,
-            gen_pfx_info: Some(gen_pfx_info.clone()),
+            gen_pfx_info: gen_pfx_info.clone(),
             poke_timer_token: Some(poke_timer_token),
             gossip_timer_token: Some(gossip_timer_token),
-            chain: Chain::with_gen_info(min_section_size, public_id, gen_pfx_info),
+            chain: Chain::new(min_section_size, public_id, gen_pfx_info),
             reconnect_peers: Default::default(),
             reconnect_peers_token,
             notified_nodes,
@@ -368,21 +376,7 @@ impl Node {
     fn init_first_node(&mut self, outbox: &mut EventBox) -> Result<(), RoutingError> {
         outbox.send_event(Event::Connected);
 
-        let first_info = SectionInfo::new(
-            iter::once(*self.full_id.public_id()).collect(),
-            *DEFAULT_PREFIX,
-            None,
-        )?;
-        self.gen_pfx_info = Some(GenesisPfxInfo {
-            first_info,
-            latest_info: Default::default(),
-        });
-
-        if self.init_parsec() {
-            self.init_chain();
-        }
         self.peer_mgr.set_established();
-
         self.crust_service.set_accept_bootstrap(true)?;
         self.crust_service.set_service_discovery_listen(true);
 
@@ -895,7 +889,7 @@ impl Node {
             mut cached_events,
             completed_events,
         } = self.chain.finalise_prefix_change()?;
-        self.gen_pfx_info = Some(gen_pfx_info);
+        self.gen_pfx_info = gen_pfx_info;
         let _ = self.init_parsec(); // We don't reset the chain on prefix change.
 
         let neighbour_infos: Vec<_> = self.chain.neighbour_infos().cloned().collect();
@@ -1186,7 +1180,7 @@ impl Node {
         use crate::messages::MessageContent::*;
         use crate::Authority::{Client, ManagedNode, PrefixSection, Section};
 
-        if !self.chain.is_member() && !self.is_first_node {
+        if !self.chain.is_member() {
             match routing_msg.content {
                 ExpectCandidate { .. }
                 | AcceptAsCandidate { .. }
@@ -1390,20 +1384,18 @@ impl Node {
             new_pub_id
         );
 
-        if let Some(gen_info) = self.gen_pfx_info.clone() {
-            let trimmed_info = GenesisPfxInfo {
-                first_info: gen_info.first_info.clone(),
-                latest_info: self.chain.our_info().clone(),
-            };
+        let trimmed_info = GenesisPfxInfo {
+            first_info: self.gen_pfx_info.first_info.clone(),
+            latest_info: self.chain.our_info().clone(),
+        };
 
-            let src = Authority::PrefixSection(*trimmed_info.first_info.prefix());
-            let content = MessageContent::NodeApproval(trimmed_info);
-            if let Err(error) = self.send_routing_message(src, new_client_auth, content) {
-                debug!(
-                    "{} Failed sending NodeApproval to {}: {:?}",
-                    self, new_pub_id, error
-                );
-            }
+        let src = Authority::PrefixSection(*trimmed_info.first_info.prefix());
+        let content = MessageContent::NodeApproval(trimmed_info);
+        if let Err(error) = self.send_routing_message(src, new_client_auth, content) {
+            debug!(
+                "{} Failed sending NodeApproval to {}: {:?}",
+                self, new_pub_id, error
+            );
         }
 
         if is_connected {
@@ -1413,35 +1405,25 @@ impl Node {
     }
 
     fn init_parsec(&mut self) -> bool {
-        let gen_pfx_info = if let Some(ref gen_pfx_info) = self.gen_pfx_info {
-            gen_pfx_info.clone()
-        } else {
-            return false;
-        };
-
-        let new = match self.parsec_map.entry(*gen_pfx_info.first_info.version()) {
+        let new = match self
+            .parsec_map
+            .entry(*self.gen_pfx_info.first_info.version())
+        {
             Entry::Occupied(_) => false,
             Entry::Vacant(entry) => {
-                let _ = entry.insert(create_parsec(self.full_id.clone(), &gen_pfx_info));
+                let _ = entry.insert(create_parsec(self.full_id.clone(), &self.gen_pfx_info));
                 true
             }
         };
 
         if new {
-            info!("{}: Init new Parsec, genesis = {:?}", self, gen_pfx_info);
+            info!(
+                "{}: Init new Parsec, genesis = {:?}",
+                self, self.gen_pfx_info
+            );
             true
         } else {
             false
-        }
-    }
-
-    fn init_chain(&mut self) {
-        if let Some(ref genesis_info) = self.gen_pfx_info {
-            self.chain = Chain::with_gen_info(
-                self.chain.min_sec_size(),
-                *self.full_id.public_id(),
-                genesis_info.clone(),
-            );
         }
     }
 
@@ -1698,7 +1680,7 @@ impl Node {
             return Err(RoutingError::FailedSignature);
         }
 
-        if !self.chain.is_member() && !self.is_first_node {
+        if !self.chain.is_member() {
             debug!(
                 "{} Client {:?} rejected: We are not an established node yet.",
                 self, pub_id
@@ -1900,13 +1882,10 @@ impl Node {
             return Err(RoutingError::InvalidDestination);
         }
 
-        let close_section = if self.is_first_node && !self.chain.is_member() {
-            vec![*self.name()]
-        } else {
-            self.chain()
-                .close_names(&dst_name)
-                .ok_or(RoutingError::InvalidDestination)?
-        };
+        let close_section = self
+            .chain()
+            .close_names(&dst_name)
+            .ok_or(RoutingError::InvalidDestination)?;
 
         let relocation_dst = self
             .next_relocation_dst
@@ -2143,13 +2122,11 @@ impl Node {
             self.gossip_timer_token = Some(self.timer.schedule(GOSSIP_TIMEOUT));
 
             // If we're the only node then invoke parsec_poll directly
-            if self.is_first_node && self.chain().our_info().members().len() == 1 {
+            if self.chain.is_member() && self.chain.our_info().members().len() == 1 {
                 let _ = self.parsec_poll(outbox);
             }
 
-            if self.gen_pfx_info.is_some() {
-                self.send_parsec_gossip(None);
-            }
+            self.send_parsec_gossip(None);
         } else {
             // Each token has only one purpose, so we only need to call this if none of the above
             // matched:
@@ -2201,22 +2178,15 @@ impl Node {
     // Can also just be a single target once node-ageing makes Offline votes Opaque which should
     // remove invalid test failures for unaccumulated parsec::Remove blocks.
     fn send_parsec_poke(&mut self) {
-        let (version, recipients) = if let Some(gen_pfx_info) = self.gen_pfx_info.as_ref() {
-            let recipients = gen_pfx_info
-                .latest_info
-                .members()
-                .iter()
-                .cloned()
-                .collect_vec();
-            (*gen_pfx_info.first_info.version(), recipients)
-        } else {
-            log_or_panic!(
-                LogLevel::Error,
-                "{} can't send ParsecPoke: not approved yet.",
-                self
-            );
-            return;
-        };
+        let version = *self.gen_pfx_info.first_info.version();
+        let recipients = self
+            .gen_pfx_info
+            .latest_info
+            .members()
+            .iter()
+            .cloned()
+            .collect_vec();
+
         for recipient in recipients {
             self.send_message(
                 &recipient,
@@ -2447,7 +2417,7 @@ impl Node {
             _ => false,
         };
 
-        if (self.is_first_node || self.chain.is_member()) && !force_via_proxy {
+        if self.chain.is_member() && !force_via_proxy {
             // TODO: even if having chain reply based on connected_state,
             // we remove self in targets info and can do same by not
             // chaining us to conn_peer list here?
@@ -2694,8 +2664,7 @@ impl Base for Node {
             client_id == self.full_id.public_id()
         } else {
             let conn_peers = self.connected_peers();
-            (self.is_first_node || self.chain.is_member())
-                && self.chain().in_authority(auth, &conn_peers)
+            self.chain.is_member() && self.chain().in_authority(auth, &conn_peers)
         }
     }
 
@@ -2912,6 +2881,23 @@ impl Display for Node {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter, "Node({}({:b}))", self.name(), self.our_prefix())
     }
+}
+
+// Create `SectionInfo` for the first node.
+fn create_first_section_info(public_id: PublicId) -> Result<SectionInfo, RoutingError> {
+    SectionInfo::new(
+        iter::once(public_id).collect(),
+        *DEFAULT_PREFIX,
+        iter::empty(),
+    )
+    .map_err(|err| {
+        error!(
+            "FirstNode({:?}) - Failed to create first SectionInfo: {:?}",
+            public_id.name(),
+            err
+        );
+        err
+    })
 }
 
 #[cfg(not(feature = "mock_parsec"))]
