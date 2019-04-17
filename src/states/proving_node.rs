@@ -20,13 +20,12 @@ use crate::{
     error::{InterfaceError, RoutingError},
     event::Event,
     id::{FullId, PublicId},
-    messages::{DirectMessage, HopMessage, Message, RoutingMessage, SignedMessage},
+    messages::{DirectMessage, HopMessage, Message, RoutingMessage},
     outbox::{EventBox, EventBuf},
     peer_manager::{Peer, PeerManager, PeerState},
     resource_prover::ResourceProver,
-    routing_message_filter::{FilteringResult, RoutingMessageFilter},
+    routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix},
-    signature_accumulator::SignatureAccumulator,
     state_machine::State,
     state_machine::Transition,
     time::Instant,
@@ -35,7 +34,6 @@ use crate::{
     xor_name::XorName,
     CrustEvent, Service,
 };
-use log::LogLevel;
 use maidsafe_utilities::serialisation;
 use std::{
     collections::{BTreeSet, VecDeque},
@@ -56,7 +54,6 @@ pub struct ProvingNode {
     peer_mgr: PeerManager,
     cache: Box<Cache>,
     routing_msg_filter: RoutingMessageFilter,
-    sig_accumulator: SignatureAccumulator,
     timer: Timer,
     resource_prover: ResourceProver,
     /// Whether resource proof is disabled.
@@ -98,7 +95,6 @@ impl ProvingNode {
             peer_mgr,
             cache,
             routing_msg_filter: RoutingMessageFilter::new(),
-            sig_accumulator: Default::default(),
             timer,
             resource_prover,
             disable_resource_proof: dev_config.disable_resource_proof,
@@ -229,14 +225,6 @@ impl ProvingNode {
         }
     }
 
-    fn respond_from_cache(
-        &mut self,
-        _msg: &RoutingMessage,
-        _route: u8,
-    ) -> Result<bool, RoutingError> {
-        unimplemented!()
-    }
-
     fn handle_new_message(
         &mut self,
         pub_id: PublicId,
@@ -326,51 +314,6 @@ impl ProvingNode {
         }
     }
 
-    fn handle_signed_message(&mut self, msg: SignedMessage, route: u8) -> Result<(), RoutingError> {
-        msg.check_integrity(self.min_section_size())?;
-
-        if msg.routing_message().src.is_client() {
-            if msg.previous_hop().is_some() {
-                warn!("{} Unexpected section infos in {:?}", self, msg);
-                return Err(RoutingError::InvalidProvingSection);
-            }
-        }
-
-        let filter_res = self
-            .routing_msg_filter
-            .filter_incoming(msg.routing_message(), route);
-        if filter_res == FilteringResult::KnownMessageAndRoute {
-            return Ok(());
-        };
-
-        if self.in_authority(&msg.routing_message().dst) {
-            self.send_ack(msg.routing_message(), route);
-
-            if msg.routing_message().dst.is_multiple() {
-                // Broadcast to the rest of the section.
-                if let Err(error) = self.send_signed_message(&msg, route) {
-                    debug!("{} Failed to send {:?}: {:?}", self, msg, error);
-                }
-            }
-
-            if filter_res == FilteringResult::NewMessage {
-                self.msg_queue.push_back(msg.into_routing_message());
-            }
-
-            return Ok(());
-        }
-
-        if self.respond_from_cache(msg.routing_message(), route)? {
-            return Ok(());
-        }
-
-        if let Err(error) = self.send_signed_message(&msg, route) {
-            debug!("{} Failed to send {:?}: {:?}", self, msg, error);
-        }
-
-        Ok(())
-    }
-
     fn handle_routing_messages(&mut self, outbox: &mut EventBox) -> Transition {
         while let Some(msg) = self.msg_queue.pop_front() {
             if self.in_authority(&msg.dst) {
@@ -452,14 +395,6 @@ impl ProvingNode {
                 content: Ack(ack, _),
                 ..
             } => self.handle_ack_response(ack),
-            RoutingMessage {
-                content: Relocate { .. },
-                ..
-            } => unimplemented!(),
-            RoutingMessage {
-                content: RelocateResponse { .. },
-                ..
-            } => unimplemented!(),
             _ => {
                 self.add_message_to_backlog(msg);
             }
@@ -468,6 +403,7 @@ impl ProvingNode {
         Ok(Transition::Stay)
     }
 
+    // Backlog the message to be processed once we are approved.
     fn add_message_to_backlog(&mut self, msg: RoutingMessage) {
         trace!(
             "{} Not approved yet. Delaying message handling: {:?}",
@@ -574,49 +510,6 @@ impl ProvingNode {
             outbox.send_event(Event::NodeAdded(*pub_id.name()));
         }
     }
-
-    fn send_signed_message(&mut self, msg: &SignedMessage, route: u8) -> Result<(), RoutingError> {
-        let dst = msg.routing_message().dst;
-        let src = msg.routing_message().src;
-
-        if self.in_authority(&dst) {
-            return Ok(()); // Message is for us as a client.
-        }
-
-        // Only send the message if we are the source (don't relay until established).
-        let proxy_pub_id = if let Authority::Client {
-            ref client_id,
-            ref proxy_node_name,
-        } = src
-        {
-            if self.name() == client_id.name() {
-                self.get_proxy_public_id(proxy_node_name)?
-            } else {
-                return Ok(());
-            }
-        } else {
-            return Ok(());
-        };
-
-        self.send_signed_message_to_peer(msg.clone(), &proxy_pub_id, route, BTreeSet::new())
-    }
-
-    fn get_proxy_public_id(&self, proxy_name: &XorName) -> Result<PublicId, RoutingError> {
-        if let Some(pub_id) = self.peer_mgr.get_peer_by_name(proxy_name).map(Peer::pub_id) {
-            if self.peer_mgr.is_connected(pub_id) {
-                Ok(*pub_id)
-            } else {
-                error!(
-                    "{} Unable to find connection to proxy in PeerManager.",
-                    self
-                );
-                Err(RoutingError::ProxyConnectionNotFound)
-            }
-        } else {
-            error!("{} Unable to find proxy in PeerManager.", self);
-            Err(RoutingError::ProxyConnectionNotFound)
-        }
-    }
 }
 
 impl Base for ProvingNode {
@@ -665,56 +558,7 @@ impl Bootstrapped for ProvingNode {
         route: u8,
         expires_at: Option<Instant>,
     ) -> Result<(), RoutingError> {
-        if !self.in_authority(&routing_msg.src) {
-            if route == 0 {
-                log_or_panic!(
-                    LogLevel::Error,
-                    "{} Not part of the source authority. Not sending message {:?}.",
-                    self,
-                    routing_msg
-                );
-            }
-            return Ok(());
-        }
-        if !self.add_to_pending_acks(&routing_msg, src_section, route, expires_at) {
-            debug!(
-                "{} already received an ack for {:?} - so not resending it.",
-                self, routing_msg
-            );
-            return Ok(());
-        }
-
-        match routing_msg.src {
-            Authority::Client { .. } => (),
-            _ => {
-                // Cannot send routing msgs as a Node until established.
-                return Ok(());
-            }
-        };
-
-        if route > 0 {
-            trace!(
-                "{} Resending Msg: {:?} via route: {}",
-                self,
-                routing_msg,
-                route,
-            );
-        }
-
-        let signed_msg = SignedMessage::new(routing_msg, &self.full_id, None)?;
-        let min_section_size = self.min_section_size();
-
-        if let Some((mut msg, route)) =
-            self.sig_accumulator
-                .add_message(signed_msg, min_section_size, route)
-        {
-            if self.in_authority(&msg.routing_message().dst) {
-                self.handle_signed_message(msg, route)?;
-            } else {
-                self.send_signed_message(&mut msg, route)?;
-            }
-        }
-        Ok(())
+        self.send_routing_message_via_proxy(routing_msg, src_section, route, expires_at)
     }
 }
 
@@ -774,7 +618,24 @@ impl Relocated for ProvingNode {
     }
 }
 
-impl Unapproved for ProvingNode {}
+impl Unapproved for ProvingNode {
+    fn get_proxy_public_id(&self, proxy_name: &XorName) -> Result<&PublicId, RoutingError> {
+        if let Some(pub_id) = self.peer_mgr.get_peer_by_name(proxy_name).map(Peer::pub_id) {
+            if self.peer_mgr.is_connected(pub_id) {
+                Ok(pub_id)
+            } else {
+                error!(
+                    "{} Unable to find connection to proxy in PeerManager.",
+                    self
+                );
+                Err(RoutingError::ProxyConnectionNotFound)
+            }
+        } else {
+            error!("{} Unable to find proxy in PeerManager.", self);
+            Err(RoutingError::ProxyConnectionNotFound)
+        }
+    }
+}
 
 impl Display for ProvingNode {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {

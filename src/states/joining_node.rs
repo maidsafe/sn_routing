@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::common::{Base, Bootstrapped, Unapproved, Unrelocated};
+use super::common::{Base, Bootstrapped, Unapproved};
 use super::{Bootstrapping, BootstrappingTargetState};
 use crate::ack_manager::{Ack, AckManager};
 use crate::action::Action;
@@ -380,13 +380,16 @@ impl Bootstrapped for JoiningNode {
     }
 }
 
-impl Unrelocated for JoiningNode {
-    fn proxy_public_id(&self) -> &PublicId {
-        &self.proxy_pub_id
+impl Unapproved for JoiningNode {
+    fn get_proxy_public_id(&self, proxy_name: &XorName) -> Result<&PublicId> {
+        if self.proxy_pub_id.name() == proxy_name {
+            Ok(&self.proxy_pub_id)
+        } else {
+            error!("{} Unable to find connection to proxy node.", self);
+            Err(RoutingError::ProxyConnectionNotFound)
+        }
     }
 }
-
-impl Unapproved for JoiningNode {}
 
 impl Display for JoiningNode {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
