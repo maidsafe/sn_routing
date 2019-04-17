@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::common::{client, Base, Bootstrapped};
+use super::common::{Base, Bootstrapped, Unapproved, Unrelocated};
 use super::{Bootstrapping, BootstrappingTargetState};
 use crate::ack_manager::{Ack, AckManager};
 use crate::action::Action;
@@ -18,7 +18,7 @@ use crate::id::{FullId, PublicId};
 use crate::messages::{HopMessage, Message, MessageContent, RoutingMessage};
 use crate::outbox::EventBox;
 use crate::resource_prover::RESOURCE_PROOF_DURATION_SECS;
-use crate::routing_message_filter::{FilteringResult, RoutingMessageFilter};
+use crate::routing_message_filter::RoutingMessageFilter;
 use crate::routing_table::{Authority, Prefix};
 use crate::state_machine::{State, Transition};
 use crate::time::{Duration, Instant};
@@ -212,37 +212,15 @@ impl JoiningNode {
     }
 
     fn handle_hop_message(&mut self, hop_msg: HopMessage, pub_id: PublicId) -> Result<Transition> {
-        if self.proxy_pub_id == pub_id {
-            hop_msg.verify(self.proxy_pub_id.signing_public_key())?;
-        } else {
+        if self.proxy_pub_id != pub_id {
             return Err(RoutingError::UnknownConnection(pub_id));
         }
 
-        let signed_msg = hop_msg.content;
-        signed_msg.check_integrity(self.min_section_size())?;
-
-        let routing_msg = signed_msg.routing_message();
-        let in_authority = self.in_authority(&routing_msg.dst);
-        if in_authority {
-            self.send_ack(routing_msg, 0);
+        if let Some(routing_msg) = self.filter_hop_message(hop_msg, pub_id)? {
+            Ok(self.dispatch_routing_message(routing_msg))
+        } else {
+            Ok(Transition::Stay)
         }
-
-        // Prevents us repeatedly handling identical messages sent by a malicious peer.
-        match self
-            .routing_msg_filter
-            .filter_incoming(routing_msg, hop_msg.route)
-        {
-            FilteringResult::KnownMessage | FilteringResult::KnownMessageAndRoute => {
-                return Err(RoutingError::FilterCheckFailed);
-            }
-            FilteringResult::NewMessage => (),
-        }
-
-        if !in_authority {
-            return Ok(Transition::Stay);
-        }
-
-        Ok(self.dispatch_routing_message(routing_msg.clone()))
     }
 
     fn dispatch_routing_message(&mut self, routing_msg: RoutingMessage) -> Transition {
@@ -390,15 +368,7 @@ impl Bootstrapped for JoiningNode {
         route: u8,
         expires_at: Option<Instant>,
     ) -> Result<()> {
-        let proxy_pub_id = self.proxy_pub_id;
-        client::send_routing_message_via_route(
-            self,
-            &proxy_pub_id,
-            routing_msg,
-            src_section,
-            route,
-            expires_at,
-        )
+        self.send_routing_message_via_proxy(routing_msg, src_section, route, expires_at)
     }
 
     fn routing_msg_filter(&mut self) -> &mut RoutingMessageFilter {
@@ -409,6 +379,14 @@ impl Bootstrapped for JoiningNode {
         &mut self.timer
     }
 }
+
+impl Unrelocated for JoiningNode {
+    fn proxy_public_id(&self) -> &PublicId {
+        &self.proxy_pub_id
+    }
+}
+
+impl Unapproved for JoiningNode {}
 
 impl Display for JoiningNode {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {

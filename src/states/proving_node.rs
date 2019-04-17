@@ -7,14 +7,14 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    common::{Base, Bootstrapped, Relocated},
+    common::{Base, Bootstrapped, Relocated, Unapproved},
     node::Node,
 };
 use crate::{
     ack_manager::{Ack, AckManager},
     action::Action,
     cache::Cache,
-    chain::GenesisPfxInfo,
+    chain::{GenesisPfxInfo, SectionInfo},
     config_handler,
     crust::ConnectionInfoResult,
     error::{InterfaceError, RoutingError},
@@ -319,33 +319,11 @@ impl ProvingNode {
             _ => return Err(RoutingError::UnknownConnection(pub_id)),
         }
 
-        hop_msg.verify(pub_id.signing_public_key())?;
-
-        let signed_msg = hop_msg.content;
-        signed_msg.check_integrity(self.min_section_size())?;
-
-        let routing_msg = signed_msg.into_routing_message();
-        let in_authority = self.in_authority(&routing_msg.dst);
-        if in_authority {
-            self.send_ack(&routing_msg, 0);
+        if let Some(routing_msg) = self.filter_hop_message(hop_msg, pub_id)? {
+            self.dispatch_routing_message(routing_msg, outbox)
+        } else {
+            Ok(Transition::Stay)
         }
-
-        // Prevents us repeatedly handling identical messages sent by a malicious peer.
-        match self
-            .routing_msg_filter
-            .filter_incoming(&routing_msg, hop_msg.route)
-        {
-            FilteringResult::KnownMessage | FilteringResult::KnownMessageAndRoute => {
-                return Err(RoutingError::FilterCheckFailed);
-            }
-            FilteringResult::NewMessage => (),
-        }
-
-        if !in_authority {
-            return Ok(Transition::Stay);
-        }
-
-        self.dispatch_routing_message(routing_msg, outbox)
     }
 
     fn handle_signed_message(&mut self, msg: SignedMessage, route: u8) -> Result<(), RoutingError> {
@@ -683,6 +661,7 @@ impl Bootstrapped for ProvingNode {
     fn send_routing_message_via_route(
         &mut self,
         routing_msg: RoutingMessage,
+        src_section: Option<SectionInfo>,
         route: u8,
         expires_at: Option<Instant>,
     ) -> Result<(), RoutingError> {
@@ -697,7 +676,7 @@ impl Bootstrapped for ProvingNode {
             }
             return Ok(());
         }
-        if !self.add_to_pending_acks(&routing_msg, route, expires_at) {
+        if !self.add_to_pending_acks(&routing_msg, src_section, route, expires_at) {
             debug!(
                 "{} already received an ack for {:?} - so not resending it.",
                 self, routing_msg
@@ -794,6 +773,8 @@ impl Relocated for ProvingNode {
         let _ = self.peer_mgr.remove_peer(&pub_id);
     }
 }
+
+impl Unapproved for ProvingNode {}
 
 impl Display for ProvingNode {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {

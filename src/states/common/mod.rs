@@ -8,9 +8,13 @@
 
 mod base;
 mod bootstrapped;
-pub mod client;
 mod relocated;
+mod unapproved;
+mod unrelocated;
 
-pub use self::{base::Base, bootstrapped::Bootstrapped, relocated::Relocated};
+pub use self::{
+    base::Base, bootstrapped::Bootstrapped, relocated::Relocated, unapproved::Unapproved,
+    unrelocated::Unrelocated,
+};
 
 pub const USER_MSG_CACHE_EXPIRY_DURATION_SECS: u64 = 120;

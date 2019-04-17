@@ -6,7 +6,9 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::common::{client, Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
+use super::common::{
+    Base, Bootstrapped, Unapproved, Unrelocated, USER_MSG_CACHE_EXPIRY_DURATION_SECS,
+};
 use crate::ack_manager::{Ack, AckManager, UnacknowledgedMessage};
 use crate::action::Action;
 use crate::chain::SectionInfo;
@@ -18,7 +20,7 @@ use crate::messages::{
     UserMessageCache,
 };
 use crate::outbox::EventBox;
-use crate::routing_message_filter::{FilteringResult, RoutingMessageFilter};
+use crate::routing_message_filter::RoutingMessageFilter;
 use crate::routing_table::Authority;
 use crate::state_machine::Transition;
 use crate::time::{Duration, Instant};
@@ -198,34 +200,15 @@ impl Client {
         pub_id: PublicId,
         outbox: &mut EventBox,
     ) -> Result<Transition> {
-        if self.proxy_pub_id == pub_id {
-            hop_msg.verify(self.proxy_pub_id.signing_public_key())?;
-        } else {
+        if self.proxy_pub_id != pub_id {
             return Err(RoutingError::UnknownConnection(pub_id));
         }
 
-        let signed_msg = hop_msg.content;
-        signed_msg.check_integrity(self.min_section_size())?;
-
-        let routing_msg = signed_msg.into_routing_message();
-        let in_authority = self.in_authority(&routing_msg.dst);
-
-        // Prevents us repeatedly handling identical messages sent by a malicious peer.
-        match self
-            .routing_msg_filter
-            .filter_incoming(&routing_msg, hop_msg.route)
-        {
-            FilteringResult::KnownMessage | FilteringResult::KnownMessageAndRoute => {
-                return Err(RoutingError::FilterCheckFailed);
-            }
-            FilteringResult::NewMessage => (),
+        if let Some(routing_msg) = self.filter_hop_message(hop_msg, pub_id)? {
+            Ok(self.dispatch_routing_message(routing_msg, outbox))
+        } else {
+            Ok(Transition::Stay)
         }
-
-        if !in_authority {
-            return Ok(Transition::Stay);
-        }
-
-        Ok(self.dispatch_routing_message(routing_msg, outbox))
     }
 
     fn handle_direct_message(&mut self, direct_msg: DirectMessage) -> Result<Transition> {
@@ -389,15 +372,7 @@ impl Bootstrapped for Client {
         route: u8,
         expires_at: Option<Instant>,
     ) -> Result<()> {
-        let proxy_pub_id = self.proxy_pub_id;
-        client::send_routing_message_via_route(
-            self,
-            &proxy_pub_id,
-            routing_msg,
-            src_section,
-            route,
-            expires_at,
-        )
+        self.send_routing_message_via_proxy(routing_msg, src_section, route, expires_at)
     }
 
     fn routing_msg_filter(&mut self) -> &mut RoutingMessageFilter {
@@ -408,6 +383,14 @@ impl Bootstrapped for Client {
         &mut self.timer
     }
 }
+
+impl Unrelocated for Client {
+    fn proxy_public_id(&self) -> &PublicId {
+        &self.proxy_pub_id
+    }
+}
+
+impl Unapproved for Client {}
 
 #[cfg(feature = "mock")]
 impl Client {
