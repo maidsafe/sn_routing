@@ -157,7 +157,7 @@ impl Node {
             error!("{} Failed to start listening: {:?}", node, error);
             None
         } else {
-            debug!("{} State changed to node.", node);
+            debug!("{} State changed to Node.", node);
             info!("{} Started a new network as a seed node.", node);
             Some(node)
         }
@@ -177,7 +177,7 @@ impl Node {
         routing_msg_filter: RoutingMessageFilter,
         timer: Timer,
     ) -> Self {
-        Self::new(
+        let node = Self::new(
             ack_mgr,
             cache,
             crust_service,
@@ -190,7 +190,10 @@ impl Node {
             peer_mgr,
             routing_msg_filter,
             timer,
-        )
+        );
+
+        debug!("{} State changed to Node.", node);
+        node
     }
 
     #[allow(clippy::too_many_arguments)]

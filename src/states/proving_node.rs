@@ -189,7 +189,8 @@ impl ProvingNode {
             }) => self.handle_connection_info_prepared(result_token, result),
             CrustEvent::NewMessage(pub_id, _peer_kind, bytes) => {
                 match self.handle_new_message(pub_id, bytes, outbox) {
-                    Err(RoutingError::FilterCheckFailed) | Ok(_) => (),
+                    Ok(transition) => return transition,
+                    Err(RoutingError::FilterCheckFailed) => (),
                     Err(err) => debug!("{} - {:?}", self, err),
                 }
             }

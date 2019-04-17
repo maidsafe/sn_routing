@@ -72,7 +72,7 @@ impl Client {
             msg_expiry_dur: msg_expiry_dur,
         };
 
-        debug!("{} State changed to client.", client);
+        debug!("{} State changed to Client.", client);
 
         outbox.send_event(Event::Connected);
         client

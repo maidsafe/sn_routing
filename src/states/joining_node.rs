@@ -81,7 +81,7 @@ impl JoiningNode {
             error!("{} Failed to start relocation: {:?}", joining_node, error);
             None
         } else {
-            debug!("{} State changed to joining node.", joining_node);
+            debug!("{} State changed to JoiningNode.", joining_node);
             Some(joining_node)
         }
     }
