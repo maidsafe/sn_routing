@@ -6,13 +6,13 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::ack_manager::ACK_TIMEOUT_SECS;
+use crate::ack_manager::ACK_TIMEOUT;
 use crate::action::Action;
 use crate::event::Event;
 use crate::id::PublicId;
 use crate::messages::{DirectMessage, MAX_PART_LEN};
 use crate::outbox::EventBox;
-use crate::signature_accumulator::ACCUMULATION_TIMEOUT_SECS;
+use crate::signature_accumulator::ACCUMULATION_TIMEOUT;
 use crate::state_machine::Transition;
 use crate::time::{Duration, Instant};
 use crate::timer::Timer;
@@ -29,14 +29,17 @@ use std::sync::Arc;
 /// Time (in seconds) between accepting a new candidate (i.e. receiving an `AcceptAsCandidate` from
 /// our section) and sending a `CandidateApproval` for this candidate. If the candidate cannot
 /// satisfy the proof of resource challenge within this time, no `CandidateApproval` is sent.
-pub const RESOURCE_PROOF_DURATION_SECS: u64 = 300;
+pub const RESOURCE_PROOF_DURATION: Duration = Duration::from_secs(300);
 /// Maximum time a new node will wait to receive `NodeApproval` after receiving a
 /// `RelocateResponse`. This covers the built-in delay of the process and also allows time for the
 /// message to accumulate and be sent via four different routes.
-const APPROVAL_TIMEOUT_SECS: u64 =
-    RESOURCE_PROOF_DURATION_SECS + ACCUMULATION_TIMEOUT_SECS + (4 * ACK_TIMEOUT_SECS);
+const APPROVAL_TIMEOUT: Duration = Duration::from_secs(
+    RESOURCE_PROOF_DURATION.as_secs()
+        + ACCUMULATION_TIMEOUT.as_secs()
+        + (4 * ACK_TIMEOUT.as_secs()),
+);
 /// Interval between displaying info about ongoing approval progress, in seconds.
-const APPROVAL_PROGRESS_INTERVAL_SECS: u64 = 30;
+const APPROVAL_PROGRESS_INTERVAL: Duration = Duration::from_secs(30);
 
 /// Handles resource proofs
 pub struct ResourceProver {
@@ -45,7 +48,7 @@ pub struct ResourceProver {
     get_approval_timer_token: Option<u64>,
     approval_progress_timer_token: Option<u64>,
     approval_expiry_time: Instant,
-    approval_timeout_secs: u64,
+    approval_timeout: Duration,
     /// Number of expected resource proof challengers.
     challenger_count: usize,
     /// Map of ResourceProofResponse parts.
@@ -63,7 +66,7 @@ impl ResourceProver {
             get_approval_timer_token: None,
             approval_progress_timer_token: None,
             approval_expiry_time: Instant::now(),
-            approval_timeout_secs: APPROVAL_TIMEOUT_SECS,
+            approval_timeout: APPROVAL_TIMEOUT,
             challenger_count: challenger_count,
             response_parts: Default::default(),
             workers: Default::default(),
@@ -76,15 +79,11 @@ impl ResourceProver {
         // Reduced waiting time when resource proof is disabled.
         if resource_proof_disabled {
             // TODO: Bring this number down with better gossip
-            self.approval_timeout_secs = 180;
+            self.approval_timeout = Duration::from_secs(180);
         }
-        let duration = Duration::from_secs(self.approval_timeout_secs);
-        self.approval_expiry_time = Instant::now() + duration;
-        self.get_approval_timer_token = Some(self.timer.schedule(duration));
-        self.approval_progress_timer_token = Some(
-            self.timer
-                .schedule(Duration::from_secs(APPROVAL_PROGRESS_INTERVAL_SECS)),
-        );
+        self.approval_expiry_time = Instant::now() + self.approval_timeout;
+        self.get_approval_timer_token = Some(self.timer.schedule(self.approval_timeout));
+        self.approval_progress_timer_token = Some(self.timer.schedule(APPROVAL_PROGRESS_INTERVAL));
     }
 
     /// Start generating a resource proof in a background thread
@@ -100,7 +99,8 @@ impl ResourceProver {
             info!(
                 "{} Starting approval process to test this node's resources. This will take \
                  at least {} seconds.",
-                log_ident, RESOURCE_PROOF_DURATION_SECS
+                log_ident,
+                RESOURCE_PROOF_DURATION.as_secs()
             );
         }
 
@@ -225,10 +225,8 @@ impl ResourceProver {
             self.handle_approval_timeout(log_ident, outbox);
             Some(Transition::Terminate)
         } else if self.approval_progress_timer_token == Some(token) {
-            self.approval_progress_timer_token = Some(
-                self.timer
-                    .schedule(Duration::from_secs(APPROVAL_PROGRESS_INTERVAL_SECS)),
-            );
+            self.approval_progress_timer_token =
+                Some(self.timer.schedule(APPROVAL_PROGRESS_INTERVAL));
             let now = Instant::now();
             let remaining_duration = if now < self.approval_expiry_time {
                 self.approval_expiry_time - now
@@ -240,7 +238,7 @@ impl ResourceProver {
                 log_ident,
                 self.response_progress(),
                 remaining_duration.display_secs(),
-                self.approval_timeout_secs
+                self.approval_timeout.as_secs()
             );
 
             Some(Transition::Stay)

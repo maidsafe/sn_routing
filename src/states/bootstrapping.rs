@@ -28,7 +28,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 // Time (in seconds) after which bootstrap is cancelled (and possibly retried).
-const BOOTSTRAP_TIMEOUT_SECS: u64 = 20;
+const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(20);
 
 // State to transition into after bootstrap process is complete.
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
@@ -300,9 +300,7 @@ impl Bootstrapping {
     fn send_bootstrap_request(&mut self, pub_id: PublicId) {
         debug!("{} Sending BootstrapRequest to {}.", self, pub_id);
 
-        let token = self
-            .timer
-            .schedule(Duration::from_secs(BOOTSTRAP_TIMEOUT_SECS));
+        let token = self.timer.schedule(BOOTSTRAP_TIMEOUT);
         self.bootstrap_connection = Some((pub_id, token));
 
         let serialised_public_id = match serialisation::serialise(self.full_id.public_id()) {

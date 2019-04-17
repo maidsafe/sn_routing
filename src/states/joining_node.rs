@@ -17,7 +17,7 @@ use crate::event::Event;
 use crate::id::{FullId, PublicId};
 use crate::messages::{HopMessage, Message, MessageContent, RoutingMessage};
 use crate::outbox::EventBox;
-use crate::resource_prover::RESOURCE_PROOF_DURATION_SECS;
+use crate::resource_prover::RESOURCE_PROOF_DURATION;
 use crate::routing_message_filter::RoutingMessageFilter;
 use crate::routing_table::{Authority, Prefix};
 use crate::state_machine::{State, Transition};
@@ -33,8 +33,8 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::sync::mpsc::Receiver;
 
-/// Total time (in seconds) to wait for `RelocateResponse`.
-const RELOCATE_TIMEOUT_SECS: u64 = 60 + RESOURCE_PROOF_DURATION_SECS;
+/// Total time to wait for `RelocateResponse`.
+const RELOCATE_TIMEOUT: Duration = Duration::from_secs(60 + RESOURCE_PROOF_DURATION.as_secs());
 
 pub struct JoiningNode {
     action_sender: RoutingActionSender,
@@ -63,8 +63,7 @@ impl JoiningNode {
         proxy_pub_id: PublicId,
         timer: Timer,
     ) -> Option<Self> {
-        let duration = Duration::from_secs(RELOCATE_TIMEOUT_SECS);
-        let relocation_timer_token = timer.schedule(duration);
+        let relocation_timer_token = timer.schedule(RELOCATE_TIMEOUT);
         let mut joining_node = JoiningNode {
             action_sender: action_sender,
             ack_mgr: AckManager::new(),

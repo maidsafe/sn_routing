@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::common::{Base, Bootstrapped, Relocated, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
+use super::common::{Base, Bootstrapped, Relocated, USER_MSG_CACHE_EXPIRY_DURATION};
 use crate::ack_manager::{Ack, AckManager};
 use crate::action::Action;
 use crate::cache::Cache;
@@ -27,7 +27,7 @@ use crate::outbox::EventBox;
 use crate::parsec::{self, ConsensusMode, Parsec};
 use crate::peer_manager::{Peer, PeerManager, PeerState};
 use crate::rate_limiter::RateLimiter;
-use crate::resource_prover::RESOURCE_PROOF_DURATION_SECS;
+use crate::resource_prover::RESOURCE_PROOF_DURATION;
 use crate::routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use crate::routing_table::Error as RoutingTableError;
 use crate::routing_table::{Authority, Prefix, Xorable, DEFAULT_PREFIX};
@@ -51,23 +51,23 @@ use std::fmt::{Display, Formatter};
 use std::net::IpAddr;
 use std::{cmp, fmt, iter, mem};
 
-/// Time (in seconds) after which a `Tick` event is sent.
-const TICK_TIMEOUT_SECS: u64 = 15;
-const POKE_TIMEOUT_SECS: u64 = 60;
-const GOSSIP_TIMEOUT_SECS: u64 = 2;
-const RECONNECT_PEER_TIMEOUT_SECS: u64 = 20;
+/// Time after which a `Tick` event is sent.
+const TICK_TIMEOUT: Duration = Duration::from_secs(15);
+const POKE_TIMEOUT: Duration = Duration::from_secs(60);
+const GOSSIP_TIMEOUT: Duration = Duration::from_secs(2);
+const RECONNECT_PEER_TIMEOUT: Duration = Duration::from_secs(20);
 //const MAX_IDLE_ROUNDS: u64 = 100;
 //const TICK_TIMEOUT_SECS: u64 = 60;
 /// The number of required leading zero bits for the resource proof
 const RESOURCE_PROOF_DIFFICULTY: u8 = 0;
 /// The total size of the resource proof data.
 const RESOURCE_PROOF_TARGET_SIZE: usize = 250 * 1024 * 1024;
-/// Interval between displaying info about current candidate, in seconds.
-const CANDIDATE_STATUS_INTERVAL_SECS: u64 = 60;
-/// Duration for which all clients on a given IP will be blocked from joining this node, in seconds.
-const CLIENT_BAN_SECS: u64 = 2 * 60 * 60;
-/// Duration for which clients' IDs we disconnected from are retained, in seconds.
-const DROPPED_CLIENT_TIMEOUT_SECS: u64 = 2 * 60 * 60;
+/// Interval between displaying info about current candidate.
+const CANDIDATE_STATUS_INTERVAL: Duration = Duration::from_secs(60);
+/// Duration for which all clients on a given IP will be blocked from joining this node.
+const CLIENT_BAN_DURATION: Duration = Duration::from_secs(2 * 60 * 60);
+/// Duration for which clients' IDs we disconnected from are retained.
+const DROPPED_CLIENT_TIMEOUT: Duration = Duration::from_secs(2 * 60 * 60);
 
 pub struct Node {
     ack_mgr: AckManager,
@@ -134,17 +134,14 @@ impl Node {
 
         let public_id = *full_id.public_id();
 
-        let tick_period = Duration::from_secs(TICK_TIMEOUT_SECS);
-        let tick_timer_token = timer.schedule(tick_period);
-        let gossip_timer_token = Some(timer.schedule(Duration::from_secs(GOSSIP_TIMEOUT_SECS)));
-        let user_msg_cache_duration = Duration::from_secs(USER_MSG_CACHE_EXPIRY_DURATION_SECS);
-        let reconnect_peers_token =
-            timer.schedule(Duration::from_secs(RECONNECT_PEER_TIMEOUT_SECS));
+        let tick_timer_token = timer.schedule(TICK_TIMEOUT);
+        let gossip_timer_token = Some(timer.schedule(GOSSIP_TIMEOUT));
+        let reconnect_peers_token = timer.schedule(RECONNECT_PEER_TIMEOUT);
 
         let mut node = Self {
             ack_mgr: AckManager::new(),
             cacheable_user_msg_cache: UserMessageCache::with_expiry_duration(
-                user_msg_cache_duration,
+                USER_MSG_CACHE_EXPIRY_DURATION,
             ),
             crust_service: crust_service,
             full_id: full_id,
@@ -156,17 +153,15 @@ impl Node {
             sig_accumulator: Default::default(),
             tick_timer_token: tick_timer_token,
             timer: timer,
-            user_msg_cache: UserMessageCache::with_expiry_duration(user_msg_cache_duration),
+            user_msg_cache: UserMessageCache::with_expiry_duration(USER_MSG_CACHE_EXPIRY_DURATION),
             next_relocation_dst: None,
             next_relocation_interval: None,
             routing_msg_backlog: vec![],
             candidate_timer_token: None,
             candidate_status_token: None,
             clients_rate_limiter: RateLimiter::new(dev_config.disable_client_rate_limiter),
-            banned_client_ips: LruCache::with_expiry_duration(Duration::from_secs(CLIENT_BAN_SECS)),
-            dropped_clients: LruCache::with_expiry_duration(Duration::from_secs(
-                DROPPED_CLIENT_TIMEOUT_SECS,
-            )),
+            banned_client_ips: LruCache::with_expiry_duration(CLIENT_BAN_DURATION),
+            dropped_clients: LruCache::with_expiry_duration(DROPPED_CLIENT_TIMEOUT),
             proxy_load_amount: 0,
             disable_resource_proof: dev_config.disable_resource_proof,
             parsec_map: Default::default(),
@@ -204,14 +199,12 @@ impl Node {
     ) -> Self {
         let dev_config = config_handler::get_config().dev.unwrap_or_default();
         let public_id = *full_id.public_id();
-        let user_msg_cache_duration = Duration::from_secs(USER_MSG_CACHE_EXPIRY_DURATION_SECS);
 
-        let tick_timer_token = timer.schedule(Duration::from_secs(TICK_TIMEOUT_SECS));
-        let gossip_timer_token = timer.schedule(Duration::from_secs(GOSSIP_TIMEOUT_SECS));
-        let poke_timer_token = timer.schedule(Duration::from_secs(POKE_TIMEOUT_SECS));
+        let tick_timer_token = timer.schedule(TICK_TIMEOUT);
+        let gossip_timer_token = timer.schedule(GOSSIP_TIMEOUT);
+        let poke_timer_token = timer.schedule(POKE_TIMEOUT);
 
-        let reconnect_peers_token =
-            timer.schedule(Duration::from_secs(RECONNECT_PEER_TIMEOUT_SECS));
+        let reconnect_peers_token = timer.schedule(RECONNECT_PEER_TIMEOUT);
 
         let parsec = create_parsec(full_id.clone(), &gen_pfx_info);
         let mut parsec_map = BTreeMap::new();
@@ -220,7 +213,7 @@ impl Node {
         Self {
             ack_mgr,
             cacheable_user_msg_cache: UserMessageCache::with_expiry_duration(
-                user_msg_cache_duration,
+                USER_MSG_CACHE_EXPIRY_DURATION,
             ),
             crust_service,
             full_id,
@@ -232,17 +225,15 @@ impl Node {
             sig_accumulator: Default::default(),
             tick_timer_token,
             timer,
-            user_msg_cache: UserMessageCache::with_expiry_duration(user_msg_cache_duration),
+            user_msg_cache: UserMessageCache::with_expiry_duration(USER_MSG_CACHE_EXPIRY_DURATION),
             next_relocation_dst: None,
             next_relocation_interval: None,
             routing_msg_backlog: Default::default(),
             candidate_timer_token: None,
             candidate_status_token: None,
             clients_rate_limiter: RateLimiter::new(dev_config.disable_client_rate_limiter),
-            banned_client_ips: LruCache::with_expiry_duration(Duration::from_secs(CLIENT_BAN_SECS)),
-            dropped_clients: LruCache::with_expiry_duration(Duration::from_secs(
-                DROPPED_CLIENT_TIMEOUT_SECS,
-            )),
+            banned_client_ips: LruCache::with_expiry_duration(CLIENT_BAN_DURATION),
+            dropped_clients: LruCache::with_expiry_duration(DROPPED_CLIENT_TIMEOUT),
             proxy_load_amount: 0,
             disable_resource_proof: dev_config.disable_resource_proof,
             parsec_map,
@@ -1480,10 +1471,7 @@ impl Node {
             .into_iter()
             .rev()
             .foreach(|msg| self.msg_queue.push_front(msg));
-        self.candidate_status_token = Some(
-            self.timer
-                .schedule(Duration::from_secs(CANDIDATE_STATUS_INTERVAL_SECS)),
-        );
+        self.candidate_status_token = Some(self.timer.schedule(CANDIDATE_STATUS_INTERVAL));
     }
 
     fn handle_resource_proof_response(
@@ -2012,10 +2000,7 @@ impl Node {
             return Ok(());
         }
 
-        self.candidate_timer_token = Some(
-            self.timer
-                .schedule(Duration::from_secs(RESOURCE_PROOF_DURATION_SECS)),
-        );
+        self.candidate_timer_token = Some(self.timer.schedule(RESOURCE_PROOF_DURATION));
 
         self.peer_mgr
             .accept_as_candidate(old_pub_id, target_interval);
@@ -2129,8 +2114,7 @@ impl Node {
 
     fn handle_timeout(&mut self, token: u64, outbox: &mut EventBox) -> Transition {
         if self.tick_timer_token == token {
-            let tick_period = Duration::from_secs(TICK_TIMEOUT_SECS);
-            self.tick_timer_token = self.timer.schedule(tick_period);
+            self.tick_timer_token = self.timer.schedule(TICK_TIMEOUT);
             self.remove_expired_peers();
             self.proxy_load_amount = 0;
 
@@ -2145,27 +2129,18 @@ impl Node {
             self.candidate_timer_token = None;
             self.send_candidate_approval();
         } else if self.candidate_status_token == Some(token) {
-            self.candidate_status_token = Some(
-                self.timer
-                    .schedule(Duration::from_secs(CANDIDATE_STATUS_INTERVAL_SECS)),
-            );
+            self.candidate_status_token = Some(self.timer.schedule(CANDIDATE_STATUS_INTERVAL));
             self.peer_mgr.show_candidate_status();
         } else if self.reconnect_peers_token == token {
-            self.reconnect_peers_token = self
-                .timer
-                .schedule(Duration::from_secs(RECONNECT_PEER_TIMEOUT_SECS));
+            self.reconnect_peers_token = self.timer.schedule(RECONNECT_PEER_TIMEOUT);
             self.reconnect_peers(outbox);
         } else if self.poke_timer_token == Some(token) {
             if !self.peer_mgr.is_established() {
                 self.send_parsec_poke();
-                self.poke_timer_token =
-                    Some(self.timer.schedule(Duration::from_secs(POKE_TIMEOUT_SECS)));
+                self.poke_timer_token = Some(self.timer.schedule(POKE_TIMEOUT));
             }
         } else if self.gossip_timer_token == Some(token) {
-            self.gossip_timer_token = Some(
-                self.timer
-                    .schedule(Duration::from_secs(GOSSIP_TIMEOUT_SECS)),
-            );
+            self.gossip_timer_token = Some(self.timer.schedule(GOSSIP_TIMEOUT));
 
             // If we're the only node then invoke parsec_poll directly
             if self.is_first_node && self.chain().our_info().members().len() == 1 {
@@ -2963,7 +2938,6 @@ fn create_parsec(full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Parsec<Netwo
 
 #[cfg(feature = "mock_parsec")]
 fn create_parsec(full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Parsec<NetworkEvent, FullId> {
-    let consensus_mode = parsec::ConsensusMode::Single;
     let section_hash = *gen_pfx_info.first_info.hash();
 
     if gen_pfx_info

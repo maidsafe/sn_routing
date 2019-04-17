@@ -7,14 +7,14 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::Base;
-use crate::ack_manager::{Ack, AckManager, UnacknowledgedMessage, ACK_TIMEOUT_SECS};
+use crate::ack_manager::{Ack, AckManager, UnacknowledgedMessage, ACK_TIMEOUT};
 use crate::chain::SectionInfo;
 use crate::error::Result;
 use crate::id::PublicId;
 use crate::messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage};
 use crate::routing_message_filter::RoutingMessageFilter;
 use crate::routing_table::Authority;
-use crate::time::{Duration, Instant};
+use crate::time::Instant;
 use crate::timer::Timer;
 use crate::xor_name::XorName;
 use maidsafe_utilities::serialisation;
@@ -66,7 +66,7 @@ pub trait Bootstrapped: Base {
             return false;
         }
 
-        let token = self.timer().schedule(Duration::from_secs(ACK_TIMEOUT_SECS));
+        let token = self.timer().schedule(ACK_TIMEOUT);
         let unacked_msg = UnacknowledgedMessage {
             routing_msg: routing_msg.clone(),
             src_section,

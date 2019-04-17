@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::common::{Base, Bootstrapped, Unapproved, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
+use super::common::{Base, Bootstrapped, Unapproved, USER_MSG_CACHE_EXPIRY_DURATION};
 use crate::ack_manager::{Ack, AckManager, UnacknowledgedMessage};
 use crate::action::Action;
 use crate::chain::SectionInfo;
@@ -30,7 +30,7 @@ use std::collections::BTreeMap;
 use std::fmt::{self, Display, Formatter};
 
 /// Duration to wait before sending rate limit exceeded messages.
-pub const RATE_EXCEED_RETRY_MS: u64 = 800;
+pub const RATE_EXCEED_RETRY: Duration = Duration::from_millis(800);
 
 /// A node connecting a user to the network, as opposed to a routing / data storage node.
 ///
@@ -67,9 +67,7 @@ impl Client {
             proxy_pub_id: proxy_pub_id,
             routing_msg_filter: RoutingMessageFilter::new(),
             timer: timer,
-            user_msg_cache: UserMessageCache::with_expiry_duration(Duration::from_secs(
-                USER_MSG_CACHE_EXPIRY_DURATION_SECS,
-            )),
+            user_msg_cache: UserMessageCache::with_expiry_duration(USER_MSG_CACHE_EXPIRY_DURATION),
             resend_buf: Default::default(),
             msg_expiry_dur: msg_expiry_dur,
         };
@@ -212,9 +210,7 @@ impl Client {
     fn handle_direct_message(&mut self, direct_msg: DirectMessage) -> Result<Transition> {
         if let DirectMessage::ProxyRateLimitExceeded { ack } = direct_msg {
             if let Some(unack_msg) = self.ack_mgr.remove(&ack) {
-                let token = self
-                    .timer()
-                    .schedule(Duration::from_millis(RATE_EXCEED_RETRY_MS));
+                let token = self.timer().schedule(RATE_EXCEED_RETRY);
                 let _ = self.resend_buf.insert(token, unack_msg);
             } else {
                 debug!(

@@ -18,9 +18,9 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 /// Time (in seconds) after which a message is resent due to being unacknowledged by recipient.
-pub const ACK_TIMEOUT_SECS: u64 = 20;
+pub const ACK_TIMEOUT: Duration = Duration::from_secs(20);
 
-const EXPIRY_DURATION_SECS: u64 = 4 * 60;
+const EXPIRY_DURATION: Duration = Duration::from_secs(4 * 60);
 
 /// A copy of a message which has been sent and is pending the ack from the recipient.
 #[derive(Clone, Debug)]
@@ -46,11 +46,9 @@ pub struct Ack {
 impl AckManager {
     /// Creates a new manager, with empty lists.
     pub fn new() -> Self {
-        let expiry_duration = Duration::from_secs(EXPIRY_DURATION_SECS);
-
         AckManager {
             pending: BTreeMap::new(),
-            received: MessageFilter::with_expiry_duration(expiry_duration),
+            received: MessageFilter::with_expiry_duration(EXPIRY_DURATION),
         }
     }
 

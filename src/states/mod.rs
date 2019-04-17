@@ -15,7 +15,7 @@ mod proving_node;
 
 pub use self::{
     bootstrapping::{Bootstrapping, TargetState as BootstrappingTargetState},
-    client::{Client, RATE_EXCEED_RETRY_MS},
+    client::{Client, RATE_EXCEED_RETRY},
     joining_node::JoiningNode,
     node::Node,
     proving_node::ProvingNode,
