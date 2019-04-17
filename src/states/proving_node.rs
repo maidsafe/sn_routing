@@ -177,6 +177,11 @@ impl ProvingNode {
         match event {
             CrustEvent::ConnectSuccess(pub_id) => self.handle_connect_success(pub_id, outbox),
             CrustEvent::ConnectFailure(pub_id) => self.handle_connect_failure(pub_id, outbox),
+            CrustEvent::LostPeer(pub_id) => {
+                if let Transition::Terminate = self.handle_lost_peer(pub_id, outbox) {
+                    return Transition::Terminate;
+                }
+            }
             CrustEvent::ConnectionInfoPrepared(ConnectionInfoResult {
                 result_token,
                 result,
@@ -495,6 +500,19 @@ impl ProvingNode {
         Ok(())
     }
 
+    fn dropped_peer(&mut self, pub_id: &PublicId) -> bool {
+        let was_proxy = self.peer_mgr.is_proxy(pub_id);
+        let _ = self.peer_mgr.remove_peer(pub_id);
+        let _ = self.notified_nodes.remove(pub_id);
+
+        if was_proxy {
+            debug!("{} Lost connection to proxy {}.", self, pub_id);
+            false
+        } else {
+            true
+        }
+    }
+
     fn add_to_routing_table(&mut self, pub_id: &PublicId, outbox: &mut EventBox) {
         match self.peer_mgr.add_to_routing_table(pub_id) {
             Err(error) => {
@@ -526,6 +544,17 @@ impl Base for ProvingNode {
             client_id == self.full_id.public_id()
         } else {
             false
+        }
+    }
+
+    fn handle_lost_peer(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
+        debug!("{} Received LostPeer - {}", self, pub_id);
+
+        if self.dropped_peer(&pub_id) {
+            Transition::Stay
+        } else {
+            outbox.send_event(Event::Terminate);
+            Transition::Terminate
         }
     }
 
@@ -614,7 +643,8 @@ impl Relocated for ProvingNode {
         {
             debug!("{} Failed to connect to peer {:?}.", self, pub_id);
         }
-        let _ = self.peer_mgr.remove_peer(&pub_id);
+
+        let _ = self.dropped_peer(&pub_id);
     }
 }
 
