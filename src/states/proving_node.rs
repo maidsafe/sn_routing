@@ -422,60 +422,6 @@ impl ProvingNode {
         }
     }
 
-    fn send_connection_info_request(
-        &mut self,
-        their_public_id: PublicId,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
-        outbox: &mut EventBox,
-    ) -> Result<(), RoutingError> {
-        let their_name = *their_public_id.name();
-
-        if self.peer_mgr.is_client(&their_public_id)
-            || self.peer_mgr.is_joining_node(&their_public_id)
-            || self.peer_mgr.is_proxy(&their_public_id)
-        {
-            self.process_connection(their_public_id, outbox);
-            return Ok(());
-        }
-
-        if self.peer_mgr.is_connected(&their_public_id) {
-            self.add_to_routing_table(&their_public_id, outbox);
-            return Ok(());
-        }
-
-        // This will insert the peer if peer is not in peer_mgr and flag them to `valid`
-        if let Some(token) = self
-            .peer_mgr
-            .get_connection_token(src, dst, their_public_id)
-        {
-            self.crust_service.prepare_connection_info(token);
-            return Ok(());
-        }
-
-        let our_pub_info = match self.peer_mgr.get_peer(&their_public_id).map(Peer::state) {
-            Some(PeerState::ConnectionInfoReady(our_priv_info)) => {
-                our_priv_info.to_pub_connection_info()
-            }
-            state => {
-                trace!(
-                    "{} Not sending connection info request to {:?}. State: {:?}",
-                    self,
-                    their_name,
-                    state
-                );
-                return Ok(());
-            }
-        };
-        trace!(
-            "{} Resending connection info request to {:?}",
-            self,
-            their_name
-        );
-        self.send_connection_info(our_pub_info, their_public_id, src, dst, None);
-        Ok(())
-    }
-
     fn dropped_peer(&mut self, pub_id: &PublicId) -> bool {
         let was_proxy = self.peer_mgr.is_proxy(pub_id);
         let _ = self.peer_mgr.remove_peer(pub_id);
@@ -486,22 +432,6 @@ impl ProvingNode {
             false
         } else {
             true
-        }
-    }
-
-    fn add_to_routing_table(&mut self, pub_id: &PublicId, outbox: &mut EventBox) {
-        match self.peer_mgr.add_to_routing_table(pub_id) {
-            Err(error) => {
-                debug!("{} Peer {:?} was not updated: {:?}", self, pub_id, error);
-                self.disconnect_peer(pub_id);
-                return;
-            }
-            Ok(()) => (),
-        }
-
-        if self.notified_nodes.insert(*pub_id) {
-            info!("{} Added {} to routing table.", self, pub_id);
-            outbox.send_event(Event::NodeAdded(*pub_id.name()));
         }
     }
 }
@@ -621,6 +551,26 @@ impl Relocated for ProvingNode {
         }
 
         let _ = self.dropped_peer(&pub_id);
+    }
+
+    fn is_peer_valid(&self, _: &PublicId) -> bool {
+        true
+    }
+
+    fn add_to_routing_table(&mut self, pub_id: &PublicId, outbox: &mut EventBox) {
+        match self.peer_mgr.add_to_routing_table(pub_id) {
+            Err(error) => {
+                debug!("{} Peer {:?} was not updated: {:?}", self, pub_id, error);
+                self.disconnect_peer(pub_id);
+                return;
+            }
+            Ok(()) => (),
+        }
+
+        if self.notified_nodes.insert(*pub_id) {
+            info!("{} Added {} to routing table.", self, pub_id);
+            outbox.send_event(Event::NodeAdded(*pub_id.name()));
+        }
     }
 }
 

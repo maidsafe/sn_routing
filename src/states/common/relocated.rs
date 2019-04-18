@@ -13,7 +13,7 @@ use crate::{
     id::PublicId,
     messages::{MessageContent, SignedMessage},
     outbox::EventBox,
-    peer_manager::{ConnectionInfoPreparedResult, Peer, PeerManager},
+    peer_manager::{ConnectionInfoPreparedResult, Peer, PeerManager, PeerState},
     routing_table::Authority,
     types::MessageId,
     xor_name::XorName,
@@ -28,6 +28,8 @@ pub trait Relocated: Bootstrapped {
     fn peer_mgr(&mut self) -> &mut PeerManager;
     fn process_connection(&mut self, pub_id: PublicId, outbox: &mut EventBox);
     fn handle_connect_failure(&mut self, pub_id: PublicId, outbox: &mut EventBox);
+    fn is_peer_valid(&self, pub_id: &PublicId) -> bool;
+    fn add_to_routing_table(&mut self, pub_id: &PublicId, outbox: &mut EventBox);
 
     fn handle_connection_info_prepared(
         &mut self,
@@ -261,6 +263,74 @@ pub trait Relocated: Bootstrapped {
         shared_secret
             .decrypt(encrypted_connection_info)
             .map_err(RoutingError::Crypto)
+    }
+
+    // Note: This fn assumes `their_public_id` is a valid node in the network
+    // Do not call this to respond to ConnectionInfo requests which are not yet validated.
+    fn send_connection_info_request(
+        &mut self,
+        their_public_id: PublicId,
+        src: Authority<XorName>,
+        dst: Authority<XorName>,
+        outbox: &mut EventBox,
+    ) -> Result<(), RoutingError> {
+        let their_name = *their_public_id.name();
+        if !self.is_peer_valid(&their_public_id) {
+            trace!(
+                "{} Not sending ConnectionInfoRequest to Invalid peer {}.",
+                self,
+                their_name
+            );
+            return Err(RoutingError::InvalidPeer);
+        }
+
+        if self.peer_mgr().is_client(&their_public_id)
+            || self.peer_mgr().is_joining_node(&their_public_id)
+            || self.peer_mgr().is_proxy(&their_public_id)
+        {
+            // we use peer_name here instead of their_name since the peer can be
+            // a joining node with its client name as far as proxy node is concerned
+            self.process_connection(their_public_id, outbox);
+            return Ok(());
+        }
+
+        if self.peer_mgr().is_connected(&their_public_id) {
+            self.add_to_routing_table(&their_public_id, outbox);
+            return Ok(());
+        }
+
+        // This will insert the peer if peer is not in peer_mgr and flag them to `valid`
+        if let Some(token) = self
+            .peer_mgr()
+            .get_connection_token(src, dst, their_public_id)
+        {
+            self.crust_service().prepare_connection_info(token);
+            return Ok(());
+        }
+
+        let log_ident = format!("{}", self);
+        let our_pub_info = match self.peer_mgr().get_peer(&their_public_id).map(Peer::state) {
+            Some(PeerState::ConnectionInfoReady(our_priv_info)) => {
+                our_priv_info.to_pub_connection_info()
+            }
+            state => {
+                trace!(
+                    "{} Not sending connection info request to {:?}. State: {:?}",
+                    log_ident,
+                    their_name,
+                    state
+                );
+                return Ok(());
+            }
+        };
+
+        trace!(
+            "{} Resending connection info request to {:?}",
+            self,
+            their_name
+        );
+        self.send_connection_info(our_pub_info, their_public_id, src, dst, None);
+        Ok(())
     }
 
     // If `msg_id` is `Some` this is sent as a response, otherwise as a request.
