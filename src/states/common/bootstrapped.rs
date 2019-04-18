@@ -8,6 +8,7 @@
 
 use super::Base;
 use crate::ack_manager::{Ack, AckManager, UnacknowledgedMessage, ACK_TIMEOUT_SECS};
+use crate::chain::SectionInfo;
 use crate::error::Result;
 use crate::id::PublicId;
 use crate::messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage};
@@ -32,6 +33,7 @@ pub trait Bootstrapped: Base {
     fn send_routing_message_via_route(
         &mut self,
         routing_msg: RoutingMessage,
+        src_section: Option<SectionInfo>,
         route: u8,
         expires_at: Option<Instant>,
     ) -> Result<()>;
@@ -47,6 +49,7 @@ pub trait Bootstrapped: Base {
     fn add_to_pending_acks(
         &mut self,
         routing_msg: &RoutingMessage,
+        src_section: Option<SectionInfo>,
         route: u8,
         expires_at: Option<Instant>,
     ) -> bool {
@@ -70,9 +73,10 @@ pub trait Bootstrapped: Base {
         let token = self.timer().schedule(Duration::from_secs(ACK_TIMEOUT_SECS));
         let unacked_msg = UnacknowledgedMessage {
             routing_msg: routing_msg.clone(),
-            route: route,
+            src_section,
+            route,
             timer_token: token,
-            expires_at: expires_at,
+            expires_at,
         };
 
         if let Some(ejected) = self.ack_mgr_mut().add_to_pending(ack, unacked_msg) {
@@ -109,6 +113,7 @@ pub trait Bootstrapped: Base {
                 );
             } else if let Err(error) = self.send_routing_message_via_route(
                 unacked_msg.routing_msg,
+                unacked_msg.src_section,
                 unacked_msg.route,
                 unacked_msg.expires_at,
             ) {
@@ -129,7 +134,7 @@ pub trait Bootstrapped: Base {
             dst: dst,
             content: content,
         };
-        self.send_routing_message_via_route(routing_msg, 0, expires_at)
+        self.send_routing_message_via_route(routing_msg, None, 0, expires_at)
     }
 
     fn send_routing_message(
@@ -159,7 +164,7 @@ pub trait Bootstrapped: Base {
         };
 
         // expires_at is set to None as we will not wait for an Ack for an Ack.
-        if let Err(error) = self.send_routing_message_via_route(response, route, None) {
+        if let Err(error) = self.send_routing_message_via_route(response, None, route, None) {
             debug!("{} Failed to send ack: {:?}", self, error);
         }
     }

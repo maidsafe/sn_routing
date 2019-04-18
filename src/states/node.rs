@@ -3325,6 +3325,7 @@ impl Bootstrapped for Node {
     fn send_routing_message_via_route(
         &mut self,
         routing_msg: RoutingMessage,
+        src_section: Option<SectionInfo>,
         route: u8,
         expires_at: Option<Instant>,
     ) -> Result<(), RoutingError> {
@@ -3339,36 +3340,33 @@ impl Bootstrapped for Node {
             }
             return Ok(());
         }
-        if !self.add_to_pending_acks(&routing_msg, route, expires_at) {
+
+        use crate::routing_table::Authority::*;
+        let sending_sec = if route == 0 {
+            match routing_msg.src {
+                ClientManager(_) | NaeManager(_) | NodeManager(_) | ManagedNode(_) | Section(_)
+                | PrefixSection(_)
+                    if self.chain.is_member() =>
+                {
+                    Some(self.chain.our_info().clone())
+                }
+                Client { .. } => None,
+                _ => {
+                    // Cannot send routing msgs as a Node until established.
+                    return Ok(());
+                }
+            }
+        } else {
+            src_section
+        };
+
+        if !self.add_to_pending_acks(&routing_msg, sending_sec.clone(), route, expires_at) {
             debug!(
                 "{} already received an ack for {:?} - so not resending it.",
                 self, routing_msg
             );
             return Ok(());
         }
-        use crate::routing_table::Authority::*;
-        let sending_sec = match routing_msg.src {
-            ClientManager(_) | NaeManager(_) | NodeManager(_) | ManagedNode(_) | Section(_)
-                if self.chain.is_member() =>
-            {
-                Some(self.chain.our_info().clone())
-            }
-            PrefixSection(ref pfx) if self.chain.is_member() => {
-                let src_section = match self.chain.our_info_for_prefix(pfx) {
-                    Some(a) => a.clone(),
-                    None => {
-                        // Can no longer represent sending Pfx.
-                        return Ok(());
-                    }
-                };
-                Some(src_section)
-            }
-            Client { .. } => None,
-            _ => {
-                // Cannot send routing msgs as a Node until established.
-                return Ok(());
-            }
-        };
 
         if route > 0 {
             trace!(

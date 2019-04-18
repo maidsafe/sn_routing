@@ -441,15 +441,6 @@ impl Chain {
         &unwrap!(self.opt_our_info())
     }
 
-    /// Returns our latest `SectionInfo` for the given prefix if found.
-    pub fn our_info_for_prefix(&self, prefix: &Prefix<XorName>) -> Option<&SectionInfo> {
-        self.our_infos
-            .iter()
-            .rev()
-            .find(|(sec_info, _)| sec_info.prefix() == prefix)
-            .map(|(sec_info, _)| sec_info)
-    }
-
     /// Returns our own current section's prefix.
     pub fn our_prefix(&self) -> &Prefix<XorName> {
         self.opt_our_info()

@@ -6,6 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use crate::chain::SectionInfo;
 use crate::error::RoutingError;
 use crate::message_filter::MessageFilter;
 use crate::messages::RoutingMessage;
@@ -29,6 +30,7 @@ const EXPIRY_DURATION_SECS: u64 = 4 * 60;
 #[derive(Clone, Debug)]
 pub struct UnacknowledgedMessage {
     pub routing_msg: RoutingMessage,
+    pub src_section: Option<SectionInfo>,
     pub route: u8,
     pub timer_token: u64,
     pub expires_at: Option<Instant>,

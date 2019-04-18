@@ -155,11 +155,11 @@ fn random_churn<R: Rng>(
     let len = nodes.len();
     let section_count = count_sections(nodes);
     if section_count > 1 && !rng.gen_weighted_bool(section_count as u32) {
-        // Only drop less than GRP_SIZE quorum to prevent collapsing any grp in the network.
-        let max_drop = cmp::max(
-            (nodes[0].chain().min_sec_size() * QUORUM_NUMERATOR / QUORUM_DENOMINATOR) - 1,
-            1,
-        );
+        // Use min_sec_size than section size to prevent collapsing any groups.
+        let max_drop = (nodes[0].chain().min_sec_size() - 1)
+            * (QUORUM_DENOMINATOR - QUORUM_NUMERATOR)
+            / QUORUM_DENOMINATOR;
+        assert!(max_drop > 0);
         let dropped_nodes = drop_random_nodes(rng, nodes, Some(max_drop));
         warn!("Dropping nodes: {:?}", dropped_nodes);
         return None;
@@ -514,13 +514,8 @@ fn aggressive_churn() {
 }
 
 #[test]
-#[ignore]
 fn messages_during_churn() {
-    // FIXME: Needs enabled again once quorum updates are applied to test flow.
-
-    // keep min_sec_size at 5 or above to allow a merging pfx which has nodes dropped
-    // from each sibling to retain a quorum(3) for groups at edges of pre-merge pfx.
-    let min_section_size = 5;
+    let min_section_size = 4;
     let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split(&network, vec![2, 2, 2, 3, 3], false);
